@@ -41,7 +41,7 @@ async function editableBytes(): Promise<HTMLTextAreaElement> {
   return area
 }
 
-const EDIT = '/packs/vendor-onboarding?edit=1'
+const EDIT = '/packs/vendor-onboarding?edit=1&builder=settings'
 const JSON_MODE = '/packs/vendor-onboarding?edit=1&shape=json'
 
 describe('the mode is the address', () => {
@@ -108,7 +108,7 @@ describe('both views are one buffer', () => {
     const raw = await editableBytes()
     const edited = PACK_TEXT.replace('"Vendor onboarding"', '"Vendor onboarding, revised"')
     fireEvent.change(raw, { target: { value: edited } })
-    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
     await waitFor(() => expect(screen.getByDisplayValue('Vendor onboarding, revised')).toBeTruthy())
   })
 
@@ -118,7 +118,7 @@ describe('both views are one buffer', () => {
     await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
     const title = await screen.findByDisplayValue('Vendor onboarding')
     fireEvent.change(title, { target: { value: 'Vendor onboarding, revised' } })
-    fireEvent.click(screen.getByRole('radio', { name: 'JSON' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Source' }))
     const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
     expect(raw.value).toContain('"title": "Vendor onboarding, revised"')
     // Every byte outside the spliced span survives: the splice is the whole
@@ -170,7 +170,7 @@ describe('bytes the desk cannot read as a document', () => {
     // The position is a line and a column, because that is what the gutter
     // beside the text is numbered in.
     expect(screen.getByText(/line 1, column 17/)).toBeTruthy()
-    expect(screen.getByRole('radio', { name: 'Form' }).getAttribute('disabled')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Settings' }).getAttribute('disabled')).not.toBeNull()
   })
 
   it('withholds form mode over a document the two readings disagree about', async () => {
@@ -183,7 +183,7 @@ describe('bytes the desk cannot read as a document', () => {
     // Twice: the strip says it, and the JSON view says why the form is
     // withheld. Both are about the same member and neither is the other's.
     await waitFor(() => expect(screen.getAllByText(/appears more than once/).length).toBe(2), FIRST_DRAW)
-    expect(screen.getByRole('radio', { name: 'Form' }).getAttribute('disabled')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Settings' }).getAttribute('disabled')).not.toBeNull()
     expect(screen.getByLabelText("The document's bytes")).toBeTruthy()
   })
 })
@@ -266,7 +266,7 @@ describe('rule order, which is what the pack decides', () => {
     await waitFor(() => expect(screen.getByText('Moved to position 2 of 2.')).toBeTruthy())
     // Focus follows the card to its new address, which is `/rules/1`.
     await waitFor(() => expect(document.activeElement?.getAttribute('data-pointer')).toBe('/rules/1'))
-    fireEvent.click(screen.getByRole('radio', { name: 'JSON' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Source' }))
     const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
     expect(raw.value.indexOf('"approve-when-clear"')).toBeLessThan(raw.value.indexOf('"screen-first"'))
   })
@@ -291,7 +291,7 @@ describe('rule order, which is what the pack decides', () => {
     // A diagnostic about a whole rule anchors on the card, and a card is not a
     // field — the panel is where it is printed, in both modes.
     drawPack(served(PACK_TEXT, REFUSED), {
-      path: '/packs/vendor-onboarding?edit=1&at=%2Frules%2F0',
+      path: '/packs/vendor-onboarding?edit=1&builder=settings&at=%2Frules%2F0',
       inspector: true,
       tab: 'checks'
     })
@@ -314,7 +314,7 @@ describe('what an omitted member offers', () => {
     drawPack(served(without), { path: EDIT })
     await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
     fireEvent.click(await screen.findByRole('button', { name: 'Declare it' }))
-    fireEvent.click(screen.getByRole('radio', { name: 'JSON' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Source' }))
     const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
     expect(raw.value).toContain('"fallbackOutcome"')
     // Between `exceptions` and `escalation`, which is the schema's own order.
@@ -363,7 +363,7 @@ describe('where Try it opens', () => {
     expect(revealed).toEqual([])
   })
 
-  it('takes the Inspector’s place where the editor would not keep it', async () => {
+  it('keeps Tests in the main workspace at narrow widths', async () => {
     // 700 wide leaves 308 for the editor, which is under the floor.
     measured(700)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
@@ -377,14 +377,14 @@ describe('where Try it opens', () => {
     void revealed
   })
 
-  it('asks a closed Inspector to open, because it has nowhere else to go', async () => {
+  it('opens Tests without displacing the Assistant tool', async () => {
     measured(700)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
     await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
     expect(revealed).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
-    expect(revealed).toContain('reveal')
+    expect(revealed).toEqual([])
   })
 })
 

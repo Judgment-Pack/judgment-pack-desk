@@ -1,3 +1,6 @@
+import { BuilderSplit } from '../builders/BuilderSplit'
+import workspaceStyles from '../packs/PackWorkspace.module.css'
+import { PackBuildActions } from '../packs/edit/PackBuildActions'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { systemMessage, msg, useLocale } from '../i18n'
@@ -17,7 +20,8 @@ import { systemMessage, msg, useLocale } from '../i18n'
  * 4. Runs `validate` over the buffer, on idle and on demand, and labels which
  *    bytes it was about.
  * 5. Renders the document with the check strip under its outline.
- * 6. Publishes the Inspector — or the what-if pane — through the shell's slot.
+ * 6. Publishes Assistant and Details through the shell's slots. Selection
+ *    editing and draft Tests stay in the main builder workspace.
  *
  * `?at` is the selection and `#pointer` is the deep link, and both are the
  * pointer address space. Selection writes are `replace: true`: choosing what
@@ -45,7 +49,7 @@ import { systemMessage, msg, useLocale } from '../i18n'
  * the authority this whole surface exists not to be.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ErrorBox, Loading } from '../components/primitives'
 import { AlertPanel } from '../ui/AlertPanel'
@@ -91,7 +95,6 @@ import { useInspectorPortal, useInspectorControls } from '../shell/InspectorSlot
 import { usePublishedDirty } from '../shell/authorBridge'
 import { TypedConfirmation, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
-import { useMeasuredBox } from '../shell/measured'
 import { PackLogic } from '../packs/PackLogic'
 import { useDecisionAppearance } from '../packs/decisionAppearanceStorage'
 import { outcomeAppearances, lookupAppearance } from '../packs/decisionAppearance'
@@ -103,26 +106,6 @@ import { usePackRun, traceMatches } from '../packs/runContext'
 import styles from './PackView.module.css'
 import { PageBody } from '../ui/PageLayout'
 import { PackHeader, PackQuestion, PackOverview, PACK_GROUPS, type PackSection } from '../packs/PackWorkspace'
-
-/**
- * What the what-if pane needs, and what the editor must keep beside it.
- *
- * **One number, and the stylesheet reads it from here.** The predicate said 392
- * and `.pane` was `24rem`, which is 384: the arithmetic asked for eight pixels
- * that were never taken, so at what was then the shell's whole box — a 60rem
- * measure less its `1.5rem` padding either side is exactly 912 — the pane
- * fitted and the page said it did not. The width is set as a custom property
- * on the workspace and `.pane` is `width: var(--tryit-pane-width)`, so the two
- * cannot drift again.
- *
- * 912 is no longer the maximum: the measure is `--measure-wide` less two
- * `--density-gutter`, and this route is the `wide` kind. It is still the
- * boundary the predicate is about, which is why the case is written at it.
- */
-const PANE_WIDTH = 384
-const EDITOR_FLOOR = 512
-/** The `1rem` between the two, from `.workspace`'s own gap. */
-const PANE_GAP = 16
 
 const LEAVING = 'This pack has unsaved changes. Leave without saving?'
 
@@ -319,7 +302,7 @@ export function PackView() {
       retainInspectorOnNavigation.current = false
       return
     }
-    if (at === null && groupId === null) return
+    if (at === null && groupId === null || editing) return
     slot.reveal()
   }, [at, groupId, locationKey, slot])
 
@@ -418,8 +401,9 @@ export function PackView() {
    * about the same bytes by construction.
    */
   const requested = params.get('view')
-  const itemEdit = editing && shape === 'form' && formAvailable && /^\/(rules|exceptions)\/\d+$/.test(params.get('editItem') ?? '') ? params.get('editItem') : null
-  const section: PackSection = itemEdit ? 'logic' : editing || hash !== '' || (at !== null && !requested)
+  const itemEdit = editing && shape === 'form' && formAvailable && Boolean(params.get('editItem')) ? params.get('editItem') : null
+  const builderView = rawMode ? 'source' : (params.get('builder') === 'settings' || (!params.has('builder') && hash !== '')) ? 'settings' : params.get('builder') === 'tests' ? 'tests' : 'build'
+  const section: PackSection = editing ? builderView === 'build' && formAvailable ? 'logic' : 'document' : hash !== '' || (at !== null && !requested)
     ? 'document' : requested === 'logic' || requested === 'rules' ? 'logic'
       : requested === 'evidence' || requested === 'document' ? requested : 'overview'
 
@@ -854,50 +838,18 @@ export function PackView() {
   /* Try it ----------------------------------------------------------------- */
 
   const [tryingIt, setTryingIt] = useState(false)
-  const [frame, setFrame] = useState<HTMLDivElement | null>(null)
-  const box = useMeasuredBox(frame)
-  /**
-   * The pane goes beside the editor only where the editor keeps its floor.
-   * Otherwise it takes the Inspector's place, which is the one other surface
-   * wide enough to hold it.
-   *
-   * **The frame is measured, not the column.** The column is the pane's flex
-   * sibling, so placing the pane shrinks the very box the decision was read
-   * from: the predicate's input depended on its own output, and between 904
-   * and 1304 pixels — which covers a 1440 shell with the Inspector closed —
-   * neither answer was a fixed point. It flipped until the browser's
-   * `ResizeObserver` loop guard stopped it, in the wrong state: the pane beside
-   * a 744px column, which is 352px of editor, under the floor this measurement
-   * exists to guarantee. The workspace's own width is the same either way, so
-   * the question is now about the room there is rather than about the choice
-   * already made.
-   */
-  const roomInMain = (box?.width ?? 0) - PANE_WIDTH - PANE_GAP >= EDITOR_FLOOR
-
   const paneNode =
-    editing && tryingIt ? (
+    editing && (tryingIt || builderView === 'tests') ? (
       <TryItPane
         buffer={bufferText ?? servedText ?? ''}
         packId={packId ?? ''}
         rehearsalSupported={rehearsalSupported}
         connected={status === 'ready'}
-        onClose={() => setTryingIt(false)}
+        onClose={() => {const next = new URLSearchParams(params); next.set('builder', 'build'); retainInspectorOnNavigation.current = true; setParams(next, {replace: true})}}
       />
     ) : null
 
-  /**
-   * What stands where the Inspector's panels normally do.
-   *
-   * The what-if pane takes that place when the editor has no room beside it,
-   * which is the rule this route has had since Try it was built. It is the
-   * first tab's *content*, not a replacement for the tab set: the Assistant has
-   * to be reachable while a what-if is open, and the pane's own heading already
-   * says Inspector in both cases.
-   */
-  const inspectorNode =
-    paneNode !== null && !roomInMain ? (
-      paneNode
-    ) : pack.data === undefined ? null : (
+  const inspectorNode = pack.data === undefined ? null : (
       <PackInspector
         packId={packId ?? ''}
         document={drawn}
@@ -922,19 +874,30 @@ export function PackView() {
   const editItem = (pointer: string) => {
     returnLocation.current = { packId, search: location.search.replace(/^\?/, ''), hash }
     const next = withEditing(params, true); next.set('editItem', pointer); next.set('at', pointer); next.delete('group'); next.set('view','logic')
-    setParams(next, { replace: true }); detailsSlot.reveal()
+    next.delete('builder'); next.delete('editorClosed'); retainInspectorOnNavigation.current = true
+    setParams(next, { replace: true })
   }
   const inspectItem = (pointer: string) => {
-    if(itemEdit && model) { const selected=selectedItem(model,pointer); if(selected && ['rules','exceptions'].includes(selected.group.id)) { const next=new URLSearchParams(params);next.set('at',selected.item.pointer);next.set('editItem',selected.item.pointer);next.delete('group');setParams(next,{replace:true});detailsSlot.reveal();return } }
+    if (editing && model) {
+      const selected = selectedItem(model, pointer)
+      if (selected || model.groups.some(group => `/${group.id}` === pointer) || /^\/(rules|exceptions|outcomes|sources|evidenceRequirements)\/\d+$/.test(pointer)) {
+        const next = new URLSearchParams(params); next.set('at', selected?.item.pointer ?? pointer); next.set('editItem', selected?.item.pointer ?? pointer); next.delete('group'); next.delete('editorClosed')
+        retainInspectorOnNavigation.current = true; setParams(next, {replace: true}); return
+      }
+    }
     select(pointer)
   }
-  const details = useDetailsPortal(itemEdit && model && selectedItem(model, at)?.item.pointer === itemEdit ? <SelectedLogicEditor key={itemEdit} model={model} pointer={itemEdit}/> : inspectorNode === null ? null :
-    (!editing || itemEdit) && (section === 'logic' || section === 'overview') && model && formAvailable ?
+  const bottomPointer = itemEdit ?? at
+  const bottomItem = editing && model ? selectedItem(model, bottomPointer) : undefined
+  const bottomGroup = editing && model?.groups.find(group => `/${group.id}` === bottomPointer)
+  const bottomEditor = model && bottomPointer && (bottomItem || bottomGroup) ? <SelectedLogicEditor key={bottomPointer} model={model} pointer={bottomPointer} wide/> : null
+  const details = useDetailsPortal(inspectorNode === null ? null :
+    !editing && (section === 'logic' || section === 'overview') && model && formAvailable ?
       <LogicInspector appearanceEditor={id => {
         const selected = lookupAppearance(appearances, id)
         return selected ? <DecisionAppearanceEditor appearance={selected} state={appearance} onChange={next => appearance.change(id, next, appearances)} /> : null
-      }} model={model} at={at} groupId={groupId} onEdit={itemEdit ? inspectItem : editItem}
-        onSelect={itemEdit ? inspectItem : select} mainContent={section === 'logic' && mode !== 'map' && (!logic.query.trim()
+      }} model={model} at={at} groupId={groupId} onEdit={editItem}
+        onSelect={select} mainContent={section === 'logic' && mode !== 'map' && (!logic.query.trim()
           || model.groups.some(group => matchingItems(group, logic.query).some(item => item.pointer === selectedItem(model, at)?.item.pointer)))}
         conditionsVisible={logic.display.conditions || Boolean(logic.query.trim())}
         trace={runTrace} advanced={inspectorNode} /> : inspectorNode)
@@ -1030,6 +993,13 @@ export function PackView() {
         <div data-layout="page">
         {editing ? <PackEditHeader
           title={text(drawn?.title, packId ?? msg('Pack'))}
+          navigation={<nav className={workspaceStyles.navigation} aria-label={msg('Pack builder')}>
+            {(['build', 'tests', 'settings', 'source'] as const).map(value => <Button key={value} variant="quiet" disabled={value !== 'source' && !formAvailable} aria-current={builderView === value ? 'page' : undefined} onClick={() => {
+              const next = new URLSearchParams(params); if (value === 'source') next.set('shape', 'json'); else next.delete('shape')
+              if (value === 'tests') setTryingIt(true)
+              next.set('builder', value); retainInspectorOnNavigation.current = true; setParams(next, {replace: true})
+            }}>{value === 'build' ? msg('Build') : value === 'settings' ? msg('Settings') : value === 'tests' ? msg('Tests') : msg('Source')}</Button>)}
+          </nav>}
           backRef={backButton}
           onBack={requestReturn}
           onSave={() => save()}
@@ -1045,17 +1015,14 @@ export function PackView() {
           discardable={hasWork}
           saving={savePending}
           checking={fetching}
-          tryingIt={tryingIt}
+          tryingIt={builderView === 'tests'}
           canUndo={buffer.canUndo}
           unwritten={unwritten}
           onShape={(next) => setParams(withShape(params, next), { replace: true })}
           onCheck={idle.checkNow}
           onTryIt={() => {
-            setTryingIt((was) => {
-              const next = !was
-              if (next && !roomInMain) slot.reveal()
-              return next
-            })
+            setTryingIt(true); const next = new URLSearchParams(params); next.delete('shape'); next.set('builder', 'tests')
+            retainInspectorOnNavigation.current = true; setParams(next, {replace: true})
           }}
           onUndo={buffer.undo}
           onDiscard={async () => { if (await confirmDiscard(msg(LEAVING), { name: drawn?.title })) discardAll() }}
@@ -1072,13 +1039,15 @@ export function PackView() {
               onClick={() => { setExitOpen(false); save(false, true) }}>{msg("Save and return")}</Button>
           </DialogActions>
         </Dialog>
+        <BuilderSplit preference="pack" title={bottomItem?.item.label ?? (bottomGroup ? bottomGroup.label : msg('Editor'))} editor={builderView === 'build' ? bottomEditor : null} open={editing && builderView === 'build' && !params.has('editorClosed')} onClose={() => {
+          const next = new URLSearchParams(params); next.set('editorClosed', '1'); retainInspectorOnNavigation.current = true; setParams(next, {replace: true})
+        }}>
+        <div className={styles.builderContent} hidden={editing && builderView === 'tests'}>
         <PageBody fill={section === 'logic'} width={section === 'logic' ? 'full' : 'wide'}>
         {section !== 'logic' && <PackQuestion document={drawn} />}
         <div
           className={styles.workspace}
           data-logic={section === 'logic' || undefined}
-          ref={setFrame}
-          style={{ '--tryit-pane-width': `${PANE_WIDTH}px` } as CSSProperties}
         >
           <div className={styles.column}>
             {pack.error !== null && (
@@ -1206,12 +1175,12 @@ export function PackView() {
                       <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('run'); retainInspectorOnNavigation.current = true; setParams(next, { replace: true }) }}>{msg("Structure only")}</Button>
                       <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>{msg("Back to Tests")}</ButtonLink>
                     </div>}
-                    <PackLogic appearanceOverrides={appearance.saved} onClearSelection={itemEdit ? undefined : clearMapSelection} model={model} at={at} groupId={groupId} select={selectInMain} inspect={inspectItem} mode={mode} onMode={changeMode}
+                    <PackLogic appearanceOverrides={appearance.saved} onClearSelection={itemEdit ? undefined : clearMapSelection} model={model} at={at} groupId={groupId} select={editing ? inspectItem : selectInMain} inspect={inspectItem} tools={editing ? <PackBuildActions onSelect={inspectItem} editorOpen={!params.has('editorClosed')} onToggleEditor={() => {const next = new URLSearchParams(params); if (next.has('editorClosed')) next.delete('editorClosed'); else next.set('editorClosed', '1'); retainInspectorOnNavigation.current = true; setParams(next, {replace: true})}}/> : undefined} mode={mode} onMode={changeMode}
                       query={logic.query} onQuery={logic.setQuery} display={logic.display} onDisplay={logic.setDisplay}
                       viewport={logic.viewport} onViewport={logic.setViewport} nodePositions={logic.nodePositions} onNodePositionsChange={logic.setNodePositions} listScroll={logic.listScroll}
                       trace={runTrace} mapUnavailable={!formAvailable ? msg("The document cannot be interpreted unambiguously.")
-                        : !itemEdit && (stale || !report) ? msg("A current validation is needed before displaying a complete map.")
-                        : !itemEdit && report?.status !== 'valid' ? msg("This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.") : undefined} />
+                        : !editing && (stale || !report) ? msg("A current validation is needed before displaying a complete map.")
+                        : !editing && report?.status !== 'valid' ? msg("This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.") : undefined} />
                   </>}
                 </> : <PackDocumentView key={section} document={drawn} active={active}
                   members={section === 'evidence' ? PACK_GROUPS.evidence : undefined}
@@ -1221,9 +1190,11 @@ export function PackView() {
               </>
             )}
           </div>
-          {paneNode !== null && roomInMain && <div className={styles.pane}>{paneNode}</div>}
         </div>
         </PageBody>
+        </div>
+        {editing && <div className={styles.builderTests} hidden={builderView !== 'tests'}>{paneNode}</div>}
+        </BuilderSplit>
         </div>
       </EditingContext.Provider>
     </SelectionContext.Provider>

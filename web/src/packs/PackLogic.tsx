@@ -1,7 +1,7 @@
 import type { NodePositions } from '../components/RelationshipMap'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
-import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type MutableRefObject } from 'react'
 import type { Viewport } from '@xyflow/react'
 import type { TraceEntry } from '../mcp/types'
 import { Button } from '../ui/Button'
@@ -26,7 +26,8 @@ import styles from './PackLogic.module.css'
 const RelationshipMap = lazy(() => import('../components/RelationshipMap').then(module => ({ default: module.RelationshipMap })))
 
 export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, query, onQuery, display, onDisplay,
-  viewport, onViewport, nodePositions, onNodePositionsChange, listScroll, mapUnavailable, trace, active = true, appearanceOverrides, onClearSelection }: {
+  viewport, onViewport, nodePositions, onNodePositionsChange, listScroll, mapUnavailable, trace, active = true, appearanceOverrides, onClearSelection, tools }: {
+  tools?: ReactNode
   model: LogicProjection; at: string | null; groupId: string | null; select: (pointer: string) => void
   mode: LogicMode; onMode: (mode: LogicMode) => void; query: string; onQuery: (query: string) => void
   inspect: (pointer: string) => void; display: ReturnType<typeof initialLogicDisplay>; onDisplay: (display: ReturnType<typeof initialLogicDisplay>) => void
@@ -146,10 +147,11 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
     </section>
   }
   const toolbar = <div className={styles.toolbar}>
+      {tools}
       <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'list', label: msg("List") }, { value: 'map', label: msg("Map") }]} />
-      <form className={styles.search} onSubmit={e => { e.preventDefault(); requestMatch() }}>
-        <Input type="search" aria-label={msg("Find pack item")} value={query} onChange={e => onQuery(e.target.value)} placeholder={mode === 'map' ? msg("Find in map…") : msg("Filter items…")} />
-      </form>
+      <div role="search" className={styles.search}>
+        <Input type="search" aria-label={msg("Find pack item")} value={query} onChange={e => onQuery(e.target.value)} onKeyDown={event => {if (event.key === 'Enter') {event.preventDefault(); requestMatch()}}} placeholder={mode === 'map' ? msg("Find in map…") : msg("Filter items…")} />
+      </div>
       {searching && <Button variant="quiet" onClick={requestMatch} disabled={!matchPointers.size}>{msg("Next match")}</Button>}
       <Popover title={msg("Display options")} trigger={<Button variant="quiet">{msg("View")}</Button>}>
         <label className={styles.option}><Message text={"<0/>Show list conditions"} slots={[<input type="checkbox" checked={display.conditions} onChange={e => updateDisplay({ ...display, conditions: e.target.checked })} />]} /></label>

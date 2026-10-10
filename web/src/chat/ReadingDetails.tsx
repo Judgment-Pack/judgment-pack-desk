@@ -46,7 +46,7 @@ export function MessageDetails({ text, input, turn }: { text: string; input?: st
   </ReadingDetails>
 }
 
-export function PackContextDetails({ text }: { text: string }) {
+export function PackContextDetails({ text, graph = false }: { text: string; graph?: boolean }) {
   useLocale()
-  return <ReadingDetails title={msg('Pack context')}><p>{msg('The current pack is included with your next message. Proposed edits require your review.')}</p><CodeBlock text={text} label={msg('Pack')} /></ReadingDetails>
+  return <ReadingDetails title={graph ? msg('Graph context') : msg('Pack context')}><p>{graph ? msg('The current graph and selection are included with your next message. Proposed edits require your review.') : msg('The current pack is included with your next message. Proposed edits require your review.')}</p><CodeBlock text={text} label={graph ? msg('Graph') : msg('Pack')} /></ReadingDetails>
 }

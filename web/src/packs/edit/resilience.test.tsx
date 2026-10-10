@@ -21,7 +21,7 @@ const PACK_TEXT = readFileSync(
   'utf8'
 )
 
-const EDIT = '/packs/vendor-onboarding?edit=1'
+const EDIT = '/packs/vendor-onboarding?edit=1&builder=settings'
 const JSON_MODE = '/packs/vendor-onboarding?edit=1&shape=json'
 
 afterEach(() => {
@@ -199,7 +199,7 @@ describe('bytes shaped like nothing this desk expects', () => {
     drawPack(served(PACK_TEXT), { path: JSON_MODE })
     const raw = await editableBytes()
     fireEvent.change(raw, { target: { value: '{ this is not json' } })
-    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
     await waitFor(() =>
       expect((screen.getByLabelText("The document's bytes") as HTMLTextAreaElement).value).toBe(
         '{ this is not json'
@@ -319,7 +319,7 @@ describe('the rule-move chord', () => {
     )
     // Down and back up: the array is exactly the bytes it started as, which is
     // also what says the second press did something.
-    fireEvent.click(screen.getByRole('radio', { name: 'JSON' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Source' }))
     const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
     expect(raw.value).toBe(PACK_TEXT)
   })
@@ -353,52 +353,15 @@ describe('where Try it opens, measured', () => {
     unmeasure = undefined
   })
 
-  it('fits at the shell’s own maximum, and not one pixel below it', async () => {
-    // **The number in the predicate and the width the pane takes were eight
-    // pixels apart.** 912 was the shell's whole box at the time — a `60rem`
-    // measure less its `1.5rem` padding either side — which fits
-    // 384 + 16 + 512, and the page said it did not, so the side-by-side branch
-    // was unreachable on every ordinary screen. The measure is wider now
-    // (`--measure-wide` less two gutters); 912 is kept as the case because it
-    // is the boundary the predicate is about, and this test hands the box in
-    // rather than reading it off a sheet.
-    measured(912, 512)
+  it.each([912, 911, 1000])('keeps Tests in the main workspace at width %s without replacing Assistant', async width => {
+    measured(width, width - 400)
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
-    const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
+    const { revealed, router } = drawPack(served(PACK_TEXT), { path: EDIT, inspector: true })
     await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
     fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
     const pane = await screen.findByRole('complementary', { name: 'Test draft' })
-    expect(String(pane.parentElement?.className)).toContain('pane')
-    expect(revealed).toEqual([])
-  })
-
-  it('takes the Inspector’s place one pixel below it', async () => {
-    measured(911, 511)
-    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
-    const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT, inspector: true })
-    await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
-    fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
-    const pane = await screen.findByRole('complementary', { name: 'Test draft' })
-    // Published into the slot rather than placed beside the editor, and the
-    // pane is asked to open because a closed one has nowhere to publish into.
-    expect(String(pane.parentElement?.className)).not.toContain('pane')
-    expect(revealed).toEqual(['reveal'])
-  })
-
-  it('asks the frame, whose width the placement does not change', async () => {
-    // 1000 of workspace leaves 592 for the editor once the pane's 392 and the
-    // gap are taken. The column is 600 *because the pane is there* — reading
-    // the decision off it makes the predicate's input depend on its own
-    // output, and between those two numbers neither answer is a fixed point.
-    measured(1000, 600)
-    chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
-    const { revealed } = drawPack(served(PACK_TEXT), { path: EDIT })
-    await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
-    fireEvent.click(screen.getByRole('button', { name: 'Test draft' }))
-    const pane = await screen.findByRole('complementary', { name: 'Test draft' })
-    expect(String(pane.parentElement?.className)).toContain('pane')
-    // Nothing was asked to move: the Inspector is not opened for a pane that
-    // fits beside the editor.
+    expect(pane.closest('[data-layout="page"]')).not.toBeNull()
+    expect(router.state.location.search).toContain('builder=tests')
     expect(revealed).toEqual([])
   })
 })
@@ -442,7 +405,7 @@ describe('a file that moved after it was loaded', () => {
     // it matched a file it had never read.
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { queryClient } = drawPack(served(PACK_TEXT), {
-      path: '/packs/vendor-onboarding?edit=1&at=%2Ftitle',
+      path: '/packs/vendor-onboarding?edit=1&builder=settings&at=%2Ftitle',
       inspector: true,
       tab: 'member'
     })
@@ -519,7 +482,7 @@ describe('when both answers move and the editor does not', () => {
     }
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     const { queryClient } = drawPack(answers, {
-      path: '/packs/vendor-onboarding?edit=1&at=%2Ftitle',
+      path: '/packs/vendor-onboarding?edit=1&builder=settings&at=%2Ftitle',
       inspector: true,
       tab: 'member'
     })
@@ -553,7 +516,7 @@ describe('the Inspector’s provenance', () => {
   it('stops claiming the editor holds the file once it does not', async () => {
     chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
     drawPack(served(PACK_TEXT), {
-      path: '/packs/vendor-onboarding?edit=1&at=%2Ftitle',
+      path: '/packs/vendor-onboarding?edit=1&builder=settings&at=%2Ftitle',
       inspector: true,
       tab: 'member'
     })

@@ -123,7 +123,7 @@ function SourceReading({ at, source }: { at: string; source: Source }) {
  * `locator` is `required` — so the absence is stated with the offer to write
  * the schema's own members, empty, and the fields appear once it is.
  */
-function SourceForm({ at }: { at: string }) {
+export function SourceForm({ at }: { at: string }) {
   useLocale()
   return (
     <>

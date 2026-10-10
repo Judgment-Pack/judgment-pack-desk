@@ -1,12 +1,12 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { PackAssistant } from './PackAssistant'
 
-const fake = vi.hoisted(() => ({ snapshot: {} as any, editing: {} as any }))
+const fake = vi.hoisted(() => ({ snapshot: {} as any, editing: {} as any, open: false }))
 vi.mock('./ChatProvider', () => ({ useChats: () => fake.snapshot }))
-vi.mock('../shell/InspectorSlot', () => ({ useInspectorControls: () => ({ open: false }) }))
+vi.mock('../shell/InspectorSlot', () => ({ useInspectorControls: () => ({ open: fake.open }) }))
 vi.mock('../packs/edit/editingContext', () => ({ useEditing: () => fake.editing }))
 vi.mock('./ChatPanel', () => ({ ChatPanel: ({ context, proposalActions }: any) => <><button onClick={context?.beforeSend}>Send request</button>{proposalActions}</> }))
 afterEach(cleanup)
@@ -21,6 +21,7 @@ function view(identity = base, draft = original) {
   return <MemoryRouter><PackAssistant packId="p" editing draft={draft} identity={identity} busy={() => ''} diagnostics={undefined} /></MemoryRouter>
 }
 beforeEach(() => {
+  fake.open = false
   fake.snapshot = { store, ready: true, chats: [chat], drafts: [], bindings: new Map([['chat-one', snapshot(1)]]) }
   fake.editing = { editing: true, pending: new Set(), write: vi.fn() }
 })
@@ -61,4 +62,12 @@ it('carries a view-mode proposal into Edit only when path and bytes still match'
   expect(screen.getByRole('button', { name: 'Apply to draft' }).hasAttribute('disabled')).toBe(false)
   rendered.rerender(<MemoryRouter><PackAssistant {...props} editing identity={{ ...base, generation: 4, revision: 2 }} /></MemoryRouter>)
   expect(screen.getByRole('button', { name: 'Apply to draft' }).hasAttribute('disabled')).toBe(true)
+})
+
+it('opening Assistant preserves the builder tab and selected item', async () => {
+ fake.open=true;fake.snapshot.chats=[]
+ fake.snapshot.store={canCreate:true,activate:vi.fn(),startChat:vi.fn(()=>{fake.snapshot.chats=[chat];return chat})}
+ function Address(){const location=useLocation();return <output aria-label="Address">{location.pathname+location.search}</output>}
+ render(<MemoryRouter initialEntries={['/packs/p?edit=1&builder=build&editItem=%2Frules%2F0']}><Address/><PackAssistant packId="p" editing draft={original} identity={base} busy={()=>''} diagnostics={undefined}/></MemoryRouter>)
+ await waitFor(()=>expect(screen.getByLabelText('Address').textContent).toBe('/packs/p?edit=1&builder=build&editItem=%2Frules%2F0&chat=chat-one'))
 })

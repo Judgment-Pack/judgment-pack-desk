@@ -112,6 +112,7 @@
 
   /* Controls use 4px corners; navigation items and cards use 8px; the main
      workspace frame uses 12px. */
+  --radius-none: 0;
   --radius: 8px;
   --radius-sm: 4px;
   --radius-panel: 12px;

@@ -60,38 +60,14 @@ export function GraphView() {
   const listing = inventory.error ? undefined : inventory.data
   const run = () => {
     if (status !== 'ready' || isFetching) return
-    setSearch(previous => { const next = new URLSearchParams(previous); next.set('view', 'tests'); return next })
+    if (!compose) setSearch(previous => { const next = new URLSearchParams(previous); next.set('view', 'tests'); return next })
     recordActivity(sourceMessage('Graph tests started.'))
     void refetch().then(result => recordActivity(result.error ? sourceMessage('Graph tests failed.') : result.data?.status ? sourceMessage('Graph tests completed: {{status}}.', { status: result.data.status }) : sourceMessage('Graph tests returned no result.')))
   }
 
-  return <article className="detail" data-measure="full" data-layout="page">
-    <PageHeader title={msg("Graphs")} context={graphId} titleHref={graphId ? "/graphs" : undefined}
-      actions={<><ButtonLink to="/packs">{msg("Decisions")}</ButtonLink>{!compose && <ButtonLink to={graphId ? `/graphs/${encodeURIComponent(graphId)}?view=compose` : "/graphs?view=compose"}>{graphId ? msg("Edit composition") : msg("Create graph")}</ButtonLink>}{!compose && <Button onClick={run} disabled={status !== 'ready' || isFetching}>
-        {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all graph tests")}
-      </Button>}</>}
-      navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Graph sections")}>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=compose`} aria-current={compose ? 'page' : undefined}>{msg("Composition")}</Link>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!compose && !tests && !plan && !rehearsal ? 'page' : undefined}>{msg("Diagram")}</Link>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=plan`} aria-current={plan ? 'page' : undefined}>{msg("Plan")}</Link>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=rehearsal`} aria-current={rehearsal ? 'page' : undefined}>{msg("Rehearsal")}</Link>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>{msg("Tests")}</Link>
-      </nav> : undefined} />
-    <PageBody width="full">
-      {compose ? <GraphWorkspace graphId={graphId} /> : <>
-      <p className="meta"><Pill tone="quiet">{msg("Experimental")}</Pill></p>
-      {!graphId && <p className="quiet">{msg("Connect packs and see how their results feed into the next decision.")}</p>}
-      {!graphId && graphInventorySupported && (inventory.error
-        ? <ErrorBox title={msg("Could not list graphs")} error={inventory.error} />
-        : inventory.isPending ? <Loading what={msg("graphs")} />
-        : listing && !tests && <><GraphLabels labels={listing} /><ConfiguredGraphs inventory={listing} /></>)}
-      {!graphId && !tests && <GraphFindingsPanel />}
-      {!graphId && !graphInventorySupported && <p className="note">{msg("This runtime cannot list graphs without running their tests. Choose Run all graph tests to discover their test results, or connect a newer runtime to browse their diagrams.")}</p>}
-      {graphId && !tests && !plan && !rehearsal && <FlowExplorer key={graphId} graphId={graphId} />}
-      {graphId && rehearsal && <GraphRehearsal key={graphId} graphId={graphId} />}
-      {graphId && plan && <GraphPlanView key={graphId} graphId={graphId} />}
-      {tests && <section aria-label={msg("Graph tests")}>
+  const testsPanel = <section aria-label={msg("Graph tests")}>
         {!graphId && <ButtonLink variant="quiet" to="/graphs">{msg("Back to graphs")}</ButtonLink>}
+        {compose && <Button onClick={run} disabled={status !== 'ready' || isFetching}>{isFetching ? msg('Running…') : msg('Run tests')}</Button>}
         <h2 className="section-title">{graphId ? msg("Graph tests") : msg("All graph tests")}</h2>
         {graphTracesSupported && <label className="checkbox trace-ask">
           <input type="checkbox" checked={includeTraces} disabled={isFetching}
@@ -115,9 +91,36 @@ export function GraphView() {
                 known={knownPaths(data)} />)}
           </>}
         <p className="quiet">{msg("Judgment Graphs use the runtime’s experimental graph format. A test run shows what the project’s own rows did, as the runtime reports it. It does not show that the rows are right, that coverage is complete, or any authorization.")}</p>
-      </section>}
-      </>}
+      </section>
+
+  return <article className="detail" data-measure="full" data-layout="page">
+    {compose ? <GraphWorkspace graphId={graphId} tests={testsPanel}/> : <>
+    <PageHeader title={msg("Graphs")} context={graphId} titleHref={graphId ? "/graphs" : undefined}
+      actions={<><ButtonLink to="/packs">{msg("Decisions")}</ButtonLink>{!compose && <ButtonLink to={graphId ? `/graphs/${encodeURIComponent(graphId)}?view=compose` : "/graphs?view=compose"}>{graphId ? msg("Edit composition") : msg("Create graph")}</ButtonLink>}{!compose && <Button onClick={run} disabled={status !== 'ready' || isFetching}>
+        {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all graph tests")}
+      </Button>}</>}
+      navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Graph sections")}>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=compose`} aria-current={compose ? 'page' : undefined}>{msg("Composition")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!compose && !tests && !plan && !rehearsal ? 'page' : undefined}>{msg("Diagram")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=plan`} aria-current={plan ? 'page' : undefined}>{msg("Plan")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=rehearsal`} aria-current={rehearsal ? 'page' : undefined}>{msg("Rehearsal")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>{msg("Tests")}</Link>
+      </nav> : undefined} />
+    <PageBody width="full">
+      <p className="meta"><Pill tone="quiet">{msg("Experimental")}</Pill></p>
+      {!graphId && <p className="quiet">{msg("Connect packs and see how their results feed into the next decision.")}</p>}
+      {!graphId && graphInventorySupported && (inventory.error
+        ? <ErrorBox title={msg("Could not list graphs")} error={inventory.error} />
+        : inventory.isPending ? <Loading what={msg("graphs")} />
+        : listing && !tests && <><GraphLabels labels={listing} /><ConfiguredGraphs inventory={listing} /></>)}
+      {!graphId && !tests && <GraphFindingsPanel />}
+      {!graphId && !graphInventorySupported && <p className="note">{msg("This runtime cannot list graphs without running their tests. Choose Run all graph tests to discover their test results, or connect a newer runtime to browse their diagrams.")}</p>}
+      {graphId && !tests && !plan && !rehearsal && <FlowExplorer key={graphId} graphId={graphId} />}
+      {graphId && rehearsal && <GraphRehearsal key={graphId} graphId={graphId} />}
+      {graphId && plan && <GraphPlanView key={graphId} graphId={graphId} />}
+      {tests && testsPanel}
     </PageBody>
+    </>}
   </article>
 }
 

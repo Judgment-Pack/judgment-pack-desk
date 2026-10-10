@@ -59,6 +59,7 @@ describe('view and edit transitions', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?view=overview'))
     expect(log.writes).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
     expect(await screen.findByDisplayValue('Vendor onboarding')).toBeTruthy()
   })
 
@@ -112,7 +113,7 @@ describe('view and edit transitions', () => {
     doc.rules[0].when = { op: 'fact', path: '/case/tag', operator: 'equals', value: 'green' }
     const source = JSON.stringify(doc)
     const log = chassis({ content: source, sha256: PACK_DIGEST })
-    drawPack(served(source), { path: `${route}?edit=1` })
+    drawPack(served(source), { path: `${route}?edit=1&builder=settings` })
     const operand = await screen.findByDisplayValue('"green"', undefined, FIRST_DRAW)
     fireEvent.change(operand, { target: { value: '{"unfinished"' } })
     const dialog = await leave()
