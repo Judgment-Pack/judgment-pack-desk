@@ -171,7 +171,7 @@ describe('guided creation within the shell', () => {
     const { router } = renderDesk()
     await screen.findByRole('heading', { name: 'Create a pack' })
     await nameAndBuild()
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'JSON' }), { button: 0 })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Source' }), { button: 0 })
     const editor = await screen.findByLabelText('Draft document')
     const draft = JSON.stringify({ ...JSON.parse((editor as HTMLTextAreaElement).value), description: 'Reviewed by the author', extensions: { 'example.keep': { a: 1 } } }, null, 2)
     fireEvent.change(editor, { target: { value: draft } })

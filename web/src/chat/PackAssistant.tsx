@@ -1,6 +1,6 @@
 import { msg, useLocale } from '../i18n'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useEditing } from '../packs/edit/editingContext'
 import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { applyProposal } from '../assistant/acceptProposal'
@@ -22,6 +22,7 @@ export function PackAssistant({ packId, path, digest, draft, editing, identity, 
   const { store, ready, chats, drafts, bindings } = useChats()
   const [params] = useSearchParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const slot = useInspectorControls()
   const session = useEditing()
   const explicit = params.get('chat')
@@ -35,9 +36,9 @@ export function PackAssistant({ packId, path, digest, draft, editing, identity, 
     else if (slot.open && store.canCreate && !creating.current) {
       creating.current = true
       const next = store.startChat({ id: packId, path: path ?? '', digest: digest ?? '' })
-      navigate(assistantChatHref(next), { replace: true })
+      navigate(assistantChatHref(next, location), { replace: true })
     }
-  }, [store, ready, chat?.id, packId, path, digest, slot.open, navigate])
+  }, [store, ready, chat?.id, packId, path, digest, slot.open, navigate, location.pathname, location.search])
   const [baseline, setBaseline] = useState<{ chatId: string; bytes: string; revision: number; identity?: BufferIdentity; fromView?: boolean; path?: string } | null>(null)
   useEffect(() => {
     if (editing && baseline?.fromView && baseline.chatId === chat?.id && baseline.path === path && baseline.bytes === draft && identity) {

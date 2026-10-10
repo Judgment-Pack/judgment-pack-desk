@@ -69,7 +69,7 @@ export function OutcomesBlock({
   )
 }
 
-function OutcomeForm({ at, fallback }: { at: string; fallback: boolean }) {
+export function OutcomeForm({ at, fallback }: { at: string; fallback: boolean }) {
   useLocale()
   return (
     <>

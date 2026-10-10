@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chassis, drawPack, forgetSlot, served, FIRST_DRAW, PACK_DIGEST } from './editHarness'
 
-const EDIT = '/packs/vendor-onboarding?edit=1'
+const EDIT = '/packs/vendor-onboarding?edit=1&builder=settings'
 
 /**
  * A draft with the two required objects left out, and the two condition shapes
@@ -68,7 +68,7 @@ async function draft(path = EDIT): Promise<void> {
 
 /** The raw bytes, once the form has been left for the JSON view. */
 async function bytes(): Promise<string> {
-  fireEvent.click(screen.getByRole('radio', { name: 'JSON' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Source' }))
   const raw = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
   return raw.value
 }
@@ -153,9 +153,9 @@ describe('an operand holding text that is not JSON', () => {
 
     // The two ways out of a form both unmount the field. Held in the field it
     // went with them, silently.
-    fireEvent.click(screen.getByRole('radio', { name: 'JSON' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Source' }))
     await screen.findByLabelText("The document's bytes")
-    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
     await waitFor(() =>
       expect(
         within(document.getElementById(OPERAND)!).getByDisplayValue('{"shade"')
@@ -277,7 +277,7 @@ describe('what the form can now reach', () => {
       target: { value: 'another author' }
     })
     await waitFor(async () => expect(await bytes()).toContain('"another author"'))
-    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
 
     fireEvent.click(within(authors()).getByRole('button', { name: 'Remove' }))
     await waitFor(async () => expect(await bytes()).toContain('"authors": []'))
@@ -402,7 +402,7 @@ describe('text that is not written yet is work', () => {
     const operand = within(document.getElementById(OPERAND)!).getByDisplayValue('"green"')
     fireEvent.change(operand, { target: { value: '"amber"' } })
     await waitFor(async () => expect(await bytes()).toContain('"value": "amber"'))
-    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
 
     // Text that is not JSON, over the bytes that are there now.
     const held = within(document.getElementById(OPERAND)!).getByDisplayValue('"amber"')

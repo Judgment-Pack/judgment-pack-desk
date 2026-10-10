@@ -68,7 +68,7 @@ export function EvidenceBlock({
   )
 }
 
-function RequirementForm({ at }: { at: string }) {
+export function RequirementForm({ at }: { at: string }) {
   useLocale()
   return (
     <>

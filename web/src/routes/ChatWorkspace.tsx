@@ -124,8 +124,8 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
   }, [review, latest?.digest])
   const presentation = useMemo(() => ({ title: msg("Assistant"), contextTitle: artifact.title, workspaceTools: draft, available: draft, open: draft && rightOpen,
     onOpenChange: setRightOpen, width, onResize: shell.resizeInspector, onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640 }), [draft, rightOpen, width, shell.resizeInspector, shell.resetInspectorWidth, locale, artifact.title])
-  useInspectorPresentation(testActive && !review ? null : presentation)
-  const portal = useInspectorPortal(draft ? <div hidden={testActive && !review} style={{height:"100%"}}><ChatPanel placement="pane" chat={chat} locked={writing} draftVisible /></div> : null)
+  useInspectorPresentation(presentation)
+  const portal = useInspectorPortal(draft ? <div style={{height:"100%"}}><ChatPanel placement="pane" chat={chat} locked={writing} draftVisible /></div> : null)
   const detailPortal = useDetailsPortal(binding?.ledger && selection && !testActive ?
     <SourceInspector selection={selection} ledger={binding.ledger} state={state} onSelect={setSelection} /> : null)
   const select = (next: Selection) => { setSelection(next); if (next) details.reveal() }

@@ -10,6 +10,12 @@ export function homeChatId(state: unknown): string | undefined {
 
 export function chatHref(chat: Chat, _location?: { pathname: string; search: string }): string { return `/chats/${chat.id}` }
 export function assistantChatHref(chat: Chat, location?: { pathname: string; search: string }): string {
+  if (chat.graph) {
+    const params = new URLSearchParams(location?.pathname.startsWith('/graphs') ? location.search : 'view=compose')
+    if (params.has('draft') && !params.has('draftChat') && params.has('chat')) params.set('draftChat', params.get('chat')!)
+    params.set('chat', chat.id)
+    return `${location?.pathname.startsWith('/graphs') ? location.pathname : `/graphs/${encodeURIComponent(chat.graph.id)}`}?${params}`
+  }
   if (chat.draftId && !chat.pack) return `${draftHref(chat.draftId)}?chat=${encodeURIComponent(chat.id)}`
   if (!chat.pack) return `/chats/${chat.id}`
   const path = `/packs/${encodeURIComponent(chat.pack.id)}`
@@ -20,7 +26,8 @@ export function assistantChatHref(chat: Chat, location?: { pathname: string; sea
 
 /** The history entry keeps the home conversation without putting its id in the URL. */
 export function openNewChat(navigate: NavigateFunction, chat: Chat, location?: { pathname: string; search: string }) {
-  if ((chat.pack || chat.draftId) && location?.pathname.startsWith('/packs/')) navigate(assistantChatHref(chat, location))
+  if (chat.graph && location?.pathname.startsWith('/graphs')) navigate(assistantChatHref(chat, location))
+  else if ((chat.pack || chat.draftId) && location?.pathname.startsWith('/packs/')) navigate(assistantChatHref(chat, location))
   else navigate('/', { state: { homeChatId: chat.id } })
 }
 

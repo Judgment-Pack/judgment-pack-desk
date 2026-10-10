@@ -52,7 +52,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   placement?: 'main' | 'pane'; headerTarget?: HTMLElement | null
   historyLoading?: boolean
   chat: Chat; landing?: boolean; onOpenDraft?: () => void; draftVisible?: boolean
-  context?: { text: string; beforeSend?: () => void }
+  context?: { text: string; kind?: 'pack' | 'graph'; beforeSend?: () => void }
   proposalActions?: ReactNode; locked?: boolean
 }) {
   useLocale()
@@ -93,6 +93,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const messageInput = useRef<HTMLTextAreaElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const id = useId()
+  const graphContext = context?.kind === 'graph' || Boolean(chat.graph)
   const running = state.status === 'running'
   const effective = useEffectiveConfig()
   const research = effective.config.research
@@ -129,7 +130,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     if (material === undefined) return
     const latest = [...store.getSnapshot().chats, ...store.getSnapshot().drafts].find(item => item.id === chat.id)
     if (currentReference.current !== reference || !latest || latest.composer !== chat.composer || JSON.stringify(latest.attachments ?? []) !== JSON.stringify(attachments)) return
-    const { prompt, display, statement } = composeMessageInput(text, material, reference, context?.text)
+    const { prompt, display, statement } = composeMessageInput(text, material, reference, context?.text, context?.kind)
     const started = store.perform(chat.id, active => {
       context?.beforeSend?.()
       if (active.state.phase === 'idle') active.run?.start(prompt, [], display, attachments, statement)
@@ -199,14 +200,14 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const conversationSources = unassignedSearches.length + unassigned.documents.length + unassigned.websites.length + unassignedResearch.length > 0
     ? <Button variant="quiet" onClick={event => read(<section><h3>{msg('Conversation sources')}</h3><SourceList chatId={chat.id} documents={unassigned.documents} websites={unassigned.websites} searches={unassignedSearches} sourceIds={unassignedResearch} binding={binding} onRead={read}/></section>, event.currentTarget)}>{msg('Sources')}</Button> : null
   const toolbar = <ChatToolbar loading={historyLoading} sources={<>{conversationSources}{graphDraftLinks}{draftAvailable && orphanCandidates.length > 0 && (draftVisible ? <span className={styles.caption}>{msg('Open')}</span> : onOpenDraft && <Button variant="quiet" onClick={onOpenDraft}>{msg('Open draft')}</Button>)}</>} chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
-    onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true, chat.draftId); setHistory(false); openNewChat(navigate, next, location) }} />
+    onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true, chat.draftId, chat.graph); setHistory(false); openNewChat(navigate, next, location) }} />
   return <section className={styles.chat} data-chat-id={chat.id} data-history-loading={historyLoading || undefined} data-landing={landing && empty || undefined} aria-label={msg("Assistant chat")}>
     {toolbarTarget ? createPortal(toolbar, toolbarTarget) : placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
     <div className={styles.conversation}>
     <div className={styles.transcript}>
     <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node && node.getClientRects().length) { following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; setAwayFromLatest(!following.current) } }}>
       <div className={styles.threadContent} ref={threadContent}>
-      {empty && (!historyLoading || landing) && <div className={styles.welcome}><h1>{chat.pack ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: chat.pack.id }) : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div>}
+      {empty && (!historyLoading || landing) && <div className={styles.welcome}><h1>{chat.pack ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{graphContext ? msg("Ask about this graph, connect packs, or propose a change.") : chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: chat.pack.id }) : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div>}
       <GraphDraftNotice chatId={chat.id} drafts={chat.graphDrafts ?? []}/>
       {shownTurns.map((turn,index) => <Fragment key={turn.id ?? `${turn.at}-${index}`}>{days[index] && <div className={styles.day}>{days[index]}</div>}<article className={styles.message} data-role={turn.role} data-kind={turn.kind} data-message-id={turn.id} aria-label={turn === liveTurn ? msg("Response in progress") : undefined}>
         {turn.kind !== 'unknowns' && <MessageTime pending={turn === liveTurn} turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text} input={turn.input} />, opener)} />}
@@ -229,7 +230,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     <div className={styles.composerArea} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void upload.attach([...event.dataTransfer.files]) } }}>
       {error && <div className={styles.notice} role="alert"><p>{systemMessage(error)}</p>{store?.canCreate ? <Button variant="quiet" onClick={() => store?.retrySave()}>{msg("Retry saving")}</Button> : <Button variant="quiet" onClick={() => navigate("/chats")}>{msg("Manage chat history")}</Button>}</div>}
       {otherRun && <div className={styles.notice} role="status"><Message text={"Another chat is working. You can keep writing here.<0/>"} slots={[<Button variant="quiet" onClick={() => { const other = store?.getSnapshot().chats.find(item => item.id === otherRun); if (other) navigate(chatHref(other, location)) }}>{msg("Open working chat")}</Button>]} /></div>}
-      {context && <Button variant="inline" onClick={event => read(<PackContextDetails text={context.text} />, event.currentTarget)}><Message text={"Context: <0/>"} slots={[chat.pack?.id ?? msg("Current draft")]} /></Button>}
+      {context && <Button variant="inline" onClick={event => read(<PackContextDetails text={context.text} graph={graphContext} />, event.currentTarget)}><Message text={"Context: <0/>"} slots={[chat.pack?.id ?? (graphContext ? chat.graph?.id || msg("Current graph") : msg("Current draft"))]} /></Button>}
       <div className={styles.composerStatus}>
         {!empty && !savedCandidate && <TaskStatus state={state}/>}
         {chat.draftId && !draftAvailable && <p className={styles.caption}>{msg('This draft is no longer available.')}</p>}

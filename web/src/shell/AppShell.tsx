@@ -471,7 +471,7 @@ function ShellFrame({
               brief={briefSubject && <BriefPane key={briefSubject.id} subject={briefSubject} headerTarget={briefHeaderTarget} />} publishBriefHeaderTarget={setBriefHeaderTarget}
               workspaceTools={workspaceTools} tool={rightTool ?? 'route'} expanded={overlay} fullWidth={takeover}
               contextTitle={routePresentation?.contextTitle ?? briefSubject?.title}
-              returnLabel={route.pathname.startsWith('/jobs/') ? msg('Back to job') : undefined}
+              returnLabel={route.pathname.startsWith('/jobs/') ? msg('Back to job') : route.pathname.startsWith('/graphs') ? msg('Back to builder') : undefined}
               expandButtonRef={expandButtonRef}
               onExpand={() => setToolExpanded(true)} onReturn={returnToPack}
               resize={overlay ? { value: overlayLayout.width, min: overlayLayout.min, max: overlayLayout.max, onChange: shell.resizeOverlay, onReset: shell.resetOverlayWidth, preview: { element: workspaceElement, property: '--overlay-preview' } } : undefined}

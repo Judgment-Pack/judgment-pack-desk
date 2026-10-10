@@ -92,7 +92,7 @@ it('highlights map matches immediately and jumps without opening the Inspector',
   await screen.findByRole('button', { name: '/rules/0' })
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'correctionApplied' } })
   expect(document.querySelectorAll('[data-map-node][data-search-match]')).toHaveLength(2)
-  fireEvent.submit(screen.getByRole('searchbox').closest('form')!)
+  fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Enter' })
   expect(document.querySelector('[data-focus-node]')?.getAttribute('data-focus-node')).toBe('/rules/0')
   fireEvent.click(screen.getByRole('button', { name: 'Next match' }))
   expect(document.querySelector('[data-focus-node]')?.getAttribute('data-focus-node')).toBe('/rules/1')

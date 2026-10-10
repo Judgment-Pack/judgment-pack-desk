@@ -29,3 +29,5 @@
 .fallback { display:inline-flex; padding:1px 6px; margin-inline-start:var(--space-2); border-radius:var(--radius-sm); background:var(--surface-raised); color:var(--ink-soft); font-size:var(--text-xs); }
 .outcomes { display:flex; flex-wrap:wrap; gap:var(--space-3) var(--space-5); }
 .outcomes li { display:flex; align-items:center; }
+
+.navigation > button[aria-current] { box-shadow: inset 0 -2px var(--ink); border-radius: var(--radius-none); }

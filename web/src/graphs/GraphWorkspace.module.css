@@ -1,9 +1,7 @@
-.workspace, .composition, .inspector { display: flex; flex-direction: column; gap: var(--density-section); min-width: 0; }
+.workspace, .inspector { display: flex; flex-direction: column; gap: var(--density-section); min-width: 0; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--density-block); }
 .toolbar > :first-child { margin-right: auto; }
 .metadata, .mapping { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: var(--density-field); align-items: end; }
-.canvas { height: clamp(280px, 48vh, 560px); min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.source { height: 360px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .hint { font-size: var(--text-sm); color: var(--ink-soft); margin: 0; }
 .inspector { padding: var(--density-gutter); }
 .feedback { padding: var(--density-block); border: 1px solid var(--border); border-radius: var(--radius); }
@@ -15,3 +13,28 @@
 
 .draft > span { min-width: 0; overflow-wrap: anywhere; }
 .draft > a { flex-shrink: 0; }
+
+/* Builder chrome remains fixed; each work surface owns its scrolling. */
+.builder { display: flex; flex-direction: column; gap: 0; height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
+.builder > [data-pane-tabs] { flex: 1; min-height: 0; }
+.composition { display: flex; flex-direction: column; min-width: 0; height: 100%; min-height: 0; gap: 0; overflow: hidden; }
+.buildToolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); padding: var(--space-2) var(--density-gutter); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.buildToolbar > :first-child { margin-right: auto; }
+.compositionBody { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.canvas { min-width: 0; overflow: hidden; flex: 1; height: auto; min-height: 0; border: none; border-radius: var(--radius-none); }
+.compositionHint { color: var(--ink-soft); font-size: var(--text-xs); margin: 0; padding: var(--space-2) var(--density-gutter); border-top: 1px solid var(--border); }
+.selectionEditor { display: flex; flex-direction: column; gap: var(--density-block); min-width: 0; }
+.selectionEditor h3 { margin: 0; font-size: var(--text-control); font-weight: 600; }
+.selectionEditor > button { align-self: start; }
+.viewBody { position: relative; height: 100%; overflow: auto; padding: var(--density-gutter); display: flex; flex-direction: column; gap: var(--density-section); }
+.settings { display: flex; flex-direction: column; gap: var(--density-field); max-width: var(--measure-form); }
+.settings > button { align-self: start; }
+.source { min-width: 0; overflow: hidden; height: 100%; border: none; border-radius: var(--radius-none); }
+.list { position: relative; overflow: auto; padding: var(--density-gutter); }
+.list h3 { margin-top: var(--density-section); }
+.empty { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: var(--density-gutter); flex: 1; overflow: auto; }
+.empty h2 { font-size: var(--text-heading); }
+.empty p { max-width: var(--measure-form); color: var(--ink-soft); font-size: var(--text-sm); }
+.picker { position: relative; margin-block: var(--density-block); max-height: 45vh; overflow: auto; }
+.assistant { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.context { margin: 0; padding: var(--space-2) var(--density-block); border-bottom: 1px solid var(--border); color: var(--ink-soft); font-size: var(--text-xs); overflow-wrap: anywhere; }
