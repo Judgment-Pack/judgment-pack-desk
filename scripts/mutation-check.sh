@@ -8818,9 +8818,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # Selecting with the pane closed.
   mutate web "an address that arrives with a selection opens no pane" "$PV" \
-    '    if (at === null && groupId === null) return
+    '    if (at === null && groupId === null || editing) return
     slot.reveal()' \
-    '    if (at === null && groupId === null) return
+    '    if (at === null && groupId === null || editing) return
     void slot'
 
   # **A disagreement is shown, not just named.** The table draws
@@ -8853,8 +8853,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
       retainInspectorOnNavigation.current = false
       return
     }
-    if (at === null && groupId === null) return' \
-    '    if (at === null && groupId === null) return
+    if (at === null && groupId === null || editing) return' \
+    '    if (at === null && groupId === null || editing) return
     if (visited.current === locationKey) return
     visited.current = locationKey
     if (retainInspectorOnNavigation.current) {
@@ -9371,14 +9371,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    if (first) return
     reset()' \
     '    if (first) return'
-  mutate web "the what-if placement measures the box it resizes" "$PV" \
-    '          ref={setFrame}
-          style={{ '"'"'--tryit-pane-width'"'"': `${PANE_WIDTH}px` } as CSSProperties}
-        >
-          <div className={styles.column}>' \
-    '          style={{ '"'"'--tryit-pane-width'"'"': `${PANE_WIDTH}px` } as CSSProperties}
-        >
-          <div className={styles.column} ref={setFrame}>'
+  # Draft Tests now occupy the main workspace at every width.
+  mutate web "pack draft Tests loses its main workspace" "$PV" \
+    '        {editing && <div className={styles.builderTests} hidden={builderView !== '"'"'tests'"'"'}>{paneNode}</div>}' \
+    '        {null}'
   mutate web "the outline is rebuilt on every keystroke" "$PV" \
     "  const documentKey = \`\${idle.checkedText ?? shownText ?? ''}|\${editing ? shape : 'read'}|\${section}\`" \
     "  const documentKey = \`\${shownText ?? ''}|\${editing ? shape : 'read'}|\${section}\`"
@@ -9672,10 +9668,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
           continue
         }
         void pointer'
-  # The pane's width, which the predicate and the stylesheet disagreed about.
-  mutate web "the pane asks for eight pixels it does not take" "$PV" \
-    'const PANE_WIDTH = 384' \
-    'const PANE_WIDTH = 392'
+  # Opening the shared Assistant must retain the current builder URL.
+  mutate web "opening pack Assistant drops the builder tab and selection" web/src/chat/PackAssistant.tsx \
+    '      navigate(assistantChatHref(next, location), { replace: true })' \
+    '      navigate(assistantChatHref(next), { replace: true })'
 
   # ---- The assistant slot, on the page side -------------------------------
   # The card is a heading, a location, a status and one form now, so the rows
