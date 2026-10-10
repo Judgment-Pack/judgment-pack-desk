@@ -138,7 +138,7 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
   return <article className={styles.builder} data-layout="page" aria-label={msg('Compose graph')}>
     {assistant}
     <PageHeader variant="title" title={proposal.id || msg('New graph')} meta={<><Pill tone="quiet">{dirty ? msg('Unsaved changes') : proposal.baseSha256 ? msg('Saved') : msg('Draft')}</Pill> <Pill tone="quiet">{msg('Experimental')}</Pill></>}
-      actions={<><ButtonLink variant="quiet" to="/packs">{msg('Decisions')}</ButtonLink><Button onClick={() => controls.reveal()}>{msg('Ask Assistant')}</Button>
+      actions={<><ButtonLink variant="quiet" to="/packs">{msg('Packs & graphs')}</ButtonLink><Button onClick={() => controls.reveal()}>{msg('Ask Assistant')}</Button>
         <Button disabled={busy} onClick={() => setView('tests')}>{msg('Test graph')}</Button><Button variant="primary" disabled={busy || saved} onClick={review}>{busy ? msg('Working…') : msg('Review & save')}</Button></>}/>
     {error && <p role="alert" className={styles.feedback}>{error}</p>}
     <Tabs label={msg('Graph builder')} variant="page" value={view} onValueChange={setView} scrollable keepMounted fillPanel={view} tabs={[

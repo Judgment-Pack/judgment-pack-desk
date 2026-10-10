@@ -329,6 +329,22 @@ export class ChatStore {
     this.changed(this.state.chats,{packDrafts:this.state.packDrafts.filter(item=>item.id!==id),deletedDrafts:[...new Set([...this.state.deletedDrafts,id])]})
     return true
   }
+  /** Validate the entire selection before changing either artifact store. */
+  removeDraftItems(items: ({kind:'pack';id:string}|{kind:'graph';chatId:string;id:string})[]): boolean {
+    if (!this.state.ready || this.running || !items.length) return false
+    const packIds = new Set(items.filter(item=>item.kind==='pack').map(item=>item.id))
+    const graphItems = items.filter(item=>item.kind==='graph')
+    const deleted = [...new Set([...this.state.deletedDrafts,...packIds])]
+    if (deleted.length > 4096 || [...packIds].some(id=>!this.state.packDrafts.some(draft=>draft.id===id&&!draft.finalized))
+      || graphItems.some(item=>!this.state.chats.some(chat=>chat.id===item.chatId&&chat.graphDrafts?.some(draft=>draft.draftId===item.id&&!draft.saved)))) return false
+    const chats = this.state.chats.map(chat=>{
+      const ids = new Set(graphItems.filter(item=>item.chatId===chat.id).map(item=>item.id))
+      return ids.size ? {...chat,graphDrafts:chat.graphDrafts?.filter(draft=>!ids.has(draft.draftId))} : chat
+    })
+    if (packIds.size) this.draftRevision++
+    this.changed(chats,{packDrafts:this.state.packDrafts.filter(draft=>!packIds.has(draft.id)),deletedDrafts:deleted})
+    return true
+  }
   problem(message: string) { this.set({ error: message }) }
   get running(): string | undefined { return [...this.state.bindings].find(([,binding]) => binding.run?.running)?.[0] }
   perform(id: string, action: (binding: ResearchRunBinding) => void, needsModel = true): boolean {

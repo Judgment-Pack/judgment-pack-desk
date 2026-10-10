@@ -111,3 +111,28 @@ it('retains the web Research lifecycle on artifacts through reload and new conve
  expect(artifact.mode).toBe('web-research')
  expect(reloaded.startChat(undefined, undefined, true, artifact.id).mode).toBe('web-research')
 })
+
+it('deletes selected pack and graph drafts durably while preserving their conversations and saved graphs',async()=>{
+ const graph={...chat('graph-chat'),checkpoint:undefined,graph:{id:'flow',path:'flow.graph.json',workspace:'workspace'},graphDrafts:[
+  {id:'flow',path:'flow.graph.json',content:'{}',draftId:'graph-one',createdAt:'2026-10-10T12:00:00Z'},
+  {id:'flow',path:'flow.graph.json',content:'{}',draftId:'graph-saved',createdAt:'2026-10-10T12:00:00Z',saved:true}
+ ]}
+ const {store,io,draftIO}=await setup([chat('one'),graph]);await store.flush()
+ const id=store.getSnapshot().packDrafts[0]!.id
+ expect(store.removeDraftItems([{kind:'pack',id},{kind:'graph',chatId:'graph-chat',id:'graph-one'}])).toBe(true)
+ expect(await store.flush()).toBe(true)
+ const next=(await setup([],draftIO,io)).store.getSnapshot()
+ expect(next.packDrafts).toEqual([]);expect(next.deletedDrafts).toContain(id)
+ expect(next.chats).toHaveLength(2)
+ expect(next.chats.find(item=>item.id==='graph-chat')?.graphDrafts?.map(draft=>draft.draftId)).toEqual(['graph-saved'])
+})
+
+it('refuses an entire draft deletion selection if an item has been finalized or no longer exists',async()=>{
+ const {store}=await setup([chat('one'),chat('two')]);await store.flush()
+ const [first,second]=store.getSnapshot().packDrafts
+ store.finalizeDraft(second!.id,{id:'saved',path:'saved.json',digest:'sha'})
+ const before=store.getSnapshot()
+ expect(store.removeDraftItems([{kind:'pack',id:first!.id},{kind:'pack',id:second!.id}])).toBe(false)
+ expect(store.removeDraftItems([{kind:'pack',id:first!.id},{kind:'graph',chatId:'missing',id:'missing'}])).toBe(false)
+ expect(store.getSnapshot()).toBe(before)
+})

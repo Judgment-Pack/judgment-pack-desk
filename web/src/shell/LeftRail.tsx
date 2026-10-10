@@ -3,7 +3,7 @@ import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
-/** Primary navigation stays about destinations. Packs and graphs share Decisions; tests live
+/** Primary navigation stays about destinations. Packs and graphs share Packs & graphs; tests live
  * inside each pack or graph; project file editing is available from the project menu.
  * The shell never runs tests or fetches graph inventory to draw navigation. */
 import { Dialog, DropdownMenu, VisuallyHidden } from 'radix-ui'
@@ -182,7 +182,7 @@ function Labelled({
   )
 }
 
-/** One Decisions destination. The collection owns its combined count;
+/** One Packs & graphs destination. The collection owns its combined count;
  * the rail does not turn a pack-only or unavailable listing into that count. */
 function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => void }) {
   useLocale()
@@ -192,16 +192,16 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
 
   return (
     <>
-      <Labelled icons={icons} label={msg("Decisions")}>
+      <Labelled icons={icons} label={msg("Packs & graphs")}>
         <Link
           className="desk-nav-item"
           to="/packs"
           aria-current={active ? 'page' : undefined}
-          aria-label={msg("Decisions")}
+          aria-label={msg("Packs & graphs")}
           onClick={onNavigate}
         >
           <IconPack />
-          {!icons && <span className="desk-nav-label">{msg("Decisions")}</span>}
+          {!icons && <span className="desk-nav-label">{msg("Packs & graphs")}</span>}
         </Link>
       </Labelled>
       {!icons && error && (
