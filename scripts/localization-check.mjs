@@ -13,9 +13,12 @@ const [binary, fixture, output = '/tmp/jp-localization-artifacts'] = process.arg
 if (!binary || !fixture || !process.env.JPACK_BIN) throw new Error('Supply Desk, a project fixture and JPACK_BIN')
 const { chromium } = createRequire(`${root}/web/package.json`)('playwright-core')
 const work = await mkdtemp(join(tmpdir(), 'jp-localization-browser-'))
-await cp(fixture, `${work}/project`, { recursive: true }); await mkdir(`${work}/config`); await mkdir(output, { recursive: true })
-const secret = randomBytes(24).toString('hex'), origin = 'http://127.0.0.1:8851'
-const server = spawn(binary, ['--dev-token', secret, '--port', '8851', '--jpack', process.env.JPACK_BIN, `${work}/project`], {
+// Avoid a fixture name such as 'project' that is also an English UI key.
+await cp(fixture, `${work}/localization-fixture`, { recursive: true }); await mkdir(`${work}/config`); await mkdir(output, { recursive: true })
+const port = Number(process.env.DESK_AUDIT_PORT ?? 8851)
+assert(Number.isInteger(port) && port >= 1024 && port <= 65535, 'valid local audit port')
+const secret = randomBytes(24).toString('hex'), origin = `http://127.0.0.1:${port}`
+const server = spawn(binary, ['--dev-token', secret, '--port', String(port), '--jpack', process.env.JPACK_BIN, `${work}/localization-fixture`], {
   env: { ...process.env, JPACK_DESK_LOCAL_ACCESS: '0', XDG_CONFIG_HOME: `${work}/config`, XDG_DATA_HOME: `${work}/data` }, stdio: 'ignore'
 })
 let browser

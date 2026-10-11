@@ -46,6 +46,8 @@ JPACK_BIN=/path/to/jpack node scripts/localization-check.mjs \
   /path/to/jpack-desk /path/to/runtime/internal/graph/testdata/project /tmp/localization-artifacts
 ```
 
+For targeted reruns, set `DESK_AUDIT_LANGUAGES` to a comma-separated list such as `de,ja`. Use a distinct `DESK_AUDIT_PORT` for each concurrent audit; the default is 8851. Each process creates its own fixture and configuration directories.
+
 The final repeated sweep found no remaining UI-copy gaps in the audited source and exercised states. This does not imply that user-authored packs, existing AI replies, exact source quotations or raw runtime/provider diagnostics change language; those intentionally retain their original content. Language quality can still benefit from native-speaker feedback in actual workflows.
 
 ## v0.12.0 translation review
