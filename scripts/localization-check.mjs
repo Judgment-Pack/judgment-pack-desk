@@ -28,6 +28,8 @@ async function showWorkspace(page, catalogue) {
   // On narrow screens the Assistant takes over the workspace. Use its real
   // return action before checking the underlying document, just as a reader does.
   const returnButton = page.getByRole('button', { name: catalogue['Return to split view'], exact: true })
+    .or(page.getByRole('button', { name: catalogue['Back to pack'], exact: true }))
+    .or(page.getByRole('button', { name: catalogue['Back to builder'], exact: true }))
   if (!(await main.isVisible()) && await returnButton.isVisible()) await returnButton.click()
   await main.waitFor()
 }
@@ -41,7 +43,9 @@ try {
   assert(ready, 'server started')
   browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROME ?? '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] })
   const languages = ['en', 'fr', 'es', 'de', 'it', 'pt-PT', 'pt-BR', 'ko', 'zh-Hans', 'zh-Hant', 'yue-Hant', 'ja']
-  for (const language of languages) {
+  const selected = process.env.DESK_AUDIT_LANGUAGES?.split(',') ?? languages
+  assert(selected.length && selected.every(language => languages.includes(language)), 'supported audit languages')
+  for (const language of selected) {
     const catalogue = JSON.parse(await readFile(`${root}/web/src/i18n/locales/${language}.json`, 'utf8'))
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark', locale: language })
     const page = await context.newPage()
