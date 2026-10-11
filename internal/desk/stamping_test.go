@@ -1922,7 +1922,7 @@ func TestStampingWithTheRuntime(t *testing.T) {
 	kept := readFile(t, stampsPath)
 	got = stampingCall(t, ts, "/api/audit/stamping/stamp", row.ID, map[string]any{})
 	if got.status != http.StatusOK || json.Unmarshal([]byte(got.data), &run) != nil || run.Run.Status != stampRefused ||
-		!slices.Equal(run.Run.Diagnostics, []runtimeDiagnostic{{"JPS-AUDIT-STAMP-UNREACHABLE", "the time-stamping authority could not be asked, or did not answer: the request was not answered. Nothing was written, and the trail and the decisions in it are as they were; asking again stamps the same checkpoint."}}) {
+		!slices.Equal(run.Run.Diagnostics, []runtimeDiagnostic{{"JPS-AUDIT-STAMP-UNREACHABLE", "the time-stamping authority could not be asked, or did not answer: the request was not answered. Nothing was written, and the trail and the decisions in it are as they were; asking again stamps the checkpoint at the trail's head at that time."}}) {
 		t.Errorf("Stamp now against a listener that never answers answered %d %s", got.status, got.data)
 	}
 	if readFile(t, stampsPath) != kept {
