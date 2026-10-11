@@ -924,6 +924,11 @@ func TestJobsForwardsAJobsJournalWithItsCursorAlone(t *testing.T) {
 		// Every other key is left out, each of the shared list's included.
 		{"after=40&q=needle&state=running&review=true&preparations=1&job=job_11111111111111111111111111111111&limit=1&untrusted=ignored", "/v1/jobs/" + job + "/events?after=40"},
 		{"q=needle&state=running&review=true&preparations=1", "/v1/jobs/" + job + "/events"},
+		// Runner v0.8.0's backward paging (capability journal-backward) is
+		// not asked for: the tab reads forward, and Runner answers a request
+		// with neither tail nor before exactly as before.
+		{"tail=true", "/v1/jobs/" + job + "/events"},
+		{"after=40&tail=true&before=41", "/v1/jobs/" + job + "/events?after=40"},
 	} {
 		forwarded = nil
 		if w := call("GET", events+"?"+tc.query, ""); w.Code != 200 || w.Body.String() != page || !slices.Equal(forwarded, []string{"GET " + tc.runner}) {
@@ -1257,8 +1262,10 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 		return *answer.Jobs.RunnerKey
 	}
 	// exported completes one mapped run on desk and answers its export, as
-	// asked for at version 5, saved to a file, and the release's digest.
-	exported := func(ts *httptest.Server, desk, key string) (map[string]json.RawMessage, string, string) {
+	// asked for at version 5, saved to a file, and the release's digest; and
+	// the completed run's `signing` member as Desk's route serves the run
+	// (Runner v0.8.0), nil where it has none.
+	exported := func(ts *httptest.Server, desk, key string) (map[string]json.RawMessage, string, string, json.RawMessage) {
 		t.Helper()
 		status, data := call(ts, desk, "POST", "operations/previews", `{"pack":`+string(pack)+`,"input":`+input+`}`)
 		var release struct{ ID string }
@@ -1271,7 +1278,10 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 			t.Fatalf("job: %d %s", status, data)
 		}
 		status, data = call(ts, desk, "POST", "operations/jobs/"+job.ID+"/runs", input, "Idempotency-Key", key)
-		var run struct{ ID, State string }
+		var run struct {
+			ID, State string
+			Signing   json.RawMessage `json:"signing"`
+		}
 		if status != 202 || json.Unmarshal(data, &run) != nil || run.ID == "" {
 			t.Fatalf("run: %d %s", status, data)
 		}
@@ -1294,7 +1304,7 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 		if err := os.WriteFile(file, data, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		return bundle, file, digest
+		return bundle, file, digest, run.Signing
 	}
 	profiles := filepath.Join(t.TempDir(), "profiles.json")
 	if err := os.WriteFile(profiles, []byte("[]"), 0o600); err != nil {
@@ -1314,12 +1324,18 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 		if key.State != "signed" || key.PublicKey == strings.TrimSpace(ownerPublic) {
 			t.Fatalf("desk %q's Runner key: %+v", desk, key)
 		}
-		bundle, file, digest := exported(ts, desk, "signed-"+desk)
+		bundle, file, digest, signing := exported(ts, desk, "signed-"+desk)
 		var signed struct {
 			AuditSignatures []byte `json:"auditSignatures"`
 		}
 		if string(bundle["version"]) != "5" || json.Unmarshal(bundle["run"], &signed) != nil || len(signed.AuditSignatures) == 0 {
 			t.Fatalf("desk %q's run is not exported signed at version 5: version %s", desk, bundle["version"])
+		}
+		// Runner v0.8.0 holds each completed run's signature to the key it
+		// read at start, and says so on the run: the key Desk keeps for the
+		// desk's Runner, in Runner's own member, as Desk's route serves it.
+		if want := `{"status":"signed","publicKey":"` + key.PublicKey + `"}`; string(signing) != want {
+			t.Fatalf("desk %q's run carries signing %s, want %s", desk, signing, want)
 		}
 		if out, err := verify(file, digest, key.PublicKey); err != nil || !strings.Contains(out, `"status":"signed"`) {
 			t.Fatalf("desk %q: verify-run --require-signed: %v %s", desk, err, out)
@@ -1352,9 +1368,12 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 	if key.State != "unsigned" || key.Reason != "custody" || !strings.Contains(key.Detail, "the folder Desk keeps Runner's keys in is writable by group or others (mode 0770)") || strings.Contains(key.Detail, config) {
 		t.Fatalf("a refused key was reported %+v", key)
 	}
-	bundle, file, digest := exported(againServer, "", "unsigned")
+	bundle, file, digest, signing := exported(againServer, "", "unsigned")
 	if string(bundle["version"]) != "4" || bundle["run"] == nil || bytes.Contains(bundle["run"], []byte(`"auditSignatures"`)) {
 		t.Fatalf("a run without the key was exported at version %s", bundle["version"])
+	}
+	if signing != nil {
+		t.Fatalf("a run made without the key carries signing %s", signing)
 	}
 	if out, err := verify(file, digest, startupKey); err == nil || !strings.Contains(out, "unsigned") {
 		t.Fatalf("verify-run --require-signed passed a run made without the key: %v %s", err, out)

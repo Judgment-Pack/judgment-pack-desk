@@ -114,7 +114,14 @@ export function anchorWords(anchor: string): string {
   return /\p{L}{3,}/u.test(words) ? words : ''
 }
 
-/** One sentence per word `adapter-web` can write; none quotes the page. */
+/**
+ * One sentence per word `adapter-web` can write; none quotes the page.
+ *
+ * Since gateway v0.11.0 a `web-redirect-origin` line may carry one JSON
+ * member after the word, naming the two origins and the redirect policy that
+ * would cover the hop. The word stays the line's first, so it is what is read
+ * here, and the member, which Desk does not show, never reaches the sentence.
+ */
 const FAILURES: Readonly<Record<string, string>> = {
   'web-invalid-url': 'the link is not a public HTTPS address the gateway accepts',
   'web-public-only': 'the link resolves to a private or local address, which the gateway does not fetch',
@@ -122,6 +129,7 @@ const FAILURES: Readonly<Record<string, string>> = {
   'web-over-limit': 'the page is larger than the 4 MiB the gateway retains',
   'web-unsupported-type': 'the page is not HTML, plain text or PDF, or it is compressed or not UTF-8',
   'web-redirect-limit': 'the link redirected more than five times',
+  'web-redirect-origin': 'the link redirected to another site, and the gateway did not follow it',
   'web-processing-failed': 'the page was fetched but its text could not be processed',
   'web-invalid-request': 'the gateway refused the request as malformed'
 }

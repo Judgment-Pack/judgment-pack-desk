@@ -91,10 +91,25 @@ describe('describeLinkFailure', () => {
     ['web-over-limit', '4 MiB'],
     ['web-unsupported-type', 'not HTML, plain text or PDF'],
     ['web-redirect-limit', 'redirected more than five times'],
+    ['web-redirect-origin', 'redirected to another site'],
     ['web-processing-failed', 'could not be processed'],
     ['web-invalid-request', 'malformed']
   ])('names the class for %s', (word, expected) => {
     expect(describeLinkFailure(new GatewayError(400, `source failed: ${word}`))).toContain(expected)
+  })
+
+  // Gateway v0.11.0's refusal of a redirect to another origin, as
+  // docs/design/public-web-sources.md (consumer contract) gives it: the word,
+  // one space, and a member naming origins and the policy that would cover the
+  // hop. The word is read; the origins and the policy never reach the sentence.
+  it.each([
+    'web-redirect-origin',
+    'web-redirect-origin {"redirect":{"from":"https://vertexaisearch.cloud.google.com","permitted":false,"policy":"google-grounding","to":"https://example.com"}}',
+    'web-redirect-origin {"redirect":{"from":"https://example.org","permitted":false,"policy":null,"to":"https://web-public-only.example"}}'
+  ])('reads a redirect refusal by its first word, with or without the member: %s', line => {
+    const said = describeLinkFailure(new GatewayError(400, `source failed: ${line}`))
+    expect(said).toBe('the link redirected to another site, and the gateway did not follow it')
+    for (const quoted of ['vertexaisearch', 'example.com', 'example.org', 'google-grounding', 'policy', '{']) expect(said).not.toContain(quoted)
   })
 
   it('says a gateway that could not be reached, a timeout, and a stop as such', () => {
