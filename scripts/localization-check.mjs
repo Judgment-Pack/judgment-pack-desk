@@ -16,11 +16,22 @@ const work = await mkdtemp(join(tmpdir(), 'jp-localization-browser-'))
 await cp(fixture, `${work}/project`, { recursive: true }); await mkdir(`${work}/config`); await mkdir(output, { recursive: true })
 const secret = randomBytes(24).toString('hex'), origin = 'http://127.0.0.1:8851'
 const server = spawn(binary, ['--dev-token', secret, '--port', '8851', '--jpack', process.env.JPACK_BIN, `${work}/project`], {
-  env: { ...process.env, XDG_CONFIG_HOME: `${work}/config`, XDG_DATA_HOME: `${work}/data` }, stdio: 'ignore'
+  env: { ...process.env, JPACK_DESK_LOCAL_ACCESS: '0', XDG_CONFIG_HOME: `${work}/config`, XDG_DATA_HOME: `${work}/data` }, stdio: 'ignore'
 })
 let browser
 const results = [], errors = [], untranslatedLabels = []
 const english = JSON.parse(await readFile(`${root}/web/src/i18n/locales/en.json`, 'utf8'))
+async function showWorkspace(page, catalogue) {
+  const main = page.locator('main')
+  await main.waitFor({ state: 'attached' })
+  await page.waitForLoadState('networkidle')
+  // On narrow screens the Assistant takes over the workspace. Use its real
+  // return action before checking the underlying document, just as a reader does.
+  const returnButton = page.getByRole('button', { name: catalogue['Return to split view'], exact: true })
+  if (!(await main.isVisible()) && await returnButton.isVisible()) await returnButton.click()
+  await main.waitFor()
+}
+
 try {
   let ready = false
   for (let i = 0; i < 80; i++) {
@@ -34,21 +45,28 @@ try {
     const catalogue = JSON.parse(await readFile(`${root}/web/src/i18n/locales/${language}.json`, 'utf8'))
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark', locale: language })
     const page = await context.newPage()
-    // Direct entry without a launch session is a real, localized recovery path.
+    // Direct entry without a launch session uses the localized sign-in setup entry.
     await page.goto(origin)
-    await page.getByText(catalogue['No session — open the URL that jpack-desk printed at startup.'], { exact: true }).first().waitFor()
-    results.push(`${language}: offline recovery instructions`)
+    await page.getByRole('heading', { name: catalogue['Set up sign-in'], exact: true }).waitFor()
+    results.push(`${language}: sign-in setup entry`)
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(`${origin}/launch?secret=${secret}`)
     await page.locator('textarea').first().waitFor()
     assert.equal(await page.locator('html').getAttribute('lang'), language)
     await page.getByRole('heading', { name: catalogue['What would you like to work on?'], exact: true }).waitFor()
     // Exercise routed views and portal menus, not only the landing page.
-    const routes = ['/packs', '/matrix', '/graphs', '/admin#assistant', '/admin#storage', '/admin#identity-provider', '/help', '/packs/vendor-onboarding', '/packs/vendor-onboarding?view=logic', '/packs/vendor-onboarding?edit=1']
+    const routes = [
+      '/packs', '/matrix', '/graphs', '/admin#assistant', '/admin#storage', '/admin#identity-provider', '/help',
+      '/packs/vendor-onboarding', '/packs/vendor-onboarding?view=logic', '/packs/vendor-onboarding?view=evidence',
+      '/packs/vendor-onboarding/evaluate', '/packs/vendor-onboarding?view=review', '/packs/vendor-onboarding?view=brief',
+      '/packs/vendor-onboarding?view=history', '/packs/vendor-onboarding?view=usage', '/packs/vendor-onboarding?edit=1',
+      '/graphs/onboarding?view=overview', '/graphs/onboarding', '/graphs/onboarding?view=sources',
+      '/graphs/onboarding?view=tests', '/graphs/onboarding?view=review', '/graphs/onboarding?view=brief',
+      '/graphs/onboarding?view=history', '/graphs/onboarding?view=usage'
+    ]
     for (const route of routes) {
       await page.goto(origin + route)
-      await page.locator('main').waitFor()
-      await page.waitForTimeout(150)
+      await showWorkspace(page, catalogue)
       const labels = await page.locator('button, [role="tab"], nav a, label, h1, h2, h3, .quiet, [role="status"]').evaluateAll(elements =>
         elements.filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
           .map(el => el.textContent.trim()).filter(Boolean))
@@ -60,7 +78,7 @@ try {
     }
     await page.goto(origin)
     await page.locator('textarea').first().waitFor()
-    results.push(`${language}: Packs, tests, flows, Assistant settings, storage, identity, Help, pack overview, logic and edit`)
+    results.push(`${language}: Library, all eight pack and graph sections, pack editing, Assistant settings, storage, identity and Help`)
     const configure = page.getByRole('button', { name: catalogue['Configure Assistant'], exact: true }).filter({ hasText: catalogue['Configure Assistant'] })
     if (await configure.count()) {
       await configure.click()
@@ -93,7 +111,7 @@ try {
     assert.equal(await page.evaluate(() => localStorage.getItem('jpack-desk.language.v1')), 'en')
     await page.reload(); await editor.waitFor()
     assert.equal(await page.locator('html').getAttribute('lang'), 'en')
-    results.push(`${language}: system detection, landing label, switch to English, draft preservation, reload`)
+    results.push(`${language}: system detection, landing label, switch to English, draft preservation, reload`); console.log(`${language}: desktop checks passed`)
     // Representative expansion/CJK layouts in both themes and narrow viewports.
     if (['de', 'yue-Hant', 'ja'].includes(language)) {
       await page.evaluate(language => { localStorage.setItem('jpack-desk.language.v1', language) }, language)
@@ -102,8 +120,8 @@ try {
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
         assert.equal(overflow, false, `${language} ${scheme} ${width}: no page overflow`)
         await page.screenshot({ path: `${output}/${language}-${scheme}-${width}.png`, fullPage: true })
-        if (width < 900) for (const route of ['/admin#assistant', '/packs/vendor-onboarding?view=logic']) {
-          await page.goto(origin + route); await page.locator('main').waitFor(); await page.waitForTimeout(150)
+        if (width < 900) for (const route of ['/admin#assistant', '/packs/vendor-onboarding?view=logic', '/packs/vendor-onboarding?view=history', '/graphs/onboarding?view=brief']) {
+          await page.goto(origin + route); await showWorkspace(page, catalogue)
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${language} ${scheme} ${width} ${route}: no page overflow`)
           await page.screenshot({ path: `${output}/${language}-${scheme}-${width}-${route.replace(/[^a-z]+/gi, '-')}.png`, fullPage: true })
         }
