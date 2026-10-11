@@ -187,6 +187,8 @@ describe('the graphs page, against a runtime that serves documents', () => {
     // One arrow for the declared edge, one for the declared result.
     expect(arrows(container)).toBe(2)
     expect(container.textContent).toContain('drawn from the served document vendor-onboarding-flow')
+    // The graph canvas must use the workspace width rather than the form measure.
+    expect(container.querySelector('[data-page-scroll] > [data-width]')?.getAttribute('data-width')).toBe('full')
   })
 
   it("refuses to draw a document the runtime could not decode, and shows the runtime's reason", async () => {

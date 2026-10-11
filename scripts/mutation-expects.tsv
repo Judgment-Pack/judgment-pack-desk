@@ -1335,6 +1335,7 @@ web	Create is offered while a turn is in flight	src/research/run.test.ts
 web	Create is withdrawn by the status of the last action	src/research/run.test.ts
 web	Create writes the proposal without shaping it	src/shell/DescribeIt.test.tsx
 web	Ctrl and Meta together are read as one modifier	src/shell/shortcuts.test.tsx
+web	Describe is drawn with no key stored on this machine	src/shell/DescribeIt.test.tsx
 web	Discard leaves the text it did not write	src/packs/edit/forms.test.tsx
 web	Enter on a block selects nothing	src/packs/document/PackDocumentView.test.tsx
 web	Escape discards the buffer	src/packs/edit/save.test.tsx
@@ -1540,7 +1541,7 @@ web	a save left in flight by a navigation wedges every later one	src/packs/edit/
 web	a save refused for any other reason says nothing	src/packs/edit/save.test.tsx,src/packs/edit/transition.test.tsx
 web	a save that answers to nobody is not reported	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx
 web	a save that lands takes the last sentence with it	src/packs/edit/useDocumentBuffer.test.ts
-web	a saved chat case is grounded in a message sent after it	src/research/run.test.ts
+web	a saved chat case is grounded in a message sent after it	src/research/retainedCheck.test.ts,src/research/run.test.ts
 web	a saved chat case suite is kept smaller	src/research/run.test.ts
 web	a scrolling pane cannot shrink below its content	src/shell/shellSheet.test.ts
 web	a second consumer of the channel is admitted	src/assistant/engines/vercel/engine.test.ts
@@ -1772,7 +1773,7 @@ web	graph row 1: findings about another revision are not told apart	src/graphs/g
 web	graph row 1: the diagram's source path is shown as given	src/graphs/graphs.test.tsx
 web	graph row 1: the inventory's path is shown as given	src/graphs/graphs.test.tsx
 web	graph row 1: the inventory's sentence is shown as given	src/graphs/graphs.test.tsx
-web	graph row 1: the plan is asked for when the diagram opens	src/graphs/graphs.test.tsx
+web	graph row 1: the plan is asked for when the diagram opens	src/graphs/graphs.test.tsx,src/routes/PacksWorkspace.test.tsx
 web	graph row 1: the runtime's kind is not shown	src/graphs/graphs.test.tsx,src/routes/GraphViewRow2.test.tsx
 web	graph row 1: the runtime's label sentence is not marked as its English	src/graphs/graphs.test.tsx,src/routes/GraphViewRow2.test.tsx
 web	graph row 1: the summary is worded as a verdict	src/graphs/graphs.test.tsx
@@ -1818,7 +1819,7 @@ web	graph row 4: facts object check omitted on page	src/graphs/rehearsal.test.ts
 web	graph row 4: id sent as path	src/graphs/rehearsal.test.tsx
 web	graph row 4: labels omitted	src/graphs/rehearsal.test.tsx
 web	graph row 4: member bytes reserialized	src/graphs/rehearsal.test.tsx
-web	graph row 4: rehearsal does not unmount on leaving	src/graphs/graphs.test.tsx
+web	graph row 4: rehearsal does not unmount on leaving	src/graphs/graphs.test.tsx,src/routes/GraphView.test.tsx,src/routes/GraphViewRow2.test.tsx,src/routes/PacksWorkspace.test.tsx
 web	graph row 4: rehearsal limits not stated	src/graphs/rehearsal.test.tsx
 web	graph row 4: rehearsal marker not checked on page	src/graphs/rehearsal.test.tsx
 web	graph row 4: rehearsal runs on opening	src/graphs/graphs.test.tsx,src/graphs/rehearsal.test.tsx
@@ -2233,6 +2234,7 @@ web	the SDK's result promises are read and left unclaimed	src/assistant/engines/
 web	the SDK-backed engine classifies a schema refusal on every family	src/assistant/engines/vercel/engine.test.ts
 web	the SDK-backed engine swallows a refused schema keyword	src/assistant/engines/vercel/engine.test.ts
 web	the Select goes uncontrolled while the listing is in flight	src/shell/CreatePackDialog.test.tsx
+web	the Tests section disappears from pack navigation	src/routes/PackView.test.tsx
 web	the Tests workspace drops the limit sentence	src/packs/test-workspace/TestsWorkspace.findings.test.tsx
 web	the Tests workspace drops the unreachable sentence	src/packs/test-workspace/TestsWorkspace.findings.test.tsx
 web	the Tests workspace shows an invalid expectation's bare message	src/packs/test-workspace/TestsWorkspace.findings.test.tsx
@@ -2325,7 +2327,7 @@ web	the foot prints the project’s decision id rather than the payload’s	src/
 web	the form is editable over a file this desk could not read	src/assistant/slotAfterSave.test.tsx
 web	the form is offered over bytes that are not a document	src/packs/edit/resilience.test.tsx
 web	the form refuses an empty in list	src/packs/edit/ConditionBuilder.test.tsx
-web	the form-level failure is not announced	src/admin/DocumentProcessingSettings.test.tsx,src/connections/ConnectionsPane.test.tsx,src/connections/WebSourcePane.test.tsx,src/packs/review/review.test.tsx,src/packs/upgrade/upgrade.test.tsx,src/shell/CreatePackDialog.test.tsx,src/ui/ui.test.tsx
+web	the form-level failure is not announced	src/admin/DocumentProcessingSettings.test.tsx,src/connections/ConnectionsPane.test.tsx,src/connections/WebSourcePane.test.tsx,src/packs/review/review.test.tsx,src/packs/upgrade/upgrade.test.tsx,src/shell/ConnectionNotices.test.tsx,src/shell/CreatePackDialog.test.tsx,src/ui/ui.test.tsx
 web	the frame has no definite height	src/shell/shellSheet.test.ts,src/ui/containingBlock.test.ts
 web	the frame is classified before it is canonicalized	src/assistant/conformance/conformance.test.ts,src/assistant/engines/codex/codex.test.ts,src/assistant/session.test.ts,src/assistant/toolGate.test.ts,src/mcp/session.test.tsx
 web	the gate is handed the call the adapter already rehearsed	src/assistant/engines/vercel/engine.test.ts
@@ -2384,7 +2386,7 @@ web	the page decides the binding for itself again	src/assistant/endpointForm.tes
 web	the page draws a buffer that is another file's	src/packs/edit/navigate.test.tsx,src/routes/PackView.test.tsx
 web	the page draws the served document while the form writes the buffer	src/packs/edit/resilience.test.tsx,src/packs/edit/transition.test.tsx,src/routes/PackView.test.tsx
 web	the page measure centred again (margin: 0 auto)	src/shell/shellSheet.test.ts
-web	the page measure unstated by a route (graphs takes the default)	src/routes/measure.test.ts
+web	the page measure unstated by a route (graphs takes the default)	src/routes/GraphView.test.tsx
 web	the page measure's form cap removed from its :has rule	src/shell/shellSheet.test.ts
 web	the page measure's gutter: compact equal to comfortable	src/shell/shellSheet.test.ts,src/ui/palette.test.ts
 web	the page never asks whether the check ran over these bytes	src/packs/edit/EditView.test.tsx,src/routes/PackView.test.tsx
@@ -2480,6 +2482,7 @@ web	the spent entry is pushed rather than replaced	src/shell/CreatePackDialog.te
 web	the spent handover stays on the history entry	src/shell/CreatePackDialog.test.tsx
 web	the splice replaces the first matching text rather than the span	src/packs/documentText.test.ts,src/packs/edit/writes.test.ts
 web	the splice reserializes the whole document	src/admin/projectFileCards.test.tsx,src/admin/projectFileSave.test.ts,src/admin/projectFileWrite.test.tsx,src/assistant/AssistantPane.test.tsx,src/assistant/acceptProposal.test.ts,src/packs/documentText.test.ts,src/packs/edit/ConditionBuilder.test.tsx,src/packs/edit/writes.test.ts
+web	the strip calls a reconnecting runtime connected	src/App.test.tsx,src/shell/ConnectionNotices.test.tsx
 web	the strip is silent about a refused desk-level file	src/config/liveConfig.test.tsx
 web	the strip's warning is the half that disappears	src/shell/shellSheet.test.ts
 web	the suffix is not required to be a primitive string	src/assistant/session.test.ts
