@@ -10,7 +10,7 @@ Runtime and pack. Upgrading Desk does not reinterpret those jobs.
 repository identities, exact commits and channels. Go embeds it; the Gateway
 builder, Jobs compatibility CI and release packager read it. Development pins
 are held rather than replaced with an older published release. A stable Desk
-release refuses development pins. Runner is pinned to `v0.7.0`, including calculator profiles, bindings,
+release refuses development pins. Runner is pinned to `v0.8.0`, including calculator profiles, bindings,
 calculated input lineage, verification export versions 3 to 5, the installation's chain
 of runs, and a journal of each job's activity. It also exports a run whose job has no
 mapping v2, as version 3 or later with `"inputs":"not-mapped"`, where earlier Runners
@@ -25,6 +25,14 @@ which Desk keeps in its custody and names on Runner's boot line (row 11 of
 Runner and the runtime accept the key, each run's record is signed and its version-5
 export carries the signature sidecar. Desk does not yet rotate that key, check a chain
 entry (row 12, the Jobs record panel) or hand the chain over (row 8b).
+Runner `v0.8.0` reads that key once, at start, and holds each completed run's signature
+to its public key, which it passes to each operational evaluation's runtime as
+`JPACK_SIGNING_PUBLIC_KEY`: with runtime `v0.30.0`, a seed put in its place after the
+start signs nothing. A completed run says which in its `signing` member, which Desk's
+Jobs route serves as Runner wrote it. Desk does not yet name the expected key on the boot
+line (`signingPublicKey`, #345). Runner `v0.8.0` can also page its journal backward
+(`tail`, `before`, capability `journal-backward`); the Activity tab still reads it
+forward, and Desk's route forwards the cursor alone.
 
 **Back up every desk's Jobs store before updating to a Desk that pins Runner
 `v0.6.0`.** Its first start migrates each store to Runner's schema `"2"`, and Runner
@@ -36,7 +44,7 @@ backups](https://github.com/Judgment-Pack/judgment-pack-runner/blob/v0.6.0/READM
 Desk's release stays at state epoch 1 even so: the change is Runner's store, not Desk's
 own state, and this paragraph is the explicit step it would otherwise lack.
 
-Runtime is pinned to `v0.28.0`, which chains a project's audit trail over its exact bytes
+Runtime is pinned to `v0.30.0`, which chains a project's audit trail over its exact bytes
 by default, and signs it where a key is set (runtime ADR-0047). Its `audit verify` report
 also says, among what it does not establish, that the trail records decisions and not
 refused or failed attempts (runtime ADR-0048); the decision-record panel shows that
@@ -54,7 +62,18 @@ can hand checkpoints to holders by download (PR 5), repair a trail whose last li
 incomplete (PR 6) and set a time-stamping authority for Desk to stamp with (PR 7). The README
 section "A defensible decision record" says what each part establishes and does not.
 
-Gateway is pinned to `v0.10.1` and includes `adapter-render`, required by its
+Runtime `v0.30.0` also reads configVersion `"7"`, whose audit member may name the public
+key the signing key is expected to have (`signingPublicKey`; the variable
+`JPACK_SIGNING_PUBLIC_KEY`, where set, names it instead). A seed whose public key is
+another signs nothing: the record is written unsigned, and `packs validate` says why,
+naming neither the key's path nor either key. Desk still makes desks at `"6"`, names no
+expected key, and offers no upgrade to `"7"`; where a project names one, the decision
+record shows the runtime's sentence. `JPACK_SIGNING_PUBLIC_KEY` is not yet removed from
+the runtimes of desks Desk made, as `JPACK_SIGNING_KEY` is: set where Desk was started,
+it holds every desk's key to the key it names, so a desk whose key is another writes its
+records unsigned, and its decision record says so in the runtime's words.
+
+Gateway is pinned to `v0.11.0` and includes `adapter-render`, required by its
 local source plan, and the two OCR workers `ocr-tesseract` and `ocr-cloud`, which
 the document processors run beside the companion
 ([document processing](document-processing.md)). Desk now asks for the plan with
@@ -65,6 +84,17 @@ user who runs Desk, pass. Its Drive connection uses whole-Drive consent and Desk
 search-and-select. Upgrade the catalog, selection UI and relay together with
 the pin. Older Drive connections may report `reconnect-required` even while
 status says connected; reconnect explicitly to grant the new scope.
+
+Gateway `v0.11.0` can follow a Google grounding search result's redirect to the
+publisher it names, where the operator enables the `google-grounding` redirect policy:
+`JPACK_WEB_REDIRECT_POLICIES=google-grounding` in the environment Desk is started with
+reaches the companion, whose local plan then launches the web source with
+`--redirect-policies=google-grounding`. Desk has no setting for it yet. Without it, every
+redirect to another origin is refused, as in `v0.10.1`, and Desk says "the link
+redirected to another site, and the gateway did not follow it", showing neither origin
+the refusal names. A value that names a policy the gateway does not support refuses the
+plan, and the local gateway does not start. Desk's catalog of connections, and the plan
+with no policy, are `v0.10.1`'s byte for byte.
 
 Dependency updates use two bots with separate responsibilities:
 
