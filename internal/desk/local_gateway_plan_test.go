@@ -79,7 +79,13 @@ func TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources(t *test
 // a search connection's timeout of 90 s; and with both.
 func gatewayPlan(t *testing.T, name string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "gateway-plans", "v0.10.0-"+name+".json"))
+	return gatewayPlanOf(t, "v0.10.0", name)
+}
+
+// gatewayPlanOf is the plan the named release's companion printed.
+func gatewayPlanOf(t *testing.T, release, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", "gateway-plans", release+"-"+name+".json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +130,47 @@ func TestLocalPlanTakesTheReleasedGatewaysPlans(t *testing.T) {
 			}
 			if tt.processing && !strings.Contains(args, "--source-env documents=JPACK_CONNECTIONS_DIR") {
 				t.Fatal("the document source is not given the connections directory", args)
+			}
+		})
+	}
+}
+
+// Gateway v0.11.0's companion prints the four plans above byte for byte, and
+// one form more: with `JPACK_WEB_REDIRECT_POLICIES=google-grounding` in its
+// environment, operator configuration that Desk's own environment carries to
+// it, the web source is launched with `--redirect-policies=google-grounding`.
+// These two are as v0.11.0's companion printed them from its published
+// linux/amd64 archive with that variable set: with nothing configured, and
+// with a program processor chosen and a search connection's timeout of 90 s.
+// Desk takes them as it takes the others: the policy reaches the web source's
+// launch and no other, and every envelope is what it was.
+func TestLocalPlanTakesGatewayV0110sRedirectPolicyPlans(t *testing.T) {
+	web := "--source web=" + executableName("adapter-web")
+	for _, tt := range []struct {
+		name       string
+		processing bool
+		launch     string
+		envelopes  map[string]string
+	}{
+		{"grounding", false, web + " --redirect-policies=google-grounding --source-timeout web=60 ", map[string]string{"documents": "40", "drive": "60", "web-search": "60"}},
+		{"processing-long-search-grounding", true, web + " --document-processing --redirect-policies=google-grounding --source-timeout web=150 ", map[string]string{"documents": "150", "drive": "150", "web-search": "130", "gmail": "60"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := decodeLocalPlan([]byte(gatewayPlanOf(t, "v0.11.0", tt.name)), gatewayPlanFiles())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.documentProcessing != tt.processing {
+				t.Fatalf("the plan's processing was read as %v", plan.documentProcessing)
+			}
+			args := strings.Join(plan.args, " ")
+			if !strings.Contains(args, tt.launch) || strings.Count(args, "--redirect-policies") != 1 {
+				t.Fatalf("the web source is not launched with the policy alone: %s", args)
+			}
+			for id, seconds := range tt.envelopes {
+				if !strings.Contains(args, "--source-timeout "+id+"="+seconds+" ") {
+					t.Fatalf("%s is not given %s s: %s", id, seconds, args)
+				}
 			}
 		})
 	}
