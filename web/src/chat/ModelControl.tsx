@@ -29,7 +29,8 @@ export function effortLabel(effort: CodexEffort): string {
     case 'max': return msg('Maximum')
   }
 }
-export function ModelControl({ id, model, models, agent, value, codex, enabled, disabled, onModelChange, onReasoningChange, connectionId, onConnectionChange, thinking, thinkingOverride, onThinkingChange }: {
+export function ModelControl({ requiredSelection = false, id, model, models, agent, value, codex, enabled, disabled, onModelChange, onReasoningChange, connectionId, onConnectionChange, thinking, thinkingOverride, onThinkingChange }: {
+  requiredSelection?: boolean
   thinking?:ThinkingTier; thinkingOverride?:ThinkingTier; onThinkingChange?:(value:ThinkingTier|undefined)=>void
   connectionId?:string; onConnectionChange?:(id:string,name:string,model:string)=>void
   id: string; model: string; models: readonly string[]; agent?: AssistantAgentConfig; value?: ChatReasoning
@@ -54,16 +55,16 @@ export function ModelControl({ id, model, models, agent, value, codex, enabled, 
   const adjustable=codex && enabled && advertised && advertised.efforts.length>1
   useEffect(()=>{if(disabled)setOpen(false)},[disabled])
   return <Popover title={msg('Model')} variant="list" size="small" align="start" open={open} onOpenChange={value=>{setOpen(value);if(!value)setSearch('')}}
-    trigger={<button id={id} type="button" className={styles.trigger} disabled={disabled} aria-label={`${msg('Model')}: ${model}${codex&&current?`, ${msg('Reasoning')}: ${effortLabel(current)}`:''}`}>
-      <span className={styles.model}>{model||msg('Choose model')}</span>{codex&&current&&<span className={styles.depth}>· {effortLabel(current)}</span>}<IconChevronDown/>
+    trigger={<button id={id} type="button" className={styles.trigger} disabled={disabled} aria-label={requiredSelection ? msg('Choose AI connection') : `${msg('Model')}: ${model}${codex&&current?`, ${msg('Reasoning')}: ${effortLabel(current)}`:''}`}>
+      <span className={styles.model}>{requiredSelection ? msg('Choose AI connection') : model||msg('Choose model')}</span>{!requiredSelection&&codex&&current&&<span className={styles.depth}>· {effortLabel(current)}</span>}<IconChevronDown/>
     </button>}>
-    <ModelMenuList pending={!grouped&&codex&&(catalog.isPending||catalog.isError)} options={grouped??choices} search={search} onSearch={setSearch} value={grouped?JSON.stringify([connectionId,model]):model} onValueChange={pick} disabled={disabled||!grouped&&codex&&(!enabled||catalog.isPending||catalog.isError)}/>
-    {!codex&&onThinkingChange&&<div className={styles.settings}>
+    <ModelMenuList pending={!grouped&&codex&&(catalog.isPending||catalog.isError)} options={grouped??choices} search={search} onSearch={setSearch} value={requiredSelection?undefined:grouped?JSON.stringify([connectionId,model]):model} onValueChange={pick} disabled={disabled||!grouped&&codex&&(!enabled||catalog.isPending||catalog.isError)}/>
+    {!requiredSelection&&!codex&&onThinkingChange&&<div className={styles.settings}>
       <Field label={msg('Reasoning effort')}>{w=><Select {...w} value={thinkingOverride??thinking??'off'} disabled={disabled} onValueChange={v=>onThinkingChange(v as ThinkingTier)} options={[{value:'off',label:msg('off')},{value:'on',label:msg('standard')},{value:'ultra',label:msg('deep')}]}/>}</Field>
       <Button variant="quiet" disabled={thinkingOverride===undefined||disabled} onClick={()=>onThinkingChange(undefined)}>{msg('Reset to default')}</Button>
       <span className={styles.caption}>{registry?.connections.find(c=>c.id===connectionId)?.name}</span>
     </div>}
-    {codex&&<div className={styles.settings}>
+    {!requiredSelection&&codex&&<div className={styles.settings}>
       {codex&&catalog.isPending&&<span className={styles.caption} role="status">{msg('Loading models…')}</span>}
       {codex&&catalog.isError&&<div className={styles.caption} role="alert">{msg(catalog.error.message)} <Button variant="inline" onClick={()=>void catalog.refetch()}>{msg('Retry')}</Button></div>}
       {adjustable&&<div className={styles.reasoning}>

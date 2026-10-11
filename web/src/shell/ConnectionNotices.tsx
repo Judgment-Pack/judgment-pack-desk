@@ -1,53 +1,42 @@
-import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
-import { Button } from '../ui/Button'
-/**
- * The three connection notices, with shared retry controls.
- *
- * They live in `<main>` and never in a collapsible pane: **nothing whose
- * absence changes what is on screen may live somewhere a viewer has closed.**
- * The console gets the history line; the governing statement stays where it
- * governs.
- *
- * Three exports rather than one component, so `App.tsx` keeps the original
- * control flow character for character — including the part that is easy to
- * lose in a rewrite: `blocked && error ?` means a blocked connection whose
- * error is null still renders the routes.
- */
-import { ErrorBox } from '../components/primitives'
-import { useMcp } from '../mcp/McpProvider'
+import { msg, systemMessage, useLocale } from '../i18n'
+import { Button, ButtonLink } from '../ui/Button'
+import { Notice } from '../ui/Notice'
+import { Popover } from '../ui/Popover'
+import { useMcp, connectionSays } from '../mcp/McpProvider'
+import styles from './ConnectionNotices.module.css'
 
-/** The two banners that sit above whatever is on screen. */
-export function ConnectionNotices() {
+/** Connection recovery belongs to the permanent status strip, not the document header. */
+export function ConnectionStatus() {
   useLocale()
-  const { status, everConnected, attempt, retryNow, known, capabilitiesError } = useMcp()
-  return (
-    <>
-      {status === 'reconnecting' && everConnected && (
-        <p className="banner" role="status"><Message text={"Lost the connection to the chassis. Reconnecting (attempt <0/>)…<1/><2/>"} slots={[attempt, ' ', <Button variant="secondary" onClick={retryNow}>{msg("Retry connection")}</Button>]} /></p>
-      )}
-      {/* Connected, and this page does not know what it is connected to. Every
-          feature-detected capability is off while that holds, and saying so is
-          the difference between a page with less on it and a page quietly
-          claiming the runtime has less on it. */}
-      {status === 'ready' && !known && (
-        <p className="banner" role="status"><Message text={"The runtime's tool listing could not be read<0/>. What this runtime can do is unknown rather than known to be little, so the optional surfaces are left off and nothing here should be read as the runtime lacking them.<1/><2/>"} slots={[capabilitiesError ? ` — ${capabilitiesError.message}` : '', ' ', <Button variant="secondary" onClick={retryNow}>{msg("Retry connection")}</Button>]} /></p>
-      )}
-    </>
-  )
+  const { status, known } = useMcp()
+  if (status === 'ready' && known) return <ButtonLink variant="inline" className="desk-strip-connection" to="/help" aria-label={`${msg('Help & About')}: ${connectionSays(status)}`}>{connectionSays(status)}</ButtonLink>
+  const label = status === 'ready' ? msg('Limited connection') : connectionSays(status)
+  return <div className={styles.status}>
+    <Popover title={msg('Connection status')} dismissible trigger={<button type="button" className={styles.trigger} aria-label={msg('Connection status: {{status}}', {status: label})}>
+      <span className={styles.dot} data-pending={status === 'connecting' || status === 'reconnecting'} aria-hidden="true"/>
+      <span role="status" aria-live="polite">{label}</span>
+    </button>}>
+      <ConnectionNotices/>
+    </Popover>
+  </div>
 }
 
-/**
- * The error that takes the page, or null.
- *
- * A connection that has never been made has nothing to show behind a banner,
- * so the reason takes the page. Once the desk has been connected, a drop is a
- * banner over what is already on screen: the reconnect is automatic, and
- * throwing the view away would lose the user's place over a local restart.
- *
- * Null where the connection is blocked but carries no error, because that is
- * what `blocked && error ?` did: the routes render.
- */
+/** One sentence, one recovery action; attempts and server diagnostics are secondary. */
+export function ConnectionNotices() {
+  useLocale()
+  const { status, error, attempt, retryNow, known, capabilitiesError } = useMcp()
+  const limited = status === 'ready' && !known
+  const connecting = status === 'connecting' || status === 'reconnecting'
+  const detail = limited ? capabilitiesError : error
+  return <Notice tone={connecting ? 'info' : 'warning'}
+    detail={detail || attempt > 0 ? <>{detail && <p>{systemMessage(detail.message)}</p>}{attempt > 0 && <p>{msg('Connection attempts: {{count}}', {count: attempt})}</p>}</> : undefined}
+    actions={<><Button onClick={retryNow}>{msg('Retry connection')}</Button><ButtonLink variant="quiet" to="/help">{msg('Help & About')}</ButtonLink></>}>
+    {limited ? msg('Some features are unavailable because Desk could not load runtime capabilities.')
+      : connecting ? msg('Reconnecting to Desk…') : msg('Desk is not connected. Check that it is running on this computer.')}
+  </Notice>
+}
+
+/** Preserve a connected workspace through a temporary outage. */
 export function useBlockingError(): Error | null {
   const { status, error, everConnected } = useMcp()
   const blocked = status === 'failed' || (status === 'reconnecting' && !everConnected)
@@ -56,13 +45,9 @@ export function useBlockingError(): Error | null {
 
 export function BlockedNotice({ error }: { error: Error }) {
   useLocale()
-  const { status, attempt, retryNow } = useMcp()
-  return (
-    <>
-      <ErrorBox title={msg("Not connected to the runtime")} error={error} />
-      {status === 'reconnecting' && (
-        <p className="note"><Message text={"Retrying automatically (attempt <0/>).<1/><2/>"} slots={[attempt, ' ', <Button variant="secondary" onClick={retryNow}>{msg("Retry connection")}</Button>]} /></p>
-      )}
-    </>
-  )
+  const { status, retryNow } = useMcp()
+  return <div className={styles.blocked}><Notice tone="error" title={msg('Not connected to the runtime')} detail={status === 'reconnecting' ? systemMessage(error.message) : undefined}
+    actions={status === 'reconnecting' ? <Button onClick={retryNow}>{msg('Retry connection')}</Button> : undefined}>
+    {status === 'reconnecting' ? msg('Desk is reconnecting automatically. Check that it is running on this computer.') : systemMessage(error.message)}
+  </Notice></div>
 }

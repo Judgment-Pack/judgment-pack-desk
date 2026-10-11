@@ -1,19 +1,22 @@
 import { Message } from '../../i18n/Message'
 import { msg, useLocale } from '../../i18n'
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useRef, useState } from 'react'
 import type { Viewport } from '@xyflow/react'
 import { useMcp } from '../../mcp/McpProvider'
 import { useGraphDocument } from '../../mcp/queries'
 import { deriveWalkLayout, edgeCarries } from '../../mcp/graphDocument'
-import { useDetailsPortal, useDetailsSlot } from '../../shell/DetailsSlot'
+import { BuilderSplit } from '../../builders/BuilderSplit'
+import { SegmentedControl } from '../../ui/SegmentedControl'
+import { Dialog, DialogActions } from '../../ui/Dialog'
+import { GraphPlanView } from '../../graphs/GraphPlan'
+import { Disclosure } from '../../ui/Disclosure'
+import shared from '../../definitions/DefinitionWorkspace.module.css'
 import { useInspectorWorkingWidth } from '../../shell/InspectorSlot'
 import { useMeasuredBox } from '../../shell/measured'
-import { ButtonLink } from '../../ui/Button'
-import { ExpandableText } from '../../ui/ExpandableText'
+import { Button, ButtonLink } from '../../ui/Button'
 import { CodeBlock } from '../../ui/CodeBlock'
 import { InspectionRow } from '../../ui/InspectionRow'
 import { Empty, ErrorBox, Loading } from '../../components/primitives'
-import { GraphLabels } from '../../graphs/GraphLabels'
 import { shownMessage, shownPath } from '../../graphs/client'
 import styles from './FlowExplorer.module.css'
 
@@ -21,7 +24,7 @@ const RelationshipMap = lazy(() => import('../../components/RelationshipMap').th
 
 /** The diagram is projected only from the served graph document. No suite or
  * coverage payload is needed and no test verdict is inferred from structure. */
-export function FlowExplorer({ graphId }: { graphId: string }) {
+export function FlowExplorer({ graphId, initialPlan = false }: { graphId: string; initialPlan?: boolean }) {
   useLocale()
   const { graphDocumentSupported, connectionEpoch } = useMcp()
   const served = useGraphDocument(graphId)
@@ -39,12 +42,13 @@ export function FlowExplorer({ graphId }: { graphId: string }) {
   const [canvas, setCanvas] = useState<HTMLDivElement | null>(null)
   const canvasWidth = useMeasuredBox(canvas)?.width
   const nodeWidth = Math.min(22 * unit, Math.max(12 * unit, (canvasWidth ?? 24 * unit) - 2 * unit))
-  const details = useDetailsSlot()
+  const [view, setView] = useState('diagram'), [detailsOpen, setDetailsOpen] = useState(false)
+  const [planOpen, setPlanOpen] = useState(initialPlan), planTrigger = useRef<HTMLButtonElement>(null)
   const inspect = (selected: { node?: string; edge?: number }) => {
     setSelection({ ...selected, epoch: connectionEpoch, digest: served.data?.meta.sha256 })
-    details.reveal()
+    setDetailsOpen(true)
   }
-  const portal = useDetailsPortal(node || edge ? <section className={styles.details}>
+  const detail = node || edge ? <section className={styles.details}>
     <h2>{node ? node.id : msg("Connection details")}</h2>
     {node?.pack && <ButtonLink to={`/packs/${encodeURIComponent(node.pack)}`}>{msg("Open pack")}</ButtonLink>}
     {edge && <dl>
@@ -56,23 +60,25 @@ export function FlowExplorer({ graphId }: { graphId: string }) {
         <div><dt>{msg("When unresolved")}</dt><dd>{edge.evidence.onUnresolved ?? msg("Not declared")}</dd></div>
       </>}
     </dl>}
-    <details><summary>{msg("Source details")}</summary>
+    <Disclosure title={msg("Source details")}>
       <p>{served.data?.meta.path !== undefined && shownPath(served.data.meta.path)}</p>
-      <CodeBlock text={JSON.stringify(node ? doc?.nodes[node.id] : doc?.edges[edge!.index], null, 2)} />
-    </details>
-  </section> : null)
+      <CodeBlock expandable text={JSON.stringify(node ? doc?.nodes[node.id] : doc?.edges[edge!.index], null, 2)} />
+    </Disclosure>
+  </section> : null
 
-  if (!graphDocumentSupported) return <Empty>{msg("This runtime cannot serve graph diagrams. The Tests tab can still run saved cases.")}</Empty>
-  if (served.error) return <ErrorBox title={msg("Could not read this graph")} error={served.error} />
-  if (served.isPending) return <Loading what={msg("the graph")} />
-  if (!doc || !shape) return <p className="note">{(served.data?.unreadable !== undefined ? shownMessage(served.data.unreadable, [served.data.meta.path]) : undefined) ?? (layout && !layout.drawn ? layout.reason : msg("No readable graph document was returned."))}</p>
-
-  return <section className={styles.explorer} aria-label={msg("Graph diagram")}>
-    {portal}
+  const planDialog = <Dialog open={planOpen} onOpenChange={setPlanOpen} title={msg('Runtime plan')} size="wide" openerRef={planTrigger}
+      footer={<DialogActions><Button onClick={()=>setPlanOpen(false)}>{msg('Close')}</Button></DialogActions>}>
+      {planOpen && <GraphPlanView graphId={graphId}/>}
+    </Dialog>
+  const unavailable = !graphDocumentSupported ? <Empty>{msg("This runtime cannot serve graph diagrams. The Tests tab can still run saved cases.")}</Empty>
+    : served.error ? <ErrorBox title={msg("Could not read this graph")} error={served.error}/>
+    : served.isPending ? <Loading what={msg("the graph")}/>
+    : !doc || !shape ? <p className="note">{(served.data?.unreadable !== undefined ? shownMessage(served.data.unreadable, [served.data.meta.path]) : undefined) ?? (layout && !layout.drawn ? layout.reason : msg("No readable graph document was returned."))}</p> : null
+  return <div className={styles.frame}>{unavailable || !shape ? <><div className={shared.toolbar}><Button ref={planTrigger} variant="quiet" onClick={()=>setPlanOpen(true)}>{msg('View runtime plan')}</Button></div>{unavailable}</> : <BuilderSplit preference="graph" title={node?.id ?? msg("Connection details")} editor={detail} open={detailsOpen} onClose={()=>setDetailsOpen(false)}><section className={styles.explorer} aria-label={msg("Graph diagram")}>
+    <div className={shared.toolbar}><SegmentedControl label={msg('Logic view')} value={view} onValueChange={setView} segments={[{value:'diagram',label:msg('Diagram')},{value:'list',label:msg('List')}]}/>
+      <Button ref={planTrigger} variant="quiet" onClick={()=>setPlanOpen(true)}>{msg('View runtime plan')}</Button></div>
     <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
-    {served.data && <GraphLabels labels={served.data.meta} />}
-    {doc.description && <ExpandableText text={doc.description} label={msg("graph description")} />}
-    {shape.nodes.length === 0 ? <Empty>{msg("This graph declares no pack nodes.")}</Empty> : <div ref={setCanvas} className={styles.canvas}>
+    {shape.nodes.length === 0 ? <Empty>{msg("This graph declares no pack nodes.")}</Empty> : view === 'diagram' ? <div ref={setCanvas} className={styles.canvas}>
       <Suspense fallback={<Loading what={msg("the diagram")} />}>
         <RelationshipMap columnGap={8} nodeWidth={nodeWidth} ariaLabel={msg("Graph diagram")} nodes={shape.nodes.map(n => ({
           id: n.id, title: n.id, column: n.layer, selected: node?.id === n.id, action: msg("View details"),
@@ -84,14 +90,14 @@ export function FlowExplorer({ graphId }: { graphId: string }) {
           onSelect={id => inspect({ node: id })} onInspect={id => inspect({ node: id })}
           onEdgeInspect={id => inspect({ edge: Number(id) })} />
       </Suspense>
+    </div> : <div className={styles.list}>
+      <section aria-label={msg('Graph steps')}>{shape.nodes.map(n=><InspectionRow key={n.id} label={n.id} description={n.pack} value={n.isResult?msg('Result'):undefined} current={node?.id===n.id} onClick={()=>inspect({node:n.id})}/>)}</section>
+      <section aria-label={msg('Graph connections')}><h2>{msg('Connections')}</h2>
+        {shape.edges.length === 0 ? <p className="quiet">{msg('No connections are declared.')}</p> : shape.edges.map(e=><InspectionRow key={e.index} label={`${e.from} → ${e.to}`} description={edgeCarries(e)} current={edge?.index===e.index} onClick={()=>inspect({edge:e.index})}/>)}</section>
     </div>}
     {shape.resultDangling && <p className="note"><Message text={"The graph result names an undeclared node: <0/>."} slots={[shape.result]} /></p>}
-    <section aria-label={msg("Graph connections")}><h2>{msg("Connections")}</h2>
-      {shape.edges.length === 0 ? <p className="quiet">{msg("No connections are declared.")}</p>
-        : shape.edges.map(e => <InspectionRow key={e.index} label={`${e.from} → ${e.to}`}
-          description={<>{edgeCarries(e)}{!e.drawable && msg(" · An endpoint is not declared")}</>}
-          current={edge?.index === e.index} onClick={() => inspect({ edge: e.index })} />)}
-    </section>
     <p className="quiet">{msg("Declared connections · Experimental runtime graph format")}</p>
-  </section>
+  </section></BuilderSplit>}
+    {planDialog}
+  </div>
 }

@@ -38,7 +38,7 @@ import { type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { WorkspaceActivity } from './WorkspaceActivity'
 import { IconFocus, IconPanelLeft, IconChevronLeft } from './icons'
 import { Button } from '../ui/Button'
-import { PaneWidthMenu } from './PaneWidthMenu'
+import { PaneWidthControls } from './PaneWidthControls'
 import { PaneDivider, type PaneResizePreview } from '../ui/PaneDivider'
 import { PaneToggle } from './PaneToggle'
 import { Diagnostics } from './Diagnostics'
@@ -133,16 +133,16 @@ export function RightPane({
     <>
       {resize && <PaneDivider label={title} controls="desk-inspector" {...resize} onCollapse={onReturn ?? onClose} />}
       <div className="desk-pane-head">
-
-        <div className="desk-pane-heading">{navigation}<span>{title}</span>{(expanded || fullWidth) && contextTitle && <OverflowTooltip><span className="desk-pane-context">{contextTitle}</span></OverflowTooltip>}</div>
-        <div ref={publishHeaderTarget} className="desk-pane-head-slot" hidden={utility || tool !== 'route' || fullWidth} />
+        {workspaceTools && fullWidth && <Tooltip content={returnLabel ?? msg('Back to pack')}><button ref={expandButtonRef} type="button" className="desk-icon-button" aria-label={returnLabel ?? msg('Back to pack')} onClick={onReturn}><IconChevronLeft/></button></Tooltip>}
+        <div className="desk-pane-heading">{navigation}<OverflowTooltip><span>{title}</span></OverflowTooltip>{(expanded || fullWidth) && contextTitle && <OverflowTooltip><span className="desk-pane-context">{contextTitle}</span></OverflowTooltip>}</div>
+        <div ref={publishHeaderTarget} className="desk-pane-head-slot" hidden={utility || tool !== 'route'} />
         <div ref={publishBriefHeaderTarget} className="desk-pane-head-slot desk-brief-head" hidden={utility || tool !== 'brief'} />
         <div className="desk-pane-actions">
-        {workspaceTools && (expanded || fullWidth) ? <>
-          {resize && <PaneWidthMenu {...resize} />}
-          <Button ref={expandButtonRef} className="desk-pane-return" onClick={onReturn}>{fullWidth ? <IconChevronLeft /> : <IconPanelLeft />}{fullWidth ? returnLabel ?? msg('Back to pack') : msg('Return to split view')}</Button>
-        </> : workspaceTools && !utility && <Tooltip content={msg('Expand pane')}><button ref={expandButtonRef} className="desk-icon-button" type="button" aria-label={msg('Expand pane')} aria-pressed={false} onClick={onExpand}><IconFocus /></button></Tooltip>}
-        <PaneToggle side="right" expanded label={msg('Collapse {{value0}}', { value0: title.toLowerCase() })} controls="desk-inspector" onClick={onClose} />
+        {workspaceTools && expanded && !fullWidth ? <>
+          {resize && <PaneWidthControls {...resize} />}
+          <Button ref={expandButtonRef} className="desk-pane-return" onClick={onReturn}><IconPanelLeft />{msg('Return to split view')}</Button>
+        </> : workspaceTools && !fullWidth && !utility && <Tooltip content={msg('Expand pane')}><button ref={expandButtonRef} className="desk-icon-button" type="button" aria-label={msg('Expand pane')} aria-pressed={false} onClick={onExpand}><IconFocus /></button></Tooltip>}
+        {(!fullWidth || !workspaceTools) && <PaneToggle side="right" expanded label={msg('Collapse {{value0}}', { value0: title.toLowerCase() })} controls="desk-inspector" onClick={onClose} />}
         </div>
       </div>
       {showEmpty && !utility && tool === 'route' && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}

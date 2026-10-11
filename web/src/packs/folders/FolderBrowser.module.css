@@ -1,7 +1,7 @@
 .frame { display: flex; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
 .sidebar { position: relative; flex: 0 0 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-inline-end: 1px solid var(--border); background: var(--surface); }
 .content { flex: 1; min-width: 0; min-height: 0; height: 100%; }
-.tree { position: relative; flex: 1; overflow: auto; min-height: 0; font-size: var(--text-sm); padding: 0 var(--space-2) var(--space-3); }
+.tree { position: relative; flex: 1; overflow: auto; min-height: 0; font-size: var(--text-sm); padding: var(--space-2) var(--space-2) var(--space-3); }
 .tree ul { list-style: none; padding: 0; margin: 0; }
 .treeRow { display: flex; align-items: center; min-height: 32px; border-radius: var(--radius-sm); padding-inline-start: calc(min(var(--depth), 6) * 12px); }
 .treeRow:hover, .treeRow[data-selected] { background: var(--accent-soft); }
@@ -28,8 +28,6 @@
 .pathCurrent { flex: 1; }
 .breadcrumb .pathMenuTrigger { display: inline-flex; align-items: center; justify-content: center; width: var(--space-5); height: var(--space-5); padding: 0; }
 .pathMenu { position: relative; max-width: min(24rem, var(--radix-dropdown-menu-content-available-width)); max-height: var(--radix-dropdown-menu-content-available-height); overflow: auto; }
-.pathMenu .pathMenuItem { flex-direction: column; align-items: flex-start; gap: var(--space-1); white-space: normal; overflow-wrap: anywhere; }
-.pathMenuItem small { color: var(--ink-soft); font-size: var(--text-xs); }
 .feedback { padding: var(--space-3) var(--density-gutter); font-size: var(--text-sm); }
 .subfolders { position: relative; list-style: none; padding: 0 var(--density-gutter); margin: 0; max-height: 35%; overflow: auto; flex: 0 1 auto; }
 .subfolders button { display: flex; align-items: center; gap: var(--space-2); border: none; border-bottom: 1px solid var(--border); background: none; color: var(--ink); text-align: start; width: 100%; min-height: var(--density-row); font: inherit; font-size: var(--text-sm); cursor: pointer; }
@@ -48,5 +46,9 @@
 
 /* Match the folder control inset when its pane is collapsed. Other tabs keep
    their normal gutters; only the leading folder control needs this space. */
-.content:not([data-folder-docked]) [data-page-header]:has(> nav > [data-show-folders]) { padding-inline-start: var(--space-3); }
+.content:not([data-folder-docked]) [data-page-header]:has(> nav > [data-show-folders]), .content:not([data-folder-docked]) [data-page-header]:has(> [data-collection-location] > [data-show-folders]) { padding-inline-start: var(--space-3); }
 .content:not([data-folder-docked]) nav > [data-show-folders] { margin-inline-end: calc(var(--space-2) - var(--space-5)); }
+.headerBreadcrumb { padding: 0; min-height: var(--density-control); flex: 1; }
+.headerBreadcrumb .pathRoot { padding-inline-start: 0; }
+
+.newDestination { margin-inline-end: auto; }

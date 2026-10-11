@@ -163,9 +163,14 @@ function ShellFrame({
     return () => setInspection(current => current?.owner === owner ? null : current)
   }, [])
   const dismissInspection = useCallback(() => {
-    if (detailOpener.current?.isConnected) detailOpener.current.focus()
+    const opener = detailOpener.current, owner = inspectionNumber.current
     setInspection(null)
     setRightTool(null); setAuxOpen(false)
+    // A reader can replace Assistant, hiding its header. Restore focus only
+    // after that header is visible again, unless another reader has opened.
+    requestAnimationFrame(() => {
+      if (inspectionNumber.current === owner && opener?.isConnected) opener.focus({ preventScroll: true })
+    })
   }, [])
   const detailsClaim = useCallback(() => {
     setDetailsClaims(count => count + 1)
@@ -241,7 +246,13 @@ function ShellFrame({
   }, [closeConnection])
   const detailsVisible = !connection && inspectorOpen && rightTool === 'details'
   const detailsSlot = useMemo<DetailsSlot>(() => ({ target: detailsTarget, open: detailsVisible, claim: detailsClaim, reveal: revealDetails, inspect, dismissInspection }), [detailsTarget, detailsVisible, detailsClaim, revealDetails, inspect, dismissInspection])
-  const paneTitle = connection ? presentation!.title : rightTool === 'brief' ? msg('Brief') : rightTool === 'details' ? msg('Details') : rightTool === 'activity' ? msg('Activity') : rightTool === 'runtime' ? msg('Runtime details') : rightTool === 'diagnostics' ? msg('Diagnostics') : presentation?.title ?? (packPage ? msg('Assistant') : msg('Details'))
+  const [chatHeading, setChatHeading] = useState<{ owner: symbol; title: string } | null>(null)
+  const requestTitle = useCallback((title: string) => {
+    const owner = Symbol()
+    setChatHeading({ owner, title })
+    return () => setChatHeading(current => current?.owner === owner ? null : current)
+  }, [])
+  const paneTitle = connection ? presentation!.title : rightTool === 'brief' ? msg('Brief') : rightTool === 'details' ? msg('Details') : rightTool === 'activity' ? msg('Activity') : rightTool === 'runtime' ? msg('Runtime details') : rightTool === 'diagnostics' ? msg('Diagnostics') : chatHeading?.title ?? presentation?.title ?? (packPage ? msg('Assistant') : msg('Details'))
   const chooseTool = (next: typeof rightTool) => {
     if (document.activeElement instanceof HTMLElement) inspectionGestureRef.current = document.activeElement
     if (connection) closeConnection(false, false)
@@ -393,6 +404,7 @@ function ShellFrame({
       setTab: setInspectorTab,
       target: inspectorTarget,
       headerTarget: inspectorHeaderTarget,
+      requestTitle,
       claim,
       reveal,
       close: closeInspector,
@@ -400,7 +412,7 @@ function ShellFrame({
       revealMain: covering ? returnToPack : undefined,
       requestWorkingWidth, minimumMainWidth, requestLeadingWidth
     }),
-    [connection, rightTool, inspectorOpen, inspectorTab, inspectorTarget, inspectorHeaderTarget, claim, reveal, closeInspector, requestWorkingWidth, minimumMainWidth, requestLeadingWidth, covering, returnToPack]
+    [connection, rightTool, inspectorOpen, inspectorTab, inspectorTarget, inspectorHeaderTarget, requestTitle, claim, reveal, closeInspector, requestWorkingWidth, minimumMainWidth, requestLeadingWidth, covering, returnToPack]
   )
 
   useEffect(
@@ -470,7 +482,7 @@ function ShellFrame({
               title={paneTitle}
               brief={briefSubject && <BriefPane key={briefSubject.id} subject={briefSubject} headerTarget={briefHeaderTarget} />} publishBriefHeaderTarget={setBriefHeaderTarget}
               workspaceTools={workspaceTools} tool={rightTool ?? 'route'} expanded={overlay} fullWidth={takeover}
-              contextTitle={routePresentation?.contextTitle ?? briefSubject?.title}
+              contextTitle={!rightTool && chatHeading ? undefined : routePresentation?.contextTitle ?? briefSubject?.title}
               returnLabel={route.pathname.startsWith('/jobs/') ? msg('Back to job') : route.pathname.startsWith('/graphs') ? msg('Back to builder') : undefined}
               expandButtonRef={expandButtonRef}
               onExpand={() => setToolExpanded(true)} onReturn={returnToPack}

@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { testQueryClient } from '../testing/harness'
-import { useAssistantSlot } from './useAssistantSlot'
+import { assistantReady, UNBOUND_KEY, useAssistantSlot } from './useAssistantSlot'
 
 afterEach(() => {
   cleanup()
@@ -74,7 +74,7 @@ function renderSlot(value: EffectiveConfig, keyPresent: boolean) {
     status: 200,
     statusText: '',
     text: async () =>
-      JSON.stringify({ present: keyPresent, fingerprint: keyPresent ? 'sk-a…wxyz' : '' })
+      JSON.stringify({ present: keyPresent, bound: keyPresent, fingerprint: keyPresent ? 'sk-a…wxyz' : '' })
   }))
   return render(
     <QueryClientProvider client={testQueryClient()}>
@@ -205,4 +205,16 @@ describe('useAssistantSlot', () => {
       'shell/DescribeIt.tsx'
     ])
   })
+})
+
+it('blocks an unbound stored key and recovers after the server confirms its binding',async()=>{
+ let bound=false
+ vi.stubGlobal('fetch',async()=>Response.json({present:true,bound,fingerprint:'masked',origin:'https://api.example.invalid',configuredOrigin:'https://api.example.invalid',kind:'openai-compatible',configuredKind:'openai-compatible'}))
+ const client=testQueryClient()
+ function Readiness(){const slot=useAssistantSlot();return <output>{String(assistantReady(slot))}|{slot.unusable}|{slot.recovery}</output>}
+ render(<QueryClientProvider client={client}><DeskConfigFixture value={withEndpoint(ENDPOINT)}><Readiness/></DeskConfigFixture></QueryClientProvider>)
+ await waitFor(()=>expect(screen.getByRole('status').textContent).toBe('false|'+UNBOUND_KEY+'|configure'))
+ bound=true
+ await client.invalidateQueries({queryKey:['assistant-key']})
+ await waitFor(()=>expect(screen.getByRole('status').textContent).toBe('true||'))
 })

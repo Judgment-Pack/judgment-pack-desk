@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { recordFileChange } from '../shell/consoleLog'
 import { deskFetch } from '../files/client'
-import { NO_SESSION_MESSAGE, NoSession, sessionBearer, sessionEnded, whenSessionEnds } from './session'
+import { NO_SESSION_MESSAGE, NoSession, discardBody, sessionBearer, sessionEnded, whenSessionEnds } from './session'
 import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
 import { followsTheProject } from './projectChange'
@@ -273,7 +273,8 @@ export function McpProvider({ children }: { children: ReactNode }) {
     const classify = async (cause: Error) => {
       if (disposed) return
       try {
-        await deskFetch('/api/session')
+        const response = await deskFetch('/api/session', { signal: AbortSignal.timeout(10_000) })
+        await discardBody(response)
       } catch (refusal) {
         if (disposed) return
         if (refusal instanceof NoSession) {
@@ -289,6 +290,18 @@ export function McpProvider({ children }: { children: ReactNode }) {
       if (disposed) return
       const client = new Client({ name: 'judgment-pack-desk', version: '0.1.0' }, { capabilities: {} })
       live = client
+      // Every failed attempt has one exit. In particular, a close before
+      // initialize must classify an expired session rather than retry it forever.
+      const fail = (cause: Error) => {
+        if (disposed || live !== client) return
+        live = null
+        void client.close()
+        if (cause instanceof NoSession) failed(cause)
+        else {
+          setConnection(previous => ({...previous, client: null, ...UNKNOWN_CAPABILITIES, status: 'reconnecting', error: cause, retryNow}))
+          void classify(cause)
+        }
+      }
 
       // desk/fileChanged is the chassis' own notification and has no SDK schema.
       // The fallback handler is the SDK's supported way to receive a method it
@@ -316,12 +329,10 @@ export function McpProvider({ children }: { children: ReactNode }) {
       // connection, not a shutdown: the subprocess died, or the chassis was
       // restarted under it.
       client.onclose = () => {
-        if (disposed || live !== client) return
-        live = null
-        scheduleRetry(new SourceError(sourceMessage("the desk connection closed — the chassis may have restarted")))
+        fail(new SourceError(sourceMessage('The connection to Desk was closed.')))
       }
 
-      const reconnecting = attempt > 0
+      const reconnecting = everConnected.current
       // **The bootstrap first, and the socket after it.** The upgrade has to
       // carry the id, and the id comes from the one `POST /api/session` this
       // page makes — memoised, so a reconnect within one page's life resolves
@@ -341,7 +352,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
       sessionBearer()
         .then((id) => {
           if (disposed || live !== client) throw new Disposed()
-          return client.connect(new DeskWebSocketTransport(socketURL(), socketProtocols(id)))
+          return client.connect(new DeskWebSocketTransport(socketURL(), socketProtocols(id)), { timeout: 10_000 })
         })
         .then(async () => {
           if (disposed || live !== client) return
@@ -357,7 +368,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
           let capabilities = UNKNOWN_CAPABILITIES
           let capabilitiesError: Error | null = null
           try {
-            capabilities = readCapabilities(await listAllTools(client))
+            capabilities = readCapabilities(await listAllTools({listTools: params => client.listTools(params, {timeout: 10_000})}))
           } catch (cause) {
             // A failed listing leaves every capability off *and says so*. Off
             // alone would be the page impersonating a connection to an older
@@ -385,19 +396,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
             void client.close()
             return
           }
-          if (disposed || live !== client) return
-          // A rejected connect leaves the Client holding a transport it will
-          // never use; dropping it here stops its onclose from scheduling a
-          // second retry beside this one.
-          live = null
-          void client.close()
-          const error = cause instanceof Error ? cause : new Error(String(cause))
-          // The one failure that never resolves on its own.
-          if (error instanceof NoSession) {
-            failed(error)
-            return
-          }
-          void classify(error)
+          fail(cause instanceof Error ? cause : new Error(String(cause)))
         })
     }
 

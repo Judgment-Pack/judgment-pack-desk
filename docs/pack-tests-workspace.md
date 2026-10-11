@@ -2,9 +2,13 @@
 
 Drafts and saved packs share `TestsContent`. `/packs/:packId/evaluate` and the
 older `/matrix` link both open the same workspace. The pack stays in the main
-area; the existing full-height tool pane alternates between Assistant and
-Details. Switching tools retains the selected case, editor buffer and assistant
-run. There is no second resize implementation.
+area; the main right pane keeps the conversation attached to that pack. Case
+and run details use the shared resizable bottom panel. Switching tabs retains
+the selected case, editor buffer and assistant run. The Tests toolbar groups
+Cases/Run history, search, result filter, Add case and Run tests. Add case offers
+manual entry or AI design; independent expectations stay in Tests and expand
+when a correction needs attention. Optional case Brief and exact results remain
+available after selection. There is no second resize implementation.
 
 ## Cases and results
 
@@ -180,3 +184,10 @@ updates only its unsaved attachment/mappings; explicit Save and Run remain
 necessary. Prior evidence and historical reports retain their original snapshots.
 See [workflow behavior and verification](reviews/desk-workflow-features-20260924.md)
 for storage limits, provenance boundaries and the keyboard quick switcher.
+
+Draft authoring checks now retain version-1 native snapshot-matrix reports with
+exact case inputs, expectations and runtime identity. Tests imports the original
+report and inputs rather than reconstructing them from today's edited suite.
+Draft readiness can recover after identity and current source-proof verification;
+this does not promote a draft rehearsal into a saved-pack run or decision audit
+record. Legacy summaries remain historical until explicitly checked again.

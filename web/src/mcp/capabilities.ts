@@ -20,6 +20,8 @@
  * different thing from knowing it can do none of it — see `known`.
  */
 export interface RuntimeCapabilities {
+  /** Exact supplied pack/matrix rehearsal and runtime identity discovery. */
+  snapshotChecksSupported?: boolean
   /**
    * True once a `tools/list` answer has been read. False means the listing was
    * never made or did not complete, and every flag below is then *unknown*
@@ -183,6 +185,7 @@ export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapab
     argument in (advertisedProperties(tools, tool) ?? {})
   return {
     known: true,
+    snapshotChecksSupported: names.has('experimental_test_cases') && names.has('describe_runtime'),
     rehearsalSupported: takes('experimental_evaluate', 'rehearsal'),
     graphDocumentSupported: names.has('experimental_get_graph'),
     graphInventorySupported: names.has('experimental_list_graphs'),

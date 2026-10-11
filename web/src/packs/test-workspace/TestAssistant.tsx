@@ -1,3 +1,5 @@
+import { ComposerContext } from '../../chat/ComposerContext'
+import { AIConnectionPicker } from '../../assistant/AIConnectionPicker'
 import { selectedAssistant } from '../../assistant/target'
 import { assistantReady } from '../../assistant/useAssistantSlot'
 import { useEffect, useRef, useState } from 'react'
@@ -39,6 +41,7 @@ import { Tooltip } from '../../ui/Tooltip'
 const EMPTY: readonly string[] = []
 export function TestAssistant({
   document,
+  title,
   packDigest,
   suite,
   sources,
@@ -46,11 +49,14 @@ export function TestAssistant({
   onReview,
   reviewing,
   reviewDisabled = false,
+  blocked = false,
+  onRunningChange,
   onCheckpoint,
   onRemoveSource,
   request,
 }: {
   document: string
+  title?: string
   packDigest: string
   suite: TestSuite
   sources: ChatAttachment[]
@@ -59,10 +65,13 @@ export function TestAssistant({
   onReview: (proposal: TestProposal) => void
   reviewing?: string
   reviewDisabled?: boolean
+  blocked?: boolean
+  onRunningChange?: (running: boolean) => void
   onCheckpoint: (record: TestProposal, messages?: NonNullable<TestSuite['messages']>) => Promise<void>
   request: { id: number; text: string; additionsOnly?: boolean; coverageRunId?: string }
 }) {
-  const slot = useAssistantSlot(),
+  const [connectionId, setConnectionId] = useState<string>()
+  const slot = useAssistantSlot(connectionId),
     listing = useFileListing(),
     config = useEffectiveConfig(),
     mcp = useMcp()
@@ -70,9 +79,9 @@ export function TestAssistant({
   const picked = usePickedModel(
     selected?.models ?? EMPTY,
     selected?.model ?? null,
-    listing.data?.root,
+    listing.data?.root, slot.connectionId, 'test-design'
   )
-  const run = useAssistantRun({
+  const run = useAssistantRun({ target: slot,
     purpose: 'test-design',
     endpoint: slot.endpoint
       ? { ...slot.endpoint, tools: [] }
@@ -91,6 +100,7 @@ export function TestAssistant({
   const active = useRef<AbortController | null>(null),
     transcript = useRef<HTMLDivElement>(null),
     follow = useRef(true)
+  useEffect(() => { onRunningChange?.(running); return () => onRunningChange?.(false) }, [running, onRunningChange])
   const live = useRef({ packDigest, suite })
   live.current = { packDigest, suite }
   useEffect(() => {
@@ -113,7 +123,7 @@ export function TestAssistant({
     return (await mcp.client.callTool({ name, arguments: args })) as McpToolResult
   }
   async function send() {
-    if (active.current || !input.trim() || !packDigest) return
+    if (blocked || active.current || !input.trim() || !packDigest || !assistantReady(slot) || !picked.model) return
     const controller = new AbortController()
     active.current = controller
     setRunning(true)
@@ -355,6 +365,7 @@ export function TestAssistant({
         {current && !owned.has(current.id) && !running && supporting(current)}
       </div>
       <div className={chatStyles.composerArea}>
+        <ComposerContext title={title || msg('Current pack')} detail={msg('Test design · Review required')}/>
         <div className={chatStyles.composerStatus}>
           {phase && <RunStatus running={running}>{phase}</RunStatus>}
         </div>
@@ -416,6 +427,7 @@ export function TestAssistant({
                 <IconPlus />
               </Button>
             </Tooltip>
+            <AIConnectionPicker value={slot.connectionId} onValueChange={setConnectionId} disabled={running}/>
             <div className={chatStyles.model}>
               <Select
                 id="tests-model"
@@ -447,7 +459,7 @@ export function TestAssistant({
                   size="icon"
                   type="submit"
                   aria-label={msg('Send')}
-                  disabled={!input.trim() || !packDigest || !assistantReady(slot) || !picked.model}
+                  disabled={blocked || !input.trim() || !packDigest || !assistantReady(slot) || !picked.model}
                 >
                   <IconSend />
                 </Button>
@@ -455,9 +467,10 @@ export function TestAssistant({
             )}
           </div>
         </form>
+        {blocked && <p className={styles.muted}>{msg('Another assistant task is running. Finish or stop it before designing tests.')}</p>}
         {!assistantReady(slot) && (
           <p className={styles.muted}>
-            {msg('Configure an assistant in Admin to design tests with AI. Manual tests remain available.')}
+            {msg(slot.unusable ?? 'Configure an assistant in Admin to design tests with AI. Manual tests remain available.')}
           </p>
         )}
       </div>

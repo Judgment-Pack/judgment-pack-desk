@@ -118,7 +118,7 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
   useEffect(()=>{if(dirty&&stored)setDirty(false)},[dirty,stored])
   const canReadSchema=config.assistant.agent?.tools.includes('get_schema')===true
   const executionAgent=applyAssistantProfile(config.assistant,assistantProfile).agent
-  const test=useAssistantRun({endpoint:null,agent:executionAgent?{...executionAgent,tools:canReadSchema?['get_schema']:[]}:undefined,engine:'codex',model:executionAgent?.model??'',thinking:'off',purpose:'test-design'})
+  const test=useAssistantRun({target:scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:{},endpoint:null,agent:executionAgent?{...executionAgent,tools:canReadSchema?['get_schema']:[]}:undefined,engine:'codex',model:executionAgent?.model??'',thinking:'off',purpose:'test-design'})
   const tested=test.status==='finished' && !test.failure && !test.events.some(event=>event.type==='error') && test.events.some(event=>event.type==='tool_result'&&event.name==='get_schema'&&!event.isError)
   const testRunning=test.status==='running'
   const save=()=>{

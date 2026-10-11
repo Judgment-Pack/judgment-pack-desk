@@ -1,5 +1,5 @@
 import { sourceMessage } from '../i18n/source'
-import { DropdownMenu } from 'radix-ui'
+import { Menu as DropdownMenu } from '../ui/Menu'
 import { IconMore } from '../shell/icons'
 import { Disclosure } from '../ui/Disclosure'
 import { PREFILLED_URL } from './endpointDraft'
@@ -69,10 +69,10 @@ export function AIConnectionsSettings({unavailable,onDirtyChange}:{unavailable:b
    <div className={styles.actions}>
     <Button variant="quiet" disabled={busy} onClick={()=>setSelected(c.id)}>{msg('Manage')}</Button>
     <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="quiet" size="icon" disabled={busy} aria-label={msg('Connection actions: {{name}}',{name:c.name})}><IconMore/></Button></DropdownMenu.Trigger>
-     <DropdownMenu.Portal><DropdownMenu.Content className="desk-menu" align="end" sideOffset={4}>
-      <DropdownMenu.Item className="desk-menu-item" onSelect={()=>{setRename(c);setName(c.name);setSnapshot(registry);save.reset()}}>{msg('Rename')}</DropdownMenu.Item>
-      {c.enabled&&registry.defaultConnection!==c.id&&<DropdownMenu.Item className="desk-menu-item" onSelect={()=>save.mutate({base:registry,connections:registry.connections,defaultConnection:c.id})}>{msg('Set default')}</DropdownMenu.Item>}
-      <DropdownMenu.Item className="desk-menu-item" onSelect={()=>save.mutate({base:registry,connections:registry.connections.map(row=>row.id===c.id?{...row,enabled:!row.enabled}:row),defaultConnection:registry.defaultConnection===c.id?'':registry.defaultConnection})}>{msg(c.enabled?'Disable':'Enable')}</DropdownMenu.Item>
+     <DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={4}>
+      <DropdownMenu.Item onSelect={()=>{setRename(c);setName(c.name);setSnapshot(registry);save.reset()}}>{msg('Rename')}</DropdownMenu.Item>
+      {c.enabled&&registry.defaultConnection!==c.id&&<DropdownMenu.Item onSelect={()=>save.mutate({base:registry,connections:registry.connections,defaultConnection:c.id})}>{msg('Set default')}</DropdownMenu.Item>}
+      <DropdownMenu.Item onSelect={()=>save.mutate({base:registry,connections:registry.connections.map(row=>row.id===c.id?{...row,enabled:!row.enabled}:row),defaultConnection:registry.defaultConnection===c.id?'':registry.defaultConnection})}>{msg(c.enabled?'Disable':'Enable')}</DropdownMenu.Item>
      </DropdownMenu.Content></DropdownMenu.Portal>
     </DropdownMenu.Root>
    </div>

@@ -10,6 +10,9 @@
  * The engine here ignores the signal and never settles. Nothing but the hook
  * can end that session, so what is asserted is the hook, alone.
  */
+import { DeskConfigFixture } from '../config/DeskConfigProvider'
+import { effectiveConfig } from '../config/deskConfig'
+import type { AIRegistry } from './aiConnections'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { scriptedWebSocket } from './conformance/scriptedServer'
@@ -357,4 +360,20 @@ it('graph authoring keeps the ToolGate ceiling and adds only the two read-only h
   expect(handed?.tools.map(tool => tool.name).sort()).toEqual([...scenario.scenarioTools].sort())
   await expect(handed!.callTool('write_file', {})).rejects.toThrow()
   await expect(handed!.callTool('packs_lock', {})).rejects.toThrow()
+})
+
+it('pins the provided connection and revision instead of resolving the desk default again',async()=>{
+ engine=records
+ const calls:Headers[]=[]
+ vi.stubGlobal('fetch',async(_url:unknown,init?:RequestInit)=>{calls.push(new Headers(init?.headers));return Response.json({})})
+ const other={id:'ai-222222222222222222222222',name:'Default',revision:'b'.repeat(64),enabled:true,assistant:{engine:'vercel' as const,thinking:'off' as const,endpoint:ENDPOINT}}
+ const registry:AIRegistry={version:1,defaultConnection:other.id,connections:[other],path:'registry',sha256:'c'.repeat(64)}
+ const effective={...effectiveConfig(undefined),aiConnections:{loading:false,data:registry}}
+ const target={connectionId:'ai-111111111111111111111111',connectionRevision:'a'.repeat(64)}
+ const {result}=renderHook(()=>useAssistantRun({target,purpose:'brief',endpoint:ENDPOINT,model:ENDPOINT.model,engine:'vercel',thinking:'off'}),{wrapper:({children})=><DeskConfigFixture value={effective}>{children}</DeskConfigFixture>})
+ act(()=>result.current.start('Make a brief'))
+ await waitFor(()=>expect(handed).not.toBeNull())
+ await handed!.model.call('chat/completions',{method:'POST',body:'{}'})
+ expect(calls.at(-1)?.get('X-Assistant-Connection')).toBe(target.connectionId)
+ expect(calls.at(-1)?.get('X-Assistant-Revision')).toBe(target.connectionRevision)
 })

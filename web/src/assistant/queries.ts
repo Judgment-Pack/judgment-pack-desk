@@ -37,16 +37,17 @@ export const ASSISTANT_KEY_QUERY_KEY = ['assistant-key'] as const
 /**
  * Whether a key is stored, and enough of it to recognise.
  *
- * `staleTime: Infinity` with no background refetch: the answer changes only
- * when this page changes it, and the two mutations below write the result they
- * were given straight into the cache rather than asking again.
+ * Refresh metadata while the page is active: another tab can replace or remove
+ * a key without changing the connection revision. Mutations update it immediately.
  */
 export function useAssistantKey(enabled = true, connectionId?:string, revision?:string): UseQueryResult<AssistantKeyState, Error> {
   const scope=useAIConnectionScope();const id=connectionId??scope?.connection.id,rev=revision??scope?.connection.revision
   return useQuery({
     queryKey: [...ASSISTANT_KEY_QUERY_KEY,...(id?[id,rev]:[])],
     enabled,
-    staleTime: Infinity,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
     retry: false,
     queryFn: ({ signal }) => readAssistantKey(signal,id,rev)
   })

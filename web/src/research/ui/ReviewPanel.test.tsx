@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { isValidElement, type ReactElement } from 'react'
+import { type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChatAttachment } from '../../chat/store'
 import { SourceReader } from '../../documents/SourceReader'
@@ -73,17 +73,13 @@ describe('the review panel on a conversation draft', () => {
     expect((screen.getByRole('button', { name: /Review and create/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('opens a traced page citation in the source reader, at its quote', () => {
+  it('opens Sources from Review without displacing chat', () => {
     const read = vi.fn()
-    const select = vi.fn()
-    render(<DraftTabs basis={BASIS} mode="draft" state={settledDraft([traced])} sources={[]} selection={null} onSelect={select} onCreate={vi.fn()} documents={[FILE]} onRead={read} />)
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Review' }), { button: 0 })
-    fireEvent.click(screen.getByRole('button', { name: /^eligibility.*Page 2/ }))
-    expect(select).not.toHaveBeenCalled()
-    expect(read).toHaveBeenCalledOnce()
-    const opened = read.mock.calls[0]![0] as ReactElement<{ reference: unknown; citation: unknown; name: string }>
-    expect(isValidElement(opened) && opened.type).toBe(SourceReader)
-    expect(opened.props).toMatchObject({ name: 'Eligibility', reference: FILE.document, citation: { page: 2, quote: 'At least 1,560 hours.' } })
+    render(<DraftTabs basis={BASIS} mode="draft" state={settledDraft([traced])} sources={[]} selection={null} onSelect={vi.fn()} onCreate={vi.fn()} documents={[FILE]} onRead={read} />)
+    fireEvent.mouseDown(screen.getByRole('tab', {name:'Review'}), {button:0})
+    fireEvent.click(screen.getByRole('button',{name:'Review sources'}))
+    expect(screen.getByRole('tab',{name:'Sources (1)',selected:true})).toBeTruthy()
+    expect(read).not.toHaveBeenCalled()
   })
 
   it('offers a saved draft without cases the step that completes it, beside the reason', () => {
@@ -104,12 +100,12 @@ describe('the review panel on a conversation draft', () => {
     }
   })
 
-  it('shows a statement-grounded case in the person\'s words, beside readiness, where Tests is the pack workspace', () => {
+  it('shows a statement-grounded case in the person\'s words, in Tests, beside the pack test workspace', () => {
     const issue = { id: 'missing-hours', original: { ...CASE, id: 'missing-hours', facts: {}, expectationSource: 'you-1' }, message: 'reasons is empty' }
     const select = vi.fn()
     render(<DraftTabs basis={BASIS} mode="draft" testsPanel={<p>Pack tests</p>} state={settledDraft([], { expectationIssues: [issue] })} sources={[]} selection={null} onSelect={select} onCreate={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Review expectations' }))
-    expect(screen.getByRole('tab', { name: 'Review', selected: true })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /Tests/, selected: true })).toBeTruthy()
     expect(screen.getAllByText('Your message 1').length).toBe(2)
     expect(screen.getAllByText(SAID).length).toBe(2)
     expect(screen.getByRole('heading', { name: 'Blocked expectations' })).toBeTruthy()
@@ -125,7 +121,8 @@ describe('the review panel on a conversation draft', () => {
     const state = settledDraft([traced], { cases: [pageCase] })
     state.candidates = [{ ...state.candidates[0]!, check: { ...state.candidates[0]!.check!, cases: [{ id: 'quoted', passed: true, expected: {}, actual: {} }] } }]
     render(<DraftTabs basis={BASIS} mode="web-research" testsPanel={<p>Pack tests</p>} state={state} sources={[]} selection={null} onSelect={vi.fn()} onCreate={vi.fn()} documents={[FILE]} onRead={read} />)
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Review' }), { button: 0 })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Tests/ }), { button: 0 })
+    fireEvent.click(screen.getByText('Independent expectations',{selector:'summary span'}))
     fireEvent.click(screen.getByRole('button', { name: 'Page 2' }))
     const opened = read.mock.calls[0]![0] as ReactElement<{ citation: unknown }>
     expect(opened.type).toBe(SourceReader)

@@ -213,7 +213,7 @@ function serve(
     if (url.startsWith('/api/assistant/key')) {
       if (options.keyReply) return options.keyReply()
       const present = options.keyPresent ?? true
-      return ok({ present, fingerprint: present ? 'sk-a…wxyz' : '' })
+      return ok({ present, bound: present, fingerprint: present ? 'sk-a…wxyz' : '' })
     }
     if (url.includes('/api/files')) {
       return ok({ root: '/p', files: files.map((path) => ({ path, bytes: 1, sha256: 'aa' })) })
@@ -416,6 +416,7 @@ function drawWith(
       act(() => {
         queryClient.setQueryData(ASSISTANT_KEY_QUERY_KEY, {
           present,
+          bound: present,
           fingerprint: present ? 'sk-a…wxyz' : ''
         })
       })
@@ -564,8 +565,9 @@ describe('the section before a run', () => {
   it('offers no picker where nothing is enabled', async () => {
     serve()
     draw({ endpoint: { ...ENDPOINT, model: null, models: [] } })
-    await openIt()
-    await screen.findByRole('button', { name: 'Propose' })
+    await screen.findByText(/no model is chosen for it/)
+    expect(screen.queryByText('Describe it instead')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Propose' })).toBeNull()
     expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull()
   })
 })

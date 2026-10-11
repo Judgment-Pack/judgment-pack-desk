@@ -2,8 +2,8 @@
   z-index: var(--z-tooltip);
   width: max-content;
   max-width: min(20rem, var(--radix-tooltip-content-available-width));
-  max-height: var(--radix-tooltip-content-available-height);
-  overflow: hidden;
+  /* Keep intrinsic height so collision detection can flip multiline hints.
+     Clamping to available height makes clipped text appear to fit. */
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

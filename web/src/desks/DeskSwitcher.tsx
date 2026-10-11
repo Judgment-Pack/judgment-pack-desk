@@ -1,7 +1,7 @@
 import { useAuthorDirty } from '../shell/authorBridge'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { DropdownMenu } from 'radix-ui'
+import { Menu as DropdownMenu } from '../ui/Menu'
 import { useRef, useState, type RefObject } from 'react'
 import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -10,7 +10,7 @@ import { deskFetch } from '../files/client'
 import { useFileListing } from '../files/queries'
 import { msg, systemMessage, useLocale } from '../i18n'
 import { sourceMessage } from '../i18n/source'
-import { IconCheck, IconFolder, IconPlus } from '../shell/icons'
+import { IconFolder, IconPlus } from '../shell/icons'
 import { useConfirmDeskExit, useConfirmDiscard, useDeskTitle, useHasUnsavedChanges } from '../shell/UnsavedChanges'
 import { Button } from '../ui/Button'
 import { Dialog, DialogActions } from '../ui/Dialog'
@@ -70,7 +70,7 @@ export function DeskSwitcher() {
             <span className="desk-chip-name">{label}</span>{dirty&&<span className="desk-dirty" aria-label={msg('unsaved changes')} role="img"/>}
           </DropdownMenu.Trigger>
         </Tooltip>
-        <DropdownMenu.Portal><DropdownMenu.Content className="desk-menu desk-switcher-menu" align="start" alignOffset={-32} sideOffset={6} collisionPadding={12}>
+        <DropdownMenu.Portal><DropdownMenu.Content className="desk-switcher-menu" align="start" alignOffset={-32} sideOffset={6} collisionPadding={12}>
           {management.items}
         </DropdownMenu.Content></DropdownMenu.Portal>
       </DropdownMenu.Root>
@@ -119,18 +119,17 @@ function useDeskManagement(opener: RefObject<HTMLButtonElement | null>) {
   const desks = [...(directory.data?.desks ?? [])].sort((a, b) =>
     Number(b.id === activeDeskId) - Number(a.id === activeDeskId) || a.name.localeCompare(b.name))
   const items = <>
-        <DropdownMenu.Label className="desk-menu-note">{msg('Switch desk')}</DropdownMenu.Label>
+        <DropdownMenu.Label>{msg('Switch desk')}</DropdownMenu.Label>
         <DropdownMenu.RadioGroup value={activeDeskId} onValueChange={id=>void switchTo(id)} className="desk-switcher-list">
-          {desks.map(desk => <DropdownMenu.RadioItem className="desk-menu-item desk-switcher-choice" key={desk.id} value={desk.id}>
-            <span className="desk-switcher-name">{desk.name}</span>
-            <span className="desk-switcher-check"><DropdownMenu.ItemIndicator><IconCheck /></DropdownMenu.ItemIndicator></span>
+          {desks.map(desk => <DropdownMenu.RadioItem key={desk.id} value={desk.id}>
+            {desk.name}
           </DropdownMenu.RadioItem>)}
         </DropdownMenu.RadioGroup>
-        {!directory.data&&activeDeskId&&<DropdownMenu.Item className="desk-menu-item" onSelect={()=>void switchTo('')}>{msg('Open startup desk')}</DropdownMenu.Item>}
-        <DropdownMenu.Separator className="desk-switcher-separator" />
-        <DropdownMenu.Item asChild className="desk-menu-item"><Link to="/author"><IconFolder />{msg('Project files')}</Link></DropdownMenu.Item>
-        <DropdownMenu.Item className="desk-menu-item" disabled={!directory.data} onSelect={()=>{setError('');setCreating(true)}}><IconPlus />{msg('Create desk…')}</DropdownMenu.Item>
-        {directory.error&&<DropdownMenu.Label className="desk-menu-note">{msg('Desk management is unavailable. Restart Desk after updating.')}</DropdownMenu.Label>}
+        {!directory.data&&activeDeskId&&<DropdownMenu.Item onSelect={()=>void switchTo('')}>{msg('Open startup desk')}</DropdownMenu.Item>}
+        <DropdownMenu.Separator/>
+        <DropdownMenu.Item asChild icon={<IconFolder/>}><Link to="/author">{msg('Project files')}</Link></DropdownMenu.Item>
+        <DropdownMenu.Item icon={<IconPlus/>} disabled={!directory.data} onSelect={()=>{setError('');setCreating(true)}}>{msg('Create desk…')}</DropdownMenu.Item>
+        {directory.error&&<DropdownMenu.Label>{msg('Desk management is unavailable. Restart Desk after updating.')}</DropdownMenu.Label>}
     </>
   const dialogs = <>
     <Dialog open={creating} onOpenChange={open=>{if(!open)void close()}} openerRef={opener} title={msg('Create desk')} description={msg('Keep packs, sources, conversations and jobs together in one desk folder.')}

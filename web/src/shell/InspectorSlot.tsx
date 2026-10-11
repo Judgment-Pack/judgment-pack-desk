@@ -51,6 +51,7 @@ export interface InspectorSlot {
   target: HTMLElement | null
   /** Optional target for controls sharing the pane's existing title bar. */
   headerTarget?: HTMLElement | null
+  requestTitle?: (title: string) => () => void
   /**
    * Say that something is published into the slot, for as long as it is.
    *

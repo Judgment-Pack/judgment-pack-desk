@@ -89,11 +89,11 @@ export function GraphComposition({content, onChange, packs, disabled = false, to
         <SegmentedControl label={msg('Composition view')} value={view === 'list' ? 'list' : 'diagram'} onValueChange={setView} segments={[{value: 'diagram', label: msg('Diagram')}, {value: 'list', label: msg('List')}]}/>
         {tools}
         <Button variant="quiet" disabled={!editor} aria-pressed={editorOpen} onClick={() => setEditorOpen(!editorOpen)}>{msg('Editor')}</Button>
-        <Button disabled={disabled || !doc || nodes.length < 2} onClick={connect}>{msg('Connect packs')}</Button>
+        {selection.node && <Button disabled={disabled || !doc || nodes.length < 2} onClick={connect}>{msg('Connect packs')}</Button>}
         <Button disabled={disabled || !doc || !packs.length || nodes.length >= 64} onClick={event => {addOpener.current = event.currentTarget; setAdding(true)}}>{msg('Add pack')}</Button>
       </div>
       <div className={styles.compositionBody}>
-        {!doc ? <p role="status">{msg('Use Source to repair this document before editing its composition.')}</p> : !nodes.length ? <div className={styles.empty}>
+        {!doc ? <p role="status">{msg('Use Edit JSON in Graph options to repair this document before editing its composition.')}</p> : !nodes.length ? <div className={styles.empty}>
           <h2>{msg('Compose a decision from packs')}</h2><p>{msg('Add a pack, connect its result to another pack, and choose the final decision.')}</p>
           <Button disabled={disabled || !packs.length} onClick={event => {addOpener.current = event.currentTarget; setAdding(true)}}>{msg('Add first pack')}</Button>
           {!packs.length && <p>{msg('Create a pack before composing a graph.')}</p>}

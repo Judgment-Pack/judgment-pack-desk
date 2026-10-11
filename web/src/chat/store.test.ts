@@ -263,3 +263,35 @@ it('refuses a saved chat whose AI connection is not a connection id, without rew
   await invalid.store.load();expect(invalid.store.getSnapshot().ready,aiConnection).toBe(false);expect(invalid.write).not.toHaveBeenCalled()
  }
 })
+
+it('saves model-free checks from an unsent draft workspace without creating a conversation',async()=>{
+  const io=memoryDraftPersistence('/project'),base=setup();await base.store.load()
+  const original=base.store.create(),state={...INITIAL_STATE,phase:'review' as const,status:'needs-input' as const,candidates:[{revision:1,text:'{"title":"Policy"}',document:{title:'Policy'},digest:'a'.repeat(64),producedBy:'conversation' as const}]}
+  base.store.report(original.id,{state,sources:[],blocked:'',model:'',researchConfigured:false,run:null,ledger:null})
+  const artifact=base.store.getSnapshot().packDrafts[0]!
+  await io.write({version:1,drafts:[artifact],deleted:[]},'absent')
+  const history={read:async()=>({project:'/project',sha256:'absent',content:{version:1,chats:[]}}),write:vi.fn(async(content:unknown)=>({project:'/project',sha256:'saved',content}))}
+  const store=new ChatStore('/project',history,io);stores.push(store);await store.load()
+  const chat=store.startChat(undefined,undefined,false,artifact.id)
+  const binding={state:{...state,restored:true},sources:[],blocked:'No model connected',model:'',researchConfigured:false,run:{running:false,stop:vi.fn()},ledger:null} as unknown as ResearchRunBinding
+  store.report(chat.id,binding)
+  const action=vi.fn();expect(store.perform(chat.id,action,false)).toBe(true);expect(action).toHaveBeenCalledOnce()
+  store.report(chat.id,{...binding,state:{...state,restored:true,status:'running',checkRun:'running'}})
+  expect(await store.flush()).toBe(true)
+  const interrupted=new ChatStore('/project',history,io);stores.push(interrupted);await interrupted.load()
+  expect(interrupted.getSnapshot().packDrafts[0]?.checkpoint.state.checkRun).toBe('running')
+  const check={documentDigest:'a'.repeat(64),valid:true,diagnostics:[],cases:[]}
+  store.report(chat.id,{...binding,state:{...state,restored:false,checkRun:'complete',candidates:[{...state.candidates[0]!,check}]}})
+  expect(await store.flush()).toBe(true)
+  expect(store.getSnapshot().chats).toEqual([])
+  const next=new ChatStore('/project',history,io);stores.push(next);await next.load()
+  expect(next.getSnapshot().chats).toEqual([])
+  expect(next.getSnapshot().packDrafts[0]?.checkpoint.state.candidates[0]?.previousCheck).toMatchObject(check)
+  expect(next.getSnapshot().packDrafts[0]?.checkpoint.state.checkRun).toBe('complete')
+  // A second workspace still holding the previous generation cannot check over it.
+  const stale=store.startChat(undefined,undefined,true,artifact.id)
+  store.report(stale.id,binding)
+  store.update(stale.id,{draftGeneration:artifact.generation})
+  const before=action.mock.calls.length
+  expect(store.perform(stale.id,action,false)).toBe(false);expect(action).toHaveBeenCalledTimes(before)
+})

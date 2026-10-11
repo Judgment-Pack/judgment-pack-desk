@@ -112,6 +112,6 @@ describe('what this page will not say', () => {
     }
     // What it does say is one sentence about the project and one about where
     // the set is reviewed and updated.
-    expect(words).toContain('Review and lock, on Packs, shows what the runtime finds and updates it.')
+    expect(words).toContain('Review and lock, in Admin → Decision safeguards, shows what the runtime finds and updates it.')
   })
 })

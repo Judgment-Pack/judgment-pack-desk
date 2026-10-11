@@ -24,7 +24,17 @@ func (s *Server) changeBrief(root *os.Root, name string, current, request []byte
 	if err := json.Unmarshal(current, &d); err != nil {
 		return nil, err
 	}
-	if c.Action == "begin" {
+	if c.Action == "begin" && definitionBriefSubject(c.Subject) {
+		snapshot, err := s.definitionBriefSnapshot(root, name, c.Subject)
+		if err != nil {
+			return nil, err
+		}
+		if !sameBriefJSON(c.Snapshot, snapshot) {
+			return nil, errors.New("The saved inputs changed. Reload the brief before generating it.")
+		}
+		// Freeze server-read bytes, never client-asserted readiness or test results.
+		c.Snapshot = snapshot
+	} else if c.Action == "begin" {
 		if c.Owner == "" || c.CaseID == "" || c.Subject != "case:"+c.Owner+":"+c.CaseID {
 			return nil, errors.New("Choose a saved test case.")
 		}

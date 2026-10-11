@@ -75,6 +75,7 @@ export function ProjectGates() {
                 {upgrade.signingKey?.state === 'offered' && <div><ButtonLink to="/packs/_upgrade">{msg('Review signing this project’s decisions')}</ButtonLink></div>}
                 {upgrade.signingKey?.state === 'unavailable' && <p className={styles.quiet}>{systemMessage(upgrade.signingKey.reason)}</p>}
               </>}
+      <div><ButtonLink to="/packs/_review">{msg('Review and lock')}</ButtonLink></div>
       <p className={styles.quiet}><Link to="/help#gates">{msg('What each gate holds, and whom it binds')}</Link></p>
     </div>
   </SettingsSection>

@@ -1,3 +1,4 @@
+import { usePackChatContext } from './packChatContext'
 import { msg, useLocale } from '../i18n'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
@@ -15,8 +16,8 @@ import { useChats } from './ChatProvider'
 import { assistantChatHref } from './navigation'
 import styles from './ChatWorkspace.module.css'
 
-export function PackAssistant({ packId, path, digest, draft, editing, identity, busy, diagnostics, onEdit }: {
-  packId: string; path?: string; digest?: string; draft?: string; editing: boolean; identity?: BufferIdentity; busy: () => string; diagnostics: { count: number; bytes: string } | undefined; onEdit?: () => void
+export function PackAssistant({ packId, title = packId, path, digest, draft, editing, identity, busy, diagnostics, onEdit }: {
+  packId: string; title?: string; path?: string; digest?: string; draft?: string; editing: boolean; identity?: BufferIdentity; busy: () => string; diagnostics: { count: number; bytes: string } | undefined; onEdit?: () => void
 }) {
   useLocale()
   const { store, ready, chats, drafts, bindings } = useChats()
@@ -25,6 +26,7 @@ export function PackAssistant({ packId, path, digest, draft, editing, identity, 
   const location = useLocation()
   const slot = useInspectorControls()
   const session = useEditing()
+  const context = usePackChatContext(packId, draft, title)
   const explicit = params.get('chat')
   const available = [...chats, ...drafts]
   const chat = (explicit ? available.find(chat => chat.id === explicit && chat.pack?.id === packId) : undefined)
@@ -67,5 +69,5 @@ export function PackAssistant({ packId, path, digest, draft, editing, identity, 
     }}>{accepted === candidate?.digest ? msg("Applied to draft") : msg("Apply to draft")}</Button>
     <p className={styles.caption}>{msg("Review the changes in the main pane, then use Save. Applying a proposal is one undo step.")}</p>
   </Disclosure>
-  return <ChatPanel placement="pane" key={chat.id} chat={chat} proposalActions={actions} context={draft === undefined ? undefined : { text: draft, beforeSend: () => { if (baseline?.chatId === chat.id && baseline.bytes === draft && (unchanged || baseline.fromView && !editing)) return; setBaseline({ chatId: chat.id, bytes: draft, revision: candidate?.revision ?? 0, identity, fromView: !editing, path }); setAccepted('') } }} locked={Boolean(busy())} />
+  return <ChatPanel placement="pane" key={chat.id} chat={chat} proposalActions={actions} context={draft === undefined ? undefined : { ...context!, text: draft, beforeSend: () => { if (baseline?.chatId === chat.id && baseline.bytes === draft && (unchanged || baseline.fromView && !editing)) return; setBaseline({ chatId: chat.id, bytes: draft, revision: candidate?.revision ?? 0, identity, fromView: !editing, path }); setAccepted('') } }} locked={Boolean(busy())} />
 }

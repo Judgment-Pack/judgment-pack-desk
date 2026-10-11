@@ -79,7 +79,7 @@ describe('the packs pane', () => {
     draw(packs(['intake-triage', 'vendor-onboarding']))
     const link = await screen.findByRole('link', { name: /intake-triage/ })
     expect(link.getAttribute('href')).toBe('/packs/intake-triage')
-    expect(link.textContent).toContain('v1.0.0')
+    expect(link.textContent).toContain('1.0.0')
     expect(screen.getByRole('link', { name: /vendor-onboarding/ })).toBeTruthy()
   })
 
@@ -151,11 +151,11 @@ describe('the packs pane', () => {
     expect(document.activeElement).toBe(row('a-pack'))
   })
 
-  it('reaches the last row of a windowed list, and focuses it there', async () => {
+  it('reaches the last row of a windowed page, and focuses it there', async () => {
     // **The integrated path, over a list that really is windowed.** `moveFocus`
     // and `scrollRowIntoView` each had a test and the thing between them did
     // not: the destination is not rendered when End is pressed, so it is
-    // scrolled to and focused in the render that brings it in. With 300 rows in
+    // scrolled to and focused in the render that brings it in. With a 50-row page in
     // a 400px viewport that is the ordinary case, and under jsdom's zero
     // heights it never happens at all.
     const many = Array.from({ length: 300 }, (_, index) => `pack-${String(index).padStart(3, '0')}`)
@@ -165,7 +165,7 @@ describe('the packs pane', () => {
     // A screenful and its overscan, not three hundred: this is the arithmetic
     // and not the fallback.
     await waitFor(() => expect(packLinks().length).toBeLessThan(40))
-    expect(screen.queryByRole('link', { name: /pack-299/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /pack-049/ })).toBeNull()
 
     const first = screen.getByRole('link', { name: /pack-000/ })
     first.focus()
@@ -174,7 +174,7 @@ describe('the packs pane', () => {
     // rows are all inside `document.body` makes a text match true the moment
     // the destination is *rendered*, whether or not anything focused it.
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('link', { name: /pack-299/ }))
+      expect(document.activeElement).toBe(screen.getByRole('link', { name: /pack-049/ }))
     )
 
     fireEvent.keyDown(document.activeElement!, { key: 'Home' })
@@ -194,9 +194,9 @@ describe('the packs pane', () => {
     expect(screen.queryByText('No packs or graphs yet')).toBeNull()
   })
 
-  it('says a project declares none where the listing said so', async () => {
+  it('shows no matches when an empty listing is restricted by type', async () => {
     draw(packs([]), '/packs?type=pack')
-    await screen.findByText('No packs or graphs yet')
+    await screen.findByText('No matching packs or graphs')
   })
 
   it('claims no version for a pack whose document the listing could not read', async () => {
@@ -225,13 +225,13 @@ describe('the packs pane', () => {
     expect(row.textContent).not.toContain('v')
     // The runtime's own sentence, quoted rather than summarised.
     expect(row.textContent).toContain('not acceptable JSON')
-    expect(screen.getByRole('link', { name: /good-pack/ }).textContent).toContain('v1.0.0')
+    expect(screen.getByRole('link', { name: /good-pack/ }).textContent).toContain('1.0.0')
   })
 
   it('is a named navigation, because it is a list of navigations', async () => {
     draw(packs(['a-pack']))
     await screen.findByRole('link', { name: /a-pack/ })
-    expect(screen.getByRole('navigation', { name: 'Packs & graphs' })).toBeTruthy()
+    expect(screen.getByRole('navigation', { name: 'Library' })).toBeTruthy()
   })
 })
 
@@ -283,6 +283,7 @@ describe('a listing that failed after it had succeeded', () => {
     // The stale rows and their preview actions are unavailable after refusal.
     expect(packLinks()).toHaveLength(0)
     expect(screen.queryByRole('button', { name: /Preview pack/ })).toBeNull()
+    expect(document.querySelector('[data-collection-footer]')).toBeNull()
   })
 
   it('comes back when the same listing answers again', async () => {
@@ -343,7 +344,8 @@ it('browses packs and graphs with the same id without confusing their links or r
   draw(stub, '/packs', true)
   await waitFor(() => expect(document.querySelector('a[href="/graphs/same"]')).toBeTruthy())
   expect(document.querySelector('a[href="/packs/same"]')).toBeTruthy()
-  fireEvent.click(screen.getByRole('radio', {name:'Graphs'}))
+  fireEvent.keyDown(screen.getByRole('button', {name:'Item type'}), {key:'Enter'})
+  fireEvent.click(await screen.findByRole('menuitemradio', {name:'Graphs'}))
   expect(document.querySelector('a[href="/packs/same"]')).toBeNull()
   expect(document.querySelector('a[href="/graphs/same"]')).toBeTruthy()
   expect(stub.calls.map(call=>call.name).sort()).toEqual(['experimental_list_graphs','list_packs'])
@@ -351,8 +353,11 @@ it('browses packs and graphs with the same id without confusing their links or r
 it('composes only explicitly selected saved packs', async () => {
   draw(packs(['alpha','beta']))
   fireEvent.click(await screen.findByRole('checkbox', {name:'Select alpha'}))
-  const link=screen.getByRole('link', {name:/Compose graph/})
+  fireEvent.keyDown(screen.getByRole('button',{name:'1 selected'}),{key:'Enter'})
+  const link=await screen.findByRole('menuitem', {name:'Compose graph'})
   expect(link.getAttribute('href')).toBe('/graphs?view=compose&pack=alpha')
+  fireEvent.keyDown(screen.getByRole('menu'),{key:'Escape'})
+  await waitFor(()=>expect(screen.queryByRole('menu')).toBeNull())
   fireEvent.click(screen.getByRole('button', {name:'Clear selection'}))
   expect(screen.queryByRole('link', {name:/Compose graph/})).toBeNull()
 })
@@ -394,4 +399,52 @@ it('withdraws saved graph rows after a refresh fails without claiming an empty p
   await screen.findByText(/graph inventory unavailable/)
   expect(document.querySelector('a[href="/graphs/flow"]')).toBeNull()
   expect(screen.queryByText('No packs or graphs yet')).toBeNull()
+})
+
+
+it('moves collection totals to the footer and omits page controls for a small list', async () => {
+  draw(packs(['alpha', 'beta', 'gamma']))
+  await screen.findByRole('link', { name: /alpha/ })
+  expect(document.querySelector('[data-collection-location]')?.textContent).toBe('Library')
+  expect(document.querySelector('[data-collection-footer]')?.textContent).toBe('3 items')
+  expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'beta' } })
+  expect(document.querySelector('[data-collection-footer]')?.textContent).toBe('1 item')
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'missing' } })
+  expect(document.querySelector('[data-collection-footer]')?.textContent).toBe('0 items')
+})
+
+it('pages the sorted matches, keeps selection across pages, and resets on filtering', async () => {
+  const ids = Array.from({ length: 113 }, (_, index) => `pack-${String(index).padStart(3, '0')}`)
+  const stub = packs(ids)
+  draw(stub)
+  await screen.findByRole('link', { name: /pack-000/ })
+  expect(packLinks()).toHaveLength(50)
+  expect(screen.getByText('1–50 of 113 items')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Previous page' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select all matches' }))
+  expect(screen.getByRole('button', { name: '113 selected' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+  expect(screen.getByRole('link', { name: /pack-050/ })).toBeTruthy()
+  expect(screen.queryByRole('link', { name: /pack-000/ })).toBeNull()
+  expect(screen.getByRole('checkbox', { name: 'Select pack-050' })).toHaveProperty('checked', true)
+  expect(screen.getByText('Page 2 of 3')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+  expect(packLinks()).toHaveLength(13)
+  expect(screen.getByText('101–113 of 113 items')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Next page' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Clear selection' }))
+  expect(screen.queryByRole('button', { name: '113 selected' })).toBeNull()
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'pack-01' } })
+  expect(packLinks()).toHaveLength(10)
+  expect(screen.getByRole('link', { name: /pack-010/ })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } })
+  expect(screen.getByText('Page 1 of 3')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+  fireEvent.keyDown(screen.getByLabelText('Sort packs and graphs'), { key: 'Enter' })
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Name: Z–A' }))
+  expect(screen.getByText('Page 1 of 3')).toBeTruthy()
+  expect(packLinks()[0]?.textContent).toContain('pack-112')
+  expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
 })

@@ -1,28 +1,6 @@
-/**
- * Which of the enabled models this run uses — **a preference, per tab, and
- * never a file**.
- *
- * **The decision moved to where the decision is.** Admin says which models this
- * desk may run; a person at the Assistant tab says which one *this* piece of
- * work wants, and that is not a fact about the desk's configuration. Writing it
- * to `jpack-desk.json` would put a per-run choice into a file that names where a
- * credential is presented, and make one tab's pick the other tab's default.
- *
- * **`sessionStorage`, on the shell's own precedent**: per tab, cleared when the
- * tab closes, keyed on the project root the chassis pinned so two projects open
- * in two tabs do not share one. `localStorage` would outlive the session and
- * cross the tabs, which is exactly what a per-run preference must not do.
- *
- * **Every access is in a try/catch**, and not defensively: a private window or
- * a browser set to block site data *throws on the accessor itself* rather than
- * answering null, and a thrown accessor must still leave a working tab.
- *
- * **And a remembered pick outside the enabled set is treated as absent.** The
- * set moves — a model is unticked in Admin, an endpoint is replaced — and a run
- * on an id this desk is no longer configured for would be a request nobody
- * enabled, made on the strength of something a browser remembered. What stands
- * in its place is the default, which is the set's own answer to "where does a
- * run start".
+/** Per-tab model preferences, scoped to a project, AI connection, and feature.
+ * Picks outside the enabled set fall back to that connection's default.
+ * Storage failures never prevent using the configured default.
  */
 import { useState } from 'react'
 import { projectKey } from '../shell/paneState'
@@ -36,8 +14,10 @@ import { projectKey } from '../shell/paneState'
 const RECORD_VERSION = 1
 
 /** Where one project's pick is remembered, on this tab. */
-export function pickedModelKey(projectRoot: string | undefined): string {
-  return `jpack-desk:model:v${RECORD_VERSION}:${projectKey(projectRoot)}`
+export function pickedModelKey(projectRoot: string | undefined, connectionId?: string, surface = 'assistant'): string {
+  return connectionId
+    ? `jpack-desk:model:v2:${JSON.stringify([projectKey(projectRoot), connectionId, surface])}`
+    : `jpack-desk:model:v${RECORD_VERSION}:${projectKey(projectRoot)}`
 }
 
 /**
@@ -76,34 +56,26 @@ export interface PickedModel {
   pick: (model: string) => void
 }
 
-/**
- * The picked model for one endpoint, on one project, in this tab.
- *
- * Seeded once from storage — a lazy initializer, so a read that throws does so
- * inside the initializer and not during a render — and re-derived where the set
- * moves under it: the state is kept, and a pick the set no longer holds simply
- * stops being what is returned.
- */
+/** Resolve the selected model without carrying it into a different connection. */
 export function usePickedModel(
   models: readonly string[],
   fallback: string | null,
-  projectRoot: string | undefined
+  projectRoot: string | undefined,
+  connectionId?: string,
+  surface = 'assistant'
 ): PickedModel {
-  const key = pickedModelKey(projectRoot)
-  const [picked, setPicked] = useState<string | undefined>(() => readPickedModel(key, models))
-  // **Derived at every render rather than corrected in an effect.** The set can
-  // change between renders — a save in Admin, a new endpoint — and an effect
-  // would leave one frame in which the run is about to use a model nothing
-  // enables.
-  const model = picked !== undefined && models.includes(picked) ? picked : (fallback ?? '')
+  const key = pickedModelKey(projectRoot, connectionId, surface)
+  const [held, setHeld] = useState(() => ({ key, picked: readPickedModel(key, models) }))
+  // Reset synchronously on a project/connection change. Identical model IDs do
+  // not make two providers interchangeable, even for the first render.
+  const current = held.key === key ? held : { key, picked: readPickedModel(key, models) }
+  if (held.key !== key) setHeld(current)
+  const model = current.picked !== undefined && models.includes(current.picked) ? current.picked : (fallback ?? '')
   return {
-    model,
-    models,
+    model, models,
     pick: (next: string) => {
-      // Only a member of the set, which is the same rule the read applies: a
-      // control offers these and nothing else, and this is the layer under it.
       if (!models.includes(next)) return
-      setPicked(next)
+      setHeld({ key, picked: next })
       writePickedModel(key, next)
     }
   }

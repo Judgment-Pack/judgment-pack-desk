@@ -312,6 +312,7 @@ describe('the signing key, on the project Desk was started on', () => {
     expect(await screen.findByRole('button', { name: 'Make the signing key and lock 2 files' })).toBeTruthy()
     cleanup()
     show(<ProjectGates />)
+    expect(screen.getByRole('link', {name:'Review and lock'}).getAttribute('href')).toBe('/packs/_review')
     expect((await screen.findByRole('link', { name: 'Review signing this project’s decisions' })).getAttribute('href')).toBe('/packs/_upgrade')
     cleanup()
     const reason = 'This project is not offered a signing key: its audit member turns the chain off, and the runtime signs only a chained trail.'
@@ -365,7 +366,8 @@ describe('where the offer appears', () => {
     offers.with = [{ state: 'unavailable', reason: 'JPACK_CONFIG names another project.', gated: false, requireComparableFacts: false, changes: [], locked: false }]
     show(<ProjectGates />)
     expect((await screen.findByText(/Desk offers no upgrade here/)).textContent).toContain('JPACK_CONFIG names another project.')
-    expect(screen.queryByRole('link', { name: /Review/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /^Review (the upgrade|turning|signing)/ })).toBeNull()
+    expect(screen.getByRole('link', {name:'Review and lock'}).getAttribute('href')).toBe('/packs/_review')
     // Each state says where the gates are explained.
     expect(screen.getByRole('link', { name: 'What each gate holds, and whom it binds' }).getAttribute('href')).toBe('/help#gates')
   })

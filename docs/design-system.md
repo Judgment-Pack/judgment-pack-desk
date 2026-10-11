@@ -242,8 +242,7 @@ from canvas pan, zoom and node positions. The decision question is shown in
 Overview; Logic uses the space for its controls and content.
 
 Document tabs use the shared Tabs page variant. The tab row owns its gutter;
-individual panels own their body padding. Draft Overview and its source-rule
-list share the bounded reading measure. Details content uses the same density
+individual panels own their body padding. Pack and graph Overview share the bounded reading measure, in drafts and saved definitions. Details content uses the same density
 gutter as the test editor, without an additional top margin on its first heading.
 Draft header actions wrap beneath the title when they cannot fit alongside it.
 
@@ -338,15 +337,37 @@ populated pages, empty/loading/error states, both themes, both densities, a
 dialog, and narrow layouts. Source checks alone cannot establish visual quality.
 
 
+## Menus
+
+Use `ui/Menu` for dropdown commands, radio/checkbox choices, nested menus,
+labels and separators. It wraps Radix behavior; callers keep their existing
+triggers, links, selection handlers and dialog focus handoffs. Use `icon`,
+`description` and `shortcut` props instead of styling SVGs or checkmarks in
+individual features. `asChild` preserves navigation links and their semantics.
+
+`MenuChoice` is the shared toolbar picker for type/status filters and Sort;
+form fields retain `Select`. The compact View menu uses the same radio rows.
+
+Every row reserves a 16px icon/check slot and an 8px gap, including commands
+without an icon. Rows follow the density control height, 13px text and shared
+surface/focus tokens. Descriptions wrap below their label. Radio checkmarks
+and submenu chevrons come from the component. Menu surfaces scroll within the
+available viewport. Desk/account, collection, folder, attachment, history,
+Admin and editor menus use the same foundation; feature CSS controls only
+content-specific widths and scrolling. Use native `disabled` for unavailable
+commands; an explained `aria-disabled` command can retain focus for a tooltip,
+but the shared item prevents its activation. Destructive actions retain their
+existing confirmation flow.
+
 ## Pack collections
 
-Use `PageHeader`'s collection variant: a single sticky 48px row with
-`PacksNavigation` on the left and the active view's action on the right. The
-Packs & graphs heading remains available to assistive technology without another visible
-row. The Browse tab carries the available inventory count; it observes the
-existing cache across views without making a decorative runtime request. Search
-and `SortMenu` sit below. Sorting uses the displayed name, and filtered
-counts appear beside the search as “1 of 2”. Keep native Tab behavior.
+Use `PageHeader`'s collection variant: one sticky 48px row with the folder
+toggle, location breadcrumb and visible item count on the left, and collection
+options and Create on the right. The Library heading remains available
+to assistive technology without another visible row. The breadcrumb is the
+navigation; do not repeat a Browse tab or another location row below it.
+Counts observe existing inventory without decorative runtime requests.
+Filtered counts appear in the header as “1 of 2”. Keep native Tab behavior.
 
 Rows use `--text-control` (13px), `--text-xs` metadata, and the existing 40/32px
 density heights. Names, descriptions and versions align in columns; headers and
@@ -387,19 +408,23 @@ when the console consumes the remaining height.
 Creation lives at `/create-pack`, outside the pack-ID route so a pack named `new` remains addressable. It uses `PageHeader`, `PageBody`, `FieldGroup`, the shared controls, and the existing byte-preserving document editors. Basics → Build → Review holds one draft. AI is offered only with an available endpoint/key, enabled model, and runtime authoring prompt; accepted suggestions become editable drafts, with declared unknowns retained for review. Neither route navigation nor tab changes silently save a draft.
 
 The reading page starts with Overview. Its compact `PageHeader` title variant
-contains the pack name, primary Test pack action, and Overview / Logic / Tests
-navigation. One divider spans the pane; metadata and successful validation
-details live under More. Material validation issues stay visible. The title
-uses `--text-page`; the decision question uses `--text-sm` in the scrolling
-body. The header stays outside that scroll region. Narrow layouts move Edit
-into More and allow the title to wrap.
+contains the pack name and Overview / Logic / Sources / Tests / Review / Usage
+navigation. Tests owns Run tests; finalization remains an explicit reviewed
+action. One divider spans the pane; metadata and successful validation
+details live in Review. Material validation issues stay visible. The title
+uses the same 13px/600 styling and 48px row as Folders and Assistant; the
+decision question uses `--text-sm` in the scrolling body. Long titles truncate
+with the shared overflow tooltip. Below 32rem, actions wrap onto a separate row
+while the title and pane toggle retain their position. The header stays outside
+that scroll region. Narrow layouts move Edit into More.
 
-Logic offers a detailed List and Map over one `logicModel` projection. Essential
-information is readable with the Inspector closed: exact scope, evidence names
-and requirements, rule/exception conditions, contributed outcomes, unknown
-behavior, fallback, and handoff configuration. List starts detailed and is the
-first-time default at every width. An explicit Map/List preference still wins.
-Rules sit alongside each other where there is room and stack at narrow widths.
+Logic offers Diagram and List over one `logicModel` projection. List uses
+compact rows; selecting an item opens its complete conditions, source references
+and exact definition in the bottom panel. Logic display options controls inline
+conditions and diagram grouping. Scope, evidence requirements, contributed
+outcomes, unknown behavior, fallback and handoff remain available without
+opening or replacing chat. The existing Diagram/List preference still wins.
+Rules use full-width rows at every width.
 Long conditions wrap without clipping or horizontal scrolling. `LogicDetails`
 shares reading content between representations; `ConditionTree` preserves
 operators, operand types, order, nested logic and unrecognized values. Structured reading separates the field, comparison and exact operands. Arrays
@@ -452,12 +477,29 @@ references, checks, provenance and exact JSON. Compact reading and Overview
 inspection retain the condition definition where the main view does not show it.
 With no selection it shows pack metadata, without a duplicate Outline.
 
-Overview contains the author's purpose/description, a short list of possible
-outcomes, aggregate evidence/rule counts, source access and View logic navigation.
-It does not repeat scope conditions, evidence members, fallback or handoff
-configuration. Authored context is visible and exact repeated paragraphs/question
-text are omitted. Summary outcome names are intentional orientation; their full
-definitions and contributions belong in Logic.
+Pack and graph Overview share `DefinitionOverview`: authored purpose, a compact
+result section and one collapsed Details disclosure. The same reading width,
+top gutter, typography and 24px section spacing apply to drafts and saved
+versions. Do not add rule lists, source cards, raw JSON or findings beneath the
+summary. Use whitespace instead of a border between every section.
+
+Pack Overview shows the decision question, distinct authored context and at
+most four outcome labels. Keep the fallback visible and mark it once; additional
+outcomes are available in Logic. Scope, evidence requirements and a declared
+human handoff live under Details. Graph Overview names the declared result step
+and counts steps separately from distinct referenced packs. Referenced packs
+and connection counts live under Details. It does not infer execution order.
+
+Logic retains the React Flow diagram, list and source references. Sources owns
+source browsing; Review owns check findings and the optional Brief; Usage owns
+references to graphs and jobs. Keep concise check status in the document header.
+`View JSON` in the shared options menu opens the same wide, read-only dialog for
+all four views. It displays exact retained bytes with wrapping and both scroll
+axes available; it never formats, writes or runs the document. Escape restores
+focus to the menu trigger. Graph's Source editor remains available for editing.
+
+Missing, unreadable and loading declarations must not become invented zero
+counts or a successful result. The overview does not run checks or models.
 
 The shell's `requestWorkingWidth` contract measures the entire workspace,
 avoiding breakpoint feedback loops. Map requests 51rem and List 34rem, while
@@ -652,6 +694,10 @@ Page wrappers must propagate the available height and allow children to shrink.
 The document observer watches this body, so navigation and deep links use the
 same visible region. Scrolling content never passes behind the header.
 
+The shared `desk-pane-head` is a 48px row with 12px horizontal insets in both
+densities. Document titles reuse it; route-specific padding must not enlarge
+that row or shift the folder toggle. Descriptions and navigation sit below it.
+
 `RightPane` holds the pane header above its scrollable slot. `Tabs scrollable`
 keeps the tab list above the active panel's scroll region in both docked and
 drawer forms. Its `resetScrollKey` starts new selections at their heading;
@@ -681,13 +727,13 @@ whether Save and return can finish.
 
 ## Packs and Judgment Graphs
 
-The primary sidebar carries Packs & graphs, Jobs, Admin and Help & About. Packs & graphs
+The primary sidebar carries Library, Jobs, Admin and Help & About. Library
 combines packs and graphs in the existing folder browser. Graphs retain the
 `/graphs` and `/graphs/:graphId` routes. Only the current destination is active,
 including in the collapsed rail and navigation drawer. Drawing navigation never
 fetches graph inventory or executes tests.
 
-New chat and Chat history belong in the chat header. Packs & graphs retains its folder
+New chat and Chat history belong in the chat header. Library retains its folder
 browser and collection controls. Saved cases and their Run tests action belong
 inside each pack; there is no collection Tests page or Run all tests action.
 The legacy `/matrix` bookmark redirects to `/packs` without executing tests;
@@ -776,6 +822,12 @@ Use `Popover.triggerTooltip` or wrap Radix's trigger with `Tooltip`; do not put
 the custom Tooltip component inside an `asChild` trigger, where trigger events
 would not reach the underlying button.
 
+The Assistant header puts conversation-wide Chat sources in the shared ⋯
+Chat options menu. Source selection opens Details and returns focus to the
+menu trigger when dismissed. Keep message-owned sources beside their response.
+Omit the redundant Open status when a draft is already visible; offer Open draft
+only when it provides navigation.
+
 The Tests assistant reuses chat's composer and message styles: quiet bounded
 model selection, square Add/Send/Stop actions, and progress immediately above
 the composer. No empty status row reserves space. Retain readable body text;
@@ -844,7 +896,7 @@ bound connection and model.
 
 ## Decision composition workspace
 
-Packs and graphs share one Packs & graphs collection, its existing folders, search,
+Packs and graphs share one Library collection, its existing folders, search,
 preview and resizable pane. Use type filters and shared type icons; preserve
 the same selection, hover, density, keyboard and empty/loading/error treatment
 for both. Graphs do not need a separate theme or global navigation entry.
@@ -855,8 +907,9 @@ never nest a second chat pane inside the builder. Pack editing uses the same
 bottom editor and existing structured fields. Both dividers support keyboard
 and pointer resizing; expansion keeps the conversation and buffer mounted.
 A searchable Add pack picker, labelled Connect form and List view provide
-alternatives to canvas interaction. Selection preserves the viewport. Build,
-Tests, Settings and Source have stable places. Graph tests read saved files;
+alternatives to canvas interaction. Selection preserves the viewport. Overview,
+Logic, Tests, Review and Usage are the graph tabs. Graph settings and Edit JSON
+are dialogs opened from Graph options; closing them retains the draft buffer. Graph tests read saved files;
 pack draft rehearsals retain their existing runtime path. Edits invalidate an
 outstanding write offer; Check is distinct from Review & save and confirmation.
 See [the builder review](reviews/decision-builders-20261010.md).
@@ -869,32 +922,229 @@ These inform discoverability and inspection, not execution semantics. JPS
 retains its own tokens and runtime contract. The non-drag form follows
 [WCAG's dragging-movements guidance](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html).
 
-## Packs & graphs browser actions
+## Library browser actions
 
-Navigation names the authored JPS objects directly: **Packs & graphs**. The folder
-pane lists real folders only; the main location breadcrumb returns to the full
-collection. Folder creation and renaming use the shared modal dialog, preserving
+The collection is named **Library** and uses `IconLibrary`. It holds reusable
+packs and graphs; Desk names the whole workspace, while List names a view. The folder
+pane lists real folders with an 8px inset below its header; the header breadcrumb
+returns to the full collection. Folder creation and renaming use the shared modal dialog, preserving
 entered text through pane resizing and returning focus to the initiating control.
 
+Move dialogs use one Destination folder selector, with full paths and the shared
+selector's keyboard type-ahead. Do not put a separate search input above it.
+New folder is a secondary action at the start of the footer; it reveals Folder
+name and Parent folder within the same dialog. Back restores the existing
+folder choice. Create and move commits the new folder and the entire move in
+one revision-checked write, with no empty folder left behind on failure. The
+name and parent stay editable after validation or conflict errors. This applies
+[progressive disclosure in forms](https://www.nngroup.com/articles/4-principles-reduce-cognitive-load/)
+to the existing folder workflow.
+
 Keep **Create** visible as the primary command, with Pack and Graph choices.
-Collection **⋯** holds New folder and Review and lock. A row keeps its Preview
-button visible; its **⋯** holds Open, Move to folder, and Delete draft when eligible.
+Collection **⋯** holds New folder. Review and lock belongs in Admin → Decision
+safeguards. A row opens through its name and keeps its Preview button visible;
+its **⋯** holds Move to folder and Delete draft when eligible.
 Folder hierarchy actions remain in each folder's existing context menu.
+Command rows opt into the shared `desk-menu-command` geometry: a 16px icon
+column, 8px gap, centered labels and the density control height. Iconless rows
+reserve the same column. Disabled actions retain an accessible explanation.
 
-Every row starts with a checkbox, followed by the shared cube (`IconPack`) or
+Row highlights and separators span the collection width up to an actual scrollbar.
+Put the shared horizontal gutter inside each row and its column header, not
+around the list. The header compensates for the measured scrollbar width; short
+lists have no empty scrollbar gutter.
+
+Every row reserves a leading checkbox column. On mouse devices, row checkboxes
+appear on hover or keyboard focus; Select all appears when the column header is
+hovered or focused. While anything is selected, all checkboxes stay visible.
+Touch devices always show them. The checkbox is followed by the shared cube (`IconPack`) or
 connected-node (`IconGraph`) glyph and name. Type glyphs have accessible names and
-shared tooltips. Draft occupies the Version column; saved objects show their
-actual version. There is no duplicate type badge beside the name.
+shared tooltips. Preview toggles the item inspector, with Spacebar shown through
+the shared tooltip's separate shortcut slot, not embedded in the action label.
+The shortcut works when the item link or Preview button has focus. Draft occupies the Version column; saved objects show their
+actual version without an added `v` prefix. There is no duplicate type badge beside the name.
 
-Select all applies to the filtered collection, including virtualized rows. Filtering
-removes hidden items from selection. Contextual actions show the selected count,
-Move to, Compose graph, Delete drafts, and Clear selection. Composition requires
+One toolbar holds search, search scope, type, status, sort and selection actions.
+Search scope can include all folders while retaining the current folder location;
+choosing another folder resets that scope. Type, status and sorting collapse into
+View when the pane is narrow. The toolbar stays on one line, including while an
+Inspector is open. Controls use the shared height and an 8px gap.
+
+Select all toggles between selecting and clearing the filtered collection, including
+all pages and virtualized rows. A partial selection shows an indeterminate checkbox. Filtering
+removes hidden items from selection. A “3 selected” menu holds Move to folder,
+Compose graph and Delete drafts. Clear selection is an adjacent icon on wide panes,
+and a menu item on narrow panes. Selection adds no extra toolbar row. Composition requires
 only saved packs; it never silently drops a selected draft or nests a graph.
 Deletion requires only unsaved drafts and explicit confirmation, preserves chats
 and saved files, and rechecks the entire selection before changing it. Failed saves
 remain visible and retryable. Folder moves update all assignments in one write
 against the original digest.
 
+Collection totals belong in the bottom footer, not the location header. Use the
+shared `ui/Pagination` with `ui/usePagination` so tables and lists share controls
+without replacing their row semantics. Three rows show “3 items”; more than one
+page shows the displayed range and matching total on the left, with page position
+and previous/next controls on the right. Use 50 items by default and the shared
+menu for 25/50/100 per page. Omit navigation when there is only one page and omit
+the size picker for 25 or fewer matches. Keep the footer visible below the scrolling
+rows; narrow panes can wrap controls instead of clipping or shrinking hit targets.
+Counts describe the current folder/search/type/status, and incomplete inventories
+say “loaded items”. Filtering, sorting, scope or page-size changes start at page
+one; removing the last row of a page clamps to the last remaining page. Opening
+an item and returning preserves the current page. Home/End and arrow keys navigate
+within the displayed page. Select all is explicitly “Select all matches” and keeps
+its collection-wide meaning across pages. This applies
+[Carbon's table pagination guidance](https://www.carbondesignsystem.com/building-blocks/core/components/pagination/guidelines)
+within Desk's existing controls and density tokens; it is not a claim that Linear
+uses this pagination layout.
+
 These choices apply [Linear's selection patterns](https://linear.app/docs/select-issues)
 and [restrained action hierarchy](https://linear.app/now/behind-the-latest-design-refresh)
 to JPS's distinct pack, graph, and draft lifecycles.
+
+
+### Assistant ownership across document tabs
+
+Only the active document tab publishes an Inspector presentation. Draft Overview,
+Logic, Sources, Tests and Review share the conversation attached to that pack
+and its draft. Case selection supplies additional context without creating an
+unrelated conversation. Inactive presentations and header controls are hidden. Share the open/closed state across the
+handoff, so visiting Tests cannot remove Assistant from the other tabs or undo
+an explicit collapse. Saved pack reading and Tests use the same open preference.
+
+Embedded chat uses a left-aligned 16px heading, 13px supporting text and 16px
+content insets. Prompts refer to the current pack or graph. Draft commands already
+in the document header are not repeated above the composer. Empty chat footnotes
+reserve no space; the home landing page retains its larger welcome layout.
+
+Graph reading and authoring use the Library folder frame, shared document title
+bar, page tabs and main right-hand Assistant. Overview describes purpose and the declared result without executing the graph; secondary composition details stay collapsed. Build keeps
+selection editing in the bottom pane; saved Logic and Tests keep Assistant in
+place. Logic opens View runtime plan in a wide dialog. Tests groups Saved cases
+and Try inputs, preserving inputs when switching. Graph options holds settings
+and editable JSON dialogs; Review & save remains the builder header action. Read-mode proposals
+remain conversation artifacts until opened and reviewed in the builder.
+
+
+### Document header options
+
+Pack and graph headers use the shared `OptionsMenu` trigger and `Menu.Item` rows.
+Keep menus as short, labeled command lists; editing forms and metadata belong
+in dialogs. A menu that opens a dialog hands focus to it, and dismissal restores
+focus to the original trigger. Use the same 16px icons, 8px gaps, density-aware
+row height, keyboard navigation and collision handling as other Desk menus.
+
+- Draft packs: Rename…, Move to folder…, Run checks when restored, then
+  Delete draft… below a separator. Rename opens a Name form; deletion opens a
+  confirmation. Run checks repeats runtime validation, source verification
+  and saved case checks without a model call. Review and finalize remains
+  visible but unavailable until the checks pass; its restored-state hint points
+  to Pack options. Do not repeat Recheck as a prominent header button.
+- Saved packs: Move to folder…, then Create job…, Saved cases
+  when available, Full document, and Pack details… in its own group. Details
+  shows identity, version and existing checks in a dialog.
+- Graph builders: Move to folder… for an existing item, Keep
+  draft, and Delete draft… for an unsaved retained draft. Settings and Source
+  already have tabs and are not repeated in the menu.
+- Saved graphs: Move to folder… and Graph details…. Keep Edit
+  composition and Run tests visible. Identity and path changes are handled by
+  graph settings and the reviewed write flow, not a label-only Rename command.
+
+The persistent right rail already opens Assistant; document menus do not
+repeat that control. A chat link opens Assistant once; returning to the document must not
+reopen it merely because the shell republishes its pane callbacks. Primary Test, Save and Review actions remain visible in the header.
+Destructive draft actions use the shared danger treatment and confirmation;
+the dialog stays mounted through save failures so users can retry. Navigate
+away after deletion only when it has been saved. Saved project files are not
+exposed to draft deletion, because graphs and jobs may reference them.
+
+This applies Linear's [consistent header actions and reduced visual structure](https://linear.app/now/behind-the-latest-design-refresh)
+and the [menu design guidance on clear labels and predictable placement](https://www.nngroup.com/articles/menu-design/)
+to Desk's existing document lifecycles, rather than copying an undocumented
+Linear component specification.
+
+
+**Run checks** remains available in Pack options after success and after reload.
+The header shows the check state using the shared tooltip: not checked, verifying,
+checking, passed, failed, outdated, unavailable, or valid with no tests. Running
+checks validates the unchanged draft and its saved tests without a model call.
+Review and finalize remains the primary action and is gated by current checks,
+source verification and independent test cases.
+
+Complete retained reports can become current again after their identity and
+source proofs are verified. Legacy summaries require one explicit run to obtain
+this record. No pending finalization approval survives a reload. See
+[conversation recovery](adr/0002-project-conversations-and-chat-workspace.md#persistence)
+and [retained test reports](pack-tests-workspace.md).
+
+
+### Pack and graph tab density
+
+Pack tabs are Overview / Logic / Sources / Tests / Review / Usage. Graph tabs
+are Overview / Logic / Tests / Review / Usage. Share toolbars, reading measures,
+menus, disclosure styling, table density and bottom selection panels. Settings
+and raw JSON are document commands, not primary browsing tabs. No navigation,
+filter, selection or disclosure performs a test, rehearsal or project write.
+
+Sources uses one compact browser for declared references, attached documents
+and retrieval records. Search and kind filter share the toolbar; selecting a
+source opens its details below. Declared references never imply retrieval.
+Receipt status, citations and page quotes preserve their exact recorded
+meaning; a verified receipt is byte lineage, not a truth or origin claim.
+
+Pack Tests groups Add case (manual or AI), search, result filter and Run tests
+in one toolbar. Case and run details use the bottom panel. Independent
+expectations belong here, with unresolved expectations expanded. Draft
+exploratory runs remain available under a disclosure. Graph Tests lists case,
+expected result, observed result and status; selecting a case reveals its exact
+runtime comparison and optional execution diagram. Runtime labels, coverage
+and exact output remain inspectable; digest mismatches are never overlaid on a
+newer diagram. Try inputs is an explicit rehearsal, not a decision audit event.
+
+Review starts with readiness and actionable findings. Link to Tests and Sources
+instead of repeating their complete content. Brief is optional and collapsed;
+once opened its state survives collapse. Revision history is collapsed.
+Usage lists only confirmed graph/job references and presents incomplete
+availability once with detailed causes on expansion.
+
+Provenance placement: use Review for document revision/check history and links
+to decision or job records; Sources owns acquisition/receipt details and Tests
+owns run inputs and outputs. A future unified “Provenance & audit trail” section
+must identify each record's scope and retained coverage, and must not label
+rehearsals, chat events or draft revisions as signed decision audit records.
+Trail verification, signing, checkpoint and repair controls remain under Admin
+→ Decision safeguards. This placement does not imply that a per-definition
+unified audit timeline already exists.
+
+### Status and warning messages
+
+Use one severity and placement pattern across the shell, chat, and forms:
+
+- Temporary background state (connecting, reconnecting) belongs in the existing
+  status strip with a polite announcement. It never inserts a row above document
+  headers. The status control opens a focused, dismissible popover with Retry and
+  diagnostics. Attempt counts stay inside Technical details and do not repeatedly
+  announce themselves.
+- Limited capabilities use an explicit Limited connection status. Do not call a
+  connection healthy merely because initialization answered.
+- Action failures and important warnings use the shared Notice next to the
+  affected action. Alert, AlertPanel, and ErrorBox reuse it. A neutral surface,
+  small severity icon, restrained leading border, and 13px text replace filled
+  warning panels. Meaning is communicated by text and icon as well as color.
+- State changes use role=status; failures requiring attention use role=alert.
+  Ordinary notices never steal focus, auto-dismiss, or hide recovery controls.
+  Destructive confirmations retain their existing dialogs.
+- State the result and next action first. Put long errors, digests, and connection
+  attempts behind a keyboard-accessible Technical details disclosure. Details are
+  bounded and scrollable. No transient toast is the sole copy of a blocking error.
+
+The placement follows [Linear's visual hierarchy](https://linear.app/now/behind-the-latest-design-refresh)
+and [Carbon's inline-notification guidance](https://v10.carbondesignsystem.com/components/notification/usage/).
+These are Desk adaptations, not a claim about Linear's private components.
+
+Connection attempts have bounded WebSocket and initialization waits. All close
+paths check the session before retrying; an expired session stops retrying and
+uses the existing sign-in/local-Desk recovery screen. Manual reconnection refreshes
+project queries. Authentication policy and the one-session-per-page boundary are
+unchanged.

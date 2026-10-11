@@ -75,7 +75,7 @@ it('supports Space, arrow browsing, Escape and filtering without navigation or t
   fireEvent.click(screen.getByRole('button', { name: 'Preview alpha' }))
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'beta' } })
   await waitFor(() => expect(screen.queryByRole('complementary')).toBeNull())
-  expect(screen.getByRole('status').textContent).toBe('1 of 2')
+  expect(screen.getByRole('status').textContent).toBe('1 item')
   expect(router.state.location.pathname).toBe('/packs')
   expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
 })

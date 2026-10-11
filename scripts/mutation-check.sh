@@ -7264,13 +7264,13 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
     '  const label = directory.data?.current.name ?? fallback' \
     '  const label = '"'"'Acme Co.'"'"''
   mutate web 'the NONE menu offers a Sign out' web/src/identity/UserControl.tsx \
-    '          <DropdownMenu.Item asChild className="desk-menu-item">
+    '          <DropdownMenu.Item asChild icon={<IconHelp/>}>
             <Link to="/help">{msg("About")}</Link>
           </DropdownMenu.Item>' \
-    '          <DropdownMenu.Item asChild className="desk-menu-item">
+    '          <DropdownMenu.Item asChild icon={<IconHelp/>}>
             <Link to="/help">{msg("About")}</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item className="desk-menu-item">Sign out</DropdownMenu.Item>'
+          <DropdownMenu.Item>Sign out</DropdownMenu.Item>'
   # Below 900px the rail is a Dialog drawer and renders no collapse toggle, so
   # the header's opener is the only pointer affordance there is. Without it the
   # whole left menu is reachable by Mod+B alone, on the width whose likeliest
@@ -7392,8 +7392,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    if (dirty && !opening && !await confirmDiscard(msg('"'"'Discard unsaved changes to this file?'"'"'), { name: selected })) return' \
     '    if (dirty && !opening && false && !await confirmDiscard(msg('"'"'Discard unsaved changes to this file?'"'"'), { name: selected })) return'
   mutate web "reload is available during an in-flight write" "$A" \
-    '              <DropdownMenu.Item className="desk-menu-item" disabled={write.isPending || editing.reloading} onSelect={()=>void reload()}>' \
-    '              <DropdownMenu.Item className="desk-menu-item" disabled={false} onSelect={()=>void reload()}>'
+    '              <DropdownMenu.Item disabled={write.isPending || editing.reloading} onSelect={()=>void reload()}>' \
+    '              <DropdownMenu.Item disabled={false} onSelect={()=>void reload()}>'
   mutate web "override is always sent" "$C" \
     '      override: input.override ?? false' \
     '      override: true'
@@ -8620,10 +8620,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # row — otherwise every test of the pane asserts against an empty list.
   mutate web "the windowed list renders nothing when the viewport cannot be measured" "$WR" \
     '  if (height <= 0 || rowHeight <= 0) {
-    return { ref, scrollRowIntoView, start: 0, end: count, padTop: 0, padBottom: 0 }
+    return { ref, scrollRowIntoView, scrollbarWidth, start: 0, end: count, padTop: 0, padBottom: 0 }
   }' \
     '  if (false) {
-    return { ref, scrollRowIntoView, start: 0, end: count, padTop: 0, padBottom: 0 }
+    return { ref, scrollRowIntoView, scrollbarWidth, start: 0, end: count, padTop: 0, padBottom: 0 }
   }'
   # A window computed from a scroll position that belongs to the longer list
   # begins after the end of the shorter one and renders no rows at all: filter
@@ -8656,8 +8656,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 16. The combined collection rail must not invent a count from a pack listing.
   mutate web 'the rail claims a count for a listing that never answered' web/src/shell/LeftRail.tsx \
-    '          {!icons && <span className="desk-nav-label">{msg("Packs & graphs")}</span>}' \
-    '          {!icons && <><span className="desk-nav-label">{msg("Packs & graphs")}</span><span className="desk-nav-count">0</span></>}'
+    '          {!icons && <span className="desk-nav-label">{msg("Library")}</span>}' \
+    '          {!icons && <><span className="desk-nav-label">{msg("Library")}</span><span className="desk-nav-count">0</span></>}'
 
 
 
@@ -9004,7 +9004,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # The shared destination must remain named for assistive technology.
   mutate web 'the rail count is invisible to a screen reader' web/src/shell/LeftRail.tsx \
-    '          aria-label={msg("Packs & graphs")}' \
+    '          aria-label={msg("Library")}' \
     '          aria-label=""'
 
   # 8. The widened convention rule, and a module outside src/ui to break it on.
@@ -9234,7 +9234,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # The desk computes no lock state, and says nothing where it knows nothing.
   mutate web 'the lock line states a verdict about the reviewed set' web/src/packs/edit/LockLine.tsx \
-    '{msg("This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.")}' \
+    '{msg("This project keeps a reviewed set. Review and lock, in Admin → Decision safeguards, shows what the runtime finds and updates it.")}' \
     '{msg("This pack is in the reviewed set, and the set is up to date.")}'
   mutate web "the lock line shows with no lock file listed" "$LL" \
     '  const listed = paths.some((path) => path === LOCK_FILE || path.endsWith(`/${LOCK_FILE}`))' \

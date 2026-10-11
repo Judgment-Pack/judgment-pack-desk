@@ -1,0 +1,15 @@
+.notice { --notice-color: var(--ink-soft); display: flex; gap: var(--space-2); min-width: 0; padding: var(--space-2) var(--space-3); border-inline-start: 2px solid var(--notice-color); color: var(--ink); font-size: var(--text-sm); line-height: 1.5; }
+.notice[data-tone="warning"], .notice[data-tone="error"] { --notice-color: var(--warn); }
+.notice[data-tone="success"] { --notice-color: var(--true); }
+.icon { display: flex; align-items: center; flex: 0 0 16px; height: 1.5em; color: var(--notice-color); }
+.icon svg { width: 16px; height: 16px; }
+.content { min-width: 0; flex: 1; display: grid; gap: var(--space-1); overflow-wrap: anywhere; }
+.title { margin: 0; font-size: inherit; font-weight: 600; }
+.message { min-width: 0; }
+.message > :first-child { margin-top: 0; }
+.message > :last-child { margin-bottom: 0; }
+.details { color: var(--ink-soft); font-size: var(--text-xs); }
+.details summary { cursor: pointer; width: fit-content; padding-block: var(--space-1); }
+.details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+.detail { position: relative; max-height: 12rem; overflow: auto; overscroll-behavior: contain; white-space: pre-wrap; overflow-wrap: anywhere; padding-block: var(--space-1); }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }

@@ -7,7 +7,10 @@ import type { TraceEntry } from '../mcp/types'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { InspectionRow } from '../ui/InspectionRow'
-import { Popover } from '../ui/Popover'
+import { Menu, OptionsMenu } from '../ui/Menu'
+import { BuilderSplit } from '../builders/BuilderSplit'
+import { CodeBlock } from '../ui/CodeBlock'
+import { Disclosure } from '../ui/Disclosure'
 import { SegmentedControl } from '../ui/SegmentedControl'
 import { useMeasuredBox } from '../shell/measured'
 import { useInspectorWorkingWidth } from '../shell/InspectorSlot'
@@ -41,6 +44,8 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
   const rem = useMeasuredBox(ruler)?.width || 16
   useInspectorWorkingWidth(active ? 34 * rem : 0)
   const root = useRef<HTMLElement>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const showDetails = (pointer: string) => { if (tools) inspect(pointer); else {select(pointer); setDetailsOpen(true)} }
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [focusRequest, setFocusRequest] = useState<{ id: string; sequence: number }>()
   const nextMatch = useRef(0)
@@ -59,6 +64,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
     return () => body.removeEventListener('scroll', remember)
   }, [mode, listScroll])
   const current = selectedItem(model, at)
+  const selectedGroup=model.groups.find(group=>'/'+group.id===at)
   const appearances = useMemo(() => outcomeAppearances(model.document, appearanceOverrides), [model.document, appearanceOverrides])
   const graph = useMemo(() => projectLogicGraph(model, display.grouped && !query.trim(), expanded), [model, display.grouped, expanded, query])
   useLayoutEffect(() => {
@@ -116,7 +122,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
       if (node.items.length > 1) setExpanded(previous => new Set([...previous, node.id]))
       setFocusRequest(previous => ({ id: match.pointer, sequence: (previous?.sequence ?? 0) + 1 }))
       root.current?.querySelector('[data-logic-canvas]')?.scrollIntoView({ block: 'nearest' })
-    } else if (mode === 'map') inspect(match.pointer)
+    } else if (mode === 'map') showDetails(match.pointer)
     else {
       const target = Array.from(root.current?.querySelectorAll<HTMLElement>('[data-logic-pointer]') ?? []).find(el => el.dataset.logicPointer === match.pointer)
       target?.scrollIntoView({ block: 'center' }); target?.querySelector('button')?.focus({ preventScroll: true })
@@ -129,8 +135,8 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
       data-current={current?.item.pointer === item.pointer || undefined} data-search-match={searching && matchPointers.has(item.pointer) || undefined}>
       <InspectionRow label={item.label} aria-label={msg("View details: {{value0}}", { value0: item.label })} current={current?.item.pointer === item.pointer}
         description={group.id === 'evidenceRequirements' ? evidenceSummary(item.value) : undefined}
-        onClick={() => inspect(item.pointer)} />
-      {group.id !== 'evidenceRequirements' && <div className={styles.itemBody}><LogicDetails document={model.document} group={group.id} item={item} conditions={display.conditions || searching} />
+        onClick={() => showDetails(item.pointer)} />
+      {group.id !== 'evidenceRequirements' && <div className={styles.itemBody}>{(group.id === 'rules' || group.id === 'exceptions') && !display.conditions && !searching ? <LogicSummary document={model.document} group={group.id} item={item} appearances={appearances}/> : <LogicDetails document={model.document} group={group.id} item={item} conditions/>}
       {observation && <p className={styles.trace}><Message text={"Recorded condition: <0/>"} slots={[observation]} /></p>}</div>}
     </article>
   }
@@ -148,26 +154,25 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
   }
   const toolbar = <div className={styles.toolbar}>
       {tools}
-      <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'list', label: msg("List") }, { value: 'map', label: msg("Map") }]} />
+      <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'map', label: msg("Diagram") }, { value: 'list', label: msg("List") }]} />
       <div role="search" className={styles.search}>
         <Input type="search" aria-label={msg("Find pack item")} value={query} onChange={e => onQuery(e.target.value)} onKeyDown={event => {if (event.key === 'Enter') {event.preventDefault(); requestMatch()}}} placeholder={mode === 'map' ? msg("Find in map…") : msg("Filter items…")} />
       </div>
       {searching && <Button variant="quiet" onClick={requestMatch} disabled={!matchPointers.size}>{msg("Next match")}</Button>}
-      <Popover title={msg("Display options")} trigger={<Button variant="quiet">{msg("View")}</Button>}>
-        <label className={styles.option}><Message text={"<0/>Show list conditions"} slots={[<input type="checkbox" checked={display.conditions} onChange={e => updateDisplay({ ...display, conditions: e.target.checked })} />]} /></label>
-        <label className={styles.option}><Message text={"<0/>Group map items by effect"} slots={[<input type="checkbox" checked={display.grouped} onChange={e => { setExpanded(new Set()); updateDisplay({ ...display, grouped: e.target.checked }) }} />]} /></label>
-        <p className={styles.note}>{msg("Display preferences are remembered. Exact map conditions are available in Details.")}</p>
-      </Popover>
-      <PackJumpTo model={model} at={at} onJump={pointer => { onQuery(''); if (mode === 'map' && !graph.nodes.some(node => node.items.some(item => item.pointer === pointer))) inspect(pointer); else { select(pointer); setJump(pointer) } }} />
+      <OptionsMenu label={msg('Logic display options')}>
+        <Menu.CheckboxItem checked={display.conditions} onCheckedChange={value=>updateDisplay({...display,conditions:!!value})}>{msg('Show list conditions')}</Menu.CheckboxItem>
+        <Menu.CheckboxItem checked={display.grouped} onCheckedChange={value=>{setExpanded(new Set());updateDisplay({...display,grouped:!!value})}}>{msg('Group diagram items by effect')}</Menu.CheckboxItem>
+      </OptionsMenu>
+      <PackJumpTo model={model} at={at} onJump={pointer => { onQuery(''); if (mode === 'map' && !graph.nodes.some(node => node.items.some(item => item.pointer === pointer))) showDetails(pointer); else { select(pointer); setJump(pointer) } }} />
     </div>
-  return <section ref={root} className={styles.logic} data-mode={mode} aria-label={msg("Pack logic")}>
+  const body = <section ref={root} className={styles.logic} data-mode={mode} aria-label={msg("Pack logic")}>
     <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
     {toolbar}
     {mode === 'map' && <div className={styles.contextStrip} aria-label={msg('Policy context')}>
-      <Button variant="quiet" onClick={() => inspect('/applicability')}>{model.document.applicability ? msg('Scope: restricted') : msg('Scope: unrestricted')}</Button>
-      <Button variant="quiet" onClick={() => inspect('/evidenceRequirements')}>{msg('Evidence: {{count}} required', { count: entries(model.document.evidenceRequirements).filter(e => isRecord(e) && e.required === true).length })}</Button>
-      <Button variant="quiet" onClick={() => inspect('/fallbackOutcome')}>{msg('Fallback: {{outcome}}', { outcome: model.document.fallbackOutcome ? outcomeLabel(model.document, model.document.fallbackOutcome) : msg('Not declared') })}</Button>
-      <Button variant="quiet" onClick={() => inspect('/escalation')}>{msg('Handoff: {{target}}', { target: isRecord(model.document.escalation?.target) ? text(model.document.escalation.target.name) : msg('Not declared') })}</Button>
+      <Button variant="quiet" onClick={() => showDetails('/applicability')}>{model.document.applicability ? msg('Scope: restricted') : msg('Scope: unrestricted')}</Button>
+      <Button variant="quiet" onClick={() => showDetails('/evidenceRequirements')}>{msg('Evidence: {{count}} required', { count: entries(model.document.evidenceRequirements).filter(e => isRecord(e) && e.required === true).length })}</Button>
+      <Button variant="quiet" onClick={() => showDetails('/fallbackOutcome')}>{msg('Fallback: {{outcome}}', { outcome: model.document.fallbackOutcome ? outcomeLabel(model.document, model.document.fallbackOutcome) : msg('Not declared') })}</Button>
+      <Button variant="quiet" onClick={() => showDetails('/escalation')}>{msg('Handoff: {{target}}', { target: isRecord(model.document.escalation?.target) ? text(model.document.escalation.target.name) : msg('Not declared') })}</Button>
     </div>}
     {searching && <p className={styles.searchStatus} role="status">{matchPointers.size ? msg("{{value0}} matching items", { value0: matchPointers.size }) : msg("No items match “{{value0}}”.", { value0: query })}</p>}
     {mode === 'map' ? mapUnavailable ? <div className={styles.unavailable} role="status">
@@ -178,16 +183,22 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
           const node = graph.nodes.find(n => n.id === id)
           if (!node) return
           if (node.items.length > 1) setExpanded(previous => new Set([...previous, id]))
-          else inspect(node.items[0]!.pointer)
+          else showDetails(node.items[0]!.pointer)
         }} onInspect={id => {
           const node = graph.nodes.find(n => n.id === id)
           if (node && node.items.length > 1) setExpanded(previous => new Set([...previous, id]))
-          else inspect(id)
+          else showDetails(id)
         }} /></Suspense></div>
       <p className={styles.caption}>{trace ? msg("Recorded observations on these pack bytes.") : msg("Declared logic. No test results are shown.")} {current && msg('Highlighted paths show declared relationships, not execution.')} {model.groups.find(g => g.id === 'exceptions')!.items.length === 0 && msg("No special cases.")}</p>
     </> : <div ref={listBody} className={styles.listBody} data-logic-list>
       <div className={styles.context}>{renderGroup('applicability')}{renderGroup('evidenceRequirements')}</div>
-      {renderGroup('rules')}{renderGroup('exceptions')}{renderGroup('outcomes')}{renderGroup('resolution')}{renderGroup('sources')}
+      {renderGroup('rules')}{renderGroup('exceptions')}{renderGroup('outcomes')}{renderGroup('resolution')}
     </div>}
   </section>
+  if (tools) return body
+  return <BuilderSplit preference="pack" title={current?.item.label ?? selectedGroup?.label ?? msg('Logic details')} open={detailsOpen} onClose={()=>setDetailsOpen(false)} editor={current ? <>
+    <LogicDetails document={model.document} group={current.group.id} item={current.item}/>
+    {isRecord(current.item.value) && Array.isArray(current.item.value.sourceRefs) && current.item.value.sourceRefs.length > 0 && <Disclosure title={msg('Source references')}><CodeBlock expandable text={JSON.stringify(current.item.value.sourceRefs,null,2)} label={msg('Source references')}/></Disclosure>}
+    <Disclosure title={msg('Exact definition')}><CodeBlock expandable text={JSON.stringify(current.item.value,null,2) ?? ''} label="JSON"/></Disclosure>
+  </> : selectedGroup && <>{selectedGroup.items.length ? selectedGroup.items.map(item=><section key={item.pointer}><h3>{item.label}</h3><LogicDetails document={model.document} group={selectedGroup.id} item={item}/></section>) : <p>{msg('None declared.')}</p>}</>}>{body}</BuilderSplit>
 }

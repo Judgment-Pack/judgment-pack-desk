@@ -5,8 +5,6 @@
   "{{count}} elements unchanged, in the same place.": "{{count}} element unchanged, in the same place.",
   "{{count}} expectations did not pass runtime expectation validation. Testing is paused until each correction is reviewed and approved.": "{{count}} expectation did not pass runtime expectation validation. Testing is paused until each correction is reviewed and approved.",
   "{{count}} excerpts": "{{count}} excerpt",
-  "{{count}} source references": "{{count}} source reference",
-  "{{revisions}} ({{count}} repairs)": "{{revisions}} ({{count}} repair)",
   "{{count}} invalid expectations · testing paused": "{{count}} invalid expectation · testing paused",
   "{{count}} invalid expectations must be corrected and approved before testing or creating the pack.": "{{count}} invalid expectation must be corrected and approved before testing or creating the pack.",
   "The unchanged draft is not a valid pack: {{count}} diagnostics. Review them, or send a message to repair it.": "The unchanged draft is not a valid pack: {{count}} diagnostic. Review them, or send a message to repair it.",
@@ -23,5 +21,10 @@
   "Turn the gates on and lock {{count}} files": "Turn the gates on and lock {{count}} file",
   "The lock covers {{count}} files: jpack.json as the upgrade writes it, and every pack and graph it declares. Without a lock, requireReviewed would refuse every deciding run, so the configuration and the lock are written together: if the lock fails, Desk puts jpack.json, .gitignore and the lock back as they were.": "The lock covers {{count}} file: jpack.json as the upgrade writes it, since it declares no pack or graph. Without a lock, requireReviewed would refuse every deciding run, so the configuration and the lock are written together: if the lock fails, Desk puts jpack.json, .gitignore and the lock back as they were.",
   "The gates are on. jpack.json is at configVersion {{version}}, and these {{count}} files are this project’s reviewed set.": "The gates are on. jpack.json is at configVersion {{version}}, and {{count}} file is this project’s reviewed set.",
-  "Make the signing key and lock {{count}} files": "Make the signing key and lock {{count}} file"
+  "Make the signing key and lock {{count}} files": "Make the signing key and lock {{count}} file",
+  "{{count}} items": "{{count}} item",
+  "{{count}} loaded items": "{{count}} loaded item",
+  "{{count}} more outcomes in Logic.": "{{count}} more outcome in Logic.",
+  "{{count}} steps": "{{count}} step",
+  "{{count}} distinct packs": "{{count}} distinct pack"
 }

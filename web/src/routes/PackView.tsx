@@ -1,4 +1,9 @@
-import { BuilderSplit } from '../builders/BuilderSplit'
+import { DefinitionBrief } from '../briefs/DefinitionBrief'
+import { DefinitionHistory } from '../definitions/DefinitionHistory'
+import { DraftSources } from '../research/ui/DraftSources'
+import { useInspectorPresentation } from '../shell/InspectorPresentation'
+import { useShellState } from '../shell/paneState'
+import { BuilderSplit, useBuilderPreference } from '../builders/BuilderSplit'
 import workspaceStyles from '../packs/PackWorkspace.module.css'
 import { PackBuildActions } from '../packs/edit/PackBuildActions'
 import { sourceMessage } from '../i18n/source'
@@ -105,6 +110,8 @@ import { useLogicState, rememberLogicMode, type LogicMode } from '../packs/logic
 import { usePackRun, traceMatches } from '../packs/runContext'
 import styles from './PackView.module.css'
 import { PageBody } from '../ui/PageLayout'
+import { PackReview } from '../briefs/PackReview'
+import { DefinitionUsage } from '../usage/DefinitionUsage'
 import { PackHeader, PackQuestion, PackOverview, PACK_GROUPS, type PackSection } from '../packs/PackWorkspace'
 
 const LEAVING = 'This pack has unsaved changes. Leave without saving?'
@@ -138,9 +145,22 @@ export function PackView() {
   const path = meta?.path ?? summary?.path
   const file = useFileContent(path)
   const rightSlot = useInspectorControls()
+  const shell = useShellState()
+  const [assistantOpen, setAssistantOpen] = useBuilderPreference<boolean>('assistant-open', true)
+  useInspectorPresentation(useMemo(() => ({ title: msg('Assistant'), contextTitle: String(pack.data?.document?.title ?? packId ?? ''), workspaceTools: true,
+    open: assistantOpen, onOpenChange: setAssistantOpen, width: shell.inspectorWidth ?? 400,
+    onResize: shell.resizeInspector, onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640
+  }), [assistantOpen, setAssistantOpen, shell.inspectorWidth, shell.resizeInspector, shell.resetInspectorWidth, locale, pack.data?.document?.title, packId]))
   const detailsSlot = useDetailsSlot()
   const askedChat = params.get('chat')
-  useEffect(() => { if (askedChat) rightSlot.reveal() }, [askedChat, rightSlot.reveal])
+  const openedChat = useRef<string | null>(null)
+  useEffect(() => {
+    const requested = askedChat ? `${packId}:${askedChat}` : null
+    if (openedChat.current === requested) return
+    openedChat.current = requested
+    // A chat link opens Assistant once; changing pane callbacks must not undo Close.
+    if (requested) rightSlot.reveal()
+  }, [packId, askedChat, rightSlot.reveal])
   const [detailsTab, setDetailsTab] = useState<string | null>(rightSlot.tab)
   const slot = { ...rightSlot, reveal: detailsSlot.reveal, tab: detailsTab, setTab: setDetailsTab }
 
@@ -405,7 +425,7 @@ export function PackView() {
   const builderView = rawMode ? 'source' : (params.get('builder') === 'settings' || (!params.has('builder') && hash !== '')) ? 'settings' : params.get('builder') === 'tests' ? 'tests' : 'build'
   const section: PackSection = editing ? builderView === 'build' && formAvailable ? 'logic' : 'document' : hash !== '' || (at !== null && !requested)
     ? 'document' : requested === 'logic' || requested === 'rules' ? 'logic'
-      : requested === 'evidence' || requested === 'document' ? requested : 'overview'
+      : requested === 'evidence' || requested === 'document' || requested === 'review' || requested === 'brief' || requested === 'history' || requested === 'usage' ? requested : 'overview'
 
   const model = useMemo(() => drawn ? projectLogic(drawn) : undefined, [drawn, locale])
   const appearance = useDecisionAppearance(model?.document.id)
@@ -902,7 +922,7 @@ export function PackView() {
         conditionsVisible={logic.display.conditions || Boolean(logic.query.trim())}
         trace={runTrace} advanced={inspectorNode} /> : inspectorNode)
   const inspector = useInspectorPortal(inspectorNode === null ? null :
-    <PackAssistant key={packId} packId={packId ?? ''} path={path} digest={file.data?.sha256}
+    <PackAssistant key={packId} title={String(pack.data?.document?.title ?? packId ?? '')} packId={packId ?? ''} path={path} digest={file.data?.sha256}
       draft={bufferText ?? servedText} editing={editing && onPath}
       onEdit={() => { returnLocation.current = { packId, search: location.search.replace(/^\?/, ''), hash }; setParams(withEditing(params, true), { replace: true }) }}
       identity={onPath ? buffer.identity : undefined} busy={busyDraft} diagnostics={diagnosticsToFix} />)
@@ -1026,7 +1046,7 @@ export function PackView() {
           }}
           onUndo={buffer.undo}
           onDiscard={async () => { if (await confirmDiscard(msg(LEAVING), { name: drawn?.title })) discardAll() }}
-        /> : <PackHeader packId={packId ?? ''} document={drawn} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />}
+        /> : <PackHeader packId={packId ?? ''} document={drawn} sourceText={shownText} checkStatus={fetching ? msg('Checking structure…') : digestsDisagree || disagreement.length ? msg('Checks need review') : unavailable ? msg('Checks unavailable') : stale ? msg('Checks outdated') : report?.status === 'valid' ? msg('Structure valid') : report ? msg('Checks need review') : msg('Not checked')} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />}
         <Dialog open={exitOpen} onOpenChange={setExitOpen} title={msg("Save changes before leaving?")}
           description={msg("Your changes have not been saved to the pack.")} openerRef={editing ? backButton : editButton}>
           <TypedConfirmation confirmation={drawn?.title || msg('Yes')} value={exitTyped} onChange={setExitTyped} disabled={savePending} />
@@ -1043,11 +1063,11 @@ export function PackView() {
           const next = new URLSearchParams(params); next.set('editorClosed', '1'); retainInspectorOnNavigation.current = true; setParams(next, {replace: true})
         }}>
         <div className={styles.builderContent} hidden={editing && builderView === 'tests'}>
-        <PageBody fill={section === 'logic'} width={section === 'logic' ? 'full' : 'wide'}>
-        {section !== 'logic' && <PackQuestion document={drawn} />}
+        <PageBody fill={section === 'logic' || section === 'usage'} width={section === 'logic' || section === 'usage' ? 'full' : 'wide'}>
+        {section !== 'overview' && section !== 'logic' && section !== 'review' && section !== 'brief' && section !== 'history' && section !== 'usage' && <PackQuestion document={drawn} />}
         <div
           className={styles.workspace}
-          data-logic={section === 'logic' || undefined}
+          data-logic={section === 'logic' || section === 'usage' || undefined}
         >
           <div className={styles.column}>
             {pack.error !== null && (
@@ -1164,9 +1184,9 @@ export function PackView() {
               </>
             ) : (
               <>
-                {section === 'overview' || section === 'logic' ? <>
+                {section === 'brief' ? <DefinitionBrief kind="pack" owner={packId ?? ''} title={drawn.title || packId || ''} content={shownText ?? ''}/> : section === 'history' ? <DefinitionHistory kind="pack" owner={packId ?? ''} documentId={drawn.id}/> : section === 'usage' ? <DefinitionUsage kind="pack" configuredKey={packId} documentId={typeof drawn.id === 'string' ? drawn.id : undefined}/> : section === 'review' ? <PackReview owner={packId ?? ''} title={drawn.title || packId || ''} content={servedText ?? ''} validation={fetching ? msg('Checking…') : stale ? msg('Outdated') : report?.status ?? msg('Not checked')} findings={strip} attention={Boolean(digestsDisagree || disagreement.length || unavailable || report?.diagnostics?.length || report && report.status !== 'valid')}/> : section === 'overview' || section === 'logic' ? <>
                   {selectionNotice && <p role="status" className={styles.warning}>{systemMessage(selectionNotice)}</p>}
-                  {(fetching || stale || unavailable || digestsDisagree || disagreement.length > 0 || Boolean(report?.diagnostics?.length) || (report?.status && report.status !== 'valid')) && <details className={styles.validation} open={Boolean(digestsDisagree || disagreement.length || report?.diagnostics?.length || (report?.status && report.status !== 'valid'))}>
+                  {section === 'logic' && (fetching || stale || unavailable || digestsDisagree || disagreement.length > 0 || Boolean(report?.diagnostics?.length) || (report?.status && report.status !== 'valid')) && <details className={styles.validation} open={Boolean(digestsDisagree || disagreement.length || report?.diagnostics?.length || (report?.status && report.status !== 'valid'))}>
                     <summary><Message text={"Validation · <0/>"} slots={[fetching ? msg("checking") : stale ? msg("out of date") : report?.status ?? msg("not checked")]} /></summary>{strip}
                   </details>}
                   {section === 'overview' ? <PackOverview document={drawn} packId={packId} logicHref={`/packs/${encodeURIComponent(packId ?? '')}?view=logic${params.get('chat') ? `&chat=${encodeURIComponent(params.get('chat')!)}` : ''}`} /> : model && <>
@@ -1182,7 +1202,7 @@ export function PackView() {
                         : !editing && (stale || !report) ? msg("A current validation is needed before displaying a complete map.")
                         : !editing && report?.status !== 'valid' ? msg("This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.") : undefined} />
                   </>}
-                </> : <PackDocumentView key={section} document={drawn} active={active}
+                </> : section === 'evidence' && !editing ? <DraftSources document={drawn}/> : <PackDocumentView key={section} document={drawn} active={active}
                   members={section === 'evidence' ? PACK_GROUPS.evidence : undefined}
                   outline={section === 'document'}>
                   {strip}

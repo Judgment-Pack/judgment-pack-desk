@@ -473,15 +473,7 @@ fieldset {
   color: var(--warn);
 }
 
-.banner {
-  margin: 0 0 1.25rem;
-  padding: 0.6rem 0.9rem;
-  border: 1px solid var(--warn);
-  border-radius: var(--radius);
-  background: var(--warn-soft);
-  color: var(--warn);
-  font-size: var(--text-body);
-}
+
 
 /* Cards ------------------------------------------------------------------- */
 
@@ -754,19 +746,9 @@ fieldset {
   margin: 0 0 1rem;
 }
 
-.error-box {
-  background: var(--danger-soft);
-  border: 1px solid var(--danger);
-  border-radius: var(--radius);
-  padding: 0.9rem 1.1rem;
-  color: var(--danger);
-}
 
-.error-box p {
-  margin: 0.35rem 0 0;
-  color: var(--ink);
-  white-space: pre-wrap;
-}
+
+
 
 .note-warn {
   color: var(--warn);
@@ -1576,4 +1558,4 @@ fieldset {
 :root:lang(ko) {
   --sans: "Inter Variable", "Noto Sans KR Variable", ui-sans-serif, system-ui, sans-serif;
 }
-.desk-menu span:lang(ko) { font-family: "Noto Sans KR Variable", sans-serif; }
+[role="menu"] span:lang(ko) { font-family: "Noto Sans KR Variable", sans-serif; }

@@ -1,5 +1,4 @@
-import { useAIConnectionScope, resolveAIConnection } from './aiConnections'
-import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import type { AITarget } from './aiConnections'
 import { bindExecution } from './target'
 import { sourceMessage } from '../i18n/source'
 /**
@@ -213,6 +212,8 @@ function modelOf(picked: string): string {
 }
 
 export function useAssistantRun(options: {
+  /** Identity from the same slot as endpoint/agent, captured when the run starts. */
+  target?: AITarget
   endpoint: AssistantEndpointConfig | null
   agent?: AssistantAgentConfig
   /**
@@ -243,9 +244,7 @@ export function useAssistantRun(options: {
    */
   hostTools?: HostTool[]
 }): AssistantRun {
-  const connectionScope=useAIConnectionScope(),effective=useEffectiveConfig()
-  const selectedConnection=connectionScope?.connection??resolveAIConnection(effective).connection
-  const connectionTarget=selectedConnection?{connectionId:selectedConnection.id,connectionRevision:selectedConnection.revision}:{}
+  const connectionTarget = options.target ?? {}
   const [status, setStatus] = useState<RunStatus>('idle')
   const [runningEngine, setRunningEngine] = useState(options.engine)
   const [events, setEvents] = useState<AssistantEvent[]>([])

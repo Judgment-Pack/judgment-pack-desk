@@ -1,3 +1,4 @@
+import { readRetainedCheck } from './retainedCheck'
 import type { AssistantEvent } from '../assistant/engine'
 import { digestOf, type CandidateCheck } from './checkCandidate'
 
@@ -46,5 +47,5 @@ export function readProbes(value: unknown): RuntimeProbe[] {
 export function readPreviousCheck(value: unknown): CandidateCheck | undefined {
   if (value === undefined) return undefined
   if (!object(value) || !/^[a-f0-9]{64}$/.test(String(value.documentDigest)) || typeof value.valid !== 'boolean' || !Array.isArray(value.diagnostics) || !Array.isArray(value.cases) || value.cases.some(row => !object(row) || typeof row.id !== 'string' || typeof row.passed !== 'boolean' || (row.refused !== undefined && typeof row.refused !== 'string'))) throw new Error('Invalid saved draft check')
-  return { documentDigest: String(value.documentDigest), valid: value.valid, diagnostics: value.diagnostics, cases: value.cases }
+  return { documentDigest: String(value.documentDigest), valid: value.valid, diagnostics: value.diagnostics, cases: value.cases, record: readRetainedCheck(value.record) }
 }

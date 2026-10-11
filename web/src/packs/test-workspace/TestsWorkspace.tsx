@@ -1,4 +1,4 @@
-import { DropdownMenu } from 'radix-ui'
+import { Menu as DropdownMenu, MenuChoice } from '../../ui/Menu'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { msg, useLocale } from '../../i18n'
 import { useMcp } from '../../mcp/McpProvider'
@@ -17,12 +17,10 @@ import { useFileListing } from '../../files/queries'
 import { readFile } from '../../files/client'
 import { digestOf, jsonIdentity } from '../../research/checkCandidate'
 import { validateExpectations, type InvalidFinding } from '../../research/expectations'
-import { useInspectorPresentation } from '../../shell/InspectorPresentation'
-import { useInspectorPortal, useInspectorControls } from '../../shell/InspectorSlot'
-import { useBriefSubject } from '../../briefs/context'
+import { useInspectorControls } from '../../shell/InspectorSlot'
+import { BriefPane } from '../../briefs/BriefPane'
 import { caseSnapshot } from '../../briefs/model'
-import { useDetailsPortal, useDetailsSlot } from '../../shell/DetailsSlot'
-import { useShellState } from '../../shell/paneState'
+import { BuilderSplit } from '../../builders/BuilderSplit'
 import { TypedConfirmation, useConfirmDiscard } from '../../shell/UnsavedChanges'
 import { useDirtyGuard } from '../../shell/useDirtyGuard'
 import { Button } from '../../ui/Button'
@@ -32,7 +30,6 @@ import { IconCopy, IconTrash, IconMore } from '../../shell/icons'
 import { Input } from '../../ui/Input'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 import { InspectionRow } from '../../ui/InspectionRow'
-import { Select } from '../../ui/Select'
 import { Disclosure } from '../../ui/Disclosure'
 import { CodeBlock } from '../../ui/CodeBlock'
 import { valueLabel } from '../terminology'
@@ -127,6 +124,7 @@ export function TestsContent({
   active = true,
   draft,
   initialHistory = false,
+  onAssistantBusyChange,
 }: {
   owner: string
   document: PackDocument
@@ -136,18 +134,19 @@ export function TestsContent({
   active?: boolean
   draft?: PackDraft
   initialHistory?: boolean
+  onAssistantBusyChange?: (busy: boolean) => void
 }) {
-  const locale = useLocale(),
-    { client, status, connectionEpoch } = useMcp(),
+  useLocale()
+  const { client, status, connectionEpoch } = useMcp(),
     storage = useTestStorage(owner),
     { suite } = storage
   const chats = useChats(),
-    shell = useShellState(),
     assistant = useInspectorControls(),
-    details = useDetailsSlot(),
     connections = useConnectionsPane(),
     config = useEffectiveConfig()
-  const [open, setOpen] = useState(false),
+  const [bottomOpen,setBottomOpen]=useState(false)
+  const details={open:bottomOpen,reveal:()=>setBottomOpen(true)}
+  const [designing, setDesigning] = useState(false),
     [working, setWorking] = useState<TestCase | null>(null),
     [baseline, setBaseline] = useState(''),
     [runView, setRunView] = useState<TestRun | null>(null),
@@ -179,8 +178,9 @@ export function TestsContent({
   workRef.current = working
   sourceRef.current = aiSources
   const briefCase = working && suite.cases.find(c => c.id === working.id)
-  useBriefSubject(active ? { id: briefCase ? `case:${owner}:${briefCase.id}` : `case:${owner}:select`, path: '/api/briefs', title, owner, caseId: briefCase?.id,
-    ...(briefCase ? { snapshot: caseSnapshot(text, briefCase, suite) } : { unavailable: msg('Select a saved test case to read or generate its brief. Save a new case first.') }) } : null)
+  const [showCaseBrief, setShowCaseBrief] = useState(false)
+  const briefOpener = useRef<HTMLButtonElement>(null)
+  const briefSubject = briefCase ? { id: `case:${owner}:${briefCase.id}`, path: '/api/briefs', title: briefCase.name, owner, caseId: briefCase.id, snapshot: caseSnapshot(text, briefCase, suite) } : null
   const [unwritten,setUnwritten]=useState(false)
   const dirty = unwritten || !!working && jsonIdentity(working) !== baseline
   const savedProposalCases =
@@ -226,23 +226,6 @@ export function TestsContent({
       keep = false
     }
   }, [client, status, connectionEpoch])
-  const presentation = useMemo(
-    () => ({
-      title: msg('Assistant'),
-      contextTitle: title,
-      workspaceTools: true,
-      available: true,
-      open,
-      onOpenChange: setOpen,
-      width: shell.inspectorWidth ?? 440,
-      onResize: shell.resizeInspector,
-      onReset: shell.resetInspectorWidth,
-      minimumMainWidth: 480,
-      maximumWidth: 640,
-    }),
-    [locale, title, open, shell.inspectorWidth, shell.resizeInspector, shell.resetInspectorWidth],
-  )
-  useInspectorPresentation(active ? presentation : null)
   const listing = useFileListing()
   const researchPath = matrixPath?.endsWith('.matrix.json')
     ? matrixPath.replace(/\.matrix\.json$/, '.research.json')
@@ -319,19 +302,20 @@ export function TestsContent({
           ? `Propose inputs for this case without changing its intended expectation: ${working.name}. Current case: ${JSON.stringify(working.row)}`
           : 'Design test cases for this pack. Cover normal decisions, exceptions, missing evidence and boundaries.',
     })
-    setOpen(true)
-    assistant.reveal?.()
+    setDesigning(true)
+    assistant.revealMain?.()
   }
   function designMissing(run: TestRun) {
     if (!currentCoverage(run, suite.cases, digest) || !missingProbes(run).length) return
     setAISources([...new Map([...aiSources, ...suite.cases.flatMap(c => c.sources)].map(s => [s.id, s])).values()])
     setAIRequest({ id: Date.now(), text: msg('Design additional test cases for the uncovered behavior in this run. Keep existing cases unchanged and explain any gaps that need a policy decision.'), additionsOnly: true, coverageRunId: run.id })
-    setOpen(true)
-    assistant.reveal?.()
+    setDesigning(true)
+    assistant.revealMain?.()
   }
   async function review(proposal: TestProposal) {
     if (busy) return
     if (reviewing?.id === proposal.id) {
+      setDesigning(false)
       assistant.revealMain?.()
       return
     }
@@ -340,6 +324,7 @@ export function TestsContent({
     setBaseline('')
     setReviewEditing(false)
     setError('')
+    setDesigning(false)
     setReviewRows(proposalCases(proposal))
     setReviewing(proposal)
     assistant.revealMain?.()
@@ -401,14 +386,14 @@ export function TestsContent({
           if (w.sources.length + files.length > 4) throw Error(msg('Attach up to four files at a time.'))
           setWorking({ ...w, sources: [...w.sources, ...files] })
           setSourceMenu(false)
-          if (reviewEditing) assistant.reveal?.()
+          if (reviewEditing) assistant.revealMain?.()
         } else {
           if (sourceRef.current.length + files.length > 4)
             throw Error(msg('Attach up to four files at a time.'))
           setAISources([...sourceRef.current, ...files])
           setSourceMenu(false)
-          setOpen(true)
-          assistant.reveal?.()
+          setDesigning(true)
+          assistant.revealMain?.()
         }
       },
     }),
@@ -668,8 +653,8 @@ export function TestsContent({
         onClick={() => {
           setSourceMenu(false)
           if (sourceTarget === 'ai') {
-            setOpen(true)
-            assistant.reveal?.()
+            setDesigning(true)
+            assistant.revealMain?.()
           }
         }}
       >
@@ -754,23 +739,22 @@ export function TestsContent({
       <p>{msg('Select a case to view inputs, sources and expected results.')}</p>
     </div>
   )
-  const detailPortal = useDetailsPortal(
-    <div hidden={!active} style={{ height: '100%' }}>
-      {detailNode}
-    </div>,
-  )
-  const assistantPortal = useInspectorPortal(
-    <div hidden={!active} style={{ height: '100%' }}>
+  const testDesigner = (
+    <section hidden={!designing} className={styles.testDesigner} aria-label={msg('Design tests')}>
+      <div className={styles.designerHeader}><h2>{msg('Design tests')}</h2><Button variant="quiet" onClick={() => setDesigning(false)}>{msg('Back to tests')}</Button></div>
       <TestAssistant
         key={owner}
+        title={title}
         document={text}
         packDigest={digest}
         suite={suite}
         sources={aiSources}
         onSource={(el) => addSource('ai', el)}
         onReview={review}
-        reviewing={assistant.mainCovered ? undefined : reviewing?.id}
+        reviewing={reviewing?.id}
         reviewDisabled={busy}
+        blocked={Boolean(chats.store?.running)}
+        onRunningChange={onAssistantBusyChange}
         onRemoveSource={(id) => setAISources((files) => files.filter((f) => f.id !== id))}
         request={aiRequest}
         onCheckpoint={async (record, rows) => {
@@ -781,7 +765,7 @@ export function TestsContent({
           }))
         }}
       />
-    </div>,
+    </section>
   )
   const filtered = suite.cases.filter(
     (c) =>
@@ -792,8 +776,7 @@ export function TestsContent({
   const trials = suite.runs.filter((r) => r.trial && r.origin === 'draft')
   return (
     <div className={styles.root} data-tests-workspace>
-      {detailPortal}
-      {assistantPortal}
+      {testDesigner}
       <Dialog
         open={pendingDelete !== null}
         title={msg('Delete case?')}
@@ -855,7 +838,11 @@ export function TestsContent({
           e.target.value = ''
         }}
       />
-      {reviewing ? (
+      <Dialog open={showCaseBrief && !!briefSubject} onOpenChange={setShowCaseBrief} title={msg('Case brief')} openerRef={briefOpener}
+        footer={<DialogActions><Button onClick={() => setShowCaseBrief(false)}>{msg('Close')}</Button></DialogActions>}>
+        {showCaseBrief && briefSubject && <BriefPane key={briefSubject.id} subject={briefSubject} embedded/>}
+      </Dialog>
+      {!designing && (reviewing ? (
         <>
           <div className={styles.proposalList} hidden={reviewEditing}>
             <ProposalReview
@@ -879,6 +866,7 @@ export function TestsContent({
         </>
       ) : (
         <>
+          <BuilderSplit preference="pack" title={runView ? msg('Test result') : working?.name || msg('Case details')} open={active && bottomOpen} onClose={()=>setBottomOpen(false)} editor={detailNode}>
           <div className={styles.content}>
             <div className={styles.workspaceBody}>
               <div className={styles.toolbar}>
@@ -891,13 +879,36 @@ export function TestsContent({
                     { value: 'history', label: msg('Run history') },
                   ]}
                 />
+                {!history && suite.cases.length > 0 && <>
+                      <Input
+                        aria-label={msg('Search cases')}
+                        placeholder={msg('Search cases…')}
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                      />
+                      <MenuChoice
+                        label={msg('Test result filter')}
+                        value={filter}
+                        onValueChange={setFilter}
+                        options={[
+                          { value: 'all', label: msg('All results') },
+                          { value: 'passed', label: msg('Passed') },
+                          { value: 'mismatch', label: msg('Mismatch') },
+                          { value: 'exploratory', label: msg('Exploratory') },
+                          { value: 'not-run', label: msg('Not run') },
+                          { value: 'stale', label: msg('Needs rerun') },
+                          { value: 'error', label: msg('Could not run') },
+                        ]}
+                      />
+                </>}
                 <div className={styles.actions}>
-                  <Button variant="quiet" ref={newCaseButton} onClick={startNew} disabled={busy}>
-                    {msg('New case')}
-                  </Button>
-                  <Button onClick={() => requestAI()} disabled={busy}>
-                    {msg('Design with AI')}
-                  </Button>
+                  {briefCase && <Button variant="quiet" ref={briefOpener} onClick={() => setShowCaseBrief(true)}>{msg('Case brief')}</Button>}
+                  <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button ref={newCaseButton} disabled={busy}>{msg('Add case')}</Button></DropdownMenu.Trigger>
+                    <DropdownMenu.Portal><DropdownMenu.Content align="end">
+                      <DropdownMenu.Item onSelect={()=>void startNew()}>{msg('New case')}</DropdownMenu.Item>
+                      <DropdownMenu.Item onSelect={()=>requestAI()}>{msg('Design with AI')}</DropdownMenu.Item>
+                    </DropdownMenu.Content></DropdownMenu.Portal>
+                  </DropdownMenu.Root>
                   <Button
                     variant="primary"
                     onClick={() => void runCases(suite.cases.filter(executable))}
@@ -912,16 +923,14 @@ export function TestsContent({
                       </Button>
                     </DropdownMenu.Trigger></Tooltip>
                     <DropdownMenu.Portal>
-                      <DropdownMenu.Content className="desk-menu" align="end" sideOffset={4}>
+                      <DropdownMenu.Content align="end" sideOffset={4}>
                         <DropdownMenu.Item
-                          className="desk-menu-item"
                           disabled={busy}
                           onSelect={() => importInput.current?.click()}
                         >
                           {msg('Import cases')}
                         </DropdownMenu.Item>
                         <DropdownMenu.Item
-                          className="desk-menu-item"
                           onSelect={exportCases}
                           disabled={!suite.cases.some(executable)}
                         >
@@ -986,31 +995,6 @@ export function TestsContent({
                 </div>
               ) : (
                 <>
-                  {suite.cases.length > 0 && (
-                    <div className={styles.filters}>
-                      <Input
-                        aria-label={msg('Search cases')}
-                        placeholder={msg('Search cases…')}
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                      />
-                      <Select
-                        id="test-results-filter"
-                        aria-label={msg('Test result filter')}
-                        value={filter}
-                        onValueChange={setFilter}
-                        options={[
-                          { value: 'all', label: msg('All results') },
-                          { value: 'passed', label: msg('Passed') },
-                          { value: 'mismatch', label: msg('Mismatch') },
-                          { value: 'exploratory', label: msg('Exploratory') },
-                          { value: 'not-run', label: msg('Not run') },
-                          { value: 'stale', label: msg('Needs rerun') },
-                          { value: 'error', label: msg('Could not run') },
-                        ]}
-                      />
-                    </div>
-                  )}
                   {suite.cases.length > 0 && !filtered.length && (
                     <p>{msg('No cases match these filters.')}</p>
                   )}
@@ -1128,10 +1112,7 @@ export function TestsContent({
                     </div>
                   )}
                   {trials.length > 0 && (
-                    <section className={styles.trials}>
-                      <h2>
-                        {msg('From draft')} <span className={styles.muted}>· {trials.length}</span>
-                      </h2>
+                    <Disclosure className={styles.trials} title={msg('Exploratory draft runs')}>
                       <p className={styles.muted}>
                         {msg(
                           'Exploratory runs from the draft, without saved expectations. Open a trial to review its result or reuse its inputs.',
@@ -1157,7 +1138,7 @@ export function TestsContent({
                           />
                         ))}
                       </div>
-                    </section>
+                    </Disclosure>
                   )}
                 </>
               )}
@@ -1182,8 +1163,9 @@ export function TestsContent({
               </div>
             </div>
           </div>
+          </BuilderSplit>
         </>
-      )}
+      ))}
     </div>
   )
 }

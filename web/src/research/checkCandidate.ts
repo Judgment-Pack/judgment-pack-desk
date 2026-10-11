@@ -41,6 +41,7 @@ export interface CandidateCheck {
   valid: boolean
   diagnostics: unknown[]
   cases: CaseResult[]
+  record?: import('./retainedCheck').RetainedCheck
 }
 
 export async function digestOf(text: string): Promise<string> {

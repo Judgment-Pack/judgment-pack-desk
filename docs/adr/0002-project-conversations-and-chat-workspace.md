@@ -54,14 +54,29 @@ preferences are cached in per-tab, project-scoped sessionStorage for reload
 recovery. Sending or explicitly starting fresh clears that cache. It contains no
 transcript, candidate checkpoint or API credential.
 
-A checkpoint excludes runtime checks, receipt verdicts, registries and pending
-approval tokens. Candidate documents are reconstructed from their exact text;
-source documents are reconstructed from their original gateway responses.
-Restored research reads and verifies the current registry without resealing an
-already sealed session, readmits its expected cases, and reruns the runtime
-checks. A missing registry or unsealed/incomplete saved acquisition cannot be
-promoted to ready. A saved historical approval is display/audit data, not a
-replacement for current admission. Recovery does not invoke a model.
+A checkpoint excludes receipt verdicts, registries and pending approval tokens.
+Candidate documents are reconstructed from their exact text; source documents
+are reconstructed from their original gateway responses. Complete draft checks
+retain a versioned caller-owned record: candidate digest, exact test inputs and
+expectations, cited statement evidence, runtime descriptor, source-context digest,
+validation result, and the complete native snapshot-matrix report. The record's
+integrity digest detects inconsistent storage; it is not a runtime signature or
+production decision authorization.
+
+On reload Desk verifies the record, exact draft/inputs and runtime identity, then
+reverifies current source proofs and pins without acquiring or resealing sources.
+Only an unchanged, verified record can restore current results and readiness.
+Failed comparisons remain failed. Changed, unavailable, interrupted or incomplete
+checks cannot unlock finalization. Development runtimes without stable version
+identity and older summary-only records require an explicit **Run checks**.
+Reload performs no test evaluation, model call or repair. Pending write approvals
+are never recovered; finalizing still requires a fresh review and approved write.
+
+Checks run from a draft with no saved conversation persist to that independent
+draft without creating chat history. Only the statements cited by its tests are
+retained as provenance; subsequent messages use distinct identities and cannot
+silently replace those statements. This uses existing Runtime snapshot checks and
+Gateway proof verification; neither service becomes a draft-history store.
 
 ### Engine contract
 

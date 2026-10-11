@@ -6,9 +6,8 @@
  * description is optional because not every dialog has something to say that
  * the fields do not already say better.
  *
- * **No description means no `aria-describedby`, not an empty one.** Radix
- * tracks whether a `Description` was rendered and omits the attribute when
- * none was, so a dialog with nothing to add simply has nothing to add. The
+ * **No description means no `aria-describedby`, not an empty one.** The wrapper
+ * associates the description only when one is rendered, so a dialog with nothing to add simply has nothing to add. The
  * shape this replaced rendered an empty `<Description />` "to mean there is
  * none", which left every dialog pointing a screen reader at an empty
  * paragraph — the same defect `Field` documents at length and refuses, two
@@ -26,7 +25,7 @@
  * puts focus back on it however the dialog closed.
  */
 import { Dialog as RadixDialog } from 'radix-ui'
-import type { ReactNode, RefObject } from 'react'
+import { useId, type ReactNode, type RefObject } from 'react'
 import styles from './Dialog.module.css'
 
 export const DialogClose = RadixDialog.Close
@@ -39,6 +38,7 @@ export function Dialog({
   openerRef,
   onCloseAutoFocus,
   footer,
+  size = 'default',
   children
 }: {
   open: boolean
@@ -58,14 +58,18 @@ export function Dialog({
   onCloseAutoFocus?: (event: Event) => void
   /** A fixed action area; the body scrolls independently when supplied. */
   footer?: ReactNode
+  size?: 'default' | 'wide'
   children: ReactNode
 }) {
+  const descriptionId = useId()
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={styles.overlay} />
         <RadixDialog.Content
           data-modal-surface
+          data-size={size}
+          aria-describedby={description ? descriptionId : undefined}
           className={styles.content}
           data-fixed-footer={footer !== undefined || undefined}
           onCloseAutoFocus={
@@ -80,7 +84,7 @@ export function Dialog({
           <div className={styles.header}>
             <RadixDialog.Title className={styles.title}>{title}</RadixDialog.Title>
             {description ? (
-              <RadixDialog.Description className={styles.description}>
+              <RadixDialog.Description id={descriptionId} className={styles.description}>
                 {description}
               </RadixDialog.Description>
             ) : null}

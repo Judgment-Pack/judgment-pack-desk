@@ -16,19 +16,15 @@ import { PacksLayout } from './routes/PacksLayout'
 import { ReviewAndLockView } from './packs/review/ReviewAndLockView'
 import { UpgradeView } from './packs/upgrade/UpgradeView'
 import { AppShell } from './shell/AppShell'
-import { BlockedNotice, ConnectionNotices, useBlockingError } from './shell/ConnectionNotices'
+import { BlockedNotice, useBlockingError } from './shell/ConnectionNotices'
 
 export function App() {
-  // The three connection notices and the blocked reason moved into
-  // `ConnectionNotices.tsx`, comments and wording intact. They render inside
-  // `<main>` and never inside a collapsible pane: nothing whose absence
-  // changes what is on screen may live somewhere a viewer has closed.
+  // A temporary connection loss keeps the workspace mounted; status lives in the footer.
   const blocking = useBlockingError()
   const location = useLocation()
 
   return (
     <AppShell>
-      <ConnectionNotices />
       {blocking && !location.pathname.startsWith('/jobs') ? (
         <BlockedNotice error={blocking} />
       ) : (
@@ -42,8 +38,10 @@ export function App() {
           <Route path="/jobs/new" element={<JobsView />} />
           <Route path="/jobs/:jobId" element={<JobsView />} />
           <Route path="/jobs/:jobId/runs/:runId" element={<JobsView />} />
-          <Route path="/graphs" element={<GraphView />} />
-          <Route path="/graphs/:graphId" element={<GraphView />} />
+          <Route path="/graphs" element={<PacksLayout />}>
+            <Route index element={<GraphView />} />
+            <Route path=":graphId" element={<GraphView />} />
+          </Route>
           {/* All pack views share folder location and browser state. Changing
               tabs changes the document view, not its place in the collection. */}
           <Route path="/create-pack" element={<Navigate to={`/packs/new${location.search}`} replace />} />

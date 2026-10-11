@@ -1,10 +1,10 @@
 import { object, type TestCase, type TestRun, type TestSuite } from '../packs/test-workspace/model'
 import { jsonIdentity } from '../research/checkCandidate'
-export interface Snapshot { documents?: { id: string; context: string }[]; kind: 'case' | 'job' | 'run'; title: string; pack: string; record: Record<string, unknown> }
+export interface Snapshot { documents?: { id: string; context: string }[]; kind: 'case' | 'job' | 'run' | 'pack' | 'graph'; title: string; pack: string; record: Record<string, unknown> }
 export interface BriefText { context: string; findings: string; uncertainty: string; nextAction: string }
 export interface Revision { id: string; revision: number; at: string; snapshot: Snapshot; text: BriefText; model: string; method: string }
 export interface History { revisions: Revision[]; pending?: { token: string; expires: string; snapshot: Snapshot; model: string } }
-export interface Reply { project?: string; content: {version: 1; subjects: Record<string, History>}; snapshot?: Snapshot }
+export interface Reply { project?: string; content: {version: 1; subjects: Record<string, History>}; snapshot?: Snapshot; snapshotIssue?: string }
 export function caseSnapshot(pack: string, c: TestCase, suite: TestSuite): Snapshot {
   const run = [...suite.runs].reverse().find(r => r.packText === pack && r.cases.some(saved => jsonIdentity(saved) === jsonIdentity(c)))
   // Keep this case's result, not the other cases' private inputs or unrelated reports.
@@ -17,7 +17,11 @@ export function briefText(value: unknown): BriefText {
   if (fields.some(k => typeof value[k] !== 'string' || !(value[k] as string).trim() || (value[k] as string).length > 3000) || fields.reduce((n,k) => n + [...String(value[k])].length, 0) > 4500) throw Error('The brief must contain four concise sections, within 4,500 characters.')
   return Object.fromEntries(fields.map(k => [k, value[k]])) as unknown as BriefText
 }
-export function evidenceFor(snapshot: Snapshot) {
+export function evidenceFor(snapshot: Snapshot): { id: string; label: string; required: boolean; state: string }[] {
+  if (snapshot.kind === 'graph') {
+    const packs = object(snapshot.record.packs) ? snapshot.record.packs : {}
+    return Object.entries(packs).flatMap(([id, pack]) => evidenceFor({ ...snapshot, kind: 'pack', pack: JSON.stringify(pack) }).map(e => ({ ...e, id: id + ':' + e.id, label: id + ' · ' + e.label })))
+  }
   const pack = JSON.parse(snapshot.pack) as Record<string, unknown>
   const c = snapshot.record.case as TestCase | undefined
   const run = snapshot.record.run as { input?: { evidence?: Record<string, string> } } | undefined

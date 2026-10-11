@@ -8,6 +8,14 @@ export function homeChatId(state: unknown): string | undefined {
   return typeof state.homeChatId === 'string' ? state.homeChatId : undefined
 }
 
+export type ChatScope = { kind: 'pack' | 'draft' | 'graph'; id: string }
+export function chatScope(chat: Chat): ChatScope | undefined {
+  return chat.graph ? {kind: 'graph', id: chat.graph.workspace} : chat.pack ? {kind: 'pack', id: chat.pack.id} : chat.draftId ? {kind: 'draft', id: chat.draftId} : undefined
+}
+export function inChatScope(chat: Chat, scope: ChatScope): boolean {
+  const own = chatScope(chat)
+  return own?.kind === scope.kind && own.id === scope.id
+}
 export function chatHref(chat: Chat, _location?: { pathname: string; search: string }): string { return `/chats/${chat.id}` }
 export function assistantChatHref(chat: Chat, location?: { pathname: string; search: string }): string {
   if (chat.graph) {
@@ -16,12 +24,18 @@ export function assistantChatHref(chat: Chat, location?: { pathname: string; sea
     params.set('chat', chat.id)
     return `${location?.pathname.startsWith('/graphs') ? location.pathname : `/graphs/${encodeURIComponent(chat.graph.id)}`}?${params}`
   }
-  if (chat.draftId && !chat.pack) return `${draftHref(chat.draftId)}?chat=${encodeURIComponent(chat.id)}`
+  if (chat.draftId && !chat.pack) {
+    const path = draftHref(chat.draftId)
+    const params = new URLSearchParams(location?.pathname === path ? location.search : '')
+    params.set('chat', chat.id)
+    return `${path}?${params}`
+  }
   if (!chat.pack) return `/chats/${chat.id}`
   const path = `/packs/${encodeURIComponent(chat.pack.id)}`
-  const params = new URLSearchParams(location?.pathname === path ? location.search : '')
+  const onPack = location?.pathname === path || location?.pathname === `${path}/evaluate` || location?.pathname === `${path}/matrix`
+  const params = new URLSearchParams(onPack ? location.search : '')
   params.set('chat', chat.id)
-  return `${path}?${params}`
+  return `${onPack ? location.pathname : path}?${params}`
 }
 
 /** The history entry keeps the home conversation without putting its id in the URL. */

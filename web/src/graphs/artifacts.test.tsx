@@ -17,3 +17,20 @@ it('keeps only the latest pending graph in the thread',()=>{
   expect(links).toHaveLength(1)
   expect(links[0].getAttribute('href')).toBe('/graphs?chat=chat-1&draft=draft-2')
 })
+
+it('omits the current draft without surfacing an older proposal in its place',()=>{
+  render(<MemoryRouter><GraphDraftNotice chatId="chat-1" openDraftId="draft-2" drafts={[pending,{...pending,draftId:'draft-2'}]}/></MemoryRouter>)
+  expect(screen.queryByRole('link')).toBeNull()
+  expect(screen.queryByText('flow')).toBeNull()
+})
+it('keeps a distinct new proposal discoverable even when its graph id matches the open draft',()=>{
+  render(<MemoryRouter><GraphDraftNotice chatId="chat-1" openDraftId="draft-1" drafts={[pending,{...pending,draftId:'draft-2'}]}/></MemoryRouter>)
+  expect(screen.getByRole('link',{name:'Review graph'}).getAttribute('href')).toBe('/graphs?chat=chat-1&draft=draft-2')
+})
+it('marks the open artifact in history while leaving other drafts navigable',()=>{
+  render(<MemoryRouter><GraphArtifacts chatId="chat-1" openDraftId="draft-1" drafts={[pending,{...pending,draftId:'draft-2'}]}/></MemoryRouter>)
+  expect(screen.getByText('Open')).toBeTruthy()
+  const links=screen.getAllByRole('link',{name:'Review graph'})
+  expect(links).toHaveLength(1)
+  expect(links[0].getAttribute('href')).toBe('/graphs?chat=chat-1&draft=draft-2')
+})

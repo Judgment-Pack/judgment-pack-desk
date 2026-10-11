@@ -68,9 +68,9 @@ it('selects each real map item directly without a group or Outline step', async 
     const button = screen.getByRole('button', { name: id })
     fireEvent.click(button)
     expect(button.getAttribute('aria-current')).toBe('true')
-    expect(inspect).toHaveBeenLastCalledWith(id)
+    expect(select).toHaveBeenLastCalledWith(id)
   }
-  expect(select).not.toHaveBeenCalled()
+  expect(inspect).not.toHaveBeenCalled()
   expect(screen.getAllByText('All 3 conditions')).toHaveLength(2)
   expect(screen.queryByText('Case correction applied')).toBeNull()
 })

@@ -12,13 +12,14 @@ import { PacksIndex } from '../routes/PacksIndex'
 const artifacts=vi.hoisted(()=>({drafts:[] as import('./drafts/model').PackDraft[]}))
 vi.mock('../chat/ChatProvider',()=>({useChats:()=>({chats:[],packDrafts:artifacts.drafts,deletedDrafts:[],ready:true})}))
 afterEach(() => { artifacts.drafts=[]; cleanup(); document.getElementById('preview-test-slot')?.remove() })
-function setup() {
+function setup(extraIds: string[] = []) {
   const target = document.createElement('div'); target.id = 'preview-test-slot'; document.body.append(target)
   const reveal = vi.fn()
   const slot: InspectorSlot = { open: true, size: 360, tab: null, setTab: vi.fn(), claim: () => () => {}, reveal, target }
   const stub = stubClient({ list_packs: () => ({ text: JSON.stringify({ status: 'valid', packs: [
     { id: 'alpha', packVersion: '1.0.0', description: 'Vendor approvals', path: 'packs/alpha.json' },
-    { id: 'zeta', packVersion: '', detail: 'The file could not be read.' }
+    { id: 'zeta', packVersion: '', detail: 'The file could not be read.' },
+    ...extraIds.map(id => ({ id, packVersion: '1.0.0' }))
   ] }) }) })
   const queryClient = testQueryClient()
   const router = createMemoryRouter([{ path: '/packs', element: <PacksLayout />, children: [
@@ -52,7 +53,7 @@ it('retains search, ordering and scroll when returning from a pack, and releases
   fireEvent.keyDown(screen.getByLabelText('Sort packs and graphs'), { key: 'Enter' })
   fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Name: Z–A' }))
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search packs and graphs' }), { target: { value: 'Vendor' } })
-  expect(within(screen.getByRole('navigation', { name: 'Packs & graphs' })).getAllByRole('link')).toHaveLength(1)
+  expect(within(screen.getByRole('navigation', { name: 'Library' })).getAllByRole('link')).toHaveLength(1)
   const list = document.querySelector('[data-pack-list]') as HTMLElement
   list.scrollTop = 80; fireEvent.scroll(list)
   fireEvent.click(screen.getByRole('button', { name: 'Preview alpha' }))
@@ -88,21 +89,37 @@ it('filters lifecycle before sorting, keeps finalized artifacts unique, and reta
   artifacts.drafts=[draft,{...draft,id:'draft-completed',finalized:{id:'alpha',path:'packs/alpha.json',digest:'saved'}}]
   const {router}=setup()
   await screen.findByRole('link',{name:/Vendor draft/})
-  const status=screen.getByRole('combobox',{name:'Status'}),sort=screen.getByLabelText('Sort packs and graphs')
+  const status=screen.getByRole('button',{name:'Status'}),sort=screen.getByLabelText('Sort packs and graphs')
   expect(status.compareDocumentPosition(sort)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  fireEvent.keyDown(status,{key:'Enter'});fireEvent.click(await screen.findByRole('option',{name:/^Draft$/}))
+  fireEvent.keyDown(status,{key:'Enter'});fireEvent.click(await screen.findByRole('menuitemradio',{name:/^Draft$/}))
   fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Vendor'}})
-  expect(within(screen.getByRole('navigation',{name:'Packs & graphs'})).getAllByRole('link')).toHaveLength(1)
+  expect(within(screen.getByRole('navigation',{name:'Library'})).getAllByRole('link')).toHaveLength(1)
   fireEvent.click(screen.getByRole('link',{name:/Vendor draft/}));await screen.findByRole('heading',{name:'Draft document'})
   expect(router.state.location.pathname).toBe('/packs/drafts/draft-example')
   await act(async()=>{await router.navigate(-1)})
-  expect(screen.getByRole('combobox',{name:'Status'}).textContent).toBe('Draft')
+  expect(screen.getByRole('button',{name:'Status'}).textContent).toBe('Draft')
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('Vendor')
-  fireEvent.keyDown(screen.getByRole('combobox',{name:'Status'}),{key:'Enter'});fireEvent.click(await screen.findByRole('option',{name:'Saved'}))
+  fireEvent.keyDown(screen.getByRole('button',{name:'Status'}),{key:'Enter'});fireEvent.click(await screen.findByRole('menuitemradio',{name:'Saved'}))
   expect(screen.queryByRole('link',{name:/Vendor draft/})).toBeNull()
   fireEvent.change(screen.getByRole('searchbox'),{target:{value:'no match'}})
   expect(screen.getByRole('heading',{name:'No matching packs or graphs'})).toBeTruthy()
   fireEvent.click(screen.getByRole('button',{name:'Reset filters'}))
-  expect(screen.getByRole('combobox',{name:'Status'}).textContent).toBe('All statuses')
-  expect(within(screen.getByRole('navigation',{name:'Packs & graphs'})).getAllByRole('link')).toHaveLength(3)
+  expect(screen.getByRole('button',{name:'Status'}).textContent).toBe('All statuses')
+  expect(within(screen.getByRole('navigation',{name:'Library'})).getAllByRole('link')).toHaveLength(3)
+})
+
+
+it('retains the page and type filter when opening an item and returning', async () => {
+  const { router } = setup(Array.from({ length: 112 }, (_, index) => `pack-${String(index).padStart(3, '0')}`))
+  await screen.findByRole('link', { name: /alpha/ })
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+  expect(screen.getByText('Page 3 of 3')).toBeTruthy()
+  fireEvent.click(screen.getByRole('link', { name: /pack-110/ }))
+  await screen.findByRole('heading', { name: 'Pack document' })
+  expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
+  await act(async () => { await router.navigate(-1) })
+  expect(screen.getByText('Page 3 of 3')).toBeTruthy()
+  expect(screen.getByRole('link', { name: /pack-110/ })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Item type' }).textContent).toBe('Packs')
 })

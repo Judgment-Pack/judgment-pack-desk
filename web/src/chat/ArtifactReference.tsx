@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Button } from '../ui/Button'
+import { Button, ButtonLink } from '../ui/Button'
 import styles from './ChatWorkspace.module.css'
 
 /** A quiet reference to work reviewed in the workspace, shared by drafts and tests. */
@@ -9,6 +9,7 @@ export function ArtifactReference({
   action,
   indicator,
   onOpen,
+  href,
   disabled,
   revision,
 }: {
@@ -17,6 +18,7 @@ export function ArtifactReference({
   action?: string
   indicator?: string
   onOpen?: () => void
+  href?: string
   disabled?: boolean
   revision?: number
 }) {
@@ -28,6 +30,8 @@ export function ArtifactReference({
       </div>
       {indicator ? (
         <span className={styles.caption}>{indicator}</span>
+      ) : href && action ? (
+        <ButtonLink to={href}>{action}</ButtonLink>
       ) : onOpen && action ? (
         <Button disabled={disabled} onClick={onOpen}>
           {action}

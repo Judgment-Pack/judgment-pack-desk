@@ -97,3 +97,16 @@ describe('the pick a run is given', () => {
     expect(pick([], null).result.current.model).toBe('')
   })
 })
+
+it('keeps identical model names separate across connections, features, and project changes',()=>{
+ const {result,rerender}=renderHook(({root,id,surface})=>usePickedModel(MODELS,'a-model',root,id,surface),{initialProps:{root:ROOT,id:'alpha',surface:'brief'}})
+ act(()=>result.current.pick('a-second-model'))
+ rerender({root:ROOT,id:'beta',surface:'brief'})
+ expect(result.current.model).toBe('a-model')
+ rerender({root:ROOT,id:'alpha',surface:'tests'})
+ expect(result.current.model).toBe('a-model')
+ rerender({root:ROOT+'/other',id:'alpha',surface:'brief'})
+ expect(result.current.model).toBe('a-model')
+ rerender({root:ROOT,id:'alpha',surface:'brief'})
+ expect(result.current.model).toBe('a-second-model')
+})

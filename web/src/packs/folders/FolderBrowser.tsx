@@ -1,6 +1,7 @@
 import { PaneToggle } from '../../shell/PaneToggle'
-import { useEffect, useId, useRef, useState, type ReactNode, type CSSProperties } from 'react'
-import { Dialog as Drawer, DropdownMenu, VisuallyHidden } from 'radix-ui'
+import { useEffect, useId, useRef, useState, type ReactNode, type CSSProperties, type RefObject } from 'react'
+import { Dialog as Drawer, VisuallyHidden } from 'radix-ui'
+import { Menu as DropdownMenu } from '../../ui/Menu'
 import { msg, useLocale } from '../../i18n'
 import { PaneDivider } from '../../ui/PaneDivider'
 import { useInspectorControls } from '../../shell/InspectorSlot'
@@ -11,7 +12,7 @@ import { Tooltip, OverflowTooltip } from '../../ui/Tooltip'
 import { Alert } from '../../ui/Alert'
 import { Dialog, DialogActions } from '../../ui/Dialog'
 import { IconChevronRight, IconChevronDown, IconMore, IconPlus, IconFolder } from '../../shell/icons'
-import { ALL_PACKS, HOME_FOLDER, WORKSPACE_ROOT, folderTrail, folderPath, inFolder, type PackFolder } from './model'
+import { ALL_PACKS, HOME_FOLDER, WORKSPACE_ROOT, folderTrail, folderPath, inFolder, type PackFolder, type FolderAction } from './model'
 import { usePackFolders, type FolderState } from './FolderContext'
 import styles from './FolderBrowser.module.css'
 
@@ -57,9 +58,9 @@ function FolderTree({state,onClose}:{state:FolderState;onClose:()=>void}) {
   return <li key={folder.id}><div className={styles.treeRow} data-selected={state.activeFolder===folder.id||undefined} style={{'--depth':depth} as CSSProperties}>
    <OverflowTooltip selector="span"><button type="button" className={styles.folder} data-folder={folder.id} aria-current={state.activeFolder===folder.id?'location':undefined} onClick={()=>state.select(folder.id)}><FolderIcon/><span>{folder.name}</span></button></OverflowTooltip>
    {nested.length>0&&<button className={styles.expand} type="button" aria-expanded={expanded} aria-label={expanded?msg('Collapse {{name}}',{name:folder.name}):msg('Expand {{name}}',{name:folder.name})} onClick={()=>state.preferences({expanded:expanded?state.prefs.expanded.filter(id=>id!==folder.id):[...state.prefs.expanded,folder.id]})}>{expanded?<IconChevronDown/>:<IconChevronRight/>}</button>}
-   <DropdownMenu.Root><DropdownMenu.Trigger asChild><button type="button" data-folder-actions={folder.id} className={`desk-icon-button ${styles.more}`} disabled={!usable||busy} aria-label={msg('Actions for {{name}}',{name:folder.name})}><IconMore/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="desk-menu" align="start" sideOffset={4} onCloseAutoFocus={event=>{if(state.editing)event.preventDefault()}}>
-    <DropdownMenu.Item className="desk-menu-item" onSelect={()=>state.edit({kind:'create',parentId:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('New subfolder')}</DropdownMenu.Item>
-    {folder.id!==HOME_FOLDER&&<><DropdownMenu.Item className="desk-menu-item" onSelect={()=>state.edit({kind:'rename',id:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('Rename')}</DropdownMenu.Item><DropdownMenu.Item className="desk-menu-item" onSelect={()=>state.edit({kind:'move',id:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('Move to…')}</DropdownMenu.Item><DropdownMenu.Separator className="desk-menu-separator"/><DropdownMenu.Item className="desk-menu-item" disabled={nested.length>0||Object.values(state.document.assignments).includes(folder.id)} onSelect={()=>void state.mutation.mutateAsync({action:{type:'delete',id:folder.id}}).catch(()=>{})}>{msg('Delete empty folder')}</DropdownMenu.Item></>}
+   <DropdownMenu.Root><DropdownMenu.Trigger asChild><button type="button" data-folder-actions={folder.id} className={`desk-icon-button ${styles.more}`} disabled={!usable||busy} aria-label={msg('Actions for {{name}}',{name:folder.name})}><IconMore/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="start" sideOffset={4} onCloseAutoFocus={event=>{if(state.editing)event.preventDefault()}}>
+    <DropdownMenu.Item onSelect={()=>state.edit({kind:'create',parentId:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('New subfolder')}</DropdownMenu.Item>
+    {folder.id!==HOME_FOLDER&&<><DropdownMenu.Item onSelect={()=>state.edit({kind:'rename',id:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('Rename')}</DropdownMenu.Item><DropdownMenu.Item onSelect={()=>state.edit({kind:'move',id:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('Move to…')}</DropdownMenu.Item><DropdownMenu.Separator/><DropdownMenu.Item disabled={nested.length>0||Object.values(state.document.assignments).includes(folder.id)} onSelect={()=>void state.mutation.mutateAsync({action:{type:'delete',id:folder.id}}).catch(()=>{})}>{msg('Delete empty folder')}</DropdownMenu.Item></>}
    </DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
   </div>{expanded&&nested.length>0&&<ul>{nested.map(child=>node(child,depth+1))}</ul>}</li>
  }
@@ -72,7 +73,7 @@ function FolderTree({state,onClose}:{state:FolderState;onClose:()=>void}) {
 }
 /** Location stays visible independently of the folder browser. Earlier ancestors
  * move into a menu as the working pane narrows; the current folder never does. */
-export function FolderLocation({folderId}:{folderId?:string}={}) {
+export function FolderLocation({folderId,header=false}:{folderId?:string;header?:boolean}={}) {
  const state=usePackFolders(), nav=useRef<HTMLElement>(null)
  const [compact,setCompact]=useState(false)
  useEffect(()=>{
@@ -93,15 +94,15 @@ export function FolderLocation({folderId}:{folderId?:string}={}) {
  const visibleCount=compact?1:2
  const hidden=trail.slice(0,Math.max(0,trail.length-visibleCount))
  const visible=trail.slice(hidden.length)
- return <nav ref={nav} className={styles.breadcrumb} aria-label={msg('Folder location')}>
-  <button className={styles.pathRoot} type="button" aria-current={current===ALL_PACKS?'location':undefined} onClick={()=>state.select(ALL_PACKS)}>{msg('Packs & graphs')}</button>
+ return <nav ref={nav} className={`${styles.breadcrumb} ${header?styles.headerBreadcrumb:''}`} aria-label={msg('Folder location')}>
+  <button className={styles.pathRoot} type="button" aria-current={current===ALL_PACKS?'location':undefined} onClick={()=>state.select(ALL_PACKS)}>{msg('Library')}</button>
   {hidden.length>0&&<span className={styles.pathOverflow}>
    <IconChevronRight/>
    <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild><button className={styles.pathMenuTrigger} type="button" aria-label={msg('Show parent folders')}><IconMore/></button></DropdownMenu.Trigger>
-    <DropdownMenu.Portal><DropdownMenu.Content className={`desk-menu ${styles.pathMenu}`} align="start" sideOffset={4}>
-     {hidden.map(folder=><DropdownMenu.Item key={folder.id} className={`desk-menu-item ${styles.pathMenuItem}`} onSelect={()=>state.select(folder.id)}>
-      <span>{folder.name}</span><small>{folderPath(state.document,folder.id)}</small>
+    <DropdownMenu.Portal><DropdownMenu.Content className={styles.pathMenu} align="start" sideOffset={4}>
+     {hidden.map(folder=><DropdownMenu.Item key={folder.id} description={folderPath(state.document,folder.id)} onSelect={()=>state.select(folder.id)}>
+      {folder.name}
      </DropdownMenu.Item>)}
     </DropdownMenu.Content></DropdownMenu.Portal>
    </DropdownMenu.Root>
@@ -127,24 +128,35 @@ export function MovePackButton({id,label=id}:{id:string;label?:string}) {
  const state=usePackFolders()
  return state&&<Tooltip content={msg('Move {{name}} to folder',{name:label})}><button className="desk-icon-button" type="button" disabled={!state.query.data||state.query.isError||state.mutation.isPending} aria-label={msg('Move {{name}} to folder',{name:label})} onClick={event=>state.edit({kind:'pack',id},event.currentTarget)}><FolderIcon/></button></Tooltip>
 }
+/** Document menus use a labeled command and return focus to their overflow trigger. */
+export function MoveToFolderItem({id, opener, onSelect}: {id: string; opener: RefObject<HTMLElement | null>; onSelect: () => void}) {
+ const state=usePackFolders()
+ return state && <DropdownMenu.Item icon={<FolderIcon/>} disabled={!state.query.data || state.query.isError || state.mutation.isPending}
+  onSelect={() => {onSelect(); state.edit({kind:'pack',id},opener.current ?? undefined)}}>{msg('Move to folder…')}</DropdownMenu.Item>
+}
 function FolderEditor({state}:{state:FolderState}) {
- const edit=state.editing, {name,destination,filter}=state.editorFields
+ const edit=state.editing, {name,destination,createDestination,parent}=state.editorFields
  const setName=(name:string)=>state.setEditorFields(value=>({...value,name}))
  const setDestination=(destination:string)=>state.setEditorFields(value=>({...value,destination}))
- const setFilter=(filter:string)=>state.setEditorFields(value=>({...value,filter}))
+ const setParent=(parent:string)=>state.setEditorFields(value=>({...value,parent}))
  const input=useRef<HTMLInputElement>(null), selectId=useId()
+ useEffect(()=>{if(edit && createDestination)input.current?.focus()},[edit,createDestination])
  if(!edit)return null
  const moving=edit.kind==='move'||edit.kind==='pack'||edit.kind==='items'
  const title=edit.kind==='items'?msg('Move selected items'):edit.kind==='create'?msg('New folder'):edit.kind==='rename'?msg('Rename folder'):edit.kind==='pack'?(edit.id?.startsWith('graph:')||edit.id?.startsWith('graph-draft:')?msg('Move graph'):msg('Move pack')):msg('Move folder')
  const options=state.document.folders.filter(folder=>edit.kind!=='move'||!inFolder(state.document,folder.id,edit.id!,true)).map(folder=>({value:folder.id,label:folderPath(state.document,folder.id)})).sort((a,b)=>a.label.localeCompare(b.label))
  if(edit.kind!=='pack'&&edit.kind!=='items')options.unshift({value:WORKSPACE_ROOT,label:msg('Workspace folders')})
- const visible=options.filter(option=>option.value===destination||option.label.toLocaleLowerCase().includes(filter.toLocaleLowerCase()))
+ const parents=[{value:WORKSPACE_ROOT,label:msg('Workspace folders')},...options.filter(option=>option.value!==WORKSPACE_ROOT)]
+ const chooseExisting=()=>{
+  state.setEditorFields(value=>({...value,createDestination:false,name:'',parent:WORKSPACE_ROOT}));state.setMessage('')
+  requestAnimationFrame(()=>document.getElementById(selectId)?.focus())
+ }
  const close=()=>{if(!state.mutation.isPending)void state.closeEditor()}
  const submit=async(event:React.FormEvent)=>{
   event.preventDefault(); if(state.mutation.isPending)return
   try {
    const id=crypto.randomUUID()
-   const action=edit.kind==='items'?{type:'assign-many' as const,packIds:edit.ids!,folderId:destination}:edit.kind==='create'?{type:'create' as const,id,name,parentId:edit.parentId??null}:edit.kind==='rename'?{type:'rename' as const,id:edit.id!,name}:edit.kind==='move'?{type:'move' as const,id:edit.id!,parentId:destination===WORKSPACE_ROOT?null:destination}:{type:'assign' as const,packId:edit.id!,folderId:destination}
+   const action:FolderAction=moving && createDestination?{type:'create-and-move',id,name,parentId:parent===WORKSPACE_ROOT?null:parent,target:edit.kind==='move'?{kind:'folder',id:edit.id!}:{kind:'items',ids:edit.kind==='items'?edit.ids!:[edit.id!]}}:edit.kind==='items'?{type:'assign-many' as const,packIds:edit.ids!,folderId:destination}:edit.kind==='create'?{type:'create' as const,id,name,parentId:edit.parentId??null}:edit.kind==='rename'?{type:'rename' as const,id:edit.id!,name}:edit.kind==='move'?{type:'move' as const,id:edit.id!,parentId:destination===WORKSPACE_ROOT?null:destination}:{type:'assign' as const,packId:edit.id!,folderId:destination}
    await state.saveEdit(action)
    state.clearGuard()
    if(edit.kind==='create'){state.preferences({selected:id,expanded:[...new Set([...state.prefs.expanded,...(edit.parentId?folderTrail(state.document,edit.parentId).map(folder=>folder.id):[])])]});state.select(id)}
@@ -153,9 +165,18 @@ function FolderEditor({state}:{state:FolderState}) {
   }catch{/* Feedback retains the entered name/destination. */}
  }
  const form=<form aria-label={title} onSubmit={event=>void submit(event)} className={styles.editor}>
-  {moving?<><Input aria-label={msg('Find a folder')} placeholder={msg('Find a folder')} value={filter} onChange={event=>setFilter(event.target.value)}/><label htmlFor={selectId}>{msg('Destination folder')}</label><Select id={selectId} options={visible} value={destination} onValueChange={setDestination} disabled={state.mutation.isPending}/></>:<><label htmlFor={selectId}>{msg('Folder name')}</label><Input id={selectId} ref={input} autoFocus value={name} maxLength={240} onChange={event=>setName(event.target.value)} disabled={state.mutation.isPending}/><p>{edit.kind==='create'?(edit.parentId?(state.document.folders.some(folder=>folder.id===edit.parentId)?folderPath(state.document,edit.parentId):msg('This folder no longer exists. Choose another folder.')):msg('Workspace folders')):''}</p></>}
+  {moving ? createDestination ? <>
+   <label htmlFor={`${selectId}-name`}>{msg('Folder name')}</label><Input id={`${selectId}-name`} ref={input} value={name} maxLength={240} onChange={event=>setName(event.target.value)} disabled={state.mutation.isPending}/>
+   <label htmlFor={selectId}>{msg('Parent folder')}</label><Select id={selectId} options={parents} value={parent} onValueChange={setParent} disabled={state.mutation.isPending}/>
+  </> : <>
+   <label htmlFor={selectId}>{msg('Destination folder')}</label><Select id={selectId} options={options} value={destination} onValueChange={setDestination} disabled={state.mutation.isPending}/>
+  </> : <><label htmlFor={selectId}>{msg('Folder name')}</label><Input id={selectId} ref={input} autoFocus value={name} maxLength={240} onChange={event=>setName(event.target.value)} disabled={state.mutation.isPending}/><p>{edit.kind==='create'?(edit.parentId?(state.document.folders.some(folder=>folder.id===edit.parentId)?folderPath(state.document,edit.parentId):msg('This folder no longer exists. Choose another folder.')):msg('Workspace folders')):''}</p></>}
   {state.message&&<Alert>{state.message}<Button variant="quiet" onClick={()=>void state.reload()}>{msg('Reload folders')}</Button></Alert>}
-  <DialogActions><Button variant="quiet" disabled={state.mutation.isPending} onClick={close}>{msg('Cancel')}</Button><Button variant="primary" type="submit" disabled={state.mutation.isPending||!state.query.data||state.query.isError||(moving?!options.some(option=>option.value===destination):!name.trim())}>{state.mutation.isPending?msg('Saving…'):moving?msg('Move'):edit.kind==='create'?msg('Create folder'):msg('Save')}</Button></DialogActions>
+  <DialogActions>
+   {moving && <Button className={styles.newDestination} variant="quiet" disabled={state.mutation.isPending||!state.query.data||state.query.isError} onClick={createDestination?chooseExisting:()=>{state.setEditorFields(value=>({...value,createDestination:true}));state.setMessage('')}}>{createDestination?msg('Back'):<><IconPlus/>{msg('New folder')}</>}</Button>}
+   <Button variant="quiet" disabled={state.mutation.isPending} onClick={close}>{msg('Cancel')}</Button>
+   <Button variant="primary" type="submit" disabled={state.mutation.isPending||!state.query.data||state.query.isError||(moving?createDestination?!name.trim()||!parents.some(option=>option.value===parent):!options.some(option=>option.value===destination):!name.trim())}>{state.mutation.isPending?msg('Saving…'):moving?createDestination?msg('Create and move'):msg('Move'):edit.kind==='create'?msg('Create folder'):msg('Save')}</Button>
+  </DialogActions>
  </form>
  return <Dialog open title={title} openerRef={state.opener} onOpenChange={open=>{if(!open)close()}}>{form}</Dialog>
 }

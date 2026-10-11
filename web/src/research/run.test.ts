@@ -1961,7 +1961,7 @@ describe('conversation draft citations', () => {
     h.run.stop()
     const state = await settled(h.run)
     expect(state.status).toBe('stopped')
-    expect(state.readiness).toBe(ready.readiness)
+    expect(state.readiness).toBe('')
     expect(state.citations[0]!.traced).toBe(false)
     expect(onItsBasis(state, 'draft')).toBe(false)
   })
@@ -2555,4 +2555,43 @@ describe('conversation draft citations', () => {
     }
     expect(await text('research')).not.toContain('attachment:<id>/<digest>/page/<n>')
   })
+})
+
+it.each(['valid','unavailable','changed-receipt','changed-registry'] as const)('reuses a snapshot report only with current signed Gateway proofs: %s', async proof => {
+  const {checkpoint,decodeCheckpoint,restoreLedger}=await import('../chat/checkpoint')
+  const {runtimeCheckIdentity}=await import('./retainedCheck')
+  const {jsonIdentity}=await import('./checkCandidate')
+  const runtime=fakeRuntime(),tool={name:'jpack',version:'0.29.0'},calls:string[]=[]
+  const callTool:CallTool=async(name,args)=>{
+    calls.push(name)
+    if(name==='describe_runtime')return {structuredContent:{tool}}
+    if(name==='validate')return {structuredContent:{tool,status:'valid',diagnostics:[]}}
+    if(name==='experimental_test_cases') {
+      const matrix=JSON.parse(args.matrix as string)
+      const rows=await Promise.all(matrix.cases.map(async(row:AuthoringCase)=>{
+        const result=await runtime.callTool('experimental_evaluate',{pack:args.pack,facts:JSON.stringify(row.facts),rehearsal:true})
+        const actual=(result.structuredContent as {disposition:unknown}).disposition
+        return {id:row.id,status:jsonIdentity(actual)===jsonIdentity(row.expectedDisposition)?'passed':'mismatch',expected:jsonIdentity(row.expectedDisposition),actual:jsonIdentity(actual)}
+      }))
+      return {structuredContent:{tool,evaluatorSpecVersion:'0.2.0-draft',status:rows.every(r=>r.status==='passed')?'passed':'mismatch',summary:{total:rows.length,passed:rows.filter(r=>r.status==='passed').length},packs:[{rows}]}}
+    }
+    return runtime.callTool(name,args)
+  }
+  const ports={snapshotChecks:true,callTool,runtimeIdentity:()=>runtimeCheckIdentity(callTool)}
+  const first=harness([researchTurn(),casesTurn],ports)
+  first.run.start('Research the requirement',[])
+  const ready=await settled(first.run)
+  expect(canCreateResearchDraft(ready),ready.detail).toBe(true)
+  const saved=decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(ready,first.ledger.sources))))
+  if(proof==='changed-receipt')saved.sources[0]!.text=saved.sources[0]!.text!.replace('gateway:test','gateway:changed')
+  const resumed=harness([], {...ports,registry:async()=>{
+    if(proof==='unavailable')throw Error('Registry unavailable')
+    return proof==='changed-registry'?'{}':Object.values(ready.registries).at(-1)!
+  },seal:async()=>{throw Error('Must not reseal')}})
+  restoreLedger(resumed.ledger,saved.sources);calls.length=0
+  await resumed.run.restore(saved.state)
+  expect(canCreateResearchDraft(resumed.run.getSnapshot()),resumed.run.getSnapshot().detail).toBe(proof==='valid')
+  expect(resumed.requests).toEqual([]);expect(resumed.sealed).toEqual([])
+  expect(calls.every(name=>name==='describe_runtime')).toBe(true)
+  expect(resumed.run.getSnapshot().checkRecovery).toBe(proof==='valid'?'current':proof==='changed-receipt'?'outdated':'unavailable')
 })

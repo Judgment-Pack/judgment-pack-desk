@@ -256,14 +256,14 @@ describe('Alert', () => {
     // than as a tail of the first.
     render(<Alert reason="could not stage the write">The pack could not be created.</Alert>)
     const alert = screen.getByRole('alert')
-    expect(alert.textContent).toBe('The pack could not be created. could not stage the write')
+    expect(alert.textContent).toContain('The pack could not be created.'); expect(alert.querySelector('details')?.open).toBe(false)
     expect(screen.getByText('could not stage the write')).not.toBe(alert)
   })
 
   it('renders no empty element for a reason it was not given', () => {
     render(<Alert>The pack could not be created.</Alert>)
     expect(screen.getByRole('alert').textContent).toBe('The pack could not be created.')
-    expect(screen.getByRole('alert').querySelector('span')).toBeNull()
+    expect(screen.getByRole('alert').querySelector('details')).toBeNull()
   })
 })
 

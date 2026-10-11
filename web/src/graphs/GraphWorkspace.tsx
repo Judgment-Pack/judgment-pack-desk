@@ -1,19 +1,30 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { DefinitionBrief } from '../briefs/DefinitionBrief'
+import { DefinitionHistory } from '../definitions/DefinitionHistory'
+import { GraphSources } from './GraphSources'
+import { DefinitionUsage } from '../usage/DefinitionUsage'
+import { DefinitionJsonDialog } from '../definitions/DefinitionJsonDialog'
+import { GraphReview } from '../briefs/GraphReview'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { msg } from '../i18n'
 import { useChats } from '../chat/ChatProvider'
 import { useFileContent } from '../files/queries'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
-import { Button, ButtonLink } from '../ui/Button'
+import { MoveToFolderItem, ShowFolders } from '../packs/folders/FolderBrowser'
+import { Menu, OptionsMenu } from '../ui/Menu'
+import { useDraftActions } from '../packs/drafts/DraftActions'
+import { IconDetails, IconTrash } from '../shell/icons'
+import { GraphOverview } from './GraphOverview'
+import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { PageHeader } from '../ui/PageLayout'
 import { Tabs } from '../ui/Tabs'
-import { Select } from '../ui/Select'
-import { useInspectorControls, useInspectorPortal } from '../shell/InspectorSlot'
+import { useInspectorPortal } from '../shell/InspectorSlot'
 import { useInspectorPresentation } from '../shell/InspectorPresentation'
+import { useShellState } from '../shell/paneState'
 import { useBuilderPreference } from '../builders/BuilderSplit'
 import { GraphAssistant } from './GraphAssistant'
 import { readGraphDocument } from '../mcp/graphDocument'
@@ -24,6 +35,7 @@ import { GraphConfirmation } from './GraphAuthor'
 import { graphPost, type GraphOffer, type GraphProposal } from './author'
 import { graphDraftHref, validGraphDraft, type GraphDraft } from './drafts'
 import styles from './GraphWorkspace.module.css'
+import shared from '../definitions/DefinitionWorkspace.module.css'
 
 const CodeEditor = lazy(() => import('../files/CodeEditor'))
 type Config = {packs?: Record<string, {path: string}>; graphs?: Record<string, {path: string; description?: string}>}
@@ -51,16 +63,20 @@ export function GraphWorkspace({graphId, tests}: {graphId?: string; tests?: Reac
 }
 export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft, tests}: {initial: GraphProposal; packs: string[]; chatId?: string; draftChatId?: string; draft?: GraphDraft; tests?: ReactNode}) {
   const {store} = useChats(), navigate = useNavigate(), queries = useQueryClient()
+  const request=useDraftActions(), menuTrigger=useRef<HTMLButtonElement>(null), menuHandoff=useRef(false)
   // Private draft metadata is not part of the server's closed proposal wire.
   const initialProposal: GraphProposal = {id: initial.id, path: initial.path, content: initial.content, description: initial.description, baseSha256: initial.baseSha256}
   const [proposal, setProposal] = useState(initialProposal)
   const [view, setView] = useState('build')
+  const [showJson, setShowJson] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false), [sourceOpen, setSourceOpen] = useState(false)
+  const [briefVisited, setBriefVisited] = useState(false)
+  useEffect(() => { if (view === 'brief') setBriefVisited(true) }, [view])
   const [selection, setSelection] = useState('')
   const [assistantChat, setAssistantChat] = useState(chatId)
   const [paneOpen, setPaneOpen] = useBuilderPreference<boolean>('graph:assistant-open', true)
-  const [paneWidth, setPaneWidth] = useBuilderPreference<number>('graph:assistant-width', 380)
-  const resetPane = useCallback(() => setPaneWidth(380), [setPaneWidth])
-  const controls = useInspectorControls()
+  const shell = useShellState()
+  const paneWidth = shell.inspectorWidth ?? 400, setPaneWidth = shell.resizeInspector, resetPane = shell.resetInspectorWidth
   useInspectorPresentation(useMemo(() => ({workspaceTools: true, title: msg('Assistant'), contextTitle: proposal.id || msg('New graph'), open: paneOpen,
     onOpenChange: setPaneOpen, width: Math.min(640, Math.max(320, paneWidth)), onResize: setPaneWidth, onReset: resetPane, minimumMainWidth: 560, maximumWidth: 640
   }), [proposal.id, paneOpen, paneWidth, setPaneOpen, setPaneWidth, resetPane]))
@@ -128,41 +144,66 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
     change({id, content, ...(!proposal.path || proposal.path === `${proposal.id}.graph.json` ? {path: `${id}.graph.json`} : {})})
   }
   const assistant = useInspectorPortal(<GraphAssistant proposal={proposal} workspace={initial.baseSha256 ? initial.id : retainedIdentity.current.draftId}
-    chatId={chatId ?? assistantChat} onChat={setAssistantChat} onApply={change} busy={busy} selection={selection}/>)
+    openDraftId={retainedIdentity.current.draftId} chatId={chatId ?? assistantChat} onChat={setAssistantChat} onApply={change} busy={busy} selection={selection}/>)
   const parsed = readGraphDocument(proposal.content)
   const check = () => void act(async signal => {const result = await graphPost<{answer: unknown}>('validate', {content: proposal.content}, signal); if (!signal.aborted) setFindings(JSON.stringify(result.answer, null, 2))})
   const review = () => {
-    if (!proposal.id || !proposal.path) {setView('settings'); setError(msg('Choose a graph id and path before reviewing the write.')); return}
+    if (!proposal.id || !proposal.path) {setSettingsOpen(true); setError(msg('Choose a graph id and path before reviewing the write.')); return}
     void act(async signal => {const result = await graphPost<GraphOffer>('proposal', proposal, signal); if (!signal.aborted) setOffer(result)})
   }
   return <article className={styles.builder} data-layout="page" aria-label={msg('Compose graph')}>
     {assistant}
-    <PageHeader variant="title" title={proposal.id || msg('New graph')} meta={<><Pill tone="quiet">{dirty ? msg('Unsaved changes') : proposal.baseSha256 ? msg('Saved') : msg('Draft')}</Pill> <Pill tone="quiet">{msg('Experimental')}</Pill></>}
-      actions={<><ButtonLink variant="quiet" to="/packs">{msg('Packs & graphs')}</ButtonLink><Button onClick={() => controls.reveal()}>{msg('Ask Assistant')}</Button>
-        <Button disabled={busy} onClick={() => setView('tests')}>{msg('Test graph')}</Button><Button variant="primary" disabled={busy || saved} onClick={review}>{busy ? msg('Working…') : msg('Review & save')}</Button></>}/>
+    <PageHeader variant="title" leading={<ShowFolders/>} title={proposal.id || msg('New graph')} meta={<><Pill tone="quiet">{dirty ? msg('Unsaved changes') : proposal.baseSha256 ? msg('Saved') : msg('Draft')}</Pill> <Pill tone="quiet">{msg('Experimental')}</Pill></>}
+      actions={<><OptionsMenu label={msg('Graph options')} triggerRef={menuTrigger} onOpenChange={open=>{if(open)menuHandoff.current=false}} onCloseAutoFocus={event=>{if(menuHandoff.current)event.preventDefault()}}>
+        {(draft || proposal.baseSha256) && <MoveToFolderItem id={draft && !draft.saved ? 'graph-draft:'+draft.draftId : 'graph:'+proposal.id} opener={menuTrigger} onSelect={()=>{menuHandoff.current=true}}/>}
+        <Menu.Item icon={<IconDetails/>} onSelect={()=>{menuHandoff.current=true;setShowJson(true)}}>{msg('View JSON')}</Menu.Item>
+        <Menu.Item icon={<IconDetails/>} disabled={busy} onSelect={()=>{menuHandoff.current=true;setSettingsOpen(true)}}>{msg('Graph settings…')}</Menu.Item>
+        <Menu.Item icon={<IconDetails/>} disabled={busy} onSelect={()=>{menuHandoff.current=true;setSourceOpen(true)}}>{msg('Edit JSON…')}</Menu.Item>
+        <Menu.Item icon={<IconDetails/>} disabled={busy || !store} onSelect={() => void act(retainAndOpen)}>{msg('Keep draft')}</Menu.Item>
+        {draft && !draft.saved && draftChatId && <><Menu.Separator/><Menu.Item destructive icon={<IconTrash/>} disabled={busy || !request || !store} onSelect={()=>{
+          menuHandoff.current=true
+          request?.({kind:'delete',opener:menuTrigger.current??undefined,onDeleted:clearGuard,item:{id:'graph-draft:'+draft.draftId,title:proposal.id,kind:'graph',status:'draft',href:'',chatId:draftChatId,draftId:draft.draftId}})
+        }}>{msg('Delete draft…')}</Menu.Item></>}
+      </OptionsMenu>
+        <Button variant="primary" disabled={busy || saved} onClick={review}>{busy ? msg('Working…') : msg('Review & save')}</Button></>}/>
+    <DefinitionJsonDialog open={showJson} onOpenChange={setShowJson} text={proposal.content} title={msg('Graph JSON')} openerRef={menuTrigger}/>
     {error && <p role="alert" className={styles.feedback}>{error}</p>}
-    <Tabs label={msg('Graph builder')} variant="page" value={view} onValueChange={setView} scrollable keepMounted fillPanel={view} tabs={[
-      {value: 'build', label: msg('Build'), panel: <GraphComposition content={proposal.content} onChange={content => change({content})} packs={packs} disabled={busy} onSelection={setSelection}
+    <Tabs overflow label={msg('Graph builder')} variant="page" value={view} onValueChange={setView} scrollable keepMounted fillPanel={view} tabs={[
+      {value: 'overview', label: msg('Overview'), panel: <div className={styles.viewBody}><GraphOverview document={parsed.ok ? parsed.document : undefined} description={proposal.description} onViewLogic={() => setView('build')}/></div>},
+      {value: 'build', label: msg('Logic'), panel: <GraphComposition content={proposal.content} onChange={content => change({content})} packs={packs} disabled={busy} onSelection={setSelection}
         tools={<><Button disabled={busy || !past.length} variant="quiet" onClick={() => undo(false)}>{msg('Undo')}</Button><Button disabled={busy || !future.length} variant="quiet" onClick={() => undo(true)}>{msg('Redo')}</Button><Button disabled={busy} variant="quiet" onClick={check}>{msg('Check')}</Button></>}/>},
+      {value: 'sources', label: msg('Sources'), panel: view === 'sources' ? <div className={styles.viewBody}><GraphSources document={parsed.ok ? parsed.document : undefined}/></div> : null},
       {value: 'tests', label: msg('Tests'), panel: <div className={styles.viewBody}>
         <p className={styles.hint}>{msg('Tests run against saved graph and pack files. Unsaved changes in this builder are not included.')}</p>
         {proposal.baseSha256 && tests ? tests : <p>{msg('Save this graph before running its tests.')}</p>}
       </div>},
-      {value: 'settings', label: msg('Settings'), panel: <div className={styles.viewBody}><div className={styles.settings}>
-        <Field label={msg('Configured graph id')}>{w => <Input {...w} value={proposal.id} disabled={busy || Boolean(proposal.baseSha256)} onChange={e => changeId(e.target.value)}/>}</Field>
+      {value: 'review', label: msg('Review'), panel: <div className={styles.viewBody}>{view === 'review' && <GraphReview
+        owner={draft && !draft.saved ? draft.draftId : initial.id} title={proposal.id || msg('New graph')} content={proposal.content} draft={!proposal.baseSha256}
+        blocked={dirty ? msg('Unsaved changes') : !draft && !proposal.baseSha256 ? msg('Draft not retained') : undefined}
+        actions={<><Button disabled={busy} onClick={check}>{msg('Check')}</Button></>}/>}</div>},
+      {value: 'brief', label: msg('Brief'), panel: <div className={styles.viewBody}>{(view === 'brief' || briefVisited) && (!draft && !proposal.baseSha256 ? <p>{msg('Keep this draft before generating a brief.')}</p> : <DefinitionBrief kind={draft && !draft.saved ? 'graph-draft' : 'graph'} owner={draft && !draft.saved ? draft.draftId : initial.id} title={proposal.id || msg('New graph')} content={proposal.content} blocked={dirty ? msg('Keep or save these changes before generating a brief.') : !draft && !proposal.baseSha256 ? msg('Keep this draft before generating a brief.') : undefined}/>)}</div>},
+      {value: 'history', label: msg('History'), panel: view === 'history' ? <div className={styles.viewBody}><DefinitionHistory kind="graph" owner={draft && !draft.saved ? draft.draftId : initial.id} documentId={parsed.ok ? parsed.document.id : undefined} draft={!proposal.baseSha256} graphDraft={draft}/></div> : null},
+      {value: 'usage', label: msg('Usage'), panel: view === 'usage' ? <DefinitionUsage kind="graph"/> : null},
+    ]}/>
+    <Dialog open={settingsOpen} onOpenChange={setSettingsOpen} title={msg('Graph settings')} openerRef={menuTrigger}
+      footer={<DialogActions><Button onClick={()=>setSettingsOpen(false)}>{msg('Done')}</Button></DialogActions>}>
+      <div className={styles.settings}><Field label={msg('Configured graph id')}>{w => <Input {...w} value={proposal.id} disabled={busy || Boolean(proposal.baseSha256)} onChange={e => changeId(e.target.value)}/>}</Field>
         <Field label={msg('Graph path')}>{w => <Input {...w} value={proposal.path} disabled={busy || Boolean(proposal.baseSha256)} onChange={e => change({path: e.target.value})}/>}</Field>
         <Field label={msg('Description')}>{w => <Input {...w} value={proposal.description ?? ''} disabled={busy || Boolean(proposal.baseSha256)} onChange={e => change({description: e.target.value})}/>}</Field>
-        {parsed.ok && <Field label={msg('Result node')}>{w => <Select {...w} value={parsed.document.result ?? ''} disabled={busy} options={Object.keys(parsed.document.nodes).map(value => ({value, label: value}))} placeholder={msg('Choose the final decision')} onValueChange={value => change({content: JSON.stringify({...parsed.document, result: value}, null, 2) + '\n'})}/>}</Field>}
-        <Button disabled={busy || !store} onClick={() => void act(retainAndOpen)}>{msg('Keep draft')}</Button>
-        <p className={styles.hint}>{msg('Keep draft stores this version in chat history without changing project files.')}</p>
-      </div></div>},
-      {value: 'source', label: msg('Source'), panel: <div className={styles.source}><Suspense fallback={<p>{msg('Loading editor…')}</p>}><CodeEditor id="graph-source" path="graph.json" value={proposal.content} wrap readOnly={busy} onChange={content => change({content})} onSave={review} onFormat={() => {try {change({content: JSON.stringify(JSON.parse(proposal.content), null, 2) + '\n'})} catch {setError(msg('Fix the JSON before formatting.'))}}}/></Suspense></div>}
-    ]}/>
+<p className={styles.hint}>{msg('Changes stay in the draft until you review and save.')}</p></div>
+    </Dialog>
+    <Dialog open={sourceOpen} onOpenChange={setSourceOpen} title={msg('Edit graph JSON')} size="wide" openerRef={menuTrigger}
+      description={msg('Changes stay in the draft until you review and save.')}
+      footer={<DialogActions><Button onClick={()=>setSourceOpen(false)}>{msg('Done')}</Button></DialogActions>}>
+      <div className={shared.editor}><Suspense fallback={<p>{msg('Loading editor…')}</p>}><CodeEditor id="graph-source" path="graph.json" value={proposal.content} wrap readOnly={busy} onChange={content => change({content})} onSave={()=>{setSourceOpen(false);review()}} onFormat={() => {try {change({content: JSON.stringify(JSON.parse(proposal.content), null, 2) + '\n'})} catch {setError(msg('Fix the JSON before formatting.'))}}}/></Suspense></div>
+    </Dialog>
     <Dialog open={findings !== undefined} onOpenChange={open => {if (!open) setFindings(undefined)}} title={msg('Runtime findings')} description={msg('Validation checks the draft structure, not whether the policy is correct.')}>
       {findings && <CodeBlock text={findings} label={msg('Runtime findings')}/>}<DialogActions><Button onClick={() => setFindings(undefined)}>{msg('Close')}</Button></DialogActions>
     </Dialog>
     <Dialog open={offer !== null} onOpenChange={open => {if (!open && !busy) setOffer(null)}} title={msg('Review & save')} description={msg('Review the exact graph and configuration changes before writing project files.')}>
-    {offer && <GraphConfirmation offer={offer} busy={busy} onConfirm={() => void act(async signal => {const accepted = offer; setOffer(null); try {await graphPost('write', accepted, signal)} finally {await queries.invalidateQueries()}  if (signal.aborted) return; setSaved(true); if (draftChatId && draft && store) {const chat = [...store.getSnapshot().chats, ...store.getSnapshot().drafts].find(c => c.id === draftChatId); if (chat) store.update(draftChatId, {graphDrafts: chat.graphDrafts?.map(d => d.draftId === draft.draftId ? {...d, ...proposal, saved: true} : d)})} clearGuard(); navigate(`/graphs/${encodeURIComponent(proposal.id)}`)})}/>}
+    {offer && <GraphConfirmation offer={offer} busy={busy} onConfirm={() => void act(async signal => {const accepted = offer; setOffer(null); try {await graphPost('write', accepted, signal)} finally {await queries.invalidateQueries()}  if (signal.aborted) return; setSaved(true); if (draftChatId && draft && store) {const chat = [...store.getSnapshot().chats, ...store.getSnapshot().drafts].find(c => c.id === draftChatId); if (chat) store.update(draftChatId, {graphDrafts: chat.graphDrafts?.map(d => d.draftId === draft.draftId ? {...d, ...proposal, saved: true} : d)})} for (const chat of [...(store?.getSnapshot().chats ?? []), ...(store?.getSnapshot().drafts ?? [])]) {
+      if (chat.graph?.workspace === (initial.baseSha256 ? initial.id : retainedIdentity.current.draftId)) store?.update(chat.id, {graph: {id: proposal.id, path: proposal.path, workspace: proposal.id}})
+    } clearGuard(); navigate(`/graphs/${encodeURIComponent(proposal.id)}${assistantChat ? '?chat=' + encodeURIComponent(assistantChat) : ''}`)})}/>}
       <DialogActions><Button disabled={busy} onClick={() => setOffer(null)}>{msg('Cancel')}</Button></DialogActions>
     </Dialog>
   </article>

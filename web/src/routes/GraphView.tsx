@@ -1,3 +1,12 @@
+import { DefinitionNavigation } from '../definitions/DefinitionNavigation'
+import { DefinitionBrief } from '../briefs/DefinitionBrief'
+import { DefinitionHistory } from '../definitions/DefinitionHistory'
+import { GraphSources } from '../graphs/GraphSources'
+import { Disclosure } from '../ui/Disclosure'
+import { Input } from '../ui/Input'
+import { Menu, MenuChoice, OptionsMenu } from '../ui/Menu'
+import shared from '../definitions/DefinitionWorkspace.module.css'
+import { GraphReview } from '../briefs/GraphReview'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
@@ -9,7 +18,6 @@ import { Button, ButtonLink } from '../ui/Button'
 import { recordActivity } from '../shell/consoleLog'
 import { useLatestFlowResult } from '../packs/flows/useLatestFlowResult'
 import { FlowExplorer } from '../packs/flows/FlowExplorer'
-import workspace from '../packs/PackWorkspace.module.css'
 import { CoverageReport } from '../components/CoverageReport'
 import { GraphWalkDiagram } from '../components/GraphWalkDiagram'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
@@ -17,10 +25,13 @@ import { TargetPair, describeTargetAssertion } from '../components/TargetPair'
 import { TracePanel } from '../components/TracePanel'
 import { GraphFindingsPanel } from '../graphs/GraphFindings'
 import { CodeBlock } from '../ui/CodeBlock'
+import { ShowFolders } from '../packs/folders/FolderBrowser'
+import { SavedGraphAssistant } from '../graphs/SavedGraphAssistant'
+import { GraphOverview } from '../graphs/GraphOverview'
+import { GraphOptions } from '../graphs/GraphOptions'
 import { GraphWorkspace } from '../graphs/GraphWorkspace'
 import { GraphLabels } from '../graphs/GraphLabels'
-import { GraphRehearsal } from '../graphs/GraphRehearsal'
-import { GraphPlanView } from '../graphs/GraphPlan'
+import { GraphTestsWorkspace } from '../graphs/GraphTestsWorkspace'
 import { shownMessage, shownPath } from '../graphs/client'
 import {
   bindGraphDigests,
@@ -41,15 +52,23 @@ import type {
 } from '../mcp/types'
 
 /** Browsing reads declarations. Tests run only after an explicit command. */
+import { DefinitionUsage } from '../usage/DefinitionUsage'
+
 export function GraphView() {
   useLocale()
   const { graphId } = useParams<{ graphId?: string }>()
   const [search, setSearch] = useSearchParams()
+  const withChat = (href: string) => search.get('chat') ? `${href}${href.includes('?') ? '&' : '?'}chat=${encodeURIComponent(search.get('chat')!)}` : href
   const compose = search.get('view') === 'compose' || search.has('draft')
   const tests = !compose && search.get('view') === 'tests'
+  const review = search.get('view') === 'review'
+  const usage = search.get('view') === 'usage'
+  const overview = search.get('view') === 'overview'
+  const sources = search.get('view') === 'sources', brief = search.get('view') === 'brief', history = search.get('view') === 'history'
+  const served = useGraphDocument(compose ? undefined : graphId)
   const rehearsal = search.get('view') === 'rehearsal' && graphId !== undefined
   const plan = search.get('view') === 'plan' && graphId !== undefined
-  const { status, graphInventorySupported, graphTracesSupported } = useMcp()
+  const { status, graphInventorySupported, graphTracesSupported, graphDocumentSupported } = useMcp()
   const inventory = useGraphInventory()
   const [includeTraces, setIncludeTraces] = useState(false)
   const asked = graphTracesSupported && includeTraces
@@ -65,15 +84,10 @@ export function GraphView() {
     void refetch().then(result => recordActivity(result.error ? sourceMessage('Graph tests failed.') : result.data?.status ? sourceMessage('Graph tests completed: {{status}}.', { status: result.data.status }) : sourceMessage('Graph tests returned no result.')))
   }
 
+  const testActions=<><Button variant="primary" onClick={run} disabled={status!=='ready'||isFetching}>{isFetching?msg('Running…'):graphId?msg('Run tests'):msg('Run all graph tests')}</Button>
+    {graphTracesSupported && <OptionsMenu label={msg('Test options')}><Menu.CheckboxItem checked={includeTraces} disabled={isFetching} onCheckedChange={value=>setIncludeTraces(!!value)}>{msg('Include detailed traces')}</Menu.CheckboxItem></OptionsMenu>}</>
   const testsPanel = <section aria-label={msg("Graph tests")}>
-        {!graphId && <ButtonLink variant="quiet" to="/graphs">{msg("Back to graphs")}</ButtonLink>}
-        {compose && <Button onClick={run} disabled={status !== 'ready' || isFetching}>{isFetching ? msg('Running…') : msg('Run tests')}</Button>}
-        <h2 className="section-title">{graphId ? msg("Graph tests") : msg("All graph tests")}</h2>
-        {graphTracesSupported && <label className="checkbox trace-ask">
-          <input type="checkbox" checked={includeTraces} disabled={isFetching}
-            onChange={event => setIncludeTraces(event.target.checked)} />
-          <span>{msg("Include detailed traces")}</span>
-        </label>}
+        {!graphId && <div className={shared.toolbar}><ButtonLink variant="quiet" to="/graphs">{msg("Back to graphs")}</ButtonLink>{testActions}</div>}
         {isFetching && <Loading what={msg("graph test results")} />}
         {error && asked && <p className="note note-warn"><Message text={"This run requested detailed traces. <0/>"} slots={[retainedUntraced
             ? msg("Turn off detailed traces to view the previous untraced result.")
@@ -81,7 +95,7 @@ export function GraphView() {
         {error ? <ErrorBox title={msg("Could not run graph tests")} error={error} />
           : !data ? !isFetching && <Empty>{msg("Run tests to run the project's saved cases and read their coverage. Opening this view does not run tests.")}</Empty>
           : <>
-            <GraphLabels labels={data} withPill={false} plural={!graphId} />
+<Disclosure title={msg("Runtime details")}><GraphLabels labels={data} withPill={false} plural={!graphId}/></Disclosure>
             <p className="ids"><Pill tone={statusTone(data.status)}>{data.status}</Pill>
               <SuiteSummaryMembers summary={data.summary} />
               <span className="quiet"><Message text={"Last run<0/>"} slots={[asked ? msg(" · detailed traces") : '']} /></span>
@@ -90,35 +104,35 @@ export function GraphView() {
               : data.graphs!.map(entry => <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching}
                 known={knownPaths(data)} />)}
           </>}
-        <p className="quiet">{msg("Judgment Graphs use the runtime’s experimental graph format. A test run shows what the project’s own rows did, as the runtime reports it. It does not show that the rows are right, that coverage is complete, or any authorization.")}</p>
+        <Disclosure title={msg('About graph tests')}><p className="quiet">{msg("Judgment Graphs use the runtime’s experimental graph format. A test run shows what the project’s own rows did, as the runtime reports it. It does not show that the rows are right, that coverage is complete, or any authorization.")}</p></Disclosure>
       </section>
 
-  return <article className="detail" data-measure="full" data-layout="page">
-    {compose ? <GraphWorkspace graphId={graphId} tests={testsPanel}/> : <>
-    <PageHeader title={msg("Graphs")} context={graphId} titleHref={graphId ? "/graphs" : undefined}
-      actions={<><ButtonLink to="/packs">{msg("Packs & graphs")}</ButtonLink>{!compose && <ButtonLink to={graphId ? `/graphs/${encodeURIComponent(graphId)}?view=compose` : "/graphs?view=compose"}>{graphId ? msg("Edit composition") : msg("Create graph")}</ButtonLink>}{!compose && <Button onClick={run} disabled={status !== 'ready' || isFetching}>
-        {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all graph tests")}
-      </Button>}</>}
-      navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Graph sections")}>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=compose`} aria-current={compose ? 'page' : undefined}>{msg("Composition")}</Link>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!compose && !tests && !plan && !rehearsal ? 'page' : undefined}>{msg("Diagram")}</Link>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=plan`} aria-current={plan ? 'page' : undefined}>{msg("Plan")}</Link>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=rehearsal`} aria-current={rehearsal ? 'page' : undefined}>{msg("Rehearsal")}</Link>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>{msg("Tests")}</Link>
-      </nav> : undefined} />
+  return <article className="detail" data-layout="page">
+    {compose ? <GraphWorkspace graphId={graphId} tests={graphId ? <GraphTestsWorkspace graphId={graphId} actions={testActions}>{testsPanel}</GraphTestsWorkspace> : testsPanel}/> : <>
+    {graphId && <SavedGraphAssistant key={graphId} graphId={graphId}/>}
+    <PageHeader variant="title" leading={<ShowFolders/>} title={graphId || msg("Graphs")} meta={graphId ? <>{served.data?.meta.graphVersion} <Pill tone="quiet">{msg("Experimental")}</Pill></> : undefined}
+      actions={<>{graphId ? <GraphOptions id={graphId} meta={served.data?.meta} sourceText={served.data?.raw}/> : <ButtonLink to="/packs">{msg("Library")}</ButtonLink>}{!compose && <ButtonLink to={withChat(graphId ? `/graphs/${encodeURIComponent(graphId)}?view=compose` : "/graphs?view=compose")}>{graphId ? msg("Edit composition") : msg("Create graph")}</ButtonLink>}</>}
+      navigation={graphId ? <DefinitionNavigation label={msg('Graph sections')} current={overview?'overview':sources?'sources':tests||rehearsal?'tests':review?'review':brief?'brief':history?'history':usage?'usage':'logic'} items={[
+        {value:'overview',label:msg('Overview')},{value:'logic',label:msg('Logic')},{value:'sources',label:msg('Sources')},{value:'tests',label:msg('Tests')},
+        {value:'review',label:msg('Review')},{value:'brief',label:msg('Brief')},{value:'history',label:msg('History')},{value:'usage',label:msg('Usage')}
+      ].map(item=>({...item,href:withChat(`/graphs/${encodeURIComponent(graphId)}${item.value==='logic'?'':'?view='+item.value}`)}))}/> : undefined} />
     <PageBody width="full">
-      <p className="meta"><Pill tone="quiet">{msg("Experimental")}</Pill></p>
+      {!graphId && <p className="meta"><Pill tone="quiet">{msg("Experimental")}</Pill></p>}
       {!graphId && <p className="quiet">{msg("Connect packs and see how their results feed into the next decision.")}</p>}
       {!graphId && graphInventorySupported && (inventory.error
         ? <ErrorBox title={msg("Could not list graphs")} error={inventory.error} />
         : inventory.isPending ? <Loading what={msg("graphs")} />
         : listing && !tests && <><GraphLabels labels={listing} /><ConfiguredGraphs inventory={listing} /></>)}
-      {!graphId && !tests && <GraphFindingsPanel />}
+      {!graphId && !tests && <><div className={shared.toolbar}>{testActions}</div><GraphFindingsPanel /></>}
       {!graphId && !graphInventorySupported && <p className="note">{msg("This runtime cannot list graphs without running their tests. Choose Run all graph tests to discover their test results, or connect a newer runtime to browse their diagrams.")}</p>}
-      {graphId && !tests && !plan && !rehearsal && <FlowExplorer key={graphId} graphId={graphId} />}
-      {graphId && rehearsal && <GraphRehearsal key={graphId} graphId={graphId} />}
-      {graphId && plan && <GraphPlanView key={graphId} graphId={graphId} />}
-      {tests && testsPanel}
+      {graphId && overview && <GraphOverview document={served.data?.document} description={served.data?.meta.description} loading={status !== 'ready' || (graphDocumentSupported && served.isPending)} unavailable={!graphDocumentSupported && status === 'ready' ? msg('This runtime cannot read graph definitions.') : served.error ? msg('The graph could not be loaded. Try again when the runtime is connected.') : undefined} logicHref={withChat(`/graphs/${encodeURIComponent(graphId)}`)}/> }
+      {graphId && !overview && !tests && !rehearsal && !review && !usage && !sources && !brief && !history && <FlowExplorer key={graphId} graphId={graphId} initialPlan={plan} />}
+      {graphId && review && (served.error ? <ErrorBox title={msg('Could not read graph')} error={served.error}/> : !served.data ? <Loading what={msg('graph')}/> : <GraphReview owner={graphId} title={graphId} content={served.data.raw} tests={data ? msg('Last observed result: {{status}}', {status:data.status}) : undefined}/>)}
+      {graphId && sources && (served.error ? <ErrorBox title={msg('Could not read graph')} error={served.error}/> : served.isPending ? <Loading what={msg('graph')}/> : <GraphSources document={served.data?.document}/>)}
+      {graphId && brief && (served.error ? <ErrorBox title={msg('Could not read graph')} error={served.error}/> : served.isPending ? <Loading what={msg('graph')}/> : served.data && <DefinitionBrief kind="graph" owner={graphId} title={graphId} content={served.data.raw}/>)}
+      {graphId && history && <DefinitionHistory kind="graph" owner={graphId} documentId={served.data?.document?.id} observation={data}/>}
+      {graphId && usage && <DefinitionUsage kind="graph"/>}
+      {(tests || rehearsal) && (graphId ? <GraphTestsWorkspace key={graphId + String(rehearsal)} graphId={graphId} initialTry={rehearsal} actions={testActions}>{testsPanel}</GraphTestsWorkspace> : testsPanel)}
     </PageBody>
     </>}
   </article>
@@ -249,12 +263,12 @@ function GraphEntry({
 }) {
   useLocale()
   const rows = entry.rows ?? []
-  // Selection is derived, not just stored: the requested row where it still
-  // exists, else the first row there is. A refetch that drops the requested
-  // row (or brings rows to a graph that had none) then selects something
-  // instead of leaving a full picker with nothing on the diagram.
+  // Details follow explicit selection and disappear when filters or a new
+  // result remove that case; never silently select a different result.
   const [selected, setSelected] = useState<string | undefined>(undefined)
-  const row = rows.find((candidate) => candidate.id === selected) ?? rows[0]
+  const [query,setQuery]=useState(''),[filter,setFilter]=useState('all')
+  const visible=rows.filter(row=>row.id.toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (filter==='all'||row.status===filter))
+  const row = visible.find((candidate) => candidate.id === selected)
 
   // The configured id the matrix reports an entry under is the same configured
   // id the inventory and the fetch are keyed by — the runtime resolves both
@@ -301,37 +315,34 @@ function GraphEntry({
           <Link to={`/graphs/${encodeURIComponent(entry.id)}`}>{entry.id}</Link>
         </h2>
         <Pill tone={statusTone(entry.status)}>{entry.status}</Pill>
-        {entry.graphVersion && <Pill tone="quiet">v{entry.graphVersion}</Pill>}
+        {entry.graphVersion && <Pill tone="quiet">{entry.graphVersion}</Pill>}
         <SuiteSummaryMembers summary={entry.summary} />
       </header>
-      <p className="meta">
+      <Disclosure title={msg("Run details")}><p className="meta">
         {entry.path && <code>{shownPath(entry.path)}</code>}
         {entry.rowsPath && <code>{shownPath(entry.rowsPath)}</code>}
         {entry.graphId && <span><Message text={"graph id <0/>"} slots={[entry.graphId]} /></span>}
       </p>
+      </Disclosure>
       {entry.detail && <p className="note note-warn" lang="en">{shownMessage(entry.detail, known)}</p>}
 
-      <Section title={msg("The walk")}>
+      <div className={shared.toolbar}><Input type="search" aria-label={msg('Search cases')} placeholder={msg('Search cases…')} value={query} onChange={event=>setQuery(event.target.value)}/>
+        <MenuChoice label={msg('Test result filter')} value={filter} onValueChange={setFilter} options={[{value:'all',label:msg('All results')},...Array.from(new Set(rows.map(row=>row.status))).map(value=>({value,label:value}))]}/></div>
+      {visible.length ? <div className={shared.tableScroll}><table className={shared.table}><thead><tr><th scope="col">{msg('Case')}</th><th scope="col">{msg('Expected')}</th><th scope="col">{msg('Observed result')}</th><th scope="col">{msg('Status')}</th></tr></thead><tbody>
+        {visible.map(candidate=><tr key={candidate.id} data-selected={row?.id===candidate.id||undefined}>
+          <td><Button variant="quiet" className={shared.name} aria-expanded={row?.id===candidate.id} onClick={()=>setSelected(candidate.id)}>{candidate.id}</Button></td>
+          <td>{candidate.expectedErrorClass || resultHeadline(candidate.expected)}</td><td>{candidate.actualErrorClass || resultHeadline(candidate.actual)}</td><td>{candidate.status}</td>
+        </tr>)}
+      </tbody></table></div> : <p className="quiet">{rows.length?msg('No cases match these filters.'):msg('No graph test results were reported.')}</p>}
+      {row && <section aria-label={msg('Test result')} className={shared.section}>
+        <ul className="rows"><GraphRowItem row={row} known={known}/></ul>
+      <Disclosure title={msg("Execution diagram")}>
         <>
           <BindingNotice
             binding={binding}
             runDigest={entry.graphSha256}
             servedDigest={servedDigest}
           />
-          {rows.length > 0 && (
-            <div className="row-picker" role="group" aria-label={msg("Choose a row to see on the diagram")}>
-              {rows.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  className={`tab${candidate.id === row?.id ? ' tab-on' : ''}`}
-                  onClick={() => setSelected(candidate.id)}
-                >
-                  {candidate.id}
-                </button>
-              ))}
-            </div>
-          )}
           {inFlight ? (
             <Loading what={msg("the served graph document")} />
           ) : (
@@ -366,23 +377,11 @@ function GraphEntry({
             </>
           )}
         </>
-      </Section>
+      </Disclosure>
 
-      <Section title={msg("Coverage")}>
-        <CoverageReport coverage={entry.coverage} groupByNode />
-      </Section>
+      </section>}
+      <Disclosure title={msg('Coverage')}><CoverageReport coverage={entry.coverage} groupByNode/></Disclosure>
 
-      <Section title={msg("Rows")} count={rows.length}>
-        {rows.length === 0 ? (
-          <Empty><Message text={"No rows were reported for this graph<0/>."} slots={[entry.detail ? msg(" — the note above says why") : '']} /></Empty>
-        ) : (
-          <ul className="rows">
-            {rows.map((candidate) => (
-              <GraphRowItem key={candidate.id} row={candidate} known={known} />
-            ))}
-          </ul>
-        )}
-      </Section>
     </section>
   )
 }
@@ -480,6 +479,10 @@ function useDigestRefetch({
  * on a composition that blindness reaches upstream too — an escalation target
  * moved on a node three hops back changes nothing any headline can see.
  */
+function resultHeadline(value: string): string {
+  try { const parsed=JSON.parse(value); if (!parsed || typeof parsed!=='object') return value; return typeof parsed.outcomeId==='string'?parsed.outcomeId:typeof parsed.kind==='string'?parsed.kind:value } catch { return value }
+}
+
 function GraphRowItem({ row, known }: { row: GraphTestRow; known: (string | undefined)[] }) {
   useLocale()
   const assertion = describeTargetAssertion(row)

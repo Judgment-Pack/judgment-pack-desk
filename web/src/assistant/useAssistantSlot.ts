@@ -11,13 +11,13 @@ import { sourceMessage } from '../i18n/source'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useAssistantKey } from './queries'
 import {
-  NO_MODEL_CHOSEN,
   type AssistantEndpointConfig,
   type AssistantAgentConfig,
   type AssistantEngine,
   type ThinkingTier
 } from '../config/deskConfig'
 
+export const UNBOUND_KEY = sourceMessage('The saved API key does not match this endpoint. Save the key again in Connections > AI.')
 export const CHECKING_KEY = sourceMessage('Checking saved API key…')
 export const UNREAD_KEY = sourceMessage('Could not check the saved API key. Retry or open Connections > AI for details.')
 
@@ -100,16 +100,16 @@ export function useAssistantSlot(connectionId?:string): AssistantSlot {
       keyPresent:key.isSuccess && key.data.present, keyStatus:key.status, retryKey:()=>{ void account.refetch() },
       engine:config.assistant.engine, thinking:config.assistant.thinking }
   }
+  const unbound = key.isSuccess && key.data.present && !key.data.bound
   return {
     ...identity,
     ...(config.assistant.agent ? {agent:config.assistant.agent}:{}),
     state: unread ? 'unavailable' : endpoint === null ? 'none' : 'configured',
     endpoint,
-    // The decoder's words, read off the decoder's own constant. A sentence
-    // typed out here would be a second copy nothing keeps in step.
-    unusable: assistantProfile?.problem ?? (endpoint !== null && endpoint.model === null ? NO_MODEL_CHOSEN : undefined),
+    // Use the server's binding verdict and point to the setting that repairs it.
+    unusable: assistantProfile?.problem ?? (unbound ? UNBOUND_KEY : undefined) ?? (endpoint !== null && endpoint.model === null ? sourceMessage("An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.") : undefined),
     recovery: unread || endpoint === null || endpoint.model === null ? 'configure'
-      : key.isPending ? undefined : key.isError ? 'retry' : !key.data.present ? 'configure' : undefined,
+      : key.isPending ? undefined : key.isError ? 'retry' : !key.data.present || unbound ? 'configure' : undefined,
     retrying: key.isFetching,
     keyPresent: key.isSuccess && key.data.present,
     keyStatus: key.status,

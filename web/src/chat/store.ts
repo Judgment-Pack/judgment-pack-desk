@@ -276,8 +276,8 @@ export class ChatStore {
     const prior = previous?.state as ResearchRunBinding['state'] | undefined
     if (prior && previous?.sources === binding.sources && Object.entries(binding.state).every(([key, value]) => key === 'streaming' || key === 'streamingId' || key === 'events' || prior[key as keyof typeof prior] === value)) return
     if (binding.state.phase !== 'idle') {
-      const owner = this.state.chats.find(item => item.id === id)
-      if (owner && !owner.pack && !owner.graph && binding.state.candidates.length && !binding.state.restored) {
+      const owner = this.state.chats.find(item => item.id === id) ?? this.state.drafts.find(item => item.id === id)
+      if (owner && !owner.pack && !owner.graph && binding.state.candidates.length && (!binding.state.restored || binding.state.checkRun === 'running' || binding.state.checkRun === 'failed' || binding.state.checkRun === 'stopped')) {
         const saved = checkpoint(binding.state, binding.sources)
         const current = this.state.packDrafts.find(item => item.id === owner.draftId)
         if (!owner.draftId) {
@@ -351,7 +351,7 @@ export class ChatStore {
     const binding = this.state.bindings.get(id)
     if (!binding || (this.running && this.running !== id) || (needsModel && binding.blocked) || binding.run?.running) return false
     const owner = [...this.state.chats,...this.state.drafts].find(chat=>chat.id===id)
-    if (owner?.draftId && needsModel && !owner.pack) {
+    if (owner?.draftId && !owner.pack) {
       const artifact = this.state.packDrafts.find(item=>item.id===owner.draftId)
       const current = binding.state.candidates.at(-1)?.text
       if (!artifact || owner.draftGeneration!==artifact.generation || artifact.checkpoint.state.candidates.at(-1)?.text !== current) {

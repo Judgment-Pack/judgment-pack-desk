@@ -11,6 +11,7 @@ export const MAX_DEPTH = 16
 export interface PackFolder { id: string; name: string; parentId: string | null; ownerId?: 'local' }
 export interface FolderDocument { version: 1 | 2; folders: PackFolder[]; assignments: Record<string, string> }
 export type FolderAction =
+ | { type: 'create-and-move'; id: string; name: string; parentId: string | null; target: { kind: 'folder'; id: string } | { kind: 'items'; ids: string[] } }
  | { type: 'create'; id: string; name: string; parentId: string | null }
  | { type: 'rename'; id: string; name: string }
  | { type: 'move'; id: string; parentId: string | null }
@@ -61,6 +62,13 @@ export function decodeFolders(value: unknown): FolderDocument {
  return doc
 }
 export function applyFolderAction(document: FolderDocument, action: FolderAction): FolderDocument {
+ // Build and validate the complete change before the client writes anything.
+ if (action.type === 'create-and-move') {
+  const created = applyFolderAction(document, {type:'create',id:action.id,name:action.name,parentId:action.parentId})
+  return applyFolderAction(created, action.target.kind === 'folder'
+   ? {type:'move',id:action.target.id,parentId:action.id}
+   : {type:'assign-many',packIds:action.target.ids,folderId:action.id})
+ }
  const next: FolderDocument = { version: document.version === 2 || action.type === 'assign' && /^(graph|graph-draft):/.test(action.packId) || action.type === 'assign-many' && action.packIds.some(id=>/^(graph|graph-draft):/.test(id)) ? 2 : 1, folders: document.folders.map(folder => ({...folder})), assignments: {...document.assignments} }
  if (action.type === 'assign' || action.type === 'assign-many') {
   if (!next.folders.some(folder => folder.id === action.folderId)) throw new Error(sourceMessage('This folder no longer exists. Choose another folder.'))

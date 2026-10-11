@@ -20,9 +20,11 @@ type conversationDocument struct {
 	Chats   []json.RawMessage `json:"chats"`
 }
 type conversationReply struct {
-	Project string          `json:"project"`
-	SHA256  string          `json:"sha256"`
-	Content json.RawMessage `json:"content"`
+	Project       string          `json:"project"`
+	SHA256        string          `json:"sha256"`
+	Content       json.RawMessage `json:"content"`
+	Snapshot      json.RawMessage `json:"snapshot,omitempty"`
+	SnapshotIssue string          `json:"snapshotIssue,omitempty"`
 }
 
 func (s *Server) conversationName() string {
@@ -188,7 +190,17 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	} else if drafts {
 		recordName = draftPackName(recordName)
 	}
-	read := func() (conversationReply, error) { return s.readWorkspaceRecord(root, recordName, drafts) }
+	read := func() (conversationReply, error) {
+		reply, err := s.readWorkspaceRecord(root, recordName, drafts)
+		if err == nil && briefs && r.URL.Query().Get("subject") != "" {
+			reply.Snapshot, err = s.definitionBriefSnapshot(root, recordName, r.URL.Query().Get("subject"))
+			if err != nil {
+				reply.SnapshotIssue = err.Error()
+				err = nil
+			}
+		}
+		return reply, err
+	}
 	validate := validateConversations
 	if briefs {
 		validate = validateBriefs

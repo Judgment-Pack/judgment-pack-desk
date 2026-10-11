@@ -1,3 +1,4 @@
+import { checkPayload, verifyRetainedCheck } from '../../research/retainedCheck'
 import type { TestProposal } from './proposals'
 import type { ChatAttachment } from '../../chat/store'
 import type { PackDraft } from '../drafts/model'
@@ -335,8 +336,20 @@ export async function recoverDraft(suite: TestSuite, draft: PackDraft): Promise<
   for (const candidate of candidates) {
     const check = candidate.check ?? candidate.previousCheck
     if (!check?.cases.length) continue
-    const id = token + ':check:' + check.documentDigest + ':' + (await digestOf(jsonIdentity(check.cases)))
+    const id = token + ':check:' + check.documentDigest + ':' + (check.record?.digest ?? await digestOf(jsonIdentity(check.cases)))
     if (next.runs.some((r) => r.id === id)) continue
+    if (check.record && check.record.documentDigest === candidate.digest) {
+      const retained = await verifyRetainedCheck(check.record)
+      const record = retained.record!
+      if (record.matrix) {
+        next.runs.push({id,at:record.at,packDigest:candidate.digest,packText:candidate.text,
+          packVersion:String((candidate.document as ObjectValue)?.version ?? 'Draft'),origin:'draft',
+          cases:record.inputs.map(({expectationSource,rationale,...row})=>({id:row.id,name:row.id,revision:1,row,
+            sources:draft.documents ?? [],sourceMappings:{},origin:'draft',rationale:rationale+' ['+expectationSource+']'})),
+          report:checkPayload(record.matrix.response) as unknown as PackTest})
+        continue
+      }
+    }
     // Old checks did not retain their input snapshots. Keep the report historical,
     // never bind a current case's edited inputs to that past result.
     const snapshots: TestCase[] = []

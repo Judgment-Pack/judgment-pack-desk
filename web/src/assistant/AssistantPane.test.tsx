@@ -171,6 +171,7 @@ async function draw(options: {
   const model = scriptedModel({ api: 'openai-compatible', answerAs: 'stream' })
   const keyRead = JSON.stringify({
     present: options.keyPresent ?? true,
+    bound: options.keyPresent ?? true,
     fingerprint: options.keyPresent === false ? '' : 'sk-a…wxyz'
   })
   const relayed: { url: string; headerNames: string[]; body: string }[] = []
@@ -257,7 +258,7 @@ describe('where there is no assistant to run', () => {
     await draw({ keyReply: () => pending })
     expect(screen.getByText('Checking saved API key…')).toBeTruthy()
     expect(screen.queryByText(/no key is stored on this machine/)).toBeNull()
-    await act(async () => { answer(Response.json({ present: true, fingerprint: 'fixture…only' })) })
+    await act(async () => { answer(Response.json({ present: true, bound: true, fingerprint: 'fixture…only' })) })
     expect(await screen.findByRole('button', { name: 'Run' })).toBeTruthy()
   })
 
@@ -265,7 +266,7 @@ describe('where there is no assistant to run', () => {
     let failed = true
     await draw({ keyReply: async () => {
       if (failed) throw new TypeError('Connection interrupted')
-      return Response.json({ present: true, fingerprint: 'fixture…only' })
+      return Response.json({ present: true, bound: true, fingerprint: 'fixture…only' })
     } })
     expect(await screen.findByText(/Could not check the saved API key/)).toBeTruthy()
     expect(screen.queryByText(/no key is stored on this machine/)).toBeNull()

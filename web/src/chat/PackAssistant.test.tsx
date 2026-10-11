@@ -5,6 +5,7 @@ import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { PackAssistant } from './PackAssistant'
 
 const fake = vi.hoisted(() => ({ snapshot: {} as any, editing: {} as any, open: false }))
+vi.mock('../packs/test-workspace/store', () => ({ useTestStorage: () => ({suite: {cases: [], runs: []}, query: {isSuccess: true}}) }))
 vi.mock('./ChatProvider', () => ({ useChats: () => fake.snapshot }))
 vi.mock('../shell/InspectorSlot', () => ({ useInspectorControls: () => ({ open: fake.open }) }))
 vi.mock('../packs/edit/editingContext', () => ({ useEditing: () => fake.editing }))

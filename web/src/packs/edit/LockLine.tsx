@@ -28,6 +28,6 @@ export function LockLine({ paths }: { paths: readonly string[] }) {
   const listed = paths.some((path) => path === LOCK_FILE || path.endsWith(`/${LOCK_FILE}`))
   if (!listed) return null
   return (
-    <p className={styles.lock}>{msg("This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.")}</p>
+    <p className={styles.lock}>{msg("This project keeps a reviewed set. Review and lock, in Admin → Decision safeguards, shows what the runtime finds and updates it.")}</p>
   )
 }

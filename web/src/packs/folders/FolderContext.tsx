@@ -35,12 +35,12 @@ function useFolderState(storageKey?: string) {
  const [settings,setSettings]=useState(()=>({key:storageKey,value:read(storageKey)})), [message,setMessage]=useState('')
  if(settings.key!==storageKey)setSettings({key:storageKey,value:read(storageKey)})
  const prefs={...settings.value,collapsed:!settings.value.visibilityChosen&&location.pathname!=='/packs'?true:settings.value.collapsed}
- const [editorFields,setEditorFields]=useState({name:'',destination:WORKSPACE_ROOT,filter:''})
+ const [editorFields,setEditorFields]=useState({name:'',destination:WORKSPACE_ROOT,createDestination:false,parent:WORKSPACE_ROOT})
  const [editing,setEditing]=useState<{kind:'create'|'rename'|'move'|'pack'|'items'; ids?:string[]; id?:string; parentId?:string|null}|null>(null)
  const [overlay,setOverlay]=useState(false)
  const formBase=useRef({name:'',destination:WORKSPACE_ROOT})
  const confirmDiscard=useConfirmDiscard()
- const dirty=!!editing && (editorFields.name!==formBase.current.name || editorFields.destination!==formBase.current.destination)
+ const dirty=!!editing && (editorFields.name!==formBase.current.name || editorFields.destination!==formBase.current.destination || editorFields.createDestination && editorFields.parent!==WORKSPACE_ROOT)
  const clearGuard=useDirtyGuard(dirty,msg('Discard unsaved folder changes?'),{name:editorFields.name})
  async function closeEditor(){if(dirty&&!await confirmDiscard(msg('Discard unsaved folder changes?'),{name:editorFields.name}))return;setEditing(null);setMessage('');opener.current?.focus()}
  const opener=useRef<HTMLElement|null>(null), drawerOpener=useRef<HTMLElement|null>(null)
@@ -64,14 +64,15 @@ function useFolderState(storageKey?: string) {
  const edit=(request:NonNullable<typeof editing>,element?:HTMLElement)=>{
   opener.current=(overlay?drawerOpener.current:null)??element??documentElement();setOverlay(false);editorBase.current=query.data?{...query.data,document}:undefined;setMessage('')
   const folder=document.folders.find(folder=>folder.id===request.id)
-  const fields={name:request.kind==='rename'?folder?.name??'':'',destination:request.kind==='items'?HOME_FOLDER:request.kind==='pack'?packFolder(document,request.id!):request.kind==='move'?folder?.parentId??WORKSPACE_ROOT:request.parentId??WORKSPACE_ROOT,filter:''}
+  const fields={name:request.kind==='rename'?folder?.name??'':'',destination:request.kind==='items'?HOME_FOLDER:request.kind==='pack'?packFolder(document,request.id!):request.kind==='move'?folder?.parentId??WORKSPACE_ROOT:request.parentId??WORKSPACE_ROOT,createDestination:false,parent:WORKSPACE_ROOT}
   formBase.current=fields;setEditorFields(fields)
   setEditing(request)
  }
  const reload=async()=>{const result=await query.refetch();if(result.data&&!result.isError)editorBase.current=result.data}
  const saveEdit=(action:FolderAction)=>mutation.mutateAsync({action,before:editorBase.current})
- const {packId:finalId,draftId}=useParams()
- const packId=finalId??draftId
+ const {packId:finalId,draftId,graphId}=useParams()
+ const graphDraft=new URLSearchParams(location.search).get('draft')
+ const packId=finalId??draftId??(graphId?'graph:'+graphId:location.pathname==='/graphs'&&graphDraft?'graph-draft:'+graphDraft:undefined)
  const activeFolder=packId&&query.data?packFolder(document,packId):selected
  useEffect(()=>{if(packId&&query.data)preferences({expanded:[...new Set([...prefs.expanded,...folderTrail(document,activeFolder).map(folder=>folder.id)])]})},[packId,activeFolder,settings.key])
  return {clearGuard,closeEditor,query,document,prefs,selected,activeFolder,editorFields,setEditorFields,drawerOpener,reload,saveEdit,preferences,select,editing,setEditing,edit,mutation,message,setMessage,overlay,setOverlay,opener}

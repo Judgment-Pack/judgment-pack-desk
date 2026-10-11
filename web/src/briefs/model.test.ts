@@ -26,3 +26,8 @@ describe('brief grounding',()=>{
   expect(briefText({context:'Context',findings:'Finding',uncertainty:'Unknown',nextAction:'Review',verdict:'approve'})).not.toHaveProperty('verdict')
  })
 })
+
+it('keeps graph evidence scoped to its referenced packs without asserting availability',()=>{
+ const graph:Snapshot={kind:'graph',title:'Graph',pack:'{"nodes":{}}',record:{packs:{first:{evidenceRequirements:[{id:'policy',required:true}]},second:{evidenceRequirements:[{id:'policy',required:false}]}}}}
+ expect(evidenceFor(graph).map(e=>[e.id,e.required,e.state])).toEqual([['first:policy',true,'unknown'],['second:policy',false,'unknown']])
+})

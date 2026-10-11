@@ -1,3 +1,4 @@
+import { whileChecking, runSnapshotCheck, verifyRetainedCheck, reusableRuntime } from './retainedCheck'
 import { conversationMode, type AuthoringMode } from './mode'
 import type { SearchReference } from '../search/results'
 import { citedAttachments } from '../chat/messageOwnership'
@@ -110,6 +111,11 @@ export interface RunState {
   status: Status
   /** A disk checkpoint is not a fresh check or approval. */
   restored?: boolean
+  checkRecovery?: 'verifying' | 'current' | 'outdated' | 'unavailable'
+  checkIssue?: string
+  checkRun?: 'running' | 'complete' | 'failed' | 'stopped'
+  /** Cited statement evidence inherited from an independent draft, without its chat. */
+  inheritedStatements?: [string, string][]
   detail: string
   /** Ephemeral prose for the current engine step; never a trusted candidate. */
   streaming?: string
@@ -157,6 +163,9 @@ export interface RunPorts {
   turn(request: TurnRequest, signal: AbortSignal, onEvent: (event: AssistantEvent) => void): Promise<void>
   /** The desk's own runtime connection, for validate and rehearsal. */
   callTool: CallTool
+  /** Feature-detected exact snapshot tests; older runtimes retain the legacy path. */
+  snapshotChecks?: boolean
+  runtimeIdentity?: () => Promise<string>
   ledger: Ledger
   /** The research tools bound to the ledger, or none where research is not configured. */
   researchTools: HostTool[]
@@ -420,6 +429,17 @@ export function statementTurns(turns: readonly Turn[]): { id: string; turn: Turn
   return turns.filter(turn => turn.role === 'user' && turn.kind !== 'note').map((turn, index) => ({ id: `you-${index + 1}`, turn }))
 }
 
+/** Inherited statements keep their original ids; new messages use stable turn ids. */
+export function caseStatements(state: Pick<RunState, 'turns' | 'inheritedStatements'>): Map<string, string> {
+  if (state.inheritedStatements === undefined) return statementsOf(state.turns)
+  const values = new Map(state.inheritedStatements)
+  for (const {turn} of statementTurns(state.turns)) {
+    const text = turn.statement ?? (turn.input === undefined ? turn.text : undefined)
+    if (text !== undefined && turn.id) values.set(`message:${turn.id}`, text)
+  }
+  return values
+}
+
 /** What a chat draft's cases may rest on besides a recorded excerpt. */
 export interface CaseGrounds {
   /** The person's own statements, by id. See `statementsOf`. */
@@ -503,15 +523,6 @@ export class AuthoringRun {
   private background: AbortController | null = null
   /** The run's owner is gone: no trace at rest starts. See `detach`. */
   private detached = false
-  /**
-   * The person's statements as the saved conversation held them, which a saved
-   * chat draft's cases are grounded again in. Taken when it is restored, so a
-   * message sent afterwards -- numbered from one in a chat opened from the
-   * pack, which keeps no turns -- never stands in for one a case was written
-   * from.
-   */
-  private savedStatements: Map<string, string> | null = null
-
   constructor(private readonly ports: RunPorts) {}
 
   subscribe = (listener: () => void): (() => void) => {
@@ -592,13 +603,13 @@ export class AuthoringRun {
     this.deadline = null
   }
 
-  /** Load a validated checkpoint; no stored verdict, check or pending approval survives. */
+  /** Reconstruct a checkpoint; only verified complete check records can become current. */
   async restore(saved: RunState): Promise<void> {
     if (this.running || this.state.phase !== 'idle') throw new Error(sourceMessage("Cannot replace an active conversation"))
     const candidates = await Promise.all(saved.candidates.map(async item => ({
       revision: item.revision, text: item.text, document: deepFreeze(JSON.parse(item.text)) as unknown,
       digest: await digestOf(item.text), producedBy: item.producedBy, responseId: item.responseId,
-      ...(item.previousCheck?.documentDigest === await digestOf(item.text) ? { previousCheck: item.previousCheck } : {})
+      ...(item.previousCheck && (item.previousCheck.record || item.previousCheck.documentDigest === await digestOf(item.text)) ? { previousCheck: item.previousCheck } : {})
     })))
     this.set({ ...INITIAL_STATE, brief: saved.brief, seedUrls: saved.seedUrls,
       turns: saved.turns.map((turn, index) => ({...turn, id: turn.id ?? `legacy-turn-${index}`})),
@@ -614,7 +625,12 @@ export class AuthoringRun {
       detail: candidates.length ? sourceMessage("Saved draft. Recheck its sources and tests before creating it.")
         : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'failed' || saved.status === 'budget' || saved.turns.at(-1)?.role === 'user'
           ? sourceMessage("This response was interrupted. Send a message to continue; nothing restarted automatically.") : '' })
-    this.savedStatements = statementsOf(this.state.turns)
+    const record = candidates.at(-1)?.previousCheck?.record
+    // Independent draft artifacts keep only the case's cited statements, never
+    // a hidden transcript. A new chat's you-1 must not replace their provenance.
+    this.set({inheritedStatements: candidates.length && !saved.turns.length ? structuredClone(record?.statements ?? saved.inheritedStatements ?? []) : saved.inheritedStatements})
+    this.set({checkRun: saved.checkRun === 'running' ? 'stopped' : saved.checkRun})
+    if (record && this.ports.runtimeIdentity) { await this.refreshCheck(); return }
     // A checkpoint keeps no citations, so a reopened conversation draft is
     // traced again before anything reads them: one that cites is never shown
     // as citing nothing. Nothing else is checked or changed here.
@@ -638,7 +654,7 @@ export class AuthoringRun {
       this.set({ candidates: [{ responseId, revision: 1, document: proposal.document, text, digest, producedBy: 'conversation' }], unknowns: proposal.unknowns, citations: conversationMode(this.ports.mode) ? [] : traceCitations(proposal.document, this.ports.ledger) })
       await this.traceConversation(signal)
       // Recovery never starts source acquisition, a paid reviewer or repair.
-      const check = await checkCandidate(text, [], this.ports.callTool, signal)
+      const check = await this.checkCandidate(text, [], this.ports.callTool, signal)
       this.set({ candidates: this.state.candidates.map(candidate => ({ ...candidate, check })) })
       // A recovered chat draft has no cases yet; establishing them is a model
       // call, and the person asks for it.
@@ -647,17 +663,94 @@ export class AuthoringRun {
     })
   }
 
+  private async checkContext(): Promise<string> {
+    return digestOf(jsonIdentity({mode:this.ports.mode ?? 'research', gateway:this.ports.gateway, documents:this.basisNow(),
+      sources:this.ports.ledger.sources.map(source => ({session:source.session, request:source.request,
+        text:source.response?.text ?? null, quotes:source.excerpts.map(e => e.text)}))}))
+  }
+
+  private async checkCandidate(document: string, inputs: AuthoringCase[], call: CallTool, signal: AbortSignal): Promise<CandidateCheck> {
+    this.set({checkRun:'running',checkRecovery:undefined,checkIssue:undefined,readiness:''})
+    try {
+      const grounds = caseStatements(this.state)
+      const statements = [...grounds].filter(([id]) => inputs.some(row => row.expectationSource === id))
+      const result = this.ports.snapshotChecks && this.ports.runtimeIdentity
+        ? await runSnapshotCheck(document, inputs, call, signal, this.ports.runtimeIdentity, () => this.checkContext(), statements, this.stamp())
+        : await checkCandidate(document, inputs, call, signal)
+      this.check(signal)
+      if (jsonIdentity(inputs) !== jsonIdentity(this.state.cases) && inputs.length) throw Error(sourceMessage('The test inputs changed during the checks. Run checks again.'))
+      this.set({checkRun:'complete',checkRecovery:'current'})
+      return result
+    } catch (error) {
+      this.set({checkRun:signal.aborted ? 'stopped' : 'failed'})
+      throw error
+    }
+  }
+
+  /** Restore completed results, never replay evaluation, acquisition or model work. */
+  async refreshCheck(): Promise<void> {
+    const candidate = this.latest(), previous = candidate?.check ?? candidate?.previousCheck, record = previous?.record
+    if (this.detached || this.running || !candidate || !record || !this.ports.runtimeIdentity) return
+    this.background?.abort()
+    const controller = new AbortController(), signal = controller.signal
+    this.background = controller
+    const timeout = setTimeout(() => controller.abort(), this.ports.seconds * 1000)
+    const active = () => !signal.aborted && this.background === controller && !this.running && this.latest()?.digest === candidate.digest
+    this.set({restored:true,readiness:'',checkRecovery:'verifying',checkIssue:undefined,
+      candidates:this.state.candidates.map(c => c === candidate ? {...c,previousCheck:previous,check:undefined} : c)})
+    try {
+      if (this.state.checkRun === 'stopped' || this.state.checkRun === 'failed') throw Error(sourceMessage('The last check did not finish. Run checks again.'))
+      const check = await verifyRetainedCheck(record)
+      if (!active()) return
+      if (record.documentDigest !== candidate.digest || jsonIdentity(record.inputs) !== jsonIdentity(this.state.cases))
+        throw Error(sourceMessage('The draft or test inputs changed. Run checks again.'))
+      if (!reusableRuntime(record.runtime) || record.runtime !== await whileChecking(signal,this.ports.runtimeIdentity))
+        throw Error(sourceMessage('The runtime version changed or cannot be verified. Run checks again.'))
+      if (!active()) return
+      if (record.context !== await this.checkContext()) throw Error(sourceMessage('The source context changed. Run checks again.'))
+      const statements = caseStatements(this.state)
+      if (record.statements.some(([id,text]) => statements.get(id) !== text)) throw Error(sourceMessage('The statements used by the tests changed. Run checks again.'))
+      if (conversationMode(this.ports.mode)) await this.traceConversation(signal)
+      else for (const session of new Set(this.ports.ledger.sources.map(s => s.session))) await this.verifyAcquisitions(session,signal,false)
+      if (!active()) return
+      const grounds = conversationMode(this.ports.mode) ? {statements,citations:this.state.citations} : undefined
+      const admitted = admitCases({cases:record.inputs},this.ports.ledger,[],grounds)
+      const withheld = this.withheld()
+      if (withheld || admitted.dropped.length || admitted.admitted.length !== record.inputs.length)
+        throw Error(withheld ?? sourceMessage('The test sources could not be verified. Run checks again.'))
+      if (record.context !== await this.checkContext() || record.runtime !== await whileChecking(signal,this.ports.runtimeIdentity))
+        throw Error(sourceMessage('The runtime or source context changed during verification. Run checks again.'))
+      if (!active()) return
+      this.set({restored:false,checkRecovery:'current',checkRun:'complete',checkIssue:undefined,
+        candidates:this.state.candidates.map(c => c.digest === candidate.digest ? {...c,check} : c)})
+      this.settleReview(check.valid ? record.inputs.length ? sourceMessage('Some test cases failed. Review the results.') : this.withoutCases() : sourceMessage('The draft needs corrections before it can be created.'))
+    } catch (cause) {
+      if (active()) {
+        const reason = (cause as Error).message
+        this.set({restored:true,readiness:'',checkRecovery:/changed/.test(reason) ? 'outdated' : 'unavailable',checkIssue:reason,detail:reason,status:'needs-input',phase:'review'})
+      }
+    } finally {
+      clearTimeout(timeout)
+      if (this.background === controller) {
+        this.background = null
+        if (signal.aborted && this.state.checkRecovery === 'verifying') this.set({checkRecovery:'unavailable',checkIssue:sourceMessage('Saved check verification was interrupted. Run checks again.')})
+      }
+    }
+  }
+
   /** Explicit, model-free recovery. A reload cannot restart paid or repair work. */
   recheck(): void {
     if (this.running || !this.latest()) return
     this.arm()
-    this.set({ status: 'running', phase: 'check', detail: sourceMessage("Rechecking the saved draft.") })
+    this.set({ status: 'running', phase: 'check', detail: sourceMessage("Running draft checks."), checkRun: 'running', checkIssue: undefined, checkRecovery: undefined, readiness: '' })
     void this.drive(async signal => {
+      this.set({restored:true})
       await this.recheckRestored(signal)
       if (!conversationMode(this.ports.mode) && !this.state.cases.length && !this.state.expectationIssues.length) throw new Error(sourceMessage("No saved cases can be rechecked. Send a message to continue research."))
       // Model-free: a chat draft saved without cases is checked and told so,
       // and its cases are established only on the person's own request.
       await this.casesAndCheck(signal, false, false)
+      if (this.state.checkRun === 'running') this.set({checkRun:'failed'})
     })
   }
 
@@ -685,7 +778,7 @@ export class AuthoringRun {
     if (conversation) await this.traceConversation(signal)
     if (!conversation) for (const session of new Set(this.ports.ledger.sources.map(source => source.session))) await this.verifyAcquisitions(session, signal, false)
     const saved = this.state.cases
-    const grounds = conversation ? { statements: this.savedStatements ?? statementsOf(this.state.turns), citations: this.state.citations } : undefined
+    const grounds = conversation ? { statements: caseStatements(this.state), citations: this.state.citations } : undefined
     const { admitted, dropped } = admitCases({ cases: saved }, this.ports.ledger, [], grounds)
     if (conversation && (dropped.length || admitted.length !== saved.length || this.state.expectationIssues.some(issue => !admitCases({ cases: [issue.original] }, this.ports.ledger, [], grounds).admitted.length))) {
       // A chat opened from the pack keeps none of the messages its cases were
@@ -697,7 +790,6 @@ export class AuthoringRun {
       this.set({ cases: [], expectationIssues: [], heldProposal: null, restored: false,
         droppedCases: [...saved, ...this.state.expectationIssues.map(issue => issue.original)].map(row => ({ id: row.id,
           reason: reasons.get(row.id) ?? sourceMessage("set aside with the saved cases that could not be grounded again") })) })
-      this.savedStatements = null
       this.addTurn({ role: 'assistant', kind: 'note', text: sourceMessage("The saved test cases rest on messages or pages this conversation cannot ground again, so they were set aside. Establish new ones before creating the pack.") })
       return
     }
@@ -714,7 +806,6 @@ export class AuthoringRun {
     this.set({ cases, expectationIssues: issues })
     // Do not generate replacement cases on a model-free recovery action.
     this.set({ restored: false })
-    this.savedStatements = null
   }
 
   /** Begin: the brief, the URLs to read first, and the research turn. */
@@ -900,7 +991,7 @@ export class AuthoringRun {
       await work(controller.signal)
     } catch (cause) {
       if (this.state.streaming?.trim()) this.addTurn({ id: this.state.streamingId, role: 'assistant', kind: 'message', text: this.state.streaming, interrupted: true }, {streaming: '', streamingId: undefined})
-      this.set({ streaming: '' })
+      this.set({ streaming: '', ...(this.state.checkRun === 'running' ? {checkRun: controller.signal.aborted ? 'stopped' as const : 'failed' as const} : {}) })
       if (isCancelled(cause) || cause instanceof Stopped) {
         if (this.outOfTime) {
           this.set({ status: 'budget', detail: this.alsoUndone(sourceMessage("The time budget of {{value0}} seconds is spent. The last completed stage is kept.", { value0: this.ports.seconds })) })
@@ -991,7 +1082,7 @@ export class AuthoringRun {
     const outcomes = ((document as { outcomes?: unknown })?.outcomes ?? []) as unknown[]
     const evidence = ((document as { evidenceRequirements?: unknown })?.evidenceRequirements ?? []) as unknown[]
     const pages = this.state.citations.filter(citation => citation.traced).map(citation => ({ id: citation.location, url: citation.url, text: citation.quote }))
-    const statements = [...statementsOf(this.state.turns)].map(([id, text]) => ({ id, text }))
+    const statements = [...caseStatements(this.state)].map(([id, text]) => ({ id, text }))
     return [
       CONVERSATION_CASES_INSTRUCTIONS,
       `OUTCOMES\n${JSON.stringify(outcomes)}`,
@@ -1233,7 +1324,7 @@ export class AuthoringRun {
       repair = false
       if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0 && this.state.heldProposal?.candidateDigest !== candidate.digest) {
         this.set({ phase: 'check', detail: sourceMessage("Validating the draft through the runtime.") })
-        const check = await checkCandidate(candidate.text, [], this.ports.callTool, signal)
+        const check = await this.checkCandidate(candidate.text, [], this.ports.callTool, signal)
         this.set({ candidates: this.state.candidates.map(item => item.digest === candidate.digest ? { ...item, check } : item) })
         if (!check.valid || !establish) {
           await this.settle(signal, check.valid ? this.withoutCases() : sourceMessage("The draft needs corrections before it can be created."))
@@ -1305,7 +1396,7 @@ export class AuthoringRun {
       const current = this.latest()!
       this.set({ phase: 'check', detail: sourceMessage("Checking revision {{value0}} through the runtime.", { value0: current.revision }) })
       this.ports.log(sourceMessage("check: revision {{value0}} — validate, then {{value1}} rehearsal(s)", { value0: current.revision, value1: this.state.cases.length }))
-      const check = await checkCandidate(current.text, this.state.cases, this.ports.callTool, signal)
+      const check = await this.checkCandidate(current.text, this.state.cases, this.ports.callTool, signal)
       this.set({
         candidates: this.state.candidates.map((candidate) => (candidate.digest === current.digest ? { ...candidate, check } : candidate))
       })
@@ -1399,7 +1490,7 @@ export class AuthoringRun {
 
   /** What a chat draft's cases may rest on now: the person's messages and its traced citations. */
   private grounds(): CaseGrounds | undefined {
-    return conversationMode(this.ports.mode) ? { statements: statementsOf(this.state.turns), citations: this.state.citations } : undefined
+    return conversationMode(this.ports.mode) ? { statements: caseStatements(this.state), citations: this.state.citations } : undefined
   }
 
   /** Why a checked chat draft without cases is not ready, and what completes it. */
@@ -1530,6 +1621,7 @@ export class AuthoringRun {
    */
   basisChanged(): void {
     if (this.detached || !conversationMode(this.ports.mode) || !this.latest() || this.basisNow() === this.state.tracedBasis) return
+    if (!this.running && (this.latest()?.check?.record || this.latest()?.previousCheck?.record)) { void this.refreshCheck(); return }
     // Withdrawn at once either way. Settled again only at rest: an action in
     // flight settles for itself, and one that ends without a settle keeps the
     // outcome it ended with.
@@ -1648,7 +1740,7 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
   // A chat draft's case may rest on the person's own words, and the transcript
   // does not travel with the pack, so the record keeps each message a case or
   // an expectation issue rests on, under the id the case names.
-  const said = statementsOf(state.turns)
+  const said = caseStatements(state)
   const statements = [...new Set([...state.cases, ...state.expectationIssues.map(issue => issue.original)].map(row => row.expectationSource))]
     .filter(id => said.has(id)).map(id => ({ id, text: said.get(id)! }))
   const sourceOf = (record: SourceRecord) => ({
@@ -1832,6 +1924,7 @@ function completeCurrentCheck(state: RunState): boolean {
   const latest = state.candidates.at(-1)
   const check = latest?.check
   return check !== undefined && check.valid && check.documentDigest === latest?.digest && state.cases.length > 0 &&
+    (!check.record || jsonIdentity(check.record.inputs) === jsonIdentity(state.cases)) &&
     check.cases.length === state.cases.length && check.cases.every((row, index) => row.passed && row.id === state.cases[index]?.id)
 }
 
@@ -1844,7 +1937,7 @@ function completeCurrentCheck(state: RunState): boolean {
 export function readinessKey(state: RunState): string {
   return JSON.stringify([
     state.candidates.at(-1)?.digest ?? '',
-    state.cases.map(row => row.id),
+    state.cases.map(row => [row.id, jsonIdentity(row)]),
     state.citations.map(citation => [citation.sourceId, citation.location, citation.traced]),
     state.tracedBasis ?? ''
   ])

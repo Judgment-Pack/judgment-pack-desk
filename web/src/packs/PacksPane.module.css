@@ -7,39 +7,45 @@
   min-height: 0;
   min-width: 0;
 }
-.controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--density-gutter);
-}
-.controls .search { width: min(20rem, 100%); flex: 0 1 20rem; min-width: 0; }
-.sort { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
+.pane > [data-page-header] { flex-wrap: nowrap; }
+.heading { display: flex; align-items: center; flex: 1; gap: var(--space-2); min-width: 0; }
+.headingTitle { font-size: var(--text-control); font-weight: 500; }
+.toolbar { display: flex; align-items: center; flex: 0 0 auto; gap: var(--space-2); padding: var(--space-3) var(--density-gutter); min-width: 0; }
+.toolbar > * { flex-shrink: 0; }
+.searchField { display: flex; align-items: center; flex: 0 1 23rem; min-width: 8rem; height: var(--density-control); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.searchField:hover { border-color: var(--border-strong); }
+.searchField:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.searchField > svg { flex: 0 0 var(--space-4); margin-inline-start: var(--space-2); color: var(--ink-faint); }
+.searchField .search { height: 100%; min-width: 0; flex: 1; border: none; padding-inline: var(--space-2); background: none; }
+.searchField .search:focus-visible { outline: none; }
+.searchField .scope { flex: 0 0 auto; height: calc(var(--density-control) - 2px); border: none; border-inline-start: 1px solid var(--border); border-start-start-radius: 0; border-end-start-radius: 0; padding-inline: var(--space-2); font-size: var(--text-xs); color: var(--ink-soft); }
+.toolbar[data-compact] .searchField { flex: 1 1 auto; }
+.toolbar[data-tight] { gap: var(--space-1); }
+.toolbar[data-tight] .scope > span { display: none; }
+.toolbar[data-tight] .searchField { min-width: 5rem; }
+.filterCount { color: var(--ink-soft); font-size: var(--text-xs); }
 .draftBadge { display: inline-block; line-height: var(--leading-body); flex: 0 0 auto; color: var(--ink-soft); font-size: var(--text-xs); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 5px; }
 .reviewBadge { display: inline-block; margin-inline-end: var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 0 5px; }
-.matchCount { color: var(--ink-faint); font-size: var(--text-xs); white-space: nowrap; }
-.collection { display: flex; flex-direction: column; min-height: calc(var(--density-row) * 3 + var(--density-control)); flex: 1; padding: 0 var(--density-gutter); }
+.pagination { margin-inline: var(--density-gutter); margin-top: auto; }
+.collection { --collection-gutter: var(--density-gutter); display: flex; flex-direction: column; min-height: calc(var(--density-row) * 3 + var(--density-control)); flex: 1; }
 .columns, .row { --name-width: clamp(10rem, 26cqi, 18rem); --version-width: 5rem; --preview-width: 4rem; --selection-width: 2rem; }
 .columns {
-  overflow-y: hidden;
-  scrollbar-gutter: stable;
   display: grid;
   grid-template-columns: var(--selection-width) var(--name-width) minmax(0, 1fr) var(--version-width) var(--preview-width);
   align-items: center;
   min-height: var(--density-control);
-  padding: 0 var(--space-3);
+  padding: 0 var(--collection-gutter);
   border-bottom: 1px solid var(--border);
   color: var(--ink-faint);
   font-size: var(--text-xs);
 }
-.list { overflow: hidden auto; position: relative; flex: 1; min-height: 0; scrollbar-gutter: stable; }
+.list { overflow: hidden auto; position: relative; flex: 1; min-height: 0; }
 .rows { margin: 0; padding: 0; list-style: none; }
 .row {
   display: flex;
   align-items: center;
   height: var(--density-row);
-  padding: 0 var(--space-3);
+  padding: 0 var(--collection-gutter);
   border-bottom: 1px solid var(--border);
 }
 .row:hover, .row[data-selected] { background: var(--accent-soft); }
@@ -73,9 +79,9 @@
   .descriptionColumn, .description, .rowDetail { display: none; }
 }
 @container pack-collection (max-width: 28rem) {
-  .controls { padding-inline: var(--space-4); }
-  .collection { padding-inline: var(--space-4); }
-  .controls .search { flex: 1 1 10rem; }
+  .toolbar { padding-inline: var(--space-4); }
+  .collection { --collection-gutter: var(--space-4); }
+  .pagination { margin-inline: var(--space-4); }
   .columns, .row { --version-width: 4rem; }
 }
 
@@ -86,10 +92,18 @@
 .selection input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .kindIcon { flex: 0 0 var(--space-4); width: var(--space-4); height: var(--space-4); color: var(--ink-soft); display: inline-flex; }
 .kindIcon svg { width: 100%; height: 100%; }
-.bulkActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding-block: var(--space-2); font-size: var(--text-control); }
-.bulkActions button[aria-disabled='true'] { color: var(--ink-faint); background: none; cursor: not-allowed; }
-.selectedCount { white-space: nowrap; font-weight: 600; }
-.clearSelection { margin-inline-start: auto; }
+.bulkActions { display: flex; align-items: center; gap: var(--space-1); margin-inline-start: auto; flex: 0 0 auto; }
 .row .rowOptions { flex: 0 0 2rem; height: min(var(--density-control), var(--density-row)); }
 .deleteList { position: relative; overflow: auto; max-height: 16rem; padding-inline-start: var(--space-5); font-size: var(--text-sm); }
 .deleteList li { overflow-wrap: anywhere; }
+
+/* Reserve the checkbox column so revealing selection never shifts a row.
+   Touch users always get a visible target; keyboard focus reveals it too. */
+@media (hover: hover) and (pointer: fine) {
+  .selection input { opacity: 0; }
+  .row:hover .selection input,
+  .row:focus-within .selection input,
+  .columns:hover .selection input,
+  .columns:focus-within .selection input,
+  .collection[data-selecting] .selection input { opacity: 1; }
+}

@@ -1,14 +1,1 @@
-.alert {
-  margin: 0.9rem 0 0;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--danger);
-  border-radius: var(--radius-sm);
-  background: var(--danger-soft);
-  color: var(--ink);
-  font-size: var(--text-body);
-  line-height: 1.45;
-}
-
-.reason {
-  color: var(--ink-faint);
-}
+.alert { margin-block-start: var(--space-3); }

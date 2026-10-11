@@ -17,7 +17,6 @@
   scrollbar-gutter: stable;
 }
 .workspaceBody {
-  max-width: var(--measure-wide);
   min-width: 0;
 }
 .toolbar,
@@ -33,7 +32,8 @@
   justify-content: space-between;
   margin-bottom: var(--space-4);
 }
-.actions { gap: var(--space-2); }
+.actions { gap: var(--space-2); margin-inline-start: auto; }
+.toolbar > input { flex: 1 1 10rem; max-width: 22rem; min-width: 8rem; }
 .filters {
   margin-bottom: var(--space-3);
 }
@@ -518,3 +518,10 @@
 .comparisonPicker {display:grid;gap:var(--space-1);flex:1;min-width:min(14rem,100%);}
 .comparisonPicker label {color:var(--ink-soft);font-size:var(--text-xs);}
 .comparisonPicker > button {width:100%;}
+
+.testDesigner { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.testDesigner[hidden] { display: none; }
+.designerHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-3) var(--density-gutter); border-bottom: 1px solid var(--border); }
+.designerHeader h2 { font-size: var(--text-heading); margin: 0; }
+
+.testDesigner > .assistant { flex: 1; height: auto; }

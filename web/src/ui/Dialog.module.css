@@ -52,3 +52,6 @@
 .body { position: relative; min-height: 0; overflow-y: auto; padding: var(--density-block) var(--density-section); }
 .footer { border-top: 1px solid var(--border); padding: var(--density-block) var(--density-section); }
 .footer .actions { margin: 0; }
+
+.content[data-size='wide'] { width: min(80rem, calc(100vw - 2rem)); }
+.content[data-size='wide'] .body { min-width: 0; }

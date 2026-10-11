@@ -172,7 +172,7 @@ export function useDescribeIt(): DescribeItState {
   const picked = usePickedModel(
     selected?.models ?? EMPTY_MODELS,
     selected?.model ?? null,
-    listing.data?.root
+    listing.data?.root, slot.connectionId, 'authoring'
   )
   const [typed, setTyped] = useState('')
   /**
@@ -243,7 +243,7 @@ export function useDescribeIt(): DescribeItState {
     advertisesTest &&
     testPrompt.data === undefined &&
     testPrompt.error === null
-  const run = useAssistantRun({
+  const run = useAssistantRun({ target: slot,
     // Only ever started where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
     endpoint: slot.endpoint,
@@ -318,7 +318,7 @@ export function useDescribeIt(): DescribeItState {
    * It runs on the way in as well, where there is nothing to discard: the key
    * read has not answered yet and `usable` is honestly false.
    */
-  const usable = slot.engine === 'codex' ? assistantReady(slot) : slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent
+  const usable = assistantReady(slot)
   /**
    * Whether there is a session to take away, read at the instant of the loss.
    *
@@ -478,7 +478,7 @@ export function useDescribeIt(): DescribeItState {
   return {
     usable,
     unusableBecause:
-      slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Connections > AI.') : slot.state === 'unavailable'
+      slot.unusable ? msg(slot.unusable) : slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Connections > AI.') : slot.state === 'unavailable'
         ? msg(UNREAD_CONFIGURATION)
         : slot.endpoint === null
           ? msg(NO_ASSISTANT)

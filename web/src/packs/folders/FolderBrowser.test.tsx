@@ -100,15 +100,15 @@ it('restores a direct pack link to its folder and expanded ancestors',async()=>{
  await act(async()=>{})
 })
 
-it('keeps the original Packs & graphs search scope when returning from a pack',async()=>{
+it('keeps the original Library search scope when returning from a pack',async()=>{
  const {router}=setup();await screen.findByRole('link',{name:/home-pack/})
- fireEvent.click(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Packs & graphs'}))
+ fireEvent.click(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Library'}))
  fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'pack'}})
  fireEvent.click(await screen.findByRole('link',{name:/department-pack/}))
  await screen.findByText('Pack content')
  await act(async()=>router.navigate(-1))
  expect(screen.getByRole('searchbox',{name:'Search packs and graphs'}).getAttribute('value')).toBe('pack')
- expect(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Packs & graphs'}).getAttribute('aria-current')).toBe('location')
+ expect(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Library'}).getAttribute('aria-current')).toBe('location')
  expect(screen.getByRole('link',{name:/home-pack/})).toBeTruthy()
 })
 it('preserves a typed folder name through dock and drawer transitions',async()=>{
@@ -212,8 +212,8 @@ it('moves a graph with its own folder identity and a readable label',async()=>{
 
 it('keeps only actual folders in the left tree and returns to all items through the location bar',async()=>{
  setup();await screen.findByRole('link',{name:/home-pack/})
- expect(within(screen.getByRole('navigation',{name:'Folder navigation'})).queryByRole('button',{name:'Packs & graphs'})).toBeNull()
- fireEvent.click(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Packs & graphs'}))
+ expect(within(screen.getByRole('navigation',{name:'Folder navigation'})).queryByRole('button',{name:'Library'})).toBeNull()
+ fireEvent.click(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Library'}))
  expect(await screen.findByRole('link',{name:/department-pack/})).toBeTruthy()
 })
 
@@ -221,7 +221,8 @@ it('moves selected packs and graphs together in one conflict-checked folder writ
  const {client}=setup({graphs:true});await screen.findByRole('link',{name:/home-pack/})
  fireEvent.click(await screen.findByRole('checkbox',{name:'Select flow'}))
  fireEvent.click(screen.getByRole('checkbox',{name:'Select home-pack'}))
- fireEvent.click(screen.getByRole('button',{name:'Move to…'}))
+ fireEvent.keyDown(screen.getByRole('button',{name:'2 selected'}),{key:'Enter'})
+ fireEvent.click(await screen.findByRole('menuitem',{name:'Move to folder…'}))
  const dialog=screen.getByRole('dialog',{name:'Move selected items'})
  fireEvent.keyDown(within(dialog).getByRole('combobox',{name:'Destination folder'}),{key:'Enter'})
  fireEvent.click(await screen.findByRole('option',{name:/Operations$/}))
@@ -231,4 +232,53 @@ it('moves selected packs and graphs together in one conflict-checked folder writ
  const doc=client.getQueryData<{document:{assignments:Record<string,string>}}>(FOLDERS_KEY)!.document
  expect(doc.assignments['graph:flow']).toBe('dept');expect(doc.assignments['home-pack']).toBe('dept')
  expect(doc.assignments['department-pack']).toBe('child')
+})
+
+it('searches across folders without losing location and prunes selection when scope narrows',async()=>{
+ setup();await screen.findByRole('link',{name:/home-pack/})
+ expect(screen.queryByRole('link',{name:/department-pack/})).toBeNull()
+ fireEvent.keyDown(screen.getByRole('button',{name:'Search scope: This folder'}),{key:'Enter'})
+ fireEvent.click(await screen.findByRole('menuitemradio',{name:'All folders'}))
+ expect(await screen.findByRole('link',{name:/department-pack/})).toBeTruthy()
+ fireEvent.click(screen.getByRole('checkbox',{name:'Select department-pack'}))
+ expect(screen.getByRole('button',{name:'1 selected'})).toBeTruthy()
+ fireEvent.keyDown(screen.getByRole('button',{name:'Search scope: All folders'}),{key:'Enter'})
+ fireEvent.click(await screen.findByRole('menuitemradio',{name:'This folder'}))
+ await waitFor(()=>expect(screen.queryByRole('link',{name:/department-pack/})).toBeNull())
+ expect(screen.queryByRole('button',{name:'1 selected'})).toBeNull()
+ expect(screen.getByRole('link',{name:/home-pack/})).toBeTruthy()
+})
+
+it('creates a destination inside the move dialog, retains it across resizing, and moves only on confirmation',async()=>{
+ const {client,resize}=setup()
+ fireEvent.keyDown(await screen.findByRole('button',{name:'Options for home-pack'}),{key:'Enter'})
+ fireEvent.click(await screen.findByRole('menuitem',{name:'Move to folder…'}))
+ const dialog=screen.getByRole('dialog',{name:'Move pack'})
+ expect(within(dialog).queryByRole('textbox',{name:'Find a folder'})).toBeNull()
+ fireEvent.click(within(dialog).getByRole('button',{name:'New folder'}))
+ const name=within(dialog).getByRole('textbox',{name:'Folder name'})
+ await waitFor(()=>expect(document.activeElement).toBe(name))
+ fireEvent.change(name,{target:{value:'Not created'}})
+ expect(saveFolderAction).not.toHaveBeenCalled()
+ fireEvent.click(within(dialog).getByRole('button',{name:'Back'}))
+ await waitFor(()=>expect(document.activeElement).toBe(within(dialog).getByRole('combobox',{name:'Destination folder'})))
+ expect(saveFolderAction).not.toHaveBeenCalled()
+ fireEvent.click(within(dialog).getByRole('button',{name:'New folder'}))
+ fireEvent.change(within(dialog).getByRole('textbox',{name:'Folder name'}),{target:{value:'Operations'}})
+ fireEvent.keyDown(within(dialog).getByRole('combobox',{name:'Parent folder'}),{key:'Enter'})
+ fireEvent.click(await screen.findByRole('option',{name:'local.user@example.com'}))
+ fireEvent.click(within(dialog).getByRole('button',{name:'Create and move'}))
+ expect((await within(dialog).findByRole('alert')).textContent).toContain('A folder with this name already exists here.')
+ expect(client.getQueryData<{document:{folders:unknown[]}}>(FOLDERS_KEY)?.document.folders).toHaveLength(3)
+ fireEvent.change(within(dialog).getByRole('textbox',{name:'Folder name'}),{target:{value:'Client briefs'}})
+ resize(620)
+ expect(within(screen.getByRole('dialog',{name:'Move pack'})).getByRole('textbox',{name:'Folder name'})).toHaveProperty('value','Client briefs')
+ fireEvent.click(screen.getByRole('button',{name:'Create and move'}))
+ await waitFor(()=>expect(screen.queryByRole('dialog',{name:'Move pack'})).toBeNull())
+ const doc=client.getQueryData<{document:{folders:{id:string;name:string;parentId:string|null}[];assignments:Record<string,string>}}>(FOLDERS_KEY)!.document
+ const folder=doc.folders.find(folder=>folder.name==='Client briefs')!
+ expect(folder.parentId).toBe(HOME_FOLDER)
+ expect(doc.assignments['home-pack']).toBe(folder.id)
+ expect(doc.assignments['department-pack']).toBe('child')
+ expect(saveFolderAction).toHaveBeenLastCalledWith(expect.objectContaining({digest:'read'}),expect.objectContaining({type:'create-and-move',name:'Client briefs'}))
 })

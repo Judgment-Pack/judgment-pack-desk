@@ -1,3 +1,6 @@
+import { listModels } from './modelListing'
+import { bindModelCall } from './session'
+import { useAssistantKey } from './queries'
 import { sourceMessage } from '../i18n/source'
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -28,10 +31,17 @@ function initialProfile(read:EffectiveConfig['assistantProfile'],registry:AIRegi
 }
 function ConnectionPreferences({connection:c,value,disabled,onChange}:{connection:AIConnection;value:ModelPreferences;disabled:boolean;onChange:(p:ModelPreferences)=>void}) {
  const native=c.assistant.engine==='codex',account=useProviderStatus(native&&c.enabled,c.id),catalog=useProviderModels(native&&c.enabled&&account.data?.account==='connected',c.id)
+ const key=useAssistantKey(!native&&c.enabled,c.id,c.revision)
+ const discovered=useMutation({mutationFn:async()=>{
+  const endpoint=c.assistant.endpoint
+  if(!endpoint)throw new Error(sourceMessage('Choose a provider first.'))
+  return {revision:c.revision,rows:await listModels(endpoint.kind,bindModelCall(endpoint.kind,{connectionId:c.id,connectionRevision:c.revision}))}
+ }})
+ const apiModels=discovered.data?.revision===c.revision?discovered.data.rows.map(m=>m.id):[]
  const available=native?allowedAgentModels(c.assistant.agent):c.assistant.endpoint?.models??[]
  const baseline={models:available,model:native?c.assistant.agent?.model??null:c.assistant.endpoint?.model??null,effort:c.assistant.agent?.effort,thinking:c.assistant.thinking}
  const current=value.inherit?baseline:value
- const choices=native&&catalog.data?catalog.data.models:[...new Set([...available,...current.models])].map(id=>({id,name:id,efforts:[],defaultEffort:'none' as const}))
+ const choices=native&&catalog.data?catalog.data.models:[...new Set([...apiModels,...available,...current.models])].map(id=>({id,name:id,efforts:[],defaultEffort:'none' as const}))
  const chosen=choices.find(m=>m.id===current.model)
  return <div className={styles.group}>
   <h3>{c.name}</h3>
@@ -39,6 +49,7 @@ function ConnectionPreferences({connection:c,value,disabled,onChange}:{connectio
   {value.inherit?<span className={styles.meta}>{msg('Default model')} · {baseline.model??msg('No model selected')}</span>:<>
    <SubscriptionModels models={choices} allowed={current.models} model={current.model??''} disabled={disabled} onChange={(models,model)=>onChange({inherit:false,models,model:model||null,...(native?model===current.model&&current.effort?{effort:current.effort}:{}:{thinking:current.thinking})})}/>
    {native&&current.model&&<Field label={msg('Reasoning effort')}>{w=><Select {...w} disabled={disabled||catalog.isPending||catalog.isError} value={current.effort??'__default__'} onValueChange={v=>{if(!value.inherit){const {effort:_,...rest}=value;onChange({...rest,...(v==='__default__'?{}:{effort:v as typeof value.effort})})}}} options={[{value:'__default__',label:msg('Model default')},...(chosen?.efforts??[]).map(value=>({value,label:value}))]}/>}</Field>}
+   {!native&&<><Button variant="quiet" disabled={disabled||discovered.isPending||!key.data?.bound} onClick={()=>discovered.mutate()}>{discovered.isPending?msg('Loading models…'):msg('Refresh models')}</Button>{discovered.error&&<span role="alert" className={styles.meta}>{discovered.error.message}</span>}{key.isError&&<span role="alert" className={styles.meta}>{key.error.message} <Button variant="inline" onClick={()=>void key.refetch()}>{msg('Retry')}</Button></span>}{key.isSuccess&&!key.data.bound&&<span className={styles.meta}>{msg('Save an API key in Connections > AI to load models.')}</span>}</>}
    {!native&&<Field label={msg('Reasoning effort')}>{w=><Select {...w} disabled={disabled} value={current.thinking??c.assistant.thinking} onValueChange={v=>{if(!value.inherit)onChange({...value,thinking:v as typeof c.assistant.thinking})}} options={[{value:'off',label:msg('off')},{value:'on',label:msg('standard')},{value:'ultra',label:msg('deep')}]}/>}</Field>}
   </>}
   {native&&catalog.error&&<span role="alert" className={styles.meta}>{msg('Model details could not be loaded.')} <Button variant="inline" onClick={()=>void catalog.refetch()}>{msg('Retry')}</Button></span>}

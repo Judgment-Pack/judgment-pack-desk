@@ -9,12 +9,12 @@
 .caption { flex: 0 0 auto; padding: var(--space-2) var(--density-gutter); margin: 0; font-size: var(--text-xs); color: var(--ink-soft); }
 .listGroup { margin: var(--density-section) 0; min-width: 0; }
 .listGroup h2 { font-size: var(--text-body); margin: 0 0 var(--space-2); font-weight: 600; }
-.rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
+.rules { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin-top: var(--space-3); }
 .items { display: grid; gap: var(--space-2); }
 .listGroup[data-group='evidenceRequirements'] .items { grid-template-columns: minmax(0, 1fr); }
 .listGroup[data-group='outcomes'] .items, .listGroup[data-group='resolution'] .items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .item { min-width: 0; scroll-margin-top: var(--space-7); }
-.rules .item { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2); }
+.rules .item { border-bottom: 1px solid var(--border); padding: var(--space-2) 0; }
 .item[data-current] { outline:1px solid var(--border-strong); border-radius:var(--radius-sm); }
 .item[data-search-match] { box-shadow:inset 3px 0 var(--accent); }
 .itemBody { padding: var(--space-1) var(--space-2) var(--space-2); min-width: 0; }

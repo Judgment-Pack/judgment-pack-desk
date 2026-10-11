@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Field } from '../ui/Field'
+import { CodeBlock } from '../ui/CodeBlock'
 import { TextArea } from '../ui/TextArea'
 import { Disclosure } from '../ui/Disclosure'
 import { compareGraphRevision, hasGraphProvenance, type GraphProvenance } from './provenance'
@@ -58,7 +59,6 @@ export function GraphRehearsal({ graphId }: { graphId: string }) {
     }
   }
   return <section className={styles.workspace} aria-label={msg('Graph rehearsal')}>
-    <h2>{msg('Rehearsal')}</h2>
     <p className={styles.hint}>{msg('Try supplied facts against this graph. Every node runs; a rehearsal creates no decision audit record and takes no external action.')}</p>
     <Disclosure title={msg('About rehearsal')}>
       <p>{msg('The runtime evaluates the supplied inputs. A matching byte revision does not establish that the policy or facts are correct, or that the project was reviewed.')}</p>
@@ -67,14 +67,15 @@ export function GraphRehearsal({ graphId }: { graphId: string }) {
     <Field label={msg('Inputs by node id')} hint={msg('Enter a JSON object keyed by node id, each entry with optional facts and evidence members. Maximum 4 MiB.')}>{w =>
       <TextArea {...w} value={inputs} disabled={busy} spellCheck={false} rows={12} onChange={event => { setInputs(event.target.value); setResult(undefined); setError(undefined) }}/>
     }</Field>
-    <Button onClick={() => void run()} disabled={busy}>{busy ? msg('Rehearsing…') : msg('Rehearse')}</Button>
+    <Button onClick={() => void run()} disabled={busy}>{busy ? msg('Running…') : msg('Try inputs')}</Button>
     {error && <pre role="alert">{error}</pre>}
     {result && <>
       {hasGraphProvenance(result.answer) ? <RevisionCheck graphId={graphId} answer={result.answer}/> : <p className={styles.hint}>{msg("This runtime did not identify all evaluated file revisions. Results are shown separately from the current graph.")}</p>}
       <Disclosure title={msg("Runtime details")}><GraphLabels labels={result.answer} /></Disclosure>
       <p lang="en">{result.answer.status}</p>
-      <RehearsalMembers raw={result.raw} />
-      <pre lang="en">{result.raw}</pre>
+      <h3>{msg('Final result')}</h3>{memberBytes(result.raw,'disposition') !== undefined ? <CodeBlock expandable lang="en" text={memberBytes(result.raw,'disposition')!} label={msg('Final result')}/> : <p>{msg('No final result was reported.')}</p>}
+      <Disclosure title={msg('Step results')}><RehearsalMembers raw={result.raw}/></Disclosure>
+      <Disclosure title={msg('Exact run record')}><CodeBlock expandable lang="en" text={result.raw} label={msg('Exact run record')}/></Disclosure>
     </>}
   </section>
 }

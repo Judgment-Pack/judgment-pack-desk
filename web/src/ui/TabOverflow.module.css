@@ -1,0 +1,3 @@
+.measure { position: fixed; inset: 0 auto auto 0; gap: var(--space-5); visibility: hidden; pointer-events: none; display: flex; width: max-content; height: 0; overflow: hidden; font-size: var(--text-control); font-weight: 600; }
+.measure > span { flex-shrink: 0; white-space: nowrap; }
+.more { flex-shrink: 0; }

@@ -1,7 +1,8 @@
-import { useSyncExternalStore } from 'react'
+import { SelectionActions, type BrowserItem } from './CollectionActions'
+import { useState, useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ChatStore, type Chat, type ChatPersistence } from '../chat/store'
 import { INITIAL_STATE } from '../research/run'
@@ -28,6 +29,14 @@ async function setup(){
  await screen.findByRole('checkbox',{name:'Select alpha'});await screen.findByRole('checkbox',{name:'Select flow'})
  return {router,store,write}
 }
+async function selectionMenu() {
+ fireEvent.keyDown(screen.getByRole('button',{name:/^\d+ selected$/}),{key:'Enter'})
+ return await screen.findByRole('menu')
+}
+async function closeMenu() {
+ fireEvent.keyDown(screen.getByRole('menu'),{key:'Escape'})
+ await waitFor(()=>expect(screen.queryByRole('menu')).toBeNull())
+}
 it('selects every object type from the leading column and places draft state with its version',async()=>{
  const {router}=await setup()
  expect(screen.getAllByRole('checkbox')).toHaveLength(5)
@@ -40,21 +49,31 @@ it('selects every object type from the leading column and places draft state wit
  expect(within(screen.getByRole('checkbox',{name:'Select pending-graph'}).closest('li')!).getByRole('img',{name:'Graph'})).toBeTruthy()
  fireEvent.click(checkbox)
  expect(router.state.location.pathname).toBe('/packs')
- expect(screen.getByRole('button',{name:'Compose graph'}).getAttribute('aria-disabled')).toBe('true')
- fireEvent.click(screen.getByRole('button',{name:'Compose graph'}))
+ await selectionMenu()
+ expect(screen.getByRole('menuitem',{name:'Compose graph'}).getAttribute('aria-disabled')).toBe('true')
+ fireEvent.click(screen.getByRole('menuitem',{name:'Compose graph'}))
  expect(router.state.location.pathname).toBe('/packs')
+ await closeMenu()
  fireEvent.click(screen.getByRole('checkbox',{name:'Select alpha'}))
- expect(screen.getByRole('button',{name:'Delete drafts'}).getAttribute('aria-disabled')).toBe('true')
- fireEvent.click(screen.getByRole('button',{name:'Delete drafts'}))
+ await selectionMenu()
+ expect(screen.getByRole('menuitem',{name:'Delete drafts'}).getAttribute('aria-disabled')).toBe('true')
+ fireEvent.click(screen.getByRole('menuitem',{name:'Delete drafts'}))
  expect(screen.queryByRole('dialog')).toBeNull()
 })
 it('selects only visible rows and removes filtered-out items from selection',async()=>{
  await setup()
- const all=screen.getByRole('checkbox',{name:'Select all visible items'}) as HTMLInputElement
+ const all=screen.getByRole('checkbox',{name:'Select all matches'}) as HTMLInputElement
  fireEvent.click(screen.getByRole('checkbox',{name:'Select alpha'}))
  expect(all.indeterminate).toBe(true)
  fireEvent.click(all)
  expect(screen.getByText('4 selected')).toBeTruthy()
+ expect(all.checked).toBe(true)
+ expect(all.indeterminate).toBe(false)
+ expect(all.getAttribute('aria-label')).toBe('Clear selection')
+ fireEvent.click(all)
+ expect(screen.queryByRole('group',{name:'Selected item actions'})).toBeNull()
+ expect(all.checked).toBe(false)
+ fireEvent.click(all)
  fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'pending'}})
  await waitFor(()=>expect(screen.getByText('2 selected')).toBeTruthy())
  expect(screen.getAllByRole('checkbox')).toHaveLength(3)
@@ -67,7 +86,8 @@ it('selects only visible rows and removes filtered-out items from selection',asy
 it('confirms draft deletion, retains conversations, and retries a failed save without deleting twice',async()=>{
  const {store,write}=await setup()
  fireEvent.click(screen.getByRole('checkbox',{name:'Select Pending pack'}));fireEvent.click(screen.getByRole('checkbox',{name:'Select pending-graph'}))
- fireEvent.click(screen.getByRole('button',{name:'Delete drafts'}))
+ await selectionMenu()
+ fireEvent.click(screen.getByRole('menuitem',{name:'Delete drafts'}))
  const dialog=screen.getByRole('dialog',{name:'Delete selected drafts?'})
  expect(store.getSnapshot().packDrafts).toHaveLength(1)
  write.mockRejectedValueOnce(new Error('Disk unavailable'))
@@ -88,8 +108,22 @@ it('cancels row deletion and restores focus to the row options control',async()=
  const {store}=await setup()
  const opener=screen.getByRole('button',{name:'Options for Pending pack'});opener.focus()
  fireEvent.keyDown(opener,{key:'Enter'})
- fireEvent.click(await screen.findByRole('menuitem',{name:'Delete draft'}))
+ await screen.findByRole('menuitem',{name:'Delete draft'})
+ expect(screen.queryByRole('menuitem',{name:'Open'})).toBeNull()
+ fireEvent.click(screen.getByRole('menuitem',{name:'Delete draft'}))
  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Cancel'}))
  await waitFor(()=>expect(document.activeElement).toBe(opener))
  expect(store.getSnapshot().packDrafts).toHaveLength(1)
+})
+
+it('returns focus to select-all when clearing from the compact selection menu', async()=>{
+ function CompactSelection() {
+  const [items,setItems]=useState<BrowserItem[]>([{id:'pack',title:'Pack',kind:'pack',status:'finalized',href:'/packs/pack'}])
+  return <><input type="checkbox" data-select-all aria-label="Select all"/><SelectionActions items={items} clear={()=>setItems([])} onDelete={()=>{}} compact/></>
+ }
+ render(<MemoryRouter><CompactSelection/></MemoryRouter>)
+ await selectionMenu()
+ fireEvent.click(screen.getByRole('menuitem',{name:'Clear selection'}))
+ await waitFor(()=>expect(document.activeElement).toBe(screen.getByRole('checkbox',{name:'Select all'})))
+ expect(screen.queryByRole('menu')).toBeNull()
 })
