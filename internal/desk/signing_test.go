@@ -1277,3 +1277,82 @@ func TestASignedDeskWithTheRuntime(t *testing.T) {
 		t.Errorf("the runtime's own audit verify answered %v %s", err, out)
 	}
 }
+
+// **With the runtime: a key that is not the expected one, refused in the
+// runtime's own words.** Runtime 0.30.0 reads configVersion "7", whose audit
+// member may name the public key the signing key is expected to have
+// (`signingPublicKey`): a seed whose public key is another signs nothing, the
+// record is written unsigned, and `packs validate` says why, naming neither
+// the key's path nor either key. With such a runtime Desk still makes a desk
+// signed at "6" and names no expected key. Where the desk's jpack.json is then
+// moved to "7" naming another key, the decision record shows the runtime's
+// `audit-signing-key` sentence, failed, exactly as the runtime wrote it; the
+// record is unsigned; and the answer names no path and not the other key. The
+// runtime still reads "1" to "6". Skipped with a runtime that reads no "7".
+func TestNewDeskWithTheRuntimeShowsAnExpectedKeyRefusal(t *testing.T) {
+	bin := requireBinary(t)
+	t.Setenv("JPACK_CONFIG", "")
+	t.Setenv("JPACK_SIGNING_KEY", "")
+	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", "")
+	var schema struct {
+		Tool struct {
+			Version string `json:"version"`
+		} `json:"tool"`
+		Supported []string `json:"supportedConfigVersions"`
+	}
+	if err := json.Unmarshal(jpackIn(t, bin, t.TempDir(), "packs", "schema", "--format", "json"), &schema); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(schema.Supported, "7") {
+		t.Skipf("runtime %s reads no configVersion 7", schema.Tool.Version)
+	}
+	for _, version := range []string{"1", "2", "3", "4", "5", "6"} {
+		if !slices.Contains(schema.Supported, version) {
+			t.Errorf("runtime %s reads %q, no longer %s", schema.Tool.Version, schema.Supported, version)
+		}
+	}
+	s, ts, _ := gatesServer(t, bin)
+	row := createGatedDesk(t, ts)
+	if row.ConfigVersion != "6" || !row.Signed || row.Notice != "" {
+		t.Fatalf("runtime %s made %+v, want it signed at 6", schema.Tool.Version, row)
+	}
+	assertGatedFolder(t, row.Folder, wantSignedConfig(s.configDir, row.ID))
+
+	// Another key, kept apart from Desk's, named as the one expected.
+	keys := t.TempDir()
+	var other struct {
+		PublicKey string `json:"publicKey"`
+	}
+	if err := json.Unmarshal(jpackIn(t, bin, keys, "audit", "key", "generate", filepath.Join(keys, "other.seed"), "--format", "json"), &other); err != nil || len(other.PublicKey) != 64 {
+		t.Fatalf("the other key: %v %+v", err, other)
+	}
+	config := strings.Replace(wantSignedConfig(s.configDir, row.ID), `"configVersion":"6"`, `"configVersion":"7"`, 1)
+	config = strings.Replace(config, `"audit":{`, `"audit":{"signingPublicKey":"`+other.PublicKey+`",`, 1)
+	config = strings.Replace(config, `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)
+	writeProject(t, row.Folder, map[string]string{"packs/a.json": reviewPack, "jpack.json": config})
+	jpackIn(t, bin, row.Folder, "packs", "lock", "--config", "jpack.json", "--format", "json")
+	facts := filepath.Join(t.TempDir(), "facts.json")
+	if err := os.WriteFile(facts, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	jpackIn(t, bin, row.Folder, "experimental", "evaluate", "--config", "jpack.json", "--pack-id", "alpha", "--facts", facts, "--format", "json")
+
+	status, data := reviewCall(t, ts, "GET", "/api/audit/verify", row.ID, nil, bearer)
+	var answer auditAnswer
+	if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || answer.Report == nil {
+		t.Fatalf("the panel answered %d %s", status, data)
+	}
+	want := auditSigning{State: signingChecked, Status: "failed", Detail: "The signing key the audit member's signingKey names is refused, so records are written unsigned: " +
+		"the key at the signing key's path is not the expected key (the audit member's signingPublicKey names the expected key)."}
+	if answer.Signing == nil || mustJSON(*answer.Signing) != mustJSON(want) {
+		t.Errorf("the panel shows the key check %+v, want %+v", answer.Signing, want)
+	}
+	if answer.Report.Coverage.SignedRecords != 0 {
+		t.Errorf("the panel reports %d signed records, want the record unsigned", answer.Report.Coverage.SignedRecords)
+	}
+	for _, named := range []string{s.configDir, keys, other.PublicKey} {
+		if strings.Contains(string(data), named) {
+			t.Errorf("the panel names %q: %s", named, data)
+		}
+	}
+}
