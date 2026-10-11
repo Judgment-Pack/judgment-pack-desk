@@ -21,3 +21,8 @@
 .thumb:active { cursor: grabbing; }
 .slider[data-disabled] { opacity: .5; }
 .scale { display: flex; justify-content: space-between; gap: var(--space-2); }
+
+/* Keep the model legible in a narrow composer; effort stays in its menu and accessible name. */
+@container chat-composer (max-width: 24rem) {
+  .depth { display: none; }
+}

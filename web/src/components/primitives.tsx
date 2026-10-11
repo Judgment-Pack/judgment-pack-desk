@@ -1,3 +1,4 @@
+import { Notice } from '../ui/Notice'
 import { SourceError } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { systemMessage, useLocale } from '../i18n'
@@ -85,12 +86,8 @@ export function Empty({ children }: { children: ReactNode }) {
 
 export function ErrorBox({ title, error }: { title: string; error: Error }) {
   useLocale()
-  return (
-    <div className="error-box" role="alert">
-      <strong>{title}</strong>
-      <p>{error instanceof SourceError ? systemMessage(error.message) : error.message}</p>
-    </div>
-  )
+  return <Notice tone="error" title={title}
+    detail={error instanceof SourceError ? systemMessage(error.message) : error.message}/>
 }
 
 export function Loading({ what }: { what: string }) {

@@ -37,7 +37,7 @@ The checks cover language negotiation, live switching with draft preservation, s
 
 CI runs catalogue validation and the UI-message guard alongside the component suite, type check and production build. The source guard checks literal JSX text, display and accessibility properties, option captions, confirmations, and captions inside `Message` slots. It cannot prove that every string passed through a variable is translated: imported labels and generated notices still require source and rendered review.
 
-The browser audit exercises every language in an isolated project: home, Packs, tests, pack flows, Assistant settings, storage, identity settings, Help, and pack overview, logic and editing. It checks offline recovery, the configuration dialog, the language menu, draft preservation, reload persistence and visible untranslated labels. German, Cantonese and Japanese are also checked in both themes at 1440, 768 and 390 pixels. It does not send a message, call an AI provider or modify real chat data.
+The browser audit exercises every language in an isolated project: home, Library, all eight pack and graph sections, Assistant settings, storage, identity settings, Help, and pack editing. It checks the sign-in setup entry, the configuration dialog, the language menu, draft preservation, reload persistence and visible untranslated labels. German, Cantonese and Japanese are also checked in both themes at 1440, 768 and 390 pixels. It does not send a message, call an AI provider or modify real chat data.
 
 After building Desk, run it with Node 22 or later and a runtime fixture:
 
@@ -46,4 +46,12 @@ JPACK_BIN=/path/to/jpack node scripts/localization-check.mjs \
   /path/to/jpack-desk /path/to/runtime/internal/graph/testdata/project /tmp/localization-artifacts
 ```
 
+For targeted reruns, set `DESK_AUDIT_LANGUAGES` to a comma-separated list such as `de,ja`. Use a distinct `DESK_AUDIT_PORT` for each concurrent audit; the default is 8851. Each process creates its own fixture and configuration directories.
+
 The final repeated sweep found no remaining UI-copy gaps in the audited source and exercised states. This does not imply that user-authored packs, existing AI replies, exact source quotations or raw runtime/provider diagnostics change language; those intentionally retain their original content. Language quality can still benefit from native-speaker feedback in actual workflows.
+
+## v0.12.0 translation review
+
+All 4,638 source messages are present in every translated catalogue, including required CLDR plural forms. The release review also compared values with English and reviewed 229 older test-workspace, source-refresh and navigation messages that had English values despite passing the presence check. Technical names, paths, interpolation-only messages and valid shared words remain unchanged. Overview and Brief have distinct tab labels; Usage describes references and use, rather than consumption volume.
+
+Release verification includes strict catalogue/source checks and the browser sweep above. Translations were reviewed for terminology, regional wording and the distinction between historical observations, verified byte lineage and approval.

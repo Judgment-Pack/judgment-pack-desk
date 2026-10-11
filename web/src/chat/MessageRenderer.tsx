@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm'
 import { VisuallyHidden } from 'radix-ui'
 import { IconCheck, IconCopy } from '../shell/icons'
 import { CodeBlock } from '../ui/CodeBlock'
+import { ResponseTable } from './ResponseTable'
 import { Tooltip } from '../ui/Tooltip'
 import styles from './ChatWorkspace.module.css'
 
@@ -50,9 +51,10 @@ export const MessageRenderer = memo(function MessageRenderer({ text, documents =
       pre: ({ children }) => {
         const code = Array.isArray(children) ? children[0] : children
         const language = isValidElement<{ className?: string }>(code) ? /^language-(\S+)$/.exec(code.props.className ?? '')?.[1] : undefined
-        return <div className={styles.messageCode}><CodeBlock text={textOf(children).replace(/\n$/, '')} label={language || msg('Code')} /></div>
+        return <div className={styles.messageCode}><CodeBlock text={textOf(children).replace(/\n$/, '')} label={language || msg('Code')} expandable defaultWrap={false} /></div>
       },
-      table: ({ children }) => <div className={styles.messageTable} role="region" aria-label={msg("Response table")} tabIndex={0}><table>{children}</table></div>
+      th: ({ children, ...props }) => <th style={props.style} scope="col">{children}</th>,
+      table: ({ children }) => <ResponseTable>{children}</ResponseTable>
     }), [documents, locale, read])
   return <div className={styles.markdown}><Markdown remarkPlugins={[remarkGfm, numberSources]} skipHtml
     urlTransform={url => /^https?:\/\//i.test(url) || /^attachment:[a-f0-9-]{36}\/sha256:[a-f0-9]{64}\/page\/[1-9][0-9]*$/.test(url) ? url : ''}

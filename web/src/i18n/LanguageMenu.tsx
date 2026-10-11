@@ -1,16 +1,15 @@
-import { DropdownMenu } from 'radix-ui'
+import { Menu as DropdownMenu } from '../ui/Menu'
 import { useState } from 'react'
 import { LANGUAGES, type LanguagePreference } from './locales'
 import { languageLoadFailed, languagePreference, languageReady, msg, setLanguage, useLocale } from './index'
-import { IconCheck, IconChevronRight } from '../shell/icons'
 
 export function LanguageMenu() {
   useLocale()
   const [persisted, setPersisted] = useState(true)
   const [loading, setLoading] = useState(false)
   return <DropdownMenu.Sub>
-    <DropdownMenu.SubTrigger className="desk-menu-item desk-language-trigger">{msg('Language')}<IconChevronRight /></DropdownMenu.SubTrigger>
-    <DropdownMenu.Portal><DropdownMenu.SubContent className="desk-menu" sideOffset={6} collisionPadding={12}>
+    <DropdownMenu.SubTrigger>{msg('Language')}</DropdownMenu.SubTrigger>
+    <DropdownMenu.Portal><DropdownMenu.SubContent sideOffset={6} collisionPadding={12}>
       <DropdownMenu.RadioGroup aria-label={msg('Language')} aria-busy={loading} value={languagePreference()} onValueChange={async value => {
         setLoading(true)
         setPersisted(setLanguage(value as LanguagePreference))
@@ -18,12 +17,12 @@ export function LanguageMenu() {
         setLoading(false)
       }}>
         {[{ id: 'system', label: msg('Use system language') }, ...LANGUAGES].map(choice =>
-          <DropdownMenu.RadioItem key={choice.id} value={choice.id} className="desk-menu-item desk-menu-choice">
-            <DropdownMenu.ItemIndicator className="desk-menu-tick"><IconCheck /></DropdownMenu.ItemIndicator><span lang={choice.id === 'system' ? undefined : choice.id}>{choice.label}</span>
+          <DropdownMenu.RadioItem key={choice.id} value={choice.id} >
+            <span lang={choice.id === 'system' ? undefined : choice.id}>{choice.label}</span>
           </DropdownMenu.RadioItem>)}
       </DropdownMenu.RadioGroup>
-      {!persisted && <p role="status" className="desk-menu-note">{msg('Language changed for this visit. This browser could not save your preference.')}</p>}
-      {languageLoadFailed() && <p role="status" className="desk-menu-note">{msg('The language could not be loaded. Using English for now. Select the language again to retry.')}</p>}
+      {!persisted && <DropdownMenu.Label role="status">{msg('Language changed for this visit. This browser could not save your preference.')}</DropdownMenu.Label>}
+      {languageLoadFailed() && <DropdownMenu.Label role="status">{msg('The language could not be loaded. Using English for now. Select the language again to retry.')}</DropdownMenu.Label>}
     </DropdownMenu.SubContent></DropdownMenu.Portal>
   </DropdownMenu.Sub>
 }

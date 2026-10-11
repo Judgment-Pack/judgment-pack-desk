@@ -20,3 +20,8 @@
 .source[data-wrap='false'] { white-space: pre; overflow-wrap: normal; }
 .source:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .feedback { margin: var(--space-1) 0; color: var(--ink-soft); }
+
+.root[data-expandable] { max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.root[data-expandable] .toolbar { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border); background: var(--surface); }
+.root[data-expandable] .source { margin: 0; padding: var(--space-3); border-radius: var(--radius-none); overscroll-behavior: contain; scrollbar-gutter: stable; }
+.source[data-expanded] { max-height: 65dvh; }

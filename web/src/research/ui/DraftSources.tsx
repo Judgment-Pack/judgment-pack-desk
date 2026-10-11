@@ -1,49 +1,78 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { ChatAttachment } from '../../chat/store'
-import { ReadingDetails, useReadingDetails } from '../../chat/ReadingDetails'
+import type { SourceRecord } from '../ledger'
+import { citedPage, type Citation } from '../run'
 import { SourceReader } from '../../documents/SourceReader'
 import { msg, useLocale } from '../../i18n'
 import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
-import styles from './ResearchAuthoring.module.css'
+import { Button } from '../../ui/Button'
+import { Input } from '../../ui/Input'
+import { MenuChoice } from '../../ui/Menu'
+import { BuilderSplit } from '../../builders/BuilderSplit'
+import { Pagination } from '../../ui/Pagination'
+import { usePagination } from '../../ui/usePagination'
+import styles from '../../definitions/DefinitionWorkspace.module.css'
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 export const declaredSources = (document: unknown): unknown[] => object(document) && Array.isArray(document.sources) ? document.sources : []
 const text = (value: unknown): string => typeof value === 'string' ? value : ''
 
-/** Authored references are distinct from documents retained by Desk and research receipts. */
-export function DraftSources({ document, documents = [], files = [], onRead }: {
+/** Shared saved/draft source browser. A declared reference never implies retrieval. */
+export function DraftSources({ document, documents = [], files = [], sources = [], citations = [] }: {
   document: unknown; documents?: readonly ChatAttachment[]; files?: readonly { name: string; text: string }[]
+  sources?: readonly SourceRecord[]; citations?: readonly Citation[]
   onRead?: (node: ReactNode, opener: HTMLElement) => void
 }) {
   useLocale()
-  const ownRead = useReadingDetails('draft-sources')
-  const read = onRead ?? ownRead
+  const [query,setQuery]=useState(''),[kind,setKind]=useState('all'),[selected,setSelected]=useState('')
+  const [pageCitation,setPageCitation]=useState<Citation>()
   const declared = declaredSources(document)
-  return <>
-    {(documents.length > 0 || files.length > 0) && <section className={styles.section}>
-      <h3>{msg('Attached documents')}</h3>
-      <ul className={styles.list}>
-        {documents.map(file => <li className={styles.row} key={file.id}><button className={styles.rowButton} type="button" onClick={event => read(<SourceReader name={file.name} reference={file.document!} link={file.link} />, event.currentTarget)}><strong>{file.name}</strong>{file.link && <div className={styles.url}>{file.link.url}</div>}</button></li>)}
-        {files.map((file, index) => <li className={styles.row} key={index}><button className={styles.rowButton} type="button" onClick={event => read(<ReadingDetails title={file.name}><CodeBlock text={file.text} label={msg('Text')} /></ReadingDetails>, event.currentTarget)}>{file.name}</button></li>)}
-      </ul>
-    </section>}
-    {declared.length > 0 && <section className={styles.section}>
-      <h3>{msg('Pack source references')}</h3>
-      <p className={styles.detail}>{msg('References declared in the draft. A reference alone does not verify that a source was retrieved.')}</p>
-      <ul className={styles.list}>{declared.map((source, index) => {
-        const record = object(source) ? source : {}
-        const title = text(record.title) || text(record.id) || msg('Source {{value0}}', { value0: index + 1 })
-        const locator = object(record.locator) ? text(record.locator.value) : ''
-        const citation = object(record.citation) ? record.citation : {}
-        return <li className={styles.row} key={index}><button className={styles.rowButton} type="button" onClick={event => read(<ReadingDetails title={title}>
-          {locator && <p className={styles.url}>{locator}</p>}
-          {text(record.publisher) && <p>{text(record.publisher)}</p>}
-          {text(citation.excerpt) && <blockquote>{text(citation.excerpt)}</blockquote>}
-          {text(citation.location) && <p>{text(citation.location)}</p>}
-          <Disclosure title={msg('Technical details')}><CodeBlock text={JSON.stringify(source, null, 2)} label="JSON" /></Disclosure>
-        </ReadingDetails>, event.currentTarget)}><strong>{title}</strong><div className={styles.url}>{locator}</div></button></li>
-      })}</ul>
-    </section>}
-  </>
+  const cited = pageCitation && citedPage(pageCitation.location)
+  const citedFile = cited && documents.find(file=>file.document?.id===cited.documentId && file.document.digest===cited.digest)
+  const citationLinks = (items: readonly Citation[]) => items.map((citation,index)=>{
+    const page=citedPage(citation.location)
+    const file=page && documents.find(file=>file.document?.id===page.documentId && file.document.digest===page.digest)
+    return <div key={index}><span>{citation.traced?msg('Citation traced'):msg('Citation not traced')}</span>{citation.reason && <p>{citation.reason}</p>}
+      {page && <Button variant="quiet" disabled={!citation.traced||!file} onClick={()=>setPageCitation(citation)}>{msg('Page {{number}}',{number:page.page})}</Button>}
+    </div>
+  })
+  const uses = (id: string) => !id || !object(document) ? [] : ['rules','exceptions'].flatMap(group=>Array.isArray(document[group]) ? document[group].flatMap((entry:unknown)=>object(entry) && Array.isArray(entry.sourceRefs) && entry.sourceRefs.includes(id) ? [text(entry.id) || msg('Unnamed rule')] : []) : [])
+  const rows: {id:string;title:string;kind:string;kindLabel:string;status:string;used:string[];detail:ReactNode}[] = [
+    ...declared.map((source,index)=>{
+      const record=object(source)?source:{}, id=text(record.id), title=text(record.title)||id||msg('Source {{value0}}',{value0:index+1})
+      const locator=object(record.locator)?text(record.locator.value):'', citation=object(record.citation)?record.citation:{}
+      return {id:'declared:'+index,title,kind:'reference',kindLabel:msg('Reference'),status:msg('Declared only'),used:uses(id),detail:<>
+        <p className={styles.muted}>{msg('A declared reference does not verify retrieval or the truth of its contents.')}</p>
+        {locator && <p>{locator}</p>}{text(record.publisher) && <p>{text(record.publisher)}</p>}
+        {text(citation.excerpt) && <blockquote>{text(citation.excerpt)}</blockquote>}{text(citation.location) && <p>{text(citation.location)}</p>}
+        {citationLinks(citations.filter(c=>c.sourceId===id))}
+        <Disclosure title={msg('Exact reference')}><CodeBlock expandable text={JSON.stringify(source,null,2)} label="JSON"/></Disclosure>
+      </>}
+    }),
+    ...documents.map(file=>({id:'document:'+file.id,title:file.name,kind:'document',kindLabel:msg('Document'),status:msg('Attached'),used:[],detail:<>{citationLinks(citations.filter(c=>{const page=citedPage(c.location);return page?.documentId===file.document?.id&&page?.digest===file.document?.digest}))}{file.document?<SourceReader name={file.name} reference={file.document} link={file.link}/>:<p>{msg('Document content is unavailable.')}</p>}</>})),
+    ...files.map((file,index)=>({id:'file:'+index,title:file.name,kind:'document',kindLabel:msg('Text file'),status:msg('Attached'),used:[],detail:<CodeBlock expandable text={file.text} label={msg('Text')}/>})),
+    ...sources.map(record=>({id:'record:'+record.id,title:record.kind==='search'?msg('Search: {{value0}}',{value0:record.request.query??''}):record.document?.title||record.request.url||record.id,kind:'retrieval',kindLabel:record.kind==='search'?msg('Search'):msg('Page'),
+      status:record.failure!==null?msg('Retrieval failed'):record.verification.state==='verified'?msg('Receipt verified'):record.verification.state==='failed'?msg('Receipt failed'):msg('Receipt unchecked'),used:uses(record.id),detail:<>
+        {record.failure && <p role="status">{record.failure}</p>}
+        {record.document && <CodeBlock expandable text={record.document.text} label={msg('Retrieved text')}/>}
+        {record.hits && <Disclosure title={msg('Search results')}><CodeBlock expandable text={JSON.stringify(record.hits,null,2)} label={msg('Search results')}/></Disclosure>}
+        {record.excerpts.length>0 && <Disclosure title={msg('Excerpts')}>{record.excerpts.map(excerpt=><blockquote key={excerpt.id}>{excerpt.text}</blockquote>)}</Disclosure>}
+        <Disclosure title={msg('Retrieval and receipt')}><p>{msg('Receipt verification establishes byte lineage, not truth, currency or origin.')}</p><CodeBlock expandable text={JSON.stringify({request:record.request,requestedAt:record.requestedAt,acquisition:record.acquisition,verification:record.verification,pageDates:record.document?.pageDates},null,2)} label={msg('Provenance')}/></Disclosure>
+      </>}))
+  ]
+  const filtered=rows.filter(row=>(kind==='all'||row.kind===kind)&&[row.title,...row.used].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const pagination=usePagination(filtered.length,JSON.stringify([query,kind]))
+  const visible=filtered.slice(pagination.start,pagination.end), detail=visible.find(row=>row.id===selected)
+  const detailContent=cited && citedFile?.document ? <><Button variant="quiet" onClick={()=>setPageCitation(undefined)}>{msg('Back to source details')}</Button><SourceReader name={citedFile.name} reference={citedFile.document} link={citedFile.link} citation={{page:cited.page,quote:pageCitation?.quote??''}}/></> : detail?.detail
+  return <div className={styles.browser}><BuilderSplit preference="pack" title={detail?.title??msg('Source details')} editor={detailContent} open={!!detail} onClose={()=>{setSelected('');setPageCitation(undefined)}}>
+    <section aria-label={msg('Pack sources')} className={styles.browserList}>
+      <div className={styles.toolbar}><Input type="search" aria-label={msg('Search sources')} placeholder={msg('Search sources…')} value={query} onChange={e=>setQuery(e.target.value)}/><MenuChoice label={msg('Source kind')} value={kind} onValueChange={setKind} options={[{value:'all',label:msg('All kinds')},{value:'reference',label:msg('References')},{value:'document',label:msg('Documents')},{value:'retrieval',label:msg('Retrievals')}]}/></div>
+      {object(document) && document.sources!==undefined && !Array.isArray(document.sources) && <p role="status">{msg('Source references could not be read. Inspect View JSON for the exact definition.')}</p>}
+      {!filtered.length ? <p className={styles.muted}>{rows.length?msg('No matching sources.'):msg('No sources yet. Declared references and retrieved documents appear here.')}</p> : <div className={styles.tableScroll}><table className={styles.table}><thead><tr><th scope="col">{msg('Name')}</th><th scope="col">{msg('Kind')}</th><th scope="col">{msg('Retrieval')}</th><th scope="col">{msg('Used by')}</th></tr></thead><tbody>
+        {visible.map(row=><tr key={row.id} data-selected={row.id===selected||undefined}><td><Button variant="quiet" className={styles.name} aria-expanded={row.id===selected} onClick={()=>{setSelected(row.id);setPageCitation(undefined)}}>{row.title}</Button></td><td>{row.kindLabel}</td><td>{row.status}</td><td>{row.used.join(', ')||'—'}</td></tr>)}
+      </tbody></table></div>}
+      <Pagination pagination={pagination} complete/>
+    </section>
+  </BuilderSplit></div>
 }

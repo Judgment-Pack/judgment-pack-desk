@@ -118,7 +118,7 @@ export function PackEvaluate() {
 
   return (
     <article data-layout="page">
-      <PackHeader packId={packId ?? ''} document={pack.data?.document} current="test" />
+      <PackHeader packId={packId ?? ''} document={pack.data?.document} sourceText={pack.data?.raw} current="test" />
       <PageBody width="wide">
       <PackQuestion document={pack.data?.document} />
       <div className={styles.workspace}>

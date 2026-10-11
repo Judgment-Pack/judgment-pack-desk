@@ -14,7 +14,7 @@ vi.mock('../packs/drafts/DraftActions', () => ({DraftActions: () => null}))
 vi.mock('../packs/folders/FolderBrowser', () => ({ShowFolders: () => null, MovePackButton: () => null}))
 vi.mock('../research/run', async original => ({...await original<typeof import('../research/run')>(), canCreateDraft: () => true}))
 vi.mock('../research/ui/DraftPanels', () => ({DraftTabs: () => null}))
-vi.mock('../packs/test-workspace/store', () => ({useTestStorage: () => ({suite: {cases: [{id: 'independent-one'}, {id: 'unrun-ai'}, {id: 'unrun-manual'}]}})}))
+vi.mock('../packs/test-workspace/store', () => ({useTestStorage: () => ({query:{isSuccess:false},suite: {cases: [{id: 'independent-one'}, {id: 'unrun-ai'}, {id: 'unrun-manual'}]}})}))
 vi.mock('../shell/CreatePackDialog', () => ({CreatePackDialog: ({reviewDraft}: {reviewDraft: {caseCount: number; cases: {total: number}}}) => <div>Independent cases: {reviewDraft.caseCount}; agreement total: {reviewDraft.cases.total}</div>}))
 afterEach(cleanup)
 it('counts only independently established cases, excluding overlapping and unrun Tests-tab cases', () => {

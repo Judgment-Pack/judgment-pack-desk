@@ -11,11 +11,13 @@ export const MAX_DEPTH = 16
 export interface PackFolder { id: string; name: string; parentId: string | null; ownerId?: 'local' }
 export interface FolderDocument { version: 1 | 2; folders: PackFolder[]; assignments: Record<string, string> }
 export type FolderAction =
+ | { type: 'create-and-move'; id: string; name: string; parentId: string | null; target: { kind: 'folder'; id: string } | { kind: 'items'; ids: string[] } }
  | { type: 'create'; id: string; name: string; parentId: string | null }
  | { type: 'rename'; id: string; name: string }
  | { type: 'move'; id: string; parentId: string | null }
  | { type: 'delete'; id: string }
  | { type: 'assign'; packId: string; folderId: string }
+ | { type: 'assign-many'; packIds: string[]; folderId: string }
 const identifier = (v: unknown): v is string => typeof v === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(v)
 const object = (v: unknown): v is Record<string, unknown> => Boolean(v && typeof v === 'object' && !Array.isArray(v))
 const only = (v: object, keys: string[]) => Object.keys(v).every(key => keys.includes(key))
@@ -60,10 +62,18 @@ export function decodeFolders(value: unknown): FolderDocument {
  return doc
 }
 export function applyFolderAction(document: FolderDocument, action: FolderAction): FolderDocument {
- const next: FolderDocument = { version: document.version === 2 || action.type === 'assign' && /^(graph|graph-draft):/.test(action.packId) ? 2 : 1, folders: document.folders.map(folder => ({...folder})), assignments: {...document.assignments} }
- if (action.type === 'assign') {
+ // Build and validate the complete change before the client writes anything.
+ if (action.type === 'create-and-move') {
+  const created = applyFolderAction(document, {type:'create',id:action.id,name:action.name,parentId:action.parentId})
+  return applyFolderAction(created, action.target.kind === 'folder'
+   ? {type:'move',id:action.target.id,parentId:action.id}
+   : {type:'assign-many',packIds:action.target.ids,folderId:action.id})
+ }
+ const next: FolderDocument = { version: document.version === 2 || action.type === 'assign' && /^(graph|graph-draft):/.test(action.packId) || action.type === 'assign-many' && action.packIds.some(id=>/^(graph|graph-draft):/.test(id)) ? 2 : 1, folders: document.folders.map(folder => ({...folder})), assignments: {...document.assignments} }
+ if (action.type === 'assign' || action.type === 'assign-many') {
   if (!next.folders.some(folder => folder.id === action.folderId)) throw new Error(sourceMessage('This folder no longer exists. Choose another folder.'))
-  Object.defineProperty(next.assignments, action.packId, { value: action.folderId, enumerable: true, configurable: true, writable: true })
+  const ids=action.type==='assign'?[action.packId]:action.packIds
+  for(const id of ids)Object.defineProperty(next.assignments, id, { value: action.folderId, enumerable: true, configurable: true, writable: true })
  } else if (action.type === 'create') next.folders.push({id:action.id,name:folderName(action.name),parentId:action.parentId})
  else {
   const folder = next.folders.find(folder => folder.id === action.id)

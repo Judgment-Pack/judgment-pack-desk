@@ -22,7 +22,7 @@ const PACK_TEXT = readFileSync(
   join(import.meta.dirname, '..', '__fixtures__', 'full.pack.json'),
   'utf8'
 )
-const EDIT = '/packs/vendor-onboarding?edit=1'
+const EDIT = '/packs/vendor-onboarding?edit=1&builder=settings'
 const SENTENCE = /This project keeps a reviewed set/
 
 const listed = (...paths: string[]) =>
@@ -112,6 +112,6 @@ describe('what this page will not say', () => {
     }
     // What it does say is one sentence about the project and one about where
     // the set is reviewed and updated.
-    expect(words).toContain('Review and lock, on Packs, shows what the runtime finds and updates it.')
+    expect(words).toContain('Review and lock, in Admin → Decision safeguards, shows what the runtime finds and updates it.')
   })
 })

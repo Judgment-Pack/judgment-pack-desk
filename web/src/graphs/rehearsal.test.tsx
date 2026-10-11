@@ -15,7 +15,7 @@ it('asks only when chosen, shows labels verbatim, and preserves all runtime byte
   expect(screen.getByText(/Inputs and results on this page/).textContent).toContain('retained with the conversation')
   const inputs = '{"node":{"facts":{"number":1.0,"text":"$(touch nope)"}}}'
   fireEvent.change(screen.getByLabelText('Inputs by node id'), { target: { value: inputs } })
-  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   await screen.findByText('evaluated')
   expect(screen.getByText(/Results are shown separately from the current graph/)).toBeTruthy()
   expect(deskFetch).toHaveBeenCalledWith('/api/graphs/evaluate?id=onboarding', expect.objectContaining({ method: 'POST', body: inputs, signal: expect.any(AbortSignal) }))
@@ -24,9 +24,10 @@ it('asks only when chosen, shows labels verbatim, and preserves all runtime byte
   expect(screen.getByText('CONFORMANCE.md').getAttribute('lang')).toBe('en')
   expect(document.querySelector('.graph-labels')?.textContent).toContain('rehearsal true')
   expect(document.querySelector('.graph-labels')?.textContent).toContain('experimental true')
-  const pre = document.querySelector('pre')!
+  fireEvent.click(screen.getByText('Exact run record',{selector:'summary span'}))
+  const pre = screen.getByRole('region',{name:'Exact run record'})
   expect(pre.textContent).toBe(raw.slice(raw.indexOf('"answer":') + 9, -1))
-  expect(pre.getAttribute('lang')).toBe('en')
+  expect(pre.querySelector('code')?.getAttribute('lang')).toBe('en')
   const signal = vi.mocked(deskFetch).mock.calls[0][1]!.signal!
   unmount()
   expect(signal.aborted).toBe(true)
@@ -43,7 +44,7 @@ it('refuses absent or false rehearsal and shows runtime refusals as errors', asy
   }
   vi.mocked(deskFetch).mockResolvedValueOnce(new Response(JSON.stringify({ error: 'screening: unknown flag: --rehearsal' }), { status: 502 }))
   render(<GraphRehearsal graphId="g" />)
-  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   expect((await screen.findByRole('alert')).textContent).toContain('screening: unknown flag: --rehearsal')
   expect(screen.queryByText('evaluated')).toBeNull()
 })
@@ -61,12 +62,12 @@ it('bounds UTF-8 inputs and refuses non-objects before asking', async () => {
 it('aborts on leaving and clears a result when inputs change', async () => {
   vi.mocked(deskFetch).mockResolvedValueOnce(new Response(raw))
   const { unmount } = render(<GraphRehearsal graphId="g" />)
-  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   await screen.findByText('evaluated')
   fireEvent.change(screen.getByLabelText('Inputs by node id'), { target: { value: '{"other":{}}' } })
   expect(document.querySelector('pre')).toBeNull()
   vi.mocked(deskFetch).mockImplementationOnce(() => new Promise(() => {}))
-  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   const signal = vi.mocked(deskFetch).mock.calls[1][1]!.signal!
   unmount()
   expect(signal.aborted).toBe(true)
@@ -75,7 +76,7 @@ it('aborts on leaving and clears a result when inputs change', async () => {
 it('refuses an answer from another command', async () => {
   vi.mocked(deskFetch).mockResolvedValueOnce(new Response(raw.replace('experimental graph evaluate', 'experimental graph explain')))
   render(<GraphRehearsal graphId="g" />)
-  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   expect((await screen.findByRole('alert')).textContent).toBe('The runtime did not return rehearsal: true.')
   expect(screen.queryByText('evaluated')).toBeNull()
 })
@@ -84,7 +85,7 @@ it('lists runtime members verbatim under their own names', async () => {
   const answer = '{"command":"experimental graph evaluate","status":"evaluated","rehearsal":true,"disposition":{ "number":1.0,"text":"\\u0026" },"nodes":[{"node":"screening","disposition":{"outcomeId":"clear"},"factFeeds":[ { "from":"screening","pointer":"/screening/status","injected":true,"value":"clear" } ],"evidenceFeeds":[{"from":"screening","requirement":"screening-outcome","state":"present"}],"trace":{"steps":[{"n":1e2}]}},{"node":"onboarding","disposition":{"outcomeId":"approve"}}],"handoffs":[{"target":"owner","n":9007199254740993}]}'
   vi.mocked(deskFetch).mockResolvedValueOnce(new Response('{"answer":' + answer + '}'))
   render(<GraphRehearsal graphId="g" />)
-  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   await screen.findByText('evaluated')
   const items = Array.from(document.querySelectorAll('li')).filter(li => li.querySelector(':scope > code'))
   expect(items.map(li => li.textContent)).toEqual([
@@ -99,13 +100,14 @@ it('lists runtime members verbatim under their own names', async () => {
     'handoffs: [{"target":"owner","n":9007199254740993}]',
   ])
   for (const item of items) expect(item.querySelector('code')?.getAttribute('lang')).toBe('en')
-  expect(document.querySelector('pre')?.textContent).toBe(answer)
+  fireEvent.click(screen.getByText('Exact run record', {selector:'summary span'}))
+  expect(screen.getByRole('region', { name: 'Exact run record' }).textContent).toBe(answer)
 })
 
 it('does not invent absent runtime members', async () => {
   vi.mocked(deskFetch).mockResolvedValueOnce(new Response('{"answer":{"command":"experimental graph evaluate","status":"evaluated","rehearsal":true}}'))
   render(<GraphRehearsal graphId="g" />)
-  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   await screen.findByText('evaluated')
   expect(document.querySelectorAll('li')).toHaveLength(0)
   for (const name of ['disposition', 'nodes', 'node', 'factFeeds', 'evidenceFeeds', 'trace', 'handoffs']) {
@@ -116,7 +118,7 @@ it('does not invent absent runtime members', async () => {
 it('does not mark Desk refusals as English', async () => {
   const { container } = render(<div lang="fr"><GraphRehearsal graphId="g" /></div>)
   fireEvent.change(screen.getByLabelText('Inputs by node id'), { target: { value: '[]' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   const alert = await screen.findByRole('alert')
   expect(alert.closest('[lang]')).toBe(container.firstChild)
   expect(alert.getAttribute('lang')).toBeNull()

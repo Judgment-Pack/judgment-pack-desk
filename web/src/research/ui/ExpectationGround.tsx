@@ -1,6 +1,6 @@
 import { msg, useLocale } from '../../i18n'
 import { Button } from '../../ui/Button'
-import { citedPage, statementTurns, type Citation, type RunState } from '../run'
+import { citedPage, caseStatements, statementTurns, type Citation, type RunState } from '../run'
 import type { Selection } from './DraftPanels'
 import styles from './ResearchAuthoring.module.css'
 
@@ -16,7 +16,10 @@ export type ReadPage = (citation: Citation, opener: HTMLElement) => void
  */
 export function ExpectationGround({ source, state, onSelect, onReadPage }: { source: string; state: RunState; onSelect: (next: Selection) => void; onReadPage?: ReadPage }) {
   useLocale()
-  const said = statementTurns(state.turns).find(item => item.id === source)
+  const inherited = state.inheritedStatements !== undefined
+  const said = !inherited && statementTurns(state.turns).find(item => item.id === source)
+  const statement = caseStatements(state).get(source)
+  if (!said && statement !== undefined) return <div><div>{msg('Statement used by this test')}</div><div className={styles.hint}>{statement.length > 280 ? `${statement.slice(0,280)}…` : statement}</div></div>
   if (said) {
     const words = said.turn.text.length > 280 ? `${said.turn.text.slice(0, 280)}…` : said.turn.text
     return <div><div>{msg('Your message {{number}}', { number: Number(source.slice('you-'.length)) })}</div><div className={styles.hint}>{words}</div></div>
@@ -33,5 +36,5 @@ export function ExpectationGround({ source, state, onSelect, onReadPage }: { sou
 
 /** Whether an expectation rests on something other than a recorded excerpt. */
 export function groundedInChat(source: string, state: RunState): boolean {
-  return citedPage(source) !== null || statementTurns(state.turns).some(item => item.id === source)
+  return citedPage(source) !== null || caseStatements(state).has(source)
 }

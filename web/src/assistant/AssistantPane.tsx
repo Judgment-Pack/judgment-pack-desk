@@ -289,9 +289,9 @@ export function AssistantPane({
   const picked = usePickedModel(
     selected?.models ?? EMPTY_MODELS,
     selected?.model ?? null,
-    listing.data?.root
+    listing.data?.root, slot.connectionId, 'authoring'
   )
-  const run = useAssistantRun({
+  const run = useAssistantRun({ target: slot,
     // Only rendered where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
     endpoint: slot.endpoint,
@@ -428,7 +428,7 @@ export function AssistantPane({
       <div className={styles.empty}>
         {/* Configuration, key-read status and model readiness are separate.
             A pending or failed read establishes no absence on disk. */}
-        {slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Connections > AI.') : slot.state === 'unavailable'
+        {slot.unusable ? msg(slot.unusable) : slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Connections > AI.') : slot.state === 'unavailable'
           ? msg("This desk could not read its own configuration, so it cannot say what assistant is configured. Admin › Assistant names the problem.")
           : slot.endpoint === null
             ? msg("No assistant is configured on this desk. Configure a connection in Admin › Connections › AI.")

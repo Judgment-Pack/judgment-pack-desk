@@ -63,3 +63,7 @@
 .pane[data-document] .panel { max-width: calc(var(--measure-wide) + 2 * var(--density-gutter)); }
 .pane[data-document] .panel[data-overview] { max-width: calc(var(--measure-form) + 2 * var(--density-gutter)); gap: var(--space-4); }
 .pane[data-document] .panel[data-overview] > :first-child { margin-bottom: 0; }
+
+.testStack { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+.testStack > details { position: relative; flex: 0 1 auto; overflow: auto; padding-inline: var(--density-gutter); max-height: 55%; }
+.testWorkspace { flex: 1; min-height: 0; }

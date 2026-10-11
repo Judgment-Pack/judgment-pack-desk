@@ -38,6 +38,7 @@ import { loadDocument } from '../documents/client'
 import type { ChatAttachment } from '../chat/store'
 import { Ledger, type SourceRecord } from './ledger'
 import { AuthoringRun, INITIAL_STATE, documentBasis, type RunState, type Turn, type TurnRequest } from './run'
+import { runtimeCheckIdentity } from './retainedCheck'
 import { researchTools } from './tools'
 
 export const MAX_REVISIONS = 4
@@ -138,10 +139,9 @@ export function useResearchRun(options?: {
   const slot = useAssistantSlot(options?.connectionId)
   const selected = selectedAssistant(slot)
   const listing = useFileListing()
-  const defaultPicked = usePickedModel(selected?.models ?? EMPTY_MODELS, selected?.model ?? null, listing.data?.root)
+  const defaultPicked = usePickedModel(selected?.models ?? EMPTY_MODELS, selected?.model ?? null, listing.data?.root, slot.connectionId, 'research')
   const nativeModels = useProviderModels(slot.engine === 'codex' && assistantReady(slot),slot.connectionId)
-  const picked = { ...defaultPicked, model: slot.engine === 'codex' ? options?.model || selected?.model || ''
-    : options?.model || defaultPicked.model }
+  const picked = { ...defaultPicked, model: options ? options.model || selected?.model || '' : defaultPicked.model }
   // Preserve an unavailable saved choice so it can be repaired, never silently
   // run Admin's default instead. The backend rechecks this catalog at admission.
   const modelProblem = slot.engine !== 'codex' ? options?.model && !selected?.models.includes(options.model) ? sourceMessage('Choose an enabled model in Admin › Assistant.') : '' : nativeModels.isPending ? sourceMessage('Loading models…')
@@ -246,6 +246,14 @@ export function useResearchRun(options?: {
         // on every evaluation it asks for a candidate.
         return callToolThrough(client)(name, name === 'experimental_evaluate' ? { ...args, rehearsal: true } : args)
       },
+      get snapshotChecks() { return settings.current.mcp.snapshotChecksSupported === true },
+      runtimeIdentity: async () => {
+        const connection = settings.current.mcp
+        if (connection.status !== 'ready' || !connection.client) throw Error(sourceMessage('Connect to the runtime to verify saved checks.'))
+        const identity = await runtimeCheckIdentity(callToolThrough(connection.client))
+        if (settings.current.mcp.client !== connection.client) throw Error(sourceMessage('The runtime connection changed. Try again.'))
+        return identity
+      },
       ledger,
       documents: () => settings.current.documents?.() ?? [],
       // The pin as it is when a trace runs, never a saved one; the run verifies
@@ -287,6 +295,7 @@ export function useResearchRun(options?: {
     return () => run.detach()
   }, [run])
   useEffect(() => { run.basisChanged() }, [run, basis])
+  useEffect(() => { void run.refreshCheck() }, [run, mcp.status, mcp.connectionEpoch, mcp.snapshotChecksSupported])
 
   const state = useSyncExternalStore(run.subscribe, run.getSnapshot, () => INITIAL_STATE)
   const sources = useSyncExternalStore(ledger.subscribe, ledger.getSnapshot, () => NO_SOURCES)

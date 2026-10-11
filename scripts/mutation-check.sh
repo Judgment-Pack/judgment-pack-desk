@@ -7223,9 +7223,9 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
     inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },' \
     '    left: merged.left,
     inspector: merged.inspector,'
-  mutate web 'the strip calls a reconnecting runtime connected' web/src/shell/StatusStrip.tsx \
-    '        {connectionSays(status)}' \
-    '        {connectionSays("ready")}'
+  mutate web 'the strip calls a reconnecting runtime connected' web/src/shell/ConnectionNotices.tsx \
+    '  const label = status === '"'"'ready'"'"' ? msg('"'"'Limited connection'"'"') : connectionSays(status)' \
+    '  const label = connectionSays('"'"'ready'"'"')'
   # A refused configuration is the built-in defaults — correct, and until this
   # cue it was indistinguishable from having no configuration file at all
   # anywhere except /admin.
@@ -7264,13 +7264,13 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
     '  const label = directory.data?.current.name ?? fallback' \
     '  const label = '"'"'Acme Co.'"'"''
   mutate web 'the NONE menu offers a Sign out' web/src/identity/UserControl.tsx \
-    '          <DropdownMenu.Item asChild className="desk-menu-item">
+    '          <DropdownMenu.Item asChild icon={<IconHelp/>}>
             <Link to="/help">{msg("About")}</Link>
           </DropdownMenu.Item>' \
-    '          <DropdownMenu.Item asChild className="desk-menu-item">
+    '          <DropdownMenu.Item asChild icon={<IconHelp/>}>
             <Link to="/help">{msg("About")}</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item className="desk-menu-item">Sign out</DropdownMenu.Item>'
+          <DropdownMenu.Item>Sign out</DropdownMenu.Item>'
   # Below 900px the rail is a Dialog drawer and renders no collapse toggle, so
   # the header's opener is the only pointer affordance there is. Without it the
   # whole left menu is reachable by Mod+B alone, on the width whose likeliest
@@ -7392,8 +7392,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    if (dirty && !opening && !await confirmDiscard(msg('"'"'Discard unsaved changes to this file?'"'"'), { name: selected })) return' \
     '    if (dirty && !opening && false && !await confirmDiscard(msg('"'"'Discard unsaved changes to this file?'"'"'), { name: selected })) return'
   mutate web "reload is available during an in-flight write" "$A" \
-    '              <DropdownMenu.Item className="desk-menu-item" disabled={write.isPending || editing.reloading} onSelect={()=>void reload()}>' \
-    '              <DropdownMenu.Item className="desk-menu-item" disabled={false} onSelect={()=>void reload()}>'
+    '              <DropdownMenu.Item disabled={write.isPending || editing.reloading} onSelect={()=>void reload()}>' \
+    '              <DropdownMenu.Item disabled={false} onSelect={()=>void reload()}>'
   mutate web "override is always sent" "$C" \
     '      override: input.override ?? false' \
     '      override: true'
@@ -7491,7 +7491,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '          reason: codeOf(cause) === '"'"'stale'"'"' ? sourceMessage(STALE_PROJECT_FILE) : refusalDetail(cause)' \
     '          reason: refusalDetail(cause)'
   # Repaired, and narrowed: the `role="alert"` half moved into the `Alert`
-  # primitive when the dialog stopped rendering bare markup, and it is held
+  # primitive (now the shared Notice) when the dialog stopped rendering bare markup, and it is held
   # there by "the form-level failure is not announced". What is left for this
   # row is the half that is still this file's: that a failure is rendered at
   # all, rather than set in state and shown to nobody.
@@ -8219,9 +8219,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '          ) : (
             <RadixDialog.Description />
           )}'
-  mutate web "the form-level failure is not announced" "$AL" \
-    '    <p role="alert" className={styles.alert}>' \
-    '    <p className={styles.alert}>'
+  mutate web 'the form-level failure is not announced' web/src/ui/Notice.tsx \
+    'role={role ?? (tone === '"'"'error'"'"' ? '"'"'alert'"'"' : '"'"'status'"'"')}' \
+    'role={role}'
   # The needle names the *item*'s radius rather than the shorthand alone: the
   # trigger's radius came down to `--radius-sm` in chunk 6f, so the bare
   # declaration now matches twice and the row would edit whichever came first.
@@ -8620,10 +8620,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # row — otherwise every test of the pane asserts against an empty list.
   mutate web "the windowed list renders nothing when the viewport cannot be measured" "$WR" \
     '  if (height <= 0 || rowHeight <= 0) {
-    return { ref, scrollRowIntoView, start: 0, end: count, padTop: 0, padBottom: 0 }
+    return { ref, scrollRowIntoView, scrollbarWidth, start: 0, end: count, padTop: 0, padBottom: 0 }
   }' \
     '  if (false) {
-    return { ref, scrollRowIntoView, start: 0, end: count, padTop: 0, padBottom: 0 }
+    return { ref, scrollRowIntoView, scrollbarWidth, start: 0, end: count, padTop: 0, padBottom: 0 }
   }'
   # A window computed from a scroll position that belongs to the longer list
   # begins after the end of the shorter one and renders no rows at all: filter
@@ -8654,10 +8654,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      void top
       void bottom'
 
-  # 16. The combined Decisions rail must not invent a count from a pack listing.
+  # 16. The combined collection rail must not invent a count from a pack listing.
   mutate web 'the rail claims a count for a listing that never answered' web/src/shell/LeftRail.tsx \
-    '          {!icons && <span className="desk-nav-label">{msg("Decisions")}</span>}' \
-    '          {!icons && <><span className="desk-nav-label">{msg("Decisions")}</span><span className="desk-nav-count">0</span></>}'
+    '          {!icons && <span className="desk-nav-label">{msg("Library")}</span>}' \
+    '          {!icons && <><span className="desk-nav-label">{msg("Library")}</span><span className="desk-nav-count">0</span></>}'
 
 
 
@@ -8810,17 +8810,17 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      {false && ('
 
   # The two other views on this pack, which nothing else links to.
-  # The standing primary action moved into the shared PackHeader. Tests also
-  # remains a navigation entry; this row specifically preserves the action.
-  mutate web 'the primary Test pack link disappears' web/src/packs/PackWorkspace.tsx \
-    '      {current !== '"'"'test'"'"' && <ButtonLink variant="primary" to={link(`${base}/evaluate`)}>{msg("Test pack")}</ButtonLink>}' \
-    '      {null}'
+  # Tests now lives in the shared navigation; preserve that route rather
+  # than the intentionally removed duplicate header action.
+  mutate web 'the Tests section disappears from pack navigation' web/src/packs/PackWorkspace.tsx \
+    '['"'"'test'"'"', msg('"'"'Tests'"'"')], ' \
+    ''
 
   # Selecting with the pane closed.
   mutate web "an address that arrives with a selection opens no pane" "$PV" \
-    '    if (at === null && groupId === null) return
+    '    if (at === null && groupId === null || editing) return
     slot.reveal()' \
-    '    if (at === null && groupId === null) return
+    '    if (at === null && groupId === null || editing) return
     void slot'
 
   # **A disagreement is shown, not just named.** The table draws
@@ -8853,8 +8853,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
       retainInspectorOnNavigation.current = false
       return
     }
-    if (at === null && groupId === null) return' \
-    '    if (at === null && groupId === null) return
+    if (at === null && groupId === null || editing) return' \
+    '    if (at === null && groupId === null || editing) return
     if (visited.current === locationKey) return
     visited.current = locationKey
     if (retainInspectorOnNavigation.current) {
@@ -8948,7 +8948,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # that brings it in — the step between `moveFocus` and `scrollRowIntoView`,
   # which each had a test and the thing between them did not.
   mutate web "a row that is not rendered yet is never focused" "$PN" \
-    '          else setWanted({ index: next, preview })' \
+    '          else setWanted({ index: next, preview, selection })' \
     '          else void next'
   mutate web "a shorter row height leaves the scroll where it was" "$WR" \
     '  }, [node, count, rowHeight])' \
@@ -9004,7 +9004,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # The shared destination must remain named for assistive technology.
   mutate web 'the rail count is invisible to a screen reader' web/src/shell/LeftRail.tsx \
-    '          aria-label={msg("Decisions")}' \
+    '          aria-label={msg("Library")}' \
     '          aria-label=""'
 
   # 8. The widened convention rule, and a module outside src/ui to break it on.
@@ -9234,7 +9234,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # The desk computes no lock state, and says nothing where it knows nothing.
   mutate web 'the lock line states a verdict about the reviewed set' web/src/packs/edit/LockLine.tsx \
-    '{msg("This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.")}' \
+    '{msg("This project keeps a reviewed set. Review and lock, in Admin → Decision safeguards, shows what the runtime finds and updates it.")}' \
     '{msg("This pack is in the reviewed set, and the set is up to date.")}'
   mutate web "the lock line shows with no lock file listed" "$LL" \
     '  const listed = paths.some((path) => path === LOCK_FILE || path.endsWith(`/${LOCK_FILE}`))' \
@@ -9371,14 +9371,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    if (first) return
     reset()' \
     '    if (first) return'
-  mutate web "the what-if placement measures the box it resizes" "$PV" \
-    '          ref={setFrame}
-          style={{ '"'"'--tryit-pane-width'"'"': `${PANE_WIDTH}px` } as CSSProperties}
-        >
-          <div className={styles.column}>' \
-    '          style={{ '"'"'--tryit-pane-width'"'"': `${PANE_WIDTH}px` } as CSSProperties}
-        >
-          <div className={styles.column} ref={setFrame}>'
+  # Draft Tests now occupy the main workspace at every width.
+  mutate web "pack draft Tests loses its main workspace" "$PV" \
+    '        {editing && <div className={styles.builderTests} hidden={builderView !== '"'"'tests'"'"'}>{paneNode}</div>}' \
+    '        {null}'
   mutate web "the outline is rebuilt on every keystroke" "$PV" \
     "  const documentKey = \`\${idle.checkedText ?? shownText ?? ''}|\${editing ? shape : 'read'}|\${section}\`" \
     "  const documentKey = \`\${shownText ?? ''}|\${editing ? shape : 'read'}|\${section}\`"
@@ -9672,10 +9668,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
           continue
         }
         void pointer'
-  # The pane's width, which the predicate and the stylesheet disagreed about.
-  mutate web "the pane asks for eight pixels it does not take" "$PV" \
-    'const PANE_WIDTH = 384' \
-    'const PANE_WIDTH = 392'
+  # Opening the shared Assistant must retain the current builder URL.
+  mutate web "opening pack Assistant drops the builder tab and selection" web/src/chat/PackAssistant.tsx \
+    '      navigate(assistantChatHref(next, location), { replace: true })' \
+    '      navigate(assistantChatHref(next), { replace: true })'
 
   # ---- The assistant slot, on the page side -------------------------------
   # The card is a heading, a location, a status and one form now, so the rows
@@ -10774,9 +10770,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "a recheck writes a chat case with the model" "$RR" \
     '      await this.casesAndCheck(signal, false, false)' \
     '      await this.casesAndCheck(signal, false)'
-  mutate web "a saved chat case is grounded in a message sent after it" "$RR" \
-    'statements: this.savedStatements ?? statementsOf(this.state.turns)' \
-    'statements: statementsOf(this.state.turns)'
+  mutate web 'a saved chat case is grounded in a message sent after it' web/src/research/run.ts \
+    '  const values = new Map(state.inheritedStatements)' \
+    '  const values = statementsOf(state.turns)'
   mutate web "a saved chat case suite is kept smaller" "$RR" \
     '      this.set({ cases: [], expectationIssues: [], heldProposal: null, restored: false,' \
     '      this.set({ cases: admitted, expectationIssues: [], heldProposal: null, restored: false,'
@@ -10798,9 +10794,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "the creation dialog does not say how a chat case suite agrees" "$X" \
     "      {reviewDraft.cases && msg(" \
     "      {false && msg("
-  mutate web "a chat case's blocked expectation cannot be reached" "$RDP" \
-    '{casesInReview && <TestsPanel' \
-    '{false && <TestsPanel'
+  mutate web 'a chat case'"'"'s blocked expectation cannot be reached' web/src/research/ui/DraftPanels.tsx \
+    '{independentCases && <Disclosure title={msg('"'"'Independent expectations'"'"')}' \
+    '{false && <Disclosure title={msg('"'"'Independent expectations'"'"')}'
 
   # **Both halves at once, because either alone holds it.** A connection whose
   # setup is still in flight is releasable two ways: the run records the handle
@@ -11609,8 +11605,8 @@ export function assistantTransport(id: string): Transport {
   # a control that would refuse is worse than a sentence saying where the key
   # goes.
   mutate web 'Describe is drawn with no key stored on this machine' web/src/shell/DescribeIt.tsx \
-    '  const usable = slot.engine === '"'"'codex'"'"' ? assistantReady(slot) : slot.state === '"'"'configured'"'"' && slot.endpoint !== null && slot.keyPresent' \
-    '  const usable = slot.engine === '"'"'codex'"'"' ? assistantReady(slot) : slot.state === '"'"'configured'"'"' && slot.endpoint !== null'
+    '  const usable = assistantReady(slot)' \
+    '  const usable = assistantReady({ ...slot, keyPresent: true })'
   # **Aimed at the sentence, which is what differs.** Breaking `usable` cannot
   # discriminate: a configuration this desk could not read falls through to the
   # defaults, so the endpoint is null and the control is withheld by that
@@ -11637,12 +11633,14 @@ export function assistantTransport(id: string): Transport {
   # other and each has its own row.
   # Repaired (both rows): the sentence names Connections > AI now.
   mutate web 'the tab describes an unreadable configuration as having no assistant' web/src/assistant/AssistantPane.tsx \
-    '        {slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Connections > AI.'"'"') : slot.state === '"'"'unavailable'"'"'' \
-    '        {slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Connections > AI.'"'"') : false'
+    ' : slot.state === '"'"'unavailable'"'"'
+          ? msg("This desk could not read its own configuration' \
+    ' : false
+          ? msg("This desk could not read its own configuration'
   mutate web 'an unreadable configuration is described as having no assistant' web/src/shell/DescribeIt.tsx \
-    '      slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Connections > AI.'"'"') : slot.state === '"'"'unavailable'"'"'
+    ' : slot.state === '"'"'unavailable'"'"'
         ? msg(UNREAD_CONFIGURATION)' \
-    '      slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Connections > AI.'"'"') : false
+    ' : false
         ? msg(UNREAD_CONFIGURATION)'
 
   # Closing the dialog ends the session, and it has to end it **through the run
@@ -12849,11 +12847,11 @@ export function assistantTransport(id: string): Transport {
   # **A route that states no kind.** The measure declares `wide` as its default,
   # so a route with no attribute renders at 72rem and looks entirely correct —
   # which is why "every route states its kind" has to be a test and not a
-  # convention. This takes the attribute off the graphs page, whose kind is
-  # `full`: the page that most wants every pixel silently becomes a column.
-  mutate web "the page measure unstated by a route (graphs takes the default)" web/src/routes/GraphView.tsx \
-    '  return <article className="detail" data-measure="full" data-layout="page">' \
-    '  return <article className="detail" data-layout="page">'
+  # convention. The full measure now belongs to PageBody; dropping it makes
+  # the graph content silently become the default reading column.
+  mutate web 'the page measure unstated by a route (graphs takes the default)' web/src/routes/GraphView.tsx \
+    '    <PageBody width="full">' \
+    '    <PageBody>'
 
   # **And the rule that reads the attribute.** The other half: a route may
   # state `form` and be given the wide measure anyway, because the `:has` rule
@@ -15020,8 +15018,8 @@ export function assistantTransport(id: string): Transport {
     '    out = out.split(path).join('\''…'\'')' \
     '    void path'
   mutate web 'graph row 1: the plan is asked for when the diagram opens' web/src/routes/GraphView.tsx \
-    '{graphId && plan && <GraphPlanView' \
-    '{graphId && <GraphPlanView'
+    'initialPlan={plan}' \
+    'initialPlan={true}'
   mutate web 'graph row 1: findings about another revision are not told apart' web/src/graphs/GraphFindings.tsx \
     'sha256 !== undefined && row.graphSha256 !== undefined && sha256 !== row.graphSha256' \
     'false && sha256 !== undefined && row.graphSha256 !== undefined'
@@ -15037,9 +15035,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'graph row 1: a plan is asked for by a path' web/src/graphs/client.ts \
     '`/api/graphs/plan?id=${encodeURIComponent(id)}`' \
     '`/api/graphs/plan?path=${encodeURIComponent(id)}`'
-  mutate web 'graph row 2: the matrix payload'\''s labels are not shown' web/src/routes/GraphView.tsx \
-    '            <GraphLabels labels={data} withPill={false} plural={!graphId} />' \
-    '            {null}'
+  mutate web 'graph row 2: the matrix payload'"'"'s labels are not shown' web/src/routes/GraphView.tsx \
+    '<GraphLabels labels={data} withPill={false} plural={!graphId}/>' \
+    '{null}'
   mutate web 'graph row 2: a payload with no claim reference is shown a claim' web/src/graphs/GraphLabels.tsx \
     '{reference !== undefined && <p><strong>' \
     '{true && <p><strong>'
@@ -15144,8 +15142,8 @@ export function assistantTransport(id: string): Transport {
     'answer?.command !== '"'"'experimental graph evaluate'"'"' || ' \
     ''
   mutate web 'graph row 4: runtime members omitted' web/src/graphs/GraphRehearsal.tsx \
-    '<RehearsalMembers raw={result.raw} />' \
-    '{false && <RehearsalMembers raw={result.raw} />}'
+    '<RehearsalMembers raw={result.raw}/>' \
+    '{false && <RehearsalMembers raw={result.raw}/>}'
   mutate web 'graph row 4: absent runtime members invented' web/src/graphs/GraphRehearsal.tsx \
     'const value = memberBytes(source, name)' \
     'const value = memberBytes(source, name) ?? '"'"'{}'"'"''
@@ -15171,8 +15169,8 @@ export function assistantTransport(id: string): Transport {
     '/api/graphs/evaluate?id=' \
     '/api/graphs/evaluate?path='
   mutate web 'graph row 4: runtime bytes are reserialized' web/src/graphs/GraphRehearsal.tsx \
-    '<pre lang="en">{result.raw}</pre>' \
-    '<pre lang="en">{JSON.stringify(result.answer)}</pre>'
+    '<CodeBlock expandable lang="en" text={result.raw} label={msg('"'"'Exact run record'"'"')}/>' \
+    '<CodeBlock expandable lang="en" text={JSON.stringify(result.answer)} label={msg('"'"'Exact run record'"'"')}/>'
   mutate web 'graph row 4: result retained after inputs change' web/src/graphs/GraphRehearsal.tsx \
     'setInputs(event.target.value); setResult(undefined); setError(undefined)' \
     'setInputs(event.target.value); setError(undefined)'
@@ -15193,8 +15191,8 @@ export function assistantTransport(id: string): Transport {
     'Desk keeps a trail of rehearsals.'
 
   mutate web 'graph row 4: rehearsal does not unmount on leaving' web/src/routes/GraphView.tsx \
-    '{graphId && rehearsal && <GraphRehearsal' \
-    '{graphId && <GraphRehearsal'
+    '{(tests || rehearsal) && (graphId ?' \
+    '{(graphId ?'
 
   mutate web 'graph row 4: rehearsal runs on opening' web/src/graphs/GraphRehearsal.tsx \
     'useEffect(() => () => { active.current?.abort() }, [])' \

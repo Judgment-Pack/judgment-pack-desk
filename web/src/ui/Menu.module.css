@@ -1,0 +1,46 @@
+.content {
+  position: relative;
+  min-width: min(12.5rem, calc(100vw - 2 * var(--space-4)));
+  max-width: min(22rem, var(--radix-dropdown-menu-content-available-width, calc(100vw - 2 * var(--space-4))));
+  max-height: var(--radix-dropdown-menu-content-available-height, calc(100dvh - 2 * var(--space-4)));
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: 0 6px 24px var(--shadow);
+  z-index: var(--z-menu);
+}
+.item {
+  display: grid;
+  grid-template-columns: var(--space-4) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--density-control);
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-control);
+  line-height: 1.4;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+.item[data-highlighted], .item[data-state='open'] { background: var(--accent-soft); outline: none; }
+.item[data-destructive] { color: var(--danger); }
+.item[data-disabled], .item[aria-disabled='true'] { color: var(--ink-faint); cursor: default; }
+.icon, .icon > span { display: flex; align-items: center; justify-content: center; }
+.icon, .icon svg, .shortcut svg { width: var(--space-4); height: var(--space-4); }
+.copy { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.description { font-size: var(--text-xs); color: var(--ink-soft); margin-block-start: var(--space-1); }
+.shortcut { display: flex; align-items: center; color: var(--ink-faint); font: inherit; font-size: var(--text-xs); white-space: nowrap; }
+.label { padding: var(--space-2); color: var(--ink-faint); font-size: var(--text-xs); line-height: 1.4; }
+.separator { height: 1px; margin: var(--space-1) var(--space-2); background: var(--border); }
+.choiceTrigger { white-space: nowrap; }

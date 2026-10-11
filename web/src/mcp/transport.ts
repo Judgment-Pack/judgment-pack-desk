@@ -16,6 +16,7 @@ export class DeskWebSocketTransport implements Transport {
   onmessage?: (message: JSONRPCMessage) => void
 
   private socket?: WebSocket
+  private cancelStart?: () => void
 
   /**
    * `protocols` is how the session id reaches the chassis on an upgrade.
@@ -43,7 +44,25 @@ export class DeskWebSocketTransport implements Transport {
           : new WebSocket(this.url)
       this.socket = socket
 
-      socket.onopen = () => resolve()
+      let settled = false
+      const finish = (error?: Error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        this.cancelStart = undefined
+        if (error) reject(error)
+        else resolve()
+      }
+      const timer = setTimeout(() => {
+        const error = new SourceError(sourceMessage('The connection to Desk timed out.'))
+        finish(error)
+        this.onerror?.(error)
+        socket.close()
+      }, 10_000)
+      this.cancelStart = () => finish(new SourceError(sourceMessage('The connection to Desk was closed.')))
+      socket.onopen = () => {
+        if (this.socket === socket) finish()
+      }
 
       socket.onerror = () => {
         // The browser withholds the reason for a failed handshake, so say what
@@ -53,10 +72,11 @@ export class DeskWebSocketTransport implements Transport {
           { value0: this.url }
         ))
         this.onerror?.(error)
-        reject(error)
+        finish(error)
       }
 
       socket.onclose = () => {
+        finish(new SourceError(sourceMessage('The connection to Desk was closed.')))
         this.onclose?.()
       }
 
@@ -85,6 +105,7 @@ export class DeskWebSocketTransport implements Transport {
   }
 
   close(): Promise<void> {
+    this.cancelStart?.()
     this.socket?.close()
     this.socket = undefined
     return Promise.resolve()

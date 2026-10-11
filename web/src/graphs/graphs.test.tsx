@@ -2,7 +2,7 @@
  * A project's graphs: the findings, the plan and the runtime's labels, as the
  * page shows them (ADR-0011, row 1).
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deskFetch } from '../files/client'
@@ -147,11 +147,12 @@ describe('the diagram’s source details', () => {
     const target = document.body.appendChild(document.createElement('div'))
     const slot = { target, open: true, claim: () => () => {}, reveal: () => {} }
     const { container } = renderConnected(<DetailsSlotContext.Provider value={slot}>{routes}</DetailsSlotContext.Provider>, connected({ client: stub(), graphDocumentSupported: true, graphInventorySupported: true }), { path: '/graphs/onboarding' })
+    fireEvent.click(await screen.findByRole('radio',{name:'List'}))
     fireEvent.click(await screen.findByText('screening → decision'))
     await screen.findByText('Source details')
-    expect(target.textContent).toContain('…')
-    expect(target.textContent).not.toContain('secret owner')
-    expect(target.textContent).not.toContain('/home/')
+    expect(container.textContent).toContain('…')
+    expect(container.textContent).not.toContain('secret owner')
+    expect(container.textContent).not.toContain('/home/')
     expect(container.textContent).not.toContain('/home/')
     target.remove()
   })
@@ -159,16 +160,17 @@ describe('the diagram’s source details', () => {
 
 describe('a graph’s Plan view', () => {
   it('asks the plan only when the owner opens it, by id', async () => {
-    const { container } = open('/graphs/onboarding')
-    await waitFor(() => expect(container.querySelector('svg, .diagram, [aria-label="Graph diagram"]')).not.toBeNull())
+    open('/graphs/onboarding')
+    await screen.findByRole('radio', {name:'Diagram'})
     expect(asked()).toEqual([])
-    fireEvent.click(screen.getByRole('link', { name: 'Plan' }))
-    await screen.findByRole('heading', { name: /screening/, level: 3 })
+    fireEvent.click(await screen.findByRole('button', { name: 'View runtime plan' }))
+    await within(await screen.findByRole('dialog',{name:'Runtime plan'})).findByRole('heading', { name: /screening/, level: 3 })
     expect(asked()).toContain('/api/graphs/plan?id=onboarding')
   })
   it('shows the plan as the runtime planned it, with the runtime’s labels and no path from a root', async () => {
-    const { container } = open('/graphs/onboarding?view=plan')
-    await screen.findByRole('heading', { name: /decision/, level: 3 })
+    open('/graphs/onboarding?view=plan')
+    const container=await screen.findByRole('dialog',{name:'Runtime plan'})
+    await within(container).findByRole('heading', { name: /decision/, level: 3 })
     expect(container.textContent).toContain('planned')
     expect(container.textContent).toContain('/screening/status')
     expect(container.textContent).toContain('screening-outcome')
@@ -222,12 +224,14 @@ describe('the runtime’s labels', () => {
 
 it('offers rehearsal on the graph page, runs nothing on opening, and forgets inputs on leaving', async () => {
   open('/graphs/onboarding')
-  fireEvent.click(await screen.findByRole('link', { name: 'Rehearsal' }))
+  fireEvent.click(await screen.findByRole('link', { name: 'Tests' }))
+  fireEvent.click(await screen.findByRole('radio',{name:'Try inputs'}))
   const inputs = await screen.findByLabelText('Inputs by node id')
   expect(asked().some(url => url.startsWith('/api/graphs/evaluate'))).toBe(false)
   fireEvent.change(inputs, { target: { value: '{"private":{}}' } })
-  fireEvent.click(screen.getByRole('link', { name: 'Diagram' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Logic' }))
   expect(screen.queryByLabelText('Inputs by node id')).toBeNull()
-  fireEvent.click(screen.getByRole('link', { name: 'Rehearsal' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Tests' }))
+  fireEvent.click(await screen.findByRole('radio',{name:'Try inputs'}))
   expect((await screen.findByLabelText('Inputs by node id') as HTMLTextAreaElement).value).toBe('{}')
 })

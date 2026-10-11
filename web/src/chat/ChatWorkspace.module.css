@@ -1,4 +1,4 @@
-.chat { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.chat { container: chat / inline-size; display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
 .conversation { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .chatHeader { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); flex: 0 0 auto; }
 .chatToolbar { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-1); min-width: 0; }
@@ -10,7 +10,7 @@
 .historySearch > input { width: 100%; }
 .transcript { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .thread { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable both-edges; overscroll-behavior: contain; padding: var(--space-4); }
-.threadContent { width: min(100%, var(--measure-wide)); margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-5); }
+.threadContent { width: min(100%, var(--measure-form)); margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-5); }
 .threadContent > * { flex: 0 0 auto; min-width: 0; }
 .welcome { max-width: var(--measure-form); margin: auto; text-align: center; padding: var(--space-5) var(--space-2); }
 .welcome h1 { font-size: var(--text-page); font-weight: 500; margin: 0 0 var(--space-3); }
@@ -24,8 +24,8 @@
 .message[data-role="assistant"] { width: 100%; }
 .message[data-role="assistant"] > :not(.markdown):not(button) { width: min(100%, var(--measure-form)); margin-inline: auto; }
 .message[data-role="assistant"] > button { margin-inline-start: max(0px, calc((100% - var(--measure-form)) / 2)); }
-.markdown > :not(.messageTable):not(.messageCode) { width: min(100%, var(--measure-form)); margin-inline: auto; }
-.messageCode { min-width: 0; max-width: 100%; }
+.markdown > * { width: min(100%, var(--measure-form)); margin-inline: auto; }
+.messageCode { min-width: 0; max-width: 100%; margin-block: var(--space-3); }
 .message .userText { white-space: pre-wrap; }
 .message[data-role="user"] { border-radius: var(--radius); padding: var(--space-3); background: var(--accent-soft); }
 .caption { font-size: var(--text-xs); color: var(--ink-soft); }
@@ -33,19 +33,21 @@
 .runStatus p { margin-block: var(--space-1) 0; }
 .work summary { cursor: pointer; }
 .work ol { display: grid; gap: var(--space-1); padding: 0; list-style: none; overflow-wrap: anywhere; }
+.artifactList { display: grid; gap: var(--space-3); }
 .artifact { display: flex; align-items: center; gap: var(--space-3); width: min(100%, var(--measure-form)); margin-inline: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); }
+.artifact > button, .artifact > a { flex-shrink: 0; }
 .artifact > div { min-width: 0; flex: 1; display: grid; gap: var(--space-1); }
 .artifact strong { font-size: var(--text-sm); font-weight: 500; overflow-wrap: anywhere; }
 .artifact small { font-size: var(--text-xs); color: var(--ink-soft); }
 .composerArea { flex: 0 0 auto; padding: var(--space-3) var(--space-4); width: 100%; max-width: calc(var(--measure-form) + 2 * var(--space-4)); margin-inline: auto; }
-.composer { border: 1px solid var(--border-strong); background: var(--surface); border-radius: var(--radius-panel); padding: var(--space-2); }
+.composer { container: chat-composer / inline-size; border: 1px solid var(--border-strong); background: var(--surface); border-radius: var(--radius-panel); padding: var(--space-2); }
 .composer:has(.messageInput:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .composer .messageInput:focus-visible { outline: none; }
 .composer .messageInput { resize: none; min-height: 3rem; max-height: max(80px, 25vh); width: 100%; background: transparent; border: none; box-shadow: none; font-size: var(--text-body); line-height: 1.6; }
-.composerTools { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.composerTools { display: flex; align-items: flex-end; gap: var(--space-1); }
+.composerControls { display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
 .pick { min-width: 0; max-width: 8rem; }
 .pick button { max-width: 100%; min-width: 0; }
-.grow { flex: 1; }
 .footnote { min-height: 1.6em; line-height: 1.6; color: var(--ink-faint); font-size: var(--text-xs); text-align: center; margin: var(--space-2) 0 0; }
 .notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-xs); color: var(--ink-soft); margin-bottom: var(--space-3); }
 .notice p { margin: 0; }
@@ -96,12 +98,7 @@
 .markdown li + li { margin-top: var(--space-1); }
 .markdown blockquote { border-inline-start: 2px solid var(--border-strong); padding-inline-start: var(--space-3); margin-inline: 0; color: var(--ink-soft); }
 .markdown a { color: var(--ink); text-decoration: underline var(--ink); text-underline-offset: 3px; }
-.markdown code { font-size: var(--text-xs); overflow-wrap: anywhere; }
-.messageTable { position: relative; width: 100%; max-width: 100%; overflow: auto; overscroll-behavior-inline: contain; overflow-wrap: normal; word-break: normal; }
-.messageTable table { border-collapse: collapse; font-size: var(--text-sm); width: 100%; }
-.messageTable td, .messageTable th { min-width: 10rem; text-align: left; vertical-align: top; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
-.messageTable td { overflow-wrap: break-word; }
-.messageTable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.markdown code { font-size: var(--text-xs); }
 .messageActions { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); margin-top: var(--space-2); }
 .messageActions > button { font-size: var(--text-xs); }
 .work li { display: flex; justify-content: space-between; gap: var(--space-3); }
@@ -121,16 +118,11 @@
 .day { color: var(--ink-soft); font-size: var(--text-xs); line-height: 1.6; text-align: center; padding-block: var(--space-1); }
 .documentList { display: grid; width: 100%; min-width: 0; gap: var(--space-1); }
 .send { flex: 0 0 var(--density-control); width: var(--density-control); padding: 0; }
-.messageTable th { font-weight: 600; background: var(--surface); }
 .markdown :not(pre) > code { background: var(--accent-soft); border-radius: var(--radius-sm); padding-inline: var(--space-1); }
 
 
 .packWorkspace { container-type: inline-size; display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; overflow:hidden; }
 
-.packWorkspace > [data-page-header] { flex-wrap: wrap; row-gap: var(--space-2); padding-block: var(--space-2); }
-.packWorkspace > [data-page-header] h1 { flex: 1 1 min(20rem, calc(100% - var(--density-control) - var(--density-gap))); flex-wrap: wrap; row-gap: var(--space-1); }
-.packWorkspace > [data-page-header] h1 > [data-page-context] { flex: 1 1 8rem; }
-.packWorkspace > [data-page-header] h1 > span:last-child { white-space: nowrap; flex-shrink: 0; }
 
 /* Message-owned supporting material stays inside its response, at a quieter scale. */
 .responseDetails { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
@@ -146,8 +138,6 @@
 .openQuestions ul { margin: 0; padding-inline-start: var(--space-4); display: grid; gap: var(--space-2); }
 .openQuestions li p { margin-block: 0; }
 
-.packWorkspace > [data-page-header] [data-page-actions] { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); max-width: 100%; }
-@container (min-width: 48rem) { .packWorkspace > [data-page-header] h1 > [data-page-context] { flex: 0 1 auto; } }
 
 .workTitle, .workWarning { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .workWarning, .work li[data-status="failed"] .workIcon, .work li[data-status="failed"] .workState { color: var(--unknown); }
@@ -173,3 +163,28 @@
 
 .composerReadiness > span { flex: 1 1 16rem; }
 .composerReadiness > button { flex: none; }
+
+/* Embedded Assistant is a compact workspace tool; the home chat keeps its landing layout. */
+.retainedChat { height: 100%; min-height: 0; }
+.retainedChat[hidden] { display: none; }
+.chat[data-placement="pane"] .welcome { text-align: start; margin: 0; padding: var(--space-3) 0; }
+.chat[data-placement="pane"] .welcome h1 { font-size: var(--text-heading); font-weight: 600; margin-bottom: var(--space-2); }
+.chat[data-placement="pane"] .thread { padding: var(--space-4); scrollbar-gutter: stable; }
+.chat[data-placement="pane"] .composerArea { padding: var(--space-3) var(--space-4) var(--space-4); }
+.footnote:empty { display: none; }
+
+.composerContext { margin-bottom: var(--space-2); min-width: 0; }
+.composerContext > button, .composerContext > div { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; padding: var(--space-2); color: var(--ink-soft); text-align: start; font-size: var(--text-xs); background: transparent; border-width: 0; border-radius: var(--radius-sm); }
+.composerContext > button { cursor: pointer; }
+.composerContext > button:hover { background: var(--false-soft); color: var(--ink); }
+.composerContext svg { width: 16px; height: 16px; flex: none; }
+.contextText { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--space-2); }
+.contextText > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.contextText > small { flex: none; font-size: inherit; }
+@container chat (max-width: 380px) { .contextText { flex-direction: column; gap: var(--space-1); } }
+
+.composerContext > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.markdown { min-width: 0; }
+.historyCreate { display: flex; padding: 0 var(--space-3) var(--space-2); border-bottom: 1px solid var(--border); }
+.historyCreate > button { width: 100%; justify-content: flex-start; }

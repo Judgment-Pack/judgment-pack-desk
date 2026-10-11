@@ -1,4 +1,8 @@
+import { DefinitionHistory } from '../definitions/DefinitionHistory'
+import { DraftCheckStatus } from '../research/DraftCheckStatus'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
+import { usePackChatContext } from '../chat/packChatContext'
+import { DefinitionBrief } from '../briefs/DefinitionBrief'
 import { TestsContent, carryDraftTests } from '../packs/test-workspace/TestsWorkspace'
 import { useReadingDetails } from '../chat/ReadingDetails'
 import { DraftActions } from '../packs/drafts/DraftActions'
@@ -9,15 +13,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../chat/ChatPanel'
 import { useChats } from '../chat/ChatProvider'
-import { chatHref } from '../chat/ChatHistory'
 import { draftHref, type PackDraft } from '../packs/drafts/model'
 import type { ResearchRunBinding } from '../research/useResearchRun'
-import { MovePackButton, ShowFolders } from '../packs/folders/FolderBrowser'
+import { ShowFolders } from '../packs/folders/FolderBrowser'
 import { usePackFolders } from '../packs/folders/FolderContext'
 import { packFolder } from '../packs/folders/model'
 import { homeChatId } from '../chat/navigation'
 import type { Chat } from '../chat/store'
 import { INITIAL_STATE, canCreateDraft, matrixDocument, researchRecord } from '../research/run'
+import { DefinitionUsage } from '../usage/DefinitionUsage'
 import { DraftTabs, type Selection } from '../research/ui/DraftPanels'
 import { SourceInspector } from '../research/ui/SourceInspector'
 import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
@@ -97,12 +101,12 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
   const binding = live && chat.draftGeneration===artifact.generation && live.state.candidates.at(-1)?.text === artifact.checkpoint.state.candidates.at(-1)?.text ? live : fallback
   const state = binding.state
   const readSource = useReadingDetails(artifact.id)
-  const navigate = useNavigate()
   const folders = usePackFolders()
   const folderId = folders ? packFolder(folders.document,artifact.id) : artifact.folderId
   const [selection, setSelection] = useState<Selection>(null)
   const [review, setReview] = useState(false)
   const [testActive, setTestActive] = useState(false)
+  const [testAssistantBusy, setTestAssistantBusy] = useState(false)
   const reviewDigest = useRef<string | undefined>(undefined)
   const [reviewNotice, setReviewNotice] = useState('')
   const [writing, setWriting] = useState(false)
@@ -124,8 +128,9 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
   }, [review, latest?.digest])
   const presentation = useMemo(() => ({ title: msg("Assistant"), contextTitle: artifact.title, workspaceTools: draft, available: draft, open: draft && rightOpen,
     onOpenChange: setRightOpen, width, onResize: shell.resizeInspector, onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640 }), [draft, rightOpen, width, shell.resizeInspector, shell.resetInspectorWidth, locale, artifact.title])
-  useInspectorPresentation(testActive && !review ? null : presentation)
-  const portal = useInspectorPortal(draft ? <div hidden={testActive && !review} style={{height:"100%"}}><ChatPanel placement="pane" chat={chat} locked={writing} draftVisible /></div> : null)
+  useInspectorPresentation(presentation)
+  const chatContext = usePackChatContext(artifact.id, latest?.text, artifact.title, true)
+  const portal = useInspectorPortal(<div className={styles.retainedChat}><ChatPanel placement="pane" chat={chat} context={chatContext} locked={writing || testAssistantBusy} draftVisible draftActionsInHeader /></div>)
   const detailPortal = useDetailsPortal(binding?.ledger && selection && !testActive ?
     <SourceInspector selection={selection} ledger={binding.ledger} state={state} onSelect={setSelection} /> : null)
   const select = (next: Selection) => { setSelection(next); if (next) details.reveal() }
@@ -139,10 +144,10 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
   } : undefined
   return <div className={styles.packWorkspace} data-draft-workspace>
     <PageHeader variant="title" leading={<ShowFolders/>} title={artifact.title} meta={<>{msg('Draft')} · {latest ? msg('revision {{value0}}', { value0: latest.revision }) : msg('no revision yet')}</>} actions={<>
-      <DraftActions draft={artifact} onChat={() => store?.getSnapshot().chats.some(item=>item.id===chat.id) ? navigate(chatHref(chat)) : navigate('/',{state:{homeChatId:chat.id}})}><MovePackButton id={artifact.id}/></DraftActions>
+      <DraftCheckStatus state={state}/>
+      <DraftActions draft={artifact} sourceText={latest?.text} recheck={{run: () => { if(store)store.perform(chat.id,active=>active.run?.recheck(),false);else binding.run?.recheck() }, disabled: state.status==='running' || writing || !binding.run || Boolean(store?.running && store.running!==chat.id)}}/>
       <Tooltip content={msg('Focus on canvas')}><Button size="icon" variant="quiet" aria-label={msg('Focus on canvas')} onClick={() => assistant.close?.()}><IconFocus /></Button></Tooltip>
-      {state.restored && <Button disabled={state.status==='running'} onClick={() => binding.run?.recheck()}>{msg('Recheck saved draft')}</Button>}
-      {!review && !state.restored && <Button variant="primary" disabled={!passing} onClick={beginReview}>{msg('Review and finalize')}</Button>}
+      {!review && <Tooltip content={state.restored ? msg('Run checks from Pack options before finalizing.') : undefined}><Button variant="primary" disabled={!passing} onClick={beginReview}>{msg('Review and finalize')}</Button></Tooltip>}
     </>} />
     {portal}{detailPortal}
     {draft && reviewNotice && <p className={styles.reviewNotice} role="status">{systemMessage(reviewNotice)}</p>}
@@ -157,7 +162,7 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
             citations: { traced: state.citations.filter(c=>c.traced).length, total: state.citations.length },
             cases: { agreeing: latest.check?.cases.filter(c=>c.passed).length ?? 0, total: state.cases.length } }}
           onSaved={async pack => { await carryDraftTests({...artifact,checkpoint:{...artifact.checkpoint,state}},pack.id); store?.finalizeDraft(artifact.id,pack); if(!await store?.flush()) throw new Error(sourceMessage('The pack was finalized, but its draft link could not be saved. Retry saving before leaving.')); writingChanged(false); return `/packs/${encodeURIComponent(pack.id)}` }} />
-      </div> : <DraftTabs onTabChange={tab=>setTestActive(tab==='tests')} testsPanel={latest && candidate ? <TestsContent owner={artifact.id} document={latest.document as import('../mcp/types').PackDocument} text={latest.text} title={artifact.title} active={testActive && !review} draft={{...artifact,checkpoint:{...artifact.checkpoint,state}}}/> : undefined} documents={artifact.documents} files={artifact.sourceFiles} onRead={readSource} hideHeader onSelectInMain={setSelection} state={state} mode={chat.mode} basis={basis} sources={binding?.sources ?? []} selection={selection} onSelect={select} onCreate={beginReview} showCreateAction={false}
+      </div> : <DraftTabs historyPanel={<DefinitionHistory kind="pack" draft owner={artifact.id} candidates={state.candidates}/>} usagePanel={<DefinitionUsage kind="pack" draft documentId={typeof (latest?.document as {id?:unknown})?.id === 'string' ? (latest!.document as {id:string}).id : undefined}/>} brief={latest && <DefinitionBrief kind="pack-draft" owner={artifact.id} title={artifact.title} content={latest.text} sourceKey={JSON.stringify([latest.text, artifact.updatedAt, store?.getSnapshot().dirty])}/>} onTabChange={tab=>setTestActive(tab==='tests')} testsPanel={latest && candidate ? <TestsContent onAssistantBusyChange={setTestAssistantBusy} owner={artifact.id} document={latest.document as import('../mcp/types').PackDocument} text={latest.text} title={artifact.title} active={testActive && !review} draft={{...artifact,checkpoint:{...artifact.checkpoint,state}}}/> : undefined} documents={artifact.documents} files={artifact.sourceFiles} onRead={readSource} hideHeader onSelectInMain={setSelection} state={state} mode={chat.mode} basis={basis} sources={binding?.sources ?? []} selection={selection} onSelect={select} onCreate={beginReview} showCreateAction={false}
         onEstablishCases={() => store?.perform(chat.id, active => active.run?.establishCases())}
         onProposeCorrection={id => store?.perform(chat.id, active => active.run?.proposeExpectationCorrection(id))}
         onApproveCorrection={(id,token) => store?.perform(chat.id, active => active.run?.approveExpectationCorrection(id,token), false)} />}

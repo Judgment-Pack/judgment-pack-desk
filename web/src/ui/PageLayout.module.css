@@ -29,32 +29,24 @@
 }
 .collectionHeader > nav { padding: 0; min-width: 0; }
 .collectionHeader > nav a { min-height: var(--space-7); display: inline-flex; align-items: center; gap: var(--space-2); }
-.collectionHeader > .actions { padding-block: var(--space-2); }
+.collectionHeader > .actions { padding-block: var(--space-1); }
 .header:has(> nav) { flex-wrap: wrap; row-gap: 0; padding-bottom: 0; }
 .header > nav { flex-basis: 100%; padding-inline: 0; }
 .header, .documentHeader { flex: 0 0 auto; }
-.documentHeader { background: var(--bg); border-bottom: 1px solid var(--border); }
-.documentHeading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-4);
-  padding: var(--space-3) var(--density-gutter) var(--space-2);
+.documentHeader { background: var(--bg); container: document-header / inline-size; }
+.documentHeader > nav { border-bottom: 1px solid var(--border); }
+.documentHeading { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.documentIdentity { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.documentIdentity > button { flex: none; }
+.documentHeading .title { min-width: 0; font-size: var(--text-sm); font-weight: 600; color: var(--ink); }
+.documentHeading .title > [data-page-title] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.documentHeading .meta { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.documentHeader > .description { padding: var(--space-2) var(--density-gutter); }
+@container document-header (max-width: 32rem) {
+  .documentHeading { height: auto; grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .documentIdentity { height: calc(var(--space-7) - 1px); }
+  .documentHeading .actions { padding-bottom: var(--space-2); }
 }
-.documentHeading .title {
-  flex: 1 1 min(16rem, calc(100% - var(--density-control) - var(--space-4)));
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  margin: 0;
-  font-size: var(--text-page);
-  font-weight: 500;
-  line-height: 1.35;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-.documentHeading .actions { align-self: start; }
 .description {
   flex-basis: 100%;
   max-width: var(--measure-form);
@@ -99,5 +91,3 @@
 
 .body[data-fill] { padding: 0; overflow: hidden; scrollbar-gutter: auto; display: flex; flex-direction: column; }
 .body[data-fill] > .content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-
-.documentHeading .meta { display:inline-block; margin-inline-start:var(--space-3); vertical-align:middle; white-space:nowrap; }

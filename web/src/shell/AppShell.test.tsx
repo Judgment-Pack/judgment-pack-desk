@@ -104,7 +104,7 @@ describe('the shell frame', () => {
     expect(await screen.findByRole('heading', { name: 'General', level: 2 })).toBeTruthy()
     expect(screen.getByRole('main')).toBe(main)
     fireEvent.click(screen.getByRole('link', { name: 'Back to app' }))
-    expect(await screen.findByRole('link', { name: /^Decisions/ })).toBeTruthy()
+    expect(await screen.findByRole('link', { name: /^Library/ })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Back to app' })).toBeNull()
   })
 
@@ -158,7 +158,7 @@ describe('the shell frame', () => {
     'ignores saved legacy pane flags on %s and exposes no global Inspector or Console', async path => {
       localStorage.setItem(shellStateKey(projectKey(ROOT)), JSON.stringify({v:2, inspector:{open:true},console:{open:true,tab:'calls'}}))
       const {container}=renderShell(<AppShell><h1>Page</h1></AppShell>, {}, path)
-      await screen.findByRole('link', {name:/Decisions/})
+      await screen.findByRole('link', {name:/Library/})
       expect(screen.queryByRole('button',{name:'Inspector'})).toBeNull()
       expect(screen.queryByRole('button',{name:'Console'})).toBeNull()
       expect(screen.queryByRole('complementary')).toBeNull()
@@ -212,7 +212,7 @@ it('replaces one detail reader, preserves draft text, restores focus and can ret
   expect((screen.getByLabelText('Unsent message') as HTMLTextAreaElement).value).toBe('Keep my draft')
   fireEvent.keyDown(screen.getByRole('region', { name: 'Source reader' }), { key: 'Escape' })
   expect(screen.queryByRole('region', { name: 'Source reader' })).toBeNull()
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open source text' }))
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open source text' })))
   fireEvent.click(screen.getByRole('button', { name: 'Inspect rule' }))
   expect(screen.getByText('Selected pack rule').closest('[hidden]')).toBeNull()
 })

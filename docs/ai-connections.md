@@ -25,6 +25,35 @@ connection name, and model in its checkpoint; these appear in reply details.
 Existing replies keep unknown attribution. An older saved chat without a
 connection ID requires an explicit selection before its next send.
 
+## Which settings each feature uses
+
+| Feature | Connection and model |
+| --- | --- |
+| New main chat or pack/graph chat | Starts with the desk default. The composer can select any connection enabled for this desk and one of its enabled models. |
+| Saved main chat or pack/graph chat | Keeps its explicit connection/model. Changing defaults does not reroute it. Older chats with unknown attribution show **Choose AI connection** before the next send. |
+| Pack and graph authoring through chat, research, and chat-generated tests | Uses that chat's selection, including its reasoning override. |
+| Standalone test design | Starts with the desk default; its connection and model controls select the actual run target. |
+| Briefs for packs, graphs, cases, jobs, and runs | Starts with the desk default and offers connection/model controls. Regeneration opens these controls before running. |
+| Legacy authoring/create forms | Uses the desk default connection and the model selected in that form. |
+| Admin connection testing and model discovery | Uses the connection being edited, with its revision, rather than the desk default. Discovery does not grant permission to run an excluded connection. |
+| PDF extraction and OCR | Uses Document processing settings and its own local/cloud processing connection. The chat model receives only the selected extracted text when sent. |
+| Deterministic evaluation, tests, graph execution and scheduled jobs | Uses the Runtime/Gateway execution configuration. Selecting an AI model does not change decision semantics. |
+
+Standalone model preferences are local to the project, connection, and feature.
+Changing connection must not reuse another provider's selection just because both
+providers expose the same model ID. An enabled non-default subscription model
+uses its own reasoning default; it does not inherit the default model's effort.
+
+API readiness requires both a saved key and the server's positive binding verdict.
+An endpoint change can require saving its key again. Active pages refresh key
+metadata so removal/replacement from another window is reflected. Native account
+and model discovery can briefly report busy while they share the same manager;
+reads recover without switching providers or resending inference.
+
+Desk-level API model overrides can refresh the provider's catalog, independent
+of the shared model defaults. Explicit overrides continue to be checked by the
+server when a request is admitted.
+
 ## Storage and migration
 
 - `<Desk config directory>/ai-connections.json` stores connection IDs, names,

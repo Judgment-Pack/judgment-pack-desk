@@ -71,6 +71,7 @@ describe('Packs workspace commands', () => {
   it('reads a diagram directly without testing the flow', async () => {
     const stub = desk()
     renderConnected(views(), connected({ client: stub.client, graphDocumentSupported: true, graphInventorySupported: true }), { path: '/graphs/flow' })
+    fireEvent.click(await screen.findByRole('radio', {name:'List'}))
     await screen.findByRole('button', { name: /first → second/ })
     expect(testCalls(stub)).toHaveLength(0)
     expect(stub.calls.find(call => call.name === 'experimental_get_graph')?.args).toEqual({ graph_id: 'flow' })

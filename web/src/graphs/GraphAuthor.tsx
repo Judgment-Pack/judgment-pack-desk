@@ -40,7 +40,7 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
   const queries = useQueryClient()
   const config = useFileContent('jpack.json')
   const hostTools = useMemo(graphHostTools, [])
-  const run = useAssistantRun({ endpoint: slot.endpoint, agent: slot.agent, model: selected?.model ?? '', engine: slot.engine, thinking: slot.thinking, purpose: 'graph', hostTools })
+  const run = useAssistantRun({ target: slot, endpoint: slot.endpoint, agent: slot.agent, model: selected?.model ?? '', engine: slot.engine, thinking: slot.thinking, purpose: 'graph', hostTools })
   const [open, setOpen] = useState(false)
   const [chosen, setChosen] = useState<string[]>([])
   const [relationship, setRelationship] = useState('')

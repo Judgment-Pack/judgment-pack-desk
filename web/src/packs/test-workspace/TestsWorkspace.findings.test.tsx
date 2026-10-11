@@ -54,7 +54,7 @@ async function saveShown(expected: unknown): Promise<string> {
   fireEvent.click(save)
   // The case editor, open beside the list, shows the save error under the case.
   const alert = await waitFor(() => {
-    const shown = within(details.target!).queryAllByRole('alert').map(node => node.textContent ?? '').filter(Boolean)
+    const shown = within(screen.getByRole('region',{name:'Held case'})).queryAllByRole('alert').map(node => node.textContent ?? '').filter(Boolean)
     expect(shown).toHaveLength(1)
     return shown[0]!
   })

@@ -16,7 +16,7 @@ import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { IconChevronLeft, IconDetails, IconMore, IconSearch } from '../shell/icons'
 import { PaneToggle } from '../shell/PaneToggle'
 import { PaneDivider } from '../ui/PaneDivider'
-import { DropdownMenu } from 'radix-ui'
+import { Menu as DropdownMenu } from '../ui/Menu'
 import { FileBrowser } from '../files/FileBrowser'
 import { FileLocation } from '../files/FileLocation'
 import { parents, readFileBrowser, writeFileBrowser, type FileBrowserPreferences } from '../files/browserState'
@@ -349,15 +349,15 @@ function FileEditor({
         actions={<>
           {!readOnly && <Tooltip content={msg('Save')} shortcut="Ctrl/⌘ S"><Button variant="primary" disabled={!dirty || write.isPending} onClick={() => save(false)}>{write.isPending ? msg('Saving…') : msg('Save')}</Button></Tooltip>}
           <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="quiet" size="icon" aria-label={msg('File actions')}><IconMore/></Button></DropdownMenu.Trigger>
-            <DropdownMenu.Portal><DropdownMenu.Content className={`desk-menu ${styles.fileMenu}`} align="end" sideOffset={4}>
-              <DropdownMenu.Item className="desk-menu-item" onSelect={()=>void copyPath()}>{msg('Copy {{label}}',{label:msg('Path')})}</DropdownMenu.Item>
-              <DropdownMenu.Item className="desk-menu-item" disabled={write.isPending || editing.reloading} onSelect={()=>void reload()}>{msg('Reload from disk')}</DropdownMenu.Item>
-              <DropdownMenu.Item className="desk-menu-item" disabled={!dirty || write.isPending} onSelect={()=>void (async()=>{
+            <DropdownMenu.Portal><DropdownMenu.Content className={styles.fileMenu} align="end" sideOffset={4}>
+              <DropdownMenu.Item onSelect={()=>void copyPath()}>{msg('Copy {{label}}',{label:msg('Path')})}</DropdownMenu.Item>
+              <DropdownMenu.Item disabled={write.isPending || editing.reloading} onSelect={()=>void reload()}>{msg('Reload from disk')}</DropdownMenu.Item>
+              <DropdownMenu.Item disabled={!dirty || write.isPending} onSelect={()=>void (async()=>{
                 if (!await confirmDiscard(msg('Discard unsaved changes to this file?'), { name: path })) return
                 setBuffer(base.content);clearFormat();editing.reset()
               })()}>{msg('Discard changes')}</DropdownMenu.Item>
-              <DropdownMenu.Separator className="desk-menu-separator"/>
-              <DropdownMenu.Label className="desk-menu-label">{msg('File details')}</DropdownMenu.Label>
+              <DropdownMenu.Separator/>
+              <DropdownMenu.Label>{msg('File details')}</DropdownMenu.Label>
               <div className={styles.fileDetails}><code>{path}</code><span><Message text={"<0/> bytes"} slots={[base.bytes]}/></span><code>sha256 {base.sha256}</code></div>
             </DropdownMenu.Content></DropdownMenu.Portal>
           </DropdownMenu.Root>

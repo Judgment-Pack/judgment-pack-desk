@@ -22,7 +22,7 @@ export function checkpoint(state: RunState, sources: readonly SourceRecord[]): C
   // Derived views, events and verdicts are deliberately omitted. Reconstruct
   // candidates from their bytes; source records from the original wire reply.
   return {
-    state: { ...state, streaming: undefined, streamingId: undefined, events: [], verdicts: {}, registries: {}, citations: [], tracing: undefined, tracedBasis: undefined,
+    state: { ...state, checkRecovery:undefined, checkIssue:undefined, streaming: undefined, streamingId: undefined, events: [], verdicts: {}, registries: {}, citations: [], tracing: undefined, tracedBasis: undefined,
       candidates: state.candidates.map(({ check, ...candidate }) => ({ ...candidate, ...(check ? { previousCheck: check } : {}) })),
       expectationIssues: state.expectationIssues.map(({ proposal: _proposal, ...issue }) => issue) },
     sources: sources.map(source => ({ session: source.session, kind: source.kind, request: source.request,
@@ -41,6 +41,9 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
   if (typeof state.brief !== 'string' || !strings(state.seedUrls) || !strings(state.unknowns) || !strings(state.sessions)
     || !Array.isArray(state.turns) || !Array.isArray(state.candidates) || !Array.isArray(state.cases)
     || !Array.isArray(state.expectationIssues) || !Number.isInteger(state.revisionsUsed) || (state.revisionsUsed as number) < 0) return invalid()
+  if (state.inheritedStatements !== undefined && (!Array.isArray(state.inheritedStatements) || state.inheritedStatements.length > 256 ||
+    state.inheritedStatements.some(row => !Array.isArray(row) || row.length !== 2 || !strings(row)) ||
+    new Set(state.inheritedStatements.map(row => row[0])).size !== state.inheritedStatements.length)) return invalid()
   const turns: Turn[] = state.turns.map((turn, index) => {
     if (!object(turn) || (turn.role !== 'user' && turn.role !== 'assistant') || typeof turn.text !== 'string'
       || (turn.statement !== undefined && typeof turn.statement !== 'string') || (turn.input !== undefined && typeof turn.input !== 'string') || (turn.interrupted !== undefined && typeof turn.interrupted !== 'boolean') || typeof turn.at !== 'string' || !['brief', 'message', 'unknowns', 'note'].includes(String(turn.kind))) return invalid()
@@ -83,6 +86,8 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
         ...(source.request.url ? { url: source.request.url as string } : {}), ...(source.request.query ? { query: source.request.query as string } : {}) } }
   })
   return { state: { ...INITIAL_STATE, status: ['idle', 'running', 'complete', 'ready', 'needs-input', 'budget', 'stalled', 'stopped', 'failed'].includes(String(state.status)) ? state.status as RunState['status'] : 'idle', brief: state.brief, seedUrls: state.seedUrls, turns, candidates, responses: readResponseHistory(state.responses),
+    inheritedStatements: state.inheritedStatements as RunState['inheritedStatements'],
+    checkRun: ['running','complete','failed','stopped'].includes(String(state.checkRun)) ? state.checkRun as RunState['checkRun'] : undefined,
     probes: readProbes(state.probes), cases: state.cases.map(readCase), expectationIssues: issues, unknowns: state.unknowns,
     revisionsUsed: state.revisionsUsed as number, sessions: state.sessions }, sources }
 }

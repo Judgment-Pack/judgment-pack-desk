@@ -29,3 +29,12 @@ it('binds a discovered chat override to that model without changing Admin or usi
  expect(bindAgentRun).toHaveBeenLastCalledWith('selected');expect(bindModelCall).not.toHaveBeenCalled()
  expect(admin).toMatchObject({model:'default',effort:'high',tools:['get_schema']})
 })
+
+it('runs another enabled subscription model and does not borrow the default model effort',()=>{
+ const config={engine:'codex' as const,endpoint:null,connectionId:'ai-111111111111111111111111',connectionRevision:'a'.repeat(64),agent:{provider:'openai' as const,authMethod:'subscription' as const,model:'default',models:['default','other'],tools:[],effort:'high' as const}}
+ expect(bindExecution(config,'other','ultra')).toMatchObject({agent:{model:'other'}})
+ expect(bindExecution(config,'other','ultra')).not.toHaveProperty('effort')
+ expect(bindAgentRun).toHaveBeenLastCalledWith('other',config)
+ expect(bindExecution(config,'default','off')).toHaveProperty('effort','high')
+ expect(()=>bindExecution(config,'disabled','off')).toThrow('Choose a model')
+})

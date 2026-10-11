@@ -123,13 +123,13 @@ describe('the gap between the two answers', () => {
       also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
       hold: [BRAVO_PATH]
     })
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
 
     vi.stubGlobal('confirm', () => true)
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
 
     // Alpha is gone from the page the moment the address is not Alpha's…
@@ -159,14 +159,14 @@ describe('the gap between the two answers', () => {
       sha256: PACK_DIGEST,
       also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
     })
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     await screen.findByDisplayValue('Bravo pack')
     await act(async () => {
-      await router.navigate('/packs/alpha?edit=1')
+      await router.navigate('/packs/alpha?edit=1&builder=settings')
     })
     const back = await screen.findByDisplayValue('Alpha pack')
     fireEvent.change(back, { target: { value: 'Alpha pack, again' } })
@@ -200,7 +200,7 @@ describe('a path that moves under one address', () => {
       }),
       validate: () => ({ text: CLEAN_REPORT })
     }
-    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
+    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1&builder=settings' })
     const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
 
@@ -256,7 +256,7 @@ describe('a path that moves under one address', () => {
       }),
       validate: () => ({ text: CLEAN_REPORT })
     }
-    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
+    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1&builder=settings' })
     await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
 
     const operand = inside(document.getElementById('/rules/0/when/value')!).getByDisplayValue(
@@ -294,7 +294,7 @@ describe('a path that moves under one address', () => {
     const log = chassis({ content: ALPHA_FACT, sha256: PACK_DIGEST })
     const { queryClient } = drawPack(
       servedPacks([{ id: 'alpha', path: PACK_PATH, text: ALPHA_FACT, sha256: PACK_DIGEST }]),
-      { path: '/packs/alpha?edit=1' }
+      { path: '/packs/alpha?edit=1&builder=settings' }
     )
     await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
 
@@ -359,7 +359,7 @@ describe('a path that moves under one address', () => {
       }),
       validate: () => ({ text: CLEAN_REPORT })
     }
-    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
+    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1&builder=settings' })
     const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
 
@@ -402,7 +402,7 @@ describe('a path that moves under one address', () => {
       }),
       validate: () => ({ text: CLEAN_REPORT })
     }
-    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
+    const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1&builder=settings' })
     const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
 
@@ -429,7 +429,7 @@ describe('a read that lands after the page has moved on', () => {
       staleWith: { sha256: 'c0c0c0'.padEnd(64, '0') }
     })
     vi.stubGlobal('confirm', () => true)
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
 
     // A conflict on A, which is what puts Reload on screen.
     const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
@@ -441,7 +441,7 @@ describe('a read that lands after the page has moved on', () => {
     log.hold(PACK_PATH)
     fireEvent.click(inside(alert).getByRole('button', { name: 'Reload' }))
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     const bravo = await screen.findByDisplayValue('Bravo pack')
     fireEvent.change(bravo, { target: { value: 'Bravo pack, revised' } })
@@ -480,7 +480,7 @@ describe('a read that lands after the page has moved on', () => {
       holdWrite: true
     })
     vi.stubGlobal('confirm', () => true)
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
     const release = log.holdWrite()
@@ -489,7 +489,7 @@ describe('a read that lands after the page has moved on', () => {
 
     // The page leaves for B while A's PUT is still in the air, and B is edited.
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     const bravo = await screen.findByDisplayValue('Bravo pack')
     fireEvent.change(bravo, { target: { value: 'Bravo pack, revised' } })
@@ -523,7 +523,7 @@ describe('a read that lands after the page has moved on', () => {
       holdWrite: true
     })
     vi.stubGlobal('confirm', () => true)
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
     const release = log.holdWrite()
@@ -531,11 +531,11 @@ describe('a read that lands after the page has moved on', () => {
     await waitFor(() => expect(log.writes).toHaveLength(1))
 
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     await screen.findByDisplayValue('Bravo pack')
     await act(async () => {
-      await router.navigate('/packs/alpha?edit=1')
+      await router.navigate('/packs/alpha?edit=1&builder=settings')
     })
     // The editor is back over Alpha's own bytes — the file query still holds
     // them, because the save that would move them has not answered.
@@ -558,7 +558,7 @@ describe('a read that lands after the page has moved on', () => {
       also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } },
       staleWith: { sha256: 'c0c0c0'.padEnd(64, '0') }
     })
-    drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
@@ -580,7 +580,7 @@ describe('a read that lands after the page has moved on', () => {
       also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
     })
     vi.stubGlobal('confirm', () => true)
-    const { router, queryClient } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router, queryClient } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
 
     // The file moves under A, which is what puts Reload on screen.
@@ -598,7 +598,7 @@ describe('a read that lands after the page has moved on', () => {
 
     // The page leaves for B and saves it, which lands.
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     const bravo = await screen.findByDisplayValue('Bravo pack')
     fireEvent.change(bravo, { target: { value: 'Bravo pack, revised' } })
@@ -626,7 +626,7 @@ describe('a read that lands after the page has moved on', () => {
       holdWrite: true
     })
     vi.stubGlobal('confirm', () => true)
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
 
     const releaseFirst = log.holdWrite()
@@ -635,11 +635,11 @@ describe('a read that lands after the page has moved on', () => {
     await waitFor(() => expect(log.writes).toHaveLength(1))
 
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     await screen.findByDisplayValue('Bravo pack')
     await act(async () => {
-      await router.navigate('/packs/alpha?edit=1')
+      await router.navigate('/packs/alpha?edit=1&builder=settings')
     })
 
     log.holdWrite()
@@ -678,18 +678,18 @@ describe('a read that lands after the page has moved on', () => {
       holdWrite: true
     })
     vi.stubGlobal('confirm', () => true)
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
     await waitFor(() => expect(log.writes).toHaveLength(1))
 
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     await screen.findByDisplayValue('Bravo pack')
     await act(async () => {
-      await router.navigate('/packs/alpha?edit=1')
+      await router.navigate('/packs/alpha?edit=1&builder=settings')
     })
     // **The write is never released.** A request that never answers is exactly
     // the case a latch has to survive: the page has left the file it was for,
@@ -705,10 +705,10 @@ describe('a read that lands after the page has moved on', () => {
 describe('the buffer follows the address', () => {
   it('draws the pack the URL names after moving to another one', async () => {
     bothOnDisk()
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     await waitFor(() => expect(screen.getByDisplayValue('Bravo pack')).toBeTruthy())
     // Not "also Bravo": the first pack's members are gone, rather than a page
@@ -719,10 +719,10 @@ describe('the buffer follows the address', () => {
 
   it('sends the second pack’s bytes, digest and path when it is saved', async () => {
     const log = bothOnDisk()
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     const title = await screen.findByDisplayValue('Bravo pack')
     fireEvent.change(title, { target: { value: 'Bravo pack, revised' } })
@@ -744,14 +744,14 @@ describe('the buffer follows the address', () => {
     // these bytes to that path.
     bothOnDisk({ sha256: 'c0c0c0'.padEnd(64, '0') })
     vi.stubGlobal('confirm', () => true)
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, edited' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('This file changed since you opened it')
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     await waitFor(() => expect(screen.getByDisplayValue('Bravo pack')).toBeTruthy())
     expect(screen.queryByRole('alert')).toBeNull()
@@ -763,12 +763,12 @@ describe('the buffer follows the address', () => {
     // address, with the unsaved dot still up.
     bothOnDisk()
     vi.stubGlobal('confirm', () => true)
-    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
+    const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, edited' } })
     await waitFor(() => expect(screen.getByText('Editing · Unsaved changes')).toBeTruthy())
     await act(async () => {
-      await router.navigate('/packs/bravo?edit=1')
+      await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     await waitFor(() => expect(screen.getByDisplayValue('Bravo pack')).toBeTruthy())
     expect(screen.queryByDisplayValue('Alpha pack, edited')).toBeNull()

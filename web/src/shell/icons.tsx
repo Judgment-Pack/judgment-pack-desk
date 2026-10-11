@@ -108,6 +108,11 @@ export function IconHelp() {
 }
 
 /** A pack: the cube. */
+/** The collection of reusable packs and graphs, distinct from a single pack. */
+export function IconLibrary() {
+  return <Glyph><path d="M2 2.5v11M5.5 2.5v11M9 2.5v11M12 3l2 10" /></Glyph>
+}
+
 export function IconPack() {
   return (
     <Glyph>

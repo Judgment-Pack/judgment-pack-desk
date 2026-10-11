@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import { DraftActionsProvider } from '../packs/drafts/DraftActions'
 import { PacksPane } from '../packs/PacksPane'
 import styles from './PacksLayout.module.css'
 import { PackFoldersProvider, usePackFolders } from '../packs/folders/FolderContext'
@@ -14,13 +15,13 @@ import { Button } from '../ui/Button'
 import { msg, systemMessage, useLocale } from '../i18n'
 
 export function PacksLayout() {
-  return <div className={styles.layout} data-measure="full" data-layout="page"><PackFoldersProvider><ReviewProvider><FolderFrame><PacksContent/></FolderFrame></ReviewProvider></PackFoldersProvider></div>
+  return <div className={styles.layout} data-measure="full" data-layout="page"><PackFoldersProvider><ReviewProvider><DraftActionsProvider><FolderFrame><PacksContent/></FolderFrame></DraftActionsProvider></ReviewProvider></PackFoldersProvider></div>
 }
 function PacksContent() {
  useLocale()
  const {packId,draftId}=useParams(), folders=usePackFolders()!
  // `_review` and `_upgrade` cannot be a pack's decision id, which begins with a lowercase letter.
- const location=useLocation(), open=Boolean(packId||draftId||location.pathname==='/packs/new'||location.pathname==='/packs/_review'||location.pathname==='/packs/_upgrade')
+ const location=useLocation(), open=Boolean(location.pathname.startsWith('/graphs')||packId||draftId||location.pathname==='/packs/new'||location.pathname==='/packs/_review'||location.pathname==='/packs/_upgrade')
  const selected=folders.query.data?packFolder(folders.document,packId??''):undefined
  return <>
   <div className={styles.collection} hidden={open}><PacksPane active={!open}/></div>

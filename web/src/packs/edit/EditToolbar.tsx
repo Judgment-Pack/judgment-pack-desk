@@ -7,9 +7,10 @@ import type { EditShape } from './editMode'
 
 export function EditToolbar({
   shape, shapeAvailable, discardable, saving, checking, tryingIt, canUndo,
-  onShape, onCheck, onTryIt, onUndo, onDiscard
+  onShape, onCheck, onTryIt, onUndo, onDiscard, hideShape = false
 }: {
   shape: EditShape
+  hideShape?: boolean
   /** False where the bytes cannot be read as a document: raw only. */
   shapeAvailable: boolean
   /** Includes unfinished operand text as well as changed document bytes. */
@@ -26,7 +27,7 @@ export function EditToolbar({
 }) {
   useLocale()
   return <Toolbar label={msg("Editing")}>
-    <ToolbarSlot>
+    {!hideShape && <ToolbarSlot>
       <SegmentedControl label={msg("Shape")} value={shape}
         onValueChange={next => onShape(next === 'json' ? 'json' : 'form')}
         segments={[
@@ -34,8 +35,8 @@ export function EditToolbar({
             description: shapeAvailable ? undefined : msg('These bytes cannot be read as a document.') },
           { value: 'json', label: "JSON" }
         ]} />
-    </ToolbarSlot>
-    <ToolbarSeparator />
+    </ToolbarSlot>}
+    {!hideShape && <ToolbarSeparator />}
     <ToolbarItem>
       <Button variant="quiet" onClick={onCheck} disabled={checking} aria-busy={checking}>{msg("Check")}</Button>
     </ToolbarItem>

@@ -21,10 +21,17 @@ import type { GraphInventory, GraphSuite } from '../mcp/types'
 import { GraphView } from './GraphView'
 
 // Exercise the explicit command before checking the result presentation.
-function renderAndRun(...args: Parameters<typeof renderConnected>) {
+async function renderAndRun(...args: Parameters<typeof renderConnected>) {
   const rendered = renderConnected(...args)
   fireEvent.click(screen.getByRole('button', { name: /Run (all graph )?tests/ }))
+  const buttons=await screen.findAllByRole('button',{name:/^(clear-approves|half-a-pair)$/})
+  await openRow(buttons[0]!.textContent!)
   return rendered
+}
+async function openRow(id: string) {
+  fireEvent.click(await screen.findByRole('button',{name:id}))
+  const disclosure=screen.getByText('Execution diagram',{selector:'summary span'}).closest('details')!
+  if(!disclosure.open) fireEvent.click(disclosure.querySelector('summary')!)
 }
 const runAgain = () => fireEvent.click(screen.getByRole('button', { name: /Run (all graph )?tests/ }))
 
@@ -175,11 +182,13 @@ const arrows = (container: HTMLElement) => container.querySelectorAll('.diagram-
 describe('the graphs page, against a runtime that serves documents', () => {
   it('draws the served document, and says which document it drew', async () => {
     const { client } = servingDesk()
-    const { container } = renderAndRun(view(), serving(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), serving(client), { path: '/graphs' })
     await screen.findByText(/declared edge/)
     // One arrow for the declared edge, one for the declared result.
     expect(arrows(container)).toBe(2)
     expect(container.textContent).toContain('drawn from the served document vendor-onboarding-flow')
+    // The graph canvas must use the workspace width rather than the form measure.
+    expect(container.querySelector('[data-page-scroll] > [data-width]')?.getAttribute('data-width')).toBe('full')
   })
 
   it("refuses to draw a document the runtime could not decode, and shows the runtime's reason", async () => {
@@ -199,7 +208,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
         }
       })
     })
-    const { container } = renderAndRun(view(), serving(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), serving(client), { path: '/graphs' })
     await screen.findByText(/could not decode it/)
     expect(arrows(container)).toBe(0)
     // Verbatim: the runtime's own sentence, path and all.
@@ -216,7 +225,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
         structured: SERVED_META
       })
     })
-    const { container } = renderAndRun(view(), serving(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), serving(client), { path: '/graphs' })
     await screen.findByText(/`edges` member/)
     expect(arrows(container)).toBe(0)
     // The claim a coerced empty array would have produced is nowhere on screen.
@@ -229,7 +238,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
     // 0.18.0 withdraws the drawing rather than leaving arrows no live
     // capability accounts for.
     const { client } = servingDesk()
-    const { container, setConnection } = renderAndRun(view(), serving(client), {
+    const { container, setConnection } = await renderAndRun(view(), serving(client), {
       path: '/graphs'
     })
     await screen.findByText(/declared edge/)
@@ -248,7 +257,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
     // The document query is keyed by the connection epoch, so a new connection
     // starts with no document at all rather than with the last one's.
     const { client, calls } = servingDesk()
-    const { container, setConnection } = renderAndRun(view(), serving(client), {
+    const { container, setConnection } = await renderAndRun(view(), serving(client), {
       path: '/graphs'
     })
     await screen.findByText(/declared edge/)
@@ -266,6 +275,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
     expect(calls.filter(call => call.name === 'experimental_test_graphs')).toHaveLength(1)
     runAgain()
     await waitFor(() => expect(calls.filter(call => call.name === 'experimental_get_graph')).toHaveLength(before + 1))
+    await openRow('clear-approves')
     await screen.findByText(/declared edge/)
     expect(arrows(container)).toBe(2)
   })
@@ -284,7 +294,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
       }
     })
     const queryClient = testQueryClient()
-    const { container } = renderAndRun(view(), serving(client), {
+    const { container } = await renderAndRun(view(), serving(client), {
       path: '/graphs',
       queryClient
     })
@@ -306,7 +316,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
     const { client } = servingDesk({
       experimental_test_graphs: () => ({ text: JSON.stringify(matrixBinding(SERVED_DIGEST)) })
     })
-    const { container } = renderAndRun(view(), serving(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), serving(client), { path: '/graphs' })
     await screen.findByText(/One revision/)
     expect(arrows(container)).toBe(2)
     expect(container.textContent).toContain('same document digest')
@@ -326,7 +336,8 @@ describe('the graphs page, against a runtime that serves documents', () => {
         afterATick({ text: JSON.stringify(matrixBinding(OTHER_DIGEST)) }),
       experimental_get_graph: () => afterATick({ text: DOCUMENT, structured: SERVED_META })
     })
-    const { container } = renderAndRun(view(), serving(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), serving(client), { path: '/graphs' })
+    await openRow('clear-approves')
     await screen.findByText(/Two revisions, not joined/)
     expect(container.textContent).toContain('edited between the two calls')
     expect(container.textContent).toContain(`sha256 ${OTHER_DIGEST.slice(0, 12)}`)
@@ -375,7 +386,8 @@ describe('the graphs page, against a runtime that serves documents', () => {
       },
       experimental_get_graph: () => afterATick({ text: DOCUMENT, structured: SERVED_META })
     })
-    renderAndRun(view(), serving(client), { path: '/graphs' })
+    await renderAndRun(view(), serving(client), { path: '/graphs' })
+    await openRow('clear-approves')
     await screen.findByText(/Two revisions, not joined/)
 
     const asked = (name: string) => calls.filter((call) => call.name === name).length
@@ -404,7 +416,8 @@ describe('the graphs page, against a runtime that serves documents', () => {
     const queryClient = testQueryClient()
     const asked = (name: string) => calls.filter((call) => call.name === name).length
 
-    const first = renderAndRun(view(), serving(client), { path: '/graphs', queryClient })
+    const first = await renderAndRun(view(), serving(client), { path: '/graphs', queryClient })
+    await openRow('clear-approves')
     await screen.findByText(/Two revisions, not joined/)
     await waitFor(() => expect(asked('experimental_test_graphs')).toBe(1))
     await act(async () => {
@@ -416,6 +429,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
     // The same connection and the same cache: what is answered here is what was
     // already answered, and it is the pair already asked about.
     renderConnected(view(), serving(client), { path: '/graphs?view=tests', queryClient })
+    await openRow('clear-approves')
     await screen.findByText(/Two revisions, not joined/)
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 200))
@@ -439,7 +453,8 @@ describe('the graphs page, against a runtime that serves documents', () => {
       },
       experimental_get_graph: () => afterATick({ text: DOCUMENT, structured: SERVED_META })
     })
-    renderAndRun(view(), serving(client), { path: '/graphs' })
+    await renderAndRun(view(), serving(client), { path: '/graphs' })
+    await openRow('clear-approves')
     await screen.findByText(/Two revisions, not joined/)
 
     const asked = (name: string) => calls.filter((call) => call.name === name).length
@@ -459,7 +474,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
     // is nothing to compare, so the epoch-bounded behaviour stands exactly as
     // it was and the page asserts nothing about the join in either direction.
     const { client } = servingDesk()
-    const { container } = renderAndRun(view(), serving(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), serving(client), { path: '/graphs' })
     await screen.findByText(/declared edge/)
     expect(arrows(container)).toBe(2)
     expect(container.textContent).not.toContain('One revision')
@@ -474,7 +489,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
         isError: true
       })
     })
-    const { container } = renderAndRun(view(), serving(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), serving(client), { path: '/graphs' })
     await screen.findByText(/Could not list graphs/)
     expect(container.textContent).toContain('this project declares no jpack.json under /project')
     // The section named "Configured" is absent rather than showing what a
@@ -662,7 +677,13 @@ const matrixCalls = (calls: { name: string; args: Record<string, unknown> }[]) =
   calls.filter((call) => call.name === 'experimental_test_graphs')
 
 /** The one control this page offers, wherever on the page it happens to be. */
-const askBox = () => screen.getByRole('checkbox')
+const toggleTraces = async () => {
+  fireEvent.keyDown(screen.getByRole('button',{name:'Test options'}),{key:'Enter'})
+  const option=await screen.findByRole('menuitemcheckbox',{name:'Include detailed traces'})
+  const enabled=option.getAttribute('aria-checked')!=='true'
+  fireEvent.click(option)
+  return enabled
+}
 
 /**
  * The failed-request notice alone.
@@ -680,7 +701,7 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     // would be refused rather than ignored. No control, and nothing else on
     // the page changes.
     const { client, calls } = tracingDesk()
-    const { container } = renderAndRun(
+    const { container } = await renderAndRun(
       view(),
       tracing(client, { graphTracesSupported: false }),
       { path: '/graphs' }
@@ -695,7 +716,7 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
 
   it('asks only when asked, and keeps the two answers apart', async () => {
     const { client, calls } = tracingDesk()
-    renderAndRun(view(), tracing(client), { path: '/graphs' })
+    await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
 
     // Default off, and off omits the key entirely: byte-identical to the call
@@ -704,8 +725,8 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     expect(matrixCalls(calls)[0]!.args).toEqual({})
     expect(screen.queryByText(/Trace of screening/)).toBeNull()
 
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
+    await openRow('clear-approves')
     await screen.findByText(/Trace of screening/)
 
     // A second call, carrying the argument. A shared query key would have
@@ -715,18 +736,17 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
 
     // And back: the untraced answer is its own cache entry, so clearing the ask
     // costs no call and withdraws the traces.
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
     await waitFor(() => expect(screen.queryByText(/Trace of screening/)).toBeNull())
     expect(matrixCalls(calls)).toHaveLength(2)
   })
 
   it('renders each compared node’s trace with the evaluation view’s own renderer', async () => {
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
+    await openRow('clear-approves')
     await screen.findByText(/Trace of screening/)
 
     // The staged walk, as the shared renderer draws it: stage headings, the
@@ -746,11 +766,11 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     // that only traced passing comparisons would hide every trace anyone opens
     // the page for.
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
 
+    await openRow('clear-approves')
     const heading = await screen.findByText(/Trace of screening/)
     const node = heading.closest('.row-node')
     expect(node).not.toBeNull()
@@ -767,10 +787,10 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     // evaluated. Collapsing them would report a runtime as having walked
     // nothing when it was never asked.
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
+    await openRow('clear-approves')
     await screen.findByText(/Trace of decision/)
     expect(container.textContent).toContain("This node's evaluation carries no trace entries")
   })
@@ -780,12 +800,13 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     // so there is no trace to carry and none is invented. The row's own detail
     // is what says why, and it is shown.
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
+    await openRow('clear-approves')
     await screen.findByText(/Trace of screening/)
 
+    await openRow('names-an-undeclared-node')
     const undeclared = [...container.querySelectorAll('.row-node')].find(
       (candidate) => candidate.querySelector('code')?.textContent === 'shipping'
     )
@@ -806,15 +827,14 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     const refusal =
       'graph matrix report budget exceeded: 4 MiB with traces (4 rows, 3 node comparisons)'
     const { client } = failingTracedDesk({ text: refusal, isError: true })
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
 
     await screen.findByText(/This run requested detailed traces/)
     expect(container.textContent).toContain(refusal)
     // The ask that failed is still reachable, so the page is not stranded on it.
-    expect(askBox()).toBeTruthy()
+    expect(screen.getByRole('button',{name:'Test options'})).toBeTruthy()
   })
 
   it('says the same of a refusal that has nothing to do with the budget', async () => {
@@ -823,10 +843,9 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     // have: they arrive as one shape. So it claims none of them.
     const refusal = 'no graph configured as onboarding'
     const { client } = failingTracedDesk({ text: refusal, isError: true })
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
 
     await screen.findByText(/This run requested detailed traces/)
     expect(container.textContent).toContain(refusal)
@@ -840,10 +859,9 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     // could not read it. Calling that "the runtime refused" or "the call did
     // not complete" would both attribute something that did not happen.
     const { client } = failingTracedDesk({ text: 'this is not JSON' })
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
 
     await screen.findByText(/This run requested detailed traces/)
     expect(container.textContent).toContain('not JSON')
@@ -855,11 +873,11 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
   it('offers an explicit untraced retry when only a traced run has been requested', async () => {
     const { client, calls } = failingTracedDesk({ text: 'report budget exceeded', isError: true })
     renderConnected(view(), tracing(client), { path: '/graphs?view=tests' })
-    fireEvent.click(askBox())
+    await toggleTraces()
     expect(matrixCalls(calls)).toHaveLength(0)
     runAgain()
     await screen.findByText(/Turn off detailed traces and run tests to try without them/)
-    fireEvent.click(askBox())
+    await toggleTraces()
     expect(matrixCalls(calls)).toHaveLength(1)
     runAgain()
     await screen.findAllByText(/clear-approves/)
@@ -868,10 +886,9 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
 
   it('promises a restoration only where the untraced answer is actually retained', async () => {
     const { client } = failingTracedDesk({ text: 'report budget exceeded', isError: true })
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
 
     await screen.findByText(/This run requested detailed traces/)
     expect(container.textContent).toContain('view the previous untraced result')
@@ -880,14 +897,12 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
 
   it('returns to the untraced answer when the ask is cleared after a failure', async () => {
     const { client, calls } = failingTracedDesk({ text: 'report budget exceeded', isError: true })
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
     await screen.findByText(/This run requested detailed traces/)
 
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
     await waitFor(() =>
       expect(screen.queryByText(/This run requested detailed traces/)).toBeNull()
     )
@@ -901,10 +916,9 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     // A failed query is not retried on its own and the retained answer does not
     // expire, so a clear that comes later behaves exactly as an immediate one.
     const { client, calls } = failingTracedDesk({ text: 'report budget exceeded', isError: true })
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
     await screen.findByText(/This run requested detailed traces/)
 
     await act(async () => {
@@ -913,8 +927,7 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     // Nothing retried itself in the meantime.
     expect(matrixCalls(calls)).toHaveLength(2)
 
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
     await waitFor(() =>
       expect(screen.queryByText(/This run requested detailed traces/)).toBeNull()
     )
@@ -928,24 +941,23 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     // a failed run is the whole page. The control has to be on that page too,
     // or turning the ask off becomes impossible.
     const { client } = failingTracedDesk({ text: 'report budget exceeded', isError: true })
-    const { container } = renderAndRun(
+    const { container } = await renderAndRun(
       view(),
       tracing(client, { graphInventorySupported: false }),
       { path: '/graphs' }
     )
     await screen.findAllByText(/clear-approves/)
-    fireEvent.click(askBox())
-    if ((askBox() as HTMLInputElement).checked) runAgain()
+    if(await toggleTraces()) runAgain()
 
     await screen.findByText(/Could not run graph tests/)
-    expect(askBox()).toBeTruthy()
+    expect(screen.getByRole('button',{name:'Test options'})).toBeTruthy()
     expect(container.textContent).toContain('report budget exceeded')
     expect(container.textContent).toContain('This run requested detailed traces')
   })
 
   it('shows no trace anywhere in an untraced payload', async () => {
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
     expect(container.textContent).not.toContain('Trace of')
     expect(container.textContent).not.toContain('carries no trace entries')
@@ -955,8 +967,8 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
 describe('the graphs page, against rows that assert a handoff target (ADR-0032)', () => {
   it('shows the composite pair where a row asserts one, and marks the assertion', async () => {
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
-    await screen.findAllByText(/escalating-vendor/)
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
+    await openRow('escalating-vendor')
 
     expect(container.textContent).toContain('expected composite target')
     expect(container.textContent).toContain('actual composite target')
@@ -971,8 +983,8 @@ describe('the graphs page, against rows that assert a handoff target (ADR-0032)'
     // a row that failed on it has none — and a view that implied otherwise
     // would describe a shape the runtime does not produce.
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
-    await screen.findAllByText(/escalating-vendor/)
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
+    await openRow('escalating-vendor')
     const row = [...container.querySelectorAll('.row')].find(
       (candidate) => candidate.querySelector('.row-id')?.textContent === 'escalating-vendor'
     )
@@ -983,19 +995,21 @@ describe('the graphs page, against rows that assert a handoff target (ADR-0032)'
 
   it('keeps “no target” and “unavailable” apart, because they are two things', async () => {
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
-    await screen.findAllByText(/refused-walk/)
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
+    await openRow('refused-walk')
 
+    await openRow('clear-approves')
     // The row that asserts there is no target at all.
     expect(container.textContent).toContain('no target')
     expect(container.textContent).toContain('asserts no handoff target')
+    await openRow('refused-walk')
     // The row whose run was refused, so no target can be stated.
     expect(container.textContent).toContain('unavailable')
   })
 
   it('shows a node’s own pair beside that node’s comparison', async () => {
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
     await screen.findAllByText(/clear-approves/)
     const node = [...container.querySelectorAll('.row-node')].find(
       (candidate) => candidate.querySelector('code')?.textContent === 'decision'
@@ -1032,8 +1046,8 @@ describe('the graphs page, against rows that assert a handoff target (ADR-0032)'
     const { client } = tracingDesk({
       experimental_test_graphs: () => ({ text: JSON.stringify(half) })
     })
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
-    await screen.findAllByText(/half-a-pair/)
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
+    await openRow('half-a-pair')
     expect(container.querySelectorAll('.row-targets')).toHaveLength(0)
     expect(container.textContent).not.toContain('expected composite target')
     expect(container.textContent).not.toContain('asserts a handoff-target state')
@@ -1045,8 +1059,8 @@ describe('the graphs page, against rows that assert a handoff target (ADR-0032)'
     // A capped rendering can differ from its own pair past the cap, so a mark
     // drawn from these strings could contradict what the runtime decided.
     const { client } = tracingDesk()
-    const { container } = renderAndRun(view(), tracing(client), { path: '/graphs' })
-    await screen.findAllByText(/escalating-vendor/)
+    const { container } = await renderAndRun(view(), tracing(client), { path: '/graphs' })
+    await openRow('escalating-vendor')
     const targets = container.querySelectorAll('.row-targets .row-side')
     expect(targets.length).toBeGreaterThan(0)
     for (const side of targets) {

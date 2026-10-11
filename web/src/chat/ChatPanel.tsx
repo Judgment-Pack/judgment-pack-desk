@@ -1,3 +1,4 @@
+import { ComposerContext } from './ComposerContext'
 import { GraphArtifacts, GraphDraftNotice } from '../graphs/GraphArtifacts'
 import { ModelControl } from './ModelControl'
 import { chatReasoningAgent } from './reasoning'
@@ -23,9 +24,9 @@ import { createPortal } from 'react-dom'
 import { useInspectorControls } from '../shell/InspectorSlot'
 import { VisuallyHidden } from 'radix-ui'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { MessageDetails, PackContextDetails, useReadingDetails } from './ReadingDetails'
+import { MessageDetails, PackContextDetails, ReadingDetails, useReadingDetails } from './ReadingDetails'
 import { Tooltip } from '../ui/Tooltip'
-import { IconSend, IconStop } from '../shell/icons'
+import { IconSend, IconStop, IconGraph, IconPack } from '../shell/icons'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { MessageRenderer, CopyMessage } from './MessageRenderer'
 import { TaskStatus, WorkSummary } from './RunPresentation'
@@ -43,16 +44,17 @@ import { linkReadable, websiteReadable, webSourceOffered } from './linkTools'
 import { ConfigureAssistant } from './ConfigureAssistant'
 import { AssistantOptions } from './AssistantOptions'
 import { ChatToolbar, chatHref } from './ChatHistory'
-import { openNewChat } from './navigation'
+import { chatTitle, openNewChat } from './navigation'
 import { useChats } from './ChatProvider'
 import { retainSentDocuments, type Chat } from './store'
 import styles from './ChatWorkspace.module.css'
 
-export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = false, context, proposalActions, locked = false, placement = 'main', headerTarget, historyLoading = false }: {
-  placement?: 'main' | 'pane'; headerTarget?: HTMLElement | null
+export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = false, context, proposalActions, locked = false, placement = 'main', headerTarget, historyLoading = false, active = true, draftActionsInHeader = false, openGraphDraftId }: {
+  placement?: 'main' | 'pane'; headerTarget?: HTMLElement | null; openGraphDraftId?: string
   historyLoading?: boolean
+  active?: boolean; draftActionsInHeader?: boolean
   chat: Chat; landing?: boolean; onOpenDraft?: () => void; draftVisible?: boolean
-  context?: { text: string; beforeSend?: () => void }
+  context?: { text: string; title?: string; detail?: string; tests?: string; kind?: 'pack' | 'graph'; beforeSend?: () => void }
   proposalActions?: ReactNode; locked?: boolean
 }) {
   useLocale()
@@ -69,7 +71,12 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const slot = useAssistantSlot(chat.aiConnection)
   const selected = selectedAssistant(slot)
   const pane = useInspectorControls()
-  const { reference, remove: removeReference } = useChatReference(chat.id, placement === 'pane')
+  const title = chatTitle(chat)
+  const requestTitle = pane.requestTitle
+  useEffect(() => {
+    if (placement === 'pane' && active) return requestTitle?.(title)
+  }, [placement, active, requestTitle, title])
+  const { reference, remove: removeReference } = useChatReference(chat.id, placement === 'pane' && active)
   const currentReference = useRef(reference)
   useLayoutEffect(() => { currentReference.current = reference }, [reference])
   const openReading = useReadingDetails(chat.id)
@@ -93,6 +100,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const messageInput = useRef<HTMLTextAreaElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const id = useId()
+  const graphContext = context?.kind === 'graph' || Boolean(chat.graph)
   const running = state.status === 'running'
   const effective = useEffectiveConfig()
   const research = effective.config.research
@@ -108,6 +116,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const otherRun = store?.running && store.running !== chat.id ? store.running : undefined
   const empty = state.turns.length === 0
   const savedCandidate = Boolean(chat.pack && chat.createdCandidateDigest && chat.createdCandidateDigest === state.candidates.at(-1)?.digest && (state.status === 'ready' || state.restored))
+  const needsConnection = !!effective.aiConnections && !chat.aiConnection && !!chat.checkpoint?.state.turns.length
   const needsConfig = !assistantReady(slot) || !selected?.models.length
   const blocked = binding?.blocked ?? msg('Loading chat…')
   // All readiness belongs to the input it blocks. Run and history notices
@@ -129,7 +138,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     if (material === undefined) return
     const latest = [...store.getSnapshot().chats, ...store.getSnapshot().drafts].find(item => item.id === chat.id)
     if (currentReference.current !== reference || !latest || latest.composer !== chat.composer || JSON.stringify(latest.attachments ?? []) !== JSON.stringify(attachments)) return
-    const { prompt, display, statement } = composeMessageInput(text, material, reference, context?.text)
+    const { prompt, display, statement } = composeMessageInput(text, material, reference, context?.text, context?.kind, context?.tests)
     const started = store.perform(chat.id, active => {
       context?.beforeSend?.()
       if (active.state.phase === 'idle') active.run?.start(prompt, [], display, attachments, statement)
@@ -195,19 +204,23 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     {draftAvailable && (onOpenDraft || draftVisible) && state.candidates.filter(candidate => candidate.responseId === response.id).map(candidate => <DraftReference key={candidate.revision} candidate={candidate} open={draftVisible} latest={candidate === state.candidates.at(-1)} onOpen={onOpenDraft}/>)}
   </div> : null
   const unassignedSearches=(chat.searches??[]).filter(s=>!responses.some(r=>r.searches?.some(ref=>ref.id===s.id)))
-  const graphDraftLinks = chat.graphDrafts?.length ? <Button variant="quiet" onClick={event => read(<GraphArtifacts chatId={chat.id} drafts={chat.graphDrafts!}/>, event.currentTarget)}>{msg('Graphs')} · {chat.graphDrafts.length}</Button> : null
-  const conversationSources = unassignedSearches.length + unassigned.documents.length + unassigned.websites.length + unassignedResearch.length > 0
-    ? <Button variant="quiet" onClick={event => read(<section><h3>{msg('Conversation sources')}</h3><SourceList chatId={chat.id} documents={unassigned.documents} websites={unassigned.websites} searches={unassignedSearches} sourceIds={unassignedResearch} binding={binding} onRead={read}/></section>, event.currentTarget)}>{msg('Sources')}</Button> : null
-  const toolbar = <ChatToolbar loading={historyLoading} sources={<>{conversationSources}{graphDraftLinks}{draftAvailable && orphanCandidates.length > 0 && (draftVisible ? <span className={styles.caption}>{msg('Open')}</span> : onOpenDraft && <Button variant="quiet" onClick={onOpenDraft}>{msg('Open draft')}</Button>)}</>} chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
-    onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true, chat.draftId); setHistory(false); openNewChat(navigate, next, location) }} />
-  return <section className={styles.chat} data-chat-id={chat.id} data-history-loading={historyLoading || undefined} data-landing={landing && empty || undefined} aria-label={msg("Assistant chat")}>
-    {toolbarTarget ? createPortal(toolbar, toolbarTarget) : placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
+  const hasChatSources = unassignedSearches.length + unassigned.documents.length + unassigned.websites.length + unassignedResearch.length > 0
+  const toolbar = <ChatToolbar loading={historyLoading}
+    onSources={hasChatSources ? opener => read(<ReadingDetails title={msg('Chat sources')}><SourceList chatId={chat.id} documents={unassigned.documents} websites={unassigned.websites} searches={unassignedSearches} sourceIds={unassignedResearch} binding={binding} onRead={read}/></ReadingDetails>, opener) : undefined}
+    actions={[
+      ...(context && placement === 'pane' ? [{label: graphContext ? msg('Graph context') : msg('Pack context'), icon: graphContext ? <IconGraph/> : <IconPack/>, onSelect: (opener: HTMLButtonElement | null) => read(<PackContextDetails text={context.text} tests={context.tests} graph={graphContext}/>, opener)}] : []),
+      ...(chat.graphDrafts?.length ? [{label: msg('Graph drafts'), icon: <IconGraph/>, onSelect: (opener: HTMLButtonElement | null) => read(<GraphArtifacts chatId={chat.id} drafts={chat.graphDrafts!} openDraftId={openGraphDraftId}/>, opener)}] : []),
+      ...(draftAvailable && orphanCandidates.length > 0 && !draftVisible && onOpenDraft ? [{label: msg('Open draft'), icon: <IconPack/>, onSelect: onOpenDraft}] : [])
+    ]}
+    chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
+    onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true, chat.draftId, chat.graph); setHistory(false); openNewChat(navigate, next, location) }} />
+  return <section className={styles.chat} data-chat-id={chat.id} data-placement={placement} data-history-loading={historyLoading || undefined} data-landing={landing && empty || undefined} aria-label={msg("Assistant chat")}>
+    {active && toolbarTarget ? createPortal(toolbar, toolbarTarget) : active && placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
     <div className={styles.conversation}>
     <div className={styles.transcript}>
     <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node && node.getClientRects().length) { following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; setAwayFromLatest(!following.current) } }}>
       <div className={styles.threadContent} ref={threadContent}>
-      {empty && (!historyLoading || landing) && <div className={styles.welcome}><h1>{chat.pack ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: chat.pack.id }) : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div>}
-      <GraphDraftNotice chatId={chat.id} drafts={chat.graphDrafts ?? []}/>
+      {empty && (!historyLoading || landing) && <div className={styles.welcome}><h1>{chat.pack || draftVisible || graphContext ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{graphContext ? msg("Ask about this graph, connect packs, or propose a change.") : chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: context?.title || chat.pack.id }) : draftVisible ? msg("Ask about this pack, test an idea, or propose a change.") : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div>}
       {shownTurns.map((turn,index) => <Fragment key={turn.id ?? `${turn.at}-${index}`}>{days[index] && <div className={styles.day}>{days[index]}</div>}<article className={styles.message} data-role={turn.role} data-kind={turn.kind} data-message-id={turn.id} aria-label={turn === liveTurn ? msg("Response in progress") : undefined}>
         {turn.kind !== 'unknowns' && <MessageTime pending={turn === liveTurn} turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text} input={turn.input} />, opener)} />}
         {turn.kind === 'unknowns' ? <OpenQuestions text={turn.text} documents={chat.documents} onRead={read}><MessageTime turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.text}/>, opener)}/></OpenQuestions>
@@ -221,6 +234,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
       {responses.filter(row => !row.messageId && row.afterTurnId === turn.id && hasDetails(row)).map(row => <article className={styles.message} data-role="assistant" key={row.id}>{renderResponse(row)}</article>)}
       </Fragment>)}
       <VisuallyHidden.Root role="status" aria-live="polite">{state.status === 'complete' ? msg("Response complete.") : state.status === 'ready' ? msg("Draft ready for review.") : ''}</VisuallyHidden.Root>
+      <GraphDraftNotice chatId={chat.id} drafts={chat.graphDrafts ?? []} openDraftId={openGraphDraftId}/>
       {proposalActions}
       </div>
     </div>
@@ -229,13 +243,13 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     <div className={styles.composerArea} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void upload.attach([...event.dataTransfer.files]) } }}>
       {error && <div className={styles.notice} role="alert"><p>{systemMessage(error)}</p>{store?.canCreate ? <Button variant="quiet" onClick={() => store?.retrySave()}>{msg("Retry saving")}</Button> : <Button variant="quiet" onClick={() => navigate("/chats")}>{msg("Manage chat history")}</Button>}</div>}
       {otherRun && <div className={styles.notice} role="status"><Message text={"Another chat is working. You can keep writing here.<0/>"} slots={[<Button variant="quiet" onClick={() => { const other = store?.getSnapshot().chats.find(item => item.id === otherRun); if (other) navigate(chatHref(other, location)) }}>{msg("Open working chat")}</Button>]} /></div>}
-      {context && <Button variant="inline" onClick={event => read(<PackContextDetails text={context.text} />, event.currentTarget)}><Message text={"Context: <0/>"} slots={[chat.pack?.id ?? msg("Current draft")]} /></Button>}
+      {context && placement !== 'pane' && <ComposerContext title={context.title || chat.pack?.id || chat.graph?.id || msg('Current draft')} kind={graphContext ? 'graph' : 'pack'} detail={context.detail}
+        onOpen={event => read(<PackContextDetails text={context.text} tests={context.tests} graph={graphContext} />, event.currentTarget)}/>}
       <div className={styles.composerStatus}>
         {!empty && !savedCandidate && <TaskStatus state={state}/>}
         {chat.draftId && !draftAvailable && <p className={styles.caption}>{msg('This draft is no longer available.')}</p>}
       {binding?.run?.canRetryResponse && <Button disabled={Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryResponse())}>{msg("Retry response")}</Button>}
-      {!state.restored && state.candidates.length > 0 && state.status === 'failed' && <Button disabled={Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Retry draft checks")}</Button>}
-      {state.restored && !savedCandidate && state.candidates.length > 0 && <Button disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Recheck saved draft")}</Button>}
+      {!draftActionsInHeader && !savedCandidate && state.candidates.length > 0 && <Button disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Run checks")}</Button>}
       {canRetryExpectationValidation(state) && <Button disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation())}>{msg("Retry validation")}</Button>}
       </div>
       <div className={styles.composer}>
@@ -243,10 +257,10 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
         <AttachmentList files={attachments} disabled={locked || running || upload.reading} onChange={file => store?.update(chat.id, { attachments: attachments.map(item => item.id === file.id ? file : item) })} onRemove={id => store?.update(chat.id, { attachments: attachments.filter(item => item.id !== id) })} />
         {upload.reading && <div className={styles.attachmentProgress}><span role="status">{systemMessage(upload.progress) || msg("Reading files…")}</span><Button variant="quiet" onClick={upload.cancel}>{msg("Cancel")}</Button></div>}
         <VisuallyHidden.Root asChild><label htmlFor={`${id}-message`}>{msg("Message the assistant")}</label></VisuallyHidden.Root>
-        <TextArea ref={messageInput} id={`${id}-message`} rows={empty ? 3 : 2} value={chat.composer} placeholder={(!readinessAction && composerReadiness) || (chat.pack ? msg("Ask about this pack…") : msg("Ask a question or describe a task…"))} aria-describedby={composerReadiness ? `${id}-readiness` : undefined} disabled={locked || upload.reading}
+        <TextArea ref={messageInput} id={`${id}-message`} rows={empty ? 3 : 2} value={chat.composer} placeholder={(!readinessAction && composerReadiness) || (graphContext ? msg("Ask about this graph…") : chat.pack || draftVisible ? msg("Ask about this pack…") : msg("Ask a question or describe a task…"))} aria-describedby={composerReadiness ? `${id}-readiness` : undefined} disabled={locked || upload.reading}
           className={styles.messageInput} onChange={event => store?.update(chat.id, { composer: event.target.value })}
           onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!otherRun && !running && (!blocked || needsConfig)) send() } }} />
-        {composerReadiness && (chat.composer || readinessAction
+        {composerReadiness && (chat.composer || readinessAction || needsConnection
           ? <div className={styles.composerReadiness}>
             <span id={`${id}-readiness`} role="status">{composerReadiness}</span>
             {readinessAction === 'retry' && <Button variant="inline" disabled={slot.retrying} onClick={slot.retryKey}>{msg('Check again')}</Button>}
@@ -254,19 +268,20 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
           </div>
           : <VisuallyHidden.Root id={`${id}-readiness`} role="status">{composerReadiness}</VisuallyHidden.Root>)}
         <div className={styles.composerTools}>
+          <div className={styles.composerControls}>
           <input ref={fileInput} hidden type="file" tabIndex={-1} accept={TEXT_ATTACHMENT_ACCEPT} multiple onChange={event => { void upload.attach([...(event.target.files ?? [])]); event.target.value = '' }} />
           <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading || connectionBusy} onUpload={() => fileInput.current?.click()} onLink={webSourceOffered(research, { local: localDrive, catalogWeb: connectionCatalog.web }) ? () => requestAnimationFrame(() => connections.open({ source: 'web', chatId: chat.id, opener: attachmentButton.current })) : undefined}
             onMore={() => openConnection()}
             connections={connectionCatalog.entries.filter(item => !item.status.isError && item.status.data?.state === 'connected').map(item => ({ descriptor: item.descriptor, provider: item.descriptor.id, selection: item.descriptor.selection, onSelect: () => openConnection(item.descriptor.id) }))} />
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select quiet id={`${id}-mode`} value={chat.mode} disabled={running || locked || (chat.mode === 'research' && state.candidates.length > 0)} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: msg("Chat") }, { value: chat.mode === 'research' ? 'research' : 'web-research', label: msg("Research") }]} /></div>
-          {((selected?.models.length ?? 0)>0||effective.aiConnections?.data?.connections.some(c=>c.enabled))&&<ModelControl id={`${id}-model`} model={binding?.model||selected?.model||''} models={selected?.models??[]} thinking={slot.thinking} thinkingOverride={chat.apiThinking} onThinkingChange={apiThinking=>store?.update(chat.id,{apiThinking})} connectionId={chat.aiConnection??slot.connectionId} onConnectionChange={(aiConnection,aiConnectionName,model)=>store?.update(chat.id,{aiConnection,aiConnectionName,model,apiThinking:undefined,reasoning:{model,effort:null}})} agent={slot.agent} value={chat.reasoning} codex={slot.engine==='codex'} enabled={assistantReady(slot)} disabled={running||locked} onModelChange={model=>store?.update(chat.id,{model,...(slot.engine==='codex'?{reasoning:{model,effort:null}}:{})})} onReasoningChange={reasoning=>store?.update(chat.id,{reasoning})}/>}
+          {((selected?.models.length ?? 0)>0||effective.aiConnections?.data?.connections.some(c=>c.enabled))&&<ModelControl requiredSelection={needsConnection} id={`${id}-model`} model={binding?.model||selected?.model||''} models={selected?.models??[]} thinking={slot.thinking} thinkingOverride={chat.apiThinking} onThinkingChange={apiThinking=>store?.update(chat.id,{apiThinking})} connectionId={chat.aiConnection??slot.connectionId} onConnectionChange={(aiConnection,aiConnectionName,model)=>store?.update(chat.id,{aiConnection,aiConnectionName,model,apiThinking:undefined,reasoning:{model,effort:null}})} agent={slot.agent} value={chat.reasoning} codex={slot.engine==='codex'} enabled={assistantReady(slot)} disabled={running||locked} onModelChange={model=>store?.update(chat.id,{model,...(slot.engine==='codex'?{reasoning:{model,effort:null}}:{})})} onReasoningChange={reasoning=>store?.update(chat.id,{reasoning})}/>}
           <AssistantOptions reasoning={chatReasoningAgent(slot.agent, binding?.model || selected?.model || '', chat.reasoning)?.effort} researchMode={chat.researchMode} searchConnection={chat.searchConnection} searchOptions={chat.mode !== 'research' && <ChatSearchOptions chat={chat} disabled={running||locked} onChange={patch=>store?.update(chat.id,patch)}/>} thinking={slot.thinking} tools={selected?.tools ?? []} mode={chat.mode} websiteExploration={websiteReadable(research,{local:localDrive,catalogWeb:connectionCatalog.web,catalogDiscovery:connectionCatalog.discovery})} linkReading={linkReadable(research, { local: localDrive, catalogWeb: connectionCatalog.web })} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
-          <span className={styles.grow} />
+          </div>
           <Tooltip content={running ? msg("Stop") : msg("Send")}><Button className={styles.send} variant={running ? "secondary" : "primary"} aria-label={running ? msg("Stop") : msg("Send")} disabled={!running && (needsConfig || !hasMessage || !binding || Boolean(otherRun) || locked || upload.reading || connectionBusy || Boolean(blocked && !needsConfig))} onClick={running ? () => binding?.run?.stop() : send}>{running ? <IconStop /> : <IconSend />}</Button></Tooltip>
         </div>
       </div>
       {upload.error && <p className={styles.caption} role="alert">{systemMessage(upload.error)}</p>}
-      <p className={styles.footnote}>{running ? msg("Working in this window. You can switch chats; keep this window open.") : unsubmitted || historyLoading ? msg("Send a message to start a chat.") : null}</p>
+      <p className={styles.footnote}>{running ? msg("Working in this window. You can switch chats; keep this window open.") : placement === 'main' && (unsubmitted || historyLoading) ? msg("Send a message to start a chat.") : null}</p>
     </div>
     </div>
     <ConfigureAssistant open={configure} onOpenChange={setConfigure} openerRef={configureButton} />

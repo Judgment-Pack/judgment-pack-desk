@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -22,9 +22,12 @@ afterEach(()=>{cleanup();vi.unstubAllGlobals()})
 function setup(child:React.ReactNode){
  let state=registry(),profile={profileVersion:1,codex:{inherit:true},api:{inherit:true}} as unknown
  const writes:{url:string;body:any;headers:Headers}[]=[]
+ const requests:{path:string;headers:Headers}[]=[]
  const client=testQueryClient()
  vi.stubGlobal('fetch',async(url:string,init:RequestInit={})=>{
   const path=new URL(url,'http://localhost'),headers=new Headers(init.headers),body=typeof init.body==='string'?JSON.parse(init.body):undefined
+  requests.push({path:path.pathname,headers})
+  if(path.pathname==='/api/assistant/relay/v1/models')return Response.json({data:[{id:headers.get('X-Assistant-Connection')===alpha?'work-extra':'personal-extra'}]})
   if(init.method==='PUT')writes.push({url:path.pathname,body,headers})
   if(path.pathname==='/api/ai-connections'){
    if(init.method==='PUT'){
@@ -43,7 +46,7 @@ function setup(child:React.ReactNode){
   return Response.json({error:'not-found'},{status:404})
  })
  const rendered=render(<QueryClientProvider client={client}><MemoryRouter><DeskConfigProvider>{child}</DeskConfigProvider></MemoryRouter></QueryClientProvider>)
- return {client,writes,...rendered,get registry(){return state}}
+ return {client,writes,requests,...rendered,get registry(){return state}}
 }
 it('adds another API connection without changing the default or existing connection records',async()=>{
  const state=setup(<AIConnectionsSettings unavailable={false}/>);await screen.findByText('Work')
@@ -111,4 +114,26 @@ it('counts a connection name in characters (not UTF-16 units or bytes), as the d
  expect(screen.queryByText("An AI connection's name must be 1 to 128 characters, with no leading or trailing spaces and no control characters.")).toBeNull()
  fireEvent.change(field,{target:{value:'é'.repeat(64)+'😀'.repeat(65)}});expect(add().disabled).toBe(true)
  expect(screen.getByText("An AI connection's name must be 1 to 128 characters, with no leading or trailing spaces and no control characters.")).toBeTruthy()
+})
+
+it('discovers API models for the edited desk connection and saves its override without changing shared defaults',async()=>{
+ const state=setup(<DeskAISettings unavailable={false}/>)
+ await screen.findByRole('checkbox',{name:'Use shared assistant defaults'})
+ fireEvent.click(screen.getByRole('checkbox',{name:'Use shared assistant defaults'}))
+ const work=within(screen.getByRole('heading',{name:'Work'}).parentElement!)
+ fireEvent.click(work.getByRole('checkbox',{name:'Use connection model defaults'}))
+ await waitFor(()=>expect((work.getByRole('button',{name:'Refresh models'}) as HTMLButtonElement).disabled).toBe(false))
+ fireEvent.click(work.getByRole('button',{name:'Refresh models'}))
+ await waitFor(()=>expect(state.requests.some(r=>r.path==='/api/assistant/relay/v1/models')).toBe(true))
+ fireEvent.click(work.getByRole('button',{name:/Allowed models/}))
+ fireEvent.click(await screen.findByRole('checkbox',{name:'work-extra'}))
+ fireEvent.keyDown(screen.getByRole('checkbox',{name:'work-extra'}),{key:'Escape'})
+ fireEvent.click(screen.getByRole('button',{name:'Save preferences'}))
+ await screen.findByText('Assistant preferences saved.')
+ const discovered=state.requests.find(r=>r.path==='/api/assistant/relay/v1/models')!
+ expect(discovered.headers.get('X-Assistant-Connection')).toBe(alpha)
+ expect(discovered.headers.get('X-Assistant-Revision')).toBe('c'.repeat(64))
+ const file=JSON.parse(state.writes[0]!.body.content)
+ expect(file.models[alpha].models).toContain('work-extra')
+ expect(state.registry.connections[0]!.assistant.endpoint!.models).toEqual(['same-model'])
 })

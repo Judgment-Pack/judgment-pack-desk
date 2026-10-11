@@ -15,6 +15,7 @@
 import { Tabs as RadixTabs } from 'radix-ui'
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import styles from './Tabs.module.css'
+import { useTabOverflow, TabOverflowMenu } from './TabOverflow'
 
 export interface TabDefinition {
   value: string
@@ -24,6 +25,7 @@ export interface TabDefinition {
 
 export function Tabs({
   label,
+  overflow = false,
   value,
   onValueChange,
   tabs,
@@ -37,6 +39,7 @@ export function Tabs({
 }: {
   /** The tab list's accessible name. */
   label: string
+  overflow?: boolean
   value: string
   onValueChange: (value: string) => void
   tabs: readonly TabDefinition[]
@@ -53,6 +56,7 @@ export function Tabs({
   activationMode?: 'automatic' | 'manual'
 }) {
   const root = useRef<HTMLDivElement>(null)
+  const {container, visible, measurements} = useTabOverflow(tabs, value, overflow)
   useLayoutEffect(() => {
     if (!scrollable || keepMounted) return
     const active = root.current?.querySelector<HTMLElement>('[data-pane-scroll][data-state="active"]')
@@ -68,13 +72,21 @@ export function Tabs({
       onValueChange={onValueChange}
       activationMode={activationMode}
     >
-      <div className={styles.heading}><RadixTabs.List className={styles.list} aria-label={label}>
-        {tabs.map((tab) => (
-          <RadixTabs.Trigger key={tab.value} className={styles.trigger} value={tab.value}>
-            {tab.label}
-          </RadixTabs.Trigger>
-        ))}
-      </RadixTabs.List>{tools}</div>
+      <div className={styles.heading} data-overflow={overflow || undefined}>
+        {overflow ? <div ref={container} className={styles.tabBar}>
+          {measurements}
+          <RadixTabs.List className={styles.list} aria-label={label}>
+            {tabs.map(tab => <RadixTabs.Trigger key={tab.value} className={styles.trigger} hidden={!visible.has(tab.value)} value={tab.value}>{tab.label}</RadixTabs.Trigger>)}
+          </RadixTabs.List>
+          <TabOverflowMenu items={tabs.filter(tab => !visible.has(tab.value))} onSelect={next => {
+            onValueChange(next)
+            requestAnimationFrame(() => root.current?.querySelector<HTMLElement>('[role="tab"][data-state="active"]')?.focus())
+          }}/>
+        </div> : <RadixTabs.List className={styles.list} aria-label={label}>
+          {tabs.map(tab => <RadixTabs.Trigger key={tab.value} className={styles.trigger} value={tab.value}>{tab.label}</RadixTabs.Trigger>)}
+        </RadixTabs.List>}
+        {tools}
+      </div>
       {tabs.map((tab) => (
         <RadixTabs.Content key={tab.value} forceMount={keepMounted || undefined} hidden={value !== tab.value} data-fill={fillPanel === tab.value || undefined} className={styles.content} data-pane-scroll={scrollable || undefined} value={tab.value}>
           {tab.panel}

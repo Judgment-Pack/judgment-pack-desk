@@ -3,10 +3,11 @@ import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
-/** Primary navigation stays about destinations. Packs and graphs share Decisions; tests live
+/** Primary navigation stays about destinations. Packs and graphs share Library; tests live
  * inside each pack or graph; project file editing is available from the project menu.
  * The shell never runs tests or fetches graph inventory to draw navigation. */
-import { Dialog, DropdownMenu, VisuallyHidden } from 'radix-ui'
+import { Dialog, VisuallyHidden } from 'radix-ui'
+import { Menu as DropdownMenu } from '../ui/Menu'
 import { type RefObject } from 'react'
 import { Link, NavLink, useLocation, useMatch } from 'react-router-dom'
 import { usePacks } from '../mcp/queries'
@@ -16,7 +17,7 @@ import {
   IconChevronRight,
   IconGear,
   IconHelp,
-  IconPack,
+  IconLibrary,
   IconHistory
 } from './icons'
 import type { LeftRailMode } from './paneState'
@@ -135,9 +136,9 @@ function RailBody({
             <IconChevronRight />
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
-            <DropdownMenu.Content className="desk-menu" side="top" align="start" sideOffset={6}>
+            <DropdownMenu.Content side="top" align="start" sideOffset={6}>
               {ADMIN_SECTIONS.map((section) => (
-                <DropdownMenu.Item asChild key={section.id} className="desk-menu-item">
+                <DropdownMenu.Item asChild key={section.id}>
                   <NavLink to={`/admin#${section.id}`} onClick={onNavigate}>
                     {section.title}
                   </NavLink>
@@ -182,7 +183,7 @@ function Labelled({
   )
 }
 
-/** One Decisions destination. The collection owns its combined count;
+/** One Library destination. The collection owns its combined count;
  * the rail does not turn a pack-only or unavailable listing into that count. */
 function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => void }) {
   useLocale()
@@ -192,16 +193,16 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
 
   return (
     <>
-      <Labelled icons={icons} label={msg("Decisions")}>
+      <Labelled icons={icons} label={msg("Library")}>
         <Link
           className="desk-nav-item"
           to="/packs"
           aria-current={active ? 'page' : undefined}
-          aria-label={msg("Decisions")}
+          aria-label={msg("Library")}
           onClick={onNavigate}
         >
-          <IconPack />
-          {!icons && <span className="desk-nav-label">{msg("Decisions")}</span>}
+          <IconLibrary />
+          {!icons && <span className="desk-nav-label">{msg("Library")}</span>}
         </Link>
       </Labelled>
       {!icons && error && (

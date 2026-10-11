@@ -1,38 +1,59 @@
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage, formatDate } from '../i18n'
-import { Fragment, useState, type RefObject, type ReactNode } from 'react'
+import { Fragment, useRef, useState, type RefObject, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { DropdownMenu, VisuallyHidden } from 'radix-ui'
+import { VisuallyHidden } from 'radix-ui'
+import { Menu as DropdownMenu } from '../ui/Menu'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { OverflowTooltip, Tooltip } from '../ui/Tooltip'
 import { Popover } from '../ui/Popover'
-import { IconHistory, IconMore, IconPlus } from '../shell/icons'
+import { IconHistory, IconMore, IconPlus, IconPaperclip } from '../shell/icons'
 import { useChats } from './ChatProvider'
 import type { Chat } from './store'
 import { readDocumentObject } from '../documents/client'
-import { assistantChatHref, chatHref, chatTitle, hasChatContent, homeChatId } from './navigation'
+import { assistantChatHref, chatHref, chatTitle, hasChatContent, homeChatId, chatScope, inChatScope, type ChatScope } from './navigation'
 export { chatHref } from './navigation'
 import styles from './ChatWorkspace.module.css'
 
 /** The same compact controls are portalled into main or the Assistant title bar. */
-export function ChatToolbar({ chat, history, onHistory, onBack, onNew, historyRef, sources, loading = false }: {
-  sources?: ReactNode; loading?: boolean
+export function ChatToolbar({ chat, history, onHistory, onBack, onNew, historyRef, actions = [], onSources, loading = false }: {
+  actions?: { label: string; icon: ReactNode; onSelect: (opener: HTMLButtonElement | null) => void }[]; loading?: boolean
+  onSources?: (opener: HTMLButtonElement | null) => void
   chat: Chat; history: boolean; onHistory: () => void; onBack: () => void; onNew: () => void
   historyRef: RefObject<HTMLButtonElement | null>
 }) {
   useLocale()
   const { store, bindings } = useChats()
+  const optionsButton = useRef<HTMLButtonElement>(null)
+  const startAfterClose = useRef(false)
+  const pendingAction = useRef<((opener: HTMLButtonElement | null) => void) | null>(null)
   const state = bindings.get(chat.id)?.state ?? chat.checkpoint?.state
   const empty = !chat.composer.trim() && !chat.attachments?.length && !state?.turns.length
   return <div className={styles.chatToolbar} role="group" aria-label={msg("Chat actions")}>
-    {sources}
-    <Tooltip content={msg("New chat")}><button type="button" className="desk-icon-button" aria-label={msg("New chat")} disabled={loading || !store?.canCreate || empty} onClick={onNew}><IconPlus /></button></Tooltip>
     <Popover title={msg("Chat history")} variant="list" triggerTooltip={msg("Chat history")} open={history} onOpenChange={open => open ? onHistory() : onBack()}
+      onCloseAutoFocus={event => {
+        if (startAfterClose.current) { startAfterClose.current = false; event.preventDefault(); onNew() }
+      }}
       onEscapeKeyDown={event => event.stopPropagation()}
       trigger={<button ref={historyRef} type="button" className="desk-icon-button" aria-label={msg("Chat history")} aria-pressed={history} aria-busy={loading || undefined} disabled={loading}>{loading ? <span className={styles.historySpinner} aria-hidden="true" /> : <IconHistory />}</button>}>
-      <ChatHistoryList packId={chat.pack?.id ?? chat.draftId} activeId={chat.id} onNavigate={onBack} compact />
+      <div className={styles.historyCreate}><Button variant="quiet" disabled={loading || !store?.canCreate || empty} onClick={() => { startAfterClose.current = true; onBack() }}><IconPlus />{msg('New chat')}</Button></div>
+      <ChatHistoryList scope={chatScope(chat)} activeId={chat.id} onNavigate={onBack} compact />
     </Popover>
+    {(onSources || actions.length > 0) && <DropdownMenu.Root>
+      <Tooltip content={msg('Chat options')}><DropdownMenu.Trigger asChild><button ref={optionsButton} type="button" className="desk-icon-button" aria-label={msg('Chat options')}><IconMore /></button></DropdownMenu.Trigger></Tooltip>
+      <DropdownMenu.Portal><DropdownMenu.Content align="end" onCloseAutoFocus={event => {
+        if (pendingAction.current) {
+          const run = pendingAction.current
+          pendingAction.current = null
+          event.preventDefault()
+          run(optionsButton.current)
+        }
+      }}>
+        {onSources && <DropdownMenu.Item icon={<IconPaperclip />} onSelect={() => { pendingAction.current = onSources }}>{msg('Chat sources')}</DropdownMenu.Item>}
+        {actions.map(action => <DropdownMenu.Item key={action.label} icon={action.icon} onSelect={() => { pendingAction.current = action.onSelect }}>{action.label}</DropdownMenu.Item>)}
+      </DropdownMenu.Content></DropdownMenu.Portal>
+    </DropdownMenu.Root>}
     {loading && <VisuallyHidden.Root role="status">{msg("Loading chat history…")}</VisuallyHidden.Root>}
   </div>
 }
@@ -46,8 +67,8 @@ export function historyGroup(chat: Chat, now = new Date()): string {
 function attention(status: string | undefined): string {
   return status === 'running' ? msg("Working") : status === 'stopped' ? msg("Interrupted") : status === 'failed' || status === 'stalled' || status === 'budget' ? msg("Needs attention") : ''
 }
-export function ChatHistoryList({ packId, activeId, onNavigate, compact = false }: {
-  packId?: string; activeId?: string; onNavigate?: () => void; compact?: boolean
+export function ChatHistoryList({ packId, scope: owner, activeId, onNavigate, compact = false }: {
+  scope?: ChatScope; packId?: string; activeId?: string; onNavigate?: () => void; compact?: boolean
 }) {
   useLocale()
   const { store, chats, bindings, ready, error } = useChats()
@@ -62,8 +83,9 @@ export function ChatHistoryList({ packId, activeId, onNavigate, compact = false 
   const [exportError, setExportError] = useState('')
   const [exporting, setExporting] = useState(false)
   const [actionChat, setActionChat] = useState<string | null>(null)
-  const shown = chats.filter(chat => hasChatContent(chat) && (all || !packId || (chat.pack?.id === packId || chat.draftId===packId)) && (archived || !chat.archived)
-    && `${chatTitle(chat)} ${chat.composer} ${chat.pack?.id ?? ''} ${chat.checkpoint?.state.turns.map(turn => turn.text).join(' ') ?? ''}`.toLowerCase().includes(query.toLowerCase()))
+  const scope = owner ?? (packId ? {kind: 'pack' as const, id: packId} : undefined)
+  const shown = chats.filter(chat => hasChatContent(chat) && (all || !scope || inChatScope(chat, scope)) && (archived || !chat.archived)
+    && `${chatTitle(chat)} ${chat.composer} ${chat.pack?.id ?? chat.graph?.id ?? ''} ${chat.checkpoint?.state.turns.map(turn => turn.text).join(' ') ?? ''}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a,b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt))
   const exportChat = async (chat: Chat) => {
     if (exporting) return
@@ -93,7 +115,7 @@ export function ChatHistoryList({ packId, activeId, onNavigate, compact = false 
     <div className={styles.historySearch}>
     <Input autoFocus aria-label={msg("Search chats")} value={query} onChange={event => setQuery(event.target.value)} placeholder={msg("Search chats…")} />
     <div className={styles.historyFilters}>
-      {packId && <label className="checkbox"><Message text={"<0/> All packs"} slots={[<input type="checkbox" checked={all} onChange={event => setAll(event.target.checked)} />]} /></label>}
+      {scope && <label className="checkbox"><Message text={"<0/> All chats"} slots={[<input type="checkbox" checked={all} onChange={event => setAll(event.target.checked)} />]} /></label>}
       <label className="checkbox"><Message text={"<0/> Include archived"} slots={[<input type="checkbox" checked={archived} onChange={event => setArchived(event.target.checked)} />]} /></label>
     </div>
     </div>
@@ -102,23 +124,23 @@ export function ChatHistoryList({ packId, activeId, onNavigate, compact = false 
         {rename === chat.id ? <form className={styles.historyRename} onSubmit={event => { event.preventDefault(); if (name.trim()) { store?.update(chat.id, { title: name.trim(), titleEdited: true }); setRename(null) } }}>
           <Input aria-label={msg("Chat name")} value={name} autoFocus maxLength={120} onChange={event => setName(event.target.value)} /><Button type="submit" disabled={!name.trim()}>{msg("Save")}</Button><Button variant="quiet" onClick={() => setRename(null)}>{msg("Cancel")}</Button>
         </form> : <>
-          <OverflowTooltip content={chatTitle(chat)} selector="[data-chat-title]"><button type="button" className={styles.historyOpen} aria-current={activeId === chat.id ? 'true' : undefined} onClick={() => { navigate(packId && location.pathname.startsWith('/packs/') ? assistantChatHref(chat,location) : chatHref(chat)); onNavigate?.() }}>
-            <span data-chat-title>{chat.pinned ? msg("Pinned · ") : ''}{chatTitle(chat)}</span><small>{chat.pack?.id ?? (chat.checkpoint?.state.candidates.length ? msg("Draft") : msg("Conversation"))} · {attention(bindings.get(chat.id)?.state.status ?? chat.checkpoint?.state.status) || formatDate(new Date(chat.updatedAt))}{chat.archived ? msg(" · Archived") : ''}</small>
+          <OverflowTooltip content={chatTitle(chat)} selector="[data-chat-title]"><button type="button" className={styles.historyOpen} aria-current={activeId === chat.id ? 'true' : undefined} onClick={() => { navigate(scope && inChatScope(chat, scope) ? assistantChatHref(chat,location) : chatHref(chat)); onNavigate?.() }}>
+            <span data-chat-title>{chat.pinned ? msg("Pinned · ") : ''}{chatTitle(chat)}</span><small>{chat.pack?.id ?? chat.graph?.id ?? (chat.checkpoint?.state.candidates.length ? msg("Draft") : msg("Conversation"))} · {attention(bindings.get(chat.id)?.state.status ?? chat.checkpoint?.state.status) || formatDate(new Date(chat.updatedAt))}{chat.archived ? msg(" · Archived") : ''}</small>
           </button></OverflowTooltip>
           <DropdownMenu.Root open={actionChat === chat.id} onOpenChange={open => setActionChat(open ? chat.id : null)}><Tooltip content={msg("Chat actions")} openOnFocus={false} disabled={actionChat === chat.id}><DropdownMenu.Trigger className={`desk-icon-button ${styles.historyActions}`} aria-label={msg("Actions for {{value0}}", { value0: chatTitle(chat) })}><IconMore /></DropdownMenu.Trigger></Tooltip>
-            <DropdownMenu.Portal><DropdownMenu.Content className="desk-menu" side="bottom" align="end" sideOffset={6} collisionPadding={16} onCloseAutoFocus={event => { if (rename || deleting) event.preventDefault() }}>
-              <DropdownMenu.Item className="desk-menu-item" onSelect={() => { setRename(chat.id); setName(chat.title) }}>{msg("Rename")}</DropdownMenu.Item>
-              <DropdownMenu.Item className="desk-menu-item" onSelect={() => store?.update(chat.id, { pinned: !chat.pinned })}>{chat.pinned ? msg("Unpin") : msg("Pin")}</DropdownMenu.Item>
-              <DropdownMenu.Item className="desk-menu-item" onSelect={() => store?.update(chat.id, { archived: !chat.archived })}>{chat.archived ? msg("Unarchive") : msg("Archive")}</DropdownMenu.Item>
-              <DropdownMenu.Item className="desk-menu-item" disabled={exporting} onSelect={() => void exportChat(chat)}>{msg("Export chat")}</DropdownMenu.Item>
-              <DropdownMenu.Item className="desk-menu-item" disabled={bindings.get(chat.id)?.run?.running} onSelect={() => setDeleting(chat.id)}>{msg("Delete chat…")}</DropdownMenu.Item>
+            <DropdownMenu.Portal><DropdownMenu.Content side="bottom" align="end" sideOffset={6} collisionPadding={16} onCloseAutoFocus={event => { if (rename || deleting) event.preventDefault() }}>
+              <DropdownMenu.Item onSelect={() => { setRename(chat.id); setName(chat.title) }}>{msg("Rename")}</DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => store?.update(chat.id, { pinned: !chat.pinned })}>{chat.pinned ? msg("Unpin") : msg("Pin")}</DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => store?.update(chat.id, { archived: !chat.archived })}>{chat.archived ? msg("Unarchive") : msg("Archive")}</DropdownMenu.Item>
+              <DropdownMenu.Item disabled={exporting} onSelect={() => void exportChat(chat)}>{msg("Export chat")}</DropdownMenu.Item>
+              <DropdownMenu.Item disabled={bindings.get(chat.id)?.run?.running} onSelect={() => setDeleting(chat.id)}>{msg("Delete chat…")}</DropdownMenu.Item>
             </DropdownMenu.Content></DropdownMenu.Portal>
           </DropdownMenu.Root>
         </>}
-        {deleting === chat.id && <div className={styles.confirm}><p>{msg("Delete this chat? Its pack and research files will remain.")}</p><Button variant="danger" onClick={() => { const current = location.pathname === `/chats/${chat.id}` || homeChatId(location.state) === chat.id || new URLSearchParams(location.search).get('chat') === chat.id; store?.remove(chat.id); setDeleting(null); if (current) { navigate(chat.pack ? `/packs/${encodeURIComponent(chat.pack.id)}` : '/'); onNavigate?.() } }}>{msg("Delete chat")}</Button><Button onClick={() => setDeleting(null)}>{msg("Cancel")}</Button></div>}
+        {deleting === chat.id && <div className={styles.confirm}><p>{msg("Delete this chat? Its pack and research files will remain.")}</p><Button variant="danger" onClick={() => { const current = location.pathname === `/chats/${chat.id}` || homeChatId(location.state) === chat.id || new URLSearchParams(location.search).get('chat') === chat.id; store?.remove(chat.id); setDeleting(null); if (current) { if (scope && inChatScope(chat, scope)) { const params = new URLSearchParams(location.search); params.delete('chat'); navigate(`${location.pathname}${params.size ? '?' + params : ''}`) } else navigate(chat.pack ? `/packs/${encodeURIComponent(chat.pack.id)}` : '/'); onNavigate?.() } }}>{msg("Delete chat")}</Button><Button onClick={() => setDeleting(null)}>{msg("Cancel")}</Button></div>}
       </li></Fragment>)}
     </ul>
-    {ready && !shown.length && <p className={styles.historyEmpty}>{query || archived || packId ? msg("No chats match this search.") : msg("Your conversations will appear here after you send a message.")}</p>}
+    {ready && !shown.length && <p className={styles.historyEmpty}>{query || archived || scope ? msg("No chats match this search.") : msg("Your conversations will appear here after you send a message.")}</p>}
     {store && !store.canCreate && <p className={styles.caption}>{msg("Chat history is full. Export and delete an older chat to start another.")}</p>}
   </section>
 }

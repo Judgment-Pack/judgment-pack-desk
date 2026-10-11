@@ -25,6 +25,8 @@ export interface Window {
 }
 
 export interface WindowedRows extends Window {
+  /** Align an external column header with the list's actual scrollbar. */
+  scrollbarWidth: number
   /**
    * The ref to put on the scrolling element.
    *
@@ -50,6 +52,7 @@ export function useWindowedRows(
   const [node, setNode] = useState<HTMLElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [height, setHeight] = useState(0)
+  const [scrollbarWidth, setScrollbarWidth] = useState(0)
 
   const ref = useCallback((next: HTMLElement | null) => setNode(next), [])
 
@@ -58,6 +61,7 @@ export function useWindowedRows(
     const measure = () => {
       setScrollTop(node.scrollTop)
       setHeight(node.clientHeight)
+      setScrollbarWidth(Math.max(0, node.offsetWidth - node.clientWidth))
     }
     measure()
     node.addEventListener('scroll', measure, { passive: true })
@@ -108,7 +112,7 @@ export function useWindowedRows(
   // zero is a window with no rows in it, which is not "the list is short" — it
   // is "the list was never laid out".
   if (height <= 0 || rowHeight <= 0) {
-    return { ref, scrollRowIntoView, start: 0, end: count, padTop: 0, padBottom: 0 }
+    return { ref, scrollRowIntoView, scrollbarWidth, start: 0, end: count, padTop: 0, padBottom: 0 }
   }
 
   // Clamped to the list that is actually there. `scrollTop` is state and the
@@ -121,6 +125,7 @@ export function useWindowedRows(
   return {
     ref,
     scrollRowIntoView,
+    scrollbarWidth,
     start: first,
     end: last,
     padTop: first * rowHeight,

@@ -37,6 +37,7 @@ describe('readCapabilities', () => {
   it('records the graph surface against a runtime that advertises it', () => {
     expect(readCapabilities(SERVING)).toEqual({
       known: true,
+      snapshotChecksSupported: false,
       rehearsalSupported: true,
       graphDocumentSupported: true,
       graphInventorySupported: true,
@@ -155,6 +156,7 @@ describe('readCapabilities', () => {
     // the difference is the one a failed listing must not blur.
     expect(readCapabilities([])).toEqual({
       known: true,
+      snapshotChecksSupported: false,
       rehearsalSupported: false,
       graphDocumentSupported: false,
       graphInventorySupported: false,

@@ -114,7 +114,7 @@ const good = {
   })),
 }
 const bad = { ...good, cases: good.cases.map((c) => ({ ...c, name: c.focus })) }
-function Harness({ digest = 'pack', request = { id: 1, text: 'Design twelve cases' } }: { digest?: string; request?: { id:number; text:string; additionsOnly?:boolean; coverageRunId?:string } }) {
+function Harness({ blocked = false, onRunningChange, digest = 'pack', request = { id: 1, text: 'Design twelve cases' } }: { blocked?: boolean; onRunningChange?: (running: boolean) => void; digest?: string; request?: { id:number; text:string; additionsOnly?:boolean; coverageRunId?:string } }) {
   const [suite, set] = useState(saved)
   const checkpoint = async (record: TestProposal, messages?: NonNullable<TestSuite['messages']>) => {
     saved = {
@@ -127,6 +127,8 @@ function Harness({ digest = 'pack', request = { id: 1, text: 'Design twelve case
   return (
     <TestAssistant
       document="{}"
+      blocked={blocked}
+      onRunningChange={onRunningChange}
       packDigest={digest}
       suite={suite}
       sources={[]}
@@ -237,4 +239,21 @@ it('does not send a stale coverage request to the model',async()=>{
  await screen.findByText('Coverage changed. Run the current suite and choose Design missing tests again.')
  expect(fixture.prompts).toHaveLength(0)
  expect(saved.proposals??[]).toHaveLength(0)
+})
+
+it('keeps explicit test design from competing with an attached conversation', async () => {
+  render(<Harness blocked/>)
+  expect(screen.getByRole('button', {name: 'Send'})).toHaveProperty('disabled', true)
+  fireEvent.keyDown(screen.getByRole('textbox', {name: 'Message about tests'}), {key: 'Enter'})
+  expect(fixture.prompts).toEqual([])
+  expect(fixture.calls).toEqual([])
+})
+it('publishes model activity and releases the chat composer after Stop', async () => {
+  const running = vi.fn()
+  fixture.hold = true
+  render(<Harness onRunningChange={running}/>)
+  fireEvent.click(screen.getByRole('button', {name: 'Send'}))
+  await waitFor(() => expect(running).toHaveBeenCalledWith(true))
+  fireEvent.click(screen.getByRole('button', {name: 'Stop'}))
+  await waitFor(() => expect(running).toHaveBeenLastCalledWith(false))
 })

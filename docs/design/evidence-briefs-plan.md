@@ -1,5 +1,8 @@
 # Persistent evidence briefs for tests and Jobs
 
+> Updated October 2026: pack and graph definition briefs now live inside the main **Review** area, below readiness. The Assistant remains in the shared right pane. Case briefs open from **Tests → Case brief**; job/run briefs retain their right-rail location. This supersedes the rail placement below for pack/graph pages. Briefs remain optional summaries, never approval or readiness authority.
+
+
 Date: 2026-09-25. Status: proposed requirements and implementation plan. No brief
 feature, Runtime behavior, or JPS schema is changed by this review.
 

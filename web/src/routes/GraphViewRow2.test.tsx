@@ -52,7 +52,7 @@ const SERVED = JSON.stringify({
 })
 const DIGEST = 'c'.repeat(64)
 
-function render(suite: GraphSuite, served = false) {
+async function render(suite: GraphSuite, served = false) {
   const { client } = stubClient({
     experimental_test_graphs: () => ({ text: JSON.stringify(suite) }),
     experimental_list_graphs: () => ({ text: JSON.stringify({ status: 'valid', graphs: [] }) }),
@@ -67,6 +67,10 @@ function render(suite: GraphSuite, served = false) {
     { path: '/graphs' }
   )
   fireEvent.click(screen.getByRole('button', { name: /Run all graph tests/ }))
+  if(suite.graphs?.some(g=>g.rows?.length)) {
+    fireEvent.click(await screen.findByRole('button',{name:'clear-approves'}))
+    fireEvent.click(screen.getByText('Execution diagram',{selector:'summary span'}))
+  }
   return rendered
 }
 
@@ -91,7 +95,7 @@ const without = <K extends keyof GraphSuite>(key: K): GraphSuite => {
 
 describe('graph row 2: the labels beside the runtime’s label', () => {
   it('graph row 2: kind, experimental and the claim reference are shown, each as what it is', async () => {
-    const { container } = render(SUITE)
+    const { container } = await render(SUITE)
     await screen.findByText(LABEL)
     const labels = container.querySelector('.graph-labels')!
     expect(labels.textContent).toContain('kind graph-test-matrix')
@@ -107,18 +111,18 @@ describe('graph row 2: the labels beside the runtime’s label', () => {
   })
 
   it('graph row 2: a payload with no claim reference shows no claim', async () => {
-    const { container } = render(without('conformanceClaimReference'))
+    const { container } = await render(without('conformanceClaimReference'))
     await screen.findByText(LABEL)
     expect(container.textContent).not.toContain('Conformance claim')
     expect(container.textContent).not.toContain('a locator for the repository file')
   })
 
   it('graph row 2: experimental is shown only as the runtime printed it', async () => {
-    const absent = render(without('experimental'))
+    const absent = await render(without('experimental'))
     await screen.findByText(LABEL)
     expect(absent.container.querySelector('.graph-labels')!.textContent).not.toMatch(/experimental (true|false)/)
     cleanup()
-    const printedFalse = render({ ...SUITE, experimental: false })
+    const printedFalse = await render({ ...SUITE, experimental: false })
     await screen.findByText(LABEL)
     const text = printedFalse.container.querySelector('.graph-labels')!.textContent!
     expect(text).toContain('experimental false')
@@ -127,7 +131,7 @@ describe('graph row 2: the labels beside the runtime’s label', () => {
 
   it('graph row 2: a payload carrying none of the members shows no label block', async () => {
     const bare: GraphSuite = { status: 'passed', summary: { total: 0, passed: 0, mismatched: 0 }, graphs: [] }
-    const { container } = render(bare)
+    const { container } = await render(bare)
     await screen.findByText('No graph test results were reported.')
     expect(container.querySelector('.graph-labels')).toBeNull()
   })
@@ -135,7 +139,7 @@ describe('graph row 2: the labels beside the runtime’s label', () => {
 
 describe('graph row 2: Desk’s own sentences', () => {
   it('graph row 2: the summary is the runtime’s members, not a count of cases passed', async () => {
-    const { container } = render(SUITE)
+    const { container } = await render(SUITE)
     await screen.findByText(LABEL)
     const summaries = [...container.querySelectorAll('code[lang="en"]')].map(node => node.textContent)
     expect(summaries.filter(text => text === 'total 3, passed 2, mismatched 1')).toHaveLength(2)
@@ -144,7 +148,7 @@ describe('graph row 2: Desk’s own sentences', () => {
   })
 
   it('graph row 2: the summary keeps the runtime’s members and their order', async () => {
-    const { container } = render({ ...SUITE, summary: { total: 3, passed: 2, skipped: 1 } as unknown as GraphSuite['summary'] })
+    const { container } = await render({ ...SUITE, summary: { total: 3, passed: 2, skipped: 1 } as unknown as GraphSuite['summary'] })
     await screen.findByText(LABEL)
     expect(container.textContent).toContain('summary total 3, passed 2, skipped 1')
     expect(container.textContent).not.toMatch(/mismatched (undefined|NaN)/)
@@ -155,7 +159,7 @@ describe('graph row 2: Desk’s own sentences', () => {
     ['a suite where every row passed', PASSED, false],
     ['a suite whose digest is the served document’s', BOUND, true]
   ])('graph row 2: no sentence of Desk’s claims anything, in %s', async (_name, suite, served) => {
-    const { container } = render(suite, served)
+    const { container } = await render(suite, served)
     await screen.findByText(LABEL)
     if (served) await screen.findByText(/One revision/)
     const own = container.cloneNode(true) as HTMLElement
@@ -165,7 +169,7 @@ describe('graph row 2: Desk’s own sentences', () => {
   })
 
   it('graph row 2: the Tests view carries one Experimental label, and the all-graphs locator names the graphs’ packs', async () => {
-    const { container } = render(SUITE)
+    const { container } = await render(SUITE)
     await screen.findByText(LABEL)
     expect([...container.querySelectorAll('.pill, [class*="pill" i]')].filter(node => node.textContent === 'Experimental')).toHaveLength(1)
     expect(container.textContent).toContain("not about these graphs' packs")
@@ -173,7 +177,7 @@ describe('graph row 2: Desk’s own sentences', () => {
   })
 
   it('graph row 2: the closing note says what a run shows and what it does not', async () => {
-    render(SUITE)
+    await render(SUITE)
     await screen.findByText(LABEL)
     expect(screen.getByText(/does not show that the rows are right, that coverage is complete, or any authorization/)).toBeTruthy()
   })
@@ -191,7 +195,7 @@ describe('graph row 2: no path reaches the page', () => {
         rows: [{ ...SUITE.graphs![0]!.rows![0]!, detail: `The run was refused: Node "screening" (pack "missing-pack"): The path "${root}/missing-pack-0.1.0.pack.json" resolves outside the configuration's own directory, which no configured path may.` }]
       }]
     }
-    const { container } = render(suite)
+    const { container } = await render(suite)
     await screen.findByText(/resolves outside the configuration/)
     expect(container.textContent).not.toContain('someone')
     expect(container.textContent).not.toContain('Owner')
@@ -212,7 +216,7 @@ describe('graph row 2: no path reaches the page', () => {
         rows: [{ ...SUITE.graphs![0]!.rows![0]!, detail: `Could not read ${root}/pack.json` }]
       }]
     }
-    const { container } = render(suite)
+    const { container } = await render(suite)
     await screen.findByText(LABEL)
     expect(container.textContent).not.toContain('someone')
     expect(container.textContent).not.toContain('my project')
@@ -228,13 +232,13 @@ describe('graph row 2: no path reaches the page', () => {
         rows: [{ ...SUITE.graphs![0]!.rows![0]!, detail: 'The expected disposition differs.' }]
       }]
     }
-    render(suite)
+    await render(suite)
     expect((await screen.findByText('The rows file could not be read.')).getAttribute('lang')).toBe('en')
     expect(screen.getByText('The expected disposition differs.').getAttribute('lang')).toBe('en')
   })
 
   it('graph row 2: a relative path is shown as given', async () => {
-    render(SUITE)
+    await render(SUITE)
     expect(await screen.findByText('onboarding.graph.json')).toBeTruthy()
     expect(screen.getByText('onboarding.rows.json')).toBeTruthy()
   })

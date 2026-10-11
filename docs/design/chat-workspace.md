@@ -15,7 +15,7 @@ chat beside it; creating a pack links that chat to the saved pack.
   The navigation does not open a manual creation wizard.
 - Main: conversation until the person chooses Open draft; then the draft, its
   sources, tests, and final review. Do not automatically move focus on generation.
-- Right: Assistant on authoring and pack document routes. New chat and Chat history are icon buttons in the pane title bar.
+- Right: the attached chat on authoring and pack document routes. Its session title labels the pane; Chat history contains New chat.
   History opens in a bounded, nonmodal popover; the conversation stays mounted underneath. One pack may have multiple conversations.
 - Bottom: selected details and Activity, underneath main only. The Assistant
   stays full height. Both dividers use the same accessible separator component.
@@ -273,3 +273,72 @@ chat. A rejected batch adds no partial context. Pending local reads are not save
 as completed attachments. Gateway-backed PDF and connected-source choices will
 use the adapter contract when available; unsupported choices are not advertised
 in the composer.
+
+
+### Pack and graph conversation context
+
+The Assistant belongs to the pack or graph, including an independent draft. It
+keeps the selected conversation and unsent composer across Overview, Logic,
+Sources, Tests and Review. History defaults to that exact owner; All chats is an
+explicit broader search. Pack and graph ids are different scopes. Switching a
+conversation preserves the current workspace view, and selecting a graph draft
+conversation preserves the chat that holds the graph artifact.
+
+A compact context row above the composer names the current pack or graph and
+opens the exact document context. Saved test inputs and observations accompany
+messages as reference material, separate from user-authored requirements. Pack
+observations identify whether their pack and case snapshots still match; graph
+observations retain their runtime digests. Reading a tab or restoring a chat
+never runs tests automatically.
+
+The Tests view uses the same attached conversation. Design with AI explicitly
+opens the reviewed test-design task in the main workspace; its existing
+per-pack proposal records and source controls remain available there. It cannot
+compete with an active attached conversation, and generation reserves the chat
+composer until it finishes or is stopped.
+
+New chat and History remain visible in the shared header. Sources and draft
+shortcuts share the secondary options menu. Expanded narrow layouts use a back
+icon and keep the chat controls visible. Pack and graph editors use the same
+saved pane width, typography, spacing and composer context component.
+
+
+## October 10: readable output and shared chat controls
+
+Main and docked chat use the same bounded message measure. Tables and code no
+longer widen the message independently. Each has a labeled toolbar and expand
+icon, a focusable scroll area capped at 24rem, and horizontal overflow for
+long fields or unwrapped code. Code starts unwrapped in chat; Wrap remains a
+local reading preference, and Copy always copies the full source.
+
+The expand icon opens a wide shared dialog (up to 80rem within viewport gutters), with a
+65dvh scroll area and a fixed Close action. Tables keep column headers visible
+while scrolling. Escape and Close return focus to the triggering expand button.
+Markdown remains sanitized; the larger view does not load remote images or
+execute model-authored HTML. Streaming updates retain the open viewer.
+
+The pane heading is the active session title and remains attached across pack
+and graph tabs. Its full title is available on overflow. The redundant context
+row above the pane composer is omitted; message-owned artifact cards remain.
+The standalone chat and explicit test-design task retain their context views.
+Chat history contains New chat, preserving pack/graph ownership and the current
+tab. Expanded panes expose Narrower, Wider and Reset width directly, with the
+same clamped bounds as the divider. Other workspace tools retain their titles.
+
+## October 11: graph chat parity
+
+Graph and pack conversations share the same artifact reference, reading panel,
+header actions, and composer. The graph already open in the workspace has no
+duplicate Review graph card in the transcript. A distinct pending proposal stays
+visible after the conversation; the Graph drafts reader retains all artifacts and
+marks the current draft as Open without a redundant navigation link.
+
+Chat options exposes Graph context or Pack context in docked views, including the
+current graph selection and saved test observations. The composer does not repeat
+the document title or its review/save commands. Context reading is explicit and
+does not execute a test, send a message, or save the document. The same reader
+focus and dismissal behavior applies to graph artifacts and pack details.
+
+These choices apply [Linear's action hierarchy and restrained structure](https://linear.app/now/behind-the-latest-design-refresh)
+and [contextual proposals reviewed beside the editor](https://www.databricks.com/blog/databricks-assistant-edit-mode-fastest-way-transform-your-notebooks)
+to Desk's existing shared components.

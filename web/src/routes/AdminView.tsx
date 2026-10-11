@@ -43,7 +43,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { DropdownMenu } from 'radix-ui'
+import { Menu as DropdownMenu } from '../ui/Menu'
 import { msg, useLocale } from '../i18n'
 import { DESK_LEVEL_PATH_UNKNOWN } from '../config/queries'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -140,10 +140,10 @@ export function AdminView() {
       {pane}
       <PageHeader title={msg('Admin')} context={open.title} actions={<DropdownMenu.Root>
         <DropdownMenu.Trigger asChild><Button variant="quiet">{msg('Details')}</Button></DropdownMenu.Trigger>
-        <DropdownMenu.Portal><DropdownMenu.Content className="desk-menu" align="end" sideOffset={4}>
-          {canInspect && <DropdownMenu.Item className="desk-menu-item" onSelect={() => inspect('config')}>{msg('Configuration file')}</DropdownMenu.Item>}
-          <DropdownMenu.Item className="desk-menu-item" onSelect={() => inspect('runtime')}>{msg('Runtime details')}</DropdownMenu.Item>
-          <DropdownMenu.Item className="desk-menu-item" asChild><Link to="/author">{msg('Project files')}</Link></DropdownMenu.Item>
+        <DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={4}>
+          {canInspect && <DropdownMenu.Item onSelect={() => inspect('config')}>{msg('Configuration file')}</DropdownMenu.Item>}
+          <DropdownMenu.Item onSelect={() => inspect('runtime')}>{msg('Runtime details')}</DropdownMenu.Item>
+          <DropdownMenu.Item asChild><Link to="/author">{msg('Project files')}</Link></DropdownMenu.Item>
         </DropdownMenu.Content></DropdownMenu.Portal>
       </DropdownMenu.Root>} />
       <DraftScope>

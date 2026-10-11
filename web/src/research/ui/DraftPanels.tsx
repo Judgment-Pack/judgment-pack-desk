@@ -1,8 +1,9 @@
+import { DefinitionHistory } from '../../definitions/DefinitionHistory'
+import shared from '../../definitions/DefinitionWorkspace.module.css'
 import { conversationMode, type AuthoringMode } from '../mode'
 import { DraftSources, declaredSources } from './DraftSources'
 import { useReadingDetails } from '../../chat/ReadingDetails'
 import { SourceReader } from '../../documents/SourceReader'
-import { DraftComparison } from '../../packs/DraftComparison'
 import type { ComponentProps, ReactNode } from 'react'
 import type { NodePositions } from '../../components/RelationshipMap'
 import { Message } from '../../i18n/Message'
@@ -12,7 +13,10 @@ import type { PackDocument } from '../../mcp/types'
 import { PackLogic } from '../../packs/PackLogic'
 import { projectLogic } from '../../packs/logicModel'
 import { initialLogicDisplay, initialLogicMode, rememberLogicMode, type LogicMode } from '../../packs/logicState'
-import { PackOverview, PackQuestion } from '../../packs/PackWorkspace'
+import { DefinitionJsonDialog } from '../../definitions/DefinitionJsonDialog'
+import { OptionsMenu, Menu } from '../../ui/Menu'
+import { IconDetails } from '../../shell/icons'
+import { PackOverview } from '../../packs/PackWorkspace'
 import { Button } from '../../ui/Button'
 import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
@@ -209,53 +213,23 @@ export function TestsPanel({ state, onSelect, mode = 'research', withChecks = tr
   )
 }
 
-export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { state: RunState; onSelect: (next: Selection) => void; onViewLogic?: () => void; onViewSources?: () => void }) {
+export function DraftPanel({ state, onViewLogic }: { state: RunState; onViewLogic?: () => void }) {
   useLocale()
   const latest = state.candidates.at(-1)
-  if (!latest) return <p className={styles.empty}>{msg("No draft yet.")}</p>
-  const document = latest.document
-  const rules = isRecord(document) && Array.isArray(document.rules) ? document.rules.filter(isRecord) : []
-  return (
-    <div className={styles.panel} data-overview>
-      {isRecord(document) && <PackQuestion document={document as unknown as PackDocument} />}
-      {isRecord(document) && <PackOverview document={document as unknown as PackDocument} onViewLogic={onViewLogic} onViewSources={onViewSources} />}
-      {rules.length > 0 && (
-        <section className={styles.section} aria-label={msg("Rules and their sources")}>
-          <h3>{msg("Rules and their sources")}</h3>
-          <ul className={styles.list}>
-            {rules.map((rule, index) => {
-              const id = typeof rule.id === 'string' ? rule.id : `#${index}`
-              const refs = Array.isArray(rule.sourceRefs) ? (rule.sourceRefs as string[]) : []
-              return (
-                <li key={id} className={styles.row}>
-                  <button type="button" className={styles.rowButton} onClick={() => onSelect({ kind: 'rule', id })} aria-label={msg("Inspect rule {{value0}}", { value0: id })}>
-                    <div className={styles.rowHead}>
-                      <strong>{id}</strong>
-                      <span className={styles.badge}>{refs.length === 0 ? msg("no source") : msg("{{count}} source references", { count: refs.length })}</span>
-                    </div>
-                    <div className={styles.url}>{typeof rule.description === 'string' ? rule.description : ''}</div>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      )}
-      <Disclosure title={msg("Full document (JSON)")}>
-        <p className={styles.detail}><Message text={"Produced by <0/> · sha256 <1/>"} slots={[latest.producedBy, latest.digest]} /></p>
-        <CodeBlock text={latest.text} label={msg("Pack JSON")} />
-      </Disclosure>
-    </div>
-  )
+  return <div className={styles.panel} data-overview>
+    {!latest ? <p className={styles.empty}>{msg('No draft yet.')}</p> : isRecord(latest.document)
+      ? <PackOverview document={latest.document as unknown as PackDocument} onViewLogic={onViewLogic}/>
+      : <p className={styles.empty}>{msg('The draft document could not be read. Open View JSON from the options menu to inspect it.')}</p>}
+  </div>
 }
 
-export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, onEstablishCases, basis, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void; onReadPage?: (citation: Citation, opener: HTMLElement) => void; onEstablishCases?: () => void; basis?: string }) {
+export function ReviewPanel({ state, sources, onCreate, onTabChange, onEstablishCases, basis, showCreateAction = true, mode = 'research' }: { brief?: ReactNode; testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void; onReadPage?: (citation: Citation, opener: HTMLElement) => void; onEstablishCases?: () => void; basis?: string }) {
   useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check
   const passing = canCreateDraft(state, mode, basis)
   const verified = sources.filter((s) => s.verification.state === 'verified').length
-  const failed = sources.filter((s) => s.verification.state === 'failed' || s.failure !== null).length
+  const failed = sources.filter((s) => s.verification.state !== 'verified' || s.failure !== null).length
   const untraced = state.citations.filter((c) => !c.traced)
   const conversation = conversationMode(mode)
   // What keeps a conversation draft's citations from Create, once they are
@@ -265,13 +239,12 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, on
   // A checked chat draft with no cases, a saved one most of all, gets them only on request.
   const establish = canEstablishCases(state, mode)
   return (
-    <div className={styles.panel}>
+    <div className={styles.panel}><div className={shared.reading}>
       <section className={styles.section}>
-        <h3>{msg("Where this stands")}</h3>
+        <h3>{msg("Readiness")}</h3>
         <p className={styles.detail}>{systemMessage(state.detail) || msg("Not started.")}</p>
         <dl className={styles.facts}>
-          <dt>{msg("Revisions")}</dt>
-          <dd>{msg("{{revisions}} ({{count}} repairs)", { revisions: state.candidates.length, count: state.revisionsUsed })}</dd>
+          <dt>{msg("Validation")}</dt><dd>{check ? check.valid ? msg("Valid") : msg("Invalid") : msg("Not checked")}</dd>
           <dt>{msg("Test cases")}</dt>
           <dd>{state.expectationIssues.some(issue => !issue.resolved) ? msg("Blocked by invalid expectations") : check?.cases.length ? msg("{{value0}} of {{value1}} agree", { value0: check.cases.filter((c) => c.passed).length, value1: check.cases.length }) : msg("Not run")}</dd>
           <dt>{msg("Sources")}</dt>
@@ -284,7 +257,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, on
             : <Message text={"<0/> of <1/> traced to a recorded excerpt"} slots={[state.citations.length - untraced.length, state.citations.length]} />}</dd>
         </dl>
       </section>
-      <DraftComparison candidates={state.candidates} />
+
       {state.unknowns.length > 0 && (
         <section className={styles.section}>
           <h3>{msg("Assumptions and open questions")}</h3>
@@ -308,38 +281,8 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, on
           </ul>
         </section>
       )}
-      {state.citations.some((c) => c.traced) && (
-        <section className={styles.section}>
-          <h3>{msg("Traced citations")}</h3>
-          <ul className={styles.list}>
-            {state.citations
-              .filter((c) => c.traced)
-              .map((citation) => (
-                <li key={citation.sourceId} className={styles.row}>
-                  <button type="button" className={styles.rowButton} onClick={event => citation.excerptId !== null ? onSelect({ kind: 'excerpt', id: citation.excerptId }) : onReadPage?.(citation, event.currentTarget)}>
-                    <div className={styles.rowHead}>
-                      <strong>{citation.sourceId}</strong>
-                      <span className={styles.badge}>{citation.excerptId ?? msg('Page {{number}}', { number: citedPage(citation.location)?.page })}</span>
-                    </div>
-                    <div className={styles.url}>{citation.url}</div>
-                  </button>
-                </li>
-              ))}
-          </ul>
-        </section>
-      )}
-      {state.candidates.length > 1 && (
-        <section className={styles.section}>
-          <h3>{msg("Revisions")}</h3>
-          <ul className={styles.unknowns}>
-            {state.candidates.map((candidate) => (
-              <li key={candidate.revision}><Message text={"Revision <0/> (<1/>):<2/><3/>"} slots={[candidate.revision, candidate.producedBy, ' ', candidate.check ? msg('{{status}}, {{passed}}/{{total}} agree', { status: candidate.check.valid ? 'valid' : 'invalid', passed: candidate.check.cases.filter(c => c.passed).length, total: candidate.check.cases.length }) : msg("not checked")]} /></li>
-            ))}
-          </ul>
-        </section>
-      )}
       <section className={styles.section}>
-        <h3>{msg("Create")}</h3>
+        <h3>{msg("Next step")}</h3>
         <p className={styles.detail}>
           {passing
             ? msg("Review the name and open questions, then create the pack with its checked cases and research record.")
@@ -354,7 +297,9 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, on
           <Button variant="primary" disabled={!passing || state.status === 'running'} onClick={onCreate}>{msg("Review and create")}</Button>
         </div>}
       </section>
-    </div>
+      {onTabChange && <div><Button variant="quiet" onClick={()=>onTabChange('tests')}>{msg('Review tests')}</Button><Button variant="quiet" onClick={()=>onTabChange('sources')}>{msg('Review sources')}</Button></div>}
+
+    </div></div>
   )
 }
 
@@ -375,10 +320,12 @@ function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: 
     viewport={viewport} onViewport={setViewport} nodePositions={nodePositions} onNodePositionsChange={setNodePositions} listScroll={scroll} /></div>
 }
 
-export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, onEstablishCases, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; onEstablishCases?: () => void; basis?: string }) {
+export function DraftTabs({ brief, historyPanel, usagePanel, testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, onEstablishCases, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { brief?: ReactNode; historyPanel?: ReactNode; usagePanel?: ReactNode; testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; onEstablishCases?: () => void; basis?: string }) {
   useLocale()
   const [tab, setTabState] = useState('draft')
-  const setTab = (next: string) => { setTabState(next); onTabChange?.(next) }
+  const [showJson, setShowJson] = useState(false), jsonTrigger = useRef<HTMLButtonElement>(null), jsonHandoff = useRef(false)
+  const [briefVisited, setBriefVisited] = useState(false)
+  const setTab = (next: string) => { if (next === 'brief') setBriefVisited(true); setTabState(next); onTabChange?.(next) }
   const ownRead = useReadingDetails('draft-review')
   // A conversation draft's traced citation is a page of a document kept in this
   // chat, and opens in the source reader at its quote.
@@ -390,10 +337,8 @@ export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, 
   }
   const pending = state.expectationIssues.filter(issue => !issue.resolved).length
   const total = state.cases.length + pending
-  // Where Tests is the pack's own test workspace, the cases written without
-  // the draft's rules, and any expectation waiting on the person, are reviewed
-  // beside readiness instead.
-  const casesInReview = testsPanel !== undefined && (state.cases.length > 0 || state.expectationIssues.length > 0 || state.droppedCases.length > 0)
+  // Independent expectations stay in Tests, beside the saved test workspace.
+  const independentCases = testsPanel !== undefined && (state.cases.length > 0 || state.expectationIssues.length > 0 || state.droppedCases.length > 0)
   const document = state.candidates.at(-1)?.document
   const sourceCount = sources.length + documents.length + files.length + declaredSources(document).length
   return (
@@ -402,24 +347,33 @@ export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, 
         <span>{typeof (state.candidates.at(-1)?.document as { title?: unknown })?.title === 'string' ? (state.candidates.at(-1)!.document as { title: string }).title : msg("Draft")}</span>
         <span className={styles.status}>{state.candidates.length === 0 ? msg("no revision yet") : msg("revision {{value0}}", { value0: state.candidates.at(-1)!.revision })}</span>
       </header>}
-      {pending > 0 && <div className={styles.panel} role="status"><span>{msg("{{count}} invalid expectations · testing paused", { count: pending })}</span><div><Button variant="quiet" onClick={() => setTab(testsPanel === undefined ? 'tests' : 'review')}>{msg("Review expectations")}</Button></div></div>}
+      {pending > 0 && <div className={styles.panel} role="status"><span>{msg("{{count}} invalid expectations · testing paused", { count: pending })}</span><div><Button variant="quiet" onClick={() => setTab('tests')}>{msg("Review expectations")}</Button></div></div>}
       <Tabs
-        scrollable keepMounted fillPanel={tab === 'tests' && testsPanel ? 'tests' : 'logic'}
+        overflow scrollable keepMounted fillPanel={tab === 'usage' ? 'usage' : tab === 'tests' && testsPanel ? 'tests' : 'logic'}
         variant={hideHeader ? 'page' : 'pane'}
+        tools={!hideHeader && <OptionsMenu label={msg('Pack options')} triggerRef={jsonTrigger} onOpenChange={open=>{if(open)jsonHandoff.current=false}} onCloseAutoFocus={event=>{if(jsonHandoff.current)event.preventDefault()}}>
+          <Menu.Item icon={<IconDetails/>} disabled={!state.candidates.length} onSelect={()=>{jsonHandoff.current=true;setShowJson(true)}}>{msg('View JSON')}</Menu.Item>
+        </OptionsMenu>}
         label={msg("Draft views")}
         value={tab}
         onValueChange={setTab}
         tabs={[
-          { value: 'draft', label: msg("Overview"), panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
+          { value: 'draft', label: msg("Overview"), panel: <DraftPanel state={state} onViewLogic={() => setTab('logic')} /> },
           { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelectInMain ?? onSelect} onInspect={onSelect} active={tab === 'logic'} /> },
-          { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <div className={styles.panel}><DraftSources document={document} documents={documents} files={files} onRead={onRead} />{(sources.length > 0 || sourceCount === 0) && <SourcesPanel sources={sources} selection={selection} onSelect={onSelect} />}</div> },
-          { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: testsPanel ?? <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} onReadPage={readPage} /> },
+          { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <div className={styles.panel}><DraftSources document={document} documents={documents} files={files} sources={sources} citations={state.citations} onRead={onRead} /></div> },
+          { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: testsPanel ? <div className={styles.testStack}>
+            {independentCases && <Disclosure title={msg('Independent expectations')} open={pending>0}><TestsPanel mode={mode} state={state} onSelect={onSelect} withChecks={false} {...actions} onReadPage={readPage}/></Disclosure>}
+            <div className={styles.testWorkspace}>{testsPanel}</div>
+          </div> : <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} onReadPage={readPage} /> },
           { value: 'review', label: msg("Review"), panel: <>
-            <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} onReadPage={readPage} onEstablishCases={onEstablishCases} basis={basis} />
-            {casesInReview && <TestsPanel mode={mode} state={state} onSelect={onSelect} withChecks={false} {...actions} onReadPage={readPage} />}
-          </> }
+            <ReviewPanel onTabChange={setTab} showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} onReadPage={readPage} onEstablishCases={onEstablishCases} basis={basis} />
+          </> },
+          { value: 'brief', label: msg('Brief'), panel: <div className={styles.panel}>{(tab === 'brief' || briefVisited) && (brief ?? <p>{msg('Keep this draft before generating a brief.')}</p>)}</div> },
+          { value: 'history', label: msg('History'), panel: tab === 'history' ? <div className={styles.panel}>{historyPanel ?? <DefinitionHistory kind="pack" draft owner="" candidates={state.candidates}/>}</div> : null },
+          ...(usagePanel ? [{ value: 'usage', label: msg('Usage'), panel: tab === 'usage' ? usagePanel : null }] : [])
         ]}
       />
+      {!hideHeader && <DefinitionJsonDialog open={showJson} onOpenChange={setShowJson} text={state.candidates.at(-1)?.text ?? ''} title={msg('Pack JSON')} openerRef={jsonTrigger}/>}
     </section>
   )
 }

@@ -325,18 +325,15 @@ describe('the deep link', () => {
 describe('the other two views on this pack', () => {
   beforeEach(() => chassis(PACK_TEXT, DIGEST))
 
-  it('offers the what-if view, which nothing else links to any more', async () => {
-    // `PackDetail` carried the only link to it and the rail carried a per-pack
-    // Evaluate child; both went with this rewrite, and the route was reachable
-    // only by typing its URL.
+  it('opens the what-if workspace from the Tests tab', async () => {
     draw(SERVED)
-    const link = await screen.findByRole('link', { name: 'Test pack' })
+    const link = await screen.findByRole('link', { name: 'Tests' })
     expect(link.getAttribute('href')).toBe('/packs/vendor-onboarding/evaluate')
   })
 
   it('offers the matrix only where the listing says the pack declares one', async () => {
     draw(SERVED)
-    await screen.findByRole('link', { name: 'Test pack' })
+    await screen.findByRole('link', { name: 'Tests' })
     expect(screen.queryByRole('link', { name: 'Saved cases' })).toBeNull()
 
     cleanup()
@@ -349,8 +346,8 @@ describe('the other two views on this pack', () => {
         })
       })
     })
-    fireEvent.click(await screen.findByRole('button', { name: 'More pack actions' }))
-    expect(await screen.findByRole('link', { name: 'Saved cases' })).toBeTruthy()
+    fireEvent.keyDown(await screen.findByRole('button', { name: 'Pack options' }), {key:'Enter'})
+    expect(await screen.findByRole('menuitem', { name: 'Saved cases' })).toBeTruthy()
   })
 })
 
@@ -851,13 +848,14 @@ describe('the guided reading workspace', () => {
     const { router, calls } = draw(SERVED, {}, `/packs/vendor-onboarding${search}`, { inspector: true })
     const overview = await screen.findByRole('region', { name: 'Pack overview' })
     expect(within(overview).getByText('Approve')).toBeTruthy()
-    expect(within(overview).getByRole('button', { name: 'Decline' })).toBeTruthy()
-    expect(within(overview).getAllByText('Fallback')).toHaveLength(2)
+    expect(within(overview).getByText('Decline')).toBeTruthy()
+    expect(within(overview).getAllByText('Fallback')).toHaveLength(1)
     expect(within(overview).queryByText('Fallback outcome')).toBeNull()
     expect(within(overview).queryByText('Handoff target')).toBeNull()
     expect(within(overview).queryByRole('button', { name: 'View conditions' })).toBeNull()
-    fireEvent.click(within(overview).getByRole('button', { name: 'View source references' }))
-    await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('at')).toBe('/sources'))
+    expect(within(overview).queryByRole('button', { name: 'View source references' })).toBeNull()
+    expect(within(overview).queryByText('At a glance')).toBeNull()
+    expect(new URLSearchParams(router.state.location.search).get('at')).toBeNull()
     expect([...new Set(calls.map(call => call.name))].sort()).toEqual(['get_pack', 'list_packs', 'validate'])
     expect(screen.getByRole('link', { name: 'View logic' }).getAttribute('href')).toBe(`/packs/vendor-onboarding?view=logic${search ? '&chat=authoring-chat' : ''}`)
   })
@@ -865,7 +863,7 @@ describe('the guided reading workspace', () => {
     const { revealed, router } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=list&at=/rules/1')
     await screen.findByRole('radio', { name: 'List' })
     await waitFor(() => expect(revealed).toHaveLength(1))
-    fireEvent.click(screen.getByRole('radio', { name: 'Map' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Diagram' }))
     await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('layout')).toBe('map'))
     expect(new URLSearchParams(router.state.location.search).get('at')).toBe('/rules/1')
     expect(revealed).toHaveLength(1)
@@ -875,9 +873,9 @@ describe('the guided reading workspace', () => {
     await screen.findByRole('radio', { name: 'List' })
     // The compact list leaves exact conditions in Details until explicitly expanded.
     await waitFor(() => expect(slotTarget!.querySelector('[data-condition-tree]')).not.toBeNull())
-    fireEvent.click(screen.getByRole('button', { name: 'View' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Show list conditions' }))
-    fireEvent.keyDown(screen.getByRole('checkbox', { name: 'Show list conditions' }), { key: 'Escape' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Logic display options' }),{key:'Enter'})
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Show list conditions' }))
+
     await waitFor(() => expect(slotTarget!.querySelector('[data-condition-tree]')).toBeNull())
     fireEvent.change(screen.getByRole('searchbox', { name: 'Find pack item' }), { target: { value: 'no-matching-rule' } })
     await waitFor(() => expect(slotTarget!.querySelector('[data-condition-tree]')).not.toBeNull())
@@ -893,10 +891,46 @@ describe('the guided reading workspace', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Logic' }))
     fireEvent.click(await screen.findByRole('radio', { name: 'List' }))
     await waitFor(() => expect(document.querySelector('[data-logic-pointer="/rules/0"]')).not.toBeNull())
-    expect(screen.getByRole('region', { name: 'Source references' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'More pack actions' }))
-    fireEvent.click(await screen.findByRole('link', { name: 'Full document' }))
-    await screen.findByRole('button', { name: /On this page/ })
-    expect(document.querySelector('[data-pointer="/rules"]')).not.toBeNull()
+    expect(screen.queryByRole('region', { name: 'Source references' })).toBeNull()
+    fireEvent.click(screen.getByRole('link',{name:'Sources'}))
+    expect(await screen.findByRole('region',{name:'Pack sources'})).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Pack options' }), {key:'Enter'})
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'View JSON' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Pack JSON' })
+    expect(within(dialog).getByRole('region', { name: 'Pack JSON' }).textContent).toBe(PACK_TEXT)
+    expect(dialog.getAttribute('data-size')).toBe('wide')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Pack options' })))
   })
+})
+
+
+it('separates saved pack commands from metadata and restores focus after inspecting details',async()=>{
+ chassis(PACK_TEXT,DIGEST)
+ draw(SERVED,{},'/packs/vendor-onboarding')
+ const trigger=await screen.findByRole('button',{name:'Pack options'})
+ fireEvent.keyDown(trigger,{key:'Enter'})
+ const menu=await screen.findByRole('menu')
+ expect(within(menu).queryByRole('textbox')).toBeNull()
+ expect(within(menu).getByRole('menuitem',{name:'Create job…'}).getAttribute('href')).toBe('/jobs/new?pack=vendor-onboarding')
+ fireEvent.click(await screen.findByRole('menuitem',{name:'Pack details…'}))
+ const dialog=await screen.findByRole('dialog',{name:'Pack details'})
+ expect(screen.queryByRole('menu')).toBeNull()
+ expect(within(dialog).getByText('Pack ID')).toBeTruthy()
+ fireEvent.click(within(dialog).getByRole('button',{name:'Close'}))
+ await waitFor(()=>expect(document.activeElement).toBe(trigger))
+})
+
+
+it('opens a linked chat once and respects closing it when shell callbacks change',async()=>{
+ chassis(PACK_TEXT,DIGEST)
+ const {revealed}=draw(SERVED,{},'/packs/vendor-onboarding?chat=linked-chat',{inspector:true})
+ await screen.findByRole('region',{name:'Pack overview'})
+ await waitFor(()=>expect(revealed).toEqual(['reveal']))
+ fireEvent.click(screen.getByRole('button',{name:'close the inspector'}))
+ // Slotted republishes reveal when its pane state changes, as the shell does.
+ expect(revealed).toEqual(['reveal'])
+ fireEvent.click(screen.getByRole('link',{name:'Sources'}))
+ await waitFor(()=>expect(screen.getByRole('link',{name:'Sources'}).getAttribute('aria-current')).toBe('page'))
+ expect(revealed).toEqual(['reveal'])
 })

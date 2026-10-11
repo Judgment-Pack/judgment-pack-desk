@@ -1,5 +1,5 @@
 import { useId, useState, type RefObject } from 'react'
-import { DropdownMenu } from 'radix-ui'
+import { Menu as DropdownMenu } from '../ui/Menu'
 import { msg, useLocale } from '../i18n'
 import { IconPaperclip, IconPlus, IconLink } from '../shell/icons'
 import { Tooltip } from '../ui/Tooltip'
@@ -27,22 +27,21 @@ export function AttachmentMenu({ disabled, onUpload, connections = [], triggerRe
       <DropdownMenu.Trigger ref={triggerRef} type="button" className="desk-icon-button" aria-label={msg('Attach files')} disabled={disabled}><IconPlus /></DropdownMenu.Trigger>
     </Tooltip>
     <DropdownMenu.Portal>
-      <DropdownMenu.Content className={`desk-menu ${styles.menu}`} aria-label={msg('Attach files')} side="top" align="start" sideOffset={8} collisionPadding={16}
+      <DropdownMenu.Content className={styles.menu} aria-label={msg('Attach files')} side="top" align="start" sideOffset={8} collisionPadding={16}
         onEscapeKeyDown={event => event.stopPropagation()}>
-        <DropdownMenu.Item className={`desk-menu-item ${styles.item}`} textValue={msg('Upload files')} aria-labelledby={`${id}-upload`} aria-describedby={`${id}-upload-hint`} onSelect={onUpload}>
-          <IconPaperclip />
-          <span className={styles.copy}><span id={`${id}-upload`}>{msg('Upload files')}</span><span id={`${id}-upload-hint`} className={styles.description}>{msg('PDFs and text files')}</span></span>
+        <DropdownMenu.Item icon={<IconPaperclip/>} description={<span id={`${id}-upload-hint`}>{msg('PDFs and text files')}</span>} textValue={msg('Upload files')} aria-labelledby={`${id}-upload`} aria-describedby={`${id}-upload-hint`} onSelect={onUpload}>
+          <span id={`${id}-upload`}>{msg('Upload files')}</span>
         </DropdownMenu.Item>
-        {linkVisible && <DropdownMenu.Item className={`desk-menu-item ${styles.item}`} textValue={msg('Add link')} disabled={!onLink} onSelect={onLink}>
-          <IconLink /><span className={styles.copy}><span>{msg('Add link')}</span><span className={styles.description}>{msg('Public web pages')}</span></span>
+        {linkVisible && <DropdownMenu.Item icon={<IconLink/>} description={msg('Public web pages')} textValue={msg('Add link')} disabled={!onLink} onSelect={onLink}>
+          {msg('Add link')}
         </DropdownMenu.Item>}
         {visible.map(item => {
           const current = connections.find(connection => connection.provider === item.provider)
-          return <DropdownMenu.Item key={item.provider} className={`desk-menu-item ${styles.item}`} textValue={providerName(item.provider, item.descriptor)} disabled={!current} onSelect={current ? () => { rememberConnection(current.provider); current.onSelect() } : undefined}>
-            <ProviderIcon provider={item.provider} descriptor={item.descriptor} /><span className={styles.copy}><span>{providerName(item.provider, item.descriptor)}</span><span className={styles.description}>{!current ? msg('Unavailable') : item.provider === 'google-drive' ? msg('Choose files') : item.selection === 'mail-search' ? msg('Choose emails') : item.descriptor?.source?.record === 'resource-v1' ? msg('Choose files') : msg('Choose notes')}</span></span>
+          return <DropdownMenu.Item icon={<ProviderIcon provider={item.provider} descriptor={item.descriptor}/>} description={!current ? msg('Unavailable') : item.provider === 'google-drive' ? msg('Choose files') : item.selection === 'mail-search' ? msg('Choose emails') : item.descriptor?.source?.record === 'resource-v1' ? msg('Choose files') : msg('Choose notes')} key={item.provider} textValue={providerName(item.provider, item.descriptor)} disabled={!current} onSelect={current ? () => { rememberConnection(current.provider); current.onSelect() } : undefined}>
+            {providerName(item.provider, item.descriptor)}
           </DropdownMenu.Item>
         })}
-        {onMore && <><DropdownMenu.Separator className="desk-menu-separator" /><DropdownMenu.Item className="desk-menu-item" onSelect={onMore}>{msg('More connections')}</DropdownMenu.Item></>}
+        {onMore && <><DropdownMenu.Separator /><DropdownMenu.Item onSelect={onMore}>{msg('More connections')}</DropdownMenu.Item></>}
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
   </DropdownMenu.Root>

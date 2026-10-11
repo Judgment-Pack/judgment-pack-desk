@@ -4,7 +4,7 @@ import { msg, useLocale } from '../i18n'
  */
 import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { connectionSays, useMcp } from '../mcp/McpProvider'
+import { ConnectionStatus } from './ConnectionNotices'
 
 export const CONFIG_REFUSED_CUE = 'configuration refused — see Admin'
 
@@ -34,7 +34,6 @@ export const CONFIG_UNREAD_SHORT = 'config unread'
 
 export function StatusStrip() {
   useLocale()
-  const { status } = useMcp()
   const { problems, readFailure, desk } = useEffectiveConfig()
   // **Either file, one cue.** The strip's job is to stop a mistyped key
   // looking exactly like having written no file at all, and that argument does
@@ -49,9 +48,7 @@ export function StatusStrip() {
           <ConfigCue full={msg(CONFIG_UNREAD_CUE)} short={msg(CONFIG_UNREAD_SHORT)} />
         )}
       </span>
-      <Link to="/help" className="desk-strip-connection" aria-label={`${msg('Help & About')}: ${connectionSays(status)}`}>
-        {connectionSays(status)}
-      </Link>
+      <ConnectionStatus/>
     </footer>
   )
 }

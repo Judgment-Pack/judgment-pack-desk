@@ -21,9 +21,26 @@ export function PageHeader({ title, titleHref, context, leading, meta, actions, 
     {navigation}
     {actions && <div className={styles.actions} data-page-actions>{actions}</div>}
   </header>
+  if (variant === 'title') return <header role="presentation" data-page-header className={styles.documentHeader}>
+    <div className={`desk-pane-head ${styles.documentHeading}`}>
+      <div className={styles.documentIdentity}>
+        {leading}
+        <OverflowTooltip selector="[data-page-title], [data-page-meta]">
+          <h1 className={styles.title}>
+            <span data-page-title>{titleHref ? <Link className={styles.titleLink} to={titleHref}>{title}</Link> : title}</span>
+            {context && <><span className={styles.separator} aria-hidden="true">/</span><span className={styles.context} data-page-context>{context}</span></>}
+            {meta !== undefined && <span className={styles.meta} data-page-meta>{meta}</span>}
+          </h1>
+        </OverflowTooltip>
+      </div>
+      {actions && <div className={styles.actions} data-page-actions>{actions}</div>}
+    </div>
+    {description && <div className={styles.description}>{description}</div>}
+    {navigation}
+  </header>
   // Route chrome is not a second banner landmark; the shell owns that role.
-  return <header role="presentation" data-page-header className={variant === 'title' ? styles.documentHeader : styles.header}>
-    <div className={variant === 'title' ? styles.documentHeading : styles.heading}>
+  return <header role="presentation" data-page-header className={styles.header}>
+    <div className={styles.heading}>
     {leading}
     <h1 className={styles.title}><span data-page-title>{titleHref ? <Link className={styles.titleLink} to={titleHref}>{title}</Link> : title}</span>{context && <>
       <span className={styles.separator} aria-hidden="true">/</span>

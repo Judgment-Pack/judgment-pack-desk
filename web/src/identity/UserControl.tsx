@@ -4,7 +4,8 @@ import { LanguageMenu } from '../i18n/LanguageMenu'
 /** Account menu: verified session identity takes precedence over legacy display
  * configuration. Ending the Desk session leaves source integrations connected.
  * Language, appearance and pane preferences remain browser-local. */
-import { Avatar, DropdownMenu } from 'radix-ui'
+import { Avatar } from 'radix-ui'
+import { Menu as DropdownMenu } from '../ui/Menu'
 import { SignOutDialog } from '../auth/SignOutDialog'
 import { useRef, useState } from 'react'
 import { useConnectionsPane } from '../connections/ConnectionPaneContext'
@@ -17,7 +18,7 @@ import {
   type ThemeChoice
 } from '../config/deskConfig'
 import { useAppearance } from '../shell/appearanceState'
-import { IconCheck, IconChevronDown } from '../shell/icons'
+import { IconChevronDown, IconLink, IconGear, IconHelp } from '../shell/icons'
 import { useShellState, type ResetOutcome } from '../shell/paneState'
 import { useIdentity } from './IdentityProvider'
 
@@ -137,28 +138,28 @@ export function UserControl() {
         <IconChevronDown />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content className="desk-menu desk-header-menu" align="end" sideOffset={6} collisionPadding={16}>
-          <DropdownMenu.Label className="desk-menu-note">
+        <DropdownMenu.Content className="desk-header-menu" align="end" sideOffset={6} collisionPadding={16}>
+          <DropdownMenu.Label>
             {localAccess ? msg('Personal · This computer') : authenticated ? msg('Signed in with {{provider}}', { provider: provider?.label ?? provider?.issuerHost ?? '' }) : provider === null ? msg(NONE_MENU_SENTENCE) : msg(PROVIDER_PHASE_NOTE)}
           </DropdownMenu.Label>
-          <DropdownMenu.Label className="desk-menu-note">{authenticated || localAccess ? msg('Signing out ends this Desk session. Your connected sources stay connected.') : msg(SESSION_SENTENCE)}</DropdownMenu.Label>
-          <DropdownMenu.Separator className="desk-rule-h" />
-          <DropdownMenu.Item className="desk-menu-item" onSelect={() => requestAnimationFrame(() => connections.open({ opener: opener.current }))}>{msg("My connections")}</DropdownMenu.Item>
+          <DropdownMenu.Label>{authenticated || localAccess ? msg('Signing out ends this Desk session. Your connected sources stay connected.') : msg(SESSION_SENTENCE)}</DropdownMenu.Label>
+          <DropdownMenu.Separator/>
+          <DropdownMenu.Item icon={<IconLink/>} onSelect={() => requestAnimationFrame(() => connections.open({ opener: opener.current }))}>{msg("My connections")}</DropdownMenu.Item>
           <LanguageMenu />
           <AppearanceItems />
-          <DropdownMenu.Separator className="desk-rule-h" />
+          <DropdownMenu.Separator/>
           <ResetPanesItem />
-          <DropdownMenu.Item asChild className="desk-menu-item">
+          <DropdownMenu.Item asChild>
             <Link to="/help#shortcuts">{msg("Keyboard shortcuts")}</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item asChild className="desk-menu-item">
+          <DropdownMenu.Item asChild icon={<IconGear/>}>
             <Link to="/admin">{msg("Admin")}</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item asChild className="desk-menu-item">
+          <DropdownMenu.Item asChild icon={<IconHelp/>}>
             <Link to="/help">{msg("About")}</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Separator className="desk-rule-h" />
-          <DropdownMenu.Item className="desk-menu-item" onSelect={() => requestAnimationFrame(() => setSignOutOpen(true))}>{msg('End session')}</DropdownMenu.Item>
+          <DropdownMenu.Separator/>
+          <DropdownMenu.Item onSelect={() => requestAnimationFrame(() => setSignOutOpen(true))}>{msg('End session')}</DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -191,7 +192,6 @@ function ResetPanesItem() {
   return (
     <>
       <DropdownMenu.Item
-        className="desk-menu-item"
         onSelect={(event) => {
           // The reset runs inside the provider that owns the record — it
           // cancels a write already on its way, refuses to clear the
@@ -202,7 +202,7 @@ function ResetPanesItem() {
         }}
       >{msg("Reset panes")}</DropdownMenu.Item>
       {reset !== undefined && (
-        <DropdownMenu.Label className="desk-menu-note">{RESET_SAYS[reset]}</DropdownMenu.Label>
+        <DropdownMenu.Label>{RESET_SAYS[reset]}</DropdownMenu.Label>
       )}
     </>
   )
@@ -241,7 +241,7 @@ function AppearanceItems() {
   const [restored, setRestored] = useState<ResetOutcome | undefined>(undefined)
   return (
     <>
-      <DropdownMenu.Label className="desk-menu-heading">{msg("Theme")}</DropdownMenu.Label>
+      <DropdownMenu.Label>{msg("Theme")}</DropdownMenu.Label>
       <DropdownMenu.RadioGroup
         aria-label={msg("Theme")}
         value={appearance.theme}
@@ -251,8 +251,8 @@ function AppearanceItems() {
           <AppearanceChoice key={choice} value={choice} />
         ))}
       </DropdownMenu.RadioGroup>
-      <DropdownMenu.Label className="desk-menu-note">{msg(THEME_SAYS)}</DropdownMenu.Label>
-      <DropdownMenu.Label className="desk-menu-heading">{msg("Density")}</DropdownMenu.Label>
+      <DropdownMenu.Label>{msg(THEME_SAYS)}</DropdownMenu.Label>
+      <DropdownMenu.Label>{msg("Density")}</DropdownMenu.Label>
       <DropdownMenu.RadioGroup
         aria-label={msg("Density")}
         value={appearance.density}
@@ -262,12 +262,11 @@ function AppearanceItems() {
           <AppearanceChoice key={choice} value={choice} />
         ))}
       </DropdownMenu.RadioGroup>
-      <DropdownMenu.Label className="desk-menu-note">{msg(DENSITY_SAYS)}</DropdownMenu.Label>
-      <DropdownMenu.Label className="desk-menu-note">
+      <DropdownMenu.Label>{msg(DENSITY_SAYS)}</DropdownMenu.Label>
+      <DropdownMenu.Label>
         {projectDefaultSays(appearance.projectDefault)}
       </DropdownMenu.Label>
       <DropdownMenu.Item
-        className="desk-menu-item"
         onSelect={(event) => {
           // Inside the provider that owns the record: it refuses to clear the
           // provisional key before the chassis has said which project this is,
@@ -278,7 +277,7 @@ function AppearanceItems() {
         }}
       >{msg("Use the project’s default")}</DropdownMenu.Item>
       {restored !== undefined && (
-        <DropdownMenu.Label className="desk-menu-note">{RESTORED_SAYS[restored]}</DropdownMenu.Label>
+        <DropdownMenu.Label>{RESTORED_SAYS[restored]}</DropdownMenu.Label>
       )}
     </>
   )
@@ -300,13 +299,9 @@ function AppearanceChoice({ value }: { value: string }) {
   useLocale()
   return (
     <DropdownMenu.RadioItem
-      className="desk-menu-item desk-menu-choice"
       value={value}
       onSelect={(event) => event.preventDefault()}
     >
-      <DropdownMenu.ItemIndicator className="desk-menu-tick">
-        <IconCheck />
-      </DropdownMenu.ItemIndicator>
       {appearanceLabel(value)}
     </DropdownMenu.RadioItem>
   )

@@ -1,4 +1,4 @@
-import { cleanup, screen } from '@testing-library/react'
+import { cleanup, fireEvent, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
 import { connected, renderConnected, stubClient } from './testing/harness'
@@ -22,7 +22,7 @@ describe('the desk, connected', () => {
 
   it('keeps the pack collection available at its own URL', async () => {
     renderConnected(<App />, connected({ client: EMPTY_PROJECT.client, known: true }), { path: '/packs' })
-    await screen.findByRole('heading', { name: /^Decisions/ })
+    await screen.findByRole('heading', { name: /^Library/ })
   })
 
   it('says the tool listing could not be read rather than impersonating an older runtime', async () => {
@@ -37,8 +37,8 @@ describe('the desk, connected', () => {
         capabilitiesError: new Error('the request timed out')
       })
     )
-    const banner = await screen.findByText(/tool listing could not be read/)
-    expect(banner.textContent).toContain('the request timed out')
-    expect(banner.textContent).toContain('unknown rather than known to be little')
+    fireEvent.click(await screen.findByRole('button', {name:'Connection status: Limited connection'}))
+    expect(await screen.findByText('Some features are unavailable because Desk could not load runtime capabilities.')).toBeTruthy()
+    expect(screen.getByText('the request timed out')).toBeTruthy()
   })
 })

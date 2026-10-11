@@ -14,8 +14,8 @@ export function selectedAssistant(slot: { engine?: string; endpoint: AssistantEn
 export function bindExecution(config: Pick<AssistantConfig,'engine'|'endpoint'|'agent'> & AITarget, model: string, thinking: ThinkingTier): Pick<AssistantSession,'model'|'thinking'> | Pick<AgentAssistantSession,'agent'|'effort'> {
   if (!model) throw new Error(sourceMessage('Choose an Assistant model before starting.'))
   if (config.engine === 'codex') {
-    if (!config.agent || config.agent.model !== model) throw new Error(sourceMessage('Choose a model for the ChatGPT subscription in Assistant settings.'))
-    return { agent:{ model, run:config.connectionId?bindAgentRun(model,config):bindAgentRun(model) }, ...(config.agent.effort ? { effort:config.agent.effort } : {}) }
+    if (!config.agent || !allowedAgentModels(config.agent).includes(model)) throw new Error(sourceMessage('Choose a model for the ChatGPT subscription in Assistant settings.'))
+    return { agent:{ model, run:config.connectionId?bindAgentRun(model,config):bindAgentRun(model) }, ...(config.agent.model === model && config.agent.effort ? { effort:config.agent.effort } : {}) }
   }
   if (!config.endpoint) throw new Error(sourceMessage('Choose an enabled Assistant model.'))
   return { model:{ family:config.endpoint.kind,model,call:config.connectionId?bindModelCall(config.endpoint.kind,config):bindModelCall(config.endpoint.kind) }, thinking:normalize(thinking,config.endpoint.kind) }

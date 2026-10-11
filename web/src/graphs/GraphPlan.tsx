@@ -2,6 +2,7 @@ import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { Disclosure } from '../ui/Disclosure'
 import { Button } from '../ui/Button'
 import { Empty, Loading, Pill, Section } from '../components/primitives'
 import { useGraphDocument } from '../mcp/queries'
@@ -65,16 +66,17 @@ function Step({ step, known }: { step: GraphStep; known: (string | undefined)[] 
     <div className="card-head">
       <h3>{step.order !== undefined && <>{step.order}. </>}{step.node}</h3>
       {step.pack && <Link to={`/packs/${encodeURIComponent(step.pack)}`}><Message text={"pack <0/>"} slots={[step.pack]} /></Link>}
-      {step.packVersion && <Pill tone="quiet">v{step.packVersion}</Pill>}
+      {step.packVersion && <Pill tone="quiet">{step.packVersion}</Pill>}
     </div>
-    <p className="meta">
+    {step.detail && <p className="note note-warn" lang="en">{shownMessage(step.detail, known)}</p>}
+    <Disclosure title={msg("Step details")}><p className="meta">
       {step.packId && <code>{step.packId}</code>}
       {step.path && <code>{shownPath(step.path)}</code>}
     </p>
-    {step.detail && <p className="note note-warn" lang="en">{shownMessage(step.detail, known)}</p>}
     {(step.feeds ?? []).length > 0
       ? <ul>{step.feeds!.map((feed, index) => <li key={index}><Feed feed={feed} /></li>)}</ul>
       : <p className="quiet">{msg("Fed by no other step.")}</p>}
+    </Disclosure>
   </li>
 }
 

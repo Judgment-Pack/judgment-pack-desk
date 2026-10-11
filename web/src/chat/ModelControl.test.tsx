@@ -61,3 +61,11 @@ it('hides unapproved and unavailable models, and filters the allowed list',()=>{
  fireEvent.change(screen.getByRole('searchbox',{name:'Search models'}),{target:{value:'unavailable'}})
  expect(screen.queryByRole('radio')).toBeNull();expect(screen.getByText('No models match your search.')).toBeTruthy()
 })
+
+it('asks older chats to choose a connection without showing an unconfirmed default as selected',()=>{
+ const props={id:'legacy',model:'chosen',models:['chosen'],codex:true,enabled:true,disabled:false,onModelChange:vi.fn(),onReasoningChange:vi.fn()}
+ render(<ModelControl {...props} requiredSelection/>)
+ expect(screen.queryByRole('button',{name:'Model: chosen, Reasoning: Low'})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'Choose AI connection'}))
+ expect(screen.getByRole('radio',{name:'chosen'}).getAttribute('data-state')).toBe('unchecked')
+})

@@ -344,6 +344,14 @@ export function useGraphInventory(): UseQueryResult<GraphInventory, Error> {
  * key that survived a reconnect would let a document read before the socket
  * dropped be joined to a matrix run from after it.
  */
+export async function fetchGraphDocument(client: Client, graphId: string, signal?: AbortSignal): Promise<ServedGraph> {
+  const { raw, structured } = await callToolText(client, 'experimental_get_graph', { graph_id: graphId }, signal)
+  // Missing metadata never becomes an invented runtime verdict.
+  const meta = (structured ?? {}) as unknown as GraphDocumentMeta
+  const read = readServedDocument(meta, raw)
+  return read.ok ? { meta, raw, document: read.document } : { meta, raw, unreadable: read.reason }
+}
+
 export function useGraphDocument(graphId: string | undefined): UseQueryResult<ServedGraph, Error> {
   const { client, status, graphDocumentSupported, connectionEpoch } = useMcp()
   return useQuery({
@@ -351,20 +359,7 @@ export function useGraphDocument(graphId: string | undefined): UseQueryResult<Se
     enabled:
       status === 'ready' && client !== null && graphDocumentSupported && Boolean(graphId),
     queryFn: async ({ signal }) => {
-      const { raw, structured } = await callToolText(
-        client!,
-        'experimental_get_graph',
-        { graph_id: graphId },
-        signal
-      )
-      // A runtime that answered without structured content leaves the metadata
-      // empty rather than invented; every reader here treats a missing member
-      // as missing — including the status, whose absence is not `valid`.
-      const meta = (structured ?? {}) as unknown as GraphDocumentMeta
-      const read = readServedDocument(meta, raw)
-      return read.ok
-        ? { meta, raw, document: read.document }
-        : { meta, raw, unreadable: read.reason }
+      return fetchGraphDocument(client!, graphId!, signal)
     }
   })
 }

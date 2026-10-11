@@ -33,3 +33,21 @@ it('re-reads the latest hierarchy when assigning a newly registered pack',async(
  expect(vi.mocked(writeFile).mock.calls[0]![0].baseSha256).toBe('fresh')
  expect(readFile).toHaveBeenCalledWith(FOLDERS_FILE,undefined)
 })
+
+it('creates a folder and moves packs and graphs in one write against the observed revision',async()=>{
+ const before={document:defaultFolders(),digest:'observed'}
+ vi.mocked(writeFile).mockImplementation(async input=>({path:input.path,bytes:input.content.length,sha256:'new',content:input.content}))
+ const saved=await saveFolderAction(before,{type:'create-and-move',id:'briefs',name:'Client briefs',parentId:null,target:{kind:'items',ids:['alpha','graph:flow','graph-draft:pending']}})
+ expect(writeFile).toHaveBeenCalledOnce()
+ expect(vi.mocked(writeFile).mock.calls[0]![0]).toMatchObject({path:FOLDERS_FILE,baseSha256:'observed'})
+ expect(saved.document.version).toBe(2)
+ expect(saved.document.assignments).toEqual({'alpha':'briefs','graph:flow':'briefs','graph-draft:pending':'briefs'})
+ expect(before.document).toEqual(defaultFolders())
+})
+
+it('does not create a destination when the accompanying folder move is invalid',async()=>{
+ const before={document:defaultFolders(),digest:'observed'}
+ await expect(saveFolderAction(before,{type:'create-and-move',id:'briefs',name:'Briefs',parentId:null,target:{kind:'folder',id:HOME_FOLDER}})).rejects.toThrow('The home folder cannot be renamed, moved, or deleted.')
+ expect(writeFile).not.toHaveBeenCalled()
+ expect(before.document).toEqual(defaultFolders())
+})

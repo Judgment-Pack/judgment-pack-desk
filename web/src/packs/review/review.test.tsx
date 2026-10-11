@@ -141,13 +141,14 @@ describe('the review page', () => {
 })
 
 describe('the collection', () => {
-  it('shows each pack’s finding beside its name, and the way to review them', async () => {
+  it('shows each pack’s finding without putting project lock management in the collection', async () => {
     reviews = [differing]
     const stub = stubClient({ list_packs: () => ({ text: JSON.stringify({ status: 'valid', packs: [{ id: 'alpha' }, { id: 'beta' }, { id: 'gamma' }] }) }) })
     render(<QueryClientProvider client={testQueryClient()}><MemoryRouter><McpContext.Provider value={connected({ client: stub.client })}><ReviewProvider><PacksPane /></ReviewProvider></McpContext.Provider></MemoryRouter></QueryClientProvider>)
     const alpha = await screen.findByRole('link', { name: /alpha/ })
     await waitFor(() => expect(alpha.textContent).toContain('Changed since the last lock'))
     expect(screen.getByRole('link', { name: /gamma/ }).textContent).not.toContain('Changed since the last lock')
-    expect(screen.getByRole('link', { name: 'Review and lock' }).getAttribute('href')).toBe('/packs/_review')
+    expect(screen.queryByRole('button', { name: 'Collection options' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Review and lock' })).toBeNull()
   })
 })
