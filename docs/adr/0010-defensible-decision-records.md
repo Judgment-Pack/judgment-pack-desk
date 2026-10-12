@@ -343,6 +343,16 @@ keys.
   *Amended 2026-10-08:* Desk does not copy the key into an agent's setup. The
   key is named by `jpack.json` through the upgrade, or inherited from where
   Desk started.
+
+  *Amended 2026-10-13 (issue #282, this PR):* decided: Desk's agent setup
+  carries no signing key. The key lives in the desk's `jpack.json`
+  (`audit.signingKey`, and since configVersion 7 `audit.signingPublicKey` for
+  the expected key, #376), which any runtime reading that configuration
+  honours, an agent's included. The project Desk was started on reaches that
+  through the upgrade offer (#261), or inherits `JPACK_SIGNING_KEY` from where
+  Desk started, as #378 keeps it. The reason: a key's path in an agent's
+  configuration is custody Desk cannot hold, and an agent that can read the
+  owner's files can read the key either way (section 1, "Whom the key binds").
 - **An inherited `JPACK_SIGNING_KEY` is removed** from every runtime Desk starts
   for a desk it made, as `JPACK_CONFIG` is (`runtimeEnv`, `runRuntime`).
   Measured:
@@ -933,6 +943,11 @@ maintainer may overrule any of them.
    agent setup. In both cases, remove an inherited `JPACK_SIGNING_KEY` from the
    runtimes of desks Desk made.
    **Answered: yes, as recommended.**
+
+   *Amended 2026-10-13 (issue #282, this PR):* the answer stands except for
+   "and in Desk's agent setup": the agent setup carries no key. The key is
+   named by the desk's `jpack.json`, which any runtime reading it honours, an
+   agent's included; see the amendment in section 1.
 
 3. **Is signing on by default for new desks?** It needs the new runtime.
    **Recommendation:** yes, where the runtime reads `"6"` and Desk's custody can
