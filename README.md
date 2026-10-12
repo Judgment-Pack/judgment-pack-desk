@@ -1123,9 +1123,13 @@ trail. Desk treats it as a holder whose channel is `witness`, one per desk.
   token its operator issued for the witness's audience, and an interval from
   5 minutes to 24 hours, an hour unless you say otherwise. Desk holds the key
   to the runtime's rule by running `jpack audit verify --config jpack.json
-  --format json --witness-key <key>` once and reading only its refusal,
-  `JPS-AUDIT-WITNESS-KEY-INVALID`, shown as the runtime said it; it refuses
-  its own local gateway's key, which is yours as the operator. A pinned key is
+  --format json --witness-key <key>` once: its refusal,
+  `JPS-AUDIT-WITNESS-KEY-INVALID`, is shown as the runtime said it, and the
+  key is kept only on an answer the runtime gives once it has read the key
+  (a report whose witness section names one key, or its refusal of a trail
+  not written yet); any other answer is "the key could not be checked", and
+  nothing is kept. Desk refuses its own local gateway's key, which is yours
+  as the operator. A pinned key is
   never changed in place: a witness under a new key is a new witness. The
   confirmation says, before anything is kept, that choosing a witness is a
   trust decision; that each submission sends it the trail identity, sequences
@@ -1142,10 +1146,18 @@ trail. Desk treats it as a holder whose channel is `witness`, one per desk.
   runtime's continuation and the witness's last answer, all in the holder's
   folder under `.desk-private/handover/`, owner-only, refused by the file API
   and in no backup. The token is kept in Desk's custody, outside the project,
-  at `secrets/witness/<desk>/<holder id>.token`, 0600: never shown again,
+  at `secrets/witness/<desk>/<holder id>.token`, 0600, bound to the origin
+  (scheme, host and port) of the URL you confirmed it for: never shown again,
   never written to a log, an answer or a project file, passed to no process,
-  and sent only as `Authorization: Bearer` on a submission to the URL you
-  set, with no redirect followed. Everything read back is held to its form
+  read only immediately before a submission, and sent only as
+  `Authorization: Bearer` on a submission to that origin, with no redirect
+  followed. A URL at another origin, however it came to be in the settings,
+  sends nothing until you set the witness again and paste its token for the
+  new URL. The witness's answer to a submission is kept as received in
+  `answer.json`, at most 64 KiB, apart from what Desk read of it, and a
+  statement of another trail in `unusable.jsonl`; neither is ever given to a
+  verification. A head or an answer Desk cannot use is moved aside before
+  anything replaces it, and nothing replaces it where it cannot be. Everything read back is held to its form
   first; a file Desk cannot use is moved aside in that folder under a name
   that says when and why, named on the decision record, and kept until you
   remove it. Desk removes no statement. Removing the witness removes its
@@ -1169,10 +1181,14 @@ trail. Desk treats it as a holder whose channel is `witness`, one per desk.
   that is not of the witness's form never move it. Each refusal is shown with
   the witness's own `reason` and sentence; Desk's own words for a witness
   that did not answer as asked are only "Desk could not reach the witness",
-  with the HTTP status where there was one. After `below-head` Desk sends
-  again only once the trail's head is past the witness's; after `retired` it
-  sends nothing more for the trail; after `429` or `503` it waits for
-  `Retry-After`.
+  with the HTTP status where there was one. **The token's secrecy comes
+  first**: an answer that carries the token, a part of it, or anything that
+  reads as a bearer token is kept and shown as its HTTP status and a
+  `reason` that is a word, and none of its words. After `below-head` Desk
+  sends again only once the trail's head is past the witness's; after
+  `retired` it sends nothing more for the trail; and every submission,
+  scheduled or Send now, waits for the time a `Retry-After` names, in seconds
+  or as a date, counted from when the answer was received.
 - **What the decision record reads.** When the panel opens, Desk fetches the
   trail's head with no token, then the statements after its continuation, up
   to the head's, and runs `audit verify` with the pinned key, the statements,

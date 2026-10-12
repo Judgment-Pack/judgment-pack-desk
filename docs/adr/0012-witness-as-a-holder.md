@@ -284,6 +284,20 @@ From Desk's Go; the commands through `runRuntime`, as ADR-0010 §8 says.
 | 5 | This record (#233) | gateway #211, #212 and #213 released (v0.11.0) and runtime #228 (v0.28.0); Desk's pins on them (#372); ADR-0013's answers to questions 5 and 7 | accepted 2026-10-12, merged: #379 |
 | 6 | #234, as ADR-0010's delivery row 10: the witness holder and its confirmation; the token in custody; submissions on the interval and Send now; the cursor on a verified statement; the statements, head and continuation kept; the panel's fetch and `audit verify --witness`; the README and in-app help; tests against a witness run from the gateway's reference on loopback, and with it stopped | 5 accepted, with questions 1 to 10 answered; a custody and network-seam review, one cross-vendor round | in review: PR #382 |
 
+*Amended 2026-10-12, review round 1 of PR #382:* no decision changed; PR 6
+holds these to what sections 1 to 3 decide. The token is kept bound to the
+origin of the URL the owner confirmed it for, and a URL at another origin
+sends nothing until the owner confirms it again, pasting the token. An answer
+that carries the token, a part of it, or any bearer token is kept and shown
+as its status and a `reason` that is a word, and none of its words: the
+token's secrecy comes before showing the witness's words as it gave them.
+The key is kept only on an answer the runtime gives once it has read the key.
+The witness's answer to a submission is kept as received, apart from what
+Desk read of it, and a statement of another trail apart from the trail's;
+neither is given to a verification. A head or an answer Desk cannot use is
+moved aside before it is replaced. `Retry-After` is read in seconds or as a
+date, from receipt.
+
 Not in this line: Runner's chain of runs at a witness (question 9); a
 second witness per desk; moving a trail aside (ADR-0010, question 9).
 
