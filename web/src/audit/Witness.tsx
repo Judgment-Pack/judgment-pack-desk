@@ -99,7 +99,7 @@ export function Witness({ witness, report, outcome, onOutcome }: {
     <h4 className={styles.heading}>{msg('Witness')}</h4>
     <div className={styles.card}>
       <WhatAStatementEstablishes />
-      <p className={styles.quiet}>{msg('Desk sends the lines since the last checkpoint the witness countersigned, ending with the head’s. Only the last line of a submission is countersigned: nothing the witness keeps shows that the lines before it were sent, and the statement for the head covers them through the trail’s own chain.')}</p>
+      <p className={styles.quiet}>{msg('Desk sends the lines after its cursor, ending with the head’s. Only the last line of a submission is countersigned: nothing the witness keeps shows that the lines before it were sent, and the statement for the head covers them through the trail’s own chain.')}</p>
       {outcome?.kind === 'set' && <p role="status">{msg('The witness is set. Desk submits this desk’s new checkpoints to it at the interval, while it is running.')}</p>}
       {outcome?.kind === 'removed' && <p role="status">{msg('The witness is removed. Desk submits nothing more to it; the statements it signed are kept.')}</p>}
       {outcome?.kind === 'failed' && <p role="alert">{systemMessage(outcome.message)}</p>}
@@ -173,9 +173,13 @@ function Settings({ settings }: { settings: WitnessSettings }) {
 function Cursor({ witness }: { witness: AuditWitnessHolder }) {
   const cursor = witness.cursor
   return <>
+    {/* **Desk's own record of its submissions, never a claim of what the
+        witness countersigned**: that is the runtime's report alone (review
+        round 1 of #382, finding 5). */}
     {cursor && cursor.through > 0
-      ? <p data-cursor={cursor.through}>{msg('The witness countersigned this desk’s trail through record {{record}}, statement index {{index}}; Desk’s cursor moved on {{date}} by Desk’s clock.', { record: cursor.through, index: cursor.index, date: when(cursor.at) })}</p>
-      : <p data-cursor={0}>{msg('The witness has countersigned nothing for this desk’s trail yet.')}</p>}
+      ? <p data-cursor={cursor.through}>{msg('Desk’s record of its submissions: its cursor is at record {{record}}, statement index {{index}}, moved on {{date}} by Desk’s clock.', { record: cursor.through, index: cursor.index, date: when(cursor.at) })}</p>
+      : <p data-cursor={0}>{msg('Desk’s record of its submissions: no statement for this trail has moved its cursor yet.')}</p>}
+    <p className={styles.quiet}>{msg('The cursor is Desk’s own record, and establishes nothing; how far the witness’s signature reaches is the runtime’s report, in the coverage above.')}</p>
     {cursor?.belowHead !== undefined && cursor.belowHead > 0 && <p>{msg("The witness holds a later checkpoint for this trail, at record {{record}}, so Desk sends again only once the trail's head is past it.", { record: cursor.belowHead })}</p>}
     {cursor?.retired && <p>{msg("The witness retired this trail, so Desk submits nothing more for it. A trail's operator goes on under a new trail, registered anew, which Desk does not make.")}</p>}
   </>
@@ -187,6 +191,7 @@ function HeadFetch({ head }: { head: WitnessFetch }) {
     case 'fetched': return <p className={styles.quiet} data-head="fetched">{msg('Desk fetched the witness’s head for this trail, statement index {{index}}, and passed it to the check.', { index: head.index ?? 0 })}</p>
     case 'refused': return <p role="alert" data-head="refused">{msg('The witness answered HTTP {{status}}:', { status: head.status ?? 0 })} <code>{head.reason}</code> <span lang="en">{head.error}</span></p>
     case 'unreached': return <p role="alert" data-head="unreached">{unreached(head.status)}</p>
+    case 'withheld': return <p role="alert" data-head="withheld">{msg('The witness answered HTTP {{status}}, and its answer carried a credential, so Desk keeps and shows none of its words.', { status: head.status ?? 0 })}{head.reason && <> <code>{head.reason}</code></>}</p>
   }
 }
 
@@ -218,7 +223,7 @@ function LastAttempt({ attempt }: { attempt: WitnessAttempt }) {
     {attempt.unsent ? <> {msg('{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.', { count: attempt.unsent })}</> : null}</p> : null
   switch (attempt.outcome) {
     case 'countersigned': return <>
-      <p data-attempt="countersigned">{msg('Last submission, {{date}} by Desk’s clock: the witness countersigned the checkpoint at record {{record}}, statement index {{index}}, and Desk’s cursor moved to it.', { date, record: attempt.through ?? 0, index: attempt.index ?? 0 })}</p>
+      <p data-attempt="countersigned">{msg('Last submission, {{date}} by Desk’s clock: the witness answered a statement for the checkpoint at record {{record}}, statement index {{index}}, which the runtime’s reading with it as the head confirmed, and Desk’s cursor moved to it.', { date, record: attempt.through ?? 0, index: attempt.index ?? 0 })}</p>
       {sent}
     </>
     case 'kept': return <>
@@ -230,18 +235,28 @@ function LastAttempt({ attempt }: { attempt: WitnessAttempt }) {
     case 'refused': return <>
       <p data-attempt="refused">{msg('Last submission, {{date}} by Desk’s clock: the witness answered HTTP {{status}}:', { date, status: attempt.status ?? 0 })} <code>{attempt.reason}</code> <span lang="en">{attempt.error}</span></p>
       {sent}
-      <p className={styles.quiet}>{msg('Desk’s cursor did not move. Desk tries again at the next interval.')}{attempt.retryAfter ? <> {msg('The witness asked Desk to wait {{seconds}} seconds first.', { seconds: attempt.retryAfter })}</> : null}</p>
+      <p className={styles.quiet}>{msg('Desk’s cursor did not move. Desk tries again at the next interval.')}{retry(attempt)}</p>
+    </>
+    case 'withheld': return <>
+      <p data-attempt="withheld">{msg('Last submission, {{date}} by Desk’s clock: the witness answered HTTP {{status}}, and its answer carried a credential, so Desk keeps and shows none of its words.', { date, status: attempt.status ?? 0 })}{attempt.reason && <> <code>{attempt.reason}</code></>}</p>
+      {sent}
+      <p className={styles.quiet}>{msg('Desk’s cursor did not move. Desk tries again at the next interval.')}{retry(attempt)}</p>
     </>
     case 'unreached': return <>
       <p data-attempt="unreached">{msg('Last submission, {{date}} by Desk’s clock:', { date })} {unreached(attempt.status)}</p>
       {sent}
-      <p className={styles.quiet}>{msg('Desk’s cursor did not move. Desk tries again at the next interval.')}</p>
+      <p className={styles.quiet}>{msg('Desk’s cursor did not move. Desk tries again at the next interval.')}{retry(attempt)}</p>
     </>
     case 'nothing': case 'problem': return <>
       <p data-attempt={attempt.outcome}>{msg('Last submission, {{date}} by Desk’s clock: nothing was sent.', { date })} {systemMessage(attempt.problem ?? '')}</p>
       {attempt.diagnostics && <ul className={styles.list} aria-label={msg('What the runtime said')}>{attempt.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>}
     </>
   }
+}
+
+/** The time the witness's Retry-After names, which every submission waits for. */
+function retry(attempt: WitnessAttempt) {
+  return attempt.retryUntil ? <> {msg('The witness asked Desk to send nothing before {{date}}, by Desk’s clock.', { date: when(attempt.retryUntil) })}</> : null
 }
 
 /** The one check the owner asks for: the countersigned coverage required through a record, once, and kept nowhere. */
@@ -263,7 +278,7 @@ function CheckOnce() {
   const report = answer?.state === 'report' ? answer.report : undefined
   const missing = report?.findings.filter(finding => finding.name === 'countersigned-coverage-missing') ?? []
   return <form aria-label={msg('Check the countersigned coverage once')} className={styles.card} onSubmit={event => { event.preventDefault(); void check() }}>
-    <p className={styles.quiet}>{msg('A reader’s demand, not the operator’s: Desk asks the runtime once to require that the witness countersigned every record through the one you give, and keeps nothing of it.')}</p>
+    <p className={styles.quiet}>{msg('A reader’s demand, not the operator’s: Desk asks the runtime once to require the countersigned coverage through the record you give, and keeps nothing of it.')}</p>
     <Field label={msg('Countersigned through record')}>
       {wiring => <Input {...wiring} inputMode="numeric" value={through} onChange={event => setThrough(event.target.value)} />}
     </Field>
@@ -322,7 +337,7 @@ function WitnessForm({ settings, onCancel, onSet }: { settings?: WitnessSettings
     <Field label={msg('The witness’s public key')} hint={msg('64 hexadecimal characters, from the witness’s operator, out of band: never from the witness it checks. The runtime holds it to its key rule before Desk keeps it.')}>
       {wiring => <Input {...wiring} value={key} autoComplete="off" spellCheck={false} readOnly={!!settings} onChange={event => setKey(event.target.value)} />}
     </Field>
-    <Field label={msg('The submitter’s token')} hint={msg('Issued by the witness’s operator for the witness’s audience. Pasted once: Desk keeps it in its own custody, outside the project, and never shows it again.')}>
+    <Field label={msg('The submitter’s token')} hint={msg('Issued by the witness’s operator for the witness’s audience. Pasted once for each URL you confirm: Desk keeps it in its own custody, outside the project, bound to that URL’s origin, and never shows it again.')}>
       {wiring => <Input {...wiring} type="password" autoComplete="new-password" spellCheck={false} value={token} onChange={event => setToken(event.target.value)} />}
     </Field>
     <Field label={msg('Interval, in minutes')} hint={msg('From 5 to 1440. Desk submits at this interval, only when records were added, and only while it is running.')}>

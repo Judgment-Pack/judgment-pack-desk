@@ -122,16 +122,42 @@ describe('witness', () => {
     show()
     await loaded()
     expect(await screen.findByText('Countersigned through record 3')).toBeTruthy()
-    expect(region().getByText(/^The witness countersigned this desk’s trail through record 3, statement index 1;/)).toBeTruthy()
+    expect(region().getByText(/^Desk’s record of its submissions: its cursor is at record 3, statement index 1,/)).toBeTruthy()
     expect(region().getByText('Desk fetched the witness’s head for this trail, statement index 1, and passed it to the check.')).toBeTruthy()
     const reading = within(region().getByLabelText('The runtime’s reading of the witness’s chain'))
     expect(reading.getByText('Current, to the head Desk fetched, index 1')).toBeTruthy()
     expect(reading.getByText('After index 0, from Desk’s own continuation')).toBeTruthy()
     expect(reading.getByText('Index 1, record 3, stated at 2026-10-12T00:00:00Z')).toBeTruthy()
-    expect(region().getByText(/the witness countersigned the checkpoint at record 3, statement index 1, and Desk’s cursor moved to it\./)).toBeTruthy()
+    expect(region().getByText(/the witness answered a statement for the checkpoint at record 3, statement index 1, which the runtime’s reading with it as the head confirmed, and Desk’s cursor moved to it\./)).toBeTruthy()
     expect(screen.getByText('Desk also gave the runtime the witness’s statements it keeps for this trail, and the witness’s key you pinned.')).toBeTruthy()
     expect(region().getByText(trail)).toBeTruthy()
     expect(desksOwnWords()).not.toMatch(/\b(verified|witnessed|proof|proves|evidence)\b/i)
+  })
+
+  // Review round 1 of #382, finding 5: the witness countersigned records
+  // before Desk submitted any. What it countersigned is the runtime's report;
+  // the cursor is Desk's own record, and says nothing of the witness.
+  it('says what the witness countersigned from the runtime’s report alone, with no cursor', async () => {
+    records = [{ ...withWitness, witness: { ...set, cursor: undefined, last: undefined } }]
+    show()
+    await loaded()
+    expect(await screen.findByText('Countersigned through record 3')).toBeTruthy()
+    expect(region().getByText('Desk’s record of its submissions: no statement for this trail has moved its cursor yet.')).toBeTruthy()
+    expect(region().queryByText(/countersigned nothing/)).toBeNull()
+    expect(desksOwnWords()).not.toMatch(/\bthe witness (has )?countersigned\b/i)
+  })
+
+  // Review round 1 of #382, findings 2 and 7: an answer that carried a
+  // credential is shown as its status and reason alone, and the witness's
+  // Retry-After as the time it names.
+  it('shows an answer that carried a credential as its status alone, and the time the witness asked Desk to wait for', async () => {
+    records = [{ ...withWitness, witness: { ...set, head: { state: 'withheld', status: 401, reason: 'unauthenticated' },
+      last: { at: 1791205200, outcome: 'withheld', trail, from: 3, first: 4, through: 4, lines: 1, status: 401, reason: 'unauthenticated', retryUntil: 1791212400,
+        problem: "The witness's answer carried a credential, so Desk keeps and shows none of its words: only its HTTP status, and its reason where that is a word." } } }]
+    show()
+    const shown = await (await loaded()).findAllByText(/and its answer carried a credential, so Desk keeps and shows none of its words\./)
+    expect(shown).toHaveLength(2)
+    expect(region().getByText(/The witness asked Desk to send nothing before .* by Desk’s clock\./)).toBeTruthy()
   })
 
   it('says only that Desk could not reach the witness, and reads the chain as far as it was supplied', async () => {
@@ -218,6 +244,9 @@ describe('witness client', () => {
     expect(isAuditWitnessHolder({ ...set, cursor: { through: 3, index: 1, at: 1 } })).toBe(false)
     expect(isWitnessAttempt({ at: 1, outcome: 'refused', status: 409 })).toBe(false)
     expect(isWitnessAttempt({ at: 1, outcome: 'other' })).toBe(false)
+    expect(isWitnessAttempt({ at: 1, outcome: 'withheld', status: 401, problem: 'withheld' })).toBe(true)
+    expect(isWitnessAttempt({ at: 1, outcome: 'withheld', status: 401, error: 'a sentence', problem: 'withheld' })).toBe(false)
+    expect(isAuditWitnessHolder({ ...set, head: { state: 'withheld', status: 401, error: 'a sentence' } })).toBe(false)
     expect(isAuditRecord(withWitness)).toBe(true)
     expect(isAuditRecord({ state: 'no-trail', witness: set })).toBe(false)
   })
@@ -233,7 +262,7 @@ describe('witness client', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/witness.go'), 'utf8')
-    expect(WITNESS_REASONS).toHaveLength(33)
+    expect(WITNESS_REASONS).toHaveLength(35)
     for (const reason of WITNESS_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)

@@ -1194,8 +1194,13 @@ export type WitnessSettings = { url: string; publicKey: string; intervalMinutes:
  * again; and whether the witness retired the trail.
  */
 export type WitnessCursor = { through: number; index: number; digest?: string; at: number; belowHead?: number; retired?: boolean }
-/** The decision record's fetch of the trail's head: fetched, the witness's refusal in its words, or Desk could not reach it. */
-export type WitnessFetch = { state: 'fetched' | 'refused' | 'unreached'; status?: number; reason?: string; error?: string; index?: number }
+/**
+ * The decision record's fetch of the trail's head: fetched; the witness's
+ * refusal in its words; withheld, an answer that carried a credential, of
+ * which only its status and a reason that is a word are kept; or Desk could
+ * not reach it.
+ */
+export type WitnessFetch = { state: 'fetched' | 'refused' | 'withheld' | 'unreached'; status?: number; reason?: string; error?: string; index?: number }
 /**
  * One submission's outcome, by Desk's clock (`at`, in seconds): what was sent,
  * and the witness's answer, its status, reason and sentence as it gave them;
@@ -1203,9 +1208,10 @@ export type WitnessFetch = { state: 'fetched' | 'refused' | 'unreached'; status?
  */
 export type WitnessAttempt = {
   at: number; requested?: boolean
-  outcome: 'countersigned' | 'kept' | 'refused' | 'unreached' | 'nothing' | 'problem'
+  outcome: 'countersigned' | 'kept' | 'refused' | 'withheld' | 'unreached' | 'nothing' | 'problem'
   trail?: string; from?: number; first?: number; through?: number; lines?: number; unsent?: number
-  status?: number; reason?: string; error?: string; retryAfter?: number; index?: number
+  /** `retryUntil`: the time the witness's Retry-After names, by Desk's clock, in seconds. */
+  status?: number; reason?: string; error?: string; retryAfter?: number; retryUntil?: number; index?: number
   problem?: string; diagnostics?: AuditDiagnostic[]; findings?: AuditFinding[]
 }
 /**
@@ -1243,10 +1249,10 @@ export const WITNESS_REASONS = [
   sourceMessage('A submission needs no settings: send {} as JSON.'),
   sourceMessage("This is the public key of Desk's own local gateway, which is yours as the operator: it is not a witness."),
   sourceMessage('This desk has a witness under another key. A pinned key is never changed in place: remove the witness, and add the one under the new key as a new witness.'),
-  sourceMessage("The trail's head has not moved past the last checkpoint the witness countersigned, so there is nothing to send."),
+  sourceMessage("The trail's head has not moved past Desk's cursor, so there is nothing to send."),
   sourceMessage('The trail has no chained record yet, so there is nothing to send.'),
   sourceMessage("The witness retired this trail, so Desk submits nothing more for it. A trail's operator goes on under a new trail, registered anew, which Desk does not make."),
-  sourceMessage("The witness answered a statement for another checkpoint than the last one Desk sent, so Desk's cursor did not move."),
+  sourceMessage("The witness answered a statement for another checkpoint than the last one Desk sent, so Desk's cursor did not move. Desk keeps the statement, apart from the trail's where it is of another trail."),
   sourceMessage("The runtime's reading of the witness's chain did not confirm the statement, so Desk's cursor did not move."),
   sourceMessage("No witness's statements are passed to the check of this desk's trail, so there is no countersigned coverage to require."),
   sourceMessage('Ask for a countersigned coverage once with a record from 1.'),
@@ -1261,7 +1267,9 @@ export const WITNESS_REASONS = [
   sourceMessage('The submission did not finish: {{reason}}.'),
   sourceMessage('Desk did not read the witness\'s chain this time: {{reason}}.'),
   sourceMessage("Desk could not read its own local gateway's key now, so it cannot tell this key from it: {{reason}}."),
-  sourceMessage('The runtime did not answer the check of the key as documented, so nothing was kept.'),
+  sourceMessage("The key could not be checked: the runtime's audit verify did not answer as documented, so nothing was kept."),
+  sourceMessage("The witness's URL is not at the origin its token was confirmed for, so Desk sends nothing. Set the witness again, pasting its token, to confirm the new URL."),
+  sourceMessage("The witness's answer carried a credential, so Desk keeps and shows none of its words: only its HTTP status, and its reason where that is a word."),
   sourceMessage("A cross-site request cannot change this desk's witness.")
 ]
 
@@ -1295,19 +1303,21 @@ const isWitnessFetch = (value: unknown): value is WitnessFetch => {
     case 'fetched': return value.reason === undefined && value.error === undefined
     case 'refused': return named(value.reason) && named(value.error) && value.index === undefined
     case 'unreached': return value.reason === undefined && value.error === undefined && value.index === undefined
+    case 'withheld': return optional(value.reason, named) && value.error === undefined && value.index === undefined
   }
   return false
 }
-const OUTCOMES = ['countersigned', 'kept', 'refused', 'unreached', 'nothing', 'problem']
+const OUTCOMES = ['countersigned', 'kept', 'refused', 'withheld', 'unreached', 'nothing', 'problem']
 
 /** A submission as the chassis says it: an outcome of its six, with what it carries. */
 export function isWitnessAttempt(value: unknown): value is WitnessAttempt {
   if (!object(value) || !count(value.at) || !OUTCOMES.includes(value.outcome as string) || !optional(value.requested, item => typeof item === 'boolean')
-    || !optional(value.trail, hex(32)) || !['from', 'first', 'through', 'lines', 'unsent', 'status', 'retryAfter'].every(name => optional(value[name], count))
+    || !optional(value.trail, hex(32)) || !['from', 'first', 'through', 'lines', 'unsent', 'status', 'retryAfter', 'retryUntil'].every(name => optional(value[name], count))
     || !optional(value.index, index) || !optional(value.reason, named) || !optional(value.error, named) || !optional(value.problem, named)
     || !optional(value.diagnostics, item => list(item, isDiagnostic)) || !optional(value.findings, item => list(item, isFinding))) return false
   switch (value.outcome) {
     case 'refused': return named(value.reason) && named(value.error)
+    case 'withheld': return named(value.problem) && value.error === undefined
     case 'nothing': case 'problem': return named(value.problem) || list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0
   }
   return true
