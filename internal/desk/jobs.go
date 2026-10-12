@@ -426,6 +426,25 @@ func journalQuery(rawQuery string) (url.Values, string) {
 
 var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)
 
+// journalCursor is the cursor a request for a page after a sequence asks
+// Runner for: "" when the query names none, which Runner reads as 0, the
+// start; or exactly one `after` of 1 to 18 decimal digits. A repeated, empty or
+// non-decimal cursor, or a query that does not parse, is refused. The Jobs
+// signing record reads its page cursor this way; the journal's own route reads
+// journalQuery.
+func journalCursor(rawQuery string) (string, error) {
+	values, malformed := url.ParseQuery(rawQuery)
+	switch cursor, given := values["after"]; {
+	case malformed != nil:
+		// Refused below, as Runner refuses it.
+	case !given:
+		return "", nil
+	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):
+		return cursor[0], nil
+	}
+	return "", errors.New("invalid journal cursor")
+}
+
 // runnerAnswerLimit is the most of a Runner answer Desk reads on most routes.
 const runnerAnswerLimit = 16 << 20
 
