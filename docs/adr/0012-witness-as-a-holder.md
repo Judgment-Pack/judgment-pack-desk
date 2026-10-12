@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted, 2026-10-12
 date: 2026-10-12
 deciders: maintainer
 ---
@@ -244,6 +244,8 @@ From Desk's Go; the commands through `runRuntime`, as ADR-0010 §8 says.
 - Neutral: one witness per desk; two need what ADR-0013 lists to revisit.
 
 ## Questions for the maintainer
+
+*Answered 2026-10-12 by the maintainer: all ten as recommended. The recommendations below are the decisions.*
 
 1. **Per desk or per installation?** **Recommendation:** per desk, as
    holders and stamping settings are, one witness each in this line.
