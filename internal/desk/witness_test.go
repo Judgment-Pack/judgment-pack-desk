@@ -128,6 +128,7 @@ type witnessRig struct {
 	config  string
 	witness *standInWitness
 	logged  *lockedWriter
+	wake    *witnessWaker
 }
 
 // witnessHolderID is the id the witness holder is made with.
@@ -137,7 +138,7 @@ func newWitnessRig(t *testing.T) *witnessRig {
 	t.Helper()
 	t.Setenv("JPACK_CONFIG", "")
 	fixHandover(t, witnessHolderID)
-	fixWitness(t)
+	wake := fixWitness(t)
 	rig := &handoverRig{auditRig: newAuditRig(t, withAuditVersions), project: t.TempDir(), logged: &bytes.Buffer{}}
 	withCheckpoints(t, rig.bin, rig.calls)
 	rig.answers(t, 0, auditValidReport)
@@ -150,13 +151,17 @@ func newWitnessRig(t *testing.T) *witnessRig {
 	rig.s, rig.ts = startDesk(t, Config{ProjectDir: rig.project, JpackBin: rig.bin, Token: testToken, DeskConfigDir: config, Logger: log.New(logged, "", 0)})
 	t.Cleanup(func() { rig.s.Close() })
 	t.Cleanup(rig.ts.Close)
-	return &witnessRig{handoverRig: rig, config: config, witness: newStandInWitness(t), logged: logged}
+	return &witnessRig{handoverRig: rig, config: config, witness: newStandInWitness(t), logged: logged, wake: wake}
 }
 
 // setWitnessWith sets the stand-in as this desk's witness, under token,
 // through the check and the confirmation.
 func (r *witnessRig) setWitnessWith(t *testing.T, token string) {
 	t.Helper()
+	// The key's check reads the report the runtime gives once it has read
+	// the key: one with a witness section of one key.
+	r.answers(t, 1, witnessKeyCheckReport)
+	defer r.answers(t, 0, auditValidReport)
 	proposal := map[string]any{"url": r.witness.URL, "publicKey": standInWitnessKey}
 	status, data := witnessCall(t, r.ts, r.ts.URL, "/api/audit/witness/check", "", proposal)
 	var checked witnessChecked
@@ -202,6 +207,15 @@ func witnessReport(index int64, sequence int) string {
 		fmt.Sprintf(`"stamped":{"status":"not-checked","detail":"no time-stamping roots were supplied"},"countersigned":{"status":"through","through":%d}}`, sequence), 1)
 	return strings.Replace(report, `,"findings":[]`, section+`,"findings":[]`, 1)
 }
+
+// witnessKeyCheckReport is what runtime 0.30.0 prints for `audit verify
+// --witness-key <key>` over a trail of three records with no statement
+// supplied: the key read, and a chain that does not begin at index 0.
+var witnessKeyCheckReport = strings.NewReplacer(
+	`"status":"valid"`, `"status":"invalid"`,
+	`,"findings":[]`, `,"witness":{"keysSupplied":1,"statementsRead":0,"statementsChecked":0,"began":"index-0","status":"failed","headIndex":null,"conflicts":[],"conflictsTotal":0,"retired":false,"continuationSaved":false},"findings":[{"name":"witness-chain-broken","line":0,"detail":"no statement begins the chain at index 0: a chain is read from its first statement"}]`,
+	`"findingsTotal":0`, `"findingsTotal":1`,
+).Replace(auditValidReport)
 
 /* The forms Desk reads ------------------------------------------------------------- */
 
@@ -308,7 +322,7 @@ func TestWitnessRepliesAreReadInTheWitnessForm(t *testing.T) {
 	if got := reply(409, "application/json", string(conflict)); !got.Reached || got.Reason != "conflict" || got.Error != "Another record was offered." || len(got.statements) != 2 {
 		t.Errorf("a conflict: %+v", got)
 	}
-	if got := reply(429, "application/json", `{"error":"Over the rate.","reason":"rate"}`, "Retry-After", "17"); !got.Reached || got.RetryAfter != 17 || got.Reason != "rate" {
+	if got := reply(429, "application/json", `{"error":"Over the rate.","reason":"rate"}`, "Retry-After", "17"); !got.Reached || got.Reason != "rate" {
 		t.Errorf("a refusal over the rate: %+v", got)
 	}
 	for name, got := range map[string]witnessReply{
@@ -335,8 +349,11 @@ func TestWitnessKeyIsHeldToTheRuntimesRefusal(t *testing.T) {
 	if failure := keyCheckAnswer([]byte(invalid), exitError(t, 3)); failure == nil || failure.message != "The witness key k.pub is refused (key-small-order): the public key is of small order." || failure.status != http.StatusBadRequest {
 		t.Errorf("a key the runtime refuses: %+v", failure)
 	}
-	if failure := keyCheckAnswer([]byte(auditValidReport), nil); failure != nil {
-		t.Errorf("a report refused the key: %+v", failure)
+	if failure := keyCheckAnswer([]byte(witnessKeyCheckReport), exitError(t, 1)); failure != nil {
+		t.Errorf("a report of the key read refused the key: %+v", failure)
+	}
+	if failure := keyCheckAnswer([]byte(auditValidReport), nil); failure == nil || failure.message != witnessUndocumentedKey {
+		t.Errorf("a report with no witness section accepted the key: %+v", failure)
 	}
 	if failure := keyCheckAnswer([]byte(auditNoTrailYet), exitError(t, 4)); failure != nil {
 		t.Errorf("a refusal of the trail, after the key was read, refused the key: %+v", failure)
@@ -373,7 +390,7 @@ func TestWitnessCheckHoldsTheKeyToTheRuntimeAndRefusesTheOperatorsOwn(t *testing
 	}) {
 		t.Error("the key was not given to the runtime's audit verify --witness-key")
 	}
-	r.answers(t, 0, auditValidReport)
+	r.answers(t, 1, witnessKeyCheckReport)
 	marker, _ := json.Marshal(localSigner{Algorithm: "ed25519", Public: standInWitnessKey})
 	if err := os.WriteFile(filepath.Join(r.config, "local-gateway-identity.json"), marker, 0o600); err != nil {
 		t.Fatal(err)
@@ -517,8 +534,9 @@ func TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission(t *testing.T) {
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("the token's file: %v %v", info, err)
 	}
-	if data, _ := os.ReadFile(path); string(data) != token {
-		t.Fatal("the token's file does not hold the token pasted")
+	var kept witnessCustody
+	if data, _ := os.ReadFile(path); json.Unmarshal(data, &kept) != nil || kept.Token != token || kept.Origin != "http://"+strings.TrimPrefix(r.witness.URL, "http://") {
+		t.Fatal("the token's file does not hold the token pasted, bound to the witness's origin")
 	}
 	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		t.Errorf("a redirect was followed, carrying %d bytes of authorization", len(req.Header.Get("Authorization")))

@@ -175,6 +175,19 @@ const (
 	witnessRecordLimit       = 64 << 10
 	// witnessRequestLimit bounds a request's body to Desk's routes.
 	witnessRequestLimit = 64 << 10
+	// witnessAnswerFileLimit bounds `answer.json`: the attempt, and the
+	// original answer's body, at most witnessAnswerLimit, in base64.
+	witnessAnswerFileLimit = 128 << 10
+	// witnessUnusableName is the file of statements Desk keeps apart: of
+	// another trail than the one asked about. It is never read for a
+	// verification. witnessUnusableLimit bounds it.
+	witnessUnusableName  = "unusable.jsonl"
+	witnessUnusableLimit = 1 << 20
+	// witnessCustodyVersion is the version of a token's file in custody.
+	witnessCustodyVersion = "1"
+	// witnessRetryMost is the longest Retry-After Desk holds itself to, so
+	// that a date or a count past it is held, not dropped: ten years.
+	witnessRetryMost = 10 * 365 * 24 * time.Hour
 	// The purposes a witness token names.
 	witnessSetPurpose    = "set-witness"
 	witnessRemovePurpose = "remove-witness"
@@ -205,10 +218,10 @@ const (
 	witnessStartWords     = "A submission needs no settings: send {} as JSON."
 	witnessOwnKeyWords    = "This is the public key of Desk's own local gateway, which is yours as the operator: it is not a witness."
 	witnessNewKeyWords    = "This desk has a witness under another key. A pinned key is never changed in place: remove the witness, and add the one under the new key as a new witness."
-	witnessNothingWords   = "The trail's head has not moved past the last checkpoint the witness countersigned, so there is nothing to send."
+	witnessNothingWords   = "The trail's head has not moved past Desk's cursor, so there is nothing to send."
 	witnessNoChainedWords = "The trail has no chained record yet, so there is nothing to send."
 	witnessRetiredWords   = "The witness retired this trail, so Desk submits nothing more for it. A trail's operator goes on under a new trail, registered anew, which Desk does not make."
-	witnessOtherWords     = "The witness answered a statement for another checkpoint than the last one Desk sent, so Desk's cursor did not move."
+	witnessOtherWords     = "The witness answered a statement for another checkpoint than the last one Desk sent, so Desk's cursor did not move. Desk keeps the statement, apart from the trail's where it is of another trail."
 	witnessUnconfirmed    = "The runtime's reading of the witness's chain did not confirm the statement, so Desk's cursor did not move."
 	witnessNoRequireWords = "No witness's statements are passed to the check of this desk's trail, so there is no countersigned coverage to require."
 	witnessRequireWords   = "Ask for a countersigned coverage once with a record from 1."
@@ -225,7 +238,9 @@ const (
 	witnessSetAsideWords   = "Desk moved %s aside in the witness's folder, and keeps it there until you remove it: %s."
 	witnessReadingWords    = "Desk did not read the witness's chain this time: %s."
 	witnessLocalReadWords  = "Desk could not read its own local gateway's key now, so it cannot tell this key from it: %s."
-	witnessUndocumentedKey = "The runtime did not answer the check of the key as documented, so nothing was kept."
+	witnessUndocumentedKey = "The key could not be checked: the runtime's audit verify did not answer as documented, so nothing was kept."
+	witnessOriginWords     = "The witness's URL is not at the origin its token was confirmed for, so Desk sends nothing. Set the witness again, pasting its token, to confirm the new URL."
+	witnessCredentialWords = "The witness's answer carried a credential, so Desk keeps and shows none of its words: only its HTTP status, and its reason where that is a word."
 )
 
 // The reasons a file is moved aside, as its name says them, and Desk's
@@ -246,7 +261,12 @@ var (
 	// ASCII, no space.
 	witnessTokenForm = regexp.MustCompile(`^[\x21-\x7e]+$`)
 	// witnessSetAsideForm is a file Desk moved aside in a holder's folder.
-	witnessSetAsideForm = regexp.MustCompile(`^((?:statements|head)-[0-9a-f]{32}\.jsonl|continuation-[0-9a-f]{32}\.json|answer\.json|record\.json)\.set-aside-([0-9]{8}T[0-9]{6}Z)-(unreadable|form|too-large|equivocation)$`)
+	witnessSetAsideForm = regexp.MustCompile(`^((?:statements|head)-[0-9a-f]{32}\.jsonl|continuation-[0-9a-f]{32}\.json|answer\.json|record\.json|unusable\.jsonl)\.set-aside-([0-9]{8}T[0-9]{6}Z)-(unreadable|form|too-large|equivocation)$`)
+	// witnessReasonForm is a refusal's `reason`: a word (SPEC.md §6).
+	witnessReasonForm = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
+	// bearerLike is a credential in an answer's body: a bearer token, or a
+	// JSON Web Token's first two segments.
+	bearerLike = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}|eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}`)
 )
 
 // witnessClock is Desk's clock for a witness: when the settings were set,
@@ -547,22 +567,68 @@ func (s *Server) openWitnessTokens(create bool) (*os.Root, error) {
 // witnessTokenName is the token's file for the holder id.
 func witnessTokenName(id string) string { return id + ".token" }
 
-// readWitnessToken is the holder's token, held to its form. A token that is
-// not there is fs.ErrNotExist; one that cannot be read now is that error.
-func (s *Server) readWitnessToken(id string) (string, error) {
+// witnessCustody is a token's file in custody: the token, and the origin the
+// owner confirmed it for (review round 1 of #382, finding 1). The token is
+// sent to that origin and no other: a URL changed in `witness.json` alone,
+// at another scheme, host or port, sends nothing until the owner confirms it.
+type witnessCustody struct {
+	Version string `json:"version"`
+	Origin  string `json:"origin"`
+	Token   string `json:"token"`
+}
+
+// errWitnessOrigin is a witness URL at another origin than its token's.
+var errWitnessOrigin = errors.New(witnessOriginWords)
+
+// witnessOrigin is address's origin, as a token is bound to it: the scheme,
+// the host in lowercase, and the port, the scheme's own where none is given.
+func witnessOrigin(address string) (string, bool) {
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Hostname() == "" {
+		return "", false
+	}
+	port := parsed.Port()
+	if port == "" {
+		port = map[string]string{"https": "443", "http": "80"}[parsed.Scheme]
+	}
+	if port == "" {
+		return "", false
+	}
+	return parsed.Scheme + "://" + net.JoinHostPort(strings.ToLower(parsed.Hostname()), port), true
+}
+
+// witnessCustodyBytes is a token's file, bound to address's origin.
+func witnessCustodyBytes(token, address string) ([]byte, error) {
+	origin, ok := witnessOrigin(address)
+	if !ok {
+		return nil, errors.New("the witness's URL has no origin a token can be bound to")
+	}
+	data, err := json.Marshal(witnessCustody{Version: witnessCustodyVersion, Origin: origin, Token: token})
+	return append(data, '\n'), err
+}
+
+// readWitnessToken is the holder's token, held to its form, for a submission
+// to address: errWitnessOrigin where address is at another origin than the
+// one the token was confirmed for. A token that is not there is
+// fs.ErrNotExist; one that cannot be read now is that error.
+func (s *Server) readWitnessToken(id, address string) (string, error) {
 	folder, err := s.openWitnessTokens(false)
 	if err != nil {
 		return "", err
 	}
 	defer folder.Close()
-	data, err := readPrivateData(folder, witnessTokenName(id), witnessTokenLimit)
+	data, err := readPrivateData(folder, witnessTokenName(id), witnessTokenLimit+1024)
 	if err != nil {
 		return "", err
 	}
-	if !witnessTokenForm.Match(data) {
+	var kept witnessCustody
+	if decodeDataJSON(data, &kept) != nil || kept.Version != witnessCustodyVersion || !witnessTokenForm.MatchString(kept.Token) || len(kept.Token) > witnessTokenLimit {
 		return "", errors.New("the token Desk keeps is not in the form it keeps one")
 	}
-	return string(data), nil
+	if origin, ok := witnessOrigin(address); !ok || origin != kept.Origin {
+		return "", errWitnessOrigin
+	}
+	return kept.Token, nil
 }
 
 /* The witness holder ---------------------------------------------------------- */
@@ -833,7 +899,17 @@ type witnessReply struct {
 	Reason     string
 	Error      string
 	RetryAfter int64
+	// RetryUntil is the witness's Retry-After as a time, from when its answer
+	// was received: in seconds or as an HTTP date, held up to
+	// witnessRetryMost.
+	RetryUntil time.Time
+	// Credential is an answer that carried a credential (`carriesCredential`):
+	// none of it is kept or shown but its status, and a reason that is a word.
+	Credential bool
 	statements [][]byte
+	// original is the answer as received, for answer.json, where it carried
+	// no credential: its status, type, Retry-After and body.
+	original *witnessOriginal
 }
 
 // statementsBody holds a 200's body to a list of statement lines, each
@@ -887,7 +963,7 @@ func readWitnessReply(response *http.Response, body []byte, empty bool) witnessR
 		return reply
 	}
 	var sentence, reason string
-	if !sidecarString(members["error"], &sentence) || sentence == "" || !sidecarString(members["reason"], &reason) || reason == "" {
+	if !sidecarString(members["error"], &sentence) || sentence == "" || !sidecarString(members["reason"], &reason) || !witnessReasonForm.MatchString(reason) {
 		return reply
 	}
 	allowed := 2
@@ -912,10 +988,93 @@ func readWitnessReply(response *http.Response, body []byte, empty bool) witnessR
 		return reply
 	}
 	reply.Reached, reply.Reason, reply.Error = true, reason, sentence
-	if seconds, err := strconv.ParseInt(strings.TrimSpace(response.Header.Get("Retry-After")), 10, 64); err == nil && seconds > 0 && seconds <= 86400 {
-		reply.RetryAfter = seconds
-	}
 	return reply
+}
+
+// retryUntil is a Retry-After header as a time, received at received: a
+// count of seconds, or an HTTP date; past witnessRetryMost, held to it,
+// never dropped (review round 1 of #382, finding 7). false where there is
+// none, or none Desk can read.
+func retryUntil(value string, received time.Time) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	most := received.Add(witnessRetryMost)
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds < 0 {
+			return time.Time{}, false
+		}
+		if seconds > int64(witnessRetryMost/time.Second) {
+			return most, true
+		}
+		return received.Add(time.Duration(seconds) * time.Second), true
+	}
+	if at, err := http.ParseTime(value); err == nil {
+		switch {
+		case at.Before(received):
+			return received, true
+		case at.After(most):
+			return most, true
+		}
+		return at, true
+	}
+	return time.Time{}, false
+}
+
+// carriesCredential is whether an answer carries a credential (review round
+// 1 of #382, finding 2): the token sent, or a part of it, in its body or a
+// header; or, in its body, anything that reads as a bearer token. Token
+// secrecy comes before showing the witness's words as it gave them.
+func carriesCredential(token string, header http.Header, body []byte) bool {
+	var parts []string
+	if token != "" {
+		parts = append(parts, token)
+		for _, part := range strings.Split(token, ".") {
+			if len(part) >= 8 {
+				parts = append(parts, part)
+			}
+		}
+	}
+	texts := [][]byte{body}
+	for name, values := range header {
+		for _, value := range values {
+			texts = append(texts, []byte(name+": "+value))
+		}
+	}
+	for i, text := range texts {
+		if i == 0 && bearerLike.Match(text) {
+			return true
+		}
+		for _, part := range parts {
+			if bytes.Contains(text, []byte(part)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// reasonOf is the `reason` of an answer that carried a credential, where it
+// is a word that holds no part of the token: all of it that is kept.
+func reasonOf(body []byte, token string) string {
+	members, ok := exactMembers(body)
+	var reason string
+	if !ok || !sidecarString(members["reason"], &reason) || !witnessReasonForm.MatchString(reason) || carriesCredential(token, nil, []byte(reason)) {
+		return ""
+	}
+	return reason
+}
+
+// witnessOriginal is an answer as it was received, kept in answer.json apart
+// from what Desk read of it (review round 1 of #382, finding 8): its status,
+// its type and Retry-After headers, and its body, at most
+// witnessAnswerLimit bytes. It is never read for a verification.
+type witnessOriginal struct {
+	Status      int    `json:"status"`
+	ContentType string `json:"contentType,omitempty"`
+	RetryAfter  string `json:"retryAfter,omitempty"`
+	Body        []byte `json:"body"`
 }
 
 // ask makes one request of the witness and reads its answer, bounded by
@@ -923,17 +1082,35 @@ func readWitnessReply(response *http.Response, body []byte, empty bool) witnessR
 // one not of the witness's form are each not reached, with the status where
 // there was one. Nothing of the request, its token included, is in what
 // this answers.
-func ask(ctx context.Context, request *http.Request, limit int, empty bool) witnessReply {
+//
+// An answer that carries a credential, the token sent among them, is read as
+// nothing but its status and a reason that is a word. Retry-After is read
+// as a time from the moment the answer was received.
+func ask(ctx context.Context, request *http.Request, limit int, empty bool, token string) witnessReply {
 	response, err := witnessClient().Do(request.WithContext(ctx))
 	if err != nil {
 		return witnessReply{}
 	}
 	defer response.Body.Close()
 	body, err := readBounded(response.Body, limit)
+	received := witnessClock()
 	if err != nil {
 		return witnessReply{Status: response.StatusCode}
 	}
-	return readWitnessReply(response, body, empty)
+	var reply witnessReply
+	if carriesCredential(token, response.Header, body) {
+		reply = witnessReply{Status: response.StatusCode, Credential: true, Reason: reasonOf(body, token)}
+	} else {
+		reply = readWitnessReply(response, body, empty)
+		if len(body) <= witnessAnswerLimit {
+			reply.original = &witnessOriginal{Status: response.StatusCode, ContentType: response.Header.Get("Content-Type"), RetryAfter: response.Header.Get("Retry-After"), Body: slices.Clone(body)}
+		}
+	}
+	if until, ok := retryUntil(response.Header.Get("Retry-After"), received); ok {
+		reply.RetryUntil = until
+		reply.RetryAfter = int64(until.Sub(received) / time.Second)
+	}
+	return reply
 }
 
 // submit POSTs body to the witness under token.
@@ -944,10 +1121,10 @@ func submit(ctx context.Context, base, token string, body []byte) witnessReply {
 	}
 	request.Header.Set("Content-Type", "application/jsonl")
 	request.Header.Set("Authorization", "Bearer "+token)
-	reply := ask(ctx, request, witnessAnswerLimit, false)
+	reply := ask(ctx, request, witnessAnswerLimit, false, token)
 	if reply.Reached && reply.Status == http.StatusOK && len(reply.statements) != 1 {
 		// A submission is answered with one statement, for its last line.
-		return witnessReply{Status: reply.Status}
+		return witnessReply{Status: reply.Status, original: reply.original, RetryUntil: reply.RetryUntil, RetryAfter: reply.RetryAfter}
 	}
 	return reply
 }
@@ -958,7 +1135,7 @@ func fetchHead(ctx context.Context, base, trail string) witnessReply {
 	if err != nil {
 		return witnessReply{}
 	}
-	reply := ask(ctx, request, witnessAnswerLimit, false)
+	reply := ask(ctx, request, witnessAnswerLimit, false, "")
 	if reply.Reached && reply.Status == http.StatusOK && len(reply.statements) != 1 {
 		return witnessReply{Status: reply.Status}
 	}
@@ -972,7 +1149,7 @@ func fetchStatements(ctx context.Context, base, trail string, from int64) witnes
 	if err != nil {
 		return witnessReply{}
 	}
-	return ask(ctx, request, witnessPageLimit, true)
+	return ask(ctx, request, witnessPageLimit, true, "")
 }
 
 // fetchAfter fetches the statements of trail after the index after (from 0
@@ -1024,6 +1201,10 @@ const (
 	witnessUnreached = "unreached"
 	// witnessNothing: nothing to send, or nothing sent; Problem says why.
 	witnessNothing = "nothing"
+	// witnessWithheld: the witness answered, and its answer carried a
+	// credential: none of its words is kept or shown, only its status and
+	// a reason that is a word.
+	witnessWithheld = "withheld"
 	// witnessProblem: Desk could not make the submission; Problem says why.
 	witnessProblem = "problem"
 )
@@ -1047,6 +1228,7 @@ type witnessAttempt struct {
 	Reason      string              `json:"reason,omitempty"`
 	Error       string              `json:"error,omitempty"`
 	RetryAfter  int64               `json:"retryAfter,omitempty"`
+	RetryUntil  int64               `json:"retryUntil,omitempty"`
 	Index       *int64              `json:"index,omitempty"`
 	Problem     string              `json:"problem,omitempty"`
 	Diagnostics []runtimeDiagnostic `json:"diagnostics,omitempty"`
@@ -1054,10 +1236,12 @@ type witnessAttempt struct {
 }
 
 // witnessAnswerFile is `answer.json`: the last attempt that reached the
-// network.
+// network, as Desk read it, and, apart from it, the answer as received,
+// where it carried no credential.
 type witnessAnswerFile struct {
-	Version string         `json:"version"`
-	Attempt witnessAttempt `json:"attempt"`
+	Version  string           `json:"version"`
+	Attempt  witnessAttempt   `json:"attempt"`
+	Original *witnessOriginal `json:"original,omitempty"`
 }
 
 // witnessScheduler is one desk's submissions to its witness: one loop, one
@@ -1187,8 +1371,10 @@ func (ws *witnessScheduler) record(attempt witnessAttempt) witnessAttempt {
 	ws.mu.Lock()
 	kept := attempt
 	ws.last = &kept
-	if attempt.RetryAfter > 0 {
-		ws.notBefore = time.Unix(attempt.At, 0).Add(time.Duration(attempt.RetryAfter) * time.Second)
+	// **The witness's Retry-After holds every submission, scheduled or asked
+	// for, until the time it names from when its answer was received.**
+	if until := time.Unix(attempt.RetryUntil, 0); attempt.RetryUntil > 0 && until.After(ws.notBefore) {
+		ws.notBefore = until
 	}
 	ws.mu.Unlock()
 	by := "the scheduler"
@@ -1197,7 +1383,9 @@ func (ws *witnessScheduler) record(attempt witnessAttempt) witnessAttempt {
 	}
 	switch attempt.Outcome {
 	case witnessCountersigned:
-		s.log.Printf("desk: a submission of desk %s to its witness, on %s: countersigned through record %d", s.signingKeyName(), by, attempt.Through)
+		s.log.Printf("desk: a submission of desk %s to its witness, on %s: the runtime's reading confirmed the statement for record %d, and the cursor moved", s.signingKeyName(), by, attempt.Through)
+	case witnessWithheld:
+		s.log.Printf("desk: a submission of desk %s to its witness, on %s: its answer carried a credential, kept as its status alone: %d %s", s.signingKeyName(), by, attempt.Status, attempt.Reason)
 	case witnessRefused:
 		s.log.Printf("desk: a submission of desk %s to its witness, on %s, was refused: %d %s", s.signingKeyName(), by, attempt.Status, attempt.Reason)
 	case witnessUnreached:
@@ -1208,44 +1396,144 @@ func (ws *witnessScheduler) record(attempt witnessAttempt) witnessAttempt {
 	return attempt
 }
 
-// keepAnswer writes the attempt to the holder's answer.json. The caller holds
-// handoverMu.
-func (s *Server) keepAnswer(id string, attempt witnessAttempt) {
-	handover, err := s.openHandover(false)
-	if err == nil {
-		var folder *os.Root
-		folder, err = openHolderFolder(handover, id, false)
-		handover.Close()
-		if err == nil {
-			var data []byte
-			data, err = json.Marshal(witnessAnswerFile{Version: witnessVersion, Attempt: attempt})
-			if err == nil && len(data)+1 <= witnessRecordLimit {
-				err = writePrivateData(folder, witnessAnswerName, append(data, '\n'))
-			}
-			folder.Close()
+// keepAnswer writes the attempt to the holder's answer.json, with the answer
+// as received where it carried no credential, in place of the one before
+// only where that one is held to its form or moved aside first
+// (`replaceKept`). The caller holds handoverMu.
+func (s *Server) keepAnswer(id string, attempt witnessAttempt, original *witnessOriginal) {
+	err := s.inHolder(id, func(folder *os.Root) error {
+		data, err := json.Marshal(witnessAnswerFile{Version: witnessVersion, Attempt: attempt, Original: original})
+		if err != nil {
+			return err
 		}
-	}
+		if len(data)+1 > witnessAnswerFileLimit {
+			return fmt.Errorf("the answer would be larger than the %d bytes Desk reads of it", witnessAnswerFileLimit)
+		}
+		_, err = s.replaceKept(folder, witnessAnswerName, append(data, '\n'), witnessAnswerFileLimit, func(data []byte) bool {
+			_, ok := readAnswerData(data)
+			return ok
+		})
+		return err
+	})
 	if err != nil {
 		s.log.Printf("desk: the witness's last answer could not be kept: %v", err)
 	}
 }
 
+// readAnswerData holds answer.json's bytes to the writer's form.
+func readAnswerData(data []byte) (*witnessAttempt, bool) {
+	var file witnessAnswerFile
+	if decodeDataJSON(data, &file) != nil || file.Version != witnessVersion || file.Attempt.At < 0 ||
+		!slices.Contains([]string{witnessCountersigned, witnessKept, witnessRefused, witnessUnreached, witnessWithheld}, file.Attempt.Outcome) ||
+		file.Original != nil && (file.Original.Status < 0 || len(file.Original.Body) > witnessAnswerLimit) {
+		return nil, false
+	}
+	return &file.Attempt, true
+}
+
 // readAnswer is the holder's answer.json, held to its form: nil where there
 // is none; an error where it cannot be read now or is not what Desk writes.
 func readAnswer(folder *os.Root) (*witnessAttempt, error) {
-	data, err := readPrivateData(folder, witnessAnswerName, witnessRecordLimit)
+	data, err := readPrivateData(folder, witnessAnswerName, witnessAnswerFileLimit)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	var file witnessAnswerFile
-	if decodeDataJSON(data, &file) != nil || file.Version != witnessVersion || file.Attempt.At < 0 ||
-		!slices.Contains([]string{witnessCountersigned, witnessKept, witnessRefused, witnessUnreached}, file.Attempt.Outcome) {
+	attempt, ok := readAnswerData(data)
+	if !ok {
 		return nil, fmt.Errorf("%s is not an answer Desk wrote", witnessAnswerName)
 	}
-	return &file.Attempt, nil
+	return attempt, nil
+}
+
+// replaceKept writes data to name in folder in place of what is there: where
+// a file is there, it is read and held to valid first, and one that cannot be
+// read as a file Desk keeps, or is not of its form, is moved aside under the
+// archive rule (`setAside`) before anything replaces it. Where it cannot be
+// read now, or cannot be moved aside, nothing is written (review round 1 of
+// #382, finding 3). It answers the name a file was moved aside under.
+func (s *Server) replaceKept(folder *os.Root, name string, data []byte, limit int, valid func([]byte) bool) (string, error) {
+	held, err := readPrivateData(folder, name, limit)
+	aside := ""
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil && (codeOf(err) == CodeTooLarge || codeOf(err) == CodeForbidden):
+		if aside, err = s.setAside(folder, name, "unreadable"); err != nil {
+			return "", err
+		}
+	case err != nil:
+		return "", err
+	case !valid(held):
+		if aside, err = s.setAside(folder, name, "form"); err != nil {
+			return "", err
+		}
+	}
+	return aside, writePrivateData(folder, name, data)
+}
+
+// keepUnusable appends lines, statements as received of another trail than
+// the one asked about, to the holder's file of statements kept apart, which
+// is never read for a verification (review round 1 of #382, finding 8): each
+// once, the file held to its form first, and moved aside where it is not.
+// Past witnessUnusableLimit, nothing more is kept, and Desk's log says so.
+func (s *Server) keepUnusable(folder *os.Root, lines [][]byte) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	held, err := readPrivateData(folder, witnessUnusableName, witnessUnusableLimit)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		held = nil
+	case err != nil && (codeOf(err) == CodeTooLarge || codeOf(err) == CodeForbidden):
+		if _, err := s.setAside(folder, witnessUnusableName, "unreadable"); err != nil {
+			return err
+		}
+		held = nil
+	case err != nil:
+		return err
+	}
+	seen := map[string]bool{}
+	for _, line := range bytes.SplitAfter(held, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		if _, ok := readWitnessStatement(bytes.TrimSuffix(line, []byte("\n"))); !ok || !bytes.HasSuffix(line, []byte("\n")) {
+			if _, err := s.setAside(folder, witnessUnusableName, "form"); err != nil {
+				return err
+			}
+			held, seen = nil, map[string]bool{}
+			break
+		}
+		seen[string(line)] = true
+	}
+	next := slices.Clip(held)
+	for _, line := range lines {
+		if _, ok := readWitnessStatement(bytes.TrimSuffix(line, []byte("\n"))); ok && bytes.HasSuffix(line, []byte("\n")) && !seen[string(line)] {
+			seen[string(line)] = true
+			next = append(next, line...)
+		}
+	}
+	if len(next) == len(held) {
+		return nil
+	}
+	if len(next) > witnessUnusableLimit {
+		s.log.Printf("desk: the witness's statements kept apart would pass %d bytes, so no more is kept", witnessUnusableLimit)
+		return nil
+	}
+	return writePrivateData(folder, witnessUnusableName, next)
+}
+
+// notOfTrail is the lines among lines whose statement names another trail.
+func notOfTrail(lines [][]byte, trail string) [][]byte {
+	var apart [][]byte
+	for _, line := range lines {
+		if statement, ok := readWitnessStatement(bytes.TrimSuffix(line, []byte("\n"))); ok && statement.checkpoint.trail != trail {
+			apart = append(apart, line)
+		}
+	}
+	return apart
 }
 
 // witnessBody is the body of a submission from the lines the runtime
@@ -1319,10 +1607,6 @@ func (ws *witnessScheduler) attempt(requested bool) witnessAttempt {
 	case !found:
 		return problem(witnessNothing, witnessNoneWords)
 	}
-	token, err := s.readWitnessToken(witness.holder.ID)
-	if err != nil {
-		return problem(witnessProblem, fmt.Sprintf(witnessUnreadWords, strings.TrimRight(s.custodyWords(err.Error()), ".")))
-	}
 	head, said, err := s.readCheckpointHead(ws.ctx, dir, deskTrail)
 	switch {
 	case err != nil:
@@ -1359,9 +1643,25 @@ func (ws *witnessScheduler) attempt(requested bool) witnessAttempt {
 	// first line read, by sequence.
 	attempt := witnessAttempt{At: at, Requested: requested, Trail: head.Identity, From: cursor.Through, First: first, Through: sent.sequence,
 		Lines: int64(bytes.Count(body, []byte("\n"))), Unsent: unsent + (from - cursor.Through)}
-	reply := submit(ws.ctx, witness.file.URL, token, body)
-	attempt.Status, attempt.Reason, attempt.Error, attempt.RetryAfter = reply.Status, reply.Reason, reply.Error, reply.RetryAfter
+	// **The token is read only now** (review round 1 of #382, finding 6),
+	// immediately before it is sent, and only for the origin it was
+	// confirmed for (finding 1).
+	token, err := s.readWitnessToken(witness.holder.ID, witness.file.URL)
 	switch {
+	case errors.Is(err, errWitnessOrigin):
+		return problem(witnessProblem, witnessOriginWords)
+	case err != nil:
+		return problem(witnessProblem, fmt.Sprintf(witnessUnreadWords, strings.TrimRight(s.custodyWords(err.Error()), ".")))
+	}
+	reply := submit(ws.ctx, witness.file.URL, token, body)
+	token = ""
+	attempt.Status, attempt.Reason, attempt.Error, attempt.RetryAfter = reply.Status, reply.Reason, reply.Error, reply.RetryAfter
+	if !reply.RetryUntil.IsZero() {
+		attempt.RetryUntil = reply.RetryUntil.Unix()
+	}
+	switch {
+	case reply.Credential:
+		attempt.Outcome, attempt.Error, attempt.Problem = witnessWithheld, "", witnessCredentialWords
 	case !reply.Reached:
 		attempt.Outcome = witnessUnreached
 	case reply.Status == http.StatusOK:
@@ -1371,7 +1671,7 @@ func (ws *witnessScheduler) attempt(requested bool) witnessAttempt {
 		s.refusedWith(witness, head.Identity, reply)
 	}
 	s.handoverMu.Lock()
-	s.keepAnswer(witness.holder.ID, attempt)
+	s.keepAnswer(witness.holder.ID, attempt, reply.original)
 	s.handoverMu.Unlock()
 	return ws.record(attempt)
 }
@@ -1387,8 +1687,10 @@ func (s *Server) refusedWith(witness witnessHolder, trail string, reply witnessR
 	defer s.handoverMu.Unlock()
 	if len(reply.statements) > 0 {
 		if err := s.inHolder(witness.holder.ID, func(folder *os.Root) error {
-			_, _, err := s.keepStatements(folder, trail, ofTrail(reply.statements, trail))
-			return err
+			if _, _, err := s.keepStatements(folder, trail, ofTrail(reply.statements, trail)); err != nil {
+				return err
+			}
+			return s.keepUnusable(folder, notOfTrail(reply.statements, trail))
 		}); err != nil {
 			s.log.Printf("desk: the statements the witness refused with could not be kept: %v", err)
 		}
@@ -1483,8 +1785,12 @@ func (s *Server) answered(ctx context.Context, dir heldDir, witness witnessHolde
 	defer s.witnessReadMu.Unlock()
 	s.handoverMu.Lock()
 	err := s.inHolder(witness.holder.ID, func(folder *os.Root) error {
-		_, _, err := s.keepStatements(folder, sent.trail, ofTrail([][]byte{line}, sent.trail))
-		return err
+		if _, _, err := s.keepStatements(folder, sent.trail, ofTrail([][]byte{line}, sent.trail)); err != nil {
+			return err
+		}
+		// A statement of another trail is kept apart, never read for a
+		// verification of this one.
+		return s.keepUnusable(folder, notOfTrail([][]byte{line}, sent.trail))
 	})
 	s.handoverMu.Unlock()
 	if err != nil {
@@ -1985,7 +2291,12 @@ func (s *Server) fetchForReading(ctx context.Context, witness witnessHolder, tra
 	statement, _ := readWitnessStatement(line[:len(line)-1])
 	if statement.checkpoint.trail != trail {
 		// A head of another trail is not an answer of the witness's form
-		// to the question asked.
+		// to the question asked; its statement is kept apart.
+		s.handoverMu.Lock()
+		if err := s.inHolder(witness.holder.ID, func(folder *os.Root) error { return s.keepUnusable(folder, [][]byte{line}) }); err != nil {
+			s.log.Printf("desk: a statement of another trail could not be kept apart: %v", err)
+		}
+		s.handoverMu.Unlock()
 		return witnessFetch{State: "unreached", Status: reply.Status}, nil
 	}
 	index := statement.index
@@ -2013,8 +2324,13 @@ func (s *Server) fetchForReading(ctx context.Context, witness witnessHolder, tra
 		if ended != nil {
 			return nil
 		}
-		// **Replaced only once its statement is in the statements file.**
-		return writePrivateData(folder, headName(trail), line)
+		// **Replaced only once its statement is in the statements file**, and
+		// a head file Desk cannot use moved aside first (`replaceKept`).
+		_, err := s.replaceKept(folder, headName(trail), line, witnessLineLimit+1, func(data []byte) bool {
+			head, ok := readWitnessStatement(bytes.TrimSuffix(data, []byte("\n")))
+			return ok && bytes.HasSuffix(data, []byte("\n")) && bytes.Count(data, []byte("\n")) == 1 && head.checkpoint.trail == trail
+		})
+		return err
 	})
 	switch {
 	case err != nil:
@@ -2028,6 +2344,8 @@ func (s *Server) fetchForReading(ctx context.Context, witness witnessHolder, tra
 // fetchOf is a reply as the decision record says it.
 func fetchOf(reply witnessReply) witnessFetch {
 	switch {
+	case reply.Credential:
+		return witnessFetch{State: witnessWithheld, Status: reply.Status, Reason: reply.Reason}
 	case !reply.Reached:
 		return witnessFetch{State: "unreached", Status: reply.Status}
 	case reply.Status == http.StatusOK:
@@ -2122,8 +2440,16 @@ func (s *Server) checkWitnessKey(ctx context.Context, dir heldDir, key string) *
 	return keyCheckAnswer(out, runErr)
 }
 
-// keyCheckAnswer reads the runtime's answer to the key's check.
+// keyCheckAnswer reads the runtime's answer to the key's check, and fails
+// closed (review round 1 of #382, finding 4). JPS-AUDIT-WITNESS-KEY-INVALID is
+// the runtime's refusal of the key, in its words. The key is accepted only on
+// an answer the runtime gives once it has read the key: a complete report,
+// whose witness section says it was given the one key; or its refusal to read
+// a trail that is not there yet, JPS-AUDIT-TRAIL-READ, which comes after the
+// keys are read (runtime 0.30.0, `audit verify`). Anything else is "the key
+// could not be checked", and nothing is kept.
 func keyCheckAnswer(out []byte, runErr error) *lockFailure {
+	couldNotCheck := &lockFailure{http.StatusConflict, CodeBadRequest, witnessUndocumentedKey}
 	if runErr != nil {
 		var exit *exec.ExitError
 		if !errors.As(runErr, &exit) {
@@ -2131,30 +2457,35 @@ func keyCheckAnswer(out []byte, runErr error) *lockFailure {
 		}
 	}
 	var got struct {
-		Command     string                   `json:"command"`
-		Status      string                   `json:"status"`
-		Tool        struct{ Version string } `json:"tool"`
-		Diagnostics []runtimeDiagnostic      `json:"diagnostics"`
+		Tool struct {
+			Version string `json:"version"`
+		} `json:"tool"`
+		Command     string              `json:"command"`
+		Diagnostics []runtimeDiagnostic `json:"diagnostics"`
 	}
 	if out == nil || json.Unmarshal(out, &got) != nil {
-		return &lockFailure{http.StatusInternalServerError, CodeInternal, witnessUndocumentedKey}
+		return couldNotCheck
 	}
 	for _, diagnostic := range got.Diagnostics {
 		switch {
-		case diagnostic.Code == "JPS-AUDIT-WITNESS-KEY-INVALID":
+		case diagnostic.Code == "JPS-AUDIT-WITNESS-KEY-INVALID" && strings.TrimSpace(diagnostic.Message) != "":
 			return &lockFailure{http.StatusBadRequest, CodeBadRequest, strings.TrimSpace(diagnostic.Message)}
 		case diagnostic.Code == "JPS-AUDIT-WITNESS-KEY-READ":
 			return &lockFailure{http.StatusInternalServerError, CodeInternal, witnessKeyReadWords}
 		case diagnostic.Code == "JPS-INVOCATION-ARGUMENTS" && strings.HasPrefix(diagnostic.Message, "unknown flag: --witness"):
 			return &lockFailure{http.StatusConflict, CodeBadRequest, fmt.Sprintf(witnessKeyOlderWords, got.Tool.Version, witnessRuntimeFloor)}
-		case strings.HasPrefix(diagnostic.Code, "JPS-INVOCATION"):
-			return &lockFailure{http.StatusInternalServerError, CodeInternal, witnessUndocumentedKey}
 		}
 	}
-	if got.Command != auditVerifyCommand {
-		return &lockFailure{http.StatusInternalServerError, CodeInternal, witnessUndocumentedKey}
+	answer, err := readAuditVerification(out, runErr)
+	switch {
+	case err != nil:
+		return couldNotCheck
+	case answer.State == auditStateReport && answer.Report != nil && answer.Report.Witness != nil && answer.Report.Witness.KeysSupplied == 1:
+		return nil
+	case answer.State == auditStateUnverified && got.Command == auditVerifyCommand && len(answer.Diagnostics) == 1 && answer.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ":
+		return nil
 	}
-	return nil
+	return couldNotCheck
 }
 
 // refuseLocalKey refuses key where it is the public key of Desk's own local
@@ -2410,7 +2741,11 @@ func (s *Server) setWitness(plan witnessPlan, submitter, token string) (*witness
 		return keepFailed(err)
 	}
 	defer tokens.Close()
-	if err := writePrivateData(tokens, witnessTokenName(holder.ID), []byte(submitter)); err != nil {
+	custody, err := witnessCustodyBytes(submitter, plan.url)
+	if err == nil {
+		err = writePrivateData(tokens, witnessTokenName(holder.ID), custody)
+	}
+	if err != nil {
 		return keepFailed(errors.New("the token could not be kept in Desk's custody"))
 	}
 	kept := false
