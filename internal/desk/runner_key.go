@@ -7,10 +7,18 @@ package desk
 //
 // Runner v0.5.0 and later take a signing key on the boot line, `signingKey`,
 // check it at boot, and hand it to the runtime of each operational evaluation
-// only, as JPACK_SIGNING_KEY. A run whose runtime signs keeps the signature
-// sidecar, and its version-5 export carries it as `run.auditSignatures`. Desk
-// keeps one such key for each desk's Runner: a key of Runner's own, never a
-// project's, and never a JPACK_SIGNING_KEY inherited where Desk was started.
+// only, as JPACK_SIGNING_KEY. Runner v0.8.0 and later also take the public
+// key that seed is expected to have, `signingPublicKey` (issue #345): Desk
+// names the key its list of public keys names, never one read from whatever
+// seed is at the path. Runner refuses to start where the seed it reads at
+// start is another key, and gives the expected key to each operational
+// evaluation as JPACK_SIGNING_PUBLIC_KEY, so that runtime 0.30.0 and later
+// refuse to sign with a seed replaced after the start. An earlier Runner
+// decodes its boot line leniently and ignores the member. A run whose runtime
+// signs keeps the signature sidecar, and its version-5 export carries it as
+// `run.auditSignatures`. Desk keeps one such key for each desk's Runner: a
+// key of Runner's own, never a project's, and never a JPACK_SIGNING_KEY
+// inherited where Desk was started.
 //
 // # Where it is kept
 //
@@ -126,8 +134,9 @@ const (
 	// runnerKeyStarting: Runner is being started, or has not been yet.
 	runnerKeyStarting = "starting"
 	// runnerKeySigned: Runner started, and answered, with the key on its boot
-	// line; PublicKey and KeyID are its public half, as the runtime read it
-	// from the seed.
+	// line; PublicKey and KeyID are its public half, as Desk's list of public
+	// keys names it, and as the runtime read it from the seed. PublicKey is
+	// also what the boot line names as the expected key (`signingPublicKey`).
 	runnerKeySigned = "signed"
 	// runnerKeyUnsigned: Runner started, and answered, without a key; Reason
 	// says why.
@@ -297,7 +306,10 @@ type runnerKeyFound struct{ seed, keys, marker os.FileInfo }
 
 // examine finds the key kept under k.name, under the lock, and decides: the
 // seed's absolute path where every check holds, "" otherwise, and the state
-// to report once Runner has started either way.
+// to report once Runner has started either way. A signed state's public key
+// is the one key of the list Desk keeps, which the runtime read the seed as:
+// what the boot line names as the expected key (`signingPublicKey`, issue
+// #345), taken from the list and never from the seed alone.
 func (k *runnerKey) examine(ctx context.Context) (RunnerKeyStatus, string) {
 	s := k.s
 	if !runnerKeyName.MatchString(k.name) {
@@ -404,7 +416,7 @@ func (k *runnerKey) examine(ctx context.Context) (RunnerKeyStatus, string) {
 	if dir.namesFile(names.seed, seed) != nil {
 		return unsignedRunner(runnerKeyNotUsed, "the key is not at the path Runner would be given"), ""
 	}
-	return RunnerKeyStatus{State: runnerKeySigned, PublicKey: public.PublicKey, KeyID: public.KeyID}, path
+	return RunnerKeyStatus{State: runnerKeySigned, PublicKey: keys[0].PublicKey, KeyID: keys[0].KeyID}, path
 }
 
 // inspectRunnerKey inspects all three names, not following a link. Absence is

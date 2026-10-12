@@ -499,6 +499,8 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/audit/holders/{id}/confirm", s.handleConfirmHandover)
 	s.mux.HandleFunc("GET /api/audit/checkpoints", s.handleCheckpoints)
 	s.mux.HandleFunc("GET /api/audit/jobs-verify", s.handleJobsVerify)
+	s.mux.HandleFunc("GET /api/audit/jobs-signing", s.handleJobsSigning)
+	s.mux.HandleFunc("GET /api/audit/jobs-verify-run", s.handleJobsVerifyRun)
 	s.mux.HandleFunc("POST /api/audit/stamping/check", s.handleStampingCheck)
 	s.mux.HandleFunc("POST /api/audit/stamping", s.handleStampingSet)
 	s.mux.HandleFunc("POST /api/audit/stamping/remove", s.handleStampingRemove)
