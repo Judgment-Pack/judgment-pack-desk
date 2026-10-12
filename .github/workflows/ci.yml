@@ -147,14 +147,28 @@ jobs:
           ref: ${{ steps.pins.outputs.runtime }}
           path: .ci-runtime
           persist-credentials: false
+      - name: Check out tested Gateway
+        uses: actions/checkout@v7
+        with:
+          repository: Judgment-Pack/judgment-pack-gateway
+          ref: ${{ steps.pins.outputs.gateway }}
+          path: .ci-gateway
+          persist-credentials: false
       - name: Build companions
         run: |
           go -C .ci-runner build -trimpath -o "$RUNNER_TEMP/jpack-runner" ./cmd/jpack-runner
           go -C .ci-runtime build -trimpath -o "$RUNNER_TEMP/jpack" ./cmd/jpack
+          CGO_ENABLED=0 GOWORK=off go -C .ci-gateway/go build -trimpath -o "$RUNNER_TEMP/gateway" .
       - name: Real Jobs boot, recovery, profiles, planning and signing
         run: |
           JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
             go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1
+      # The witness (ADR-0012): the gateway's own reference, run on loopback as
+      # a witness, with the pinned runtime reading its chain.
+      - name: A witness from the pinned gateway, read by the pinned runtime
+        run: |
+          JPACK_BIN="$RUNNER_TEMP/jpack" JPACK_GATEWAY_TEST_BIN="$RUNNER_TEMP/gateway" \
+            go test ./internal/desk -run '^TestWitnessWithThePublishedRuntimeAndGateway$' -count=1 -v
       # The Go job has no runtime, so these skip there. Here they create a desk
       # with the pinned runtime, check its lock, and drive its relay: a deciding
       # run of a draft refused, a locked pack recorded, rehearsals unaffected.
