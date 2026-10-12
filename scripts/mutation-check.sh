@@ -2590,7 +2590,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if s.cfg.deskID == "" {
 		return nil
 	}
-	return withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv)' \
+	return withoutVariables(os.Environ(), append([]string{runtimeConfigEnv}, runtimeSigningEnv...)...)' \
     '	return nil'
   mutate go "named desk: the relay's environment is never set" internal/desk/relay.go \
     '	cmd.Env = s.runtimeEnv()
@@ -2624,13 +2624,13 @@ func (b *cappedBuffer) exceeded() bool {'
   # in the commands Desk runs over it or a private copy of it; the launch says
   # so without naming it, and the desk-config answer reports it there only.
   mutate go "signing key: a named desk's relay inherits it" "$NRT" \
-    '	return withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv)' \
+    '	return withoutVariables(os.Environ(), append([]string{runtimeConfigEnv}, runtimeSigningEnv...)...)' \
     '	return withoutVariables(os.Environ(), runtimeConfigEnv)'
   mutate go "signing key: a made desk's commands inherit it" "$NRT" \
     '	if !dir.startup {
-		drop = append(drop, runtimeSigningKeyEnv)' \
+		drop = append(drop, runtimeSigningEnv...)' \
     '	if false {
-		drop = append(drop, runtimeSigningKeyEnv)'
+		drop = append(drop, runtimeSigningEnv...)'
   mutate go "signing key: the startup desk's relay drops it" "$NRT" \
     '	if s.cfg.deskID == "" {
 		return nil
@@ -2640,9 +2640,9 @@ func (b *cappedBuffer) exceeded() bool {'
 	}'
   mutate go "signing key: the startup desk's commands drop it" "$NRT" \
     '	if !dir.startup {
-		drop = append(drop, runtimeSigningKeyEnv)' \
+		drop = append(drop, runtimeSigningEnv...)' \
     '	if true {
-		drop = append(drop, runtimeSigningKeyEnv)'
+		drop = append(drop, runtimeSigningEnv...)'
   mutate go "signing key: the startup desk's project is not marked" internal/desk/review.go \
     'info: s.project.info, startup: s.cfg.deskID == ""}' \
     'info: s.project.info}'
@@ -2669,6 +2669,13 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "signing key: a blank value counts as one" "$NRT" \
     '	return s.cfg.deskID == "" && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
     '	return s.cfg.deskID == "" && os.Getenv(runtimeSigningKeyEnv) != ""'
+  # **And the public key it is expected to have, through the same list
+  # (#377).** Runtime 0.30.0 holds every key it signs with to the public key
+  # JPACK_SIGNING_PUBLIC_KEY names; inherited, a made desk's own key signed
+  # nothing. The list is the one place both strip sites read.
+  mutate go "signing key: a made desk inherits the expected public key" "$NRT" \
+    'var runtimeSigningEnv = []string{runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv}' \
+    'var runtimeSigningEnv = []string{runtimeSigningKeyEnv}'
   mutate go "signing key: desk-config reports it never" internal/desk/assistant.go \
     'InheritsSigningKey: s.inheritsSigningKey()}' \
     'InheritsSigningKey: false}'

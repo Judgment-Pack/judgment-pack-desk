@@ -11,6 +11,7 @@ package desk
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +25,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 )
 
 // A second public key, with its keyId as the first 32 hexadecimal
@@ -1354,5 +1358,130 @@ func TestNewDeskWithTheRuntimeShowsAnExpectedKeyRefusal(t *testing.T) {
 		if strings.Contains(string(data), named) {
 			t.Errorf("the panel names %q: %s", named, data)
 		}
+	}
+}
+
+// **With the runtime: a desk made under a stray expected key signs with its
+// own key** (#377). JPACK_SIGNING_PUBLIC_KEY, set where Desk was started,
+// names the public key of another key, kept apart from Desk's. Runtime 0.30.0
+// holds every key it signs with to the public key that variable names, so a
+// desk's runtime that inherited it would refuse the desk's own seed and write
+// its records unsigned. Desk makes the desk signed at "6"; a deciding run
+// through the desk's own relay, the runtime Desk starts for it, is recorded
+// and signed by the desk's key; the decision record, whose `packs validate`
+// and `audit verify` Desk runs, says the key signs and the record is signed;
+// and the runtime's own `audit verify --public-key`, run apart from Desk with
+// the desk's public key, agrees. Skipped with a runtime that reads no "7",
+// which has no expected key to inherit.
+func TestNewDeskWithTheRuntimeSignsWithItsOwnKeyUnderAStrayExpectedKey(t *testing.T) {
+	bin := requireBinary(t)
+	t.Setenv("JPACK_CONFIG", "")
+	t.Setenv("JPACK_SIGNING_KEY", "")
+	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", "")
+	var schema struct {
+		Tool struct {
+			Version string `json:"version"`
+		} `json:"tool"`
+		Supported []string `json:"supportedConfigVersions"`
+	}
+	if err := json.Unmarshal(jpackIn(t, bin, t.TempDir(), "packs", "schema", "--format", "json"), &schema); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(schema.Supported, "7") {
+		t.Skipf("runtime %s reads no configVersion 7", schema.Tool.Version)
+	}
+
+	// Another key, kept apart from Desk's, whose public key is the stray one.
+	keys := t.TempDir()
+	var other struct {
+		PublicKey string `json:"publicKey"`
+	}
+	if err := json.Unmarshal(jpackIn(t, bin, keys, "audit", "key", "generate", filepath.Join(keys, "other.seed"), "--format", "json"), &other); err != nil || len(other.PublicKey) != 64 {
+		t.Fatalf("the other key: %v %+v", err, other)
+	}
+	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", other.PublicKey)
+
+	s, ts, _ := gatesServer(t, bin)
+	row := createGatedDesk(t, ts)
+	if row.ConfigVersion != "6" || !row.Signed || row.Notice != "" {
+		t.Fatalf("runtime %s made %+v, want it signed at 6", schema.Tool.Version, row)
+	}
+	assertGatedFolder(t, row.Folder, wantSignedConfig(s.configDir, row.ID))
+	var public struct {
+		PublicKey string `json:"publicKey"`
+		KeyID     string `json:"keyId"`
+	}
+	if err := json.Unmarshal(jpackIn(t, bin, row.Folder, "audit", "key", "public", filepath.Join(signingFolderOf(s), row.ID+".seed"), "--format", "json"), &public); err != nil {
+		t.Fatal(err)
+	}
+	if public.PublicKey == other.PublicKey {
+		t.Fatal("the desk's key is the other key")
+	}
+
+	// A reviewed pack, locked as the owner locks it; neither writing nor
+	// locking signs anything.
+	config := strings.Replace(wantSignedConfig(s.configDir, row.ID), `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)
+	writeProject(t, row.Folder, map[string]string{"packs/a.json": reviewPack, "jpack.json": config})
+	jpackIn(t, bin, row.Folder, "packs", "lock", "--config", "jpack.json", "--format", "json")
+
+	// A deciding run through the desk's own relay.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?desk="+row.ID, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{ts.URL}, "Authorization": []string{"Bearer " + testToken}},
+	})
+	if err != nil {
+		t.Fatalf("dial the new desk: %v", err)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	c.SetReadLimit(readLimit)
+	rpc := &rpcSession{t: t, ctx: ctx, ws: c}
+	rpc.initialize()
+	result := rpc.call(11, "experimental_evaluate", map[string]any{"pack_id": "alpha", "facts": "{}"})
+	if structured, _ := result["structuredContent"].(map[string]any); structured["status"] != "evaluated" || structured["reviewed"] != true {
+		t.Fatalf("the deciding run answered %v", result)
+	}
+	if trail := readFile(t, filepath.Join(row.Folder, ".desk-private", "audit", "evaluations.jsonl")); strings.Count(trail, "\n") != 1 {
+		t.Fatalf("the deciding run left %d record(s), want 1", strings.Count(trail, "\n"))
+	}
+
+	status, data := reviewCall(t, ts, "GET", "/api/audit/verify", row.ID, nil, bearer)
+	var answer auditAnswer
+	if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || answer.Report == nil {
+		t.Fatalf("the panel answered %d %s", status, data)
+	}
+	report := answer.Report
+	if report.Status != "valid" || report.Coverage.Signed != (auditCoverageState{Status: "through", Through: 1}) || report.Coverage.SignedRecords != 1 ||
+		report.Signatures == nil || report.Signatures.KeyInForce != public.KeyID {
+		t.Errorf("the panel reports %+v, signatures %+v; want the record signed by the desk's key %s", report, report.Signatures, public.KeyID)
+	}
+	wantCheck := auditSigning{State: signingChecked, Status: "passed", Detail: "Chained records are signed with key " + public.KeyID + ", named by the audit member's signingKey."}
+	if answer.Signing == nil || mustJSON(*answer.Signing) != mustJSON(wantCheck) {
+		t.Errorf("the panel shows the key check %+v, want %+v", answer.Signing, wantCheck)
+	}
+
+	// The runtime's own check, run apart from Desk, with no expected key and
+	// the desk's public key in a file of the holder's.
+	held := filepath.Join(t.TempDir(), "desk.pub")
+	if err := os.WriteFile(held, []byte(public.PublicKey+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "audit", "verify", "--config", "jpack.json", "--format", "json", "--public-key", held)
+	cmd.Dir = row.Folder
+	cmd.Env = append(os.Environ(), "JPACK_CONFIG=", "JPACK_SIGNING_PUBLIC_KEY=")
+	out, err := cmd.Output()
+	var own struct {
+		Status   string `json:"status"`
+		Coverage struct {
+			Signed        auditCoverageState `json:"signed"`
+			SignedRecords int64              `json:"signedRecords"`
+		} `json:"coverage"`
+		Signatures struct {
+			KeyInForce string `json:"keyInForce"`
+		} `json:"signatures"`
+	}
+	if err != nil || json.Unmarshal(out, &own) != nil || own.Status != "valid" || own.Coverage.Signed != (auditCoverageState{Status: "through", Through: 1}) ||
+		own.Coverage.SignedRecords != 1 || own.Signatures.KeyInForce != public.KeyID {
+		t.Errorf("the runtime's own audit verify answered %v %s", err, out)
 	}
 }
