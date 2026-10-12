@@ -181,6 +181,18 @@ type Server struct {
 	// stamping is this desk's scheduler of stamps: one loop, one run at a
 	// time, stopped by Close (stamping.go).
 	stamping *stampScheduler
+	// witnessMu guards this desk's witness: its settings and the submitter's
+	// token, read under it, written and removed under it for writing, and
+	// held for reading while a submission is sent and while the decision
+	// record reads the witness's chain (witness.go). witnessNonces holds the
+	// nonce of each witness token spent in this process, under it for
+	// writing. witnessReadMu serializes the readings of the witness's chain,
+	// which fetch, keep and save. witnessLoop is this desk's submission loop:
+	// one attempt at a time, stopped by Close.
+	witnessMu     sync.RWMutex
+	witnessNonces map[string]bool
+	witnessReadMu sync.Mutex
+	witnessLoop   *witnessScheduler
 	// reviewKey is this desk's own key for review tokens (`reviewToken`):
 	// random per process, so a token names one desk and does not outlive it.
 	reviewKey  [32]byte
@@ -505,6 +517,10 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/audit/stamping", s.handleStampingSet)
 	s.mux.HandleFunc("POST /api/audit/stamping/remove", s.handleStampingRemove)
 	s.mux.HandleFunc("POST /api/audit/stamping/stamp", s.handleStampNow)
+	s.mux.HandleFunc("POST /api/audit/witness/check", s.handleWitnessCheck)
+	s.mux.HandleFunc("POST /api/audit/witness", s.handleWitnessSet)
+	s.mux.HandleFunc("POST /api/audit/witness/remove", s.handleWitnessRemove)
+	s.mux.HandleFunc("POST /api/audit/witness/send", s.handleWitnessSend)
 	s.mux.HandleFunc("GET /api/upgrade", s.handleUpgrade)
 	s.mux.HandleFunc("POST /api/upgrade", s.handleUpgradeConfirm)
 	s.mux.HandleFunc("GET /api/source-reviews", s.handleSourceReviews)
@@ -572,6 +588,9 @@ func New(cfg Config) (*Server, error) {
 	// This desk's stamping, off the decision path: a loop that stamps where
 	// the owner set an authority, until Close (stamping.go).
 	s.startStamping()
+	// And its submissions to a witness, off the decision path too: a loop
+	// that submits where the owner set a witness, until Close (witness.go).
+	s.startWitness()
 	if cfg.parent == nil {
 		s.resumeDesks()
 	}
@@ -618,6 +637,7 @@ func (s *Server) closeAll() error {
 	// Before the project's folder is let go: a stamp in progress is waited
 	// for, never killed mid-write.
 	s.stamping.close()
+	s.witnessLoop.close()
 	if s.cfg.parent == nil {
 		s.closeAIAccounts()
 	}
