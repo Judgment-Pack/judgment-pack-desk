@@ -401,6 +401,13 @@ func New(cfg Config) (*Server, error) {
 	if s.inheritsSigningKey() {
 		s.log.Print("desk: JPACK_SIGNING_KEY is set, so where this project's audit trail is chained, its runtime signs each record with the key it names, if it accepts that key; desks Desk made ignore it")
 	}
+	// And an inherited JPACK_SIGNING_PUBLIC_KEY, said once beside them (#377).
+	// Not trimmed: the runtime reads it exactly as set, and a value of
+	// whitespace is a key it refuses, not none. Not its value either, as the
+	// key's is not.
+	if os.Getenv(runtimeSigningPublicKeyEnv) != "" && cfg.deskID == "" {
+		s.log.Print("desk: JPACK_SIGNING_PUBLIC_KEY is set, so where this project's audit trail is chained, its runtime signs each record only with a key whose public key is the one it names, if it accepts that key; desks Desk made ignore it")
+	}
 	if cfg.parent != nil {
 		s.sessions = cfg.parent.sessions
 		s.signIn = cfg.parent.signIn

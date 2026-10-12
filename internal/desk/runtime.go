@@ -74,6 +74,20 @@ const runtimeConfigEnv = "JPACK_CONFIG"
 // and it takes precedence over the configuration's own `audit.signingKey`.
 const runtimeSigningKeyEnv = "JPACK_SIGNING_KEY"
 
+// runtimeSigningPublicKeyEnv is the variable the runtime reads the public key
+// a signing key is expected to have from (runtime 0.30.0). Set and not empty,
+// it holds whatever key signs to that one public key: a seed whose public key
+// is another signs nothing, and the record is written unsigned. It takes
+// precedence over the configuration's own `audit.signingPublicKey`.
+const runtimeSigningPublicKeyEnv = "JPACK_SIGNING_PUBLIC_KEY"
+
+// runtimeSigningEnv is every variable through which the runtime is told how a
+// project's records are signed: the key, and the public key it must have.
+// They are removed, and kept, together, through this one list, so that a desk
+// Desk made never has another project's key, nor its own key held to another
+// project's public key (#377).
+var runtimeSigningEnv = []string{runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv}
+
 // runtimeEnv is the environment the relay's runtime gets: this process's own,
 // except that a desk Desk made never reads another project's configuration,
 // and never signs with another project's key.
@@ -88,17 +102,21 @@ const runtimeSigningKeyEnv = "JPACK_SIGNING_KEY"
 //
 // `JPACK_SIGNING_KEY` is removed for the same reason (ADR-0010, section 1).
 // Inherited, the one key named where Desk was started signed the records of
-// every desk's runtime, whatever key that desk's own configuration names.
+// every desk's runtime, whatever key that desk's own configuration names. And
+// `JPACK_SIGNING_PUBLIC_KEY` with it (`runtimeSigningEnv`): inherited, the one
+// public key named where Desk was started held every desk's key to it, so a
+// desk whose key is another wrote its records unsigned.
 //
-// The startup desk keeps both. There they are the owner's: an inherited
+// The startup desk keeps them all. There they are the owner's: an inherited
 // `JPACK_CONFIG` is the only way the owner can have chosen the configuration,
-// and an inherited `JPACK_SIGNING_KEY` the key; this desk does not change what
-// an existing project reads or signs with. `New` logs each.
+// an inherited `JPACK_SIGNING_KEY` the key, and an inherited
+// `JPACK_SIGNING_PUBLIC_KEY` the public key it must have; this desk does not
+// change what an existing project reads or signs with. `New` logs each.
 func (s *Server) runtimeEnv() []string {
 	if s.cfg.deskID == "" {
 		return nil
 	}
-	return withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv)
+	return withoutVariables(os.Environ(), append([]string{runtimeConfigEnv}, runtimeSigningEnv...)...)
 }
 
 // withoutVariables is env without any entry for the variables named.
@@ -185,8 +203,10 @@ func runRuntimeInput(ctx context.Context, bin string, dir heldDir, input []byte,
 	// an inherited value could only point it at another project's file.
 	//
 	// **`JPACK_SIGNING_KEY` only on the startup desk**, as the relay has it
-	// (`runtimeEnv`). A desk Desk made never signs with the key named where
-	// Desk was started. On the startup desk the key is the owner's, and these
+	// (`runtimeEnv`), and `JPACK_SIGNING_PUBLIC_KEY` with it, through the same
+	// list (`runtimeSigningEnv`). A desk Desk made never signs with the key
+	// named where Desk was started, nor holds its own key to the public key
+	// named there. On the startup desk the key is the owner's, and these
 	// commands keep it, so that they see the project as its relay does: with
 	// the one key in force for it. `packs schema`, `packs lock` and `packs
 	// verify` neither evaluate nor sign, so keeping it changes nothing they do.
@@ -195,7 +215,7 @@ func runRuntimeInput(ctx context.Context, bin string, dir heldDir, input []byte,
 	// it would speak of another key than the one the project's runtime uses.
 	drop := []string{runtimeConfigEnv}
 	if !dir.startup {
-		drop = append(drop, runtimeSigningKeyEnv)
+		drop = append(drop, runtimeSigningEnv...)
 	}
 	cmd.Env = withoutVariables(os.Environ(), drop...)
 	stdout := &cappedBuffer{limit: runtimeAnswerLimit}
