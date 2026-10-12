@@ -363,9 +363,10 @@ The runtime chains each desk's audit trail, and can sign it, check it against
 checkpoints someone else holds, and have it time-stamped. Desk's part, set out
 in [ADR-0010](docs/adr/0010-defensible-decision-records.md), is to keep the
 key, to show what the runtime's own check finds, to hand checkpoints to holders
-you name, and to run the stamping, all on the owner's word. Desk adds no claim
-of its own: where this section quotes a sentence, it is the runtime's or
-Runner's, or ADR-0010's, as written. **Help & About → Gates** and the panels in
+you name, to run the stamping, and to submit checkpoints to a witness you set
+([ADR-0012](docs/adr/0012-witness-as-a-holder.md)), all on the owner's word.
+Desk adds no claim of its own: where this section quotes a sentence, it is the
+runtime's or Runner's, the witness's, or ADR-0010's or ADR-0012's, as written. **Help & About → Gates** and the panels in
 **Admin → Workspace → Decision safeguards** say the same in brief. A runtime older than 0.26.0 has none
 of this, and Desk offers none of it with one.
 
@@ -913,8 +914,9 @@ of the trail is held to what they kept with `jpack audit verify --expect`.
   them, and its record of what went to each, in `.desk-private/handover/`
   under the project: owner-only, opened through the project's root and never
   through a link, refused by the file API, and in no backup, like the trail.
-- **Download or copy is the one channel.** Desk sends a checkpoint to no
-  endpoint itself. "Download
+- **Download or copy is the one channel to a holder you name.** Desk sends a
+  checkpoint to no endpoint of a holder's; a witness (below) is the one
+  endpoint it submits to. "Download
   checkpoints" saves the checkpoints after that holder's last confirmed record
   as the exact bytes `jpack audit checkpoint --since <n> --limit 300` printed,
   batch after batch, up to 6,000 in one file, which is named for the trail and
@@ -1105,6 +1107,99 @@ authority's stated time, as far as that authority is independent of the
 operator", and not "when any record was made: a stamp is an upper bound on
 existence; anything against an authority that colludes; revocation, where no
 supplied list speaks for it; anything after the last checkpoint stamped".
+
+### A witness
+
+**A witness, in the decision record** (ADR-0012, accepted 2026-10-12;
+ADR-0010's delivery row 10). A witness is a gateway another party runs
+(Gateway v0.11.0, `SPEC.md` §6 and §8) that signs each checkpoint handed to
+it, chains its statements per trail, and serves them to anyone who names the
+trail. Desk treats it as a holder whose channel is `witness`, one per desk.
+**There is none by default.**
+
+- **Setting one.** You give its URL (https, or http to a loopback address
+  only), its public key, 64 hexadecimal characters from the witness's
+  operator out of band and never from the witness it checks, the submitter's
+  token its operator issued for the witness's audience, and an interval from
+  5 minutes to 24 hours, an hour unless you say otherwise. Desk holds the key
+  to the runtime's rule by running `jpack audit verify --config jpack.json
+  --format json --witness-key <key>` once and reading only its refusal,
+  `JPS-AUDIT-WITNESS-KEY-INVALID`, shown as the runtime said it; it refuses
+  its own local gateway's key, which is yours as the operator. A pinned key is
+  never changed in place: a witness under a new key is a new witness. The
+  confirmation says, before anything is kept, that choosing a witness is a
+  trust decision; that each submission sends it the trail identity, sequences
+  and record digests, never a record's contents; that its reads are open, so
+  whoever holds one of the trail's checkpoints can follow the trail there;
+  that only the last line of a submission is countersigned; that whoever
+  holds the token can poison the trail there for good; and that the
+  witness's operator registers the trail first, with the trail identity to
+  give them.
+- **What Desk keeps.** The URL and the key in `witness.json` (and the key as
+  the runtime reads it, `witness.pub`), the cursor in the holder's
+  `record.json`, every statement the witness answered or served exactly as
+  received in `statements-<trail>.jsonl`, the head last fetched, the
+  runtime's continuation and the witness's last answer, all in the holder's
+  folder under `.desk-private/handover/`, owner-only, refused by the file API
+  and in no backup. The token is kept in Desk's custody, outside the project,
+  at `secrets/witness/<desk>/<holder id>.token`, 0600: never shown again,
+  never written to a log, an answer or a project file, passed to no process,
+  and sent only as `Authorization: Bearer` on a submission to the URL you
+  set, with no redirect followed. Everything read back is held to its form
+  first; a file Desk cannot use is moved aside in that folder under a name
+  that says when and why, named on the decision record, and kept until you
+  remove it. Desk removes no statement. Removing the witness removes its
+  token and settings and keeps its statements.
+- **What Desk sends, and when.** At the interval, where the trail's head has
+  moved past the cursor, one submission at a time per desk, and on **Send
+  now**: the lines `jpack audit checkpoint --since <cursor> --limit 300`
+  printed, joined untouched through the trail's last chained record, as
+  `application/jsonl`, each request with 15 seconds. Over the witness's
+  1 MiB, Desk sends the whole lines that end with the head's and says how many
+  earlier ones it left unsent. Only the last line is countersigned: nothing
+  the witness keeps shows that the lines before it were sent, and the
+  statement for the head covers them through the trail's own chain. Nothing a deciding run
+  does waits for it; while Desk is not running, nothing is sent.
+- **What moves the cursor.** Only a `200` whose statement is a checkpoint
+  statement for the last line sent, by trail, sequence and record digest,
+  compared by Desk, and which the runtime's reading with it as the head
+  confirms: the witness section read, no `witness-*` finding, its latest
+  checkpoint statement at that index and sequence. A `409` (`conflict`,
+  `below-head`, `retired`), a `401`, `403`, `429` or `503`, and an answer
+  that is not of the witness's form never move it. Each refusal is shown with
+  the witness's own `reason` and sentence; Desk's own words for a witness
+  that did not answer as asked are only "Desk could not reach the witness",
+  with the HTTP status where there was one. After `below-head` Desk sends
+  again only once the trail's head is past the witness's; after `retired` it
+  sends nothing more for the trail; after `429` or `503` it waits for
+  `Retry-After`.
+- **What the decision record reads.** When the panel opens, Desk fetches the
+  trail's head with no token, then the statements after its continuation, up
+  to the head's, and runs `audit verify` with the pinned key, the statements,
+  the head, its continuation and `--witness-save`. The panel shows the
+  runtime's `countersigned` coverage beside the held one, and its witness
+  section: where the reading began, whether it is current, to the head Desk
+  fetched, or historical, read only as far as it was supplied, the latest
+  checkpoint statement, the conflicts and the retirement. With the witness
+  stopped, Desk keeps working and the reading is historical.
+  `--require-countersigned-through` is passed only for one check you ask
+  for, which saves nothing.
+
+What a witness establishes, and does not, is ADR-0012 section 5's, in
+ADR-0013's words:
+
+| Part | Establishes | Does not establish |
+|---|---|---|
+| A `checkpoint` statement, verified under the pinned key | the key's holder was given this checkpoint and signed it as statement `index` of its chain for the trail, and states that it did so at `witnessedAt` | that the checkpoint names a real record; that it extends the one before; that the submitter was the trail's operator; that `witnessedAt` is true; anything against a witness that colludes, or whose key is stolen |
+| The same, held against the trail | lines 1 to its sequence are the lines that existed when the witness signed, if the witness is independent of the operator | anything after that sequence; that this is the project's only trail; that the records are true, or that every decision was recorded |
+| The chain read to a head Desk fetched | Desk holds every statement that head commits to, as the witness signed them: none missing, out of order or altered | that the head is still the witness's after the fetch; that the witness signed no second chain for another audience; that it will serve these tomorrow |
+| A `conflict` statement | a submitter the witness allowed offered another record for a sequence the witness held | which of the two is the trail's; who that submitter was |
+| A `retirement` statement | the witness accepts no more statements for the trail, and the chain ends there | why; whether the trail's operator went on under another trail, as it does after a retirement, registered anew |
+| The submitter's token | to the witness, an issuer and a subject; it opens the witness and nothing else | that its holder is the trail's operator: a credential is enough to poison a trail for good, by a checkpoint signed at a sequence no honest one will exceed, which revoking the token does not unsign; recovery is retirement, not erasure |
+| Desk's cursor and its record of submissions | — | anything: they are the operator's |
+
+Not in this line: Runner's chain of runs at a witness, a second witness per
+desk, and moving a trail aside.
 
 ### What each part establishes, and does not
 
