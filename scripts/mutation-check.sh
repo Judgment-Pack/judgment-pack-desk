@@ -5452,6 +5452,64 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "run signer: a path in a member reaches the page" "$JS" \
     'Signing: s.shownSigning(item.Signing),' \
     'Signing: item.Signing,'
+  # **A witness as a holder (ADR-0012; issue #234; witness.go).** The
+  # cursor moves only on a statement for the last line sent that the
+  # runtime's reading confirms; the key is held to the runtime's rule and
+  # refused in its words; the token stays in Desk's custody, out of the log
+  # and the answers, and goes to no redirect; the decision record fetches
+  # the head, passes none it did not fetch, and the one check saves
+  # nothing; the body is cut at the witness's bound; a file Desk cannot use
+  # is moved aside, not removed; and the witness is not handed over to.
+  # Every row's name starts "witness:".
+  WG=internal/desk/witness.go
+  WH=internal/desk/handover.go
+  mutate go 'witness: the cursor moves on a refusal' "$WG" \
+    '		s.refusedWith(witness, head.Identity, reply)' \
+    '		s.refusedWith(witness, head.Identity, reply)
+		s.handoverMu.Lock()
+		_ = s.updateCursor(witness.holder.ID, head.Identity, func(entry *witnessCursor) { entry.Through, entry.Digest = sent.sequence, sent.digest })
+		s.handoverMu.Unlock()'
+  mutate go 'witness: the statement is not held to the last line sent' "$WG" \
+    '	if statement.kind != "checkpoint" || statement.checkpoint != sent {' \
+    '	if statement.kind != "checkpoint" {'
+  mutate go 'witness: the runtime'"'"'s reading does not decide the cursor' "$WG" \
+    '	return w.LatestCheckpoint.Index == statement.index && w.LatestCheckpoint.Sequence == statement.checkpoint.sequence' \
+    '	return true'
+  mutate go 'witness: the key is not given to the runtime'"'"'s check' "$WG" \
+    '	if failure := s.checkWitnessKey(ctx, dir, plan.key); failure != nil {' \
+    '	if failure := (*lockFailure)(nil); failure != nil {'
+  mutate go 'witness: the runtime'"'"'s refusal of the key is not read' "$WG" \
+    '		case diagnostic.Code == "JPS-AUDIT-WITNESS-KEY-INVALID":' \
+    '		case false:'
+  mutate go 'witness: the token is written to Desk'"'"'s log' "$WG" \
+    '	reply := submit(ws.ctx, witness.file.URL, token, body)' \
+    '	s.log.Printf("desk: submitting to the witness under %s", token)
+	reply := submit(ws.ctx, witness.file.URL, token, body)'
+  mutate go 'witness: the token is in the confirmation'"'"'s answer' "$WG" \
+    '	writeJSON(w, http.StatusOK, auditWitnessHolder{State: witnessStateSet, Settings: shown})' \
+    '	writeJSON(w, http.StatusOK, map[string]any{"state": witnessStateSet, "settings": shown, "token": submitter})'
+  mutate go 'witness: a redirect is followed' "$WG" \
+    '		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },' \
+    '		CheckRedirect: nil,'
+  mutate go 'witness: the decision record fetches no head' "$WG" \
+    '	fetch, err := s.fetchForReading(ctx, witness, head.Identity)' \
+    '	fetch, err := witnessFetch{State: "unreached"}, error(nil)'
+  mutate go 'witness: a head is passed where none was fetched' "$WG" \
+    '	case fetch.State == "fetched":' \
+    '	default:'
+  mutate go 'witness: the owner'"'"'s one check saves a continuation' "$WG" \
+    '	reading, err := s.prepareReading(witness, head.Identity, headFile, require == 0)' \
+    '	reading, err := s.prepareReading(witness, head.Identity, headFile, true)'
+  mutate go 'witness: the body is not cut at the witness'"'"'s bound' "$WG" \
+    '	for len(data)-start > witnessBodyLimit {' \
+    '	for false && len(data)-start > witnessBodyLimit {'
+  mutate go 'witness: a file Desk cannot use is removed, not moved aside' "$WG" \
+    '	if err := folder.Rename(name, aside); err != nil {' \
+    '	if err := folder.Remove(name); err != nil {'
+  mutate go 'witness: the witness is listed as a holder to hand over to' "$WH" \
+    '	holders = withoutWitness(holders)
+	var jobs *checkpointHead' \
+    '	var jobs *checkpointHead'
   # **Checkpoint hand-over by download or copy (ADR-0010 PR 5, section 2).**
   # The bytes the runtime printed, untouched and in order, through the record
   # read first; each line held to that trail and to the order; the batches
@@ -13906,8 +13964,8 @@ export function assistantTransport(id: string): Transport {
     "if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })" \
     "if (reconnecting) await queryClient.invalidateQueries()"
   mutate web 'record: asking again runs nothing' 'web/src/audit/DecisionRecord.tsx' \
-    '  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }}' \
-    '  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined) }}'
+    '  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined); void query.refetch() }}' \
+    '  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined) }}'
   mutate web "record: an older runtime's line claims signing" "$DR" \
     "            : record?.state === 'older-runtime' ? <><p>{msg(" \
     "            : record?.state === 'older-runtime' ? <><p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
@@ -14199,8 +14257,8 @@ export function assistantTransport(id: string): Transport {
     "onOutcome={outcome => { setRotated(outcome); void query.refetch() }}" \
     "onOutcome={outcome => { setRotated(outcome) }}"
   mutate web 'rotation page: an outcome outlives a later check' 'web/src/audit/DecisionRecord.tsx' \
-    'onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }}' \
-    'onClick={() => { setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }}'
+    'onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined); void query.refetch() }}' \
+    'onClick={() => { setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined); void query.refetch() }}'
   mutate web "rotation page: an outcome outlives opening the panel again" "$DR" \
     "  useEffect(() => { if (visible) setRotated(undefined) }, [visible])" \
     "  useEffect(() => { if (visible) void 0 }, [visible])"
@@ -14551,8 +14609,8 @@ export function assistantTransport(id: string): Transport {
     'onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />' \
     'onOutcome={outcome => { setRepaired(outcome) }} />'
   mutate web 'repair page: an outcome outlives a later check' 'web/src/audit/DecisionRecord.tsx' \
-    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }' \
-    '{ setRotated(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }'
+    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined); void query.refetch() }'
   mutate web 'repair page: an outcome outlives opening the panel again' "$RDR" \
     '  useEffect(() => { if (visible) setRepaired(undefined) }, [visible])' \
     '  useEffect(() => { if (visible && false) setRepaired(undefined) }, [visible])'
@@ -14587,6 +14645,39 @@ export function assistantTransport(id: string): Transport {
   mutate web 'repair client: an unavailable offer with a token is read' "$RAC" \
     '    case '"'"'unavailable'"'"': return named(value.reason) && value.token === undefined' \
     '    case '"'"'unavailable'"'"': return named(value.reason)'
+  # ADR-0012, the witness on the page (Witness.tsx, DecisionRecord.tsx) and
+  # in the client: a historical reading said as one; Desk's only words for
+  # a witness it could not reach; the token typed out of sight; the witness
+  # kept only on the confirmation, with its sentences; the countersigned
+  # coverage beside the held one; and the witness's own words on a refusal.
+  WT=web/src/audit/Witness.tsx
+  WAC=web/src/audit/client.ts
+  WDR=web/src/audit/DecisionRecord.tsx
+  mutate web 'witness page: a historical reading is shown as current' "$WT" \
+    '{section.reading === '"'"'current'"'"'
+' \
+    '{section.reading !== undefined
+'
+  mutate web 'witness page: Desk says more than that it could not reach the witness' "$WT" \
+    '  return status ? `${msg(UNREACHED)} (HTTP ${status}).` : `${msg(UNREACHED)}.`' \
+    '  return status ? '"'"'The witness is down (HTTP '"'"' + status + '"'"'), and nothing it signed holds.'"'"' : '"'"'The witness is down, and nothing it signed holds.'"'"''
+  mutate web 'witness page: the submitter'"'"'s token is typed in the clear' "$WT" \
+    '{wiring => <Input {...wiring} type="password" autoComplete="new-password"' \
+    '{wiring => <Input {...wiring} type="text" autoComplete="new-password"'
+  mutate web 'witness page: the witness is kept before it is confirmed' "$WT" \
+    '      setChecked({ proposal, answer: await checkWitness(proposal) })' \
+    '      await setWitness(proposal, token, (await checkWitness(proposal)).token)
+      onSet()'
+  mutate web 'witness page: the poison sentence is left out' "$WT" \
+    '        <li>{msg('"'"'Whoever holds the token can poison the trail at the witness for good: a checkpoint signed at a sequence no honest one will exceed is not unsigned by revoking the token, and the trail is then retired, not repaired.'"'"')}</li>
+' \
+    ''
+  mutate web 'witness page: the countersigned coverage is not shown' "$WDR" \
+    '      {coverage.countersigned && coverage.countersigned.status !== '"'"'not-checked'"'"' && <div>' \
+    '      {false && coverage.countersigned && coverage.countersigned.status !== '"'"'not-checked'"'"' && <div>'
+  mutate web 'witness client: a refusal of the head is read without the witness'"'"'s words' "$WAC" \
+    '    case '"'"'refused'"'"': return named(value.reason) && named(value.error) && value.index === undefined' \
+    '    case '"'"'refused'"'"': return value.index === undefined'
   # ADR-0010 row 7, stamping, on the page (Stamping.tsx, DecisionRecord.tsx)
   # and in the client: the proposal kept only on the confirmation, its three
   # sentences and section 7's row; Stamp now and the removal; the record
@@ -14652,8 +14743,8 @@ export function assistantTransport(id: string): Transport {
     '    onOutcome={outcome => { setStamped(outcome); void query.refetch() }} />' \
     '    onOutcome={outcome => { setStamped(outcome) }} />'
   mutate web 'stamping page: an outcome outlives a later check' 'web/src/audit/DecisionRecord.tsx' \
-    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }' \
-    '{ setRotated(undefined); setRepaired(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }'
+    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); setRepaired(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined); void query.refetch() }'
   mutate web 'stamping page: the statement says no stamp was checked with roots given' "$SDR" \
     '  const roots = record.stamping?.passed === true' \
     '  const roots = false'
