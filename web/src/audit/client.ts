@@ -856,6 +856,124 @@ export async function downloadRunChain(): Promise<Blob> {
   return response.blob()
 }
 
+/* Each run's signing (issue #345) ------------------------------------------- */
+
+/**
+ * How a completed run's `signing`, as Runner records it (Runner v0.8.0),
+ * holds against the list of public keys Desk keeps for this desk's Runner:
+ * signed under a key the list names, or one it does not; a failed signing,
+ * in Runner's words; no member; signed, where the list could not be read now,
+ * so held to nothing; or a member in neither of Runner's forms.
+ */
+export const RUN_SIGNING_HELD = ['listed', 'unlisted', 'failed', 'none', 'not-held', 'other'] as const
+export type RunSigningHeld = typeof RUN_SIGNING_HELD[number]
+
+/** One completed run, with Runner's `signing` member as Runner served it. */
+export interface RunSigning { id: string; jobId: string; jobName?: string; finishedAt?: string; signing?: unknown; held: RunSigningHeld }
+
+/** The list of public keys Desk keeps for this desk's Runner: read, not there, or not read now and why. */
+export type RunnerKeyList =
+  | { state: 'read'; keys: string[]; current: string }
+  | { state: 'none' }
+  | { state: 'unread'; problem: string }
+
+/** A page of Runner's completed runs, newest first, with Runner's cursor for the next; or no Runner, or Runner not running. */
+export type JobsSigning =
+  | { state: 'runs'; list: RunnerKeyList; runs: RunSigning[]; next?: number }
+  | { state: 'no-runner' }
+  | { state: 'not-running' }
+
+/**
+ * What `jpack-runner verify-run --public-key <the list's key in force>
+ * --require-signed` said of one run's export: its exit status, its standard
+ * output verbatim and its standard error with no path; or Runner's refusal to
+ * export the run, in its words.
+ */
+export type RunVerification =
+  | { state: 'checked'; run: string; publicKey: string; exportVersion?: number; exit: number; stdout?: string; stderr?: string }
+  | { state: 'export-refused'; run: string; status: number; said?: string }
+
+/** The chassis's own sentences about each run's signing, as it says them (`internal/desk/jobs_signing.go`). */
+export const JOBS_SIGNING_REASONS = [
+  sourceMessage('This desk has no Runner, so it has no run to check.'),
+  sourceMessage('Runner is not running on this desk now, so Desk could not read its runs.'),
+  sourceMessage("Desk keeps no list of public keys for this desk's Runner, so it has no key to check a run's export under."),
+  sourceMessage("Desk's copy of the run's export changed while jpack-runner verify-run read it, so its answer is not shown.")
+]
+
+const runID = (value: unknown): value is string => text(value) && /^run_[0-9a-f]{32}$/.test(value)
+const hexKey = (value: unknown): value is string => text(value) && /^[0-9a-f]{64}$/.test(value)
+
+function isRunnerKeyList(value: unknown): value is RunnerKeyList {
+  if (!object(value)) return false
+  switch (value.state) {
+    case 'read': return list(value.keys, hexKey) && value.keys.length > 0 && hexKey(value.current) && value.keys.at(-1) === value.current
+    case 'none': return value.keys === undefined
+    case 'unread': return named(value.problem)
+  }
+  return false
+}
+
+function isRunSigning(value: unknown): value is RunSigning {
+  if (!object(value) || !runID(value.id) || !text(value.jobId) || !optional(value.jobName, text) || !optional(value.finishedAt, text)) return false
+  if (!(RUN_SIGNING_HELD as readonly unknown[]).includes(value.held)) return false
+  // A failed signing is named in Runner's words, so it must carry them.
+  if (value.held === 'failed') return object(value.signing) && named(value.signing.reason)
+  if (value.held === 'none') return value.signing === undefined
+  if (value.held === 'listed' || value.held === 'unlisted' || value.held === 'not-held') return object(value.signing) && hexKey(value.signing.publicKey)
+  return true
+}
+
+/**
+ * A page of runs as the chassis answers one, each run in one of the forms
+ * above. A page with no run leaves `runs` out, and is read as an empty one.
+ */
+export function isJobsSigning(value: unknown): value is JobsSigning {
+  if (!object(value)) return false
+  switch (value.state) {
+    case 'runs': return isRunnerKeyList(value.list) && optional(value.runs, item => list(item, isRunSigning)) && optional(value.next, count)
+    case 'no-runner': case 'not-running': return value.runs === undefined
+  }
+  return false
+}
+
+/** A check of one run's export as the chassis answers one. */
+export function isRunVerification(value: unknown): value is RunVerification {
+  if (!object(value) || !runID(value.run)) return false
+  switch (value.state) {
+    case 'checked': return hexKey(value.publicKey) && count(value.exit) && optional(value.exportVersion, count) && optional(value.stdout, text) && optional(value.stderr, text)
+    case 'export-refused': return count(value.status) && optional(value.said, text) && value.exit === undefined
+  }
+  return false
+}
+
+/** Desk's refusal, in its words, or the fallback where it gave none. */
+async function runsRefusal(response: Response, fallback: string): Promise<Error> {
+  let body: { error?: unknown } = {}
+  try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+  return new Error(text(body.error) ? body.error : fallback)
+}
+
+/** One page of Runner's completed runs, each run's signing held to the list now: the newest, or the one after Runner's cursor. */
+export async function readJobsSigning(after?: number, signal?: AbortSignal): Promise<JobsSigning> {
+  const failed = msg('The runs could not be read. Please try again.')
+  const response = await deskFetch(after === undefined ? '/api/audit/jobs-signing' : `/api/audit/jobs-signing?after=${after}`, { signal })
+  if (!response.ok) throw await runsRefusal(response, failed)
+  const value: unknown = await response.json()
+  if (!isJobsSigning(value)) throw new Error(failed)
+  return value.state === 'runs' ? { ...value, runs: value.runs ?? [] } : value
+}
+
+/** jpack-runner verify-run on one run's export, run now, at the owner's request. */
+export async function verifyJobsRun(run: string): Promise<RunVerification> {
+  const failed = msg('The run’s export could not be checked. Please try again.')
+  const response = await deskFetch(`/api/audit/jobs-verify-run?run=${encodeURIComponent(run)}`)
+  if (!response.ok) throw await runsRefusal(response, failed)
+  const value: unknown = await response.json()
+  if (!isRunVerification(value) || value.run !== run) throw new Error(failed)
+  return value
+}
+
 /* Stamping ------------------------------------------------------------------ */
 
 /** One root certificate Desk keeps: its subject, and the SHA-256 of its DER bytes. */

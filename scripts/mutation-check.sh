@@ -5404,6 +5404,36 @@ func (b *cappedBuffer) exceeded() bool {'
     '	return strings.ReplaceAll(withoutAbsolutePaths(replaceSpans(message, spans)), held, "…")' \
     '	_ = spans
 	return strings.ReplaceAll(message, held, "…")'
+  # **Each run's signer, held to Runner's list of public keys (issue #345;
+  # jobs.go and jobs_signing.go).** The boot line names the list's key as the
+  # one Runner is to expect; each completed run's signing is passed on as
+  # Runner served it and held to the list, a key the list does not name is
+  # named, and a list that could not be read now holds no run; verify-run is
+  # run under the list's key in force with --require-signed, from copies held
+  # to what Desk wrote, and its answer is passed on as it gave it. Every
+  # row's name starts "run signer:".
+  JS=internal/desk/jobs_signing.go
+  mutate go "run signer: the boot line names no expected key" "$J" \
+    '			boot["signingPublicKey"] = signingPublicKey' \
+    '			_ = signingPublicKey'
+  mutate go "run signer: a key the list does not name is not named" "$JS" \
+    '		return signingUnlisted' \
+    '		return signingListed'
+  mutate go "run signer: a list not read now is taken for one that names nothing" "$JS" \
+    '		if list.State == runnerListUnread {
+			return signingNotHeld
+		}
+' \
+    ''
+  mutate go "run signer: verify-run's answer is altered" "$JS" \
+    'Stdout: string(stdout), ' \
+    'Stdout: string(bytes.ReplaceAll(stdout, []byte("unsigned"), []byte("signed"))), '
+  mutate go "run signer: verify-run is not told to require a signature" "$JS" \
+    '"--public-key", list.Current, "--require-signed")' \
+    '"--public-key", list.Current)'
+  mutate go "run signer: the copies are not held to what Desk wrote" "$JS" \
+    '		if read, err := readPrivateData(handover, each.name, len(each.data)); err != nil || !bytes.Equal(read, each.data) {' \
+    '		if read, err := readPrivateData(handover, each.name, len(each.data)); false && (err != nil || !bytes.Equal(read, each.data)) {'
   # **Checkpoint hand-over by download or copy (ADR-0010 PR 5, section 2).**
   # The bytes the runtime printed, untouched and in order, through the record
   # read first; each line held to that trail and to the order; the batches
@@ -14363,7 +14393,7 @@ export function assistantTransport(id: string): Transport {
     'const STATEMENT = "Desk ran this over its own copy of the runner'"'"'s chain of runs, with the checkpoints it keeps.' \
     'const STATEMENT = "Desk ran this over its own copy of the runner'"'"'s chain of runs, with the keys and checkpoints it keeps.'
   mutate web "jobs record page: where each run's signature is checked is not said" "$JRP" \
-    '    <p className={styles.quiet}>{msg("Each run'"'"'s signature is checked by jpack-runner verify-run on that run'"'"'s export, not here.")}</p>
+    '    <p className={styles.quiet}>{msg(SIGNED_STATEMENT)}</p>
 ' \
     ''
   mutate web "jobs record page: Runner's key is not shown" "$JRP" \
@@ -14393,6 +14423,15 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs record page: the chain is saved under another name" "$JRP" \
     '      link.href = url; link.download = RUN_CHAIN_FILE' \
     '      link.href = url; link.download = '"'"'chain.jsonl'"'"''
+  mutate web "run signer page: a key the list does not name is not named" "$JRP" \
+    "  const named = runs.filter(run => run.held === 'unlisted' || run.held === 'failed' || run.held === 'other')" \
+    "  const named = runs.filter(run => run.held === 'failed' || run.held === 'other')"
+  mutate web "run signer page: a failed signing is not named in Runner's words" "$JRP" \
+    "  if (run.held === 'failed') return <span lang=\"en\">{(run.signing as { reason: string }).reason}</span>" \
+    "  if (run.held === 'failed') return <span lang=\"en\">{msg(UNLISTED)}</span>"
+  mutate web "run signer page: verify-run's output is not shown as it gave it" "$JRP" \
+    "      {check.stdout && <CodeBlock text={check.stdout} " \
+    "      {check.stdout && <CodeBlock text={check.stdout.trim()} "
   mutate web "jobs record client: the chain is asked of another route" "$AC" \
     '  const response = await deskFetch('"'"'/api/operations/run-chain'"'"')' \
     '  const response = await deskFetch('"'"'/api/operations/runs'"'"')'

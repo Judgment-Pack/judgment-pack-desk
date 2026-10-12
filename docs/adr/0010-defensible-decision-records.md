@@ -678,6 +678,26 @@ passed here would check nothing; the panel instead shows Runner's key as `GET
 /api/runner-key` reports it, says that each run's signature is checked by
 `verify-run` on that run's export, and says the sentence above without "the
 keys and".
+*Amended 2026-10-11, issue #345:* the panel's sentence on what is signed says
+that the chain of runs carries no signature sidecar of its own, and that
+Runner's key signs each run's record, in that run's own attempt. On request,
+the panel reads a page of Runner's completed runs (`GET
+/v1/runs?state=completed`) and shows each run's `signing` member as Runner
+v0.8.0 records it, held to the list of public keys Desk keeps for the desk's
+Runner: a run signed under a key the list does not name is named in Desk's
+one sentence of its own, "Signed under a key the list does not name."; a
+failed signing is named in Runner's words; a run with no member is never
+shown as signed; and where the list could not be read now, no run is held to
+it. On request, for one run, Desk runs `jpack-runner verify-run --file
+<copy> --profiles <the desk's input profiles> --release-digest <the export's
+own releaseDigest> --public-key <the list's key in force> --require-signed`
+on the run's version-5 export, and shows its exit status and output as it
+gave them, with the command. verify-run requires the profiles and the release
+digest; the digest is the export's own, so its release check binds nothing
+there. Runner's member is the operator's record of Runner's own check, and
+establishes nothing against the operator. Rotating Runner's key (#238) is not
+part of this: Desk keeps one key for each Runner, and checks every run's
+export under it.
 
 ### 5. Runner
 
@@ -755,6 +775,14 @@ is moved to the archive of Runner's keys, the list, the seed and then the
 marker, each only while it is the file just inspected; then a key is made
 again. Where no lock can be taken, Runner starts without a key, and nothing
 changes.
+*Amended 2026-10-11, issue #345:* the boot line also names the list's key as
+`signingPublicKey`, the public key the seed is expected to have, taken from
+the list and never from the seed alone. Runner v0.8.0 refuses to start where
+the seed it reads is another key, which Desk answers as any refusal of the
+key, by starting Runner again without one; and it passes the key to each
+operational evaluation as `JPACK_SIGNING_PUBLIC_KEY`, so that runtime 0.30.0
+and later sign nothing with a seed replaced after the start, and Runner
+records that run's signing as failed. An earlier Runner ignores the member.
 
 ### 6. The version floor
 
