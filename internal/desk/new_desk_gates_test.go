@@ -71,7 +71,7 @@ func writeStandInRuntime(t *testing.T, path, schema, lock string) (calls string)
 	calls = filepath.Join(t.TempDir(), "calls")
 	script := "#!/bin/sh\n" +
 		"printf '%s [JPACK_SIGNING_KEY=%s] [DESK_TEST_INHERITED=%s]\\n' \"$*\" \"${JPACK_SIGNING_KEY-unset}\" \"${DESK_TEST_INHERITED-unset}\" >> '" + calls + ".env'\n" +
-		"printf '%s [JPACK_SIGNING_PUBLIC_KEY=%s]\\n' \"$*\" \"${JPACK_SIGNING_PUBLIC_KEY-unset}\" >> '" + calls + ".expected'\n" +
+		"printf '%s [JPACK_SIGNING_PUBLIC_KEY=%s]\\n' \"$*\" \"${JPACK_SIGNING_PUBLIC_KEY-unset}\" >> '" + calls + ".signing-public-key'\n" +
 		"printf '%s [JPACK_CONFIG=%s]\\n' \"$*\" \"${JPACK_CONFIG-unset}\" >> '" + calls + "'\n" +
 		"case \"$1 $2\" in\n" +
 		"'packs schema')\n" + schema + "\n  ;;\n" +
@@ -219,7 +219,7 @@ func envSeen(t *testing.T, calls string) []string {
 // recorded nothing.
 func expectedKeySeen(t *testing.T, calls string) []string {
 	t.Helper()
-	data, err := os.ReadFile(calls + ".expected")
+	data, err := os.ReadFile(calls + ".signing-public-key")
 	if os.IsNotExist(err) {
 		return nil
 	}
