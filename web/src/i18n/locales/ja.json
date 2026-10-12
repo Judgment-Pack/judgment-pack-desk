@@ -3557,7 +3557,6 @@
   "Desk could not read the runner’s chain of runs now, so nothing can be handed over from it.": "Desk は現在ランナーの実行のチェーンを読み取れなかったため、そこから引き渡せるものはありません。",
   "Desk ran this over its own copy of the runner's chain of runs, with the checkpoints it keeps. It shows what a holder would see. It is not evidence to anyone who does not trust this installation.": "Desk はこれを、ランナーの実行のチェーンの自身のコピーに対して、自身が保管するチェックポイントを使って実行しました。保管者に見えるものを示します。このインストールを信頼しない人にとって、これは証拠になりません。",
   "Download the chain": "チェーンをダウンロード",
-  "Each run's signature is checked by jpack-runner verify-run on that run's export, not here.": "各実行の署名は、その実行のエクスポートに対して jpack-runner verify-run が確認します。ここでは確認しません。",
   "Jobs record": "ジョブの記録",
   "Jobs runs": "ジョブの実行",
   "Lines in Desk’s copy of the chain: {{number}}": "Desk のチェーンのコピーの行数: {{number}}",

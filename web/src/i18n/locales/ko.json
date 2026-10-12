@@ -3557,7 +3557,6 @@
   "Desk could not read the runner’s chain of runs now, so nothing can be handed over from it.": "Desk가 지금 실행기의 실행 체인을 읽지 못해, 그로부터 인계할 수 있는 것이 없습니다.",
   "Desk ran this over its own copy of the runner's chain of runs, with the checkpoints it keeps. It shows what a holder would see. It is not evidence to anyone who does not trust this installation.": "Desk가 이 확인을 실행기의 실행 체인에 대한 자체 사본에서, 자신이 보관하는 체크포인트로 실행했습니다. 보관자가 보게 될 것을 보여 줍니다. 이 설치를 신뢰하지 않는 사람에게 이것은 증거가 아닙니다.",
   "Download the chain": "체인 다운로드",
-  "Each run's signature is checked by jpack-runner verify-run on that run's export, not here.": "각 실행의 서명은 해당 실행의 내보내기에서 jpack-runner verify-run이 확인하며, 여기서는 확인하지 않습니다.",
   "Jobs record": "작업 기록",
   "Jobs runs": "작업 실행",
   "Lines in Desk’s copy of the chain: {{number}}": "Desk의 체인 사본에 있는 줄 수: {{number}}",

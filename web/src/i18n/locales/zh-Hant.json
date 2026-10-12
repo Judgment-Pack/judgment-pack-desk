@@ -3557,7 +3557,6 @@
   "Desk could not read the runner’s chain of runs now, so nothing can be handed over from it.": "Desk 目前無法讀取執行器的執行鏈，因此無法從中移交任何內容。",
   "Desk ran this over its own copy of the runner's chain of runs, with the checkpoints it keeps. It shows what a holder would see. It is not evidence to anyone who does not trust this installation.": "Desk 針對其自己的執行器執行鏈副本，用其保管的檢查點執行了這項檢查。它顯示保管者會看到什麼。對不信任此安裝的人來說，這不是證據。",
   "Download the chain": "下載執行鏈",
-  "Each run's signature is checked by jpack-runner verify-run on that run's export, not here.": "每次執行的簽署由 jpack-runner verify-run 在該次執行的匯出上檢查，而不是在這裡。",
   "Jobs record": "作業記錄",
   "Jobs runs": "作業執行",
   "Lines in Desk’s copy of the chain: {{number}}": "Desk 的執行鏈副本中的行數：{{number}}",

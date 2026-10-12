@@ -3579,7 +3579,6 @@
   "Desk could not read the runner’s chain of runs now, so nothing can be handed over from it.": "Desk n’a pas pu lire la chaîne des exécutions de l’exécuteur pour l’instant ; rien ne peut donc en être remis.",
   "Desk ran this over its own copy of the runner's chain of runs, with the checkpoints it keeps. It shows what a holder would see. It is not evidence to anyone who does not trust this installation.": "Desk a exécuté ceci sur sa propre copie de la chaîne des exécutions de l’exécuteur, avec les points de contrôle qu’il conserve. Cela montre ce qu’un détenteur verrait. Ce n’est une preuve pour personne qui ne fait pas confiance à cette installation.",
   "Download the chain": "Télécharger la chaîne",
-  "Each run's signature is checked by jpack-runner verify-run on that run's export, not here.": "La signature de chaque exécution est vérifiée par jpack-runner verify-run sur l’export de cette exécution, pas ici.",
   "Jobs record": "Registre des tâches",
   "Jobs runs": "Exécutions des tâches",
   "Lines in Desk’s copy of the chain: {{number}}": "Lignes dans la copie de la chaîne de Desk : {{number}}",
