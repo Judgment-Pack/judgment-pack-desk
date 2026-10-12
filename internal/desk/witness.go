@@ -2409,11 +2409,20 @@ func (s *Server) setWitness(plan witnessPlan, submitter, token string) (*witness
 	if err != nil {
 		return keepFailed(err)
 	}
-	err = writePrivateData(tokens, witnessTokenName(holder.ID), []byte(submitter))
-	tokens.Close()
-	if err != nil {
+	defer tokens.Close()
+	if err := writePrivateData(tokens, witnessTokenName(holder.ID), []byte(submitter)); err != nil {
 		return keepFailed(errors.New("the token could not be kept in Desk's custody"))
 	}
+	kept := false
+	defer func() {
+		// **A new witness not kept whole leaves no token behind**: no listed
+		// holder names it, so nothing would ever remove it.
+		if !kept && !listed {
+			if err := tokens.Remove(witnessTokenName(holder.ID)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				s.log.Printf("desk: the token of a witness not kept could not be removed from Desk's custody: %v", err)
+			}
+		}
+	}()
 	folder, err := openHolderFolder(handover, holder.ID, true)
 	if err != nil {
 		return keepFailed(err)
@@ -2442,6 +2451,7 @@ func (s *Server) setWitness(plan witnessPlan, submitter, token string) (*witness
 	if err != nil {
 		return keepFailed(err)
 	}
+	kept = true
 	shown := witnessShown{URL: file.URL, PublicKey: file.PublicKey, IntervalMinutes: file.IntervalMinutes, SetAt: file.SetAt}
 	return &shown, nil
 }

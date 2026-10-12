@@ -282,7 +282,7 @@ From Desk's Go; the commands through `runRuntime`, as ADR-0010 §8 says.
 | PR | What | Needs | Status, 2026-10-12 |
 |---|---|---|---|
 | 5 | This record (#233) | gateway #211, #212 and #213 released (v0.11.0) and runtime #228 (v0.28.0); Desk's pins on them (#372); ADR-0013's answers to questions 5 and 7 | accepted 2026-10-12, merged: #379 |
-| 6 | #234, as ADR-0010's delivery row 10: the witness holder and its confirmation; the token in custody; submissions on the interval and Send now; the cursor on a verified statement; the statements, head and continuation kept; the panel's fetch and `audit verify --witness`; the README and in-app help; tests against a witness run from the gateway's reference on loopback, and with it stopped | 5 accepted, with questions 1 to 10 answered; a custody and network-seam review, one cross-vendor round | in review: the PR for #234 |
+| 6 | #234, as ADR-0010's delivery row 10: the witness holder and its confirmation; the token in custody; submissions on the interval and Send now; the cursor on a verified statement; the statements, head and continuation kept; the panel's fetch and `audit verify --witness`; the README and in-app help; tests against a witness run from the gateway's reference on loopback, and with it stopped | 5 accepted, with questions 1 to 10 answered; a custody and network-seam review, one cross-vendor round | in review: PR #382 |
 
 Not in this line: Runner's chain of runs at a witness (question 9); a
 second witness per desk; moving a trail aside (ADR-0010, question 9).

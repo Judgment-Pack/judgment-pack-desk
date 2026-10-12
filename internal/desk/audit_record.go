@@ -902,6 +902,14 @@ func (s *Server) auditVerifyRequiring(ctx context.Context, dir heldDir, require 
 		return older, nil
 	}
 	signing := s.signingCheck(ctx, dir)
+	// The witness's statements, the head fetched and the continuation, held
+	// until the runtime has read them (witness.go); fetched before the desk's
+	// key lock is taken, so that no rotation waits on the witness's network.
+	witness := s.witnessForVerify(ctx, dir, require)
+	defer witness.done()
+	if require > 0 && len(witness.args) == 0 {
+		return auditAnswer{}, errNoWitnessToRequire
+	}
 	// Under the desk's key lock, so the panel never reads a rotation half
 	// made in this process, and its token names what it read.
 	s.keyMu.Lock()
@@ -935,13 +943,6 @@ func (s *Server) auditVerifyRequiring(ctx context.Context, dir heldDir, require 
 	// same roots (issue #324), and released however this ends.
 	defer stamping.done()
 	args = append(args, stamping.args...)
-	// The witness's statements, the head fetched and the continuation, held
-	// until the runtime has read them.
-	witness := s.witnessForVerify(ctx, dir, require)
-	defer witness.done()
-	if require > 0 && len(witness.args) == 0 {
-		return auditAnswer{}, errNoWitnessToRequire
-	}
 	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, append(args, witness.args...)...)
 	answer, err := readAuditVerification(out, runErr)
 	if err == nil && len(witness.args) > 0 && witnessAbsent(answer) {

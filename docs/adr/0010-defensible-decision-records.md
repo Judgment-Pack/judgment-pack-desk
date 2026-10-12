@@ -1010,7 +1010,7 @@ their meaning. The status column was as of 2026-10-05, and is as of 2026-10-08.
 | 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the held checkpoints, and no key, since the chain carries no signature sidecar (section 4, as amended 2026-10-06) | 5 and 11 | shipped: #254, in v0.7.0 |
 | 12b | Each Jobs run's signer held to Runner's list: the list's key named on the boot line as `signingPublicKey`; each completed run's `signing` shown and held to the list; `jpack-runner verify-run --require-signed` on one run's export on request (section 4 and 5, as amended 2026-10-11; issue #345) | 11 and 12; Runner v0.8.0 and runtime v0.30.0, pinned by #372 | in review: PR #380 |
 | 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | merged: PR #281, in no release yet |
-| 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | built for a witness, the holder that runs one (ADR-0012, #234): in review, PR #234's; the plain HTTPS holder acknowledged by a 2xx still waits for a holder who runs one (ADR-0012, question 10) |
+| 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | built for a witness, the holder that runs one (ADR-0012, #234): in review, PR #382; the plain HTTPS holder acknowledged by a 2xx still waits for a holder who runs one (ADR-0012, question 10) |
 
 *Amended 2026-10-08 (the archive rule):* #327 archives every key that rows
 3, 4 and 11 removed, and changes how row 7's panel checks an older stamp run
