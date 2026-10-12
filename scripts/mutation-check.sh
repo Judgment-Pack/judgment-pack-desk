@@ -5390,7 +5390,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if decoded && answer.Command == "audit key public" {'
   mutate go "runner key: a list naming another key is named" "$RK" \
     '	if public.PublicKey != keys[0].PublicKey || public.KeyID != keys[0].KeyID {' \
-    '	if false {'
+    '	if _ = public; false {'
   mutate go "runner key: named where the seed was replaced while read" "$RK" \
     '	if dir.namesFile(names.seed, seed) != nil {
 		return unsignedRunner(runnerKeyNotUsed, "the key is not at the path Runner would be given"), ""
