@@ -1327,6 +1327,30 @@ go	verification export: refused version still forwarded	TestJobsRefusesAnyOtherV
 go	verification export: run read to the ordinary limit	TestJobsReadsAnExportUpToRunnersLimit
 go	verification export: version 6 forwarded	TestJobsRefusesAnyOtherVerificationVersion
 go	verification export: version forwarded on every route	TestJobsForwardsAJobsJournalWithItsCursorAlone,TestJobsForwardsVerificationVersionOnlyOnItsRoute,TestJobsReadsAnExportUpToRunnersLimit
+go	witness: Retry-After as a date is dropped	TestWitnessRetryAfterIsHeldInEitherFormFromReceipt
+go	witness: a file Desk cannot use is removed, not moved aside	TestWitnessFilesOutOfFormAreMovedAsideAndKept
+go	witness: a head is passed where none was fetched	TestWitnessPanelFetchesTheHeadAndReadsHistoricallyWithoutIt
+go	witness: a head or an answer out of form is written over	TestWitnessHeadAndAnswerOutOfFormAreMovedAsideBeforeReplacement
+go	witness: a redirect is followed	TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission
+go	witness: a replacement goes on when the original cannot be moved aside	TestWitnessHeadAndAnswerOutOfFormAreMovedAsideBeforeReplacement
+go	witness: a statement of another trail is dropped	TestWitnessKeepsTheOriginalAnswerAndAnotherTrailsStatementApart
+go	witness: an answer carrying a credential is kept and shown	TestWitnessAnswerCarryingACredentialIsWithheld
+go	witness: the answer as received is not kept	TestWitnessKeepsTheOriginalAnswerAndAnotherTrailsStatementApart
+go	witness: the body is not cut at the witness's bound	TestWitnessBodyIsCutAtTheWitnessBound
+go	witness: the cursor moves on a refusal	TestWitnessCursorMovesOnlyOnAConfirmedStatementForTheLastLineSent,TestWitnessWaitsBelowItsHeadAndStopsOnARetirement
+go	witness: the decision record fetches no head	TestWitnessPanelFetchesTheHeadAndReadsHistoricallyWithoutIt
+go	witness: the key is kept on an answer of no form	TestWitnessKeyCheckFailsClosedOnAnUndocumentedAnswer,TestWitnessKeyIsHeldToTheRuntimesRefusal
+go	witness: the key is not given to the runtime's check	TestWitnessCheckHoldsTheKeyToTheRuntimeAndRefusesTheOperatorsOwn
+go	witness: the owner's one check saves a continuation	TestWitnessPanelFetchesTheHeadAndReadsHistoricallyWithoutIt
+go	witness: the runtime's reading does not decide the cursor	TestWitnessCursorMovesOnlyOnAConfirmedStatementForTheLastLineSent
+go	witness: the runtime's refusal of the key is not read	TestWitnessCheckHoldsTheKeyToTheRuntimeAndRefusesTheOperatorsOwn,TestWitnessKeyIsHeldToTheRuntimesRefusal
+go	witness: the statement is not held to the last line sent	TestWitnessCursorMovesOnlyOnAConfirmedStatementForTheLastLineSent
+go	witness: the token is in the confirmation's answer	TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission
+go	witness: the token is read before anything is known to send	TestWitnessTokenIsNotReadWhenNothingIsSent
+go	witness: the token is sent to an origin it was not confirmed for	TestWitnessTokenIsSentOnlyToTheOriginItWasConfirmedFor
+go	witness: the token is written to Desk's log	TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission
+go	witness: the witness is listed as a holder to hand over to	TestWitnessIsNotAHolderToDownloadFor
+go	witness: the witness's deadline does not hold the next submission	TestWitnessRetryAfterIsHeldInEitherFormFromReceipt
 web	Accept is drawn on the reading route	src/assistant/AssistantPane.test.tsx
 web	Accept is enabled while the session is still running	src/assistant/acceptProposal.test.ts
 web	Accept pushes a second undo entry	src/assistant/AssistantPane.test.tsx
@@ -2606,39 +2630,15 @@ web	verification export: version 6 saved	src/jobs/VerificationDownload.test.tsx
 web	what a save actually did is never printed	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx,src/packs/edit/transition.test.tsx
 web	what was seen in one document is kept for the next	src/packs/useDocumentSpy.test.tsx
 web	widening never gives an untouched pane its layout back	src/shell/narrowShell.test.tsx
-web	write state dropped from the card's status comparison	src/routes/AdminView.test.tsx
-web	writing a chat case is offered over established ones	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
-go	witness: the cursor moves on a refusal	TestWitnessCursorMovesOnlyOnAConfirmedStatementForTheLastLineSent,TestWitnessWaitsBelowItsHeadAndStopsOnARetirement
-go	witness: the statement is not held to the last line sent	TestWitnessCursorMovesOnlyOnAConfirmedStatementForTheLastLineSent
-go	witness: the runtime's reading does not decide the cursor	TestWitnessCursorMovesOnlyOnAConfirmedStatementForTheLastLineSent
-go	witness: the key is not given to the runtime's check	TestWitnessCheckHoldsTheKeyToTheRuntimeAndRefusesTheOperatorsOwn
-go	witness: the runtime's refusal of the key is not read	TestWitnessCheckHoldsTheKeyToTheRuntimeAndRefusesTheOperatorsOwn,TestWitnessKeyIsHeldToTheRuntimesRefusal
-go	witness: the token is written to Desk's log	TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission
-go	witness: the token is in the confirmation's answer	TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission
-go	witness: a redirect is followed	TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission
-go	witness: the decision record fetches no head	TestWitnessPanelFetchesTheHeadAndReadsHistoricallyWithoutIt
-go	witness: a head is passed where none was fetched	TestWitnessPanelFetchesTheHeadAndReadsHistoricallyWithoutIt
-go	witness: the owner's one check saves a continuation	TestWitnessPanelFetchesTheHeadAndReadsHistoricallyWithoutIt
-go	witness: the body is not cut at the witness's bound	TestWitnessBodyIsCutAtTheWitnessBound
-go	witness: a file Desk cannot use is removed, not moved aside	TestWitnessFilesOutOfFormAreMovedAsideAndKept
-go	witness: the witness is listed as a holder to hand over to	TestWitnessIsNotAHolderToDownloadFor
-web	witness page: a historical reading is shown as current	src/audit/witness.test.tsx
+web	witness client: a refusal of the head is read without the witness's words	src/audit/witness.test.tsx
+web	witness client: a withheld answer with words is read	src/audit/witness.test.tsx
 web	witness page: Desk says more than that it could not reach the witness	src/audit/witness.test.tsx
+web	witness page: a head that carried a credential is not said	src/audit/witness.test.tsx
+web	witness page: a historical reading is shown as current	src/audit/witness.test.tsx
+web	witness page: the countersigned coverage is not shown	src/audit/witness.test.tsx
+web	witness page: the poison sentence is left out	src/audit/witness.test.tsx
 web	witness page: the submitter's token is typed in the clear	src/audit/witness.test.tsx
 web	witness page: the witness is kept before it is confirmed	src/audit/witness.test.tsx
-web	witness page: the poison sentence is left out	src/audit/witness.test.tsx
-web	witness page: the countersigned coverage is not shown	src/audit/witness.test.tsx
-web	witness client: a refusal of the head is read without the witness's words	src/audit/witness.test.tsx
-go	witness: the token is sent to an origin it was not confirmed for	TestWitnessTokenIsSentOnlyToTheOriginItWasConfirmedFor
-go	witness: an answer carrying a credential is kept and shown	TestWitnessAnswerCarryingACredentialIsWithheld
-go	witness: a head or an answer out of form is written over	TestWitnessHeadAndAnswerOutOfFormAreMovedAsideBeforeReplacement
-go	witness: a replacement goes on when the original cannot be moved aside	TestWitnessHeadAndAnswerOutOfFormAreMovedAsideBeforeReplacement
-go	witness: the key is kept on an answer of no form	TestWitnessKeyCheckFailsClosedOnAnUndocumentedAnswer,TestWitnessProposalOfAnInvalidKeyIsRefusedOnAnUndocumentedAnswer,TestWitnessKeyIsHeldToTheRuntimesRefusal
-go	witness: the token is read before anything is known to send	TestWitnessTokenIsNotReadWhenNothingIsSent
-go	witness: Retry-After as a date is dropped	TestWitnessRetryAfterIsHeldInEitherFormFromReceipt
-go	witness: the witness's deadline does not hold the next submission	TestWitnessRetryAfterIsHeldInEitherFormFromReceipt
-go	witness: the answer as received is not kept	TestWitnessKeepsTheOriginalAnswerAndAnotherTrailsStatementApart
-go	witness: a statement of another trail is dropped	TestWitnessKeepsTheOriginalAnswerAndAnotherTrailsStatementApart
 web	witness page: with no cursor, Desk says the witness countersigned nothing	src/audit/witness.test.tsx
-web	witness page: a head that carried a credential is not said	src/audit/witness.test.tsx
-web	witness client: a withheld answer with words is read	src/audit/witness.test.tsx
+web	write state dropped from the card's status comparison	src/routes/AdminView.test.tsx
+web	writing a chat case is offered over established ones	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
