@@ -5479,7 +5479,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if failure := s.checkWitnessKey(ctx, dir, plan.key); failure != nil {' \
     '	if failure := (*lockFailure)(nil); failure != nil {'
   mutate go 'witness: the runtime'"'"'s refusal of the key is not read' "$WG" \
-    '		case diagnostic.Code == "JPS-AUDIT-WITNESS-KEY-INVALID":' \
+    '		case diagnostic.Code == "JPS-AUDIT-WITNESS-KEY-INVALID" && strings.TrimSpace(diagnostic.Message) != "":' \
     '		case false:'
   mutate go 'witness: the token is written to Desk'"'"'s log' "$WG" \
     '	reply := submit(ws.ctx, witness.file.URL, token, body)' \
@@ -5510,6 +5510,56 @@ func (b *cappedBuffer) exceeded() bool {'
     '	holders = withoutWitness(holders)
 	var jobs *checkpointHead' \
     '	var jobs *checkpointHead'
+  # Review round 1 of #382: the token bound to its confirmed origin, an
+  # answer carrying a credential withheld, a head or answer out of form
+  # moved aside before replacement, the key check failing closed, the token
+  # read only when sent, Retry-After in both forms holding every
+  # submission, the answer as received and another trail's statement kept
+  # apart.
+  mutate go 'witness: the token is sent to an origin it was not confirmed for' "$WG" \
+    '	if origin, ok := witnessOrigin(address); !ok || origin != kept.Origin {' \
+    '	if origin, ok := witnessOrigin(address); !ok && origin != kept.Origin {'
+  mutate go 'witness: an answer carrying a credential is kept and shown' "$WG" \
+    '	if carriesCredential(token, response.Header, body) {' \
+    '	if false && carriesCredential(token, response.Header, body) {'
+  mutate go 'witness: a head or an answer out of form is written over' "$WG" \
+    '	case !valid(held):' \
+    '	case false && !valid(held):'
+  mutate go 'witness: a replacement goes on when the original cannot be moved aside' "$WG" \
+    '		if aside, err = s.setAside(folder, name, "form"); err != nil {' \
+    '		if aside, _ = s.setAside(folder, name, "form"); false {'
+  mutate go 'witness: the key is kept on an answer of no form' "$WG" \
+    '	}
+	return couldNotCheck
+}' \
+    '	}
+	_ = couldNotCheck
+	return nil
+}'
+  mutate go 'witness: the token is read before anything is known to send' "$WG" \
+    '	case !found:
+		return problem(witnessNothing, witnessNoneWords)
+	}
+	head, said, err := s.readCheckpointHead(ws.ctx, dir, deskTrail)' \
+    '	case !found:
+		return problem(witnessNothing, witnessNoneWords)
+	}
+	if _, err := s.readWitnessToken(witness.holder.ID, witness.file.URL); err != nil && !errors.Is(err, errWitnessOrigin) {
+		return problem(witnessProblem, err.Error())
+	}
+	head, said, err := s.readCheckpointHead(ws.ctx, dir, deskTrail)'
+  mutate go 'witness: Retry-After as a date is dropped' "$WG" \
+    '	if at, err := http.ParseTime(value); err == nil {' \
+    '	if at, err := http.ParseTime(value); false && err == nil {'
+  mutate go 'witness: the witness'"'"'s deadline does not hold the next submission' "$WG" \
+    '	if until := time.Unix(attempt.RetryUntil, 0); attempt.RetryUntil > 0 && until.After(ws.notBefore) {' \
+    '	if until := time.Unix(attempt.RetryUntil, 0); false && attempt.RetryUntil > 0 && until.After(ws.notBefore) {'
+  mutate go 'witness: the answer as received is not kept' "$WG" \
+    '	s.keepAnswer(witness.holder.ID, attempt, reply.original)' \
+    '	s.keepAnswer(witness.holder.ID, attempt, nil)'
+  mutate go 'witness: a statement of another trail is dropped' "$WG" \
+    '		return s.keepUnusable(folder, notOfTrail([][]byte{line}, sent.trail))' \
+    '		return nil'
   # **Checkpoint hand-over by download or copy (ADR-0010 PR 5, section 2).**
   # The bytes the runtime printed, untouched and in order, through the record
   # read first; each line held to that trail and to the order; the batches
@@ -14678,6 +14728,19 @@ export function assistantTransport(id: string): Transport {
   mutate web 'witness client: a refusal of the head is read without the witness'"'"'s words' "$WAC" \
     '    case '"'"'refused'"'"': return named(value.reason) && named(value.error) && value.index === undefined' \
     '    case '"'"'refused'"'"': return value.index === undefined'
+  # Review round 1 of #382 on the page: the cursor never a claim of what
+  # the witness countersigned, and an answer that carried a credential
+  # said as its status alone.
+  mutate web 'witness page: with no cursor, Desk says the witness countersigned nothing' "$WT" \
+    '      : <p data-cursor={0}>{msg('"'"'Desk’s record of its submissions: no statement for this trail has moved its cursor yet.'"'"')}</p>}' \
+    '      : <p data-cursor={0}>{msg('"'"'The witness has countersigned nothing for this desk’s trail yet.'"'"')}</p>}'
+  mutate web 'witness page: a head that carried a credential is not said' "$WT" \
+    '    case '"'"'withheld'"'"': return <p role="alert" data-head="withheld">{msg('"'"'The witness answered HTTP {{status}}, and its answer carried a credential, so Desk keeps and shows none of its words.'"'"', { status: head.status ?? 0 })}{head.reason && <> <code>{head.reason}</code></>}</p>
+' \
+    ''
+  mutate web 'witness client: a withheld answer with words is read' "$WAC" \
+    '    case '"'"'withheld'"'"': return named(value.problem) && value.error === undefined' \
+    '    case '"'"'withheld'"'"': return named(value.problem)'
   # ADR-0010 row 7, stamping, on the page (Stamping.tsx, DecisionRecord.tsx)
   # and in the client: the proposal kept only on the confirmation, its three
   # sentences and section 7's row; Stamp now and the removal; the record

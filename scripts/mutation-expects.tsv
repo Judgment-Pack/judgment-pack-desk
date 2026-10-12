@@ -2629,3 +2629,16 @@ web	witness page: the witness is kept before it is confirmed	src/audit/witness.t
 web	witness page: the poison sentence is left out	src/audit/witness.test.tsx
 web	witness page: the countersigned coverage is not shown	src/audit/witness.test.tsx
 web	witness client: a refusal of the head is read without the witness's words	src/audit/witness.test.tsx
+go	witness: the token is sent to an origin it was not confirmed for	TestWitnessTokenIsSentOnlyToTheOriginItWasConfirmedFor
+go	witness: an answer carrying a credential is kept and shown	TestWitnessAnswerCarryingACredentialIsWithheld
+go	witness: a head or an answer out of form is written over	TestWitnessHeadAndAnswerOutOfFormAreMovedAsideBeforeReplacement
+go	witness: a replacement goes on when the original cannot be moved aside	TestWitnessHeadAndAnswerOutOfFormAreMovedAsideBeforeReplacement
+go	witness: the key is kept on an answer of no form	TestWitnessKeyCheckFailsClosedOnAnUndocumentedAnswer,TestWitnessProposalOfAnInvalidKeyIsRefusedOnAnUndocumentedAnswer,TestWitnessKeyIsHeldToTheRuntimesRefusal
+go	witness: the token is read before anything is known to send	TestWitnessTokenIsNotReadWhenNothingIsSent
+go	witness: Retry-After as a date is dropped	TestWitnessRetryAfterIsHeldInEitherFormFromReceipt
+go	witness: the witness's deadline does not hold the next submission	TestWitnessRetryAfterIsHeldInEitherFormFromReceipt
+go	witness: the answer as received is not kept	TestWitnessKeepsTheOriginalAnswerAndAnotherTrailsStatementApart
+go	witness: a statement of another trail is dropped	TestWitnessKeepsTheOriginalAnswerAndAnotherTrailsStatementApart
+web	witness page: with no cursor, Desk says the witness countersigned nothing	src/audit/witness.test.tsx
+web	witness page: a head that carried a credential is not said	src/audit/witness.test.tsx
+web	witness client: a withheld answer with words is read	src/audit/witness.test.tsx
