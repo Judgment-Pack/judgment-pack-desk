@@ -397,8 +397,9 @@ of this, and Desk offers none of it with one.
 - A `JPACK_SIGNING_PUBLIC_KEY` set where Desk was started, which names the
   public key the signing key is expected to have (runtime 0.30.0), is removed
   with it, from the same runtimes, so a desk Desk made signs with its own key
-  whatever public key is named there. The project Desk was started on keeps
-  it too, as the owner's: there the runtime signs nothing with a key whose
+  whatever public key is named in Desk's environment. The project Desk was
+  started on keeps it too, as the owner's, and Desk's log says so once at
+  start, not naming the key: there the runtime signs nothing with a key whose
   public key is another.
 - The folder is private: owner-only, never committed (`.desk-private/` is in a
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in

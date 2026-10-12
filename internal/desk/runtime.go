@@ -109,8 +109,9 @@ var runtimeSigningEnv = []string{runtimeSigningKeyEnv, runtimeSigningPublicKeyEn
 //
 // The startup desk keeps them all. There they are the owner's: an inherited
 // `JPACK_CONFIG` is the only way the owner can have chosen the configuration,
-// and an inherited `JPACK_SIGNING_KEY` the key; this desk does not change what
-// an existing project reads or signs with. `New` logs the first two.
+// an inherited `JPACK_SIGNING_KEY` the key, and an inherited
+// `JPACK_SIGNING_PUBLIC_KEY` the public key it must have; this desk does not
+// change what an existing project reads or signs with. `New` logs each.
 func (s *Server) runtimeEnv() []string {
 	if s.cfg.deskID == "" {
 		return nil

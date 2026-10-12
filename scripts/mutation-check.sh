@@ -2676,6 +2676,13 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "signing key: a made desk inherits the expected public key" "$NRT" \
     'var runtimeSigningEnv = []string{runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv}' \
     'var runtimeSigningEnv = []string{runtimeSigningKeyEnv}'
+  mutate go "signing key: the startup desk's relay drops the expected public key" "$NRT" \
+    '	if s.cfg.deskID == "" {
+		return nil
+	}' \
+    '	if s.cfg.deskID == "" {
+		return withoutVariables(os.Environ(), runtimeSigningPublicKeyEnv)
+	}'
   mutate go "signing key: desk-config reports it never" internal/desk/assistant.go \
     'InheritsSigningKey: s.inheritsSigningKey()}' \
     'InheritsSigningKey: false}'

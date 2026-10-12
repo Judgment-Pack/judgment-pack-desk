@@ -1371,24 +1371,32 @@ func TestNewDeskWithTheRuntimeShowsAnExpectedKeyRefusal(t *testing.T) {
 // and signed by the desk's key; the decision record, whose `packs validate`
 // and `audit verify` Desk runs, says the key signs and the record is signed;
 // and the runtime's own `audit verify --public-key`, run apart from Desk with
-// the desk's public key, agrees. Skipped with a runtime that reads no "7",
-// which has no expected key to inherit.
+// the desk's public key, agrees.
+//
+// **Never vacuous.** A runtime that does not read the variable would pass
+// without testing anything, so: a release older than 0.30.0, the first that
+// reads it, by the version it reports, is skipped; and, whatever the version,
+// the runtime itself, given the variable apart from Desk, must refuse the
+// desk's key in `packs validate` before the test goes on. A build that
+// reports no release (a source build, as CI's companion job makes, reports
+// "0.0.0-dev") and does not refuse is skipped; a release of 0.30.0 or later
+// that does not refuse fails.
 func TestNewDeskWithTheRuntimeSignsWithItsOwnKeyUnderAStrayExpectedKey(t *testing.T) {
 	bin := requireBinary(t)
 	t.Setenv("JPACK_CONFIG", "")
 	t.Setenv("JPACK_SIGNING_KEY", "")
 	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", "")
-	var schema struct {
+	var version struct {
 		Tool struct {
 			Version string `json:"version"`
 		} `json:"tool"`
-		Supported []string `json:"supportedConfigVersions"`
 	}
-	if err := json.Unmarshal(jpackIn(t, bin, t.TempDir(), "packs", "schema", "--format", "json"), &schema); err != nil {
+	if err := json.Unmarshal(jpackIn(t, bin, t.TempDir(), "version", "--format", "json"), &version); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(schema.Supported, "7") {
-		t.Skipf("runtime %s reads no configVersion 7", schema.Tool.Version)
+	release := !strings.HasPrefix(version.Tool.Version, "0.0.0-")
+	if release && !runtimeAtLeast(version.Tool.Version, 0, 30, 0) {
+		t.Skipf("runtime %q is older than 0.30.0, the first that reads JPACK_SIGNING_PUBLIC_KEY", version.Tool.Version)
 	}
 
 	// Another key, kept apart from Desk's, whose public key is the stray one.
@@ -1404,7 +1412,7 @@ func TestNewDeskWithTheRuntimeSignsWithItsOwnKeyUnderAStrayExpectedKey(t *testin
 	s, ts, _ := gatesServer(t, bin)
 	row := createGatedDesk(t, ts)
 	if row.ConfigVersion != "6" || !row.Signed || row.Notice != "" {
-		t.Fatalf("runtime %s made %+v, want it signed at 6", schema.Tool.Version, row)
+		t.Fatalf("runtime %s made %+v, want it signed at 6", version.Tool.Version, row)
 	}
 	assertGatedFolder(t, row.Folder, wantSignedConfig(s.configDir, row.ID))
 	var public struct {
@@ -1416,6 +1424,25 @@ func TestNewDeskWithTheRuntimeSignsWithItsOwnKeyUnderAStrayExpectedKey(t *testin
 	}
 	if public.PublicKey == other.PublicKey {
 		t.Fatal("the desk's key is the other key")
+	}
+	// The runtime, given the stray key apart from Desk, refuses the desk's.
+	probe := exec.Command(bin, "packs", "validate", "--config", "jpack.json", "--format", "json")
+	probe.Dir = row.Folder
+	probe.Env = append(os.Environ(), "JPACK_CONFIG=")
+	said, _ := probe.Output()
+	type check struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+	var validated struct {
+		Checks []check `json:"checks"`
+	}
+	refused := json.Unmarshal(said, &validated) == nil && slices.Contains(validated.Checks, check{auditSigningKeyCheck, "failed"})
+	switch {
+	case !refused && release:
+		t.Fatalf("runtime %s, given JPACK_SIGNING_PUBLIC_KEY naming another key, did not refuse the desk's key: %s", version.Tool.Version, said)
+	case !refused:
+		t.Skipf("runtime %q does not hold the key to JPACK_SIGNING_PUBLIC_KEY: %s", version.Tool.Version, said)
 	}
 
 	// A reviewed pack, locked as the owner locks it; neither writing nor
@@ -1483,5 +1510,44 @@ func TestNewDeskWithTheRuntimeSignsWithItsOwnKeyUnderAStrayExpectedKey(t *testin
 	if err != nil || json.Unmarshal(out, &own) != nil || own.Status != "valid" || own.Coverage.Signed != (auditCoverageState{Status: "through", Through: 1}) ||
 		own.Coverage.SignedRecords != 1 || own.Signatures.KeyInForce != public.KeyID {
 		t.Errorf("the runtime's own audit verify answered %v %s", err, out)
+	}
+}
+
+// runtimeAtLeast reports whether version, as the runtime reports it
+// ("0.30.0", or with a suffix after a "-" or "+"), is major.minor.patch or
+// later. A version it cannot read is not.
+func runtimeAtLeast(version string, major, minor, patch int) bool {
+	core, _, _ := strings.Cut(strings.TrimPrefix(version, "v"), "-")
+	core, _, _ = strings.Cut(core, "+")
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	var got [3]int
+	for i, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 {
+			return false
+		}
+		got[i] = n
+	}
+	for i, want := range [3]int{major, minor, patch} {
+		if got[i] != want {
+			return got[i] > want
+		}
+	}
+	return true
+}
+
+// The real-binary test above skips by runtimeAtLeast, so a version read wrong
+// would skip it, or run it against a runtime that ignores the variable.
+func TestRuntimeAtLeastReadsTheReportedVersion(t *testing.T) {
+	for version, want := range map[string]bool{
+		"0.30.0": true, "0.30.1": true, "0.31.0": true, "1.0.0": true, "0.30.0-dev": true, "v0.30.0": true,
+		"0.29.9": false, "0.29.10": false, "0.3.0": false, "0.30": false, "": false, "0.30.x": false, "0.0.0-stand-in": false,
+	} {
+		if got := runtimeAtLeast(version, 0, 30, 0); got != want {
+			t.Errorf("runtimeAtLeast(%q, 0.30.0) = %v, want %v", version, got, want)
+		}
 	}
 }
