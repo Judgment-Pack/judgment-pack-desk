@@ -873,6 +873,12 @@ go	run chain: read whole before its size is checked	TestJobsRefusesARunChainPast
 go	run chain: the caller's query forwarded	TestJobsPassesTheRunChainThroughUntouched
 go	run chain: type rewritten to JSON	TestJobsPassesTheRunChainThroughUntouched,TestJobsReadsTheRunChainOnItsRouteAlone
 go	run chain: written with POST	TestJobsReadsTheRunChainOnItsRouteAlone
+go	run signer: a key the list does not name is not named	TestARunsSigningIsHeldToTheList,TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
+go	run signer: a list not read now is taken for one that names nothing	TestARunsSigningIsHeldToTheList,TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
+go	run signer: the boot line names no expected key	TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestTheBootLineNamesTheListsKeyAsTheOneToExpect
+go	run signer: the copies are not held to what Desk wrote	TestJobsVerifyRunShowsWhatVerifyRunSaid
+go	run signer: verify-run is not told to require a signature	TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestJobsVerifyRunShowsWhatVerifyRunSaid
+go	run signer: verify-run's answer is altered	TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestJobsVerifyRunShowsWhatVerifyRunSaid
 go	runner key: Runner inherits Desk's environment	TestEachDesksRunnerIsNamedAKeyOfItsOwn
 go	runner key: Runner's first start does not wait for the start's sweep	TestDesksStartSweepsBeforeItsRunnerTakesTheLock
 go	runner key: Runner's refusal is not reported	TestARunnerThatRefusesItsKeyStartsWithout
@@ -2126,6 +2132,9 @@ web	run chain: not offered on the Jobs page	src/jobs/JobsIndex.test.tsx
 web	run chain: not said to be unverified	src/jobs/RunChainDownload.test.tsx
 web	run chain: saved as text decoded from the answer	src/jobs/RunChainDownload.test.tsx
 web	run chain: saved under another name	src/jobs/RunChainDownload.test.tsx
+web	run signer page: a failed signing is not named in Runner's words	src/audit/jobsRecord.test.tsx
+web	run signer page: a key the list does not name is not named	src/audit/jobsRecord.test.tsx
+web	run signer page: verify-run's output is not shown as it gave it	src/audit/jobsRecord.test.tsx
 web	runner key: Runner not running not said	src/jobs/runnerKey.test.tsx,src/routes/HelpAbout.test.tsx
 web	runner key: a Jobs action does not ask again	src/jobs/JobsView.test.tsx
 web	runner key: a malformed public key read	src/jobs/runnerKey.test.tsx
