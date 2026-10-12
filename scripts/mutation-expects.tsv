@@ -873,8 +873,12 @@ go	run chain: read whole before its size is checked	TestJobsRefusesARunChainPast
 go	run chain: the caller's query forwarded	TestJobsPassesTheRunChainThroughUntouched
 go	run chain: type rewritten to JSON	TestJobsPassesTheRunChainThroughUntouched,TestJobsReadsTheRunChainOnItsRouteAlone
 go	run chain: written with POST	TestJobsReadsTheRunChainOnItsRouteAlone
+go	run signer: a failed signing's reason is not held to Runner's	TestARunsSigningIsHeldToTheList
 go	run signer: a key the list does not name is not named	TestARunsSigningIsHeldToTheList,TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
 go	run signer: a list not read now is taken for one that names nothing	TestARunsSigningIsHeldToTheList,TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
+go	run signer: a path in a member reaches the page	TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
+go	run signer: a signed run with no list is said to be under a key the list does not name	TestARunsSigningIsHeldToTheList,TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
+go	run signer: every run is checked under the key in force	TestJobsVerifyRunShowsWhatVerifyRunSaid
 go	run signer: the boot line names no expected key	TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestTheBootLineNamesTheListsKeyAsTheOneToExpect
 go	run signer: the copies are not held to what Desk wrote	TestJobsVerifyRunShowsWhatVerifyRunSaid
 go	run signer: verify-run is not told to require a signature	TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestJobsVerifyRunShowsWhatVerifyRunSaid
@@ -2134,6 +2138,8 @@ web	run chain: saved as text decoded from the answer	src/jobs/RunChainDownload.t
 web	run chain: saved under another name	src/jobs/RunChainDownload.test.tsx
 web	run signer page: a failed signing is not named in Runner's words	src/audit/jobsRecord.test.tsx
 web	run signer page: a key the list does not name is not named	src/audit/jobsRecord.test.tsx
+web	run signer page: a signed run with no list is said to be under a key the list does not name	src/audit/jobsRecord.test.tsx
+web	run signer page: the list's earlier keys are not shown	src/audit/jobsRecord.test.tsx
 web	run signer page: verify-run's output is not shown as it gave it	src/audit/jobsRecord.test.tsx
 web	runner key: Runner not running not said	src/jobs/runnerKey.test.tsx,src/routes/HelpAbout.test.tsx
 web	runner key: a Jobs action does not ask again	src/jobs/JobsView.test.tsx
