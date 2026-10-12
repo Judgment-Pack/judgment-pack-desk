@@ -164,9 +164,10 @@ var (
 // (the marker written, the runtime not yet run), "after generate" (the
 // runtime run, its seed not yet checked), "before publish" (the desk locked,
 // its manifest not yet written), "published" (the manifest written, the
-// marker not yet removed) and "read list" (a list of keys inspected, not yet
-// opened). It lets a test put another folder or file under a name, or stop a
-// creation there, as a crash would.
+// marker not yet removed), "read list" (a list of keys inspected, not yet
+// opened) and "runner: decided" (a Runner's key decided and released, Runner
+// not yet started with it). It lets a test put another folder or file under a
+// name, or stop a creation there, as a crash would.
 var testHookKeyBetween func(at string)
 
 func keyBetween(at string) {

@@ -152,11 +152,15 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	// as is published only once Runner has started and answered: until then
 	// it is starting, and a Runner that did not start is reported as not
 	// running, never as signing.
+	// The key Desk's list names for that seed goes on the boot line with it,
+	// as the key Runner is to expect (issue #345): Runner v0.8.0 refuses to
+	// start with a seed that is another key, a refusal answered as any other.
 	signingKey, decided := j.key.prepare()
-	refusal, err := j.start(signingKey)
+	keyBetween("runner: decided")
+	refusal, err := j.start(signingKey, decided.PublicKey)
 	if err != nil && signingKey != "" && refusal != nil {
 		decided = j.key.refused(*refusal)
-		_, err = j.start("")
+		_, err = j.start("", "")
 	}
 	if err != nil {
 		j.key.notRunning(err)
@@ -167,9 +171,11 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 }
 
 // start starts Runner and reads its handshake, naming signingKey on the boot
-// line where it is not empty. Where Runner did not start, and what it wrote
-// to its standard error says it refused a signing key, refusal is its reason.
-func (j *jobsCompanion) start(signingKey string) (refusal *string, err error) {
+// line where it is not empty, with signingPublicKey, the public key Desk's
+// list names for it, as the key that seed is expected to have. Where Runner
+// did not start, and what it wrote to its standard error says it refused a
+// signing key, refusal is its reason.
+func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *string, err error) {
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return nil, err
@@ -231,6 +237,12 @@ func (j *jobsCompanion) start(signingKey string) (refusal *string, err error) {
 	boot["requireTestedReleases"] = j.requireTested
 	if signingKey != "" {
 		boot["signingKey"] = signingKey
+		// Runner v0.8.0 and later hold the seed to it at start, and pass it
+		// to each operational evaluation as JPACK_SIGNING_PUBLIC_KEY; an
+		// earlier Runner decodes the boot line leniently and ignores it.
+		if signingPublicKey != "" {
+			boot["signingPublicKey"] = signingPublicKey
+		}
 	}
 	if err = json.NewEncoder(input).Encode(boot); err != nil {
 		return failed(err)
