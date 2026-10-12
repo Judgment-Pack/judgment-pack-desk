@@ -2697,9 +2697,10 @@ func (b *cappedBuffer) exceeded() bool {'
 		s.log.Print(' \
     '	if false {
 		s.log.Print('
+  # Repaired (#377): the expected key's launch line ends in the same words.
   mutate go "signing key: the launch names the key's path" "$S" \
-    '; desks Desk made ignore it")' \
-    '; desks Desk made ignore it: " + os.Getenv(runtimeSigningKeyEnv))'
+    'with the key it names, if it accepts that key; desks Desk made ignore it")' \
+    'with the key it names, if it accepts that key; desks Desk made ignore it: " + os.Getenv(runtimeSigningKeyEnv))'
 
   # **The decision-record panel (ADR-0010, sections 4, 6 and 8).** It runs the
   # runtime's own `audit verify` with no held input and no `--require-…` flag,

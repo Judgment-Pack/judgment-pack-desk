@@ -976,6 +976,7 @@ go	signing key: the startup desk's commands drop it	TestAReviewOfAnUnreadablePro
 go	signing key: the startup desk's private copy is not marked	TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk
 go	signing key: the startup desk's project is not marked	TestAReviewOfAnUnreadableProjectKeepsTheSigningKeyOnlyOnTheStartupDesk,TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk,TestThePanelsCommandsKeepTheSigningKeyOnlyOnTheStartupDesk,TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk
 go	signing key: the startup desk's relay drops it	TestAnInheritedSigningKeyStaysWithTheStartupDesk
+go	signing key: the startup desk's relay drops the expected public key	TestAnInheritedExpectedKeyStaysWithTheStartupDesk,TestTheSigningVariablesAreRemovedTogether
 go	signing key: the startup desk's upgrade drops it	TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk
 go	signing lock: a creation lets the lock go before its marker goes	TestTheLockIsHeldFromTheFirstLookToTheLastChange
 go	signing lock: a creation or a rotation does not wait	TestACreationWaitsForTheLockAndThenRefuses,TestAKeyCustodyLockHeldByAnotherProcess,TestARotationWaitsForTheLockAndThenRefuses,TestTwoFirstCreationsAtOnceAreBothSigned,TestTwoStartsNeverRemoveANamedKey
