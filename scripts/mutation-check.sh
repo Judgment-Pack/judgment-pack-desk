@@ -5408,10 +5408,13 @@ func (b *cappedBuffer) exceeded() bool {'
   # jobs.go and jobs_signing.go).** The boot line names the list's key as the
   # one Runner is to expect; each completed run's signing is passed on as
   # Runner served it and held to the list, a key the list does not name is
-  # named, and a list that could not be read now holds no run; verify-run is
-  # run under the list's key in force with --require-signed, from copies held
-  # to what Desk wrote, and its answer is passed on as it gave it. Every
-  # row's name starts "run signer:".
+  # named, a signed run with no list is not said to be under a key a list
+  # does not name, a failure holds to Runner's six reasons, a path in a
+  # member does not reach the page, and a list that could not be read now
+  # holds no run; verify-run is run with --require-signed under the listed
+  # key the run's signing names, or else the list's key in force, from copies
+  # held to what Desk wrote, and its answer is passed on as it gave it.
+  # Every row's name starts "run signer:".
   JS=internal/desk/jobs_signing.go
   mutate go "run signer: the boot line names no expected key" "$J" \
     '			boot["signingPublicKey"] = signingPublicKey' \
@@ -5429,11 +5432,26 @@ func (b *cappedBuffer) exceeded() bool {'
     'Stdout: string(stdout), ' \
     'Stdout: string(bytes.ReplaceAll(stdout, []byte("unsigned"), []byte("signed"))), '
   mutate go "run signer: verify-run is not told to require a signature" "$JS" \
-    '"--public-key", list.Current, "--require-signed")' \
-    '"--public-key", list.Current)'
+    '"--public-key", key, "--require-signed")' \
+    '"--public-key", key)'
   mutate go "run signer: the copies are not held to what Desk wrote" "$JS" \
     '		if read, err := readPrivateData(handover, each.name, len(each.data)); err != nil || !bytes.Equal(read, each.data) {' \
     '		if read, err := readPrivateData(handover, each.name, len(each.data)); false && (err != nil || !bytes.Equal(read, each.data)) {'
+  mutate go "run signer: every run is checked under the key in force" "$JS" \
+    '			return named.PublicKey, underListed' \
+    '			return list.Current, underListed'
+  mutate go "run signer: a signed run with no list is said to be under a key the list does not name" "$JS" \
+    '		if list.State == runnerListNone {
+			return signingNoList
+		}
+' \
+    ''
+  mutate go "run signer: a failed signing's reason is not held to Runner's" "$JS" \
+    'slices.Contains(runnerSigningFailures, *signing.Reason)' \
+    '*signing.Reason != ""'
+  mutate go "run signer: a path in a member reaches the page" "$JS" \
+    'Signing: s.shownSigning(item.Signing),' \
+    'Signing: item.Signing,'
   # **Checkpoint hand-over by download or copy (ADR-0010 PR 5, section 2).**
   # The bytes the runtime printed, untouched and in order, through the record
   # read first; each line held to that trail and to the order; the batches
@@ -14424,14 +14442,20 @@ export function assistantTransport(id: string): Transport {
     '      link.href = url; link.download = RUN_CHAIN_FILE' \
     '      link.href = url; link.download = '"'"'chain.jsonl'"'"''
   mutate web "run signer page: a key the list does not name is not named" "$JRP" \
-    "  const named = runs.filter(run => run.held === 'unlisted' || run.held === 'failed' || run.held === 'other')" \
-    "  const named = runs.filter(run => run.held === 'failed' || run.held === 'other')"
+    "  const named = runs.filter(run => run.held === 'unlisted' || run.held === 'no-list' || run.held === 'failed' || run.held === 'other')" \
+    "  const named = runs.filter(run => run.held === 'no-list' || run.held === 'failed' || run.held === 'other')"
   mutate web "run signer page: a failed signing is not named in Runner's words" "$JRP" \
     "  if (run.held === 'failed') return <span lang=\"en\">{(run.signing as { reason: string }).reason}</span>" \
     "  if (run.held === 'failed') return <span lang=\"en\">{msg(UNLISTED)}</span>"
   mutate web "run signer page: verify-run's output is not shown as it gave it" "$JRP" \
     "      {check.stdout && <CodeBlock text={check.stdout} " \
     "      {check.stdout && <CodeBlock text={check.stdout.trim()} "
+  mutate web "run signer page: the list's earlier keys are not shown" "$JRP" \
+    "      {list.keys.map(key =>" \
+    "      {list.keys.slice(-1).map(key =>"
+  mutate web "run signer page: a signed run with no list is said to be under a key the list does not name" "$JRP" \
+    "  if (run.held === 'no-list') return <>{msg('Desk keeps no list of public keys.')}</>" \
+    "  if (run.held === 'no-list') return <>{msg(UNLISTED)}</>"
   mutate web "jobs record client: the chain is asked of another route" "$AC" \
     '  const response = await deskFetch('"'"'/api/operations/run-chain'"'"')' \
     '  const response = await deskFetch('"'"'/api/operations/runs'"'"')'

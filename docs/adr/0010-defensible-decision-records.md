@@ -679,25 +679,30 @@ passed here would check nothing; the panel instead shows Runner's key as `GET
 `verify-run` on that run's export, and says the sentence above without "the
 keys and".
 *Amended 2026-10-11, issue #345:* the panel's sentence on what is signed says
-that the chain of runs carries no signature sidecar of its own, and that
-Runner's key signs each run's record, in that run's own attempt. On request,
-the panel reads a page of Runner's completed runs (`GET
+that the chain of runs carries no signature sidecar of its own, and that,
+where Runner has a key, it signs each run's record in that run's own
+attempt, and a run it signed carries the signature in its version-5 export.
+On request, the panel reads a page of Runner's completed runs (`GET
 /v1/runs?state=completed`) and shows each run's `signing` member as Runner
 v0.8.0 records it, held to the list of public keys Desk keeps for the desk's
-Runner: a run signed under a key the list does not name is named in Desk's
+Runner, with every key of the list as read for that page and the one in
+force: a run signed under a key the list does not name is named in Desk's
 one sentence of its own, "Signed under a key the list does not name."; a
-failed signing is named in Runner's words; a run with no member is never
-shown as signed; and where the list could not be read now, no run is held to
-it. On request, for one run, Desk runs `jpack-runner verify-run --file
-<copy> --profiles <the desk's input profiles> --release-digest <the export's
-own releaseDigest> --public-key <the list's key in force> --require-signed`
-on the run's version-5 export, and shows its exit status and output as it
-gave them, with the command. verify-run requires the profiles and the release
-digest; the digest is the export's own, so its release check binds nothing
-there. Runner's member is the operator's record of Runner's own check, and
-establishes nothing against the operator. Rotating Runner's key (#238) is not
-part of this: Desk keeps one key for each Runner, and checks every run's
-export under it.
+signed run where Desk keeps no list, as "Desk keeps no list of public keys.";
+a failed signing, with one of Runner's six reasons, in Runner's words; a run
+with no member is never shown as signed; and where the list could not be
+read now, no run is held to it. On request, for one run, Desk runs
+`jpack-runner verify-run --file <copy> --profiles <the desk's input
+profiles> --release-digest <the export's own releaseDigest> --public-key
+<key> --require-signed` on the run's version-5 export, the key the one the
+run's signing names where the list names it too, on the list's word, and
+otherwise the list's key in force; it shows its exit status and output as it
+gave them, with the command and which key it was. verify-run requires the
+profiles and the release digest; the digest is the export's own, so its
+release check binds nothing there. Runner's member is the operator's record
+of Runner's own check, and establishes nothing against the operator.
+Rotating Runner's key (#238) is not part of this: this version of Desk names
+Runner a key only where its list holds one.
 
 ### 5. Runner
 
@@ -1002,13 +1007,17 @@ their meaning. The status column was as of 2026-10-05, and is as of 2026-10-08.
 | 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | shipped: #220, in v0.5.2 |
 | 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | shipped: #254, in v0.7.0 |
 | 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | shipped: #232, in v0.7.0 |
-| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | shipped: #254, in v0.7.0 |
+| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the held checkpoints, and no key, since the chain carries no signature sidecar (section 4, as amended 2026-10-06) | 5 and 11 | shipped: #254, in v0.7.0 |
+| 12b | Each Jobs run's signer held to Runner's list: the list's key named on the boot line as `signingPublicKey`; each completed run's `signing` shown and held to the list; `jpack-runner verify-run --require-signed` on one run's export on request (section 4 and 5, as amended 2026-10-11; issue #345) | 11 and 12; Runner v0.8.0 and runtime v0.30.0, pinned by #372 | in review: PR #380 |
 | 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | merged: PR #281, in no release yet |
 | 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | not built: waits for a holder who runs an endpoint |
 
 *Amended 2026-10-08 (the archive rule):* #327 archives every key that rows
 3, 4 and 11 removed, and changes how row 7's panel checks an older stamp run
 (issue #324). It is merged, in no release yet.
+
+*Amended 2026-10-11, issue #345:* row 12's text says what its panel passes
+since 2026-10-06, the held checkpoints and no key; row 12b is #345's.
 
 Not in this line:
 - the gateway's `requireSignedRecord`, since Desk sends no writes through
