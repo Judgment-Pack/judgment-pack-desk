@@ -9,7 +9,10 @@
  * with 404, the tab shows the records alone and says so. The journal is read
  * forward from its start, bounded (`useJournalReader`): until it is read to
  * its end the tab says how far it has read and shows no entry it has not read
- * to the end, and it renders the newest entries in steps.
+ * to the end, and it renders the newest entries in steps. Where Runner lists
+ * `journal-backward` (v0.8.0, #235) the journal is read from its newest page
+ * instead, older pages on request, and the tab says what it shows and what it
+ * has not yet read.
  *
  * A record row is a run, a trigger occurrence, or a source preparation
  * (see `activity.ts` for how rows are made, ordered and paged). It says when
@@ -188,6 +191,17 @@ function ActivityDetails({ row, record, jobId, release, triggers }: { row: Activ
 function JournalProgress({ state, resume }: { state: JournalState; resume: () => void }) {
   if (state.phase === 'starting' || state.phase === 'absent') return null
   const read = formatNumber(state.read), sequence = formatNumber(state.next)
+  if (state.backward) {
+    // Read from the newest entries: what is shown is said by the coverage lines of the tab; here, what is under way and what stopped.
+    if (state.phase === 'stopped') {
+      const reason = state.reason ?? msg('The local runner could not complete this request.')
+      return <div className={own.journalStop}>
+        <p role="alert" className={styles.problem}>{state.snapshot ? msg('Reading the runner’s journal stopped: {{reason}} Journal entries read: {{read}}. Earlier entries are not yet read.', { reason, read }) : msg('Reading the runner’s journal stopped before any entry was read: {{reason}}', { reason })}</p>
+        <div><Button onClick={resume}>{msg('Try again')}</Button></div>
+      </div>
+    }
+    return state.backward.loadingOlder ? <p className="quiet" role="status">{msg('Reading earlier journal entries…')}</p> : null
+  }
   const shownAsBefore = state.snapshot ? msg('Until it is read to its end again, the table shows the journal as it was when last read to its end.')
     : msg('Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.')
   if (state.phase === 'caught-up') return <p className="quiet">{msg('The runner’s journal is read to its end as of the last request. Entries read: {{read}}.', { read })}</p>
@@ -197,6 +211,13 @@ function JournalProgress({ state, resume }: { state: JournalState; resume: () =>
     <p role="alert" className={styles.problem}>{state.next > 0 ? msg('Reading the runner’s journal stopped after entry {{sequence}}: {{reason}} Entries read: {{read}}.', { sequence, reason, read }) : msg('Reading the runner’s journal stopped before its first entry: {{reason}}', { reason })} {shownAsBefore}</p>
     <div><Button onClick={resume}>{state.next > 0 ? msg('Continue from entry {{sequence}}', { sequence }) : msg('Try again from its start')}</Button></div>
   </div>
+}
+
+/** What the table shows of a journal read from its newest entries, and what is not yet read. */
+function coverage(more: boolean, shown: number, read: number): string {
+  const counts = { shown: formatNumber(shown), read: formatNumber(read) }
+  if (more) return shown < read ? msg('Showing {{shown}} of the {{read}} journal entries read, the newest first. Earlier entries are not yet read.', counts) : msg('Showing the newest {{shown}} journal entries. Earlier entries are not yet read.', counts)
+  return shown < read ? msg('Showing {{shown}} of the {{read}} journal entries the runner holds for this job, as of the last request.', counts) : msg('Showing all {{shown}} journal entries the runner holds for this job, as of the last request.', counts)
 }
 
 export function ActivityView({ jobId, release, limits = JOURNAL_LIMITS }: { jobId: string; release: Release; limits?: JournalLimits }) {
@@ -216,7 +237,8 @@ export function ActivityView({ jobId, release, limits = JOURNAL_LIMITS }: { jobI
   const [windowFor, setWindowFor] = useState({ jobId, size: limits.window })
   const windowSize = windowFor.jobId === jobId ? windowFor.size : limits.window
   const readTotal = served ? served.dropped + served.entries.length : 0
-  const from = served ? Math.max(served.dropped, readTotal - windowSize) : 0
+  // Read from the newest entries, every entry held is shown; otherwise the newest `window` of those read to the end.
+  const from = served?.places ? 0 : served ? Math.max(served.dropped, readTotal - windowSize) : 0
   const runs = useInfiniteQuery({
     queryKey: ['jobs-pages', `jobs/${jobId}/runs`, 'activity', plan.runState ?? 'all'], enabled: plan.runs, initialPageParam: 0,
     queryFn: ({ pageParam }) => jobsAPI<Page<Run>>(`jobs/${jobId}/runs?${plan.runState ? `state=${plan.runState}&` : ''}after=${pageParam}`),
@@ -233,7 +255,7 @@ export function ActivityView({ jobId, release, limits = JOURNAL_LIMITS }: { jobI
   const merged = mergeActivity({
     runs: plan.runs && runs.data ? { records: runs.data.pages.flatMap(page => page.items), more: runs.hasNextPage } : undefined,
     occurrences: plan.occurrences && occurrences.data ? { records: occurrences.data.pages.flatMap(page => page.items), more: occurrences.hasNextPage } : undefined
-  }, keeps(filter), served && { entries: served.entries, dropped: served.dropped, from, show: !filtered })
+  }, keeps(filter), served && { entries: served.entries, dropped: served.dropped, from, show: !filtered, places: served.places })
   const rows = pending ? [] : merged.rows, shown = pending ? [] : merged.shown
   const runRows = rows.filter(row => row.run)
   const records = useQueries({ queries: runRows.map(row => ({ queryKey: ['job-activity-run', row.run!.id, row.run!.state], queryFn: () => jobsAPI<Run>(`runs/${row.run!.id}`), staleTime: Infinity })) })
@@ -248,6 +270,9 @@ export function ActivityView({ jobId, release, limits = JOURNAL_LIMITS }: { jobI
   const entriesShown = shown.filter(row => row.kind === 'journal').length
   // Earlier kept entries are offered when the window, not a record list's next page, is what holds them.
   const earlier = served && !filtered && !pending && from > served.dropped && merged.heldEntries === 0
+  // Read from the newest entries: older ones are asked for when the viewer asks, and only as far as the step.
+  const backward = reading.phase === 'reading' || reading.phase === 'caught-up' || reading.phase === 'stopped' ? reading.backward : undefined
+  const olderAvailable = !!(served && backward?.more && !backward.loadingOlder && reading.phase !== 'stopped' && !filtered && !pending && merged.heldEntries === 0 && served.entries.length < limits.keep)
   // The next page of the list that holds rows back; the boundary moves only when it is read.
   function loadMore() {
     const lists = { runs: plan.runs && runs.hasNextPage ? runs : undefined, occurrences: plan.occurrences && occurrences.hasNextPage ? occurrences : undefined }
@@ -267,7 +292,8 @@ export function ActivityView({ jobId, release, limits = JOURNAL_LIMITS }: { jobI
     {reading.phase === 'absent' && <p className="quiet">{msg('The local runner serves no journal of job activity for this job, so only its records are shown.')}</p>}
     <JournalProgress state={reading} resume={journal.resume} />
     {served && served.dropped > 0 && <p className="quiet">{msg('Earlier entries read and not kept, to bound what this page holds: {{dropped}}. Only the newest {{kept}} are kept.', { dropped: formatNumber(served.dropped), kept: formatNumber(served.entries.length) })}</p>}
-    {served && !filtered && !pending && entriesShown < readTotal && <p className="quiet">{msg('Showing the newest {{shown}} of {{read}} journal entries read.', { shown: formatNumber(entriesShown), read: formatNumber(readTotal) })}</p>}
+    {served && !backward && !filtered && !pending && entriesShown < readTotal && <p className="quiet">{msg('Showing the newest {{shown}} of {{read}} journal entries read.', { shown: formatNumber(entriesShown), read: formatNumber(readTotal) })}</p>}
+    {served && backward && !filtered && !pending && <p className="quiet">{coverage(backward.more, entriesShown, readTotal)}</p>}
     {served && filtered && <p className="quiet">{msg('The runner’s journal is shown when no filter is set.')}</p>}
     {served && !pending && beforeTheJournal(served.began, job.data?.job.createdAt) && <p className={styles.note}>{typeof served.began === 'string' && stamp('recorded', served.began)
       ? msg('No journal before {{time}}: the runner’s journal of job activity began then. Nothing earlier has an entry, and nothing is filled in from its records.', { time: when(served.began) })
@@ -309,6 +335,7 @@ export function ActivityView({ jobId, release, limits = JOURNAL_LIMITS }: { jobI
     </table></div>}
     {more && <div><Button disabled={fetching} onClick={loadMore}>{msg('Load more')}</Button></div>}
     {earlier && <div><Button onClick={() => setWindowFor({ jobId, size: windowSize + limits.step })}>{msg('Show earlier journal entries')}</Button></div>}
+    {olderAvailable && <div><Button onClick={() => journal.showOlder(limits.step)}>{msg('Show earlier journal entries')}</Button></div>}
     {!portal && pane}
     {portal}
   </section>

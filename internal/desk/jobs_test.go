@@ -2,6 +2,8 @@ package desk
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"io"
@@ -924,11 +926,16 @@ func TestJobsForwardsAJobsJournalWithItsCursorAlone(t *testing.T) {
 		// Every other key is left out, each of the shared list's included.
 		{"after=40&q=needle&state=running&review=true&preparations=1&job=job_11111111111111111111111111111111&limit=1&untrusted=ignored", "/v1/jobs/" + job + "/events?after=40"},
 		{"q=needle&state=running&review=true&preparations=1", "/v1/jobs/" + job + "/events"},
-		// Runner v0.8.0's backward paging (capability journal-backward) is
-		// not asked for: the tab reads forward, and Runner answers a request
-		// with neither tail nor before exactly as before.
-		{"tail=true", "/v1/jobs/" + job + "/events"},
-		{"after=40&tail=true&before=41", "/v1/jobs/" + job + "/events?after=40"},
+		// Runner v0.8.0's backward paging (capability journal-backward): the
+		// newest page, and the page before a sequence, each alone.
+		{"tail=true", "/v1/jobs/" + job + "/events?tail=true"},
+		{"before=41", "/v1/jobs/" + job + "/events?before=41"},
+		{"before=0", "/v1/jobs/" + job + "/events?before=0"},
+		{"before=000000000000000041&q=needle&limit=1", "/v1/jobs/" + job + "/events?before=000000000000000041"},
+		// tail=false is Runner's own default: nothing is asked for.
+		{"tail=false", "/v1/jobs/" + job + "/events"},
+		{"tail=false&after=40", "/v1/jobs/" + job + "/events?after=40"},
+		{"tail=false&before=41", "/v1/jobs/" + job + "/events?before=41"},
 	} {
 		forwarded = nil
 		if w := call("GET", events+"?"+tc.query, ""); w.Code != 200 || w.Body.String() != page || !slices.Equal(forwarded, []string{"GET " + tc.runner}) {
@@ -950,6 +957,30 @@ func TestJobsForwardsAJobsJournalWithItsCursorAlone(t *testing.T) {
 		"after=1234567890123456789",
 		"after=40;bad=x",
 		"after=40&bad=%zz",
+		// Runner v0.8.0's conflicts, refused here with one sentence.
+		"tail=true&before=41",
+		"tail=true&after=40",
+		"before=41&after=40",
+		"after=40&tail=true&before=41",
+		"tail=true&before=41&after=40",
+		// A tail or a before Runner would refuse.
+		"tail",
+		"tail=",
+		"tail=1",
+		"tail=TRUE",
+		"tail=yes",
+		"tail=true&tail=true",
+		"tail=false&tail=true",
+		"before",
+		"before=",
+		"before=-1",
+		"before=+41",
+		"before=4e1",
+		"before=41&before=41",
+		"before=41&before=99",
+		"before=1234567890123456789",
+		"before=41;bad=x",
+		"tail=true&bad=%zz",
 	} {
 		forwarded = nil
 		if w := call("GET", events+"?"+query, ""); w.Code != 400 || len(forwarded) != 0 {
@@ -1380,5 +1411,93 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 	}
 	if mode := permOf(t, folder); mode != 0o770 {
 		t.Errorf("the refused folder was changed to %v", mode)
+	}
+}
+
+// Runner v0.8.0's two conflicts of paging, and a query that asks for both ends,
+// are refused by Desk in one sentence each and reach nothing; the sentence is
+// not Runner's, so what Runner would answer is never passed off as Desk's.
+func TestJobsRefusesTheJournalConflictsInOneSentence(t *testing.T) {
+	var forwarded []string
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = append(forwarded, r.URL.RequestURI())
+		w.Write([]byte(`{}`))
+	}))
+	defer companion.Close()
+	s, _ := newTestServer(t, false)
+	s.jobs = &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{}), stop: make(chan struct{})}
+	t.Cleanup(func() { s.jobs.closed = true })
+	job := "job_0123456789abcdef0123456789abcdef"
+	for _, query := range []string{"tail=true&before=5", "tail=true&after=5", "before=5&after=5"} {
+		r := httptest.NewRequest("GET", "/api/operations/jobs/"+job+"/events?"+query, nil)
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		var refusal struct{ Error string }
+		if err := json.Unmarshal(w.Body.Bytes(), &refusal); err != nil || w.Code != 400 || len(forwarded) != 0 {
+			t.Fatalf("?%s: %d %s, forwarded %q", query, w.Code, w.Body, forwarded)
+		}
+		if message := refusal.Error; strings.Count(message, ". ") != 0 || !strings.HasSuffix(message, ".") || !strings.Contains(message, "not more than one") {
+			t.Errorf("?%s: not one sentence about the conflict: %q", query, message)
+		}
+	}
+}
+
+// The forward path is exactly what it was before Runner v0.8.0: the requests
+// an older Desk made reach an older Runner as they always did, and what Runner
+// answers is passed on byte for byte (SHA-256 of the answers, recorded from the
+// code before backward paging). A stand-in that serves no backward paging
+// ignores tail and before, as Runner before v0.8.0 does.
+func TestJobsForwardReadingOfAnOlderRunnerIsUnchanged(t *testing.T) {
+	var forwarded []string
+	var served []string
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = append(forwarded, r.Method+" "+r.URL.RequestURI())
+		after, _ := strconv.Atoi(r.URL.Query().Get("after"))
+		var items []string
+		for n := after + 1; n <= after+50 && n <= 120; n++ {
+			items = append(items, `{"sequence":`+strconv.Itoa(n)+`,"entryVersion":"1","kind":"runner.started","at":"2026-10-06T08:00:00.000000Z","by":{"kind":"runner"},"concerns":{}}`)
+		}
+		next := after
+		if len(items) > 0 {
+			next = min(after+50, 120)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"journalBegan":"2026-10-06T08:00:00.000000Z","items":[` + strings.Join(items, ",") + `],"next":` + strconv.Itoa(next) + `,"more":` + strconv.FormatBool(next < 120) + `}` + "\n"))
+	}))
+	defer companion.Close()
+	s, _ := newTestServer(t, false)
+	s.jobs = &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{}), stop: make(chan struct{})}
+	t.Cleanup(func() { s.jobs.closed = true })
+	job := "job_0123456789abcdef0123456789abcdef"
+	var sums []string
+	for _, query := range []string{"", "after=0", "after=50", "after=100", "after=120", "after=000000000000000050", "after=50&q=x&state=running&limit=1"} {
+		r := httptest.NewRequest("GET", "/api/operations/jobs/"+job+"/events?"+query, nil)
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		sum := sha256.Sum256(w.Body.Bytes())
+		sums = append(sums, strconv.Itoa(w.Code)+" "+hex.EncodeToString(sum[:]))
+		served = append(served, query)
+	}
+	wantRequests := []string{
+		"GET /v1/jobs/" + job + "/events", "GET /v1/jobs/" + job + "/events?after=0", "GET /v1/jobs/" + job + "/events?after=50",
+		"GET /v1/jobs/" + job + "/events?after=100", "GET /v1/jobs/" + job + "/events?after=120",
+		"GET /v1/jobs/" + job + "/events?after=000000000000000050", "GET /v1/jobs/" + job + "/events?after=50",
+	}
+	if !slices.Equal(forwarded, wantRequests) {
+		t.Errorf("forwarded %q, want %q", forwarded, wantRequests)
+	}
+	wantSums := []string{
+		"200 89407235bb8943d21769cf3859844331f26ccfb122e59ad5234c7f89e1384a4a",
+		"200 89407235bb8943d21769cf3859844331f26ccfb122e59ad5234c7f89e1384a4a",
+		"200 bfbfc1a504dabdf6fef9811dbc69bd565cef6802757905a0bfa0eb171cf3c84d",
+		"200 2c879fda4310693904d47dcaaf619ce5d52314723d794d05895799cc84a992d8",
+		"200 f2e6b4e144ec15eec7d6da069615314ed9b0f4bc768226d5b8e417fd5064adf3",
+		"200 bfbfc1a504dabdf6fef9811dbc69bd565cef6802757905a0bfa0eb171cf3c84d",
+		"200 bfbfc1a504dabdf6fef9811dbc69bd565cef6802757905a0bfa0eb171cf3c84d",
+	}
+	if !slices.Equal(sums, wantSums) {
+		t.Errorf("answers %q for %q, want %q", sums, served, wantSums)
 	}
 }

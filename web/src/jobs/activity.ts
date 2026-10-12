@@ -198,7 +198,16 @@ const NOTHING_SHOWN: Place = [Infinity, Infinity]
  * were read before them and not kept; the place of the oldest entry to show as
  * a row (the window); and whether entries are rows at all.
  */
-export interface JournalWindow { entries: JournalEntry[]; dropped: number; from: number; show: boolean }
+export interface JournalWindow {
+  entries: JournalEntry[]; dropped: number; from: number; show: boolean
+  /**
+   * Set when the journal is read from its newest entries (#235): the sequence of
+   * each entry, ascending, which is its place; nothing earlier than the first
+   * is read. `dropped` is then 0 and `from` the index of the first entry to
+   * show, not a place.
+   */
+  places?: number[]
+}
 
 export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loaded<Occurrence> }, keep: (row: ActivityRow) => boolean = () => true, journal?: JournalWindow): Merged {
   const built: Record<StreamName, ActivityRow[]> = {
@@ -206,7 +215,8 @@ export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loade
     occurrences: rowsOf(streams.occurrences?.records.map(occurrenceRow))
   }
   const created = creations(journal?.entries ?? []), offset = journal?.dropped ?? 0
-  const place = (row: ActivityRow): Place => { const at = created.get(row.key); return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }
+  const placeAt = (index: number) => journal?.places ? journal.places[index]! : offset + index
+  const place = (row: ActivityRow): Place => { const at = created.get(row.key); return at === undefined ? [0, row.when.time] : [1, placeAt(at) + 0.5] }
   // A list with more pages holds back every row older than its oldest loaded
   // record: a record not yet loaded was made before it, and so was the entry
   // that created it. The oldest record's own creation entry is not held. A
@@ -222,8 +232,8 @@ export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loade
   const placed: { row: ActivityRow | JournalRow; at: Place }[] = [...built.runs, ...built.occurrences].filter(keep).map(row => ({ row, at: place(row) }))
   const records = placed.length
   if (journal?.show) {
-    for (let index = Math.max(0, journal.from - offset); index < journal.entries.length; index++) {
-      const at = offset + index
+    for (let index = journal.places ? journal.from : Math.max(0, journal.from - offset); index < journal.entries.length; index++) {
+      const at = placeAt(index)
       placed.push({ row: { key: `journal:${at}`, kind: 'journal', entry: journal.entries[index]!, place: at }, at: [1, at] })
     }
   }

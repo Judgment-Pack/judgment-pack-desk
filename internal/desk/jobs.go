@@ -378,29 +378,50 @@ var (
 )
 
 // journalPath is a job's journal of job activity (Runner v0.6.0,
-// `GET /v1/jobs/{job}/events?after=`), read with GET alone and with its cursor
-// alone: journalCursor. A page holds at most 50 entries, each reason cut at
-// 1,024 bytes, well within runnerAnswerLimit.
+// `GET /v1/jobs/{job}/events?after=`, and from v0.8.0 `tail=true` and
+// `before=`, capability journal-backward), read with GET alone and with the
+// paging parameters alone: journalQuery. A page holds at most 50 entries, each
+// reason cut at 1,024 bytes, well within runnerAnswerLimit.
 var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/events$`)
 
-// journalCursor is the cursor a journal request asks Runner for: "" when the
-// query names none, which Runner reads as 0, the start; or exactly one
-// `after` of 1 to 18 decimal digits, as Runner reads a cursor. A repeated,
-// empty or non-decimal cursor, or a query that does not parse, is refused
-// rather than forwarded: a lenient reader would keep one of repeated values,
-// or drop a malformed one and read from the start, where Runner refuses both.
-// Every other key is left out.
-func journalCursor(rawQuery string) (string, error) {
+// journalQuery is the query a journal request asks Runner with: nothing, which
+// Runner reads as `after=0`, the start; or exactly one of `after=<sequence>`,
+// `before=<sequence>` and `tail=true`, each sequence of 1 to 18 decimal digits,
+// as Runner reads a cursor. `tail=false` is Runner's own default and is not
+// forwarded. A repeated, empty or non-decimal cursor, a `tail` that is not
+// `true` or `false`, a query that does not parse, and the combinations Runner
+// v0.8.0 refuses (`tail` with `before`, either with `after`) are refused here
+// rather than forwarded: a lenient reader would keep one of repeated values, or
+// drop a malformed one and read from the start, or from the end, where Runner
+// refuses them. Every other key is left out. The second result is the one
+// sentence that refuses the request.
+func journalQuery(rawQuery string) (url.Values, string) {
 	values, malformed := url.ParseQuery(rawQuery)
-	switch cursor, given := values["after"]; {
-	case malformed != nil:
-		// Refused below, as Runner refuses it.
-	case !given:
-		return "", nil
-	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):
-		return cursor[0], nil
+	const invalid = "Ask for a journal page with at most one after, before or tail=true, each given once, a sequence in decimal digits, in a well-formed query."
+	if malformed != nil {
+		return nil, invalid
 	}
-	return "", errors.New("invalid journal cursor")
+	query := url.Values{}
+	for _, key := range []string{"after", "before"} {
+		if given, ok := values[key]; ok {
+			if len(given) != 1 || !journalSequence.MatchString(given[0]) {
+				return nil, invalid
+			}
+			query.Set(key, given[0])
+		}
+	}
+	if given, ok := values["tail"]; ok {
+		switch {
+		case len(given) != 1 || (given[0] != "true" && given[0] != "false"):
+			return nil, invalid
+		case given[0] == "true":
+			query.Set("tail", "true")
+		}
+	}
+	if len(query) > 1 {
+		return nil, "Ask for a journal page after a sequence, before a sequence, or the newest page, not more than one of them."
+	}
+	return query, ""
 }
 
 var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)
@@ -493,15 +514,12 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	case runPath.MatchString(tail):
 		limit = runnerExportLimit
 	case journalPath.MatchString(tail):
-		after, err := journalCursor(r.URL.RawQuery)
-		if err != nil {
-			writeJSONCoded(w, 400, CodeBadRequest, "Ask for a journal page with at most one after, a sequence in decimal digits, in a well-formed query.")
+		paging, refusal := journalQuery(r.URL.RawQuery)
+		if refusal != "" {
+			writeJSONCoded(w, 400, CodeBadRequest, refusal)
 			return
 		}
-		query = url.Values{}
-		if after != "" {
-			query.Set("after", after)
-		}
+		query = paging
 	}
 	if s.jobs == nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "Jobs requires the local runner companion. Install jpack-runner beside Desk or start Desk with --runner.")

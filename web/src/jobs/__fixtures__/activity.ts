@@ -75,7 +75,7 @@ export const occurrences: Record<string, Occurrence> = {
  * not serve the route does. By default, an empty journal that began when the
  * job was created.
  */
-export interface StandInJournal { began?: string; entries?: { sequence: number }[]; size?: number }
+export interface StandInJournal { began?: string; entries?: { sequence: number }[]; size?: number; backward?: boolean }
 export function journalPage(journal: StandInJournal, after: number): JournalPage {
   const entries = journal.entries ?? [], size = journal.size ?? 50
   const items = entries.filter(entry => entry.sequence > after).slice(0, size)
@@ -83,15 +83,39 @@ export function journalPage(journal: StandInJournal, after: number): JournalPage
   return { journalBegan: journal.began ?? at(0), items, next, more: entries.some(entry => entry.sequence > next) }
 }
 
+/**
+ * The same journal read from its end, as Runner v0.8.0 serves `tail=true` and
+ * `before=<sequence>`: the up to `size` entries before the cursor (all entries
+ * for the newest page), in the journal's order; `before` the first one's
+ * sequence (the cursor asked with, or 0, for an empty page); `next` the last
+ * one's (0 for an empty page); `more` when entries older than the page exist.
+ */
+export function backwardPage(journal: StandInJournal, cursor: number | 'tail'): JournalPage & { before: number } {
+  const entries = journal.entries ?? [], size = journal.size ?? 50
+  const older = entries.filter(entry => cursor === 'tail' || entry.sequence < cursor)
+  const items = older.slice(Math.max(0, older.length - size))
+  const before = items.length ? items[0]!.sequence : cursor === 'tail' ? 0 : cursor
+  return { journalBegan: journal.began ?? at(0), items, next: items.length ? items[items.length - 1]!.sequence : 0, more: entries.some(entry => entry.sequence < before), before }
+}
+
+/** What `GET status` lists: the capabilities of a Runner that reads the journal from its end or does not. */
+export const runnerStatus = (backward: boolean) => ({ capabilities: ['activity-journal', ...(backward ? ['journal-backward'] : [])], healthy: true })
+
 /** Runner's lists and records for one job, answering as Desk's `jobsAPI` does. */
 export function runner(options: { runs?: Run[]; occurrences?: Occurrence[]; pages?: Record<string, unknown>; journal?: StandInJournal | 'absent' } = {}) {
   const all = options.runs ?? Object.values(runs), occurring = options.occurrences ?? Object.values(occurrences)
   return async (path: string): Promise<unknown> => {
     if (options.pages?.[path]) return options.pages[path]
+    if (path === 'status') return runnerStatus(typeof options.journal === 'object' && options.journal.backward === true)
     const events = /^jobs\/job_a{32}\/events\?after=(\d+)$/.exec(path)
     if (events) {
       if (options.journal === 'absent') throw new JobsRequestError('Unknown Jobs operation.', 404)
       return journalPage(options.journal ?? {}, Number(events[1]))
+    }
+    const backward = /^jobs\/job_a{32}\/events\?(?:tail=true|before=(\d+))$/.exec(path)
+    if (backward) {
+      if (options.journal === 'absent') throw new JobsRequestError('Unknown Jobs operation.', 404)
+      return backwardPage(options.journal ?? {}, backward[1] === undefined ? 'tail' : Number(backward[1]))
     }
     if (path === `jobs/${JOB}`) return { job: { id: JOB, name: 'Daily intake', releaseId: release.id, revision: 1, createdAt: at(0) }, release }
     if (path === `jobs/${JOB}/triggers`) return { items: [trigger], localFiles: true }
