@@ -25,12 +25,19 @@ package desk
 //   - **listed**: signed, under a key the list names;
 //   - **unlisted**: signed, under a key the list does not name, which the
 //     page says in Desk's one sentence of its own;
-//   - **failed**: Runner recorded a failed signing, which the page names in
-//     Runner's own words;
+//   - **no-list**: signed, and Desk keeps no list for this Runner, which the
+//     page says as that, never as a key the list does not name;
+//   - **failed**: Runner recorded a failed signing, with one of the six
+//     reasons Runner v0.8.0 gives, which the page names in Runner's words;
 //   - **none**: Runner recorded no member, which is never taken for signed;
 //   - **not-held**: signed, and the list could not be read now, so the key
 //     was held to nothing: never taken for listed, or for unlisted;
-//   - **other**: a member in neither of Runner's two forms, shown as served.
+//   - **other**: a member in neither of Runner's two forms, or a failure
+//     with a reason Runner does not give, shown as served.
+//
+// A member is passed on as Runner served it, unless a string in it names a
+// path: that string reaches the page through withoutPaths, and the member is
+// encoded again (`shownSigning`). Runner's own members name none.
 //
 // The list is read as a Runner's key is (`readKeys`): a regular file, not a
 // link, the user's, writable by nobody else, the file opened the file
@@ -39,12 +46,16 @@ package desk
 // is said as that, and never as no list.
 //
 // `GET /api/audit/jobs-verify-run?run=<id>` checks one run's export, on
-// request: Desk asks Runner for the run's export at version 5, keeps it
-// whole within Runner's own bound, writes it to a private copy in the
-// hand-over folder, and runs `jpack-runner verify-run --file <copy>
-// --profiles <this desk's input profiles> --release-digest <the export's own
-// releaseDigest> --public-key <the list's key in force> --require-signed`
-// in the project. verify-run requires the profiles and the release digest;
+// request: Desk asks Runner for the run and for its export at version 5,
+// keeps each whole within Runner's own bound, writes the export to a private
+// copy in the hand-over folder, under a name of its own for this check, and
+// runs `jpack-runner verify-run --file <copy> --profiles <this desk's input
+// profiles> --release-digest <the export's own releaseDigest> --public-key
+// <key> --require-signed` in the project. The key is the one the run's
+// `signing` names where the list names it too, which is the list's word for
+// it and not Runner's; for any other run, the list's key in force. A run
+// signed under a key the list held before the one in force is so checked
+// under the key it was signed with. verify-run requires the profiles and the release digest;
 // the digest is the export's own, so its release check binds nothing here,
 // and the page shows the command Desk ran. Desk then holds both copies to the
 // bytes it wrote, and answers verify-run's exit status, its standard output
@@ -83,8 +94,28 @@ const (
 	signingFailed   = "failed"
 	signingNone     = "none"
 	signingNotHeld  = "not-held"
+	signingNoList   = "no-list"
 	signingOther    = "other"
 )
+
+// What a check of a run's export was run under (`runVerifyAnswer.Under`):
+// the listed key the run's signing names, or the list's key in force.
+const (
+	underListed  = "listed"
+	underInForce = "in-force"
+)
+
+// runnerSigningFailures are the six reasons Runner v0.8.0 gives for a failed
+// signing (openapi.json, `Run.signing.reason`), word for word. A failure
+// with any other reason is not one of Runner's forms.
+var runnerSigningFailures = []string{
+	"The record's signature sidecar could not be read.",
+	"The record's signature sidecar names a key that is not the expected one.",
+	"The record's signature sidecar does not verify under the expected key.",
+	"The Runtime signed nothing: the key at the signing key's path is not the expected key.",
+	"The Runtime signed nothing, and the key at the signing key's path could not be read as a key.",
+	"The record carries no signature.",
+}
 
 // What Desk found of the list of public keys for this desk's Runner
 // (`runnerList.State`).
@@ -99,8 +130,8 @@ const (
 	jobsSigningRuns    = "runs"
 	jobsRunChecked     = "checked"
 	jobsExportRefused  = "export-refused"
-	jobsRunExportName  = "jobs-run-export.json"
-	jobsRunProfileName = "jobs-run-profiles.json"
+	jobsRunExportName  = "jobs-run-export-"
+	jobsRunProfileName = "jobs-run-profiles-"
 	// runnerVerifyTimeout bounds one verify-run, which runs no Runtime here.
 	runnerVerifyTimeout = 60 * time.Second
 	// runnerVerifyLimit is the most of each of verify-run's streams Desk
@@ -178,7 +209,8 @@ func (s *Server) readRunnerList() runnerList {
 
 // holdSigning is how a run's `signing` member, as Runner served it, holds
 // against list. A member that is not there is none; a member in neither of
-// Runner's forms is other.
+// Runner's forms, a failure with a reason Runner does not give among them,
+// is other.
 func holdSigning(raw json.RawMessage, list runnerList) string {
 	if raw == nil {
 		return signingNone
@@ -194,11 +226,14 @@ func holdSigning(raw json.RawMessage, list runnerList) string {
 		return signingOther
 	}
 	switch {
-	case signing.Status == "failed" && signing.PublicKey == nil && signing.Reason != nil && *signing.Reason != "":
+	case signing.Status == "failed" && signing.PublicKey == nil && signing.Reason != nil && slices.Contains(runnerSigningFailures, *signing.Reason):
 		return signingFailed
 	case signing.Status == "signed" && signing.Reason == nil && signing.PublicKey != nil && publicKeyForm.MatchString(*signing.PublicKey):
 		if list.State == runnerListUnread {
 			return signingNotHeld
+		}
+		if list.State == runnerListNone {
+			return signingNoList
 		}
 		if slices.Contains(list.Keys, *signing.PublicKey) {
 			return signingListed
@@ -331,19 +366,21 @@ func (s *Server) jobsSigning(ctx context.Context, after string) (jobsSigningAnsw
 		if item.State != "completed" {
 			continue
 		}
-		answer.Runs = append(answer.Runs, runSigning{ID: item.ID, JobID: item.JobID, JobName: item.JobName, FinishedAt: item.FinishedAt, Signing: item.Signing, Held: holdSigning(item.Signing, list)})
+		answer.Runs = append(answer.Runs, runSigning{ID: item.ID, JobID: item.JobID, JobName: item.JobName, FinishedAt: item.FinishedAt, Signing: s.shownSigning(item.Signing), Held: holdSigning(item.Signing, list)})
 	}
 	return answer, nil
 }
 
 // runVerifyAnswer is what `GET /api/audit/jobs-verify-run` answers: what
-// jpack-runner verify-run said of the run's export, checked under the list's
+// jpack-runner verify-run said of the run's export, checked under PublicKey,
+// which Under says is the listed key the run's signing names or the list's
 // key in force (Exit, Stdout verbatim, Stderr with no path); or Runner's own
-// refusal to export the run (Status, Said).
+// refusal to give the run or its export (Status, Said).
 type runVerifyAnswer struct {
 	State         string `json:"state"`
 	Run           string `json:"run"`
 	PublicKey     string `json:"publicKey,omitempty"`
+	Under         string `json:"under,omitempty"`
 	ExportVersion int    `json:"exportVersion,omitempty"`
 	Exit          *int   `json:"exit,omitempty"`
 	Stdout        string `json:"stdout,omitempty"`
@@ -392,8 +429,8 @@ func (s *Server) handleJobsVerifyRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, answer)
 }
 
-// jobsVerifyRun checks run's export with jpack-runner verify-run under the
-// list's key in force, as the package comment says.
+// jobsVerifyRun checks run's export with jpack-runner verify-run, under the
+// key verifyKey chooses, as the package comment says.
 func (s *Server) jobsVerifyRun(ctx context.Context, dir heldDir, run string) (runVerifyAnswer, *lockFailure) {
 	list := s.readRunnerList()
 	switch list.State {
@@ -402,17 +439,36 @@ func (s *Server) jobsVerifyRun(ctx context.Context, dir heldDir, run string) (ru
 	case runnerListUnread:
 		return runVerifyAnswer{}, &lockFailure{http.StatusServiceUnavailable, CodeBadRequest, runnerListUnreadPrefix + list.Problem}
 	}
-	status, export, err := s.runnerAnswer(ctx, "runs/"+run+"/verification", url.Values{"version": {"5"}}, runnerExportLimit)
-	var stopped runnerStopped
-	switch {
-	case errors.As(err, &stopped):
-		s.log.Printf("desk: Runner is not running, so the run's export was not read: %v", err)
-		return runVerifyAnswer{}, &lockFailure{http.StatusServiceUnavailable, CodeBadRequest, runnerNotRunningRuns}
-	case err != nil:
-		return runVerifyAnswer{}, &lockFailure{http.StatusBadGateway, CodeBadRequest, handoverWords("Desk could not read the run's export: ", err)}
-	case status != http.StatusOK:
-		// Runner's own refusal, in its words.
-		return runVerifyAnswer{State: jobsExportRefused, Run: run, Status: status, Said: s.withoutPaths(string(export))}, nil
+	// readRunner is one of Runner's answers on the run, or Runner's refusal
+	// to give it, in its words, or why Desk could not read it.
+	readRunner := func(tail string, query url.Values) ([]byte, *runVerifyAnswer, *lockFailure) {
+		status, data, err := s.runnerAnswer(ctx, tail, query, runnerExportLimit)
+		var stopped runnerStopped
+		switch {
+		case errors.As(err, &stopped):
+			s.log.Printf("desk: Runner is not running, so the run was not read: %v", err)
+			return nil, nil, &lockFailure{http.StatusServiceUnavailable, CodeBadRequest, runnerNotRunningRuns}
+		case err != nil:
+			return nil, nil, &lockFailure{http.StatusBadGateway, CodeBadRequest, handoverWords("Desk could not read the run's export: ", err)}
+		case status != http.StatusOK:
+			return nil, &runVerifyAnswer{State: jobsExportRefused, Run: run, Status: status, Said: s.withoutPaths(string(data))}, nil
+		}
+		return data, nil, nil
+	}
+	record, refused, failure := readRunner("runs/"+run, url.Values{})
+	if refused != nil || failure != nil {
+		return answerOr(refused), failure
+	}
+	var recorded struct {
+		Signing json.RawMessage `json:"signing"`
+	}
+	if json.Unmarshal(record, &recorded) != nil {
+		return runVerifyAnswer{}, &lockFailure{http.StatusBadGateway, CodeBadRequest, "Desk could not read the run's export: the runner's answer is not a run."}
+	}
+	key, under := verifyKey(recorded.Signing, list)
+	export, refused, failure := readRunner("runs/"+run+"/verification", url.Values{"version": {"5"}})
+	if refused != nil || failure != nil {
+		return answerOr(refused), failure
 	}
 	var head struct {
 		Version       int    `json:"version"`
@@ -425,8 +481,10 @@ func (s *Server) jobsVerifyRun(ctx context.Context, dir heldDir, run string) (ru
 	if len(profiles) == 0 {
 		profiles = []byte("[]")
 	}
-	s.handoverMu.Lock()
-	defer s.handoverMu.Unlock()
+	// **Copies of this check's own.** Each is written under a name no other
+	// check takes, so no lock is held while verify-run runs, and a hand-over
+	// never waits behind a check. A Desk stopped during a check leaves them
+	// in the hand-over folder, where nothing reads them again.
 	handover, err := s.openHandover(true)
 	if err != nil {
 		return runVerifyAnswer{}, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("Desk's hand-over folder could not be opened: ", err)}
@@ -436,6 +494,13 @@ func (s *Server) jobsVerifyRun(ctx context.Context, dir heldDir, run string) (ru
 		name string
 		data []byte
 	}{{jobsRunExportName, export}, {jobsRunProfileName, profiles}}
+	for i := range copies {
+		name, err := randomStagingName(copies[i].name)
+		if err != nil {
+			return runVerifyAnswer{}, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("Desk could not name its copy of the run's export: ", err)}
+		}
+		copies[i].name = name
+	}
 	defer func() {
 		for _, each := range copies {
 			if err := handover.Remove(each.name); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -449,8 +514,8 @@ func (s *Server) jobsVerifyRun(ctx context.Context, dir heldDir, run string) (ru
 		}
 	}
 	stdout, stderr, exit, err := runRunnerVerify(ctx, s.jobs.bin, dir,
-		"verify-run", "--file", handoverDir+"/"+jobsRunExportName, "--profiles", handoverDir+"/"+jobsRunProfileName,
-		"--release-digest", head.ReleaseDigest, "--public-key", list.Current, "--require-signed")
+		"verify-run", "--file", handoverDir+"/"+copies[0].name, "--profiles", handoverDir+"/"+copies[1].name,
+		"--release-digest", head.ReleaseDigest, "--public-key", key, "--require-signed")
 	if err != nil {
 		return runVerifyAnswer{}, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("jpack-runner verify-run did not answer: ", err)}
 	}
@@ -461,7 +526,74 @@ func (s *Server) jobsVerifyRun(ctx context.Context, dir heldDir, run string) (ru
 			return runVerifyAnswer{}, &lockFailure{http.StatusConflict, CodeStale, runCopyChangedWords}
 		}
 	}
-	return runVerifyAnswer{State: jobsRunChecked, Run: run, PublicKey: list.Current, ExportVersion: head.Version, Exit: &exit, Stdout: string(stdout), Stderr: s.withoutPaths(string(stderr))}, nil
+	return runVerifyAnswer{State: jobsRunChecked, Run: run, PublicKey: key, Under: under, ExportVersion: head.Version, Exit: &exit, Stdout: string(stdout), Stderr: s.withoutPaths(string(stderr))}, nil
+}
+
+// answerOr is refused, or no answer where there is none.
+func answerOr(refused *runVerifyAnswer) runVerifyAnswer {
+	if refused == nil {
+		return runVerifyAnswer{}
+	}
+	return *refused
+}
+
+// verifyKey is the key a run's export is checked under, and which it is: the
+// key the run's signing names, where the list names it too, so that a run
+// signed under a key the list held before the one in force is checked under
+// that key, on the list's word and not Runner's; for any other run, the
+// list's key in force. list was read.
+func verifyKey(signing json.RawMessage, list runnerList) (string, string) {
+	if holdSigning(signing, list) == signingListed {
+		var named struct {
+			PublicKey string `json:"publicKey"`
+		}
+		if json.Unmarshal(signing, &named) == nil && slices.Contains(list.Keys, named.PublicKey) {
+			return named.PublicKey, underListed
+		}
+	}
+	return list.Current, underInForce
+}
+
+// shownSigning is a run's `signing` as Runner served it, unless a string in
+// it, a name or a value, names a path: then the member with each such string
+// passed through withoutPaths, encoded again. Runner's own members name
+// none, so they reach the page as Runner served them.
+func (s *Server) shownSigning(raw json.RawMessage) json.RawMessage {
+	var value any
+	if raw == nil || json.Unmarshal(raw, &value) != nil {
+		return raw
+	}
+	changed := false
+	var walk func(any) any
+	walk = func(value any) any {
+		switch value := value.(type) {
+		case string:
+			shown := s.withoutPaths(value)
+			changed = changed || shown != value
+			return shown
+		case []any:
+			for i, each := range value {
+				value[i] = walk(each)
+			}
+			return value
+		case map[string]any:
+			shown := make(map[string]any, len(value))
+			for name, each := range value {
+				shown[walk(name).(string)] = walk(each)
+			}
+			return shown
+		}
+		return value
+	}
+	value = walk(value)
+	if !changed {
+		return raw
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // testHookRunnerVerified runs once verify-run has answered, before Desk holds

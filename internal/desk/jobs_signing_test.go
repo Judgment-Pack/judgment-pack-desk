@@ -74,9 +74,10 @@ func TestTheBootLineNamesTheListsKeyAsTheOneToExpect(t *testing.T) {
 }
 
 // **A run's signing, held to the list**, for every form Runner gives and some
-// it does not: signed under a key the list names, or one it does not; failed,
-// whatever Runner's reason; no member; and, where the list could not be read
-// now, a signed run held to nothing, never called listed or unlisted.
+// it does not: signed under a key the list names, or one it does not, or with
+// no list kept; failed, with each of Runner's six reasons and with none
+// other; no member; and, where the list could not be read now, a signed run
+// held to nothing, never called listed or unlisted.
 func TestARunsSigningIsHeldToTheList(t *testing.T) {
 	read := runnerList{State: runnerListRead, Keys: []string{signerA, signerB}, Current: signerB}
 	none := runnerList{State: runnerListNone}
@@ -92,7 +93,8 @@ func TestARunsSigningIsHeldToTheList(t *testing.T) {
 		{signed(signerA), read, signingListed},
 		{signed(signerB), read, signingListed},
 		{signed(signerC), read, signingUnlisted},
-		{signed(signerA), none, signingUnlisted},
+		{signed(signerA), none, signingNoList},
+		{signed(signerC), none, signingNoList},
 		{signed(signerA), unread, signingNotHeld},
 		{signed(signerC), unread, signingNotHeld},
 		{nil, read, signingNone},
@@ -104,6 +106,8 @@ func TestARunsSigningIsHeldToTheList(t *testing.T) {
 		{json.RawMessage(`{"status":"signed","publicKey":"` + signerA + `","by":"x"}`), read, signingOther},
 		{json.RawMessage(`{"status":"failed"}`), read, signingOther},
 		{json.RawMessage(`{"status":"failed","reason":""}`), read, signingOther},
+		{json.RawMessage(`{"status":"failed","reason":"The record carries no signature"}`), read, signingOther},
+		{json.RawMessage(`{"status":"failed","reason":"/home/owner/key.seed could not be read."}`), read, signingOther},
 		{json.RawMessage(`{"status":"failed","reason":"x","publicKey":"` + signerA + `"}`), read, signingOther},
 		{json.RawMessage(`{"status":"pending"}`), read, signingOther},
 	}
@@ -181,8 +185,9 @@ func TestJobsSigningReadsEachRunsSigningAsRunnerServesIt(t *testing.T) {
 		"run_" + strings.Repeat("3", 32): `{"status":"failed","reason":"` + runnerSigningReasons[3] + `"}`,
 		"run_" + strings.Repeat("4", 32): ``,
 		"run_" + strings.Repeat("6", 32): `{"status":"signed"}`,
+		"run_" + strings.Repeat("7", 32): `{"status":"failed","reason":"` + rig.s.configDir + `/secrets/signing/runner/key.seed could not be read."}`,
 	}
-	order := []string{"run_" + strings.Repeat("6", 32), "run_" + strings.Repeat("4", 32), "run_" + strings.Repeat("3", 32), "run_" + strings.Repeat("2", 32), "run_" + strings.Repeat("1", 32)}
+	order := []string{"run_" + strings.Repeat("7", 32), "run_" + strings.Repeat("6", 32), "run_" + strings.Repeat("4", 32), "run_" + strings.Repeat("3", 32), "run_" + strings.Repeat("2", 32), "run_" + strings.Repeat("1", 32)}
 	var page strings.Builder
 	page.WriteString(`{"items":[{"id":"run_` + strings.Repeat("5", 32) + `","jobId":"job_` + strings.Repeat("0", 32) + `","jobName":"Queued","state":"queued"}`)
 	for _, id := range order {
@@ -206,6 +211,13 @@ func TestJobsSigningReadsEachRunsSigningAsRunnerServesIt(t *testing.T) {
 		got := map[string]string{}
 		for _, run := range answer.Runs {
 			got[run.ID] = run.Held
+			if run.ID == order[0] {
+				// A string that names a path reaches the page without it.
+				if strings.Contains(string(run.Signing), rig.s.configDir) || !strings.Contains(string(run.Signing), `"status":"failed"`) || !json.Valid(run.Signing) {
+					t.Errorf("%s's signing reached the page as %s", run.ID, run.Signing)
+				}
+				continue
+			}
 			if string(run.Signing) != members[run.ID] {
 				t.Errorf("%s's signing reached the page as %s, want %s as Runner served it", run.ID, run.Signing, members[run.ID])
 			}
@@ -213,9 +225,9 @@ func TestJobsSigningReadsEachRunsSigningAsRunnerServesIt(t *testing.T) {
 		return got
 	}
 	status, answer, data := rig.signings(t, "")
-	want := map[string]string{order[4]: signingListed, order[3]: signingUnlisted, order[2]: signingFailed, order[1]: signingNone, order[0]: signingOther}
+	want := map[string]string{order[5]: signingListed, order[4]: signingUnlisted, order[3]: signingFailed, order[2]: signingNone, order[1]: signingOther, order[0]: signingOther}
 	if status != http.StatusOK || answer.State != "runs" || answer.Next != 7 || answer.List == nil || answer.List.State != runnerListRead ||
-		!slices.Equal(answer.List.Keys, []string{signerA}) || answer.List.Current != signerA || len(answer.Runs) != 5 {
+		!slices.Equal(answer.List.Keys, []string{signerA}) || answer.List.Current != signerA || len(answer.Runs) != 6 {
 		t.Fatalf("the page of runs answered %d %s", status, data)
 	}
 	if got := held(answer); !mapsEqual(got, want) {
@@ -241,16 +253,16 @@ func TestJobsSigningReadsEachRunsSigningAsRunnerServesIt(t *testing.T) {
 
 	// A list that names B and then A: the run signed under A is still listed.
 	rig.keys(t, wantKeyLine(signerA, keyIDOf(signerA), 0)+`{"publicKey":"`+signerB+`","keyId":"`+keyIDOf(signerB)+`","at":4}`+"\n")
-	if _, answer, data := rig.signings(t, ""); answer.List == nil || answer.List.Current != signerB || held(answer)[order[4]] != signingListed {
+	if _, answer, data := rig.signings(t, ""); answer.List == nil || answer.List.Current != signerB || held(answer)[order[5]] != signingListed {
 		t.Errorf("a run signed under the list's earlier key: %s", data)
 	}
 
-	// No list: no key is named by it.
+	// No list: no signed run is said to be under a key a list does not name.
 	if err := os.Remove(rig.list); err != nil {
 		t.Fatal(err)
 	}
 	_, answer, data = rig.signings(t, "")
-	want[order[4]] = signingUnlisted
+	want[order[5]], want[order[4]] = signingNoList, signingNoList
 	if answer.List == nil || answer.List.State != runnerListNone || !mapsEqual(held(answer), want) {
 		t.Errorf("with no list: %s", data)
 	}
@@ -261,7 +273,7 @@ func TestJobsSigningReadsEachRunsSigningAsRunnerServesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, answer, data = rig.signings(t, "")
-	want[order[4]], want[order[3]] = signingNotHeld, signingNotHeld
+	want[order[5]], want[order[4]] = signingNotHeld, signingNotHeld
 	if answer.List == nil || answer.List.State != runnerListUnread || !strings.Contains(answer.List.Problem, "its group or other users can write it") || !mapsEqual(held(answer), want) {
 		t.Errorf("with a list that could not be read: %s", data)
 	}
@@ -308,21 +320,29 @@ func standInVerifier(t *testing.T, record, stdout, stderr string, code int) stri
 }
 
 // **verify-run on one run's export, on request, its answer as it gave it.**
-// Desk asks Runner for the run's export at version 5, writes it and this
-// desk's input profiles to private copies, and runs `jpack-runner verify-run
-// --file <copy> --profiles <copy> --release-digest <the export's own>
-// --public-key <the list's key in force> --require-signed` in the project. It
-// answers the exit status and standard output verbatim, and standard error
-// with no path; the copies are gone after. Runner's refusal to export is its
-// own answer. No list, a list that could not be read, a copy changed while
-// verify-run read it and a query that names no one run are each refused.
+// Desk asks Runner for the run and its export at version 5, writes the export
+// and this desk's input profiles to private copies of this check's own, and
+// runs `jpack-runner verify-run --file <copy> --profiles <copy>
+// --release-digest <the export's own> --public-key <key> --require-signed` in
+// the project, the key the one the run's signing names where the list names
+// it, and the list's key in force otherwise. It answers the exit status and
+// standard output verbatim, and standard error with no path; the copies are
+// gone after. Runner's refusal to export is its own answer. No list, a list
+// that could not be read, a copy changed while verify-run read it and a query
+// that names no one run are each refused.
 func TestJobsVerifyRunShowsWhatVerifyRunSaid(t *testing.T) {
 	rig := newSigningRig(t)
 	run := "run_" + strings.Repeat("1", 32)
 	digest := "sha256:" + strings.Repeat("ab", 32)
 	export := []byte(`{"version":5,"releaseDigest":"` + digest + `","run":{"id":"` + run + `","auditSignatures":"eA=="},"note":"a&b"}` + "\n")
 	exportStatus := http.StatusOK
+	signing := `{"status":"signed","publicKey":"` + signerA + `"}`
 	rig.serveWith(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/runs/"+run && r.URL.RawQuery == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"id":"` + run + `","state":"completed","signing":` + signing + `}`))
+			return
+		}
 		if r.URL.Path != "/v1/runs/"+run+"/verification" || r.URL.RawQuery != "version=5" {
 			http.NotFound(w, r)
 			return
@@ -339,9 +359,20 @@ func TestJobsVerifyRunShowsWhatVerifyRunSaid(t *testing.T) {
 	report := `{"exactBytes":"matches-record","exportVersion":5,"retainedDisposition":"matches-audit","signature":{"status":"unsigned"},"status":"unsigned"}`
 	said := "runner: the run is unsigned under " + rig.project + "/secret.seed"
 	rig.s.jobs.bin = standInVerifier(t, record, report, said, 1)
+	// copyOf is the path of this check's copy whose name begins with prefix.
+	copyOf := func(prefix string) string {
+		t.Helper()
+		found, _ := filepath.Glob(filepath.Join(rig.project, ".desk-private", "handover", prefix+"*"))
+		if len(found) != 1 {
+			t.Fatalf("Desk's copies named %s: %q", prefix, found)
+		}
+		return found[0]
+	}
 	var seen []byte
+	var names []string
 	testHookRunnerVerified = func() {
-		seen, _ = os.ReadFile(filepath.Join(rig.project, ".desk-private", "handover", jobsRunExportName))
+		seen, _ = os.ReadFile(copyOf(jobsRunExportName))
+		names = []string{filepath.Base(copyOf(jobsRunExportName)), filepath.Base(copyOf(jobsRunProfileName))}
 	}
 	t.Cleanup(func() { testHookRunnerVerified = nil })
 	verify := func(query string) (int, runVerifyAnswer, []byte) {
@@ -357,12 +388,12 @@ func TestJobsVerifyRunShowsWhatVerifyRunSaid(t *testing.T) {
 	}
 
 	status, answer, data := verify("?run=" + run)
-	if status != http.StatusOK || answer.State != jobsRunChecked || answer.Run != run || answer.PublicKey != signerA || answer.ExportVersion != 5 ||
+	if status != http.StatusOK || answer.State != jobsRunChecked || answer.Run != run || answer.PublicKey != signerA || answer.Under != underListed || answer.ExportVersion != 5 ||
 		answer.Exit == nil || *answer.Exit != 1 || answer.Stdout != report+"\n" || answer.Stderr != "runner: the run is unsigned under the project's folder/secret.seed\n" {
 		t.Fatalf("the check answered %d %s", status, data)
 	}
 	argv := strings.Split(strings.TrimSuffix(readFile(t, record), "\n"), "\n")
-	wantArgv := []string{"verify-run", "--file", ".desk-private/handover/" + jobsRunExportName, "--profiles", ".desk-private/handover/" + jobsRunProfileName, "--release-digest", digest, "--public-key", signerA, "--require-signed"}
+	wantArgv := []string{"verify-run", "--file", ".desk-private/handover/" + names[0], "--profiles", ".desk-private/handover/" + names[1], "--release-digest", digest, "--public-key", signerA, "--require-signed"}
 	if len(argv) != len(wantArgv)+1 || !slices.Equal(argv[:len(wantArgv)], wantArgv) {
 		t.Errorf("verify-run was run with %q, want %q", argv, wantArgv)
 	}
@@ -372,30 +403,40 @@ func TestJobsVerifyRunShowsWhatVerifyRunSaid(t *testing.T) {
 	if !bytes.Equal(seen, export) {
 		t.Errorf("verify-run read %q, not the export Runner served", seen)
 	}
-	for _, name := range []string{jobsRunExportName, jobsRunProfileName} {
-		if _, err := os.Lstat(filepath.Join(rig.project, ".desk-private", "handover", name)); !os.IsNotExist(err) {
-			t.Errorf("Desk's copy %s is still there: %v", name, err)
-		}
+	if !strings.HasPrefix(names[0], jobsRunExportName) || !strings.HasPrefix(names[1], jobsRunProfileName) || names[0] == jobsRunExportName {
+		t.Errorf("Desk's copies were named %q", names)
+	}
+	if left, _ := filepath.Glob(filepath.Join(rig.project, ".desk-private", "handover", "jobs-run-*")); len(left) != 0 {
+		t.Errorf("Desk's copies are still there: %q", left)
 	}
 	if strings.Contains(string(data), rig.project) {
 		t.Errorf("the answer names the project's path: %s", data)
 	}
 
-	// The list's key in force is the last, and the installation's profiles go
-	// as they are.
+	// With a list of two keys, A and then B: a run signed under A, which the
+	// list names, is checked under A, on the list's word; a run signed under a
+	// key the list does not name, a failed signing and a run with none, under
+	// B, the key in force. The installation's profiles go as they are.
 	rig.keys(t, wantKeyLine(signerA, keyIDOf(signerA), 0)+`{"publicKey":"`+signerB+`","keyId":"`+keyIDOf(signerB)+`","at":4}`+"\n")
 	rig.s.jobs.profiles = json.RawMessage(`[{"id":"p"}]`)
 	var profiles []byte
 	testHookRunnerVerified = func() {
-		profiles, _ = os.ReadFile(filepath.Join(rig.project, ".desk-private", "handover", jobsRunProfileName))
+		profiles, _ = os.ReadFile(copyOf(jobsRunProfileName))
 	}
-	if _, answer, data := verify("?run=" + run); answer.PublicKey != signerB || !strings.Contains(readFile(t, record), "--public-key\n"+signerB+"\n") || string(profiles) != `[{"id":"p"}]` {
-		t.Errorf("with a list of two keys: %s, profiles %s", data, profiles)
+	if _, answer, data := verify("?run=" + run); answer.PublicKey != signerA || answer.Under != underListed || !strings.Contains(readFile(t, record), "--public-key\n"+signerA+"\n") || string(profiles) != `[{"id":"p"}]` {
+		t.Errorf("a run signed under the list's earlier key: %s, profiles %s", data, profiles)
 	}
+	for _, member := range []string{`{"status":"signed","publicKey":"` + signerC + `"}`, `{"status":"failed","reason":"` + runnerSigningReasons[3] + `"}`, `null`} {
+		signing = member
+		if _, answer, data := verify("?run=" + run); answer.PublicKey != signerB || answer.Under != underInForce || !strings.Contains(readFile(t, record), "--public-key\n"+signerB+"\n") {
+			t.Errorf("a run whose signing is %s: %s", member, data)
+		}
+	}
+	signing = `{"status":"signed","publicKey":"` + signerA + `"}`
 
 	// A copy changed while verify-run read it.
 	testHookRunnerVerified = func() {
-		os.WriteFile(filepath.Join(rig.project, ".desk-private", "handover", jobsRunExportName), []byte("{}"), 0o600)
+		os.WriteFile(copyOf(jobsRunExportName), []byte("{}"), 0o600)
 	}
 	if status, _, data := verify("?run=" + run); status != http.StatusConflict || !strings.Contains(string(data), runCopyChangedWords) {
 		t.Errorf("a copy changed while read answered %d %s", status, data)
@@ -653,7 +694,7 @@ func TestJobsRealCompanionHoldsEachRunsSignerToTheList(t *testing.T) {
 		t.Fatalf("the first run: %+v %+v", answer.List, byID[first])
 	}
 	verified, stdout, stderr, code := checked(first, key.PublicKey)
-	if *verified.Exit != 0 || code != 0 || verified.Stdout != stdout || verified.Stderr != stderr || !strings.Contains(stdout, `"signature":{`) || verified.PublicKey != key.PublicKey {
+	if *verified.Exit != 0 || code != 0 || verified.Stdout != stdout || verified.Stderr != stderr || !strings.Contains(stdout, `"signature":{`) || verified.PublicKey != key.PublicKey || verified.Under != underListed {
 		t.Fatalf("verify-run on the first run: Desk %+v\nthe binary %d %s %s", verified, code, stdout, stderr)
 	}
 
@@ -674,7 +715,7 @@ func TestJobsRealCompanionHoldsEachRunsSignerToTheList(t *testing.T) {
 		t.Errorf("Runner's own route says otherwise: %d %.400s", status, data)
 	}
 	verified, stdout, stderr, code = checked(second, key.PublicKey)
-	if *verified.Exit == 0 || *verified.Exit != code || verified.Stdout != stdout || verified.Stderr != stderr || !strings.Contains(stdout, "unsigned") {
+	if *verified.Exit == 0 || *verified.Exit != code || verified.Stdout != stdout || verified.Stderr != stderr || !strings.Contains(stdout, "unsigned") || verified.PublicKey != key.PublicKey || verified.Under != underInForce {
 		t.Fatalf("verify-run on the second run: Desk %+v\nthe binary %d %s %s", verified, code, stdout, stderr)
 	}
 	ts.Close()
