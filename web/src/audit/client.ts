@@ -951,7 +951,7 @@ export function isRunVerification(value: unknown): value is RunVerification {
 async function runsRefusal(response: Response, fallback: string): Promise<Error> {
   let body: { error?: unknown } = {}
   try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
-  return new Error(text(body.error) ? body.error : fallback)
+  return new Error(named(body.error) ? body.error : fallback)
 }
 
 /** One page of Runner's completed runs, each run's signing held to the list now: the newest, or the one after Runner's cursor. */
