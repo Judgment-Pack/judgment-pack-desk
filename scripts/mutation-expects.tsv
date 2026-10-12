@@ -621,6 +621,13 @@ go	jobs journal (cursor): a repeated cursor read as its first	TestJobsForwardsAJ
 go	jobs journal (cursor): an empty cursor forwarded	TestJobsForwardsAJobsJournalWithItsCursorAlone
 go	jobs journal (cursor): no cursor refused rather than read as the start	TestJobsForwardsAJobsJournalWithItsCursorAlone
 go	jobs journal (cursor): the shared query keys forwarded	TestJobsForwardsAJobsJournalWithItsCursorAlone
+go	jobs journal (old path): a request with no paging is forwarded from 0	TestJobsForwardReadingOfAnOlderRunnerIsUnchanged,TestJobsForwardsAJobsJournalWithItsCursorAlone
+go	jobs journal (paging): a before is not read	TestJobsForwardsAJobsJournalWithItsCursorAlone,TestJobsRefusesTheJournalConflictsInOneSentence
+go	jobs journal (paging): a tail other than true or false forwarded	TestJobsForwardsAJobsJournalWithItsCursorAlone
+go	jobs journal (paging): before with after forwarded	TestJobsForwardsAJobsJournalWithItsCursorAlone,TestJobsRefusesTheJournalConflictsInOneSentence
+go	jobs journal (paging): tail with after forwarded	TestJobsForwardsAJobsJournalWithItsCursorAlone,TestJobsRefusesTheJournalConflictsInOneSentence
+go	jobs journal (paging): tail with before forwarded	TestJobsForwardsAJobsJournalWithItsCursorAlone,TestJobsRefusesTheJournalConflictsInOneSentence
+go	jobs journal (paging): tail=false forwarded as asked	TestJobsForwardsAJobsJournalWithItsCursorAlone
 go	jobs journal (route): a path that begins with it forwarded	TestJobsForwardsAJobsJournalWithItsCursorAlone
 go	jobs journal (route): an id in upper-case hex forwarded	TestJobsForwardsAJobsJournalWithItsCursorAlone
 go	jobs journal (route): an id with hex letters refused	TestJobsForwardsAJobsJournalWithItsCursorAlone
@@ -1922,11 +1929,11 @@ web	jobs journal (bound): the bounds are not the ones stated	src/jobs/journal.te
 web	jobs journal (bound): the entries read and not kept are not said	src/jobs/ActivityJournalBounds.test.tsx
 web	jobs journal (by): a key issued before the journal is given a revision	src/jobs/ActivityJournal.test.tsx
 web	jobs journal (by): the installation is shown as its owner	src/jobs/ActivityJournal.test.tsx
-web	jobs journal (filters): entries are shown under a filter	src/jobs/ActivityJournal.test.tsx
+web	jobs journal (filters): entries are shown under a filter	src/jobs/ActivityCoverageGolden.test.tsx,src/jobs/ActivityJournal.test.tsx
 web	jobs journal (kinds): a kind Runner writes is not worded	src/jobs/ActivityJournal.test.tsx,src/jobs/journal.test.ts
 web	jobs journal (kinds): a kind this Desk does not know is dropped	src/jobs/ActivityJournal.test.tsx,src/jobs/journal.test.ts
 web	jobs journal (order): a place does not count the entries read and not kept	src/jobs/activity.test.ts
-web	jobs journal (order): a record stands by its time, not its creation entry	src/jobs/ActivityJournal.test.tsx,src/jobs/activity.test.ts
+web	jobs journal (order): a record stands by its time, not its creation entry	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBackward.test.tsx,src/jobs/activity.test.ts
 web	jobs journal (order): entries are ordered by their time, not Runner's order	src/jobs/ActivityJournal.test.tsx,src/jobs/activity.test.ts
 web	jobs journal (order): the oldest record's own creation entry is held back	src/jobs/activity.test.ts
 web	jobs journal (pace): no turn for the browser between pages	src/jobs/ActivityJournalBounds.test.tsx,src/jobs/journal.test.ts
@@ -1950,8 +1957,8 @@ web	jobs journal (stop): a failure is not said	src/jobs/ActivityJournalBounds.te
 web	jobs journal (stop): a page answered after the reading was abandoned is read	src/jobs/journal.test.ts
 web	jobs journal (stop): continuing starts from 0	src/jobs/ActivityJournalBounds.test.tsx
 web	jobs journal (time): a time that does not read as one is formatted	src/jobs/ActivityJournal.test.tsx
-web	jobs journal (window): every entry kept is rendered	src/jobs/ActivityJournalBounds.test.tsx
-web	jobs journal (window): the newest-entries line is not shown	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (window): every entry kept is rendered	src/jobs/ActivityCoverageGolden.test.tsx,src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (window): the newest-entries line is not shown	src/jobs/ActivityCoverageGolden.test.tsx,src/jobs/ActivityJournalBounds.test.tsx
 web	jobs journal (window): the step control is offered past what is kept	src/jobs/ActivityJournalBounds.test.tsx
 web	jobs journal (window): the step control shows nothing more	src/jobs/ActivityJournalBounds.test.tsx
 web	jobs record client: a check in flight is joined after a confirmation of the chain	src/audit/jobsRecord.test.tsx
@@ -2004,6 +2011,17 @@ web	jobs standing: the comparison is inverted	src/jobs/JobsView.test.tsx,src/job
 web	jobs standing: the file's current digest is compared	src/jobs/ReleaseStanding.test.tsx,src/jobs/reviewedSet.desks.test.ts
 web	jobs standing: the first pack's entry is compared	src/jobs/ReleaseStanding.test.tsx
 web	jobs standing: the parsed pack is hashed, not its bytes	src/jobs/ReleaseStanding.test.tsx,src/jobs/reviewedSet.desks.test.ts
+web	journal backward (capability): a Runner that lists none is read from its newest entries	src/jobs/ActivityCoverageGolden.test.tsx,src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx
+web	journal backward (capability): a status that cannot be read is taken for a Runner without it	src/jobs/ActivityJournalBackward.test.tsx
+web	journal backward (merge): a forward page that carries a backward cursor is merged	src/jobs/journalPages.test.ts
+web	journal backward (merge): a page of another journal is merged	src/jobs/ActivityJournalBackward.test.tsx,src/jobs/journalPages.test.ts
+web	journal backward (merge): a page that reaches the entries held is merged	src/jobs/ActivityJournalBackward.test.tsx,src/jobs/journalPages.test.ts
+web	journal backward (merge): a page whose cursor is not its first entry is merged	src/jobs/ActivityJournalBackward.test.tsx,src/jobs/journalPages.test.ts
+web	journal backward (merge): an older page asked for before the cursor moved is merged	src/jobs/journalPages.test.ts
+web	journal backward (merge): the forward cursor skips an entry	src/jobs/ActivityJournalBackward.test.tsx,src/jobs/journalPages.test.ts
+web	journal backward (merge): the older cursor skips an entry	src/jobs/ActivityJournalBackward.test.tsx,src/jobs/journalPages.test.ts
+web	journal backward (old path): the forward reading is reworded	src/jobs/ActivityCoverageGolden.test.tsx,src/jobs/ActivityJournalBounds.test.tsx
+web	journal backward (window): older pages are read past the window asked for	src/jobs/ActivityJournalBackward.test.tsx
 web	key panel: a check of any status is accepted	src/audit/decisionRecord.test.tsx
 web	key panel: a failed check reads as passed	src/audit/decisionRecord.test.tsx
 web	key panel: a kept list out of order is accepted	src/audit/decisionRecord.test.tsx
