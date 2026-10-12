@@ -2430,12 +2430,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/events$`)' \
     'var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/eventz$`)'
   mutate go "jobs journal (cursor): the shared query keys forwarded" "$J" \
-    '		query = url.Values{}
-		if after != "" {' \
-    '		if after != "" {'
+    '		query = paging' \
+    '		for key, values := range paging {
+			query[key] = values
+		}'
   mutate go "jobs journal (cursor): a repeated cursor read as its first" "$J" \
-    '	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):' \
-    '	case len(cursor) >= 1 && journalSequence.MatchString(cursor[0]):'
+    '			if len(given) != 1 || !journalSequence.MatchString(given[0]) {' \
+    '			if len(given) < 1 || !journalSequence.MatchString(given[0]) {'
   mutate go "jobs journal (cursor): a cursor that only begins with digits forwarded" "$J" \
     'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)' \
     'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}`)'
@@ -2446,12 +2447,58 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)' \
     'var journalSequence = regexp.MustCompile(`^[0-9]+$`)'
   mutate go "jobs journal (cursor): a query that does not parse read leniently" "$J" \
-    '	case malformed != nil:
-		// Refused below, as Runner refuses it.' \
-    '	case malformed != nil && false:'
+    '	if malformed != nil {
+		return nil, invalid
+	}' \
+    '	if malformed != nil && false {
+		return nil, invalid
+	}'
   mutate go "jobs journal (cursor): no cursor refused rather than read as the start" "$J" \
-    '	case !given:' \
-    '	case !given && false:'
+    '	query := url.Values{}
+	for _, key := range []string{"after", "before"} {' \
+    '	query := url.Values{}
+	if _, ok := values["after"]; !ok {
+		return nil, invalid
+	}
+	for _, key := range []string{"after", "before"} {'
+  # **Runner v0.8.0's backward paging is forwarded by `tail=true` and `before`
+  # alone (#235).** Desk forwards one of `after`, `before` and `tail=true`,
+  # refuses `tail` with `before` and either with `after` in one sentence of its
+  # own, bounds `before` as it bounds `after`, reads a `tail` other than true
+  # or false as Runner does (a refusal), leaves `tail=false` out as Runner's
+  # default, and forwards a request with none of them exactly as before.
+  mutate go "jobs journal (paging): tail with before forwarded" "$J" \
+    '	if len(query) > 1 {' \
+    '	if query.Has("after") && len(query) > 1 {'
+  mutate go "jobs journal (paging): tail with after forwarded" "$J" \
+    '	if len(query) > 1 {' \
+    '	if query.Has("before") && len(query) > 1 {'
+  mutate go "jobs journal (paging): before with after forwarded" "$J" \
+    '	if len(query) > 1 {' \
+    '	if query.Has("tail") && len(query) > 1 {'
+  mutate go "jobs journal (paging): a tail other than true or false forwarded" "$J" \
+    '		case len(given) != 1 || (given[0] != "true" && given[0] != "false"):' \
+    '		case len(given) != 1:'
+  mutate go "jobs journal (paging): tail=false forwarded as asked" "$J" \
+    '		case given[0] == "true":
+			query.Set("tail", "true")' \
+    '		default:
+			query.Set("tail", given[0])'
+  mutate go "jobs journal (paging): a before is not read" "$J" \
+    '	for _, key := range []string{"after", "before"} {' \
+    '	for _, key := range []string{"after"} {'
+  mutate go "jobs journal (old path): a request with no paging is forwarded from 0" "$J" \
+    '	return query, ""
+}
+
+var journalSequence' \
+    '	if len(query) == 0 {
+		query.Set("after", "0")
+	}
+	return query, ""
+}
+
+var journalSequence'
   mutate go "jobs proxy (path): a percent-encoded path forwarded" "$J" \
     '	if strings.Contains(r.URL.EscapedPath(), "%") {' \
     '	if false {'
@@ -13542,8 +13589,10 @@ export function assistantTransport(id: string): Transport {
     "    const answer = await page(journal.next)" \
     "    const answer = await page(0)"
   mutate web "jobs journal (reading): the tab reads from 0 again on every refresh" "$JJ" \
-    "        await new Promise<void>(resolve => { timer = setTimeout(resolve, JOURNAL_REFRESH_MS) })" \
-    "        await new Promise<void>(resolve => { timer = setTimeout(resolve, JOURNAL_REFRESH_MS) }); journal.next = 0"
+    "        status('caught-up')
+        await new Promise<void>(resolve => { timer = setTimeout(resolve, JOURNAL_REFRESH_MS) })" \
+    "        status('caught-up')
+        await new Promise<void>(resolve => { timer = setTimeout(resolve, JOURNAL_REFRESH_MS) }); journal.next = 0"
   mutate web "jobs journal (reading): only the first page is read" "$JJ" \
     "    if (!answer.more || !moved) return" \
     "    return"
@@ -13560,14 +13609,14 @@ export function assistantTransport(id: string): Transport {
     "  const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })" \
     "  const result = await response.json()"
   mutate web "jobs journal (order): a record stands by its time, not its creation entry" "$JAC" \
-    "return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }" \
+    "return at === undefined ? [0, row.when.time] : [1, placeAt(at) + 0.5] }" \
     "return [0, row.when.time] }"
   mutate web "jobs journal (order): entries are ordered by their time, not Runner's order" "$JAC" \
     "entry: journal.entries[index]!, place: at }, at: [1, at] })" \
     "entry: journal.entries[index]!, place: at }, at: [1, Date.parse(String(journal.entries[index]!.at))] })"
   mutate web "jobs journal (order): a place does not count the entries read and not kept" "$JAC" \
-    "return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }" \
-    "return at === undefined ? [0, row.when.time] : [1, at + 0.5] }"
+    "  const placeAt = (index: number) => journal?.places ? journal.places[index]! : offset + index" \
+    "  const placeAt = (index: number) => journal?.places ? journal.places[index]! : index"
   mutate web "jobs journal (order): the oldest record's own creation entry is held back" "$JAC" \
     "return lowest(oldest, at[0] === 1 ? [1, at[1] - 0.5] : at) }" \
     "return lowest(oldest, at) }"
@@ -13593,8 +13642,8 @@ export function assistantTransport(id: string): Transport {
     "    runs: rowsOf(streams.runs?.records.map(runRow))," \
     "    runs: rowsOf(streams.runs?.records.map(run => runRow({ ...run, state: ([...(journal?.entries ?? [])].reverse().find(entry => entry.concerns?.run === run.id && typeof entry.to === 'string')?.to as Run['state'] | undefined) ?? run.state })))," 
   mutate web "jobs journal (filters): entries are shown under a filter" "$JAV" \
-    "served && { entries: served.entries, dropped: served.dropped, from, show: !filtered })" \
-    "served && { entries: served.entries, dropped: served.dropped, from, show: true })"
+    "served && { entries: served.entries, dropped: served.dropped, from, show: !filtered, places: served.places })" \
+    "served && { entries: served.entries, dropped: served.dropped, from, show: true, places: served.places })"
   mutate web "jobs journal (progress): entries are shown before the journal is read to its end" "$JJ" \
     "          await catchUp(journal, page, keep, () => status('reading'), yieldToBrowser, controller.signal)" \
     "          await catchUp(journal, page, keep, () => { reading.snapshot = { entries: journal.entries.slice(), dropped: journal.dropped, began: journal.began }; status('reading') }, yieldToBrowser, controller.signal)"
@@ -13608,13 +13657,13 @@ export function assistantTransport(id: string): Transport {
     "  if (state.phase === 'caught-up') return <p className=\"quiet\">" \
     "  if (state.phase === 'caught-up') return null; if (false) return <p className=\"quiet\">"
   mutate web "jobs journal (progress): what was last read to the end is dropped while newer pages are read" "$JJ" \
-    "next: journal.next, snapshot: reading.snapshot, ...(reason" \
-    "next: journal.next, snapshot: phase === 'caught-up' ? reading.snapshot : undefined, ...(reason"
+    "next: reading.journal.next, snapshot: reading.snapshot, ...(reason" \
+    "next: reading.journal.next, snapshot: phase === 'caught-up' ? reading.snapshot : undefined, ...(reason"
   mutate web "jobs journal (window): every entry kept is rendered" "$JAV" \
-    "  const from = served ? Math.max(served.dropped, readTotal - windowSize) : 0" \
-    "  const from = served ? served.dropped : 0"
+    "  const from = served?.places ? 0 : served ? Math.max(served.dropped, readTotal - windowSize) : 0" \
+    "  const from = served?.places ? 0 : served ? served.dropped : 0"
   mutate web "jobs journal (window): the newest-entries line is not shown" "$JAV" \
-    "    {served && !filtered && !pending && entriesShown < readTotal && " \
+    "    {served && !backward && !filtered && !pending && entriesShown < readTotal && " \
     "    {false && "
   mutate web "jobs journal (window): the step control shows nothing more" "$JAV" \
     "setWindowFor({ jobId, size: windowSize + limits.step })" \
@@ -13651,8 +13700,54 @@ export function assistantTransport(id: string): Transport {
     "          status('stopped', error instanceof Error ? error.message : msg('The local runner could not complete this request.'))" \
     "          status('caught-up')"
   mutate web "jobs journal (stop): continuing starts from 0" "$JJ" \
-    "    resume: () => { const reading = held.current!;" \
-    "    resume: () => { const reading = held.current!; reading.journal = emptyJournal();"
+    "      forgetRunnerCapabilities()" \
+    "      forgetRunnerCapabilities(); reading.journal = emptyJournal()"
+
+  # **A journal read from its newest entries, where Runner lists
+  # `journal-backward` (#235).** The capability is read from `GET status` and
+  # a status that cannot be read is a stop, not a Runner without it; the
+  # newest page is one request, older pages go only as far as the viewer asked,
+  # and every page is held to the record before it is merged: the journal it
+  # is of, its cursors, and the side of the cursor its entries are on. A
+  # Runner without the capability is read forward, and the tab says what it
+  # said (ActivityCoverageGolden.test.tsx).
+  mutate web "journal backward (capability): a Runner that lists none is read from its newest entries" "$JJ" \
+    "Array.isArray(answer?.capabilities) && answer.capabilities.includes(JOURNAL_BACKWARD)" \
+    "true"
+  mutate web "journal backward (capability): a status that cannot be read is taken for a Runner without it" "$JJ" \
+    "answer.capabilities.includes(JOURNAL_BACKWARD))
+    detected = asked" \
+    "answer.capabilities.includes(JOURNAL_BACKWARD)).catch(() => false)
+    detected = asked"
+  mutate web "journal backward (window): older pages are read past the window asked for" "$JJ" \
+    "          while (reading.backward.older.more && reading.backward.entries.length < Math.min(reading.target, keep)) {" \
+    "          while (reading.backward.older.more) {"
+  mutate web "journal backward (merge): the forward cursor skips an entry" "$JJ" \
+    "      held.entries = [...held.entries, ...page.items]; held.places = [...held.places, ...page.places]; held.next = page.next" \
+    "      held.entries = [...held.entries, ...page.items]; held.places = [...held.places, ...page.places]; held.next = page.next + 1"
+  mutate web "journal backward (merge): the older cursor skips an entry" "$JJ" \
+    "      held.entries = [...page.items, ...held.entries]; held.places = [...page.places, ...held.places]
+      held.older = { more: page.more, before: page.before! }" \
+    "      held.entries = [...page.items, ...held.entries]; held.places = [...page.places, ...held.places]
+      held.older = { more: page.more, before: page.before! - 1 }"
+  mutate web "journal backward (merge): a page that reaches the entries held is merged" "$JJ" \
+    "page.before === first && page.next === last && last! < way.before :" \
+    "page.before === first && page.next === last :"
+  mutate web "journal backward (merge): a page whose cursor is not its first entry is merged" "$JJ" \
+    "(entries ? page.before === first && page.next === last && last! < way.before :" \
+    "(entries ? last! < way.before :"
+  mutate web "journal backward (merge): a page of another journal is merged" "$JJ" \
+    "(held.began !== undefined && page.began !== held.began)" \
+    "false"
+  mutate web "journal backward (merge): a forward page that carries a backward cursor is merged" "$JJ" \
+    "      fits = page.before === undefined && (entries ?" \
+    "      fits = (entries ?"
+  mutate web "journal backward (merge): an older page asked for before the cursor moved is merged" "$JJ" \
+    "      if (!held.older.more || held.older.before !== way.before) return false" \
+    "      if (!held.older.more) return false"
+  mutate web "journal backward (old path): the forward reading is reworded" web/src/jobs/ActivityView.tsx \
+    "msg('The runner’s journal is read to its end as of the last request. Entries read: {{read}}.', { read })" \
+    "msg('The runner’s journal is read to its end as of the last request. Entries read so far: {{read}}.', { read })"
 
   # **A run time Desk cannot read, in Jobs (#223).** Runner v0.5.0 always
   # writes `createdAt`; a record from an older or edited store may not, and a
