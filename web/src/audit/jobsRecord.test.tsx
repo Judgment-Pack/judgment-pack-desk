@@ -29,7 +29,7 @@ import { JobsRecord } from './JobsRecord'
 vi.mock(import('../files/client'), async original => ({ ...(await original()), deskFetch: vi.fn() }))
 
 const STATEMENT = "Desk ran this over its own copy of the runner's chain of runs, with the checkpoints it keeps. It shows what a holder would see. It is not evidence to anyone who does not trust this installation."
-const SIGNATURES = "The chain of runs carries no signature sidecar of its own. Runner's key signs each run's record, in that run's own attempt, and the signature travels with that run's export."
+const SIGNATURES = "The chain of runs carries no signature sidecar of its own. Where Runner has a key, it signs each run's record in that run's own attempt, and a run it signed carries the signature in its version-5 export."
 const trail = '9a5ef41d74e7d7e003c8a34cff056351'
 const chainId = 'abe5e3a494c36af588768ce5b0305497'
 const moved = '68e77cefed3b0f20750d9b61ffceec38'
@@ -557,7 +557,9 @@ const runsPage = (more: Partial<Extract<JobsSigning, { state: 'runs' }>> = {}): 
 const verifiedOut = `{"exactBytes":"matches-record","exportVersion":5,"retainedDisposition":"matches-audit","signature":{"keyId":"${keyId}","publicKey":"${publicKey}","status":"signed"},"status":"verified-inputs"}\n`
 const verifiedErr = "verified-inputs: the run's inputs match its record. The record's signature verifies under key " + keyId + ': whoever held that key signed these exact bytes as the attempt\'s record. That establishes nothing against the operator, who holds the key, and nothing once the key is copied.\n'
 const checked = (more: Partial<Extract<RunVerification, { state: 'checked' }>> = {}): RunVerification =>
-  ({ state: 'checked', run: run(1), publicKey, exportVersion: 5, exit: 0, stdout: verifiedOut, stderr: verifiedErr, ...more })
+  ({ state: 'checked', run: run(1), publicKey, under: 'listed', exportVersion: 5, exit: 0, stdout: verifiedOut, stderr: verifiedErr, ...more })
+const listedKeys = (section: ReturnType<typeof within>, name = 'Desk’s list of public keys for this Runner') =>
+  within(section.getByRole('list', { name })).getAllByRole('listitem').map(item => item.textContent)
 
 const runsSection = async () => within(await screen.findByRole('region', { name: 'Each run’s signing' }))
 async function readRuns() {
@@ -596,7 +598,22 @@ describe('each run’s signing', () => {
     // No run Runner recorded no signing for, or signed under a listed key, is named.
     expect(named.queryByText(run(4))).toBeNull()
     expect(named.queryByText(run(1))).toBeNull()
-    expect(section.getByLabelText('The key in force in Desk’s list for this Runner').textContent).toBe(publicKey)
+    expect(listedKeys(section)).toEqual([`${publicKey} (in force)`])
+    expect(section.getByText('A run whose signing names a key in this list is checked under that key; any other run, under the key in force.')).toBeTruthy()
+  })
+
+  it('shows every key in the list, the last in force, and names a signed run as Desk keeping no list where it keeps none', async () => {
+    signings = () => json(200, runsPage({ list: { state: 'read', keys: [other, publicKey], current: publicKey } }))
+    show()
+    await readRuns()
+    expect(listedKeys(await runsSection())).toEqual([other, `${publicKey} (in force)`])
+    cleanup()
+    signings = () => json(200, runsPage({ list: { state: 'none' }, runs: [{ id: run(1), jobId: 'job_' + '0'.repeat(32), signing: { status: 'signed', publicKey }, held: 'no-list' }] }))
+    show()
+    await readRuns()
+    const section = await runsSection()
+    expect(within(await section.findByRole('alert', { name: 'Runs to look at' })).getAllByRole('listitem').map(item => item.textContent)).toEqual([`${run(1)} Desk keeps no list of public keys.`])
+    expect(section.queryByText(UNLISTED, { exact: false })).toBeNull()
   })
 
   it('holds no run to a list it could not read now, and says why; says where Desk keeps no list', async () => {
@@ -619,13 +636,20 @@ describe('each run’s signing', () => {
     expect(none.queryByRole('button', { name: 'Show older runs' })).toBeNull()
   })
 
-  it('reads older runs from Runner’s cursor, and keeps the runs already read', async () => {
-    signings = url => url === '/api/audit/jobs-signing' ? json(200, runsPage()) : json(200, runsPage({ next: undefined, runs: [{ id: run(6), jobId: 'job_' + '0'.repeat(32), signing: { status: 'signed', publicKey }, held: 'listed' }] }))
+  it('reads older runs from Runner’s cursor, keeps the runs already read, and shows each page with the list it was held to', async () => {
+    signings = url => url === '/api/audit/jobs-signing' ? json(200, runsPage({ list: { state: 'unread', problem: 'it could not be inspected' } }))
+      : json(200, runsPage({ next: undefined, list: { state: 'read', keys: [other, publicKey], current: publicKey }, runs: [{ id: run(6), jobId: 'job_' + '0'.repeat(32), signing: { status: 'signed', publicKey }, held: 'listed' }] }))
     show()
     await readRuns()
     fireEvent.click(await (await runsSection()).findByRole('button', { name: 'Show older runs' }))
     const section = await runsSection()
     expect(await section.findByRole('listitem', { name: run(6) })).toBeTruthy()
+    const first = within(section.getByRole('region', { name: 'Page 1 of completed runs' })), second = within(section.getByRole('region', { name: 'Page 2 of completed runs' }))
+    expect(first.getByRole('alert').textContent).toBe('Desk could not read its list of Runner’s public keys now, so no run’s key was held to it: it could not be inspected')
+    expect(first.queryByRole('list', { name: 'Desk’s list of public keys for this Runner' })).toBeNull()
+    expect(first.getByRole('listitem', { name: run(1) })).toBeTruthy()
+    expect(listedKeys(second)).toEqual([other, `${publicKey} (in force)`])
+    expect(second.queryByRole('listitem', { name: run(1) })).toBeNull()
     expect(section.getAllByRole('listitem').filter(item => item.getAttribute('aria-label')?.startsWith('run_'))).toHaveLength(6)
     expect(asked.filter(call => call.url.startsWith('/api/audit/jobs-signing')).map(call => call.url)).toEqual(['/api/audit/jobs-signing', '/api/audit/jobs-signing?after=41'])
     expect(section.queryByRole('button', { name: 'Show older runs' })).toBeNull()
@@ -640,6 +664,7 @@ describe('each run’s signing', () => {
     expect(count(`/api/audit/jobs-verify-run?run=${run(1)}`)).toBe(0)
     fireEvent.click(row.getByRole('button', { name: 'Check this run’s export with jpack-runner verify-run' }))
     const said = within(await row.findByRole('region', { name: 'What jpack-runner verify-run said' }))
+    expect(row.getByText('Checked under the key in Desk’s list that this run’s signing names.')).toBeTruthy()
     expect(said.getByText('jpack-runner verify-run exited with status 0.')).toBeTruthy()
     expect(said.getByLabelText('Its standard output').textContent).toBe(verifiedOut)
     expect(said.getByLabelText('Its standard error').textContent).toBe(verifiedErr)
@@ -653,7 +678,7 @@ describe('each run’s signing', () => {
     const unsigned = `{"exportVersion":4,"signature":{"keyId":"${keyId}","publicKey":"${publicKey}","readableLines":0,"status":"unsigned","unreadableLines":0},"status":"unsigned"}\n`
     const refused = `runner: unsigned: no valid signature under key ${keyId} covers the run's audit record, and --require-signed refuses it\n`
     signings = () => json(200, runsPage())
-    checks = url => url.endsWith(run(3)) ? json(200, checked({ run: run(3), exportVersion: 4, exit: 1, stdout: unsigned, stderr: refused }))
+    checks = url => url.endsWith(run(3)) ? json(200, checked({ run: run(3), under: 'in-force', exportVersion: 4, exit: 1, stdout: unsigned, stderr: refused }))
       : url.endsWith(run(4)) ? json(200, { state: 'export-refused', run: run(4), status: 422, said: '{"error":"not_verified_mapping"}' })
         : json(409, { error: "Desk's copy of the run's export changed while jpack-runner verify-run read it, so its answer is not shown." })
     show()
@@ -663,6 +688,7 @@ describe('each run’s signing', () => {
     fireEvent.click(row(3).getByRole('button', { name: 'Check this run’s export with jpack-runner verify-run' }))
     const said = within(await row(3).findByRole('region', { name: 'What jpack-runner verify-run said' }))
     expect(said.getByText('jpack-runner verify-run exited with status 1.')).toBeTruthy()
+    expect(row(3).getByText('Checked under the key in force in Desk’s list.')).toBeTruthy()
     expect(said.getByLabelText('Its standard output').textContent).toBe(unsigned)
     expect(said.getByLabelText('Its standard error').textContent).toBe(refused)
     fireEvent.click(row(4).getByRole('button', { name: 'Check this run’s export with jpack-runner verify-run' }))
@@ -720,6 +746,8 @@ describe('each run’s signing', () => {
     expect(isJobsSigning({ state: 'runs', list: { state: 'unread', problem: '' }, runs: [] })).toBe(false)
     expect(isRunVerification(checked())).toBe(true)
     expect(isRunVerification(checked({ exit: -1 }))).toBe(false)
+    expect(isRunVerification({ ...checked(), under: undefined })).toBe(false)
+    expect(isJobsSigning(runsPage({ runs: [{ id: run(1), jobId: 'j', held: 'no-list' }] }))).toBe(false)
     expect(isRunVerification({ state: 'export-refused', run: run(1), status: 422, exit: 0 })).toBe(false)
   })
 

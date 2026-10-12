@@ -861,11 +861,12 @@ export async function downloadRunChain(): Promise<Blob> {
 /**
  * How a completed run's `signing`, as Runner records it (Runner v0.8.0),
  * holds against the list of public keys Desk keeps for this desk's Runner:
- * signed under a key the list names, or one it does not; a failed signing,
- * in Runner's words; no member; signed, where the list could not be read now,
- * so held to nothing; or a member in neither of Runner's forms.
+ * signed under a key the list names, or one it does not, or with no list
+ * kept; a failed signing, in Runner's words; no member; signed, where the
+ * list could not be read now, so held to nothing; or a member in neither of
+ * Runner's forms.
  */
-export const RUN_SIGNING_HELD = ['listed', 'unlisted', 'failed', 'none', 'not-held', 'other'] as const
+export const RUN_SIGNING_HELD = ['listed', 'unlisted', 'no-list', 'failed', 'none', 'not-held', 'other'] as const
 export type RunSigningHeld = typeof RUN_SIGNING_HELD[number]
 
 /** One completed run, with Runner's `signing` member as Runner served it. */
@@ -884,13 +885,14 @@ export type JobsSigning =
   | { state: 'not-running' }
 
 /**
- * What `jpack-runner verify-run --public-key <the list's key in force>
- * --require-signed` said of one run's export: its exit status, its standard
- * output verbatim and its standard error with no path; or Runner's refusal to
- * export the run, in its words.
+ * What `jpack-runner verify-run --public-key <key> --require-signed` said of
+ * one run's export, the key the listed one the run's signing names or the
+ * list's key in force (`under`): its exit status, its standard output
+ * verbatim and its standard error with no path; or Runner's refusal to give
+ * the run or its export, in its words.
  */
 export type RunVerification =
-  | { state: 'checked'; run: string; publicKey: string; exportVersion?: number; exit: number; stdout?: string; stderr?: string }
+  | { state: 'checked'; run: string; publicKey: string; under: 'listed' | 'in-force'; exportVersion?: number; exit: number; stdout?: string; stderr?: string }
   | { state: 'export-refused'; run: string; status: number; said?: string }
 
 /** The chassis's own sentences about each run's signing, as it says them (`internal/desk/jobs_signing.go`). */
@@ -920,7 +922,7 @@ function isRunSigning(value: unknown): value is RunSigning {
   // A failed signing is named in Runner's words, so it must carry them.
   if (value.held === 'failed') return object(value.signing) && named(value.signing.reason)
   if (value.held === 'none') return value.signing === undefined
-  if (value.held === 'listed' || value.held === 'unlisted' || value.held === 'not-held') return object(value.signing) && hexKey(value.signing.publicKey)
+  if (value.held === 'listed' || value.held === 'unlisted' || value.held === 'no-list' || value.held === 'not-held') return object(value.signing) && hexKey(value.signing.publicKey)
   return true
 }
 
@@ -941,7 +943,7 @@ export function isJobsSigning(value: unknown): value is JobsSigning {
 export function isRunVerification(value: unknown): value is RunVerification {
   if (!object(value) || !runID(value.run)) return false
   switch (value.state) {
-    case 'checked': return hexKey(value.publicKey) && count(value.exit) && optional(value.exportVersion, count) && optional(value.stdout, text) && optional(value.stderr, text)
+    case 'checked': return hexKey(value.publicKey) && (value.under === 'listed' || value.under === 'in-force') && count(value.exit) && optional(value.exportVersion, count) && optional(value.stdout, text) && optional(value.stderr, text)
     case 'export-refused': return count(value.status) && optional(value.said, text) && value.exit === undefined
   }
   return false

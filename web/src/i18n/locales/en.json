@@ -4636,7 +4636,6 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.",
   "… (truncated for display)": "… (truncated for display)",
-  "The chain of runs carries no signature sidecar of its own. Runner's key signs each run's record, in that run's own attempt, and the signature travels with that run's export.": "The chain of runs carries no signature sidecar of its own. Runner's key signs each run's record, in that run's own attempt, and the signature travels with that run's export.",
   "Signed under a key the list does not name.": "Signed under a key the list does not name.",
   "Each run’s signing": "Each run’s signing",
   "Read each run’s signing": "Read each run’s signing",
@@ -4646,7 +4645,6 @@
   "Runner lists no completed run.": "Runner lists no completed run.",
   "Completed runs": "Completed runs",
   "Show older runs": "Show older runs",
-  "The key in force in Desk’s list for this Runner": "The key in force in Desk’s list for this Runner",
   "Desk keeps no list of public keys for this desk’s Runner.": "Desk keeps no list of public keys for this desk’s Runner.",
   "Desk could not read its list of Runner’s public keys now, so no run’s key was held to it: {{problem}}": "Desk could not read its list of Runner’s public keys now, so no run’s key was held to it: {{problem}}",
   "Runner’s signing member for this run is in neither of the forms Runner documents.": "Runner’s signing member for this run is in neither of the forms Runner documents.",
@@ -4666,5 +4664,13 @@
   "The runs could not be read. Please try again.": "The runs could not be read. Please try again.",
   "The run’s export could not be checked. Please try again.": "The run’s export could not be checked. Please try again.",
   "Desk keeps no list of public keys for this desk's Runner, so it has no key to check a run's export under.": "Desk keeps no list of public keys for this desk's Runner, so it has no key to check a run's export under.",
-  "Desk's copy of the run's export changed while jpack-runner verify-run read it, so its answer is not shown.": "Desk's copy of the run's export changed while jpack-runner verify-run read it, so its answer is not shown."
+  "Desk's copy of the run's export changed while jpack-runner verify-run read it, so its answer is not shown.": "Desk's copy of the run's export changed while jpack-runner verify-run read it, so its answer is not shown.",
+  "The chain of runs carries no signature sidecar of its own. Where Runner has a key, it signs each run's record in that run's own attempt, and a run it signed carries the signature in its version-5 export.": "The chain of runs carries no signature sidecar of its own. Where Runner has a key, it signs each run's record in that run's own attempt, and a run it signed carries the signature in its version-5 export.",
+  "Desk keeps no list of public keys.": "Desk keeps no list of public keys.",
+  "Page {{number}} of completed runs": "Page {{number}} of completed runs",
+  "Desk’s list of public keys for this Runner": "Desk’s list of public keys for this Runner",
+  "(in force)": "(in force)",
+  "A run whose signing names a key in this list is checked under that key; any other run, under the key in force.": "A run whose signing names a key in this list is checked under that key; any other run, under the key in force.",
+  "Checked under the key in Desk’s list that this run’s signing names.": "Checked under the key in Desk’s list that this run’s signing names.",
+  "Checked under the key in force in Desk’s list.": "Checked under the key in force in Desk’s list."
 }

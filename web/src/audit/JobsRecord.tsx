@@ -21,9 +21,11 @@
  * name is named in Desk's one sentence of its own; a failed signing, in
  * Runner's words; a run Runner recorded no signing for is never shown as
  * signed; and where the list could not be read now, no run is held to it.
- * Each run's export is checked by `jpack-runner verify-run --public-key <the
- * list's key in force> --require-signed` on request only, and what it said
- * is shown as it said it, with the command Desk ran.
+ * Each page shows the list as it was read for that page: every key, and the
+ * one in force. Each run's export is checked by `jpack-runner verify-run
+ * --public-key <key> --require-signed` on request only, under the listed key
+ * the run's signing names, or else the list's key in force, and what it said
+ * is shown as it said it, with the command Desk ran and which key it was.
  *
  * It runs on request only: when the owner checks, and again after a
  * hand-over of the chain is confirmed (`checkJobsRecordAgain`). Never when it
@@ -58,7 +60,7 @@ const RUN_CHAIN_FILE = 'run-chain.jsonl'
  * 2026-10-06, and row 12): the chain has no signature sidecar of its own;
  * each run's record is what Runner's key signs.
  */
-const SIGNED_STATEMENT = "The chain of runs carries no signature sidecar of its own. Runner's key signs each run's record, in that run's own attempt, and the signature travels with that run's export."
+const SIGNED_STATEMENT = "The chain of runs carries no signature sidecar of its own. Where Runner has a key, it signs each run's record in that run's own attempt, and a run it signed carries the signature in its version-5 export."
 
 /** Desk's one sentence of its own on a run's signing: signed, under a key the list it keeps does not name. */
 const UNLISTED = 'Signed under a key the list does not name.'
@@ -185,20 +187,22 @@ function RunSignings() {
   }
   const last = pages.at(-1)
   const runs = pages.flatMap(page => page.runs)
-  const named = runs.filter(run => run.held === 'unlisted' || run.held === 'failed' || run.held === 'other')
+  const named = runs.filter(run => run.held === 'unlisted' || run.held === 'no-list' || run.held === 'failed' || run.held === 'other')
   return <section className={styles.card} aria-label={msg('Each run’s signing')}>
     <div className={styles.actions}><Button disabled={busy} onClick={() => void read()}>{msg('Read each run’s signing')}</Button></div>
     {error && <p role="alert">{systemMessage(error)}</p>}
     {other?.state === 'no-runner' && <p>{msg('This desk has no Runner, so it has no run to check.')}</p>}
     {other?.state === 'not-running' && <p>{msg('Runner is not running on this desk now, so Desk could not read its runs.')}</p>}
     {last && <>
-      <KeyList list={last.list} />
       {named.length > 0 && <div role="alert" aria-label={msg('Runs to look at')}>
         <ul className={styles.list}>{named.map(run => <li key={run.id}><code>{run.id}</code> <Named run={run} /></li>)}</ul>
       </div>}
-      {runs.length === 0
-        ? <p>{msg('Runner lists no completed run.')}</p>
-        : <ul className={styles.list} aria-label={msg('Completed runs')}>{runs.map(run => <RunSigningRow key={run.id} run={run} />)}</ul>}
+      {runs.length === 0 && <p>{msg('Runner lists no completed run.')}</p>}
+      {/* Each page with the list it was held to, read for it. */}
+      {pages.map((page, index) => <section key={index} className={styles.card} aria-label={msg('Page {{number}} of completed runs', { number: index + 1 })}>
+        <KeyList list={page.list} />
+        {page.runs.length > 0 && <ul className={styles.list} aria-label={msg('Completed runs')}>{page.runs.map(run => <RunSigningRow key={run.id} run={run} />)}</ul>}
+      </section>)}
       {last.next !== undefined && <div className={styles.actions}><Button disabled={busy} onClick={() => void read(last.next)}>{msg('Show older runs')}</Button></div>}
     </>}
   </section>
@@ -206,7 +210,12 @@ function RunSignings() {
 
 /** The list Desk keeps for this Runner, as the page of runs was held to it. */
 function KeyList({ list }: { list: RunnerKeyList }) {
-  if (list.state === 'read') return <CodeBlock text={list.current} label={msg('The key in force in Desk’s list for this Runner')} />
+  if (list.state === 'read') return <div>
+    <ol className={styles.list} aria-label={msg('Desk’s list of public keys for this Runner')}>
+      {list.keys.map(key => <li key={key}><code>{key}</code>{key === list.current ? <> {msg('(in force)')}</> : null}</li>)}
+    </ol>
+    <p className={styles.quiet}>{msg('A run whose signing names a key in this list is checked under that key; any other run, under the key in force.')}</p>
+  </div>
   if (list.state === 'none') return <p>{msg('Desk keeps no list of public keys for this desk’s Runner.')}</p>
   return <p role="alert">{msg('Desk could not read its list of Runner’s public keys now, so no run’s key was held to it: {{problem}}', { problem: list.problem })}</p>
 }
@@ -214,6 +223,7 @@ function KeyList({ list }: { list: RunnerKeyList }) {
 /** Why a run is named: Desk's one sentence, Runner's own words, or a member in neither of Runner's forms. */
 function Named({ run }: { run: RunSigning }) {
   if (run.held === 'unlisted') return <>{msg(UNLISTED)}</>
+  if (run.held === 'no-list') return <>{msg('Desk keeps no list of public keys.')}</>
   if (run.held === 'failed') return <span lang="en">{(run.signing as { reason: string }).reason}</span>
   return <>{msg('Runner’s signing member for this run is in neither of the forms Runner documents.')}</>
 }
@@ -253,6 +263,7 @@ function Verification({ check }: { check: RunVerification }) {
     {check.said && <CodeBlock text={check.said} label={msg('Runner’s answer')} lang="en" />}
   </section>
   return <>
+    <p>{check.under === 'listed' ? msg('Checked under the key in Desk’s list that this run’s signing names.') : msg('Checked under the key in force in Desk’s list.')}</p>
     <CodeBlock text={verifyCommand(check.publicKey)} label={msg('The command Desk ran')} lang="en" />
     <section aria-label={msg('What jpack-runner verify-run said')}>
       <p>{msg('jpack-runner verify-run exited with status {{exit}}.', { exit: check.exit })}</p>
