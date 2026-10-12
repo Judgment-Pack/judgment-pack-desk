@@ -107,5 +107,6 @@ export function GatesHelp() {
     <p className="quiet"><Message text={"<0/> To give an agent this project’s tools without that access, start jpack mcp for it with JPACK_CONFIG naming this desk’s jpack.json, and give the agent no file or shell tools:"} slots={[<strong>{msg('An outside agent.')}</strong>]} /></p>
     <CodeBlock text={outsideAgentCommand(chassis?.projectDir, chassis?.runtimeBin)} label={msg('Shell command')} />
     <p className="quiet">{msg('This holds only as far as the agent’s client really withholds those tools: the server runs as your user, and Desk does not host it.')}</p>
+    <p className="quiet">{msg('An agent started with this signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records; Desk puts no key in the agent’s setup.')}</p>
   </Section>
 }

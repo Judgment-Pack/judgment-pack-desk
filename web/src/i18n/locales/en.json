@@ -4672,5 +4672,6 @@
   "(in force)": "(in force)",
   "A run whose signing names a key in this list is checked under that key; any other run, under the key in force.": "A run whose signing names a key in this list is checked under that key; any other run, under the key in force.",
   "Checked under the key in Desk’s list that this run’s signing names.": "Checked under the key in Desk’s list that this run’s signing names.",
-  "Checked under the key in force in Desk’s list.": "Checked under the key in force in Desk’s list."
+  "Checked under the key in force in Desk’s list.": "Checked under the key in force in Desk’s list.",
+  "An agent started with this signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records; Desk puts no key in the agent’s setup.": "An agent started with this signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records; Desk puts no key in the agent’s setup."
 }

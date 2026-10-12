@@ -184,6 +184,7 @@ describe('Help & About', () => {
     expect(gates.textContent).toContain('it is never refused for a draft, and never recorded')
     expect(gates.textContent).toContain('This holds only as far as the agent’s client really withholds those tools')
     expect(gates.textContent).toContain("JPACK_CONFIG='/desks/a desk/jpack.json' /opt/jpack/bin/jpack mcp")
+    expect(gates.textContent).toContain('signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records')
     expect(gates.textContent).toContain('This installation refuses a job from a release whose saved tests were not run.')
     cleanup()
 
