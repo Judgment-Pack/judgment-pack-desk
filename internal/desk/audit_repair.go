@@ -76,6 +76,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan"
 	"hash"
 	"io"
 	"mime"
@@ -136,7 +137,8 @@ func repairOlderWords(version string) string {
 }
 
 // A published Runtime >= 0.30.0 implements the locked damaged-tail precondition.
-// Unknown/development and prerelease versions do not establish support. Even
+// Unrecognized development and prerelease versions do not establish support.
+// An exact reviewed development pin carries the same capability as its source. Even
 // when admitted, every invocation sends both flags; there is no unbound retry.
 const repairBoundRuntimeWords = "Safe repair requires Runtime 0.30.0 or later. Update Runtime, then refresh history."
 
@@ -144,7 +146,11 @@ func runtimeSupportsBoundRepair(version string) bool {
 	version = strings.TrimPrefix(version, "v")
 	version, _, _ = strings.Cut(version, "+")
 	if strings.Contains(version, "-") {
-		return false
+		pin := releaseplan.Locked.Components["runtime"]
+		if pin.Channel != "development" || version != strings.TrimPrefix(pin.Version, "v") {
+			return false
+		}
+		version, _, _ = strings.Cut(version, "-")
 	}
 	parts := strings.Split(version, ".")
 	if len(parts) != 3 {

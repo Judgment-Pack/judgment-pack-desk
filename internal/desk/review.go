@@ -855,6 +855,14 @@ func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string) (
 	if err != nil || !hmac.Equal([]byte(s.reviewToken(snap)), []byte(token)) {
 		return nil, &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed it, so nothing was locked. Review it again."}
 	}
+	publication, admissionErr := s.beginPublication(ctx, snap)
+	if admissionErr != nil {
+		return nil, &lockFailure{http.StatusConflict, CodeStale, admissionErr.Error()}
+	}
+	defer publication.close()
+	if err := s.checkPublicationVersions(ctx, dir, publication); err != nil {
+		return nil, &lockFailure{http.StatusConflict, CodeStale, err.Error()}
+	}
 	lockErr := lockRuntimeProjectAt(ctx, s.cfg.JpackBin, dir)
 	locked := false
 	if lockErr == nil {
@@ -879,6 +887,10 @@ func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string) (
 			status, code = http.StatusInternalServerError, CodeInternal
 		}
 		return nil, &lockFailure{status, code, message}
+	}
+	if err := publication.commit(); err != nil {
+		s.log.Printf("desk: reviewed lock is saved but version history could not be confirmed: %v", err)
+		return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, "The reviewed lock was saved, but artifact version history could not be confirmed. Inspect the retained history and review again before continuing. The write was not retried."}
 	}
 	result := struct {
 		Files         int    `json:"files"`

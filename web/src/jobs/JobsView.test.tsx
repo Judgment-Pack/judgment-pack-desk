@@ -32,7 +32,7 @@ beforeEach(() => {
  vi.mocked(jobsAPI).mockResolvedValue(release)
 })
 afterEach(() => { cleanup(); vi.resetAllMocks(); vi.unstubAllGlobals() })
-function renderCreate() { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/new?pack=pack']}><CreateJobContent /></MemoryRouter></Tooltip.Provider></QueryClientProvider>) }
+function renderCreate(path='/jobs/new?pack=pack') { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><Tooltip.Provider><MemoryRouter initialEntries={[path]}><CreateJobContent /></MemoryRouter></Tooltip.Provider></QueryClientProvider>) }
 function next(){fireEvent.click(screen.getByRole('button',{name:'Continue'}));const input=screen.queryByRole('combobox',{name:'Input configuration'});if(input){fireEvent.keyDown(input,{key:'Enter'});fireEvent.click(screen.getByRole('option',{name:'Manual / API'}))}}
 function toReview(){fireEvent.change(screen.getByLabelText('Job name'),{target:{value:'Intake'}});next();next();next()}
 async function check() {
@@ -274,4 +274,19 @@ it('leaves the tested-releases policy as it was: a reviewed release whose tests 
  renderCreate(); await check()
  expect(await standing('reviewed')).toBe('In the reviewed set')
  expect(review().disabled).toBe(true); expect(button().disabled).toBe(true)
+})
+
+it('upgrades only the reviewed frozen job revision through the existing checked-release flow',async()=>{
+ const base={job:{id:'job-base',name:'Existing',releaseId:'old-release',revision:4},release:{...release,packId:undefined,packVersion:'0.1.0'}}
+ vi.mocked(jobsAPI).mockImplementation(async(path)=>path==='jobs/job-base'?base:path==='previews'?release:base.job)
+ renderCreate('/jobs/new?pack=pack&upgrade=job-base')
+ await screen.findByDisplayValue('Existing')
+ expect((screen.getByLabelText('Job name') as HTMLInputElement).disabled).toBe(true)
+ expect(screen.queryByRole('button',{name:'Save draft'})).toBeNull()
+ next();next();next();fireEvent.click(screen.getByRole('button',{name:'Check release'}))
+ await screen.findByText('Review this release')
+ expect((screen.getByRole('button',{name:'Upgrade job'}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.click(review());fireEvent.click(screen.getByRole('button',{name:'Upgrade job'}))
+ await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith('jobs/job-base/upgrade',{releaseId:release.id,baseReleaseId:'old-release',baseRevision:4,reviewed:true}))
+ expect(vi.mocked(jobsAPI).mock.calls.some(([path])=>path==='jobs')).toBe(false)
 })

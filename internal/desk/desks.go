@@ -596,6 +596,11 @@ func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry, id 
 	if err = lockRuntimeProject(ctx, bin, held, folder, gates.config); err != nil {
 		return failed(runtimeRefusal(errors.New(s.withoutCustodyPaths(err.Error(), id))))
 	}
+	initial := &Server{root: folder}
+	snapshot := &reviewSnapshot{set: reviewSet{Config: sha256Digest(gates.config)}, config: gates.config}
+	if err = initial.storeReviewedCopies(snapshot); err != nil {
+		return failed(storageRefusal(err))
+	}
 	return gates, nil
 }
 
@@ -753,6 +758,26 @@ var deskFolderMade = []string{
 // then empty, and rmdir alone is enough.
 func unmakeDeskFolder(folder *os.Root, entry string) error {
 	if folder != nil {
+		// Creation retains its initial configuration before publication. Remove
+		// only that exact copy; unknown files still prevent directory removal.
+		if raw, err := readPrivateData(folder, runtimeConfigName, reviewTextLimit); err == nil {
+			copies, _, err := openOwnFolder(folder, strings.Split(reviewedCopiesDir, "/"), false, "reviewed copies")
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+			if err == nil {
+				defer copies.Close()
+				name, _ := copyName(sha256Digest(raw))
+				for _, made := range []string{name, ".gitignore"} {
+					if err := copies.Remove(made); err != nil && !errors.Is(err, fs.ErrNotExist) {
+						return err
+					}
+				}
+				if err := folder.Remove(reviewedCopiesDir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					return err
+				}
+			}
+		}
 		for _, name := range deskFolderMade {
 			if err := folder.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return err

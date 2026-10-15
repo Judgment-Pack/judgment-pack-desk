@@ -177,7 +177,8 @@ jobs:
       - name: Build companions
         run: |
           go -C .ci-runner build -trimpath -o "$RUNNER_TEMP/jpack-runner" ./cmd/jpack-runner
-          go -C .ci-runtime build -trimpath -o "$RUNNER_TEMP/jpack" ./cmd/jpack
+          component_runtime_version=$(python3 -c 'import json; print(json.load(open("internal/releaseplan/components.json"))["components"]["runtime"]["version"].removeprefix("v"))')
+          go -C .ci-runtime build -trimpath -ldflags "-X github.com/Judgment-Pack/judgment-pack-runtime/internal/result.CLIVersion=$component_runtime_version" -o "$RUNNER_TEMP/jpack" ./cmd/jpack
       - name: Real Jobs boot, recovery, profiles, planning and signing
         run: |
           JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
@@ -189,7 +190,7 @@ jobs:
       # and the upgrade offer turns an existing project's gates on.
       - name: New desks, the review step and the upgrade under the pinned runtime
         run: |
-          JPACK_BIN="$RUNNER_TEMP/jpack" go test ./internal/desk -run 'TestNewDeskWithTheRuntime|TestReviewAndLockWithTheRuntime|TestUpgradeWithTheRuntime|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1 -v
+          JPACK_BIN="$RUNNER_TEMP/jpack" JPACK_TEST_BIN="$RUNNER_TEMP/jpack" go test ./internal/desk -run 'TestNewDeskWithTheRuntime|TestReviewAndLockWithTheRuntime|TestArtifactPublication|TestArtifactVersionHistory|TestFailedCreationNeverCleansThroughSubstitutedReviewedSymlink|TestUpgradeWithTheRuntime|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1 -v
 
   release-archives:
     if: github.event_name == 'pull_request'

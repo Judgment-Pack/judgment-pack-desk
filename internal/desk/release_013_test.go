@@ -3,6 +3,7 @@ package desk
 import (
 	"bytes"
 	"context"
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +13,14 @@ import (
 )
 
 func TestBoundRepairRuntimeFloor(t *testing.T) {
+	pin := releaseplan.Locked.Components["runtime"]
+	if pin.Channel == "development" && !runtimeSupportsBoundRepair(pin.Version) {
+		t.Fatal("exact reviewed Runtime pin unavailable")
+	}
+	if runtimeSupportsBoundRepair("0.32.0-dev.unreviewed") {
+		t.Fatal("unreviewed development version admitted")
+	}
+
 	for _, version := range []string{"0.30.0", "v0.30.1", "0.31.0+build", "1.0.0"} {
 		if !runtimeSupportsBoundRepair(version) {
 			t.Errorf("%q was refused", version)

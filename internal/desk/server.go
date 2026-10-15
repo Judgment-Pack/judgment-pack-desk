@@ -572,6 +572,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/connections/{provider}/{method}", s.handleConnections)
 	s.mux.HandleFunc("GET /api/attachments/{id}", s.handleAttachment)
 	s.mux.HandleFunc("PUT /api/attachments/{id}", s.handleAttachment)
+	s.mux.HandleFunc("GET /api/artifacts/versions", s.handleArtifactVersions)
 	s.mux.HandleFunc("GET /api/review", s.handleReview)
 	s.mux.HandleFunc("POST /api/review/lock", s.handleReviewLock)
 	s.mux.HandleFunc("POST /api/graphs/validate", s.handleGraphProposalCheck)

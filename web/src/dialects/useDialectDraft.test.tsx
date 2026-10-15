@@ -17,7 +17,7 @@ it('autosaves incomplete fields without marking normal persistence dirty',async(
  expect(hook.result.current.status.pending).toBe(true);expect(hook.result.current.status.dirty).toBe(false)
  await waitFor(()=>expect(hook.result.current.editor.dirty).toBe(false))
  expect(dialectDraftAPI).toHaveBeenCalledWith('/draft_one','PUT',{name:'',recipe:{intent:'Unfinished'}},'original')
- expect(hook.result.current.status.pending).toBe(false)
+ await waitFor(()=>expect(hook.result.current.status.pending).toBe(false))
 })
 it('serializes writes and retains edits made while the first save is in flight',async()=>{
  let finish!:(value:unknown)=>void

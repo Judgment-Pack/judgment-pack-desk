@@ -300,7 +300,7 @@ func (j *jobsCompanion) close() {
 // job's journal of job activity (Runner v0.6.0, `GET /v1/jobs/{job}/events`),
 // which the Activity tab reads; see journalPath. Runner's store-wide `events`
 // route is not forwarded.
-var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|run-chain|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
+var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|run-chain|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
@@ -317,6 +317,10 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	// The chain of runs and a job's journal are read, never written: Runner
 	// serves each on GET alone.
+	if strings.HasSuffix(tail, "/upgrade") && r.Method != http.MethodPost {
+		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
+		return
+	}
 	if !jobsPath.MatchString(tail) || (r.Method != http.MethodGet && r.Method != http.MethodPost) || (tail == runChainRoute || journalPath.MatchString(tail)) && r.Method != http.MethodGet {
 		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
 		return

@@ -4,9 +4,9 @@
   "components": {
     "runtime": {
       "repository": "Judgment-Pack/judgment-pack-runtime",
-      "version": "v0.30.0",
-      "revision": "8270e9999a53ccf0d8ce9e3277b8dd7646cea98a",
-      "channel": "stable"
+      "version": "v0.32.0-dev.4ea3315",
+      "revision": "4ea33155727b9b2ec6842b12b8fc1e5cc8f069b6",
+      "channel": "development"
     },
     "runner": {
       "repository": "Judgment-Pack/judgment-pack-runner",

@@ -11,8 +11,8 @@ A pack's `version` already uses exactly `MAJOR.MINOR.PATCH`, without leading zer
 prerelease suffixes or build metadata. Its `specVersion` is independent. Desk
 accepts the version supplied by a form or checked AI proposal. The shared Runtime
 arithmetic tool and Desk's capability-gated pack editor now provide patch, minor,
-and major choices from the saved base. The publication/admission workflow below
-remains follow-up work. Dialect `version: 2|3` identifies its document format, and
+and major choices from the saved base. The reviewed publication and job-upgrade boundaries now retain exact versions,
+as described below. Dialect `version: 2|3` identifies its document format, and
 Desk's `recipeVersion` counts local recipe changes. Those are different identities.
 
 ## Implemented authoring slice
@@ -31,13 +31,43 @@ invalidates old requests. Older Runtime installations retain manual version entr
 The read-only tool follows the shared Plan and context policies, and all eleven
 non-English catalogs include the controls.
 
-Independent same-vendor Codex review and local integration checks cover this slice.
-This source integration does not imply a released or installed Runtime/Desk build.
+Independent same-vendor Codex review and local integration checks cover this work.
+These capabilities do not imply a new stable release.
 
-Next, extend the existing authoritative publication boundary with immutable
-identity admission and reviewed history; do not put those rules in the generic
-file-edit path. The new Dialect artifact identity still depends on Spec #180.
-First-job promotion and the impact policy after job use must be settled separately.
+## Reviewed publication and job upgrades
+
+The existing **Review & lock** action is Desk's publication boundary. Saving a
+file remains draft authoring. On confirmation, Desk retains the configuration and
+all reviewed pack/graph bytes in its private content-addressed repository, then
+locks exactly that snapshot and records an immutable publication receipt. The
+ledger binds `(kind, id, version)` to exact bytes. It refuses conflicting identity
+reuse and requires a higher Runtime-verified version when replacing an existing
+artifact alias or path. Adding a reference to an existing immutable version is
+allowed. Restoring older content into an existing alias needs a new version.
+
+Retention precedes locking so a process interruption cannot lose the bytes of a
+published lock. The next confirmation reconciles the current public lock into the
+ledger before attempting another publication. A failed or uncertain write is
+reported without replay. The ledger and content are private, bounded, and ignored
+by Git. History exposes retained versions with verified bytes and bounded stable
+pagination; it never converts an unavailable store into an empty history.
+
+Jobs remain pinned until **Upgrade job** completes the existing checked-release
+wizard. Runner requires an explicit review plus the current job revision/release,
+retains every creation and upgrade receipt, and leaves older runs pinned. Pending
+source occurrences block the upgrade. Existing triggers must be paused and stay
+paused with a new trigger revision; resuming a trigger needs a fresh review.
+Connected Dialect subscriptions need a new subscription review. The UI discovers
+the `job-upgrades` capability and hides this action on older Runner versions.
+
+Runtime owns strict numeric version operations; Desk and Runner own their separate
+publication/admission policies. None of these operations infers compatibility,
+automatic major bumps, permission to write, or passing expected outcomes. Plan,
+Ask me/Auto, and the shared AI correction framework retain their existing guards.
+
+The new portable Dialect artifact identity still depends on Spec #180. First-job
+promotion and the impact policy after job use must be settled separately. Current
+integer Dialect formats 2 and 3 are preserved.
 
 ## Shared workflow
 
