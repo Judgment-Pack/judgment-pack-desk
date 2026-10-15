@@ -1,0 +1,28 @@
+.stack { container-type:inline-size; display:grid; gap:0; min-width:0; }
+.section { container-type:inline-size; min-width:0; display:grid; gap:var(--density-block); padding-block:var(--density-block); border-bottom:1px solid var(--border); }
+.heading { display:flex; align-items:center; justify-content:space-between; gap:var(--space-2); min-width:0; }
+.heading h3 { margin:0; font-size:var(--text-sm); font-weight:600; }
+.body { overflow-wrap:anywhere; min-width:0; display:grid; gap:var(--density-block); }
+.prose { margin:0; color:var(--ink-soft); white-space:pre-wrap; overflow-wrap:anywhere; }
+.summary { margin:0; display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-4); color:var(--ink-soft); font-size:var(--text-sm); }
+.attention { margin:0; color:var(--unknown); font-size:var(--text-xs); }
+.table { width:100%; table-layout:fixed; border-collapse:collapse; font-size:var(--text-sm); }
+.table th,.table td { padding:var(--density-gap) var(--space-2); border-bottom:1px solid var(--border); text-align:start; overflow-wrap:anywhere; vertical-align:top; }
+.table th { color:var(--ink-soft); font-weight:400; }
+.table td { box-sizing:border-box; height:var(--density-row); }
+
+.table th:first-child { width:24%; }
+.table th:nth-child(2) { width:8rem; }
+.table th:last-child { width:2.5rem; }
+.table input,.table textarea { width:100%; min-width:0; }
+.stack > .section:first-child { padding-block-start:0; }
+@container (max-width:600px) {
+ .table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+ .table,.table tbody { display:block; }
+ .table tr { display:grid; grid-template-columns:minmax(0,1fr) minmax(7rem,.6fr) 2.5rem; padding-block:var(--density-gap); border-bottom:1px solid var(--border); }
+ .table td { display:block; height:auto; border:0; }
+ .table td:nth-child(3) { grid-column:1 / -1; grid-row:2; }
+ .table td:last-child { grid-column:3; grid-row:1; }
+}
+
+.srOnly { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }

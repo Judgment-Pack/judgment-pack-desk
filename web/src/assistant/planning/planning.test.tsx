@@ -75,3 +75,13 @@ it('preserves unsent text when revising and persists approval without claiming f
  expect(screen.queryByText('Work started')).toBeNull()
  expect(start).toHaveBeenCalledOnce()
 })
+
+it('allows read-only version arithmetic in Plan without allowing publication',async()=>{
+ const before=session()
+ before.tools.push({name:'get_artifact_version_options',inputSchema:{type:'object',properties:{base:{type:'string'}}}})
+ const ready=await contextualSession(before)
+ expect(ready.session.tools.map(t=>t.name)).toContain('get_artifact_version_options')
+ await ready.session.callTool('get_artifact_version_options',{base:'0.1.0'})
+ expect(before.callTool).toHaveBeenCalledWith('get_artifact_version_options',{base:'0.1.0'})
+ await expect(ready.session.callTool('publish_artifact',{})).rejects.toThrow(/Plan mode/)
+})

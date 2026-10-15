@@ -138,6 +138,13 @@ type Config struct {
 
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
+	// Bound once before serving; nil selects the existing workspace file store.
+	inputPreparations  inputPreparationRepository
+	retainedArtifacts  retainedArtifactRepository
+	researchJournals   researchJournalProvider
+	evaluationJournals evaluationJournalProvider
+	dialectDrafts      dialectDraftRepository
+
 	actionGrants map[string]assistantActionGrant // scoped one-use allowances; protected by writes
 
 	desksMu     sync.Mutex
@@ -526,6 +533,12 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/audit/runs/{run}/signature", s.handleRunSignature)
 	s.mux.HandleFunc("GET /api/input-subscriptions", s.handleInputSubscriptions)
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/subscription-state", s.handleInputEvaluation)
+	s.mux.HandleFunc("GET /api/dialect-drafts", s.handleDialectDrafts)
+	s.mux.HandleFunc("POST /api/dialect-drafts", s.handleDialectDrafts)
+	s.mux.HandleFunc("GET /api/dialect-drafts/{draft}", s.handleDialectDrafts)
+	s.mux.HandleFunc("PUT /api/dialect-drafts/{draft}", s.handleDialectDrafts)
+	s.mux.HandleFunc("DELETE /api/dialect-drafts/{draft}", s.handleDialectDrafts)
+	s.mux.HandleFunc("POST /api/dialect-drafts/{draft}/publish", s.handleDialectDrafts)
 	s.mux.HandleFunc("GET /api/input-preparations", s.handleInputPreparations)
 	s.mux.HandleFunc("POST /api/input-preparations", s.handleInputPreparations)
 	s.mux.HandleFunc("GET /api/input-preparations/{preparation}", s.handleInputPreparations)

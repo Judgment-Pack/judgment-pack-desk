@@ -98,3 +98,5 @@
 .approvalReview { gap:var(--space-3); }
 .detail.reprocessDetails { grid-template-columns:minmax(8rem,1fr) minmax(0,2fr); gap:var(--space-2); font-size:var(--text-sm); }
 .approvalReview > p { margin:0; }
+
+.form.recipeOverview { container-type:inline-size; gap:0; }

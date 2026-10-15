@@ -77,14 +77,16 @@ it('offers contextual search setup independently of supplied-link reading',async
 })
 
 it('offers recipe proposals through the same conversation worker without running research',async()=>{
+ vi.mocked(deskFetch).mockResolvedValue(new Response(JSON.stringify({sha256:'draft-revision',document:{id:'draft_one'}}),{status:200}))
  m.snapshot.chats[0].mode='draft';m.snapshot.chats[0].researchMode='provided';m.catalog.web=false
  render(<ChatProvider><span>Desk</span></ChatProvider>)
  await waitFor(()=>expect(m.options.draftTools).toBeTypeOf('function'))
  const tools:HostTool[]=m.options.draftTools({turns:()=>[{id:'turn',role:'user'}]})
  expect(tools.map(tool=>tool.name)).toEqual(expect.arrayContaining(['get_dialect_recipe_instructions','list_dialects','read_dialect_recipe','propose_dialect_recipe','read_dialect_records','read_dialect_activity','propose_dialect_action']))
- await tools.find(tool=>tool.name==='propose_dialect_recipe')!.execute({name:'Decision owners',intent:'Find owners.',target:'people',fields:[{name:'role',description:'Current role',type:'string'}],criteria:[],limits:{records:25,searches:10,pages:30,modelCalls:30}},new AbortController().signal)
- expect(m.update).toHaveBeenCalledWith('chat',{inputDrafts:[expect.objectContaining({name:'Decision owners',target:'people',afterTurnId:'turn'})]})
- expect(deskFetch).not.toHaveBeenCalled()
+ await tools.find(tool=>tool.name==='propose_dialect_recipe')!.execute({name:'Decision owners',intent:'Find owners.',fields:[{name:'role',description:'Current role',type:'string'}],criteria:[],limits:{records:25,searches:10,pages:30,modelCalls:30}},new AbortController().signal)
+ expect(m.update).toHaveBeenCalledWith('chat',{inputDrafts:[expect.objectContaining({name:'Decision owners',target:'records',afterTurnId:'turn'})]})
+ expect(deskFetch).toHaveBeenCalledTimes(1)
+ expect(deskFetch).toHaveBeenCalledWith('/api/dialect-drafts',expect.objectContaining({method:'POST',body:expect.stringContaining('Decision owners')}))
 })
 
 it('offers test design tools in the existing session worker', async () => {

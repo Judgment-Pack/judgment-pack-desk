@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 )
 
 // A source gap is returned only after the unsuccessful operation and retry
@@ -42,12 +41,12 @@ func researchContinuableAttempt(a inputResearchAttempt) bool {
 	return false
 }
 
-func continueResearchSource(ctx context.Context, root *os.Root, failure error) (bool, error) {
+func continueResearchSource(ctx context.Context, root researchRunStore, failure error) (bool, error) {
 	var gap *researchSourceGap
 	if !errors.As(failure, &gap) {
 		return false, failure
 	}
-	_, err := changeInputResearch(root, func(run *inputResearchRun) error {
+	_, err := root.change(func(run *inputResearchRun) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -93,7 +92,7 @@ type inputResearchOperations struct {
 	validateSearch func(context.Context, inputResearchRecipe) error
 	validateAI     func(context.Context, inputResearchAI) error
 	model          func(context.Context, inputResearchAI, string, func(bool) error) (json.RawMessage, error)
-	source         func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error)
+	source         func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error)
 	publish        func(inputResearchRun) error
 }
 

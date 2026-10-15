@@ -54,7 +54,7 @@ func (s *Server) handleInputResearch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer runRoot.Close()
-		run, e := readInputResearch(runRoot)
+		run, e := s.researchJournal(runRoot, id).Read(r.Context())
 		if e != nil || run.PreparationID != prep {
 			writeJSONCoded(w, 404, CodeNotFound, "Research run not found.")
 			return
@@ -81,12 +81,12 @@ func (s *Server) handleInputResearch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/confirm") {
-			if e = researchInputAvailable(root, prep, id); e != nil {
+			if e = s.researchInputAvailable(r.Context(), root, prep, id); e != nil {
 				fail(e)
 				return
 			}
 		}
-		run, e = changeInputResearch(runRoot, func(run *inputResearchRun) error {
+		run, e = s.researchJournal(runRoot, id).Update(r.Context(), func(run *inputResearchRun) error {
 			if strings.HasSuffix(r.URL.Path, "/stop") {
 				if run.Approval != nil && run.Approval.UsedAt == "" {
 					run.Approval.RevokedAt = time.Now().UTC().Format(time.RFC3339Nano)
@@ -156,7 +156,7 @@ func (s *Server) handleInputResearch(w http.ResponseWriter, r *http.Request) {
 				fail(errors.New("A research run could not be opened."))
 				return
 			}
-			run, e := readInputResearch(rr)
+			run, e := s.researchJournal(rr, entry.Name()).Read(r.Context())
 			rr.Close()
 			if e != nil {
 				fail(errors.New("A research run could not be read."))
@@ -189,27 +189,17 @@ func (s *Server) handleInputResearch(w http.ResponseWriter, r *http.Request) {
 		fail(errors.New("Select records and choose Reprocess from saved sources. Whole-run continuation is no longer available."))
 		return
 	}
-	if e = researchInputAvailable(root, prep, ""); e != nil {
+	if e = s.researchInputAvailable(r.Context(), root, prep, ""); e != nil {
 		fail(e)
 		return
 	}
-	p, e := s.openInputPreparations(false)
+	p, e := s.preparationRepository().Read(r.Context())
 	if e != nil {
 		fail(e)
 		return
 	}
 	defer p.Close()
-	lock, e := p.Open(".")
-	if e != nil {
-		fail(e)
-		return
-	}
-	defer lock.Close()
-	if e = waitPrivateDataLock(r.Context(), lock, false); e != nil {
-		fail(e)
-		return
-	}
-	saved, e := readInputPreparation(p, prep)
+	saved, e := p.Get(prep)
 	if e != nil {
 		fail(e)
 		return
@@ -318,20 +308,20 @@ func (s *Server) handleInputResearch(w http.ResponseWriter, r *http.Request) {
 		fail(errors.New("This project has reached its retained research-run limit."))
 		return
 	}
-	if e = writeResearchReview(root, run, nil); e != nil {
+	if e = s.writeResearchReview(r.Context(), root, run, nil); e != nil {
 		fail(e)
 		return
 	}
 	writeJSON(w, 201, run)
 }
 
-// Caller holds the preparation store lock. Copy exactly the company records
-// reviewed by the person; another input cannot change them beneath a run.
-func selectedResearchCompanies(root *os.Root, current inputPreparation, recipe inputResearchRecipe) ([]inputResearchEntity, error) {
+// Caller holds a repository read view. Copy exactly the selected records;
+// another collection cannot change them beneath this admission.
+func selectedResearchCompanies(reader inputPreparationReader, current inputPreparation, recipe inputResearchRecipe) ([]inputResearchEntity, error) {
 	result := []inputResearchEntity{}
 	find := func(doc inputPreparation, id string) error {
 		for _, record := range doc.Records {
-			if record.Research != nil && record.Research.Entity.Kind == "company" && record.Research.Entity.ID == id {
+			if record.Research != nil && (record.Research.Entity.Kind == "company" || record.Research.Entity.Kind == "record") && record.Research.Entity.ID == id {
 				result = append(result, record.Research.Entity)
 				return nil
 			}
@@ -348,7 +338,7 @@ func selectedResearchCompanies(root *os.Root, current inputPreparation, recipe i
 		doc, ok := loaded[ref.PreparationID]
 		if !ok {
 			var err error
-			doc, err = readInputPreparation(root, ref.PreparationID)
+			doc, err = reader.Get(ref.PreparationID)
 			if err != nil {
 				return nil, errors.New("The selected company input could not be read. Review the selection.")
 			}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 )
@@ -95,7 +94,7 @@ func TestResearchSelectedCompletionDoesNotRequestAFinalModelAnswer(t *testing.T)
 				if scenario == "publication-failure" {
 					ops.publish = func(inputResearchRun) error { return errors.New("storage unavailable") }
 				}
-				ops.source = func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
+				ops.source = func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 					t.Fatal("selected reprocessing acquired a source")
 					return inputResearchSource{}, nil
 				}
@@ -130,7 +129,7 @@ func TestResearchSelectedCompletionDoesNotRequestAFinalModelAnswer(t *testing.T)
 					}
 					return nil, errors.New("unnecessary model request after completed publication")
 				}
-				executeInputResearch(context.Background(), work, run, ops)
+				executeInputResearch(context.Background(), fileResearchStore(work), run, ops)
 				finished, err := readInputResearch(work)
 				if err != nil {
 					t.Fatal(err)

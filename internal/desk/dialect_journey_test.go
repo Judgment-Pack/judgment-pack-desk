@@ -16,6 +16,11 @@ import (
 // mapping preparation, pack matrix, release tests, Job and verification export.
 // Only the AI and public website content are deterministic fixtures.
 func TestDialectCompanyPeopleTestedJobJourney(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		t.Run(backend, func(t *testing.T) { testDialectCompanyPeopleTestedJobJourney(t, backend) })
+	}
+}
+func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 	bundle, runner, runtime := os.Getenv("JPS_TEST_GATEWAY_BUNDLE"), os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
 	if bundle == "" || runner == "" || runtime == "" {
 		t.Skip("requires installed Gateway, Runner and Runtime")
@@ -46,6 +51,15 @@ func TestDialectCompanyPeopleTestedJobJourney(t *testing.T) {
 	defer s.Close()
 	s.inputResearchCancel()
 	<-s.inputResearchDone
+	if backend == "memory" {
+		s.inputEvaluationCancel()
+		<-s.inputEvaluationDone
+		s.inputPreparations = &memoryPreparationRepository{data: map[string][]byte{}}
+		s.retainedArtifacts = newMemoryArtifacts()
+		s.researchJournals = newMemoryResearchJournals()
+		s.evaluationJournals = newMemoryEvaluationJournals()
+		s.startInputEvaluations()
+	}
 	call := func(method, path string, body any, revision string) []byte {
 		t.Helper()
 		raw, _ := json.Marshal(body)
@@ -93,7 +107,7 @@ func TestDialectCompanyPeopleTestedJobJourney(t *testing.T) {
 		run.Seeds = []string{url}
 		source, proof, pin := handoffProofFixtureFor(t, filepath.Join(bundle, "gateway"), url, text)
 		run.Gateway = pin
-		pr, e := s.openInputPreparations(false)
+		pr, e := s.preparationRepository().Read(t.Context())
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -107,17 +121,23 @@ func TestDialectCompanyPeopleTestedJobJourney(t *testing.T) {
 			t.Fatal(e)
 		}
 		defer rr.Close()
-		if e = writeInputResearch(rr, run); e != nil {
+		if e = s.researchJournal(rr, run.ID).Create(t.Context(), run); e != nil {
 			t.Fatal(e)
 		}
 		ops := recoveryOperations()
 		ops.publish = s.publishResearchRecords
-		ops.source = func(_ context.Context, dir *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+		ops.source = func(ctx context.Context, current inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+			var retained inputResearchProof
+			if err := json.Unmarshal(proof, &retained); err != nil {
+				return inputResearchSource{}, err
+			}
 			source.ID = a.ID
-			return source, writePrivateData(dir, a.ID+".proof.json", proof)
+			size, err := s.saveResearchProof(ctx, rr, a.ID, retained, current.RetrievedBytes)
+			source.Bytes = size
+			return source, err
 		}
 		ops.model = func(_ context.Context, _ inputResearchAI, _ string, _ func(bool) error) (json.RawMessage, error) {
-			current, e := readInputResearch(rr)
+			current, e := s.researchJournal(rr, run.ID).Read(t.Context())
 			if e != nil {
 				return nil, e
 			}
@@ -134,8 +154,8 @@ func TestDialectCompanyPeopleTestedJobJourney(t *testing.T) {
 			}
 			return recoveryAction("finish", map[string]string{"reason": "Record goal reached."}), nil
 		}
-		executeInputResearch(context.Background(), rr, run, ops)
-		result, e := readInputResearch(rr)
+		executeInputResearch(context.Background(), s.researchRunStore(rr, run.ID), run, ops)
+		result, e := s.researchJournal(rr, run.ID).Read(t.Context())
 		if e != nil || result.State != "completed" || len(result.Records) != 1 {
 			t.Fatalf("research: %s %s, records %d, %v", result.State, result.Problem, len(result.Records), e)
 		}
@@ -147,7 +167,10 @@ func TestDialectCompanyPeopleTestedJobJourney(t *testing.T) {
 		if e = s.publishResearchRecords(result); e != nil {
 			t.Fatal(e)
 		}
-		again := v2Rows(t, s, saved.Document.ID)
+		again, e := s.preparationRepository().Get(t.Context(), saved.Document.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
 		if len(again.Document.Records) != 1 {
 			t.Fatal("replay duplicated a record")
 		}
@@ -195,7 +218,8 @@ func TestDialectCompanyPeopleTestedJobJourney(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		batch, e = readInputEvaluation(dir)
+		snapshot, readErr := s.evaluationJournal(dir, batch.ID).Read(t.Context())
+		batch, e = snapshot.Document, readErr
 		dir.Close()
 		root.Close()
 		if e != nil {
@@ -221,6 +245,12 @@ func TestDialectCompanyPeopleTestedJobJourney(t *testing.T) {
 	checked := s.checkRunSignature(context.Background(), batch.Rows[0].RunID)
 	if checked.Status != "verified" || checked.References != "verified" {
 		t.Fatal("verification", checked)
+	}
+	if backend == "memory" {
+		assertNoCollectionFiles(t, s)
+		assertNoArtifactFiles(t, s)
+		assertNoResearchJournalFiles(t, s)
+		assertNoEvaluationFiles(t, s)
 	}
 	t.Log("company discovery -> person discovery -> dedup -> pinned company lineage -> mapping -> review -> tested release -> Job -> verified generated-origin export passed")
 }

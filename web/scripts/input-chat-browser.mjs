@@ -24,8 +24,10 @@ try{
  assert((await artifact.boundingBox()).height<=68,'Proposed recipe should be a compact reference')
  await page.screenshot({path:'/tmp/jps-input-card-compact.png'})
  await page.getByRole('button',{name:'Review recipe',exact:true}).click()
- const review=page.getByRole('dialog',{name:'Review dialect recipe'})
+ await page.waitForURL(/\/dialects\/drafts\//)
+ const review=page
  await review.getByRole('textbox',{name:'What records do you need?',exact:true}).fill('Find up to 3 companies with at least 50 employees.')
+ await review.getByRole('tab',{name:'Execution',exact:true}).click()
  await review.getByText('Limits and retries',{exact:true}).click()
  await review.getByRole('spinbutton',{name:'Records',exact:true}).fill('10')
  await review.getByText('Maximum records per run. This setting takes precedence over record counts in the instructions.',{exact:true}).waitFor()
@@ -39,24 +41,21 @@ try{
  await page.setViewportSize({width:1600,height:1000})
  await review.getByRole('combobox',{name:'AI connection',exact:true}).click()
  await page.getByRole('option').first().click()
- const savedPromise=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname==='/api/input-preparations')
+ const savedPromise=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname.endsWith('/publish'))
  await review.getByRole('button',{name:'Save to Dialects',exact:true}).click()
- const response=await savedPromise;assert.equal(response.status(),201)
- const saved=await response.json(),inputId=saved.document.id
- assert.equal(saved.document.chatOrigin.chatId,source)
+ const response=await savedPromise;assert.equal(response.status(),200)
+ const saved=await response.json(),inputId=saved.document.savedInputId
+ assert.equal(saved.document.origin.chatId,source)
  assert.equal(saved.document.recipe.research.limits.records,10)
  assert.equal(saved.document.recipe.intent,'Find up to 3 companies with at least 50 employees.')
- assert.equal(await page.getByRole('link',{name:'Open dialect',exact:true}).count(),0,'Saved work must leave the transcript')
- await page.getByRole('button',{name:'Related work',exact:true}).click()
- const open=page.getByRole('link',{name:'Open dialect',exact:true})
- await open.waitFor();assert((await open.getAttribute('href')).includes('chat='+source))
- await open.click()
+ await page.waitForURL(/\/dialects\/prep_/)
  const pane=page.locator('[data-chat-id][data-placement="pane"]')
  await pane.getByText(prompt,{exact:true}).waitFor()
  assert.equal(await pane.getAttribute('data-chat-id'),source)
  assert.equal(new URL(page.url()).searchParams.get('tab'),'recipe')
  assert.equal(await pane.getByRole('link',{name:'Open dialect',exact:true}).count(),0,'Already-open recipe must not be repeated in chat')
  // Check real control geometry with unequal helper text, in both densities.
+
  await page.getByText('Limits and retries',{exact:true}).click()
  for(const density of ['comfortable','compact']) {
   await page.evaluate(value=>document.documentElement.setAttribute('data-density',value),density)

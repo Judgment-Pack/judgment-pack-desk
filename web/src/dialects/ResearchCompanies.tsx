@@ -15,7 +15,7 @@ export function ResearchCompanies({value,records,disabled,onChange}:{value:Resea
  const [source,setSource]=useState(value.companyInputs?.[0]?.preparationId??'current')
  const inputs=useQuery(dialectListQuery())
  const selected=useQuery({...dialectQuery(source),enabled:source!=='current'})
- const companies=Array.from(new Map((source==='current'?records:selected.data?.document.records??[]).filter(r=>r.research?.entity.kind==='company').map(r=>[r.research!.entity.id,r.research!.entity])).values())
+ const companies=Array.from(new Map((source==='current'?records:selected.data?.document.records??[]).filter(r=>(r.research?.entity.kind==='company'||r.research?.entity.kind==='record')).map(r=>[r.research!.entity.id,r.research!.entity])).values())
  const count=(value.companyIds?.length??0)+(value.companyInputs?.length??0)
  return <fieldset className={styles.researchCompanies}><legend>{msg('Selected companies')}</legend>
   <Field label={msg('Company records')} hint={msg('Choose the companies to research people at. The selected records are copied into the research review.')}>{props=><Select {...props} value={source} disabled={disabled} options={[{value:'current',label:msg('This dialect')},...(inputs.data?.items??[]).map(input=>({value:input.id,label:input.name}))]} onValueChange={id=>{setSource(id);onChange({companyIds:[],companyInputs:[]})}}/>}</Field>

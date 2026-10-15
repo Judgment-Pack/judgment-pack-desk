@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +55,7 @@ func TestResearchRecoversLateSourceFailureWithoutRepeatingWork(t *testing.T) {
 			return recoveryAction("finish", map[string]any{}), nil
 		}
 	}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		pages++
 		if a.URL == run.Seeds[1] {
 			if !publishedBeforeFailure {
@@ -75,7 +74,7 @@ func TestResearchRecoversLateSourceFailureWithoutRepeatingWork(t *testing.T) {
 		}
 		return nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	saved, err := readInputResearch(root)
 	if err != nil {
 		t.Fatal(err)
@@ -161,11 +160,11 @@ func TestResearchFatalFailuresStopBeforeNextModelRequest(t *testing.T) {
 				models++
 				return recoveryAction("read", map[string]string{"url": run.Seeds[0]}), nil
 			}
-			ops.source = func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
+			ops.source = func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 				pages++
 				return inputResearchSource{}, failure
 			}
-			executeInputResearch(context.Background(), root, run, ops)
+			executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 			saved, err := readInputResearch(root)
 			if err != nil || saved.State != "interrupted" || models != 1 || pages != 1 || researchSummary(saved).UnavailableSources != 0 {
 				t.Fatal("fatal error was ignored", err, saved.State, models, pages)
@@ -181,7 +180,7 @@ func TestResearchGapNeedsSavedHistoryAndRespectsStop(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			args := json.RawMessage(`{"url":"https://example.com/"}`)
-			_, failure := researchAttempt(ctx, root, "page", args, func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+			_, failure := researchAttempt(ctx, fileResearchStore(root), "page", args, func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 				if mode == "journal lost" {
 					if err := root.Rename("record.json", "before.json"); err != nil {
 						t.Fatal(err)
@@ -201,7 +200,7 @@ func TestResearchGapNeedsSavedHistoryAndRespectsStop(t *testing.T) {
 			if mode == "cancel" {
 				cancel()
 			}
-			if continued, _ := continueResearchSource(ctx, root, failure); continued {
+			if continued, _ := continueResearchSource(ctx, fileResearchStore(root), failure); continued {
 				t.Fatal("continued without usable live history", run.ID)
 			}
 		})
@@ -222,12 +221,12 @@ func TestResearchTimeoutExhaustsSavedRetriesBeforeContinuing(t *testing.T) {
 		calls++
 		return nil, recoveryRefusal("search-timeout")
 	}
-	_, err := researchAttemptWithWait(context.Background(), root, "search", args, call, func(context.Context, time.Time) error { return nil })
-	if ok, e := continueResearchSource(context.Background(), root, err); !ok || e != nil {
+	_, err := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", args, call, func(context.Context, time.Time) error { return nil })
+	if ok, e := continueResearchSource(context.Background(), fileResearchStore(root), err); !ok || e != nil {
 		t.Fatal("exhausted operation did not become a gap", e)
 	}
-	_, err = researchAttempt(context.Background(), root, "search", args, call)
-	if ok, e := continueResearchSource(context.Background(), root, err); !ok || e != nil {
+	_, err = researchAttempt(context.Background(), fileResearchStore(root), "search", args, call)
+	if ok, e := continueResearchSource(context.Background(), fileResearchStore(root), err); !ok || e != nil {
 		t.Fatal("repeat could not reuse gap", e)
 	}
 	saved, _ := readInputResearch(root)
@@ -258,11 +257,11 @@ func TestResearchRecoveryDoesNotExceedBudgets(t *testing.T) {
 				}
 				return recoveryAction("read", map[string]string{"url": url}), nil
 			}
-			ops.source = func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
+			ops.source = func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 				pages++
 				return inputResearchSource{}, recoveryRefusal("web-over-limit")
 			}
-			executeInputResearch(context.Background(), root, run, ops)
+			executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 			saved, err := readInputResearch(root)
 			if err != nil || pages != 1 || models > 3 || saved.State != "partial" || researchSummary(saved).UnavailableSources != 1 {
 				t.Fatal("limit bypassed", err, pages, models, saved.State)
@@ -292,7 +291,7 @@ func TestResearchSavesAndEnrichesPartialRecordAtRecordLimit(t *testing.T) {
 		}
 		return recoveryAction("records", map[string]any{"records": []any{map[string]any{"kind": "company", "name": "Example", "url": run.Seeds[0], "fields": map[string]any{"country": field}}}}), nil
 	}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		if !publishedMissing {
 			t.Error("partial record not published early")
 		}
@@ -305,7 +304,7 @@ func TestResearchSavesAndEnrichesPartialRecordAtRecordLimit(t *testing.T) {
 		}
 		return nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	saved, err := readInputResearch(root)
 	if err != nil || saved.State != "completed" || models != 3 || len(saved.Records) != 1 || saved.Records[0].Fields["country"].Status != "supported" {
 		t.Fatal("partial record blocked later enrichment", err, saved.State, models)
@@ -321,7 +320,7 @@ func TestResearchRecoveryStopsOnChangedConnection(t *testing.T) {
 		models++
 		return recoveryAction("read", map[string]string{"url": run.Seeds[0]}), nil
 	}
-	ops.source = func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 		changed = true
 		return inputResearchSource{}, recoveryRefusal("web-over-limit")
 	}
@@ -331,7 +330,7 @@ func TestResearchRecoveryStopsOnChangedConnection(t *testing.T) {
 		}
 		return nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	saved, err := readInputResearch(root)
 	if err != nil || saved.State != "blocked" || models != 1 || saved.Problem != errResearchSearchChanged.Error() {
 		t.Fatal("changed search settings ignored after recovery", err, saved.State, models)
@@ -341,11 +340,11 @@ func TestResearchRecoveryStopsOnChangedConnection(t *testing.T) {
 func TestResearchExhaustedTemporarySearchContinuesWithSavedSources(t *testing.T) {
 	root := retryFixture(t, 5)
 	attempts := 0
-	_, err := researchAttemptWithWait(context.Background(), root, "search", json.RawMessage(`{"query":"unavailable query"}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+	_, err := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", json.RawMessage(`{"query":"unavailable query"}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 		attempts++
 		return nil, retryFailure("search-temporary")
 	}, noRetryWait)
-	if ok, e := continueResearchSource(context.Background(), root, err); !ok || e != nil {
+	if ok, e := continueResearchSource(context.Background(), fileResearchStore(root), err); !ok || e != nil {
 		t.Fatal("exhausted search should be a retained gap", e)
 	}
 	run, _ := readInputResearch(root)
@@ -364,11 +363,11 @@ func TestResearchExhaustedTemporarySearchContinuesWithSavedSources(t *testing.T)
 		}
 		return recoveryAction("finish", map[string]any{}), nil
 	}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		pages++
 		return inputResearchSource{ID: a.ID, Kind: "page", URL: a.URL, Text: "Company", Verification: "verified"}, nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	saved, e := readInputResearch(root)
 	if e != nil || attempts != 3 || pages != 1 || len(saved.Records) != 1 || saved.State != "completed-with-gaps" {
 		t.Fatal("remaining evidence not processed", e, saved.State, attempts, pages)

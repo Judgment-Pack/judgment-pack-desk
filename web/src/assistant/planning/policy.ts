@@ -1,7 +1,7 @@
 import {toolInputFailure} from '../failures'
 import type {EngineSession,HostTool} from '../engine'
 // Closed runtime vocabulary. Future capabilities require an explicit review.
-const reads=new Set(['get_schema','list_examples','get_example','validate'])
+const reads=new Set(['get_schema','list_examples','get_example','validate','get_artifact_version_options'])
 export function planningTool(tool:HostTool):boolean {
  if(tool.effect)return tool.effect==='read'||tool.effect==='plan'
  return tool.interaction==='question'||tool.interaction==='delegation'||tool.delegation==='read'||tool.delegation==='research'

@@ -4,143 +4,27 @@
     {
       "label": "desk: start",
       "type": "process",
-      "command": "python3",
+      "command": "${env:HOME}/.local/bin/jpack-desk",
       "args": [
-        "${workspaceFolder}/scripts/desk-dev.py",
-        "start"
+        "--port",
+        "5173"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "detail": "Build companions from the component lock if needed, then build and start Desk + Vite; keep the saved project. Safe to run again.",
+      "detail": "Start the installed Desk at http://localhost:5173/ using its saved startup Desk. Use Tasks: Terminate Task or Tasks: Restart Running Task to stop or restart.",
       "problemMatcher": [],
       "presentation": {
-        "panel": "shared",
+        "panel": "dedicated",
         "reveal": "always",
         "clear": true
       },
       "runOptions": {
         "instanceLimit": 1
-      }
-    },
-    {
-      "label": "desk: stop",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/desk-dev.py",
-        "stop"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
       },
-      "detail": "Stop only the development servers started by these tasks; preserve workspace files.",
-      "problemMatcher": [],
-      "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
-      },
-      "runOptions": {
-        "instanceLimit": 1
-      }
-    },
-    {
-      "label": "desk: prune",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/desk-dev.py",
-        "prune"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "detail": "With Desk stopped, remove old launch directories under bin/dev-launches, keeping the one the last start used. Refuses while servers these tasks started run; trusts bin/dev-launches as written only by this launcher.",
-      "problemMatcher": [],
-      "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
-      },
-      "runOptions": {
-        "instanceLimit": 1
-      }
-    },
-    {
-      "label": "desk: restart",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/desk-dev.py",
-        "restart"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "detail": "Rebuild Desk (and companions if the lock changed), then restart both servers. A build failure leaves the current session running.",
-      "problemMatcher": [],
-      "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
-      },
-      "runOptions": {
-        "instanceLimit": 1
-      }
-    },
-    {
-      "label": "desk: status",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/desk-dev.py",
-        "status"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "detail": "Show development server status and the log directory.",
-      "problemMatcher": [],
-      "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
-      },
-      "runOptions": {
-        "instanceLimit": 1
-      }
-    },
-    {
-      "label": "desk: dev",
-      "detail": "Start Desk + Vite (alias for desk: start).",
-      "dependsOn": [
-        "desk: start"
-      ],
-      "problemMatcher": [],
       "group": {
         "kind": "build",
         "isDefault": true
-      }
-    },
-    {
-      "label": "desk: open (hot reload)",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/desk-dev.py",
-        "start",
-        "--open"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "detail": "Start Desk if needed, wait until ready, and open the browser.",
-      "problemMatcher": [],
-      "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
       }
     }
   ]

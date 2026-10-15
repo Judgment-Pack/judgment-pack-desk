@@ -3,7 +3,7 @@ import {dialectRecipeChatTools} from './chatTools'
 import {dialectAPI} from './client'
 import {recipeFromProposal,validDialectRecipeProposal,type DialectRecipeProposal} from './proposals'
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),dialectAPI:vi.fn()}))
-export const content={name:'Decision owners',intent:'Find decision owners at selected companies.',target:'people-at-companies' as const,fields:[{name:'role',description:'Current job title',type:'string' as const}],criteria:[{id:'seniority',description:'Owns a recurring decision'}],limits:{records:25,searches:10,pages:30,modelCalls:30}}
+export const content={name:'Decision owners',intent:'Find decision owners at selected companies.',fields:[{name:'role',description:'Current job title',type:'string' as const}],criteria:[{id:'seniority',description:'Owns a recurring decision'}],limits:{records:25,searches:10,pages:30,modelCalls:30}}
 const tools=(addDraft=vi.fn())=>dialectRecipeChatTools({addDraft,afterTurnId:()=> 'turn-1',attribution:()=>({connection:'legacy-codex',model:'test-model'})})
 it('retains a portable proposal without saving Dialects, granting a connection, or running research',async()=>{
  const add=vi.fn(),tool=tools(add).find(t=>t.name==='propose_dialect_recipe')!
@@ -25,7 +25,7 @@ it('does not retain a proposal after the response is cancelled',async()=>{
  expect(add).not.toHaveBeenCalled()
 })
 it('reads recipe context without exposing record data or saved connection settings',async()=>{
- vi.mocked(dialectAPI).mockResolvedValueOnce({document:{name:'Existing',recipeVersion:2,recipe:{intent:'Research',research:{...recipeFromProposal({...content,version:1,draftId:'a',createdAt:'2026-01-01'}),ai:{connection:'private-id',revision:'secret',model:'internal'} }},records:[{email:'private@example.org'}]}})
+ vi.mocked(dialectAPI).mockResolvedValueOnce({document:{name:'Existing',recipeVersion:2,recipe:{intent:'Research',research:{...recipeFromProposal({...content,target:'records',version:1,draftId:'a',createdAt:'2026-01-01'}),ai:{connection:'private-id',revision:'secret',model:'internal'} }},records:[{email:'private@example.org'}]}})
  const result=await tools().find(t=>t.name==='read_dialect_recipe')!.execute({id:'prep_'+'a'.repeat(32)},new AbortController().signal)
  expect(JSON.stringify(result)).not.toMatch(/private@example|private-id|secret|internal/)
 })
@@ -33,7 +33,7 @@ it('reads recipe context without exposing record data or saved connection settin
 it('returns a useful validation result and accepts a corrected six-field proposal',async()=>{
  const add=vi.fn(),tool=tools(add).find(t=>t.name==='propose_dialect_recipe')!,signal=new AbortController().signal
  const fields=['business_description','fit_signal','country','employee_count_evidence','intake_channels','routing_complexity_signal'].map(name=>({name,description:'A sourced value; leave missing when unsupported.',type:'string'}))
- const proposal={...content,target:'companies',fields,criteria:[{id:'size',description:'At least 50 employees',qualificationTarget:''}]}
+ const proposal={...content,target:'records',fields,criteria:[{id:'size',description:'At least 50 employees',qualificationTarget:''}]}
  const refused=await tool.execute(proposal,signal)
  expect(refused).toMatchObject({isError:true,structuredContent:{inputRecipeFailure:'criteria'}})
  expect(JSON.stringify(refused)).toContain('Omit qualificationTarget when unused')
@@ -47,4 +47,15 @@ it('retains only known proposal failure reasons, never raw persistence errors',a
  const result=await tool.execute(content,new AbortController().signal)
  expect(result).toMatchObject({isError:true,structuredContent:{inputRecipeFailure:'proposal-unavailable'}})
  expect(JSON.stringify(result)).not.toContain('PRIVATE_SENTINEL')
+})
+
+it('does not expose a target choice and always retains generic records',async()=>{
+ const add=vi.fn(),tool=tools(add).find(t=>t.name==='propose_dialect_recipe')!
+ expect((tool.inputSchema as {properties:Record<string,unknown>}).properties.target).toBeUndefined()
+ await tool.execute(content,new AbortController().signal)
+ expect(add.mock.calls[0][0].target).toBe('records')
+ const response=await tool.execute({...content,target:'people'},new AbortController().signal)
+ expect(response.isError).toBe(true)
+ expect(add).toHaveBeenCalledOnce()
+ expect(validDialectRecipeProposal({...add.mock.calls[0][0],target:'people'})).toBe(true)
 })

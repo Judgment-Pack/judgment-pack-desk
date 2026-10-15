@@ -109,42 +109,47 @@ func TestInputResearchExternalCompanySelectionIsBounded(t *testing.T) {
 }
 
 func TestInputResearchExternalCompanySnapshotRejectsStaleOrInventedSelection(t *testing.T) {
-	s, _ := newTestServer(t, false)
-	root, err := s.openInputPreparations(true)
-	if err != nil {
-		t.Fatal(err)
+	for _, kind := range []string{"company", "record"} {
+		t.Run(kind, func(t *testing.T) {
+			s, _ := newTestServer(t, false)
+			root, err := s.openInputPreparations(true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			company := inputResearchEntity{ID: "company-1", Name: "Example", Kind: kind, URL: "https://example.org/", Fields: map[string]inputResearchValue{}}
+			doc := inputPreparation{Version: 1, ID: "prep_" + strings.Repeat("a", 32), Name: "Companies", RecipeVersion: 1, Recipe: inputRecipe{Intent: "Find companies"}, Records: []preparedInputRecord{{ID: "row", Class: "generated", Research: &inputResearchRecord{Entity: company}}}}
+			saved, err := writeInputPreparation(root, doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			recipe := researchRecipeFixture()
+			recipe.Target = "records"
+			recipe.CompanyInputs = []inputResearchCompanyRef{{PreparationID: doc.ID, Revision: saved.SHA256, EntityID: company.ID}}
+			companies, err := selectedResearchCompanies(preparationReaderFunc(func(id string) (inputPreparationReply, error) { return readInputPreparation(root, id) }), inputPreparation{}, recipe)
+			if err != nil || len(companies) != 1 || companies[0].Name != "Example" {
+				t.Fatalf("selection %v %v", companies, err)
+			}
+			doc.Records[0].Research.Entity.Name = "Changed"
+			if _, err = writeInputPreparation(root, doc); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = selectedResearchCompanies(preparationReaderFunc(func(id string) (inputPreparationReply, error) { return readInputPreparation(root, id) }), inputPreparation{}, recipe); err == nil {
+				t.Fatal("stale company selection accepted")
+			}
+			if companies[0].Name != "Example" {
+				t.Fatal("reviewed snapshot changed")
+			}
+			updated, err := readInputPreparation(root, doc.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			recipe.CompanyInputs[0].Revision = updated.SHA256
+			recipe.CompanyInputs[0].EntityID = "invented"
+			if _, err = selectedResearchCompanies(preparationReaderFunc(func(id string) (inputPreparationReply, error) { return readInputPreparation(root, id) }), inputPreparation{}, recipe); err == nil {
+				t.Fatal("invented company accepted")
+			}
+		})
 	}
-	defer root.Close()
-	company := inputResearchEntity{ID: "company-1", Name: "Example", Kind: "company", URL: "https://example.org/", Fields: map[string]inputResearchValue{}}
-	doc := inputPreparation{Version: 1, ID: "prep_" + strings.Repeat("a", 32), Name: "Companies", RecipeVersion: 1, Recipe: inputRecipe{Intent: "Find companies"}, Records: []preparedInputRecord{{ID: "row", Class: "generated", Research: &inputResearchRecord{Entity: company}}}}
-	saved, err := writeInputPreparation(root, doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	recipe := researchRecipeFixture()
-	recipe.Target = "people-at-companies"
-	recipe.CompanyInputs = []inputResearchCompanyRef{{PreparationID: doc.ID, Revision: saved.SHA256, EntityID: company.ID}}
-	companies, err := selectedResearchCompanies(root, inputPreparation{}, recipe)
-	if err != nil || len(companies) != 1 || companies[0].Name != "Example" {
-		t.Fatalf("selection %v %v", companies, err)
-	}
-	doc.Records[0].Research.Entity.Name = "Changed"
-	if _, err = writeInputPreparation(root, doc); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = selectedResearchCompanies(root, inputPreparation{}, recipe); err == nil {
-		t.Fatal("stale company selection accepted")
-	}
-	if companies[0].Name != "Example" {
-		t.Fatal("reviewed snapshot changed")
-	}
-	updated, err := readInputPreparation(root, doc.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	recipe.CompanyInputs[0].Revision = updated.SHA256
-	recipe.CompanyInputs[0].EntityID = "invented"
-	if _, err = selectedResearchCompanies(root, inputPreparation{}, recipe); err == nil {
-		t.Fatal("invented company accepted")
-	}
+
 }

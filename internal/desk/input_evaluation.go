@@ -72,29 +72,11 @@ func (s *Server) inputEvaluationRoot(create bool) (*os.Root, error) {
 	return root, err
 }
 func openInputEvaluation(root *os.Root, id string, create bool) (*os.Root, error) {
+	if !inputEvaluationID.MatchString(id) {
+		return nil, errors.New("Invalid evaluation ID.")
+	}
 	r, _, e := openOwnFolder(root, []string{id}, create, "input evaluation")
 	return r, e
-}
-func readInputEvaluation(root *os.Root) (inputEvaluation, error) {
-	var b inputEvaluation
-	raw, e := readPrivateData(root, "record.json", inputEvaluationLimit)
-	if e == nil {
-		e = decodeDataJSON(raw, &b)
-	}
-	if e == nil && (b.Version != 1 || !inputEvaluationID.MatchString(b.ID) || !inputPreparationID.MatchString(b.PreparationID) || len(b.Rows) > inputRecordLimit) {
-		e = errors.New("Invalid evaluation record.")
-	}
-	return b, e
-}
-func writeInputEvaluation(root *os.Root, b inputEvaluation) error {
-	raw, e := json.Marshal(b)
-	if e != nil {
-		return e
-	}
-	if len(raw) > inputEvaluationLimit {
-		return errors.New("This evaluation exceeds its storage limit.")
-	}
-	return writePrivateData(root, "record.json", raw)
 }
 func (s *Server) inputRunner(ctx context.Context, path string, body any, key string) (json.RawMessage, error) {
 	if s.jobs == nil {
@@ -348,7 +330,8 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 				fail(409, e)
 				return
 			}
-			b, e := readInputEvaluation(br)
+			snapshot, e := s.evaluationJournal(br, entry.Name()).Read(r.Context())
+			b := snapshot.Document
 			br.Close()
 			if e != nil {
 				fail(409, errors.New("An evaluation record could not be read."))
@@ -368,23 +351,13 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"items": items})
 		return
 	}
-	root, e := s.openInputPreparations(false)
+	view, e := s.preparationRepository().Read(r.Context())
 	if e != nil {
-		fail(409, errors.New("Dialects could not be opened."))
+		fail(409, errors.New("Dialects could not be read. Try again."))
 		return
 	}
-	defer root.Close()
-	lock, e := root.Open(".")
-	if e != nil {
-		fail(409, e)
-		return
-	}
-	defer lock.Close()
-	if e = waitPrivateDataLock(r.Context(), lock, false); e != nil {
-		fail(409, errors.New("Dialects are being saved. Try again."))
-		return
-	}
-	saved, e := readInputPreparation(root, id)
+	defer view.Close()
+	saved, e := view.Get(id)
 	if e != nil {
 		fail(409, errors.New("Dialects could not be read."))
 		return
@@ -392,7 +365,7 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 	// A repeat confirmation is allowed after the recipe changes: it returns the
 	// existing batch only, never confirms another selection or creates more work.
 	if batchID != "" {
-		s.confirmInputEvaluation(w, r, saved, batchID)
+		s.confirmInputEvaluation(w, r, view, saved, batchID)
 		return
 	}
 	if r.Header.Get("If-Match") != saved.SHA256 {
@@ -493,19 +466,13 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer er.Close()
-	br, e := openInputEvaluation(er, b.ID, true)
-	if e != nil {
-		fail(409, e)
-		return
-	}
-	defer br.Close()
-	if e = writeInputEvaluation(br, b); e != nil {
+	if e = s.createEvaluationReview(r.Context(), er, b); e != nil {
 		fail(409, e)
 		return
 	}
 	writeJSON(w, 201, b)
 }
-func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, saved inputPreparationReply, id string) {
+func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, reader inputPreparationReader, saved inputPreparationReply, id string) {
 	fail := func(e error) { writeJSONCoded(w, 409, CodeStale, e.Error()) }
 	var request struct {
 		Reviewed     bool               `json:"reviewed"`
@@ -538,7 +505,9 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 		fail(errors.New("This evaluation is being updated. Try again."))
 		return
 	}
-	b, e := readInputEvaluation(br)
+	snapshot, e := s.evaluationJournal(br, id).Read(r.Context())
+	b := snapshot.Document
+	checkpoint := evaluationCheckpoint{journal: s.evaluationJournal(br, id), revision: snapshot.SHA256}
 	if e != nil || b.PreparationID != saved.Document.ID {
 		fail(errors.New("The evaluation review does not belong to these inputs."))
 		return
@@ -558,7 +527,7 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 				return
 			}
 			if *request.Enabled {
-				fresh, e := s.subscriptionDocument(b)
+				fresh, e := s.subscriptionDocument(reader, b)
 				if e != nil {
 					fail(e)
 					return
@@ -571,7 +540,7 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 			b.Subscription.RetryAt = ""
 			b.State = "queued"
 			b.Problem = ""
-			if e = writeInputEvaluation(br, b); e != nil {
+			if e = checkpoint.save(r.Context(), b); e != nil {
 				fail(e)
 				return
 			}
@@ -579,7 +548,7 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 		if strings.HasSuffix(r.URL.Path, "/resume") && b.State == "blocked" {
 			b.State = "queued"
 			b.Problem = ""
-			if e = writeInputEvaluation(br, b); e != nil {
+			if e = checkpoint.save(r.Context(), b); e != nil {
 				fail(e)
 				return
 			}
@@ -642,7 +611,7 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 	}
 	b.ConfirmedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	b.State = "queued"
-	if e = writeInputEvaluation(br, b); e != nil {
+	if e = checkpoint.save(r.Context(), b); e != nil {
 		fail(e)
 		return
 	}
@@ -718,21 +687,26 @@ func (s *Server) resumeInputEvaluations(ctx context.Context) {
 			if lockPrivateData(lock, true) != nil {
 				return
 			}
-			b, e := readInputEvaluation(br)
+			snapshot, e := s.evaluationJournal(br, entry.Name()).Read(ctx)
+			b := snapshot.Document
+			checkpoint := evaluationCheckpoint{journal: s.evaluationJournal(br, entry.Name()), revision: snapshot.SHA256}
 			if e != nil || b.ConfirmedAt == "" || b.State == "completed" || b.State == "partial" || b.State == "blocked" {
 				return
 			}
 			if b.Subscription != nil {
-				s.advanceInputSubscription(ctx, br, &b)
+				s.advanceInputSubscription(ctx, &checkpoint, &b)
 			} else {
-				s.advanceInputEvaluation(ctx, br, &b)
+				s.advanceInputEvaluation(ctx, &checkpoint, &b)
 			}
 		}()
 	}
 }
-func (s *Server) advanceInputEvaluation(ctx context.Context, root *os.Root, b *inputEvaluation) {
+func (s *Server) advanceInputEvaluation(ctx context.Context, checkpoint *evaluationCheckpoint, b *inputEvaluation) {
+	if checkpoint.failure != nil {
+		return
+	}
 	save := func() bool {
-		if e := writeInputEvaluation(root, *b); e != nil {
+		if e := checkpoint.retain(*b); e != nil {
 			s.log.Printf("desk: input evaluation progress could not be saved")
 			return false
 		}
@@ -746,23 +720,11 @@ func (s *Server) advanceInputEvaluation(ctx context.Context, root *os.Root, b *i
 		}
 		save()
 	}
-	if b.JobID == "" {
-		raw, e := s.inputRunner(ctx, "jobs", map[string]any{"name": b.Name, "releaseId": b.ReleaseID, "reviewed": true}, "")
-		if e != nil {
+	if e := s.ensureEvaluationJob(ctx, checkpoint, b); e != nil {
+		if checkpoint.failure == nil {
 			problem(e)
-			return
 		}
-		var job struct {
-			ID string `json:"id"`
-		}
-		if json.Unmarshal(raw, &job) != nil || !regexp.MustCompile(`^job_[a-f0-9]{32}$`).MatchString(job.ID) {
-			problem(errors.New("The job response is invalid."))
-			return
-		}
-		b.JobID = job.ID
-		if !save() {
-			return
-		}
+		return
 	}
 	b.State = "running"
 	b.Problem = ""

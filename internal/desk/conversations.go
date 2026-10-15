@@ -226,6 +226,12 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 			fail(err)
 			return
 		}
+		if !briefs && !reviews && !tests && !drafts {
+			if err = s.retainConversationDialectDrafts(r.Context(), reply.Content); err != nil {
+				fail(err)
+				return
+			}
+		}
 		writeConversationReply(w, reply)
 		return
 	}
@@ -273,6 +279,17 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	if err = matches(); err != nil {
 		fail(err)
 		return
+	}
+	if !briefs && !reviews && !tests && !drafts {
+		previous, e := read()
+		if e != nil {
+			fail(e)
+			return
+		}
+		if e = s.retainConversationDialectDrafts(r.Context(), previous.Content, data); e != nil {
+			fail(e)
+			return
+		}
 	}
 	stage, name, err := newDataStage(root)
 	if err != nil {

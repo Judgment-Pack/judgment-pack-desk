@@ -7,9 +7,13 @@ import { Tooltip } from './Tooltip'
 import type { CollectionSelection } from './useCollectionSelection'
 import styles from './SelectionTable.module.css'
 
+/** Native collection table, also used by collections without bulk selection. */
+export function CollectionTable({className,variant,...table}:ComponentPropsWithRef<'table'> & {variant?:'index'}) {
+  return <table {...table} data-collection-index={variant==='index'||undefined} className={[styles.table,className].filter(Boolean).join(' ')}/>
+}
 /** Native table semantics with Library's selection reveal and scoped shortcuts. */
 export function SelectionTable({ selection, className, onKeyDown, variant, ...table }: ComponentPropsWithRef<'table'> & { selection: CollectionSelection; variant?: 'index' }) {
-  return <table {...table} data-collection-index={variant==='index'||undefined} className={[styles.table, className].filter(Boolean).join(' ')} data-selecting={selection.count > 0 || undefined} onKeyDown={event => {
+  return <CollectionTable {...table} variant={variant} className={className} data-selecting={selection.count > 0 || undefined} onKeyDown={event => {
     onKeyDown?.(event)
     if (event.defaultPrevented || (event.target instanceof Element && event.target.closest('input:not([type="checkbox"]),textarea,select,[contenteditable="true"]'))) return
     if (event.key === 'Escape' && selection.count) { event.preventDefault(); event.stopPropagation(); selection.clear() }

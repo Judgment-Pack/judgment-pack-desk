@@ -52,13 +52,13 @@ func TestResearchFinalizesAfterPageBudgetAndSavesBeforeFurtherDiscovery(t *testi
 			return recoveryAction("finish", map[string]string{"reason": "No further candidates were supported by the retained page."}), nil
 		}
 	}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		pages++
 		sourceID = a.ID
 		return inputResearchSource{ID: a.ID, Kind: "page", URL: run.Seeds[0], URLs: run.Seeds, Text: "Example is based in Canada.", Verification: "verified"}, nil
 	}
 	ops.publish = func(r inputResearchRun) error { published = len(r.Records); return nil }
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	got, err := readInputResearch(root)
 	if err != nil || len(got.Records) != 1 || published != 1 || pages != 1 || models != 4 || got.State != "paused" || got.Problem == "" {
 		t.Fatalf("did not finalize: %v %+v calls %d/%d", err, got, models, pages)
@@ -96,7 +96,7 @@ func TestResearchInvalidBatchCorrectsAtomicallyAndRetainsFeedback(t *testing.T) 
 		}
 		return nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	got, err := readInputResearch(root)
 	if err != nil || len(got.Records) != 2 || got.State != "completed-with-gaps" || calls != 3 || partialPublication || got.Attempts[0].ActionProblem == "" {
 		t.Fatal("atomic correction failed", err, got.State, calls)
@@ -119,7 +119,7 @@ func TestResearchEmptyPageContinuesAndDoesNotRepeatRequest(t *testing.T) {
 		}
 		return recoveryAction("finish", map[string]string{"reason": "One usable candidate; the first source had no text."}), nil
 	}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, args json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, args json.RawMessage) (inputResearchSource, error) {
 		pages++
 		if pages == 1 {
 			return decodeInputResearchSource(inputResearchSource{ID: a.ID, Kind: "page", Verification: "verified"}, args, json.RawMessage(`{"attachmentVersion":"1","content":{"pages":[]},"processing":{"status":"complete"},"provenance":{"source":{"kind":"web","url":"https://example.com/","requestedUrl":"https://example.com/"}}}`))
@@ -127,7 +127,7 @@ func TestResearchEmptyPageContinuesAndDoesNotRepeatRequest(t *testing.T) {
 		sourceID = a.ID
 		return inputResearchSource{ID: a.ID, Kind: "page", URL: run.Seeds[1], URLs: run.Seeds, Text: "Canada", Verification: "verified"}, nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	got, err := readInputResearch(root)
 	if err != nil || pages != 2 || len(got.Records) != 1 || researchSummary(got).UnavailableSources != 1 || got.State != "completed-with-gaps" {
 		t.Fatal("empty page stopped work", err, got.State)
@@ -146,11 +146,11 @@ func TestResearchRepeatedReadAndMalformedActionsAreBounded(t *testing.T) {
 				}
 				return recoveryAction("read", map[string]string{"url": run.Seeds[0]}), nil
 			}
-			ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+			ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 				pages++
 				return inputResearchSource{ID: a.ID, Kind: "page", URLs: run.Seeds, Text: "Canada", Verification: "verified"}, nil
 			}
-			executeInputResearch(context.Background(), root, run, ops)
+			executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 			got, _ := readInputResearch(root)
 			expected := 3
 			if mode == "repeated" {
@@ -168,7 +168,7 @@ func TestResearchEmptyFinishExplainsShortfall(t *testing.T) {
 	ops.model = func(context.Context, inputResearchAI, string, func(bool) error) (json.RawMessage, error) {
 		return recoveryAction("finish", map[string]any{}), nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	got, _ := readInputResearch(root)
 	if got.State != "completed-with-gaps" || !strings.Contains(got.Problem, "Saved 0 of up to") {
 		t.Fatal("false empty success", got.State, got.Problem)
@@ -209,7 +209,7 @@ func TestResearchContinuationNeverDispatchesSourcesAndRequiresReview(t *testing.
 		t.Fatal("continuation depends on search settings")
 		return nil
 	}
-	ops.source = func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 		t.Fatal("source dispatched in continuation")
 		return inputResearchSource{}, nil
 	}
@@ -223,7 +223,7 @@ func TestResearchContinuationNeverDispatchesSourcesAndRequiresReview(t *testing.
 		}
 		return recoveryAction("finish", map[string]string{"reason": "Only one retained candidate."}), nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	got, _ := readInputResearch(root)
 	if len(got.Records) != 1 || calls != 3 || got.State != "completed-with-gaps" {
 		t.Fatal("continuation failed", got.State, calls)
@@ -259,7 +259,7 @@ func TestResearchAdmissionIsExclusiveAndBlocksAcrossInputsWindows(t *testing.T) 
 			if err = lockPrivateData(lock, true); err != nil {
 				return
 			}
-			if researchInputAvailable(root, prep, id) != nil {
+			if (&Server{}).researchInputAvailable(context.Background(), root, prep, id) != nil {
 				return
 			}
 			rr, _ := openInputResearch(root, id, false)
@@ -373,10 +373,10 @@ func TestResearchModelInterruptionKeepsSourcesForExplicitContinuation(t *testing
 		}
 		return nil, errors.New("response lost")
 	}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		return inputResearchSource{ID: a.ID, Kind: "page", URLs: run.Seeds, Text: "Canada", Verification: "verified"}, nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	got, _ := readInputResearch(root)
 	if got.State != "interrupted" || models != 2 || !researchSummary(got).CanContinue || len(got.Sources) != 1 {
 		t.Fatal("unsafe replay or lost continuation", got.State, models)
@@ -415,14 +415,14 @@ func TestResearchSixFieldRecipeSavesEarlyAndKeepsOptionalFieldsMissing(t *testin
 			return nil, errors.New("AI connection interrupted after candidate save")
 		}
 	}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		pages++
 		sourceID = a.ID
 		return inputResearchSource{ID: a.ID, Kind: "page", URLs: run.Seeds, Text: "Example operates in Canada.", Verification: "verified"}, nil
 	}
 	published := 0
 	ops.publish = func(r inputResearchRun) error { published = len(r.Records); return nil }
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	got, _ := readInputResearch(root)
 	if got.State != "interrupted" || published != 1 || len(got.Records) != 1 || len(got.Records[0].Fields) != 6 || got.Records[0].Fields["employee_count_evidence"].Status != "missing" || pages != 1 {
 		t.Fatal("interruption lost saved candidate or invented optional data", got.State, published)
@@ -430,12 +430,21 @@ func TestResearchSixFieldRecipeSavesEarlyAndKeepsOptionalFieldsMissing(t *testin
 }
 
 func TestResearchContinuationCopiesProofsAndSupportsReviewedPartialEvaluation(t *testing.T) {
+	for _, backend := range []string{"legacy", "file", "memory"} {
+		t.Run(backend, func(t *testing.T) { testResearchContinuationCopiesProofs(t, backend) })
+	}
+}
+func testResearchContinuationCopiesProofs(t *testing.T, backend string) {
 	bundle := os.Getenv("JPS_TEST_GATEWAY_BUNDLE")
 	if bundle == "" {
 		t.Skip("requires pinned local verifier")
 	}
 	s, _ := newTestServer(t, false)
 	s.cfg.LocalGatewayBundle = bundle
+	if backend == "memory" {
+		s.retainedArtifacts = newMemoryArtifacts()
+		s.researchJournals = newMemoryResearchJournals()
+	}
 	source, proof, pin := handoffProofFixture(t, bundle+"/gateway")
 	source.ID = "attempt_" + strings.Repeat("1", 64)
 	root, err := s.inputResearchRoot(true)
@@ -449,8 +458,27 @@ func TestResearchContinuationCopiesProofsAndSupportsReviewedPartialEvaluation(t 
 	parent.Sources = []inputResearchSource{source}
 	rr, _ := openInputResearch(root, parent.ID, true)
 	defer rr.Close()
-	writePrivateData(rr, source.ID+".proof.json", proof)
-	writeInputResearch(rr, parent)
+	if backend == "legacy" {
+		if err = writePrivateData(rr, source.ID+".proof.json", proof); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		var retained inputResearchProof
+		if err = json.Unmarshal(proof, &retained); err != nil {
+			t.Fatal(err)
+		}
+		size, e := s.saveResearchProof(t.Context(), rr, source.ID, retained, 0)
+		if e != nil {
+			t.Fatal(e)
+		}
+		parent.Sources[0].Bytes = size
+		snapshot, e := s.loadResearchProof(t.Context(), rr, source.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		proof = snapshot.Raw
+	}
+	s.researchJournal(rr, parent.ID).Create(t.Context(), parent)
 	if err = s.verifyResearchContinuation(context.Background(), rr, parent); err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +491,7 @@ func TestResearchContinuationCopiesProofsAndSupportsReviewedPartialEvaluation(t 
 	child.CreatedAt = "2026-10-13T12:00:00Z"
 	child.Recipe.Limits.Pages = 0
 	child.Recipe.Limits.Searches = 0
-	if err = writeResearchReview(root, child, rr); err != nil {
+	if err = s.writeResearchReview(t.Context(), root, child, rr); err != nil {
 		t.Fatal(err)
 	}
 	cr, _ := openInputResearch(root, child.ID, false)
@@ -472,12 +500,12 @@ func TestResearchContinuationCopiesProofsAndSupportsReviewedPartialEvaluation(t 
 	if string(copied) != string(proof) {
 		t.Fatal("proof copy changed")
 	}
-	retained, _ := readInputResearch(cr)
+	retained, _ := s.researchJournal(cr, child.ID).Read(t.Context())
 	if retained.State != "review" || len(retained.Attempts) != 0 {
 		t.Fatal("continuation auto-started")
 	}
 	child.State = "running"
-	writeInputResearch(cr, child)
+	s.researchJournal(cr, child.ID).Update(t.Context(), func(r *inputResearchRun) error { r.State = child.State; return nil })
 	pr, _ := s.openInputPreparations(true)
 	defer pr.Close()
 	doc := inputPreparation{Version: 1, ID: child.PreparationID, Name: "Continued", RecipeVersion: 1, Recipe: inputRecipe{Intent: "Find companies", Research: &child.Recipe, Qualification: qualificationFixture()}}
@@ -492,7 +520,7 @@ func TestResearchContinuationCopiesProofsAndSupportsReviewedPartialEvaluation(t 
 		}
 		return recoveryAction("finish", map[string]string{"reason": "Only one company was supported."}), nil
 	}
-	executeInputResearch(context.Background(), cr, child, ops)
+	executeInputResearch(context.Background(), s.researchRunStore(cr, child.ID), child, ops)
 	saved, _ := readInputPreparation(pr, doc.ID)
 	saved = acceptFixture(t, s, saved)
 	rows, err := prepareInputSelection(saved.Document, []string{saved.Document.Records[0].ID})
@@ -500,7 +528,7 @@ func TestResearchContinuationCopiesProofsAndSupportsReviewedPartialEvaluation(t 
 		t.Fatal(err)
 	}
 	for _, state := range []string{"completed-with-gaps", "partial"} {
-		changeInputResearch(cr, func(r *inputResearchRun) error { r.State = state; return nil })
+		s.researchJournal(cr, child.ID).Update(t.Context(), func(r *inputResearchRun) error { r.State = state; return nil })
 		if _, err = s.reviewedInputSnapshot(context.Background(), saved.Document, saved.Document.Records[0], rows[0]); err != nil {
 			t.Fatal("reviewed partial handoff failed", state, err)
 		}
@@ -517,7 +545,11 @@ func TestResearchContinuationCopiesProofsAndSupportsReviewedPartialEvaluation(t 
 	if s.verifyResearchContinuation(context.Background(), rr, parent) == nil {
 		t.Fatal("modified proof admitted")
 	}
-	original, _ := readInputResearch(rr)
+	if backend == "memory" {
+		assertNoArtifactFiles(t, s)
+		assertNoResearchJournalFiles(t, s)
+	}
+	original, _ := s.researchJournal(rr, parent.ID).Read(t.Context())
 	if original.State != "interrupted" || len(original.Records) != 0 {
 		t.Fatal("continuation changed original run")
 	}
@@ -526,13 +558,13 @@ func TestResearchContinuationCopiesProofsAndSupportsReviewedPartialEvaluation(t 
 func TestResearchEmptySourceProofStillConsumesStorage(t *testing.T) {
 	root, _ := researchRunFixture(t)
 	proof := []byte(`{"retained":"unusable extraction"}`)
-	_, err := researchAttempt(context.Background(), root, "page", json.RawMessage(`{"url":"https://example.com/"}`), func(_ context.Context, _ inputResearchRun, a inputResearchAttempt) (json.RawMessage, error) {
+	_, err := researchAttempt(context.Background(), fileResearchStore(root), "page", json.RawMessage(`{"url":"https://example.com/"}`), func(_ context.Context, _ inputResearchRun, a inputResearchAttempt) (json.RawMessage, error) {
 		if e := writePrivateData(root, a.ID+".proof.json", proof); e != nil {
 			t.Fatal(e)
 		}
 		return nil, &researchSourceError{code: "source-empty-text", message: "No usable text."}
 	})
-	if ok, e := continueResearchSource(context.Background(), root, err); !ok || e != nil {
+	if ok, e := continueResearchSource(context.Background(), fileResearchStore(root), err); !ok || e != nil {
 		t.Fatal(e)
 	}
 	run, _ := readInputResearch(root)

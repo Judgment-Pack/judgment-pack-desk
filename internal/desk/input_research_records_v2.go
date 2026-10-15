@@ -88,14 +88,14 @@ func (s *Server) prepareResearchReprocessing(ctx context.Context, root *os.Root,
 		if selected == nil {
 			return fmt.Errorf("Selected record %s has no saved research. No records were skipped.", id)
 		}
-		if selected.Entity.Kind != researchTargetKind(run.Recipe.Target) {
+		if !researchKindAllowed(run.Recipe.Target, selected.Entity.Kind) {
 			return fmt.Errorf("%s does not match the saved recipe target.", selected.Entity.Name)
 		}
 		rr, err := openInputResearch(root, selected.RunID, false)
 		if err != nil {
 			return fmt.Errorf("Saved research for %s is unavailable.", selected.Entity.Name)
 		}
-		parent, err := readInputResearch(rr)
+		parent, err := s.researchJournal(rr, selected.RunID).Read(ctx)
 		if err != nil || parent.PreparationID != doc.ID || !researchCanContinue(parent) || parent.Gateway != run.Gateway {
 			rr.Close()
 			return fmt.Errorf("Saved evidence for %s is unavailable or incompatible. Review its research history.", selected.Entity.Name)
@@ -396,7 +396,17 @@ func applyResearchRecordsV2(run *inputResearchRun, args json.RawMessage) error {
 				return errors.New("Evidence link wasn't found in saved sources. Use a saved reference; leave an unconfirmed website missing. A source title alone is not a URL reference.")
 			}
 			entity.URL = normalized
-			if err := validateResearchEntity(&entity, run.Recipe, sources, researchAllowedURLs(*run), companies); err != nil {
+			validationRecipe := run.Recipe
+			if snapshot != nil && (validationRecipe.Target == "records" || validationRecipe.Target == "") {
+				// Identity was checked against this exact saved row above.
+				switch snapshot.Entity.Kind {
+				case "company":
+					validationRecipe.Target = "companies"
+				case "person":
+					validationRecipe.Target = "people"
+				}
+			}
+			if err := validateResearchEntity(&entity, validationRecipe, sources, researchAllowedURLs(*run), companies); err != nil {
 				return err
 			}
 			if snapshot == nil {
@@ -494,20 +504,8 @@ func (s *Server) publishResearchRecordsV2(run inputResearchRun) error {
 	}
 	outcomes := append([]researchRecordOutcome(nil), run.Outcomes...)
 	err := func() error {
-		root, e := s.openInputPreparations(false)
-		if e != nil {
-			return e
-		}
-		defer root.Close()
-		lock, e := root.Open(".")
-		if e != nil {
-			return e
-		}
-		defer lock.Close()
-		if e = waitPrivateDataLock(context.Background(), lock, true); e != nil {
-			return e
-		}
-		saved, e := readInputPreparation(root, run.PreparationID)
+		repository := s.preparationRepository()
+		saved, e := repository.Get(context.Background(), run.PreparationID)
 		if e != nil {
 			return e
 		}
@@ -602,7 +600,7 @@ func (s *Server) publishResearchRecordsV2(run inputResearchRun) error {
 		if changed > 0 {
 			doc.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 			doc.Activity = append(doc.Activity, inputActivity{Kind: "researched", At: doc.UpdatedAt, Count: changed, RecipeVersion: run.RecipeVersion})
-			_, e = writeInputPreparation(root, doc)
+			_, e = repository.CompareAndSwap(context.Background(), doc, saved.SHA256)
 		}
 		return e
 	}()
@@ -619,7 +617,7 @@ func (s *Server) publishResearchRecordsV2(run inputResearchRun) error {
 		return err
 	}
 	defer rr.Close()
-	_, err = changeInputResearch(rr, func(current *inputResearchRun) error {
+	_, err = s.researchRunStore(rr, run.ID).change(func(current *inputResearchRun) error {
 		// A stale publication pass must not acknowledge a newer proposal.
 		a, _ := json.Marshal(current.Records)
 		b, _ := json.Marshal(run.Records)

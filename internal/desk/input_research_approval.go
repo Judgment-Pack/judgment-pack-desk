@@ -3,6 +3,7 @@ package desk
 // A composer permission is a reviewed run waiting for a chat request, not a
 // browser preference. Consuming it and queueing that exact run is one write.
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -97,7 +98,7 @@ func researchApprovalView(run inputResearchRun, state string) inputResearchAppro
 	a := run.Approval
 	return inputResearchApprovalView{ChatID: a.ChatID, TurnID: a.TurnID, Reviewer: a.Reviewer, RunID: run.ID, PreparationID: run.PreparationID, Name: a.Name, RecipeVersion: run.RecipeVersion, Limits: run.Recipe.Limits, State: state, ApprovedAt: a.ApprovedAt, ExpiresAt: a.ExpiresAt, UsedAt: a.UsedAt, RevokedAt: a.RevokedAt}
 }
-func researchApprovals(root *os.Root, chat, scope string) ([]inputResearchRun, error) {
+func (s *Server) researchApprovals(ctx context.Context, root *os.Root, chat, scope string) ([]inputResearchRun, error) {
 	dir, err := root.Open(".")
 	if err != nil {
 		return nil, err
@@ -116,7 +117,7 @@ func researchApprovals(root *os.Root, chat, scope string) ([]inputResearchRun, e
 		if err != nil {
 			return nil, err
 		}
-		run, err := readInputResearch(rr)
+		run, err := s.researchJournal(rr, entry.Name()).Read(ctx)
 		rr.Close()
 		if err != nil {
 			return nil, err
@@ -136,20 +137,12 @@ func researchApprovals(root *os.Root, chat, scope string) ([]inputResearchRun, e
 // Shared by the page's Start research button, authorizing Auto, and chat's
 // admitted start. Each path validates the same frozen recipe and connections.
 func (s *Server) validateResearchAdmission(r *http.Request, run inputResearchRun) (string, error) {
-	p, err := s.openInputPreparations(false)
+	p, err := s.preparationRepository().Read(r.Context())
 	if err != nil {
 		return "", err
 	}
 	defer p.Close()
-	lock, err := p.Open(".")
-	if err != nil {
-		return "", err
-	}
-	defer lock.Close()
-	if err = waitPrivateDataLock(r.Context(), lock, false); err != nil {
-		return "", err
-	}
-	saved, err := readInputPreparation(p, run.PreparationID)
+	saved, err := p.Get(run.PreparationID)
 	if err != nil {
 		return "", err
 	}
@@ -214,7 +207,7 @@ func (s *Server) handleAuthorizeResearch(w http.ResponseWriter, r *http.Request,
 	}
 	fail := func(err error) { writeJSONCoded(w, 409, CodeBadRequest, err.Error()) }
 	scope := s.researchApprovalScope(r)
-	grants, err := researchApprovals(root, request.ChatID, scope)
+	grants, err := s.researchApprovals(r.Context(), root, request.ChatID, scope)
 	if err != nil {
 		fail(err)
 		return
@@ -225,11 +218,11 @@ func (s *Server) handleAuthorizeResearch(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	}
-	if err = researchInputAvailable(root, run.PreparationID, run.ID); err != nil {
+	if err = s.researchInputAvailable(r.Context(), root, run.PreparationID, run.ID); err != nil {
 		fail(err)
 		return
 	}
-	_, err = changeInputResearch(rr, func(current *inputResearchRun) error {
+	_, err = s.researchJournal(rr, run.ID).Update(r.Context(), func(current *inputResearchRun) error {
 		if current.State != "review" || current.StopRequested || current.Approval != nil || current.ContinuationOf != "" {
 			return errors.New("Review a new saved recipe before allowing automatic research.")
 		}
@@ -240,7 +233,7 @@ func (s *Server) handleAuthorizeResearch(w http.ResponseWriter, r *http.Request,
 		if err != nil {
 			return err
 		}
-		if err = researchBudgetIsLatest(root, *current); err != nil {
+		if err = s.researchBudgetIsLatest(r.Context(), root, *current); err != nil {
 			return err
 		}
 		actor := inputReviewActor{Kind: "local-access"}
@@ -327,7 +320,7 @@ func (s *Server) handleResearchApprovals(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	grants, err := researchApprovals(root, chat, s.researchApprovalScope(r))
+	grants, err := s.researchApprovals(r.Context(), root, chat, s.researchApprovalScope(r))
 	if err != nil {
 		fail(err)
 		return
@@ -338,16 +331,10 @@ func (s *Server) handleResearchApprovals(w http.ResponseWriter, r *http.Request)
 			grant := grants[0]
 			state := researchApprovalState(grant, time.Now())
 			if state == "ready" {
-				p, err := s.openInputPreparations(false)
-				if err != nil {
-					fail(err)
-					return
-				}
-				saved, err := readInputPreparation(p, grant.PreparationID)
-				p.Close()
+				saved, err := s.preparationRepository().Get(r.Context(), grant.PreparationID)
 				if err != nil || saved.SHA256 != grant.Revision {
 					state = "stale"
-				} else if researchBudgetIsLatest(root, grant) != nil {
+				} else if s.researchBudgetIsLatest(r.Context(), root, grant) != nil {
 					state = "stale"
 				} else {
 					reply["mode"] = "auto"
@@ -367,7 +354,7 @@ func (s *Server) handleResearchApprovals(w http.ResponseWriter, r *http.Request)
 					return
 				}
 				defer rr.Close()
-				_, err = changeInputResearch(rr, func(current *inputResearchRun) error {
+				_, err = s.researchJournal(rr, grant.ID).Update(r.Context(), func(current *inputResearchRun) error {
 					if current.Approval.UsedAt != "" {
 						return errors.New("This allowance was already used. Use Stop on the research run if needed.")
 					}
@@ -397,11 +384,11 @@ func (s *Server) handleResearchApprovals(w http.ResponseWriter, r *http.Request)
 		if researchApprovalState(grant, time.Now()) != "ready" || grant.PreparationID != request.PreparationID || grant.Revision != request.Revision {
 			continue
 		}
-		if err = researchInputAvailable(root, grant.PreparationID, grant.ID); err != nil {
+		if err = s.researchInputAvailable(r.Context(), root, grant.PreparationID, grant.ID); err != nil {
 			fail(err)
 			return
 		}
-		if err = researchBudgetIsLatest(root, grant); err != nil {
+		if err = s.researchBudgetIsLatest(r.Context(), root, grant); err != nil {
 			fail(err)
 			return
 		}
@@ -411,7 +398,7 @@ func (s *Server) handleResearchApprovals(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		defer rr.Close()
-		updated, err := changeInputResearch(rr, func(current *inputResearchRun) error {
+		updated, err := s.researchJournal(rr, grant.ID).Update(r.Context(), func(current *inputResearchRun) error {
 			if current.State != "review" || researchApprovalState(*current, time.Now()) != "ready" {
 				return errors.New("This research allowance is no longer available.")
 			}

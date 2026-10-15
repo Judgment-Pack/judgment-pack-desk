@@ -8,5 +8,5 @@ export interface ContextToolPolicy {
 /** Runtime protocol contracts with known immutable semantics. Mutable object
  * reads, evaluations and workflow actions must not acquire caching by name. */
 export function runtimeToolContextPolicy(name:string):ContextToolPolicy {
- return name==='get_schema'?{immutable:true,reference:true}:{}
+ return name==='get_schema'?{immutable:true,reference:true}:name==='get_artifact_version_options'?{immutable:true}:{}
 }

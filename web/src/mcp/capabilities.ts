@@ -20,6 +20,8 @@
  * different thing from knowing it can do none of it — see `known`.
  */
 export interface RuntimeCapabilities {
+  /** Exact version arithmetic; does not grant publication admission. */
+  artifactVersionOptionsSupported?: boolean
   /** Exact supplied pack/matrix rehearsal and runtime identity discovery. */
   snapshotChecksSupported?: boolean
   /**
@@ -185,6 +187,7 @@ export function readCapabilities(tools: readonly AdvertisedTool[]): RuntimeCapab
     argument in (advertisedProperties(tools, tool) ?? {})
   return {
     known: true,
+    artifactVersionOptionsSupported: names.has('get_artifact_version_options'),
     snapshotChecksSupported: names.has('experimental_test_cases') && names.has('describe_runtime'),
     rehearsalSupported: takes('experimental_evaluate', 'rehearsal'),
     graphDocumentSupported: names.has('experimental_get_graph'),

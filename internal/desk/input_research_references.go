@@ -3,7 +3,6 @@ package desk
 import (
 	"errors"
 	"fmt"
-	"os"
 )
 
 var errResearchURLReference = errors.New("The AI selected a link that did not match a saved source. No website read was sent.")
@@ -35,11 +34,11 @@ func researchURLReferences(run inputResearchRun) []inputResearchURLReference {
 	return refs
 }
 
-func rejectResearchRead(root *os.Root, step int, reason error) (inputResearchRun, error) {
+func rejectResearchRead(root researchRunStore, step int, reason error) (inputResearchRun, error) {
 	return rejectResearchAction(root, step, reason)
 }
-func rejectResearchAction(root *os.Root, step int, reason error) (inputResearchRun, error) {
-	return changeInputResearch(root, func(run *inputResearchRun) error {
+func rejectResearchAction(root researchRunStore, step int, reason error) (inputResearchRun, error) {
+	return root.change(func(run *inputResearchRun) error {
 		if run.StopRequested || run.State != "running" || len(run.Attempts) == 0 {
 			return errors.New("Research is no longer running.")
 		}

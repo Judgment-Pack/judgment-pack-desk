@@ -72,7 +72,7 @@ func TestResearchCandidatePagesOverlapAndCompleteByID(t *testing.T) {
 		release[fmt.Sprintf("https://company%d.example/", i)] = make(chan struct{})
 	}
 	var active, peak atomic.Int32
-	ops.source = func(ctx context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(ctx context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		n := active.Add(1)
 		defer active.Add(-1)
 		for old := peak.Load(); n > old; old = peak.Load() {
@@ -94,7 +94,7 @@ func TestResearchCandidatePagesOverlapAndCompleteByID(t *testing.T) {
 	done := make(chan error, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	go func() { done <- readResearchCandidateBatch(ctx, root, ops) }()
+	go func() { done <- readResearchCandidateBatch(ctx, fileResearchStore(root), ops) }()
 	attempts := []inputResearchAttempt{}
 	for range 3 {
 		select {
@@ -141,7 +141,7 @@ func TestResearchCandidatePagesOverlapAndCompleteByID(t *testing.T) {
 	if saved.Candidates[3].State != "queued" || saved.Candidates[4].State != "queued" {
 		t.Fatal("more than one batch dispatched")
 	}
-	if err = readResearchCandidateBatch(ctx, root, ops); err != nil {
+	if err = readResearchCandidateBatch(ctx, fileResearchStore(root), ops); err != nil {
 		t.Fatal(err)
 	}
 	again, _ := readInputResearch(root)
@@ -162,7 +162,7 @@ func TestResearchCandidateSchedulerSavesTenIncrementally(t *testing.T) {
 	models := 0
 	var pages atomic.Int32
 	published := []int{}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		pages.Add(1)
 		return testCandidateSource(a), nil
 	}
@@ -205,7 +205,7 @@ func TestResearchCandidateSchedulerSavesTenIncrementally(t *testing.T) {
 		}
 		return nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	saved, err := readInputResearch(root)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +238,7 @@ func TestResearchCandidateBudgetStopAndRecovery(t *testing.T) {
 				t.Fatal(err)
 			}
 			started := make(chan struct{}, 3)
-			ops.source = func(ctx context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+			ops.source = func(ctx context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 				calls.Add(1)
 				if mode == "fatal" {
 					started <- struct{}{}
@@ -255,7 +255,7 @@ func TestResearchCandidateBudgetStopAndRecovery(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			err := readResearchCandidateBatch(ctx, root, ops)
+			err := readResearchCandidateBatch(ctx, fileResearchStore(root), ops)
 			saved, e := readInputResearch(root)
 			if e != nil {
 				t.Fatal(e)
@@ -287,14 +287,14 @@ func TestResearchUnusableSearchAfterTimeoutContinues(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	_, err := researchAttemptWithWait(context.Background(), root, "search", json.RawMessage(`{"query":"candidate leads"}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+	_, err := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", json.RawMessage(`{"query":"candidate leads"}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 		calls++
 		if calls == 1 {
 			return nil, retryFailure("search-timeout")
 		}
 		return nil, retryFailure("search-invalid-response")
 	}, noRetryWait)
-	if ok, e := continueResearchSource(context.Background(), root, err); !ok || e != nil {
+	if ok, e := continueResearchSource(context.Background(), fileResearchStore(root), err); !ok || e != nil {
 		t.Fatal("invalid response interrupted recovery", e)
 	}
 	run, e := readInputResearch(root)
@@ -305,7 +305,7 @@ func TestResearchUnusableSearchAfterTimeoutContinues(t *testing.T) {
 		t.Fatal("invalid response retried or treated as evidence", calls)
 	}
 	// Acquisition classification cannot swallow proof/sealing errors.
-	if ok, _ := continueResearchSource(context.Background(), root, errors.New("proof invalid")); ok {
+	if ok, _ := continueResearchSource(context.Background(), fileResearchStore(root), errors.New("proof invalid")); ok {
 		t.Fatal("proof failure continued")
 	}
 }
@@ -340,7 +340,7 @@ func TestResearchCandidateStopCancelsOutstandingAndKeepsCompleted(t *testing.T) 
 	defer cancel()
 	entered := make(chan inputResearchAttempt, 3)
 	release := make(chan struct{})
-	ops.source = func(call context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(call context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		entered <- a
 		if a.URL == "https://company0.example/" {
 			<-release
@@ -350,7 +350,7 @@ func TestResearchCandidateStopCancelsOutstandingAndKeepsCompleted(t *testing.T) 
 		return inputResearchSource{}, call.Err()
 	}
 	done := make(chan error, 1)
-	go func() { done <- readResearchCandidateBatch(ctx, root, ops) }()
+	go func() { done <- readResearchCandidateBatch(ctx, fileResearchStore(root), ops) }()
 	for range 3 {
 		select {
 		case <-entered:
@@ -395,11 +395,11 @@ func TestResearchCandidateChecksAIConnectionBeforeReadingQueue(t *testing.T) {
 	ops := recoveryOperations()
 	calls := 0
 	ops.validateAI = func(context.Context, inputResearchAI) error { return errors.New("AI settings changed") }
-	ops.source = func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 		calls++
 		return inputResearchSource{}, nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	saved, err := readInputResearch(root)
 	if err != nil || calls != 0 || saved.State != "blocked" || saved.Problem != "AI settings changed" {
 		t.Fatal("source dispatched with unusable AI connection", err, calls, saved.State)

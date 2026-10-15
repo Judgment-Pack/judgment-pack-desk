@@ -43,7 +43,7 @@ func TestResearchBudgetPauseApprovalResumesWithoutRepeatingSources(t *testing.T)
 			return nil, nil
 		}
 	}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 		pages++
 		if a.URL != run.Seeds[pages-1] {
 			t.Fatal("source repeated", a.URL)
@@ -52,7 +52,7 @@ func TestResearchBudgetPauseApprovalResumesWithoutRepeatingSources(t *testing.T)
 		return inputResearchSource{ID: a.ID, Kind: "page", URL: a.URL, URLs: run.Seeds, Text: "Canada", Verification: "verified"}, nil
 	}
 	ops.publish = func(r inputResearchRun) error { published = len(r.Records); return nil }
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	paused, err := readInputResearch(root)
 	if err != nil || paused.State != "paused" || models != 3 || pages != 1 || published != 1 || len(paused.BudgetRequests) != 1 {
 		t.Fatal("not safely paused", err, paused.State, models, pages)
@@ -79,7 +79,7 @@ func TestResearchBudgetPauseApprovalResumesWithoutRepeatingSources(t *testing.T)
 	}
 	approved.State = "running"
 	writeInputResearch(root, approved)
-	executeInputResearch(context.Background(), root, approved, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), approved, ops)
 	done, err := readInputResearch(root)
 	if err != nil || done.State != "completed" || len(done.Records) != 2 || published != 2 || models != 5 || pages != 2 {
 		t.Fatal("resume failed", err, done.State, models, pages)

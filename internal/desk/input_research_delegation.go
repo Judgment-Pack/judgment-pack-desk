@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -197,7 +196,7 @@ func admitResearchTaskOperation(r *inputResearchRun, id, kind string) error {
 func newResearchTask(r inputResearchRun, profile, key, title, objective string) researchTask {
 	return researchTask{Task: delegation.Task{ID: "task_" + digestOf([]byte(r.ID+"\n"+profile+"\n"+key)), Title: title, Objective: objective, State: "queued", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}, Profile: profile}
 }
-func queueResearchDiscoveryTasks(root *os.Root, raw json.RawMessage) error {
+func queueResearchDiscoveryTasks(root researchRunStore, raw json.RawMessage) error {
 	var q struct {
 		Tasks []struct {
 			Title     string `json:"title"`
@@ -207,7 +206,7 @@ func queueResearchDiscoveryTasks(root *os.Root, raw json.RawMessage) error {
 	if decodeDataJSON(raw, &q) != nil || len(q.Tasks) < 1 || len(q.Tasks) > 3 {
 		return errors.New("Delegate one to three independent discovery tasks with a title and focused objective.")
 	}
-	_, err := changeInputResearch(root, func(r *inputResearchRun) error {
+	_, err := root.change(func(r *inputResearchRun) error {
 		if !delegatedResearch(*r) || r.Reprocess || r.StopRequested || r.State != "running" || r.Phase == "finalize" || r.Phase == "save" {
 			return errors.New("Discovery delegation is unavailable.")
 		}
@@ -227,8 +226,8 @@ func queueResearchDiscoveryTasks(root *os.Root, raw json.RawMessage) error {
 	})
 	return err
 }
-func runResearchCandidateTasks(ctx context.Context, root *os.Root, ops inputResearchOperations) error {
-	_, err := changeInputResearch(root, func(r *inputResearchRun) error {
+func runResearchCandidateTasks(ctx context.Context, root researchRunStore, ops inputResearchOperations) error {
+	_, err := root.change(func(r *inputResearchRun) error {
 		if r.StopRequested {
 			return context.Canceled
 		}
@@ -262,8 +261,8 @@ func runResearchCandidateTasks(ctx context.Context, root *os.Root, ops inputRese
 	}
 	return runQueuedResearchTasks(ctx, root, ops)
 }
-func runResearchSelectedTasks(ctx context.Context, root *os.Root, ops inputResearchOperations) error {
-	_, err := changeInputResearch(root, func(r *inputResearchRun) error {
+func runResearchSelectedTasks(ctx context.Context, root researchRunStore, ops inputResearchOperations) error {
+	_, err := root.change(func(r *inputResearchRun) error {
 		for _, row := range r.Selection {
 			t := newResearchTask(*r, "selected", row.RecordID, row.Entity.Name, "Update only this selected record using its retained sources. Do not search, read websites or create another entity.")
 			t.RecordID = row.RecordID
@@ -285,8 +284,8 @@ func runResearchSelectedTasks(ctx context.Context, root *os.Root, ops inputResea
 	}
 	return runQueuedResearchTasks(ctx, root, ops)
 }
-func runQueuedResearchTasks(ctx context.Context, root *os.Root, ops inputResearchOperations) error {
-	r, err := readInputResearch(root)
+func runQueuedResearchTasks(ctx context.Context, root researchRunStore, ops inputResearchOperations) error {
+	r, err := root.read()
 	if err != nil {
 		return err
 	}
@@ -303,7 +302,7 @@ func runQueuedResearchTasks(ctx context.Context, root *os.Root, ops inputResearc
 	var publication sync.Mutex
 	return delegation.Run(ctx, tasks, r.Execution.Concurrency, delegation.Hooks{
 		Transition: func(_ context.Context, next delegation.Task) error {
-			_, e := changeInputResearch(root, func(r *inputResearchRun) error {
+			_, e := root.change(func(r *inputResearchRun) error {
 				t, e := researchTaskByID(r, next.ID)
 				if e != nil {
 					return e
@@ -434,12 +433,12 @@ func researchTaskPrompt(r inputResearchRun, t researchTask) (string, error) {
 	out, err := json.Marshal(payload)
 	return string(out), err
 }
-func taskResearchSource(ctx context.Context, root *os.Root, ops inputResearchOperations, t researchTask, kind string, args json.RawMessage) error {
+func taskResearchSource(ctx context.Context, root researchRunStore, ops inputResearchOperations, t researchTask, kind string, args json.RawMessage) error {
 	key := digestOf(append([]byte(kind+"\n"), args...))
 	// Reuse completed acquisition across tasks; wait for an in-flight request
 	// rather than dispatching it again. Uncertain outcomes are never replayed.
 	for {
-		r, err := readInputResearch(root)
+		r, err := root.read()
 		if err != nil {
 			return &delegation.Fatal{Err: err}
 		}
@@ -463,7 +462,7 @@ func taskResearchSource(ctx context.Context, root *os.Root, ops inputResearchOpe
 			if err := validateResearchSearchForPhase(call, current, ops); err != nil {
 				return nil, &delegation.Fatal{Err: err}
 			}
-			source, err := ops.source(call, root, current, a, args)
+			source, err := ops.source(call, current, a, args)
 			if err != nil {
 				return nil, err
 			}
@@ -473,7 +472,7 @@ func taskResearchSource(ctx context.Context, root *os.Root, ops inputResearchOpe
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			fresh, readErr := readInputResearch(root)
+			fresh, readErr := root.read()
 			if readErr != nil {
 				return &delegation.Fatal{Err: readErr}
 			}
@@ -500,7 +499,7 @@ func taskResearchSource(ctx context.Context, root *os.Root, ops inputResearchOpe
 		if json.Unmarshal(raw, &source) != nil {
 			return &delegation.Fatal{Err: errors.New("Invalid retained task source.")}
 		}
-		_, e = changeInputResearch(root, func(r *inputResearchRun) error {
+		_, e = root.change(func(r *inputResearchRun) error {
 			phase, reason := r.Phase, r.PhaseReason
 			if err := retainResearchSource(r, source); err != nil {
 				return err
@@ -537,8 +536,8 @@ func hasResearchRetry(r inputResearchRun, id string) bool {
 	return false
 }
 
-func executeResearchTask(ctx context.Context, root *os.Root, ops inputResearchOperations, id string, publication *sync.Mutex) error {
-	r, err := readInputResearch(root)
+func executeResearchTask(ctx context.Context, root researchRunStore, ops inputResearchOperations, id string, publication *sync.Mutex) error {
+	r, err := root.read()
 	if err != nil {
 		return &delegation.Fatal{Err: err}
 	}
@@ -572,7 +571,7 @@ func executeResearchTask(ctx context.Context, root *os.Root, ops inputResearchOp
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		r, err = readInputResearch(root)
+		r, err = root.read()
 		if err != nil {
 			return &delegation.Fatal{Err: err}
 		}
@@ -603,7 +602,7 @@ func executeResearchTask(ctx context.Context, root *os.Root, ops inputResearchOp
 		raw, err := researchAttempt(ctx, root, "model", args, func(call context.Context, current inputResearchRun, a inputResearchAttempt) (json.RawMessage, error) {
 			attemptID = a.ID
 			return ops.model(call, current.Recipe.AI, prompt, func(waiting bool) error {
-				_, e := changeInputResearch(root, func(r *inputResearchRun) error {
+				_, e := root.change(func(r *inputResearchRun) error {
 					if call.Err() != nil {
 						return call.Err()
 					}
@@ -639,7 +638,7 @@ func executeResearchTask(ctx context.Context, root *os.Root, ops inputResearchOp
 		}
 		feedback = err.Error()
 		corrections++
-		if _, e := changeInputResearch(root, func(r *inputResearchRun) error {
+		if _, e := root.change(func(r *inputResearchRun) error {
 			a, e := researchAttemptByID(r, attemptID)
 			if e != nil {
 				return e
@@ -655,9 +654,9 @@ func executeResearchTask(ctx context.Context, root *os.Root, ops inputResearchOp
 	}
 	return errors.New("The task reached its AI request allowance. Saved findings were kept.")
 }
-func applyResearchTaskAction(ctx context.Context, root *os.Root, ops inputResearchOperations, t researchTask, attemptID string, action inputResearchAction, publication *sync.Mutex) error {
+func applyResearchTaskAction(ctx context.Context, root researchRunStore, ops inputResearchOperations, t researchTask, attemptID string, action inputResearchAction, publication *sync.Mutex) error {
 	if action.Tool == "read_context" {
-		r, err := readInputResearch(root)
+		r, err := root.read()
 		if err != nil {
 			return &delegation.Fatal{Err: err}
 		}
@@ -675,7 +674,7 @@ func applyResearchTaskAction(ctx context.Context, root *os.Root, ops inputResear
 		if decodeDataJSON(action.Arguments, &result) != nil || len(result.Reason) > 2000 {
 			return errors.New("Finish with a short explanation of the task result or missing evidence.")
 		}
-		_, e := changeInputResearch(root, func(r *inputResearchRun) error {
+		_, e := root.change(func(r *inputResearchRun) error {
 			current, e := researchTaskByID(r, t.ID)
 			if e != nil {
 				return e
@@ -694,7 +693,7 @@ func applyResearchTaskAction(ctx context.Context, root *os.Root, ops inputResear
 		}
 		publication.Lock()
 		defer publication.Unlock()
-		result, err := changeInputResearch(root, func(r *inputResearchRun) error {
+		result, err := root.change(func(r *inputResearchRun) error {
 			if r.StopRequested || ctx.Err() != nil {
 				return context.Canceled
 			}
@@ -730,7 +729,7 @@ func applyResearchTaskAction(ctx context.Context, root *os.Root, ops inputResear
 				return errors.New(o.Problem)
 			}
 		}
-		_, err = changeInputResearch(root, func(r *inputResearchRun) error {
+		_, err = root.change(func(r *inputResearchRun) error {
 			current, e := researchTaskByID(r, t.ID)
 			if e != nil {
 				return e
@@ -743,7 +742,7 @@ func applyResearchTaskAction(ctx context.Context, root *os.Root, ops inputResear
 		}
 		return nil
 	}
-	r, err := readInputResearch(root)
+	r, err := root.read()
 	if err != nil {
 		return &delegation.Fatal{Err: err}
 	}
@@ -754,7 +753,7 @@ func applyResearchTaskAction(ctx context.Context, root *os.Root, ops inputResear
 		if t.Profile != "discovery" {
 			return errors.New("Prepare only the assigned candidate. Do not queue other companies.")
 		}
-		_, err = changeInputResearch(root, func(r *inputResearchRun) error {
+		_, err = root.change(func(r *inputResearchRun) error {
 			if r.StopRequested {
 				return context.Canceled
 			}

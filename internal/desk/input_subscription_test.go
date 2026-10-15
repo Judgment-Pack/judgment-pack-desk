@@ -3,6 +3,7 @@ package desk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -58,6 +59,13 @@ func TestInputSubscriptionRevisionEligibility(t *testing.T) {
 }
 
 func TestInputSubscriptionRealRunnerOutbox(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		for _, phase := range []string{"before", "after"} {
+			t.Run(backend+"/"+phase, func(t *testing.T) { testInputSubscriptionRealRunnerOutbox(t, backend, phase) })
+		}
+	}
+}
+func testInputSubscriptionRealRunnerOutbox(t *testing.T, backend, phase string) {
 	bin, runtime := os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
 	if bin == "" || runtime == "" {
 		t.Skip("requires Runner and Runtime")
@@ -76,6 +84,10 @@ func TestInputSubscriptionRealRunnerOutbox(t *testing.T) {
 	if s.inputResearchCancel != nil {
 		s.inputResearchCancel()
 		<-s.inputResearchDone
+	}
+	if backend == "memory" {
+		s.inputPreparations = &memoryPreparationRepository{data: map[string][]byte{}}
+		s.evaluationJournals = newMemoryEvaluationJournals()
 	}
 	call := func(path string, body any, revision string) []byte {
 		t.Helper()
@@ -119,13 +131,27 @@ func TestInputSubscriptionRealRunnerOutbox(t *testing.T) {
 		t.Helper()
 		s.resumeInputEvaluations(context.Background())
 		var err error
-		b, err = readInputEvaluation(br)
+		snapshot, readErr := s.evaluationJournal(br, b.ID).Read(t.Context())
+		b, err = snapshot.Document, readErr
 		if err != nil || b.State == "blocked" {
 			t.Fatal(b.State, b.Problem, err)
 		}
 	}
+	// Runner accepts job creation, but Desk loses the acknowledgement. Its
+	// frozen release/configuration must resolve to that exact job on recovery.
+	acceptedJobRaw, err := s.inputRunner(t.Context(), "jobs", map[string]any{"name": b.Name, "releaseId": b.ReleaseID, "reviewed": true, "trigger": subscriptionTrigger()}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var acceptedJob struct {
+		ID        string `json:"id"`
+		TriggerID string `json:"initialTriggerId"`
+	}
+	if err = json.Unmarshal(acceptedJobRaw, &acceptedJob); err != nil || acceptedJob.ID == "" || acceptedJob.TriggerID == "" {
+		t.Fatal("invalid accepted job", err)
+	}
 	tick()
-	if b.JobID == "" || b.State != "paused" || len(b.Rows) != 0 {
+	if b.JobID != acceptedJob.ID || b.Subscription.TriggerID != acceptedJob.TriggerID || b.State != "paused" || len(b.Rows) != 0 {
 		t.Fatal("save paused started processing", b)
 	}
 	call(path+"/evaluations/"+b.ID+"/subscription-state", map[string]any{"reviewed": true, "enabled": true}, "")
@@ -149,16 +175,82 @@ func TestInputSubscriptionRealRunnerOutbox(t *testing.T) {
 		} `json:"occurrence"`
 	}
 	json.Unmarshal(reply, &accepted)
-	// Discard that acknowledgement; the on-disk outbox is still pending.
+	// Let the accepted run finish before recovering its acknowledgement.
+	// Runner retains a submitted occurrence separately from the completed run.
+	completed := false
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		raw, err := s.inputRunner(t.Context(), "triggers/"+b.Subscription.TriggerID+"/deliveries/"+row.EventID, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var delivery struct {
+			Occurrence struct {
+				RunID string `json:"runId"`
+			} `json:"occurrence"`
+		}
+		if err = json.Unmarshal(raw, &delivery); err != nil {
+			t.Fatal(err)
+		}
+		if delivery.Occurrence.RunID != "" {
+			raw, err = s.inputRunner(t.Context(), "runs/"+delivery.Occurrence.RunID, nil, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var run struct {
+				State string `json:"state"`
+			}
+			if err = json.Unmarshal(raw, &run); err != nil {
+				t.Fatal(err)
+			}
+			if run.State == "completed" {
+				completed = true
+				break
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !completed {
+		t.Fatal("accepted run did not complete")
+	}
+	// Discard that acknowledgement; the journaled outbox is still pending.
+	// Then lose the storage acknowledgement too, on either side of commit.
+	provider := s.evaluationJournals
+	journal := s.evaluationJournal(br, b.ID)
+	writes := 0
+	s.evaluationJournals = evaluationProviderFunc(func(id string) evaluationJournal {
+		if id != b.ID {
+			t.Fatal("unexpected batch")
+		}
+		return interceptedEvaluationJournal{evaluationJournal: journal, write: func(ctx context.Context, candidate inputEvaluation, revision string) (evaluationSnapshot, error) {
+			writes++
+			if len(candidate.Rows) != 1 || candidate.Rows[0].OccurrenceID != accepted.Occurrence.ID {
+				t.Fatal("unexpected recovery write")
+			}
+			if phase == "after" {
+				if _, err := journal.CompareAndSwap(ctx, candidate, revision); err != nil {
+					return evaluationSnapshot{}, err
+				}
+			}
+			return evaluationSnapshot{}, errors.New("delivery acknowledgement persistence unavailable")
+		}}
+	})
+	tick()
+	s.evaluationJournals = provider
+	if writes != 1 || b.Rows[0].EventID != row.EventID || b.Rows[0].EventAt != row.EventAt {
+		t.Fatal("uncertain delivery was replayed or changed", writes, b.Rows)
+	}
+	if phase == "before" && (b.Rows[0].OccurrenceID != "" || !sameEvaluationValue(b.Rows[0].Input, row.Input)) {
+		t.Fatal("uncommitted acknowledgement changed outbox")
+	}
 	tick()
 	if b.Rows[0].OccurrenceID != accepted.Occurrence.ID {
 		t.Fatal("lost acknowledgement created another occurrence", b.Rows)
 	}
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline) && b.Rows[0].State != "completed"; {
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline) && (b.Rows[0].State != "completed"); {
 		time.Sleep(25 * time.Millisecond)
 		tick()
 	}
-	if b.Rows[0].State != "completed" || b.Rows[0].RunID == "" {
+	if b.Rows[0].State != "completed" || b.Rows[0].RunID == "" || len(b.Rows[0].Result) == 0 {
 		t.Fatal("no retained decision", b.Rows)
 	}
 	tick()
@@ -179,17 +271,17 @@ func TestInputSubscriptionRealRunnerOutbox(t *testing.T) {
 	}
 	// Recipe changes withdraw eligibility instead of silently applying new mapping.
 	saved.Document.RecipeVersion++
-	pr, e := s.openInputPreparations(false)
-	if e != nil {
+	if _, e = s.preparationRepository().CompareAndSwap(t.Context(), saved.Document, saved.SHA256); e != nil {
 		t.Fatal(e)
 	}
-	_, e = writeInputPreparation(pr, saved.Document)
-	pr.Close()
-	if e != nil {
-		t.Fatal(e)
+	if backend == "memory" {
+		assertNoCollectionFiles(t, s)
+		assertNoEvaluationFiles(t, s)
 	}
+
 	s.resumeInputEvaluations(context.Background())
-	b, e = readInputEvaluation(br)
+	snapshot, readErr := s.evaluationJournal(br, b.ID).Read(t.Context())
+	b, e = snapshot.Document, readErr
 	if e != nil || b.State != "blocked" || b.Rows[1].OccurrenceID != "" {
 		t.Fatal("stale recipe delivered", b, e)
 	}

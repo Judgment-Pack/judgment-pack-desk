@@ -61,7 +61,7 @@ func TestResearchRetriesPersistExactAttemptsAndReuseOnlySuccess(t *testing.T) {
 	root := retryFixture(t, 5)
 	args := json.RawMessage(`{"query":"one"}`)
 	// Preserve a previously successful model operation; source retries don't replay it.
-	_, err := researchAttempt(context.Background(), root, "model", json.RawMessage(`{"step":0}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+	_, err := researchAttempt(context.Background(), fileResearchStore(root), "model", json.RawMessage(`{"step":0}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 		return json.RawMessage(`{"tool":"search","arguments":{"query":"one"}}`), nil
 	})
 	if err != nil {
@@ -101,11 +101,11 @@ func TestResearchRetriesPersistExactAttemptsAndReuseOnlySuccess(t *testing.T) {
 		}
 		return nil
 	}
-	raw, e := researchAttemptWithWait(context.Background(), root, "search", args, call, wait)
+	raw, e := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", args, call, wait)
 	if e != nil || calls != 3 || waits != 2 {
 		t.Fatal(calls, waits, e)
 	}
-	cached, e := researchAttempt(context.Background(), root, "search", args, call)
+	cached, e := researchAttempt(context.Background(), fileResearchStore(root), "search", args, call)
 	if e != nil || calls != 3 || string(raw) != string(cached) {
 		t.Fatal("completed retry replayed", e)
 	}
@@ -158,7 +158,7 @@ func TestResearchRetryLimitsAndOptIn(t *testing.T) {
 				calls++
 				return nil, retryFailure(tc.code)
 			}
-			_, e = researchAttemptWithWait(context.Background(), root, tc.kind, json.RawMessage(`{}`), call, noRetryWait)
+			_, e = researchAttemptWithWait(context.Background(), fileResearchStore(root), tc.kind, json.RawMessage(`{}`), call, noRetryWait)
 			if e == nil || !strings.Contains(e.Error(), tc.note) || calls != tc.calls {
 				t.Fatal(calls, e)
 			}
@@ -169,7 +169,7 @@ func TestResearchRetryLimitsAndOptIn(t *testing.T) {
 			if err != nil || len(run.Attempts) != tc.calls || run.PendingRetry != nil {
 				t.Fatal(run, err)
 			}
-			_, _ = researchAttemptWithWait(context.Background(), root, tc.kind, json.RawMessage(`{}`), call, noRetryWait)
+			_, _ = researchAttemptWithWait(context.Background(), fileResearchStore(root), tc.kind, json.RawMessage(`{}`), call, noRetryWait)
 			if calls != tc.calls {
 				t.Fatal("failed group replayed outside live invocation")
 			}
@@ -182,7 +182,7 @@ func TestResearchRetriesRefuseAmbiguousPermanentAndPostAcquireFailures(t *testin
 		t.Run(code, func(t *testing.T) {
 			root := retryFixture(t, 5)
 			calls := 0
-			_, e := researchAttemptWithWait(context.Background(), root, "search", json.RawMessage(`{}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+			_, e := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", json.RawMessage(`{}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 				calls++
 				if code == "seal-rate-limited" {
 					return nil, researchSourceFailure(429, []byte(`{"error":"rate-limited"}`))
@@ -206,7 +206,7 @@ func TestResearchRetryStopsOnCancellationRestartAndSaveFailure(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			calls := 0
-			_, e := researchAttemptWithWait(ctx, root, "search", json.RawMessage(`{"query":"test"}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+			_, e := researchAttemptWithWait(ctx, fileResearchStore(root), "search", json.RawMessage(`{"query":"test"}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 				calls++
 				return nil, retryFailure("rate-limited")
 			}, func(ctx context.Context, at time.Time) error {
@@ -240,7 +240,7 @@ func TestResearchRetryStopsOnCancellationRestartAndSaveFailure(t *testing.T) {
 func TestResearchRetryDoesNotRepeatUnretainedResponses(t *testing.T) {
 	root := retryFixture(t, 5)
 	calls := 0
-	_, e := researchAttemptWithWait(context.Background(), root, "search", json.RawMessage(`{}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+	_, e := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", json.RawMessage(`{}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 		calls++
 		_ = root.Remove("record.json")
 		return nil, retryFailure("rate-limited")
@@ -272,7 +272,7 @@ func TestResearchRetryAdmissionUsesAcquisitionStage(t *testing.T) {
 func TestResearchRetryFailureAfterEarlierRetryHasAccurateHistory(t *testing.T) {
 	root := retryFixture(t, 5)
 	calls := 0
-	_, err := researchAttemptWithWait(context.Background(), root, "search", json.RawMessage(`{}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+	_, err := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", json.RawMessage(`{}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 		calls++
 		if calls == 1 {
 			return nil, retryFailure("rate-limited")
@@ -335,10 +335,10 @@ func TestResearchTemporaryRetryRecoversWithoutReplayingSuccess(t *testing.T) {
 		}
 		return json.RawMessage(`{"text":"retained source","bytes":0}`), nil
 	}
-	if _, err := researchAttemptWithWait(context.Background(), root, "search", args, call, noRetryWait); err != nil {
+	if _, err := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", args, call, noRetryWait); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := researchAttemptWithWait(context.Background(), root, "search", args, call, noRetryWait); err != nil {
+	if _, err := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", args, call, noRetryWait); err != nil {
 		t.Fatal(err)
 	}
 	saved, err := readInputResearch(root)
@@ -346,7 +346,7 @@ func TestResearchTemporaryRetryRecoversWithoutReplayingSuccess(t *testing.T) {
 		t.Fatal("recovery did not reuse the saved success", err, calls, saved.Attempts)
 	}
 	// A temporary failure from sealing cannot replay the acquisition.
-	_, err = researchAttemptWithWait(context.Background(), root, "search", json.RawMessage(`{"query":"seal failure"}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+	_, err = researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", json.RawMessage(`{"query":"seal failure"}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 		return nil, researchSourceFailure(503, []byte(`{"error":"search-temporary"}`))
 	}, func(context.Context, time.Time) error { t.Fatal("seal was retried"); return nil })
 	if err == nil {

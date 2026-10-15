@@ -55,7 +55,8 @@ export function applyDialectRecipeAction(saved:PreparationReply,action:DialectCh
   if(patch.research){
    const prior=recipe.research
    const research={version:1 as const,target:'records' as const,fields:[],criteria:[],limits:{records:3,searches:0,pages:10,modelCalls:15},ai:{connection:'',revision:'',model:''},...(!prior?{retries:defaultResearchRetries()}:{}),...prior,...structuredClone(patch.research)}
-   if(prior&&research.target!==prior.target){research.companyIds=[];research.companyInputs=[]}
+   // A generic recipe retains the person's reviewed source selection.
+   research.target='records'
    recipe.research=research
   }
  }

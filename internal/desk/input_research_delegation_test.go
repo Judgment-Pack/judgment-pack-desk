@@ -74,7 +74,7 @@ func delegatedResult(p taskPromptFixture) json.RawMessage {
 func delegatedOps(s *Server) inputResearchOperations {
 	ops := recoveryOperations()
 	ops.publish = s.publishResearchRecords
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, args json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, args json.RawMessage) (inputResearchSource, error) {
 		url, _ := researchRequestCoordinates(a.Kind, args)
 		return inputResearchSource{ID: a.ID, Kind: a.Kind, URL: url, URLs: []string{url}, Verification: "verified", Text: "This company operates in Canada."}, nil
 	}
@@ -126,7 +126,7 @@ func TestResearchDelegationParallelCompletionsRemainBoundToTheirTasks(t *testing
 		}
 		return delegatedResult(p), nil
 	}
-	executeInputResearch(context.Background(), root, r, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), r, ops)
 	saved, e := readInputResearch(root)
 	if e != nil {
 		t.Fatal(e)
@@ -176,7 +176,7 @@ func TestResearchDelegationFailedSiblingDoesNotDiscardRecords(t *testing.T) {
 		}
 		return delegatedResult(p), nil
 	}
-	executeInputResearch(context.Background(), root, r, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), r, ops)
 	saved, e := readInputResearch(root)
 	if e != nil {
 		t.Fatal(e)
@@ -214,7 +214,7 @@ func TestResearchDelegationBudgetIsReservedAcrossWaitingRequests(t *testing.T) {
 	done := make(chan error, 1)
 	first := context.WithValue(ctx, researchTaskContextKey{}, r.Tasks[0].ID)
 	go func() {
-		_, e := researchAttempt(first, root, "model", json.RawMessage(`{"task":1}`), func(call context.Context, _ inputResearchRun, a inputResearchAttempt) (json.RawMessage, error) {
+		_, e := researchAttempt(first, fileResearchStore(root), "model", json.RawMessage(`{"task":1}`), func(call context.Context, _ inputResearchRun, a inputResearchAttempt) (json.RawMessage, error) {
 			_, e := changeInputResearch(root, func(r *inputResearchRun) error { return researchModelAvailability(r, a.ID, true) })
 			if e != nil {
 				return nil, e
@@ -232,7 +232,7 @@ func TestResearchDelegationBudgetIsReservedAcrossWaitingRequests(t *testing.T) {
 	}
 	calls := 0
 	second := context.WithValue(ctx, researchTaskContextKey{}, r.Tasks[1].ID)
-	_, e := researchAttempt(second, root, "model", json.RawMessage(`{"task":2}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+	_, e := researchAttempt(second, fileResearchStore(root), "model", json.RawMessage(`{"task":2}`), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
 		calls++
 		return nil, nil
 	})
@@ -261,7 +261,7 @@ func TestResearchDelegationRejectsSiblingSourcesAndNestedDelegation(t *testing.T
 	if validateResearchTaskRecords(r, task, action.Arguments) == nil {
 		t.Fatal("out-of-scope record admitted")
 	}
-	if e := applyResearchTaskAction(context.Background(), root, ops, task, "", inputResearchAction{Tool: "delegate", Arguments: json.RawMessage(`{}`)}, &sync.Mutex{}); e == nil {
+	if e := applyResearchTaskAction(context.Background(), fileResearchStore(root), ops, task, "", inputResearchAction{Tool: "delegate", Arguments: json.RawMessage(`{}`)}, &sync.Mutex{}); e == nil {
 		t.Fatal("nested delegation admitted")
 	}
 }
@@ -276,7 +276,7 @@ func TestResearchDelegationDiscoveryQueuesCandidatesAndCannotSaveDirectly(t *tes
 	ops := delegatedOps(s)
 	var mu sync.Mutex
 	turns := map[string]int{}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, args json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, args json.RawMessage) (inputResearchSource, error) {
 		_, query := researchRequestCoordinates(a.Kind, args)
 		return inputResearchSource{ID: a.ID, Kind: "search", URLs: []string{"https://a.example/"}, Query: query, Text: "A company lead", Verification: "verified"}, nil
 	}
@@ -293,10 +293,10 @@ func TestResearchDelegationDiscoveryQueuesCandidatesAndCannotSaveDirectly(t *tes
 		return recoveryAction("candidates", map[string]any{"candidates": []any{map[string]any{"name": "Company 1", "urlRef": p.URLs[0].Ref}}}), nil
 	}
 	args := json.RawMessage(`{"tasks":[{"title":"Sector discovery","objective":"Find firms in the assigned sector."}]}`)
-	if e := queueResearchDiscoveryTasks(root, args); e != nil {
+	if e := queueResearchDiscoveryTasks(fileResearchStore(root), args); e != nil {
 		t.Fatal(e)
 	}
-	if e := runQueuedResearchTasks(context.Background(), root, ops); e != nil {
+	if e := runQueuedResearchTasks(context.Background(), fileResearchStore(root), ops); e != nil {
 		t.Fatal(e)
 	}
 	saved, e := readInputResearch(root)
@@ -306,7 +306,7 @@ func TestResearchDelegationDiscoveryQueuesCandidatesAndCannotSaveDirectly(t *tes
 	if len(saved.Candidates) != 1 || len(saved.Records) != 0 || saved.Tasks[0].State != "complete" {
 		t.Fatalf("%+v", saved.Tasks)
 	}
-	if e := queueResearchDiscoveryTasks(root, args); e == nil {
+	if e := queueResearchDiscoveryTasks(fileResearchStore(root), args); e == nil {
 		t.Fatal("same task delegated twice")
 	}
 }
@@ -353,7 +353,7 @@ func TestResearchDelegationSelectedRowsKeepTheirScopeAndReviews(t *testing.T) {
 		t.Fatal(e)
 	}
 	ops := delegatedOps(s)
-	ops.source = func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 		return inputResearchSource{}, errors.New("selected scope attempted web access")
 	}
 	ops.model = func(_ context.Context, _ inputResearchAI, prompt string, _ func(bool) error) (json.RawMessage, error) {
@@ -364,7 +364,7 @@ func TestResearchDelegationSelectedRowsKeepTheirScopeAndReviews(t *testing.T) {
 		}
 		return delegatedResult(p), nil
 	}
-	executeInputResearch(context.Background(), next, r, ops)
+	executeInputResearch(context.Background(), fileResearchStore(next), r, ops)
 	saved, e := readInputResearch(next)
 	if e != nil {
 		t.Fatal(e)
@@ -393,7 +393,7 @@ func TestResearchDelegationConcurrentRetriesKeepSeparatePendingState(t *testing.
 			defer wg.Done()
 			calls := 0
 			args, _ := json.Marshal(map[string]string{"query": query})
-			_, e := researchAttemptWithWait(context.Background(), root, "search", args, func(_ context.Context, _ inputResearchRun, a inputResearchAttempt) (json.RawMessage, error) {
+			_, e := researchAttemptWithWait(context.Background(), fileResearchStore(root), "search", args, func(_ context.Context, _ inputResearchRun, a inputResearchAttempt) (json.RawMessage, error) {
 				calls++
 				if calls == 1 {
 					return nil, retryFailure("search-temporary")
@@ -440,7 +440,7 @@ func TestResearchDelegationStopCancelsAllActiveTasks(t *testing.T) {
 		return nil, ctx.Err()
 	}
 	done := make(chan struct{})
-	go func() { defer close(done); executeInputResearch(context.Background(), root, r, ops) }()
+	go func() { defer close(done); executeInputResearch(context.Background(), fileResearchStore(root), r, ops) }()
 	for i := 0; i < 2; i++ {
 		select {
 		case <-started:
@@ -495,7 +495,7 @@ func TestResearchDelegationCoordinatorResumesAfterDiscoveryAndCandidateTasks(t *
 			return recoveryAction("finish", map[string]any{"reason": "The available candidate was prepared."}), nil
 		}
 	}
-	executeInputResearch(context.Background(), root, r, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), r, ops)
 	saved, err := readInputResearch(root)
 	if err != nil {
 		t.Fatal(err)

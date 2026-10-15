@@ -187,7 +187,7 @@ it('returns recipe validation feedback to Codex so it can correct the proposal i
  const run:AgentRun=async(request,callbacks)=>{
   const offered=request.tools.find(tool=>tool.description.startsWith('propose_dialect_recipe:'))!
   const fields=['business_description','fit_signal','country','employee_count_evidence','intake_channels','routing_complexity_signal'].map(name=>({name,type:'string',description:'Source-backed value'}))
-  const args={name:'ICP',intent:'Find companies',target:'companies',fields,criteria:[{id:'size',description:'50 employees or more',qualificationTarget:''}],limits:{records:3,searches:3,pages:6,modelCalls:15}}
+  const args={name:'ICP',intent:'Find companies',fields,criteria:[{id:'size',description:'50 employees or more',qualificationTarget:''}],limits:{records:3,searches:3,pages:6,modelCalls:15}}
   const failed=await callbacks.tool({id:'failed',name:offered.name,arguments:args},callbacks.signal)
   expect(failed.isError).toBe(true);expect(failed.text).toContain('Omit qualificationTarget when unused')
   const passed=await callbacks.tool({id:'corrected',name:offered.name,arguments:{...args,criteria:[{id:'size',description:'50 employees or more'}]}},callbacks.signal)

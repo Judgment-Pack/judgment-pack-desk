@@ -120,7 +120,7 @@ func TestResearchSearchRefusalIsSavedWithoutReplay(t *testing.T) {
 		return nil, researchSourceFailure(400, []byte(`{"error":"source failed: search-timeout"}`))
 	}
 	for i := 0; i < 2; i++ {
-		if _, err := researchAttempt(context.Background(), root, "search", args, call); err == nil {
+		if _, err := researchAttempt(context.Background(), fileResearchStore(root), "search", args, call); err == nil {
 			t.Fatal("timeout accepted as success")
 		}
 	}
@@ -245,24 +245,26 @@ func TestResearchSourceResponseSizeAndReadFailures(t *testing.T) {
 }
 
 func TestResearchProofStorageBudgetAndEscaping(t *testing.T) {
+	s, _ := newTestServer(t, false)
 	root, _ := researchRunFixture(t)
-	// This remains a small enough document. Default JSON HTML escaping would
-	// unnecessarily turn the retained three MiB payload into eighteen MiB.
-	raw := json.RawMessage(`{"text":"` + strings.Repeat("<", 3<<20) + `"}`)
-	p := inputResearchProof{Response: raw}
-	size, err := saveResearchProof(root, "source.proof.json", p, 0)
+	// Preserve whitespace and escaping in the original JSON, not merely its
+	// canonical meaning. Literal HTML must not expand the storage allocation.
+	raw := json.RawMessage(" \n" + `{"text" : "` + strings.Repeat("<", 3<<20) + `", "escaped":"\u0061"}` + "\n")
+	p := inputResearchProof{Arguments: json.RawMessage(`{}`), Response: raw}
+	id := "attempt_" + strings.Repeat("a", 64)
+	size, err := s.saveResearchProof(t.Context(), root, id, p, 0)
 	if err != nil || size > 4<<20 {
 		t.Fatal(size, err)
 	}
-	stored, err := readPrivateData(root, "source.proof.json", inputResearchSourceProofLimit)
-	var loaded inputResearchProof
-	if err != nil || json.Unmarshal(stored, &loaded) != nil || !bytes.Equal(loaded.Response, raw) {
+	stored, err := s.loadResearchProof(t.Context(), root, id)
+	if err != nil || !bytes.Equal(stored.Proof.Response, raw) || stored.Bytes != size {
 		t.Fatal("source bytes changed", err)
 	}
-	if _, err = saveResearchProof(root, "over.proof.json", p, inputResearchRetainedByteLimit-size); err == nil {
+	over := "attempt_" + strings.Repeat("b", 64)
+	if _, err = s.saveResearchProof(t.Context(), root, over, p, inputResearchRetainedByteLimit-size); err == nil {
 		t.Fatal("budget ignored")
 	}
-	if _, err = root.Stat("over.proof.json"); !errors.Is(err, os.ErrNotExist) {
+	if _, err = root.Stat(over + ".proof.json"); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("over-budget proof written", err)
 	}
 }

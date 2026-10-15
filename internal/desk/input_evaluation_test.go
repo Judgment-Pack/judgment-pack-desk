@@ -81,12 +81,14 @@ func TestPreparedInputsKeepOriginalsAndPerTargetConversion(t *testing.T) {
 	}
 }
 func TestInputEvaluationRealRunnerDurability(t *testing.T) {
-	testInputEvaluationRealRunnerDurability(t, false)
+	for _, backend := range []string{"file", "memory"} {
+		t.Run(backend, func(t *testing.T) { testInputEvaluationRealRunnerDurability(t, false, backend) })
+	}
 }
 func TestDeskHomeMigrationRealRunnerDurability(t *testing.T) {
-	testInputEvaluationRealRunnerDurability(t, true)
+	testInputEvaluationRealRunnerDurability(t, true, "file")
 }
-func testInputEvaluationRealRunnerDurability(t *testing.T, moveHome bool) {
+func testInputEvaluationRealRunnerDurability(t *testing.T, moveHome bool, backend string) {
 	if moveHome {
 		t.Setenv("XDG_DATA_HOME", t.TempDir())
 	}
@@ -132,6 +134,9 @@ func testInputEvaluationRealRunnerDurability(t *testing.T, moveHome bool) {
 	// Control the worker to force the exact accepted-but-response-lost window.
 	s.inputEvaluationCancel()
 	<-s.inputEvaluationDone
+	if backend == "memory" {
+		s.evaluationJournals = newMemoryEvaluationJournals()
+	}
 	call := func(method, path string, body any, revision string) (int, []byte) {
 		t.Helper()
 		raw, _ := json.Marshal(body)
@@ -244,6 +249,7 @@ func testInputEvaluationRealRunnerDurability(t *testing.T, moveHome bool) {
 		cfg.DeskConfigDir = filepath.Join(plan.Destination, deskHomePlatform)
 		cfg.RunnerBin = migration.relocate(bin)
 	}
+	retainedJournals := s.evaluationJournals
 	ts.Close()
 	s.Close()
 	if moveHome {
@@ -253,6 +259,12 @@ func testInputEvaluationRealRunnerDurability(t *testing.T, moveHome bool) {
 		}
 	}
 	s, ts = startDesk(t, cfg)
+	if retainedJournals != nil {
+		s.inputEvaluationCancel()
+		<-s.inputEvaluationDone
+		s.evaluationJournals = retainedJournals
+		s.startInputEvaluations()
+	}
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		code, raw = call("GET", path+"/evaluations", nil, "")
@@ -305,6 +317,12 @@ func testInputEvaluationRealRunnerDurability(t *testing.T, moveHome bool) {
 	s.Close()
 	cfg.RunnerAllowUntestedReleases = false
 	s, ts = startDesk(t, cfg)
+	if retainedJournals != nil {
+		s.inputEvaluationCancel()
+		<-s.inputEvaluationDone
+		s.evaluationJournals = retainedJournals
+		s.startInputEvaluations()
+	}
 	untested := review()
 	code, raw = call("POST", path+"/evaluations/"+untested.ID+"/confirm", map[string]any{"reviewed": true}, saved.SHA256)
 	if code != 409 {
@@ -334,6 +352,9 @@ func testInputEvaluationRealRunnerDurability(t *testing.T, moveHome bool) {
 	if changed.Document.Records[0].Values["Matches"] != "0" || b.RecipeVersion == changed.Document.RecipeVersion {
 		t.Fatal("history rewritten")
 	}
+	if backend == "memory" {
+		assertNoEvaluationFiles(t, s)
+	}
 }
 
 func TestInputBatchSeparatesSigningAndNeverRepeatsInterruptedExecution(t *testing.T) {
@@ -360,11 +381,18 @@ func TestInputBatchSeparatesSigningAndNeverRepeatsInterruptedExecution(t *testin
 	}
 	defer root.Close()
 	b := inputEvaluation{Version: 1, ID: "eval_" + strings.Repeat("d", 32), PreparationID: "prep_" + strings.Repeat("e", 32), JobID: jobID, ConfirmedAt: "now", Rows: []inputEvaluationRow{{RecordID: "one", RunID: run1, State: "running"}, {RecordID: "two", RunID: run2, State: "running"}}}
-	s.advanceInputEvaluation(context.Background(), root, &b)
+	journal := s.evaluationJournal(root, b.ID)
+	saved, err := journal.CompareAndSwap(t.Context(), b, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := evaluationCheckpoint{journal: journal, revision: saved.SHA256}
+
+	s.advanceInputEvaluation(context.Background(), &checkpoint, &b)
 	if b.State != "partial" || b.Rows[0].State != "completed" || !strings.Contains(string(b.Rows[0].Signing), `"failed"`) || !strings.Contains(string(b.Rows[0].Result), `"qualified"`) || len(b.Rows[0].Result) > 1024 || b.Rows[1].State != "interrupted" {
 		t.Fatalf("result state lost: %+v", b)
 	}
-	s.advanceInputEvaluation(context.Background(), root, &b)
+	s.advanceInputEvaluation(context.Background(), &checkpoint, &b)
 	if calls != 2 {
 		t.Fatal("terminal runs were polled or repeated", calls)
 	}

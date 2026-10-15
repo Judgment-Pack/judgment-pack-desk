@@ -40,7 +40,7 @@ async function assertHint(){
 try{
  await page.goto(origin);await page.getByRole('button',{name:'Set up sign-in',exact:true}).click();await page.getByLabel('Owner setup code',{exact:true}).fill(setupCode);await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'Set password',exact:true}).waitFor()
  await page.goto(origin);await assertHint();await page.screenshot({path:'/tmp/jps-delegated-main-hint.png'})
- await page.goto(origin+'/dialects/'+id+'?tab=recipe');await page.getByText('Execution',{exact:true}).click();await assertHint()
+ await page.goto(origin+'/dialects/'+id+'?tab=recipe');await assertHint()
  const approach=page.getByRole('combobox',{name:'Research approach',exact:true});assert.match(await approach.innerText(),/Standard/)
  await approach.click();await page.getByRole('option',{name:'Delegated',exact:true}).click()
  const concurrency=page.getByRole('combobox',{name:'Concurrent AI tasks',exact:true});assert.match(await concurrency.innerText(),/Auto/)

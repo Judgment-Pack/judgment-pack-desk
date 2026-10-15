@@ -1,6 +1,6 @@
 import {cleanup,render,screen} from '@testing-library/react'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
-import {MemoryRouter} from 'react-router-dom'
+import {MemoryRouter,useLocation} from 'react-router-dom'
 import {afterEach,expect,it,vi} from 'vitest'
 import {DialectAssistant} from './DialectAssistant'
 import {dialectAPI} from './client'
@@ -69,4 +69,14 @@ it('does not pick an unrelated conversation or automatically reopen an archived 
  mountAssistant()
  await vi.waitFor(()=>expect(startChat).toHaveBeenCalledTimes(1))
  expect(screen.queryByText('source-chat')).toBeNull();expect(screen.queryByText('unrelated')).toBeNull()
+})
+
+it('initializes the assistant without replacing the independent draft route',async()=>{
+ const startChat=vi.fn(()=>({id:'new-chat',input:{id:'list'}}))
+ fake.snapshot={ready:true,store:{activate:vi.fn(),startChat,canCreate:true},chats:[],drafts:[]}
+ const path='/dialects/drafts/draft_'+ 'a'.repeat(32)
+ function Location(){const location=useLocation();return <output aria-label="Location">{location.pathname+location.search}</output>}
+ render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path+'?tab=fields']}><DialectAssistant draft={{version:1,id:'draft_'+'a'.repeat(32),name:'Draft',recipe:{intent:''},createdAt:'2026-10-15',updatedAt:'2026-10-15'}}/><Location/></MemoryRouter></QueryClientProvider>)
+ await vi.waitFor(()=>expect(startChat).toHaveBeenCalledOnce())
+ expect(screen.getByLabelText('Location').textContent).toBe(path+'?tab=fields')
 })

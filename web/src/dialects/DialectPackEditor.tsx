@@ -28,7 +28,7 @@ export function DialectPackEditor({value,records,research,disabled,onChange,onPe
  const options=packs.data?.packs?.map(p=>({value:p.id,label:p.id}))??[]
  if(value&&!options.some(o=>o.value===value.key))options.push({value:value.key,label:doc?.title??value.key})
  return <section className={styles.stack}>
-  <strong>{msg('Dialect')}</strong><p className={styles.note}>{msg('Choose a pack snapshot and map record fields. This does not change its rules or evaluate records.')}</p><div className={styles.qualificationChoice}><Field label={msg('Pack')}>{props=><Select {...props} value={choice} placeholder={msg('Choose a saved pack')} options={options} disabled={disabled||busy} onValueChange={setChoice}/>}</Field>
+  <p className={styles.note}>{msg('Choose a pack snapshot and map record fields. This does not change its rules or evaluate records.')}</p><div className={styles.qualificationChoice}><Field label={msg('Pack')}>{props=><Select {...props} value={choice} placeholder={msg('Choose a saved pack')} options={options} disabled={disabled||busy} onValueChange={setChoice}/>}</Field>
   <Button disabled={disabled||busy||!pack.data||choice===value?.key&&pack.data.raw===value.pack} onClick={()=>void usePackSnapshot()}>{msg('Use this pack')}</Button></div>
   {(error||packs.error||pack.error)&&<Notice tone="error">{error||(packs.error??pack.error)?.message}</Notice>}
   {value&&doc&&<><p className={styles.note}>{msg('Saved pack snapshot')}: {doc.title??value.key} · {doc.version}</p><DialectEditor value={value} records={records} research={research} disabled={disabled||busy} onChange={onChange}/><Disclosure title={msg('Technical details')}><p className={styles.note}>{value.digest}</p></Disclosure></>}

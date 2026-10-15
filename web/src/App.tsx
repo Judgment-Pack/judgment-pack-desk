@@ -29,6 +29,8 @@ export function App() {
           <Route path="/matrix" element={<Navigate to="/library" replace />} />
           <Route path="/connections/:provider/files" element={<StorageFilesView />} />
           <Route path="/author" element={<AuthorView />} />
+          <Route path="/dialects/new" element={<DialectsView />} />
+          <Route path="/dialects/drafts/:draftId" element={<DialectsView />} />
           <Route path="/dialects" element={<DialectsView />} />
           <Route path="/dialects/:preparationId" element={<DialectsView />} />
           <Route path="/jobs" element={<JobsView />} />

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 )
@@ -56,7 +55,7 @@ func TestResearchRecordGoalAndRequestBudgetsAreIndependent(t *testing.T) {
 					return recoveryAction("records", map[string]any{"records": []any{record}}), nil
 				}
 			}
-			ops.source = func(_ context.Context, _ *os.Root, current inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
+			ops.source = func(_ context.Context, current inputResearchRun, a inputResearchAttempt, _ json.RawMessage) (inputResearchSource, error) {
 				url := fmt.Sprintf("https://company%d.example/", len(current.Records))
 				if a.Kind == "search" {
 					searches++
@@ -67,7 +66,7 @@ func TestResearchRecordGoalAndRequestBudgetsAreIndependent(t *testing.T) {
 				return inputResearchSource{ID: a.ID, Kind: a.Kind, URL: url, URLs: []string{url}, Text: "Canada", Verification: "verified"}, nil
 			}
 			ops.publish = func(current inputResearchRun) error { published = len(current.Records); return nil }
-			executeInputResearch(context.Background(), root, run, ops)
+			executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 			saved, err := readInputResearch(root)
 			if err != nil {
 				t.Fatal(err)

@@ -40,11 +40,11 @@ func TestResearchWorkerCommitsBeforeCallCachesAndKeepsUncertainOutcome(t *testin
 		}
 		return json.RawMessage(`{"tool":"finish","arguments":{}}`), nil
 	}
-	first, e := researchAttempt(context.Background(), root, "model", args, call)
+	first, e := researchAttempt(context.Background(), fileResearchStore(root), "model", args, call)
 	if e != nil {
 		t.Fatal(e)
 	}
-	second, e := researchAttempt(context.Background(), root, "model", args, call)
+	second, e := researchAttempt(context.Background(), fileResearchStore(root), "model", args, call)
 	if e != nil || string(first) != string(second) || calls != 1 {
 		t.Fatal("completed request repeated", e, calls)
 	}
@@ -52,11 +52,11 @@ func TestResearchWorkerCommitsBeforeCallCachesAndKeepsUncertainOutcome(t *testin
 		calls++
 		return nil, errors.New("response lost")
 	}
-	_, e = researchAttempt(context.Background(), root, "model", json.RawMessage(`{"step":1}`), fail)
+	_, e = researchAttempt(context.Background(), fileResearchStore(root), "model", json.RawMessage(`{"step":1}`), fail)
 	if e == nil {
 		t.Fatal("lost response accepted")
 	}
-	_, e = researchAttempt(context.Background(), root, "model", json.RawMessage(`{"step":1}`), fail)
+	_, e = researchAttempt(context.Background(), fileResearchStore(root), "model", json.RawMessage(`{"step":1}`), fail)
 	if e == nil || calls != 2 {
 		t.Fatal("uncertain request replayed")
 	}

@@ -1,13 +1,16 @@
+import {dialectDraftAPI} from './drafts'
 import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react'
 import {DeskNotices,DeskNoticesProvider} from '../shell/DeskNotices'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {MemoryRouter,Route,Routes} from 'react-router-dom'
 import {Tooltip} from 'radix-ui'
-import {afterEach,expect,it,vi} from 'vitest'
+import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {DialectsContent} from './DialectsView'
 import {setLanguage,languageReady,msg} from '../i18n'
 import {dialectAPI,type PreparationReply} from './client'
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),dialectAPI:vi.fn()}))
+vi.mock('./drafts',async original=>{const api=vi.fn();return {...await original<typeof import('./drafts')>(),dialectDraftAPI:api,dialectDraftListQuery:()=>({queryKey:['dialect-drafts'],queryFn:()=>api()})}})
+beforeEach(()=>vi.mocked(dialectDraftAPI).mockResolvedValue({items:[]}))
 afterEach(()=>{cleanup();vi.resetAllMocks()})
 const saved:PreparationReply={sha256:'original',document:{version:1,id:'one',name:'Suppliers',recipe:{intent:'Original instructions'},recipeVersion:1,createdAt:'2026-01-01',updatedAt:'2026-01-01',records:[],imports:[],activity:[]}}
 function show(){
@@ -17,7 +20,7 @@ function show(){
  return client
 }
 it('keeps unsaved instructions and their starting revision when a background refresh finds an edit',async()=>{
- const client=show(),field=await screen.findByRole('textbox',{name:'What records do you need?'})
+ const client=show();const field=await screen.findByRole('textbox',{name:'What records do you need?'})
  fireEvent.change(field,{target:{value:'My unsaved instructions'}})
  act(()=>client.setQueryData(['input-preparations','one'],{...saved,sha256:'concurrent',document:{...saved.document,recipeVersion:2,recipe:{intent:'Other editor'}}}))
  expect((field as HTMLTextAreaElement).value).toBe('My unsaved instructions')
@@ -28,7 +31,7 @@ it('keeps unsaved instructions and their starting revision when a background ref
  expect((field as HTMLTextAreaElement).value).toBe('My unsaved instructions')
 })
 it('adopts a newer saved recipe when the form has no pending edits',async()=>{
- const client=show(),field=await screen.findByRole('textbox',{name:'What records do you need?'})
+ const client=show();const field=await screen.findByRole('textbox',{name:'What records do you need?'})
  act(()=>client.setQueryData(['input-preparations','one'],{...saved,sha256:'updated',document:{...saved.document,recipeVersion:2,recipe:{intent:'Updated instructions'}}}))
  await waitFor(()=>expect((field as HTMLTextAreaElement).value).toBe('Updated instructions'))
  expect((screen.getByRole('button',{name:'Save recipe'}) as HTMLButtonElement).disabled).toBe(true)
@@ -131,4 +134,13 @@ it('distinguishes retained research sources from saved records and shows why non
  expect(screen.getByText('17 sources retained. Sources are research material, not saved records.')).toBeTruthy()
  expect(screen.getByText('AI explanation: The notices were closed, not open opportunities.')).toBeTruthy()
  expect(screen.getByRole('button',{name:'View steps'})).toBeTruthy()
+})
+it('lists incomplete dialect drafts independently from prepared records',async()=>{
+ vi.mocked(dialectAPI).mockResolvedValue({items:[]})
+ vi.mocked(dialectDraftAPI).mockResolvedValue({items:[{id:'draft_one',name:'Procurement draft',updatedAt:'2026-10-15T12:00:00Z'},{id:'draft_two',name:'',updatedAt:'2026-10-15T11:00:00Z'}]})
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={['/dialects']}><Routes><Route path="/dialects" element={<DialectsContent/>}/></Routes></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
+ const draft=await screen.findByRole('link',{name:'Procurement draft'})
+ expect(draft.getAttribute('href')).toBe('/dialects/drafts/draft_one')
+ expect(within(draft.closest('tr')!).getByText('Draft')).toBeTruthy()
+ expect(screen.getByRole('link',{name:'Untitled dialect'}).getAttribute('href')).toBe('/dialects/drafts/draft_two')
 })

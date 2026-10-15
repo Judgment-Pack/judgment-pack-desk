@@ -145,7 +145,7 @@ func (s *Server) reviewedInputSnapshot(ctx context.Context, doc inputPreparation
 		return nil, err
 	}
 	defer dir.Close()
-	run, err := readInputResearch(dir)
+	run, err := s.researchJournal(dir, record.Research.RunID).Read(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -228,12 +228,12 @@ func (s *Server) reviewedInputSnapshot(ctx context.Context, doc inputPreparation
 	}
 	for _, source := range run.Sources {
 		if needed[source.ID] {
-			proof, err := readPrivateData(dir, source.ID+".proof.json", inputResearchSourceProofLimit)
+			proof, err := s.loadResearchProof(ctx, dir, source.ID)
 			if err != nil {
 				return nil, errors.New("A retained research source is unavailable.")
 			}
-			var retained inputResearchProof
-			if decodeDataJSON(proof, &retained) != nil || retained.Pin != run.Gateway {
+			retained := proof.Proof
+			if retained.Pin != run.Gateway {
 				return nil, errors.New("A retained research proof changed.")
 			}
 			verified, digest, err := verifyResearchProof(ctx, program, retained)
@@ -249,7 +249,7 @@ func (s *Server) reviewedInputSnapshot(ctx context.Context, doc inputPreparation
 			if err != nil || string(a) != string(b) {
 				return nil, errors.New("Saved research source text does not match its receipt.")
 			}
-			sources = append(sources, map[string]any{"id": source.ID, "kind": source.Kind, "url": source.URL, "urls": source.URLs, "query": source.Query, "at": source.At, "digest": source.Digest, "proofDigest": sha256Digest(proof), "verification": source.Verification})
+			sources = append(sources, map[string]any{"id": source.ID, "kind": source.Kind, "url": source.URL, "urls": source.URLs, "query": source.Query, "at": source.At, "digest": source.Digest, "proofDigest": sha256Digest(proof.Raw), "verification": source.Verification})
 			delete(needed, source.ID)
 		}
 	}

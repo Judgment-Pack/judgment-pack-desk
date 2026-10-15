@@ -104,7 +104,12 @@ func validateInputResearch(r *inputResearchRecipe) error {
 	if r == nil {
 		return nil
 	}
-	bad := errors.New("Research requires a supported target, named AI connection, requested fields and bounded limits.")
+	// Older journals retain their target to preserve historical identities.
+	// The target is no longer an authoring choice; omitted values mean records.
+	if r.Target == "" {
+		r.Target = "records"
+	}
+	bad := errors.New("Research requires a named AI connection, requested fields and bounded limits.")
 	if r.Version != 1 || (r.Target != "records" && r.Target != "companies" && r.Target != "people" && r.Target != "people-at-companies") {
 		return bad
 	}
@@ -137,7 +142,7 @@ func validateInputResearch(r *inputResearchRecipe) error {
 	if len(r.Fields) < 1 || len(r.Fields) > 30 || len(r.Criteria) > 30 || len(r.CompanyIDs)+len(r.CompanyInputs) > 50 {
 		return bad
 	}
-	if r.Target == "people-at-companies" && len(r.CompanyIDs)+len(r.CompanyInputs) == 0 || r.Target != "people-at-companies" && len(r.CompanyIDs)+len(r.CompanyInputs) > 0 {
+	if r.Target == "people-at-companies" && len(r.CompanyIDs)+len(r.CompanyInputs) == 0 || r.Target != "records" && r.Target != "people-at-companies" && len(r.CompanyIDs)+len(r.CompanyInputs) > 0 {
 		return errors.New("People at selected companies requires a reviewed company selection.")
 	}
 	seen := map[string]bool{}
@@ -206,7 +211,7 @@ func validateResearchEntity(entity *inputResearchEntity, recipe inputResearchRec
 		return errors.New("A record URL must come from supplied inputs or retained search/page results.")
 	}
 	entity.URL = normalized
-	if recipe.Target == "people-at-companies" && !companyIDs[entity.CompanyID] || entity.CompanyID != "" && !companyIDs[entity.CompanyID] {
+	if (recipe.Target == "people-at-companies" || len(recipe.CompanyIDs)+len(recipe.CompanyInputs) > 0) && !companyIDs[entity.CompanyID] || entity.CompanyID != "" && !companyIDs[entity.CompanyID] {
 		return errors.New("The company relationship must name a reviewed company record.")
 	}
 	identity := normalized
@@ -293,4 +298,13 @@ func researchTargetKind(target string) string {
 	default:
 		return "record"
 	}
+}
+
+// Generic recipes can update historical company/person rows without changing
+// their identity. New records use kind record; legacy journals retain their kind.
+func researchKindAllowed(target, kind string) bool {
+	if target == "records" || target == "" {
+		return kind == "record" || kind == "company" || kind == "person"
+	}
+	return kind == researchTargetKind(target)
 }

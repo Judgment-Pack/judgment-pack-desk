@@ -42,7 +42,7 @@ it('suggests two retries only for a new research setup',()=>{
  fireEvent.click(screen.getByRole('button',{name:'Set up research'}))
  expect(change.mock.calls[0][0].retries).toEqual({mode:'temporary',maxRetries:2,searchTimeouts:false})
  cleanup();const legacy=show()
- fireEvent.click(screen.getByText('Limits and retries'))
+
  expect(screen.getByRole('combobox',{name:'Automatic retries'}).textContent).toContain('Off')
  expect(legacy).not.toHaveBeenCalled()
  fireEvent.change(screen.getByRole('spinbutton',{name:'Records'}),{target:{value:'4'}})
@@ -50,6 +50,19 @@ it('suggests two retries only for a new research setup',()=>{
 })
 
 it('explains that the Records setting controls the run count',()=>{
- show();fireEvent.click(screen.getByText('Limits and retries'))
+ show()
  expect(screen.getByText('Maximum records per run. This setting takes precedence over record counts in the instructions.')).toBeTruthy()
+})
+
+it('keeps every section editable without Find, Edit or Done controls',()=>{
+ const change=vi.fn()
+ render(<MemoryRouter><Tooltip.Provider><ResearchRecipe value={{...recipe,ai:{connection:'',revision:'',model:''}}} onChange={change} records={[]} disabled={false}/></Tooltip.Provider></MemoryRouter>)
+ expect(screen.getByRole('combobox',{name:'AI connection'})).toBeTruthy()
+ expect(screen.getByRole('spinbutton',{name:'Records'})).toBeTruthy()
+ expect(screen.getByRole('textbox',{name:'Description'})).toBeTruthy()
+ expect(screen.queryByRole('combobox',{name:'Find'})).toBeNull()
+ expect(screen.queryByRole('button',{name:/^(Done|Edit )/})).toBeNull()
+ expect(change).not.toHaveBeenCalled()
+ fireEvent.change(screen.getByRole('spinbutton',{name:'Records'}),{target:{value:'4'}})
+ expect(change.mock.calls[0][0].limits.records).toBe(4)
 })

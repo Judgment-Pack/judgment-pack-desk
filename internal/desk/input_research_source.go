@@ -249,7 +249,14 @@ func (s *Server) acquireResearchSource(ctx context.Context, root *os.Root, run i
 	storedBytes := 0
 	save := func() error {
 		var err error
-		storedBytes, err = saveResearchProof(root, attempt.ID+".proof.json", proof, run.RetrievedBytes)
+		// A returned response must be retained even if Stop arrives immediately
+		// afterwards. This bounded persistence phase never dispatches a request.
+		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), privateDataLockWait)
+		defer cancel()
+		storedBytes, err = s.saveResearchProof(persistCtx, root, attempt.ID, proof, run.RetrievedBytes)
+		if err != nil && !errors.Is(err, errResearchProofStorageLimit) {
+			return errors.New("The acquired source could not be saved. No automatic retry was made.")
+		}
 		return err
 	}
 	if e = save(); e != nil {
@@ -421,24 +428,4 @@ func researchSourceFailure(status int, raw []byte) error {
 		}
 	}
 	return fmt.Errorf("The source request was refused (HTTP %d). No automatic retry was made.", status)
-}
-
-// Keep proof growth bounded before touching disk. HTML escaping is unnecessary
-// for private JSON files and can expand a valid document sixfold. Canonical
-// verification continues to bind its original result and receipt exactly.
-func saveResearchProof(root *os.Root, name string, proof inputResearchProof, retainedBytes int) (int, error) {
-	var encoded bytes.Buffer
-	encoder := json.NewEncoder(&encoded)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(proof); err != nil {
-		return 0, err
-	}
-	size := encoded.Len()
-	if size > inputResearchSourceProofLimit || retainedBytes < 0 || retainedBytes+size+inputResearchSourceMetadataReserve > inputResearchRetainedByteLimit {
-		return 0, errors.New("Research reached its saved-source storage limit. Use fewer or smaller documents in a new run. No automatic retry was made.")
-	}
-	if err := writePrivateData(root, name, encoded.Bytes()); err != nil {
-		return 0, errors.New("The acquired source could not be saved. No automatic retry was made.")
-	}
-	return size, nil
 }

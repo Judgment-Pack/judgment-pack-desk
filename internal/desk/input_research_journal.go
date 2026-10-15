@@ -115,70 +115,6 @@ func openInputResearch(root *os.Root, id string, create bool) (*os.Root, error) 
 	r, _, e := openOwnFolder(root, []string{id}, create, "input research run")
 	return r, e
 }
-func readInputResearch(root *os.Root) (inputResearchRun, error) {
-	var run inputResearchRun
-	raw, e := readPrivateData(root, "record.json", inputResearchRecordLimit)
-	if e == nil {
-		e = decodeDataJSON(raw, &run)
-	}
-	if e == nil && (run.Version != 1 || !inputResearchID.MatchString(run.ID) || !inputPreparationID.MatchString(run.PreparationID) || len(run.Records) > 50 || len(run.Attempts) > 250 || len(run.Sources) > 130) {
-		e = errors.New("Invalid research record.")
-	}
-	if e == nil {
-		e = validateInputResearch(&run.Recipe)
-	}
-	if e == nil {
-		e = validateResearchBudgets(run)
-	}
-	if e == nil {
-		e = validateResearchApproval(run)
-	}
-	if e == nil {
-		e = validateResearchCandidates(run)
-	}
-	if e == nil {
-		e = validateResearchRecordScope(run)
-	}
-	if e == nil {
-		e = validateResearchTasks(run)
-	}
-	return run, e
-}
-func writeInputResearch(root *os.Root, run inputResearchRun) error {
-	if e := validateResearchTasks(run); e != nil {
-		return e
-	}
-	if e := validateResearchRecordScope(run); e != nil {
-		return e
-	}
-	raw, e := json.Marshal(run)
-	if e != nil {
-		return e
-	}
-	if len(raw) > inputResearchRecordLimit {
-		return errors.New("Research storage limit reached.")
-	}
-	return writePrivateData(root, "record.json", raw)
-}
-func changeInputResearch(root *os.Root, change func(*inputResearchRun) error) (inputResearchRun, error) {
-	lock, e := root.Open(".")
-	if e != nil {
-		return inputResearchRun{}, e
-	}
-	defer lock.Close()
-	if e = lockResearchJournal(lock); e != nil {
-		return inputResearchRun{}, e
-	}
-	run, e := readInputResearch(root)
-	if e != nil {
-		return run, e
-	}
-	if e = change(&run); e != nil {
-		return run, e
-	}
-	run.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	return run, writeInputResearch(root, run)
-}
 
 // beginResearchAttempt must be committed before invoking a provider. A matching
 // completed call is reusable; a started call has an uncertain outcome and is
@@ -321,17 +257,4 @@ func researchModelAvailability(run *inputResearchRun, id string, waiting bool) e
 		a.State = "started"
 	}
 	return nil
-}
-
-// Source completions and Stop may arrive together. Wait only for this short
-// journal transaction, never for provider IO; keep cross-process exclusion.
-func lockResearchJournal(file *os.File) error {
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		err := lockPrivateData(file, true)
-		if err == nil || !lockHeld(err) || time.Now().After(deadline) {
-			return err
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
 }

@@ -57,7 +57,7 @@ func TestResearchAdmissionRetainsWaitingAndOneModelRequest(t *testing.T) {
 				}
 				return recoveryAction("finish", map[string]any{}), nil
 			}
-			executeInputResearch(context.Background(), root, run, ops)
+			executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 			saved, err := readInputResearch(root)
 			if err != nil {
 				t.Fatal(err)
@@ -97,7 +97,10 @@ func TestResearchStopWhileWaitingNeverDispatches(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	go func() { defer close(done); executeInputResearch(context.Background(), root, run, ops) }()
+	go func() {
+		defer close(done)
+		executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
+	}()
 	select {
 	case <-waiting:
 	case <-time.After(3 * time.Second):

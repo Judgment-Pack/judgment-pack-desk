@@ -74,12 +74,12 @@ func (s *Server) scanInputResearch(ctx context.Context) {
 			if lockPrivateData(lease, true) != nil {
 				return
 			}
-			run, e := readInputResearch(rr)
+			run, e := s.researchJournal(rr, entry.Name()).Read(ctx)
 			if e != nil {
 				return
 			}
 			if run.State == "running" {
-				run, e = changeInputResearch(rr, func(r *inputResearchRun) error { recoverInputResearch(r); return nil })
+				run, e = s.researchJournal(rr, entry.Name()).Update(ctx, func(r *inputResearchRun) error { recoverInputResearch(r); return nil })
 				if e != nil {
 					return
 				}
@@ -92,7 +92,7 @@ func (s *Server) scanInputResearch(ctx context.Context) {
 			if run.State != "queued" || run.StopRequested {
 				return
 			}
-			run, e = changeInputResearch(rr, func(r *inputResearchRun) error {
+			run, e = s.researchJournal(rr, entry.Name()).Update(ctx, func(r *inputResearchRun) error {
 				if r.State != "queued" || r.StopRequested {
 					return errors.New("Research is no longer queued.")
 				}
@@ -107,12 +107,12 @@ func (s *Server) scanInputResearch(ctx context.Context) {
 	}
 }
 func (s *Server) executeInputResearch(parent context.Context, root *os.Root, run inputResearchRun) {
-	executeInputResearch(parent, root, run, inputResearchOperations{
+	executeInputResearch(parent, s.researchRunStore(root, run.ID), run, inputResearchOperations{
 		validateSearch: s.validateResearchSearchConnection, validateAI: s.validateResearchConnection,
-		model: s.inputResearchModel, source: s.acquireResearchSource, publish: s.publishResearchRecords,
+		model: s.inputResearchModel, source: s.researchSource(root), publish: s.publishResearchRecords,
 	})
 }
-func executeInputResearch(parent context.Context, root *os.Root, run inputResearchRun, ops inputResearchOperations) {
+func executeInputResearch(parent context.Context, root researchRunStore, run inputResearchRun, ops inputResearchOperations) {
 	// An overall time bound complements per-call and request-count bounds.
 	ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
 	defer cancel()
@@ -128,7 +128,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 			case <-ctx.Done():
 				return
 			case <-tick.C:
-				current, e := readInputResearch(root)
+				current, e := root.read()
 				if e == nil && current.StopRequested {
 					cancel()
 					return
@@ -137,7 +137,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 		}
 	}()
 	finish := func(state string, err error) {
-		updated, e := changeInputResearch(root, func(r *inputResearchRun) error {
+		updated, e := root.change(func(r *inputResearchRun) error {
 			if r.StopRequested {
 				r.State = "stopped"
 			} else if ctx.Err() != nil {
@@ -163,7 +163,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 		})
 		if e == nil {
 			if err := ops.publish(updated); err != nil {
-				_, _ = changeInputResearch(root, func(r *inputResearchRun) error {
+				_, _ = root.change(func(r *inputResearchRun) error {
 					if r.ContractVersion >= 2 && r.PublicationResumeState == "" {
 						r.PublicationResumeState = r.State
 						if r.State == "running" || r.State == "blocked" || r.State == "queued" {
@@ -203,7 +203,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 			finish("interrupted", errors.New("Research stopped. Saved records are available; outstanding requests were not repeated."))
 			return
 		}
-		run, e := readInputResearch(root)
+		run, e := root.read()
 		if e != nil {
 			return
 		}
@@ -211,7 +211,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 			finish("completed", nil)
 			return
 		}
-		run, e = changeInputResearch(root, func(r *inputResearchRun) error {
+		run, e = root.change(func(r *inputResearchRun) error {
 			if r.Phase != "finalize" && (researchApprovedLimits(*r).ModelCalls-step <= 2 && step > 0 || researchRequestBudget(r, "page") != nil && researchRequestBudget(r, "search") != nil) {
 				r.Phase = "finalize"
 				if researchApprovedLimits(*r).ModelCalls-step <= 2 && step > 0 {
@@ -246,7 +246,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 			finish("interrupted", e)
 			return
 		}
-		run, e = readInputResearch(root)
+		run, e = root.read()
 		if e != nil {
 			return
 		}
@@ -256,7 +256,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 			break
 		}
 		if delegatedResearch(run) && researchApprovedLimits(run).ModelCalls-step <= 2 && run.Phase != "finalize" {
-			run, e = changeInputResearch(root, func(r *inputResearchRun) error {
+			run, e = root.change(func(r *inputResearchRun) error {
 				r.Phase = "finalize"
 				r.PhaseReason = "The remaining AI requests are reserved for saving retained findings."
 				return nil
@@ -274,7 +274,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 		modelArgs, _ := json.Marshal(map[string]any{"step": step, "prompt": prompt, "ai": run.Recipe.AI})
 		actionRaw, e := researchAttempt(ctx, root, "model", modelArgs, func(call context.Context, _ inputResearchRun, attempt inputResearchAttempt) (json.RawMessage, error) {
 			return ops.model(call, run.Recipe.AI, prompt, func(waiting bool) error {
-				_, err := changeInputResearch(root, func(r *inputResearchRun) error {
+				_, err := root.change(func(r *inputResearchRun) error {
 					if call.Err() != nil {
 						return call.Err()
 					}
@@ -290,7 +290,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 			finish("interrupted", e)
 			return
 		}
-		_, e = changeInputResearch(root, func(r *inputResearchRun) error { r.Step = step + 1; return nil })
+		_, e = root.change(func(r *inputResearchRun) error { r.Step = step + 1; return nil })
 		if e != nil {
 			return
 		}
@@ -327,7 +327,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 					}
 					return
 				}
-				_, e = changeInputResearch(root, func(r *inputResearchRun) error {
+				_, e = root.change(func(r *inputResearchRun) error {
 					r.Phase = ""
 					r.PhaseReason = ""
 					reviewResearchCandidates(r)
@@ -359,7 +359,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 				finish("interrupted", err)
 				return
 			}
-			latest, err := readInputResearch(root)
+			latest, err := root.read()
 			if err != nil {
 				finish("blocked", err)
 				return
@@ -368,7 +368,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 			continue
 		}
 		if action.Tool == "records" {
-			run, e = changeInputResearch(root, func(r *inputResearchRun) error {
+			run, e = root.change(func(r *inputResearchRun) error {
 				if r.StopRequested {
 					return errors.New("Research was stopped.")
 				}
@@ -421,7 +421,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 				return
 			}
 			if action.Tool == "candidates" {
-				_, err := changeInputResearch(root, func(r *inputResearchRun) error {
+				_, err := root.change(func(r *inputResearchRun) error {
 					if r.StopRequested {
 						return errors.New("Research was stopped.")
 					}
@@ -442,7 +442,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 				return
 			}
 			if researchRequestBudget(&run, kind) != nil {
-				_, err := changeInputResearch(root, func(r *inputResearchRun) error {
+				_, err := root.change(func(r *inputResearchRun) error {
 					r.Phase = "finalize"
 					r.PhaseReason = "Source request limit reached. Save from retained evidence."
 					return nil
@@ -470,7 +470,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 				return
 			}
 			sourceRaw, e := researchAttempt(ctx, root, kind, args, func(call context.Context, current inputResearchRun, attempt inputResearchAttempt) (json.RawMessage, error) {
-				source, e := ops.source(call, root, current, attempt, args)
+				source, e := ops.source(call, current, attempt, args)
 				if e != nil {
 					return nil, e
 				}
@@ -481,7 +481,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 				if !continued {
 					state := "interrupted"
 					if errors.Is(failure, errResearchRequestLimit) || errors.Is(failure, errResearchStorageLimit) {
-						_, err := changeInputResearch(root, func(r *inputResearchRun) error {
+						_, err := root.change(func(r *inputResearchRun) error {
 							r.Phase = "finalize"
 							r.PhaseReason = failure.Error()
 							return nil
@@ -500,7 +500,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 					finish("blocked", errors.New("Saved source metadata could not be read."))
 					return
 				}
-				_, e = changeInputResearch(root, func(r *inputResearchRun) error {
+				_, e = root.change(func(r *inputResearchRun) error {
 					return retainResearchSource(r, source)
 				})
 				if e != nil {
@@ -509,7 +509,7 @@ func executeInputResearch(parent context.Context, root *os.Root, run inputResear
 				}
 			}
 		}
-		run, e = changeInputResearch(root, func(r *inputResearchRun) error { r.Step = step + 1; return nil })
+		run, e = root.change(func(r *inputResearchRun) error { r.Step = step + 1; return nil })
 		if e != nil {
 			return
 		}
@@ -543,7 +543,7 @@ func researchPrompt(run inputResearchRun) (string, error) {
 	}
 	limits := researchApprovedLimits(run)
 	remainingRequests := map[string]int{"model": max(0, limits.ModelCalls-counts["model"]), "search": max(0, limits.Searches-counts["search"]), "page": max(0, limits.Pages-counts["page"])}
-	payload := map[string]any{"retainedSourceIndex": researchContextIndex(run), "requestedContext": researchContextSelection(run, ""), "contractVersion": run.ContractVersion, "instructions": run.Intent, "recipe": run.Recipe, "approvedLimits": limits, "phase": run.Phase, "phaseInstructions": run.PhaseReason, "availableURLs": researchURLReferences(run), "actionFeedback": researchActionFeedback(run), "selectedCompanies": run.Companies, "retainedSources": sources, "savedRecords": run.Records, "selectedRecords": researchSelectedContext(run), "existingRecords": researchExistingContext(run), "recordResults": run.Outcomes, "reprocessSelectedOnly": run.Reprocess, "requestsUsed": counts, "requestsRemaining": remainingRequests, "recordGoal": map[string]int{"maximum": run.Recipe.Limits.Records, "saved": len(run.Records), "remaining": max(0, run.Recipe.Limits.Records-len(run.Records))}, "limitsAuthority": "Use approvedLimits and recordGoal for total record counts and request budgets, even when instructions contain older numbers. Instructions define target and research criteria. Retry decisions belong to the host and the saved recipe policy.", "candidateQueue": researchCandidateContext(run), "unavailableSources": researchSourceFailures(run)}
+	payload := map[string]any{"retainedSourceIndex": researchContextIndex(run), "requestedContext": researchContextSelection(run, ""), "contractVersion": run.ContractVersion, "instructions": run.Intent, "recipe": run.Recipe, "recordKind": researchTargetKind(run.Recipe.Target), "approvedLimits": limits, "phase": run.Phase, "phaseInstructions": run.PhaseReason, "availableURLs": researchURLReferences(run), "actionFeedback": researchActionFeedback(run), "selectedCompanies": run.Companies, "retainedSources": sources, "savedRecords": run.Records, "selectedRecords": researchSelectedContext(run), "existingRecords": researchExistingContext(run), "recordResults": run.Outcomes, "reprocessSelectedOnly": run.Reprocess, "requestsUsed": counts, "requestsRemaining": remainingRequests, "recordGoal": map[string]int{"maximum": run.Recipe.Limits.Records, "saved": len(run.Records), "remaining": max(0, run.Recipe.Limits.Records-len(run.Records))}, "limitsAuthority": "Use approvedLimits and recordGoal for total record counts and request budgets, even when instructions contain older numbers. Instructions define target and research criteria. Retry decisions belong to the host and the saved recipe policy.", "candidateQueue": researchCandidateContext(run), "unavailableSources": researchSourceFailures(run)}
 	if delegatedResearch(run) {
 		payload["execution"] = run.Execution
 		payload["delegatedTasks"] = researchTaskViews(run)
@@ -689,20 +689,8 @@ func (s *Server) publishResearchRecords(run inputResearchRun) error {
 	if len(run.Records) == 0 {
 		return nil
 	}
-	root, e := s.openInputPreparations(false)
-	if e != nil {
-		return e
-	}
-	defer root.Close()
-	lock, e := root.Open(".")
-	if e != nil {
-		return e
-	}
-	defer lock.Close()
-	if e = waitPrivateDataLock(context.Background(), lock, true); e != nil {
-		return e
-	}
-	saved, e := readInputPreparation(root, run.PreparationID)
+	repository := s.preparationRepository()
+	saved, e := repository.Get(context.Background(), run.PreparationID)
 	if e != nil {
 		return e
 	}
@@ -763,7 +751,7 @@ func (s *Server) publishResearchRecords(run inputResearchRun) error {
 	}
 	doc.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	doc.Activity = append(doc.Activity, inputActivity{Kind: "researched", At: doc.UpdatedAt, Count: len(run.Records), RecipeVersion: run.RecipeVersion})
-	_, e = writeInputPreparation(root, doc)
+	_, e = repository.CompareAndSwap(context.Background(), doc, saved.SHA256)
 	return e
 }
 

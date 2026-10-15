@@ -1,3 +1,4 @@
+import { packVersion as savedArtifactVersion } from '../chat/packProposal'
 import {LoadingState} from '../ui/LoadingState'
 import {PageLoading} from '../ui/PageLoading'
 import { QueryStatusNotice } from '../shell/QueryStatusNotice'
@@ -582,6 +583,7 @@ export function PackView() {
   const session: EditingSession = useMemo(
     () => ({
       editing: editing && shape === 'form' && read !== undefined,
+      baseArtifactVersion: savedArtifactVersion(buffer.base?.content),
       buffer: read ?? { text: '', index: { spans: new Map(), duplicates: [] } },
       write: (edit, options) => {
         if (read === undefined) return
@@ -592,7 +594,7 @@ export function PackView() {
       pending: drafts,
       hold
     }),
-    [editing, shape, read, commit, byPointer, drawn, summary?.consultedFactPaths, drafts, hold]
+    [editing, shape, read, commit, byPointer, drawn, summary?.consultedFactPaths, drafts, hold, buffer.base?.content]
   )
 
   /**

@@ -37,7 +37,8 @@ func inputRecordDigest(record preparedInputRecord) string {
 	return digestOf(raw)
 }
 
-// Called while the preparation's exclusive lock and If-Match check are held.
+// Builds a review on the caller's private snapshot. The caller must commit it
+// with CompareAndSwap against the revision checked by If-Match.
 func (s *Server) reviewInputRecord(r *http.Request, doc *inputPreparation, now string) (bool, error) {
 	var request struct {
 		RecordID  *string   `json:"recordId"`
@@ -53,8 +54,8 @@ func (s *Server) reviewInputRecord(r *http.Request, doc *inputPreparation, now s
 	default:
 		return false, errors.New("Choose Ready for evaluation, Needs more information or Exclude.")
 	}
-	// Both the single-record and bulk dialogs save under this route's existing
-	// exclusive lock and If-Match check. Resolve the entire selection before
+	// Both the single-record and bulk dialogs commit one revision-checked
+	// snapshot through the repository. Resolve the entire selection before
 	// changing any record; there is no partial bulk approval.
 	if (request.RecordID == nil) == (request.RecordIDs == nil) {
 		return false, errors.New("Choose one record or a selection of records to review.")

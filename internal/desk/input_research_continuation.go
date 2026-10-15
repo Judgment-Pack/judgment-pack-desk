@@ -16,7 +16,7 @@ func researchCanContinue(run inputResearchRun) bool {
 
 // The caller holds the research-root admission lock. Fail closed if any saved
 // state cannot be inspected; another window must not start a duplicate run.
-func researchInputAvailable(root *os.Root, prep, except string) error {
+func (s *Server) researchInputAvailable(ctx context.Context, root *os.Root, prep, except string) error {
 	dir, err := root.Open(".")
 	if err != nil {
 		return err
@@ -34,7 +34,7 @@ func researchInputAvailable(root *os.Root, prep, except string) error {
 		if err != nil {
 			return err
 		}
-		run, err := readInputResearch(rr)
+		run, err := s.researchJournal(rr, entry.Name()).Read(ctx)
 		rr.Close()
 		if err != nil {
 			return err
@@ -48,15 +48,32 @@ func researchInputAvailable(root *os.Root, prep, except string) error {
 
 var researchProofID = regexp.MustCompile(`^attempt_[a-f0-9]{64}(_[1-4])?$`)
 
-func writeResearchReview(root *os.Root, run inputResearchRun, parent *os.Root) error {
-	// Publish the review directory only when all copied evidence is durable.
+func (s *Server) writeResearchReview(ctx context.Context, root *os.Root, run inputResearchRun, parent *os.Root) error {
+	if err := validateResearchJournal(run, run.ID); err != nil {
+		return err
+	}
+	// The coordinator publishes only by renaming a fully prepared directory.
+	// A journal backend may commit before that rename, but workers and HTTP reads
+	// cannot discover it yet. Retain hidden staging after an uncertain create.
 	staging := ".review-" + run.ID
+	for _, name := range []string{run.ID, staging} {
+		if _, err := root.Lstat(name); err == nil {
+			return os.ErrExist
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
 	rr, _, err := openOwnFolder(root, []string{staging}, true, "research review")
 	if err != nil {
 		return err
 	}
 	defer rr.Close()
-	defer root.RemoveAll(staging)
+	retainStage := false
+	defer func() {
+		if !retainStage {
+			_ = root.RemoveAll(staging)
+		}
+	}()
 	if parent != nil || run.Reprocess {
 		for _, source := range run.Sources {
 			sourceRoot := parent
@@ -78,27 +95,33 @@ func writeResearchReview(root *os.Root, run inputResearchRun, parent *os.Root) e
 			if !researchProofID.MatchString(originID) {
 				return errors.New("A saved source origin is invalid.")
 			}
-			raw, err := readPrivateData(sourceRoot, originID+".proof.json", inputResearchSourceProofLimit)
+			saved, err := s.loadResearchProof(ctx, sourceRoot, originID)
 			if err != nil {
 				return errors.New("A retained source proof is unavailable. Start new research instead.")
 			}
-			var proof inputResearchProof
-			if decodeDataJSON(raw, &proof) != nil || proof.Pin != run.Gateway {
+			if saved.Proof.Pin != run.Gateway {
 				return errors.New("A saved source proof no longer matches this research.")
 			}
-			run.RetrievedBytes += len(raw)
+			run.RetrievedBytes += saved.Bytes
 			if run.RetrievedBytes > inputResearchRetainedByteLimit-inputResearchSourceMetadataReserve {
 				return errors.New("Retained sources exceed the continuation storage limit.")
 			}
-			if err = writePrivateData(rr, source.ID+".proof.json", raw); err != nil {
+			if err = s.copyResearchProof(ctx, rr, source.ID, saved); err != nil {
 				return err
 			}
 		}
 	}
-	if err = writeInputResearch(rr, run); err != nil {
+	// Create can have committed even when its acknowledgement fails. Never
+	// delete its evidence or retry creation in that case. The admission lease
+	// prevents another publisher from replacing this staged run.
+	retainStage = true
+	if err = s.researchJournal(rr, run.ID).Create(ctx, run); err != nil {
 		return err
 	}
-	return root.Rename(staging, run.ID)
+	if err = root.Rename(staging, run.ID); err != nil {
+		return err
+	}
+	return syncPrivateDirectory(root)
 }
 
 // Match exact person URLs. Companies additionally require the same normalized
@@ -128,7 +151,7 @@ func (s *Server) researchRecordIsNewer(record preparedInputRecord, incoming inpu
 		return false, err
 	}
 	defer rr.Close()
-	previous, err := readInputResearch(rr)
+	previous, err := s.researchRunStore(rr, record.Research.RunID).read()
 	if err != nil {
 		return false, err
 	}
@@ -146,12 +169,12 @@ func (s *Server) verifyResearchContinuation(ctx context.Context, root *os.Root, 
 		if !researchProofID.MatchString(source.ID) {
 			return errors.New("A saved source reference is invalid.")
 		}
-		raw, err := readPrivateData(root, source.ID+".proof.json", inputResearchSourceProofLimit)
+		saved, err := s.loadResearchProof(ctx, root, source.ID)
 		if err != nil {
 			return errors.New("A retained source proof is unavailable.")
 		}
-		var proof inputResearchProof
-		if decodeDataJSON(raw, &proof) != nil || proof.Pin != run.Gateway {
+		proof := saved.Proof
+		if proof.Pin != run.Gateway {
 			return errors.New("A saved source proof changed.")
 		}
 		result, digest, err := verifyResearchProof(ctx, program, proof)

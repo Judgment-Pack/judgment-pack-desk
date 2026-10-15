@@ -73,13 +73,8 @@ func initializeSubscription(a *inputSubscription, doc inputPreparation) {
 	}
 	a.Initialized = true
 }
-func (s *Server) subscriptionDocument(b inputEvaluation) (inputPreparationReply, error) {
-	root, e := s.openInputPreparations(false)
-	if e != nil {
-		return inputPreparationReply{}, e
-	}
-	defer root.Close()
-	saved, e := readInputPreparation(root, b.PreparationID)
+func (s *Server) subscriptionDocument(reader inputPreparationReader, b inputEvaluation) (inputPreparationReply, error) {
+	saved, e := reader.Get(b.PreparationID)
 	if e != nil {
 		return saved, e
 	}
@@ -127,6 +122,7 @@ func (s *Server) handleInputSubscriptions(w http.ResponseWriter, r *http.Request
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	root, e := s.inputEvaluationRoot(false)
 	if errors.Is(e, os.ErrNotExist) {
 		writeJSON(w, 200, map[string]any{"items": []any{}})
@@ -155,11 +151,17 @@ func (s *Server) handleInputSubscriptions(w http.ResponseWriter, r *http.Request
 		}
 		br, e := openInputEvaluation(root, entry.Name(), false)
 		if e != nil {
-			continue
+			writeJSONCoded(w, 409, CodeBadRequest, "Subscriptions could not be read.")
+			return
 		}
-		b, e := readInputEvaluation(br)
+		snapshot, e := s.evaluationJournal(br, entry.Name()).Read(r.Context())
+		b := snapshot.Document
 		br.Close()
-		if e != nil || b.Subscription == nil {
+		if e != nil {
+			writeJSONCoded(w, 409, CodeBadRequest, "Subscriptions could not be read.")
+			return
+		}
+		if b.Subscription == nil {
 			continue
 		}
 		b.Release = nil
@@ -172,14 +174,17 @@ func (s *Server) handleInputSubscriptions(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, 200, map[string]any{"items": items})
 }
-func (s *Server) advanceInputSubscription(ctx context.Context, root *os.Root, b *inputEvaluation) {
+func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evaluationCheckpoint, b *inputEvaluation) {
+	if checkpoint.failure != nil {
+		return
+	}
 	a := b.Subscription
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if at, e := time.Parse(time.RFC3339Nano, a.RetryAt); e == nil && time.Now().Before(at) {
 		return
 	}
-	save := func() bool { return writeInputEvaluation(root, *b) == nil }
+	save := func() bool { return checkpoint.retain(*b) == nil }
 	problem := func(e error) {
 		b.Problem = e.Error()
 		b.State = "blocked"
@@ -193,25 +198,11 @@ func (s *Server) advanceInputSubscription(ctx context.Context, root *os.Root, b 
 		}
 		save()
 	}
-	if b.JobID == "" {
-		raw, e := s.inputRunner(ctx, "jobs", map[string]any{"name": b.Name, "releaseId": b.ReleaseID, "reviewed": true, "trigger": subscriptionTrigger()}, "")
-		if e != nil {
+	if e := s.ensureEvaluationJob(ctx, checkpoint, b); e != nil {
+		if checkpoint.failure == nil {
 			problem(e)
-			return
 		}
-		var job struct {
-			ID               string `json:"id"`
-			InitialTriggerID string `json:"initialTriggerId"`
-		}
-		if json.Unmarshal(raw, &job) != nil || !strings.HasPrefix(job.ID, "job_") || !strings.HasPrefix(job.InitialTriggerID, "trg_") {
-			problem(errors.New("The subscription job response is invalid."))
-			return
-		}
-		b.JobID = job.ID
-		a.TriggerID = job.InitialTriggerID
-		if !save() {
-			return
-		}
+		return
 	}
 	raw, e := s.inputRunner(ctx, "jobs/"+b.JobID+"/triggers", nil, "")
 	if e != nil {
@@ -319,6 +310,12 @@ func (s *Server) advanceInputSubscription(ctx context.Context, root *os.Root, b 
 			if len(run.Result) > 0 && json.Unmarshal(run.Result, &result) == nil {
 				row.Result, _ = json.Marshal(result)
 			}
+			switch run.State {
+			case "queued", "running", "completed", "failed", "interrupted":
+			default:
+				problem(errors.New("The retained run state is invalid."))
+				return
+			}
 			row.State = run.State
 			row.Problem = run.Problem
 			row.Signing = run.Signing
@@ -333,22 +330,15 @@ func (s *Server) advanceInputSubscription(ctx context.Context, root *os.Root, b 
 		save()
 		return
 	}
-	// Hold a shared collection lock while checking eligibility and publishing.
-	// A concurrent edit/review cannot revoke the exact snapshot mid-admission.
-	pr, e := s.openInputPreparations(false)
+	// Keep the reviewed collection stable through admission. This acquisition is
+	// nonblocking, separate from the worker's ownership lease. A snapshot that
+	// permits concurrent revocation is not sufficient here.
+	view, e := s.preparationRepository().TryRead(ctx)
 	if e != nil {
 		return
 	}
-	defer pr.Close()
-	pl, e := pr.Open(".")
-	if e != nil {
-		return
-	}
-	defer pl.Close()
-	if lockPrivateData(pl, false) != nil {
-		return
-	}
-	saved, e := s.subscriptionDocument(*b)
+	defer view.Close()
+	saved, e := s.subscriptionDocument(view, *b)
 	if e != nil {
 		problem(e)
 		return

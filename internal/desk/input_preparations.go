@@ -20,8 +20,6 @@ import (
 	"time"
 )
 
-const inputPreparationDir = ".desk-private/input-preparations"
-const inputPreparationLimit = 8 << 20
 const inputRecordLimit = 1000
 
 var inputPreparationID = regexp.MustCompile(`^prep_[a-f0-9]{32}$`)
@@ -109,22 +107,9 @@ type inputPreparationReply struct {
 	Document inputPreparation `json:"document"`
 }
 
-func (s *Server) openInputPreparations(create bool) (*os.Root, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(inputPreparationDir, "/"), create, "input preparations")
-	if err == nil && made {
-		err = writePrivateData(root, ".gitignore", []byte("*\n"))
-		if err != nil {
-			root.Close()
-		}
-	}
-	return root, err
-}
-func readInputPreparation(root *os.Root, id string) (inputPreparationReply, error) {
+func decodeInputPreparation(id string, raw []byte) (inputPreparationReply, error) {
 	var result inputPreparationReply
-	raw, err := readPrivateData(root, id+".json", inputPreparationLimit)
-	if err != nil {
-		return result, err
-	}
+	var err error
 	if err = decodeDataJSON(raw, &result.Document); err != nil {
 		return result, err
 	}
@@ -145,22 +130,6 @@ func readInputPreparation(root *os.Root, id string) (inputPreparationReply, erro
 	}
 	result.SHA256 = digestOf(raw)
 	return result, nil
-}
-func writeInputPreparation(root *os.Root, doc inputPreparation) (inputPreparationReply, error) {
-	if err := validateInputRecordReviews(doc); err != nil {
-		return inputPreparationReply{}, err
-	}
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		return inputPreparationReply{}, err
-	}
-	if len(raw) > inputPreparationLimit {
-		return inputPreparationReply{}, errors.New("input preparation exceeds its storage limit")
-	}
-	if err = writePrivateData(root, doc.ID+".json", raw); err != nil {
-		return inputPreparationReply{}, err
-	}
-	return readInputPreparation(root, doc.ID)
 }
 func inputRequest(r *http.Request, target any) error {
 	raw, err := readBounded(r.Body, 2<<20)
@@ -194,65 +163,33 @@ func (s *Server) handleInputPreparations(w http.ResponseWriter, r *http.Request)
 		writeJSONCoded(w, 400, CodeBadRequest, "Invalid input preparation request.")
 		return
 	}
-	root, err := s.openInputPreparations(r.Method != "GET")
-	if errors.Is(err, os.ErrNotExist) && r.Method == "GET" && id == "" {
-		writeJSON(w, 200, map[string]any{"items": []any{}})
-		return
-	}
-	if err != nil {
-		writeJSONCoded(w, 409, CodeBadRequest, "Input preparations could not be opened.")
-		return
-	}
-	defer root.Close()
-	lock, err := root.Open(".")
-	if err != nil {
-		writeJSONCoded(w, 409, CodeBadRequest, "Input preparations could not be opened.")
-		return
-	}
-	defer lock.Close()
-	if err = waitPrivateDataLock(r.Context(), lock, r.Method != "GET"); err != nil {
-		w.Header().Set("Retry-After", "1")
-		writeJSONCoded(w, 503, "storage-busy", "Dialects are being saved. Try again shortly.")
-		return
+	repository := s.preparationRepository()
+	storageError := func(err error, fallback string) {
+		if errors.Is(err, errInputPreparationBusy) {
+			w.Header().Set("Retry-After", "1")
+			writeJSONCoded(w, 503, "storage-busy", "Dialects are being saved. Try again shortly.")
+		} else {
+			writeJSONCoded(w, 409, CodeBadRequest, fallback)
+		}
 	}
 	if r.Method == "GET" && id == "" {
-		names, err := lock.ReadDir(-1)
+		items, err := repository.List(r.Context())
 		if err != nil {
-			writeJSONCoded(w, 409, CodeBadRequest, "Input preparations could not be listed.")
+			storageError(err, "Input preparations could not be listed.")
 			return
 		}
-		type summary struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			Records   int    `json:"records"`
-			UpdatedAt string `json:"updatedAt"`
-		}
-		items := []summary{}
-		for _, name := range names {
-			key := strings.TrimSuffix(name.Name(), ".json")
-			if !strings.HasSuffix(name.Name(), ".json") || !inputPreparationID.MatchString(key) {
-				continue
-			}
-			saved, err := readInputPreparation(root, key)
-			if err != nil {
-				writeJSONCoded(w, 409, CodeBadRequest, "An input preparation could not be read.")
-				return
-			}
-			d := saved.Document
-			items = append(items, summary{d.ID, d.Name, len(d.Records), d.UpdatedAt})
-		}
-		sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt > items[j].UpdatedAt })
 		writeJSON(w, 200, map[string]any{"items": items})
 		return
 	}
+	var err error
 	var saved inputPreparationReply
 	if id != "" {
-		saved, err = readInputPreparation(root, id)
+		saved, err = repository.Get(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				writeJSONCoded(w, 404, CodeNotFound, "Input preparation not found.")
 			} else {
-				writeJSONCoded(w, 409, CodeBadRequest, "Input preparation could not be read.")
+				storageError(err, "Input preparation could not be read.")
 			}
 			return
 		}
@@ -344,7 +281,7 @@ func (s *Server) handleInputPreparations(w http.ResponseWriter, r *http.Request)
 			proposedID = "prep_" + digestOf([]byte(origin.ChatID + "\n" + origin.DraftID))[:32]
 			raw, _ := json.Marshal(request)
 			origin.RequestDigest = digestOf(raw)
-			prior, e := readInputPreparation(root, proposedID)
+			prior, e := repository.Get(r.Context(), proposedID)
 			if e == nil {
 				if prior.Document.ChatOrigin == nil || prior.Document.ChatOrigin.RequestDigest != origin.RequestDigest {
 					writeJSONCoded(w, 409, CodeStale, "This proposal was already saved with different settings. Open its input to make changes.")
@@ -354,26 +291,11 @@ func (s *Server) handleInputPreparations(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			if !errors.Is(e, os.ErrNotExist) {
-				writeJSONCoded(w, 409, CodeBadRequest, "The saved chat input could not be read.")
+				storageError(e, "The saved chat input could not be read.")
 				return
 			}
 		}
 		if id == "" {
-			names, err := lock.ReadDir(-1)
-			if err != nil {
-				writeJSONCoded(w, 409, CodeBadRequest, "Input preparations could not be listed.")
-				return
-			}
-			count := 0
-			for _, name := range names {
-				if strings.HasSuffix(name.Name(), ".json") && inputPreparationID.MatchString(strings.TrimSuffix(name.Name(), ".json")) {
-					count++
-				}
-			}
-			if count >= 100 {
-				writeJSONCoded(w, 422, CodeTooLarge, "This workspace can contain at most 100 preparations.")
-				return
-			}
 			nonce := make([]byte, 16)
 			if _, err = rand.Read(nonce); err != nil {
 				writeJSONCoded(w, 500, CodeBadRequest, "The preparation could not be created.")
@@ -392,9 +314,24 @@ func (s *Server) handleInputPreparations(w http.ResponseWriter, r *http.Request)
 		doc.Recipes = append(doc.Recipes, inputRecipeRevision{doc.RecipeVersion, doc.Name, doc.Recipe, now})
 	}
 	doc.UpdatedAt = now
-	result, err := writeInputPreparation(root, doc)
+	result, err := repository.CompareAndSwap(r.Context(), doc, saved.SHA256)
 	if err != nil {
-		writeJSONCoded(w, 409, CodeBadRequest, "Input preparation could not be saved.")
+		if errors.Is(err, errInputPreparationConflict) {
+			// A concurrent create of the same chat proposal is a replay. Return
+			// its current snapshot, never overwrite it or repeat an uncertain write.
+			if id == "" && doc.ChatOrigin != nil {
+				prior, e := repository.Get(r.Context(), doc.ID)
+				if e == nil && prior.Document.ChatOrigin != nil && prior.Document.ChatOrigin.RequestDigest == doc.ChatOrigin.RequestDigest {
+					writeJSON(w, 200, prior)
+					return
+				}
+			}
+			writeJSONCoded(w, 409, CodeStale, "Dialects changed. Reload before saving.")
+		} else if errors.Is(err, errInputPreparationCapacity) {
+			writeJSONCoded(w, 422, CodeTooLarge, "This workspace can contain at most 100 preparations.")
+		} else {
+			storageError(err, "Input preparation could not be saved.")
+		}
 		return
 	}
 	code := 200

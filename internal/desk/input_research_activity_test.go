@@ -11,7 +11,7 @@ import (
 func TestResearchActivityRetainsLiveCoordinatesAndTypedRecovery(t *testing.T) {
 	root, run := researchRunFixture(t)
 	args := json.RawMessage(`{"url":"https://vertexaisearch.cloud.google.com/grounding-api-redirect/example"}`)
-	_, e := researchAttempt(context.Background(), root, "page", args, func(_ context.Context, current inputResearchRun, _ inputResearchAttempt) (json.RawMessage, error) {
+	_, e := researchAttempt(context.Background(), fileResearchStore(root), "page", args, func(_ context.Context, current inputResearchRun, _ inputResearchAttempt) (json.RawMessage, error) {
 		activity := researchActivity(current)
 		if len(activity.Steps) != 1 || activity.Steps[0].URL == "" || activity.Steps[0].State != "started" {
 			t.Fatal("live request not retained")

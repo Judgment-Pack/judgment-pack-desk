@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -133,9 +132,9 @@ func retainResearchSource(run *inputResearchRun, source inputResearchSource) err
 // Read one small batch, then yield to the model to save records. Search and
 // model calls remain serial. Each read has its own journal/proof and atomic
 // request+byte reservation. Join every call before changing the run's phase.
-func readResearchCandidateBatch(ctx context.Context, root *os.Root, ops inputResearchOperations) error {
+func readResearchCandidateBatch(ctx context.Context, root researchRunStore, ops inputResearchOperations) error {
 	var batch []inputResearchCandidate
-	run, err := changeInputResearch(root, func(r *inputResearchRun) error {
+	run, err := root.change(func(r *inputResearchRun) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -188,7 +187,7 @@ func readResearchCandidateBatch(ctx context.Context, root *os.Root, ops inputRes
 		go func(c inputResearchCandidate) {
 			args, _ := json.Marshal(map[string]string{"url": c.URL})
 			raw, callErr := researchAttempt(batchCtx, root, "page", args, func(call context.Context, current inputResearchRun, a inputResearchAttempt) (json.RawMessage, error) {
-				source, e := ops.source(call, root, current, a, args)
+				source, e := ops.source(call, current, a, args)
 				if e != nil {
 					return nil, e
 				}
@@ -211,7 +210,7 @@ func readResearchCandidateBatch(ctx context.Context, root *os.Root, ops inputRes
 					callErr = e
 				}
 			}
-			_, saveErr := changeInputResearch(root, func(r *inputResearchRun) error {
+			_, saveErr := root.change(func(r *inputResearchRun) error {
 				if state == "ready" {
 					if err := retainResearchSource(r, source); err != nil {
 						return err
@@ -246,8 +245,8 @@ func readResearchCandidateBatch(ctx context.Context, root *os.Root, ops inputRes
 	return first
 }
 
-func readResearchCandidates(ctx context.Context, root *os.Root, ops inputResearchOperations) error {
-	current, err := readInputResearch(root)
+func readResearchCandidates(ctx context.Context, root researchRunStore, ops inputResearchOperations) error {
+	current, err := root.read()
 	if err != nil {
 		return err
 	}
@@ -258,7 +257,7 @@ func readResearchCandidates(ctx context.Context, root *os.Root, ops inputResearc
 		if err := readResearchCandidateBatch(ctx, root, ops); err != nil {
 			return err
 		}
-		run, err := readInputResearch(root)
+		run, err := root.read()
 		if err != nil {
 			return err
 		}

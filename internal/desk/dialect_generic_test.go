@@ -69,3 +69,73 @@ func TestPersonRelationshipColumnsAreVersioned(t *testing.T) {
 		t.Fatal("record identity changed")
 	}
 }
+
+func TestGenericRecipeDefaultsAndSelectedCompanyScope(t *testing.T) {
+	recipe := researchRecipeFixture()
+	recipe.Target = ""
+	if err := validateInputResearch(&recipe); err != nil || recipe.Target != "records" {
+		t.Fatalf("omitted target must default to records: %q %v", recipe.Target, err)
+	}
+	draft := inputRecipe{Research: &inputResearchRecipe{Version: 1}}
+	if err := validateDialectDraft("Draft", draft); err != nil || draft.Research.Target != "records" {
+		t.Fatalf("draft default: %v", err)
+	}
+	recipe.CompanyIDs = []string{"reviewed-company"}
+	if err := validateInputResearch(&recipe); err != nil {
+		t.Fatal(err)
+	}
+	entity := inputResearchEntity{Kind: "record", Name: "Contact", URL: "https://example.com/team", Fields: map[string]inputResearchValue{"country": {Status: "missing"}}}
+	urls := map[string]bool{entity.URL: true}
+	companies := map[string]bool{"reviewed-company": true}
+	if validateResearchEntity(&entity, recipe, nil, urls, companies) == nil {
+		t.Fatal("missing selected-company relationship accepted")
+	}
+	entity.CompanyID = "invented"
+	if validateResearchEntity(&entity, recipe, nil, urls, companies) == nil {
+		t.Fatal("invented selected-company relationship accepted")
+	}
+	entity.CompanyID = "reviewed-company"
+	if err := validateResearchEntity(&entity, recipe, nil, urls, companies); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGenericRecipeReprocessesLegacyIdentityWithoutCreatingLegacyKinds(t *testing.T) {
+	s, rr, original := researchV2Fixture(t)
+	original = v2Apply(t, rr, v2Record(original, "Example"))
+	if err := s.publishResearchRecords(original); err != nil {
+		t.Fatal(err)
+	}
+	saved := v2Rows(t, s, original.PreparationID)
+	row := saved.Document.Records[0]
+	next := original
+	next.Recipe.Target = "records"
+	next.Records = nil
+	next.Outcomes = nil
+	next.Attempts = nil
+	next.Existing = researchRecordSnapshots(saved.Document)
+	next.Reprocess = true
+	next.Selection = next.Existing
+	next.Existing[0].SourceIDs = []string{next.Sources[0].ID}
+	if !researchKindAllowed(next.Recipe.Target, next.Existing[0].Entity.Kind) {
+		t.Fatal("legacy row refused for generic reprocessing")
+	}
+	candidate := v2Record(next, "Example")
+	candidate["recordId"] = row.ID
+	raw, _ := json.Marshal(map[string]any{"records": []any{candidate}})
+	if err := applyResearchRecordsV2(&next, raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(next.Records) != 1 || next.Records[0].ID != row.Research.Entity.ID || next.Records[0].Kind != "company" {
+		t.Fatalf("legacy identity lost: %+v", next.Outcomes)
+	}
+	next.Reprocess = false
+	next.Records = nil
+	next.Outcomes = nil
+	delete(candidate, "recordId")
+	raw, _ = json.Marshal(map[string]any{"records": []any{candidate}})
+	_ = applyResearchRecordsV2(&next, raw)
+	if len(next.Records) != 0 {
+		t.Fatal("new company-kind record accepted without existing row scope")
+	}
+}

@@ -33,5 +33,5 @@ export function validDialectRecipeProposal(value:unknown):value is DialectRecipe
  return version===1&&typeof draftId==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(draftId)&&typeof createdAt==='string'&&Number.isFinite(Date.parse(createdAt))&&(afterTurnId===undefined||text(afterTurnId,160))&&(savedInputId===undefined||typeof savedInputId==='string'&&/^prep_[a-f0-9]{32}$/.test(savedInputId))&&(attribution===undefined||object(attribution)&&keys(attribution,['connection','model'])&&text(attribution.connection,128)&&text(attribution.model,128))&&validDialectRecipeContent(content)
 }
 export function recipeFromProposal(proposal:DialectRecipeProposal):ResearchRecipe {
- return {...(proposal.execution?{execution:structuredClone(proposal.execution)}:{}),version:1,retries:defaultResearchRetries(),target:proposal.target,fields:structuredClone(proposal.fields),criteria:structuredClone(proposal.criteria),ai:{connection:'',revision:'',model:''},limits:{...proposal.limits,searches:0},companyIds:[]}
+ return {...(proposal.execution?{execution:structuredClone(proposal.execution)}:{}),version:1,retries:defaultResearchRetries(),target:'records',fields:structuredClone(proposal.fields),criteria:structuredClone(proposal.criteria),ai:{connection:'',revision:'',model:''},limits:{...proposal.limits,searches:0},companyIds:[]}
 }

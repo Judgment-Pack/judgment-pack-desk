@@ -6,7 +6,7 @@ export function dialectRecipeFailureMessage(code: unknown): string | undefined {
   case 'content': return sourceMessage('Use only name, intent, target, fields, criteria and limits in a recipe proposal. Connections and execution settings are chosen during review.')
   case 'name': return sourceMessage('Give the recipe a name between 1 and 160 characters.')
   case 'intent': return sourceMessage('Provide research instructions between 1 and 12,000 characters.')
-  case 'target': return sourceMessage('Choose records, companies, people, or people-at-companies as the research target.')
+  case 'target': return sourceMessage('Dialects research records. Describe what to find in the instructions and requested fields.')
   case 'fields': return sourceMessage('Provide 1–30 uniquely named fields. Each needs a description and type: string, number or boolean. Field names must start with a lowercase letter and contain only letters, numbers or underscores; constructor and prototype are reserved.')
   case 'criteria': return sourceMessage('Use up to 30 criteria with unique IDs and descriptions. Omit qualificationTarget when unused; otherwise provide a non-empty string of at most 512 characters.')
   case 'limits': return sourceMessage('Use integer limits: 1–50 records, 0–30 searches, 0–100 pages and 1–60 modelCalls.')

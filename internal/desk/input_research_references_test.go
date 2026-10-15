@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 )
@@ -91,7 +90,7 @@ func TestResearchCorrectsAlteredReferenceAndSavesRecords(t *testing.T) {
 			return recoveryAction("finish", map[string]any{}), nil
 		}
 	}
-	ops.source = func(_ context.Context, _ *os.Root, _ inputResearchRun, a inputResearchAttempt, args json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(_ context.Context, _ inputResearchRun, a inputResearchAttempt, args json.RawMessage) (inputResearchSource, error) {
 		pages++
 		var request struct {
 			URL string `json:"url"`
@@ -109,7 +108,7 @@ func TestResearchCorrectsAlteredReferenceAndSavesRecords(t *testing.T) {
 		}
 		return nil
 	}
-	executeInputResearch(context.Background(), root, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 	saved, err := readInputResearch(root)
 	if err != nil {
 		t.Fatal(err)
@@ -138,11 +137,11 @@ func TestResearchInvalidReferenceCorrectionsStayBounded(t *testing.T) {
 			models++
 			return recoveryAction("read", map[string]string{"urlRef": "unknown"}), nil
 		}
-		ops.source = func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
+		ops.source = func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 			t.Fatal("rejected source was fetched")
 			return inputResearchSource{}, nil
 		}
-		executeInputResearch(context.Background(), root, run, ops)
+		executeInputResearch(context.Background(), fileResearchStore(root), run, ops)
 		saved, err := readInputResearch(root)
 		if err != nil {
 			t.Fatal(err)

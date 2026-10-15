@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -42,7 +43,7 @@ func (s *Server) handleResearchBudget(w http.ResponseWriter, r *http.Request, ro
 		actor = inputReviewActor{Kind: "session", Subject: held.subject, Issuer: held.issuer, Name: held.name}
 	}
 	if !review && request.Decision == "decline" {
-		updated, err := changeInputResearch(runRoot, func(current *inputResearchRun) error {
+		updated, err := s.researchJournal(runRoot, run.ID).Update(r.Context(), func(current *inputResearchRun) error {
 			return decideResearchBudget(current, request.RequestID, "decline", actor)
 		})
 		if err != nil {
@@ -52,17 +53,17 @@ func (s *Server) handleResearchBudget(w http.ResponseWriter, r *http.Request, ro
 		writeJSON(w, 200, updated)
 		return
 	}
-	if err := researchInputAvailable(root, run.PreparationID, run.ID); err != nil {
+	if err := s.researchInputAvailable(r.Context(), root, run.PreparationID, run.ID); err != nil {
 		fail(err)
 		return
 	}
 	// An older finished run must not be resumed over a newer confirmed run.
-	if err := researchBudgetIsLatest(root, run); err != nil {
+	if err := s.researchBudgetIsLatest(r.Context(), root, run); err != nil {
 		fail(err)
 		return
 	}
 	var response inputResearchBudgetReview
-	updated, err := changeInputResearch(runRoot, func(current *inputResearchRun) error {
+	updated, err := s.researchJournal(runRoot, run.ID).Update(r.Context(), func(current *inputResearchRun) error {
 		if review {
 			if current.State != "paused" && current.State != "completed-with-gaps" && current.State != "partial" {
 				return errors.New("This research is not waiting for a budget increase.")
@@ -70,20 +71,12 @@ func (s *Server) handleResearchBudget(w http.ResponseWriter, r *http.Request, ro
 		} else if current.State != "paused" || pendingResearchBudget(*current) == nil || pendingResearchBudget(*current).ID != request.RequestID {
 			return errors.New("This budget request was already resolved or changed. Reload research.")
 		}
-		p, err := s.openInputPreparations(false)
+		p, err := s.preparationRepository().Read(r.Context())
 		if err != nil {
 			return err
 		}
 		defer p.Close()
-		lock, err := p.Open(".")
-		if err != nil {
-			return err
-		}
-		defer lock.Close()
-		if err = waitPrivateDataLock(r.Context(), lock, false); err != nil {
-			return err
-		}
-		saved, err := readInputPreparation(p, current.PreparationID)
+		saved, err := p.Get(current.PreparationID)
 		if err != nil {
 			return err
 		}
@@ -142,7 +135,7 @@ func (s *Server) handleResearchBudget(w http.ResponseWriter, r *http.Request, ro
 		writeJSON(w, 200, updated)
 	}
 }
-func researchBudgetIsLatest(root *os.Root, run inputResearchRun) error {
+func (s *Server) researchBudgetIsLatest(ctx context.Context, root *os.Root, run inputResearchRun) error {
 	dir, err := root.Open(".")
 	if err != nil {
 		return err
@@ -160,7 +153,7 @@ func researchBudgetIsLatest(root *os.Root, run inputResearchRun) error {
 		if err != nil {
 			return err
 		}
-		other, err := readInputResearch(rr)
+		other, err := s.researchJournal(rr, entry.Name()).Read(ctx)
 		rr.Close()
 		if err != nil {
 			return err

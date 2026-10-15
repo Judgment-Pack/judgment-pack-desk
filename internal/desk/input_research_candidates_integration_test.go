@@ -17,6 +17,11 @@ import (
 // Exercise concurrent HTTP acquisition, independent signed sessions, proof
 // storage and the installed verifier without any website or provider traffic.
 func TestResearchCandidatePagesVerifyIndependentProofs(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		t.Run(backend, func(t *testing.T) { testResearchCandidatePagesVerifyIndependentProofs(t, backend) })
+	}
+}
+func testResearchCandidatePagesVerifyIndependentProofs(t *testing.T, backend string) {
 	program := os.Getenv("JPS_TEST_GATEWAY")
 	if program == "" {
 		t.Skip("set JPS_TEST_GATEWAY to the local verifier")
@@ -95,17 +100,24 @@ func TestResearchCandidatePagesVerifyIndependentProofs(t *testing.T) {
 	defer server.Close()
 	s, _ := newTestServer(t, false)
 	s.cfg.LocalGatewayBundle = filepath.Dir(program)
+	if backend == "memory" {
+		s.retainedArtifacts = newMemoryArtifacts()
+		s.researchJournals = newMemoryResearchJournals()
+	}
 	writeDeskConfig(t, s, strings.Replace(researchDeskFile(server.URL), testSignerPublic, pin.Public, 1))
 	run.Gateway = pin
-	if err := writeInputResearch(root, run); err != nil {
+	if err := root.Remove("record.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.researchJournal(root, run.ID).Create(t.Context(), run); err != nil {
 		t.Fatal(err)
 	}
 	ops := recoveryOperations()
-	ops.source = s.acquireResearchSource
-	if err := readResearchCandidateBatch(context.Background(), root, ops); err != nil {
+	ops.source = s.researchSource(root)
+	if err := readResearchCandidateBatch(context.Background(), s.researchRunStore(root, run.ID), ops); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := readInputResearch(root)
+	saved, err := s.researchJournal(root, run.ID).Read(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,18 +126,17 @@ func TestResearchCandidatePagesVerifyIndependentProofs(t *testing.T) {
 	}
 	bytes := 0
 	for _, a := range saved.Attempts {
-		raw, err := readPrivateData(root, a.ID+".proof.json", inputResearchSourceProofLimit)
+		proof, err := s.loadResearchProof(t.Context(), root, a.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var proof inputResearchProof
-		if err = json.Unmarshal(raw, &proof); err != nil {
-			t.Fatal(err)
-		}
-		if _, _, err = verifyResearchProof(context.Background(), program, proof); err != nil {
+		if _, _, err = verifyResearchProof(context.Background(), program, proof.Proof); err != nil {
 			t.Fatal("saved proof does not independently verify", err)
 		}
-		bytes += len(raw) + len(a.Result)
+		bytes += proof.Bytes + len(a.Result)
+	}
+	if backend == "memory" {
+		assertNoArtifactFiles(t, s)
 	}
 	if saved.RetrievedBytes != bytes {
 		t.Fatal("retained bytes do not match independent proofs", saved.RetrievedBytes, bytes)

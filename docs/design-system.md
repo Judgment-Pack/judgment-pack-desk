@@ -1571,3 +1571,42 @@ in memory. The selection and active record are retained in the URL. Shared dirty
 guards protect leaving/reloading, and stale revisions require explicit reload.
 Decision controls and save feedback stay in the fixed footer. Batch decisions
 remain a small dialog naming the exact scope; they reuse `RecordReviewDecision`.
+
+### Dialect recipe review and editing
+
+The Recipe page and independent draft workspace share `RecipeSection`,
+`RecipePurpose`, `RecipeFields` and `RecipePackSection`. All section controls are
+open and edit the same recipe buffer. Do not add section-level Edit, Done or
+confirmation actions. Purpose, criteria, source settings, execution limits and
+pack mappings are available immediately within their page tab. The page save
+action validates and saves the complete recipe.
+
+Every dialect researches records. Domain examples belong in instructions and
+requested fields, not a Find selector. AI recipe tools and presets follow the
+same contract. Historical target labels remain readable for saved research
+identities and journals; they must not reintroduce a mode selector. Explicit
+selected-company references retain their revision and relationship checks.
+
+Requested fields use an always-visible shared search/filter toolbar and an
+editable table. Name, type and complete instructions are available in each row;
+filtering does not commit or discard edits. On narrow panes, stack descriptions
+under name/type controls. Preserve typed values, dirty buffers, revision checks,
+approvals and the existing right-pane conversation.
+
+### Dialect draft workspace
+
+New dialects and chat recipe proposals open a page at `/dialects/drafts/:id`.
+Use the same `routes/DialectsView` page frame as saved dialects, with `PageHeader`, page tabs and `PageBody`; do not place the recipe in a dialog. The frame owns the full-width layout, so the shell must not add another gutter.
+Overview, Requested fields, Sources, Execution and Pack separate the editing
+concerns. Requested fields use the full available width, the shared collection
+search/filter toolbar and a compact table. Keep all field controls open. Keep name/type columns bounded so descriptions receive the remaining width.
+The existing assistant pane remains available, with the draft as its context.
+
+Drafts are project artifacts stored in `.desk-private/dialect-drafts`, independently
+of conversations. Autosave incomplete settings with revision checks. Show quiet
+save progress in the page footer; failed persistence uses the shared bottom notice
+and retains local edits. Register pending writes as autosave, not manual dirty
+state. Final Save to Dialects validates the complete recipe and creates one
+preparation idempotently; it never starts research. A chat reference opens the
+same draft or its saved dialect. Discarded drafts retain a tombstone so restored
+conversation checkpoints cannot recreate them.

@@ -1,3 +1,4 @@
+import {retainDialectProposal,DIALECT_DRAFTS_KEY} from '../dialects/drafts'
 import {usePackAutoSave} from './usePackAutoSave'
 import {privateQuery} from '../data/privateQuery'
 import {checkPackProposal,packReviewContext} from './packProposal'
@@ -163,11 +164,14 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
   })
   return (context: Parameters<typeof links>[0]) => {
     currentTurns = [...context.turns()].reverse().find(turn=>turn.role==='user')
-    const inputs=dialectRecipeChatTools({afterTurnId:()=>[...context.turns()].reverse().find(turn=>turn.role==='user')?.id,attribution:()=>{const c=chatOf(store,chat.id);return c?.aiConnection&&c.model?{connection:c.aiConnection,model:c.model}:undefined},addDraft:draft=>{
+    const inputs=dialectRecipeChatTools({afterTurnId:()=>[...context.turns()].reverse().find(turn=>turn.role==='user')?.id,attribution:()=>{const c=chatOf(store,chat.id);return c?.aiConnection&&c.model?{connection:c.aiConnection,model:c.model}:undefined},addDraft:async draft=>{
       const current=chatOf(store,chat.id)
       if(!current)throw new DialectRecipeDraftError('chat-unavailable')
       if((current.inputDrafts?.length??0)>=16)throw new DialectRecipeDraftError('draft-limit')
-      store.update(chat.id,{inputDrafts:[...(current.inputDrafts??[]),draft]})
+      await retainDialectProposal(chat.id,draft)
+      void queryClient.invalidateQueries({queryKey:DIALECT_DRAFTS_KEY})
+      const live=chatOf(store,chat.id)
+      if(live)store.update(chat.id,{inputDrafts:[...(live.inputDrafts??[]),draft]})
     }})
     const inputActions=dialectActionChatTools({chatId:chat.id,beforeResearch:inputId=>{
       const current=chatOf(store,chat.id)

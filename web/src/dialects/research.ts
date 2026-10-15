@@ -8,6 +8,7 @@ export interface ResearchPendingRetry {afterAttempt:string;at:string;number:numb
 export interface ResearchExecutionPolicy {approach:'standard'|'delegated';concurrency:0|1|2}
 export interface ResearchExecution {approach:'standard'|'delegated';requestedConcurrency:number;concurrency:number;connectionLimit:number}
 export interface ResearchTask {id:string;title:string;objective:string;profile:string;state:'queued'|'running'|'complete'|'failed'|'interrupted';createdAt:string;startedAt?:string;finishedAt?:string;problem?:string;result?:string;modelRequests:number;sourceRequests:number}
+/** Legacy targets are read-compatible metadata; new recipes always research records. */
 export interface ResearchRecipe {execution?:ResearchExecutionPolicy;retries?:ResearchRetryPolicy;version:1;target:'records'|'companies'|'people'|'people-at-companies';fields:ResearchField[];criteria:{id:string;description:string;qualificationTarget?:string}[];companyIds?:string[];companyInputs?:{preparationId:string;revision:string;entityId:string}[];ai:{connection:string;revision:string;model:string;effort?:string};search?:{connection:string;revision:string};limits:{records:number;searches:number;pages:number;modelCalls:number}}
 // Empty Go citation slices are retained as null in existing records and reviews.
 export interface ResearchValue {value?:string|number|boolean|null;status:'supported'|'interpretation'|'missing'|'conflicting'|'inaccessible'|'stale';sources?:{sourceId:string;quote:string}[]|null;note?:string}

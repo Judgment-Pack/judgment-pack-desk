@@ -206,7 +206,7 @@ func TestResearchV2DurableLoopCorrectsOnlyFailedRecord(t *testing.T) {
 	ops := recoveryOperations()
 	ops.publish = s.publishResearchRecords
 	calls := 0
-	ops.source = func(context.Context, *os.Root, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
+	ops.source = func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 		t.Fatal("finalize requested a source")
 		return inputResearchSource{}, nil
 	}
@@ -228,7 +228,7 @@ func TestResearchV2DurableLoopCorrectsOnlyFailedRecord(t *testing.T) {
 		}
 		return recoveryAction("finish", map[string]any{"reason": "Only two candidates are supported."}), nil
 	}
-	executeInputResearch(context.Background(), rr, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(rr), run, ops)
 	run, _ = readInputResearch(rr)
 	if calls != 3 || len(run.Records) != 2 || researchNeedsCorrection(run) || !researchStep(run, 0).Recovered {
 		t.Fatalf("loop did not recover: %d %+v", calls, run.Outcomes)
@@ -311,7 +311,7 @@ func TestResearchV2SelectionCollectsOnlyAssociatedEvidenceAcrossRuns(t *testing.
 	if !researchUnchangedContent(run, unchanged, contextRows[1].Entity) {
 		t.Fatal("rebinding source references invalidated an unchanged record")
 	}
-	if err = writeResearchReview(root, run, nil); err != nil {
+	if err = s.writeResearchReview(t.Context(), root, run, nil); err != nil {
 		t.Fatal(err)
 	}
 	child, _ := openInputResearch(root, run.ID, false)
@@ -452,7 +452,7 @@ func TestResearchV2LocalPublicationRecoveryDoesNotRepeatAI(t *testing.T) {
 		return recoveryAction("records", map[string]any{"records": []any{v2Record(run, "Example")}}), nil
 	}
 	ops.publish = func(inputResearchRun) error { return errors.New("temporary local write failure") }
-	executeInputResearch(context.Background(), rr, run, ops)
+	executeInputResearch(context.Background(), fileResearchStore(rr), run, ops)
 	saved, err := readInputResearch(rr)
 	if err != nil {
 		t.Fatal(err)

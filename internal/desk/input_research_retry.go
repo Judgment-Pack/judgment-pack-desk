@@ -141,13 +141,13 @@ func waitResearchRetry(ctx context.Context, at time.Time) error {
 	}
 }
 
-func researchAttempt(ctx context.Context, root *os.Root, kind string, args json.RawMessage, call func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error)) (json.RawMessage, error) {
+func researchAttempt(ctx context.Context, root researchRunStore, kind string, args json.RawMessage, call func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error)) (json.RawMessage, error) {
 	return researchAttemptWithWait(ctx, root, kind, args, call, waitResearchRetry)
 }
 
 // Only this live invocation may consume its scheduled retry. Process recovery
 // interrupts the run and clears pending work instead of replaying requests.
-func researchAttemptWithWait(ctx context.Context, root *os.Root, kind string, args json.RawMessage, call func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error), wait func(context.Context, time.Time) error) (json.RawMessage, error) {
+func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind string, args json.RawMessage, call func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error), wait func(context.Context, time.Time) error) (json.RawMessage, error) {
 	after := ""
 	for {
 		if ctx.Err() != nil {
@@ -155,7 +155,7 @@ func researchAttemptWithWait(ctx context.Context, root *os.Root, kind string, ar
 		}
 		var attempt inputResearchAttempt
 		var cached bool
-		run, e := changeInputResearch(root, func(r *inputResearchRun) error {
+		run, e := root.change(func(r *inputResearchRun) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -186,7 +186,7 @@ func researchAttemptWithWait(ctx context.Context, root *os.Root, kind string, ar
 		})
 		if e != nil {
 			if after != "" {
-				_, saveErr := changeInputResearch(root, func(r *inputResearchRun) error {
+				_, saveErr := root.change(func(r *inputResearchRun) error {
 					removeResearchRetry(r, after, "The retry could not be admitted. No further request was sent.")
 					return nil
 				})
@@ -210,7 +210,7 @@ func researchAttemptWithWait(ctx context.Context, root *os.Root, kind string, ar
 		if callErr != nil {
 			problem = callErr.Error()
 		}
-		_, e = changeInputResearch(root, func(r *inputResearchRun) error {
+		_, e = root.change(func(r *inputResearchRun) error {
 			current, err := researchAttemptByID(r, attempt.ID)
 			if err != nil {
 				return err
@@ -227,12 +227,9 @@ func researchAttemptWithWait(ctx context.Context, root *os.Root, kind string, ar
 				// Acquisition can leave a proof even when extraction has no
 				// usable text. Count those bytes before continuing to another
 				// source, rather than allowing empty pages to evade the cap.
-				info, err := root.Lstat(attempt.ID + ".proof.json")
+				retained, err := root.proofSize(attempt.ID)
 				if err == nil {
-					if !info.Mode().IsRegular() || info.Size() > inputResearchSourceProofLimit {
-						return errors.New("Invalid retained source proof.")
-					}
-					size += int(info.Size())
+					size += retained
 				} else if !errors.Is(err, os.ErrNotExist) {
 					return err
 				}
@@ -278,7 +275,7 @@ func researchAttemptWithWait(ctx context.Context, root *os.Root, kind string, ar
 		var pending *inputResearchPendingRetry
 		var finalized inputResearchAttempt
 		terminal := callErr
-		_, e = changeInputResearch(root, func(r *inputResearchRun) error {
+		_, e = root.change(func(r *inputResearchRun) error {
 			a, err := researchAttemptByID(r, attempt.ID)
 			if err != nil {
 				return err
@@ -331,7 +328,7 @@ func researchAttemptWithWait(ctx context.Context, root *os.Root, kind string, ar
 		}
 		at, _ := time.Parse(time.RFC3339Nano, pending.At)
 		if e = wait(ctx, at); e != nil {
-			_, saveErr := changeInputResearch(root, func(r *inputResearchRun) error {
+			_, saveErr := root.change(func(r *inputResearchRun) error {
 				removeResearchRetry(r, pending.AfterAttempt, "Research stopped before the scheduled retry. No further request was made.")
 				return nil
 			})

@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+const handoffProofSourceID = "attempt_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+
 // The same executable identity must serve both trusted companion operations in
 // integration tests, just as it does in the installed Desk binary.
 func TestMain(m *testing.M) {
@@ -97,7 +99,7 @@ func reviewedFixture(t *testing.T, s *Server, q *inputQualification) (inputPrepa
 		var source inputResearchSource
 		source, retainedProof, run.Gateway = handoffProofFixture(t, filepath.Join(bundle, "gateway"))
 		run.Sources = []inputResearchSource{source}
-		args = json.RawMessage(`{"records":[{"kind":"company","name":"Example","url":"https://example.com/","fields":{"country":{"value":"CA","status":"supported","sources":[{"sourceId":"attempt_page","quote":"Example operates in CA."}]}}}]}`)
+		args = json.RawMessage(strings.ReplaceAll(`{"records":[{"kind":"company","name":"Example","url":"https://example.com/","fields":{"country":{"value":"CA","status":"supported","sources":[{"sourceId":"attempt_page","quote":"Example operates in CA."}]}}}]}`, "attempt_page", handoffProofSourceID))
 	}
 	if err := applyResearchRecords(&run, args); err != nil {
 		t.Fatal(err)
@@ -115,7 +117,7 @@ func reviewedFixture(t *testing.T, s *Server, q *inputQualification) (inputPrepa
 	}
 	defer rr.Close()
 	if retainedProof != nil {
-		if err = writePrivateData(rr, "attempt_page.proof.json", retainedProof); err != nil {
+		if err = writePrivateData(rr, handoffProofSourceID+".proof.json", retainedProof); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -250,15 +252,15 @@ func TestReviewedInputRealGatewayRunner(t *testing.T) {
 		t.Fatal("missing model response admitted")
 	}
 	writeInputResearch(rr, run)
-	proof, err := readPrivateData(rr, "attempt_page.proof.json", inputResearchRecordLimit)
+	proof, err := readPrivateData(rr, handoffProofSourceID+".proof.json", inputResearchRecordLimit)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writePrivateData(rr, "attempt_page.proof.json", bytes.ReplaceAll(proof, []byte("Example operates in CA."), []byte("Modified source text.")))
+	writePrivateData(rr, handoffProofSourceID+".proof.json", bytes.ReplaceAll(proof, []byte("Example operates in CA."), []byte("Modified source text.")))
 	if _, err = s.reviewedInputSnapshot(context.Background(), saved.Document, saved.Document.Records[0], rows[0]); err == nil {
 		t.Fatal("modified page proof admitted")
 	}
-	writePrivateData(rr, "attempt_page.proof.json", proof)
+	writePrivateData(rr, handoffProofSourceID+".proof.json", proof)
 	call := func(suffix string, body any, revision string) (int, []byte) {
 		raw, _ := json.Marshal(body)
 		r := httptest.NewRequest("POST", "/api/input-preparations/"+saved.Document.ID+suffix, bytes.NewReader(raw))
@@ -396,7 +398,7 @@ func handoffProofFixtureFor(t *testing.T, program, sourceURL, sourceText string)
 	pin := inputResearchPin{Authority: "gateway:test", Public: hex.EncodeToString(public)}
 	proof := inputResearchProof{Session: "research-test", Source: "web", Arguments: args, Pin: pin, Response: response, Seal: canon(seal)}
 	raw, _ := json.Marshal(proof)
-	source, err := decodeInputResearchSource(inputResearchSource{ID: "attempt_page", Kind: "page", At: stamp, Digest: sha256Digest(canon(result)), Verification: "verified", Bytes: len(response) + len(proof.Seal)}, args, result)
+	source, err := decodeInputResearchSource(inputResearchSource{ID: handoffProofSourceID, Kind: "page", At: stamp, Digest: sha256Digest(canon(result)), Verification: "verified", Bytes: len(response) + len(proof.Seal)}, args, result)
 	if err != nil {
 		t.Fatal(err)
 	}
