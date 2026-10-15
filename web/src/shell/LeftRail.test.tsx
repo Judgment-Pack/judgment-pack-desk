@@ -65,7 +65,7 @@ describe('the left rail', () => {
     // A runtime with no graph tools at all: exactly the case where
     // `useConfiguredGraphs` falls back to running every graph's matrix.
     renderRail(stub, { graphInventorySupported: false })
-    await screen.findByRole('link', { name: /^Decisions/ })
+    await screen.findByRole('link', { name: /^Packs & graphs/ })
     expect(stub.calls.map((call) => call.name)).toEqual(['list_packs'])
     expect(stub.calls.every((call) => call.name !== 'experimental_test_graphs')).toBe(true)
   })
@@ -85,7 +85,7 @@ describe('the left rail', () => {
       get_schema: () => ({ text: '{}' })
     })
     renderRail(stub, { exampleSupported: true, schemaSupported: true })
-    await screen.findByRole('link', { name: /^Decisions/ })
+    await screen.findByRole('link', { name: /^Packs & graphs/ })
     expect(stub.calls.map((call) => call.name)).toEqual(['list_packs'])
 
   })
@@ -93,7 +93,7 @@ describe('the left rail', () => {
   it('keeps secondary features out of the primary rail', async () => {
     const stub = packs([])
     renderRail(stub, { graphInventorySupported: true })
-    await screen.findByRole('link', { name: /^Decisions/ })
+    await screen.findByRole('link', { name: /^Packs & graphs/ })
     for (const name of ['Author', 'Matrix and coverage']) expect(screen.queryByRole('link', { name })).toBeNull()
     expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Recent chats' })).toBeNull()
@@ -107,12 +107,12 @@ describe('the left rail', () => {
     // rest to the project home, which is a list that stops being one exactly
     // when it would start being useful.
     renderRail(packs(['intake-triage', 'vendor-onboarding']))
-    const link = await screen.findByRole('link', { name: /^Decisions/ })
+    const link = await screen.findByRole('link', { name: /^Packs & graphs/ })
     expect(link.getAttribute('href')).toBe('/packs')
     // The **accessible name**, not the markup. Every rail entry carries an
     // `aria-label`, which replaces its contents, so a count that lived only in
     // a child span was a number no screen reader ever reached.
-    expect(link.getAttribute('aria-label')).toBe('Decisions')
+    expect(link.getAttribute('aria-label')).toBe('Packs & graphs')
     expect(link.querySelector('.desk-nav-count')).toBeNull()
     expect(screen.queryByRole('link', { name: 'intake-triage' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'show all →' })).toBeNull()
@@ -129,30 +129,30 @@ describe('the left rail', () => {
     })
     renderRail(stub)
     await screen.findByText(/the runtime refused the listing/)
-    const link = screen.getByRole('link', { name: /^Decisions/ })
+    const link = screen.getByRole('link', { name: /^Packs & graphs/ })
     expect(link.textContent).not.toContain('0')
     // And the name says no number either, which is the same claim in the place
     // assistive technology reads it.
-    expect(link.getAttribute('aria-label')).toBe('Decisions')
+    expect(link.getAttribute('aria-label')).toBe('Packs & graphs')
   })
 
   it.each(['/packs', '/packs/vendor', '/packs/vendor/matrix'])('marks Packs active at %s', async path => {
     renderRail(packs([]), {}, path)
     await waitFor(() =>
       expect(
-        screen.getByRole('link', { name: /^Decisions/ }).getAttribute('aria-current')
+        screen.getByRole('link', { name: /^Packs & graphs/ }).getAttribute('aria-current')
       ).toBe('page')
     )
   })
 
-  it.each(['expanded', 'icons'] as const)('uses the same Decisions destination for graphs in %s navigation', async mode => {
+  it.each(['expanded', 'icons'] as const)('uses the same Packs & graphs destination for graphs in %s navigation', async mode => {
     const stub = packs(['intake'])
     renderRail(stub, {}, '/graphs/onboarding', false, mode)
     await waitFor(() => expect(stub.calls).toHaveLength(1))
     const links = screen.getAllByRole('link')
     expect(links.slice(0, 2).map(link => link.getAttribute('href'))).toEqual(['/packs', '/jobs'])
     expect(screen.queryByRole('link', { name: 'Graphs' })).toBeNull()
-    expect(screen.getByRole('link', { name: /^Decisions/ }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('link', { name: /^Packs & graphs/ }).getAttribute('aria-current')).toBe('page')
     expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
   })
 

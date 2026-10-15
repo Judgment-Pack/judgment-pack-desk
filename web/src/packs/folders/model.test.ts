@@ -74,3 +74,13 @@ it('keeps graph and pack assignments distinct while preserving version 1 folders
   expect(decodeFolders(JSON.parse(JSON.stringify(graph)))).toEqual(graph)
   expect(original.version).toBe(1)
 })
+
+it('validates a bulk assignment as one new document without mutating its baseline',()=>{
+ const before=apply(defaultFolders(),{type:'create',id:'destination',name:'Destination',parentId:null})
+ const moved=apply(before,{type:'assign-many',packIds:['one','draft-two','graph:flow','graph-draft:pending'],folderId:'destination'})
+ expect(moved.version).toBe(2)
+ expect(Object.values(moved.assignments)).toEqual(['destination','destination','destination','destination'])
+ expect(before.assignments).toEqual({})
+ expect(()=>apply(before,{type:'assign-many',packIds:['one','INVALID!'],folderId:'destination'})).toThrow()
+ expect(before.assignments).toEqual({})
+})
