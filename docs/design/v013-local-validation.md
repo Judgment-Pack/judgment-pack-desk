@@ -449,3 +449,32 @@ Fixture and evidence: `/tmp/jps-collection-consistency-browser.mjs`, `/tmp/jps-c
 The final localization pass removed two retired search-placeholder keys (no missing translations) and aligned Inputs timestamps with Jobs’ shared, locale-aware medium-date/short-time formatter. An additional UI regression verifies that switching Desk to French updates input dates without losing rows, and that invalid timestamps display Not recorded. The final affected Inputs/convention checks passed (644 tests, including that added regression).
 
 Final follow-up: Inputs and Jobs now have plain-text main headers; Library retains its functional collapse control. Shared selection menus show the existing download icon for Export selected rows and close icon for Clear selection. The final targeted collection suite passed (15 tests), the frontend and Go builds passed, and the final browser fixture passed eight desktop and four narrow cases, including both menu icons and plain collection headings. The local Desk at localhost:5173 was updated and its live smoke check passed with the runtime connected and no browser errors. Evidence: `/tmp/jps-collection-final-smoke-result.json`.
+
+## Combined v0.13 checkpoint — 2026-10-15
+
+Local commit `6e14150` retains the accumulated Desk implementation and the
+[combined v0.13 scope](v013-release-scope.md). Claude's ongoing portable-Dialect
+work has not yet been integrated into this checkpoint. No push, PR merge or
+release was performed. The machine-specific `.vscode/tasks.json` remains outside
+the commit.
+
+Checkpoint verification:
+
+- Full Go suite, Go vet, TypeScript check, seven local-launcher tests and four
+  UI-message-audit tests passed.
+- The full frontend sweep ran 421 files: 6,571 passed, six skipped and nine
+  failed. Five failures were old editor-status assertions, corrected without
+  changing their save/navigation behavior checks; all 26 affected editor tests
+  then passed. Four failures identified scroll containers missing a positioned
+  containing block; those CSS rules were corrected, and all 147 affected layout
+  and record-review tests then passed. The full sweep was not repeated after
+  these focused fixes.
+- Final production frontend build passed. All 56 localization tests passed after
+  extracting the catalog and pruning obsolete translation keys.
+- Normal catalog/source checks passed with zero placeholder errors in all 11
+  translated catalogs. Strict checks fail solely on the deferred translation
+  backlog; see [localization status](../localization.md) for exact counts.
+
+These checks establish this local checkpoint only. The integrated revision still
+needs the shared release gates, translations and final acceptance recorded in the
+release scope.

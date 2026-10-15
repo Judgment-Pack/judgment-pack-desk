@@ -1,6 +1,6 @@
 # Desk localization
 
-The English catalogue and all 11 translated catalogues cover the current Desk UI messages. Translations were authored and reviewed directly, without sending UI text or project data to an external translation API. English remains the fallback for an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects invalid placeholders, keys that `en.json` lacks, and untranslated UI literals, and warns about a message missing from a translated catalogue (English is shown); `--strict` makes that a failure, for the release's translation pull request.
+The English catalogue covers the current Desk UI messages. The combined v0.13 development work has a translation backlog in all 11 non-English catalogues; the completed v0.12 translation review is recorded below. Existing translations were authored and reviewed directly, without sending UI text or project data to an external translation API. English remains the fallback for missing messages, an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects invalid placeholders, keys that `en.json` lacks, and untranslated UI literals, and warns about a message missing from a translated catalogue (English is shown); `--strict` makes that a failure, for the release's translation pull request.
 
 ## Language choice
 
@@ -48,10 +48,38 @@ JPACK_BIN=/path/to/jpack node scripts/localization-check.mjs \
 
 For targeted reruns, set `DESK_AUDIT_LANGUAGES` to a comma-separated list such as `de,ja`. Use a distinct `DESK_AUDIT_PORT` for each concurrent audit; the default is 8851. Each process creates its own fixture and configuration directories.
 
-The final repeated sweep found no remaining UI-copy gaps in the audited source and exercised states. This does not imply that user-authored packs, existing AI replies, exact source quotations or raw runtime/provider diagnostics change language; those intentionally retain their original content. Language quality can still benefit from native-speaker feedback in actual workflows.
+The v0.12 release sweep found no remaining UI-copy gaps in the then-audited source and exercised states. That historical result does not cover the later v0.13 additions. This does not imply that user-authored packs, existing AI replies, exact source quotations or raw runtime/provider diagnostics change language; those intentionally retain their original content. Language quality can still benefit from native-speaker feedback in actual workflows.
 
 ## v0.12.0 translation review
 
 All 4,638 source messages are present in every translated catalogue, including required CLDR plural forms. The release review also compared values with English and reviewed 229 older test-workspace, source-refresh and navigation messages that had English values despite passing the presence check. Technical names, paths, interpolation-only messages and valid shared words remain unchanged. Overview and Brief have distinct tab labels; Usage describes references and use, rather than consumption volume.
 
 Release verification includes strict catalogue/source checks and the browser sweep above. Translations were reviewed for terminology, regional wording and the distinction between historical observations, verified byte lineage and approval.
+
+## Combined v0.13 catalog checkpoint — 2026-10-15
+
+The [combined release scope](design/v013-release-scope.md) includes both Codex's
+Desk changes and Claude's ongoing portable-Dialect integration. The agreed
+sequence is extraction/checking now, followed by translation after integration.
+
+Extraction contains **5,696 English message keys**: 41 newly extracted keys and
+7 obsolete keys removed from the previous English catalog. Five obsolete keys
+were removed from each translated catalog, retaining every other translation
+value unchanged and preserving applicable CLDR plural forms. Missing entries
+were not filled with English text.
+
+| Locales | Missing source keys per locale | Additional missing CLDR forms | Total pending per locale |
+| --- | ---: | ---: | ---: |
+| German, Japanese, Korean, Cantonese, simplified Chinese, traditional Chinese | 987 | 0 | 987 |
+| Spanish, French, Italian, Brazilian Portuguese, European Portuguese | 987 | 13 | 1,000 |
+
+The normal catalog check permits this explicit English fallback; the strict
+release check must remain failing until the translations are completed. After
+both contributors' work is integrated, extract again, translate the final delta,
+review terminology in context, and run strict validation and representative
+layout checks. This checkpoint is not a translation-complete release.
+
+Checkpoint validation passed the normal catalog/source check, all 56 localization
+unit tests and the production frontend build. All 11 translated catalogs have
+zero placeholder errors. The strict check was also run and failed only on the
+missing translations listed above, as expected for this extraction-only stage.
