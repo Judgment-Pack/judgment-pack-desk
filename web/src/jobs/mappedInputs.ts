@@ -1,7 +1,7 @@
 import { msg } from '../i18n'
 import type { ResearchConfig } from '../config/deskConfig'
 import { acquire, newResearchSession, seal } from '../research/gatewayClient'
-import { canonicalize, parseJsonText } from '../research/verify/canon'
+import { parseJSON } from '../dialect/canon'
 import { readDocumentRecord } from '../documents/record'
 import { connectionFailure, type DriveSelection } from '../connections/client'
 import type { SourceInput, InputPreview } from './client'
@@ -11,11 +11,9 @@ import { RetainedJSON } from './wire'
 import { sourcePaths } from './sourceInputs'
 
 export function parseMappedObject(text: string): Record<string, unknown> {
- const node = parseJsonText(text)
- // The gateway's canonical domain rejects lossy numbers and duplicate keys.
- canonicalize(node)
- if (node.kind !== 'object') throw Error(msg('Choose one JSON object describing a single input record.'))
- return JSON.parse(text) as Record<string, unknown>
+ const value = parseJSON(text)
+ if (value === null || typeof value !== 'object' || Array.isArray(value)) throw Error(msg('Choose one JSON object describing a single input record.'))
+ return value
 }
 export function parseMapping(text: string): MappingV2 {
  const value = parseMappedObject(text)

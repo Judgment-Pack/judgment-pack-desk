@@ -1,0 +1,10 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2}",
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {},
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"sources\":[]},\"case\":{\"count\":7},\"sources\":{}}}",
+  "mappingDigest": "sha256:0b2f95fe90aa8db3faecfa9f8b1bacb49088d07e5e9b7349e342be2613d367a5"
+}

@@ -1,3 +1,4 @@
+import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import {cleanup, fireEvent, render, screen, within} from '@testing-library/react'
 import {afterEach, expect, it} from 'vitest'
 import {languageReady, setLanguage} from '../i18n'
@@ -5,9 +6,9 @@ import {MappingReview, InputLineage} from './MappingReview'
 import type {InputProfile, MappingV2, Preparation} from './mappingTypes'
 
 const profile: InputProfile = {id:'fx',publicKey:'key',class:'record',source:'finance',authority:'gateway',shape:'mcp',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,calculator:{name:'fx-convert',version:'2.1.0'}}
-const mapping: MappingV2 = {version:2,case:{facts:[],evidence:[]},sources:[{name:'conversion',kind:'operation',profile:'fx',read:{copy:{facts:[],evidence:[]}},calculation:{inputs:{amount:'invoiceAmount',currency:'invoiceCurrency'},tables:{'ecb-rates':86400,'spot-rates':3601}}}]}
-const line: Preparation['lineage'][number] = {target:'/converted',kind:'fact',source:'conversion',class:'record',generatedInfluence:false,present:true,status:'resolved',reason:'',calculation:{calculator:{name:'fx-convert',version:'2.1.0'},status:'computed',inputs:[{name:'amount',parameter:'invoiceAmount',source:'case',pointer:'/invoice/amount'},{name:'currency',parameter:'invoiceCurrency',source:'invoice-record',pointer:'/currency'}],asOf:{'ecb-rates':'2026-10-01T14:00:00Z','spot-rates':'2026-10-01T13:00:00Z'}}}
-const preparation = (...lineage: Preparation['lineage']): Preparation => ({version:2,verifiedAt:'2026-10-01T14:01:00Z',mappingDigest:'digest',verification:'verified',lineage,cites:[],outcomes:[]})
+const mapping: MappingV2 =mappingFixture('calculator-review')
+const line: Preparation['lineage'][number] = {target:'/converted',kind:'fact',source:'conversion',class:'record',generatedInfluence:false,present:true,status:'resolved',reason:'',basis:[],readDigest:'digest',calculation:{calculator:{name:'fx-convert',version:'2.1.0'},status:'computed',inputs:[{name:'amount',parameter:'invoiceAmount',source:'case',pointer:'/invoice/amount'},{name:'currency',parameter:'invoiceCurrency',source:'invoice-record',pointer:'/currency'}],asOf:{'ecb-rates':'2026-10-01T14:00:00Z','spot-rates':'2026-10-01T13:00:00Z'}}}
+const preparation = (...lineage: Preparation['lineage']): Preparation => ({version:2,verifiedAt:'2026-10-01T14:01:00Z',mappingDigest:'digest',verification:'verified acquisitions; session sealing and input truth are not established',lineage,cites:[],outcomes:[]})
 afterEach(async()=>{cleanup();setLanguage('en');await languageReady()})
 
 it('names the pinned calculator and every binding and exact table limit in the mapping review',()=>{
@@ -31,7 +32,7 @@ it('leaves ordinary source rows unchanged and never infers a calculator from cal
 })
 it('reads mappings without calculation bindings or installed profiles',()=>{
  const {calculation:_,...source}=mapping.sources![0]!
- const ui=render(<MappingReview mapping={{version:2,sources:[source]}} profiles={[profile]}/>)
+ const ui=render(<MappingReview mapping={{version:2,case:{facts:[],evidence:[]},sources:[source]}} profiles={[profile]}/>)
  expect(screen.getByText('Calculator: fx-convert · 2.1.0')).toBeTruthy()
  ui.rerender(<MappingReview mapping={mapping}/>)
  expect(screen.getByRole('row',{name:'conversion fx —'})).toBeTruthy()

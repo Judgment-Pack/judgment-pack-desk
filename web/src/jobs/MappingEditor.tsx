@@ -15,6 +15,7 @@ import { parseMappedObject } from './mappedInputs'
 import { setBinding, getBinding } from './mappingEditorModel'
 import { JobIntegrationPicker } from './JobIntegrationPicker'
 import { canChangeIntegration, setSourceIntegration } from './jobIntegrations'
+import { mappingErrorMessage } from './mappingError'
 import styles from './JobsView.module.css'
 
 type Assignment={kind:'facts'|'evidence';target:string;label:string;description?:string}
@@ -74,7 +75,7 @@ function SourceEditor({active=true,fileControls,integration,source,calculator,to
  useEffect(()=>{setArgs(JSON.stringify(source.arguments?.arguments??{},null,2));setAge(String(source.maxAge??300));setTool(String(source.arguments?.tool??''));setError('')},[request])
  useEffect(()=>{onInvalid(dirty);return()=>onInvalid(false)},[dirty,onInvalid])
  function edit(){onDirty();setError('')}
- function apply(){try{const value=Number(age);if(!Number.isInteger(value)||value<1||value>86400)throw Error(msg('Enter a whole number between 1 and 86400.'));const argumentsValue=parseMappedObject(args);onApply({...source,...(source.profile?{maxAge:value}:{}),...(source.kind==='operation'?{arguments:{...source.arguments,tool,arguments:argumentsValue}}:{})});setError('')}catch(e){setError((e as Error).message)}}
+ function apply(){try{const value=Number(age);if(!Number.isInteger(value)||value<1||value>86400)throw Error(msg('Enter a whole number between 1 and 86400.'));const argumentsValue=parseMappedObject(args);onApply({...source,...(source.profile?{maxAge:value}:{}),...(source.kind==='operation'?{arguments:{...source.arguments,tool,arguments:argumentsValue}}:{})});setError('')}catch(e){setError(mappingErrorMessage(e))}}
  const content=<div className={styles.sourceEditor}>
   <section className={styles.fields}><h2>{source.name}</h2>{integration}</section>
   {calculator&&<p className={styles.note}>{msg('This source is a calculator. In Advanced mapping → Edit mapping, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.')}</p>}

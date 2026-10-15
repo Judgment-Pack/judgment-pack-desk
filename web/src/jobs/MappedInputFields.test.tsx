@@ -1,3 +1,4 @@
+import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
@@ -18,7 +19,7 @@ vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('./mappedInputs',async original=>({...await original<object>(),prepareMappedInputs:vi.fn()}))
 vi.mock('./sourceInputs',async original=>({...await original<object>(),localSnapshot:vi.fn()}))
 const doc={rules:[{condition:{op:'fact',path:'/score',value:7}}],evidenceRequirements:[]} as unknown as PackDocument
-const mapping: MappingV2={version:2,case:{facts:[{target:'/score',source:'/facts/score'}],evidence:[]},sources:[]}
+const mapping: MappingV2=mappingFixture('case-score')
 const source={mapping,case:{facts:{score:7}},sources:{},mappingDigest:'digest'}
 const result={input:{source,facts:{score:7}},factsText:'{"score":7}',evidenceText:''}
 beforeEach(()=>{vi.mocked(jobsAPI).mockResolvedValue([]);vi.mocked(prepareMappedInputs).mockResolvedValue(result)})
@@ -131,4 +132,12 @@ it.each(['complete','cancel','unmount'] as const)('offers explicit reconnect for
  expect(screen.queryByText('Mapped inputs')).toBeNull()
  if(action==='cancel'){expect(screen.getByText('Selected')).toBeTruthy();expect(screen.getByRole('button',{name:'Reconnect'})).toBeTruthy()}
  else {expect(screen.queryByText('Selected')).toBeNull();expect(screen.getByText('This selection expired. Search again and reselect your sources.')).toBeTruthy()}
+})
+
+it('shows the translated canonical rule in the advanced mapping error',async()=>{
+ await view()
+ fireEvent.click(screen.getByText('Edit mapping'))
+ fireEvent.change(screen.getByLabelText('Mapping JSON'),{target:{value:'{"version":2,"version":2}'}})
+ expect(screen.getByRole('alert').textContent).toBe('JSON member “version” appears more than once (§1).')
+ expect(prepareMappedInputs).not.toHaveBeenCalled()
 })

@@ -4817,5 +4817,12 @@
   "The witness's URL is not at the origin its token was confirmed for, so Desk sends nothing. Set the witness again, pasting its token, to confirm the new URL.": "The witness's URL is not at the origin its token was confirmed for, so Desk sends nothing. Set the witness again, pasting its token, to confirm the new URL.",
   "The witness's answer carried a credential, so Desk keeps and shows none of its words: only its HTTP status, and its reason where that is a word.": "The witness's answer carried a credential, so Desk keeps and shows none of its words: only its HTTP status, and its reason where that is a word.",
   "A reader’s demand, not the operator’s: Desk asks the runtime once to require the countersigned coverage through the record you give, and keeps nothing of it.": "A reader’s demand, not the operator’s: Desk asks the runtime once to require the countersigned coverage through the record you give, and keeps nothing of it.",
-  "An agent started with this signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records; Desk puts no key in the agent’s setup.": "An agent started with this signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records; Desk puts no key in the agent’s setup."
+  "An agent started with this signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records; Desk puts no key in the agent’s setup.": "An agent started with this signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records; Desk puts no key in the agent’s setup.",
+  "Enter one valid JSON value. Check position {{offset}} ({{section}}).": "Enter one valid JSON value. Check position {{offset}} ({{section}}).",
+  "JSON may contain at most 64 nested containers ({{section}}).": "JSON may contain at most 64 nested containers ({{section}}).",
+  "JSON member “{{member}}” appears more than once ({{section}}).": "JSON member “{{member}}” appears more than once ({{section}}).",
+  "Use only JSON values with string member names and plain values ({{section}}).": "Use only JSON values with string member names and plain values ({{section}}).",
+  "Use valid Unicode characters without lone surrogates ({{section}}).": "Use valid Unicode characters without lone surrogates ({{section}}).",
+  "Use whole numbers between −9007199254740991 and 9007199254740991 ({{section}}).": "Use whole numbers between −9007199254740991 and 9007199254740991 ({{section}}).",
+  "Write integers without fractions or exponents ({{section}}).": "Write integers without fractions or exponents ({{section}})."
 }

@@ -1,3 +1,4 @@
+import { mappingErrorMessage } from './mappingError'
 import {SourcePreparations} from './SourcePreparations'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useConfirmDiscard } from '../shell/UnsavedChanges'
@@ -46,7 +47,7 @@ function date(value: string) { return formatDate(new Date(value), { dateStyle: '
 // it stored does not read as a time, decided as the Activity tab decides it,
 // rather than throwing and taking the table down with it (#223).
 function submitted(at: string | undefined) { const stored = stamp('submitted', at); return stored ? date(stored.at) : msg('Not recorded') }
-function errorText(error: unknown) { return error instanceof Error ? error.message : msg('The local runner could not complete this request.') }
+function errorText(error: unknown) { return error instanceof Error ? mappingErrorMessage(error) : msg('The local runner could not complete this request.') }
 function Problem({ error }: { error: unknown }) { return error ? <p className={styles.problem} role="alert">{errorText(error)}</p> : null }
 function JSONView({ value, title }: { value: unknown; title: string }) { return <Disclosure title={title}><pre className={styles.json}>{JSON.stringify(value, null, 2)}</pre></Disclosure> }
 export function decisionLabel(result?: Decision) { if (!result) return '—'; return result.disposition.outcomeId ?? (result.disposition.kind === 'not-applicable' ? msg('Not applicable') : msg('Unresolved')) }

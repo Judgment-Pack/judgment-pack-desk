@@ -1,0 +1,10 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"case\":{\"facts\":[],\"evidence\":[]},\"sources\":[{\"name\":\"registry\",\"kind\":\"operation\",\"profile\":\"registry\",\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}},{\"name\":\"caseFile\",\"kind\":\"selected-file\",\"provider\":\"local-file\",\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}}]}",
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {},
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"case\":{\"facts\":[],\"evidence\":[]},\"sources\":[{\"name\":\"registry\",\"kind\":\"operation\",\"profile\":\"registry\",\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}},{\"name\":\"caseFile\",\"kind\":\"selected-file\",\"provider\":\"local-file\",\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}}]},\"case\":{\"count\":7},\"sources\":{}}}",
+  "mappingDigest": "sha256:7b18907d92b5d493f3c6c8508125afed6152a89904527e29457a38c897719055"
+}

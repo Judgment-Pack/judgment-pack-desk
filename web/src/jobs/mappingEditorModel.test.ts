@@ -1,7 +1,8 @@
+import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import { expect, it } from 'vitest'
 import { getBinding, setBinding } from './mappingEditorModel'
 import type { MappingV2 } from './mappingTypes'
-const mapping:MappingV2={version:2,case:{facts:[{target:'/score',source:'/facts/score'},{target:'/name',source:'/facts/name'}],evidence:[]},sources:[{name:'records',kind:'selected-file',provider:'local-file',read:{copy:{facts:[],evidence:[]}}}]}
+const mapping:MappingV2=mappingFixture('copy-bindings')
 it('reassigns only the selected target and preserves the source mapping',()=>{
  const next=setBinding(mapping,'facts','/score','records','/score')
  expect(getBinding(next,'facts','/score')).toMatchObject({owner:'records',path:'/score'})
@@ -13,9 +14,9 @@ it('reassigns only the selected target and preserves the source mapping',()=>{
  expect(setBinding(omitted,'facts','/score','case','/facts/score').unmapped).not.toContain('/score')
 })
 it('does not rewrite advanced derivation rules or competing writers',()=>{
- const advanced=structuredClone(mapping);advanced.sources![0]!.read.rule={version:1}
+ const advanced=structuredClone(mapping);advanced.sources![0]!.read.rule={ruleVersion:'1',parameters:{},clauses:[{when:{op:'always'},claim:{facts:[],evidence:{},acquisitionStatus:'unknown'},reason:'unknown'}]}
  expect(getBinding(advanced,'facts','/score').complex).toBe(true)
  expect(()=>setBinding(advanced,'facts','/score','case','/x')).toThrow()
- const duplicate=structuredClone(mapping);duplicate.sources![0]!.read.copy!.facts.push({target:'/score',source:'/score'})
+ const duplicate=structuredClone(mapping);duplicate.sources![0]!.read.copy!.facts!.push({target:'/score',source:'/score'})
  expect(getBinding(duplicate,'facts','/score').complex).toBe(true)
 })

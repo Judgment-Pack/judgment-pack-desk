@@ -4635,5 +4635,12 @@
   "{{count}} steps_one": "{{count}} 个步骤",
   "{{count}} steps_other": "{{count}} 个步骤",
   "{{required}} required · {{optional}} optional": "{{required}} 项必需 · {{optional}} 项可选",
-  "{{status}} · recorded for these inputs": "{{status}} · 针对这些输入记录"
+  "{{status}} · recorded for these inputs": "{{status}} · 针对这些输入记录",
+  "Use valid Unicode characters without lone surrogates ({{section}}).": "请使用不含孤立代理项的有效 Unicode 字符（{{section}}）。",
+  "Write integers without fractions or exponents ({{section}}).": "请使用不含小数或指数的整数写法（{{section}}）。",
+  "Use whole numbers between −9007199254740991 and 9007199254740991 ({{section}}).": "请使用 −9007199254740991 到 9007199254740991 之间的整数（{{section}}）。",
+  "JSON may contain at most 64 nested containers ({{section}}).": "JSON 最多可包含 64 层嵌套容器（{{section}}）。",
+  "Enter one valid JSON value. Check position {{offset}} ({{section}}).": "请输入一个有效的 JSON 值。请检查位置 {{offset}}（{{section}}）。",
+  "JSON member “{{member}}” appears more than once ({{section}}).": "JSON 成员“{{member}}”出现了多次（{{section}}）。",
+  "Use only JSON values with string member names and plain values ({{section}}).": "请仅使用成员名称为字符串且值为普通值的 JSON 值（{{section}}）。"
 }
