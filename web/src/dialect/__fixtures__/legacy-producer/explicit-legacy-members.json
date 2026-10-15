@@ -1,0 +1,10 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"case\":{\"facts\":[],\"evidence\":[]},\"provider\":\"\",\"facts\":null,\"evidence\":null}",
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {},
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"case\":{\"facts\":[],\"evidence\":[]},\"provider\":\"\",\"facts\":null,\"evidence\":null,\"sources\":[]},\"case\":{\"count\":7},\"sources\":{}}}",
+  "mappingDigest": "sha256:1cba47f4a484d7b7ad7991809e84a86f57843894870d57418d26fab6584b4dbe"
+}

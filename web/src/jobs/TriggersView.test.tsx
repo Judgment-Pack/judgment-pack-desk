@@ -1,3 +1,4 @@
+import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import {useState} from 'react'
 import {cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
@@ -108,7 +109,7 @@ it('shows the installation requirement without offering a false cloud connection
  expect(screen.queryByRole('combobox',{name:'Cloud connection'})).toBeNull()
 })
 it('does not reuse interactive grants and only binds local files in automatic operation mappings',()=>{
- const mapping={version:2,case:{facts:[],evidence:[]},sources:[{name:'registry',kind:'operation',profile:'registry',read:{copy:{facts:[],evidence:[]}}},{name:'caseFile',kind:'selected-file',provider:'local-file',read:{copy:{facts:[],evidence:[]}}}]} as const
+ const mapping=mappingFixture('automatic-sources')
  const value=defaultTrigger('cloud',mapping as never)
  expect(value.input).toEqual({kind:'mapped-sources',case:{},files:{caseFile:''}})
 })

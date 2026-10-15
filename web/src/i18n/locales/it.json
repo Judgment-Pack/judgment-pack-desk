@@ -5766,5 +5766,12 @@
   "Patch {{version}}": "Patch {{version}}",
   "Saved version {{version}}": "Versione salvata {{version}}",
   "Version options": "Opzioni di versione",
-  "Version options unavailable": "Opzioni di versione non disponibili"
+  "Version options unavailable": "Opzioni di versione non disponibili",
+  "Use valid Unicode characters without lone surrogates ({{section}}).": "Usa caratteri Unicode validi senza surrogati isolati ({{section}}).",
+  "Write integers without fractions or exponents ({{section}}).": "Scrivi numeri interi senza frazioni o esponenti ({{section}}).",
+  "Use whole numbers between −9007199254740991 and 9007199254740991 ({{section}}).": "Usa numeri interi compresi tra −9007199254740991 e 9007199254740991 ({{section}}).",
+  "JSON may contain at most 64 nested containers ({{section}}).": "JSON può contenere al massimo 64 contenitori annidati ({{section}}).",
+  "Enter one valid JSON value. Check position {{offset}} ({{section}}).": "Inserisci un solo valore JSON valido. Controlla la posizione {{offset}} ({{section}}).",
+  "JSON member “{{member}}” appears more than once ({{section}}).": "Il membro JSON «{{member}}» compare più di una volta ({{section}}).",
+  "Use only JSON values with string member names and plain values ({{section}}).": "Usa solo valori JSON con nomi dei membri di tipo stringa e valori semplici ({{section}})."
 }

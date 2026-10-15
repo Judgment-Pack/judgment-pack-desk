@@ -1,5 +1,7 @@
 import type {TriggerOrigin} from './triggerTypes'
-import { jobsRequest } from './wire'
+import { jobsRequest, RetainedJSON } from './wire'
+import { canonicalize, parseJSON } from '../dialect/canon'
+import { parseJsonText, memberOf } from '../research/verify/canon'
 import type { DialectV2, SourceV2, Preparation, InputProfile } from './dialectTypes'
 import type { DocumentObject } from '../documents/client'
 import type { PackTest } from '../mcp/types'
@@ -27,8 +29,67 @@ export interface Page<T> { items: T[]; next: number }
 export class JobsRequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); this.name = 'JobsRequestError' }
 }
+/** Serialize only mapping slots as dialects. Case data and signed acquisitions
+ * must keep their own bytes and numeric spellings, including in constant triggers. */
+export function canonicalJobsRequest(body: unknown): string {
+  const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof RetainedJSON)
+  const mapping = (value: unknown) => object(value) && value.version === 2 ? new RetainedJSON(canonicalize(value)) : value
+  const inputText = (text: string): string => {
+    const root = parseJsonText(text), source = memberOf(root, 'source')
+    const declared = source && memberOf(source, 'mapping'), version = declared && memberOf(declared, 'version')
+    if (version?.kind !== 'number' || Number(version.literal) !== 2) return text
+    // Locate just source.mapping in the already strictly parsed text. Splice
+    // only that value, leaving signed response strings, whitespace and numbers
+    // byte for byte as retained by the trigger.
+    const space = (at: number) => { while (/[ \t\r\n]/.test(text[at] ?? '') && at < text.length) at++; return at }
+    const stringEnd = (at: number) => {
+      for (at++; at < text.length; at++) {
+        if (text[at] === '\\') at++
+        else if (text[at] === '"') return at + 1
+      }
+      throw Error('Unterminated JSON string') // parseJsonText has already refused this.
+    }
+    const valueEnd = (at: number): number => {
+      if (text[at] === '"') return stringEnd(at)
+      if (text[at] === '{' || text[at] === '[') {
+        let depth = 0
+        for (; at < text.length; at++) {
+          if (text[at] === '"') { at = stringEnd(at) - 1; continue }
+          if (text[at] === '{' || text[at] === '[') depth++
+          if ((text[at] === '}' || text[at] === ']') && --depth === 0) return at + 1
+        }
+      }
+      while (at < text.length && !/[,}\] \t\r\n]/.test(text[at])) at++
+      return at
+    }
+    const span = (at: number, name: string): [number, number] => {
+      at = space(at + 1)
+      while (text[at] !== '}') {
+        const end = stringEnd(at), key = JSON.parse(text.slice(at, end))
+        at = space(space(end) + 1) // colon, then value
+        const last = valueEnd(at)
+        if (key === name) return [at, last]
+        at = space(space(last) + 1) // comma, then next name
+      }
+      throw Error('Missing JSON member') // The parsed tree established both members.
+    }
+    const [sourceStart] = span(space(0), 'source')
+    const [start, end] = span(sourceStart, 'mapping')
+    return text.slice(0, start) + canonicalize(parseJSON(text.slice(start, end))) + text.slice(end)
+  }
+  const envelope = (value: unknown): unknown => {
+    if (!object(value)) return value
+    const next = {...value}
+    if (object(value.source)) next.source = {...value.source, mapping: mapping(value.source.mapping)}
+    if (value.inputMapping !== undefined) next.inputMapping = mapping(value.inputMapping)
+    for (const key of ['input', 'sample', 'trigger', 'config']) if (object(value[key])) next[key] = envelope(value[key])
+    if (value.kind === 'constant' && typeof value.value === 'string') next.value = inputText(value.value)
+    return next
+  }
+  return jobsRequest(envelope(body))
+}
 export async function jobsAPI<T>(path: string, body?: unknown, key?: string, signal?: AbortSignal): Promise<T> {
-  const response = await deskFetch(`/api/operations/${path}`, body === undefined ? { signal } : { signal, method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? { 'Idempotency-Key': key } : {}) }, body: jobsRequest(body) })
+  const response = await deskFetch(`/api/operations/${path}`, body === undefined ? { signal } : { signal, method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? { 'Idempotency-Key': key } : {}) }, body: canonicalJobsRequest(body) })
   // A refusal whose body is not JSON, such as an earlier Runner's plain-text
   // 404 for a route it does not serve, is still a refusal with its status.
   const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })

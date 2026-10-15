@@ -5726,5 +5726,12 @@
   "Patch {{version}}": "패치 {{version}}",
   "Saved version {{version}}": "저장된 버전 {{version}}",
   "Version options": "버전 옵션",
-  "Version options unavailable": "버전 옵션을 사용할 수 없습니다"
+  "Version options unavailable": "버전 옵션을 사용할 수 없습니다",
+  "Use valid Unicode characters without lone surrogates ({{section}}).": "단독 서로게이트가 없는 유효한 Unicode 문자를 사용하세요({{section}}).",
+  "Write integers without fractions or exponents ({{section}}).": "소수나 지수 없이 정수를 작성하세요({{section}}).",
+  "Use whole numbers between −9007199254740991 and 9007199254740991 ({{section}}).": "−9007199254740991에서 9007199254740991 사이의 정수를 사용하세요({{section}}).",
+  "JSON may contain at most 64 nested containers ({{section}}).": "JSON 컨테이너는 최대 64단계까지 중첩할 수 있습니다({{section}}).",
+  "Enter one valid JSON value. Check position {{offset}} ({{section}}).": "유효한 JSON 값 하나를 입력하세요. {{offset}} 위치를 확인하세요({{section}}).",
+  "JSON member “{{member}}” appears more than once ({{section}}).": "JSON 멤버 “{{member}}”이(가) 두 번 이상 나타납니다({{section}}).",
+  "Use only JSON values with string member names and plain values ({{section}}).": "멤버 이름이 문자열이고 값이 일반 값인 JSON 값만 사용하세요({{section}})."
 }

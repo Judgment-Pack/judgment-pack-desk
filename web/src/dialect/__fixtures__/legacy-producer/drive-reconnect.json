@@ -1,0 +1,15 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"case\":{\"parameters\":{\"file\":{\"pointer\":\"/id\",\"type\":\"string\"},\"grant\":{\"pointer\":\"/grant\",\"type\":\"string\"}},\"facts\":[],\"evidence\":[]},\"sources\":[{\"name\":\"drive\",\"kind\":\"selected-file\",\"provider\":\"google-drive\",\"profile\":\"records\",\"profileDigest\":\"sha256:pin\",\"arguments\":{\"fileId\":{\"$param\":\"file\"},\"grant\":{\"$param\":\"grant\"}},\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}}]}",
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {
+    "drive": {
+      "fileId": "selected",
+      "grant": "grant"
+    }
+  },
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"case\":{\"parameters\":{\"file\":{\"pointer\":\"/id\",\"type\":\"string\"},\"grant\":{\"pointer\":\"/grant\",\"type\":\"string\"}},\"facts\":[],\"evidence\":[]},\"sources\":[{\"name\":\"drive\",\"kind\":\"selected-file\",\"provider\":\"google-drive\",\"profile\":\"records\",\"profileDigest\":\"sha256:pin\",\"arguments\":{\"fileId\":{\"$param\":\"file\"},\"grant\":{\"$param\":\"grant\"}},\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}}]},\"case\":{\"count\":7,\"id\":\"selected\",\"grant\":\"grant\"},\"sources\":{}}}",
+  "mappingDigest": "sha256:3b504753d81b1759b867de798d38ee0db5795bd0024efbf9ffc659112e6e1aac"
+}

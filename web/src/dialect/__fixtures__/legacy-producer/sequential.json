@@ -1,0 +1,10 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"sources\":[{\"name\":\"first\",\"kind\":\"operation\",\"profile\":\"records\",\"profileDigest\":\"sha256:pin\",\"maxAge\":300,\"arguments\":{\"tool\":\"lookup\",\"arguments\":{}},\"read\":{\"copy\":{\"facts\":[{\"target\":\"/id\",\"source\":\"/id\"}],\"evidence\":[]}}},{\"name\":\"second\",\"kind\":\"operation\",\"profile\":\"records\",\"profileDigest\":\"sha256:pin\",\"maxAge\":300,\"arguments\":{\"tool\":\"lookup\",\"arguments\":{\"id\":{\"$param\":\"id\"}}},\"parameters\":{\"id\":{\"from\":\"first\",\"pointer\":\"/id\",\"type\":\"integer\"}},\"read\":{\"copy\":{\"facts\":[{\"target\":\"/name\",\"source\":\"/name\"}],\"evidence\":[]}}}]}",
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {},
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"sources\":[{\"name\":\"first\",\"kind\":\"operation\",\"profile\":\"records\",\"profileDigest\":\"sha256:pin\",\"maxAge\":300,\"arguments\":{\"tool\":\"lookup\",\"arguments\":{}},\"read\":{\"copy\":{\"facts\":[{\"target\":\"/id\",\"source\":\"/id\"}],\"evidence\":[]}}},{\"name\":\"second\",\"kind\":\"operation\",\"profile\":\"records\",\"profileDigest\":\"sha256:pin\",\"maxAge\":300,\"arguments\":{\"tool\":\"lookup\",\"arguments\":{\"id\":{\"$param\":\"id\"}}},\"parameters\":{\"id\":{\"from\":\"first\",\"pointer\":\"/id\",\"type\":\"integer\"}},\"read\":{\"copy\":{\"facts\":[{\"target\":\"/name\",\"source\":\"/name\"}],\"evidence\":[]}}}]},\"case\":{\"count\":7},\"sources\":{}}}",
+  "mappingDigest": "sha256:d041b006a8b6475accba3dcb727684c2f597f9f4a8772c78a41c9834b11b4b82"
+}

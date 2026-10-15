@@ -1,0 +1,35 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"case\":{\"facts\":[{\"target\":\"/manual\",\"source\":\"/manual\"}],\"evidence\":[]},\"sources\":[]}",
+  "integration": {
+    "digest": "pin",
+    "profile": {
+      "id": "registry",
+      "shape": "http",
+      "source": "drive",
+      "class": "record",
+      "authority": "gateway",
+      "publicKey": "key",
+      "adapter": {
+        "name": "mcp",
+        "version": "1",
+        "digest": "digest"
+      },
+      "endpoint": null,
+      "tools": [
+        "read"
+      ]
+    }
+  },
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {
+    "source1": {
+      "fileId": "selected",
+      "grant": "grant"
+    }
+  },
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"case\":{\"facts\":[{\"target\":\"/manual\",\"source\":\"/manual\"}],\"evidence\":[],\"parameters\":{\"source1File\":{\"pointer\":\"/selections/source1/fileId\",\"type\":\"string\"},\"source1Grant\":{\"pointer\":\"/selections/source1/grant\",\"type\":\"string\"}}},\"sources\":[{\"name\":\"source1\",\"kind\":\"selected-file\",\"provider\":\"google-drive\",\"profile\":\"registry\",\"profileDigest\":\"pin\",\"maxAge\":300,\"arguments\":{\"fileId\":{\"$param\":\"source1File\"},\"grant\":{\"$param\":\"source1Grant\"}},\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}}]},\"case\":{\"count\":7,\"selections\":{\"source1\":{\"fileId\":\"selected\",\"grant\":\"grant\"}}},\"sources\":{}}}",
+  "mappingDigest": "sha256:8148929f0f6fc5af373455fd6d2a2993d8a17d90c4e83d4c856cc9bab28fbc94"
+}

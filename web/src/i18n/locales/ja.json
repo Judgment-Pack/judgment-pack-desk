@@ -5726,5 +5726,12 @@
   "Patch {{version}}": "パッチ {{version}}",
   "Saved version {{version}}": "保存済みバージョン {{version}}",
   "Version options": "バージョンの選択肢",
-  "Version options unavailable": "バージョンの選択肢を取得できません"
+  "Version options unavailable": "バージョンの選択肢を取得できません",
+  "Use valid Unicode characters without lone surrogates ({{section}}).": "単独のサロゲートを含まない有効な Unicode 文字を使用してください（{{section}}）。",
+  "Write integers without fractions or exponents ({{section}}).": "整数は小数や指数を使わずに記述してください（{{section}}）。",
+  "Use whole numbers between −9007199254740991 and 9007199254740991 ({{section}}).": "−9007199254740991 から 9007199254740991 までの整数を使用してください（{{section}}）。",
+  "JSON may contain at most 64 nested containers ({{section}}).": "JSON のコンテナーの入れ子は 64 階層までです（{{section}}）。",
+  "Enter one valid JSON value. Check position {{offset}} ({{section}}).": "有効な JSON 値を 1 つ入力してください。位置 {{offset}} を確認してください（{{section}}）。",
+  "JSON member “{{member}}” appears more than once ({{section}}).": "JSON メンバー「{{member}}」が複数回出現しています（{{section}}）。",
+  "Use only JSON values with string member names and plain values ({{section}}).": "メンバー名が文字列で、値が通常の値である JSON 値のみを使用してください（{{section}}）。"
 }

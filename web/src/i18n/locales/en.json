@@ -5726,5 +5726,12 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.",
-  "… (truncated for display)": "… (truncated for display)"
+  "… (truncated for display)": "… (truncated for display)",
+  "Enter one valid JSON value. Check position {{offset}} ({{section}}).": "Enter one valid JSON value. Check position {{offset}} ({{section}}).",
+  "JSON may contain at most 64 nested containers ({{section}}).": "JSON may contain at most 64 nested containers ({{section}}).",
+  "JSON member “{{member}}” appears more than once ({{section}}).": "JSON member “{{member}}” appears more than once ({{section}}).",
+  "Use only JSON values with string member names and plain values ({{section}}).": "Use only JSON values with string member names and plain values ({{section}}).",
+  "Use valid Unicode characters without lone surrogates ({{section}}).": "Use valid Unicode characters without lone surrogates ({{section}}).",
+  "Use whole numbers between −9007199254740991 and 9007199254740991 ({{section}}).": "Use whole numbers between −9007199254740991 and 9007199254740991 ({{section}}).",
+  "Write integers without fractions or exponents ({{section}}).": "Write integers without fractions or exponents ({{section}})."
 }

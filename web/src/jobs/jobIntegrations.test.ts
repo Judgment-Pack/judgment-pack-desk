@@ -1,9 +1,10 @@
+import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import {expect,it} from 'vitest'
 import {canChangeIntegration,matchesJobGateway,setSourceIntegration,supportsJobProfile} from './jobIntegrations'
 import type {DialectV2,ProfileEntry} from './dialectTypes'
 import type {ResearchConfig} from '../config/deskConfig'
 const entry:ProfileEntry={digest:'new-digest',profile:{id:'registry',shape:'mcp',source:'registry',class:'record',authority:'gateway',publicKey:'key',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,tools:['read_case']}}
-const base:DialectV2={version:2,case:{facts:[{target:'/manual',source:'/manual'}],evidence:[]},sources:[]}
+const base:DialectV2=mappingFixture('integration-base')
 it('requires a supported execution contract and the configured signer/authority',()=>{
  expect(supportsJobProfile(entry)).toBe(true)
  expect(supportsJobProfile({...entry,profile:{...entry.profile,shape:'http'}})).toBe(false)
@@ -29,7 +30,7 @@ it('changing authority resets request parameters and pins while preserving simpl
 })
 it('does not silently rewrite derivations or downstream dependencies',()=>{
  const mapping=setSourceIntegration(base,entry)
- mapping.sources![0]!.read={rule:{version:1}}
+ mapping.sources![0]!.read={rule:{ruleVersion:'1',parameters:{},clauses:[{when:{op:'always'},claim:{facts:[],evidence:{},acquisitionStatus:'unknown'},reason:'unknown'}]}}
  expect(canChangeIntegration(mapping,'source1')).toBe(false)
  expect(()=>setSourceIntegration(mapping,undefined,'source1')).toThrow()
  const dependent=setSourceIntegration(setSourceIntegration(base,entry),entry)

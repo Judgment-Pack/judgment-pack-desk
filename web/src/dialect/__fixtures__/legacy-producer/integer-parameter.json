@@ -1,0 +1,10 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"case\":{\"parameters\":{\"count\":{\"pointer\":\"/count\",\"type\":\"integer\"}},\"facts\":[],\"evidence\":[]}}",
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {},
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"case\":{\"parameters\":{\"count\":{\"pointer\":\"/count\",\"type\":\"integer\"}},\"facts\":[],\"evidence\":[]},\"sources\":[]},\"case\":{\"count\":7},\"sources\":{}}}",
+  "mappingDigest": "sha256:33ec58332310f5b4c7a3d50c894bab9078d026b49490404d0c26311c0cdcb7d0"
+}

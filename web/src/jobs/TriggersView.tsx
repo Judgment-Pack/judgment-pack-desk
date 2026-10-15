@@ -1,5 +1,6 @@
 import {LoadingState} from '../ui/LoadingState'
 import { QueryStatusNotice } from '../shell/QueryStatusNotice'
+import { mappingErrorMessage } from './mappingError'
 import {SourceProgress,occurrenceState} from './SourcePreparations'
 import { deskEventPath } from '../desks/scope'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
@@ -23,7 +24,7 @@ import styles from './JobsView.module.css'
 type Preview={config?:TriggerConfig;next:string[];inputReady:boolean;configurationReady?:boolean;deferred?:boolean;factsText?:string;evidenceText?:string}
 const when=(s:string)=>formatDate(new Date(s),{dateStyle:'medium',timeStyle:'short'})
 export function triggerState(t:Pick<Trigger,'paused'|'config'|'nextAt'|'problem'>){return t.paused?msg('Paused'):t.problem?msg('Needs attention'):t.config.kind==='cloud'?msg('Listening'):t.config.kind==='schedule'&&!t.nextAt?msg('Finished'):msg('Active')}
-function failure(e:unknown){return e instanceof Error?e.message:String(e)}
+function failure(e:unknown){return e instanceof Error?mappingErrorMessage(e):String(e)}
 export function reason(value?:string){return value?({'missed':msg('Missed while unavailable'),'latest-after-missed':msg('Latest missed occurrence'),'overlap':msg('Another run was pending'),'queue-full':msg('Queue full'),'queue-expired':msg('Queue expired'),'trigger-paused':msg('Trigger paused')} as Record<string,string>)[value]??value:'—'}
 export function TriggersView({jobId,release,managedTriggers=[]}:{jobId:string;release:Release;managedTriggers?:string[]}){
  const client=useQueryClient(),opener=useRef<HTMLElement|null>(null)

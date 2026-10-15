@@ -22,6 +22,7 @@ import { localSnapshot, pointerEscape } from './sourceInputs'
 import { DialectEditor } from './DialectEditor'
 import { MappedCaseFields } from './MappedCaseFields'
 import { DialectReview, InputLineage } from './DialectReview'
+import { mappingErrorMessage } from './mappingError'
 import styles from './JobsView.module.css'
 
 function starter(doc: PackDocument): DialectV2 {
@@ -44,7 +45,7 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
  useEffect(() => { if (text !== initial.current.text || caseText !== initial.current.caseText || draft) draftChanged.current?.({text,caseText}) }, [text,caseText])
  useEffect(() => { onWorkChange?.(text !== initial.current.text || caseText !== initial.current.caseText || editorInvalid || Object.keys(files).length > 0 || Object.keys(selections).length > 0) }, [text,caseText,editorInvalid,files,selections,onWorkChange])
  useEffect(() => { onPendingChange?.(editorInvalid || !caseValid) }, [editorInvalid,caseValid,onPendingChange])
- const mapping = useMemo(() => {try {return parseMapping(text)} catch {return undefined}},[text])
+ const {mapping,mappingError} = useMemo(() => {try {return {mapping:parseMapping(text)}} catch(error) {return {mappingError:error}}},[text])
  const context = JSON.stringify([config.gateway,config.documents,config.managedLocal,profiles.data?.filter(p=>mapping?.sources?.some(s=>s.profile===p.profile.id)),fixed,connections.entries.filter(e=>mapping?.sources?.some(s=>s.provider==='google-drive'&&e.descriptor.id==='google-drive'||profiles.data?.some(p=>p.profile.id===s.profile&&p.profile.source===(e.descriptor.source?.id??e.descriptor.id)))).map(e=>[e.descriptor.id,e.status.data?.state,e.status.data?.account?.id,e.status.data?.resource?.id]),connections.isError])
  const busy = disabled || Boolean(progress)
  function invalidate() {setPreview(undefined); onChange(undefined); setError('')}
@@ -79,7 +80,7 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
    const result=await prepareMappedInputs({mapping,caseValue:parseMappedObject(caseText),files,selections,profiles:trusted.data ?? [],config,signal:active.signal,progress:name=>setProgress(msg('Reading {{source}}…',{source:name}))})
    active.signal.throwIfAborted();setPreview(result)
    if(result.input.source && isSourceV2(result.input.source))onChange(result.input.source)
-  } catch(e) {if(!active.signal.aborted){setError(e instanceof Error?e.message:msg('The inputs could not be mapped.'));if(e instanceof ConnectionRequestError && e.provider==='google-drive' && e.reconnectRequired)setReconnect(true)}}
+  } catch(e) {if(!active.signal.aborted){setError(mappingErrorMessage(e));if(e instanceof ConnectionRequestError && e.provider==='google-drive' && e.reconnectRequired)setReconnect(true)}}
   finally {if(operation.current===active){operation.current=null;setProgress('')}}
  }
  async function connectAgain() {
@@ -106,7 +107,7 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
   </Disclosure>
   {fixed&&fileControls}
 
-  {!mapping && <p role="alert" className={styles.problem}>{msg('The inputs could not be mapped.')}</p>}
+  {!mapping && <p role="alert" className={styles.problem}>{mappingErrorMessage(mappingError)}</p>}
   {(error || profiles.error) && <p role="alert" className={styles.problem}>{error || String(profiles.error)}</p>}
   {reconnect && <Button disabled={busy} onClick={()=>void connectAgain()}>{msg('Reconnect')}</Button>}
   {progress && <LoadingState>{progress}</LoadingState>}
