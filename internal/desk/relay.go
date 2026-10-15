@@ -33,12 +33,14 @@ const (
 // out so subprocess output and file-watcher broadcasts cannot interleave frames.
 // Silent agent sockets own their writer and do not receive those broadcasts.
 type conn struct {
-	ws     *websocket.Conn
-	silent bool // Agent sockets do not receive MCP file-watcher notifications.
-	out    chan []byte
-	once   sync.Once
-	done   chan struct{}
-	cancel context.CancelFunc
+	requestsMu sync.Mutex
+	requests   map[string]bool
+	ws         *websocket.Conn
+	silent     bool // Agent sockets do not receive MCP file-watcher notifications.
+	out        chan []byte
+	once       sync.Once
+	done       chan struct{}
+	cancel     context.CancelFunc
 }
 
 func (c *conn) send(msg []byte) {
@@ -57,7 +59,7 @@ func (c *conn) stop() { c.once.Do(func() { close(c.done) }) }
 func (s *Server) register(c *conn) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closing {
+	if s.closing || s.location.moving.Load() || s.projectHasMoved() {
 		return false
 	}
 	s.relayWork.Add(1)
@@ -221,6 +223,7 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 		for {
 			line, err := br.ReadBytes('\n')
 			if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+				c.finishProjectRequest(trimmed)
 				c.send(trimmed)
 			}
 			if err != nil {
@@ -251,6 +254,9 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 			if bytes.ContainsAny(data, "\r\n") {
 				s.log.Printf("desk: refusing a frame containing a newline (%d bytes)", len(data))
 				continue
+			}
+			if !s.beginProjectRequest(c, data) {
+				return
 			}
 			if _, err := stdin.Write(append(data, '\n')); err != nil {
 				return

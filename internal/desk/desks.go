@@ -164,6 +164,12 @@ func (s *Server) deskOwner() *Server {
 func (s *Server) deskRecord() (deskRecord, error) {
 	row := deskRecord{ID: s.cfg.deskID, Name: filepath.Base(s.projectDir), Folder: s.projectDir, Managed: s.cfg.deskID != ""}
 	if s.cfg.deskID == "" {
+		if entry := s.homeEntry(); entry != nil {
+			row.Name = entry.Name
+			if s.cfg.parent != nil {
+				row.ID = entry.ID
+			}
+		}
 		return row, nil
 	}
 	saved, err := readDeskManifest(s.root, s.cfg.deskID)
@@ -180,6 +186,9 @@ func (s *Server) deskRecord() (deskRecord, error) {
 	return row, nil
 }
 func (s *Server) desksRoot() (*os.Root, error) {
+	if s.home != nil {
+		return openPrivateDataRoot(s.home.Path, false)
+	}
 	if !s.assistant.usable() {
 		return nil, errors.New("desk storage is unavailable")
 	}
@@ -205,6 +214,9 @@ func (s *Server) openDeskLocked(id string) (*Server, error) {
 	if child := s.desks[id]; child != nil {
 		return child, nil
 	}
+	if entry := s.homeEntry(); entry != nil && entry.ID == id {
+		return s, nil
+	}
 	if !deskIDPattern.MatchString(id) {
 		return nil, errors.New("invalid desk identifier")
 	}
@@ -213,14 +225,18 @@ func (s *Server) openDeskLocked(id string) (*Server, error) {
 		return nil, err
 	}
 	defer root.Close()
-	info, err := root.Lstat(id)
+	folderName, err := s.registryFolder(id)
+	if err != nil {
+		return nil, err
+	}
+	info, err := root.Lstat(folderName)
 	if err != nil {
 		return nil, err
 	}
 	if !deskFolderAccepted(info) {
 		return nil, errors.New("invalid desk folder")
 	}
-	dir := filepath.Join(s.configDir, "desks", id)
+	dir := filepath.Join(s.registryPath(), folderName)
 	pinned, err := OpenProjectRoot(dir)
 	if err != nil {
 		return nil, err
@@ -232,13 +248,32 @@ func (s *Server) openDeskLocked(id string) (*Server, error) {
 		pinned.Close()
 		return nil, errors.New("desk folder changed while opening")
 	}
-	if _, err := readDeskManifest(pinned.own.root, id); err != nil {
-		pinned.Close()
-		return nil, errors.New("desk metadata is invalid")
+	projectEntry := false
+	if s.home != nil {
+		home, err := readDeskHome(s.configDir)
+		if err != nil {
+			pinned.Close()
+			return nil, err
+		}
+		entry := home.entry(dir)
+		if entry == nil || entry.ID != id {
+			pinned.Close()
+			return nil, errors.New("Desk registry changed")
+		}
+		projectEntry = entry.Kind == "project"
+	}
+	if !projectEntry {
+		if _, err := readDeskManifest(pinned.own.root, id); err != nil {
+			pinned.Close()
+			return nil, errors.New("desk metadata is invalid")
+		}
 	}
 	cfg := s.cfg
 	cfg.parent = s
 	cfg.deskID = id
+	if projectEntry {
+		cfg.deskID = ""
+	}
 	cfg.Root = pinned
 	cfg.ProjectDir = ""
 	child, err := New(cfg)
@@ -291,7 +326,7 @@ func (s *Server) handleDesks(w http.ResponseWriter, r *http.Request) {
 		Current  deskRecord   `json:"current"`
 		Desks    []deskRecord `json:"desks"`
 		Location string       `json:"location"`
-	}{current, rows, filepath.Join(owner.configDir, "desks")})
+	}{current, rows, owner.registryPath()})
 }
 
 // maxDesks bounds the registry: the desks one installation opens, with those
@@ -346,12 +381,16 @@ func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
 		storageFailure(w, err)
 		return
 	}
-	if err = root.Mkdir(id, 0700); err != nil {
+	folderName := id
+	if s.home != nil {
+		folderName = homeFolderName(request.Name, id)
+	}
+	if err = root.Mkdir(folderName, 0700); err != nil {
 		storageFailure(w, err)
 		return
 	}
-	entry := filepath.Join(s.configDir, "desks", id)
-	folder, err := root.OpenRoot(id)
+	entry := filepath.Join(s.registryPath(), folderName)
+	folder, err := root.OpenRoot(folderName)
 	if err != nil {
 		s.abandonDesk(w, nil, entry, storageRefusal(err))
 		return
@@ -412,6 +451,11 @@ func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
 	}
 	if gates.notice != "" {
 		s.log.Printf("desk: %s", strings.ReplaceAll(gates.notice, "\n\n", " "))
+	}
+	if err = s.publishHomeEntry(id, request.Name, folderName); err != nil {
+		// A published folder and its signing key are retained if indexing fails.
+		storageFailure(w, err)
+		return
 	}
 	child, err := s.openDeskLocked(id)
 	if err != nil {
@@ -760,7 +804,7 @@ func (s *Server) resumeDesks() {
 	// also where no desk is opened.
 	defer s.recoverRotations()
 	// Read-only on startup: starting an existing Desk creates no registry.
-	root, err := s.assistant.root.OpenRoot("desks")
+	root, err := s.registryRoot(false)
 	if err != nil {
 		return
 	}
@@ -783,7 +827,18 @@ func (s *Server) resumeDesks() {
 	// (`abandonDesk`). It is named here, and neither opened nor counted:
 	// counted, a few of them would hold the registry shut at the bound.
 	var saved []string
+	if s.home != nil {
+		for _, entry := range s.home.Registry.Desks {
+			if filepath.Join(s.home.Path, entry.Folder) != s.projectDir {
+				saved = append(saved, entry.ID)
+			}
+		}
+	}
 	for _, entry := range entries {
+		if s.home != nil {
+			break
+		}
+
 		name := entry.Name()
 		if !deskIDPattern.MatchString(name) || name == s.cfg.deskID {
 			continue
@@ -815,7 +870,7 @@ func (s *Server) closeDesks() {
 	}
 }
 func (s *Server) routeDesk(w http.ResponseWriter, r *http.Request) bool {
-	if s.cfg.parent != nil {
+	if s.cfg.parent != nil || strings.HasPrefix(r.URL.Path, "/api/project-location") || strings.HasPrefix(r.URL.Path, "/api/desk-home") {
 		return false
 	}
 	id := r.Header.Get("X-Jpack-Desk")
@@ -848,7 +903,7 @@ func (s *Server) routeDesk(w http.ResponseWriter, r *http.Request) bool {
 		writeJSONCoded(w, 404, CodeNotFound, "This desk could not be opened. Its files have not been changed.")
 		return true
 	}
-	child.mux.ServeHTTP(w, r)
+	child.serveProject(w, r)
 	return true
 }
 

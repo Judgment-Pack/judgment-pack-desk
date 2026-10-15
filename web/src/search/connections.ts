@@ -2,7 +2,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { connectionCall } from '../connections/client'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useConnections } from '../connections/catalog'
-import { FileRequestError, readFile, writeFile } from '../files/client'
+import { readOptionalFile, writeFile } from '../files/client'
 import { useFileListing } from '../files/queries'
 
 export interface SearchConnection { id:string; revision:string; name:string; provider:string; project?:string; location?:string; model?:string; dailyLimit:number; timeoutSeconds?:number; requests?:number; day?:string
@@ -40,8 +40,10 @@ export function decodeSearchPreference(value:unknown):SearchPreference {
  return v
 }
 export async function loadSearchPreference(signal?:AbortSignal){
- try{const f=await readFile(SEARCH_PREFERENCE_FILE,signal);if(f.bytes>4096)throw new Error('Search settings are too large');return {value:decodeSearchPreference(JSON.parse(f.content)),digest:f.sha256}}
- catch(e){if(e instanceof FileRequestError&&e.status===404&&e.code==='not-found')return {value:{version:1,connection:null,mode:'auto'} as SearchPreference,digest:''};throw e}
+ const f=await readOptionalFile(SEARCH_PREFERENCE_FILE,signal)
+ if(f===null)return {value:{version:1,connection:null,mode:'auto'} as SearchPreference,digest:''}
+ if(f.bytes>4096)throw new Error('Search settings are too large')
+ return {value:decodeSearchPreference(JSON.parse(f.content)),digest:f.sha256}
 }
 export function useSearchPreference(){
  const root=useFileListing().data?.root,client=useQueryClient(),key=['web-search-preference',root]

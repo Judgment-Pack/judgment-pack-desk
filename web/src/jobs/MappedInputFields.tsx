@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { msg } from '../i18n'
@@ -14,19 +15,19 @@ import { JobIntegrationPicker } from './JobIntegrationPicker'
 import { setSourceIntegration } from './jobIntegrations'
 import { Disclosure } from '../ui/Disclosure'
 import { jobsAPI, type SourceInput, type InputPreview } from './client'
-import type { MappingV2, ProfileEntry, SourceV2 } from './mappingTypes'
-import { isSourceV2 } from './mappingTypes'
+import type { DialectV2, ProfileEntry, SourceV2 } from './dialectTypes'
+import { isSourceV2 } from './dialectTypes'
 import { parseMapping, parseMappedObject, prepareMappedInputs } from './mappedInputs'
 import { localSnapshot, pointerEscape } from './sourceInputs'
-import { MappingEditor } from './MappingEditor'
+import { DialectEditor } from './DialectEditor'
 import { MappedCaseFields } from './MappedCaseFields'
-import { MappingReview, InputLineage } from './MappingReview'
+import { DialectReview, InputLineage } from './DialectReview'
 import styles from './JobsView.module.css'
 
-function starter(doc: PackDocument): MappingV2 {
+function starter(doc: PackDocument): DialectV2 {
  return {version:2,case:{parameters:{},facts:factFields(doc).map(f => ({target:f.path,source:`/facts${f.path}`})),evidence:(doc.evidenceRequirements ?? []).map(e => ({requirement:e.id,source:`/evidence/${pointerEscape(e.id)}`}))},sources:[]}
 }
-export function MappedInputFields({doc, fixed, disabled, active=true, onChange, draft, onDraftChange, onWorkChange, onPendingChange, onTransientChange}: {doc: PackDocument; fixed?: MappingV2; disabled: boolean; active?: boolean; onChange: (source: SourceV2 | undefined) => void; draft?: MappedDraft; onDraftChange?: (draft: MappedDraft) => void; onWorkChange?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void; onTransientChange?: () => void}) {
+export function MappedInputFields({doc, fixed, disabled, active=true, onChange, draft, onDraftChange, onWorkChange, onPendingChange, onTransientChange}: {doc: PackDocument; fixed?: DialectV2; disabled: boolean; active?: boolean; onChange: (source: SourceV2 | undefined) => void; draft?: MappedDraft; onDraftChange?: (draft: MappedDraft) => void; onWorkChange?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void; onTransientChange?: () => void}) {
  const effective=useEffectiveConfig(),config=effective.config.research
  const localConnections=effective.desk?.localGateway?.status==='ready'&&!effective.desk?.decoded?.values?.research?.gateway
  const connections=useConnections(localConnections)
@@ -49,7 +50,7 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
  function invalidate() {setPreview(undefined); onChange(undefined); setError('')}
  useEffect(() => {setReconnect(false);setChoosing(undefined);setPreview(undefined); onChange(undefined); setSelections({}); setProgress(''); setError(''); return () => {operation.current?.abort(); operation.current=null}},[context,onChange])
  useEffect(() => {if(fixed) {setText(JSON.stringify(fixed,null,2));setFiles({});setSelections({})}},[fixed])
- function updateMapping(next: MappingV2) {
+ function updateMapping(next: DialectV2) {
   invalidate(); setText(JSON.stringify(next,null,2))
   // Output-pointer edits do not change the selected artifact. Retire it only
   // when the source's provider or verified profile changes.
@@ -95,11 +96,11 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
   {choosing && active && !disabled && mapping?.sources?.some(s=>s.name===choosing&&s.kind==='selected-file'&&s.provider==='google-drive') && <DriveFilePicker openerRef={pickerOpener} onClose={()=>setChoosing(undefined)} onSelect={async(items,signal)=>{signal.throwIfAborted();if(items.length!==1)throw Error(msg('Choose one JSON file up to 200 KB.'));invalidate();setSelections(v=>({...v,[choosing]:{fileId:items[0]!.resourceId,grant:items[0]!.grant}}));onTransientChange?.()}}/>}
 
   {!fixed && <div className={styles.actions}><JobIntegrationPicker profiles={profiles.data??[]} disabled={busy||editorInvalid||!mapping||(mapping.sources??[]).length>=16} onPick={addSource}/></div>}
-  {mapping && (fixed ? <MappingReview details mapping={mapping} profiles={profiles.data?.map(p=>p.profile)}/> : <MappingEditor active={active} fileControls={source=>fileControls?.find(el=>el.key===source.name)} doc={doc} mapping={mapping} profiles={profiles.data??[]} disabled={busy} onChange={updateMapping} onInvalid={setEditorInvalid} onDirty={invalidate}/>)}
-  {!fixed && <Disclosure title={msg('Advanced mapping')}>
+  {mapping && (fixed ? <DialectReview details mapping={mapping} profiles={profiles.data?.map(p=>p.profile)}/> : <DialectEditor active={active} fileControls={source=>fileControls?.find(el=>el.key===source.name)} doc={doc} mapping={mapping} profiles={profiles.data??[]} disabled={busy} onChange={updateMapping} onInvalid={setEditorInvalid} onDirty={invalidate}/>)}
+  {!fixed && <Disclosure title={msg('Advanced dialect')}>
   {!profiles.isPending && !profiles.data?.length && <p className={styles.note}>{msg('Connected source profiles must be configured by the installation owner. Case inputs and local files are available without them.')}</p>}
-  <Disclosure title={msg('Edit mapping')}><div className={styles.field}><label htmlFor="job-mapping-json">{msg('Mapping JSON')}</label><TextArea id="job-mapping-json" rows={8} disabled={busy||editorInvalid} spellCheck={false} value={text} onChange={e=>{invalidate();setText(e.target.value);setFiles({});setSelections({})}}/><p className={styles.note}>{msg('Edit target paths, request templates and derivation rules here. The release freezes this mapping.')}</p></div></Disclosure></Disclosure>}
-  <Disclosure title={msg('Inputs supplied with each run')}>
+  <Disclosure title={msg('Edit dialect')}><div className={styles.field}><label htmlFor="job-mapping-json">{msg('Dialect JSON')}</label><TextArea id="job-mapping-json" rows={8} disabled={busy||editorInvalid} spellCheck={false} value={text} onChange={e=>{invalidate();setText(e.target.value);setFiles({});setSelections({})}}/><p className={styles.note}>{msg('Edit target paths, request templates and derivation rules here. The release freezes this dialect.')}</p></div></Disclosure></Disclosure>}
+  <Disclosure title={msg('Dialects supplied with each run')}>
   {mapping&&<MappedCaseFields doc={doc} mapping={mapping} text={caseText} disabled={busy} onChange={value=>{invalidate();setCaseText(value)}} onValid={setCaseValid}/>}
   <Disclosure title={msg('Case inputs (JSON)')}><div className={styles.field}><label htmlFor="job-case-json">{msg('Case inputs (JSON)')}</label><TextArea id="job-case-json" rows={5} disabled={busy} spellCheck={false} value={caseText} onChange={e=>{invalidate();setCaseText(e.target.value)}}/></div></Disclosure>
   </Disclosure>
@@ -108,7 +109,7 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
   {!mapping && <p role="alert" className={styles.problem}>{msg('The inputs could not be mapped.')}</p>}
   {(error || profiles.error) && <p role="alert" className={styles.problem}>{error || String(profiles.error)}</p>}
   {reconnect && <Button disabled={busy} onClick={()=>void connectAgain()}>{msg('Reconnect')}</Button>}
-  {progress && <p role="status" className={styles.note}>{progress}</p>}
+  {progress && <LoadingState>{progress}</LoadingState>}
   <div className={styles.actions}><Button disabled={busy || reconnect || editorInvalid || !caseValid || !mapping || profiles.isPending || Boolean(profiles.error)} onClick={()=>void check()}>{msg('Read sources and preview')}</Button>{progress && <Button variant="quiet" onClick={()=>{operation.current?.abort();operation.current=null;setProgress('');invalidate()}}>{msg('Cancel')}</Button>}</div>
   {preview && <><p role="status" className={styles.previewStatus}>{msg('Input preview complete. Review mapped values before continuing.')}</p><Disclosure title={msg('Mapped inputs')}><pre className={styles.json}>{preview.factsText}</pre><pre className={styles.json}>{preview.evidenceText || msg('Not supplied')}</pre></Disclosure>{preview.input.preparation && <InputLineage preparation={preview.input.preparation}/>}</>}
  </section>

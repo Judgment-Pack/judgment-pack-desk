@@ -24,7 +24,7 @@ async function setup(){
  const io:ChatPersistence={read:async()=>({project:'/test',content:{version:1,chats},sha256:'saved'}),write}
  const store=new ChatStore('/test',io,memoryDraftPersistence('/test'));fixture.store=store;await store.load();await store.flush();write.mockClear()
  const stub=stubClient({list_packs:()=>({text:JSON.stringify({status:'valid',packs:[{id:'alpha',packVersion:'1.0.0'}]})}),experimental_list_graphs:()=>({text:JSON.stringify({status:'valid',graphs:[{id:'flow',graphVersion:'2.0.0'}]})})})
- const router=createMemoryRouter([{path:'*',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:true})}><PacksPane/></McpContext.Provider>}],{initialEntries:['/packs']})
+ const router=createMemoryRouter([{path:'*',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:true})}><PacksPane/></McpContext.Provider>}],{initialEntries:['/library']})
  render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router}/></QueryClientProvider>)
  await screen.findByRole('checkbox',{name:'Select alpha'});await screen.findByRole('checkbox',{name:'Select flow'})
  return {router,store,write}
@@ -48,11 +48,11 @@ it('selects every object type from the leading column and places draft state wit
  expect(within(row).getByRole('img',{name:'Pack'})).toBeTruthy()
  expect(within(screen.getByRole('checkbox',{name:'Select pending-graph'}).closest('li')!).getByRole('img',{name:'Graph'})).toBeTruthy()
  fireEvent.click(checkbox)
- expect(router.state.location.pathname).toBe('/packs')
+ expect(router.state.location.pathname).toBe('/library')
  await selectionMenu()
  expect(screen.getByRole('menuitem',{name:'Compose graph'}).getAttribute('aria-disabled')).toBe('true')
  fireEvent.click(screen.getByRole('menuitem',{name:'Compose graph'}))
- expect(router.state.location.pathname).toBe('/packs')
+ expect(router.state.location.pathname).toBe('/library')
  await closeMenu()
  fireEvent.click(screen.getByRole('checkbox',{name:'Select alpha'}))
  await selectionMenu()

@@ -1,3 +1,4 @@
+import {privateQuery} from '../data/privateQuery'
 import { useDirtyGuard } from './useDirtyGuard'
 import { useConfirmDiscard } from './UnsavedChanges'
 import { Message } from '../i18n/Message'
@@ -214,7 +215,7 @@ export function CreatePackDialog({
 }) {
   const locale = useLocale()
   const [folderId,setFolderId] = useState(initialFolderId)
-  const folders = useQuery({queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),enabled:open&&initialFolderId!==undefined,retry:false,staleTime:0})
+  const folders = useQuery({...privateQuery,queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),enabled:open&&initialFolderId!==undefined,retry:false,staleTime:0})
   const folderReady = initialFolderId===undefined || !folders.isError && !!folders.data?.document.folders.some(folder=>folder.id===folderId)
   const createHelpId = useId()
   const { config } = useEffectiveConfig()

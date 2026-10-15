@@ -626,5 +626,136 @@
       }
     },
     "accepted": false
+  },
+  {
+    "name": "context defaults with inherited connection preferences",
+    "accepted": true,
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "context": {
+        "version": 1,
+        "projectBrief": "docs/assistant-context.md",
+        "models": {
+          "gemini-3.8-flash": {
+            "contextWindowTokens": 32768,
+            "outputTokens": 4096
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "context with legacy profile",
+    "accepted": true,
+    "value": {
+      "profileVersion": 1,
+      "context": {
+        "version": 1,
+        "projectBrief": "docs/assistant-context.md",
+        "models": {
+          "gemini-3.8-flash": {
+            "contextWindowTokens": 32768,
+            "outputTokens": 4096
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "context traversal",
+    "accepted": false,
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "context": {
+        "version": 1,
+        "projectBrief": "../outside.md",
+        "models": {
+          "gemini-3.8-flash": {
+            "contextWindowTokens": 32768,
+            "outputTokens": 4096
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown context key",
+    "accepted": false,
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "context": {
+        "version": 1,
+        "projectBrief": "docs/assistant-context.md",
+        "models": {
+          "gemini-3.8-flash": {
+            "contextWindowTokens": 32768,
+            "outputTokens": 4096
+          }
+        },
+        "autoMemory": true
+      }
+    }
+  },
+  {
+    "name": "zero context window",
+    "accepted": false,
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "context": {
+        "version": 1,
+        "models": {
+          "small": {
+            "contextWindowTokens": 0,
+            "outputTokens": 1024
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "context brief null",
+    "accepted": false,
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "context": {
+        "version": 1,
+        "projectBrief": null,
+        "models": {
+          "gemini-3.8-flash": {
+            "contextWindowTokens": 32768,
+            "outputTokens": 4096
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "context models null",
+    "accepted": false,
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "context": {
+        "version": 1,
+        "models": null
+      }
+    }
+  },
+  {
+    "name": "context brief empty",
+    "accepted": false,
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "context": {
+        "version": 1,
+        "projectBrief": ""
+      }
+    }
   }
 ]

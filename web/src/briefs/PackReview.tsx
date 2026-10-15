@@ -20,7 +20,7 @@ export function PackReview({ owner, content, validation, findings, attention = f
       <dl className={styles.readiness}>
         <dt>{msg('Validation')}</dt><dd>{validation}</dd>
         <dt>{msg('Saved test cases')}</dt><dd>{query.isSuccess ? suite.cases.length : msg('Unavailable')}</dd>
-        <dt>{msg('Last test run')}</dt><dd>{!run ? msg('Not recorded') : matching ? run.error ? msg('Run failed') : run.report?.status ? msg('{{status}} · recorded for these inputs',{status:run.report.status}) : msg('Recorded for these inputs') : msg('Inputs have changed')}</dd>
+        <dt>{msg('Last test run')}</dt><dd>{!run ? msg('Not recorded') : matching ? run.error ? msg('Run failed') : run.report?.status ? msg('{{status}} · recorded for this dialect',{status:run.report.status}) : msg('Recorded for this dialect') : msg('Dialects have changed')}</dd>
       </dl>
       <p className={styles.meta}>{msg('Review validation and test findings before using this pack. A brief does not establish readiness.')}</p>
     </section>

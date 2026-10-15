@@ -1,3 +1,5 @@
+import {PageLoading} from '../ui/PageLoading'
+import { QueryStatusNotice } from '../shell/QueryStatusNotice'
 import { graphDraftHref } from '../graphs/drafts'
 import { useSearchParams } from 'react-router-dom'
 import { useChats } from '../chat/ChatProvider'
@@ -24,10 +26,9 @@ import styles from './PacksPane.module.css'
 import { moveFocus, useWindowedRows } from './useWindowedRows'
 import { usePackFolders } from './folders/FolderContext'
 import { ALL_PACKS, HOME_FOLDER, inFolder, packFolder, folderPath } from './folders/model'
-import { FolderLocation, FolderFeedback, SubfolderRows, ShowFolders } from './folders/FolderBrowser'
+import { LibraryLocation, FolderFeedback, SubfolderRows } from './folders/FolderBrowser'
 import { findingWords, packFindings } from './review/findings'
 import { useReview } from './review/ReviewContext'
-import { UpgradeNote } from './upgrade/UpgradeNote'
 import { CollectionToolbar } from './CollectionToolbar'
 import { CollectionHeaderActions, ItemOptions, DeleteDraftsDialog, type BrowserItem } from './CollectionActions'
 
@@ -50,11 +51,11 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   useEffect(() => { if (active) retainedKind.current = routeKind }, [active, routeKind])
   const kind = active ? routeKind : retainedKind.current
   const includePacks = kind !== 'graph', includeGraphs = kind !== 'pack'
-  const listedGraphs = graphInventorySupported && !graphs.error ? graphs.data : undefined
+  const listedGraphs = graphInventorySupported ? graphs.data : undefined
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [deleting,setDeleting] = useState<{items:BrowserItem[];opener?:HTMLElement}>()
   const selectAll = useRef<HTMLInputElement>(null)
-  const {chats,packDrafts,ready:draftsReady,error:draftError,store}=useChats()
+  const {chats,packDrafts}=useChats()
   const drafts = packDrafts.filter(item=>!item.finalized)
   const graphDrafts = chats.flatMap(chat => (chat.graphDrafts ?? []).filter(draft => !draft.saved).map(draft => ({chatId: chat.id, ...draft})))
   const inventoryReady = (!includePacks || isSuccess) && (!includeGraphs || graphInventorySupported && graphs.isSuccess)
@@ -94,7 +95,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   useInspectorPresentation(presentation)
   const packs = useMemo(() => {
     const needle = filter.trim().toLowerCase()
-    const rows = [...(error ? [] : data?.packs ?? []).map(pack=>({...pack,kind:'pack',title:pack.id,status:'finalized',href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({kind:'pack',id:draft.id,title:draft.title,status:'draft',href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document),detail:undefined,packVersion:undefined})), ...(listedGraphs?.graphs ?? []).map(graph => ({kind:'graph', id:'graph:'+graph.id, title:graph.id, status:'finalized', href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({kind:'graph', id:'graph-draft:'+draft.draftId, title:draft.id, status:'draft', chatId:draft.chatId, draftId:draft.draftId, href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description, detail:undefined,packVersion:undefined}))] as BrowserItem[]
+    const rows = [...(data?.packs ?? []).map(pack=>({...pack,kind:'pack',title:pack.id,status:'finalized',href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({kind:'pack',id:draft.id,title:draft.title,status:'draft',href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document),detail:undefined,packVersion:undefined})), ...(listedGraphs?.graphs ?? []).map(graph => ({kind:'graph', id:'graph:'+graph.id, title:graph.id, status:'finalized', href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({kind:'graph', id:'graph-draft:'+draft.draftId, title:draft.id, status:'draft', chatId:draft.chatId, draftId:draft.draftId, href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description, detail:undefined,packVersion:undefined}))] as BrowserItem[]
     const matching = rows.filter(pack => (kind==='all'||pack.kind===kind) && (status==='all'||pack.status===status) && (!folders || listScope === ALL_PACKS || inFolder(folders.document, packFolder(folders.document,pack.id), listScope, !!needle)) && (!needle ||
       `${pack.id} ${pack.title}`.toLowerCase().includes(needle) || pack.description?.toLowerCase().includes(needle)))
     return matching.sort((left, right) => sort === 'id-desc'
@@ -153,24 +154,19 @@ export function PacksPane({ active = true }: { active?: boolean }) {
 
   return <article className={styles.pane} data-layout={active ? 'page' : undefined} aria-label={msg("Pack and graph collection")}>
     <PageHeader title={msg("Library")} variant="collection"
-      navigation={<div className={styles.heading} data-collection-location><ShowFolders/>{folders ? <FolderLocation header/> : <span className={styles.headingTitle}>{msg('Library')}</span>}
-      </div>}
+      navigation={<LibraryLocation/>}
       actions={<CollectionHeaderActions createHref={createHref}/>} />
     <FolderFeedback/>
-    {review && <UpgradeNote/>}
     <CollectionToolbar filter={filter} onFilter={value => {resetScroll();setFilter(value)}} kind={kind} onKind={changeKind}
       status={status} onStatus={value=>{resetScroll();setStatus(value)}} sort={sort} onSort={value=>{resetScroll();setSort(value)}}
       canScope={Boolean(folders && folderScope !== ALL_PACKS)} everywhere={searchEverywhere} onScope={value=>{resetScroll();setSearchEverywhere(value)}}
       filtered={filtered} reset={clearFilter} selected={selected} clearSelection={()=>setSelectedIds([])} onDelete={requestDelete}/>
     {!searchEverywhere && <SubfolderRows query={filter}/>}
-    {includeGraphs && graphs.error && <div className={styles.message} role="alert">{msg("Could not list graphs")}: {graphs.error.message}<Button onClick={()=>void graphs.refetch()}>{msg("Retry")}</Button></div>}
+    {includeGraphs && <QueryStatusNotice id="graphs" label={msg("Graphs unavailable")} error={graphs.error} retrying={graphs.isFetching} onRetry={()=>graphs.refetch()}>{msg("Graphs could not be refreshed. Previously loaded graphs may be out of date.")}</QueryStatusNotice>}
     {includeGraphs && graphsUnavailable && <div className={styles.message} role="status">{msg('This runtime cannot list saved graphs. Connect a newer runtime to browse all packs and graphs.')} <ButtonLink to="/graphs">{msg('Open graphs')}</ButtonLink></div>}
-    {draftError && <div className={styles.message} role="alert">{draftError}<Button onClick={()=>draftsReady?store?.retrySave():void store?.load()}>{msg('Retry')}</Button></div>}
-    {includePacks && error ? <section className={styles.empty} role="alert">
-      <h2>{msg("Couldn’t load packs")}</h2><p>{error.message}</p>
-      <Button onClick={() => { void refetch() }} disabled={isFetching}>{isFetching ? msg("Retrying…") : msg("Retry")}</Button>
-    </section> : includePacks && isPending ? <p className={styles.message} role="status">{msg("Loading packs…")}</p>
-    : packs.length === 0 && includeGraphs && !graphsUnavailable && graphs.isPending ? <p className={styles.message} role="status">{msg('Loading packs and graphs…')}</p>
+    {includePacks && <QueryStatusNotice id="packs" label={msg("Packs unavailable")} error={error} retrying={isFetching} onRetry={()=>refetch()}>{msg("Packs could not be refreshed. Previously loaded packs may be out of date.")}</QueryStatusNotice>}
+    {includePacks && error && !packs.length ? <p className={styles.message}>{msg("Packs unavailable")}</p> : !packs.length && includePacks && isPending ? <PageLoading>{msg("Loading library…")}</PageLoading>
+    : packs.length === 0 && includeGraphs && !graphsUnavailable && graphs.isPending ? <PageLoading>{msg('Loading library…')}</PageLoading>
     : packs.length === 0 && includeGraphs && (!graphInventorySupported || graphs.error) ? null
     : packs.length === 0 ? <section className={styles.empty} role="status">
       <h2>{filtered ? msg("No matching packs or graphs") : msg("No packs or graphs yet")}</h2>
@@ -213,7 +209,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
           else setWanted({ index: next, preview, selection })
         }}>
           {pageItems.slice(window.start, window.end).map((pack, offset) => <li key={pack.id}
-            className={styles.row} data-selected={selectedIds.includes(pack.id) || previewOpen && preview?.id === pack.id || undefined}>
+            className={styles.row} data-selection-selected={selectedIds.includes(pack.id) || undefined} data-selected={selectedIds.includes(pack.id) || previewOpen && preview?.id === pack.id || undefined}>
             <span className={styles.selection}><input type="checkbox" data-select data-row={window.start+offset} aria-label={msg('Select {{name}}', {name:pack.title})} checked={selectedIds.includes(pack.id)} onChange={()=>toggleSelection(pack.id)}/></span>
             <OverflowTooltip selector="[data-overflow-text]" fallback={msg("Preview this item to read the full description.")}><Link className={styles.link} aria-keyshortcuts="Space" data-row={window.start + offset} to={pack.href}
               onClick={() => { if (list.current) scrollPosition.current = list.current.scrollTop }}>

@@ -1,5 +1,27 @@
 import { msg } from '../i18n'
 export const TOOL_LABELS: Record<string, string> = {
+  get request_budget_increase(){return msg('Request more time')},
+  get update_plan(){return msg('Update task progress')},
+ get propose_plan(){return msg('Propose plan')},
+ get recall_memory(){return msg('Recall project memory')},
+ get remember_memory(){return msg('Remember a preference')},
+ get list_context(){return msg('Browse retained context')},
+ get read_context(){return msg('Read retained context')},
+ get read_pack_tests(){return msg('Read pack tests')},
+ get propose_test_cases(){return msg('Propose test cases')},
+ get ask_user(){return msg('Ask a question')},
+ get delegate_task(){return msg('Delegated task')},
+ get delegate_tasks(){return msg('Delegate tasks')},
+ get request_dialect_research(){return msg('Request dialect research')},
+ get get_dialect_recipe_instructions(){return msg('Read dialect recipe instructions')},
+ get list_dialects(){return msg('List dialects')},
+ get read_dialect_recipe(){return msg('Read dialect recipe')},
+ get read_dialect_records(){return msg('Read records')},
+  get read_dialect_activity(){return msg('Read dialect activity')},
+  get read_dialect(){return msg('Read dialect')},
+  get propose_dialect(){return msg('Propose dialect')},
+  get propose_dialect_action(){return msg('Propose dialect action')},
+  get propose_dialect_recipe(){return msg('Propose dialect recipe')},
   get list_decisions() { return msg('List decisions') },
   get read_decision() { return msg('Read decision') },
   get get_graph_authoring_instructions() { return msg('Read graph instructions') },
@@ -16,3 +38,13 @@ export const TOOL_LABELS: Record<string, string> = {
   get explore_website(){return msg("Explore website")},
   get read_link() { return msg("Read a link") }
 }
+
+// Saved step names predate the Dialects workspace; keep their labels readable.
+Object.defineProperty(TOOL_LABELS, 'get_input_recipe_instructions', {get:()=>TOOL_LABELS.get_dialect_recipe_instructions})
+Object.defineProperty(TOOL_LABELS, 'list_inputs', {get:()=>TOOL_LABELS.list_dialects})
+Object.defineProperty(TOOL_LABELS, 'read_input_recipe', {get:()=>TOOL_LABELS.read_dialect_recipe})
+Object.defineProperty(TOOL_LABELS, 'propose_input_recipe', {get:()=>TOOL_LABELS.propose_dialect_recipe})
+Object.defineProperty(TOOL_LABELS, 'request_input_research', {get:()=>TOOL_LABELS.request_dialect_research})
+Object.defineProperty(TOOL_LABELS, 'read_input_records', {get:()=>TOOL_LABELS.read_dialect_records})
+Object.defineProperty(TOOL_LABELS, 'read_input_activity', {get:()=>TOOL_LABELS.read_dialect_activity})
+Object.defineProperty(TOOL_LABELS, 'propose_input_action', {get:()=>TOOL_LABELS.propose_dialect_action})

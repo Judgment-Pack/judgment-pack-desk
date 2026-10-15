@@ -46,7 +46,7 @@ export function decodeDrafts(value: unknown): DraftDocument {
 }
 /** An artifact retains its evidence, never a hidden copy of conversation turns. */
 export function artifactCheckpoint(value: Checkpoint): Checkpoint {
-  return { ...value, state: {...value.state, turns: [], responses: [], candidates: value.state.candidates.map(({responseId: _responseId, ...candidate}) => candidate), streaming: undefined, streamingId: undefined, events: []} }
+  return { ...value, state: {...value.state, turns: [], questions: [], responses: [], candidates: value.state.candidates.map(({responseId: _responseId, ...candidate}) => candidate), streaming: undefined, streamingId: undefined, events: []} }
 }
 export function draftTitle(saved: Checkpoint): string {
   const title = (saved.state.candidates.at(-1)?.document as {title?:unknown} | undefined)?.title

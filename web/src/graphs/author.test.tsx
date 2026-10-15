@@ -1,3 +1,5 @@
+import { formatJson } from '../files/formatJson'
+const displayJSON = (raw: string) => { const result = formatJson(raw); return result.ok ? result.content.trimEnd() : raw }
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { GraphAuthor, GraphConfirmation } from './GraphAuthor'
@@ -84,11 +86,11 @@ it('shows the entire declaration, its diff and runtime answers before one confir
   expect(deskFetch).toHaveBeenCalledTimes(1)
   expect(vi.mocked(deskFetch).mock.calls[0]![0]).toBe('/api/graphs/proposal')
   expect(JSON.parse(vi.mocked(deskFetch).mock.calls[0]![1]!.body as string)).toEqual({ id: 'draft', path: 'draft.graph.json', content, description: 'description', baseSha256: '' })
-  expect(screen.getByText(offer.configContent.trim())).toBeTruthy()
-  expect(screen.getByText(offer.before.trim())).toBeTruthy()
+  expect(Array.from(document.querySelectorAll('pre')).some(pre => pre.textContent === displayJSON(offer.configContent))).toBe(true)
+  expect(Array.from(document.querySelectorAll('pre')).some(pre => pre.textContent === displayJSON(offer.before))).toBe(true)
   expect(screen.getByRole('region', { name: 'The proposal as a diff' })).toBeTruthy()
-  expect(screen.getByText(offer.findings)).toHaveProperty('lang', 'en')
-  expect(screen.getByText(offer.plan)).toHaveProperty('lang', 'en')
+  expect(Array.from(document.querySelectorAll('pre code')).find(code => code.textContent === displayJSON(offer.findings))).toHaveProperty('lang', 'en')
+  expect(Array.from(document.querySelectorAll('pre code')).find(code => code.textContent === displayJSON(offer.plan))).toHaveProperty('lang', 'en')
   expect(screen.getByText('runtime findings sentence')).toHaveProperty('lang', 'en')
   expect(screen.getByText(/A change to jpack.json holds every pack/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Confirm graph write' }))

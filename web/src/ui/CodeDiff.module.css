@@ -1,0 +1,6 @@
+.root { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.legend { white-space: nowrap; }
+.actions { display: flex; align-items: center; gap: var(--space-1); margin-inline-start: auto; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1); padding: var(--space-1) var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); }
+.removed { color: var(--danger); }
+.added { color: var(--decision-green); }

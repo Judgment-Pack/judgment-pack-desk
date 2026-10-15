@@ -1,3 +1,4 @@
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 /**
  * Admin → Workspace → Decision safeguards → Jobs record (ADR-0010, section 4, "A Jobs record panel",
  * and section 5; issue #216).
@@ -91,8 +92,8 @@ export function JobsRecord({ visible = true }: { visible?: boolean }) {
   return <SettingsSection title={msg('Jobs record')} description={msg('Runner’s chain of runs: one entry for each completed Jobs run. Desk checks a copy of it when you ask.')} variant="plain">
     <div className={styles.card} data-testid="jobs-record">
       <div className={styles.actions}><Button onClick={() => void query.refetch()} disabled={query.isFetching}>{msg('Check the chain of runs')}</Button></div>
-      {query.isFetching ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
-        : query.error ? <p role="alert">{systemMessage(query.error.message)}</p>
+      {query.isFetching ? <SettingsFeedback>{msg('Asking the runtime…')}</SettingsFeedback>
+        : query.error ? <SettingsFeedback tone="error">{systemMessage(query.error.message)}</SettingsFeedback>
           : record && <Answer record={record} />}
       <ChainDownload />
     </div>
@@ -108,14 +109,14 @@ function Answer({ record }: { record: JobsAnswer }) {
     case 'unverified': return <>
       <p>{msg('The runtime did not check the chain of runs.')}</p>
       <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
-      {record.handoverProblem && <p role="alert">{systemMessage(record.handoverProblem)}</p>}
+      {record.handoverProblem && <SettingsFeedback tone="error">{systemMessage(record.handoverProblem)}</SettingsFeedback>}
       <Signatures runnerKey={record.runnerKey} />
       {record.runtime && <p className={styles.quiet}>{msg('Checked by jpack {{version}}.', { version: record.runtime })}</p>}
     </>
     case 'report': return <>
       <p className={styles.statement}>{msg(STATEMENT)}</p>
-      {record.handoverProblem && <p role="alert">{systemMessage(record.handoverProblem)}</p>}
-      {record.expectUnread && <p role="alert">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</p>}
+      {record.handoverProblem && <SettingsFeedback tone="error">{systemMessage(record.handoverProblem)}</SettingsFeedback>}
+      {record.expectUnread && <SettingsFeedback tone="error">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</SettingsFeedback>}
       <Report report={record.report} />
       <p className={styles.quiet}>{msg('Lines in Desk’s copy of the chain: {{number}}', { number: record.chainLines })}</p>
       <Signatures runnerKey={record.runnerKey} />
@@ -153,8 +154,6 @@ function ChainDownload() {
     }
   }
   return <div className={styles.card}>
-    <div className={styles.actions}><Button disabled={busy} onClick={() => void download()}>{msg('Download the chain')}</Button></div>
-    {saved && <p role="status">{msg('Saved {{file}}.', { file: RUN_CHAIN_FILE })}</p>}
-    {error && <p role="alert">{systemMessage(error)}</p>}
+    <SettingsActions feedback={<SettingsFeedback tone={error ? 'error' : saved ? 'success' : 'neutral'}>{error ? systemMessage(error) : busy ? msg('Preparing download…') : saved ? msg('Saved {{file}}.', { file: RUN_CHAIN_FILE }) : null}</SettingsFeedback>}><Button disabled={busy} onClick={() => void download()}>{msg('Download the chain')}</Button></SettingsActions>
   </div>
 }

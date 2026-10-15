@@ -229,6 +229,27 @@ open and closed, plus a narrow light-theme example.
 
 ## Pack workspace spacing
 
+Test-design messages belong to the existing linked chat session. Tests pages must
+not mount a second assistant, transcript, composer, or a “Back to chat” switch.
+Design with AI and Design missing tests reveal that session and add the request
+to its composer, preserving unsent text and attachments. The same chat tools read
+runtime test guidance and retain validated case proposals; questions stay normal
+conversation. A compact Review cases action opens the shared case review while
+keeping the session visible. Saved proposals remain in Related work.
+
+Test suites keep proposals, cases and run history. Migrate legacy conversation
+rows only after the chat write is acknowledged. Refresh restores the same session.
+Main chat and page panes use the same chat model, attachment, question, send/stop,
+and history controls, with no separate test-generation mode.
+Pack action menu commands use the shared icon column; filters retain selection
+indicators. Test results inherit the bottom panel's gutter and scrolling, with
+one title and compact metadata. Expected and actual results share a row when
+space permits and stack in narrow panels.
+
+Library and saved pack pages use `LibraryLocation` for their folder toggle and
+breadcrumbs: one 24px toggle slot, a 4px gap, and one parent-owned gutter. The expanded
+folder header uses that same gutter and height so the toggle never shifts.
+
 Saved and draft pack views use `--density-gutter` for the title, section tabs,
 toolbar controls and reading content. A canvas can fill the available pane;
 its controls and status text still keep that gutter. The single-line folder
@@ -603,7 +624,12 @@ Unbroken values may wrap anywhere. This is a presentation rule, not a rewrite
 of the document. The JSON disclosure retains the complete machine representation.
 
 `MemberValue` renders strings as prose and scalars explicitly. Structured values
-remain complete JSON. `CodeBlock` owns the shared 12px monospace source size,
+remain complete JSON. `CodeBlock` presents valid JSON objects and arrays with two-space indentation
+using the shared lossless formatter. Wrap only breaks long lines; turning it off
+keeps JSON indentation. Copy preserves the original source, including numeric
+precision, duplicate keys and escape spelling. Invalid, incomplete or oversized
+JSON stays as received. Formatting never changes saved files or chat context.
+`CodeBlock` owns the shared 12px monospace source size,
 soft wrapping, optional horizontal scrolling, and Copy feedback. Its nested
 `code` inherits that size. Copy uses the full input text regardless of wrapping;
 clipboard failures leave selectable text and explain the fallback. Raw editing
@@ -718,7 +744,7 @@ controls use the shared toolbar and neutral Form/JSON selection. The reading
 header's Test pack and section links are replaced while editing, so saved-pack
 navigation is not mistaken for a test of unsaved changes.
 
-Save status and unfinished-field guidance stay with the actions. An explicit return
+Save status sits beside Save as small muted text; do not add a full-width “Editing · No changes to save” banner. Unfinished-field guidance stays near these actions. An explicit return
 with unsaved work uses the shared Radix Dialog, with Keep editing, Discard and
 return, and Save and return. Focus returns to the editor on cancellation and to
 the reading action after exiting. The dialog never dismisses unsaved work merely
@@ -736,7 +762,7 @@ fetches graph inventory or executes tests.
 New chat and Chat history belong in the chat header. Library retains its folder
 browser and collection controls. Saved cases and their Run tests action belong
 inside each pack; there is no collection Tests page or Run all tests action.
-The legacy `/matrix` bookmark redirects to `/packs` without executing tests;
+The legacy `/matrix` bookmark redirects to `/library` without executing tests;
 `/packs/:packId/matrix` still opens that pack's saved cases. `/` opens the chat
 landing page. Existing graph and author URLs remain reachable without reserving
 pack IDs.
@@ -833,13 +859,21 @@ model selection, square Add/Send/Stop actions, and progress immediately above
 the composer. No empty status row reserves space. Retain readable body text;
 compactness comes from consistent controls and removing redundant gaps.
 
-Case tables retain two lines of title and expose the complete title with an
-overflow tooltip on hover/focus and the case editor on click. Hide the secondary
-Origin column in narrow panes; keep Expected and Last result. On phone widths
-the table scrolls horizontally within its own container. Never clip the whole
-workspace to fit a wide table. Use density tokens for editor sections and
-history rows; source choices use quiet navigation rows instead of stretched
-boxed buttons.
+Pack test indexes use `CollectionLayout`, `CollectionToolbar` and
+`SelectionTable variant="index"`: density-aware single-line rows, complete names
+in overflow tooltips, fixed search/filter controls and a pagination footer.
+Select matched cases to run or export only that selection. Coverage is a compact
+footer action with details on demand; load and connection notices use the bottom
+status strip, while case validation stays beside the field or save action.
+
+Case rows are real links to `/packs/:packId/matrix/cases/:caseId`. The case page
+keeps the pack header and existing chat, adds a Tests → case breadcrumb, and
+protects unsaved edits. Refresh restores saved cases; list search, filters and
+chat context survive the round trip. New and duplicate cases stay unsaved until
+Save case. Results may use the bottom panel; case editors do not. Draft cases
+use the same layout with a `case` query parameter. Narrow tables scroll inside
+the collection, never the entire workspace. Source choices use quiet navigation
+rows rather than stretched boxed buttons.
 
 See [the spacing review](reviews/desk-spacing-review-20260924.md) for scope,
 verification and the proposed next features.
@@ -924,7 +958,8 @@ retains its own tokens and runtime contract. The non-drag form follows
 
 ## Library browser actions
 
-The collection is named **Library** and uses `IconLibrary`. It holds reusable
+The collection is named **Library**, uses `/library` and `IconLibrary`. Pack and
+graph document URLs retain `/packs/:id` and `/graphs/:id`. It holds reusable
 packs and graphs; Desk names the whole workspace, while List names a view. The folder
 pane lists real folders with an 8px inset below its header; the header breadcrumb
 returns to the full collection. Folder creation and renaming use the shared modal dialog, preserving
@@ -970,6 +1005,53 @@ choosing another folder resets that scope. Type, status and sorting collapse int
 View when the pane is narrow. The toolbar stays on one line, including while an
 Inspector is open. Controls use the shared height and an 8px gap.
 
+Search fields use `ui/SearchInput` across collections, chat history, source and
+model pickers, and navigation. The leading search glyph, border, native input
+height, padding and focus ring match Library. Labels, native input refs, filtering
+and keyboard handlers remain on the input; the decorative icon adds no tab stop.
+Library passes its existing scope menu as a trailing control. Set layout sizing
+on the wrapper (`className`); use `[data-search-field]` in parent layout selectors.
+Ordinary search inputs expose the native searchbox role; command navigation keeps
+its explicit combobox semantics. A folder-prefix field retains text semantics.
+
+Library, Inputs, Jobs and the all-runs index share collection geometry. Use
+`ui/CollectionToolbar` for the control row and `SelectionTable variant="index"`
+for native collection tables. Library keeps its virtualized list, using the same
+geometry tokens rather than a second set of values.
+
+| Detail | Shared treatment |
+| --- | --- |
+| Location header | 48px, 13px / 500 labels; plain Inputs/Jobs titles, Library’s functional collapse control; primary command at the right |
+| Search | `--collection-search-width` (23rem / 368px) including any scope control; `Search…` placeholder and a specific accessible label such as Search inputs |
+| Controls | Density height (32px / 28px), 8px gaps; filters and sort collapse into View below 800px of available toolbar space |
+| Selection | Right aligned; compact count and in-menu Clear selection on narrow panes |
+| Name column | `--collection-name-width` (`clamp(10rem, 26cqi, 18rem)`); the reserved checkbox slot precedes the 16px glyph and 13px / 400 name |
+| Column labels / metadata | 12px, neutral secondary ink; column labels remain aligned with values |
+| Table headings / rows | Headings 32px / 28px; rows 40px / 32px; one line with full values available on overflow |
+| Numeric counts | Right aligned, tabular digits; labels align with their column values |
+| Scrolling / footer | Full-width row highlights; vertical scrolling inside the collection; horizontal scrolling where needed; pagination stays at the bottom |
+| Empty results | The Library heading/copy hierarchy and spacing; filtered-empty copy points back to search and filters |
+
+Keep native table semantics, named searchboxes, labeled checkboxes and real links
+or buttons as keyboard targets. Column widths follow content roles; do not make a
+count or action column as wide as a name. Library may omit its description column
+on narrow panes while the denser Jobs and Inputs tables scroll horizontally.
+These choices apply [Linear's predictable placement and restrained hierarchy](https://linear.app/now/behind-the-latest-design-refresh),
+[Carbon's table guidance](https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines),
+and [WAI's native table guidance](https://www.w3.org/WAI/ARIA/apg/patterns/table/)
+to Desk's existing density and palette; they do not copy another system's pixel values.
+
+Jobs collection rows use the standard density row height (40px comfortable,
+32px compact). Keep the pack version beside its title, summarize triggers inline,
+and keep recent-run controls in one row. Long names and trigger summaries truncate
+with `OverflowTooltip`; full values remain in the DOM and job details. On narrow
+panes, scroll the table horizontally inside `CollectionLayout` rather than
+wrapping rows. Run (play) and Resume draft (pencil) use shared icon-only controls
+with accessible names and tooltips. Keep these actions visible for keyboard and
+touch use. Run still opens the input form; row navigation does not execute a job.
+This follows [Linear's restrained visual hierarchy](https://linear.app/now/behind-the-latest-design-refresh)
+and [Carbon's guidance for a small number of inline row actions](https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines).
+
 Select all toggles between selecting and clearing the filtered collection, including
 all pages and virtualized rows. A partial selection shows an indeterminate checkbox. Filtering
 removes hidden items from selection. A “3 selected” menu holds Move to folder,
@@ -989,6 +1071,55 @@ and previous/next controls on the right. Use 50 items by default and the shared
 menu for 25/50/100 per page. Omit navigation when there is only one page and omit
 the size picker for 25 or fewer matches. Keep the footer visible below the scrolling
 rows; narrow panes can wrap controls instead of clipping or shrinking hit targets.
+For page and tab collections, use `ui/CollectionLayout` to keep the toolbar,
+scrollable rows and bottom footer in one bounded pane, following Library. Its
+native table headings stay visible while the body scrolls vertically or
+horizontally. Parent panels must fill the available height (`PageBody` fill or
+`Tabs` fillPanel); do not put the entire collection inside a page scroller.
+The footer stays at the pane bottom even with one item. Do not reserve an empty
+scrollbar gutter: rows fill the pane edge to edge, with scrollbar space used only
+when vertical overflow exists, matching Library. Page/filter changes reset
+the row scroll position; background refreshes do not. Cursor-based lists keep
+honest loaded counts and their existing Load more/Load older actions. Small tables
+inside forms, details or dialogs remain embedded in that content.
+
+Rows with a destination or inspection view use `ui/CollectionRow` and mark their
+existing primary link/button with `data-row-primary`. Clicking any non-control
+cell opens that action; hover and focus use Library's shared highlight token.
+Keep the native link/button as the keyboard target and retain table row semantics,
+without adding a second tab stop to the row. Checkboxes, their selection cells,
+menus and secondary links remain independent (`data-row-ignore` marks custom
+control areas). Selecting text must not open a record. Ctrl/Cmd-click and
+middle-click on linked rows open another tab. Rows with no detail action remain
+non-clickable; do not make a destructive or execution action the row default.
+
+Paginated native tables use `ui/SelectionTable` with `useCollectionSelection`,
+`SelectionHeader`, `SelectionCell` and `SelectionActions`. This applies Library's
+reserved checkbox column, hover/focus reveal, persistent visibility while selected,
+and always-visible touch targets. Keep row opening on the primary link/button;
+checkboxes and their whole cell must not navigate. Use native indeterminate state
+for partial selection. Shift-click selects a range; Ctrl/Cmd+A selects matching
+loaded rows when focus is in the table, and Escape clears them. Text inputs keep
+their native text-selection behavior.
+
+Selection covers matching loaded rows across every local page and survives page
+changes. Filtered-out, removed or changed-owner rows are discarded. New rows loaded
+after selection are not silently added. Incomplete inventories label their header
+control “Select all loaded matches”; toggling a fully selected header clears the
+selection. Row counts and pagination retain their independent loaded/total scope.
+The selected-count menu and clear icon align to the right of the existing toolbar.
+Use the shared `SelectionCountButton` in Library and native tables: its neutral
+fill and accent label make selection mode visible without implying success.
+Selected rows use the stronger neutral `--selection` background, distinct from
+hover and preview, and native checkboxes use `--accent-fill`. Inputs Records
+retains Review inputs, Evaluate and its existing input export; other collection
+tables offer Export selected rows and Clear selection. Table exports include exactly
+the selected loaded rows with a `desk-table-selection` format marker and do not
+claim to be signed verification records. Bulk selection never submits jobs or
+modifies sources. Tests and small embedded tables retain their task-specific controls.
+These interactions follow [Linear's selection patterns](https://linear.app/docs/select-issues)
+and [Carbon's conditional batch-action guidance](https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines).
+
 Counts describe the current folder/search/type/status, and incomplete inventories
 say “loaded items”. Filtering, sorting, scope or page-size changes start at page
 one; removing the last row of a page clamps to the last remaining page. Opening
@@ -1013,10 +1144,26 @@ unrelated conversation. Inactive presentations and header controls are hidden. S
 handoff, so visiting Tests cannot remove Assistant from the other tabs or undo
 an explicit collapse. Saved pack reading and Tests use the same open preference.
 
-Embedded chat uses a left-aligned 16px heading, 13px supporting text and 16px
-content insets. Prompts refer to the current pack or graph. Draft commands already
-in the document header are not repeated above the composer. Empty chat footnotes
-reserve no space; the home landing page retains its larger welcome layout.
+Chat welcomes use a regular-weight 14px title, 13px secondary text and a 4px
+text gap in both main chat and the right pane. Embedded chat keeps left alignment
+and uses `--density-block` content insets (12px comfortable, 9.6px compact); the
+home landing keeps its centered placement. Pane messages and composer text use
+`--text-sm` (13px) with the shared 1.5 body line height. Messages are separated by
+`--density-field` (16px comfortable, 12px compact); user bubbles use
+`--density-gap` vertical padding. Metadata stays 12px and chat commands use the shared small control size
+described in Chat controls below. Pane Markdown headings use 14px for h1/h2
+and 13px for lower levels, with weight 600 preserving hierarchy. The pane
+composer starts at two lines and grows with its text. Full-page message type and
+spacing retain their existing reading layout. Prompts
+refer to the current pack, graph or input. Welcome copy appears only in an empty,
+idle conversation, without proposals or work. Inputs also checks its research
+status before showing the welcome: queued, running and retained finished runs or
+status failures suppress it, including research started outside chat. The Inputs
+page owns its research progress, recovery and budget controls. A docked chat beside
+that page does not duplicate them. When chat covers the workspace or opens on its
+own, show a compact status, Open input link and Stop while active; the link reveals
+the Inputs page. Keep detailed source explanations and continuation controls there. Draft commands already in the document header are
+not repeated above the composer. Empty chat footnotes reserve no space.
 
 Graph reading and authoring use the Library folder frame, shared document title
 bar, page tabs and main right-hand Assistant. Overview describes purpose and the declared result without executing the graph; secondary composition details stay collapsed. Build keeps
@@ -1117,6 +1264,21 @@ Trail verification, signing, checkpoint and repair controls remain under Admin
 → Decision safeguards. This placement does not imply that a per-definition
 unified audit timeline already exists.
 
+### Reprocessing selected research
+
+Use the shared selected-count menu for **Reprocess from saved sources…**. Do not
+repeat this action in research status rows or above the chat composer. The review
+uses the existing compact dialog spacing, selected-record disclosure, saved recipe,
+AI connection/model and request ceiling. Name the confirmation **Reprocess N records**.
+Explain that only the selection is updated, no new sources are acquired, and changed
+records need review again. Preserve the frozen selection while background reads occur.
+
+Progress reports publication outcomes (added / updated / unchanged / needs correction),
+not a misleading total of model-emitted records. Details and per-record results stay
+in Activity; background read failures use the bottom strip. Use **Needs correction**
+for record validation failures and **Recovered** only with a linked published correction.
+An evidence link is separate from an official website; unconfirmed websites stay explicit.
+
 ### Status and warning messages
 
 Use one severity and placement pattern across the shell, chat, and forms:
@@ -1126,12 +1288,62 @@ Use one severity and placement pattern across the shell, chat, and forms:
   headers. The status control opens a focused, dismissible popover with Retry and
   diagnostics. Attempt counts stay inside Technical details and do not repeatedly
   announce themselves.
+- Background read failures across Inputs, Library, Jobs, chat and Admin belong in
+  the bottom status strip alongside configuration, local processing, connections,
+  folders and optional safeguards setup. Register them through `DeskStatusNotice`; `DeskNotices` deduplicates by
+  service and shows one bounded summary with a count. Recovery actions and details
+  stay available in its popover. Workspace content remains mounted during runtime
+  outages; authentication recovery still uses the access screen.
+- Use `QueryStatusNotice` for failed background reads. Keep the same resource ID
+  when a page and its Assistant pane observe the same query. Include the document
+  name in details where available. The notice clears after a successful read or
+  when its last observing page unmounts; an open details popover does not retain
+  stale actions. Retry refetches that resource and never starts research, repeats
+  an evaluation, or replays a write. Preserve a journal's continuation cursor.
+- Keep cached rows and edits visible after refresh failures. If no data loaded,
+  show a quiet unavailable state, not a false empty-list or “Not run” result.
+  Research progress and the result of a run stay in their compact contextual row;
+  failures to refresh that progress belong in the strip. Do not repeat the same
+  warning in Records, Activity, and Assistant. Chat storage failures register once
+  for the whole Desk; unsaved changes take priority and retain Retry saving.
+- Dialog read failures stay inside their modal with recovery controls reachable
+  in its focus scope. Field validation, rejected writes, review blockers and
+  saved run outcomes stay beside their affected action or result. Incomplete
+  history/usage coverage may retain a quiet contextual explanation; background
+  request diagnostics and retries belong in the strip.
+- Use the same amber `--unknown` token as failed chat steps for the icon and text
+  of attention notices, including “Project safeguards off.” Connecting states and
+  a healthy connection stay neutral. Use words and icons as well as color.
+- Status popovers have one header/body inset, a 13px title and message, and shared
+  buttons. Do not nest an outlined notice inside another padded panel. Optional
+  safeguards setup can be dismissed per project; service faults cannot. Setup
+  remains available in Admin → Decision safeguards and follows service faults in
+  the notice list. Never insert a setup banner above Library filters.
 - Limited capabilities use an explicit Limited connection status. Do not call a
   connection healthy merely because initialization answered.
 - Action failures and important warnings use the shared Notice next to the
   affected action. Alert, AlertPanel, and ErrorBox reuse it. A neutral surface,
   small severity icon, restrained leading border, and 13px text replace filled
   warning panels. Meaning is communicated by text and icon as well as color.
+- Admin action feedback uses `SettingsFeedback` and `SettingsActions`: one compact
+  13px message before the right-aligned action group, wrapping within narrow panes.
+  Confirmed saves use a small green check with neutral text; attention uses the
+  existing gold token. No filled banner, automatic dismissal or focus change.
+  Clear confirmation when its draft changes. Keep saved, tested and service-ready
+  states distinct; a successful write does not prove a connection works.
+  Show a reconnect consequence while reviewing a changed setting, beside Apply.
+  Context-specific retry instructions belong in that workflow, not generic Admin
+  confirmations. An unconfirmed write says the outcome is unknown and offers a
+  read-only reload; never silently repeat the write. Recovery actions sit outside
+  the live region. Detailed audit/test reports keep their existing structure.
+- Web-access recovery uses a standard secondary button, never the muted inline
+  text variant. Keep the control available for a supported editable policy even
+  after enabling it; the saved failure describes an earlier read. Research and
+  chat share `WebAccessDialog` with one title and one fixed action footer.
+  Explanations and the reconnect warning stay in the body; the warning appears
+  only for an edited setting. Apply never retries work. Keep the dialog open
+  during the write and restore focus to its opener when finished. Admin retains
+  its section layout and uses the same form state and write logic.
 - State changes use role=status; failures requiring attention use role=alert.
   Ordinary notices never steal focus, auto-dismiss, or hide recovery controls.
   Destructive confirmations retain their existing dialogs.
@@ -1148,3 +1360,214 @@ paths check the session before retrying; an expired session stops retrying and
 uses the existing sign-in/local-Desk recovery screen. Manual reconnection refreshes
 project queries. Authentication policy and the one-session-per-page boundary are
 unchanged.
+
+Inputs collection names follow the Library item pattern: a muted 16px Inputs icon,
+a regular-weight `--ink` name and no underline or accent color. Preserve the link,
+row hover treatment, and visible keyboard focus.
+
+### Recent runs and collection exports
+
+Jobs' recent-run links use unframed shared 16px glyphs in stable 24px targets:
+a neutral check for completed (`--ink-soft`), gold cross for failed (`--danger`),
+gold stop for interrupted (`--warn`), accent activity line for running (`--accent`)
+and muted clock for queued (`--ink-faint`). Completion is an operational state,
+not a successful qualification or verified signature; reserve green success
+verdicts for explicit successful results. Do not wrap these glyphs in colored
+circles. Use neutral square hover surfaces, no text-link underline and the shared
+focus ring. Run and Resume row actions use `--bg` with a neutral strong border
+on hover, so they remain visible against highlighted or selected rows. Status and explicitly labelled submission time appear
+in the portal tooltip on hover or focus; the link also names its View run action.
+Missing or invalid submission times read Not recorded.
+
+Jobs and Runs keep search at the top, including empty lists. Their header's
+Collection options menu opens Download run history, with the shared download
+glyph in the menu and download action. Show the export scope and
+unverified-file explanation inside that dialog beside its download action; opening
+it does not download or verify anything. The runner's complete original file is
+independent of filters or selected-row exports.
+
+## Local sign-in controls and password settings
+
+Entry-header language and appearance selectors size to their label with an 8px
+chevron gap and wrap within the header. Scope this to entry preferences; form
+Select controls retain full width. Admin → Sign-in & access uses SettingRow for
+the password action and the shared Dialog, Field and SettingsActions components
+for setup/change. One title, scrollable form, fixed right-aligned footer. Current
+password failures belong beside the field; unconfirmed saves offer return to
+sign-in without another write. Reset instructions remain in Recovery.
+
+### Password entry
+
+`ui/PasswordInput` composes Input, a quiet icon Button and Tooltip. It places
+Show/Hide at the trailing edge within the field, using shared density and focus
+styles. Each field owns visibility independently and starts hidden. Field keeps
+label and error associations; validation replaces a duplicate hint. Password
+length is a feature policy, not imposed by the shared control, so existing
+credentials and provider secrets are not silently truncated.
+
+### Loading states
+
+Use `ui/PageLoading` for an initial main-pane load. It fills the available body
+and centers one quiet status below the existing header and toolbar. Collections
+use `CollectionLayout loading={label}`; detail pages use `PageBody loading={label}`
+or place `PageLoading` directly in their flex page body. Labels name the resource
+(e.g. Loading library…, Loading dialects…). Do not add page-specific padding,
+large spinners, blocking overlays or loading messages inside collection toolbars.
+Keep cached content (including an empty result) visible during background refresh;
+reserve this state for a first read with no content. Failures stop the spinner and
+use the existing unavailable state and bottom status strip.
+
+Use `ui/LoadingState` for local pane, dialog, editor, inline and settings loads. It composes `RunStatus` and the shared `Spinner`: quiet small text, an
+8px icon gap, readable shimmer and reduced-motion support. Containers own their
+usual spacing; use `inset` only for an otherwise unpadded surface. Inline states
+inherit their control or cell typography. Icon-only loading controls use the
+same `Spinner` and retain an accessible label.
+
+Use `SettingsFeedback pending` for a settings action that switches between
+progress and a result. Never keep an error or an empty result animated. Separate
+loading from not-found states, and keep recovery actions in their existing
+status strip or local error surface. One loading state owns one live region.
+
+### Chat activity and recovery
+
+Chat panes use `ChatPlaceholder` while history loads: a 16px content gutter,
+shared `RunStatus` text and spinner, and reduced-motion support. A failed load
+stops the animation and shows a quiet unavailable state; error details and Retry
+remain in the bottom status strip. Saved work retains historical tool names, so
+renaming a workspace cannot make existing conversation history unreadable.
+
+Use the shared 12px `Spinner` in place of a working step's trailing chevron, and
+in place of the Work disclosure's leading chevron while any step is active. Keep source/provider icons recognizable.
+Completed, failed and interrupted steps have no spinner. `RunStatus` pairs the
+same spinner with the subtle text shimmer; reduced-motion mode leaves a static
+indicator and plain, readable text. The spinner and chevron share a 16px slot,
+so switching states does not move the labels.
+Do not add a second live region per step; the current status owns announcements.
+
+Action buttons, including inline actions, use a neutral hover surface and the
+shared focus ring. Underlining remains for prose links and active navigation.
+A failed chat response places its saved reason and Retry response together in the
+conversation, with no duplicate error above the composer. Label this deterministic
+Desk feedback as Response interrupted rather than manufacturing model prose.
+
+Input recipe proposal validation uses closed, actionable failure reasons. These
+are returned to the assistant for correction and retained under the failed work
+step; raw exception messages and tool arguments are not saved as diagnostics.
+An unused qualification target is omitted, matching the declared tool schema.
+
+
+### Compact Inputs references in chat
+
+Input recipe and action artifacts use the shared reference component's compact
+variant: 8px vertical padding, a single-line 13px title, one 12px metadata line
+and the existing review action. Long titles use the shared overflow tooltip.
+Fields and full instructions belong in the review, not a repeated field list.
+A saved recipe or applied action for the input already open in the pane is
+omitted; the context header identifies it. Pending proposals still appear, and
+Related work retains every reference in grouped history. Hiding the
+latest applied item never revives an older pending item.
+
+
+### Related work rows
+
+Related work follows [Linear's restrained hierarchy and lighter separators](https://linear.app/now/behind-the-latest-design-refresh).
+Use a single 13px, weight-500 title with 12px secondary type/version text and a
+16px neutral entity icon. Keep the standard 32px control height, keyboard focus
+and background hover feedback. A pending review is a flat action row or the
+creation proposal's direct action, never a bordered card inside another row.
+Rows share a trailing action edge; below 19rem of available content width,
+actions wrap below the identity. Long names truncate with the shared overflow
+tooltip, while status and recovery text wrap. The existing reader owns scrolling.
+
+Completed and earlier proposals recede into native disclosures. An older
+unsaved creation proposal is labelled Earlier proposal · Not saved and does not
+resurface as Needs review after a later recipe is saved. Saved entity IDs, graph
+paths and explicit draft identities govern grouping, never display-name matches.
+The same presentation serves main chat and Inputs/Library panes and is reusable
+for Jobs. Related work remains a labeled control, without an ellipsis menu.
+
+
+### Inputs status and record controls
+
+Use one compact research status beneath the tabs: current state, saved count
+explicitly scoped to this run, and the relevant actions. Paused runs say
+“Approval needed”; retain View steps, Keep results and Review increase. Running
+work retains the spinner, current operation, elapsed time and Stop. Retries keep
+the actual countdown. Do not repeat source counts, long provider/budget messages,
+or general review instructions above the records. View steps owns retained
+sources, source gaps and the full recorded explanation. Actionable web-access
+recovery remains a bordered button in the status row. Real refresh/save failures
+remain visible beside their recovery; never suppress them as decorative noise.
+
+Records uses CollectionToolbar with the same 23rem search width and responsive
+View menu as Library, Inputs and Jobs. Preparation and Evaluation filters sit
+beside search on wide panes; selection stays at the right. The table's Preparation
+cells carry review state. Explain a disabled evaluation in its selection-menu
+item, and keep evidence/verification guidance in record review. Routine guidance
+is not another persistent warning panel.
+
+This applies [Linear's restrained hierarchy](https://linear.app/now/behind-the-latest-design-refresh)
+and [Carbon's concise contextual feedback](https://www.carbondesignsystem.com/building-blocks/core/components/notification/guidelines)
+to Desk's existing controls rather than introducing a new banner or toolbar.
+
+Research execution settings use the existing Execution disclosure, FieldGroup
+and Select controls. Offer Standard/Delegated and, only for Delegated, Auto or a
+supported numeric maximum. Show unsupported choices disabled with an explicit
+connection explanation; retain an existing requested maximum when connections
+change, and show effective concurrency in the start review. Auto here governs
+scheduling, never permission. Keep internal task caps and queue mechanics out of
+the recipe form.
+
+Research task groups reuse compact operation disclosures, shared status tokens,
+and Spinner in place of the disclosure chevron while running. Keep actual
+operations and their times inside the owning task instead of presenting an
+ungrouped list that implies all work is sequential.
+
+The keyboard hint beneath the chat composer is aligned to its trailing edge in
+both full-page and pane chat, including Tests' shared composer. Its existing
+secondary text size and spacing stay unchanged. Both idle and working notices
+wrap at narrow widths without horizontal overflow.
+
+Chat composer help, including the active-window notice, aligns to the trailing edge in the main page and right pane. Chat history uses the shared inline RunStatus for Working, with the same spinner, text shimmer, and reduced-motion behavior as the composer.
+
+Test proposal review keeps static fact-type findings separate from runtime results. An intentional wrong-type case carries a specific fact pointer and explanation, shown in a collapsed shared Disclosure beside the case. Changes to an existing case expose the actual saved and proposed rows through the shared CodeBlock. No type conversion, expectation change or save is inferred from a passing check.
+
+## Chat controls
+
+Use `ChatAction`/`ChatActionLink` for commands in the transcript, recovery notices, questions, artifact cards and composer. `ChatActions` provides wrapping rows and feedback. These adapters share the small `Button` geometry; `size="icon"` maps to a matching square target. Secondary commands use neutral borders or quiet presentation; only the current primary action uses a fill. Retain native keyboard behavior, accessible names, tooltips and disabled states. Select triggers in the composer use `size="small"` from the same density scale. Menus and full settings/approval dialogs retain their shared menu/form geometry. Message navigation rows and in-text citations remain rows and inline links.
+
+Retry response uses the same small secondary button in the transcript and recovery header. Never size it independently. Narrow layouts wrap labels/actions without horizontal overflow. Coarse pointers retain standard control targets. New chat features must use these adapters rather than a new button class or local pixel dimensions.
+
+## Chat proposal review
+
+Use `ChatActions`, `ChatAction` and `ChatActionLink` for artifact commands. They use the shared `Button` small size: 28px tall (24px in Compact), 12px labels, 8px side padding and 4px icon/action gaps. Small icon actions are square and retain accessible names and tooltips. Coarse pointers retain the standard control target. Use the same small geometry in embedded diff toolbars and proposal disclosures; page toolbars keep their standard size. Keep one primary save action, secondary checks/corrections, and visible reasons for disabled actions. Related-work links use the same shared adapter. Ask me exposes explicit Save proposal. Auto requires a separately reviewed scoped allowance and the same fresh checks. Proposal checks and diff expansion never grant permission. Applying to an unsaved editor buffer remains a secondary editor action. Group Save, Check and optional editor/correction commands in one wrapping action row after the review details, with explanations 4px below. Proposal title and status use a 4px rhythm; summary, disclosures and actions are separated by 8px. Do not stack generic notice rows or place buttons flush against an expanded diff.
+
+`CodeDiff` is the shared read-only JSON comparison. It uses the existing CodeMirror editor theme with `@codemirror/merge` (MIT), line numbers, deletion/insertion marks and collapsed unchanged ranges. Narrow panes use unified diff; Expand diff opens the shared dialog with an optional split comparison. No per-hunk mutation controls appear. Never substitute model-authored change descriptions for this exact host-computed comparison.
+
+## Desk changes and persistence
+
+The desk dot and tab asterisk share `UnsavedChanges` state. They indicate manual edits awaiting Save or an automatic save that failed. Normal chat checkpoint writes, streaming, successful autosaves, background work and busy-only operations do not raise an unsaved-edit marker. A failed automatic save stays marked during retry until the owner confirms persistence; starting a retry is not success. The desk tooltip includes the names of registered changes when available.
+
+Register real edits with `useDirtyGuard`/`useRegisteredChanges` (default `kind: 'edit'`). Use `kind: 'autosave'` and `saveFailed` for retained state that saves automatically, and `kind: 'activity'` for temporary operations whose navigation needs protection. Pass write admission as `busy`, never combine it with an edit's dirty boolean. Owners clear only their own registration. Header and tab consume the same aggregate; path-specific author guards must not supply a separate global dirty indicator.
+
+Visual attention and exit protection are distinct. Pending autosaves and active writes still protect tab closing, sign-out, project moves and desk switches. Destructive flows use `useHasPendingChanges` or the shared exit guard; `useHasUnsavedChanges` describes the visible unsaved-edit state. Ordinary chat navigation retains the session and does not require a save prompt.
+
+## Record review
+
+Dialect research review opens in the main pane and keeps chat available. Single
+and selected-record review share the same workspace, decision controls and
+`RecordDetailsTable`. Values use aligned Field / Value / Evidence columns, with
+row-level expansion for quotations, notes and technical field names. Long values
+use an explicit Show more action. Narrow containers stack the same fields without
+horizontal scrolling. Preserve false, zero, null and missing distinctions.
+
+Pack-mapped fields come first; search and All / Needs attention / Changed filters
+use `CollectionToolbar`. Changed compares against the latest saved review. It
+does not infer correctness from a prior review or a source quotation.
+
+The selected queue becomes Previous / Next and a selector in narrow panes. Save
+and next saves only the current record; navigation preserves each unsaved review
+in memory. The selection and active record are retained in the URL. Shared dirty
+guards protect leaving/reloading, and stale revisions require explicit reload.
+Decision controls and save feedback stay in the fixed footer. Batch decisions
+remain a small dialog naming the exact scope; they reuse `RecordReviewDecision`.

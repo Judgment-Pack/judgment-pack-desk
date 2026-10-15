@@ -236,7 +236,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		bundle = s.localGateway.bundle
-		directory = filepath.Join(s.assistant.dir, "gateway-connections")
+		directory = platformPath(s.assistant.dir, "gateway-connections")
 	}
 	timeout := 55 * time.Second
 	if provider == "web-search" && method == "test" {

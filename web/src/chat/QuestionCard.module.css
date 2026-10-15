@@ -1,0 +1,24 @@
+.card { container-type: inline-size; border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); font-size: var(--text-control); }
+.caption { display: flex; justify-content: space-between; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); margin-bottom: var(--space-1); }
+.question { margin: 0 0 var(--space-2); font-size: var(--text-body); font-weight: 400; line-height: 1.5; }
+.options { border-width: 0; padding: 0; margin: 0; min-width: 0; }
+.option { display: grid; grid-template-columns: 14px minmax(0, max-content) auto; align-items: center; gap: var(--space-2); min-height: 32px; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); cursor: pointer; }
+.option:hover, .option:has(input:checked) { background: var(--accent-soft); }
+.option input { margin: 0; width: 14px; height: 14px; flex-shrink: 0; accent-color: var(--accent); }
+.option > span:first-of-type { min-width: 0; overflow-wrap: anywhere; }
+.option input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.options:disabled .option { cursor: default; color: var(--ink-soft); }
+.badge { justify-self: start; color: var(--ink-soft); font-size: var(--text-xs); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 var(--space-1); line-height: 18px; }
+.hint { margin: var(--space-1) 0 var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); }
+.textLabel { display: block; margin: var(--space-2) 0 var(--space-1); font-size: var(--text-xs); }
+.textLabel span { color: var(--ink-soft); }
+.card .text { min-height: 32px; height: 32px; max-height: 120px; padding: var(--space-1) var(--space-2); font-size: var(--text-control); line-height: 20px; }
+.shortcut { margin: var(--space-1) 0 0; color: var(--ink-soft); font-size: var(--text-xs); }
+.actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.right { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); margin-left: auto; }
+.error { color: var(--danger); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
+.answered { color: var(--ink-soft); font-size: var(--text-sm); }
+.answered > button { margin-top: var(--space-2); }
+.retainedText { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@container (max-width: 300px) { .badge { grid-column: 2 / -1; justify-self: start; } }

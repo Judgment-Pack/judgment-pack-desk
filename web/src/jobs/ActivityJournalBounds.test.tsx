@@ -8,6 +8,7 @@
  * several thousand entries long; the tests compare counts and short sentences,
  * never the entries themselves.
  */
+import { DeskNotices, DeskNoticesProvider } from '../shell/DeskNotices'
 import { cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
@@ -24,7 +25,7 @@ configure({ asyncUtilTimeout: 20000 })
 beforeEach(() => { vi.mocked(jobsAPI).mockImplementation(runner({ runs: [], occurrences: [] }) as never) })
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); document.body.innerHTML = '' })
 
-const page = (ui: React.ReactNode) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Tooltip.Provider><MemoryRouter initialEntries={[`/jobs/${JOB}?tab=activity`]}><Routes><Route path="/jobs/:jobId" element={ui} /></Routes></MemoryRouter></Tooltip.Provider></QueryClientProvider>
+const page = (ui: React.ReactNode) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Tooltip.Provider><MemoryRouter initialEntries={[`/jobs/${JOB}?tab=activity`]}><DeskNoticesProvider><Routes><Route path="/jobs/:jobId" element={ui} /></Routes><footer><DeskNotices/></footer></DeskNoticesProvider></MemoryRouter></Tooltip.Provider></QueryClientProvider>
 /** The whole job page, with the tab's own bounds. */
 const showPage = () => render(page(<JobsContent />))
 /** The tab alone, with bounds small enough to reach. */
@@ -129,7 +130,8 @@ describe('reading a large journal', { timeout: 60_000 }, () => {
       return served(path)
     }) as never)
     showPage()
-    const stop = await screen.findByRole('alert')
+    fireEvent.click(await screen.findByRole('button',{name:'Activity journal unavailable'}))
+    const stop = await screen.findByText(/^Reading the runner’s journal stopped after entry/)
     expect(stop.textContent).toBe('Reading the runner’s journal stopped after entry 1,500: The runner did not respond. Entries read: 1,500. Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.')
     expect(journalRows().length).toBe(0)
     fireEvent.click(screen.getByRole('button', { name: 'Continue from entry 1,500' }))
@@ -146,7 +148,8 @@ describe('reading a large journal', { timeout: 60_000 }, () => {
       return served(path)
     }) as never)
     showPage()
-    expect((await screen.findByRole('alert')).textContent).toMatch(/^Reading the runner’s journal stopped before its first entry: The runner did not respond\. /)
+    fireEvent.click(await screen.findByRole('button',{name:'Activity journal unavailable'}))
+    expect((await screen.findByText(/^Reading the runner’s journal stopped before its first entry/)).textContent).toMatch(/^Reading the runner’s journal stopped before its first entry: The runner did not respond\. /)
     fireEvent.click(screen.getByRole('button', { name: 'Try again from its start' }))
     expect(await screen.findByText('The runner’s journal is read to its end as of the last request. Entries read: 10.')).toBeTruthy()
   })

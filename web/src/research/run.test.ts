@@ -1786,6 +1786,15 @@ describe('conversation draft citations', () => {
     expect(h.loads).toEqual([page.file.document!.id, page.file.document!.id, page.file.document!.id])
   })
 
+  it.each(['draft', 'web-research'] as const)('traces a %s citation with presentation quotes using the same page matcher as chat', async mode => {
+    const page = kept()
+    const h = chat(mode, citing(pageOf(page.file), `“${QUOTE}”`), [page])
+    h.run.start('Draft from the page I shared', [])
+    const state = await settled(h.run)
+    expect(state.citations[0]).toMatchObject({traced:true,quote:`“${QUOTE}”`})
+    expect(state.status,state.detail).toBe('ready')
+  })
+
   const untraced: [string, (page: { file: ChatAttachment }) => unknown, string][] = [
     ['a bare URL', () => ({ ...PACK, sources: [{ ...PACK.sources[0]!, citation: undefined }] }), 'citation.location is not a page of a document read in this chat'],
     ['an excerpt id the ledger does not hold', () => PACK, 'citation.location is not a page of a document read in this chat'],
@@ -2347,7 +2356,7 @@ describe('conversation draft citations', () => {
       const saved = decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(state, []))))
       expect([...statementsOf(saved.state.turns).values()].at(-1)).toBe(text + material)
       expect(saved.state.turns.filter(turn => turn.role === 'user').at(-1)?.input).toContain(rule.id)
-      // A continuing authoring turn retains the full context in its transcript.
+      // The current draft still supplies its rules; historical workspace snapshots need not repeat them.
       const reopened = harness([async (_request, _signal, emit) => emit({ type: 'message', text: 'Noted.' })], { mode: 'draft' })
       await reopened.run.restore(saved.state)
       reopened.run.send('Explain the draft.')
@@ -2594,4 +2603,224 @@ it.each(['valid','unavailable','changed-receipt','changed-registry'] as const)('
   expect(resumed.requests).toEqual([]);expect(resumed.sealed).toEqual([])
   expect(calls.every(name=>name==='describe_runtime')).toBe(true)
   expect(resumed.run.getSnapshot().checkRecovery).toBe(proof==='valid'?'current':proof==='changed-receipt'?'outdated':'unavailable')
+})
+
+it('restores a failed message retry with its exact context, attachments and web choice',async()=>{
+ const h=harness([async()=>{throw new Error('Disconnected')}],{mode:'draft'})
+ const attachments=[{id:'file',name:'brief.txt',text:'Supplied facts'}]
+ h.run.start('Original request\nSupplied facts\nPack context',[],'Original request',attachments,'Original request\nSupplied facts','provided')
+ await settled(h.run)
+ const {checkpoint,decodeCheckpoint}=await import('../chat/checkpoint')
+ const saved=decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(h.run.getSnapshot(),[]))))
+ const restored=harness([async(request,_signal,emit)=>{expect(request.prompt).toContain('Pack context');emit({type:'message',text:'Recovered'})}],{mode:'draft'})
+ await restored.run.restore(saved.state)
+ expect(restored.requests).toHaveLength(0);expect(restored.run.canRetryResponse).toBe(true)
+ restored.run.retryResponse();await settled(restored.run)
+ expect(restored.run.getSnapshot().turns.filter(t=>t.role==='user')).toEqual([expect.objectContaining({text:'Original request',attachments,researchChoice:'provided'})])
+ expect(restored.requests).toHaveLength(1)
+})
+it.each(['research','provided'] as const)('resumes a retained research suggestion with %s, without duplicating the user turn',async(choice)=>{
+ const h=harness([async(_request,_signal,emit)=>{
+  emit({type:'tool_call',name:'search_sources',callId:'gate',args:{query:'market facts'}})
+  emit({type:'tool_result',name:'search_sources',callId:'gate',text:'Awaiting choice',isError:false,structured:{researchSuggestion:true}})
+  emit({type:'message',text:'Choose how to continue.'})
+ }],{mode:'draft'})
+ h.run.start('Help with the market',[],'Help with the market',[],'Help with the market','ask');await settled(h.run)
+ const {checkpoint,decodeCheckpoint}=await import('../chat/checkpoint')
+ const saved=decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(h.run.getSnapshot(),[]))))
+ const next=harness([async(request,_signal,emit)=>{expect(request.prompt).toContain('This continuation is read-only');emit({type:'message',text:'Continued'})}],{mode:'draft'})
+ await next.run.restore(saved.state);expect(next.requests).toHaveLength(0)
+ next.run.chooseResearch(choice);await settled(next.run)
+ expect(next.run.getSnapshot().turns.filter(t=>t.role==='user')).toEqual([expect.objectContaining({researchChoice:choice})]);expect(next.requests).toHaveLength(1)
+ next.run.chooseResearch(choice);expect(next.requests).toHaveLength(1)
+})
+
+it('keeps successful work when retrying an interrupted response and supplies continuation context',async()=>{
+ let attempt=0
+ const h=harness([async(request,_signal,emit)=>{
+  if(attempt++===0){emit({type:'tool_call',callId:'done',name:'list_dialects',args:{}});emit({type:'tool_result',callId:'done',name:'list_dialects',text:'Saved inputs',isError:false});emit({type:'tool_call',callId:'pending',name:'read_dialect_recipe',args:{}});throw Error('Connection ended')}
+  expect(request.prompt).toContain('do not repeat completed actions')
+  expect(request.prompt).toContain('"name":"list_dialects","status":"complete"')
+  expect(request.prompt).toContain('"name":"read_dialect_recipe","status":"interrupted"')
+  emit({type:'message',text:'Continued'})
+ }],{mode:'draft'})
+ h.run.start('Help with this dialect',[]);await settled(h.run)
+ expect(h.requests).toHaveLength(1)
+ h.run.retryResponse();const retried=await settled(h.run)
+ expect(retried.status).toBe('complete')
+ expect(retried.turns.filter(turn=>turn.role==='user')).toHaveLength(1)
+ expect(retried.responses?.[0]?.work.items.map(row=>row.status)).toEqual(['complete','interrupted'])
+})
+
+it('restores an exhausted response with its reason and no automatic replay',async()=>{
+ const {checkpoint,decodeCheckpoint}=await import('../chat/checkpoint')
+ const failed=harness([async()=>{throw Error('Codex could not recover the connection after automatic retries.')}],{mode:'draft'})
+ failed.run.start('Help',[]);const state=await settled(failed.run)
+ const saved=decodeCheckpoint(checkpoint(state,[])),restored=harness([],{mode:'draft'})
+ await restored.run.restore(saved.state)
+ expect(restored.run.getSnapshot()).toMatchObject({status:'failed',detail:state.detail})
+ expect(restored.requests).toEqual([])
+ expect(restored.run.canRetryResponse).toBe(true)
+})
+
+
+describe('bounded conversation context',()=>{
+ it('preserves user material while removing repeated historical workspace snapshots',async()=>{
+  const h=harness([async(_r,_s,emit)=>emit({type:'message',text:'Ready to map.'})],{mode:'draft'})
+  const turns=Array.from({length:30},(_,i)=>({id:'u'+i,role:'user' as const,kind:'message' as const,text:'Requirement '+i,statement:'Requirement '+i+'\nAttached material '+i,input:'Requirement '+i+'\nAttached material '+i+'\nHistorical workspace '+('x'.repeat(10000)),at:'2026-10-14T00:00:00Z'}))
+  await h.run.restore({...INITIAL_STATE,phase:'conversation',status:'complete',turns})
+  const before=JSON.stringify(h.run.getSnapshot().turns)
+  h.run.send('Map these fields\nCURRENT-WORKSPACE','Map these fields',false,[],'Map these fields')
+  const state=await settled(h.run),prompt=h.requests[0]!.prompt
+  expect(state.status).toBe('complete');expect(prompt.length).toBeLessThan(10000)
+  expect(prompt.match(/CURRENT-WORKSPACE/g)).toHaveLength(1)
+  expect(prompt.match(/Map these fields/g)).toHaveLength(1)
+  for(let i=0;i<30;i++)expect(prompt).toContain('Requirement '+i+'\nAttached material '+i)
+  expect(prompt).not.toContain('Historical workspace x')
+  expect(JSON.stringify(state.turns.slice(0,30))).toBe(before)
+ })
+ it('sends attachments once and leaves oversized projection to the shared engine boundary',async()=>{
+  const h=harness([async(_r,_s,emit)=>emit({type:'message',text:'Noted'})],{mode:'draft'})
+  await h.run.restore({...INITIAL_STATE,turns:[{role:'user',kind:'message',text:'Begin',at:''}]})
+  h.run.send('Attached material '+ 'x'.repeat(110000))
+  expect((await settled(h.run)).status).toBe('complete')
+  expect(h.requests[0]!.prompt.length).toBeLessThan(120000)
+  h.run.send('x'.repeat(200001))
+  await settled(h.run)
+  expect(h.requests).toHaveLength(2)
+  expect(h.requests[1]!.context?.documents?.[0]?.kind).toBe('history')
+  expect(h.requests[1]!.prompt).toContain('x'.repeat(200001))
+ })
+ it('keeps legacy mixed inputs intact rather than guessing away supplied material',async()=>{
+  const h=harness([async(_r,_s,emit)=>emit({type:'message',text:'Noted'})],{mode:'draft'})
+  await h.run.restore({...INITIAL_STATE,turns:[{role:'user',kind:'message',text:'Earlier',input:'Earlier\nLEGACY-SUPPLIED-MATERIAL',at:''}]})
+  h.run.send('Continue');await settled(h.run)
+  expect(h.requests[0]!.prompt).toContain('LEGACY-SUPPLIED-MATERIAL')
+ })
+ it('restores an unsent oversized request alongside a draft and permits one explicit retry',async()=>{
+  const {CONTEXT_LIMIT_MESSAGE}=await import('./run')
+  const h=harness([async(_r,_s,emit)=>emit({type:'message',text:'Mapping explanation.'})],{mode:'draft'})
+  const saved={...INITIAL_STATE,status:'failed' as const,phase:'conversation' as const,detail:CONTEXT_LIMIT_MESSAGE,responses:[{id:'earlier-response',afterTurnId:'earlier-user',documents:[],websites:[],sourceIds:[],work:{items:[{id:'obsolete-work',name:'obsolete_action',status:'complete'}],notices:[]}}] as RunState['responses'],candidates:[{revision:1,document:UNCITED,text:JSON.stringify(UNCITED),digest:'',producedBy:'conversation' as const}],turns:[{id:'user',role:'user' as const,kind:'message' as const,text:'Map my dialect',statement:'Map my dialect',input:'Map my dialect\nCURRENT-PACK-CONTEXT',at:''}]}
+  await h.run.restore(saved)
+  expect(h.requests).toEqual([]);expect(h.run.canRetryResponse).toBe(true)
+  h.run.retryResponse();const state=await settled(h.run)
+  expect(h.requests).toHaveLength(1);expect(h.requests[0]!.prompt.match(/CURRENT-PACK-CONTEXT/g)).toHaveLength(1)
+  expect(h.requests[0]!.prompt).not.toContain('obsolete_action')
+  expect(state.status).toBe('needs-input');expect(state.detail).not.toContain('200,000-character')
+  expect(state.turns.filter(t=>t.role==='user')).toHaveLength(1)
+  expect(state.candidates[0]!.text).toBe(saved.candidates[0]!.text)
+ })
+})
+
+it.runIf(Boolean(process.env.JPS_CHAT_CONTEXT_STORE&&process.env.JPS_CHAT_CONTEXT_ID))('replays the long saved mapping conversation without a live model or changing its history',async()=>{
+ const store=JSON.parse(readFileSync(process.env.JPS_CHAT_CONTEXT_STORE!,'utf8'))
+ const {decodeCheckpoint}=await import('../chat/checkpoint')
+ const state=decodeCheckpoint(store.chats.find((c:any)=>c.id===process.env.JPS_CHAT_CONTEXT_ID).checkpoint).state
+ const history=JSON.stringify(state.turns)
+ let projectedBytes=0
+ const h=harness([async(request,_s,emit)=>{
+  const {SessionContext}=await import('../assistant/context/session')
+  const context=new SessionContext({prompt:request.prompt,context:request.context,testPrompt:'',hostTools:[],tools:[],callTool:async()=>({}),signal:_s,agent:{model:'fixture',run:async()=>{throw Error('No provider')}}})
+  await context.initialize(request.context?.documents)
+  const projected=await context.prompt(request.prompt,'Host instructions',context.ledger.tools().map(({name,description,inputSchema})=>({name,description,inputSchema})),request.context?.currentRequest)
+  projectedBytes=new TextEncoder().encode(projected).length;expect(projectedBytes).toBeLessThan(180000)
+  const latest=[...state.turns].reverse().find(t=>t.role==='user')!
+  if(h.run.canRetryResponse || request.context?.currentRequest?.input===latest.input){
+   expect(request.context?.currentRequest?.message).toBe(latest.statement??latest.text)
+   expect(projected.includes(latest.statement??latest.text)||projected.includes(JSON.stringify(latest.statement??latest.text).slice(1,-1))).toBe(true)
+   const focus=context.ledger.list().items.find(i=>i.label.startsWith('Latest user'))
+   if(focus){expect(context.ledger.read({id:focus.contextId,path:'/input'})).toMatchObject({text:expect.any(String)})}
+  }
+  const {vercel}=await import('../assistant/engines/vercel')
+  const {normalize}=await import('../assistant/thinking')
+  const {MAX_TURNS}=await import('../assistant/engines/contract')
+  let calls=0
+  const call:import('../assistant/engine').ModelCall=async(_path,wire)=>{
+   const body=JSON.parse(wire.body),json=JSON.stringify(body);calls++
+   const final=calls===MAX_TURNS
+   const id=json.match(/[0-9a-f-]{36}:current-request:[0-9a-f]{16}/)?.[0]
+   expect(id).toBeDefined()
+   if(final){expect(body.tools??[]).toEqual([]);expect(json).toContain('This is the final request')}
+   const part=final?{text:'Context replay completed.'}:{functionCall:{name:'read_context',args:{id,path:'/input',offset:(calls-1)*128,limit:256}}}
+   return new Response('data: '+JSON.stringify({candidates:[{content:{role:'model',parts:[part]},finishReason:'STOP'}]})+'\n\n',{status:200,headers:{'content-type':'text/event-stream'}})
+  }
+  // Small declared window forces projection, then real SDK function-call
+  // envelopes consume the tool budget before the reserved final answer.
+  const events:AssistantEvent[]=[]
+  for await(const event of vercel.start({prompt:request.prompt,testPrompt:'',context:{...request.context,configuration:{version:1,models:{fixture:{contextWindowTokens:16384,outputTokens:4096}}}},tools:[],hostTools:[],callTool:async()=>{throw Error('No runtime work')},signal:_s,model:{family:'gemini',model:'fixture',call},thinking:normalize('off','gemini'),allowConversation:true,interactive:true,adversarialReview:false})){events.push(event);emit(event)}
+  expect(calls).toBe(MAX_TURNS)
+  expect(events.filter(e=>e.type==='tool_result')).toHaveLength(MAX_TURNS-1)
+  expect(events.filter(e=>e.type==='tool_result').every(e=>!e.isError)).toBe(true)
+  expect(events.filter(e=>e.type==='error')).toEqual([])
+ }],{mode:'draft'})
+ // This fixture tests a fresh projection of historical messages, independently of a live response allowance.
+ await h.run.restore({...state,execution:undefined})
+ if(h.run.canRetryResponse)h.run.retryResponse();else h.run.send('Continue mapping the dialect; keep the agreed requirements.')
+ const completed=await settled(h.run)
+ expect(h.requests).toHaveLength(1);expect(completed.status,completed.detail).not.toBe('failed')
+ expect(JSON.stringify(completed.turns.slice(0,state.turns.length))).toBe(history)
+ console.log(JSON.stringify({savedTurns:state.turns.length,promptChars:h.requests[0]!.prompt.length,projectedBytes,providerCalls:0,historyPreserved:true}))
+})
+
+
+it.each(['retry','follow-up'] as const)('recovers a failed diagnostic response beside a saved candidate through %s',async action=>{
+ const message='Why is the omitted-size test a mismatch?'
+ const text=JSON.stringify(UNCITED),digest=await digestOf(text)
+ const state:RunState={...INITIAL_STATE,phase:'conversation',status:'failed',detail:'Error: The assistant returned an empty reply',
+  candidates:[{responseId:'earlier',revision:1,document:UNCITED,text,digest,producedBy:'conversation'}],
+  turns:[{id:'question',role:'user',kind:'message',text:message,statement:message,input:message+'\nCURRENT PACK AND TESTS',at:''}],
+  responses:[{id:'failed',afterTurnId:'question',documents:[],websites:[],sourceIds:[],work:{items:[{id:'read',name:'read_context',status:'complete'}],notices:[]}}]}
+ const h=harness([async(request,_signal,emit)=>{
+  expect(request.context?.currentRequest?.message).toBe(action==='retry'?message:'Explain the exception precedence')
+  if(action==='retry'){
+   expect(request.prompt).toContain('do not repeat completed actions')
+   expect(request.context?.currentRequest?.input).toContain('CURRENT PACK AND TESTS')
+  }
+  emit({type:'message',text:'The exception is evaluated before the outcome rule.'})
+ }],{mode:'draft'})
+ const {checkpoint,decodeCheckpoint}=await import('../chat/checkpoint')
+ await h.run.restore(decodeCheckpoint(checkpoint(state,[])).state);expect(h.run.canRetryResponse).toBe(true)
+ if(action==='retry')h.run.retryResponse();else h.run.send('Explain the exception precedence')
+ const recovered=await settled(h.run)
+ expect(recovered.status).not.toBe('failed');expect(recovered.detail).not.toContain('empty reply')
+ expect(recovered.candidates[0]!.text).toBe(text)
+ expect(recovered.turns.filter(t=>t.role==='user')).toHaveLength(action==='retry'?1:2)
+ expect(recovered.responses?.[0]?.work.items[0]?.status).toBe('complete')
+ expect(h.requests).toHaveLength(1)
+})
+
+it('does not turn an interrupted artifact check into a retried conversation after decoding',async()=>{
+ const {checkpoint,decodeCheckpoint}=await import('../chat/checkpoint')
+ const text=JSON.stringify(UNCITED)
+ const state:RunState={...INITIAL_STATE,phase:'check',status:'failed',detail:'Runtime check interrupted',candidates:[{responseId:'earlier',revision:1,document:UNCITED,text,digest:await digestOf(text),producedBy:'conversation'}],turns:[{id:'user',role:'user',kind:'message',text:'Check the draft',at:''}],responses:[{id:'response',afterTurnId:'user',documents:[],websites:[],sourceIds:[],work:{items:[],notices:[]}}]}
+ const h=harness([],{mode:'draft'})
+ await h.run.restore(decodeCheckpoint(checkpoint(state,[])).state)
+ expect(h.run.canRetryResponse).toBe(false);expect(h.requests).toHaveLength(0)
+})
+
+it('restores a budget pause and resumes only after an explicit persisted allowance without duplicating the user request',async()=>{
+ const {contextualSession}=await import('../assistant/context/session')
+ const {normalize}=await import('../assistant/thinking')
+ const {checkpoint,decodeCheckpoint}=await import('../chat/checkpoint')
+ const ready=await contextualSession({prompt:'Fix it',testPrompt:'',hostTools:[],tools:[],callTool:async()=>({}),model:{family:'gemini',model:'fixture',call:async()=>new Response('{}')},thinking:normalize('off','gemini'),signal:new AbortController().signal})
+ ready.context.execution.state.used=20
+ const execution=ready.context.execution.snapshot('paused')
+ const first=harness([async(_r,_s,emit)=>emit({type:'budget_paused',checkpoint:execution})],{mode:'draft'})
+ first.run.start('Fix it',[]);const paused=await settled(first.run)
+ expect(paused.status).toBe('budget');expect(first.run.canRetryResponse).toBe(false)
+ const saved=decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(paused,[]))))
+ const next=harness([async(request,_s,emit)=>{
+  expect(request.context?.execution).toMatchObject({used:20,limit:30,grants:[{from:20,to:30}]})
+  emit({type:'execution_checkpoint',checkpoint:{...request.context!.execution!,status:'complete',used:21}})
+  emit({type:'message',text:'The fix is ready for review.'})
+ }],{mode:'draft'})
+ await next.run.restore(saved.state)
+ expect(next.run.getSnapshot().status).toBe('budget');expect(next.requests).toHaveLength(0)
+ expect(next.run.prepareBudgetContinuation()).toBe(true)
+ expect(next.requests).toHaveLength(0)
+ const approved=decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(next.run.getSnapshot(),[]))))
+ expect(approved.state.execution?.limit).toBe(30)
+ next.run.continueExecution();const done=await settled(next.run)
+ expect(done.status).toBe('complete');expect(done.turns.filter(t=>t.role==='user')).toHaveLength(1)
+ expect(done.execution?.used).toBe(21)
 })

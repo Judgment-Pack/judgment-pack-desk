@@ -11,6 +11,7 @@ import { useConnectionsPane } from '../connections/ConnectionPaneContext'
 import { ConnectionDirectory, connectionState } from '../connections/ConnectionDirectory'
 import { ButtonLink } from '../ui/Button'
 import { SettingsSection } from '../ui/SettingsSection'
+import { WebAccessSettings } from '../connections/WebAccessSettings'
 
 export function ConnectionSettings({embedded=false}:{embedded?:boolean}) {
   useLocale()
@@ -21,6 +22,7 @@ export function ConnectionSettings({embedded=false}:{embedded?:boolean}) {
   const context = JSON.stringify([available, effective.config.research.gateway])
   const content=<>
     <ConnectionCatalog key={context} available={available} />
+    <WebAccessSettings/>
     {returnTo && <ButtonLink to={returnTo}>{msg('Return to chat')}</ButtonLink>}
     {!available && <ButtonLink to="/admin#gateway">{msg('Manage gateway')}</ButtonLink>}
   </>

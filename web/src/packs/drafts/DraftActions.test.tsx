@@ -61,7 +61,7 @@ it('keeps delete confirmation mounted after removal and navigates only after sav
  await within(dialog).findByRole('alert');expect(router.state.location.pathname).toBe('/packs/drafts/example')
  expect(store.getSnapshot().chats).toHaveLength(1)
  fireEvent.click(within(dialog).getByRole('button',{name:'Retry saving'}))
- await waitFor(()=>expect(router.state.location.pathname).toBe('/packs'))
+ await waitFor(()=>expect(router.state.location.pathname).toBe('/library'))
  expect(screen.queryByRole('dialog')).toBeNull();expect(store.getSnapshot().packDrafts).toHaveLength(0)
  expect(store.getSnapshot().chats).toHaveLength(1);expect(store.getSnapshot().dirty).toBe(false)
 })

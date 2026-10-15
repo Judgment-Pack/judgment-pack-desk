@@ -1,6 +1,8 @@
 # Build outputs
 /bin/
 /jpack-desk
+/node_modules/
+web/*.tsbuildinfo
 web/node_modules/
 web/dist/*
 !web/dist/.gitkeep

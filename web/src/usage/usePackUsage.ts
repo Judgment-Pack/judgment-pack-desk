@@ -1,3 +1,4 @@
+import {privateQuery} from '../data/privateQuery'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMcp } from '../mcp/McpProvider'
 import { fetchGraphDocument, useGraphInventory, usePacks } from '../mcp/queries'
@@ -48,7 +49,7 @@ export function usePackUsage(configuredKey?: string, documentId?: string) {
       href: graphDraftHref(chat.id, draft.draftId), draft: true, graphVersion: read.document.version, ...reference })
   }
   const jobs = useInfiniteQuery({
-    queryKey: ['pack-usage-jobs', connectionEpoch, documentId], initialPageParam: 0,
+    ...privateQuery, queryKey: ['pack-usage-jobs', connectionEpoch, documentId], initialPageParam: 0,
     enabled: !!documentId && status === 'ready',
     queryFn: ({ pageParam, signal }) => readJobUsagePage(<T,>(path: string) => jobsAPI<T>(path, undefined, undefined, signal), pageParam, documentId!, signal),
     getNextPageParam: page => page.next || undefined,

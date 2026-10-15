@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { useQuery } from '@tanstack/react-query'
@@ -39,7 +40,7 @@ export function GraphFindingsPanel({ graphId, sha256 }: { graphId?: string; sha2
       {query.isPending && <Loading what={msg("findings")} />}
       {query.error && <p className="note note-warn">{query.error.message}</p>}
       {answer && <Findings answer={answer} graphId={graphId} sha256={sha256} />}
-      <Button variant="quiet" onClick={() => void query.refetch()} disabled={query.isFetching}>{query.isFetching && !query.isPending ? msg("Checking…") : msg("Check again")}</Button>
+      <Button variant="quiet" onClick={() => void query.refetch()} disabled={query.isFetching}>{query.isFetching && !query.isPending ? <LoadingState inline>{msg("Checking…")}</LoadingState> : msg("Check again")}</Button>
     </>
   </Section>
 }

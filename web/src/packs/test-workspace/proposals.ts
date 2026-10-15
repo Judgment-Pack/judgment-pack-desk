@@ -1,3 +1,5 @@
+import type {FactCheck} from './factTypes'
+import { factCheckRows, factTypeReviewFindings, intentionalFactTypes } from './factTypes'
 import { additionFindings } from './coverage'
 import type { CallTool } from '../../assistant/engine'
 import type { ProposalFinding, ProposalProgress } from '../../assistant/proposalWorkflow'
@@ -9,6 +11,7 @@ import { importMatrix, object, type TestCase, type TestSuite } from './model'
 export const MATRIX_CONTRACT_TOOL = 'experimental_get_test_matrix_contract'
 export const MATRIX_VALIDATION_TOOL = 'experimental_validate_test_matrix'
 export interface TestProposal extends ProposalProgress {
+  chatId?: string
   id: string
   at: string
   request: string
@@ -65,13 +68,14 @@ export async function validateTestProposal(
   sources: ChatAttachment[],
   call: CallTool,
   signal: AbortSignal,
+  packText?: string,
 ): Promise<ProposalFinding[]> {
-  // sourceMappings is explicitly Desk-owned metadata; no other root field is erased.
+  // Only these two explicit Desk metadata fields are excluded from the runtime matrix.
   const matrix = object(document)
-    ? Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'sourceMappings'))
+    ? Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'sourceMappings' && key !== 'intentionalFactTypes'))
     : document
-  const report = await payload(MATRIX_VALIDATION_TOOL, { matrix: JSON.stringify(matrix) }, call, signal)
-  const errors = findings(report.findings)
+  const report = await payload(MATRIX_VALIDATION_TOOL, { matrix: JSON.stringify(matrix), ...(packText !== undefined ? {pack:packText} : {}) }, call, signal)
+  const errors = [...findings(report.findings)]
   if (!Array.isArray(report.results)) throw Error('The runtime omitted the matrix case results.')
   if (
     !errors.length &&
@@ -128,7 +132,27 @@ export async function validateTestProposal(
       errors.push({ code: 'DESK-MATRIX', path: '/cases', message: (e as Error).message })
     }
   }
+  if (!errors.length && packText !== undefined) errors.push(...factTypeReviewFindings(factCheckRows(report, matrix), document))
   return errors
+}
+
+/** Prepared records have no authored expectation yet; do not invent one to
+ * satisfy the matrix validator. Runtime supplies the same static comparison advice. */
+export async function inspectPreparedFactTypes(pack:string,cases:{id:string;facts:unknown}[],call:CallTool,signal:AbortSignal){
+ const rows:FactCheck[]=[]
+ for(const [index,c] of cases.entries()){
+  const report=await payload('experimental_check_fact_types',{pack,facts:JSON.stringify(c.facts)},call,signal)
+  const checked=factCheckRows({factCheckVersion:report.factCheckVersion,factChecks:[{index:0,id:c.id,status:report.status,findings:report.findings,...(report.message?{message:report.message}:{})}]},{cases:[c]})
+  rows.push({...checked[0],index})
+ }
+ return rows
+}
+
+export async function inspectTestFactTypes(pack: string, cases: unknown[], call: CallTool, signal: AbortSignal) {
+  const document = {matrixVersion:'3', cases}
+  const report = await payload(MATRIX_VALIDATION_TOOL, {pack, matrix:JSON.stringify(document)}, call, signal)
+  if (report.status !== 'valid') throw Error('Saved test rows need structural review before checking fact types.')
+  return factCheckRows(report, document)
 }
 
 /** Corrections can add missing disposition members, but cannot change authored
@@ -176,7 +200,10 @@ export function preserveTestMeaning(original: unknown, corrected: unknown): Prop
           'A repair cannot invent or change inputs, evidence or assertions. This case needs review.',
         )
     }
-    if (!retains(before.expectedDisposition, after.expectedDisposition))
+    // No authored answer exists when the entire disposition is omitted. A
+    // completed, validated expectation is still only a proposal for user review.
+    const missingExpectation = !Object.hasOwn(before, 'expectedDisposition') && !Object.hasOwn(before, 'expectedErrorClass')
+    if (!missingExpectation && !retains(before.expectedDisposition, after.expectedDisposition))
       return fail(
         `/cases/${i}/expectedDisposition`,
         'A repair cannot change an existing expected answer. Resolve this expectation through review.',
@@ -197,6 +224,7 @@ export function proposalCases(record: TestProposal): TestCase[] {
   return importMatrix(document, 'ai').map((c) => ({
     ...c,
     sources: record.sources,
+    intentionalFactTypes: intentionalFactTypes(document).filter(entry => entry.caseId === c.id),
     sourceMappings:
       object(document) && object(document.sourceMappings) && object(document.sourceMappings[c.id])
         ? (document.sourceMappings[c.id] as Record<string, string>)

@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -19,7 +20,7 @@ export function WebsiteSources({reference,documents:initialDocuments,chatId,onRe
   <p className={styles.identity}>{reference.seed}</p>
   <p>{msg('Discovery lists pages. Saved text does not mean every page was fully read.')}</p>
   {!pin&&<p role="alert">{msg('Website discovery could not be verified; no links were authorized.')}</p>}
-  {pin&&query.isPending&&<p role="status">{msg('Loading…')}</p>}
+  {pin&&query.isPending&&<LoadingState>{msg('Loading…')}</LoadingState>}
   {query.isError&&<p role="alert">{msg('Website discovery could not be verified; no links were authorized.')}</p>}
   {query.data&&<>
    <p>{msg('Pages discovered: {{count}}',{count:query.data.discovery.pages.filter(p=>p.status==='discovered').length})}</p>

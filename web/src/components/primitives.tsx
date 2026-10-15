@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { Notice } from '../ui/Notice'
 import { SourceError } from '../i18n/source'
 import { Message } from '../i18n/Message'
@@ -92,7 +93,7 @@ export function ErrorBox({ title, error }: { title: string; error: Error }) {
 
 export function Loading({ what }: { what: string }) {
   useLocale()
-  return <p className="loading"><Message text={"Loading <0/>…"} slots={[what]} /></p>
+  return <LoadingState><Message text={"Loading <0/>…"} slots={[what]} /></LoadingState>
 }
 
 /**

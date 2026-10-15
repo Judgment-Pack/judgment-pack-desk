@@ -28,7 +28,7 @@ function show(slot?: React.ContextType<typeof DetailsSlotContext>) {
 }
 const table = () => screen.findByRole('table')
 const row = (what: string) => screen.getByRole('button', { name: what }).closest('tr')!
-const cells = (what: string) => [...row(what).querySelectorAll('td')]
+const cells = (what: string) => [...row(what).querySelectorAll<HTMLTableCellElement>('td:not([data-selection-cell])')]
 const whats = async () => within(await table()).getAllByRole('button').map(button => button.textContent)
 async function pick(label: string, option: string) {
   fireEvent.keyDown(screen.getByRole('combobox', { name: label }), { key: 'Enter' })
@@ -48,7 +48,7 @@ describe('the Activity tab', () => {
     const tabs = within(await screen.findByRole('navigation', { name: 'Job' })).getAllByRole('button')
     expect(tabs.map(tab => tab.textContent)).toEqual(['Runs', 'Triggers', 'Release', 'Activity'])
     expect(tabs[3]!.getAttribute('aria-current')).toBe('page')
-    const head = within(await table()).getAllByRole('columnheader').map(th => th.textContent)
+    const head = within(await table()).getAllByRole('columnheader').filter(cell=>!cell.hasAttribute('data-selection-cell')).map(th => th.textContent)
     expect(head).toEqual(['When', 'Source', 'What', 'By', 'Release', 'Evidence'])
     expect(await whats()).toEqual([
       'Run queued', 'Run started', 'Occurrence received', 'Occurrence skipped', 'Occurrence expired', 'Occurrence failed', 'Occurrence canceled',
@@ -67,7 +67,7 @@ describe('the Activity tab', () => {
 
   it('names every time it shows for what Runner recorded at it', async () => {
     show(); await table()
-    const stamps = (what: string, index = 0) => [...screen.getAllByRole('button', { name: what })[index]!.closest('tr')!.querySelectorAll('td')[0]!.querySelectorAll(':scope > div > div')].map(line => line.textContent)
+    const stamps = (what: string, index = 0) => [...screen.getAllByRole('button', { name: what })[index]!.closest('tr')!.querySelectorAll<HTMLTableCellElement>('td:not([data-selection-cell])')[0]!.querySelectorAll(':scope > div > div')].map(line => line.textContent)
     expect(stamps('Run queued')).toEqual([`Submitted ${when(runs.queued.createdAt)}`])
     expect(stamps('Run started')).toEqual([`Submitted ${when(runs.running.createdAt)}`, `Started ${when(runs.running.startedAt!)}`])
     expect(stamps('Run completed: refer')).toEqual([`Submitted ${when(runs.unsigned.createdAt)}`, `Started ${when(runs.unsigned.startedAt!)}`, `Finished ${when(runs.unsigned.finishedAt!)}`])
@@ -103,7 +103,7 @@ describe('the Activity tab', () => {
     expect(cells('Run started')[3]!.textContent).toBe('Nightly intake, trigger revision 2')
     expect(cells('Occurrence skipped')[3]!.textContent).toBe('Nightly intake, trigger revision 3')
     // A run recorded before Runner kept who asked for it.
-    expect(screen.getAllByRole('button', { name: 'Run completed: accept' })[1]!.closest('tr')!.querySelectorAll('td')[3]!.textContent).toBe('Not recorded')
+    expect(screen.getAllByRole('button', { name: 'Run completed: accept' })[1]!.closest('tr')!.querySelectorAll<HTMLTableCellElement>('td:not([data-selection-cell])')[3]!.textContent).toBe('Not recorded')
   })
 
   it('names the fixed release, linking to the Release tab', async () => {
@@ -119,7 +119,7 @@ describe('the Activity tab', () => {
     await waitFor(() => expect(evidence('Run completed: refer').textContent).not.toContain('Loading'))
     expect([...evidence('Run completed: refer').querySelectorAll('span')].map(span => span.textContent)).toEqual(['Present: Retained inputs, Exact record bytes', 'Absent: Signature sidecar, Acquisition receipts'])
     await waitFor(() => expect([...evidence('Run queued').querySelectorAll('span')].map(span => span.textContent)).toEqual(['Present: Retained inputs', 'Absent: Exact record bytes, Signature sidecar, Acquisition receipts']))
-    const signed = screen.getAllByRole('button', { name: 'Run completed: accept' })[0]!.closest('tr')!.querySelectorAll('td')[5]!
+    const signed = screen.getAllByRole('button', { name: 'Run completed: accept' })[0]!.closest('tr')!.querySelectorAll<HTMLTableCellElement>('td:not([data-selection-cell])')[5]!
     await waitFor(() => expect([...signed.querySelectorAll('span')].map(span => span.textContent)).toEqual(['Present: Retained inputs, Exact record bytes, Signature sidecar', 'Absent: Acquisition receipts']))
     expect(asked(`runs/${runs.signed.id}`)).toBe(true)
     // An occurrence is no run record, and claims nothing.

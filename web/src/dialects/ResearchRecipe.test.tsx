@@ -1,0 +1,55 @@
+import {cleanup,fireEvent,render,screen} from '@testing-library/react'
+import {MemoryRouter} from 'react-router-dom'
+import {Tooltip} from 'radix-ui'
+import {afterEach,expect,it,vi} from 'vitest'
+import {ResearchRecipe} from './ResearchRecipe'
+import type {ResearchRecipe as Recipe} from './research'
+const state=vi.hoisted(()=>({available:true,loading:false,isFetching:false,isError:false,revision:'b'.repeat(64)}))
+vi.mock('../config/DeskConfigProvider',()=>({useEffectiveConfig:()=>({aiConnections:{data:{connections:[]}}})}))
+vi.mock('../assistant/aiConnections',()=>({deskAIConnections:()=>[{id:'legacy-api',name:'My AI connection'}],resolveAIConnection:()=>({assistant:{engine:'vercel',endpoint:{model:'test',models:['test']}},connection:{id:'legacy-api',revision:'a'.repeat(64)}})}))
+vi.mock('../search/connections',()=>({useSearchConnections:()=>({...state,data:{connections:[{id:'search-test',name:'Google search',revision:state.revision}]}})}))
+vi.mock('../shell/UnsavedChanges',()=>({useConfirmDiscard:()=>vi.fn()}))
+afterEach(()=>{cleanup();Object.assign(state,{available:true,loading:false,isFetching:false,isError:false,revision:'b'.repeat(64)})})
+const recipe:Recipe={version:1,target:'companies',fields:[{name:'country',description:'Country',type:'string'}],criteria:[],ai:{connection:'legacy-api',revision:'a'.repeat(64),model:'test'},search:{connection:'search-test',revision:'a'.repeat(64)},limits:{records:3,searches:8,pages:6,modelCalls:15}}
+function show(disabled=false){const change=vi.fn();render(<MemoryRouter><Tooltip.Provider><ResearchRecipe value={recipe} onChange={change} records={[]} disabled={disabled}/></Tooltip.Provider></MemoryRouter>);return change}
+it('keeps the reviewed revision until the user accepts current settings, preserving all other edits',()=>{
+ const change=show()
+ expect(screen.getByText('Search settings changed. Review the current settings.')).toBeTruthy()
+ expect(change).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button',{name:'Use current settings'}))
+ expect(change).toHaveBeenCalledExactlyOnceWith({...recipe,search:{connection:'search-test',revision:state.revision}})
+ expect(recipe.search?.revision).toBe('a'.repeat(64))
+})
+it('shows no recovery for a current connection',()=>{
+ state.revision='a'.repeat(64);show()
+ expect(screen.queryByRole('button',{name:'Use current settings'})).toBeNull()
+})
+it.each(['isError','available'] as const)('does not accept stale cached settings when %s changes',key=>{
+ state[key]=key==='isError';show()
+ expect(screen.queryByRole('button',{name:'Use current settings'})).toBeNull()
+})
+it('disables adoption while fetching a fresh status or while the recipe is locked',()=>{
+ state.isFetching=true;let change=show()
+ let button=screen.getByRole('button',{name:'Use current settings'}) as HTMLButtonElement
+ expect(button.disabled).toBe(true);fireEvent.click(button);expect(change).not.toHaveBeenCalled()
+ cleanup();state.isFetching=false;change=show(true)
+ button=screen.getByRole('button',{name:'Use current settings'}) as HTMLButtonElement
+ expect(button.disabled).toBe(true);fireEvent.click(button);expect(change).not.toHaveBeenCalled()
+})
+it('suggests two retries only for a new research setup',()=>{
+ const change=vi.fn()
+ render(<MemoryRouter><Tooltip.Provider><ResearchRecipe onChange={change} records={[]} disabled={false}/></Tooltip.Provider></MemoryRouter>)
+ fireEvent.click(screen.getByRole('button',{name:'Set up research'}))
+ expect(change.mock.calls[0][0].retries).toEqual({mode:'temporary',maxRetries:2,searchTimeouts:false})
+ cleanup();const legacy=show()
+ fireEvent.click(screen.getByText('Limits and retries'))
+ expect(screen.getByRole('combobox',{name:'Automatic retries'}).textContent).toContain('Off')
+ expect(legacy).not.toHaveBeenCalled()
+ fireEvent.change(screen.getByRole('spinbutton',{name:'Records'}),{target:{value:'4'}})
+ expect(legacy.mock.calls[0][0].retries).toBeUndefined()
+})
+
+it('explains that the Records setting controls the run count',()=>{
+ show();fireEvent.click(screen.getByText('Limits and retries'))
+ expect(screen.getByText('Maximum records per run. This setting takes precedence over record counts in the instructions.')).toBeTruthy()
+})

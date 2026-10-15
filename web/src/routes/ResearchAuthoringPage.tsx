@@ -64,7 +64,7 @@ export function ResearchAuthoringPage() {
   // Leaving the page ends the run: nothing about it is persisted, and a run
   // nobody is watching is a run spending budget for nobody.
   useEffect(() => () => run?.stop(), [run])
-  useDirtyGuard(running, msg('Leave and stop the research run? The draft so far will be discarded.'))
+  useDirtyGuard(running, msg('Leave and stop the research run? The draft so far will be discarded.'), {kind:'activity'})
 
   const select = (next: Selection) => {
     setSelection(next)

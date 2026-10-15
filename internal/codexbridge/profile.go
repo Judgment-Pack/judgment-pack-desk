@@ -341,3 +341,18 @@ view_image = false
 token_budget = false
 `)
 }
+
+// RelocatedProfileConfig regenerates only Desk-owned location metadata. The
+// caller keeps auth.json and native account state byte for byte. An edited
+// configuration is refused instead of adopting or weakening its restrictions.
+func RelocatedProfileConfig(current []byte, previous, next string) ([]byte, error) {
+	if !filepath.IsAbs(previous) || !filepath.IsAbs(next) {
+		return nil, ErrProfile
+	}
+	before := &profile{dir: previous, codex: filepath.Join(previous, "profile"), work: filepath.Join(previous, "work")}
+	if !bytes.Equal(current, before.config()) && !before.previousConfig(current) {
+		return nil, ErrProfile
+	}
+	after := &profile{dir: next, codex: filepath.Join(next, "profile"), work: filepath.Join(next, "work")}
+	return after.config(), nil
+}

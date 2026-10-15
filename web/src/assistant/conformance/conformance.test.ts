@@ -1044,7 +1044,7 @@ describe.each(MODEL_ENGINES)('engine %s', (engineId) => {
     it('K2 — offers exactly the five, out of tools/list', async () => {
       const { requests } = await runLeg(fromRegistry(engineId), leg)
       for (const request of requests) {
-        expect(request.toolNames).toEqual(FIVE)
+        expect(request.toolNames).toEqual(['list_context','read_context',...FIVE])
       }
     })
 
@@ -1418,7 +1418,7 @@ describe.each(MODEL_ENGINES)('engine %s · thinking', (engineId) => {
         schemaShown(engineId, leg.api, tool.inputSchema)
       )
       for (const request of requests) {
-        expect(request.schemas, `${request.step} sent a different schema`).toEqual(shown)
+        expect(request.schemas.slice(2), `${request.step} sent a different schema`).toEqual(shown)
       }
       // The runtime's own schemas all declare `additionalProperties: false`, so
       // this is a rule with a subject rather than one waiting for a
@@ -1451,7 +1451,7 @@ describe.each(MODEL_ENGINES)('engine %s · thinking', (engineId) => {
       // still missing from the wire is the **engine's** removal and nothing
       // else. That is what is derived and what is compared.
       const desk = servedSchemaFor(leg.api, VOCABULARY)
-      const carried = keywordsSent(requests[0]!.schemas[0])
+      const carried = keywordsSent(requests[0]!.schemas[2])
       const derived = [...keywordsSent(desk)].filter((keyword) => !carried.has(keyword)).sort()
       const declared = keywordsNotShown(engineId, leg.api)
         .filter((keyword) => keywordsSent(desk).has(keyword))
@@ -1460,7 +1460,7 @@ describe.each(MODEL_ENGINES)('engine %s · thinking', (engineId) => {
       expect(derived).toEqual([])
       // Preserve values and references too, not only keyword names. This fails
       // if extraction reads the old `parameters` field and returns undefined.
-      for (const request of requests) expect(request.schemas).toEqual([desk])
+      for (const request of requests) expect(request.schemas.slice(2)).toEqual([desk])
     })
 
     it('carries exactly the recorded runtime’s own schema vocabulary', () => {
@@ -1506,7 +1506,7 @@ describe.each(MODEL_ENGINES)('engine %s · thinking', (engineId) => {
       const { events, requests } = await runLeg(fromRegistry(engineId), leg, { tools: [VOCABULARY] })
       expect(requests.length).toBeGreaterThan(0)
       for (const request of requests) {
-        expect(request.schemas).toEqual([servedSchemaFor(leg.api, VOCABULARY)])
+        expect(request.schemas.slice(2)).toEqual([servedSchemaFor(leg.api, VOCABULARY)])
       }
       expect(guardrails(events).filter((event) => event.action === 'narrowed')).toEqual([])
       expect(events.some((event) => event.type === 'error')).toBe(false)
@@ -1664,7 +1664,7 @@ describe.each(MODEL_ENGINES)('engine %s · thinking', (engineId) => {
           (event): event is Extract<AssistantEvent, { type: 'error' }> => event.type === 'error'
         )
         expect(failures).toHaveLength(1)
-        expect(failures[0]!.message).toContain('400')
+        expect(failures[0]!.failure).toMatchObject({code:'invalid-request',status:400})
         return
       }
 

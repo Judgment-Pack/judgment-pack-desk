@@ -1,3 +1,4 @@
+import {failureError} from './failures'
 import { aiHeaders, type AITarget } from './aiConnections'
 import { deskHeaders } from '../desks/scope'
 import { currentLanguage } from '../i18n/locales'
@@ -205,39 +206,14 @@ export function suffixProblem(suffix: unknown, family: EndpointKind): string {
   return ''
 }
 
-/**
- * The answer headers an engine may read, and the whole of them.
- *
- * Both wire formats need one thing from an answer's headers — whether it is an
- * event stream — and the byte count is worth carrying beside it. Everything
- * else is dropped, on the same allow-list reasoning the request side uses: a
- * header nobody has heard of does not reach the engine because it is not on
- * this list. The chassis already strips credential headers from an answer; this
- * is the same claim one layer in.
- */
+/** Response content metadata plus bounded diagnostics. Routing, cookies and
+ * credentials never enter the model adapter. Retry timing and request IDs are
+ * necessary for the shared error contract and survive the response facade. */
 const MODEL_ANSWER_HEADERS: readonly string[] = ['content-type', 'content-length']
+const MODEL_DIAGNOSTIC_HEADERS: readonly string[] = ['request-id','x-request-id','retry-after']
 
-/**
- * The sentence every failed model call carries, whatever went wrong.
- *
- * Fixed text, because a browser's own `TypeError` for a failed fetch **quotes
- * the URL**. No credential is in that URL any more — the session is a bearer on
- * a header — so what the fixed text withholds is this desk's own routing, which
- * an engine that is handed a capability rather than an address should not get
- * by the back door.
- */
-/**
- * The sentence an aborted model call carries.
- *
- * Separate from `CALL_FAILED` because the two say different things to a loop —
- * one is the viewer stopping a session, the other is a request that did not
- * happen — and neither says where.
- */
+/** Fixed cancellation text, with no routing details. */
 const CALL_ABORTED = 'the model request was aborted'
-
-const CALL_FAILED =
-  'the model request could not be made; the desk holds the address and the reason is not the ' +
-  "engine's to read"
 
 /**
  * A model call this session may make, bound by the desk.
@@ -333,14 +309,14 @@ export function bindModelCall(family: EndpointKind, target?:AITarget): ModelCall
       if ((cause as Error)?.name === 'AbortError') {
         throw new DOMException(CALL_ABORTED, 'AbortError')
       }
-      throw new Error(CALL_FAILED)
+      throw failureError('connection-lost','model')
     }
     // **An opaque redirect is not an answer.** `redirect: 'manual'` gives a
     // `Response` of type `opaqueredirect` with status 0 and no body, and an
     // engine handed that would be handed nothing it could read — so it is
     // reported as what it is, an upstream that did not answer.
     if (answered.type === 'opaqueredirect' || (answered.status === 0 && answered.redirected)) {
-      throw new Error(CALL_FAILED)
+      throw failureError('connection-lost','model')
     }
     // **A 401 is two different things on this one route, and one header tells
     // them apart.** Every other chassis call has a single meaning for a 401 —
@@ -391,6 +367,10 @@ function facade(answered: Response): Response {
   const carried = new Headers()
   answered.headers.forEach((value, name) => {
     if (MODEL_ANSWER_HEADERS.includes(name.toLowerCase())) carried.set(name, value)
+    else if(MODEL_DIAGNOSTIC_HEADERS.includes(name.toLowerCase())&&value.length<=128){
+      const valid=name.toLowerCase()==='retry-after'? /^\d+(?:\.\d+)?$/.test(value)||Number.isFinite(Date.parse(value)):/^[-a-zA-Z0-9_]{1,128}$/.test(value)
+      if(valid)carried.set(name,value)
+    }
   })
   // A body is not allowed on these statuses, and the constructor throws rather
   // than ignoring one.
@@ -613,8 +593,8 @@ export function openAssistantConnection(options: {
 export async function runAssistantSession(
   engine: Engine,
   session: EngineSession,
-  onEvent: (event: AssistantEvent) => void
+  onEvent: (event: AssistantEvent) => unknown
 ): Promise<void> {
   const localizedSession = { ...session, replyLanguage: session.replyLanguage ?? currentLanguage() }
-  for await (const event of engine.start(localizedSession)) onEvent(event)
+  for await (const event of engine.start(localizedSession)) await onEvent(event)
 }

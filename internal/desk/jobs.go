@@ -90,15 +90,31 @@ func (s *Server) initJobs() {
 	if s.cfg.RunnerBin == "" || !s.assistant.usable() {
 		return
 	}
-	connections, err := runnerConnectionsForDesk(s.cfg.RunnerConnections, s.cfg.deskID, s.cfg.parent == nil)
+	id, startup := s.cfg.deskID, s.cfg.parent == nil
+	if entry := s.homeEntry(); entry != nil {
+		id, startup = entry.ID, entry.Kind == "project"
+		if startup {
+			id = ""
+		}
+	}
+	connections, err := runnerConnectionsForDesk(s.cfg.RunnerConnections, id, startup)
 	if err != nil {
 		s.log.Printf("desk: Jobs background connections are invalid: %v", err)
 		return
 	}
-	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
+	profiles, err := s.reviewedInputProfiles()
+	if err != nil {
+		s.log.Printf("desk: Jobs input profiles are invalid: %v", err)
+		return
+	}
+	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: profiles, bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + s.installationOwner(), stop: make(chan struct{})}
 	if s.cfg.deskID != "" {
 		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
 		s.jobs.workspace = s.cfg.deskID
+	}
+	if entry := s.homeEntry(); entry != nil {
+		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
+		s.jobs.workspace = entry.RunnerWorkspace
 	}
 	// Runner's own key is kept under the name of its workspace: the desk's
 	// id, or the startup desk's state directory's name (ADR-0010, section 5).
@@ -153,10 +169,10 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	// it is starting, and a Runner that did not start is reported as not
 	// running, never as signing.
 	signingKey, decided := j.key.prepare()
-	refusal, err := j.start(signingKey)
+	refusal, err := j.start(signingKey, decided.PublicKey)
 	if err != nil && signingKey != "" && refusal != nil {
 		decided = j.key.refused(*refusal)
-		_, err = j.start("")
+		_, err = j.start("", "")
 	}
 	if err != nil {
 		j.key.notRunning(err)
@@ -169,7 +185,7 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 // start starts Runner and reads its handshake, naming signingKey on the boot
 // line where it is not empty. Where Runner did not start, and what it wrote
 // to its standard error says it refused a signing key, refusal is its reason.
-func (j *jobsCompanion) start(signingKey string) (refusal *string, err error) {
+func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *string, err error) {
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return nil, err
@@ -231,6 +247,7 @@ func (j *jobsCompanion) start(signingKey string) (refusal *string, err error) {
 	boot["requireTestedReleases"] = j.requireTested
 	if signingKey != "" {
 		boot["signingKey"] = signingKey
+		boot["signingPublicKey"] = signingPublicKey
 	}
 	if err = json.NewEncoder(input).Encode(boot); err != nil {
 		return failed(err)
@@ -365,30 +382,38 @@ var (
 	verificationPath = regexp.MustCompile(`^runs/run_[a-f0-9]{32}/verification$`)
 )
 
-// journalPath is a job's journal of job activity (Runner v0.6.0,
-// `GET /v1/jobs/{job}/events?after=`), read with GET alone and with its cursor
-// alone: journalCursor. A page holds at most 50 entries, each reason cut at
-// 1,024 bytes, well within runnerAnswerLimit.
+// journalPath is a job activity journal, read with GET alone. journalQuery
+// validates forward paging and Runner v0.8 backward paging. A page holds at
+// most 50 entries, each reason cut at 1,024 bytes, within runnerAnswerLimit.
 var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/events$`)
 
-// journalCursor is the cursor a journal request asks Runner for: "" when the
-// query names none, which Runner reads as 0, the start; or exactly one
-// `after` of 1 to 18 decimal digits, as Runner reads a cursor. A repeated,
-// empty or non-decimal cursor, or a query that does not parse, is refused
-// rather than forwarded: a lenient reader would keep one of repeated values,
-// or drop a malformed one and read from the start, where Runner refuses both.
-// Every other key is left out.
-func journalCursor(rawQuery string) (string, error) {
-	values, malformed := url.ParseQuery(rawQuery)
-	switch cursor, given := values["after"]; {
-	case malformed != nil:
-		// Refused below, as Runner refuses it.
-	case !given:
-		return "", nil
-	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):
-		return cursor[0], nil
+// journalQuery forwards only the released paging modes. Unknown list filters
+// stay stripped. Repeated, malformed or conflicting cursors never become a
+// different page. tail=false retains the existing forward semantics.
+func journalQuery(raw string) (url.Values, error) {
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return nil, errors.New("invalid journal query")
 	}
-	return "", errors.New("invalid journal cursor")
+	result := url.Values{}
+	for _, name := range []string{"after", "before"} {
+		if cursor, given := values[name]; given {
+			if len(cursor) != 1 || !journalSequence.MatchString(cursor[0]) {
+				return nil, errors.New("invalid journal cursor")
+			}
+			result.Set(name, cursor[0])
+		}
+	}
+	if tail, given := values["tail"]; given {
+		if len(tail) != 1 || tail[0] != "true" && tail[0] != "false" {
+			return nil, errors.New("invalid journal tail")
+		}
+		result.Set("tail", tail[0])
+	}
+	if result.Has("before") && result.Has("after") || result.Get("tail") == "true" && (result.Has("after") || result.Has("before")) {
+		return nil, errors.New("conflicting journal cursors")
+	}
+	return result, nil
 }
 
 var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)
@@ -481,15 +506,12 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	case runPath.MatchString(tail):
 		limit = runnerExportLimit
 	case journalPath.MatchString(tail):
-		after, err := journalCursor(r.URL.RawQuery)
+		paging, err := journalQuery(r.URL.RawQuery)
 		if err != nil {
-			writeJSONCoded(w, 400, CodeBadRequest, "Ask for a journal page with at most one after, a sequence in decimal digits, in a well-formed query.")
+			writeJSONCoded(w, 400, CodeBadRequest, "Ask for one journal paging mode: after, before or tail=true, with a valid decimal cursor.")
 			return
 		}
-		query = url.Values{}
-		if after != "" {
-			query.Set("after", after)
-		}
+		query = paging
 	}
 	if s.jobs == nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "Jobs requires the local runner companion. Install jpack-runner beside Desk or start Desk with --runner.")
@@ -543,6 +565,14 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	if len(body) > limit {
 		writeJSONCoded(w, 502, CodeBadRequest, "The runner response exceeded its limit.")
 		return
+	}
+	if r.Method == http.MethodPost && tail == "previews" && response.StatusCode == http.StatusCreated {
+		// Capture independent references before a reviewed release can be used
+		// to create a job. Storage failure does not discard Runner's release;
+		// future checks report references unavailable, never self-trust an export.
+		if err := s.retainRunReferences(body, data); err != nil {
+			s.log.Printf("desk: release verification references could not be retained")
+		}
 	}
 	if tail == runChainRoute {
 		// Runner's own type, application/jsonl for the chain and JSON for a

@@ -3,6 +3,7 @@ import { VisuallyHidden } from 'radix-ui'
 import type { ReactNode } from 'react'
 import { OverflowTooltip } from './Tooltip'
 import styles from './PageLayout.module.css'
+import {PageLoading} from './PageLoading'
 
 /** Full-width page chrome, independent of the reading measure below it. */
 export function PageHeader({ title, titleHref, context, leading, meta, actions, description, navigation, variant = 'context' }: {
@@ -53,12 +54,19 @@ export function PageHeader({ title, titleHref, context, leading, meta, actions, 
   </header>
 }
 
+/** Compact collection identity, aligned with Library's breadcrumb. */
+export function CollectionHeading({children}:{children:ReactNode}){
+ return <div className={styles.collectionIdentity} data-collection-location>{children}</div>
+}
+
 /** A fixed gutter with a bounded, left-aligned reading area. */
-export function PageBody({ children, width = 'form', fill = false }: {
+export function PageBody({ children, width = 'form', fill = false, loading }: {
   children: ReactNode
   width?: 'form' | 'wide' | 'full'
   fill?: boolean
+  loading?: string
 }) {
+  if (loading) return <PageLoading>{loading}</PageLoading>
   return <div className={styles.body} data-fill={fill || undefined} data-page-scroll>
     <div className={styles.content} data-width={width}>{children}</div>
   </div>

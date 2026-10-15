@@ -1,3 +1,4 @@
+import {FailureDetails} from './FailureDetails'
 import { sourceMessage } from '../i18n/source'
 import { systemMessage, msg as uiMessage } from '../i18n'
 import { Message } from '../i18n/Message'
@@ -53,6 +54,17 @@ const COMPACT: ReadonlySet<AssistantEvent['type']> = new Set([
  */
 export function describeEvent(event: AssistantEvent, msg: typeof uiMessage = uiMessage): string {
   switch (event.type) {
+    case 'execution_checkpoint': return msg('Task progress saved')
+    case 'budget_paused': return msg('Paused · Request limit reached')
+    case 'delegation_requested':
+      return msg('Delegating tasks')
+    case 'delegated_task':
+      return msg('Delegated task: {{title}} · {{state}}', {title:event.task.title,state:event.task.state})
+    case 'response_recovery': return msg('Finishing response from completed work…')
+    case 'retry':
+      return msg('Reconnecting… · Retry {{attempt}} of 2', {attempt:event.attempt})
+    case 'user_question':
+      return msg('Waiting for your answer')
     case 'tool_call':
       return msg("called {{value0}}({{value1}})", { value0: event.name, value1: Object.keys((event.args ?? {}) as object).join(', ') })
     case 'tool_result':
@@ -145,7 +157,7 @@ export function EventList({
               <pre className={styles.reasoning}>{event.text}</pre>
             </details>
           ) : (
-            describeEvent(event)
+            <>{describeEvent(event)}{event.type==='error'&&<FailureDetails failure={event.failure}/>}</>
           )}
         </li>
       ))}

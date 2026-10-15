@@ -7,7 +7,7 @@ import type { ChatAttachment } from './store'
 import type { WebsiteReference } from '../documents/website'
 import type { ResearchRunBinding } from '../research/useResearchRun'
 import { msg, useLocale } from '../i18n'
-import { Button } from '../ui/Button'
+import {ChatAction} from './ChatActions'
 import { CodeBlock } from '../ui/CodeBlock'
 import { Disclosure } from '../ui/Disclosure'
 import { SourceReader } from '../documents/SourceReader'
@@ -20,9 +20,9 @@ export type ReadMessageDetail = (node: ReactNode, opener: HTMLElement | null) =>
 export function SentAttachments({files, onRead}: {files: ChatAttachment[]; onRead: ReadMessageDetail}) {
   useLocale()
   if (!files.length) return null
-  return <ul className={styles.sentAttachments} aria-label={msg('Attached files')}>{files.map(file => <li key={attachmentKey(file)}><Button variant="quiet" onClick={event => onRead(file.document
+  return <ul className={styles.sentAttachments} aria-label={msg('Attached files')}>{files.map(file => <li key={attachmentKey(file)}><ChatAction variant="quiet" onClick={event => onRead(file.document
     ? <SourceReader name={file.name} reference={file.document} link={file.link}/>
-    : <section><h3>{file.name}</h3><CodeBlock text={file.text} label={msg('Attachment')}/></section>, event.currentTarget)}>{file.name}</Button></li>)}</ul>
+    : <section><h3>{file.name}</h3><CodeBlock text={file.text} label={msg('Attachment')}/></section>, event.currentTarget)}>{file.name}</ChatAction></li>)}</ul>
 }
 export function SourceList({chatId, documents, websites = [], searches = [], sourceIds = [], binding, onRead}: {
   chatId: string; documents: ChatAttachment[]; websites?: WebsiteReference[]; searches?: SearchReference[]; sourceIds?: string[]; binding?: ResearchRunBinding; onRead: ReadMessageDetail

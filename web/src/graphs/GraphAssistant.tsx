@@ -1,5 +1,6 @@
+import {ChatPlaceholder} from '../chat/ChatPlaceholder'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { msg, systemMessage } from '../i18n'
+import { msg } from '../i18n'
 import { useGraphMatrix } from '../mcp/queries'
 import { useChats } from '../chat/ChatProvider'
 import { ChatPanel } from '../chat/ChatPanel'
@@ -50,8 +51,7 @@ export function GraphAssistant({ proposal, workspace, chatId, onChat, onApply, b
     && (!proposal.baseSha256 || candidate.id === proposal.id && candidate.path === proposal.path)
   const document = useMemo(() => {try {return candidate ? JSON.parse(candidate.content) : undefined} catch {return undefined}}, [candidate?.content])
   const diff = useMemo(() => document === undefined ? null : diffProposal(baseline?.content, document), [baseline?.content, document])
-  if (error) return <div className={styles.feedback} role="alert"><p>{systemMessage(error)}</p><Button onClick={() => void store?.load()}>{msg('Retry')}</Button></div>
-  if (!chat) return <p className={styles.feedback}>{ready ? msg('Open Assistant to discuss this graph.') : msg('Loading chats…')}</p>
+  if (!chat) return <ChatPlaceholder loading={!ready} error={!!error}>{msg('Open Assistant to discuss this graph.')}</ChatPlaceholder>
   const actions = onApply && candidate && state?.status !== 'running' ? <Disclosure title={msg('Review proposed changes')}>
     {diff && <ProposalDiffView diff={diff} onBaseline={unchanged}/>}
     {!unchanged && <p>{msg('The document changed since this request. Send another message against the current draft.')}</p>}

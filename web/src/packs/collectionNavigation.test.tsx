@@ -22,9 +22,9 @@ function setup(extraIds: string[] = []) {
     ...extraIds.map(id => ({ id, packVersion: '1.0.0' }))
   ] }) }) })
   const queryClient = testQueryClient()
-  const router = createMemoryRouter([{ path: '/packs', element: <PacksLayout />, children: [
-    { index: true, element: <PacksIndex /> }, { path: ':packId', element: <h1>Pack document</h1> }, { path: 'drafts/:draftId', element: <h1>Draft document</h1> }
-  ] }], { initialEntries: ['/packs?type=pack'] })
+  const router = createMemoryRouter([{ element: <PacksLayout />, children: [
+    { path: '/library', element: <PacksIndex /> }, { path: '/packs/:packId', element: <h1>Pack document</h1> }, { path: '/packs/drafts/:draftId', element: <h1>Draft document</h1> }
+  ] }], { initialEntries: ['/library?type=pack'] })
   render(<QueryClientProvider client={queryClient}><McpContext.Provider value={connected({ client: stub.client })}>
     <InspectorSlotContext.Provider value={slot}><RouterProvider router={router} /></InspectorSlotContext.Provider>
   </McpContext.Provider></QueryClientProvider>)
@@ -37,7 +37,7 @@ it('previews inventory metadata without navigation or additional runtime calls',
   expect(screen.queryByText('Select a pack')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Preview alpha' }))
   await within(target).findByRole('heading', { name: 'alpha' })
-  expect(router.state.location.pathname).toBe('/packs')
+  expect(router.state.location.pathname).toBe('/library')
   expect(reveal).toHaveBeenCalledOnce()
   expect(within(target).getByText('packs/alpha.json')).toBeTruthy()
   expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])

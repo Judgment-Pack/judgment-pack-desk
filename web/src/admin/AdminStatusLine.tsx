@@ -1,3 +1,4 @@
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { sourceMessage } from '../i18n/source'
 import { msg, useLocale, systemMessage } from '../i18n'
 import { useState, type ReactNode } from 'react'
@@ -17,21 +18,21 @@ export function AdminStatusLine({
 }) {
   useLocale()
   const [copied, setCopied] = useState<string>()
+  const [copyFailed, setCopyFailed] = useState(false)
   return (
     <>
     <dl className={styles.line}>
       <Pair label={msg("Runtime")}>{runtime}</Pair>
       <Pair label={msg("Binary")}>{binary}</Pair>
     </dl>
-    {copyText !== undefined && <div className={styles.actions}>
-      <span role="status">{systemMessage(copied ?? '')}</span>
+    {copyText !== undefined && <SettingsActions feedback={<SettingsFeedback tone={copyFailed ? 'error' : copied ? 'success' : 'neutral'}>{systemMessage(copied ?? '')}</SettingsFeedback>}>
       <Button onClick={async () => {
         try {
           await navigator.clipboard.writeText(copyText)
-          setCopied('Copied')
-        } catch { setCopied(sourceMessage("Could not copy. Select the details to copy them.")) }
+          setCopyFailed(false); setCopied('Copied')
+        } catch { setCopyFailed(true); setCopied(sourceMessage("Could not copy. Select the details to copy them.")) }
       }}>{msg("Copy details")}</Button>
-    </div>}
+    </SettingsActions>}
     </>
   )
 }

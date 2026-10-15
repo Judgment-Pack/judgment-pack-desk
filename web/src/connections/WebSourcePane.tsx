@@ -1,3 +1,7 @@
+import {LoadingState} from '../ui/LoadingState'
+import { DeskStatusNotice } from '../shell/DeskNotices'
+import { PopoverClose } from '../ui/Popover'
+import { ButtonLink } from '../ui/Button'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useChats } from '../chat/ChatProvider'
@@ -49,11 +53,14 @@ export function WebSourcePane({ request, target, onClose, onAttached, onBusy }: 
    <p id="web-source-hint" className={styles.linkHint}>{msg('Public HTTPS links only, up to 4 MiB. Sign-in pages and JavaScript content are not supported.')}</p>
    {invalid && <Alert>{msg('Enter a public HTTPS link without a sign-in or fragment.')}</Alert>}
    {!capacity && <Alert>{msg('Attach up to four files at a time.')}</Alert>}
-   {!available && !catalog.loading && <Alert>{msg('Local processing is unavailable. Check the details in Admin → Document processing.')}</Alert>}
+   {!available && !catalog.loading && <DeskStatusNotice id="local-processing" tone="warning" label={msg('Local processing unavailable')}
+     actions={<PopoverClose><ButtonLink to="/admin#documents">{msg('Review settings')}</ButtonLink></PopoverClose>}>
+     {msg('Local processing is unavailable. Check the details in Admin → Document processing.')}
+   </DeskStatusNotice>}
    {upload.error && <Alert>{systemMessage(upload.error)}</Alert>}
   </div>
   <div className={styles.footer}>
-   {upload.reading && <p role="status">{systemMessage(upload.progress)}</p>}
+   {upload.reading && <LoadingState>{systemMessage(upload.progress)}</LoadingState>}
    <div className={styles.actions}>
     <Button type="button" variant="quiet" onClick={() => { upload.cancel(); onClose() }}>{msg('Cancel')}</Button>
     <Button type="submit" variant="primary" disabled={!url.trim() || !available || !capacity || upload.reading}>{msg('Attach link')}</Button>

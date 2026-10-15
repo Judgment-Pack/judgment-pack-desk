@@ -1,3 +1,6 @@
+import {privateQuery} from '../data/privateQuery'
+import {LoadingState} from '../ui/LoadingState'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useConfirmDiscard } from '../shell/UnsavedChanges'
 import { sourceMessage } from '../i18n/source'
@@ -8,7 +11,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useChats } from '../chat/ChatProvider'
 import { answer, deskFetch } from '../files/client'
 import { Button } from '../ui/Button'
-import { Dialog, DialogActions } from '../ui/Dialog'
+import { Dialog } from '../ui/Dialog'
 import { Field, FieldGroup } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { SettingsSection } from '../ui/SettingsSection'
@@ -22,7 +25,7 @@ import { ProjectHistorySettings } from './ProjectHistorySettings'
 export function ChatDataSettings() {
   useLocale()
   const queryClient = useQueryClient()
-  const query = useQuery({ queryKey, queryFn: ({ signal }) => deskFetch('/api/storage', { signal }).then(answer<ChatStorageStatus>), retry: false })
+  const query = useQuery({ ...privateQuery, queryKey, queryFn: ({ signal }) => deskFetch('/api/storage', { signal }).then(answer<ChatStorageStatus>), retry: false })
   const { store, saving, dirty, error: chatError } = useChats()
   const [edit, setEdit] = useState<ChatStorageStatus | null>(null)
   const [path, setPath] = useState('')
@@ -53,8 +56,8 @@ export function ChatDataSettings() {
     } finally { setMoving(false) }
   }
   return <><SettingsSection title={msg("Chat data")} variant="plain" description={status ? status.managed ? msg('This desk · Conversations, drafts and retained source files.') : msg('Shared project history on this computer. Each project keeps its own conversations.') : undefined}>
-    {query.isPending && <p role="status" className={styles.caption}>{msg("Reading chat storage…")}</p>}
-    {query.isError && <div role="alert"><p>{query.error.message}</p><Button onClick={() => void query.refetch()}>{msg("Retry")}</Button></div>}
+    {query.isPending && <LoadingState>{msg('Reading chat storage…')}</LoadingState>}
+    {query.isError && <SettingsFeedback tone="error" actions={<Button onClick={() => void query.refetch()}>{msg("Retry")}</Button>}>{query.error.message}</SettingsFeedback>}
     {status && <div className={styles.details}>
       <CardField label={msg("Location")}><code>{status.path}</code></CardField>
       <CardField label={msg("Usage")}>{formatStorageBytes(status.bytes)} · {status.projectCount} {status.projectCount === 1 ? msg("project") : msg("projects")}</CardField>
@@ -63,13 +66,12 @@ export function ChatDataSettings() {
       <p className={styles.caption}>{msg('Removing a file from a message does not erase its retained original. Unsent and canceled uploads also remain in private storage and backups.')}</p>
       {status.legacy && <p className={styles.caption}>{msg("Your existing history is still in the settings folder. You can move it to a dedicated data folder.")}</p>}
       {status.previousPath && <p className={styles.caption}><Message text={"Recovery copy: <0/>. New changes are saved only to the current location."} slots={[<code>{status.previousPath}</code>]} /></p>}
-      <div className={styles.actions}><Button ref={opener} disabled={status.managed || blocked || query.isFetching || query.isError || Boolean(status.problem)} onClick={() => { setEdit(status); setPath(status.legacy ? status.recommendedPath : ''); setError('') }}>{msg("Change location…")}</Button>
+      <SettingsActions feedback={<SettingsFeedback tone="success">{notice && systemMessage(notice)}</SettingsFeedback>}><Button ref={opener} disabled={status.managed || blocked || query.isFetching || query.isError || Boolean(status.problem)} onClick={() => { setEdit(status); setPath(status.legacy ? status.recommendedPath : ''); setError(''); setNotice('') }}>{msg("Change location…")}</Button>
         <Button variant="quiet" disabled={query.isFetching} onClick={() => void query.refetch()}>{msg("Refresh usage")}</Button>
-        {!status.managed && status.projectBytes === 0 && <ProjectHistorySettings blocked={blocked || moving} onLinked={() => window.location.reload()} />}</div>
+        {!status.managed && status.projectBytes === 0 && <ProjectHistorySettings blocked={blocked || moving} onLinked={() => window.location.reload()} />}</SettingsActions>
       {blocked && <p className={styles.caption}>{msg("Finish or stop active work and save chat changes before moving data.")}</p>}
     </div>}
-    {(chatError || status?.problem) && <p role="alert">{chatError || status?.problem}</p>}
-    {notice && <p role="status" className={styles.caption}>{systemMessage(notice)}</p>}
+    {(chatError || status?.problem) && <SettingsFeedback tone="error">{chatError || status?.problem}</SettingsFeedback>}
     <Dialog open={edit !== null} onOpenChange={open => { if (!open && !moving) void close() }} title={msg("Move chat data")} openerRef={opener}
       description={msg("All saved chats move together. Desk verifies the copy before switching locations and keeps the original folder for recovery.")}>
       <form onSubmit={event => { event.preventDefault(); void move() }}>
@@ -78,12 +80,11 @@ export function ChatDataSettings() {
             {wiring => <Input {...wiring} autoComplete="off" spellCheck={false} value={path} disabled={moving} onChange={event => setPath(event.target.value)} />}
           </Field>
           <p className={styles.caption}>{msg("Close older Desk versions before moving. Other current Desk windows will follow the new location.")}</p>
-          {edit && edit.bytes > edit.maxMoveBytes && <p role="alert"><Message text={"This store exceeds the supported move size of <0/>."} slots={[formatStorageBytes(edit.maxMoveBytes)]} /></p>}
-          {error && <div role="alert"><p>{systemMessage(error)}</p><Button disabled={moving || query.isFetching} onClick={() => { void query.refetch().then(result => { if (result.data) { setEdit(result.data); setError('') } }) }}>{msg("Reload settings")}</Button></div>}
-          {moving && <p role="status" className={styles.caption}>{msg("Copying and verifying chat data…")}</p>}
+          {edit && edit.bytes > edit.maxMoveBytes && <SettingsFeedback tone="error"><Message text={"This store exceeds the supported move size of <0/>."} slots={[formatStorageBytes(edit.maxMoveBytes)]} /></SettingsFeedback>}
+
         </FieldGroup>
-        <DialogActions><Button disabled={moving} onClick={()=>void close()}>{msg("Cancel")}</Button>
-          <Button type="submit" variant="primary" disabled={moving || blocked || !path.trim() || path.trim() === edit?.path || Boolean(edit && edit.bytes > edit.maxMoveBytes)}>{moving ? msg("Moving…") : msg("Move data")}</Button></DialogActions>
+        <SettingsActions feedback={<SettingsFeedback tone={error?'error':'neutral'} actions={error&&<Button disabled={moving || query.isFetching} onClick={() => { void query.refetch().then(result => { if (result.data) { setEdit(result.data); setError('') } }) }}>{msg('Reload settings')}</Button>}>{error?systemMessage(error):moving?msg('Copying and verifying chat data…'):null}</SettingsFeedback>}><Button disabled={moving} onClick={()=>void close()}>{msg("Cancel")}</Button>
+          <Button type="submit" variant="primary" disabled={moving || blocked || !path.trim() || path.trim() === edit?.path || Boolean(edit && edit.bytes > edit.maxMoveBytes)}>{moving ? msg("Moving…") : msg("Move data")}</Button></SettingsActions>
       </form>
     </Dialog>
   </SettingsSection>

@@ -262,7 +262,7 @@ describe('the model capability the desk binds', () => {
       // A response that knows where it came from, exactly as a browser's does.
       const real = new Response('{"ok":true}', {
         status: 200,
-        headers: { 'content-type': 'application/json', 'x-echo': String(url) }
+        headers: { 'content-type': 'application/json', 'x-echo': String(url), 'x-request-id':'req_fixture', 'retry-after':'2', 'request-id':'https://private.example' }
       })
       Object.defineProperty(real, 'url', { value: String(url), configurable: true })
       return real
@@ -279,6 +279,9 @@ describe('the model capability the desk binds', () => {
     expect(await answered.text()).toBe('{"ok":true}')
     // And the header the endpoint used to smuggle it back is not.
     expect(answered.headers.get('x-echo')).toBeNull()
+    expect(answered.headers.get('x-request-id')).toBe('req_fixture')
+    expect(answered.headers.get('retry-after')).toBe('2')
+    expect(answered.headers.get('request-id')).toBeNull()
   })
 
   it('gives back a body stream of its own, not the one the answer arrived on', async () => {
@@ -424,7 +427,7 @@ describe('the model capability the desk binds', () => {
     const reachable = everythingReachable(failure)
     expect(reachable).not.toContain('a-secret-session-id')
     expect(reachable).not.toContain('/api/assistant/relay')
-    expect((failure as Error).message).toContain('could not be made')
+    expect(failure).toMatchObject({failure:{code:'connection-lost',outcome:'unknown'}})
   })
 
   it('reports an abort as itself, so a loop can tell stopped from failed', async () => {

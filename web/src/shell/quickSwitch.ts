@@ -9,7 +9,7 @@ export function searchItems(items: SwitchItem[], query: string, recent: string[]
     .sort((a,b) => rank(a)-rank(b) || a.title.localeCompare(b.title)).slice(0,60)
 }
 export function switchHref(path: string, search: string): string | undefined {
-  if (path === '/packs') { const folder = new URLSearchParams(search).get('folder'); return folder ? `/packs?folder=${encodeURIComponent(folder)}` : undefined }
+  if (path === '/library') { const folder = new URLSearchParams(search).get('folder'); return folder ? `/library?folder=${encodeURIComponent(folder)}` : undefined }
   return /^\/(packs\/(drafts\/)?[^/]+|graphs\/[^/]+|chats\/[^/]+)(\/evaluate|\/matrix)?$/.test(path) && path !== '/packs/new'
     ? path.replace(/\/(evaluate|matrix)$/, '') : undefined
 }

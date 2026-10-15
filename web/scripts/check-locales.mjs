@@ -34,7 +34,8 @@ function inspect(file) {
   }
   walk(ast, node => {
     let argument
-    if (node.type === 'CallExpression' && ['msg', 'sourceMessage'].includes(node.callee.name)) argument = node.arguments[0]
+    if (node.type === 'CallExpression' && ['msg', 'sourceMessage', 'toolInputFailure'].includes(node.callee.name)) argument = node.arguments[0]
+    if (node.type === 'CallExpression' && node.callee.name === 'authoredFailure') argument = node.arguments[1]
     if (node.type === 'JSXOpeningElement' && node.name.name === 'Message') argument = node.attributes.find(a => a.name?.name === 'text')?.value
     if (!argument) return
     const key = value(argument)
@@ -50,6 +51,8 @@ function scan(dir) {
   }
 }
 scan(sourceRoot)
+// Shared Go/browser failure messages have one canonical catalogue.
+for (const entry of Object.values(JSON.parse(fs.readFileSync(new URL('../../internal/aifailure/catalog.json', import.meta.url), 'utf8')).failures)) messages.set(entry.message, ['internal/aifailure/catalog.json'])
 // These messages are selected from durable state rather than passed as literals.
 for (const text of ['Copied', 'Select the response text to copy it.']) if (!messages.has(text)) messages.set(text, ['chat/MessageRenderer.tsx'])
 const enFile = path.join(localeRoot, 'en.json')

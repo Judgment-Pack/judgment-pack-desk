@@ -480,13 +480,20 @@ func (s *Server) openStamping(create bool) (*os.Root, error) {
 	if !stampingName.MatchString(name) {
 		return nil, fmt.Errorf(stampingCustodyWords, "this desk has no name its settings can be kept under")
 	}
-	root, _, err := openOwnFolder(s.assistant.root, []string{stampingDirName, name}, create, stampingKept)
+	base, parts := s.assistant.root, []string{stampingDirName, name}
+	if s.home != nil {
+		base, parts = s.root, []string{".desk-private", stampingDirName}
+	}
+	root, _, err := openOwnFolder(base, parts, create, stampingKept)
 	return root, err
 }
 
 // stampingPath is the path the runtime is given a file of this desk's
 // stamping folder by.
 func (s *Server) stampingPath(name string) string {
+	if s.home != nil {
+		return filepath.Join(s.projectDir, ".desk-private", stampingDirName, name)
+	}
 	return filepath.Join(s.configDir, stampingDirName, s.signingKeyName(), name)
 }
 
@@ -1035,6 +1042,13 @@ func (st *stampScheduler) knowChecked(checkpoint *checkpointHead, since uint64) 
 // in Desk's log once.
 func (st *stampScheduler) wake() {
 	s := st.s
+	if !s.location.use.TryRLock() {
+		return
+	}
+	defer s.location.use.RUnlock()
+	if s.projectHasMoved() {
+		return
+	}
 	s.stampingMu.RLock()
 	settings, found, err := s.readStamping()
 	s.stampingMu.RUnlock()

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import {PageLoading} from '../ui/PageLoading'
+import { useMemo } from 'react'
 import { PackAssistant } from '../chat/PackAssistant'
 import { useInspectorPortal } from '../shell/InspectorSlot'
 import { useInspectorPresentation } from '../shell/InspectorPresentation'
@@ -19,14 +20,13 @@ export function PackTests() {
     [params] = useSearchParams()
   const summary = inventory.data?.packs?.find((p) => p.id === packId)
   const shell = useShellState()
-  const [assistantBusy, setAssistantBusy] = useState(false)
   const [open, setOpen] = useBuilderPreference<boolean>('assistant-open', true)
   useInspectorPresentation(useMemo(() => ({ title: msg('Assistant'), contextTitle: title, workspaceTools: true,
     open, onOpenChange: setOpen, width: shell.inspectorWidth ?? 400, onResize: shell.resizeInspector,
     onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640
   }), [title, open, setOpen, shell.inspectorWidth, shell.resizeInspector, shell.resetInspectorWidth]))
-  const assistant = useInspectorPortal(pack.data ? <PackAssistant key={packId} packId={packId} title={title}
-    path={summary?.path} draft={pack.data.raw} editing={false} busy={() => assistantBusy ? msg('Designing tests…') : ''} diagnostics={undefined}/> : null)
+  const assistant = useInspectorPortal(pack.data ? <div className={styles.retainedAssistant}><PackAssistant key={packId} packId={packId} title={title}
+    path={summary?.path} draft={pack.data.raw} editing={false} busy={() => ''} diagnostics={undefined}/></div> : null)
   return (
     <article className={styles.root} data-layout="page">
       {assistant}
@@ -34,12 +34,11 @@ export function PackTests() {
       {pack.error ? (
         <p role="alert">{pack.error.message}</p>
       ) : !pack.data ? (
-        <p role="status">{msg('Loading pack…')}</p>
+        <PageLoading>{msg('Loading pack…')}</PageLoading>
       ) : (
         <TestsContent
           key={packId}
           owner={packId}
-          onAssistantBusyChange={setAssistantBusy}
           document={pack.data.document}
           text={pack.data.raw}
           title={title}

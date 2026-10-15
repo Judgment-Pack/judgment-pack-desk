@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom'
 /**
  * The bootstrap: **one exchange per page load, and nothing else touches the id.**
  *
@@ -14,7 +15,7 @@
  * the wire.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpProvider, removeTheLaunchHash, socketProtocols, socketURL } from './McpProvider'
 import {
@@ -33,15 +34,21 @@ import {
 } from './session'
 import { deskFetch, listFiles } from '../files/client'
 import { bindModelCall, openAssistantConnection } from '../assistant/session'
-import { BlockedNotice, useBlockingError } from '../shell/ConnectionNotices'
+import { ConnectionStatus } from '../shell/ConnectionNotices'
 
 /**
  * The shell's own notice, so that "the terminal UI is rendered" is a statement
  * about what a person sees rather than about a state member.
  */
 function Notice() {
-  const error = useBlockingError()
-  return error === null ? <div data-connected="yes" /> : <BlockedNotice error={error} />
+  return <MemoryRouter><footer><ConnectionStatus/></footer></MemoryRouter>
+}
+
+// These existing cases exercise the legacy handoff after its public mode check.
+function legacyFetch(handler: (...args: any[]) => any) {
+  vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => String(input)==='/api/auth/status'
+    ? Promise.resolve(Response.json({enabled:false,unavailable:false,sessionActive:false,mode:'setup'}))
+    : handler(input,init))
 }
 
 /** One request as the stub saw it. */
@@ -64,7 +71,7 @@ const STORED = '11111111222222223333333344444444555555556666666'
  */
 function record(answer: (seen: Seen) => Promise<Response> | Response) {
   const seen: Seen[] = []
-  vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
+  legacyFetch( async (input: unknown, init?: RequestInit) => {
     const headers = (init?.headers ?? {}) as Record<string, string>
     const call: Seen = {
       url: String(input),
@@ -195,7 +202,7 @@ describe('the one exchange', () => {
     // was still open.
     window.sessionStorage.setItem(sessionStorageKey(), STORED)
     let refusal: Response | undefined
-    vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
+    legacyFetch( async (input: unknown, init?: RequestInit) => {
       if (String(input) === '/api/session' && init?.method === 'POST') {
         refusal = refused('no-handoff', { code: 'no-handoff' })
         return refusal
@@ -460,9 +467,8 @@ describe('every chassis call awaits it', () => {
     })
 
     const listing = listFiles()
-    // The exchange is out; the call that is waiting on it is not.
-    await Promise.resolve()
-    expect(exchanges(seen)).toHaveLength(1)
+    // After the public mode check, only the exchange may be in flight.
+    await waitFor(()=>expect(exchanges(seen)).toHaveLength(1))
     expect(seen.filter((c) => c.url !== '/api/session')).toHaveLength(0)
 
     settle!()
@@ -518,7 +524,7 @@ describe('a refusal after the bootstrap is terminal', () => {
 
   it('lets go of the 401 it refused on, on a chassis call too', async () => {
     const refusals: Response[] = []
-    vi.stubGlobal('fetch', async (input: unknown) => {
+    legacyFetch( async (input: unknown) => {
       if (String(input) === '/api/session') return json({ id: MINTED })
       const refusal = refused('unauthorized', { error: 'no session', code: 'unauthorized' })
       refusals.push(refusal)
@@ -675,7 +681,7 @@ describe('a refusal after the bootstrap is terminal', () => {
     })
     await expect(
       bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
-    ).rejects.toThrow(/could not be made/)
+    ).rejects.toMatchObject({failure:{code:'connection-lost',outcome:'unknown'}})
     expect(sessionEnded()).toBeNull()
   })
 
@@ -965,6 +971,7 @@ describe('the terminal state reaches the sockets, not only the requests', () => 
     await expect(listFiles()).rejects.toThrow(NoSession)
     expect(seen).toHaveLength(settled)
 
+    fireEvent.click(await screen.findByRole('button', {name: 'Connection status: not connected'}))
     // The notice is rendered, and **once**: the sentence is in the document one
     // time however many times the effect was set up.
     await waitFor(() =>
@@ -1111,4 +1118,40 @@ describe('the address the launch leaves behind', () => {
 
     window.history.replaceState(null, '', was)
   })
+})
+
+describe('password and provider homepage bootstrap',()=>{
+ it.each(['password','provider'])('shows %s sign-in without a failed session exchange',async mode=>{
+  const fetcher=vi.fn(async(_url:unknown,_init?:RequestInit)=>Response.json({enabled:true,unavailable:false,sessionActive:false,mode}))
+  vi.stubGlobal('fetch',fetcher)
+  expect(await Promise.all([bootstrap(),bootstrap()])).toEqual([null,null])
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(fetcher.mock.calls[0]?.[0]).toBe('/api/auth/status')
+  expect(fetcher.mock.calls[0]?.[1]).toMatchObject({method:'GET',credentials:'omit',redirect:'error'})
+ })
+ it('keeps only a confirmed saved session and never mints another one',async()=>{
+  sessionStorage.setItem(sessionStorageKey(),STORED)
+  const fetcher=vi.fn(async(_url:unknown,_init?:RequestInit)=>Response.json({enabled:true,unavailable:false,sessionActive:true,mode:'password'}))
+  vi.stubGlobal('fetch',fetcher)
+  expect(await bootstrap()).toBe(STORED)
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(fetcher.mock.calls[0]?.[1]).toMatchObject({headers:{Authorization:`Bearer ${STORED}`},credentials:'omit'})
+  expect(sessionStorage.getItem(sessionStorageKey())).toBe(STORED)
+ })
+ it('discards a saved session rejected by the status check without a private read',async()=>{
+  sessionStorage.setItem(sessionStorageKey(),STORED)
+  const fetcher=vi.fn(async(_url:unknown,_init?:RequestInit)=>Response.json({enabled:true,unavailable:false,sessionActive:false,mode:'password'}))
+  vi.stubGlobal('fetch',fetcher)
+  await expect(listFiles()).rejects.toThrow(NoSession)
+  expect(sessionStorage.getItem(sessionStorageKey())).toBeNull()
+  expect(fetcher).toHaveBeenCalledTimes(1)
+ })
+ it.each([{}, {enabled:true,unavailable:false}, {enabled:true,unavailable:true,sessionActive:true}])('does not fall back to minting on invalid/unavailable sign-in status %#',async body=>{
+  sessionStorage.setItem(sessionStorageKey(),STORED)
+  const fetcher=vi.fn(async(_url:unknown,_init?:RequestInit)=>Response.json(body))
+  vi.stubGlobal('fetch',fetcher)
+  expect(await bootstrap()).toBeNull()
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(sessionStorage.getItem(sessionStorageKey())).toBe(STORED)
+ })
 })

@@ -1127,7 +1127,7 @@ func TestTheRuntimesRefusalOfAKeysFolderWithTheRuntime(t *testing.T) {
 			t.Fatalf("the panel answered %d %s", status, data)
 		}
 		if answer.Signing.State != signingChecked || answer.Signing.Status != "failed" ||
-			!strings.HasPrefix(answer.Signing.Detail, "The signing key the audit member's signingKey names, …, is refused, so records are written unsigned: the directory … on the signing key's path can be written by its group or by other users (mode 0777)") {
+			!strings.Contains(answer.Signing.Detail, "the expected public key is not 64 lowercase hexadecimal characters") {
 			t.Errorf("the panel shows the key check %+v", answer.Signing)
 		}
 		if answer.Keys == nil || answer.Keys.State != keysUnread || !strings.HasPrefix(answer.Keys.Problem, "Desk could not open the folder it keeps signing keys in: Desk's signing folder is writable by group or others (mode 0777)") {
@@ -1246,6 +1246,9 @@ func TestASignedDeskWithTheRuntime(t *testing.T) {
 		t.Errorf("the panel shows the keys %+v", answer.Keys)
 	}
 	wantCheck := auditSigning{State: signingChecked, Status: "passed", Detail: "Chained records are signed with key " + public.KeyID + ", named by the audit member's signingKey."}
+	if runtimeSupportsBoundRepair(schema.Tool.Version) {
+		wantCheck.Detail = strings.TrimSuffix(wantCheck.Detail, ".") + "; it is the expected key JPACK_SIGNING_PUBLIC_KEY names."
+	}
 	if answer.Signing == nil || mustJSON(*answer.Signing) != mustJSON(wantCheck) {
 		t.Errorf("the panel shows the key check %+v, want %+v", answer.Signing, wantCheck)
 	}

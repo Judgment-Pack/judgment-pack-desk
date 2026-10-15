@@ -1,3 +1,9 @@
+import {RECOVER_REPEATED_WORK_INSTRUCTIONS,REPEATED_WORK_INSTRUCTIONS} from '../../execution/progress'
+import {canFinishResponse,completionFailureCode,FINISH_RESPONSE_INSTRUCTIONS,modelCompletion,type ModelCompletion} from '../../completion'
+import {failureEvent,authoredFailure,toolFailureResult,normalizeFailure,AIFailureError} from '../../failures'
+import {ExecutionPaused} from '../../execution/state'
+import {managedContext,contextOf} from '../../context/managed'
+import { readDelegationRequest } from '../../delegationContract'
 import { assistantLanguageInstructions } from '../../../i18n/assistantLanguage'
 /**
  * The `vercel` engine's loop: the Vercel AI SDK v7, behind the desk's contract.
@@ -45,9 +51,10 @@ import { assistantLanguageInstructions } from '../../../i18n/assistantLanguage'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { readModelQuestion } from '../../questions'
+import { questionFailureResult } from '../../questionFailure'
 import { dynamicTool, jsonSchema, stepCountIs, streamText } from 'ai'
 import {
-  MAX_TURNS,
   SYSTEM,
   CONVERSATION_SYSTEM,
   TEST_DESIGN_SYSTEM,
@@ -79,7 +86,7 @@ import {
 import { refusedSchemaKeyword, refusedSchemaSentence } from '../../geminiSchema'
 import { eventChannel } from './channel'
 import { placeholderBase, relayFetch, signatureLedger, signatureOf } from './relay'
-import type { LanguageModel, ToolSet } from 'ai'
+import type { LanguageModel, ToolSet, ModelMessage } from 'ai'
 import type { AssistantEngine, EndpointKind } from '../../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, McpTool, McpToolResult, HostTool } from '../../engine'
 import type { CritiqueRecorder } from '../../refutation'
@@ -347,44 +354,11 @@ export function claimPromises(result: object): number {
   return claimed
 }
 
-/**
- * One sentence for a failure, with no address in it.
- *
- * The status and the endpoint's own sentence, where the SDK's error carries
- * them: "this desk has no key stored", "the endpoint refused the request" and
- * "the endpoint is broken" are different things to go and fix, and they are
- * indistinguishable once the body is thrown away. The **address is not** in it:
- * the SDK's error carries the placeholder URL, which says nothing useful and
- * reads as a real host.
- */
-function describe(cause: unknown): string {
-  const error = cause as {
-    name?: string
-    message?: string
-    statusCode?: unknown
-    responseBody?: unknown
-  }
-  if (typeof error?.statusCode === 'number') {
-    const said = endpointSentence(error.responseBody)
-    return `the model endpoint answered ${error.statusCode}${said === '' ? '' : `: ${said}`}`
-  }
-  return `${error?.name ?? 'Error'}: ${error?.message ?? String(cause)}`
-}
-
-/** `error.message`, `message` or a bare `error` string, out of an answer body. */
-function endpointSentence(body: unknown): string {
-  if (typeof body !== 'string') return ''
-  try {
-    const parsed = JSON.parse(body) as { error?: { message?: string } | string; message?: string }
-    const said =
-      typeof parsed?.error === 'string'
-        ? parsed.error
-        : (parsed?.error?.message ?? parsed?.message)
-    if (typeof said === 'string') return said
-  } catch {
-    /* not JSON — the raw text is the best there is */
-  }
-  return body.slice(0, 200)
+// Provider text is inspected only for the existing bounded capability-negotiation
+// rules. It is never used as a user-facing failure or persisted diagnostic.
+function endpointSentence(body:unknown):string {
+ if(typeof body!=='string'||body.length>16384)return ''
+ try{const value=JSON.parse(body);return typeof value?.error==='string'?value.error:typeof value?.error?.message==='string'?value.error.message:typeof value?.message==='string'?value.message:''}catch{return ''}
 }
 
 /**
@@ -396,7 +370,11 @@ function endpointSentence(body: unknown): string {
  * Stop has not been told about a failure. A consumer that stops listening is
  * owed no terminal event and gets none: its `return()` closes the generator.
  */
-export function runVercel(
+export function runVercel(session:AssistantSession,id:AssistantEngine):AsyncIterable<AssistantEvent> {
+ return managedContext(session,held=>runVercelLoop(held,id))
+}
+
+function runVercelLoop(
   session: AssistantSession,
   /** The id the registry loaded this engine under. See `runBuiltin`. */
   id: AssistantEngine
@@ -431,6 +409,7 @@ export function runVercel(
   // The runtime, reachable only while the run is: read before dispatch, so
   // nothing reaches `jpack mcp` after the consumer has left, and bounded, so a
   // call in flight cannot hold the cleanup that is ending it.
+  const context = contextOf(session)
   const callTool = guardedCallTool(session, gate.signal)
   // The tier, held by the desk. This adapter asks it for members and pushes
   // whatever notice it hands back; it never decides what a refusal meant.
@@ -462,6 +441,9 @@ export function runVercel(
   // the order the SDK refines and then executes them, so a step carrying two
   // evaluates still pairs each call with its own arguments.
   const asked: unknown[] = []
+  const inputPause = new AbortController()
+  const executionSignal = AbortSignal.any([gate.signal, inputPause.signal])
+  let awaitingInput = false
 
   /**
    * One whole attempt at the session.
@@ -492,6 +474,22 @@ export function runVercel(
      * length of the pass is that the answers are also shown to the recorder.
      */
     let recording: CritiqueRecorder | null = null
+    let toolsClosed=false
+    let progressStep:'work'|'recover'|'finish'='work'
+    const turnLimit=context.execution.remaining
+    const finalInstructions='\nThis is the final request within this turn budget. Tools are unavailable. Answer the current question using results already obtained. If the available information is insufficient, explain exactly what is known and what remains missing. Do not invent results, claim unsaved changes, or turn a diagnostic question into a new proposal.'
+    // Refusals are journaled as not-started operations, including the exact
+    // attempted arguments. They never reach a host tool or the runtime.
+    const rejectToolStep=async(name:string,args:unknown):Promise<McpToolResult|undefined>=>{
+      if(!toolsClosed&&!context.execution.progress.rejects(name,args))return
+      const repetition=context.execution.progress.stalled
+      const result=toolFailureResult(new AIFailureError({version:1,code:repetition?'repeated-work':'invalid-response',source:'desk',outcome:'not-started',detail:toolsClosed?'This request is reserved for a final answer. This tool call was not executed. Use completed results or explain what remains.':'This call repeats completed work with the same arguments and was not executed. Use its retained result, choose a different concrete action, or explain the remaining blocker.'}))
+      const callId=crypto.randomUUID()
+      await deliver({type:'tool_call',callId,name,args})
+      await deliver({type:'tool_result',callId,name,isError:true,text:result.content[0]!.text,structured:result.structuredContent})
+      return result
+    }
+
     // A fresh attempt takes nothing from the one before it.
     asked.length = 0
     const tools = toolsFor(session.model.family, session.tools, async (name, input) => {
@@ -505,6 +503,10 @@ export function runVercel(
         string,
         unknown
       >
+      if (awaitingInput) throw new DOMException('Waiting for input', 'AbortError')
+      executionSignal.throwIfAborted()
+      const refusal=await rejectToolStep(name,args)
+      if(refusal)return refusal
       const correlation = session.interactive ? { callId: crypto.randomUUID() } : {}
       await deliver({ type: 'tool_call', ...correlation, name, args })
       let answer: McpToolResult
@@ -518,11 +520,9 @@ export function runVercel(
           const text = 'the session was stopped before this call was made; nothing was written'
           return { content: [{ type: 'text', text }], isError: true }
         }
-        const text =
-          `refused: ${(cause as Error).message}. This assistant proposes; it never ` +
-          `writes a file and never calls a tool it was not offered.`
-        await deliver({ type: 'tool_result', ...correlation, name, isError: true, text })
-        return { content: [{ type: 'text', text }], isError: true }
+        const result=toolFailureResult(cause)
+        await deliver({type:'tool_result',...correlation,name,isError:true,text:result.content[0]!.text,structured:result.structuredContent})
+        return result
       }
       const said = outcome(answer)
       await deliver({
@@ -537,26 +537,50 @@ export function runVercel(
       // reached: the refusal path above returns before it, so a call the gate
       // refused is a `guardrail` line and never a check.
       recording?.saw(name, said.text)
-      return answer
+      return context.result(name, answer)
     }, session.hostTools, async (tool, input) => {
       // A host tool runs on the page, under the run's own signal: a stopped run
       // stops it, and its answer is reported in the same two events a runtime
       // answer earns. It is never a check the critic counts — the runtime's
       // verdicts are the runtime's — and it never reaches the recorder.
       const args = (input ?? {}) as Record<string, unknown>
+      if (awaitingInput) throw new DOMException('Waiting for input', 'AbortError')
+      executionSignal.throwIfAborted()
+      const refusal=await rejectToolStep(tool.name,args)
+      if(refusal)return refusal
       const correlation = session.interactive ? { callId: crypto.randomUUID() } : {}
-      await deliver({ type: 'tool_call', ...correlation, name: tool.name, args })
+      if (!tool.interaction) await deliver({ type: 'tool_call', ...correlation, name: tool.name, args })
       let answer: McpToolResult
       try {
-        answer = await withAbort(() => tool.execute(args, gate.signal), gate.signal)
+        if (tool.interaction === 'delegation') {
+          const request = readDelegationRequest(args)
+          awaitingInput = true
+          await deliver({type:'delegation_requested',request})
+          inputPause.abort()
+          throw new DOMException('Delegation handoff', 'AbortError')
+        }
+        if (tool.interaction === 'question') {
+          const question = readModelQuestion(args)
+          if (awaitingInput) throw new DOMException('Waiting for input', 'AbortError')
+          awaitingInput = true
+          await deliver({type:'user_question', id:crypto.randomUUID(), question})
+          inputPause.abort()
+          throw new DOMException('Waiting for input', 'AbortError')
+        }
+        answer = await withAbort(() => tool.execute(args, executionSignal), executionSignal)
       } catch (cause) {
         if (isCancelled(cause)) {
           const text = 'the session was stopped before this call was made; nothing was written'
           return { content: [{ type: 'text', text }], isError: true }
         }
-        const text = `refused: ${(cause as Error).message}`
-        await deliver({ type: 'tool_result', ...correlation, name: tool.name, isError: true, text })
-        return { content: [{ type: 'text', text }], isError: true }
+        if (tool.interaction === 'question') {
+          const result = questionFailureResult(cause)
+          await deliver({type:'tool_result',...correlation,name:tool.name,isError:true,text:result.content[0]!.text,structured:result.structuredContent})
+          return result
+        }
+        const result=toolFailureResult(cause)
+        await deliver({type:'tool_result',...correlation,name:tool.name,isError:true,text:result.content[0]!.text,structured:result.structuredContent})
+        return result
       }
       const said = outcome(answer)
       await deliver({
@@ -567,13 +591,13 @@ export function runVercel(
         text: said.text,
         ...(said.structured === undefined ? {} : { structured: said.structured })
       })
-      return answer
+      return context.result(tool.name, answer)
     })
 
     // One model and one refinement hook, shared by the loop and the critic:
     // the pass runs on the same everything, which is what makes "inside the
     // same ToolGate" structural rather than a habit.
-    const model = modelFor(session, gate.signal, ledger, onTruncated, slot)
+    const model = modelFor(session, executionSignal, ledger, onTruncated, slot)
     // See REHEARSAL_HOOK. The key is the constant, never a literal.
     const refine = {
       [REHEARSAL_TOOL]: (input: unknown) => {
@@ -584,161 +608,224 @@ export function runVercel(
     }
 
     let streamed: unknown = null
-    const result = streamText({
-      // See claimPromises: the unused browser tracing path leaks on failure.
-      telemetry: { isEnabled: false },
-      model,
-      instructions: (session.purpose === 'graph' ? GRAPH_SYSTEM : session.purpose === 'brief' ? BRIEF_SYSTEM : session.purpose === 'test-design' ? TEST_DESIGN_SYSTEM : session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM) + assistantLanguageInstructions(session.replyLanguage),
-      tools,
-      messages: [{ role: 'user', content: session.prompt }],
-      stopWhen: stepCountIs(MAX_TURNS),
-      abortSignal: gate.signal,
-      // **The tier, per step, with no agent to rebuild.** ADR-0001 credits this
-      // SDK with exactly that, and the members are the desk's table's — read
-      // fresh on every step, so a degrade or a dialect fallback takes effect on
-      // the next request rather than at the next session.
-      prepareStep: () => sdkThinking(session.model.family, slot.members()),
-      // **No retries, deliberately.** The SDK's default is two, with an
-      // exponential backoff, and its retryable set includes 409 — which is the
-      // status the *desk's own relay* answers with when no key is stored on
-      // this machine. So a refusal a person has to go and fix became three
-      // requests and six seconds of a spinner. This adapter makes one
-      // request per turn and reports what came back; two engines that answer a
-      // refusal differently is exactly what the slot exists to prevent.
-      maxRetries: 0,
-      // `streamText` does not throw: a refused request surfaces here and again
-      // as an `error` part on the stream. Both are read, and whichever arrives
-      // first is the one reported.
-      onError: (event: { error: unknown }) => {
-        streamed ??= event.error
-      },
-      [REHEARSAL_HOOK]: refine
-    })
+    let publicText = ''
+    const instructions=(session.purpose === 'graph' ? GRAPH_SYSTEM : session.purpose === 'brief' ? BRIEF_SYSTEM : session.purpose === 'test-design' ? TEST_DESIGN_SYSTEM : session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM) + assistantLanguageInstructions(session.replyLanguage)
+    const schemas=[...session.tools,...session.hostTools].map(({name,description,inputSchema})=>({name,description,inputSchema}))
+    context.reserveOutput(sdkThinking(session.model.family,slot.members()).maxOutputTokens)
+    const initialPrompt=await context.prompt(session.prompt,instructions+'\n'+context.execution.guidance(),schemas,session.context?.currentRequest)
+    let messages:ModelMessage[]=[{role:'user',content:initialPrompt}]
+    let lastMessages=messages
+    let completion:ModelCompletion|undefined
+    let lastToolCalls=0
+    let finalText=''
+    let synthesis=false
+    let steps=0
+    for(;;){
+      completion=undefined
+      lastToolCalls=0
+      const result = streamText({
+        // See claimPromises: the unused browser tracing path leaks on failure.
+        telemetry: { isEnabled: false },
+        model,
+        onChunk: async ({chunk}) => {
+          if(chunk.type==='text-delta' && session.interactive){publicText+=chunk.text;await deliver({type:'message_progress',text:streamingProse(publicText)})}
+        },
+        instructions,
+        tools,
+        messages,
+        maxOutputTokens:context.policy.outputTokens,
+        stopWhen: [stepCountIs(synthesis?1:turnLimit),()=>toolsClosed],
+        abortSignal: executionSignal,
+        // **The tier, per step, with no agent to rebuild.** ADR-0001 credits this
+        // SDK with exactly that, and the members are the desk's table's — read
+        // fresh on every step, so a degrade or a dialect fallback takes effect on
+        // the next request rather than at the next session.
+        prepareStep: async ({messages,stepNumber}) => {
+          publicText=''
+          if(session.interactive)await deliver({type:'message_progress',text:''})
+          if(synthesis)await deliver({type:'response_recovery'})
+          await context.execution.retainProgress(false)
+          progressStep=synthesis?'finish':context.execution.progress.nextStep(context.execution.remaining)
+          if(progressStep==='finish'&&context.execution.progress.stalled&&!synthesis)await deliver({type:'response_recovery'})
+          toolsClosed=synthesis||progressStep==='finish'||stepNumber>=turnLimit-1
+          const stepInstructions=instructions+'\n'+context.execution.guidance()+(synthesis?'\n'+FINISH_RESPONSE_INSTRUCTIONS:progressStep==='recover'?'\n'+RECOVER_REPEATED_WORK_INSTRUCTIONS:progressStep==='finish'?'\n'+REPEATED_WORK_INSTRUCTIONS:toolsClosed?finalInstructions:'')
+          lastMessages=await context.messages(messages,stepInstructions,schemas)
+          return {...sdkThinking(session.model.family,slot.members()),
+            ...(toolsClosed?{activeTools:[],toolChoice:'none' as const}:{}),
+            instructions:stepInstructions,messages:lastMessages}
+        },
+        // **No retries, deliberately.** The SDK's default is two, with an
+        // exponential backoff, and its retryable set includes 409 — which is the
+        // status the *desk's own relay* answers with when no key is stored on
+        // this machine. So a refusal a person has to go and fix became three
+        // requests and six seconds of a spinner. This adapter makes one
+        // request per turn and reports what came back; two engines that answer a
+        // refusal differently is exactly what the slot exists to prevent.
+        maxRetries: 0,
+        // Google's chat schema currently omits error-only chunks. Inspect only
+        // the error envelope; raw chunks never enter events or saved context.
+        includeRawChunks: session.model.family === 'gemini',
+        // `streamText` does not throw: a refused request surfaces here and again
+        // as an `error` part on the stream. Both are read, and whichever arrives
+        // first is the one reported.
+        onError: (event: { error: unknown }) => {
+          streamed ??= event.error
+        },
+        [REHEARSAL_HOOK]: refine
+      })
 
-    // **Before anything is awaited, and the only claim there is.** Every
-    // promise-valued member of the result is claimed the moment the result
-    // exists, so a call that fails produces no rejection the page cannot catch.
-    // Nothing below reads one of those members without awaiting it, which is
-    // the other half of the same rule. See `claimPromises`.
-    claimPromises(result)
+      // **Before anything is awaited, and the only claim there is.** Every
+      // promise-valued member of the result is claimed the moment the result
+      // exists, so a call that fails produces no rejection the page cannot catch.
+      // Nothing below reads one of those members without awaiting it, which is
+      // the other half of the same rule. See `claimPromises`.
+      claimPromises(result)
 
-    // The **last** step's text, not every step's: a session that reasoned aloud
-    // before calling a tool would otherwise have that prose concatenated onto
-    // the message the proposal is read out of.
-    let final = ''
-    /** How many steps have started, so a turn boundary can be recognised. */
-    let steps = 0
-    /** One reasoning passage, accumulated so `done` can carry the whole of it. */
-    let reasoning = ''
-    // **Read through the run's signal, not only the SDK's.** `abortSignal`
-    // makes the SDK end its own stream; this makes the *read* end whatever the
-    // SDK decides to do, which is the same rule every other await in this loop
-    // is held to.
-    const parts = result.stream[Symbol.asyncIterator]()
-    for (;;) {
-      const step = await withAbort(() => parts.next(), gate.signal)
-      if (step.done === true) break
-      const part = step.value
-      if (part.type === 'start-step') {
-        // A step boundary is the end of the turn before it. ADR-0001's second
-        // unmeasurable state — "no thinking block after the first turn" — is
-        // decided here, by the desk, and said once.
-        if (steps > 0) {
-          // `final` still holds the step that just ended: whether it produced
-          // an answer of its own is half the evidence a turn carries.
-          const noticed = slot.turnEnded(final !== '')
-          if (noticed !== null) await deliver(noticed)
+      // The **last** step's text, not every step's: a session that reasoned aloud
+      // before calling a tool would otherwise have that prose concatenated onto
+      // the message the proposal is read out of.
+      let final = ''
+      /** How many steps have started, so a turn boundary can be recognised. */
+      /** One reasoning passage, accumulated so `done` can carry the whole of it. */
+      let reasoning = ''
+      // **Read through the run's signal, not only the SDK's.** `abortSignal`
+      // makes the SDK end its own stream; this makes the *read* end whatever the
+      // SDK decides to do, which is the same rule every other await in this loop
+      // is held to.
+      const parts = result.stream[Symbol.asyncIterator]()
+      for (;;) {
+        const step = await withAbort(() => parts.next(), executionSignal)
+        if (step.done === true) break
+        const part = step.value
+        if (part.type === 'start-step') {
+          // A step boundary is the end of the turn before it. ADR-0001's second
+          // unmeasurable state — "no thinking block after the first turn" — is
+          // decided here, by the desk, and said once.
+          if (steps > 0) {
+            // `final` still holds the step that just ended: whether it produced
+            // an answer of its own is half the evidence a turn carries.
+            const noticed = slot.turnEnded(final !== '')
+            if (noticed !== null) await deliver(noticed)
+          }
+          // A turn boundary is where a reasoning block's signature is finished.
+          // See `signatureLedger`.
+          ledger.boundary()
+          steps += 1
+          lastToolCalls=0
+          completion=undefined
+          final = ''
+          continue
         }
-        // A turn boundary is where a reasoning block's signature is finished.
-        // See `signatureLedger`.
-        ledger.boundary()
-        steps += 1
-        final = ''
-        if (session.interactive) await deliver({ type: 'message_progress', text: '' })
-        continue
-      }
-      if (part.type === 'error') {
-        streamed ??= (part as { error: unknown }).error
-        continue
-      }
-      // **Reasoning is reported whatever the tier is.** The tier is what this
-      // desk *asks* for, and this chunk asks for nothing; but a model that
-      // always thinks reasons anyway, and an endpoint that returns
-      // `reasoning_content` on its own default behaviour is the ordinary case
-      // rather than the exotic one. An adapter that dropped those parts would
-      // be deciding, on the desk's behalf, that what the model said about its
-      // own reasoning is not worth showing.
-      if (part.type === 'reasoning-delta') {
-        const text = (part as { text?: string }).text ?? ''
-        reasoning += text
-        // Every signature fragment, as it arrives, wherever this family's
-        // provider puts one. See `signatureLedger` and `signatureOf`.
-        const carried = signatureOf(session.model.family, part)
-        if (carried !== undefined) {
-          ledger.fragment(String((part as { id?: unknown }).id ?? ''), carried)
+        if(part.type==='finish-step'){
+          completion=modelCompletion(part.finishReason,part.usage)
+          context.execution.recordCompletion(completion,synthesis?'synthesis':'work')
+          continue
         }
-        if (text !== '') await deliver({ type: 'reasoning', text, done: false })
-        continue
-      }
-      if (part.type === 'reasoning-end') {
-        // The whole of it, once, so a reader has the passage rather than the
-        // pieces — which is the shape the contract's `done` marks.
-        await deliver({ type: 'reasoning', text: reasoning, done: true })
-        reasoning = ''
-        slot.sawReasoning()
-        continue
-      }
-      // **A signed function call is ledgered too.** On the Gemini wire the
-      // signature that matters most rides on the first `functionCall` part of a
-      // turn rather than on a summary, and the SDK surfaces it in the same
-      // provider metadata. Read off `tool-call` and not off `tool-input-*`,
-      // which repeat the same value three times before it.
-      if (part.type === 'tool-call') {
-        const onCall = signatureOf(session.model.family, part)
-        if (onCall !== undefined) {
-          ledger.fragment(String((part as { toolCallId?: unknown }).toolCallId ?? ''), onCall)
+        if (part.type === 'raw') {
+          const raw=part.rawValue as {error?:unknown}|null
+          if(session.model.family==='gemini'&&raw&&typeof raw==='object'&&raw.error!==undefined)streamed??=new AIFailureError({...normalizeFailure(raw.error,'model'),outcome:'unknown'})
+          continue
+        }
+        if (part.type === 'error') {
+          streamed ??= (part as { error: unknown }).error
+          continue
+        }
+        // **Reasoning is reported whatever the tier is.** The tier is what this
+        // desk *asks* for, and this chunk asks for nothing; but a model that
+        // always thinks reasons anyway, and an endpoint that returns
+        // `reasoning_content` on its own default behaviour is the ordinary case
+        // rather than the exotic one. An adapter that dropped those parts would
+        // be deciding, on the desk's behalf, that what the model said about its
+        // own reasoning is not worth showing.
+        if (part.type === 'reasoning-delta') {
+          const text = (part as { text?: string }).text ?? ''
+          reasoning += text
+          // Every signature fragment, as it arrives, wherever this family's
+          // provider puts one. See `signatureLedger` and `signatureOf`.
+          const carried = signatureOf(session.model.family, part)
+          if (carried !== undefined) {
+            ledger.fragment(String((part as { id?: unknown }).id ?? ''), carried)
+          }
+          if (text !== '') await deliver({ type: 'reasoning', text, done: false })
+          continue
+        }
+        if (part.type === 'reasoning-end') {
+          // The whole of it, once, so a reader has the passage rather than the
+          // pieces — which is the shape the contract's `done` marks.
+          await deliver({ type: 'reasoning', text: reasoning, done: true })
+          reasoning = ''
+          slot.sawReasoning()
+          continue
+        }
+        // **A signed function call is ledgered too.** On the Gemini wire the
+        // signature that matters most rides on the first `functionCall` part of a
+        // turn rather than on a summary, and the SDK surfaces it in the same
+        // provider metadata. Read off `tool-call` and not off `tool-input-*`,
+        // which repeat the same value three times before it.
+        if (part.type === 'tool-call') {
+          lastToolCalls++
+          const onCall = signatureOf(session.model.family, part)
+          if (onCall !== undefined) {
+            ledger.fragment(String((part as { toolCallId?: unknown }).toolCallId ?? ''), onCall)
+          }
+        }
+        if(part.type==='tool-error'&&await rejectToolStep(part.toolName,part.input??{}))continue
+        const unoffered = unofferedTool(part, offered)
+        if (unoffered !== undefined) {
+          // The SDK refused it; the desk's gate must be the one to say so.
+          const input = (part as { input?: unknown }).input
+          await deliver({ type: 'tool_call', name: unoffered, args: input ?? {} })
+          let refusal = 'the call did not leave the page and nothing was written'
+          try {
+            await callTool(unoffered, (input ?? {}) as Record<string, unknown>)
+          } catch (cause) {
+            // A cancelled run stops here rather than reporting a refusal that
+            // never happened.
+            if (isCancelled(cause)) throw cause
+            refusal = (cause as Error).message
+          }
+          await deliver({
+            type: 'tool_result',
+            name: unoffered,
+            isError: true,
+            text:
+              `refused: ${refusal}. This assistant proposes; it never writes a file and ` +
+              `never calls a tool it was not offered.`
+          })
+          continue
+        }
+        if (part.type === 'text-delta') {
+          final += (part as { text?: string }).text ?? ''
         }
       }
-      const unoffered = unofferedTool(part, offered)
-      if (unoffered !== undefined) {
-        // The SDK refused it; the desk's gate must be the one to say so.
-        const input = (part as { input?: unknown }).input
-        await deliver({ type: 'tool_call', name: unoffered, args: input ?? {} })
-        let refusal = 'the call did not leave the page and nothing was written'
-        try {
-          await callTool(unoffered, (input ?? {}) as Record<string, unknown>)
-        } catch (cause) {
-          // A cancelled run stops here rather than reporting a refusal that
-          // never happened.
-          if (isCancelled(cause)) throw cause
-          refusal = (cause as Error).message
-        }
-        await deliver({
-          type: 'tool_result',
-          name: unoffered,
-          isError: true,
-          text:
-            `refused: ${refusal}. This assistant proposes; it never writes a file and ` +
-            `never calls a tool it was not offered.`
-        })
+      if (streamed !== null) throw streamed
+      // The last turn's own accounting.
+      const noticed = slot.turnEnded(final !== '')
+      if (noticed !== null) await deliver(noticed)
+
+      // `result.text` mints a fresh promise on every read, so it is read here,
+      // where it is awaited, and nowhere it would be left standing.
+      finalText = final !== '' ? final : await withAbort(() => Promise.resolve(result.text), executionSignal)
+      if(canFinishResponse(completion,finalText,lastToolCalls,context.execution.remaining,synthesis||(toolsClosed&&context.execution.progress.stalled))){
+        synthesis=true
+        // Reuse the projected history before the incomplete response, with its
+        // completed tool pairs. Do not append the failed response's partial
+        // JSON or private reasoning. New tool dispatch and SDK retries stay closed.
+        messages=[...lastMessages,{role:'user',content:FINISH_RESPONSE_INSTRUCTIONS}]
         continue
       }
-      if (part.type === 'text-delta') {
-        final += (part as { text?: string }).text ?? ''
-        if (session.interactive) await deliver({ type: 'message_progress', text: streamingProse(final) })
+      if(!context.execution.progress.stalled&&!finalText.trim()&&steps>=turnLimit&&completion?.finishReason!=='content-filter'&&completion?.finishReason!=='length'&&completion?.finishReason!=='error')throw new ExecutionPaused()
+      if(toolsClosed&&lastToolCalls>0||!finalText.trim()||completion?.finishReason==='length'||completion?.finishReason==='content-filter'||completion?.finishReason==='error'){
+        // A stalled loop is distinct from filtering, output truncation or a
+        // provider error. Keep those original causes when they actually occur.
+        const stalled=context.execution.progress.stalled&&!['length','content-filter','error'].includes(completion?.finishReason??'')
+        throw new AIFailureError({version:1,code:stalled?'repeated-work':completionFailureCode(completion),source:stalled?'desk':'model',outcome:'unknown',...(completion?{completion}:{})})
       }
+      break
     }
-    if (streamed !== null) throw streamed
-    // The last turn's own accounting.
-    const noticed = slot.turnEnded(final !== '')
-    if (noticed !== null) await deliver(noticed)
-
-    // `result.text` mints a fresh promise on every read, so it is read here,
-    // where it is awaited, and nowhere it would be left standing.
-    const finalText = final !== '' ? final : await withAbort(() => Promise.resolve(result.text), gate.signal)
     if (session.allowConversation && !hasProposalFence(finalText)) {
-      if (!finalText.trim()) throw new Error('The assistant returned an empty reply')
       await deliver({ type: 'message', text: proseOf(finalText) })
+      if(context.execution.remaining<=0&&context.execution.state.plan.some(step=>step.status!=='completed'))throw new ExecutionPaused()
       return
     }
     const proposal = extractProposal(finalText)
@@ -765,8 +852,10 @@ export function runVercel(
     } else if (review) {
       const recorder = openCritique()
       recording = recorder
+      toolsClosed=false
       // A fresh conversation: its history carries none of the loop's blocks.
       ledger.conversation()
+      context.beginIsolatedPhase()
       let criticText = ''
       let criticReasoning = ''
       try {
@@ -774,23 +863,32 @@ export function runVercel(
           telemetry: { isEnabled: false },
           model,
           instructions: CRITIC_SYSTEM + assistantLanguageInstructions(session.replyLanguage),
-          tools,
+          tools: Object.fromEntries(Object.entries(tools).filter(([name]) => !session.hostTools?.some(tool => tool.name === name && (tool.interaction || tool.effect === 'memory' || ['update_plan','request_budget_increase'].includes(tool.name))))),
           messages: [
-            { role: 'user', content: criticMessage(session.testPrompt, proposal.document) }
+            { role: 'user', content: await context.prompt(criticMessage(session.testPrompt, proposal.document),CRITIC_SYSTEM,schemas) }
           ],
-          stopWhen: stepCountIs(MAX_CRITIC_TURNS),
-          abortSignal: gate.signal,
+          stopWhen: [stepCountIs(MAX_CRITIC_TURNS),()=>toolsClosed],
+          abortSignal: executionSignal,
           maxRetries: 0,
+          // Google's chat schema currently omits error-only chunks. Inspect only
+          // the error envelope; raw chunks never enter events or saved context.
+          includeRawChunks: session.model.family === 'gemini',
           onError: (event: { error: unknown }) => {
             streamed ??= event.error
           },
-          prepareStep: () => sdkThinking(session.model.family, slot.members()),
+          prepareStep: async ({messages,stepNumber}) => {
+            progressStep=context.execution.progress.nextStep(Math.min(context.execution.remaining,MAX_CRITIC_TURNS-stepNumber))
+            toolsClosed=progressStep==='finish'||stepNumber>=MAX_CRITIC_TURNS-1
+            const instructions=CRITIC_SYSTEM+assistantLanguageInstructions(session.replyLanguage)+(progressStep==='recover'?'\n'+RECOVER_REPEATED_WORK_INSTRUCTIONS:progressStep==='finish'?'\n'+REPEATED_WORK_INSTRUCTIONS:toolsClosed?finalInstructions:'')
+            return {...sdkThinking(session.model.family,slot.members()),...(toolsClosed?{activeTools:[],toolChoice:'none' as const}:{}),instructions,messages:await context.messages(messages,instructions,schemas)}
+          },
+          maxOutputTokens:context.policy.outputTokens,
           [REHEARSAL_HOOK]: refine
         })
         claimPromises(critic)
         const criticParts = critic.stream[Symbol.asyncIterator]()
         for (;;) {
-          const step = await withAbort(() => criticParts.next(), gate.signal)
+          const step = await withAbort(() => criticParts.next(), executionSignal)
           if (step.done === true) break
           const part = step.value
           if (part.type === 'start-step') {
@@ -799,6 +897,17 @@ export function runVercel(
             const said = slot.turnEnded(criticText !== '')
             if (said !== null) await deliver(said)
             criticText = ''
+            continue
+          }
+          if(part.type==='finish-step'){
+            const completion=modelCompletion(part.finishReason,part.usage)
+            context.execution.recordCompletion(completion,'review')
+            if(['length','content-filter','error'].includes(completion.finishReason))streamed??=new AIFailureError({version:1,code:completionFailureCode(completion),source:'model',outcome:'unknown',completion})
+            continue
+          }
+          if (part.type === 'raw') {
+            const raw=part.rawValue as {error?:unknown}|null
+            if(session.model.family==='gemini'&&raw&&typeof raw==='object'&&raw.error!==undefined)streamed??=new AIFailureError({...normalizeFailure(raw.error,'model'),outcome:'unknown'})
             continue
           }
           if (part.type === 'error') {
@@ -828,6 +937,7 @@ export function runVercel(
             }
             continue
           }
+          if(part.type==='tool-error'&&await rejectToolStep(part.toolName,part.input??{}))continue
           if (part.type === 'text-delta') criticText += (part as { text?: string }).text ?? ''
         }
       } finally {
@@ -855,7 +965,7 @@ export function runVercel(
    *
    * The desk's thinking slot needs both to decide whether a refusal was about
    * the tier it sent. Neither is quoted past that: the sentence a person reads
-   * is `describe`'s, and the endpoint's body reaches the closed list of
+   * comes from the shared failure catalogue, and the endpoint's body reaches the closed list of
    * patterns in `assistant/thinking.ts` and goes no further.
    */
   const refusalOf = (cause: unknown): { status: number; message: string } | null => {
@@ -892,7 +1002,7 @@ export function runVercel(
       refusal.message,
       schemasShown(session.model.family, session.tools)
     )
-    return keyword === '' ? null : new Error(refusedSchemaSentence(keyword))
+    return keyword === '' ? null : authoredFailure('invalid-request',refusedSchemaSentence(keyword),'model')
   }
 
   /**
@@ -909,7 +1019,7 @@ export function runVercel(
   const drive = async (): Promise<void> => {
     // A host tool named like a runtime tool would shadow it in the SDK's
     // set: reported as this run's error, before the model is shown either.
-    if (collision !== undefined) throw new Error(`host tool ${collision.name} is named like a tool the runtime serves; nothing was run`)
+    if (collision !== undefined) throw authoredFailure('configuration',`host tool ${collision.name} is named like a tool the runtime serves; nothing was run`)
     // **Said before the model is asked anything, and pushed rather than
     // delivered.** These are a property of the session and not of an attempt:
     // counting them as delivered would spend the one retry a tier refusal
@@ -924,6 +1034,7 @@ export function runVercel(
         await runOnce(produced)
         return
       } catch (cause) {
+        if (awaitingInput) return
         const refusal = refusalOf(cause)
         if (refusal === null || produced.count > 0 || attempt >= 3) throw schemaRefusal(cause) ?? cause
         const said = slot.refused(refusal.status, refusal.message)
@@ -965,7 +1076,8 @@ export function runVercel(
       // A cancelled run is the viewer stopping the session, or a consumer
       // walking away: it ends the run and there is no failure to report.
       if (isCancelled(cause) || gate.signal.aborted) return
-      await channel.push({ type: 'error', message: describe(cause) })
+      if(cause instanceof ExecutionPaused){await channel.push({type:'budget_paused',checkpoint:context.execution.snapshot('paused')});return}
+      await channel.push(failureEvent(cause,'model'))
     })
     // Nothing else awaits this; a rejection out of the catch above would be
     // unhandled. It cannot reject, and this is what says so.

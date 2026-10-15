@@ -1,3 +1,5 @@
+import {privateQuery} from '../data/privateQuery'
+import {LoadingState} from '../ui/LoadingState'
 import { AIConnectionPicker } from '../assistant/AIConnectionPicker'
 import { selectedAssistant } from '../assistant/target'
 import { assistantReady } from '../assistant/useAssistantSlot'
@@ -49,7 +51,7 @@ export function BriefPane({ subject, headerTarget = null, embedded = false, sour
   const run = useAssistantRun({ target: slot, purpose: 'brief', endpoint: slot.endpoint, agent: slot.agent ? { ...slot.agent, tools: [] } : undefined, model: picked.model, engine: slot.engine, thinking: slot.thinking })
   const generate = useProposalGenerator(run), cache = useQueryClient()
   const key = ['briefs', project, subject.path, subject.id]
-  const query = useQuery({ queryKey: key, enabled: !!project && !subject.unavailable, queryFn: () => request(subject.path), refetchInterval: q => q.state.data?.content.subjects[subject.id]?.pending ? 4000 : false })
+  const query = useQuery({ ...privateQuery, queryKey: key, enabled: !!project && !subject.unavailable, queryFn: () => request(subject.path), refetchInterval: q => q.state.data?.content.subjects[subject.id]?.pending ? 4000 : privateQuery.refetchInterval })
   const previousSource = useRef(sourceKey)
   useEffect(() => { if (previousSource.current !== sourceKey) { previousSource.current = sourceKey; void query.refetch() } }, [sourceKey, query.refetch])
   const history = query.data?.content.subjects[subject.id]
@@ -132,13 +134,13 @@ export function BriefPane({ subject, headerTarget = null, embedded = false, sour
     {!embedded && headerTarget && createPortal(actions, headerTarget)}
     <div className={styles.page}>
       {subject.unavailable ? <p className={styles.meta}>{subject.unavailable}</p> : <>
-        {query.isPending && <RunStatus>{msg('Loading brief…')}</RunStatus>}
+        {query.isPending && <LoadingState>{msg('Loading brief…')}</LoadingState>}
         {(error || query.error) && <RunStatus error>{error || (query.error as Error).message}</RunStatus>}
         {query.error && <div><Button onClick={() => { void query.refetch() }}>{msg('Retry')}</Button></div>}
         {busy && <div className={styles.actions}><RunStatus running>{phase}</RunStatus><Button variant="quiet" onClick={() => active.current?.abort()}>{msg('Stop')}</Button></div>}
         {!busy && pending && <RunStatus>{msg('A brief is being generated in another window. The saved version remains available.')}</RunStatus>}
         {blocked && <p className={styles.notice}>{blocked}</p>}
-        {stale && <p className={styles.notice}>{msg('Inputs have changed since this brief was generated. Regenerate when you are ready.')}</p>}
+        {stale && <p className={styles.notice}>{msg('Dialects have changed since this brief was generated. Regenerate when you are ready.')}</p>}
         {showHistory && revisions.length > 0 && <Select id={id + "-revision"} aria-label={msg('Brief revision')} value={revision} onValueChange={setRevision} options={[{ value: 'latest', label: msg('Latest revision') }, ...[...revisions].reverse().map(r => ({ value: r.id, label: msg('Revision {{revision}} · {{date}}', { revision: r.revision, date: new Date(r.at).toLocaleString() }) }))]} />}
         {!held && !query.isPending && !query.error && <section className={styles.empty}>{!embedded && <h2>{msg('A one-page brief')}</h2>}<p className={styles.meta}>{source?.kind === 'pack' || source?.kind === 'graph' ? msg('Summarize this definition, its saved tests and open questions. This brief is optional and does not approve or finalize anything.') : msg('Summarize this saved record, its required evidence and what needs attention. Generate once, then reopen the saved version at any time.')}</p><div className={styles.generate}>{modelControls}<Button variant="primary" disabled={busy || !!pending || !!blocked || !source || !picked.model || !assistantReady(slot)} onClick={() => { void start() }}>{msg('Generate brief')}</Button></div></section>}
         {!busy && !held && <div data-no-print>{(!assistantReady(slot) || !picked.model) && <p className={styles.meta}>{slot.unusable ? systemMessage(slot.unusable) : msg('Configure an Assistant model in Admin to generate a brief.')}</p>}</div>}
@@ -159,5 +161,5 @@ export function BriefPane({ subject, headerTarget = null, embedded = false, sour
 }
 function RecordedResult({ snapshot }: { snapshot: Snapshot }) {
   const results = briefResults(snapshot)
-  return <section><h3>{snapshot.kind === 'job' ? msg('Sample result') : msg('Recorded result')}</h3>{results.expected && <p>{msg('Expected')}: {results.expected}</p>}<p>{msg('Actual')}: {results.actual}</p>{results.state && <p className={styles.meta}>{results.state}</p>}{results.actual === '—' && <p className={styles.meta}>{msg('No matching result is recorded for these inputs.')}</p>}</section>
+  return <section><h3>{snapshot.kind === 'job' ? msg('Sample result') : msg('Recorded result')}</h3>{results.expected && <p>{msg('Expected')}: {results.expected}</p>}<p>{msg('Actual')}: {results.actual}</p>{results.state && <p className={styles.meta}>{results.state}</p>}{results.actual === '—' && <p className={styles.meta}>{msg('No matching result is recorded for this dialect.')}</p>}</section>
 }

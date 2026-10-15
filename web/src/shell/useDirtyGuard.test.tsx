@@ -40,7 +40,7 @@ describe('unsaved-work protection',()=>{
   fireEvent.click(screen.getByText('Save draft and leave'));await waitFor(()=>expect(router.state.location.pathname).toBe('/elsewhere'));expect(saveDraft).toHaveBeenCalledTimes(2)
  })
  it('blocks navigation during a write without offering a discard',async()=>{
-  const router=draw({initial:false,busy:true});fireEvent.click(screen.getByText('leave'))
+  const router=draw({initial:false,busy:true});expect(document.title).toBe('Desk');fireEvent.click(screen.getByText('leave'))
   await waitFor(()=>expect(router.state.blockers.size===0||[...router.state.blockers.values()].every(b=>b.state==='unblocked')).toBe(true))
   expect(router.state.location.pathname).toBe('/packs/a');expect(screen.queryByRole('dialog')).toBeNull()
  })

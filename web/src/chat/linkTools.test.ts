@@ -188,6 +188,11 @@ describe('read_link', () => {
     expect(said(result)).toBe('read failed: the link resolves to a private or local address, which the gateway does not fetch')
     expect(refused.logged.some((line) => line.includes('failed'))).toBe(true)
     expect(refused.documents).toHaveLength(0)
+    expect(result.structuredContent).toEqual({linkFailure:'web-public-only'})
+    const origin=harness({ingest:async()=>{throw new GatewayError(400,'source failed: web-redirect-origin')}})
+    const redirect=await origin.tool.execute({url:INCIDENT},signal)
+    expect(redirect.structuredContent).toEqual({linkFailure:'web-redirect-origin'})
+    expect(said(redirect)).toContain('redirected to another site')
     const stopped = new AbortController()
     const aborted = harness({ ingest: async () => { stopped.abort(); throw Object.assign(new Error('aborted'), { name: 'AbortError' }) } })
     expect(said(await aborted.tool.execute({ url: INCIDENT }, stopped.signal))).toBe('read failed: the read was stopped')
@@ -489,4 +494,16 @@ it('authorizes a verified redirect destination for exploration and checks it aga
  docs[0]!.link!.resolvedUrl='https://forged.example/'
  await linkReading(deps)(context).find(t=>t.name===EXPLORE_WEBSITE)!.execute({url:'https://forged.example/'},signal)
  expect(discover).toHaveBeenCalledTimes(2)
+})
+
+it('reads a user-supplied bare domain with no search connection and retains its canonical source', async () => {
+ const h = harness({turns:[user('check the judgmentpack.org')]})
+ const result = await h.tool.execute({url:'judgmentpack.org'}, signal)
+ expect(result.isError).toBeUndefined()
+ expect(h.ingested).toEqual(['https://judgmentpack.org/'])
+ expect(h.documents[0]?.link?.url).toBe('https://judgmentpack.org/')
+ expect(givenInChat('https://judgmentpack.org/', h.turns, [])).toBe(true)
+ expect(givenInChat('https://judgmentpack.org/about', h.turns, [])).toBe(false)
+ expect(givenInChat('https://judgmentpack.org/', [assistant('judgmentpack.org')], [])).toBe(false)
+ expect(givenInChat('https://example.org/', [user('email user@example.org')], [])).toBe(false)
 })

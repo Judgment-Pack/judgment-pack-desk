@@ -1,3 +1,4 @@
+import {AIFailureError,failure} from './failures'
 /**
  * The ToolGate: the desk's promises about what the assistant may reach, held
  * **on the wire** rather than anywhere an engine could be wrong.
@@ -51,11 +52,11 @@ export const REHEARSAL_MEMBER = 'rehearsal'
  * call was refused without reading a sentence back apart, and because the
  * engine turns this into a result the model is told about.
  */
-export class GateViolation extends Error {
+export class GateViolation extends AIFailureError {
   readonly tool: string
 
   constructor(tool: string, message: string) {
-    super(message)
+    super({...failure('permission','tool','not-started'),detail:message})
     this.name = 'GateViolation'
     this.tool = tool
   }

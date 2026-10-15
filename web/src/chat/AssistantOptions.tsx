@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { conversationMode, type AuthoringMode } from '../research/mode'
 import { useSearchConnections, useSearchPreference } from '../search/connections'
 import { Message } from '../i18n/Message'
@@ -13,7 +14,7 @@ import { EXPLORE_WEBSITE, READ_LINK } from './linkTools'
 import { TOOL_LABELS } from './toolLabels'
 import type { ThinkingTier } from '../config/deskConfig'
 import { IconGear } from '../shell/icons'
-import { Button } from '../ui/Button'
+import {ChatAction} from './ChatActions'
 import { Popover } from '../ui/Popover'
 import { Tooltip } from '../ui/Tooltip'
 import { ConfigureAssistant } from './ConfigureAssistant'
@@ -51,7 +52,7 @@ export function AssistantOptions({ reasoning, researchMode, searchConnection, se
       triggerTooltip={msg("Assistant settings")} onEscapeKeyDown={event => event.stopPropagation()}
       onOpenAutoFocus={event => { event.preventDefault(); configureButton.current?.focus() }}
       onCloseAutoFocus={event => { if (configure) event.preventDefault() }}
-      trigger={<button ref={trigger} className="desk-icon-button" type="button" aria-label={msg("Assistant settings")}><IconGear /></button>}>
+      trigger={<ChatAction variant="quiet" size="icon" ref={trigger} type="button" aria-label={msg("Assistant settings")}><IconGear /></ChatAction>}>
       <div className={styles.settingsBody}>
         {searchOptions}
         <dl className={styles.setting}><dt>{config.assistant.engine === "codex" ? msg("Codex reasoning") : msg("Thinking requested")}</dt><dd>{config.assistant.engine === "codex" ? reasoning ?? msg("Model default") : thinking === 'off' ? msg("Off") : thinking === 'ultra' ? msg("Ultra") : msg("On")}</dd></dl>
@@ -60,11 +61,11 @@ export function AssistantOptions({ reasoning, researchMode, searchConnection, se
         <p className={styles.caption}>{reviewAvailable ? msg("Optional model review of proposed changes. Runtime validation remains required.") : msg("Connect a runtime with test_pack to enable adversarial review.")}</p>
         <section className={styles.toolSection} aria-label={msg("Allowed tools")}>
           <h3><Message text={"Available tools <0/>"} slots={[<span>{available.length + host.length}</span>]} /></h3>
-          {available.length + host.length ? <ul>{[...available, ...host].map(tool => <li key={tool}><Tooltip content={tool}><span tabIndex={0}>{TOOL_LABELS[tool] ?? tool}</span></Tooltip></li>)}</ul> : <p>{mcp.status !== 'ready' ? msg("Runtime tools are unavailable while disconnected. You can still chat.") : listed.isPending ? msg("Checking runtime tools…") : msg("No enabled tools are available.")}</p>}
+          {available.length + host.length ? <ul>{[...available, ...host].map(tool => <li key={tool}><Tooltip content={tool}><span tabIndex={0}>{TOOL_LABELS[tool] ?? tool}</span></Tooltip></li>)}</ul> : mcp.status === 'ready' && listed.isPending ? <LoadingState>{msg('Checking runtime tools…')}</LoadingState> : <p>{mcp.status !== 'ready' ? msg("Runtime tools are unavailable while disconnected. You can still chat.") : msg("No enabled tools are available.")}</p>}
           <p className={styles.caption}>{msg("Authoring instructions are loaded when needed. Tool access follows Admin settings.")}</p>
         </section>
       </div>
-      <div className={styles.settingsFooter}><Button ref={configureButton} variant="quiet" onClick={() => { setOpen(false); setConfigure(true) }}>{msg("Configure Assistant…")}</Button></div>
+      <div className={styles.settingsFooter}><ChatAction ref={configureButton} variant="quiet" onClick={() => { setOpen(false); setConfigure(true) }}>{msg("Configure Assistant…")}</ChatAction></div>
     </Popover>
     <ConfigureAssistant open={configure} onOpenChange={setConfigure} openerRef={trigger} />
   </>

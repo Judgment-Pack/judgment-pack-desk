@@ -55,14 +55,14 @@ export function normalizeLink(raw: unknown): NormalizedLink | { refused: string 
   if (/[\\\x00-\x1f\x7f]/.test(given)) return { refused: 'the link contains characters a link cannot' }
   let parsed: URL
   try {
-    parsed = new URL(given)
+    parsed = new URL(bareAddress(given) ? `https://${given}` : given)
   } catch {
     return { refused: 'the link is not a well-formed address' }
   }
   if (parsed.protocol !== 'https:') return { refused: 'only public https:// links can be read' }
   // The parser drops an empty `@`; the authority as written is what is judged,
   // as `validWebURL` judges it, so a spelling with a sign-in in it is refused whole.
-  if (parsed.username !== '' || parsed.password !== '' || given.slice('https://'.length).split(/[/?#]/, 1)[0]!.includes('@')) {
+  if (parsed.username !== '' || parsed.password !== '' || given.replace(/^https:\/\//i, '').split(/[/?#]/, 1)[0]!.includes('@')) {
     return { refused: 'a link with a sign-in in it cannot be read' }
   }
   const fetchUrl = `${parsed.origin}${parsed.pathname}${parsed.search}`
@@ -71,18 +71,30 @@ export function normalizeLink(raw: unknown): NormalizedLink | { refused: string 
   return { fetchUrl, displayUrl: given, anchor, anchorKind: anchor === '' ? 'none' : /^[/!]/.test(anchor) ? 'route' : 'section' }
 }
 
-const LINK = /https:\/\/[^\s<>"'`]+/gi
+// Only unambiguous hostnames get an implicit scheme. Never repair a supplied
+// scheme, credentials, port, local path, or a common filename into a website.
+const DOMAIN = '(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})'
+const BARE = new RegExp(`^${DOMAIN}(?:[/?#][^\\s<>"'\x60]*)?$`, 'i')
+const FILE_EXTENSION = /\.(?:json|jsonl|md|txt|csv|tsv|pdf|js|jsx|ts|tsx|py|go|rs|yaml|yml|toml|xml|html|css|zip|png|jpg|jpeg|svg|log)$/i
+function bareAddress(value: string): boolean {
+  return BARE.test(value) && !FILE_EXTENSION.test(value.split(/[/?#]/, 1)[0]!)
+}
+const LINK = new RegExp(`https://[^\\s<>"'\x60]+|(?<![a-z0-9_@:/\\\\.%+-])${DOMAIN}(?:[/?#][^\\s<>"'\x60]*)?(?![a-z0-9_:@-]|\\.[a-z0-9])`, 'gi')
 
 /**
- * The https links written in a text, in order, each once, as written.
+ * The HTTPS links and bare website addresses in text, with their original positions.
  *
  * Trailing punctuation belongs to the sentence, not the link, and a closing
  * bracket is kept only where the link opened one — so `(see https://a/b#c).`
  * yields `https://a/b#c` and a Wikipedia title keeps its parentheses.
  */
-export function extractLinks(text: string): string[] {
-  const found: string[] = []
-  for (const match of text.matchAll(LINK)) {
+export interface LinkMatch { text: string; start: number; end: number }
+/** Positions preserve repeated links and surrounding prose. HTTP is opt-in for
+ * display only; supplied-source admission continues to accept HTTPS only. */
+export function findLinks(text: string, allowHttp = false): LinkMatch[] {
+  const found: LinkMatch[] = []
+  const pattern = allowHttp ? new RegExp(LINK.source.replace('https:', 'https?:'), LINK.flags) : LINK
+  for (const match of text.matchAll(pattern)) {
     let link = match[0]
     for (;;) {
       const last = link.at(-1) ?? ''
@@ -93,9 +105,13 @@ export function extractLinks(text: string): string[] {
       }
       break
     }
-    if (link.length > 'https://'.length && !found.includes(link)) found.push(link)
+    if (/^https?:\/\//i.test(link) ? /^https?:\/\/.+/i.test(link) : bareAddress(link)) found.push({ text: link, start: match.index!, end: match.index! + link.length })
   }
   return found
+}
+
+export function extractLinks(text: string): string[] {
+  return [...new Set(findLinks(text).map(link => link.text))]
 }
 
 /**
@@ -128,8 +144,9 @@ const FAILURES: Readonly<Record<string, string>> = {
   'web-unavailable': 'the page could not be fetched: DNS, TLS, a timeout, or a status other than 200 (a sign-in redirect answers this way)',
   'web-over-limit': 'the page is larger than the 4 MiB the gateway retains',
   'web-unsupported-type': 'the page is not HTML, plain text or PDF, or it is compressed or not UTF-8',
-  'web-redirect-limit': 'the link redirected more than five times',
   'web-redirect-origin': 'the link redirected to another site, and the gateway did not follow it',
+  'web-outside-site': 'the page is outside the website selected for exploration',
+  'web-redirect-limit': 'the link redirected more than five times',
   'web-processing-failed': 'the page was fetched but its text could not be processed',
   'web-invalid-request': 'the gateway refused the request as malformed'
 }

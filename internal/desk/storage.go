@@ -56,13 +56,19 @@ type storageStatus struct {
 }
 
 func (s *Server) defaultChatDataPath() string {
-	if s.cfg.deskID != "" {
+	if s.containedDeskData() {
 		return filepath.Join(s.projectDir, ".desk-private", "data")
 	}
 	// Keep hermetic server fixtures inside their supplied private root.
 	if s.cfg.DeskConfigDir != "" {
 		return filepath.Join(s.configDir, "data")
 	}
+	return filepath.Join(deskApplicationDataPath(), "history")
+}
+
+// User data has its own namespace; never offer the releases/builds directory
+// itself as an empty chat-store destination. Existing pointers still win.
+func deskApplicationDataPath() string {
 	if xdg := os.Getenv("XDG_DATA_HOME"); filepath.IsAbs(xdg) {
 		return filepath.Join(xdg, deskDirName)
 	}
@@ -95,10 +101,13 @@ func storageEntries(root *os.Root) ([]os.DirEntry, error) {
 }
 
 func (s *Server) storageOwner() string {
-	if s.cfg.deskID != "" {
+	if entry := s.homeEntry(); entry != nil {
+		return entry.StorageOwner
+	}
+	if s.containedDeskData() {
 		return s.cfg.deskID
 	}
-	return digestOf([]byte(s.configDir))
+	return s.installationOwner()
 }
 
 // Read the storage pointer under the cross-process lock on every operation.
@@ -118,7 +127,7 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 		path := s.defaultChatDataPath()
 		for _, entry := range entries {
 			if conversationFileName.MatchString(entry.Name()) {
-				if s.cfg.deskID == "" {
+				if !s.containedDeskData() {
 					path = s.configDir
 				}
 				break
@@ -144,7 +153,7 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 	if err = decodeDataJSON(data, &location); err != nil || location.Version != 1 {
 		return nil, errors.New("chat storage settings are invalid")
 	}
-	if s.cfg.deskID != "" {
+	if s.containedDeskData() {
 		if filepath.IsAbs(location.Path) || !filepath.IsLocal(location.Path) {
 			return nil, errors.New("desk storage must stay inside its folder")
 		}
@@ -163,10 +172,10 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 }
 
 func (s *Server) openChatDataAt(location dataLocation, revision string, create bool) (*chatDataStore, error) {
-	if s.cfg.deskID != "" && !pathContains(filepath.Join(s.projectDir, ".desk-private"), location.Path) {
+	if s.containedDeskData() && !pathContains(filepath.Join(s.projectDir, ".desk-private"), location.Path) {
 		return nil, errors.New("desk data must stay inside its folder")
 	}
-	if s.cfg.deskID == "" && location.Path != s.configDir && pathContains(s.projectDir, location.Path) {
+	if !s.containedDeskData() && location.Path != s.configDir && pathContains(s.projectDir, location.Path) {
 		return nil, errors.New("private chat storage must be outside the project")
 	}
 	var root *os.Root
@@ -260,7 +269,7 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	s.writes.Lock()
 	defer s.writes.Unlock()
-	lock, err := s.privateDataLock(true)
+	lock, err := s.privateDataLockContext(r.Context(), true)
 	if err != nil {
 		storageFailure(w, err)
 		return
@@ -273,7 +282,7 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 	}
 	defer store.root.Close()
 	status, err := s.describeStorage(store)
-	status.Managed = s.cfg.deskID != ""
+	status.Managed = s.containedDeskData()
 	if err != nil {
 		storageFailure(w, err)
 		return
@@ -320,7 +329,7 @@ func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, reque
 		return
 	}
 	defer settings.Close()
-	if s.cfg.deskID != "" && !pathContains(filepath.Join(s.projectDir, ".desk-private"), request.Path) {
+	if s.containedDeskData() && !pathContains(filepath.Join(s.projectDir, ".desk-private"), request.Path) {
 		writeJSONCoded(w, 400, CodeBadRequest, "Choose a private data folder inside this desk.")
 		return
 	}
@@ -333,7 +342,7 @@ func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, reque
 	defer work.Close()
 	s.writes.Lock()
 	defer s.writes.Unlock()
-	lock, err := s.privateDataLock(true)
+	lock, err := s.privateDataLockContext(r.Context(), true)
 	if err != nil {
 		storageFailure(w, err)
 		return
@@ -349,7 +358,7 @@ func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, reque
 		storageFailure(w, withCode(CodeStale, errors.New("the location changed; reload storage settings before moving data")))
 		return
 	}
-	if request.Path == store.location.Path || pathContains(request.Path, store.location.Path) || pathContains(store.location.Path, request.Path) || (s.cfg.deskID == "" && pathContains(s.projectDir, request.Path)) || pathContains(request.Path, s.projectDir) || request.Path == s.configDir {
+	if request.Path == store.location.Path || pathContains(request.Path, store.location.Path) || pathContains(store.location.Path, request.Path) || (!s.containedDeskData() && pathContains(s.projectDir, request.Path)) || pathContains(request.Path, s.projectDir) || request.Path == s.configDir {
 		// A legacy config root may migrate to its dedicated child data folder.
 		if !(store.legacy && request.Path == s.defaultChatDataPath() && request.Path != s.configDir && !pathContains(s.projectDir, request.Path)) {
 			storageFailure(w, withCode(CodeBadRequest, errors.New("choose a separate private folder outside the project and current data folder")))
@@ -473,13 +482,13 @@ func copyChatData(ctx context.Context, source, target *chatDataStore, copied *[]
 }
 
 func (s *Server) storageSettingsRoot() (*os.Root, error) {
-	if s.cfg.deskID != "" {
+	if s.containedDeskData() {
 		return s.root.OpenRoot(".desk-private")
 	}
 	return s.assistant.root.OpenRoot(".")
 }
 func (s *Server) encodeDataLocation(location dataLocation) []byte {
-	if s.cfg.deskID != "" {
+	if s.containedDeskData() {
 		location.Path, _ = filepath.Rel(filepath.Join(s.projectDir, ".desk-private"), location.Path)
 		if location.Previous != "" {
 			location.Previous, _ = filepath.Rel(filepath.Join(s.projectDir, ".desk-private"), location.Previous)

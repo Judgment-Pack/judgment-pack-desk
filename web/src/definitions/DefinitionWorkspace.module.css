@@ -1,6 +1,6 @@
 /* Shared tab content: one toolbar, bounded reading, scrollable data. */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; margin-bottom: var(--space-4); }
-.toolbar > input { flex: 1 1 12rem; max-width: 22rem; min-width: 8rem; }
+.toolbar > [data-search-field] { flex: 1 1 12rem; max-width: 22rem; min-width: 8rem; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-inline-start: auto; }
 .reading { display: flex; flex-direction: column; gap: var(--space-5); max-width: var(--measure-form); min-width: 0; font-size: var(--text-sm); }
 .reading h2 { margin: 0; font-size: var(--text-heading); }
@@ -11,9 +11,9 @@
 .table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
 .table th { color: var(--ink-soft); font-weight: 400; text-align: start; }
 .table th, .table td { padding: var(--space-2); border-bottom: 1px solid var(--border); vertical-align: top; }
-.table th:first-child, .table td:first-child { padding-inline-start: 0; }
+.table th:first-child:not([data-selection-cell]), .table td:first-child:not([data-selection-cell]) { padding-inline-start: 0; }
 .table td { overflow-wrap: anywhere; }
-.table td:first-child { min-width: 10rem; }
+.table td:first-child:not([data-selection-cell]), .table td[data-selection-cell] + td { min-width: 10rem; }
 .table tbody tr:hover, .table tr[data-selected] { background: var(--surface-raised); }
 .name { text-align: start; white-space: normal; height: auto; min-height: var(--density-control); }
 .subtext { display: block; color: var(--ink-soft); font-size: var(--text-xs); }
@@ -21,8 +21,8 @@
 .editor { position: relative; height: min(65vh, 48rem); min-height: 16rem; min-width: 0; overflow: auto; }
 .panel[hidden] { display: none; }
 
-.browser { height: min(72vh, 55rem); min-height: 28rem; min-width: 0; }
-.browserList { position: relative; overflow: auto; min-height: 0; }
+.browser { height:100%; flex:1; min-height:0; min-width:0; overflow:hidden; }
+.collectionToolbar { margin-bottom:0; }
 
 .history { min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
 .metadata { display: grid; grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr); gap: var(--space-2); margin: 0; }

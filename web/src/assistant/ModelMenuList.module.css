@@ -1,5 +1,4 @@
 .search { padding: var(--space-2); }
-.search input { width: 100%; border-color: transparent; background: transparent; }
 .list { position: relative; display: grid; gap: 2px; min-height: 0; overflow-y: auto; max-height: min(16rem, 40vh); padding: 0 var(--space-2) var(--space-2); }
 .row { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; min-height: var(--density-control); padding: var(--space-2); border-width: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink-soft); font: inherit; font-size: var(--text-control); text-align: start; cursor: pointer; }
 .row > span:first-of-type { flex: 1; min-width: 0; overflow-wrap: anywhere; }

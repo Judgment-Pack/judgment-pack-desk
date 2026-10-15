@@ -1,3 +1,4 @@
+import { SettingsFeedback } from '../ui/SettingsFeedback'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { msg, systemMessage, useLocale } from '../i18n'
@@ -118,15 +119,14 @@ export function DocumentProcessingSettings() {
       <SettingRow title={msg('PDF processing')} description={msg('Extract text from uploaded PDFs.')}
         status={!gateway ? msg('Requires a gateway') : documents?.enabled ? msg('Enabled · Up to {{size}} per file', { size: formatStorageBytes(documents.maxFileBytes) }) : msg('Disabled')}
         action={<Button ref={pdfOpener} disabled={!writable || !gateway} aria-label={msg('Manage PDF processing')} onClick={() => open('pdf')}>{msg('Manage')}</Button>} />
+      <SettingsFeedback tone="success">{notice && systemMessage(notice)}</SettingsFeedback>
       {/* Scanned pages are the local gateway's to read (gateway v0.10.0): an
           external gateway's operator sets its own processor. */}
       {managed && (local?.status === 'ready' || local?.status === 'unavailable') && writable && <div className={styles.ocr}><OCRSettings /></div>}
-      {managed && local?.status === 'unavailable' && <div><Alert>{msg('Local processing is unavailable. Check the details below or use an existing gateway.')}</Alert><Disclosure title={msg('Technical details')}><p>{systemMessage(local.problem ?? '')}</p></Disclosure></div>}
       {!writable && <Alert>{msg('Settings could not be read. Reload the page before making changes.')}</Alert>}
       <p className={styles.note}>{msg('Text files can be attached without a gateway.')}</p>
       <p className={styles.note}>{msg('When you send a message, selected document text is sent to your configured AI model.')}</p>
       <p className={styles.note}>{msg('Uploaded originals stay in chat storage when removed from a message.')}</p>
-      {notice && <p role="status" className={styles.note}>{systemMessage(notice)}</p>}
     </SettingsSection>
     <Dialog open={editor !== null} onOpenChange={isOpen => { if (!isOpen) close() }} openerRef={opener}
       title={discard ? msg('Discard changes?') : editor === 'gateway' ? msg('Gateway') : msg('PDF processing')}

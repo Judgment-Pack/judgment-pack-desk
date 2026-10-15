@@ -7,7 +7,7 @@ import { PacksPane } from '../packs/PacksPane'
 import styles from './PacksLayout.module.css'
 import { PackFoldersProvider, usePackFolders } from '../packs/folders/FolderContext'
 import { ReviewProvider } from '../packs/review/ReviewContext'
-import { FolderFrame, FolderLocation, FolderFeedback, MovePackButton, ShowFolders } from '../packs/folders/FolderBrowser'
+import { FolderFrame, LibraryLocation, FolderFeedback, MovePackButton } from '../packs/folders/FolderBrowser'
 import { packFolder } from '../packs/folders/model'
 import { assignCreatedPack, FOLDERS_KEY } from '../packs/folders/client'
 import { Alert } from '../ui/Alert'
@@ -26,7 +26,7 @@ function PacksContent() {
  return <>
   <div className={styles.collection} hidden={open}><PacksPane active={!open}/></div>
   <div className={styles.main} hidden={!open}>
-   {packId&&<><div className={styles.location}><ShowFolders/><FolderLocation folderId={selected}/><MovePackButton id={packId}/></div><FolderFeedback/><AssignmentRecovery packId={packId}/></>}
+   {packId&&<><div className={styles.location}><LibraryLocation folderId={selected}/><MovePackButton id={packId}/></div><FolderFeedback/><AssignmentRecovery packId={packId}/></>}
    <div className={styles.document}><Outlet/></div>
   </div>
  </>

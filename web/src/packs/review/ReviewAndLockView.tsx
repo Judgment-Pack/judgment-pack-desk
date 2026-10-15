@@ -49,7 +49,7 @@ export function ReviewAndLockView() {
   const matches = review?.locked && review.status === 'valid' && review.findings.length === 0
   const others = review ? otherFindings(review) : []
   return <article className={styles.page} aria-label={msg('Review and lock')}>
-    <PageHeader title={msg('Review and lock')} actions={<ButtonLink to="/packs">{msg('Back to packs')}</ButtonLink>} />
+    <PageHeader title={msg('Review and lock')} actions={<ButtonLink to="/library">{msg('Back to packs')}</ButtonLink>} />
     <div className={styles.body}>
       <p className={styles.statement}>{msg('Locking records that you confirmed these exact files as this project’s reviewed set. It is not a second person’s approval, and it records no name.')}</p>
       <p className={styles.quiet}>{msg('A change to jpack.json holds every pack: until the next lock, the runtime refuses every deciding run by decision id. Rehearsals and tests are not affected.')}</p>

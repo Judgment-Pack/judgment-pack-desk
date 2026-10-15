@@ -8,7 +8,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  height: var(--density-control);
+  --button-height: var(--density-control);
+  height: var(--button-height);
   padding: 0 var(--space-3);
   border-radius: var(--radius-sm);
   /* A hairline, like every other control at rest. `--border-strong` here made
@@ -89,7 +90,7 @@
   justify-content: flex-start;
   overflow-wrap: anywhere;
 }
-.inline:not(:disabled):hover { color: var(--ink); text-decoration-line: underline; text-underline-offset: var(--space-1); }
+.inline:not(:disabled):hover { color: var(--ink); background: var(--false-soft); text-decoration: none; }
 
 .danger:not(:disabled):hover {
   background: var(--danger-soft);
@@ -100,7 +101,13 @@
   background: var(--danger-soft);
 }
 
+/* Embedded artifact controls share a smaller density-aware geometry. */
+.small { --button-height: var(--density-control-small); padding-inline: var(--space-2); gap: var(--space-1); font-size: var(--text-xs); }
+@media (pointer: coarse) {
+  .small { --button-height: var(--density-control); }
+}
+
 /* Icon actions retain the control hit area without text-button side padding. */
-.icon { flex-shrink: 0; width: var(--density-control); padding: 0; }
+.icon { flex-shrink: 0; width: var(--button-height); padding: 0; }
 .button > svg { flex-shrink: 0; }
 .quiet:disabled, .inline:disabled { background: none; border-color: transparent; }

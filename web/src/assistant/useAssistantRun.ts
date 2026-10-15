@@ -1,3 +1,4 @@
+import {failureEvent,authoredFailure} from './failures'
 import type { AITarget } from './aiConnections'
 import { bindExecution } from './target'
 import { sourceMessage } from '../i18n/source'
@@ -42,6 +43,7 @@ import { sourceMessage } from '../i18n/source'
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadEngine } from './engines'
+import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { openAssistantConnection, runAssistantSession } from './session'
 import { sessionBearer, whenSessionEnds } from '../mcp/session'
 import type { HostTool, AssistantEvent } from './engine'
@@ -207,7 +209,7 @@ export function canonicalProposal(
  * not offer a run there, and this is the second layer under that.
  */
 function modelOf(picked: string): string {
-  if (picked === '') throw new Error(NO_MODEL_CHOSEN)
+  if (picked === '') throw authoredFailure('configuration',NO_MODEL_CHOSEN)
   return picked
 }
 
@@ -244,6 +246,7 @@ export function useAssistantRun(options: {
    */
   hostTools?: HostTool[]
 }): AssistantRun {
+  const contextConfiguration=useEffectiveConfig().assistantProfile?.value?.context
   const connectionTarget = options.target ?? {}
   const [status, setStatus] = useState<RunStatus>('idle')
   const [runningEngine, setRunningEngine] = useState(options.engine)
@@ -254,8 +257,8 @@ export function useAssistantRun(options: {
   const terminals = useRef({ count: 0 })
   // Read at call time rather than captured, so a run started with one
   // configuration is not carried on with another.
-  const settings = useRef({...options,connectionTarget})
-  settings.current = {...options,connectionTarget}
+  const settings = useRef({...options,connectionTarget,contextConfiguration})
+  settings.current = {...options,connectionTarget,contextConfiguration}
 
   /**
    * Put one event on the stream, for the run that produced it.
@@ -376,6 +379,7 @@ export function useAssistantRun(options: {
             loaded,
             {
               prompt,
+              context:{configuration:settings.current.contextConfiguration},
               testPrompt: testPrompt ?? '',
               purpose,
               ...(purpose === 'graph' ? { adversarialReview: false } : {}),
@@ -387,7 +391,7 @@ export function useAssistantRun(options: {
               // chosen is a saved endpoint whose assistant is not ready; a run
               // that substituted the empty string would put a request on the
               // wire naming no model and read whatever came back as an answer.
-              ...bindExecution({ endpoint, agent, engine, ...connectionTarget }, modelOf(model), thinking),
+              ...bindExecution({ ...connectionTarget, endpoint, agent, engine }, modelOf(model), thinking),
               signal: run.controller.signal
             },
             (event) => push(run, event)
@@ -396,7 +400,8 @@ export function useAssistantRun(options: {
           // Everything before the engine's own `try` — the socket, the tool
           // listing, the engine's chunk. The engine reports its own failures
           // and always ends; this reports the ones it never got to see.
-          const said = `${(cause as Error).name}: ${(cause as Error).message}`
+          const event = failureEvent(cause)
+          const said = event.message
           if (active.current === run) {
             // **Recorded whether or not the run has ended.** A failure after
             // the terminal event cannot go on the stream — one `end` is the
@@ -404,7 +409,7 @@ export function useAssistantRun(options: {
             // what made `proposal → end → throw` read as a clean run to
             // everything downstream. It goes beside the stream instead.
             setFailure(said)
-            if (!run.ended) push(run, { type: 'error', message: said })
+            if (!run.ended) push(run, event)
           }
         } finally {
           if (active.current === run) {

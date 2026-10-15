@@ -1,14 +1,20 @@
+import {LoadingState} from '../../ui/LoadingState'
+import { CodeBlock } from '../../ui/CodeBlock'
+import { Disclosure } from '../../ui/Disclosure'
+import { jsonIdentity } from '../../research/checkCandidate'
+import type { IntentionalFactType } from './factTypes'
 import { useState } from 'react'
 import { msg } from '../../i18n'
 import { Button } from '../../ui/Button'
 import { OverflowTooltip } from '../../ui/Tooltip'
-import { RunStatus } from '../../ui/RunStatus'
 import { expectedLabel, type TestCase } from './model'
 import styles from './TestsWorkspace.module.css'
 
 /** Suite review is workspace content, rather than a custom conversation renderer. */
 export function ProposalReview({
   cases,
+  intentionalTypes = [],
+  previousCases = [],
   saved,
   busy,
   stale,
@@ -18,6 +24,8 @@ export function ProposalReview({
   onClose,
 }: {
   cases: TestCase[]
+  intentionalTypes?: IntentionalFactType[]
+  previousCases?: TestCase[]
   saved: Record<string, string>
   busy: boolean
   stale: boolean
@@ -49,9 +57,9 @@ export function ProposalReview({
           </Button>
         </div>
         <p className={styles.muted}>
-          {msg('Review inputs and expected results before saving. Saving does not run tests.')}
+          {msg('Review records and expected results before saving. Saving does not run tests.')}
         </p>
-        {busy && <RunStatus running>{msg('Checking and saving cases…')}</RunStatus>}
+        {busy && <LoadingState>{msg('Checking and saving cases…')}</LoadingState>}
         {stale && <p role="status">{msg('The pack changed. Request new suggestions for this revision.')}</p>}
         {error && (
           <p className={styles.error} role="alert">
@@ -112,6 +120,19 @@ export function ProposalReview({
                         {c.name}
                       </Button>
                     </OverflowTooltip>
+                    {(() => {
+                      const previous = previousCases.find(saved => saved.id === c.id)
+                      if (!previous || jsonIdentity(previous.row) === jsonIdentity(c.row)) return null
+                      return <Disclosure title={msg('Changes to saved case')}>
+                        <CodeBlock label={msg('Saved case')} text={JSON.stringify(previous.row)} />
+                        <CodeBlock label={msg('Proposed case')} text={JSON.stringify(c.row)} />
+                      </Disclosure>
+                    })()}
+                    {intentionalTypes.filter(entry => entry.caseId === c.id).map(entry => (
+                      <Disclosure key={JSON.stringify([entry.path,entry.within])} title={<>{msg('Intentional fact type test')} · <code>{entry.path || '/'}</code></>}>
+                        <p>{entry.reason}</p>
+                      </Disclosure>
+                    ))}
                   </td>
                   <td>{expectedLabel(c.row)}</td>
                   <td className={styles.muted}>

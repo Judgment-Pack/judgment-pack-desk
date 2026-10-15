@@ -1,0 +1,33 @@
+.list { display: flex; flex-direction: column; gap: var(--space-3); container-type: inline-size; }
+.entry { min-width: 0; padding-block: var(--space-1); }
+.entry + .entry { border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); }
+.identity { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; }
+.icon { display: flex; flex: none; padding-top: 2px; color: var(--ink-soft); }
+.icon svg { width: 16px; height: 16px; }
+.text { min-width: 0; flex: 1; }
+.title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 500; line-height: 1.5; }
+.caption, .empty { color: var(--ink-soft); font-size: var(--text-xs); line-height: 1.5; margin: var(--space-1) 0 0; overflow-wrap: anywhere; }
+.actions { display: flex; align-items: center; gap: var(--space-1); flex: none; }
+.actions:empty { display: none; }
+.content { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); padding-inline-start: calc(16px + var(--space-2)); min-width: 0; }
+.content > details > summary { color: var(--ink-soft); }
+.history { display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-xs); color: var(--ink-soft); }
+.history p { margin: 0; }
+.actionRow { display: flex; align-items: center; gap: var(--space-3); min-width: 0; font-size: var(--text-xs); }
+.actionText { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.actionText > span { color: var(--ink); }
+.actionText small { display: block; margin-top: var(--space-1); color: var(--ink-soft); font-size: inherit; }
+@container (max-width: 19rem) {
+  .heading { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+  .heading > .actions { justify-self: end; }
+  .actionRow { flex-wrap: wrap; gap: var(--space-1); }
+  .actionRow > .actions { margin-inline-start: auto; }
+}
+
+.actions > button, .actions > a { max-width: 100%; }
+.heading:not(:has(> .actions:not(:empty))) { grid-template-columns: minmax(0, 1fr); }
+@container (max-width: 19rem) {
+  .actions { flex-wrap: wrap; max-width: 100%; }
+  .actions > button, .actions > a { height: auto; min-height: var(--button-height, var(--density-control)); white-space: normal; line-height: 1.4; padding-block: var(--space-1); }
+}

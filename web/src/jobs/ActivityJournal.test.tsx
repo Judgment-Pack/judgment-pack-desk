@@ -32,7 +32,7 @@ function serve(journal: StandInJournal | 'absent', records: { runs?: typeof runs
 const table = () => screen.findByRole('table')
 const bodyRows = async () => [...(await table()).querySelectorAll('tbody tr')]
 const journalRows = async () => (await bodyRows()).filter(row => row.getAttribute('data-kind') === 'journal')
-const text = (row: Element, column: number) => row.querySelectorAll('td')[column]!.textContent
+const text = (row: Element, column: number) => row.querySelectorAll<HTMLTableCellElement>('td:not([data-selection-cell])')[column]!.textContent
 /** A row in a sentence: its source and what it says, as a reader scans the table. */
 const line = (row: Element) => `${text(row, 1)}: ${row.querySelector('button')!.textContent}`
 const asked = (path: string) => vi.mocked(jobsAPI).mock.calls.filter(([called]) => called === path).length
@@ -99,8 +99,8 @@ describe('the journal in the Activity tab', () => {
     expect(text(skipped!, 2)).toBe('Occurrence skippedAnother run was pending')
     expect(text(skipped!, 3)).toBe('Nightly intake, trigger revision 4')
     expect(text(failed!, 2)).toBe(`Run failedRuntime refused.Run ${run2.slice(-8)}`)
-    expect(within(failed!.querySelectorAll('td')[2]!).getByRole('link').getAttribute('href')).toBe(`/jobs/${JOB}/runs/${run2}`)
-    expect(within(failed!.querySelectorAll('td')[4]!).getByRole('link', { name: 'Fixed version 1.2.0' })).toBeTruthy()
+    expect(within(failed!.querySelectorAll<HTMLTableCellElement>('td:not([data-selection-cell])')[2]!).getByRole('link').getAttribute('href')).toBe(`/jobs/${JOB}/runs/${run2}`)
+    expect(within(failed!.querySelectorAll<HTMLTableCellElement>('td:not([data-selection-cell])')[4]!).getByRole('link', { name: 'Fixed version 1.2.0' })).toBeTruthy()
   })
 
   it('stands each record at the place of the entry that created it, and a record from before the journal below every entry', async () => {

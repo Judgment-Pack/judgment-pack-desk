@@ -128,3 +128,14 @@ describe('describeLinkFailure', () => {
 it('extracts Markdown destinations with balanced parentheses without keeping the wrapper', () => {
   expect(extractLinks('[page](https://example.com/Foo_(bar))')).toEqual(['https://example.com/Foo_(bar)'])
 })
+
+it('normalizes a supplied bare domain, path, query and anchor without changing explicit schemes', () => {
+ expect(normalizeLink(' judgmentpack.org ')).toMatchObject({fetchUrl:'https://judgmentpack.org/',displayUrl:'judgmentpack.org'})
+ expect(normalizeLink('WWW.Example.org/Policy?view=1#terms')).toMatchObject({fetchUrl:'https://www.example.org/Policy?view=1',anchor:'terms'})
+ for (const value of ['http://example.org','user@example.org','example.org:8443','localhost','127.0.0.1','../example.org','/tmp/example.org','report.json','draft.graph.json']) expect(normalizeLink(value)).toHaveProperty('refused')
+})
+
+it('extracts bare websites without granting hosts hidden inside emails, paths, filenames or other schemes', () => {
+ expect(extractLinks('Check judgmentpack.org, (www.example.org/docs). [Policy](example.org/Policy#terms)')).toEqual(['judgmentpack.org','www.example.org/docs','example.org/Policy#terms'])
+ expect(extractLinks('user@example.org http://example.org ftp://example.org /tmp/example.org ../example.org report.json draft.graph.json example.org:8443')).toEqual([])
+})

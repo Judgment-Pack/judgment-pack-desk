@@ -1,13 +1,16 @@
-import { cleanup, render, waitFor } from '@testing-library/react'
+import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
+import { cleanup, render as baseRender, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { INITIAL_STATE } from '../research/run'
 import { readFile, deskFetch } from '../files/client'
 import type { HostTool } from '../assistant/engine'
 import { ChatProvider } from './ChatProvider'
 
+const render=(node:React.ReactNode)=>{const client=new QueryClient({defaultOptions:{queries:{retry:false}}});return baseRender(node,{wrapper:({children})=><QueryClientProvider client={client}>{children}</QueryClientProvider>})}
+
 const m=vi.hoisted(()=>({preference:{} as any,connections:{} as any,catalog:{} as any,report:vi.fn(),update:vi.fn(),snapshot:{} as any,binding:{} as any,options:{} as any}))
 vi.mock('../files/client', async original=>({...await original(), readFile:vi.fn(), deskFetch:vi.fn()}))
-vi.mock('../files/queries',()=>({useFileListing:()=>({data:{root:'/fixture'}})}))
+vi.mock('../files/queries',()=>({useFileListing:()=>({data:{root:'/fixture'}}),useFileContent:()=>({data:undefined})}))
 vi.mock('../config/DeskConfigProvider',()=>({useEffectiveConfig:()=>({config:{research:{gateway:{authority:'test'},documents:{enabled:true},sources:{}}},desk:{localGateway:{status:'ready'}}})}))
 vi.mock('../connections/catalog',()=>({useConnections:()=>m.catalog}))
 vi.mock('../search/connections',()=>({useSearchPreference:()=>m.preference,useSearchConnections:()=>m.connections}))
@@ -58,5 +61,37 @@ it('offers graph proposals and saved rehearsals through the main conversation wo
  const content='{"formatVersion":"1","id":"flow","version":"1.0.0","nodes":{"a":{"pack":"alpha"}},"edges":[],"result":"a"}'
  await tools.find(tool=>tool.name==='propose_graph')!.execute({id:'flow',content},new AbortController().signal)
  expect(m.update).toHaveBeenCalledWith('chat',{graphDrafts:[expect.objectContaining({id:'flow',content,path:'flow.graph.json'})]})
+ expect(deskFetch).not.toHaveBeenCalled()
+})
+
+it('offers contextual search setup independently of supplied-link reading',async()=>{
+ m.preference={isPending:false,isError:false,data:{value:{mode:'auto',connection:null}}}
+ m.connections={available:true,loading:false,isError:false,data:{connections:[]}}
+ m.catalog.web=false
+ render(<ChatProvider><span>Desk</span></ChatProvider>)
+ await waitFor(()=>expect(m.report.mock.lastCall?.[1].blocked).toBe(''))
+ const tools:HostTool[]=m.options.draftTools({turns:()=>[]})
+ expect(tools.map(tool=>tool.name)).toContain('search_sources')
+ expect(tools.map(tool=>tool.name)).not.toContain('read_link')
+ expect(m.options.researchPolicy()).toContain('call search_sources once')
+})
+
+it('offers recipe proposals through the same conversation worker without running research',async()=>{
+ m.snapshot.chats[0].mode='draft';m.snapshot.chats[0].researchMode='provided';m.catalog.web=false
+ render(<ChatProvider><span>Desk</span></ChatProvider>)
+ await waitFor(()=>expect(m.options.draftTools).toBeTypeOf('function'))
+ const tools:HostTool[]=m.options.draftTools({turns:()=>[{id:'turn',role:'user'}]})
+ expect(tools.map(tool=>tool.name)).toEqual(expect.arrayContaining(['get_dialect_recipe_instructions','list_dialects','read_dialect_recipe','propose_dialect_recipe','read_dialect_records','read_dialect_activity','propose_dialect_action']))
+ await tools.find(tool=>tool.name==='propose_dialect_recipe')!.execute({name:'Decision owners',intent:'Find owners.',target:'people',fields:[{name:'role',description:'Current role',type:'string'}],criteria:[],limits:{records:25,searches:10,pages:30,modelCalls:30}},new AbortController().signal)
+ expect(m.update).toHaveBeenCalledWith('chat',{inputDrafts:[expect.objectContaining({name:'Decision owners',target:'people',afterTurnId:'turn'})]})
+ expect(deskFetch).not.toHaveBeenCalled()
+})
+
+it('offers test design tools in the existing session worker', async () => {
+ m.snapshot.chats[0].mode='draft';m.snapshot.chats[0].researchMode='provided'
+ render(<ChatProvider><span>Desk</span></ChatProvider>)
+ await waitFor(()=>expect(m.options.draftTools).toBeTypeOf('function'))
+ const tools:HostTool[]=m.options.draftTools({turns:()=>[]})
+ expect(tools.map(tool=>tool.name)).toEqual(expect.arrayContaining(['read_pack_tests','propose_test_cases','ask_user']))
  expect(deskFetch).not.toHaveBeenCalled()
 })

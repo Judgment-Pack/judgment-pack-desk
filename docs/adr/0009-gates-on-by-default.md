@@ -217,8 +217,9 @@ job until it has some.
 ### 4. Existing desks are offered the upgrade, never forced into it
 
 The offer covers the project Desk was started on, and managed desks created
-before this change. It appears once as a note on Packs that the owner can
-dismiss, and stays available in Admin → Project. It lists each change, what it
+before this change. The current UI places the dismissible offer in the bottom
+status strip, behind “Project safeguards off,” and keeps setup available in
+Admin → Decision safeguards. This replaces the original note above Packs. It lists each change, what it
 writes, and why:
 
 1. **`jpack.json`:** `configVersion` moves to `"5"`, with `requireReviewed` and

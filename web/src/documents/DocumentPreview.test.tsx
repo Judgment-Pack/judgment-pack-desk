@@ -29,12 +29,13 @@ it('shows explicit consent for partial pages and disables unreadable pages', asy
   expect(onChange).toHaveBeenCalledWith({...reference,allowPartial:true})
   expect(screen.getAllByRole('checkbox').some(node => (node as HTMLInputElement).disabled)).toBe(true)
 })
-it('never shows a verified citation for a mismatched quote', async () => {
+it('distinguishes verified source bytes from a mismatched quote', async () => {
   const { document, config, reference } = await setup(); mocks.load.mockResolvedValue(document)
   render(<DeskConfigFixture value={config}><DocumentPreview name="notes.txt" reference={reference} disabled citation={{page:1,quote:'Invented'}} /></DeskConfigFixture>)
   fireEvent.click(screen.getByRole('button',{name:'Invented'}))
   await screen.findByText('This quote does not match the cited page.')
-  expect(screen.queryByText(/Receipt verified/)).toBeNull()
+  expect(screen.getByText(/Receipt verified/)).toBeTruthy()
+  expect(screen.getByText('line one line two')).toBeTruthy()
 })
 it('does not show a late verification after closing the preview', async () => {
   const { document, config, reference } = await setup(); let finish!: (value: typeof document) => void

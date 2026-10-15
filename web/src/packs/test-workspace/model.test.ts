@@ -7,6 +7,7 @@ import {
   matrix,
   latestResult,
   recoverDraft,
+  mergeDraftSuite,
   recoverResearchRecord,
   pointerGet,
   pointerSet,
@@ -256,4 +257,22 @@ it('keeps the Desk AI tag on exported rows while preserving file-import origins'
   expect(matrix(importMatrix(document, 'ai')).cases[0]?.origin).toBe('ai')
   expect(matrix(importMatrix(document)).cases[0]?.origin).toBe('manual')
   expect(document.cases[0]?.origin).toBe('manual')
+})
+
+it('carries reviewed cases, run history and design messages once while keeping proposals unreviewed', async () => {
+  const {draft} = await fixture()
+  const held = await recoverDraft(emptySuite(),draft)
+  const row = newCase(); row.id='reviewed'; held.cases=[row]
+  held.messages=[{role:'assistant',text:'Proposed boundary cases',at}]
+  held.proposals=[{id:'unreviewed',status:'ready'} as never]
+  const saved=emptySuite(); saved.deleted=['deleted']; const removed={...row,id:'deleted'};held.cases.push(removed)
+  saved.recovered=['merge:'+draft.id+':'+draft.generation]
+  saved.messages=[{role:'user',text:'A saved-pack question',at:'2026-09-25T12:00:00Z'}]
+  const result=mergeDraftSuite(saved,held,draft)
+  expect(result.cases.map(row=>row.id)).toEqual(['reviewed'])
+  expect(result.runs).toHaveLength(8)
+  expect(result.proposals?.map(proposal=>proposal.id)).toEqual(['unreviewed'])
+  expect(result.messages?.map(message=>message.text)).toEqual(['Proposed boundary cases','A saved-pack question'])
+  expect(mergeDraftSuite(result,held,draft)).toEqual(result)
+  expect(saved.cases).toEqual([])
 })

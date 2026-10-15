@@ -1366,7 +1366,7 @@ func (s *Server) deskCreationLeft(dir *signingDir, id string, marker os.FileInfo
 // manifest is there and empty, cut short or not a desk's, which says nothing
 // of whether the desk was published (review round 1 of #315).
 func (s *Server) deskRegistered(id string) (folder os.FileInfo, published bool, err error) {
-	desks, err := s.assistant.root.OpenRoot("desks")
+	desks, err := s.registryRoot(false)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, false, nil
 	}
@@ -1374,7 +1374,14 @@ func (s *Server) deskRegistered(id string) (folder os.FileInfo, published bool, 
 		return nil, false, err
 	}
 	defer desks.Close()
-	info, err := desks.Lstat(id)
+	folderName, err := s.registryFolder(id)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	info, err := desks.Lstat(folderName)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, false, nil
 	}
@@ -1384,7 +1391,7 @@ func (s *Server) deskRegistered(id string) (folder os.FileInfo, published bool, 
 	if !deskFolderAccepted(info) {
 		return nil, false, nil
 	}
-	opened, err := desks.OpenRoot(id)
+	opened, err := desks.OpenRoot(folderName)
 	if err != nil {
 		return nil, false, err
 	}

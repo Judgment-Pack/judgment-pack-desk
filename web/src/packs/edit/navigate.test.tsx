@@ -265,7 +265,7 @@ describe('a path that moves under one address', () => {
     fireEvent.change(operand, { target: { value: '{"shade"' } })
     await waitFor(() => expect(screen.getByText('1 field is not written yet')).toBeTruthy())
     // Unfinished text is unsaved work even though it is not in the byte buffer.
-    expect(screen.getByText('Editing · Unsaved changes')).toBeTruthy()
+    expect(screen.getByText('Unsaved changes')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
 
     servedPath = BRAVO_PATH
@@ -452,7 +452,7 @@ describe('a read that lands after the page has moved on', () => {
     // B is still B, still dirty, and Alpha is nowhere on this page.
     expect(screen.getByDisplayValue('Bravo pack, revised')).toBeTruthy()
     expect(screen.queryByDisplayValue('Alpha pack')).toBeNull()
-    expect(screen.getByText('Editing · Unsaved changes')).toBeTruthy()
+    expect(screen.getByText('Unsaved changes')).toBeTruthy()
   })
 
   it('leaves the file the page is on alone when another file’s save lands', async () => {
@@ -493,7 +493,7 @@ describe('a read that lands after the page has moved on', () => {
     })
     const bravo = await screen.findByDisplayValue('Bravo pack')
     fireEvent.change(bravo, { target: { value: 'Bravo pack, revised' } })
-    await waitFor(() => expect(screen.getByText('Editing · Unsaved changes')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Unsaved changes')).toBeTruthy())
 
     // A's save answers now.
     release()
@@ -503,7 +503,7 @@ describe('a read that lands after the page has moved on', () => {
     // no offer of a file this page never asked for.
     expect(screen.getByDisplayValue('Bravo pack, revised')).toBeTruthy()
     expect(screen.queryByDisplayValue(/Alpha pack/)).toBeNull()
-    expect(screen.getByText('Editing · Unsaved changes')).toBeTruthy()
+    expect(screen.getByText('Unsaved changes')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Undo' }).hasAttribute('disabled')).toBe(false)
     expect(screen.queryByText(/This page is now about a different file/)).toBeNull()
     expect(screen.queryByText(/The file on disk has changed since this was loaded/)).toBeNull()
@@ -766,12 +766,12 @@ describe('the buffer follows the address', () => {
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1&builder=settings' })
     const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, edited' } })
-    await waitFor(() => expect(screen.getByText('Editing · Unsaved changes')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Unsaved changes')).toBeTruthy())
     await act(async () => {
       await router.navigate('/packs/bravo?edit=1&builder=settings')
     })
     await waitFor(() => expect(screen.getByDisplayValue('Bravo pack')).toBeTruthy())
     expect(screen.queryByDisplayValue('Alpha pack, edited')).toBeNull()
-    expect(screen.queryByText('Editing · Unsaved changes')).toBeNull()
+    expect(screen.queryByText('Unsaved changes')).toBeNull()
   })
 })

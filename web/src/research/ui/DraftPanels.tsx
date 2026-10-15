@@ -1,3 +1,4 @@
+import {LoadingState} from '../../ui/LoadingState'
 import { DefinitionHistory } from '../../definitions/DefinitionHistory'
 import shared from '../../definitions/DefinitionWorkspace.module.css'
 import { conversationMode, type AuthoringMode } from '../mode'
@@ -8,7 +9,7 @@ import type { ComponentProps, ReactNode } from 'react'
 import type { NodePositions } from '../../components/RelationshipMap'
 import { Message } from '../../i18n/Message'
 import { systemMessage, msg, useLocale } from '../../i18n'
-import { Fragment, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { PackDocument } from '../../mcp/types'
 import { PackLogic } from '../../packs/PackLogic'
 import { projectLogic } from '../../packs/logicModel'
@@ -250,7 +251,7 @@ export function ReviewPanel({ state, sources, onCreate, onTabChange, onEstablish
           <dt>{msg("Sources")}</dt>
           <dd><Message text={"<0/> recorded; <1/> with verified receipts; <2/> failed or unverified"} slots={[sources.length, verified, failed]} /></dd>
           <dt>{msg("Citations")}</dt>
-          <dd>{state.tracing ? msg("Checking the draft's citations…")
+          <dd>{state.tracing ? <LoadingState inline>{msg("Checking the draft's citations…")}</LoadingState>
             : mode === 'draft' && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")
             : conversation && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This draft cites no source.")
             : conversation ? <Message text={"<0/> of <1/> traced to a page read in this chat"} slots={[state.citations.length - untraced.length, state.citations.length]} />
@@ -320,9 +321,10 @@ function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: 
     viewport={viewport} onViewport={setViewport} nodePositions={nodePositions} onNodePositionsChange={setNodePositions} listScroll={scroll} /></div>
 }
 
-export function DraftTabs({ brief, historyPanel, usagePanel, testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, onEstablishCases, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { brief?: ReactNode; historyPanel?: ReactNode; usagePanel?: ReactNode; testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; onEstablishCases?: () => void; basis?: string }) {
+export function DraftTabs({ requestedTab, brief, historyPanel, usagePanel, testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, onEstablishCases, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { brief?: ReactNode; historyPanel?: ReactNode; usagePanel?: ReactNode; testsPanel?: ReactNode; requestedTab?: {tab: string; id: string}; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; onEstablishCases?: () => void; basis?: string }) {
   useLocale()
   const [tab, setTabState] = useState('draft')
+  useEffect(() => { if (requestedTab) { setTabState(requestedTab.tab); onTabChange?.(requestedTab.tab) } }, [requestedTab?.tab, requestedTab?.id])
   const [showJson, setShowJson] = useState(false), jsonTrigger = useRef<HTMLButtonElement>(null), jsonHandoff = useRef(false)
   const [briefVisited, setBriefVisited] = useState(false)
   const setTab = (next: string) => { if (next === 'brief') setBriefVisited(true); setTabState(next); onTabChange?.(next) }
@@ -349,7 +351,7 @@ export function DraftTabs({ brief, historyPanel, usagePanel, testsPanel, onTabCh
       </header>}
       {pending > 0 && <div className={styles.panel} role="status"><span>{msg("{{count}} invalid expectations · testing paused", { count: pending })}</span><div><Button variant="quiet" onClick={() => setTab('tests')}>{msg("Review expectations")}</Button></div></div>}
       <Tabs
-        overflow scrollable keepMounted fillPanel={tab === 'usage' ? 'usage' : tab === 'tests' && testsPanel ? 'tests' : 'logic'}
+        overflow scrollable keepMounted fillPanel={['usage','sources','history'].includes(tab) ? tab : tab === 'tests' && testsPanel ? 'tests' : 'logic'}
         variant={hideHeader ? 'page' : 'pane'}
         tools={!hideHeader && <OptionsMenu label={msg('Pack options')} triggerRef={jsonTrigger} onOpenChange={open=>{if(open)jsonHandoff.current=false}} onCloseAutoFocus={event=>{if(jsonHandoff.current)event.preventDefault()}}>
           <Menu.Item icon={<IconDetails/>} disabled={!state.candidates.length} onSelect={()=>{jsonHandoff.current=true;setShowJson(true)}}>{msg('View JSON')}</Menu.Item>
@@ -360,7 +362,7 @@ export function DraftTabs({ brief, historyPanel, usagePanel, testsPanel, onTabCh
         tabs={[
           { value: 'draft', label: msg("Overview"), panel: <DraftPanel state={state} onViewLogic={() => setTab('logic')} /> },
           { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelectInMain ?? onSelect} onInspect={onSelect} active={tab === 'logic'} /> },
-          { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <div className={styles.panel}><DraftSources document={document} documents={documents} files={files} sources={sources} citations={state.citations} onRead={onRead} /></div> },
+          { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <DraftSources document={document} documents={documents} files={files} sources={sources} citations={state.citations} onRead={onRead} /> },
           { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: testsPanel ? <div className={styles.testStack}>
             {independentCases && <Disclosure title={msg('Independent expectations')} open={pending>0}><TestsPanel mode={mode} state={state} onSelect={onSelect} withChecks={false} {...actions} onReadPage={readPage}/></Disclosure>}
             <div className={styles.testWorkspace}>{testsPanel}</div>
@@ -369,7 +371,7 @@ export function DraftTabs({ brief, historyPanel, usagePanel, testsPanel, onTabCh
             <ReviewPanel onTabChange={setTab} showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} onReadPage={readPage} onEstablishCases={onEstablishCases} basis={basis} />
           </> },
           { value: 'brief', label: msg('Brief'), panel: <div className={styles.panel}>{(tab === 'brief' || briefVisited) && (brief ?? <p>{msg('Keep this draft before generating a brief.')}</p>)}</div> },
-          { value: 'history', label: msg('History'), panel: tab === 'history' ? <div className={styles.panel}>{historyPanel ?? <DefinitionHistory kind="pack" draft owner="" candidates={state.candidates}/>}</div> : null },
+          { value: 'history', label: msg('History'), panel: tab === 'history' ? historyPanel ?? <DefinitionHistory kind="pack" draft owner="" candidates={state.candidates}/> : null },
           ...(usagePanel ? [{ value: 'usage', label: msg('Usage'), panel: tab === 'usage' ? usagePanel : null }] : [])
         ]}
       />

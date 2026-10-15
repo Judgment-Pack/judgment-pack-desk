@@ -8,7 +8,7 @@ export interface AgentRequest {
   effort?: CodexEffort
   phase: 'author' | 'critic'
 }
-export interface AgentEvent { type: 'text' | 'message'; id: string; text: string; phase?: 'commentary' | 'final' }
+export type AgentEvent = { type: 'text' | 'message'; id: string; text: string; phase?: 'commentary' | 'final' } | { type: 'retry'; attempt: number }
 export interface AgentToolCall { id: string; name: string; arguments: Record<string, unknown> }
 export interface AgentToolAnswer { text: string; isError: boolean }
 export interface AgentCallbacks {

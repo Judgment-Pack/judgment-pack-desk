@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-type localWorkerOptions struct{ Bundle, Dir, Seed, Public, ConnectionsDir string }
+type localWorkerOptions struct{ Bundle, Dir, Seed, Public, ConnectionsDir, InputHandoffs string }
 
 func executableName(name string) string {
 	if runtime.GOOS == "windows" {
@@ -56,6 +56,20 @@ func RunLocalGatewayWorker(input io.Reader, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// The reviewed-input adapter is Desk itself, pinned independently of the bundle.
+	self, _, err := deskInputAdapter()
+	if err != nil {
+		return err
+	}
+	if strings.ContainsAny(filepath.Base(self), " \t\r\n") {
+		return errors.New("invalid Desk executable name")
+	}
+	if options.InputHandoffs != "" {
+		if !filepath.IsAbs(options.InputHandoffs) {
+			return errors.New("invalid handoff directory")
+		}
+		plan.args = append(plan.args, "--source", reviewedInputSource+"="+filepath.Base(self)+" --input-source-adapter", "--source-shape", reviewedInputSource+"=mcp", "--source-env", reviewedInputSource+"=JPACK_INPUT_HANDOFFS")
+	}
 	for attempt := 0; attempt < 5; attempt++ {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -74,7 +88,7 @@ func RunLocalGatewayWorker(input io.Reader, output io.Writer) error {
 		cmd.Dir = options.Dir
 		// The CLI splits a source declaration into words. Resolve the adapter by its
 		// fixed basename on a dedicated PATH so installation paths may contain spaces.
-		cmd.Env = []string{"PATH=" + options.Bundle, "JPACK_CONNECTIONS_DIR=" + options.ConnectionsDir}
+		cmd.Env = []string{"PATH=" + options.Bundle + string(os.PathListSeparator) + filepath.Dir(self), "JPACK_CONNECTIONS_DIR=" + options.ConnectionsDir, "JPACK_INPUT_HANDOFFS=" + options.InputHandoffs}
 		for _, key := range []string{"SYSTEMROOT", "WINDIR", "TMPDIR", "TEMP", "TMP"} {
 			if value := os.Getenv(key); value != "" {
 				cmd.Env = append(cmd.Env, key+"="+value)

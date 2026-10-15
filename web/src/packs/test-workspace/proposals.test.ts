@@ -177,3 +177,12 @@ it('exports reviewed proposal cases with the Desk AI origin despite the proposed
   expect(cases[0]?.origin).toBe('ai')
   expect(matrix(cases).cases[0]?.origin).toBe('ai')
 })
+
+it('allows completing an omitted expectation for review without allowing existing assertions to change', () => {
+  const row = document.cases[0]!
+  const { expectedDisposition: _expected, ...withoutExpectation } = row
+  expect(preserveTestMeaning({...document,cases:[withoutExpectation]},document)).toEqual([])
+  expect(preserveTestMeaning({...document,cases:[{...withoutExpectation,expectedDisposition:null}]},document)[0]?.code).toBe('CORRECTION-MEANING')
+  expect(preserveTestMeaning({...document,cases:[{...withoutExpectation,expectedErrorClass:'evaluation'}]},document)[0]?.code).toBe('CORRECTION-MEANING')
+  expect(preserveTestMeaning(document,{...document,cases:[withoutExpectation]})[0]?.code).toBe('CORRECTION-MEANING')
+})

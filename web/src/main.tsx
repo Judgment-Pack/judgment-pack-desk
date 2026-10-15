@@ -16,7 +16,8 @@ import './shell.css'
 
 // The runtime is a local subprocess reading local files, and the chassis tells
 // us when those files change. Refetching on window focus or on an interval
-// would only add calls that the file watcher already covers.
+// would only add calls that the file watcher already covers. Mutable private
+// server snapshots are excluded from that watcher and use data/privateQuery.
 const releaseLanguage = initializeLanguage()
 if (import.meta.hot) import.meta.hot.dispose(releaseLanguage)
 

@@ -61,13 +61,10 @@ package desk
 // "2"; its refusal is passed on in its own words, with no path. The page then
 // checks the decision record again (ADR-0010, section 4, "When it runs").
 //
-// **What Desk cannot close** (review round 1). Between Desk's last reading
-// and the runtime's own, another writer can still append: `audit repair`
-// takes no precondition to hold it to what Desk read. So Desk compares the
-// discontinuity the runtime reports, the damaged line, its length and its
-// digest, with the bytes it read, and where they differ it says so, never as
-// a repair confirmed. Closing that window needs a precondition in the
-// runtime.
+// Runtime v0.30.0 checks --damaged-bytes and --damaged-digest under its
+// write lock. Changed damage is refused before any repair write. Desk still
+// compares the returned discontinuity with the confirmed bytes, and never
+// retries a refused or uncertain repair with a new precondition.
 
 import (
 	"bytes"
@@ -116,7 +113,7 @@ const (
 // Desk's own sentences about a repair. The page lists them (REPAIR_REASONS),
 // so that each is shown in the owner's language.
 const (
-	repairStaleWords      = "The trail changed after the decision record showed it, so nothing was repaired. Check the decision record again."
+	repairStaleWords      = "History changed since you reviewed it. No repair was made."
 	repairNoTrailWords    = "Nothing was repaired: this project's jpack.json declares no audit directory, so it keeps no trail."
 	repairUncheckedWords  = "Nothing was repaired: the runtime did not check the trail again, so Desk could not tell that it is the trail the decision record showed. It said:"
 	repairRefusedWords    = "The runtime did not report a repair. It said:"
@@ -136,6 +133,32 @@ const (
 // `audit repair`: its version, and the first release with it.
 func repairOlderWords(version string) string {
 	return fmt.Sprintf("Nothing was repaired: the runtime this Desk runs (jpack %s) does not read configVersion 6 and has no audit repair. A runtime of %s or later has it.", version, auditRuntimeFloor)
+}
+
+// A published Runtime >= 0.30.0 implements the locked damaged-tail precondition.
+// Unknown/development and prerelease versions do not establish support. Even
+// when admitted, every invocation sends both flags; there is no unbound retry.
+const repairBoundRuntimeWords = "Safe repair requires Runtime 0.30.0 or later. Update Runtime, then refresh history."
+
+func runtimeSupportsBoundRepair(version string) bool {
+	version = strings.TrimPrefix(version, "v")
+	version, _, _ = strings.Cut(version, "+")
+	if strings.Contains(version, "-") {
+		return false
+	}
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	var numbers [3]int
+	for i, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 || strconv.Itoa(n) != part {
+			return false
+		}
+		numbers[i] = n
+	}
+	return numbers[0] > 0 || numbers[1] >= 30
 }
 
 // auditRepair is the decision record's word on `audit repair`, given only
@@ -183,13 +206,16 @@ func repairFinding(report *auditReport) (int64, bool) {
 // incomplete-last-line, and nil everywhere else: offered where the trail is
 // chained and Desk could read it, with a token over a fresh nonce; otherwise
 // not, and why.
-func (s *Server) repairOffer(ctx context.Context, report *auditReport) *auditRepair {
+func (s *Server) repairOffer(ctx context.Context, report *auditReport, runtimeVersion string) *auditRepair {
 	line, found := repairFinding(report)
 	if !found {
 		return nil
 	}
 	unavailable := func(reason string) *auditRepair {
 		return &auditRepair{State: repairUnavailable, Line: line, Reason: reason}
+	}
+	if !runtimeSupportsBoundRepair(runtimeVersion) {
+		return unavailable(repairBoundRuntimeWords)
 	}
 	chained, err := s.trailChained()
 	switch {
@@ -450,6 +476,9 @@ func (s *Server) repairTrail(ctx context.Context, project heldDir, token string)
 	if !slices.Contains(schema.supported, auditConfigVersion) {
 		return nil, &repairFailure{status: http.StatusConflict, code: CodeBadRequest, message: repairOlderWords(schema.version)}
 	}
+	if !runtimeSupportsBoundRepair(schema.version) {
+		return nil, &repairFailure{status: http.StatusConflict, code: CodeBadRequest, message: repairBoundRuntimeWords}
+	}
 	if _, declared, err := s.projectAuditDir(); err != nil {
 		return nothing(http.StatusInternalServerError, CodeInternal, err)
 	} else if !declared {
@@ -499,7 +528,8 @@ func (s *Server) repairTrail(ctx context.Context, project heldDir, token string)
 	// a repair killed in the middle could leave a discontinuity record whose
 	// own write did not complete, which no repair mends. The run keeps
 	// runRuntime's own bound.
-	out, runErr = runRuntime(context.WithoutCancel(ctx), s.cfg.JpackBin, project, "audit", "repair", "--config", runtimeConfigName, "--format", "json")
+	out, runErr = runRuntime(context.WithoutCancel(ctx), s.cfg.JpackBin, project, "audit", "repair", "--config", runtimeConfigName, "--format", "json",
+		"--damaged-bytes", strconv.FormatInt(read.tail, 10), "--damaged-digest", read.tailDigest)
 	answer, failure := readRepaired(out, runErr)
 	if failure != nil {
 		return nil, failure
@@ -558,6 +588,9 @@ func readRepaired(out []byte, runErr error) (*repairAnswer, *repairFailure) {
 			return &repairAnswer{State: "repaired", Discontinuity: repaired}, nil
 		}
 	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && (auditVerification{Diagnostics: got.Diagnostics}).said():
+		if len(got.Diagnostics) == 1 && got.Diagnostics[0].Code == "JPS-AUDIT-REPAIR-TAIL-CHANGED" {
+			return nil, &repairFailure{status: http.StatusConflict, code: CodeStale, message: repairStaleWords, diagnostics: got.Diagnostics}
+		}
 		return nil, &repairFailure{status: http.StatusConflict, code: CodeBadRequest, message: repairRefusedWords, diagnostics: got.Diagnostics}
 	}
 	return nil, undocumented

@@ -2,6 +2,16 @@
  * string indices, including when PDF whitespace was folded by the model. */
 export function quoteRange(text: string, quote: string): { start: number; end: number } | undefined {
   const trimmed = quote.trim()
+  // Prefer the literal span, including quotation marks that are in the source.
+  // Otherwise allow one balanced presentation wrapper added to a link label.
+  // Do not change case, internal punctuation, words, ellipses or source bytes.
+  const literal = literalRange(text, trimmed)
+  if (literal) return literal
+  const pairs: Record<string, string> = {'“':'”', '‘':'’', '"':'"', "'":"'", '«':'»', '‹':'›', '「':'」', '『':'』', '„':'“'}
+  if (trimmed.length > 2 && pairs[trimmed[0]!] === trimmed.at(-1)) return literalRange(text, trimmed.slice(1, -1))
+}
+function literalRange(text: string, quote: string): { start: number; end: number } | undefined {
+  const trimmed = quote.trim()
   if (!trimmed) return
   const exact = text.indexOf(trimmed)
   if (exact >= 0) return { start: exact, end: exact + trimmed.length }

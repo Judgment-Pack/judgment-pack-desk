@@ -19,6 +19,10 @@ export function IconPreview() {
   return <Glyph><path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z" /><circle cx="8" cy="8" r="2" /></Glyph>
 }
 
+export function IconHide() {
+  return <Glyph><path d="m2 2 12 12M6.1 3.7A8 8 0 0 1 8 3.5c4.5 0 7 4.5 7 4.5a14 14 0 0 1-2.5 2.9M10 12.2c-.6.2-1.3.3-2 .3C3.5 12.5 1 8 1 8a14 14 0 0 1 2.5-2.9M6.6 6.6a2 2 0 0 0 2.8 2.8" /></Glyph>
+}
+
 function Glyph({ children }: { children: ReactNode }) {
   return (
     <svg {...glyphProps}>
@@ -51,6 +55,8 @@ export function IconBrief() { return <Glyph><path d="M8 3.5C6 2 3.5 2 1.5 2.5v10
 export function IconMore() {
   return <Glyph><circle cx="3" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="8" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="8" r=".8" fill="currentColor" stroke="none" /></Glyph>
 }
+
+export function IconMessageList() { return <Glyph><path d="M5.5 3h8M5.5 8h8M5.5 13h8"/><circle cx="2" cy="3" r=".65"/><circle cx="2" cy="8" r=".65"/><circle cx="2" cy="13" r=".65"/></Glyph> }
 
 export function IconHistory() {
   return <Glyph><path d="M2 5a6 6 0 1 1-.2 5M2 1.5V5h3.5M8 4.5V8l2.5 1.5" /></Glyph>
@@ -211,6 +217,8 @@ export function IconCopy() {
 }
 
 export function IconSend() { return <Glyph><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></Glyph> }
+export function IconDownload() { return <Glyph><path d="M8 1.5v8M4.5 6 8 9.5 11.5 6M2 10v3.5h12V10" /></Glyph> }
+export function IconPlay() { return <Glyph><path d="m5 3 8 5-8 5Z" /></Glyph> }
 export function IconStop() { return <Glyph><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" stroke="none" /></Glyph> }
 
 export function IconLink() { return <Glyph><path d="m6 10 4-4M5.5 5.5 3 8a3 3 0 0 0 4.2 4.2l2.3-2.3M6.5 6.1l2.3-2.3A3 3 0 0 1 13 8l-2.5 2.5" /></Glyph> }
@@ -234,3 +242,5 @@ export function IconOutcome() { return <Glyph><circle cx="8" cy="8" r="5" /></Gl
 export function IconAutoArrange() {
   return <Glyph><rect x="1.5" y="2" width="4" height="4" rx=".7" /><rect x="1.5" y="10" width="4" height="4" rx=".7" /><rect x="10.5" y="6" width="4" height="4" rx=".7" /><path d="M5.5 4H8v8H5.5M8 8h2.5" /></Glyph>
 }
+
+export function IconRetry() { return <Glyph><path d="M2 5a6 6 0 1 1-.2 5M2 1.5V5h3.5" /></Glyph> }

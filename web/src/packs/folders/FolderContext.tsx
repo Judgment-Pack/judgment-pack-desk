@@ -1,3 +1,4 @@
+import {privateQuery} from '../../data/privateQuery'
 import { useDirtyGuard } from '../../shell/useDirtyGuard'
 import { useConfirmDiscard } from '../../shell/UnsavedChanges'
 import { useChats } from '../../chat/ChatProvider'
@@ -20,7 +21,7 @@ function read(key: string | undefined): Preferences {
 }
 function useFolderState(storageKey?: string) {
  const client=useQueryClient(), navigate=useNavigate(), location=useLocation()
- const query=useQuery({queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false,staleTime:0,refetchOnWindowFocus:true})
+ const query=useQuery({...privateQuery,queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false,staleTime:0,refetchOnWindowFocus:true})
  const {packDrafts,deletedDrafts,chats,ready}=useChats()
  const raw=query.data?.document ?? defaultFolders()
  const assignments={...raw.assignments}
@@ -34,7 +35,7 @@ function useFolderState(storageKey?: string) {
  const document={...raw,assignments}
  const [settings,setSettings]=useState(()=>({key:storageKey,value:read(storageKey)})), [message,setMessage]=useState('')
  if(settings.key!==storageKey)setSettings({key:storageKey,value:read(storageKey)})
- const prefs={...settings.value,collapsed:!settings.value.visibilityChosen&&location.pathname!=='/packs'?true:settings.value.collapsed}
+ const prefs={...settings.value,collapsed:!settings.value.visibilityChosen&&location.pathname!=='/library'?true:settings.value.collapsed}
  const [editorFields,setEditorFields]=useState({name:'',destination:WORKSPACE_ROOT,createDestination:false,parent:WORKSPACE_ROOT})
  const [editing,setEditing]=useState<{kind:'create'|'rename'|'move'|'pack'|'items'; ids?:string[]; id?:string; parentId?:string|null}|null>(null)
  const [overlay,setOverlay]=useState(false)
@@ -56,11 +57,11 @@ function useFolderState(storageKey?: string) {
   return {key:storageKey,value:next}
  })
  useEffect(()=>{
-  if(location.pathname!=='/packs'||!query.data)return
+  if(location.pathname!=='/library'||!query.data)return
   const id=new URLSearchParams(location.search).get('folder')
   if(id && id===ALL_PACKS)preferences({selected:id});else if(id && document.folders.some(f=>f.id===id))preferences({selected:id,expanded:[...new Set([...prefs.expanded,...folderTrail(document,id).map(f=>f.id)])]})
  },[location.pathname,location.search,query.data])
- const select=(id:string)=>{preferences({selected:id});setOverlay(false);if(location.pathname!=='/packs'||new URLSearchParams(location.search).has('folder'))navigate(`/packs?folder=${encodeURIComponent(id)}`)}
+ const select=(id:string)=>{preferences({selected:id});setOverlay(false);if(location.pathname!=='/library'||new URLSearchParams(location.search).has('folder'))navigate(`/library?folder=${encodeURIComponent(id)}`)}
  const edit=(request:NonNullable<typeof editing>,element?:HTMLElement)=>{
   opener.current=(overlay?drawerOpener.current:null)??element??documentElement();setOverlay(false);editorBase.current=query.data?{...query.data,document}:undefined;setMessage('')
   const folder=document.folders.find(folder=>folder.id===request.id)

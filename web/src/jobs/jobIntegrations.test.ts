@@ -1,9 +1,9 @@
 import {expect,it} from 'vitest'
 import {canChangeIntegration,matchesJobGateway,setSourceIntegration,supportsJobProfile} from './jobIntegrations'
-import type {MappingV2,ProfileEntry} from './mappingTypes'
+import type {DialectV2,ProfileEntry} from './dialectTypes'
 import type {ResearchConfig} from '../config/deskConfig'
 const entry:ProfileEntry={digest:'new-digest',profile:{id:'registry',shape:'mcp',source:'registry',class:'record',authority:'gateway',publicKey:'key',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,tools:['read_case']}}
-const base:MappingV2={version:2,case:{facts:[{target:'/manual',source:'/manual'}],evidence:[]},sources:[]}
+const base:DialectV2={version:2,case:{facts:[{target:'/manual',source:'/manual'}],evidence:[]},sources:[]}
 it('requires a supported execution contract and the configured signer/authority',()=>{
  expect(supportsJobProfile(entry)).toBe(true)
  expect(supportsJobProfile({...entry,profile:{...entry.profile,shape:'http'}})).toBe(false)

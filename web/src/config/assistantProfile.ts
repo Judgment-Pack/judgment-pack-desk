@@ -1,4 +1,5 @@
 import { CODEX_EFFORTS, ASSISTANT_THINKING, type AssistantConfig, type AssistantAgentConfig, type ThinkingTier } from './deskConfig'
+import { contextConfiguration, type ContextConfiguration } from '../assistant/context/policy'
 import { sourceMessage } from '../i18n/source'
 
 export const ASSISTANT_PROFILE_PATH = 'jpack-assistant.json'
@@ -7,7 +8,7 @@ export type ModelPreferences = { inherit: true } | {
   inherit: false; models: string[]; model: string | null
   effort?: AssistantAgentConfig['effort']; thinking?: ThinkingTier
 }
-export interface AssistantProfile { profileVersion: 1 | 2; codex?: ModelPreferences; api?: ModelPreferences; inherit?:boolean; connections?:string[]; defaultConnection?:string|null; models?:Record<string,ModelPreferences> }
+export interface AssistantProfile { profileVersion: 1 | 2; context?:ContextConfiguration; codex?: ModelPreferences; api?: ModelPreferences; inherit?:boolean; connections?:string[]; defaultConnection?:string|null; models?:Record<string,ModelPreferences> }
 export interface AssistantProfileRead {
   present: boolean; sha256?: string; text?: string; value?: AssistantProfile; problem?: string
 }
@@ -15,8 +16,9 @@ export const INHERITED_PROFILE: AssistantProfile = { profileVersion: 1, codex: {
 const object = (value: unknown): value is Record<string,unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 export function decodeAssistantProfile(text: string): AssistantProfile {
   const value:unknown=JSON.parse(text)
+  if(object(value)&&value.context!==undefined)contextConfiguration(value.context)
   if(object(value)&&value.profileVersion===2)return decodeProfileV2(value,text)
-  if(new TextEncoder().encode(text).byteLength>65536 || !object(value) || value.profileVersion!==1 || Object.keys(value).some(key=>!['profileVersion','codex','api'].includes(key))) throw new Error(PROFILE_PROBLEM)
+  if(new TextEncoder().encode(text).byteLength>65536 || !object(value) || value.profileVersion!==1 || Object.keys(value).some(key=>!['profileVersion','codex','api','context'].includes(key))) throw new Error(PROFILE_PROBLEM)
   for(const key of ['codex','api'] as const){
     const row=value[key];if(row===undefined)continue
     if(!object(row)||typeof row.inherit!=='boolean')throw new Error(PROFILE_PROBLEM)
@@ -42,7 +44,7 @@ export function applyAssistantProfile(machine: AssistantConfig, read?: Assistant
 function decodeProfileV2(value:Record<string,unknown>,text:string):AssistantProfile {
  const fail=()=>{throw new Error(PROFILE_PROBLEM)}
  if(new TextEncoder().encode(text).byteLength>65536||typeof value.inherit!=='boolean')return fail()
- const keys=value.inherit?['profileVersion','inherit']:['profileVersion','inherit','connections','defaultConnection','models']
+ const keys=value.inherit?['profileVersion','inherit','context']:['profileVersion','inherit','connections','defaultConnection','models','context']
  if(Object.keys(value).some(k=>!keys.includes(k)))return fail()
  if(!value.inherit){
   if(!Array.isArray(value.connections)||value.connections.length>32||value.connections.some(id=>typeof id!=='string'||!/^(legacy-api|legacy-codex|ai-[a-f0-9]{24})$/.test(id))||new Set(value.connections).size!==value.connections.length)return fail()

@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { msg, useLocale } from '../i18n'
@@ -19,5 +20,5 @@ export function SavedGraphAssistant({ graphId }: { graphId: string }) {
   return useInspectorPortal(graph.data && !graph.error ? <GraphAssistant workspace={graphId}
     proposal={{id: graphId, path: graph.data.meta.path, content: graph.data.raw, baseSha256: graph.data.meta.sha256}}
     chatId={params.get('chat') ?? chatId} onChat={id => { setChatId(id); if (params.get('chat') !== id) setParams(previous => { const next = new URLSearchParams(previous); next.set('chat', id); return next }, {replace: true}) }} busy={false} selection=""/>
-    : <p role="status">{graph.error ? graph.error.message : msg('Loading graph…')}</p>)
+    : graph.error ? <p role="status">{graph.error.message}</p> : <LoadingState inset>{msg('Loading graph…')}</LoadingState>)
 }

@@ -201,7 +201,7 @@ it('shows Not recorded in the Runs table for a run without a readable submission
   {...run,id:'run-cccccccc',createdAt:'not a time'},
  ]:[]}) as never)
  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/runs']}><JobsContent/></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
- const submitted=async(run:string)=>(await screen.findByRole('link',{name:run})).closest('tr')!.querySelectorAll('td')[4]!.textContent
+ const submitted=async(run:string)=>(await screen.findByRole('link',{name:run})).closest('tr')!.querySelectorAll<HTMLTableCellElement>('td:not([data-selection-cell])')[4]!.textContent
  expect(await submitted('bbbbbbbb')).toBe('Not recorded')
  expect(await submitted('cccccccc')).toBe('Not recorded')
  expect(await submitted('aaaaaaaa')).toBe(formatDate(new Date('2026-09-26T12:00:00Z'),{dateStyle:'medium',timeStyle:'short'}))

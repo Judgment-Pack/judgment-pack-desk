@@ -1,0 +1,125 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within, act } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { testQueryClient } from '../testing/harness'
+import { ChatWebAccessRecovery, WebAccessSettings } from './WebAccessSettings'
+const m=vi.hoisted(()=>({data:{local:true,supported:true,enabled:false,managed:false,revision:'first'},error:false,apply:vi.fn(),refetch:vi.fn()}))
+vi.mock('./webAccess',()=>({WEB_ACCESS_KEY:['web-access'],useWebAccess:()=>({data:m.data,isError:m.error,isPending:false,refetch:m.refetch}),applyWebAccess:m.apply}))
+beforeEach(()=>{m.data={local:true,supported:true,enabled:false,managed:false,revision:'first'};m.error=false;m.refetch.mockResolvedValue({data:m.data,isError:false});m.apply.mockImplementation(async (enabled:boolean)=>{m.data={...m.data,enabled,revision:'second'};return m.data})})
+afterEach(()=>{cleanup();vi.clearAllMocks()})
+const view=(ui:React.ReactNode)=><QueryClientProvider client={testQueryClient()}>{ui}</QueryClientProvider>
+it('requires explicit Apply after reviewing the setting and warning',async()=>{
+ render(view(<WebAccessSettings/>))
+ const toggle=screen.getByRole('switch',{name:'Read websites linked by Google search'})
+ expect(toggle.getAttribute('aria-checked')).toBe('false')
+ fireEvent.click(toggle);expect(m.apply).not.toHaveBeenCalled()
+ expect(screen.getByText('Applying changes briefly interrupts source connections.')).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:'Apply changes'}))
+ await waitFor(()=>expect(m.apply).toHaveBeenCalledExactlyOnceWith(true,'first'))
+ expect(await screen.findByText('Changes saved')).toBeTruthy()
+})
+it('opens the same form in place, and Cancel does not apply anything',async()=>{
+ render(view(<ChatWebAccessRecovery/>));const opener=screen.getByRole('button',{name:'Review web access'});fireEvent.click(opener)
+ expect(screen.getByRole('dialog',{name:'Web access'})).toBeTruthy()
+ fireEvent.click(screen.getByRole('switch'));fireEvent.click(screen.getByRole('button',{name:'Cancel'}))
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());expect(m.apply).not.toHaveBeenCalled()
+ await waitFor(()=>expect(document.activeElement).toBe(opener))
+})
+it('hides recovery for external, unsupported, unavailable or managed policy',()=>{
+ const v=render(view(<ChatWebAccessRecovery/>))
+ for(const patch of [{local:false},{supported:false},{managed:true}]){m.data={local:true,supported:true,enabled:false,managed:false,revision:'first',...patch};v.rerender(view(<ChatWebAccessRecovery/>));expect(screen.queryByRole('button')).toBeNull()}
+ m.error=true;v.rerender(view(<ChatWebAccessRecovery/>));expect(screen.queryByRole('button')).toBeNull()
+})
+
+it('confirms turning access off without suggesting a page retry, and clears success on edits',async()=>{
+ m.data={...m.data,enabled:true}
+ render(view(<WebAccessSettings/>))
+ expect(screen.queryByText('Applying changes briefly interrupts source connections.')).toBeNull()
+ fireEvent.click(screen.getByRole('switch'))
+ fireEvent.click(screen.getByRole('button',{name:'Apply changes'}))
+ await screen.findByText('Changes saved')
+ expect(m.apply).toHaveBeenCalledExactlyOnceWith(false,'first')
+ expect(screen.queryByText(/Retry the page read/)).toBeNull()
+ expect(screen.queryByText('Applying changes briefly interrupts source connections.')).toBeNull()
+ expect((screen.getByRole('button',{name:'Apply changes'}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.click(screen.getByRole('switch'))
+ expect(screen.queryByText('Changes saved')).toBeNull()
+ expect(screen.getByText('Unsaved changes')).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:'Cancel'}))
+ expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
+ expect(m.apply).toHaveBeenCalledTimes(1)
+})
+it('keeps uncertain save outcomes explicit and reloads without retrying the write',async()=>{
+ m.apply.mockRejectedValueOnce(new Error('connection lost'))
+ render(view(<WebAccessSettings/>))
+ fireEvent.click(screen.getByRole('switch'))
+ fireEvent.click(screen.getByRole('button',{name:'Apply changes'}))
+ expect((await screen.findByRole('alert')).textContent).toContain('Could not confirm whether web access settings were saved.')
+ expect(screen.queryByText('Changes saved')).toBeNull()
+ expect((screen.getByRole('button',{name:'Apply changes'}) as HTMLButtonElement).disabled).toBe(true)
+ m.refetch.mockResolvedValueOnce({data:{...m.data,enabled:true,revision:'updated'},isError:false})
+ fireEvent.click(screen.getByRole('button',{name:'Reload settings'}))
+ await waitFor(()=>expect(screen.queryByRole('alert')).toBeNull())
+ expect(m.apply).toHaveBeenCalledTimes(1)
+ expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
+})
+it('retains the failure and draft when a recovery reload fails',async()=>{
+ m.apply.mockRejectedValueOnce(new Error('connection lost'))
+ m.refetch.mockResolvedValueOnce({isError:true})
+ render(view(<WebAccessSettings/>))
+ fireEvent.click(screen.getByRole('switch'))
+ fireEvent.click(screen.getByRole('button',{name:'Apply changes'}))
+ await screen.findByRole('alert')
+ fireEvent.click(screen.getByRole('button',{name:'Reload settings'}))
+ await waitFor(()=>expect(m.refetch).toHaveBeenCalled())
+ expect(screen.getByRole('alert')).toBeTruthy()
+ expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
+ expect(m.apply).toHaveBeenCalledTimes(1)
+})
+
+it('keeps the enabled policy inspectable and uses one dialog title with explanations before actions',async()=>{
+ m.data.enabled=true
+ render(view(<ChatWebAccessRecovery/>))
+ const opener=screen.getByRole('button',{name:'Review web access'})
+ fireEvent.click(opener)
+ const dialog=screen.getByRole('dialog',{name:'Web access'})
+ expect(within(dialog).getAllByRole('heading',{name:'Web access'})).toHaveLength(1)
+ expect(within(dialog).getByRole('switch').getAttribute('aria-checked')).toBe('true')
+ expect((within(dialog).getByRole('button',{name:'Apply changes'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(within(dialog).queryByText('Applying changes briefly interrupts source connections.')).toBeNull()
+ const footer=dialog.lastElementChild!
+ expect(footer.contains(within(dialog).getByRole('button',{name:'Apply changes'}))).toBe(true)
+ expect(footer.contains(within(dialog).getByText('The page read won’t restart automatically.'))).toBe(false)
+ fireEvent.click(within(dialog).getByRole('switch'))
+ expect(footer.contains(within(dialog).getByText('Applying changes briefly interrupts source connections.'))).toBe(false)
+ fireEvent.click(within(dialog).getByRole('button',{name:'Cancel'}))
+ await waitFor(()=>expect(document.activeElement).toBe(opener))
+ expect(m.apply).not.toHaveBeenCalled()
+})
+it('keeps an applying dialog open and restores focus to its retained button after saving',async()=>{
+ let finish!:(value:typeof m.data)=>void
+ m.apply.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
+ render(view(<ChatWebAccessRecovery/>))
+ const opener=screen.getByRole('button',{name:'Review web access'})
+ fireEvent.click(opener)
+ fireEvent.click(screen.getByRole('switch'))
+ fireEvent.click(screen.getByRole('button',{name:'Apply changes'}))
+ expect((screen.getByRole('button',{name:'Cancel'}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.keyDown(screen.getByRole('dialog'),{key:'Escape'})
+ expect(screen.getByRole('dialog')).toBeTruthy()
+ await act(async()=>{m.data={...m.data,enabled:true,revision:'saved'};finish(m.data)})
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
+ expect(screen.getByRole('button',{name:'Review web access'})).toBe(opener)
+ await waitFor(()=>expect(document.activeElement).toBe(opener))
+ expect(m.apply).toHaveBeenCalledExactlyOnceWith(true,'first')
+})
+
+it('retains the reviewed revision and unsaved toggle through a background refresh',async()=>{
+ const v=render(view(<WebAccessSettings/>))
+ fireEvent.click(screen.getByRole('switch'))
+ m.data={...m.data,revision:'changed-in-another-window'}
+ v.rerender(view(<WebAccessSettings/>))
+ expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
+ fireEvent.click(screen.getByRole('button',{name:'Apply changes'}))
+ await waitFor(()=>expect(m.apply).toHaveBeenCalledExactlyOnceWith(true,'first'))
+})

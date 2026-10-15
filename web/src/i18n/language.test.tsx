@@ -184,7 +184,7 @@ describe('personal language preference', () => {
     await act(async () => { setLanguage('ja'); await languageReady() })
     expect(screen.getByRole('status').textContent).toBe(msg('Copied'))
     expect(writeText).toHaveBeenCalledExactlyOnceWith('{"outcomeId":"Save"}')
-    expect(document.querySelector('pre code')?.textContent).toBe('{"outcomeId":"Save"}')
+    expect(document.querySelector('pre code')?.textContent).toBe('{\n  "outcomeId": "Save"\n}')
     vi.unstubAllGlobals()
   })
 

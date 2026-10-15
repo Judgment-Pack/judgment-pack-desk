@@ -1,3 +1,5 @@
+import {privateQuery} from '../data/privateQuery'
+import {LoadingState} from '../ui/LoadingState'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -12,7 +14,7 @@ import { folderPath } from '../packs/folders/model'
 import { msg } from '../i18n'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { Tooltip } from '../ui/Tooltip'
 import { IconSearch } from './icons'
 import { isTypingTarget } from './shortcuts'
@@ -43,7 +45,7 @@ export function QuickSwitcher() {
 }
 function SwitchResults({ recentKey,close }: { recentKey?:string;close:()=>void }) {
   const packs=usePacks(), graphs=useGraphInventory(), chats=useChats(), queryClient=useQueryClient(), navigate=useNavigate()
-  const folders=useQuery({queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false})
+  const folders=useQuery({...privateQuery,queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false})
   const [query,setQuery]=useState(''), [selected,setSelected]=useState(0)
   const id=useId(), input=useRef<HTMLInputElement|null>(null)
   const items=useMemo(() => {
@@ -56,7 +58,7 @@ function SwitchResults({ recentKey,close }: { recentKey?:string;close:()=>void }
     for (const draft of chats.packDrafts.filter(d=>!d.finalized)) rows.push({id:draft.id,title:draft.title,kind:msg('Draft'),detail:'',href:draftHref(draft.id)})
     for (const graph of graphs.data?.graphs??[]) rows.push({id:`graph:${graph.id}`,title:graph.id,kind:msg('Graph'),detail:graph.description??'',href:`/graphs/${encodeURIComponent(graph.id)}`})
     for (const chat of chats.chats) rows.push({id:`chat:${chat.id}`,title:chatTitle(chat),kind:chat.archived?msg('Archived chat'):msg('Chat'),detail:'',href:`/chats/${encodeURIComponent(chat.id)}`})
-    if(folders.data) for(const folder of folders.data.document.folders) rows.push({id:`folder:${folder.id}`,title:folder.name,kind:msg('Folder'),detail:folderPath(folders.data.document,folder.id),href:`/packs?folder=${encodeURIComponent(folder.id)}`})
+    if(folders.data) for(const folder of folders.data.document.folders) rows.push({id:`folder:${folder.id}`,title:folder.name,kind:msg('Folder'),detail:folderPath(folders.data.document,folder.id),href:`/library?folder=${encodeURIComponent(folder.id)}`})
     return rows
   },[packs.data,graphs.data,chats.packDrafts,chats.chats,folders.data,queryClient])
   const results=searchItems(items,query,recentKey?readRecent(recentKey):[])
@@ -65,7 +67,7 @@ function SwitchResults({ recentKey,close }: { recentKey?:string;close:()=>void }
   useEffect(()=>{document.getElementById(`${id}-${index}`)?.scrollIntoView?.({block:'nearest'})},[index,id])
   const choose=(item:SwitchItem)=>{close();navigate(item.href)}
   return <div className={styles.root}>
-    <Input ref={input} role="combobox" aria-label={msg('Search packs, folders, drafts, graphs and chats')} aria-controls={id} aria-expanded="true" aria-autocomplete="list" aria-activedescendant={results.length?`${id}-${index}`:undefined}
+    <SearchInput ref={input} role="combobox" aria-label={msg('Search packs, folders, drafts, graphs and chats')} aria-controls={id} aria-expanded="true" aria-autocomplete="list" aria-activedescendant={results.length?`${id}-${index}`:undefined}
       placeholder={msg('Search packs, folders, drafts, graphs and chats')} value={query}
       onChange={e=>{setQuery(e.target.value);setSelected(0)}} onKeyDown={e=>{
         if(e.nativeEvent.isComposing)return
@@ -79,7 +81,7 @@ function SwitchResults({ recentKey,close }: { recentKey?:string;close:()=>void }
         <span><strong>{item.title}</strong><small>{item.detail}</small></span><span className={styles.kind}>{item.kind}</span>
       </button>)}
     </div>
-    {!results.length && <p role="status">{packs.isPending||!chats.ready?msg('Loading items…'):msg('No matching items.')}</p>}
+    {!results.length && (packs.isPending||!chats.ready&&!chats.error ? <LoadingState>{msg('Loading items…')}</LoadingState> : <p role="status">{msg('No matching items.')}</p>)}
     <Button variant="quiet" onClick={close}>{msg('Close')}</Button>
   </div>
 }

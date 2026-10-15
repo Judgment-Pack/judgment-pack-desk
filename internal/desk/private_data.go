@@ -2,6 +2,7 @@ package desk
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -203,10 +204,18 @@ func decodeDataJSON(data []byte, into any) error {
 // The lock file is stable and never renamed or removed. Every cooperating Desk
 // sharing this configuration root serializes storage changes through this inode.
 func (s *Server) privateDataLock(exclusive bool) (*os.File, error) {
-	return s.privateDataFileLock(".data.lock", exclusive)
+	return s.privateDataLockContext(context.Background(), exclusive)
+}
+
+func (s *Server) privateDataLockContext(ctx context.Context, exclusive bool) (*os.File, error) {
+	return s.openPrivateDataFileLock(ctx, ".data.lock", exclusive, true)
 }
 
 func (s *Server) privateDataFileLock(name string, exclusive bool) (*os.File, error) {
+	return s.openPrivateDataFileLock(context.Background(), name, exclusive, false)
+}
+
+func (s *Server) openPrivateDataFileLock(ctx context.Context, name string, exclusive, wait bool) (*os.File, error) {
 	if !s.assistant.usable() {
 		return nil, s.assistant.problem
 	}
@@ -222,7 +231,11 @@ func (s *Server) privateDataFileLock(name string, exclusive bool) (*os.File, err
 		err = ownedByUs("private data lock", info)
 	}
 	if err == nil {
-		err = lockPrivateData(file, exclusive)
+		if wait {
+			err = waitPrivateDataLock(ctx, file, exclusive)
+		} else {
+			err = lockPrivateData(file, exclusive)
+		}
 	}
 	if err != nil {
 		file.Close()

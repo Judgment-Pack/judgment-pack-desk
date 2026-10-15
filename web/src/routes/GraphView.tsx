@@ -3,7 +3,7 @@ import { DefinitionBrief } from '../briefs/DefinitionBrief'
 import { DefinitionHistory } from '../definitions/DefinitionHistory'
 import { GraphSources } from '../graphs/GraphSources'
 import { Disclosure } from '../ui/Disclosure'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { Menu, MenuChoice, OptionsMenu } from '../ui/Menu'
 import shared from '../definitions/DefinitionWorkspace.module.css'
 import { GraphReview } from '../briefs/GraphReview'
@@ -111,19 +111,19 @@ export function GraphView() {
     {compose ? <GraphWorkspace graphId={graphId} tests={graphId ? <GraphTestsWorkspace graphId={graphId} actions={testActions}>{testsPanel}</GraphTestsWorkspace> : testsPanel}/> : <>
     {graphId && <SavedGraphAssistant key={graphId} graphId={graphId}/>}
     <PageHeader variant="title" leading={<ShowFolders/>} title={graphId || msg("Graphs")} meta={graphId ? <>{served.data?.meta.graphVersion} <Pill tone="quiet">{msg("Experimental")}</Pill></> : undefined}
-      actions={<>{graphId ? <GraphOptions id={graphId} meta={served.data?.meta} sourceText={served.data?.raw}/> : <ButtonLink to="/packs">{msg("Library")}</ButtonLink>}{!compose && <ButtonLink to={withChat(graphId ? `/graphs/${encodeURIComponent(graphId)}?view=compose` : "/graphs?view=compose")}>{graphId ? msg("Edit composition") : msg("Create graph")}</ButtonLink>}</>}
+      actions={<>{!graphId&&!tests&&testActions}{graphId ? <GraphOptions id={graphId} meta={served.data?.meta} sourceText={served.data?.raw}/> : <ButtonLink to="/library">{msg("Library")}</ButtonLink>}{!compose && <ButtonLink to={withChat(graphId ? `/graphs/${encodeURIComponent(graphId)}?view=compose` : "/graphs?view=compose")}>{graphId ? msg("Edit composition") : msg("Create graph")}</ButtonLink>}</>}
       navigation={graphId ? <DefinitionNavigation label={msg('Graph sections')} current={overview?'overview':sources?'sources':tests||rehearsal?'tests':review?'review':brief?'brief':history?'history':usage?'usage':'logic'} items={[
         {value:'overview',label:msg('Overview')},{value:'logic',label:msg('Logic')},{value:'sources',label:msg('Sources')},{value:'tests',label:msg('Tests')},
         {value:'review',label:msg('Review')},{value:'brief',label:msg('Brief')},{value:'history',label:msg('History')},{value:'usage',label:msg('Usage')}
       ].map(item=>({...item,href:withChat(`/graphs/${encodeURIComponent(graphId)}${item.value==='logic'?'':'?view='+item.value}`)}))}/> : undefined} />
-    <PageBody width="full">
+    <PageBody width="full" fill={!!graphId && history} loading={!tests&&!rehearsal&&(!graphId&&graphInventorySupported&&inventory.isPending||!!graphId&&graphDocumentSupported&&served.isPending)?(graphId?msg('Loading graph…'):msg('Loading graphs…')):undefined}>
       {!graphId && <p className="meta"><Pill tone="quiet">{msg("Experimental")}</Pill></p>}
       {!graphId && <p className="quiet">{msg("Connect packs and see how their results feed into the next decision.")}</p>}
       {!graphId && graphInventorySupported && (inventory.error
         ? <ErrorBox title={msg("Could not list graphs")} error={inventory.error} />
         : inventory.isPending ? <Loading what={msg("graphs")} />
         : listing && !tests && <><GraphLabels labels={listing} /><ConfiguredGraphs inventory={listing} /></>)}
-      {!graphId && !tests && <><div className={shared.toolbar}>{testActions}</div><GraphFindingsPanel /></>}
+      {!graphId && !tests && <GraphFindingsPanel />}
       {!graphId && !graphInventorySupported && <p className="note">{msg("This runtime cannot list graphs without running their tests. Choose Run all graph tests to discover their test results, or connect a newer runtime to browse their diagrams.")}</p>}
       {graphId && overview && <GraphOverview document={served.data?.document} description={served.data?.meta.description} loading={status !== 'ready' || (graphDocumentSupported && served.isPending)} unavailable={!graphDocumentSupported && status === 'ready' ? msg('This runtime cannot read graph definitions.') : served.error ? msg('The graph could not be loaded. Try again when the runtime is connected.') : undefined} logicHref={withChat(`/graphs/${encodeURIComponent(graphId)}`)}/> }
       {graphId && !overview && !tests && !rehearsal && !review && !usage && !sources && !brief && !history && <FlowExplorer key={graphId} graphId={graphId} initialPlan={plan} />}
@@ -326,7 +326,7 @@ function GraphEntry({
       </Disclosure>
       {entry.detail && <p className="note note-warn" lang="en">{shownMessage(entry.detail, known)}</p>}
 
-      <div className={shared.toolbar}><Input type="search" aria-label={msg('Search cases')} placeholder={msg('Search cases…')} value={query} onChange={event=>setQuery(event.target.value)}/>
+      <div className={shared.toolbar}><SearchInput type="search" aria-label={msg('Search cases')} placeholder={msg('Search cases…')} value={query} onChange={event=>setQuery(event.target.value)}/>
         <MenuChoice label={msg('Test result filter')} value={filter} onValueChange={setFilter} options={[{value:'all',label:msg('All results')},...Array.from(new Set(rows.map(row=>row.status))).map(value=>({value,label:value}))]}/></div>
       {visible.length ? <div className={shared.tableScroll}><table className={shared.table}><thead><tr><th scope="col">{msg('Case')}</th><th scope="col">{msg('Expected')}</th><th scope="col">{msg('Observed result')}</th><th scope="col">{msg('Status')}</th></tr></thead><tbody>
         {visible.map(candidate=><tr key={candidate.id} data-selected={row?.id===candidate.id||undefined}>

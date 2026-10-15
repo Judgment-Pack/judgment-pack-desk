@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { SignInEntry } from './SignInEntry'
 import { useEffect, useRef, useState } from 'react'
 import { languageLoadFailed, languagePreference, languageReady, msg, setLanguage, useLocale } from '../i18n'
@@ -51,7 +52,7 @@ export function SessionPage({ state }: { state: AccessState; detail?: string }) 
         <span className={styles.largeMark} aria-hidden="true">{PRODUCT_MARK}</span>
         {state === 'recovery' ? <SignInEntry /> : <>
           <h1 ref={heading} tabIndex={-1}>{state === 'checking' ? msg('Opening Desk…') : msg('Desk is not responding')}</h1>
-          <p className={styles.lead}>{state === 'checking' ? msg('Checking your local session…') : msg('Make sure Desk is running on this computer, then try again.')}</p>
+          {state === 'checking' ? <LoadingState>{msg('Checking your local session…')}</LoadingState> : <p className={styles.lead}>{msg('Make sure Desk is running on this computer, then try again.')}</p>}
           {state === 'unavailable' && <Button variant="primary" className={styles.action} onClick={() => window.location.reload()}>{msg('Try again')}</Button>}
         </>}
         {!languageSaved && <p role="status" className={styles.notice}>{msg('Language changed for this visit. This browser could not save your preference.')}</p>}

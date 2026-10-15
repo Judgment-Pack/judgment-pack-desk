@@ -8,6 +8,7 @@
 import { act, render, renderHook } from '@testing-library/react'
 import { createElement, useLayoutEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import {publishVerifiedWrite} from '../../files/verifiedWrites'
 import type { FileContent } from '../../files/client'
 import { UNDO_DEPTH, useDocumentBuffer, type DocumentBuffer } from './useDocumentBuffer'
 
@@ -441,4 +442,23 @@ describe('what a save lands on', () => {
     expect(result.current.text).toBe('{"a": 2}')
     expect(result.current.dirty).toBe(true)
   })
+})
+
+it('adopts a verified host save only for the exact clean buffer; watcher reads still freeze',()=>{
+ const before=file('old'),saved={...file('saved'),sha256:'b'.repeat(64)}
+ const {result,rerender,unmount}=renderHook(({loaded,otherWork})=>useDocumentBuffer(loaded,undefined,{otherWork}),{initialProps:{loaded:before,otherWork:false}})
+ rerender({loaded:saved,otherWork:false});expect(result.current.text).toBe('old')
+ act(()=>publishVerifiedWrite({beforeSha256:'wrong',file:saved}));expect(result.current.text).toBe('old')
+ const pendingReload=result.current.identity
+ act(()=>publishVerifiedWrite({beforeSha256:before.sha256,file:saved}));expect(result.current.text).toBe('saved');expect(result.current.dirty).toBe(false)
+ act(()=>expect(result.current.rebase(before,pendingReload)).toBe(false))
+ act(()=>{result.current.touch();publishVerifiedWrite({beforeSha256:saved.sha256,file:{...saved,content:'other save'}})})
+ expect(result.current.text).toBe('saved')
+ // An edit made in the very same event turn is protected, before React renders.
+ act(()=>{result.current.commit('new local text');publishVerifiedWrite({beforeSha256:saved.sha256,file:{...saved,content:'other save'}})})
+ expect(result.current.text).toBe('new local text');expect(result.current.canUndo).toBe(true)
+ act(()=>result.current.discard())
+ rerender({loaded:saved,otherWork:true})
+ act(()=>publishVerifiedWrite({beforeSha256:saved.sha256,file:{...saved,content:'other save'}}));expect(result.current.text).toBe('saved')
+ unmount()
 })

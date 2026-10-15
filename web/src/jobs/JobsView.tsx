@@ -1,3 +1,15 @@
+import {privateQuery} from '../data/privateQuery'
+import {PageLoading} from '../ui/PageLoading'
+import { DialectSubscriptions,ConnectDialectDialog,useDialectSubscriptions } from '../dialects/DialectSubscriptions'
+import { QueryStatusNotice } from '../shell/QueryStatusNotice'
+import { useCollectionSelection, type CollectionSelection } from '../ui/useCollectionSelection'
+import { SelectionTable, SelectionHeader, SelectionCell, SelectionActions } from '../ui/SelectionTable'
+import { exportSelectedRows } from '../ui/selectionExport'
+import { VisuallyHidden } from 'radix-ui'
+import { IconPlay, IconPencil, IconCheck, IconClose, IconStop, IconHistory, IconActivity, IconMore, IconDownload } from '../shell/icons'
+import { Menu } from '../ui/Menu'
+import { Dialog, DialogActions } from '../ui/Dialog'
+import { CollectionRow } from '../ui/CollectionRow'
 import {SourcePreparations} from './SourcePreparations'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useConfirmDiscard } from '../shell/UnsavedChanges'
@@ -9,8 +21,8 @@ import { useDetailsSlot } from '../shell/DetailsSlot'
 import { useInspectorControls } from '../shell/InspectorSlot'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { MappedInputFields } from './MappedInputFields'
-import { MappingReview, InputLineage } from './MappingReview'
-import { isSourceV2, type SourceV2 } from './mappingTypes'
+import { DialectReview, InputLineage } from './DialectReview'
+import { isSourceV2, type SourceV2 } from './dialectTypes'
 import { deskFetch } from '../files/client'
 import { SourceInputFields } from './SourceInputFields'
 import { SourceSummary } from './SourceSummary'
@@ -22,13 +34,17 @@ import { useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { msg, systemMessage, useLocale, formatDate } from '../i18n'
+import {CollectionToolbar} from '../ui/CollectionToolbar'
+import { CollectionLayout, CollectionEmpty } from '../ui/CollectionLayout'
+import { Pagination } from '../ui/Pagination'
+import { usePagination } from '../ui/usePagination'
 import { PageHeader, PageBody } from '../ui/PageLayout'
 import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { InputFields } from './InputFields'
 import { parseInput } from './inputModel'
 import { refreshRunnerKey } from './runnerKey'
-import { Tooltip } from '../ui/Tooltip'
+import { Tooltip, OverflowTooltip } from '../ui/Tooltip'
 import { Select } from '../ui/Select'
 import { Disclosure } from '../ui/Disclosure'
 import { usePack, usePacks } from '../mcp/queries'
@@ -39,6 +55,7 @@ import { ReleaseReadiness } from './ReleaseReadiness'
 import { ReleaseStanding } from './ReleaseStanding'
 import { ActivityView } from './ActivityView'
 import { stamp } from './activity'
+import { VerifySavedRecord } from './RunSigning'
 import { RunFields, RunTechnicalDetails } from './RunRecord'
 
 function date(value: string) { return formatDate(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }) }
@@ -51,7 +68,7 @@ function Problem({ error }: { error: unknown }) { return error ? <p className={s
 function JSONView({ value, title }: { value: unknown; title: string }) { return <Disclosure title={title}><pre className={styles.json}>{JSON.stringify(value, null, 2)}</pre></Disclosure> }
 export function decisionLabel(result?: Decision) { if (!result) return '—'; return result.disposition.outcomeId ?? (result.disposition.kind === 'not-applicable' ? msg('Not applicable') : msg('Unresolved')) }
 function stateLabel(state: Run['state']) { return { queued: msg('Queued'), running: msg('Running'), completed: msg('Completed'), failed: msg('Failed'), interrupted: msg('Interrupted') }[state] }
-function usePages<T>(path: string) { return useInfiniteQuery({ queryKey: ['jobs-pages', path], initialPageParam: 0, queryFn: ({ pageParam }) => jobsAPI<Page<T>>(`${path}${path.includes('?')?'&':'?'}after=${pageParam}`), getNextPageParam: page => page.next || undefined, refetchInterval: 2500 }) }
+function usePages<T>(path: string) { return useInfiniteQuery({ ...privateQuery, queryKey: ['jobs-pages', path], initialPageParam: 0, queryFn: ({ pageParam }) => jobsAPI<Page<T>>(`${path}${path.includes('?')?'&':'?'}after=${pageParam}`), getNextPageParam: page => page.next || undefined, refetchInterval: 2500 }) }
 function More({ hasNextPage, isFetchingNextPage, fetchNextPage }: { hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown }) { return hasNextPage ? <Button disabled={isFetchingNextPage} onClick={() => { void fetchNextPage() }}>{msg('Load more')}</Button> : null }
 
 export function JobsContent() {
@@ -62,6 +79,7 @@ export function JobsContent() {
   return <JobsIndex />
 }
 function JobsIndex() {
+ const [connectInputs,setConnectInputs]=useState(false),inputOpener=useRef<HTMLButtonElement|null>(null)
   const allRuns=useLocation().pathname==='/jobs/runs'
   const drafts = useJobDrafts()
   const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[state,setState]=useState('all'),[review,setReview]=useState(false)
@@ -71,23 +89,56 @@ function JobsIndex() {
   const list=usePages<Job|Run>(path),items=list.data?.pages.flatMap(p=>p.items)??[]
   const filtered=Boolean(query||(allRuns&&(state!=='all'||review)))
   const visibleDrafts = allRuns ? [] : (drafts.data ?? []).filter(({draft}) => `${draft.values.name} ${draft.values.packId}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const pagination=usePagination(items.length+visibleDrafts.length,path)
+  const pageItems=items.slice(pagination.start,pagination.end),pageDrafts=visibleDrafts.slice(Math.max(0,pagination.start-items.length),Math.max(0,pagination.end-items.length))
+  const selectable=[...items.map(value=>({id:(allRuns?'run:':'job:')+value.id,value})),...visibleDrafts.map(({draft})=>({id:'draft:'+draft.id,value:draft}))]
+  const selection=useCollectionSelection(selectable,item=>item.id,allRuns?'runs':'jobs')
+  const complete=!list.hasNextPage&&!list.error&&!list.isPending&&(allRuns||!drafts.isPending&&!drafts.error)
   const hasRows = items.length > 0 || visibleDrafts.length > 0
-  const showToolbar=hasRows||Boolean(search)||filtered
   return <>
-    <PageHeader variant="collection" title={msg('Jobs')} navigation={<nav className={styles.tabs} aria-label={msg('Jobs')}><Link to="/jobs" aria-current={!allRuns?'page':undefined}>{msg('Jobs')}</Link><Link to="/jobs/runs" aria-current={allRuns?'page':undefined}>{msg('Runs')}</Link></nav>} actions={<ButtonLink to="/jobs/new" variant="primary">{msg('Create job')}</ButtonLink>}/>
-    <PageBody width="full"><div className={styles.stack}>
-      <RunChainDownload/>
-      {showToolbar&&<div className={styles.toolbar}><Input className={styles.search} aria-label={allRuns?msg('Search runs'):msg('Search jobs')} placeholder={allRuns?msg('Search runs…'):msg('Search jobs…')} value={search} onChange={e=>setSearch(e.target.value)}/>{allRuns&&<><Select id="jobs-execution-filter" aria-label={msg('Execution')} value={state} options={[{value:'all',label:msg('All executions')},...(['queued','running','completed','failed','interrupted'] as const).map(value=>({value,label:stateLabel(value)}))]} onValueChange={setState}/><label className="checkbox"><input type="checkbox" checked={review} onChange={e=>setReview(e.target.checked)}/>{msg('Needs attention')}</label></>}</div>}
-      <Problem error={list.error}/>{list.isPending&&<p role="status">{msg('Loading…')}</p>}
-      {!list.isPending&&!list.error&&!hasRows&&(allRuns||!drafts.isPending)&&<section className={styles.empty} role="status"><h2>{filtered?msg('No matches'):allRuns?msg('No runs yet'):msg('No jobs yet')}</h2><p>{filtered?msg('Try another search or clear the filters.'):allRuns?msg('Run a job to see its results and history here.'):msg('Create a job to run a saved pack manually, on a schedule, or when an event arrives.')}</p></section>}
-      {hasRows&&(allRuns?<RunTable runs={items as Run[]} showJob/>:<div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{msg('Job')}</th><th>{msg('Pack release')}</th><th>{msg('Trigger')}</th><th>{msg('Recent runs')}</th><th><span className="sr-only">{msg('Actions')}</span></th></tr></thead><tbody>{(items as Job[]).map(j=><tr key={j.id}><td><Link to={`/jobs/${j.id}`}>{j.name}</Link></td><td><span>{j.packTitle??'—'}</span>{j.packVersion&&<span className={styles.cellMeta}>{j.packVersion}</span>}</td><td className="quiet">{j.triggers?.length?j.triggers.map(t=><span className={styles.cellMeta} key={t.id}>{triggerName(t.kind)} · {t.paused?msg('Paused'):t.kind==='cloud'?msg('Listening'):t.kind==='schedule'&&!t.nextAt?msg('Finished'):msg('Active')}</span>):msg('Manual / API')}</td><td><div className={styles.recentRuns}>{j.recentRuns?.length?j.recentRuns.map(r=><Tooltip key={r.id} content={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}><Link className={styles.runDot} data-state={r.state} to={`/jobs/${j.id}/runs/${r.id}`} aria-label={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}>{r.state==='completed'?'✓':r.state==='failed'||r.state==='interrupted'?'×':'·'}</Link></Tooltip>):<span className="quiet">{msg('No runs yet')}</span>}</div></td><td><ButtonLink to={`/jobs/${j.id}?run=new`} variant="quiet">{msg('Run')}</ButtonLink></td></tr>)}{visibleDrafts.map(({draft}) => <tr key={`draft-${draft.id}`}><td><div className={styles.jobName}><Link to={`/jobs/new?draft=${draft.id}`}>{draft.values.name || msg('Untitled job')}</Link><span className={styles.draftBadge}>{msg('Draft')}</span></div><span className={styles.cellMeta}>{date(draft.updatedAt)}</span></td><td className="quiet">{draft.values.packId || '—'}</td><td className="quiet">{draft.values.trigger ? triggerName(draft.values.trigger.kind) : msg('Manual / API')}<span className={styles.cellMeta}>{msg('Not active')}</span></td><td className="quiet">—</td><td><ButtonLink to={`/jobs/new?draft=${draft.id}`} variant="quiet">{msg('Resume')}</ButtonLink></td></tr>)}</tbody></table></div>)}
+    <PageHeader variant="collection" title={msg('Jobs')} navigation={<nav className={styles.collectionTabs} aria-label={msg('Jobs')}><Link to="/jobs" aria-current={!allRuns?'page':undefined}>{msg('Jobs')}</Link><Link to="/jobs/runs" aria-current={allRuns?'page':undefined}>{msg('Runs')}</Link></nav>} actions={<><Button ref={inputOpener} onClick={()=>setConnectInputs(true)}>{msg('Connect Dialects')}</Button><JobsCollectionOptions/><ButtonLink to="/jobs/new" variant="primary">{msg('Create job')}</ButtonLink></>}/>
+    {connectInputs&&<ConnectDialectDialog opener={inputOpener} onClose={()=>setConnectInputs(false)} onSaved={()=>void list.refetch()}/>}
+    <CollectionLayout label={allRuns?msg('Runs'):msg('Jobs')} loading={!hasRows&&!list.error&&(list.isPending||!allRuns&&drafts.isPending)?(allRuns?msg('Loading runs…'):msg('Loading jobs…')):undefined} scrollKey={JSON.stringify([path,pagination.page,pagination.size])} footer={<>{(list.data||visibleDrafts.length>0)&&<Pagination pagination={pagination} complete={!list.hasNextPage&&!list.error&&(allRuns||!drafts.isPending&&!drafts.error)}/>}<More {...list}/></>} toolbar={<>
+      <CollectionToolbar label={msg('Jobs')} searchLabel={allRuns?msg('Search runs'):msg('Search jobs')} search={search} onSearch={setSearch}
+       filters={allRuns?[{label:msg('Execution'),value:state,onValueChange:setState,options:[{value:'all',label:msg('All executions')},...(['queued','running','completed','failed','interrupted'] as const).map(value=>({value,label:stateLabel(value)}))]}]:[]}
+       toggles={allRuns?[{label:msg('Needs attention'),checked:review,onCheckedChange:setReview}]:[]}
+       filtered={filtered} onReset={()=>{setSearch('');setState('all');setReview(false)}}
+       actions={({compact,tight})=><SelectionActions selection={selection} compact={compact} tight={tight} onExport={()=>exportSelectedRows(allRuns?'runs':'jobs',selection.selectedRows.map(item=>item.value))}/>}/>
 
-      {!allRuns && <Problem error={drafts.error} />}
-      <More {...list}/>
-    </div></PageBody>
+      <QueryStatusNotice id={allRuns?"runs":"jobs"} label={allRuns?msg("Run history unavailable"):msg("Jobs unavailable")} error={list.error} retrying={list.isFetching} onRetry={()=>list.refetch()}>{msg("The list could not be refreshed. Previously loaded items may be out of date.")}</QueryStatusNotice>
+      {!allRuns && <QueryStatusNotice id="job-drafts" label={msg("Job drafts unavailable")} error={drafts.error} retrying={drafts.isFetching} onRetry={()=>drafts.refetch()}/>}
+    </>}>
+      {!hasRows&&list.error&&!list.data&&<CollectionEmpty title={allRuns?msg("Run history unavailable"):msg("Jobs unavailable")}>{null}</CollectionEmpty>}
+      {!list.isPending&&!list.error&&!hasRows&&(allRuns||!drafts.isPending&&!drafts.error)&&<CollectionEmpty title={filtered?msg('No matches'):allRuns?msg('No runs yet'):msg('No jobs yet')}><p>{filtered?msg('Try another search or clear the filters.'):allRuns?msg('Run a job to see its results and history here.'):msg('Create a job to run a saved pack manually, on a schedule, or when an event arrives.')}</p></CollectionEmpty>}
+      {hasRows && (allRuns ? <RunTable selection={selection} complete={complete} runs={pageItems as Run[]} showJob/> : <JobsTable selection={selection} complete={complete} jobs={pageItems as Job[]} drafts={pageDrafts}/>)}
+    </CollectionLayout>
   </>
 }
-function RunTable({runs,showJob=false}:{runs:Run[];showJob?:boolean}){return <div className={styles.tableWrap}><table className={styles.table}><thead><tr>{showJob&&<th>{msg('Job')}</th>}<th>{msg('Run')}</th><th>{msg('Execution')}</th><th>{msg('Decision')}</th><th>{msg('Submitted')}</th></tr></thead><tbody>{runs.map(r=><tr key={r.id}>{showJob&&<td><Link to={`/jobs/${r.jobId}`}>{r.jobName??r.jobId}</Link></td>}<td><Link to={`/jobs/${r.jobId}/runs/${r.id}`}>{r.id.slice(-8)}</Link></td><td>{stateLabel(r.state)}</td><td>{decisionLabel(r.result)}</td><td className="quiet">{submitted(r.createdAt)}</td></tr>)}</tbody></table></div>}
+function JobsTable({jobs,drafts,selection,complete}:{jobs:Job[];drafts:SavedJobDraft[];selection:CollectionSelection;complete:boolean}) {
+  return <SelectionTable selection={selection} variant="index" aria-label={msg('Jobs')} className={`${styles.table} ${styles.indexTable}`}>
+    <colgroup><col data-selection-column/><col data-name-column/><col className={styles.releaseColumn}/><col/><col className={styles.recentColumn}/><col className={styles.actionColumn}/></colgroup>
+    <thead><tr><SelectionHeader selection={selection} complete={complete}/><th scope="col">{msg('Job')}</th><th scope="col">{msg('Pack release')}</th><th scope="col">{msg('Trigger')}</th><th scope="col">{msg('Recent runs')}</th><th scope="col"><VisuallyHidden.Root>{msg('Actions')}</VisuallyHidden.Root></th></tr></thead>
+    <tbody>{jobs.map(job => {
+      const triggers=job.triggers?.length?job.triggers.map(trigger=>`${triggerName(trigger.kind)} · ${trigger.paused?msg('Paused'):trigger.kind==='cloud'?msg('Listening'):trigger.kind==='schedule'&&!trigger.nextAt?msg('Finished'):msg('Active')}`).join(', '):msg('Manual / API')
+      return <CollectionRow key={job.id} data-selection-selected={selection.has('job:'+job.id)||undefined}><SelectionCell selection={selection} id={'job:'+job.id} name={job.name}/>
+        <td><OverflowTooltip selector="[data-overflow-text]"><Link data-row-primary data-collection-name to={`/jobs/${job.id}`}><IconHistory/><span data-overflow-text>{job.name}</span></Link></OverflowTooltip></td>
+        <td><OverflowTooltip selector="[data-overflow-text]" content={[job.packTitle??'—',job.packVersion].filter(Boolean).join(' · ')}><span className={styles.releaseLine}><span data-overflow-text className={styles.indexText}>{job.packTitle??'—'}</span>{job.packVersion&&<span className={styles.indexMeta}> · {job.packVersion}</span>}</span></OverflowTooltip></td>
+        <td className="quiet"><OverflowTooltip><span className={styles.indexText}>{triggers}</span></OverflowTooltip></td>
+        <td><div className={styles.recentRuns}>{job.recentRuns?.length?job.recentRuns.map(run=><Tooltip key={run.id} content={`${stateLabel(run.state)}\n${msg('Submitted')}: ${submitted(run.createdAt)}`}><Link className={styles.runDot} data-state={run.state} to={`/jobs/${job.id}/runs/${run.id}`} aria-label={`${msg('View run')} · ${stateLabel(run.state)} · ${msg('Submitted')}: ${submitted(run.createdAt)}`}>
+          {run.state==='completed'?<IconCheck/>:run.state==='failed'?<IconClose/>:run.state==='interrupted'?<IconStop/>:run.state==='running'?<IconActivity/>:<IconHistory/>}
+        </Link></Tooltip>):<span className="quiet">{msg('No runs yet')}</span>}</div></td>
+        <td data-row-ignore className={styles.indexAction}><Tooltip content={msg('Run')}><ButtonLink to={`/jobs/${job.id}?run=new`} size="icon" variant="quiet" aria-label={msg('Run')}><IconPlay/></ButtonLink></Tooltip></td>
+      </CollectionRow>
+    })}{drafts.map(({draft})=><CollectionRow key={`draft-${draft.id}`} data-selection-selected={selection.has('draft:'+draft.id)||undefined}><SelectionCell selection={selection} id={'draft:'+draft.id} name={draft.values.name||msg('Untitled job')}/>
+      <td><div className={styles.jobName}><OverflowTooltip selector="[data-overflow-text]"><Link data-row-primary data-collection-name to={`/jobs/new?draft=${draft.id}`}><IconHistory/><span data-overflow-text>{draft.values.name||msg('Untitled job')}</span></Link></OverflowTooltip><Tooltip content={date(draft.updatedAt)}><span className={styles.draftBadge}>{msg('Draft')}</span></Tooltip></div></td>
+      <td className="quiet"><OverflowTooltip><span className={styles.indexText}>{draft.values.packId||'—'}</span></OverflowTooltip></td>
+      <td className="quiet"><OverflowTooltip><span className={styles.indexText}>{draft.values.trigger?triggerName(draft.values.trigger.kind):msg('Manual / API')} · {msg('Not active')}</span></OverflowTooltip></td>
+      <td className="quiet">—</td>
+      <td data-row-ignore className={styles.indexAction}><Tooltip content={msg('Resume')}><ButtonLink to={`/jobs/new?draft=${draft.id}`} size="icon" variant="quiet" aria-label={msg('Resume')}><IconPencil/></ButtonLink></Tooltip></td>
+    </CollectionRow>)}</tbody>
+  </SelectionTable>
+}
+function RunTable({runs,showJob=false,selection,complete}:{runs:Run[];showJob?:boolean;selection:CollectionSelection;complete:boolean}){return <SelectionTable selection={selection} variant={showJob?'index':undefined} aria-label={showJob?msg('Runs'):msg('Run history')} className={`${styles.table} ${showJob?styles.runsIndex:''}`}>{showJob&&<colgroup><col data-selection-column/><col data-name-column/><col className={styles.runIdColumn}/><col className={styles.runStateColumn}/><col/><col className={styles.submittedColumn}/></colgroup>}<thead><tr><SelectionHeader selection={selection} complete={complete}/>{showJob&&<th scope="col">{msg('Job')}</th>}<th scope="col">{msg('Run')}</th><th scope="col">{msg('Execution')}</th><th scope="col">{msg('Decision')}</th><th scope="col">{msg('Submitted')}</th></tr></thead><tbody>{runs.map(r=><CollectionRow key={r.id} data-selection-selected={selection.has('run:'+r.id)||undefined}><SelectionCell selection={selection} id={'run:'+r.id} name={r.id}/>{showJob&&<td><OverflowTooltip selector="[data-overflow-text]"><Link data-collection-name to={`/jobs/${r.jobId}`}><IconHistory/><span data-overflow-text>{r.jobName??r.jobId}</span></Link></OverflowTooltip></td>}<td><Link data-row-primary to={`/jobs/${r.jobId}/runs/${r.id}`}>{r.id.slice(-8)}</Link></td><td>{stateLabel(r.state)}</td><td><OverflowTooltip><span data-overflow-text>{decisionLabel(r.result)}</span></OverflowTooltip></td><td className="quiet">{submitted(r.createdAt)}</td></CollectionRow>)}</tbody></SelectionTable>}
 export function CreateJobContent() {
   const [params] = useSearchParams(), draftId = params.get('draft')
   const loaded = useQuery({ queryKey: ['job-draft', draftId], queryFn: () => loadJobDraft(draftId!), enabled: !!draftId, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false })
@@ -96,7 +147,7 @@ export function CreateJobContent() {
   const hydrated = useRef<{id: string; value: SavedJobDraft} | undefined>(undefined)
   if (!draftId) hydrated.current = undefined
   if (draftId && hydrated.current?.id !== draftId) {
-    if (loaded.isPending || loaded.isFetching) return <p role="status">{msg('Loading draft…')}</p>
+    if (loaded.isPending || loaded.isFetching) return <PageLoading>{msg('Loading draft…')}</PageLoading>
     if (loaded.error || !loaded.data || loaded.data.draft.status === 'created') return <><Problem error={loaded.error || Error(msg('This draft has already been used to create a job.'))} /><ButtonLink to="/jobs">{msg('Back to jobs')}</ButtonLink></>
     hydrated.current = {id:draftId,value:loaded.data}
   }
@@ -138,7 +189,7 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
   const clearGuard = useDirtyGuard(dirty, msg('Leave without saving this job?'), { name, busy, saveDraft: pendingConfig || unwritten || !triggerValid ? undefined : saveDraft, shouldBlock: ({currentLocation,nextLocation}) => currentLocation.pathname !== nextLocation.pathname || new URLSearchParams(currentLocation.search).get('draft') !== new URLSearchParams(nextLocation.search).get('draft') })
   async function changePack(next: string) {
     if (next === packId) return
-    if ((mappedWork || mapped || trigger || unwritten) && !await confirmDiscard(msg('Changing the pack discards its input mapping and trigger configuration.'), {name})) return
+    if ((mappedWork || mapped || trigger || unwritten) && !await confirmDiscard(msg('Changing the pack discards its dialect and trigger configuration.'), {name})) return
     setTransientWork(false); setMapped(undefined); setMappedWork(false); setPendingConfig(false); setSource(undefined); setTrigger(undefined); setPackId(next)
   }
   const signature = JSON.stringify([pack.data?.raw, facts, supplied, evidence, inputMode, source])
@@ -195,7 +246,7 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
   return <>
     <PageHeader title={msg('Jobs')} titleHref="/jobs" context={msg('Create job')} />
     <PageBody fill width="full"><div className={styles.wizard}><div className={styles.wizardContent}>
-      <nav aria-label={msg('Create job')}><ol className={styles.steps}>{[msg('Job'),msg('Inputs'),msg('Trigger'),msg('Review')].map((label,index)=><li key={label} aria-current={step===index?'step':undefined}><span>{index+1}</span>{label}</li>)}</ol></nav>
+      <nav aria-label={msg('Create job')}><ol className={styles.steps}>{[msg('Job'),msg('Dialects'),msg('Trigger'),msg('Review')].map((label,index)=><li key={label} aria-current={step===index?'step':undefined}><span>{index+1}</span>{label}</li>)}</ol></nav>
       {step===0&&<p className="quiet">{msg('Choose the pack this job will apply. Later pack edits will not change its release.')}</p>}
       <Problem error={packs.error || pack.error || error} />
       {initial && <p className={styles.note}>{msg('Resumed draft. Reselect files, preview inputs and check the release before creating this job.')}</p>}
@@ -214,14 +265,14 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
         <dl className={`${styles.properties} ${styles.reviewSummary}`}>
           <div><dt>{msg('Job')}</dt><dd>{name}</dd></div>
           <div><dt>{msg('Pack')}</dt><dd>{pack.data?.document.title} · {pack.data?.document.version}</dd></div>
-          <div><dt>{msg('Inputs')}</dt><dd>{inputMode==='manual'?msg('Manual / API'):source&&isSourceV2(source)?msg('{{count}} configured sources and case inputs',{count:source.mapping.sources?.length??0}):msg('Select and preview sources')}</dd></div>
+          <div><dt>{msg('Dialects')}</dt><dd>{inputMode==='manual'?msg('Manual / API'):source&&isSourceV2(source)?msg('{{count}} configured sources and case inputs',{count:source.mapping.sources?.length??0}):msg('Select and preview sources')}</dd></div>
           <div><dt>{msg('Trigger')}</dt><dd>{trigger?triggerName(trigger.kind):msg('Manual / API')}{trigger&&` · ${msg('Created paused')}`}</dd></div>
           <div><dt>{msg('Execution')}</dt><dd>{msg('Local runner · artifacts stored locally')}</dd></div>
         </dl>
-        {!validPreview&&<p className={styles.callout}>{msg('Structure, saved tests and the sample decision have not been checked for these inputs.')}</p>}
+        {!validPreview&&<p className={styles.callout}>{msg('Structure, saved tests and the sample decision have not been checked for this dialect.')}</p>}
         <div><Button onClick={() => { void prepare() }} disabled={busy || inputMode === 'manual' && !inputsValid || !pack.data || inputMode !== 'manual' && !source}>{busy ? msg('Working…') : msg('Check release')}</Button></div>
 
-      {validPreview && <section className={styles.review}><h2>{msg('Review this release')}</h2>{trigger&&<><TriggerSummary config={trigger}/><p className={styles.note}>{msg('The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.')}</p></>}<dl className={styles.properties}><div><dt>{msg('Pack version')}</dt><dd>{validPreview.packVersion}</dd></div><div><dt>{msg('Sample decision')}</dt><dd>{decisionLabel(validPreview.preview)}</dd></div><div><dt>{msg('Structure')}</dt><dd>{msg('Validated')}</dd></div></dl><ReleaseReadiness release={validPreview} refusal={refusal} />{preview && <ReleaseStanding release={validPreview} packId={preview.packId} />}{validPreview.inputMapping?.version === 2 && <MappingReview mapping={validPreview.inputMapping} profiles={validPreview.inputProfiles} warnings={validPreview.mappingWarnings} />}<p className={styles.note}>{msg('The preview is a rehearsal. Operational runs append audit records. No external actions or schedules are enabled.')}</p><JSONView title={msg('Sample result')} value={validPreview.preview} /><label className="checkbox"><input type="checkbox" checked={reviewed} disabled={busy || !canCreate} onChange={e => setReviewed(e.target.checked)} />{msg('I reviewed this release, its test status and sample result.')}</label></section>}
+      {validPreview && <section className={styles.review}><h2>{msg('Review this release')}</h2>{trigger&&<><TriggerSummary config={trigger}/><p className={styles.note}>{msg('The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.')}</p></>}<dl className={styles.properties}><div><dt>{msg('Pack version')}</dt><dd>{validPreview.packVersion}</dd></div><div><dt>{msg('Sample decision')}</dt><dd>{decisionLabel(validPreview.preview)}</dd></div><div><dt>{msg('Structure')}</dt><dd>{msg('Validated')}</dd></div></dl><ReleaseReadiness release={validPreview} refusal={refusal} />{preview && <ReleaseStanding release={validPreview} packId={preview.packId} />}{validPreview.inputMapping?.version === 2 && <DialectReview mapping={validPreview.inputMapping} profiles={validPreview.inputProfiles} warnings={validPreview.mappingWarnings} />}<p className={styles.note}>{msg('The preview is a rehearsal. Operational runs append audit records. No external actions or schedules are enabled.')}</p><JSONView title={msg('Sample result')} value={validPreview.preview} /><label className="checkbox"><input type="checkbox" checked={reviewed} disabled={busy || !canCreate} onChange={e => setReviewed(e.target.checked)} />{msg('I reviewed this release, its test status and sample result.')}</label></section>}
       </section>
       </div><div className={styles.wizardActions}><ButtonLink to="/jobs" variant="quiet">{msg('Cancel')}</ButtonLink><div className={styles.actions}><Button disabled={busy || pendingConfig || unwritten || !triggerValid || !dirty} onClick={()=>void saveDraft().catch(setError)}>{msg('Save draft')}</Button>{step>0&&<Button disabled={busy} onClick={()=>setStep(step-1)}>{msg('Back')}</Button>}{step<3?<Button variant="primary" disabled={busy||step===0&&(!name.trim()||!pack.data)||step===1&&(inputMode==='manual'?!inputsValid:!source)||step===2&&!triggerValid} onClick={()=>setStep(step+1)}>{msg('Continue')}</Button>:<Button variant="primary" disabled={!validPreview||!canCreate||!reviewed||!triggerValid||!name.trim()||busy} onClick={()=>void create()}>{trigger?msg('Create paused job'):msg('Create job')}</Button>}</div></div>
     </div></PageBody>
@@ -229,29 +280,33 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
 }
 function JobView({ jobId }: { jobId: string }) {
   const [hasPreparations,setHasPreparations]=useState(false)
-  const query = useQuery({ queryKey: ['job', jobId], queryFn: () => jobsAPI<{ job: Job; release: Release }>(`jobs/${jobId}`) })
+  const query = useQuery({ ...privateQuery, queryKey: ['job', jobId], queryFn: () => jobsAPI<{ job: Job; release: Release }>(`jobs/${jobId}`) })
   const runs = usePages<Run>(`jobs/${jobId}/runs`)
   const [params,setParams]=useSearchParams()
   const showInputs=params.get('run')==='new',tab=params.get('tab')??'runs'
+  const subscriptions=useDialectSubscriptions(tab==='triggers')
   function setShowInputs(show:boolean){setParams(show?{run:'new'}:{})}
   const data = query.data
+  const runItems=runs.data?.pages.flatMap(page=>page.items)??[],pagination=usePagination(runItems.length,jobId)
+  const runSelection=useCollectionSelection(runItems,run=>'run:'+run.id,jobId)
+  const collectionTab=!showInputs&&(tab==='runs'||tab==='activity')
   useBriefSubject({ id: `job:${jobId}`, path: `/api/operations/jobs/${jobId}/briefs`, title: data?.job.name ?? msg('Job brief') })
   return <>
     <PageHeader title={msg('Jobs')} titleHref="/jobs" context={data?.job.name} navigation={data&&!showInputs&&<nav className={styles.tabs} aria-label={msg('Job')}><button aria-current={tab==='runs'?'page':undefined} onClick={()=>setParams({})}>{msg('Runs')}</button><button aria-current={tab==='triggers'?'page':undefined} onClick={()=>setParams({tab:'triggers'})}>{msg('Triggers')}</button><button aria-current={tab==='release'?'page':undefined} onClick={()=>setParams({tab:'release'})}>{msg('Release')}</button><button aria-current={tab==='activity'?'page':undefined} onClick={()=>setParams({tab:'activity'})}>{msg('Activity')}</button></nav>} actions={data && <Button variant="primary" onClick={() => setShowInputs(!showInputs)}>{showInputs ? msg('Hide inputs') : msg('Run job')}</Button>} />
-    <PageBody width="wide"><div className={styles.stack}><Problem error={query.error || runs.error} />
-      {query.isPending && <p role="status">{msg('Loading job…')}</p>}
-      {data && <><div hidden={showInputs||tab!=='release'} className={styles.release}><h2>{data.release.title}</h2><p className="quiet">{msg('Fixed version {{version}}', { version: data.release.packVersion })}</p>{data.release.inputMapping && <p className={styles.note}>{data.release.inputMapping.version === 2 ? msg('Mapped sources') : data.release.inputMapping.provider === 'local-file' ? msg('Local JSON file · Fixed input mapping') : msg('Google Drive · Fixed input mapping')}</p>}<ReleaseReadiness release={data.release} job />{data.release.inputMapping?.version === 2 && <MappingReview mapping={data.release.inputMapping} profiles={data.release.inputProfiles} warnings={data.release.mappingWarnings} />}<Disclosure title={msg('Release details')}><dl className={styles.properties}><div><dt>{msg('Pack digest')}</dt><dd><code>{data.release.packDigest}</code></dd></div><div><dt>{msg('Runtime digest')}</dt><dd><code>{data.release.runtimeDigest}</code></dd></div></dl><p className={styles.note}>{msg('To use a changed pack, create a new job and review its new release.')}</p></Disclosure></div>
-        {!showInputs&&tab==='triggers'&&<TriggersView jobId={jobId} release={data.release}/>}
-        {!showInputs&&tab==='activity'&&<ActivityView jobId={jobId} release={data.release}/>}
+    <PageBody width={collectionTab?"full":"wide"} fill={collectionTab} loading={query.isPending?msg('Loading job…'):undefined}><div className={collectionTab?styles.collectionPage:styles.stack}><QueryStatusNotice id={"job:"+jobId} label={msg("Job unavailable")} context={data?.job.name} error={query.error} retrying={query.isFetching} onRetry={()=>query.refetch()}/><QueryStatusNotice id={"job-runs:"+jobId} label={msg("Run history unavailable")} context={data?.job.name} error={runs.error} retrying={runs.isFetching} onRetry={()=>runs.refetch()}>{msg("Run history could not be refreshed. Previously loaded results may be out of date.")}</QueryStatusNotice>
+      {query.error&&!data&&<p className="quiet">{msg('Job unavailable')}</p>}
+      {data && <><div className={styles.jobContext}>        <Disclosure title={msg('Submit through the API')}><p className="quiet">{data.release.inputMapping ? msg('Send a retained source snapshot with the exact release dialect and a unique idempotency key. File inputs use the source contract documented by the runner.') : msg('Send facts and optional evidence availability with your Desk bearer and a unique idempotency key. Retry the same submission with the same key.')}</p><pre className={styles.json}>{`POST /api/operations/jobs/${jobId}/runs\nAuthorization: Bearer <your Desk bearer>\nIdempotency-Key: <unique submission ID>\nContent-Type: application/json\n\n${data.release.inputMapping ? JSON.stringify({ source: { mapping: data.release.inputMapping, ...(data.release.inputMapping.version === 2 ? { case: {}, sources: '<named snapshots and signed responses>' } : { snapshot: '<retained source snapshot>' }) } }, null, 2) : '{"facts": {}}'}`}</pre></Disclosure>
+        <p className={styles.note}>{msg('Runs are stored by the local runner, separately from chat backups. Keep Desk running to process the queue.')}</p></div><div hidden={showInputs||tab!=='release'} className={styles.release}><h2>{data.release.title}</h2><p className="quiet">{msg('Fixed version {{version}}', { version: data.release.packVersion })}</p>{data.release.inputMapping && <p className={styles.note}>{data.release.inputMapping.version === 2 ? msg('Mapped sources') : data.release.inputMapping.provider === 'local-file' ? msg('Local JSON file · Fixed dialect') : msg('Google Drive · Fixed dialect')}</p>}<ReleaseReadiness release={data.release} job />{data.release.inputMapping?.version === 2 && <DialectReview mapping={data.release.inputMapping} profiles={data.release.inputProfiles} warnings={data.release.mappingWarnings} />}<Disclosure title={msg('Release details')}><dl className={styles.properties}><div><dt>{msg('Pack digest')}</dt><dd><code>{data.release.packDigest}</code></dd></div><div><dt>{msg('Runtime digest')}</dt><dd><code>{data.release.runtimeDigest}</code></dd></div></dl><p className={styles.note}>{msg('To use a changed pack, create a new job and review its new release.')}</p></Disclosure></div>
+        {!showInputs&&tab==='triggers'&&<><DialectSubscriptions jobId={jobId}/><TriggersView jobId={jobId} release={data.release} managedTriggers={(subscriptions.data?.items??[]).filter(b=>b.jobId===jobId).flatMap(b=>b.subscription?.triggerId?[b.subscription.triggerId]:[])}/></>}
+        {!showInputs&&tab==='activity'&&<ActivityView key={jobId} jobId={jobId} release={data.release}/>}
         {showInputs && <RunForm job={data.job} release={data.release} />}
-        <section hidden={showInputs||tab!=='runs'} className={styles.stack}>{!showInputs&&tab==='runs'&&<SourcePreparations jobId={jobId} onHasItems={setHasPreparations}/>}<h2>{msg('Run history')}</h2>
-          {runs.isPending && <p role="status">{msg('Loading runs…')}</p>}
-          {!hasPreparations && !runs.isPending && !runs.error && runs.data?.pages.every(p => p.items.length === 0) && <p className="quiet">{msg('No runs yet. Run this job with a new input to record its first decision.')}</p>}
-          {runs.data?.pages.some(p=>p.items.length>0)&&<RunTable runs={runs.data.pages.flatMap(p=>p.items)}/>}
-          <More {...runs} />
-        </section>
-        <Disclosure title={msg('Submit through the API')}><p className="quiet">{data.release.inputMapping ? msg('Send a retained source snapshot with the exact release mapping and a unique idempotency key. File inputs use the source contract documented by the runner.') : msg('Send facts and optional evidence availability with your Desk bearer and a unique idempotency key. Retry the same submission with the same key.')}</p><pre className={styles.json}>{`POST /api/operations/jobs/${jobId}/runs\nAuthorization: Bearer <your Desk bearer>\nIdempotency-Key: <unique submission ID>\nContent-Type: application/json\n\n${data.release.inputMapping ? JSON.stringify({ source: { mapping: data.release.inputMapping, ...(data.release.inputMapping.version === 2 ? { case: {}, sources: '<named snapshots and signed responses>' } : { snapshot: '<retained source snapshot>' }) } }, null, 2) : '{"facts": {}}'}`}</pre></Disclosure>
-        <p className={styles.note}>{msg('Runs are stored by the local runner, separately from chat backups. Keep Desk running to process the queue.')}</p>
+        <section hidden={showInputs||tab!=='runs'} className={styles.runCollection}><CollectionLayout label={msg('Run history')} loading={runs.isPending?msg('Loading runs…'):undefined} scrollKey={JSON.stringify([jobId,pagination.page,pagination.size])} footer={<><Pagination pagination={pagination} complete={!runs.hasNextPage&&!runs.error&&!runs.isPending}/><More {...runs}/></>} toolbar={<>{!showInputs&&tab==='runs'&&<SourcePreparations jobId={jobId} onHasItems={setHasPreparations}/>}<div className={styles.actions}><h2>{msg('Run history')}</h2><SelectionActions selection={runSelection} onExport={()=>exportSelectedRows('run-history',runSelection.selectedRows)}/></div>
+
+          {!hasPreparations && !runs.isPending && !runs.error && runs.data?.pages.every(p => p.items.length === 0) && <p className="quiet">{msg('No runs yet. Run this job with a new dialect to record its first decision.')}</p>}
+        </>}>
+          {runItems.length>0&&<RunTable selection={runSelection} complete={!runs.hasNextPage&&!runs.error&&!runs.isPending} runs={runItems.slice(pagination.start,pagination.end)}/>}
+        </CollectionLayout></section>
+
       </>}
     </div></PageBody>
   </>
@@ -279,19 +334,20 @@ function RunForm({ job, release }: { job: Job; release: Release }) {
   return <section className={styles.runForm}><h2>{msg('New run')}</h2><p className="quiet">{msg('These inputs start an operational run and will be retained with its audit record.')}</p>{release.inputMapping?.version === 2 ? <MappedInputFields doc={JSON.parse(release.pack) as PackDocument} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : release.inputMapping ? <SourceInputFields doc={JSON.parse(release.pack) as PackDocument} provider={release.inputMapping.provider} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : <InputFields doc={JSON.parse(release.pack) as PackDocument} onValid={setInputsValid} onUnwritten={setUnwritten} {...{ facts, setFacts, supplied, setSupplied, evidence, setEvidence }} disabled={busy} />}<Problem error={error} /><div><Button variant="primary" disabled={busy || !inputsValid || Boolean(release.inputMapping && !source)} onClick={() => { void submit() }}>{busy ? msg('Submitting…') : msg('Submit run')}</Button></div></section>
 }
 function RunView({ runId }: { runId: string }) {
-  const query = useQuery({ queryKey: ['job-run', runId], queryFn: () => jobsAPI<Run>(`runs/${runId}`), refetchInterval: q => ['queued', 'running'].includes(q.state.data?.state ?? '') ? 1000 : false })
+  const query = useQuery({ ...privateQuery, queryKey: ['job-run', runId], queryFn: () => jobsAPI<Run>(`runs/${runId}`), refetchInterval: q => ['queued', 'running'].includes(q.state.data?.state ?? '') ? 1000 : false })
   const run = query.data
   useBriefSubject({ id: `run:${runId}`, path: `/api/operations/runs/${runId}/briefs`, title: msg('Run brief'), ...(!run || ['queued', 'running'].includes(run.state) ? { unavailable: msg('The run brief is available when execution finishes.') } : {}) })
   return <>
     <PageHeader title={msg('Jobs')} titleHref="/jobs" context={msg('Run {{id}}', { id: runId.slice(-8) })} actions={run && <ButtonLink to={`/jobs/${run.jobId}`} variant="quiet">{msg('Back to job')}</ButtonLink>} />
-    <PageBody width="wide"><div className={styles.stack}><Problem error={query.error} />
-      {query.isPending && <p role="status">{msg('Loading run…')}</p>}
+    <PageBody width="wide" loading={query.isPending?msg('Loading run…'):undefined}><div className={styles.stack}><QueryStatusNotice id={"job-run:"+runId} label={msg("Run status unavailable")} error={query.error} retrying={query.isFetching} onRetry={()=>query.refetch()}>{msg("Run status could not be refreshed. The last known status is shown; the run may still be active.")}</QueryStatusNotice>
+      {query.error&&!run&&<p className="quiet">{msg('Run status unavailable')}</p>}
       {run && <><RunFields run={run} />
         {run.trigger&&<><div className={styles.actions}><span className="quiet">{msg('Trigger')}</span><Link to={`/jobs/${run.jobId}?tab=triggers`}>{triggerName(run.trigger.kind)}</Link>{run.trigger.scheduledAt&&<span className="quiet">{date(run.trigger.scheduledAt)}</span>}</div><JSONView title={msg('Trigger record')} value={run.trigger}/></>}
         {run.problem && <p className={styles.problem}>{run.problem}</p>}
         {run.result && <section className={styles.stack}><h2>{msg('Decision details')}</h2>{run.result.disposition.reasons.length > 0 && <ul>{run.result.disposition.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}<p>{run.result.disposition.handoff.state === 'requested' ? msg('Handoff requested: {{target}}', { target: run.result.handoffTarget?.name ?? msg('See full result') }) : msg('No handoff requested')}</p><p className={styles.note}>{msg('This is a recorded decision. No external action or notification was sent.')}</p><JSONView title={msg('Full result')} value={run.result} /></section>}
-        {run.input?.source && isSourceV2(run.input.source) ? <><MappingReview mapping={run.input.source.mapping} />{run.input.preparation && <InputLineage preparation={run.input.preparation} />}<JSONView title={msg('Retained inputs')} value={{ facts: run.input.facts, evidence: run.input.evidence }} /><VerificationDownload runId={run.id} /></> : run.input?.source ? <SourceSummary source={run.input.source as SourceInput} /> : <JSONView title={msg('Retained inputs')} value={run.input} />}
+        {run.input?.source && isSourceV2(run.input.source) ? <><DialectReview mapping={run.input.source.mapping} />{run.input.preparation && <InputLineage preparation={run.input.preparation} />}<JSONView title={msg('Retained inputs')} value={{ facts: run.input.facts, evidence: run.input.evidence }} /></> : run.input?.source ? <SourceSummary source={run.input.source as SourceInput} /> : <JSONView title={msg('Retained inputs')} value={run.input} />}
         {run.audit && <JSONView title={msg('Runtime audit record')} value={run.audit} />}
+        {run.state === 'completed' && <VerifySavedRecord key={run.id} runId={run.id} actions={<VerificationDownload runId={run.id} />} />}
         <RunTechnicalDetails run={run} />
       </>}
     </div></PageBody>
@@ -369,9 +425,23 @@ async function refusalText(response: Response) {
  return msg('The local runner could not complete this request.')
 }
 
+function JobsCollectionOptions() {
+ const [open,setOpen]=useState(false),opener=useRef<HTMLButtonElement>(null),handoff=useRef(false)
+ return <>
+  <Menu.Root onOpenChange={next=>{if(next)handoff.current=false}}>
+   <Tooltip content={msg('Collection options')}><Menu.Trigger asChild><Button ref={opener} variant="quiet" size="icon" aria-label={msg('Collection options')}><IconMore/></Button></Menu.Trigger></Tooltip>
+   <Menu.Portal><Menu.Content align="end" onCloseAutoFocus={event=>{if(handoff.current)event.preventDefault()}}>
+    <Menu.Item icon={<IconDownload/>} onSelect={()=>{handoff.current=true;setOpen(true)}}>{msg('Download run history')}</Menu.Item>
+   </Menu.Content></Menu.Portal>
+  </Menu.Root>
+  <Dialog open={open} onOpenChange={setOpen} title={msg('Download run history')} openerRef={opener}>
+   <RunChainDownload onClose={()=>setOpen(false)}/>
+  </Dialog>
+ </>
+}
 /** The runner's whole chain of runs, saved as the runner sent it: Desk passes
  it on untouched, or fails it whole, and nothing here reads or checks it. */
-export function RunChainDownload() {
+export function RunChainDownload({ onClose }: { onClose?: () => void } = {}) {
  const [error,setError]=useState<unknown>(), [busy,setBusy]=useState(false), [chainSaved,setChainSaved]=useState(false)
  async function download() {
   setBusy(true);setError(undefined);setChainSaved(false)
@@ -385,8 +455,10 @@ export function RunChainDownload() {
    setChainSaved(true)
   } catch(e){setError(e)} finally {setBusy(false)}
  }
- return <div className={styles.field}><div className={styles.actions}><Button variant="quiet" disabled={busy} onClick={()=>void download()}>{msg('Download the runner’s chain of runs')}</Button>
-  <span className={styles.note}>{msg('The file is the runner’s whole chain of runs, byte for byte as the runner sent it, unverified here.')}</span></div>
+ return <div className={styles.field}>
+  <p className={styles.note}>{msg('Downloads the runner’s full run-history file, regardless of table filters. Desk saves the original file without verifying it.')}</p>
   {chainSaved && <p role="status" className={styles.note}>{msg('Saved {{file}}.', {file: RUN_CHAIN_FILE})}</p>}
-  <Problem error={error}/></div>
+  <Problem error={error}/>
+  <DialogActions>{onClose&&<Button variant="quiet" onClick={onClose}>{msg('Close')}</Button>}<Button variant="primary" disabled={busy} onClick={()=>void download()}><IconDownload/>{msg('Download')}</Button></DialogActions>
+ </div>
 }

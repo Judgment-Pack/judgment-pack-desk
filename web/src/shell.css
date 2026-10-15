@@ -133,7 +133,7 @@
      — the form-participation select Radix renders beside every Select trigger
      that sits inside a `<form>`, here the assistant endpoint form's three
      pickers, at y 1725, 2257 and 2354, each with `offsetParent` BODY.
-     `/packs` and `/help` measured 800: the Sort picker is in no form, so it
+     `/library` and `/help` measured 800: the Sort picker is in no form, so it
      renders no such select, and nothing else there is positioned.
 
      So the rule, and it is not a list of five names: **every rule in this
@@ -365,8 +365,8 @@
   }
 
   .desk-strip-left {
-    flex: 0 0 auto;
-    display: inline-flex;
+    flex: 1 1 0;
+    display: flex;
     align-items: center;
     gap: 0.75rem;
     min-width: 0;
@@ -387,35 +387,7 @@
     color: var(--ink-soft);
   }
 
-  /* The configuration cue. A link, because it goes to the page that names the
-     problem — never a colour the shell decided on its own. It never shrinks
-     and never wraps: it is the shorter string and the more important one. */
-  .desk-strip-warn {
-    flex: 0 0 auto;
-    white-space: nowrap;
-    color: var(--warn);
-  }
-
-  /* Two spellings of one cue, and only one of them is ever painted.
-     `configuration refused — see Admin` is about 263px in the strip's own
-     face; a 320px viewport leaves roughly 232px between the padding, the gap
-     and the console button. Unshrinkable and unwrappable, it painted straight
-     across that button and off the edge of a frame that clips. So the narrow
-     spelling is a short one — and the accessible name is unchanged in both,
-     because it is on the link, not in the text. */
-  .desk-strip-warn-short {
-    display: none;
-  }
-
   @media (max-width: 599px) {
-    .desk-strip-warn-full {
-      display: none;
-    }
-
-    .desk-strip-warn-short {
-      display: inline;
-    }
-
     /* Keep the project label and every control reachable without overlapping
        navigation. Identity text remains available inside the user menu. */
     .desk-head {
@@ -1002,3 +974,5 @@
 .desk-brief-head { display: flex; justify-content: flex-end; }
 
 .desk-pane-width-controls { display: flex; align-items: center; gap: var(--space-1); padding-inline: var(--space-1); border-inline: 1px solid var(--border); }
+
+.desk-strip > .desk-strip-connection, .desk-strip > :last-child { flex-shrink: 0; }

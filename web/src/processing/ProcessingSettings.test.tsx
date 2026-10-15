@@ -1,3 +1,4 @@
+import { DeskNotices, DeskNoticesProvider } from '../shell/DeskNotices'
 import { UnsavedChangesProvider } from '../shell/UnsavedChanges'
 import { respondToDiscardDialogs } from '../testing/discardDialogs'
 respondToDiscardDialogs()
@@ -33,7 +34,7 @@ function setup(read: ProcessingAnswer<ProcessingSettings>, reply: (url: string, 
     return Response.json(reply(url, JSON.parse(body || '{}') as Record<string, unknown>))
   })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
-  render(<QueryClientProvider client={client}><MemoryRouter><UnsavedChangesProvider><OCRSettings /></UnsavedChangesProvider></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><MemoryRouter><UnsavedChangesProvider><DeskNoticesProvider><OCRSettings /><footer><DeskNotices/></footer></DeskNoticesProvider></UnsavedChangesProvider></MemoryRouter></QueryClientProvider>)
   return { client, sent, invalidate }
 }
 const configured = (sent: Sent[]) => sent.filter(s => s.url === '/api/document-processing/configure').map(s => JSON.parse(s.body) as { ifMatch: string; config: ProcessingSettings })
@@ -216,6 +217,7 @@ it('sends the warning decision and says apply on start only after Desk decides s
   expect(screen.queryByText('The local gateway is not running. Settings saved now apply when it starts.')).toBeNull()
   fireEvent.click(screen.getByRole('combobox', { name: 'OCR mode' })); fireEvent.click(screen.getByRole('option', { name: 'Off' }))
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+  fireEvent.click(await screen.findByRole('button', {name:'Local processing unavailable'}))
   await screen.findByText('The local gateway is not running. Settings saved now apply when it starts.')
   expect(configured(sent)[0]).toHaveProperty('restartWarned', false)
 })

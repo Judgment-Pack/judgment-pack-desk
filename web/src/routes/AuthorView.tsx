@@ -1,3 +1,5 @@
+import {Spinner} from '../ui/Spinner'
+import {PageLoading} from '../ui/PageLoading'
 import { useQueryClient } from '@tanstack/react-query'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
@@ -69,7 +71,7 @@ export function AuthorView() {
   // The workspace is keyed by the project, so its remembered state is per project.
   return <article className="detail authoring" data-measure="full" data-layout="page">
     {listing.data ? <FileWorkspace key={listing.data.root} listing={listing}/>
-      : <><PageHeader title={msg('Project files')}/><div className={styles.feedback}>{listing.error ? <ErrorBox title={msg("Could not list the project's files")} error={listing.error}/> : <Loading what={msg("the project's files")}/>}</div></>}
+      : <><PageHeader title={msg('Project files')}/>{listing.error ? <div className={styles.feedback}><ErrorBox title={msg("Could not list the project's files")} error={listing.error}/></div> : <PageLoading>{msg('Loading project files…')}</PageLoading>}</>}
   </article>
 }
 function FileWorkspace({listing}:{listing:ReturnType<typeof useFileListing>}) {
@@ -206,7 +208,7 @@ function FileWorkspace({listing}:{listing:ReturnType<typeof useFileListing>}) {
             onReset={() => resize(Math.min(DEFAULT_FILES_WIDTH, maxWidth))} onCollapse={collapse}
             preview={{element:frame.current, property:'--files-width'}} />}
         </aside>
-        {opening && <span className={styles.opening} role="status" aria-label={msg('Loading…')}><span className={styles.spinner} aria-hidden="true"/></span>}
+        {opening && <span className={styles.opening} role="status" aria-label={msg('Loading…')}><Spinner/></span>}
         <section className={styles.detail} aria-label={msg('Editor')} hidden={showBrowser} aria-busy={!!opening} inert={!!opening}>
           {openError && <div className={styles.feedback}><ErrorBox title={msg('Could not read {{value0}}',{value0:openError.path})} error={openError.error}/></div>}
           {selected ? <FileEditor key={selected} path={selected} listed={listedNow} onDirty={setDirty} leading={leading} wrap={prefs.wrap} onWrap={wrap=>updatePrefs({wrap})} /> : <>
@@ -393,7 +395,7 @@ function FileEditor({
         {formatError && <p id="format-error" className="note note-warn" role="alert">{formatError === 'invalid'
           ? msg('Cannot format invalid JSON. Fix its syntax and try again.')
           : msg('Formatted JSON exceeds the editor’s 4 MiB limit.')}</p>}
-        <Suspense fallback={<div className={styles.editorLoading} role="status">{msg('Loading editor…')}</div>}>
+        <Suspense fallback={<PageLoading>{msg('Loading editor…')}</PageLoading>}>
           <CodeEditor ref={editor} id="authoring-buffer" path={path} value={buffer} wrap={wrap} readOnly={readOnly} describedBy={[readOnly?'authoring-read-only':undefined,formatError?'format-error':undefined].filter(Boolean).join(' ')||undefined}
             onChange={value=>{setBuffer(value);clearFormat()}} onFormat={format} onSave={()=>{if(dirty&&!write.isPending)void save(false)}}/>
         </Suspense>

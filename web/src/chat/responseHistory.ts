@@ -1,3 +1,7 @@
+import {questionFailureMessage,type QuestionFailureCode} from '../assistant/questionFailure'
+import { validDelegatedTask, type DelegatedTask } from '../assistant/delegationContract'
+import {dialectRecipeFailureMessage,type DialectRecipeFailureCode} from '../dialects/proposalFailure'
+import { validLinkFailure, type LinkFailureCode } from './linkFailure'
 import { GRAPH_TOOLS, graphWork, graphWorkResult, validGraphWork, type GraphWork } from '../graphs/work'
 import { linkStepFromCall, linkStepFromResult, validLinkStep, type LinkStep } from './linkStep'
 import { validSearchStep, type SearchStep } from '../search/step'
@@ -8,13 +12,29 @@ import type { ChatAttachment } from './store'
 import { validWebURL } from '../documents/record'
 import { validWebsiteReference, type WebsiteReference } from '../documents/website'
 
-export interface WorkItem { graph?: GraphWork; id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted'; failure?: SearchFailureCode; search?: SearchStep; link?: LinkStep }
+export interface WorkItem { questionFailure?: QuestionFailureCode; questionRecovered?: true; task?: DelegatedTask; inputRecipeFailure?: DialectRecipeFailureCode; redirectPolicy?: 'google-grounding'; linkFailure?: LinkFailureCode; researchSuggestion?: true; graph?: GraphWork; id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted'; failure?: SearchFailureCode; search?: SearchStep; link?: LinkStep }
+// Saved work keeps the tool name used at execution, including names before the Dialects rename.
+const isRecipeProposalTool = (name: unknown) => name === 'propose_dialect_recipe' || name === 'propose_input_recipe'
+
 /** Pair by invocation identity, never by a tool name (parallel calls may repeat). */
 export function workItems(events: readonly AssistantEvent[], running: boolean): WorkItem[] {
   const rows: WorkItem[] = []
   const pending = new Map<string, WorkItem>()
   events.forEach((event, index) => {
-    if (event.type === 'tool_call' && event.callId) {
+    if (event.type === 'user_question') {
+      for (const row of rows) if (row.name === 'ask_user' && row.status === 'failed') { row.status = 'complete'; row.questionRecovered = true }
+    } else if (event.type === 'delegated_task') {
+      const task=structuredClone(event.task)
+      if(!running && (task.state==='running'||task.state==='queued')) {
+        task.state='interrupted'
+        task.problem='This task was interrupted. Nothing restarted automatically.'
+        task.steps=task.steps.map(step=>step.state==='running'||step.state==='queued'?{...step,state:'interrupted'}:step)
+      }
+      const status=task.state==='queued'||task.state==='running'?'working':task.state
+      const existing=rows.find(row=>row.id===task.id)
+      if(existing)Object.assign(existing,{task,status})
+      else rows.push({id:task.id,name:'delegate_task',task,status})
+    } else if (event.type === 'tool_call' && event.callId) {
       const row: WorkItem = { id: event.callId, name: event.name, status: running ? 'working' : 'interrupted' }
       const query=(event.args as {query?:unknown}|undefined)?.query
       if(event.name==='search_sources' && validSearchStep({query})) {
@@ -26,15 +46,25 @@ export function workItems(events: readonly AssistantEvent[], running: boolean): 
       rows.push(row); pending.set(event.callId, row)
     } else if (event.type === 'tool_result') {
       const row = event.callId ? pending.get(event.callId) : undefined
+      const researchSuggestion = ['search_sources','explore_website'].includes(event.name) && !event.isError && (event.structured as {researchSuggestion?:unknown}|undefined)?.researchSuggestion === true
       const status = event.isError ? 'failed' : 'complete'
+      const questionCode=event.name==='ask_user'&&event.isError?(event.structured as {questionFailure?:unknown}|undefined)?.questionFailure:undefined
+      const questionFailure=questionFailureMessage(questionCode)?questionCode as QuestionFailureCode:undefined
+      const proposedFailure=isRecipeProposalTool(event.name)&&event.isError?(event.structured as {inputRecipeFailure?:unknown}|undefined)?.inputRecipeFailure:undefined
+      const inputRecipeFailure=dialectRecipeFailureMessage(proposedFailure)?proposedFailure as DialectRecipeFailureCode:undefined
       const code=event.name==='search_sources'&&event.isError?(event.structured as {searchFailure?:unknown}|undefined)?.searchFailure:undefined
       const failure=searchFailureMessage(code)?code as SearchFailureCode:undefined
       const detail=event.name==='search_sources'?(event.structured as {searchStep?:unknown}|undefined)?.searchStep:undefined
       const search=validSearchStep(detail)?structuredClone(detail):undefined
+      const readFailure = event.name==='read_link'&&event.isError ? (event.structured as {linkFailure?:unknown}|undefined)?.linkFailure : undefined
+      const linkFailure = event.name==='read_link'&&event.isError ? validLinkFailure(readFailure) ? readFailure : 'unknown' : undefined
+      const redirectPolicy = linkFailure==='web-redirect-origin' && (event.structured as {redirectPolicy?:unknown}|undefined)?.redirectPolicy==='google-grounding' ? 'google-grounding' as const : undefined
+      if(row&&row.name===event.name&&linkFailure){row.linkFailure=linkFailure;if(redirectPolicy)row.redirectPolicy=redirectPolicy}
       const link=event.name==='read_link'&&!event.isError?linkStepFromResult(event.structured):undefined
+      if (row && researchSuggestion) row.researchSuggestion = true
       if (row && row.name === event.name && GRAPH_TOOLS.has(event.name)) row.graph = graphWorkResult(row.graph, event.text)
-      if (row) { if(link && row.name==='read_link')row.link=link; row.status = status; if(failure)row.failure=failure; if(search && row.name==='search_sources')row.search=search; pending.delete(event.callId!) }
-      else rows.push({ id: `result-${index}`, name: event.name, status, ...(failure?{failure}:{}), ...(search?{search}:{}), ...(link?{link}:{}) })
+      if (row) { if(questionFailure&&row.name===event.name)row.questionFailure=questionFailure; if(inputRecipeFailure&&row.name===event.name)row.inputRecipeFailure=inputRecipeFailure; if(link && row.name==='read_link')row.link=link; row.status = status; if(failure)row.failure=failure; if(search && row.name==='search_sources')row.search=search; pending.delete(event.callId!) }
+      else rows.push({ id: `result-${index}`, name: event.name, status, ...(questionFailure?{questionFailure}:{}), ...(inputRecipeFailure?{inputRecipeFailure}:{}), ...(researchSuggestion ? {researchSuggestion:true as const} : {}), ...(failure?{failure}:{}), ...(linkFailure?{linkFailure}:{}), ...(redirectPolicy?{redirectPolicy}:{}), ...(search?{search}:{}), ...(link?{link}:{}) })
     }
   })
   return rows
@@ -95,9 +125,9 @@ export function readResponseHistory(value: unknown): ResponseHistory[] {
       || !Array.isArray(row.sourceIds) || row.sourceIds.some(s => typeof s !== 'string' || !/^src-\d+$/.test(s)) || !object(row.work)
       || !Array.isArray(row.work.items) || !Array.isArray(row.work.notices) || row.work.notices.some(n => typeof n !== 'string')
       || row.work.critique !== undefined && typeof row.work.critique !== 'string') return invalid()
-    for (const item of row.work.items) if (!object(item) || item.graph!==undefined&&(!GRAPH_TOOLS.has(String(item.name))||!validGraphWork(item.graph)) || typeof item.id !== 'string' || typeof item.name !== 'string' || !['working','complete','failed','interrupted'].includes(String(item.status)) || item.failure!==undefined&&(!searchFailureMessage(item.failure)||item.status!=='failed'||item.name!=='search_sources') || item.search!==undefined&&(item.name!=='search_sources'||!validSearchStep(item.search)) || item.link!==undefined&&(item.name!=='read_link'||!validLinkStep(item.link))) return invalid()
+    for (const item of row.work.items) if (!object(item) || item.questionRecovered!==undefined&&(item.questionRecovered!==true||item.name!=='ask_user'||item.status!=='complete') || item.questionFailure!==undefined&&(!questionFailureMessage(item.questionFailure)||item.name!=='ask_user'||(item.status!=='failed'&&!item.questionRecovered)) || item.task!==undefined&&(item.name!=='delegate_task'||!validDelegatedTask(item.task)||item.task.id!==item.id) || item.inputRecipeFailure!==undefined&&(!dialectRecipeFailureMessage(item.inputRecipeFailure)||!isRecipeProposalTool(item.name)||item.status!=='failed') || item.redirectPolicy!==undefined&&(item.redirectPolicy!=='google-grounding'||item.linkFailure!=='web-redirect-origin'||item.status!=='failed'||item.name!=='read_link') || item.linkFailure!==undefined&&(item.name!=='read_link'||item.status!=='failed'||!validLinkFailure(item.linkFailure)) || item.researchSuggestion!==undefined&&(item.researchSuggestion!==true||!['search_sources','explore_website'].includes(String(item.name))) || item.graph!==undefined&&(!GRAPH_TOOLS.has(String(item.name))||!validGraphWork(item.graph)) || typeof item.id !== 'string' || typeof item.name !== 'string' || !['working','complete','failed','interrupted'].includes(String(item.status)) || item.failure!==undefined&&(!searchFailureMessage(item.failure)||item.status!=='failed'||item.name!=='search_sources') || item.search!==undefined&&(item.name!=='search_sources'||!validSearchStep(item.search)) || item.link!==undefined&&(item.name!=='read_link'||!validLinkStep(item.link))) return invalid()
     return {id: row.id, messageId: readMessageId(row.messageId), afterTurnId: readMessageId(row.afterTurnId), documents: readAttachments(row.documents),
-      ...(row.searches ? {searches:structuredClone(row.searches) as SearchReference[]} : {}), websites: structuredClone(row.websites), sourceIds: [...row.sourceIds], work: {items: structuredClone(row.work.items) as WorkItem[], notices: [...row.work.notices] as string[], ...(typeof row.work.critique === 'string' ? {critique: row.work.critique} : {})}}
+      ...(row.searches ? {searches:structuredClone(row.searches) as SearchReference[]} : {}), websites: structuredClone(row.websites), sourceIds: [...row.sourceIds], work: {items: (structuredClone(row.work.items) as WorkItem[]).map((item):WorkItem=>item.task && (item.task.state==='queued'||item.task.state==='running') ? {...item,status:'interrupted',task:{...item.task,state:'interrupted',problem:'This task was interrupted. Nothing restarted automatically.',steps:item.task.steps.map(step=>step.state==='running'?{...step,state:'interrupted'}:step)}} : item), notices: [...row.work.notices] as string[], ...(typeof row.work.critique === 'string' ? {critique: row.work.critique} : {})}}
   })
   if (new Set(records.map(r => r.id)).size !== records.length) return invalid()
   return records

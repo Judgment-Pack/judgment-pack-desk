@@ -377,3 +377,14 @@ it('pins the provided connection and revision instead of resolving the desk defa
  expect(calls.at(-1)?.get('X-Assistant-Connection')).toBe(target.connectionId)
  expect(calls.at(-1)?.get('X-Assistant-Revision')).toBe(target.connectionRevision)
 })
+
+
+it('uses explicit run settings when the connection slot also carries default engine settings', async () => {
+  engine = records
+  const target = {connectionName:'Test connection', endpoint:null, engine:'codex'}
+  const {result}=renderHook(()=>useAssistantRun({target,purpose:'brief',endpoint:ENDPOINT,model:ENDPOINT.model,engine:'vercel',thinking:'off'}))
+  act(()=>result.current.start('Design tests'))
+  await waitFor(()=>expect(result.current.status).toBe('finished'))
+  expect(result.current.failure).toBeUndefined()
+  expect(handed?.model.model).toBe(ENDPOINT.model)
+})

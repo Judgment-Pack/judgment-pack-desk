@@ -1,3 +1,4 @@
+import {DeskNotices, DeskNoticesProvider} from '../shell/DeskNotices'
 /**
  * The packs pane, which is where the rail's list went.
  *
@@ -12,6 +13,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { McpContext } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { PacksPane } from './PacksPane'
+
+function PaneWithNotices() {return <DeskNoticesProvider><PacksPane/><footer><DeskNotices/></footer></DeskNoticesProvider>}
 
 const packLinks = () => screen.queryAllByRole('link').filter(link => link.getAttribute('href')?.startsWith('/packs/') && link.getAttribute('href') !== '/packs/new')
 
@@ -53,14 +56,14 @@ function packs(ids: string[]) {
   })
 }
 
-function draw(stub: ReturnType<typeof stubClient>, path = '/packs?type=pack', graphInventorySupported = false) {
+function draw(stub: ReturnType<typeof stubClient>, path = '/library?type=pack', graphInventorySupported = false) {
   const router = createMemoryRouter(
     [
       {
         path: '*',
         element: (
           <McpContext.Provider value={connected({ client: stub.client, graphInventorySupported })}>
-            <PacksPane />
+            <PaneWithNotices/>
           </McpContext.Provider>
         )
       }
@@ -190,12 +193,13 @@ describe('the packs pane', () => {
       }
     })
     draw(stub)
+    fireEvent.click(await screen.findByRole('button', {name:'Packs unavailable'}))
     await screen.findByText(/the runtime refused the listing/)
     expect(screen.queryByText('No packs or graphs yet')).toBeNull()
   })
 
   it('shows no matches when an empty listing is restricted by type', async () => {
-    draw(packs([]), '/packs?type=pack')
+    draw(packs([]), '/library?type=pack')
     await screen.findByText('No matching packs or graphs')
   })
 
@@ -236,10 +240,9 @@ describe('the packs pane', () => {
 })
 
 describe('a listing that failed after it had succeeded', () => {
-  it('takes its stale rows and preview actions away with it', async () => {
-    // react-query keeps the last good data through a refetch error, so the
-    // pane printed the failure sentence and left a button underneath offering
-    // to show all N of a listing it had just said it could not read.
+  it('retains the last listing with refresh failure in the bottom strip', async () => {
+    // A refresh failure retains the last known rows and explains their staleness
+    // in the same bottom-strip notice used by the application shell.
     let answer: () => { text: string } = () => ({
       text: JSON.stringify({
         status: 'valid',
@@ -257,12 +260,12 @@ describe('a listing that failed after it had succeeded', () => {
           path: '*',
           element: (
             <McpContext.Provider value={connected({ client: stub.client })}>
-              <PacksPane />
+              <PaneWithNotices/>
             </McpContext.Provider>
           )
         }
       ],
-      { initialEntries: ['/packs'] }
+      { initialEntries: ['/library'] }
     )
     render(
       <QueryClientProvider client={queryClient}>
@@ -277,19 +280,15 @@ describe('a listing that failed after it had succeeded', () => {
     }
     await queryClient.refetchQueries({ queryKey: ['list_packs'] })
 
-    await waitFor(() =>
-      expect(screen.getByText(/the project could not be read/)).toBeTruthy()
-    )
-    // The stale rows and their preview actions are unavailable after refusal.
-    expect(packLinks()).toHaveLength(0)
-    expect(screen.queryByRole('button', { name: /Preview pack/ })).toBeNull()
-    expect(document.querySelector('[data-collection-footer]')).toBeNull()
+    fireEvent.click(await screen.findByRole('button', {name:'Packs unavailable'}))
+    expect(await screen.findByText(/the project could not be read/)).toBeTruthy()
+    expect(screen.getByText('Packs could not be refreshed. Previously loaded packs may be out of date.')).toBeTruthy()
+    expect(packLinks()).toHaveLength(30)
+    expect(document.querySelector('[data-collection-footer]')).toBeTruthy()
   })
 
   it('comes back when the same listing answers again', async () => {
-    // The retry mounts a new list node at the same length. The scroll listener
-    // used to stay on the detached one, so the pane came back and scrolled no
-    // more; `useWindowedRows.test.tsx` holds that half directly.
+    // A successful refresh clears the failure without replacing the retained list.
     let fail = false
     const rows = Array.from({ length: 30 }, (_, index) => ({
       id: `pack-${String(index).padStart(2, '0')}`,
@@ -308,12 +307,12 @@ describe('a listing that failed after it had succeeded', () => {
           path: '*',
           element: (
             <McpContext.Provider value={connected({ client: stub.client })}>
-              <PacksPane />
+              <PaneWithNotices/>
             </McpContext.Provider>
           )
         }
       ],
-      { initialEntries: ['/packs'] }
+      { initialEntries: ['/library'] }
     )
     render(
       <QueryClientProvider client={queryClient}>
@@ -324,7 +323,8 @@ describe('a listing that failed after it had succeeded', () => {
 
     fail = true
     await queryClient.refetchQueries({ queryKey: ['list_packs'] })
-    await waitFor(() => expect(packLinks()).toHaveLength(0))
+    expect(await screen.findByRole('button', {name:'Packs unavailable'})).toBeTruthy()
+    expect(packLinks()).toHaveLength(30)
 
     fail = false
     await queryClient.refetchQueries({ queryKey: ['list_packs'] })
@@ -332,6 +332,7 @@ describe('a listing that failed after it had succeeded', () => {
       expect(screen.getByRole('link', { name: /pack-00/ })).toBeTruthy()
     )
     expect(screen.getByRole('link', { name: /pack-00/ })).toBeTruthy()
+    await waitFor(()=>expect(screen.queryByRole('button',{name:'Packs unavailable'})).toBeNull())
   })
 })
 
@@ -341,7 +342,7 @@ it('browses packs and graphs with the same id without confusing their links or r
     list_packs: () => ({text: JSON.stringify({status:'valid',packs:[{id:'same',packVersion:'1.0.0'}]})}),
     experimental_list_graphs: () => ({text: JSON.stringify({status:'valid',graphs:[{id:'same',graphVersion:'2.0.0',path:'same.graph.json',rowsDeclared:false}]})})
   })
-  draw(stub, '/packs', true)
+  draw(stub, '/library', true)
   await waitFor(() => expect(document.querySelector('a[href="/graphs/same"]')).toBeTruthy())
   expect(document.querySelector('a[href="/packs/same"]')).toBeTruthy()
   fireEvent.keyDown(screen.getByRole('button', {name:'Item type'}), {key:'Enter'})
@@ -365,7 +366,7 @@ it('composes only explicitly selected saved packs', async () => {
 
 it('does not claim that an unsupported graph inventory is empty', async () => {
   const stub = packs([])
-  draw(stub, '/packs?type=graph')
+  draw(stub, '/library?type=graph')
   await screen.findByText('This runtime cannot list saved graphs. Connect a newer runtime to browse all packs and graphs.')
   expect(screen.queryByText('No packs or graphs yet')).toBeNull()
   expect(stub.calls.map(call => call.name)).not.toContain('experimental_list_graphs')
@@ -376,12 +377,12 @@ it('keeps graphs usable when only the pack inventory fails', async () => {
     list_packs: () => { throw new Error('pack inventory unavailable') },
     experimental_list_graphs: () => ({text: JSON.stringify({status:'valid',graphs:[{id:'flow',graphVersion:'1.0.0'}]})})
   })
-  draw(stub, '/packs?type=graph', true)
+  draw(stub, '/library?type=graph', true)
   expect(await screen.findByRole('link', {name:/flow/})).toHaveProperty('href', expect.stringContaining('/graphs/flow'))
   expect(screen.queryByText('pack inventory unavailable')).toBeNull()
 })
 
-it('withdraws saved graph rows after a refresh fails without claiming an empty project', async () => {
+it('retains saved graph rows with a refresh warning instead of claiming an empty project', async () => {
   let fail = false
   const stub = stubClient({
     list_packs: () => ({text:'{"status":"valid","packs":[]}'}),
@@ -391,13 +392,15 @@ it('withdraws saved graph rows after a refresh fails without claiming an empty p
     }
   })
   const queryClient = testQueryClient()
-  const router = createMemoryRouter([{path:'*',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:true})}><PacksPane/></McpContext.Provider>}], {initialEntries:['/packs?type=graph']})
+  const router = createMemoryRouter([{path:'*',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:true})}><PaneWithNotices/></McpContext.Provider>}], {initialEntries:['/library?type=graph']})
   render(<QueryClientProvider client={queryClient}><RouterProvider router={router}/></QueryClientProvider>)
   await screen.findByRole('link',{name:/flow/})
   fail = true
   await queryClient.refetchQueries({queryKey:['experimental_list_graphs']})
+  fireEvent.click(await screen.findByRole('button',{name:'Graphs unavailable'}))
   await screen.findByText(/graph inventory unavailable/)
-  expect(document.querySelector('a[href="/graphs/flow"]')).toBeNull()
+  expect(screen.getByText('Graphs could not be refreshed. Previously loaded graphs may be out of date.')).toBeTruthy()
+  expect(document.querySelector('a[href="/graphs/flow"]')).toBeTruthy()
   expect(screen.queryByText('No packs or graphs yet')).toBeNull()
 })
 

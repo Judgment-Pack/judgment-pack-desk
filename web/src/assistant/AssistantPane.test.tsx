@@ -478,26 +478,18 @@ describe('one whole run', () => {
     const drawn = await draw({ draft: JSON.stringify(scenario.documents.DRAFT_V1, null, 2) })
     await runIt(drawn)
     const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
-    expect(diff.textContent).toContain('Compared with the draft on this page')
-    // The two members that moved, the one that arrived, and the eleven that
-    // did not — under one line with a count.
-    expect(diff.textContent).toContain('/version')
-    expect(diff.textContent).toContain('/rules')
-    expect(diff.textContent).toContain('/exceptions')
-    expect(diff.textContent).toContain('11 members unchanged')
-    // The rule the proposal drops is named, and the three it keeps are not
-    // redrawn as rewrites.
-    expect(diff.textContent).toContain('/rules/3')
-    expect(diff.textContent).toContain('3 elements unchanged, in the same place.')
-    // And the draft's own bytes are quoted beside the proposal's.
-    const before = screen.getByLabelText('/version, in the draft') as HTMLTextAreaElement
-    expect(JSON.parse(before.value)).toBe('0.0.1')
+    expect(diff.textContent).toContain('Compared with the document this request started from.')
+    expect(diff.textContent).toContain('Changed: version, rules, exceptions')
+    expect(screen.getByRole('button',{name:'Expand diff'})).toBeTruthy()
+    // Both revisions share one read-only line comparison, including deletions.
+    await waitFor(()=>expect(diff.querySelector('.cm-deletedChunk')?.textContent).toContain('0.0.1'))
+
   })
 
   it('says there was nothing to compare with where the page has no bytes', async () => {
     await runIt()
     const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
-    expect(diff.textContent).toContain('There was nothing to compare with')
+    expect(diff.textContent).toContain('No comparison available:')
     expect(diff.textContent).toContain('no draft on this page')
   })
 
@@ -599,7 +591,7 @@ describe('exactly one end, on every path', () => {
     await typeAndRun()
     await waitFor(() => expect(ends()).toHaveLength(1))
     const stream = screen.getByRole('list', { name: 'What the assistant did' })
-    expect(stream.textContent).toContain('409')
+    expect(stream.textContent).toContain('needs authentication')
   })
 
   it('one, when the connection itself never comes up', async () => {
@@ -1081,7 +1073,7 @@ describe('the proposal the pane reads is the one the hook canonicalized', () => 
     await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
     // The diff and the whole-document display are both on screen by now.
     expect(screen.getByRole('region', { name: 'The proposal as a diff' }).textContent).toContain(
-      '/title'
+      'title'
     )
     expect(
       JSON.parse((screen.getByLabelText('The proposed document') as HTMLTextAreaElement).value)
@@ -1105,8 +1097,8 @@ describe('the proposal the pane reads is the one the hook canonicalized', () => 
     await runIt()
     await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
     const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
-    expect(diff.textContent).toContain('added')
-    expect(diff.textContent).toContain('removed')
+    await waitFor(()=>expect(diff.querySelector('.cm-deletedChunk')?.textContent).toContain('a'))
+    expect(diff.textContent).toContain('b')
     expect(complaints.filter((line) => /same key|duplicate/i.test(line))).toEqual([])
     spy.mockRestore()
   })
@@ -1199,9 +1191,9 @@ describe('a proposal belongs to the draft it was given', () => {
     // **And the caption says which draft that is.** "The draft on this page" is
     // a different document now, and a caption that named it would make the
     // comparison look like one it is not.
-    expect(diff.textContent).toContain('Compared with the draft this proposal was given')
-    expect(diff.textContent).toContain('the draft on this page has changed since')
-    expect(diff.textContent).not.toContain('Compared with the draft on this page')
+    expect(diff.textContent).toContain('Compared with the request-time document.')
+    expect(diff.textContent).toContain('The current document has changed.')
+    expect(diff.textContent).not.toContain('Compared with the document this request started from.')
   })
 
   it('goes back to naming the page’s own draft once it is that draft again', async () => {
@@ -1210,7 +1202,7 @@ describe('a proposal belongs to the draft it was given', () => {
     await waitFor(() =>
       expect(
         screen.getByRole('region', { name: 'The proposal as a diff' }).textContent
-      ).toContain('Compared with the draft on this page')
+      ).toContain('Compared with the document this request started from.')
     )
   })
 
@@ -1271,7 +1263,8 @@ describe('a session that failed after it ended', () => {
     await waitFor(() =>
       expect(stream.textContent).toContain('the session failed after it ended')
     )
-    expect(stream.textContent).toContain('the session could not be closed')
+    expect(stream.textContent).toContain('The response could not complete.')
+    expect(stream.textContent).not.toContain('the session could not be closed')
     // And it is still exactly one terminal event: the failure is beside the
     // stream, not a second `end` on it.
     expect(
@@ -1284,7 +1277,7 @@ describe('a session that failed after it ended', () => {
     const accept = () => screen.getByRole('button', { name: 'Accept into draft' })
     await waitFor(() => expect(accept().hasAttribute('disabled')).toBe(true))
     // The run's own words, which carry the error's name as the hook records it.
-    expect(helpText(accept())).toBe('Error: the session could not be closed')
+    expect(helpText(accept())).toBe('The response could not complete. Review completed work before continuing.')
     expect(
       screen.getByRole('region', { name: 'The proposal' }).textContent
     ).toContain('did not stand behind what it proposed')

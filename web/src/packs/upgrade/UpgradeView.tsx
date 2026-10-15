@@ -61,7 +61,7 @@ export function UpgradeView() {
     }
   }
   return <article className={styles.page} aria-label={msg('Turn on this project’s gates')}>
-    <PageHeader title={msg('Turn on this project’s gates')} actions={<ButtonLink to="/packs">{msg('Back to packs')}</ButtonLink>} />
+    <PageHeader title={msg('Turn on this project’s gates')} actions={<ButtonLink to="/library">{msg('Back to packs')}</ButtonLink>} />
     <div className={styles.body}>
       {outcome?.kind !== 'done' && upgrade?.state === 'offer' && <p className={styles.statement}>{msg('Nothing is written until you confirm. If you leave this page, every file stays as it is.')}</p>}
       {outcome?.kind === 'done' && <p role="status" className={styles.done}>
@@ -154,7 +154,7 @@ function Offer({ upgrade, facts, setFacts, sign, setSign, busy, confirm }: {
         {upgrade.sign
           ? <Button variant="primary" disabled={busy} onClick={() => void confirm()}>{busy ? msg('Making the key and locking…') : msg('Make the signing key and lock {{count}} files', { count: covered })}</Button>
           : <Button variant="primary" disabled={busy} onClick={() => void confirm()}>{busy ? msg('Turning the gates on…') : msg('Turn the gates on and lock {{count}} files', { count: covered })}</Button>}
-        <ButtonLink to="/packs" variant="quiet">{msg('Not now')}</ButtonLink>
+        <ButtonLink to="/library" variant="quiet">{msg('Not now')}</ButtonLink>
       </div>
     </section>}
   </>

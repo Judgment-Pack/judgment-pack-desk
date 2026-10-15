@@ -138,14 +138,18 @@ describe('repairing the trail', () => {
     expect(screen.getByText(NOT_INTACT)).toBeTruthy()
   })
 
-  it('shows a stale refusal in Desk’s words, and checks the trail again', async () => {
-    const stale = 'The trail changed after the decision record showed it, so nothing was repaired. Check the decision record again.'
+  it('requires Refresh history and a new confirmation after a stale refusal', async () => {
+    const stale = 'History changed since you reviewed it. No repair was made.'
     repair = () => json(409, { error: stale, code: 'stale' })
     records = [offered, { ...offered, repair: { state: 'available', line: 4, token: 'ef'.repeat(48) } }]
     show()
     await confirmRepair()
-    expect((await screen.findByText(stale)).getAttribute('role')).toBe('alert')
-    expect(checks).toBe(2)
+    expect((await screen.findByText(stale)).closest('[role=alert]')).toBeTruthy()
+    expect(checks).toBe(1)
+    expect(screen.queryByRole('button', {name:'Repair the trail'})).toBeNull()
+    expect(posts).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', {name:'Refresh history'}))
+    await waitFor(()=>expect(checks).toBe(2))
     expect(screen.queryByText(REPAIRED)).toBeNull()
     expect(screen.queryByRole('list', { name: 'What the runtime said of the repair' })).toBeNull()
     // The fresh offer is the one shown.
@@ -160,7 +164,8 @@ describe('repairing the trail', () => {
     records = [offered]
     show()
     await confirmRepair()
-    expect((await screen.findByText('The runtime did not report a repair. It said:')).getAttribute('role')).toBe('alert')
+    expect((await screen.findByText('The runtime did not report a repair. It said:')).closest('[role=alert]')).toBeTruthy()
+    fireEvent.click(region().getByText('Technical details'))
     const words = within(screen.getByRole('list', { name: 'What the runtime said of the repair' })).getAllByRole('listitem')
     expect(words.map(item => [item.textContent, item.getAttribute('lang')])).toEqual([[`${said.code} ${said.message}`, 'en']])
     expect(checks).toBe(2)
@@ -246,7 +251,7 @@ describe('the repair client', () => {
     // Each sentence's words between its placeholders, as the chassis's Go
     // source spells them.
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/audit_repair.go'), 'utf8')
-    expect(REPAIR_REASONS).toHaveLength(17)
+    expect(REPAIR_REASONS).toHaveLength(18)
     for (const reason of REPAIR_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)

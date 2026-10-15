@@ -110,6 +110,14 @@ export type CallTool = (name: string, args: Record<string, unknown>) => Promise<
  * so the narrowing notice a served schema can earn never fires for one.
  */
 export interface HostTool {
+  /** Context retention is independent of topic, provider and action permissions. */
+  contextPolicy?: import('./context/toolPolicy').ContextToolPolicy
+  /** Host-declared effect, never supplied by model arguments. */
+  effect?: 'read' | 'proposal' | 'workflow' | 'memory' | 'plan'
+  /** Desk interaction; adapters pause before returning any user answer. */
+  interaction?: 'question' | 'delegation'
+  /** Explicit read-only capability offered to children; absent means parent-only. */
+  delegation?: 'read' | 'research'
   /** Host-owned presentation, frozen when this tool is offered; never model arguments. */
   presentation?: { provider: string }
   name: string
@@ -162,6 +170,8 @@ export interface ModelRequest {
 export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Response>
 
 export interface AssistantSession {
+  /** Shared, provider-independent context policy and current scoped source copies. */
+  context?: import('./context/session').ContextInput
   /** Test design proposes reviewed cases rather than a replacement pack. */
   purpose?: 'test-design' | 'brief' | 'graph'
   /** Reply language captured for this turn; wire keys and source quotations remain exact. */
@@ -217,6 +227,13 @@ export interface AssistantSession {
  * reporting on a guard it does not hold.
  */
 export type AssistantEvent =
+  | {type:'execution_checkpoint'; durable?:boolean; checkpoint:import('./execution/state').ExecutionCheckpoint}
+  | {type:'budget_paused'; checkpoint:import('./execution/state').ExecutionCheckpoint}
+  | { type: 'retry'; attempt: number }
+  | { type: 'response_recovery' }
+  | { type: 'delegation_requested'; request: import('./delegationContract').DelegationRequest }
+  | { type: 'delegated_task'; task: import('./delegationContract').DelegatedTask }
+  | { type: 'user_question'; id: string; question: import('./questions').UserQuestion }
   | { type: 'reasoning'; text: string; done: boolean }
   /**
    * The model's own prose in its final turn, outside the proposal fence: what
@@ -239,7 +256,7 @@ export type AssistantEvent =
   | { type: 'thinking_unavailable'; detail: string }
   | { type: 'critique'; refuted: boolean; checks: { tool: string; status: string }[]; text: string }
   | { type: 'proposal'; document: unknown; unknowns: string[]; critique?: { refuted: boolean } }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; failure?: import('./failures').AIFailure }
   | { type: 'end' }
 
 export type AgentAssistantSession = Omit<AssistantSession, 'model' | 'thinking'> & {

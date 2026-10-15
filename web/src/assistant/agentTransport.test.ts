@@ -131,3 +131,47 @@ it('names the AI connection and its revision in the run socket address, and noth
   controller.abort()
   await expect(run).rejects.toBeTruthy()
 })
+
+it.each(['limit', 'retries-exhausted'])('keeps the %s reason when the server closes during a pending tool', async code => {
+  let entered!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  Socket.respond = (_value, socket) => {
+    socket.receive({type:'started',runId:runID})
+    socket.receive({type:'tool-call',runId:runID,call:{id:callID,name:'desk_runtime_0',arguments:{}}})
+  }
+  const c=callbacks()
+  c.tool=vi.fn(async (_call, signal) => { entered(); return new Promise<never>((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Stopped','AbortError')),{once:true})) })
+  const pending=bindAgentRun('model')(request,c)
+  const ended=expect(pending).rejects.toMatchObject({failure:{code:code==='limit'?'provider-limit':'retries-exhausted'}})
+  await started
+  Socket.opened[0]!.receive({type:'end',runId:runID,error:code})
+  Socket.opened[0]!.close()
+  await ended
+  expect(c.tool).toHaveBeenCalledOnce()
+  expect(Socket.opened).toHaveLength(1)
+  expect(Socket.sent.filter(v=>v.type==='tool-result')).toHaveLength(0)
+  expect(auth.listeners.size).toBe(0)
+})
+it('forwards bounded same-run recovery without opening a new socket or exposing raw details', async () => {
+ Socket.respond=(_value,socket)=>{
+  socket.receive({type:'started',runId:runID})
+  socket.receive({type:'event',runId:runID,event:{type:'retry',attempt:1,text:'PRIVATE_SENTINEL'}})
+  socket.receive({type:'end',runId:runID,error:''});socket.close()
+ }
+ const c=callbacks();await bindAgentRun('model')(request,c)
+ expect(c.event).toHaveBeenCalledWith({type:'retry',attempt:1})
+ expect(Socket.opened).toHaveLength(1)
+})
+it('does not accept a terminal error for another run while a tool is pending', async()=>{
+ let entered!:()=>void;const ready=new Promise<void>(resolve=>{entered=resolve})
+ Socket.respond=(_value,socket)=>{socket.receive({type:'started',runId:runID});socket.receive({type:'tool-call',runId:runID,call:{id:callID,name:'desk_runtime_0',arguments:{}}})}
+ const c=callbacks();c.tool=async(_call,signal)=>{entered();return new Promise<never>((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new Error('cancelled'))))}
+ const pending=bindAgentRun('model')(request,c);const ended=expect(pending).rejects.toThrow('connection ended')
+ await ready;Socket.opened[0]!.receive({type:'end',runId:'f'.repeat(48),error:'retries-exhausted'});Socket.opened[0]!.close();await ended
+})
+
+it('preserves the server shared failure contract instead of reducing it to a native code', async()=>{
+ Socket.respond=(_value,socket)=>{socket.receive({type:'started',runId:runID});socket.receive({type:'end',runId:runID,error:'context-limit',failure:{version:1,code:'context-limit',source:'context',outcome:'not-started'}})}
+ await expect(bindAgentRun('model')(request,callbacks())).rejects.toMatchObject({failure:{code:'context-limit',source:'context',outcome:'not-started'}})
+ expect(Socket.opened).toHaveLength(1)
+})

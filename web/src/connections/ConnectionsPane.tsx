@@ -1,3 +1,5 @@
+import {LoadingState} from '../ui/LoadingState'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -9,7 +11,7 @@ import { useChats } from '../chat/ChatProvider'
 import { useChatAttachments } from '../chat/useChatAttachments'
 import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
-import { Alert } from '../ui/Alert'
+import { SearchInput } from '../ui/SearchInput'
 import { Disclosure } from '../ui/Disclosure'
 import { GoogleRegistrationSetup } from './GoogleRegistrationSetup'
 import { ConnectionDirectory } from './ConnectionDirectory'
@@ -191,7 +193,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
   <div className={styles.body}>
    <p className={styles.scope}>{[status?.data?.resource?.name, status?.data?.account?.email || status?.data?.account?.name].filter(Boolean).join(' · ') || (generic ? providerName(provider, descriptor) : msg('Personal · This computer'))}</p>
    <p>{jobSetup ? msg('Configure this integration, then return to the job to choose a supported source.') : descriptor?.presentation ? localized(descriptor.presentation.description) : provider === 'obsidian' ? msg('Search and attach notes from a local vault. Your notes stay unchanged.') : provider === 'notion' ? msg('Search and attach Notion pages. Desk cannot change your workspace.') : provider === 'gmail' ? msg('Choose up to four emails. Message text is attached; mail attachments are excluded.') : msg('Choose the files you want to attach to this chat.')}</p>
-   {unavailable ? <p>{unsupported ? msg('Update Desk to use this connection.') : state === 'blocked' ? msg('Managed by your organization') : !available ? msg('Local processing is unavailable. Check the details in Admin → Document processing.') : msg('This connection is unavailable in the current gateway.')}</p> : state === undefined ? <p role="status">{msg('Loading…')}</p> : state !== 'connected' || reconnect ? <>
+   {unavailable ? <p>{unsupported ? msg('Update Desk to use this connection.') : state === 'blocked' ? msg('Managed by your organization') : !available ? msg('Local processing is unavailable. Check the details in Admin → Document processing.') : msg('This connection is unavailable in the current gateway.')}</p> : state === undefined ? <LoadingState>{msg('Loading…')}</LoadingState> : state !== 'connected' || reconnect ? <>
     {needsSetup ? descriptor?.setup?.map(field => <label key={field.key} className={styles.setupField}>{localized(field.label)}<Input type={field.type} value={setup[field.key] ?? ''} onChange={event => setSetup(values => ({...values, [field.key]:event.target.value}))} autoComplete="off" spellCheck={false} disabled={working} maxLength={4096} required={field.required} /></label>) : provider === 'obsidian' && <label>{msg('Vault folder')}<Input value={vault} onChange={event => setVault(event.target.value)} autoComplete="off" spellCheck={false} disabled={working} placeholder={msg('Absolute path to your Obsidian vault')} /></label>}
     <Disclosure title={msg('How it works')}>
      <p>{descriptor?.presentation ? localized(descriptor.presentation.instructions) : provider === 'obsidian' ? msg('In Obsidian, open Manage vaults and copy the folder path shown below your vault name. Paste that full path here. No plugin is needed.') : msg('Connect your account, then choose the sources to attach. Connecting does not add anything to your chat.')}</p>
@@ -200,7 +202,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
     {!request.selection && <p className={styles.description}>{msg('Up to {{count}} files · {{size}} per file', {count: Math.min(4, status?.data?.maxFiles ?? 4), size: formatStorageBytes(fileLimit)})}</p>}
     {!canAttach ? <p>{msg('Enable document processing in Admin → Document processing before attaching sources.')}</p> : <>
      <form className={styles.search} onSubmit={event => { event.preventDefault(); void search() }}>
-      <Input value={query} onChange={event => setQuery(event.target.value)} disabled={working} maxLength={1024} aria-label={prefix ? msg('Path starts with…') : msg('Search {{provider}}', { provider: providerName(provider, descriptor ?? unsupported) })} placeholder={prefix ? msg('Path starts with…') : msg('Search {{provider}}', { provider: providerName(provider, descriptor ?? unsupported) })} />
+      <SearchInput type={prefix ? 'text' : 'search'} value={query} onChange={event => setQuery(event.target.value)} disabled={working} maxLength={1024} aria-label={prefix ? msg('Path starts with…') : msg('Search {{provider}}', { provider: providerName(provider, descriptor ?? unsupported) })} placeholder={prefix ? msg('Path starts with…') : msg('Search {{provider}}', { provider: providerName(provider, descriptor ?? unsupported) })} />
       <Button type="submit" disabled={working || descriptor?.queryRequired && !query.trim()}>{prefix ? msg('Browse') : msg('Search')}</Button>
      </form>
      {rows?.map(row => <label key={row.id} className={styles.row}>
@@ -222,15 +224,14 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
   </div>
   <footer className={styles.footer}>
    {selected.length > 0 && <p className={styles.description}>{selected.map(row => row.title).join(' · ')}</p>}
-   {(error || upload.error) && <Alert>{systemMessage(error || upload.error)}</Alert>}
-   {notice && <p role="status">{notice}</p>}
-   {working && <p role="status">{upload.reading ? systemMessage(upload.progress) : state === 'connected' || descriptor?.auth !== 'oauth' ? msg('Loading…') : descriptor?.protocol ? msg('Continue in the sign-in window.') : provider === 'notion' ? msg('Continue in the Notion sign-in window.') : msg('Continue in the Google sign-in window.')}</p>}
-   <div className={styles.actions}>
+   <SettingsActions feedback={<SettingsFeedback pending={working} tone={error||upload.error?'error':notice&&!working?'warning':'neutral'}>
+    {error||upload.error?systemMessage(error||upload.error):working?(upload.reading ? systemMessage(upload.progress) : state === 'connected' || descriptor?.auth !== 'oauth' ? msg('Loading…') : descriptor?.protocol ? msg('Continue in the sign-in window.') : provider === 'notion' ? msg('Continue in the Notion sign-in window.') : msg('Continue in the Google sign-in window.')):notice||null}
+   </SettingsFeedback>}>
     {jobSetup && !working && !reconnect && state === 'connected' && request.onConnected && <Button variant="primary" onClick={()=>request.onConnected?.(provider)}>{msg('Return to job')}</Button>}
     {working ? <Button variant="quiet" onClick={() => { cancel(); if (upload.reading) upload.cancel() }}>{msg('Cancel')}</Button> : unavailable ? <Button onClick={() => { void catalog.refetch(); void status?.refetch() }} disabled={!available}>{msg('Retry')}</Button> : reconnect ? <Button variant="primary" disabled={descriptor?.registration === 'form' ? missingSetup : provider === 'obsidian' && !vault.trim()} onClick={() => void connect()}>{descriptor?.auth === 'credentials' ? msg('Update credentials') : msg('Reconnect')}</Button> : state === 'not-connected' || state === 'setup-required' && descriptor?.registration === 'form' ?
      <Button variant="primary" disabled={descriptor?.registration === 'form' ? missingSetup : provider === 'obsidian' && !vault.trim()} onClick={() => void connect()}>{descriptor?.protocol ? state === 'setup-required' ? msg('Save') : descriptor.auth === 'oauth' ? msg('Continue with {{provider}}', {provider:providerName(provider,descriptor)}) : msg('Connect') : provider === 'obsidian' ? msg('Connect vault') : provider === 'notion' ? msg('Continue with Notion') : msg('Continue with Google')}</Button> : state === 'connected' && hasDestination &&
      <Button variant="primary" disabled={!canAttach || capacity === 0 || selected.length === 0 || selected.length > capacity} onClick={() => void attach()}>{request.selection ? msg('Use selected file') : msg('Attach {{count}} items', { count: selected.length })}</Button>}
-   </div>
+   </SettingsActions>
   </footer>
  </section>
  return target ? createPortal(content, target) : null

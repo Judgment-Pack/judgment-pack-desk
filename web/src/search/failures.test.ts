@@ -5,6 +5,9 @@ import { readResponseHistory, summarizeWork, workItems } from '../chat/responseH
 
 describe('safe search failure diagnostics', () => {
  it.each([
+  ['search-temporary', /temporary server error/],
+  ['search-invalid-request', /rejected the request/],
+  ['search-invalid-response', /unusable response/],
   ['search-not-grounded', /no usable grounded sources/],
   ['provider-unavailable', /could not complete this request/],
   ['credentials-required', /authentication or access/],

@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict'
+import {chromium} from 'playwright-core'
+const [origin,id,setupCode]=process.argv.slice(2)
+assert(origin&&id,'Use the disposable reviewed-input integration fixture')
+const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']})
+const page=await browser.newPage({viewport:{width:1440,height:1000},colorScheme:'dark'})
+page.setDefaultTimeout(20000)
+const errors=[],modelRequests=[]
+page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.method()==='POST'&&/\/api\/(codex\/run|assistant\/)/.test(r.url()))modelRequests.push(r.url())})
+try{
+ await page.goto(origin)
+ if(await page.getByRole('button',{name:'Set up sign-in',exact:true}).count()){
+  await page.getByRole('button',{name:'Set up sign-in',exact:true}).click()
+  await page.getByLabel('Owner setup code',{exact:true}).fill(setupCode)
+  await page.getByRole('button',{name:'Continue',exact:true}).click()
+  await page.getByRole('button',{name:'Set password',exact:true}).waitFor()
+ }
+ await page.goto(origin+'/dialects/'+id)
+ await page.getByRole('checkbox',{name:/Select /}).first().waitFor()
+ const savedResponse=await fetch(origin+'/api/input-preparations/'+id,{headers:{Authorization:'Bearer '+setupCode}});const saved=await savedResponse.json();assert(savedResponse.ok,JSON.stringify(saved))
+ const record=saved.document.records[0],pack=saved.document.recipe.qualification.key
+ await page.getByRole('checkbox',{name:'Select '+record.name,exact:true}).check()
+ await page.getByRole('button',{name:'1 selected',exact:true}).click()
+ await page.getByRole('menuitem',{name:'Add to pack tests…',exact:true}).click()
+ let dialog=page.getByRole('dialog',{name:'Add cases from Dialects',exact:true})
+ await dialog.getByRole('button',{name:'Review snapshots',exact:true}).click()
+ await dialog.getByRole('checkbox',{name:'I reviewed the prepared facts and evidence. Existing snapshots will be skipped.',exact:true}).check()
+ await page.screenshot({path:'/tmp/jps-inputs-work/test-snapshot-review.png'})
+ await dialog.getByRole('button',{name:'Add snapshots',exact:true}).click()
+ await page.waitForURL('**/packs/'+pack+'/matrix')
+ const table=page.getByRole('table',{name:'Test cases',exact:true})
+ await table.getByRole('link',{name:record.name,exact:true}).waitFor()
+ await page.reload();await table.getByRole('link',{name:record.name,exact:true}).waitFor()
+ await page.getByRole('button',{name:'Add case',exact:true}).click()
+ await page.getByRole('menuitem',{name:'From Dialects',exact:true}).click()
+ dialog=page.getByRole('dialog',{name:'Add cases from Dialects',exact:true})
+ await dialog.getByRole('combobox',{name:'Dialects',exact:true}).click()
+ await page.getByRole('option',{name:saved.document.name,exact:true}).click()
+ await dialog.getByRole('checkbox',{name:'Select '+record.name,exact:true}).check()
+ await dialog.getByRole('button',{name:'Review snapshots',exact:true}).click()
+ await dialog.getByRole('checkbox',{name:'I reviewed the prepared facts and evidence. Existing snapshots will be skipped.',exact:true}).check()
+ await dialog.getByRole('button',{name:'Add snapshots',exact:true}).click();await dialog.waitFor({state:'hidden'})
+ assert.equal(await table.getByRole('link',{name:record.name,exact:true}).count(),1)
+ const storeResponse=await fetch(origin+'/api/pack-tests',{headers:{Authorization:'Bearer '+setupCode}});const store=await storeResponse.json();assert(storeResponse.ok,JSON.stringify(store))
+ const cases=store.content.suites[pack].cases
+ assert.equal(cases.length,1);assert(cases[0].inputSnapshot);assert.equal(cases[0].inputSnapshot.source.records[0].class,'generated')
+ assert.equal(cases[0].row.expectedDisposition,undefined);assert.equal(cases[0].row.facts.company.country,'CA')
+ assert.equal(modelRequests.length,0);assert.deepEqual(errors,[])
+ console.log(JSON.stringify({bothEntryPoints:true,reviewedGeneratedLineage:true,frozenAfterReload:true,deduplicated:true,expectationUnset:true,noModelRequests:true,browserErrors:errors}))
+}catch(e){console.error((await page.locator('body').innerText()).slice(-7000));await page.screenshot({path:'/tmp/jps-inputs-work/snapshot-error.png'});throw e}finally{await browser.close()}

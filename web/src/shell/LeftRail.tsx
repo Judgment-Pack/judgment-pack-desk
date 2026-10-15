@@ -18,7 +18,8 @@ import {
   IconGear,
   IconHelp,
   IconLibrary,
-  IconHistory
+  IconHistory,
+  IconMatrix
 } from './icons'
 import type { LeftRailMode } from './paneState'
 import { SettingsNavigationTarget } from './SettingsNavigation'
@@ -47,7 +48,7 @@ export function LeftRail({
     <div className="desk-settings" onClick={(event) => {
       if ((event.target as HTMLElement).closest('a')) onNavigate?.()
     }}>
-      <NavLink to="/packs" className="desk-nav-item">
+      <NavLink to="/library" className="desk-nav-item">
         <IconChevronLeft /><span>{msg("Back to app")}</span>
       </NavLink>
       <SettingsNavigationTarget onNavigate={onNavigate} />
@@ -116,6 +117,11 @@ function RailBody({
   return (
     <>
       <PacksGroup icons={icons} onNavigate={onNavigate} />
+      <Labelled icons={icons} label={msg("Dialects")}>
+        <NavLink className="desk-nav-item" to="/dialects" aria-label={msg("Dialects")} onClick={onNavigate}>
+          <IconMatrix />{!icons && <span className="desk-nav-label">{msg("Dialects")}</span>}
+        </NavLink>
+      </Labelled>
       <Labelled icons={icons} label={msg("Jobs")}>
         <NavLink className="desk-nav-item" to="/jobs" aria-label={msg("Jobs")} onClick={onNavigate}>
           <IconHistory />{!icons && <span className="desk-nav-label">{msg("Jobs")}</span>}
@@ -189,14 +195,14 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
   useLocale()
   const { error } = usePacks()
   const { pathname } = useLocation()
-  const active = /^\/(packs|graphs|decisions)(?:\/|$)/.test(pathname)
+  const active = /^\/(library|packs|graphs|decisions)(?:\/|$)/.test(pathname)
 
   return (
     <>
       <Labelled icons={icons} label={msg("Library")}>
         <Link
           className="desk-nav-item"
-          to="/packs"
+          to="/library"
           aria-current={active ? 'page' : undefined}
           aria-label={msg("Library")}
           onClick={onNavigate}

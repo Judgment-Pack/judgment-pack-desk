@@ -1218,12 +1218,31 @@ func TestRelayBoundsABodyOfUndeclaredLength(t *testing.T) {
 	}
 }
 
-func TestRelayCarriesABodyOfUndeclaredLengthWhenItFits(t *testing.T) {
+func TestRelayRefusesLargeUndeclaredContextBeforeDispatch(t *testing.T) {
 	// The positive control for the buffering above: a chunked body inside the
 	// bound still arrives, whole, with the length this desk measured.
 	u := newUpstream(t, nil)
 	_, ts, _ := relayDesk(t, "openai-compatible", u)
 	payload := strings.Repeat("x", 3<<20)
+	unmeasured := io.LimitReader(neverEndingReader{}, int64(len(payload)))
+	resp, body := relayDo(t, ts, http.MethodPost, "chat/completions", unmeasured, nil)
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status %d, want 413: %s", resp.StatusCode, body)
+	}
+	if codeOfBody(t, body) != CodeTooLarge {
+		t.Fatalf("wrong refusal: %s", body)
+	}
+	if len(u.arrivals()) != 0 {
+		t.Fatal("over-budget context reached the provider")
+	}
+}
+
+func TestRelayCarriesABodyOfUndeclaredLengthWhenItFits(t *testing.T) {
+	// The positive control for the buffering above: a chunked body inside the
+	// bound still arrives, whole, with the length this desk measured.
+	u := newUpstream(t, nil)
+	_, ts, _ := relayDesk(t, "openai-compatible", u)
+	payload := strings.Repeat("x", 64<<10)
 	unmeasured := io.LimitReader(neverEndingReader{}, int64(len(payload)))
 	resp, body := relayDo(t, ts, http.MethodPost, "chat/completions", unmeasured, nil)
 	if resp.StatusCode != http.StatusOK {

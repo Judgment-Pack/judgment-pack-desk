@@ -36,7 +36,7 @@ describe.each(AGENT_ENGINES)('agent engine %s', engineId => {
       const run: AgentRun = async (request, callbacks) => {
         passes++
         expect(request.phase).toBe(passes === 1 ? 'author' : 'critic')
-        expect(request.tools.map(tool => tool.inputSchema)).toEqual(ready.tools.map(tool => tool.inputSchema))
+        expect(request.tools.filter(tool=>tool.name.startsWith('desk_runtime_')).map(tool => tool.inputSchema)).toEqual(ready.tools.map(tool => tool.inputSchema))
         const calls = passes === 1 ? recording.calls : recording.calls.filter(call => call.step === 'T5' || call.step === 'T6')
         for (const [index, call] of calls.entries()) {
           const route = ready.tools.findIndex(tool => tool.name === call.tool)
@@ -152,4 +152,121 @@ describe.each(AGENT_ENGINES)('agent engine %s', engineId => {
     await promise
     expect(events).toEqual([])
   })
+})
+
+it('releases the agent connection at a question without returning a fabricated user answer',async()=>{
+ const {questionTool}=await import('../../questions')
+ const {interviewQuestion}=await import('../../../testing/question')
+ let answered=false,aborted=false
+ const events=await collect(session(async(request,callbacks)=>{
+  callbacks.signal.addEventListener('abort',()=>{aborted=true})
+  await callbacks.tool({id:'call-question',name:request.tools[0]!.name,arguments:interviewQuestion as unknown as Record<string,unknown>},callbacks.signal)
+  answered=true
+ },{allowConversation:true,interactive:true,hostTools:[questionTool]}))
+ expect(aborted).toBe(true);expect(answered).toBe(false)
+ expect(events.filter(e=>e.type==='user_question')).toEqual([{type:'user_question',id:expect.any(String),question:interviewQuestion}])
+ expect(events.filter(e=>e.type==='error'||e.type==='tool_result'||e.type==='proposal')).toEqual([])
+ expect(events.filter(e=>e.type==='end')).toHaveLength(1)
+})
+
+it('keeps native recovery as progress without fabricating assistant text or another run',async()=>{
+ const run=vi.fn<AgentRun>(async(_request,callbacks)=>{
+  await callbacks.event({type:'retry',attempt:1})
+  await callbacks.event({type:'message',id:'answer',text:'Recovered answer',phase:'final'})
+ })
+ const events=await collect(session(run,{allowConversation:true}))
+ expect(run).toHaveBeenCalledOnce()
+ expect(events).toContainEqual({type:'retry',attempt:1})
+ expect(events.filter(e=>e.type==='message')).toEqual([{type:'message',text:'Recovered answer'}])
+ expect(events.some(e=>e.type==='error')).toBe(false)
+})
+
+it('returns recipe validation feedback to Codex so it can correct the proposal in the same response',async()=>{
+ const {dialectRecipeChatTools}=await import('../../../dialects/chatTools')
+ const add=vi.fn(),hostTools=dialectRecipeChatTools({addDraft:add,afterTurnId:()=> 'user',attribution:()=>undefined})
+ const run:AgentRun=async(request,callbacks)=>{
+  const offered=request.tools.find(tool=>tool.description.startsWith('propose_dialect_recipe:'))!
+  const fields=['business_description','fit_signal','country','employee_count_evidence','intake_channels','routing_complexity_signal'].map(name=>({name,type:'string',description:'Source-backed value'}))
+  const args={name:'ICP',intent:'Find companies',target:'companies',fields,criteria:[{id:'size',description:'50 employees or more',qualificationTarget:''}],limits:{records:3,searches:3,pages:6,modelCalls:15}}
+  const failed=await callbacks.tool({id:'failed',name:offered.name,arguments:args},callbacks.signal)
+  expect(failed.isError).toBe(true);expect(failed.text).toContain('Omit qualificationTarget when unused')
+  const passed=await callbacks.tool({id:'corrected',name:offered.name,arguments:{...args,criteria:[{id:'size',description:'50 employees or more'}]}},callbacks.signal)
+  expect(passed.isError).toBe(false)
+  await callbacks.event({type:'message',id:'message',text:'Review the proposed recipe.',phase:'final'})
+ }
+ const events=await collect(session(run,{hostTools,allowConversation:true}))
+ expect(add).toHaveBeenCalledOnce()
+ expect(events).toContainEqual(expect.objectContaining({type:'tool_result',name:'propose_dialect_recipe',isError:true,structured:{inputRecipeFailure:'criteria'}}))
+ expect(events.some(event=>event.type==='error')).toBe(false)
+})
+
+it('returns a precise question refusal and accepts the corrected call in the same Codex turn',async()=>{
+ const {questionTool}=await import('../../questions')
+ const {interviewQuestion}=await import('../../../testing/question')
+ let calls=0
+ const run=vi.fn<AgentRun>(async(request,callbacks)=>{
+  const first=await callbacks.tool({id:'invalid',name:request.tools[0]!.name,arguments:{...interviewQuestion,title:'x'.repeat(41)}},callbacks.signal)
+  calls++;expect(first.isError).toBe(true);expect(first.text).toContain('40 characters');expect(first.text).toContain('call ask_user again')
+  await callbacks.tool({id:'corrected',name:request.tools[0]!.name,arguments:interviewQuestion as unknown as Record<string,unknown>},callbacks.signal)
+  calls++
+ })
+ const events=await collect(session(run,{allowConversation:true,interactive:true,hostTools:[questionTool]}))
+ expect(run).toHaveBeenCalledOnce();expect(calls).toBe(1)
+ expect(events.find(e=>e.type==='tool_result')).toMatchObject({name:'ask_user',isError:true,structured:{questionFailure:'title'}})
+ expect(events.filter(e=>e.type==='user_question')).toHaveLength(1)
+ expect(events.some(e=>e.type==='error')).toBe(false)
+})
+
+it('retains full tool results for the UI, sends bounded references to Codex, and isolates the critic',async()=>{
+ const value={records:Array.from({length:1000},(_,i)=>({id:i,decimal:'50',flag:false,note:'evidence '.repeat(40)}))}
+ let passes=0
+ const run:AgentRun=async(request,callbacks)=>{
+  passes++
+  const find=(name:string)=>request.tools.find(t=>t.description.startsWith(name+':'))!.name
+  if(passes===1){
+   const result=await callbacks.tool({id:'large',name:find('read_records'),arguments:{}},callbacks.signal)
+   expect(result.text.length).toBeLessThan(12000)
+   const ref=JSON.parse(result.text).structuredContent
+   expect(ref).toMatchObject({operationReturned:true,readWith:'read_context'})
+   const page=await callbacks.tool({id:'page',name:find('read_context'),arguments:{id:ref.contextId,path:'/structuredContent/records/999'}},callbacks.signal)
+   expect(JSON.parse(page.text).structuredContent.value).toEqual(value.records[999])
+  }else{
+   const refs=await callbacks.tool({id:'list',name:find('list_context'),arguments:{}},callbacks.signal)
+   expect(JSON.parse(refs.text).structuredContent.items).toEqual([])
+  }
+  await callbacks.event({type:'message',id:'answer-'+passes,phase:'final',text:passes===1?proposal({id:'p'}):'No change recommended.'})
+ }
+ const events:AssistantEvent[]=[]
+ for await(const e of codex.start(session(run,{adversarialReview:true,hostTools:[{name:'read_records',description:'Read records',inputSchema:{type:'object'},execute:async()=>({structuredContent:value})}]})))events.push(e)
+ expect(events.filter(e=>e.type==='error')).toEqual([])
+ expect(passes).toBe(2)
+ expect(events.find(e=>e.type==='tool_result'&&e.name==='read_records')).toMatchObject({structured:value})
+})
+
+it('preserves the current question and reads searchable context through the subscription adapter',async()=>{
+ const message='Explain this mismatch',input='Pack evidence '.repeat(12000)+'EXACT CASE: missing size'
+ const events=await collect(session(async(request,callbacks)=>{
+  expect(request.prompt).toContain(message)
+  const id=request.prompt.match(/[0-9a-f-]{36}:current-request:[0-9a-f]{16}/)?.[0]
+  expect(id).toBeDefined()
+  const tool=request.tools.find(t=>t.description.startsWith('read_context:'))!
+  const result=await callbacks.tool({id:'read',name:tool.name,arguments:{id,path:'/input',query:'EXACT CASE'}},callbacks.signal)
+  expect(JSON.stringify(result)).toContain('EXACT CASE: missing size')
+  await callbacks.event({type:'message',id:'reply',text:'Explained without changes.',phase:'final'})
+ },{prompt:'history '.repeat(40000),context:{currentRequest:{message,input}},allowConversation:true,adversarialReview:false}))
+ expect(events.filter(e=>e.type==='error')).toEqual([])
+ expect(events.filter(e=>e.type==='message')).toEqual([{type:'message',text:'Explained without changes.'}])
+})
+
+it('uses shared task progress without inventing subscription model-request usage',async()=>{
+ const run:AgentRun=async(request,callbacks)=>{
+  const tool=request.tools.find(t=>t.description.startsWith('update_plan:'))!
+  const result=await callbacks.tool({id:'plan-progress',name:tool.name,arguments:{explanation:'Inspection complete',plan:[{step:'Inspect the rule',status:'completed'}]}},callbacks.signal)
+  expect(result.text).toContain('provider-managed')
+  expect(result.text).not.toContain('remaining')
+  await callbacks.event({type:'message',id:'done',text:'The exception needs a guard.',phase:'final'})
+ }
+ const events=await collect(session(run,{allowConversation:true,interactive:true,context:{currentRequest:{message:'Inspect the rule',input:'Current pack'}}}))
+ expect(events.filter(e=>e.type==='execution_checkpoint').at(-1)).toMatchObject({checkpoint:{unit:'provider-managed',plan:[{step:'Inspect the rule',status:'completed'}]}})
+ expect(events.filter(e=>e.type==='error')).toEqual([])
 })

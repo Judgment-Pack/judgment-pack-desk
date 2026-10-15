@@ -1,6 +1,6 @@
 import { msg, useLocale, systemMessage } from '../../i18n'
 import { useEffect, useRef, useState } from 'react'
-import { Button } from '../../ui/Button'
+import {ChatAction} from '../../chat/ChatActions'
 import { TextArea } from '../../ui/TextArea'
 import { canRetryExpectationValidation, type RunState } from '../run'
 import styles from './ResearchAuthoring.module.css'
@@ -88,19 +88,19 @@ export function Conversation({ state, onSend, onStop, onRetryValidation }: { sta
               the same proposal, judged again, without paying for the reviewer
               turn that answered the question. */}
           {canRetryExpectationValidation(state) && (
-            <Button disabled={running || !onRetryValidation} onClick={() => onRetryValidation?.()}>{msg("Retry validation")}</Button>
+            <ChatAction disabled={running || !onRetryValidation} onClick={() => onRetryValidation?.()}>{msg("Retry validation")}</ChatAction>
           )}
           {running ? (
-            <Button variant="secondary" onClick={onStop}>{msg("Stop")}</Button>
+            <ChatAction variant="secondary" onClick={onStop}>{msg("Stop")}</ChatAction>
           ) : (
-            <Button
+            <ChatAction
               variant="primary"
               disabled={!canSend}
               onClick={() => {
                 onSend(text.trim())
                 setText('')
               }}
-            >{msg("Send")}</Button>
+            >{msg("Send")}</ChatAction>
           )}
         </div>
       </div>

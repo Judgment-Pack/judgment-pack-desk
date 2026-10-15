@@ -33,6 +33,7 @@ export function Tabs({
   resetScrollKey,
   keepMounted = false,
   tools,
+  status,
   fillPanel,
   variant = 'pane',
   activationMode = 'automatic'
@@ -49,6 +50,8 @@ export function Tabs({
   resetScrollKey?: string
   keepMounted?: boolean
   tools?: ReactNode
+  /** Shared operation state, outside every tab panel’s scroll area. */
+  status?: ReactNode
   fillPanel?: string
   /** Document tabs share the page gutter; nested panes keep their compact inset. */
   variant?: 'pane' | 'page' | 'settings'
@@ -87,6 +90,7 @@ export function Tabs({
         </RadixTabs.List>}
         {tools}
       </div>
+      {status}
       {tabs.map((tab) => (
         <RadixTabs.Content key={tab.value} forceMount={keepMounted || undefined} hidden={value !== tab.value} data-fill={fillPanel === tab.value || undefined} className={styles.content} data-pane-scroll={scrollable || undefined} value={tab.value}>
           {tab.panel}

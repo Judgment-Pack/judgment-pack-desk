@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { msg, useLocale } from '../i18n'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -10,15 +11,15 @@ import type { PackDocument } from '../mcp/types'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Disclosure } from '../ui/Disclosure'
-import { jobsAPI, type InputMapping, type InputPreview, type SourceInput } from './client'
+import { jobsAPI, type LegacyDialect, type InputPreview, type SourceInput } from './client'
 import { initialMapping, localSnapshot, sourcePaths, sourceText, verifySource } from './sourceInputs'
 import styles from './JobsView.module.css'
 
-export function SourceInputFields({ doc, provider, fixed, disabled, onChange, onWorkChange }: { doc: PackDocument; provider: InputMapping['provider']; fixed?: InputMapping; disabled: boolean; onChange: (source: SourceInput | undefined) => void; onWorkChange?: (dirty: boolean) => void }) {
+export function SourceInputFields({ doc, provider, fixed, disabled, onChange, onWorkChange }: { doc: PackDocument; provider: LegacyDialect['provider']; fixed?: LegacyDialect; disabled: boolean; onChange: (source: SourceInput | undefined) => void; onWorkChange?: (dirty: boolean) => void }) {
   useLocale()
   const config = useEffectiveConfig().config.research, connections = useConnectionsPane()
   const [choosing, setChoosing] = useState(false), pickerOpener = useRef<HTMLElement | null>(null)
-  const [snapshot, setSnapshot] = useState<SourceInput['snapshot']>(), [mapping, setMapping] = useState<InputMapping>()
+  const [snapshot, setSnapshot] = useState<SourceInput['snapshot']>(), [mapping, setMapping] = useState<LegacyDialect>()
   const [preview, setPreview] = useState<InputPreview>(), [error, setError] = useState(''), [progress, setProgress] = useState('')
   const operation = useRef<AbortController | null>(null), upload = useRef<HTMLInputElement>(null)
   useEffect(() => { onWorkChange?.(!!snapshot || !!mapping) }, [snapshot,mapping,onWorkChange])
@@ -70,17 +71,17 @@ export function SourceInputFields({ doc, provider, fixed, disabled, onChange, on
   const busy = disabled || Boolean(progress)
   return <section className={styles.fields}>
     {choosing && !disabled && <DriveFilePicker openerRef={pickerOpener} onClose={() => setChoosing(false)} onSelect={(items,signal) => select(undefined,items,signal)} />}
-    <p className={styles.note}>{provider === 'local-file' ? msg('Choose a JSON file from this computer. Inputs and run records stay in local storage.') : msg('Read one selected JSON file from Google Drive. Copies and run records stay in local storage; nothing is written to Drive.')}</p>
+    <p className={styles.note}>{provider === 'local-file' ? msg('Choose a JSON file from this computer. Dialects and run records stay in local storage.') : msg('Read one selected JSON file from Google Drive. Copies and run records stay in local storage; nothing is written to Drive.')}</p>
     <div className={styles.actions}>
       <input ref={upload} type="file" accept=".json,application/json" hidden aria-label={msg('Choose JSON file')} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void select(file) }} />
       <Button disabled={busy} onClick={e => { if (provider === 'local-file') upload.current?.click(); else { pickerOpener.current=e.currentTarget; setChoosing(true) } }}>{snapshot ? msg('Choose another file') : provider === 'local-file' ? msg('Choose JSON file') : msg('Choose from Google Drive')}</Button>
       {provider === 'google-drive' && <Button variant="quiet" disabled={busy} onClick={e => connections.open({ provider: 'google-drive', opener: e.currentTarget })}>{msg('Manage connection')}</Button>}
       {progress && <Button variant="quiet" onClick={() => { operation.current?.abort(); operation.current = null; setProgress(''); invalidate() }}>{msg('Cancel')}</Button>}
     </div>
-    {progress && <p role="status" className={styles.note}>{progress}</p>}
+    {progress && <LoadingState>{progress}</LoadingState>}
     {error && <p role="alert" className={styles.problem}>{error}</p>}
     {snapshot && mapping && <>
-      <div className={styles.field}><strong>{snapshot.original.name}</strong><p className={styles.note}>{fixed ? msg('This run uses the mapping frozen in the job release. Select a new file for every run.') : msg('Map source paths to pack inputs. Leave a path blank to keep that input unknown.')}</p></div>
+      <div className={styles.field}><strong>{snapshot.original.name}</strong><p className={styles.note}>{fixed ? msg('This run uses the dialect frozen in the job release. Select a new file for every run.') : msg('Map source paths to pack inputs. Leave a path blank to keep that input unknown.')}</p></div>
       <fieldset disabled={busy || Boolean(fixed)} className={styles.fields}>
         {factFields(doc).map((field, index) => <div className={styles.mappingRow} key={field.path}><label htmlFor={`source-fact-${index}`}>{field.label}</label><Input id={`source-fact-${index}`} list="job-source-paths" value={mapping.facts.find(f => f.target === field.path)?.source ?? ''} placeholder={msg('Source path, e.g. /request/type')} onChange={e => change('facts', field.path, e.target.value)} /></div>)}
         {(doc.evidenceRequirements ?? []).length > 0 && <p className={styles.note}>{msg('Evidence paths must contain present, absent or unknown. A file connection does not verify evidence.')}</p>}
@@ -88,8 +89,8 @@ export function SourceInputFields({ doc, provider, fixed, disabled, onChange, on
         <datalist id="job-source-paths">{paths.filter(Boolean).slice(0, 1000).map(path => <option key={path} value={path} />)}</datalist>
       </fieldset>
       <Disclosure title={msg('Source JSON')}><pre className={styles.json}>{originalText}</pre></Disclosure>
-      <div><Button disabled={busy} onClick={() => { void check() }}>{msg('Preview mapping')}</Button></div>
+      <div><Button disabled={busy} onClick={() => { void check() }}>{msg('Preview dialect')}</Button></div>
     </>}
-    {preview && <div className={styles.fields}><h3>{msg('Mapped inputs')}</h3><pre className={styles.json}>{preview.factsText}</pre><p className={styles.note}>{msg('Evidence availability')}</p><pre className={styles.json}>{preview.evidenceText || msg('Not supplied')}</pre><p className={styles.note}>{msg('Mapping checked. Missing values remain unknown.')}</p></div>}
+    {preview && <div className={styles.fields}><h3>{msg('Mapped inputs')}</h3><pre className={styles.json}>{preview.factsText}</pre><p className={styles.note}>{msg('Evidence availability')}</p><pre className={styles.json}>{preview.evidenceText || msg('Not supplied')}</pre><p className={styles.note}>{msg('Dialect checked. Missing values remain unknown.')}</p></div>}
   </section>
 }

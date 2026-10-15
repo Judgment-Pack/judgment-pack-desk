@@ -1,3 +1,10 @@
+import {privateQuery} from '../data/privateQuery'
+import {LoadingState} from '../ui/LoadingState'
+import { QueryStatusNotice } from '../shell/QueryStatusNotice'
+import { useCollectionSelection } from '../ui/useCollectionSelection'
+import { SelectionTable, SelectionHeader, SelectionCell, SelectionActions } from '../ui/SelectionTable'
+import { exportSelectedRows } from '../ui/selectionExport'
+import { CollectionRow } from '../ui/CollectionRow'
 import { Fragment, useId, useRef, useState } from 'react'
 import { historyRecordField } from './historyRecord'
 import { DraftComparison } from '../packs/DraftComparison'
@@ -12,12 +19,13 @@ import { readTests, TESTS_KEY } from '../packs/test-workspace/store'
 import { decisionText, type Reply as BriefReply } from '../briefs/model'
 import type { Candidate } from '../research/run'
 import type { GraphDraft } from '../graphs/drafts'
-import { msg, systemMessage } from '../i18n'
+import { msg } from '../i18n'
 import { Button, ButtonLink } from '../ui/Button'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { MenuChoice } from '../ui/Menu'
 import { Disclosure } from '../ui/Disclosure'
 import { CodeBlock } from '../ui/CodeBlock'
+import { CollectionLayout } from '../ui/CollectionLayout'
 import { Pagination } from '../ui/Pagination'
 import { usePagination } from '../ui/usePagination'
 import styles from './DefinitionWorkspace.module.css'
@@ -41,9 +49,9 @@ export function DefinitionHistory({kind, owner, documentId, draft=false, candida
   const project=useFileListing().data?.root, chats=useChats()
   const linked=kind==='pack' ? (chats.packDrafts??[]).filter(item=>item.id===owner || item.finalized?.id===owner) : []
   const subjects=owner ? [...new Set([`${kind}${draft?'-draft':''}:${owner}`, ...linked.map(item=>'pack-draft:'+item.id)])] : []
-  const briefs=useQueries({queries:subjects.map(subject=>({queryKey:['briefs',project,'/api/briefs?subject='+encodeURIComponent(subject),subject],enabled:!!project,queryFn:async({signal}:{signal:AbortSignal})=>answer<BriefReply>(await deskFetch('/api/briefs?subject='+encodeURIComponent(subject),{signal})),staleTime:0}))})
-  const tests=useQuery({queryKey:[...TESTS_KEY,project??null],queryFn:readTests,enabled:!!project&&!!owner&&kind==='pack'})
-  const records=useInfiniteQuery({queryKey:['definition-history',project,kind,documentId],enabled:!!project&&!!documentId&&!draft,initialPageParam:undefined as number|undefined,
+  const briefs=useQueries({queries:subjects.map(subject=>({...privateQuery,queryKey:['briefs',project,'/api/briefs?subject='+encodeURIComponent(subject),subject],enabled:!!project,queryFn:async({signal}:{signal:AbortSignal})=>answer<BriefReply>(await deskFetch('/api/briefs?subject='+encodeURIComponent(subject),{signal})),staleTime:0}))})
+  const tests=useQuery({...privateQuery,queryKey:[...TESTS_KEY,project??null],queryFn:({signal})=>readTests(signal),enabled:!!project&&!!owner&&kind==='pack'})
+  const records=useInfiniteQuery({...privateQuery,queryKey:['definition-history',project,kind,documentId],enabled:!!project&&!!documentId&&!draft,initialPageParam:undefined as number|undefined,
     queryFn:async({pageParam,signal})=>answer<RecordPage>(await deskFetch('/api/definitions/history?'+new URLSearchParams({kind,id:documentId!,...(pageParam===undefined?{}:{before:String(pageParam)})}),{signal})),
     getNextPageParam:page=>page.next})
   const revisions=candidates??(linked.length===1?linked[0]!.checkpoint.state.candidates:[])
@@ -61,13 +69,16 @@ export function DefinitionHistory({kind, owner, documentId, draft=false, candida
   const searchField=useRef<HTMLInputElement>(null),heading=useRef<HTMLHeadingElement>(null)
   const unique=[...new Map(entries.map(entry=>[entry.id,entry])).values()]
   const filtered=unique.filter(entry=>(filter==='all'||entry.kind===filter)&&[entry.title,entry.detail,entry.digest].join(' ').toLowerCase().includes(search.toLowerCase())).sort((a,b)=>(Date.parse(b.at??'')||0)-(Date.parse(a.at??'')||0))
+  const selection=useCollectionSelection(filtered,entry=>entry.id,kind+owner)
   const pagination=usePagination(filtered.length,kind+owner+filter+search), shown=filtered.slice(pagination.start,pagination.end)
   const detail=unique.find(entry=>entry.id===selected)
   const loading=briefs.some(query=>query.isPending)||(kind==='pack'&&!!owner&&tests.isPending)||(!draft&&!!documentId&&records.isPending)
   const errors=[...briefs.map(query=>query.error),kind==='pack'&&!!owner&&tests.error,!draft&&!!documentId&&records.error,chats.error].filter(Boolean)
+  const failedReads=[...briefs,...(kind==='pack'&&owner?[tests]:[]),...(!draft&&documentId?[records]:[])].filter(query=>query.error)
+  const complete=!loading&&!errors.length&&!records.hasNextPage&&(draft||!!documentId)
   const recordDetails=detail?.kind==='decisions'?JSON.parse(detail.raw):undefined
   const download=()=>{const url=URL.createObjectURL(new Blob([detail?.raw??json(filtered)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=detail?'history-record.json':'loaded-definition-history.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-  return <section className={`${styles.history} ${historyStyles.root}`} aria-label={msg('Definition history')}>
+  return <section className={`${styles.history} ${historyStyles.root}`} aria-label={msg('Definition history')} data-detail={!!detail || undefined}>
     {detail?<>
       <div className={`${styles.toolbar} ${historyStyles.toolbar}`}><Button variant="quiet" onClick={()=>{setSelected(undefined);requestAnimationFrame(()=>searchField.current?.focus())}}>{msg('Back to history')}</Button><div className={styles.actions}><Button onClick={download}>{msg('Export record')}</Button></div></div>
       <div className={styles.reading}>
@@ -84,7 +95,7 @@ export function DefinitionHistory({kind, owner, documentId, draft=false, candida
           <p className={styles.muted}>{msg('Original saved data and fingerprints for troubleshooting or independent verification.')}</p>
           {recordDetails&&<>
             <dl className={styles.metadata}><dt>{msg('Run')}</dt><dd>{text(recordDetails.run)||'—'}</dd><dt>{msg('Definition version')}</dt><dd>{text(recordDetails.pack?.version)||text(recordDetails.graph?.version)||'—'}</dd><dt>{msg('Runtime')}</dt><dd>{text(recordDetails.tool?.version)||msg('Not recorded')}</dd></dl>
-            <Disclosure title={msg('Inputs as evaluated')}><CodeBlock expandable text={historyRecordField(detail.raw,'inputs')??msg('Inspect the saved data for this field.')} label={msg('Recorded inputs')}/></Disclosure>
+            <Disclosure title={msg('Dialects as evaluated')}><CodeBlock expandable text={historyRecordField(detail.raw,'inputs')??msg('Inspect the saved data for this field.')} label={msg('Recorded inputs')}/></Disclosure>
             <Disclosure title={msg('Receipt references')}><p className={styles.muted}>{msg('These are recorded citations. Receipts and their bindings have not been checked in this view.')}</p><CodeBlock expandable text={historyRecordField(detail.raw,'cites')??msg('Not recorded')} label={msg('Receipt references')}/></Disclosure>
             <Disclosure title={msg('Evaluation notes')}><p className={styles.muted}>{msg('The audit record retains selected trace notes, not the full evaluation trace.')}</p><CodeBlock expandable text={[historyRecordField(detail.raw,'unknownCauses'),historyRecordField(detail.raw,'typeMismatches')].filter(Boolean).join('\n')||msg('Not recorded')} label={msg('Evaluation notes')}/></Disclosure>
             <section className={styles.section}><h3 className={historyStyles.sectionTitle}>{msg('Record verification')}</h3><p className={styles.muted}>{msg('Signatures, checkpoints and timestamps have not been checked in this view. A record digest alone does not authenticate it.')}</p><ButtonLink variant="quiet" to="/admin/safeguards">{msg('Open decision safeguards')}</ButtonLink></section>
@@ -97,19 +108,18 @@ export function DefinitionHistory({kind, owner, documentId, draft=false, candida
           <section className={styles.section}><h3 className={historyStyles.sectionTitle}>{msg('Saved data')}</h3><p className={styles.muted}>{msg('The original data saved for this event, including any inputs and results it contains.')}</p><CodeBlock expandable text={detail.raw} label={msg('Saved data (JSON)')}/></section>
         </div>
       </Disclosure></div>
-    </>:<>
-      <div className={`${styles.toolbar} ${historyStyles.toolbar}`}><Input ref={searchField} type="search" aria-label={msg('Search history')} placeholder={msg('Search history…')} value={search} onChange={e=>setSearch(e.target.value)}/><MenuChoice label={msg('Event type')} value={filter} onValueChange={setFilter} options={[{value:'all',label:msg('All events')},{value:'changes',label:msg('Changes')},{value:'checks',label:msg('Checks')},{value:'briefs',label:msg('Briefs')},{value:'decisions',label:msg('Decisions')}]}/><div className={styles.actions}><Button variant="quiet" onClick={()=>{if(!draft&&documentId)void records.refetch();if(kind==='pack'&&owner)void tests.refetch();briefs.forEach(query=>void query.refetch())}}>{msg('Refresh')}</Button><Button disabled={!filtered.length} onClick={download}>{msg('Export loaded events')}</Button></div></div>
+    </>:<CollectionLayout label={msg('History')} scrollKey={JSON.stringify([pagination.page,pagination.size,filter,search])} footer={<><Pagination pagination={pagination} complete={complete}/>{records.hasNextPage&&<Button disabled={records.isFetchingNextPage} onClick={()=>void records.fetchNextPage()}>{msg('Load older decision records')}</Button>}</>} toolbar={<>
+      <div className={`${styles.toolbar} ${historyStyles.toolbar}`}><SearchInput ref={searchField} type="search" aria-label={msg('Search history')} placeholder={msg('Search history…')} value={search} onChange={e=>setSearch(e.target.value)}/><MenuChoice label={msg('Event type')} value={filter} onValueChange={setFilter} options={[{value:'all',label:msg('All events')},{value:'changes',label:msg('Changes')},{value:'checks',label:msg('Checks')},{value:'briefs',label:msg('Briefs')},{value:'decisions',label:msg('Decisions')}]}/><div className={styles.actions}><SelectionActions selection={selection} onExport={()=>exportSelectedRows('definition-history',selection.selectedRows)}/><Button variant="quiet" onClick={()=>{if(!draft&&documentId)void records.refetch();if(kind==='pack'&&owner)void tests.refetch();briefs.forEach(query=>void query.refetch())}}>{msg('Refresh')}</Button><Button disabled={!filtered.length} onClick={download}>{msg('Export loaded events')}</Button></div></div>
       <p className={historyStyles.intro}>{msg('Saved changes, test results, briefs and decisions. Some activity may not have been recorded.')}</p>
-      {!!errors.length&&<Disclosure title={msg('Some history is unavailable')} open>{errors.map((error,i)=><p className={styles.muted} key={i}>{systemMessage(error instanceof Error?error.message:String(error))}</p>)}</Disclosure>}
+      <QueryStatusNotice id={'definition-history:'+kind+':'+owner} label={msg('Definition history unavailable')} context={owner} error={failedReads.length?failedReads.map(query=>query.error?.message).join('\n'):null} retrying={failedReads.some(query=>query.isFetching)} onRetry={()=>Promise.allSettled(failedReads.map(query=>query.refetch()))}>{msg('Some history could not be refreshed. Only loaded events are shown.')}</QueryStatusNotice>
       {(records.data?.pages.some(page=>page.unread>0))&&<p role="status" className={styles.notice}>{msg('Some trail lines could not be read as completed decisions. Inspect the full trail in Decision safeguards.')}</p>}
       {!draft&&!documentId&&<p role="status" className={styles.notice}>{msg('Decision history is unavailable until the definition identity can be read.')}</p>}
       {records.data?.pages[0]?.state==='no-trail'&&<p className={styles.notice}>{msg('This project does not keep a Runtime decision trail.')}</p>}
-      {loading&&<p role="status">{msg('Loading history…')}</p>}
+      {loading&&<LoadingState>{msg('Loading history…')}</LoadingState>}
+    </>}>
       {!loading&&!filtered.length&&<p className={styles.muted}>{search||filter!=='all'?msg('No matching events in the loaded history.'):msg('No retained history is available for this definition.')}</p>}
-      <div className={styles.tableScroll}><table className={`${styles.table} ${historyStyles.table}`}><thead><tr><th scope="col">{msg('Event')}</th><th scope="col">{msg('Recorded')}</th></tr></thead><tbody>{shown.map((entry,index)=><tr key={entry.id}><td><Button variant="inline" className={historyStyles.event} aria-label={entry.title} aria-describedby={`${historyId}-${index}`} onClick={()=>{setSelected(entry.id);requestAnimationFrame(()=>heading.current?.focus())}}><span className={historyStyles.eventTitle}>{entry.title}</span><span id={`${historyId}-${index}`} className={historyStyles.subtitle}>{entry.detail}</span></Button></td><td>{entry.at?<time dateTime={entry.at}>{new Date(entry.at).toLocaleString()}</time>:msg('Time not recorded')}</td></tr>)}</tbody></table></div>
+      <SelectionTable selection={selection} className={`${styles.table} ${historyStyles.table}`}><thead><tr><SelectionHeader selection={selection} complete={complete}/><th scope="col">{msg('Event')}</th><th scope="col">{msg('Recorded')}</th></tr></thead><tbody>{shown.map((entry,index)=><CollectionRow key={entry.id} data-selection-selected={selection.has(entry.id)||undefined}><SelectionCell selection={selection} id={entry.id} name={entry.title}/><td><Button data-row-primary variant="inline" className={historyStyles.event} aria-label={entry.title} aria-describedby={`${historyId}-${index}`} onClick={()=>{setSelected(entry.id);requestAnimationFrame(()=>heading.current?.focus())}}><span className={historyStyles.eventTitle}>{entry.title}</span><span id={`${historyId}-${index}`} className={historyStyles.subtitle}>{entry.detail}</span></Button></td><td>{entry.at?<time dateTime={entry.at}>{new Date(entry.at).toLocaleString()}</time>:msg('Time not recorded')}</td></CollectionRow>)}</tbody></SelectionTable>
       {revisions.length>1&&<Disclosure title={msg('Compare draft revisions')}><DraftComparison candidates={revisions}/></Disclosure>}
-      <Pagination pagination={pagination} complete={!loading&&!errors.length&&!records.hasNextPage&&(draft||!!documentId)}/>
-      {records.hasNextPage&&<Button disabled={records.isFetchingNextPage} onClick={()=>void records.fetchNextPage()}>{msg('Load older decision records')}</Button>}
-    </>}
+    </CollectionLayout>}
   </section>
 }

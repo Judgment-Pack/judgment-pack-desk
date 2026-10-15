@@ -14,8 +14,8 @@
  * already available, and once it has caught up asks again with the same
  * cursor: never from 0 again.
  *
- * **Reading forward, bounded.** Runner pages the journal oldest first and has
- * no way to read it from its newest entries, so the tab reads it from the
+ * **Legacy forward fallback, bounded.** For a Runner without the
+ * journal-backward capability the tab reads from the
  * start, one page after another, never two at once, giving the browser a turn
  * between pages. Until it reaches the end it says how far it has read and
  * shows no entry, since a journal read in part would be shown as the whole of
@@ -115,7 +115,7 @@ export interface JournalEntry {
   code?: unknown
   [member: string]: unknown
 }
-export interface JournalPage { journalBegan: string; items: unknown[]; next: number; more: boolean }
+export interface JournalPage { journalBegan: string; items: unknown[]; next: number; more: boolean; before?: number }
 
 /**
  * How much of the journal the page holds and renders. `keep`: the most entries
@@ -176,25 +176,27 @@ export function yieldToBrowser(): Promise<void> {
 
 /** What the page shows: the journal as it was when last read to its end. Never changed once made. */
 export interface JournalSnapshot { entries: JournalEntry[]; dropped: number; began: unknown }
+export interface BackwardProgress { before: number; more: boolean; busy: boolean; limit: boolean; error?: string }
 export type JournalState =
   /** Before Runner first answered. */
   | { phase: 'starting' }
   /** The route answered 404 to the first request: this runner serves no journal for the job. */
   | { phase: 'absent' }
   /** Catching up, read to the end, or stopped by a failure; `read` and `next` are the reading's own. */
-  | { phase: 'reading' | 'caught-up' | 'stopped'; read: number; next: number; snapshot?: JournalSnapshot; reason?: string }
+  | { phase: 'reading' | 'caught-up' | 'stopped'; read: number; next: number; snapshot?: JournalSnapshot; reason?: string; backward?: BackwardProgress }
 
 /**
  * Reads a job's journal for the page: from the start once, then from its
  * cursor every `JOURNAL_REFRESH_MS` once caught up. `resume` continues a
  * reading that stopped, from its cursor.
  */
-export function useJournalReader(jobId: string, keep: number): { state: JournalState; resume: () => void } {
+export function useForwardJournalReader(jobId: string, keep: number, enabled = true): { state: JournalState; resume: () => void } {
   const [state, setState] = useState<JournalState>({ phase: 'starting' })
   const [attempt, setAttempt] = useState(0)
   const held = useRef<{ jobId: string; journal: Journal; snapshot?: JournalSnapshot }>(undefined)
   if (held.current?.jobId !== jobId) held.current = { jobId, journal: emptyJournal() }
   useEffect(() => {
+    if (!enabled) return
     const reading = held.current!, journal = reading.journal, controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     const status = (phase: 'reading' | 'caught-up' | 'stopped', reason?: string) => setState({ phase, read: readCount(journal), next: journal.next, snapshot: reading.snapshot, ...(reason === undefined ? {} : { reason }) })
@@ -221,7 +223,7 @@ export function useJournalReader(jobId: string, keep: number): { state: JournalS
     }
     void read()
     return () => { controller.abort(); clearTimeout(timer) }
-  }, [jobId, keep, attempt])
+  }, [jobId, keep, attempt, enabled])
   return {
     state,
     resume: () => { const reading = held.current!; setState({ phase: 'reading', read: readCount(reading.journal), next: reading.journal.next, snapshot: reading.snapshot }); setAttempt(n => n + 1) }

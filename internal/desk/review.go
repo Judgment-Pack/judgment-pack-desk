@@ -351,8 +351,8 @@ func (s *Server) projectRuntime() (dir heldDir, named string, ok bool) {
 	if s.project == nil || s.project.own == nil {
 		return heldDir{}, "", false
 	}
-	dir = heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}
-	if s.cfg.deskID != "" {
+	dir = heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation}
+	if !s.usesStartupRuntimeEnvironment() {
 		return dir, "", true
 	}
 	named = strings.TrimSpace(os.Getenv(runtimeConfigEnv))
@@ -526,7 +526,7 @@ func (s *Server) verifySnapshot(ctx context.Context, snap *reviewSnapshot) (veri
 		return verifiedAnswer{}, err
 	}
 	// A copy of the startup desk's project is still the startup desk's.
-	return s.runVerify(ctx, heldDir{file: file, path: where, info: info, startup: s.cfg.deskID == ""})
+	return s.runVerify(ctx, heldDir{file: file, path: where, info: info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation})
 }
 
 func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) {

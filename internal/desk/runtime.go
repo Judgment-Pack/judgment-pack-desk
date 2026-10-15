@@ -74,6 +74,10 @@ const runtimeConfigEnv = "JPACK_CONFIG"
 // and it takes precedence over the configuration's own `audit.signingKey`.
 const runtimeSigningKeyEnv = "JPACK_SIGNING_KEY"
 
+// The expected identity is scoped with the seed path. Runtime v0.30.0 checks
+// it at every signing, so another project must never inherit this value.
+const runtimeSigningPublicKeyEnv = "JPACK_SIGNING_PUBLIC_KEY"
+
 // runtimeEnv is the environment the relay's runtime gets: this process's own,
 // except that a desk Desk made never reads another project's configuration,
 // and never signs with another project's key.
@@ -95,10 +99,17 @@ const runtimeSigningKeyEnv = "JPACK_SIGNING_KEY"
 // and an inherited `JPACK_SIGNING_KEY` the key; this desk does not change what
 // an existing project reads or signs with. `New` logs each.
 func (s *Server) runtimeEnv() []string {
-	if s.cfg.deskID == "" {
-		return nil
+	var env []string
+	if !s.usesStartupRuntimeEnvironment() {
+		env = withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)
 	}
-	return withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv)
+	if expected := s.runtimeSigningExpectation(); expected != "" {
+		if env == nil {
+			env = os.Environ()
+		}
+		env = append(env, runtimeSigningPublicKeyEnv+"="+expected)
+	}
+	return env
 }
 
 // withoutVariables is env without any entry for the variables named.
@@ -118,7 +129,7 @@ func withoutVariables(env []string, names ...string) []string {
 // `JPACK_SIGNING_KEY` is set and not blank, which is when the runtime reads
 // it. Neither the key's path nor its bytes are read here.
 func (s *Server) inheritsSigningKey() bool {
-	return s.cfg.deskID == "" && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""
+	return s.usesStartupRuntimeEnvironment() && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""
 }
 
 // heldDir is a directory a runtime command runs in, held open by this desk.
@@ -136,6 +147,8 @@ type heldDir struct {
 	// `JPACK_SIGNING_KEY` (`runRuntime`). The zero value is a desk Desk made,
 	// so a directory nobody marked never carries the owner's key.
 	startup bool
+	// Resolve the retained project identity for each invocation, including after rotation.
+	expectedSigning func() string
 }
 
 // runtimeCommandTimeout bounds one runtime command this desk runs to
@@ -195,9 +208,14 @@ func runRuntimeInput(ctx context.Context, bin string, dir heldDir, input []byte,
 	// it would speak of another key than the one the project's runtime uses.
 	drop := []string{runtimeConfigEnv}
 	if !dir.startup {
-		drop = append(drop, runtimeSigningKeyEnv)
+		drop = append(drop, runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)
 	}
 	cmd.Env = withoutVariables(os.Environ(), drop...)
+	if dir.expectedSigning != nil {
+		if expected := dir.expectedSigning(); expected != "" {
+			cmd.Env = append(cmd.Env, runtimeSigningPublicKeyEnv+"="+expected)
+		}
+	}
 	stdout := &cappedBuffer{limit: runtimeAnswerLimit}
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)
@@ -347,4 +365,10 @@ func lockRuntimeProject(ctx context.Context, bin string, dir heldDir, root *os.R
 		return errors.New("the runtime reported a lock, but there is none in the new desk")
 	}
 	return nil
+}
+
+// A registered original project can now be a child of another startup Desk.
+// That child must never inherit the process owner's runtime overrides.
+func (s *Server) usesStartupRuntimeEnvironment() bool {
+	return s.cfg.deskID == "" && s.cfg.parent == nil
 }

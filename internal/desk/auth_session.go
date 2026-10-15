@@ -60,7 +60,7 @@ func (st *sessionStore) expireVerified(handle string) {
 // whose launch credential has no browser-session context. Activation's own
 // response is exempt so it can report the durable transition to its caller.
 func (s *Server) withSignInPolicy(r *http.Request) (*http.Request, func()) {
-	if s.signIn == nil || r.URL.Path == "/api/auth/enable" {
+	if s.signIn == nil || signInPolicyMutation(r) {
 		return r, func() {}
 	}
 	s.signIn.mu.Lock()

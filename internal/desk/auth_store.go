@@ -17,9 +17,10 @@ const signInFileName = "sign-in.json"
 const signInAttemptLifetime = 5 * time.Minute
 
 type signInRecord struct {
-	Version  int            `json:"version"`
-	Provider signInProvider `json:"provider"`
-	Owner    signInOwner    `json:"owner"`
+	Version  int                 `json:"version"`
+	Provider signInProvider      `json:"provider"`
+	Owner    signInOwner         `json:"owner"`
+	Password *passwordCredential `json:"password,omitempty"`
 }
 type signInAttempt struct {
 	id, state, proof, nonce, verifier      string
@@ -33,21 +34,22 @@ type signInAttempt struct {
 	problem                                string
 }
 type signInState struct {
-	mu          sync.Mutex
-	active      *signInRecord
-	problem     bool
-	generation  uint64
-	attempts    map[string]*signInAttempt
-	lastTest    map[string]string
-	limitStart  time.Time
-	limitCount  int
-	slots       chan struct{}
-	epoch       context.Context
-	cancelEpoch context.CancelFunc
+	mu            sync.Mutex
+	active        *signInRecord
+	problem       bool
+	generation    uint64
+	attempts      map[string]*signInAttempt
+	lastTest      map[string]string
+	limitStart    time.Time
+	limitCount    int
+	passwordSlots chan struct{}
+	slots         chan struct{}
+	epoch         context.Context
+	cancelEpoch   context.CancelFunc
 }
 
 func (s *Server) openSignIn() {
-	s.signIn = &signInState{attempts: make(map[string]*signInAttempt), lastTest: make(map[string]string), slots: make(chan struct{}, 4)}
+	s.signIn = &signInState{attempts: make(map[string]*signInAttempt), lastTest: make(map[string]string), slots: make(chan struct{}, 4), passwordSlots: make(chan struct{}, 1)}
 	s.signIn.epoch, s.signIn.cancelEpoch = context.WithCancel(context.Background())
 	record, err := s.assistant.readSignIn()
 	if err != nil {
@@ -81,6 +83,9 @@ func (s *Server) signInSessionAllowed(held session) bool {
 	}
 	if s.signIn.active == nil {
 		return held.issuer == nil
+	}
+	if s.signIn.active.Password != nil {
+		return held.password && held.issuer == nil
 	}
 	owner := s.signIn.active.Owner
 	return held.issuer != nil && *held.issuer == owner.Issuer && held.subject == owner.Subject
@@ -130,7 +135,7 @@ func (s *assistantStore) readSignIn() (*signInRecord, error) {
 	if err := decoder.Decode(&record); err != nil {
 		return nil, errors.New("invalid sign-in configuration")
 	}
-	if decoder.Decode(new(any)) != io.EOF || record.Version != 1 || record.Provider.validate() != nil || record.Owner.Subject == "" || len(record.Owner.Subject) > 512 || record.Owner.Issuer != record.Provider.Issuer {
+	if decoder.Decode(new(any)) != io.EOF || !record.valid() {
 		return nil, errors.New("invalid sign-in configuration")
 	}
 	return &record, nil

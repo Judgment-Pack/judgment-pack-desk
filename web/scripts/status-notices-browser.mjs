@@ -1,0 +1,72 @@
+import assert from 'node:assert/strict'
+import {chromium} from 'playwright-core'
+const [origin,setupCode,id]=process.argv.slice(2)
+assert(origin&&setupCode&&id,'Use the disposable TestInputRecordReviewBrowser fixture')
+const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']})
+const page=await browser.newPage({viewport:{width:1440,height:900},colorScheme:'dark'})
+page.setDefaultTimeout(20000)
+const errors=[],writes=[];page.on('pageerror',e=>errors.push(e.message))
+page.on('request',req=>{if(req.method()!=='GET'&&/input-preparations.*\/(confirm|stop|resume|research)|operations.*\/(runs|submit)/.test(req.url()))writes.push(req.url())})
+const root=origin+'/api/input-preparations/'+id,at=new Date().toISOString()
+const run={id:'research-fixture',state:'completed-with-gaps',recipeVersion:1,createdAt:at,updatedAt:at,recordCount:7,sourceCount:9,unavailableSources:1,stopRequested:false}
+let researchFailed=false,evaluationsFailed=false,jobsFailed=false
+const fail=route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'fixture-read-unavailable'})})
+const answer=(route,value)=>route.fulfill({contentType:'application/json',body:JSON.stringify(value)})
+await page.route(root+'/research',route=>researchFailed?fail(route):answer(route,{items:[run]}))
+await page.route(root+'/evaluations',route=>evaluationsFailed?fail(route):answer(route,{items:[]}))
+await page.route('**/api/operations/jobs?*',route=>jobsFailed?fail(route):answer(route,{items:[]}))
+const researchText='Research status could not be refreshed. The last known status is shown; the run may still be active.'
+const evaluationText='Evaluation history could not be loaded. Existing results are not changed.'
+const retryFor=text=>page.getByRole('dialog').getByText(text,{exact:true}).locator('xpath=ancestor::*[@data-tone][1]').getByRole('button',{name:'Retry',exact:true})
+try {
+ await page.goto(origin)
+ await page.getByRole('button',{name:'Set up sign-in',exact:true}).click()
+ await page.getByLabel('Owner setup code',{exact:true}).fill(setupCode)
+ await page.getByRole('button',{name:'Continue',exact:true}).click()
+ await page.getByRole('button',{name:'Set password',exact:true}).waitFor()
+ await page.goto(origin+'/dialects/'+id)
+ await page.getByRole('button',{name:'Example company 7',exact:true}).waitFor()
+ await page.getByLabel('Research status',{exact:true}).getByText('Research finished with gaps · 7 saved this run',{exact:true}).waitFor()
+ await page.locator('.desk-pane-head').getByRole('button',{name:/^Collapse /}).click()
+ researchFailed=true;evaluationsFailed=true
+ const strip=page.locator('.desk-strip'),notice=strip.locator('[data-desk-notices]')
+ await page.waitForFunction(()=>document.querySelector('[data-desk-notices]')?.textContent?.includes('notices'))
+ await notice.click()
+ const panel=page.getByRole('dialog')
+ await panel.getByText(researchText,{exact:true}).waitFor();await panel.getByText(evaluationText,{exact:true}).waitFor()
+ assert.equal(await panel.getByText(researchText,{exact:true}).count(),1)
+ assert.equal(await page.locator('main').getByText(/could not be (refreshed|loaded)/).count(),0)
+ await page.screenshot({path:'/tmp/jps-status-notices-details.png'})
+ await panel.getByRole('button',{name:'Close',exact:true}).click()
+ await page.getByRole('tab',{name:'Activity',exact:true}).click()
+ await notice.click();await panel.getByText(researchText,{exact:true}).waitFor();await panel.getByText(evaluationText,{exact:true}).waitFor()
+ assert.equal(await panel.getByText(evaluationText,{exact:true}).count(),1)
+ await panel.getByRole('button',{name:'Close',exact:true}).click()
+ await page.getByRole('tab',{name:'Records',exact:true}).click()
+ await page.getByRole('button',{name:'Example company 7',exact:true}).waitFor()
+ assert.equal(await page.locator('[data-desk-notices]').count(),1)
+ await page.screenshot({path:'/tmp/jps-status-notices-records.png'})
+ await page.setViewportSize({width:390,height:844});await page.evaluate(()=>document.documentElement.setAttribute('data-theme','light'))
+ await notice.focus();await page.keyboard.press('Enter');await panel.getByText(researchText,{exact:true}).waitFor()
+ const bounds=await panel.boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=390)
+ await page.screenshot({path:'/tmp/jps-status-notices-mobile.png'})
+ researchFailed=false;await retryFor(researchText).click();await panel.getByText(researchText,{exact:true}).waitFor({state:'hidden'})
+ evaluationsFailed=false;await retryFor(evaluationText).click();await panel.getByText(evaluationText,{exact:true}).waitFor({state:'hidden'})
+ if(await panel.count())await page.keyboard.press('Escape')
+ await page.setViewportSize({width:1440,height:900})
+ researchFailed=true;evaluationsFailed=true
+ await page.waitForFunction(()=>document.querySelector('[data-desk-notices]')?.textContent?.includes('notices'))
+ jobsFailed=true;await page.getByRole('link',{name:'Jobs',exact:true}).first().click();await page.waitForURL('**/jobs')
+ await page.waitForFunction(()=>document.querySelector('[data-desk-notices]')?.textContent?.includes('Jobs unavailable'))
+ assert(!(await strip.innerText()).includes('Research status unavailable'))
+ await notice.click()
+ const jobsText='The list could not be refreshed. Previously loaded items may be out of date.'
+ await panel.getByText(jobsText,{exact:true}).waitFor();jobsFailed=false;await retryFor(jobsText).click()
+ await page.getByText('No jobs yet',{exact:true}).waitFor()
+ assert.deepEqual(writes,[],'Retry must never start or replay research or evaluation')
+ assert.deepEqual(errors,[])
+ console.log(JSON.stringify({groupedNotices:true,noInlineBanners:true,deduplicated:true,cachedRecordsKept:true,activityConsistent:true,keyboardAndMobile:true,readOnlyRetry:true,jobsRecovery:true,browserErrors:errors}))
+} catch(error) {
+ await page.screenshot({path:'/tmp/jps-status-notices-failure.png'})
+ console.error((await page.locator('body').innerText()).slice(-5000));throw error
+} finally {await browser.close()}

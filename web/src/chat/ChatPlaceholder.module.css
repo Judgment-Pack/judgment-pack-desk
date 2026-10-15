@@ -1,0 +1,4 @@
+.placeholder {
+ padding: var(--space-4);
+ min-width: 0;
+}

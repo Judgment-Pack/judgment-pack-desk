@@ -1,3 +1,4 @@
+import { DeskNotices, DeskNoticesProvider } from '../../shell/DeskNotices'
 import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react'
 import {QueryClientProvider} from '@tanstack/react-query'
 import {useState} from 'react'
@@ -10,7 +11,7 @@ import {applyFolderAction,defaultFolders,FOLDERS_FILE,HOME_FOLDER} from './model
 import {FOLDERS_KEY,loadFolders,saveFolderAction,assignCreatedPack} from './client'
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),loadFolders:vi.fn(),saveFolderAction:vi.fn(),assignCreatedPack:vi.fn()}))
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.clearAllMocks();vi.unstubAllGlobals();localStorage.clear()})
-function setup({width=1100,path='/packs',corrupt=false,rootPending=false,graphs=false,state=undefined as unknown}={}){
+function setup({width=1100,path='/library',corrupt=false,rootPending=false,graphs=false,state=undefined as unknown}={}){
  const observers:{callback:(entries:ResizeObserverEntry[])=>void}[]=[]
  vi.stubGlobal('ResizeObserver',class {constructor(callback:(entries:ResizeObserverEntry[])=>void){observers.push({callback})} observe(){} disconnect(){} unobserve(){}})
  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(()=>({x:0,y:0,top:0,left:0,bottom:700,right:width,width,height:700,toJSON(){}}))
@@ -20,7 +21,7 @@ function setup({width=1100,path='/packs',corrupt=false,rootPending=false,graphs=
  vi.mocked(saveFolderAction).mockImplementation(async(before,action)=>{document=applyFolderAction(before.document,action);return {document,digest:'saved'}})
  const client=testQueryClient();if(!rootPending)client.setQueryData(['desk-files'],{root:'/project',files:[{path:FOLDERS_FILE,bytes:1,sha256:'read'}]})
  const stub=stubClient({experimental_list_graphs:()=>({text:JSON.stringify({status:'valid',graphs:[{id:'flow',graphVersion:'1.0.0'}]})}),list_packs:()=>({text:JSON.stringify({status:'valid',packs:[{id:'home-pack',packVersion:'1'},{id:'department-pack',packVersion:'1'}]})})})
- const router=createMemoryRouter([{path:'/packs',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:graphs})}><PacksLayout/></McpContext.Provider>,children:[{path:':packId',element:<><p>Pack content</p><Editable/></>}]},{path:'/create-pack',element:<p>Create</p>}],{initialEntries:[{pathname:path,state}]})
+ const router=createMemoryRouter([{element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:graphs})}><DeskNoticesProvider><PacksLayout/><footer><DeskNotices/></footer></DeskNoticesProvider></McpContext.Provider>,children:[{path:'/library',element:null},{path:'/packs/:packId',element:<><p>Pack content</p><Editable/></>}]},{path:'/create-pack',element:<p>Create</p>}],{initialEntries:[{pathname:path,state}]})
  render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>)
  return {client,router,resize:(next:number)=>{width=next;act(()=>observers.forEach(observer=>observer.callback([])))}}
 }
@@ -45,7 +46,7 @@ it('defaults existing packs to home, scopes nested search, and carries destinati
  expect(screen.queryByRole('navigation',{name:'Folder navigation'})).toBeNull()
  fireEvent.click(screen.getByRole('button',{name:'Expand folders'}))
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'Operations'}))
- expect(router.state.location.pathname).toBe('/packs')
+ expect(router.state.location.pathname).toBe('/library')
 })
 it('creates an empty folder in a modal and preserves it in the hierarchy',async()=>{
  const {client}=setup()
@@ -82,7 +83,9 @@ it('uses a closable drawer in narrow panes without changing the desktop preferen
 })
 it('shows all packs and disables mutations when folder metadata cannot be read',async()=>{
  setup({corrupt:true})
+ fireEvent.click(await screen.findByRole('button',{name:'Folders unavailable'}))
  await screen.findByText(/Folder organization is unavailable/)
+ fireEvent.keyDown(screen.getByRole('dialog'),{key:'Escape'})
  fireEvent.keyDown(screen.getByRole('button',{name:'Collection options'}),{key:'Enter'})
  expect((await screen.findByRole('menuitem',{name:'New folder'})).getAttribute('aria-disabled')).toBe('true')
  fireEvent.keyDown(screen.getByRole('menu'),{key:'Escape'})
@@ -178,7 +181,7 @@ it('keeps the current folder visible and makes collapsed ancestors navigable',as
  fireEvent.keyDown(within(location).getByRole('button',{name:'Show parent folders'}),{key:'Enter'})
  const menu=await screen.findByRole('menu')
  fireEvent.click(within(menu).getByRole('menuitem',{name:/Operations/}))
- await waitFor(()=>expect(router.state.location.pathname).toBe('/packs'))
+ await waitFor(()=>expect(router.state.location.pathname).toBe('/library'))
  expect(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Operations'}).getAttribute('aria-current')).toBe('location')
  expect(saveFolderAction).not.toHaveBeenCalled()
 })

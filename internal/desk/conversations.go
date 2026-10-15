@@ -38,6 +38,11 @@ func validateConversations(data []byte) error {
 	if err := json.Unmarshal(data, &doc); err != nil || doc.Version != 1 || doc.Chats == nil || len(doc.Chats) > 256 {
 		return errors.New("chat history must have version 1 and at most 256 chats")
 	}
+	for _, chat := range doc.Chats {
+		if err := validateChatPlan(chat); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -160,7 +165,7 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	w.Header().Set("Cache-Control", "no-store")
 	s.writes.Lock()
 	defer s.writes.Unlock()
-	lock, err := s.privateDataLock(true)
+	lock, err := s.privateDataLockContext(r.Context(), true)
 	if err != nil {
 		storageFailure(w, err)
 		return
@@ -329,6 +334,9 @@ func writeConversationReply(w http.ResponseWriter, reply conversationReply) {
 }
 
 func (s *Server) conversationIdentity() string {
+	if entry := s.homeEntry(); entry != nil {
+		return entry.HistoryIdentity
+	}
 	if s.cfg.deskID != "" {
 		return "desk:" + s.cfg.deskID
 	}

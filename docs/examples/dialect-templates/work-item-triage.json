@@ -1,0 +1,8 @@
+{
+  "templateVersion": 1,
+  "id": "work-item-triage",
+  "name": "Work item triage",
+  "description": "Import work items from any system, then review their translation into a triage pack.",
+  "license": "Apache-2.0",
+  "intent": "Prepare work items with title, description, severity, status and source reference. Preserve missing values. Select a triage pack and review the column conversions before evaluation."
+}

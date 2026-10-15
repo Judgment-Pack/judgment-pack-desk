@@ -65,6 +65,6 @@ export function Field({
 }
 
 /** A form owns spacing between fields once, without doubling field margins. */
-export function FieldGroup({ children }: { children: ReactNode }) {
-  return <div className={styles.group}>{children}</div>
+export function FieldGroup({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={[styles.group,className].filter(Boolean).join(' ')}>{children}</div>
 }

@@ -1,3 +1,4 @@
+import {RunStatus} from '../ui/RunStatus'
 import { useQuery } from '@tanstack/react-query'
 import { Field } from '../ui/Field'
 import { CodeBlock } from '../ui/CodeBlock'
@@ -62,9 +63,9 @@ export function GraphRehearsal({ graphId }: { graphId: string }) {
     <p className={styles.hint}>{msg('Try supplied facts against this graph. Every node runs; a rehearsal creates no decision audit record and takes no external action.')}</p>
     <Disclosure title={msg('About rehearsal')}>
       <p>{msg('The runtime evaluates the supplied inputs. A matching byte revision does not establish that the policy or facts are correct, or that the project was reviewed.')}</p>
-      <p>{msg('Inputs and results on this page last until you leave. Rehearsals requested in chat are retained with the conversation and sent to its selected model provider.')}</p>
+      <p>{msg('Dialects and results on this page last until you leave. Rehearsals requested in chat are retained with the conversation and sent to its selected model provider.')}</p>
     </Disclosure>
-    <Field label={msg('Inputs by node id')} hint={msg('Enter a JSON object keyed by node id, each entry with optional facts and evidence members. Maximum 4 MiB.')}>{w =>
+    <Field label={msg('Dialects by node id')} hint={msg('Enter a JSON object keyed by node id, each entry with optional facts and evidence members. Maximum 4 MiB.')}>{w =>
       <TextArea {...w} value={inputs} disabled={busy} spellCheck={false} rows={12} onChange={event => { setInputs(event.target.value); setResult(undefined); setError(undefined) }}/>
     }</Field>
     <Button onClick={() => void run()} disabled={busy}>{busy ? msg('Running…') : msg('Try inputs')}</Button>
@@ -106,8 +107,8 @@ function RehearsalMembers({ raw }: { raw: string }) {
 
 function RevisionCheck({graphId, answer}: {graphId: string; answer: GraphProvenance}) {
   const check = useQuery({queryKey: ['desk-graph-revision', graphId, answer], queryFn: ({signal}) => compareGraphRevision(graphId, answer, signal), retry: false, refetchOnWindowFocus: true})
-  return <div className={`${styles.feedback} ${styles.toolbar}`} role="status">
-    <span>{check.isPending ? msg('Checking evaluated file revisions…') : check.isError ? msg('Current file revisions could not be checked.') : check.data === 'matching' ? msg('The evaluated graph, configuration and packs match the files just read.') : msg('The project has changed since this rehearsal. Run again to test the current files.')}</span>
+  return <div className={`${styles.feedback} ${styles.toolbar}`}>
+    <RunStatus running={check.isPending}>{check.isPending ? msg('Checking evaluated file revisions…') : check.isError ? msg('Current file revisions could not be checked.') : check.data === 'matching' ? msg('The evaluated graph, configuration and packs match the files just read.') : msg('The project has changed since this rehearsal. Run again to test the current files.')}</RunStatus>
     <Button variant="quiet" disabled={check.isFetching} onClick={() => void check.refetch()}>{msg('Check revisions')}</Button>
   </div>
 }

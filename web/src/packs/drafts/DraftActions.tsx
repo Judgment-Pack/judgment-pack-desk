@@ -24,7 +24,7 @@ export function DraftActionsProvider({children}:{children:ReactNode}) {
  const [operation,setOperation]=useState<Operation>(), navigate=useNavigate()
  return <Operations.Provider value={setOperation}>{children}
   {operation?.kind==='rename' && <RenameDraftDialog draft={operation.draft} opener={operation.opener} onClose={()=>setOperation(undefined)}/>}
-  {operation?.kind==='delete' && <DeleteDraftsDialog items={[operation.item]} opener={operation.opener} onClose={()=>setOperation(undefined)} onDeleted={()=>{operation.onDeleted?.();navigate('/packs')}}/>}
+  {operation?.kind==='delete' && <DeleteDraftsDialog items={[operation.item]} opener={operation.opener} onClose={()=>setOperation(undefined)} onDeleted={()=>{operation.onDeleted?.();navigate('/library')}}/>}
  </Operations.Provider>
 }
 

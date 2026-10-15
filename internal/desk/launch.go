@@ -54,6 +54,11 @@ func chooseProject(argument, configDir string) (projectChoice, error) {
 	if argument != "" {
 		return projectChoice{dir: argument}, nil
 	}
+	if moved, err := pendingMovedProject(configDir); err != nil {
+		return projectChoice{}, err
+	} else if moved != nil {
+		return *moved, nil
+	}
 	file, err := configuredProjectFile(configDir)
 	if err != nil {
 		return projectChoice{}, err
@@ -215,3 +220,6 @@ func configuredProjectFile(configDir string) (deskLaunchFile, error) {
 // `main` needs the directory before it builds a server, because the file in it
 // is what decides which project that server is built for.
 func DeskConfigDirFor(explicit string) string { return configDirFor(explicit) }
+
+// ResolveDeskConfigDir reports malformed home pointers before launch.
+func ResolveDeskConfigDir() (string, error) { return resolveHomeConfig("") }

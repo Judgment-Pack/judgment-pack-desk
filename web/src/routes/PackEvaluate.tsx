@@ -191,7 +191,7 @@ export function PackEvaluate() {
       <h2>{msg("Result")}</h2>
       {current && <Button onClick={explain} disabled={current.packBytes === undefined}>{msg("Explain on map")}</Button>}
       {current && current.packBytes === undefined && <p className="quiet">{msg("This result has no captured pack revision, so a trace cannot be attached to the map.")}</p>}
-      {drifted && <p className={styles.stale} role="status">{msg("Inputs changed since this result. Run again to evaluate the current inputs.")}</p>}
+      {drifted && <p className={styles.stale} role="status">{msg("Dialects changed since this result. Run again to evaluate the current inputs.")}</p>}
       {evaluate.isPending && <p role="status">{msg("Evaluating the submitted inputs…")}</p>}
       {evaluate.error && <RefusalPanel error={evaluate.error} />}
 

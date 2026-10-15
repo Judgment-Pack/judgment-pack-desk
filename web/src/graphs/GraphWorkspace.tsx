@@ -1,3 +1,5 @@
+import {LoadingState} from '../ui/LoadingState'
+import {PageLoading} from '../ui/PageLoading'
 import { DefinitionBrief } from '../briefs/DefinitionBrief'
 import { DefinitionHistory } from '../definitions/DefinitionHistory'
 import { GraphSources } from './GraphSources'
@@ -29,7 +31,7 @@ import { useBuilderPreference } from '../builders/BuilderSplit'
 import { GraphAssistant } from './GraphAssistant'
 import { readGraphDocument } from '../mcp/graphDocument'
 import { CodeBlock } from '../ui/CodeBlock'
-import { ErrorBox, Loading, Pill } from '../components/primitives'
+import { ErrorBox, Pill } from '../components/primitives'
 import { GraphComposition } from './GraphComposition'
 import { GraphConfirmation } from './GraphAuthor'
 import { graphPost, type GraphOffer, type GraphProposal } from './author'
@@ -52,7 +54,7 @@ export function GraphWorkspace({graphId, tests}: {graphId?: string; tests?: Reac
   const draft = [...chats, ...drafts].find(chat => chat.id === draftOwner)?.graphDrafts?.find(draft => draft.draftId === draftId)
   if (config.error) return <ErrorBox title={msg('Could not read project configuration')} error={config.error}/>
   if (malformed) return <p role="alert">{msg('Repair jpack.json before composing a graph.')}</p>
-  if (!config.data || draftId && !ready || graphId && path && !file.data && !file.error) return <Loading what={msg('graph workspace')}/>
+  if (!config.data || draftId && !ready || graphId && path && !file.data && !file.error) return <PageLoading>{msg('Loading graph…')}</PageLoading>
   if (draftId && !draft) return <p role="alert">{msg('This graph draft is no longer available in the conversation.')}</p>
   if (graphId && !path) return <p role="alert">{msg('This graph is not declared in the project.')}</p>
   if (file.error) return <ErrorBox title={msg('Could not read graph')} error={file.error}/>
@@ -88,7 +90,7 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
   const retainedIdentity = useRef({chatId, draftId: draft?.draftId ?? crypto.randomUUID(), createdAt: draft?.createdAt ?? new Date().toISOString()})
   useEffect(() => () => active.current?.abort(), [])
   const dirty = !saved && JSON.stringify(proposal) !== baseline
-  const clearGuard = useDirtyGuard(dirty || busy, msg('Leave this graph and discard unsaved changes?'), {busy, shouldBlock: ({currentLocation, nextLocation}) => currentLocation.pathname !== nextLocation.pathname || ['draft', 'view'].some(key => new URLSearchParams(currentLocation.search).get(key) !== new URLSearchParams(nextLocation.search).get(key))})
+  const clearGuard = useDirtyGuard(dirty, msg('Leave this graph and discard unsaved changes?'), {busy, shouldBlock: ({currentLocation, nextLocation}) => currentLocation.pathname !== nextLocation.pathname || ['draft', 'view'].some(key => new URLSearchParams(currentLocation.search).get(key) !== new URLSearchParams(nextLocation.search).get(key))})
   const change = (patch: Partial<GraphProposal>) => {
     if (Object.entries(patch).some(([key, value]) => proposal[key as keyof GraphProposal] !== value)) {setPast(before => [...before.slice(-49), JSON.stringify(proposal)]); setFuture([])}
     setProposal({...proposal, ...patch}); setOffer(null); setFindings(undefined); setSaved(false)
@@ -182,7 +184,7 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
         blocked={dirty ? msg('Unsaved changes') : !draft && !proposal.baseSha256 ? msg('Draft not retained') : undefined}
         actions={<><Button disabled={busy} onClick={check}>{msg('Check')}</Button></>}/>}</div>},
       {value: 'brief', label: msg('Brief'), panel: <div className={styles.viewBody}>{(view === 'brief' || briefVisited) && (!draft && !proposal.baseSha256 ? <p>{msg('Keep this draft before generating a brief.')}</p> : <DefinitionBrief kind={draft && !draft.saved ? 'graph-draft' : 'graph'} owner={draft && !draft.saved ? draft.draftId : initial.id} title={proposal.id || msg('New graph')} content={proposal.content} blocked={dirty ? msg('Keep or save these changes before generating a brief.') : !draft && !proposal.baseSha256 ? msg('Keep this draft before generating a brief.') : undefined}/>)}</div>},
-      {value: 'history', label: msg('History'), panel: view === 'history' ? <div className={styles.viewBody}><DefinitionHistory kind="graph" owner={draft && !draft.saved ? draft.draftId : initial.id} documentId={parsed.ok ? parsed.document.id : undefined} draft={!proposal.baseSha256} graphDraft={draft}/></div> : null},
+      {value: 'history', label: msg('History'), panel: view === 'history' ? <DefinitionHistory kind="graph" owner={draft && !draft.saved ? draft.draftId : initial.id} documentId={parsed.ok ? parsed.document.id : undefined} draft={!proposal.baseSha256} graphDraft={draft}/> : null},
       {value: 'usage', label: msg('Usage'), panel: view === 'usage' ? <DefinitionUsage kind="graph"/> : null},
     ]}/>
     <Dialog open={settingsOpen} onOpenChange={setSettingsOpen} title={msg('Graph settings')} openerRef={menuTrigger}
@@ -195,7 +197,7 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
     <Dialog open={sourceOpen} onOpenChange={setSourceOpen} title={msg('Edit graph JSON')} size="wide" openerRef={menuTrigger}
       description={msg('Changes stay in the draft until you review and save.')}
       footer={<DialogActions><Button onClick={()=>setSourceOpen(false)}>{msg('Done')}</Button></DialogActions>}>
-      <div className={shared.editor}><Suspense fallback={<p>{msg('Loading editor…')}</p>}><CodeEditor id="graph-source" path="graph.json" value={proposal.content} wrap readOnly={busy} onChange={content => change({content})} onSave={()=>{setSourceOpen(false);review()}} onFormat={() => {try {change({content: JSON.stringify(JSON.parse(proposal.content), null, 2) + '\n'})} catch {setError(msg('Fix the JSON before formatting.'))}}}/></Suspense></div>
+      <div className={shared.editor}><Suspense fallback={<LoadingState inset>{msg('Loading editor…')}</LoadingState>}><CodeEditor id="graph-source" path="graph.json" value={proposal.content} wrap readOnly={busy} onChange={content => change({content})} onSave={()=>{setSourceOpen(false);review()}} onFormat={() => {try {change({content: JSON.stringify(JSON.parse(proposal.content), null, 2) + '\n'})} catch {setError(msg('Fix the JSON before formatting.'))}}}/></Suspense></div>
     </Dialog>
     <Dialog open={findings !== undefined} onOpenChange={open => {if (!open) setFindings(undefined)}} title={msg('Runtime findings')} description={msg('Validation checks the draft structure, not whether the policy is correct.')}>
       {findings && <CodeBlock text={findings} label={msg('Runtime findings')}/>}<DialogActions><Button onClick={() => setFindings(undefined)}>{msg('Close')}</Button></DialogActions>

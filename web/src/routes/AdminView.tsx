@@ -1,3 +1,5 @@
+import {privateQuery} from '../data/privateQuery'
+import {LoadingState} from '../ui/LoadingState'
 /**
  * Admin: settings navigation grouped by task, one open section, and the file
  * itself in the right pane.
@@ -58,6 +60,7 @@ import { SharedAssistantSettings } from '../assistant/AssistantSettings'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { ConfigPane } from '../admin/ConfigPane'
 import { SourceCard, CardField, type SourceStatus } from '../admin/SourceCard'
+import { DeskHomeSettings } from '../admin/DeskHomeSettings'
 import { useDefaultProject } from '../admin/DefaultProject'
 import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { SignInSettings } from '../auth/SignInSettings'
@@ -90,7 +93,7 @@ export function AdminView() {
   const tab = connectionTab(hash)
   // General's Startup field and its Save, sharing one draft across two slots.
   const defaultProject = useDefaultProject()
-  const directory = useQuery({ queryKey: ['desks'], queryFn: () => desksAPI<{ current: { name: string } }>() })
+  const directory = useQuery({ ...privateQuery,queryKey: ['desks'], queryFn: () => desksAPI<{ current: { name: string } }>() })
   // **One unsaved draft at a time between the desk's model preferences and the
   // shared AI connections.** Each blocks the other while it holds an edit, so
   // a save on one never lands on a base the other has moved.
@@ -170,7 +173,7 @@ export function AdminView() {
                 <SettingsSection title={msg('General')} level={2} variant="standalone" description={msg('Desk identity, branding and startup preferences.')}>
                   <SettingsStack>
                     <CardField label={msg('Desk name')}>
-                      {directory.data?.current.name ?? (directory.isError ? msg('could not be read') : msg('Loading…'))}
+                      {directory.data?.current.name ?? (directory.isError ? msg('could not be read') : <LoadingState inline>{msg('Loading…')}</LoadingState>)}
                     </CardField>
                     <SourceCard id={sectionId('branding')} title={msg('Branding')} level={3} presentation="settings"
                       location={sectionLocation(effective, 'organization')} status={sectionStatus(effective, 'organization')}
@@ -180,6 +183,7 @@ export function AdminView() {
                       {defaultProject.field}
                       {defaultProject.save}
                     </SettingsSection>
+                    <DeskHomeSettings />
                   </SettingsStack>
                 </SettingsSection>
               </RetainedPanel>

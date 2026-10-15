@@ -1,3 +1,5 @@
+import { formatJson } from '../../files/formatJson'
+const displayJSON = (raw: string) => { const result = formatJson(raw); return result.ok ? result.content.trimEnd() : raw }
 /**
  * Review and lock on the page: what it reads, what it shows, and that it
  * locks only on the owner's confirmation, sending back the token of exactly
@@ -88,7 +90,7 @@ describe('the review page', () => {
     expect(within(file('packs/a.json')).getByRole('region', { name: 'Pack changes' })).toBeTruthy()
     expect(within(file('packs/b.json')).queryByRole('region', { name: 'Pack changes' })).toBeNull()
     expect(within(file('packs/b.json')).getByText('Desk has no earlier copy of the locked version to compare with.')).toBeTruthy()
-    expect(file('packs/b.json').textContent).toContain(beta)
+    expect(file('packs/b.json').textContent).toContain(displayJSON(beta))
   })
 
   it('locks nothing until the owner confirms, then sends back the token of what it showed', async () => {
@@ -119,7 +121,7 @@ describe('the review page', () => {
     for (const [path, text] of [['jpack.json', config], ['packs/a.json', after], ['packs/b.json', beta]] as const) {
       expect(within(file(path)).getByText('Not in a lock yet')).toBeTruthy()
       expect(file(path).querySelector('details')?.open).toBe(true)
-      expect(file(path).textContent).toContain(text)
+      expect(file(path).textContent).toContain(displayJSON(text))
     }
     expect(screen.getByRole('button', { name: 'Confirm and lock 3 files' })).toBeTruthy()
   })

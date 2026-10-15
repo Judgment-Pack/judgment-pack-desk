@@ -48,7 +48,7 @@ const (
 )
 
 // repairCall is the one repair a confirmation runs.
-const repairCall = "audit repair --config jpack.json --format json [JPACK_CONFIG=unset]"
+const repairCall = "audit repair --config jpack.json --format json --damaged-bytes 8 --damaged-digest " + tornDigest + " [JPACK_CONFIG=unset]"
 
 // withRepair adds `audit repair` to the stand-in at rig.bin: it runs the
 // shell fragment in `<calls>.repair`, set by repairingAs, and otherwise exits
@@ -58,6 +58,10 @@ func withRepair(t *testing.T, rig *auditRig) {
 	script, err := os.ReadFile(rig.bin)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Current repair fixtures advertise the released safe-repair floor.
+	if bytes.Contains(script, []byte(`"6"`)) {
+		script = bytes.ReplaceAll(script, []byte(`"version":"0.0.0-stand-in"`), []byte(`"version":"0.30.0"`))
 	}
 	repair := "'audit repair')\n  if [ -e '" + rig.calls + ".repair' ]; then . '" + rig.calls + ".repair'; exit $?; fi\n  exit 64\n  ;;\n"
 	script = bytes.Replace(script, []byte("'packs lock')\n"), []byte(repair+"'packs lock')\n"), 1)
@@ -683,7 +687,7 @@ func TestARepairThatDoesNotFinishIsSaid(t *testing.T) {
 	defer func(bound time.Duration) { runtimeCommandTimeout = bound }(runtimeCommandTimeout)
 	runtimeCommandTimeout = time.Second
 	got := r.repair(t, token)
-	want := "The runtime's audit repair did not finish as asked: the runtime did not finish audit repair --config jpack.json --format json within 1s. Desk cannot say whether it repaired the trail. Check the decision record again: it shows what the trail holds now."
+	want := "The runtime's audit repair did not finish as asked: the runtime did not finish audit repair --config jpack.json --format json --damaged-bytes 8 --damaged-digest sha256:952cdc0f85ab10d18a1bdccfeb6c3991e59ab424dc2ce916544aac44f3d8b45e within 1s. Desk cannot say whether it repaired the trail. Check the decision record again: it shows what the trail holds now."
 	if got.status != http.StatusInternalServerError || got.error != want {
 		t.Errorf("the repair answered %d %s", got.status, got.data)
 	}

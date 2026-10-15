@@ -1,19 +1,15 @@
-import { FileRequestError, readFile, writeFile } from '../../files/client'
+import { FileRequestError, readOptionalFile, writeFile } from '../../files/client'
 import { sourceMessage } from '../../i18n/source'
 import { applyFolderAction, decodeFolders, defaultFolders, FOLDERS_FILE, type FolderAction, type FolderDocument } from './model'
 export interface FolderSnapshot { document: FolderDocument; digest: string }
 export const FOLDERS_KEY = ['pack-folders'] as const
 export async function loadFolders(signal?: AbortSignal): Promise<FolderSnapshot> {
- try {
-  const file = await readFile(FOLDERS_FILE,signal)
-  if (file.bytes > 2_000_000) throw new Error(sourceMessage('Folder organization could not be read. The saved file has not been changed.'))
-  let value: unknown
-  try { value = JSON.parse(file.content) } catch { throw new Error(sourceMessage('Folder organization could not be read. The saved file has not been changed.')) }
-  return { document: decodeFolders(value), digest: file.sha256 }
- } catch (cause) {
-  if (cause instanceof FileRequestError && cause.status === 404 && cause.code === 'not-found') return { document: defaultFolders(), digest: '' }
-  throw cause
- }
+ const file = await readOptionalFile(FOLDERS_FILE,signal)
+ if (file === null) return { document: defaultFolders(), digest: '' }
+ if (file.bytes > 2_000_000) throw new Error(sourceMessage('Folder organization could not be read. The saved file has not been changed.'))
+ let value: unknown
+ try { value = JSON.parse(file.content) } catch { throw new Error(sourceMessage('Folder organization could not be read. The saved file has not been changed.')) }
+ return { document: decodeFolders(value), digest: file.sha256 }
 }
 export async function saveFolderAction(before: FolderSnapshot, action: FolderAction): Promise<FolderSnapshot> {
  const document = applyFolderAction(before.document, action)

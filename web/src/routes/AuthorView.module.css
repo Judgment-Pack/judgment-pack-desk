@@ -26,7 +26,6 @@
 
 .browserContents { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 .browserContents > :global(.note), .browserContents > :global(.empty) { margin: var(--space-2); overflow-wrap: anywhere; }
-.editorLoading { display: flex; flex: 1; min-height: 12rem; align-items: center; justify-content: center; color: var(--ink-faint); font-size: var(--text-sm); }
 .jsonActions { display: flex; gap: var(--space-1); align-items: center; }
 .fileMenu { max-width: min(26rem, calc(100vw - 32px)); }
 .fileDetails { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); font-size: var(--text-xs); color: var(--ink-faint); }
@@ -41,6 +40,3 @@
 .readOnlyNote { flex: 1 1 20rem; min-width: 0; margin: 0; color: var(--ink-soft); font-size: var(--text-xs); line-height: var(--leading-body); }
 
 .opening { position: absolute; z-index: 1; inset-block-start: var(--space-4); inset-inline-end: var(--space-4); display: flex; align-items: center; justify-content: center; padding: var(--space-1); background: var(--bg); color: var(--ink-soft); border-radius: var(--radius-sm); }
-.spinner { display: block; width: var(--space-4); height: var(--space-4); box-sizing: border-box; border-width: 1.75px; border-style: solid; border-color: currentColor; border-right-color: transparent; border-radius: var(--radius-pill); animation: fileSpin .8s linear infinite; }
-@keyframes fileSpin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

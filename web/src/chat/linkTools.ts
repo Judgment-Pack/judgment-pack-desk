@@ -1,3 +1,4 @@
+import { configurableRedirect, linkFailure } from './linkFailure'
 import { discoverWebsite, loadWebsite, type WebsiteReference, type VerifiedWebsite } from '../documents/website'
 /** Bounded reading and discovery. New URLs must come from the user or a verified search/discovery receipt. */
 import { searchAccess, type SearchDeps } from '../search/tools'
@@ -95,7 +96,6 @@ export function linkReading(deps: LinkReadingDeps): (context: DraftToolContext) 
   const sites=new Map<string,VerifiedWebsite>()
   let active:{userId:string;tools:HostTool[]}|undefined
   return context=>{
-   if(!deps.available())return []
    const userId=[...context.turns()].reverse().find(t=>t.role==='user')?.id
    if(userId&&active?.userId===userId)return active.tools
    const spent:Spent={reads:0}
@@ -119,6 +119,7 @@ export function linkReading(deps: LinkReadingDeps): (context: DraftToolContext) 
     }
     return false
    }
+   if(!deps.available())return search.tools
    const tools=[...search.tools,readLinkTool(deps,context,held,spent,sites,authorized),...(enabled()&&deps.discoveryAvailable?.()?[exploreWebsiteTool(deps,context,spent,sites,authorized)]:[])]
    if(userId)active={userId,tools}
    return tools
@@ -143,10 +144,10 @@ const readContext = (config: ResearchConfig) => JSON.stringify(config)
 
 function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Map<string, VerifiedDocument>, spent: Spent, sites:Map<string,VerifiedWebsite>,searched:(url:string,signal:AbortSignal)=>Promise<boolean>): HostTool {
   return {
-    name: READ_LINK,
+    name: READ_LINK, delegation:'read',
     description:
       'Read a public web page supplied by the person or found by search_sources or explore_website, through the configured gateway, ' +
-      `${READ_WINDOW} characters at a time. Use the exact supplied or discovered URL. Only a link the person ` +
+      `${READ_WINDOW} characters at a time. Use the supplied or discovered URL. Bare domains such as example.org are accepted with HTTPS assumed; do not request a full URL or use search just to add https://. Only a link the person ` +
       'wrote in this chat, attached, or a verified search_sources or explore_website result discovered can be read. Never invent links. ' +
       'A section anchor (#…) is reported, not followed; find locates words in the text. Continue with the ' +
       'same url and an offset. Cite with a Markdown link whose label is an exact quote and whose ' +
@@ -206,7 +207,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
             loaded = await (deps.load ?? loadDefault)(reference, config.gateway, signal)
           } catch (cause) {
             const failure = signal.aborted ? 'the read was stopped' : describeLinkFailure(cause)
-            return text(`the page could not be re-read from this chat: ${failure}`, undefined, true)
+            return text(`the page could not be re-read from this chat: ${failure}`, {linkFailure:linkFailure(cause), redirectPolicy:configurableRedirect(cause)}, true)
           }
           const refused = invalidated()
           if (refused) return refused
@@ -233,7 +234,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
         } catch (cause) {
           const failure = signal.aborted ? 'the read was stopped' : describeLinkFailure(cause)
           deps.log(sourceMessage("link: failed — {{value0}}", { value0: failure }))
-          return text(`read failed: ${failure}`, undefined, true)
+          return text(`read failed: ${failure}`, {linkFailure:linkFailure(cause), redirectPolicy:configurableRedirect(cause)}, true)
         }
         const refused = invalidated()
         if (refused) return refused
@@ -367,7 +368,7 @@ function window(attachment: ChatAttachment, document: VerifiedDocument, link: No
 
 const websiteKey=(ref:WebsiteReference,config:ResearchConfig)=>`${JSON.stringify(config.gateway)}/${ref.id}/${ref.digest}/${ref.seed}`
 function exploreWebsiteTool(deps:LinkReadingDeps,context:DraftToolContext,spent:Spent,sites:Map<string,VerifiedWebsite>,searched:(url:string,signal:AbortSignal)=>Promise<boolean>):HostTool{
- return {name:EXPLORE_WEBSITE,
+ return {name:EXPLORE_WEBSITE,delegation:'research',
  description:'When the person asks to explore a website or read other pages, discover linked pages on a supplied website or one found by search_sources. At most 10 pages, two link levels. Use a seed URL from their messages, attachments or verified search results. Results are a navigation map, not page evidence: then call read_link on relevant discovered URLs, with offset paging for in-depth reading. Cite retained page text. Never claim all pages were read; report limits and unread pages.',
  inputSchema:{type:'object',properties:{url:{type:'string',description:'A supplied website URL or a verified search result URL.'}},required:['url']},
  execute:async(args,signal)=>{

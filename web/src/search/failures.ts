@@ -1,3 +1,4 @@
+import {AIFailureError,normalizeFailure} from '../assistant/failures'
 import { FileRequestError } from '../files/client'
 import { GatewayError, OverBudget } from '../research/gatewayClient'
 
@@ -6,6 +7,9 @@ import { GatewayError, OverBudget } from '../research/gatewayClient'
 const FAILURES = {
  'search-timeout': 'The search provider took too long to respond. Try a shorter query within the remaining search budget.',
  'search-not-grounded': 'The provider returned no usable grounded sources. Try a shorter, more specific query within the remaining search budget.',
+ 'search-temporary': 'The search provider reported a temporary server error. Retry within the remaining search budget.',
+ 'search-invalid-request': 'The search provider rejected the request. Check the search connection and model settings.',
+ 'search-invalid-response': 'The search provider returned an unusable response. No source was retained for this request.',
  'provider-unavailable': 'The search provider could not complete this request. A retry is allowed within the remaining search budget.',
  'credentials-required': 'The search provider rejected authentication or access. Check this connection in Admin > Connections > Web search.',
  'search-budget-exhausted': 'This connection has reached its daily search limit. Wait for the limit to reset or update it in Web search settings.',
@@ -28,8 +32,8 @@ export type SearchFailureCode = keyof typeof FAILURES
 export function searchFailureMessage(code: unknown): string | undefined {
  return typeof code === 'string' && Object.hasOwn(FAILURES, code) ? FAILURES[code as SearchFailureCode] : undefined
 }
-export class SearchFailure extends Error {
- constructor(readonly code: SearchFailureCode) { super(FAILURES[code]); this.name = 'SearchFailure' }
+export class SearchFailure extends AIFailureError {
+ constructor(readonly code: SearchFailureCode) { super({...normalizeFailure({code},'tool'),detail:FAILURES[code]}); this.name = 'SearchFailure' }
 }
 export function searchFailure(cause: unknown): SearchFailure {
  if (cause instanceof SearchFailure) return cause
@@ -39,7 +43,7 @@ export function searchFailure(cause: unknown): SearchFailure {
  if (cause instanceof GatewayError) {
   // The adapter's protocol token is carried by Gateway as bounded stderr.
   const token = /^(?:source failed: )?([a-z-]+)$/.exec(cause.message)?.[1]
-  if (token && ['search-timeout','search-not-grounded','provider-unavailable','credentials-required','search-budget-exhausted','rate-limited','source-changed','connect-required','setup-required','blocked-by-policy','invalid-request'].includes(token)) return new SearchFailure(token as SearchFailureCode)
+  if (token && ['search-timeout','search-not-grounded','search-temporary','search-invalid-request','search-invalid-response','provider-unavailable','credentials-required','search-budget-exhausted','rate-limited','source-changed','connect-required','setup-required','blocked-by-policy','invalid-request'].includes(token)) return new SearchFailure(token as SearchFailureCode)
   if (cause.status >= 502 && cause.status <= 504) return new SearchFailure('gateway-unavailable')
   return new SearchFailure('gateway-refused')
  }

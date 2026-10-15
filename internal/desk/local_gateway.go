@@ -73,6 +73,7 @@ type localSigner struct {
 }
 
 type localGateway struct {
+	inputHandoffs      string
 	mu                 sync.Mutex
 	closed             bool
 	bundle, executable string
@@ -81,6 +82,7 @@ type localGateway struct {
 	done               chan struct{}
 	pin                *localGatewayPin
 	retryAfter         time.Time
+	webPolicy          string
 	problem            error
 }
 
@@ -191,7 +193,7 @@ func localIdentity(store *assistantStore) (string, error) {
 		if markerErr == nil {
 			return "", errors.New("local gateway signing key is missing; restore the original key to keep saved documents verifiable")
 		}
-		if _, historyErr := store.root.Lstat("local-gateway"); !errors.Is(historyErr, os.ErrNotExist) {
+		if _, historyErr := store.root.Lstat(platformRelative(store.dir, "local-gateway")); !errors.Is(historyErr, os.ErrNotExist) {
 			return "", errors.New("local gateway signing identity is missing but receipt storage exists; restore the original protected settings")
 		}
 		seed := make([]byte, ed25519.SeedSize)
@@ -240,6 +242,19 @@ func (g *localGateway) ensure(store *assistantStore) (*localGatewayPin, error) {
 	if !store.usable() {
 		return nil, store.problem
 	}
+	policy, _, err := webPolicyValue(store)
+	if err != nil {
+		return nil, err
+	}
+	effectivePolicy := ""
+	if policy != nil {
+		effectivePolicy = *policy
+	}
+	// Shared settings may have been applied from another desk or process.
+	// Never serve a new request with that gateway's superseded policy.
+	if g.done != nil && g.webPolicy != effectivePolicy {
+		g.stop()
+	}
 	if g.done != nil {
 		select {
 		case <-g.done:
@@ -277,7 +292,7 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	// Each process owns a separate append-only registry. Saved document proofs
 	// retain their sealed registry entries, so reopening them needs the stable
 	// public pin, not a running instance's historic HTTP endpoint.
-	root, err := openPrivateDataRoot(filepath.Join(store.dir, "local-gateway"), true)
+	root, err := openPrivateDataRoot(platformPath(store.dir, "local-gateway"), true)
 	if err != nil {
 		return nil, err
 	}
@@ -289,8 +304,24 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	if err = root.Mkdir(run, 0700); err != nil {
 		return nil, err
 	}
-	options := localWorkerOptions{Bundle: g.bundle, Dir: filepath.Join(store.dir, "local-gateway", run), Seed: filepath.Join(store.dir, "secrets", "local-gateway.seed"), Public: public, ConnectionsDir: filepath.Join(store.dir, "gateway-connections")}
+	handoffs := g.inputHandoffs
+	if handoffs == "" {
+		handoffs = filepath.Join(store.dir, "input-handoffs")
+	}
+	options := localWorkerOptions{Bundle: g.bundle, Dir: filepath.Join(platformPath(store.dir, "local-gateway"), run), Seed: filepath.Join(store.dir, "secrets", "local-gateway.seed"), Public: public, ConnectionsDir: platformPath(store.dir, "gateway-connections"), InputHandoffs: handoffs}
+	policy, _, err := webPolicyValue(store)
+	if err != nil {
+		return nil, err
+	}
+	g.webPolicy = ""
+	if policy != nil {
+		g.webPolicy = *policy
+	}
 	g.cmd = exec.Command(g.executable, "--local-gateway-worker")
+	g.cmd.Env = os.Environ()
+	if policy != nil {
+		g.cmd.Env = append(g.cmd.Env, webPolicyEnv+"="+*policy)
+	}
 	g.input, err = g.cmd.StdinPipe()
 	if err != nil {
 		return nil, err

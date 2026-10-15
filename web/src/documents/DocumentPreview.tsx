@@ -1,27 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { msg, systemMessage, useLocale } from '../i18n'
-import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import {LoadingState} from '../ui/LoadingState'
+import {useDocumentSource} from './useDocumentSource'
 import { Button } from '../ui/Button'
 import { Popover } from '../ui/Popover'
-import { loadDocument, matchesPageQuote, type DocumentReference, type VerifiedDocument } from './client'
+import { type DocumentReference } from './client'
 import { usablePages, needsPartialConsent } from './record'
 import styles from './Documents.module.css'
 
 export function DocumentPreview({ name, reference, disabled, onChange, citation }: { name: string; reference: DocumentReference; disabled: boolean; onChange?: (ref: DocumentReference) => void; citation?: { page: number; quote: string } }) {
   useLocale()
-  const pin = useEffectiveConfig().config.research.gateway
-  const [open, setOpen] = useState(false), [document, setDocument] = useState<VerifiedDocument>(), [error, setError] = useState('')
-  useEffect(() => {
-    if (!open) return
-    const operation = new AbortController()
-    setDocument(undefined); setError('')
-    if (!pin) { setError(msg('Configure the gateway in Admin → Document processing to use attached PDFs.')); return }
-    void loadDocument(reference, pin, operation.signal).then(value => { if (!operation.signal.aborted) {
-      if (citation && (!reference.pages.includes(citation.page) || !matchesPageQuote(value, citation.page, citation.quote))) setError(msg('This quote does not match the cited page.'))
-      else setDocument(value)
-    } }, cause => { if (!operation.signal.aborted) setError((cause as Error).message) })
-    return () => operation.abort()
-  }, [open, reference.id, reference.digest, pin?.authority, pin?.signer.public, citation?.page, citation?.quote])
+  const [open,setOpen]=useState(false)
+  const {value:document,error,citationProblem}=useDocumentSource(reference,open,citation)
   const record = document?.record
   const canUse = record ? new Set(usablePages(record).map(page => page.number)) : new Set<number>()
   const exportOriginal = () => {
@@ -33,14 +23,15 @@ export function DocumentPreview({ name, reference, disabled, onChange, citation 
     triggerTooltip={citation ? `${name} · ${msg('Page {{number}}', { number: citation.page })}` : undefined}
     trigger={citation ? <button type="button" className={styles.citation}>{citation.quote}</button> : <Button variant="quiet">{name}</Button>}>
     <div className={styles.preview}>
-      {error ? <p role="alert">{systemMessage(error)}</p> : !record ? <p role="status">{msg('Verifying document pages…')}</p> : <>
+      {error ? <p role="alert">{systemMessage(error)}</p> : !record ? <LoadingState>{msg('Verifying document pages…')}</LoadingState> : <>
+        {citationProblem&&<p role="alert">{citationProblem}</p>}
         {record.provenance.source.kind === 'web' && <p><a href={record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open original source')}</a>{record.provenance.source.format === 'static-text-v1' && <> · {msg('Static text snapshot')}</>}</p>}
         <p>{msg('Receipt verified. This confirms byte lineage, not accuracy or authority.')}</p>
         <p>{record.processing.status === 'failed' ? msg('Extraction failed. No pages can be sent.') : needsPartialConsent(record) ? msg('Some pages are missing or unreadable. Only selected readable pages can be sent.') : msg('Extraction complete.')}</p>
         {record.content.extraction === 'ocr' || record.content.extraction === 'mixed' ? <p>{msg('OCR was used. Check the page text against the original.')}</p> : null}
         {record.processing.errors.map((error, index) => <p key={index} className={styles.problem}><code>{error.code}</code>{error.page !== null && <> · {msg('Page {{number}}', { number: error.page })}</>}<br />{error.message}</p>)}
         {record.content.truncated && <p>{msg('Processing stopped before the whole document was read.')}</p>}
-        <div className={styles.pages}>{record.content.pages.filter(page => !citation || page.number === citation.page).map(page => <section key={page.number}>
+        <div className={styles.pages}>{record.content.pages.filter(page => !citation || reference.pages.includes(page.number) && (citationProblem || page.number === citation.page)).map(page => <section key={page.number}>
           <div className={styles.pageHeading}><label><input type="checkbox" checked={canUse.has(page.number) && reference.pages.includes(page.number)} disabled={disabled || !onChange || !canUse.has(page.number)} onChange={e => onChange?.({ ...reference, pages: e.target.checked ? [...reference.pages, page.number].sort((a,b) => a-b) : reference.pages.filter(n => n !== page.number) })} /> {msg('Page {{number}}', { number: page.number })}</label>
             <span>{page.unmapped > 0 ? msg('Unreadable characters') : page.status === 'ok' ? page.extraction === 'ocr' ? msg('OCR') : msg('Text') : page.status === 'no-text' ? msg('Blank page') : page.status === 'needs-ocr' ? msg('Needs OCR') : msg('Failed')}</span></div>
           {page.text && <p className={styles.pageText}>{page.text}</p>}

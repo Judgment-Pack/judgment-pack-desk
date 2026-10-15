@@ -11,17 +11,19 @@ import (
 )
 
 var (
-	ErrRun    = errors.New("Codex could not complete this run")
-	ErrLimit  = errors.New("the Codex run reached its limit")
-	ErrSignIn = errors.New("connect a ChatGPT account before running Codex")
+	ErrRun     = errors.New("Codex could not complete this run")
+	ErrLimit   = errors.New("the Codex run reached its limit")
+	ErrSignIn  = errors.New("connect a ChatGPT account before running Codex")
+	ErrRetries = errors.New("Codex automatic recovery exhausted")
 )
 
 // Only these presentation fields and host-tool requests can leave the bridge.
 type RunEvent struct {
-	Type  string `json:"type"`
-	ID    string `json:"id,omitempty"`
-	Text  string `json:"text"`
-	Phase string `json:"phase,omitempty"`
+	Type    string `json:"type"`
+	ID      string `json:"id,omitempty"`
+	Text    string `json:"text"`
+	Phase   string `json:"phase,omitempty"`
+	Attempt int    `json:"attempt,omitempty"`
 }
 type ToolCall struct {
 	ID        string          `json:"id"`
@@ -62,13 +64,6 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 	if err != nil {
 		return err
 	}
-	if !m.mu.TryLock() {
-		return ErrBusy
-	}
-	if m.closed || m.disconnecting || m.active != nil || m.pending != nil {
-		m.mu.Unlock()
-		return ErrBusy
-	}
 	ctx, release := m.operation(ctx)
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	stopSession := context.AfterFunc(owner.Session, cancel)
@@ -77,11 +72,17 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 	if !owner.alive() {
 		cancel()
 	}
+	if err = m.admitRun(ctx, request.WaitForAvailability, emit); err != nil {
+		return err
+	}
 	if err = m.ready(ctx); err != nil {
 		m.mu.Unlock()
 		return err
 	}
-	account, err := m.readAccount(ctx, true)
+	// Check native account presence without forcing a credential refresh.
+	// Discovery/preflight must not mutate sign-in; Codex owns token renewal
+	// during execution. Explicit refresh remains a separate account action.
+	account, err := m.readAccount(ctx, false)
 	if err != nil || !account.Authenticated {
 		m.mu.Unlock()
 		if err != nil {
@@ -204,6 +205,7 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 		}
 		return emit(event)
 	}
+	retries := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -250,7 +252,9 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 					err   error
 				}
 				answered := make(chan answer, 1)
-				callCtx, stop := context.WithTimeout(ctx, 60*time.Second)
+				// The host owns each tool timeout (including configured search timeouts).
+				// Keep the overall run deadline; do not cut off a valid longer search.
+				callCtx, stop := context.WithCancel(ctx)
 				go func() {
 					value, err := execute(callCtx, ToolCall{ID: id, Name: call.Name, Arguments: call.Arguments})
 					answered <- answer{value, err}
@@ -355,12 +359,85 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 				}
 				return nil
 			case "error":
-				// Native errors may contain prompts, account data or provider bodies.
-				return ErrRun
+				// Pinned v2 ErrorNotification. Raw errors can contain prompts or
+				// credentials: retain only the retry flag and scoped identities.
+				var d struct {
+					Thread    string `json:"threadId"`
+					Turn      string `json:"turnId"`
+					WillRetry *bool  `json:"willRetry"`
+					Error     *struct {
+						Message *string `json:"message"`
+					} `json:"error"`
+				}
+				if json.Unmarshal(f.Params, &d) != nil || d.Thread != threadID || d.Turn != turnID || d.WillRetry == nil || d.Error == nil || d.Error.Message == nil {
+					return ErrRun
+				}
+				if !*d.WillRetry {
+					if retries > 0 {
+						return ErrRetries
+					}
+					return ErrRun
+				}
+				// Codex owns backoff and recovery within this turn. Two recovery
+				// notices are allowed in total; no new thread or tool replay.
+				if retries >= 2 {
+					return ErrRetries
+				}
+				retries++
+				if err := deliver(RunEvent{Type: "retry", Attempt: retries}); err != nil {
+					return err
+				}
 			default:
 				// Lifecycle, token-accounting and fixed native-utility notifications
 				// are counted but never forwarded as raw payloads.
 			}
+		}
+	}
+}
+
+// admitRun waits only before admission, never around Run or a native request.
+// Status/discovery can briefly own mu; an existing run can own active. Neither
+// should interrupt a research sequence. The acquired lock transfers to Run.
+func (m *Manager) admitRun(ctx context.Context, wait bool, emit func(RunEvent) error) error {
+	if wait {
+		if err := emit(RunEvent{Type: "waiting"}); err != nil {
+			return err
+		}
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if m.mu.TryLock() {
+			if wait && (m.closed || m.disconnecting) {
+				m.mu.Unlock()
+				return ErrUnavailable
+			}
+			if !m.closed && !m.disconnecting && m.active == nil && m.pending == nil {
+				if wait {
+					// The journal must leave Waiting before any native call.
+					if err := emit(RunEvent{Type: "admitted"}); err != nil {
+						m.mu.Unlock()
+						return err
+					}
+				}
+				if err := ctx.Err(); err != nil {
+					m.mu.Unlock()
+					return err
+				}
+				return nil
+			}
+			m.mu.Unlock()
+		}
+		if !wait {
+			return ErrBusy
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
 		}
 	}
 }

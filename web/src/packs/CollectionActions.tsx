@@ -6,6 +6,7 @@ import { useChats } from '../chat/ChatProvider'
 import { Button } from '../ui/Button'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { Tooltip } from '../ui/Tooltip'
+import { SelectionCountButton } from '../ui/SelectionTable'
 import { Alert } from '../ui/Alert'
 import { IconChevronDown, IconMore, IconPack, IconGraph, IconFolder, IconTrash, IconClose } from '../shell/icons'
 import { usePackFolders } from './folders/FolderContext'
@@ -50,7 +51,7 @@ export function SelectionActions({items, clear, onDelete, compact = false, tight
   }
   return <div className={styles.bulkActions} role="group" aria-label={msg('Selected item actions')}>
     <DropdownMenu.Root onOpenChange={open => {if (open) handoff.current = false}}>
-      <DropdownMenu.Trigger asChild><Button ref={trigger} variant="quiet" aria-label={msg('{{count}} selected', {count:items.length})}><span role="status">{tight ? items.length : msg('{{count}} selected', {count:items.length})}</span><IconChevronDown/></Button></DropdownMenu.Trigger>
+      <DropdownMenu.Trigger asChild><SelectionCountButton ref={trigger} count={items.length} compact={tight}/></DropdownMenu.Trigger>
       <DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={4} collisionPadding={16} onCloseAutoFocus={event => {if (handoff.current) event.preventDefault()}}>
         {folders && <DropdownMenu.Item icon={<IconFolder/>} disabled={!folders.query.data || folders.query.isError || folders.mutation.isPending}
           onSelect={() => {handoff.current = true; folders.edit({kind:'items',ids:items.map(item => item.id)}, trigger.current ?? undefined)}}>{msg('Move to folder…')}</DropdownMenu.Item>}

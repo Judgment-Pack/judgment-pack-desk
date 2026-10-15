@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/aicontext"
 	"io"
 	"net/http"
 	"strings"
@@ -21,6 +22,7 @@ type modelPreferences struct {
 	Thinking string   `json:"thinking,omitempty"`
 }
 type assistantProfile struct {
+	Context           *aicontext.Configuration     `json:"context,omitempty"`
 	Version           int                          `json:"profileVersion"`
 	Codex             *modelPreferences            `json:"codex,omitempty"`
 	API               *modelPreferences            `json:"api,omitempty"`
@@ -36,6 +38,15 @@ func decodeAssistantProfile(data []byte) (*assistantProfile, error) {
 		return fail()
 	}
 	var value map[string]any
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil || !uniqueJSON(data) {
+		return fail()
+	}
+	if raw, present := fields["context"]; present {
+		if _, err := aicontext.Decode(raw); err != nil {
+			return fail()
+		}
+	}
 	if json.Unmarshal(data, &value) == nil && value != nil && value["profileVersion"] == float64(2) {
 		return decodeAssistantProfileV2(data, value)
 	}
@@ -43,7 +54,7 @@ func decodeAssistantProfile(data []byte) (*assistantProfile, error) {
 		return fail()
 	}
 	for key := range value {
-		if !contains([]string{"profileVersion", "codex", "api"}, key) {
+		if !contains([]string{"profileVersion", "codex", "api", "context"}, key) {
 			return fail()
 		}
 	}
@@ -207,7 +218,7 @@ func decodeAssistantProfileV2(data []byte, value map[string]any) (*assistantProf
 	if !ok {
 		return fail()
 	}
-	keys := []string{"profileVersion", "inherit"}
+	keys := []string{"profileVersion", "inherit", "context"}
 	if !inherit {
 		keys = append(keys, "connections", "defaultConnection", "models")
 	}

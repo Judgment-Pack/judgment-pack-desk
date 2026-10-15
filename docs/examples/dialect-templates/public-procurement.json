@@ -1,0 +1,17 @@
+{
+  "templateVersion": 1,
+  "id": "public-procurement",
+  "name": "Public procurement notices",
+  "description": "Research public opportunities with source-backed descriptions and eligibility requirements.",
+  "license": "Apache-2.0",
+  "intent": "Research public procurement notices matching the agreed geography and subject. Keep unsupported information missing. Retain the official notice URL and quote the source for each supported value.",
+  "research": {
+    "target": "records",
+    "fields": [
+      {"name": "description", "description": "The published purpose of the notice", "type": "string"},
+      {"name": "eligibility", "description": "Eligibility requirements stated in the public notice", "type": "string"}
+    ],
+    "criteria": [],
+    "limits": {"records": 10, "searches": 10, "pages": 20, "modelCalls": 40}
+  }
+}

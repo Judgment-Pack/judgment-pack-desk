@@ -545,7 +545,7 @@ export type RepairResult = { state: 'repaired'; discontinuity: AuditDiscontinuit
  * and the runtime's own words, where it gave them, each as it said them.
  */
 export class RepairRefused extends Error {
-  constructor(message: string, readonly diagnostics: AuditDiagnostic[] = []) { super(message); this.name = 'RepairRefused' }
+  constructor(message: string, readonly diagnostics: AuditDiagnostic[] = [], readonly stale = false) { super(message); this.name = 'RepairRefused' }
 }
 
 /**
@@ -554,7 +554,8 @@ export class RepairRefused extends Error {
  * words beside them are shown as it said them.
  */
 export const REPAIR_REASONS = [
-  sourceMessage('The trail changed after the decision record showed it, so nothing was repaired. Check the decision record again.'),
+  sourceMessage('Safe repair requires Runtime 0.30.0 or later. Update Runtime, then refresh history.'),
+  sourceMessage('History changed since you reviewed it. No repair was made.'),
   sourceMessage('Nothing was repaired: this project\'s jpack.json declares no audit directory, so it keeps no trail.'),
   sourceMessage('Nothing was repaired: the runtime did not check the trail again, so Desk could not tell that it is the trail the decision record showed. It said:'),
   sourceMessage('The runtime did not report a repair. It said:'),
@@ -592,9 +593,9 @@ export async function repairTrail(token: string): Promise<RepairResult> {
   const unread = msg('Desk could not read what the repair answered. The decision record, checked again, shows what the trail holds now.')
   const response = await deskFetch('/api/audit/repair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
   if (!response.ok) {
-    let body: { error?: unknown; diagnostics?: unknown } = {}
+    let body: { error?: unknown; diagnostics?: unknown; code?: unknown } = {}
     try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
-    throw new RepairRefused(text(body.error) ? body.error : unread, list(body.diagnostics, isDiagnostic) ? body.diagnostics : [])
+    throw new RepairRefused(text(body.error) ? body.error : unread, list(body.diagnostics, isDiagnostic) ? body.diagnostics : [], body.code === 'stale')
   }
   const value: unknown = await response.json()
   if (!object(value) || value.state !== 'repaired' || !isDiscontinuity(value.discontinuity) || value.discontinuity.line <= value.discontinuity.damagedLine) {

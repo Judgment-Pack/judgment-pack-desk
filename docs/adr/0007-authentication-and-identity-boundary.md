@@ -5,6 +5,23 @@ Hosted deployment and multi-user authorization remain proposed and out of scope.
 
 Date: 2026-09-23.
 
+## Local-password amendment — 2026-10-12
+
+The approved local flow adds an optional, single-owner Desk password alongside
+initial OIDC setup. Terminal-code setup remains the default bootstrap. Admin
+requires an authenticated session to set a password and the current password to
+change it. Either action replaces the local policy and ends all existing
+sessions. Enabled OIDC and password modes are mutually exclusive; neither is a
+fallback for the other. Password mode also disables launch-secret and automatic
+local-access entry. The existing local OS-owner reset command handles recovery.
+
+This is a limited amendment to the original exclusion of a custom password
+store below: one salted Argon2id verifier for this loopback installation, with
+bounded requests, rate limiting and expiring sessions. It does not introduce
+hosted passwords, accounts, email recovery, MFA, or a password grant. Hosted
+identity continues to belong to the external provider. A local OS owner can
+reset the policy; a Desk password is not encryption of local files.
+
 ## Context
 
 Local Desk binds loopback. By default, initial setup requires a code printed by

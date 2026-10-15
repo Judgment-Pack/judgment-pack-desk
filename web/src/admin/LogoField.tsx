@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { useEffect, useRef, useState } from 'react'
 import { MAX_MARK_BYTES, ORGANIZATION_MARK_SAYS } from '../config/deskConfig'
 import { msg, systemMessage, useLocale } from '../i18n'
@@ -46,7 +47,7 @@ export function LogoField({ value, onChange, error, kind = 'logo', fallbackMark 
         <span className={styles.previewFrame}><BrandMark mark={value.trim() ? value : fallbackMark} className={favicon ? styles.faviconPreview : styles.preview} /></span>
         <input {...wiring} ref={input} type="file" hidden accept={types.join(',')}
           onChange={event => { upload(event.target.files?.[0]); event.target.value = '' }} />
-        <Button disabled={reading} onClick={() => input.current?.click()}>{reading ? msg('Loading…') : msg('Upload file')}</Button>
+        <Button disabled={reading} onClick={() => input.current?.click()}>{reading ? <LoadingState inline>{msg('Loading…')}</LoadingState> : msg('Upload file')}</Button>
         <Button variant="quiet" disabled={reading || !value.trim()} onClick={() => { setUploadError(''); onChange('') }}>{favicon ? msg('Use logo') : msg('Reset to default')}</Button>
       </div>}
     </Field>

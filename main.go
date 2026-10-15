@@ -42,6 +42,13 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) == 2 && os.Args[1] == "--desk-home-layout-version" {
+		fmt.Println("1")
+		return nil
+	}
+	if len(os.Args) == 2 && os.Args[1] == "--input-source-adapter" {
+		return desk.RunInputSourceAdapter(os.Stdin, os.Stdout)
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--local-gateway-worker" {
 		return desk.RunLocalGatewayWorker(os.Stdin, os.Stdout)
 	}
@@ -86,8 +93,15 @@ func run() error {
 	// directory checked is not the directory served. See `desk.OpenProject`.
 	// A missing standard config base is normal on a fresh installation. Any
 	// unsafe/unavailable location is still reported by the custody layer.
-	_ = desk.PrepareDeskConfigBase(desk.DeskConfigDirFor(""))
-	project, err := desk.OpenProject(flag.Arg(0), desk.DeskConfigDirFor(""))
+	if err := desk.RecoverDeskHomeMigration(); err != nil {
+		return err
+	}
+	configDir, err := desk.ResolveDeskConfigDir()
+	if err != nil {
+		return err
+	}
+	_ = desk.PrepareDeskConfigBase(configDir)
+	project, err := desk.OpenProject(flag.Arg(0), configDir)
 	if err != nil {
 		return err
 	}
@@ -146,14 +160,21 @@ func run() error {
 	}
 
 	// The Jobs policy flags write themselves into the Config: see Apply.
+	homeMoveShutdown := make(chan struct{}, 1)
 	srv, err := desk.New(jobsPolicy.Apply(desk.Config{
 		RunnerBin:           runnerExecutable,
 		RunnerInputProfiles: profiles,
 		RunnerConnections:   connections,
-		CodexBin:            *codexBin,
-		Root:                project,
-		JpackBin:            runtimeBin,
-		LocalGatewayBundle:  desk.LocalGatewayBundleDir(),
+		HomeMoveShutdown: func() {
+			select {
+			case homeMoveShutdown <- struct{}{}:
+			default:
+			}
+		},
+		CodexBin:           *codexBin,
+		Root:               project,
+		JpackBin:           runtimeBin,
+		LocalGatewayBundle: desk.LocalGatewayBundleDir(),
 		// The port this listener binds, handed over because the handoff
 		// cookie's name carries it: a cookie's origin has no port, so two
 		// desks on one host would otherwise share one handoff.
@@ -190,7 +211,10 @@ func run() error {
 	}
 
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-homeMoveShutdown:
+		}
 		shutdown, cancel := context.WithTimeout(context.Background(), desk.ShutdownGrace)
 		defer cancel()
 		_ = httpSrv.Shutdown(shutdown)
@@ -212,7 +236,10 @@ func run() error {
 	if err := httpSrv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
-	return nil
+	if err := srv.Close(); err != nil {
+		return err
+	}
+	return srv.FinishDeskHomeMove()
 }
 
 // Read only by the backend; never a VITE_* setting or a browser credential.

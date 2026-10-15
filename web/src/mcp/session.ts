@@ -1,4 +1,4 @@
-import { finishSignIn } from '../auth/flow'
+import { authCall, finishSignIn, type SignInStatus } from '../auth/flow'
 import { SourceError, sourceMessage } from '../i18n/source'
 /**
  * The session this page holds, and the **one** bootstrap that gets it.
@@ -17,8 +17,10 @@ import { SourceError, sourceMessage } from '../i18n/source'
  *
  *  1. `jpack-desk` prints `/launch?secret=…`. Opening it sets a one-shot,
  *     sixty-second handoff cookie and redirects to `/`.
- *  2. This module calls `POST /api/session` **exactly once per page load**,
- *     which spends that handoff and answers `{id, subject, issuer}`.
+ *  2. This module reads the public sign-in status once. Password/provider
+ *     installations reuse only a confirmed saved session or show sign-in.
+ *     Otherwise one `POST /api/session` spends the launch handoff and answers
+ *     `{id, subject, issuer}`.
  *  3. The id goes in `sessionStorage` under a key naming this origin, and on
  *     every later request as `Authorization: Bearer <id>` — or, on the
  *     WebSocket upgrade, as a subprotocol offer, because a browser's
@@ -243,7 +245,9 @@ export async function signOut(): Promise<void> {
 }
 
 /**
- * The exchange itself: one `POST /api/session`, and what to do with each answer.
+ * The bootstrap checks sign-in mode first. In password/provider mode the
+ * optional saved bearer is checked by that status read; the launch exchange is
+ * skipped. Other modes retain one `POST /api/session` and its existing handling.
  *
  * - **200** — the handoff was spent for a fresh id. It replaces whatever was in
  *   storage, because the id the chassis just minted is the one the chassis
@@ -267,6 +271,21 @@ async function beginSession(): Promise<string | null> {
     if (returned.id) hold(returned.id)
     else { try { sessionStorage.removeItem(sessionStorageKey()) } catch { /* No usable session. */ } }
     return returned.id
+  }
+  // Password/provider installations cannot mint a session through the legacy
+  // launch exchange. Check this tab's optional bearer without an expected 401;
+  // SessionGate still verifies identity before mounting the private workspace.
+  try {
+    const status = await authCall<SignInStatus>('status', undefined, stored ?? undefined, AbortSignal.timeout(10_000))
+    if (typeof status?.enabled !== 'boolean' || typeof status?.unavailable !== 'boolean' || typeof status?.sessionActive !== 'boolean' || status.unavailable) throw new Error('Sign-in status unavailable')
+    if (status.enabled) {
+      if (status.sessionActive && stored) return stored
+      try { sessionStorage.removeItem(sessionStorageKey()) } catch { /* Storage may be disabled. */ }
+      return null
+    }
+  } catch {
+    unavailable = true
+    return null
   }
   let answered: Response
   try {
@@ -446,7 +465,7 @@ export function giveThisPageASessionForTesting(id: string): void {
   forgotten = null
 }
 
-/** A backend-issued owner setup session is persisted before a full page reload. */
+/** A backend-issued entry session (setup or password) is persisted before a full page reload. */
 export function keepSetupSession(id: string): void {
   if (!/^[a-f0-9]{48}$/.test(id)) throw new Error('invalid setup session')
   window.sessionStorage.setItem(sessionStorageKey(), id)

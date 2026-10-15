@@ -14,7 +14,7 @@ import { LANGUAGES } from '../../../i18n/locales'
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ASSISTANT_ENGINES, ASSISTANT_TOOLS } from '../../../config/deskConfig'
 import { CERTIFICATION_IS_TOTAL, CERTIFIED_ENGINES, loadEngine } from '../index'
 import { ChannelHasOneConsumer, eventChannel } from './channel'
@@ -129,6 +129,12 @@ function anthropicTurn(step: {
     event('content_block_stop', { index })
     index += 1
   }
+  if (step.tool !== undefined && step.text) {
+    event('content_block_start', { index, content_block: { type: 'text', text: '' } })
+    event('content_block_delta', { index, delta: { type: 'text_delta', text: step.text } })
+    event('content_block_stop', { index })
+    index += 1
+  }
   if (step.tool !== undefined) {
     event('content_block_start', {
       index,
@@ -159,20 +165,21 @@ function geminiTurn(step: {
   tool?: { name: string; args: unknown }
 }): string {
   const lines: string[] = []
-  const frame = (parts: unknown[]) =>
+  const frame = (parts: unknown[], final = false) =>
     lines.push(
-      `data: ${JSON.stringify({ candidates: [{ content: { role: 'model', parts }, index: 0 }] })}\n\n`
+      `data: ${JSON.stringify({ candidates: [{ content: { role: 'model', parts }, index: 0, ...(final ? {finishReason:'STOP'} : {}) }] })}\n\n`
     )
   if (step.reasoning !== undefined) {
     frame([
       { text: step.reasoning, thought: true, thoughtSignature: step.signature ?? 'c2ln' }
     ])
   }
+  if (step.tool && step.text) frame([{text:step.text}])
   frame([
     step.tool !== undefined
       ? { functionCall: { name: step.tool.name, args: step.tool.args } }
       : { text: step.text ?? '' }
-  ])
+  ], true)
   return lines.join('')
 }
 
@@ -669,8 +676,8 @@ describe('the tools this engine offers, and the schemas it writes', () => {
       )
     )
     const tools = seen[0]!.body.tools as { function: { name: string; parameters: unknown } }[]
-    expect(tools.map((tool) => tool.function.name)).toEqual(['validate'])
-    expect(tools[0]!.function.parameters).toEqual(served)
+    expect(tools.map((tool) => tool.function.name)).toEqual(['list_context', 'read_context', 'validate'])
+    expect(tools.find(t=>t.function.name==='validate')!.function.parameters).toEqual(served)
   })
 
   it('refuses a tool the runtime served without a schema, rather than inventing one', async () => {
@@ -731,8 +738,7 @@ describe('exactly one end, on every path', () => {
     const events = await drain(vercel.start(session(call)))
     const errors = events.filter((event) => event.type === 'error')
     expect(errors).toHaveLength(1)
-    expect((errors[0] as { message: string }).message).toContain('409')
-    expect((errors[0] as { message: string }).message).toContain('no key stored')
+    expect(errors[0]).toMatchObject({failure:{code:'authentication',status:409}})
     // No address in it, not even the placeholder the SDK's own error carries.
     expect((errors[0] as { message: string }).message).not.toContain('relay.invalid')
     expect(events.filter((event) => event.type === 'end')).toHaveLength(1)
@@ -1649,7 +1655,7 @@ describe('what the author is told when the endpoint refuses', () => {
   // Browser Stop/refusal regressions are also exercised by
   // scripts/chat-response-check.mjs; a jsdom test cannot reproduce the SDK's
   // non-Node telemetry path.
-  it('reports the status and the endpoint’s own sentence, and ends once', async () => {
+  it('reports typed status without the endpoint’s prose, and ends once', async () => {
     const call: ModelCall = async () =>
       new Response(JSON.stringify({ error: { message: 'this endpoint refuses everything' } }), {
         status: 400,
@@ -1658,8 +1664,8 @@ describe('what the author is told when the endpoint refuses', () => {
     const events = await drain(vercel.start(session(call)))
     expect(events.map((event) => event.type)).toEqual(['error', 'end'])
     const said = (events[0] as { message: string }).message
-    expect(said).toContain('400')
-    expect(said).toContain('this endpoint refuses everything')
+    expect(events[0]).toMatchObject({failure:{code:'invalid-request',status:400}})
+    expect(said).not.toContain('this endpoint refuses everything')
     // …and no address in it: the SDK's error carries the placeholder origin,
     // which says nothing useful and reads as a real host.
     expect(said).not.toContain('relay.invalid')
@@ -2018,9 +2024,10 @@ describe('a schema refusal is one wire’s business, on this engine too', () => 
   it.each([
     ['openai-compatible' as const, 'Unsupported response type: json_object'],
     ['anthropic' as const, 'properties is not permitted here']
-  ])('leaves a %s 400 naming an ordinary keyword exactly as it was', async (family, message) => {
+  ])('classifies a %s 400 without exposing provider prose', async (family, message) => {
     const said = await failure(family, message)
-    expect(said).toContain(message)
+    expect(said).not.toContain(message)
+    expect(said).toContain('request was rejected')
     expect(said).not.toContain('removal list')
     expect(said).not.toContain('OpenAPI')
   })
@@ -2073,7 +2080,7 @@ describe('host tools: the desk’s own, executed on the page', () => {
     expect(events[1]).toMatchObject({ type: 'tool_result', name: 'search_sources', isError: false, text: 'src-1: a hit' })
     // The model was offered the host tool beside the runtime's, under the desk's schema.
     const offered = (seen[0]!.body.tools as { function: { name: string } }[]).map((tool) => tool.function.name)
-    expect(offered).toEqual(['search_sources', 'validate', 'experimental_evaluate'])
+    expect(offered).toEqual(['search_sources', 'list_context', 'read_context', 'validate', 'experimental_evaluate'])
   })
 
   it('reports a host tool that threw as a refused result, and goes on', async () => {
@@ -2093,7 +2100,8 @@ describe('host tools: the desk’s own, executed on the page', () => {
       )
     )
     expect(events[1]).toMatchObject({ type: 'tool_result', name: 'search_sources', isError: true })
-    expect((events[1] as { text: string }).text).toContain('refused: the budget of 8 searches is spent')
+    expect(events[1]).toMatchObject({structured:{failure:{code:'tool-failed',source:'tool'}}})
+    expect((events[1] as {text:string}).text).not.toContain('the budget of 8 searches')
     expect(events.at(-1)).toEqual({ type: 'end' })
   })
 
@@ -2151,11 +2159,11 @@ describe('host tools: the desk’s own, executed on the page', () => {
     expect((events[0] as { message: string }).message).toContain('named like a tool the runtime serves')
   })
 
-  it('offers no host tool where the session hands none', async () => {
+  it('offers only shared context host tools where the session hands none', async () => {
     const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
     await drain(vercel.start(session(call)))
     const offered = (seen[0]!.body.tools as { function: { name: string } }[]).map((tool) => tool.function.name)
-    expect(offered).toEqual(['validate', 'experimental_evaluate'])
+    expect(offered).toEqual(['list_context', 'read_context', 'validate', 'experimental_evaluate'])
   })
 })
 
@@ -2261,4 +2269,162 @@ it('graph authoring uses its proposal envelope and host-tool instructions', asyn
   expect(JSON.stringify(seen[0])).toContain('graph authoring assistant')
   expect(JSON.stringify(seen[0])).toContain('graph_validate and graph_explain')
   expect(events.some(event => event.type === 'proposal')).toBe(true)
+})
+
+it.each(['openai-compatible','anthropic','gemini'] as const)('pauses %s at a question without another model request or a fake answer',async family=>{
+ const {questionTool}=await import('../../questions')
+ const {interviewQuestion}=await import('../../../testing/question')
+ const wire=family==='anthropic'?anthropicTurn:family==='gemini'?geminiTurn:turn
+ const scripted=scriptedCall([wire({text:'Here are the tradeoffs.',tool:{name:'ask_user',args:interviewQuestion}})])
+ const events=await drain(vercel.start(session(scripted.call,{allowConversation:true,interactive:true,hostTools:[questionTool],model:{family,model:'fixture-model',call:scripted.call},thinking:normalize('off',family)})))
+ expect(scripted.seen).toHaveLength(1)
+ const questionAt=events.findIndex(e=>e.type==='user_question')
+ expect(events.slice(0,questionAt).some(e=>e.type==='message_progress'&&e.text==='Here are the tradeoffs.')).toBe(true)
+ expect(events.filter(e=>e.type==='user_question'),JSON.stringify(events)).toEqual([{type:'user_question',id:expect.any(String),question:interviewQuestion}])
+ expect(events.filter(e=>e.type==='error'||e.type==='proposal'||e.type==='tool_result')).toEqual([])
+ expect(events.filter(e=>e.type==='end')).toHaveLength(1)
+})
+
+it('does not dispatch later host work in the same model response after a question', async () => {
+  const { questionTool } = await import('../../questions')
+  const { interviewQuestion } = await import('../../../testing/question')
+  const execute = vi.fn(async () => ({content: []}))
+  const frame = (delta: unknown, finish_reason: string | null) => `data: ${JSON.stringify({id:'c',object:'chat.completion.chunk',model:'m',choices:[{index:0,delta,finish_reason}]})}\n\n`
+  const tools = [{name:'ask_user',args:interviewQuestion},{name:'later_work',args:{}}]
+  const wire = frame({tool_calls:tools.map((tool,index)=>({index,id:`call-${index}`,type:'function',function:{name:tool.name,arguments:JSON.stringify(tool.args)}}))},null) + frame({},'tool_calls') + 'data: [DONE]\n\n'
+  const scripted = scriptedCall([wire])
+  const events = await drain(vercel.start(session(scripted.call,{interactive:true,allowConversation:true,hostTools:[questionTool,{name:'later_work',description:'Later work',inputSchema:{type:'object'},execute}]})))
+  expect(execute).not.toHaveBeenCalled()
+  expect(events.filter(e => e.type === 'user_question')).toHaveLength(1)
+  expect(scripted.seen).toHaveLength(1)
+})
+
+it.each(['openai-compatible','anthropic','gemini'] as const)('corrects a malformed question through the %s tool result before pausing',async family=>{
+ const {questionTool}=await import('../../questions')
+ const {interviewQuestion}=await import('../../../testing/question')
+ const wire=family==='anthropic'?anthropicTurn:family==='gemini'?geminiTurn:turn
+ const bad={...interviewQuestion,options:[interviewQuestion.options[0],interviewQuestion.options[0]]}
+ const scripted=scriptedCall([wire({tool:{name:'ask_user',args:bad}}),wire({tool:{name:'ask_user',args:interviewQuestion}})])
+ const events=await drain(vercel.start(session(scripted.call,{allowConversation:true,interactive:true,hostTools:[questionTool],model:{family,model:'fixture-model',call:scripted.call},thinking:normalize('off',family)})))
+ expect(scripted.seen).toHaveLength(2)
+ expect(events.find(e=>e.type==='tool_result')).toMatchObject({name:'ask_user',isError:true,structured:{questionFailure:'options'}})
+ expect(events.filter(e=>e.type==='user_question')).toHaveLength(1)
+ expect(events.some(e=>e.type==='error')).toBe(false)
+})
+
+it.each(['openai-compatible','anthropic','gemini'] as const)('opens a %s question with omitted optional presentation fields',async family=>{
+ const {questionTool}=await import('../../questions')
+ const {interviewQuestion}=await import('../../../testing/question')
+ const wire=family==='anthropic'?anthropicTurn:family==='gemini'?geminiTurn:turn
+ const {recommendation:_reason,recommendedOptionId:_id,...base}=interviewQuestion
+ const question={...base,options:base.options.map(({id,label})=>({id,label}))}
+ const scripted=scriptedCall([wire({tool:{name:'ask_user',args:question}})])
+ const events=await drain(vercel.start(session(scripted.call,{allowConversation:true,interactive:true,hostTools:[questionTool],model:{family,model:'fixture-model',call:scripted.call},thinking:normalize('off',family)})))
+ expect(events.filter(e=>e.type==='user_question')).toHaveLength(1)
+ expect(events.find(e=>e.type==='user_question')).toMatchObject({question:{recommendedOptionId:null,recommendation:null,options:base.options.map(({id,label})=>({id,label,description:''}))}})
+ expect(events.some(e=>e.type==='tool_result'||e.type==='error')).toBe(false)
+ expect(scripted.seen).toHaveLength(1)
+})
+
+it.each(['openai-compatible','anthropic','gemini'] as const)('bounds a long UTF-8 prompt on the actual %s wire and keeps the latest request',async family=>{
+ const wire=family==='anthropic'?anthropicTurn:family==='gemini'?geminiTurn:turn
+ const scripted=scriptedCall([wire({text:'Ready'})])
+ const events=await drain(vercel.start(session(scripted.call,{prompt:'Original task\n'+('Earlier material 😀 " '.repeat(24000))+'\nLATEST REQUEST: map current dialect',allowConversation:true,interactive:true,adversarialReview:false,model:{family,model:'fixture-model',call:scripted.call},thinking:normalize('off',family)})))
+ expect(events.filter(e=>e.type==='error')).toEqual([])
+ expect(scripted.seen).toHaveLength(1)
+ const body=JSON.stringify(scripted.seen[0]!.body)
+ expect(new TextEncoder().encode(body).length).toBeLessThan(180000)
+ expect(body).toContain('LATEST REQUEST: map current dialect')
+ expect(body).toContain('read_context')
+ expect(body).toContain('Complete current request')
+})
+
+
+// Execute real SDK tool turns, rather than answering the first projected request.
+// Previously all 20 turns could read context and leave result.text empty.
+it.each(['openai-compatible','anthropic','gemini'] as const)('reserves the final %s request for synthesis after repeated retained-context reads',async family=>{
+ const {MAX_TURNS}=await import('../contract')
+ const wire=family==='anthropic'?anthropicTurn:family==='gemini'?geminiTurn:turn
+ const seen:Record<string,unknown>[]=[]
+ const message='Why does the no-routing case return unresolved?'
+ const call:ModelCall=async(_suffix,request)=>{
+  const body=JSON.parse(request.body);seen.push(body)
+  const json=JSON.stringify(body)
+  expect(json).toContain(message)
+  const id=json.match(/[0-9a-f-]{36}:current-request:[0-9a-f]{16}/)?.[0]
+  expect(id).toBeDefined()
+  const final=seen.length===MAX_TURNS
+  if(final){
+   expect(json).toContain('This is the final request within this turn budget')
+   expect(body.tools??[]).toEqual([])
+  }
+  return new Response(wire(final?{text:'The missing-size exception precedes the no-routing rule. No changes were saved.'}:{tool:{name:'read_context',args:{id,path:'/input',offset:(seen.length-1)*128,limit:256}}}),{status:200,headers:{'content-type':'text/event-stream'}})
+ }
+ const events=await drain(vercel.start(session(call,{prompt:'Earlier messages '.repeat(20000),context:{currentRequest:{message,input:'Facts and observed results. '.repeat(1000)}},allowConversation:true,interactive:true,adversarialReview:false,model:{family,model:'fixture',call},thinking:normalize('off',family)})))
+ expect(seen).toHaveLength(MAX_TURNS)
+ expect(events.filter(e=>e.type==='tool_result')).toHaveLength(MAX_TURNS-1)
+ expect(events.filter(e=>e.type==='tool_result').every(e=>!e.isError)).toBe(true)
+ expect(events.filter(e=>e.type==='message')).toEqual([{type:'message',text:'The missing-size exception precedes the no-routing rule. No changes were saved.'}])
+ expect(events.filter(e=>e.type==='error')).toEqual([])
+ expect(events.filter(e=>e.type==='end')).toHaveLength(1)
+})
+it.each(['empty','tool'] as const)('reports exhaustion accurately and refuses final-step work when the provider returns %s',async response=>{
+ const {MAX_TURNS}=await import('../contract')
+ let calls=0
+ const execute=vi.fn(async()=>({content:[]}))
+ const call:ModelCall=async(_suffix,request)=>{
+  calls++
+  const id=request.body.match(/[0-9a-f-]{36}:current-request:[0-9a-f]{16}/)?.[0]
+  const final=calls===MAX_TURNS
+  const step=final?(response==='empty'?{text:''}:{tool:{name:'propose_change',args:{}}}):{tool:{name:'read_context',args:{id,path:'/message',limit:128+calls}}}
+  return new Response(geminiTurn(step),{status:200,headers:{'content-type':'text/event-stream'}})
+ }
+ const events=await drain(vercel.start(session(call,{prompt:'history '.repeat(40000),context:{currentRequest:{message:'Explain the mismatch',input:'Omitted size facts'}},hostTools:[{name:'propose_change',description:'Propose change',effect:'proposal',inputSchema:{type:'object'},execute}],allowConversation:true,interactive:true,adversarialReview:false,model:{family:'gemini',model:'fixture',call},thinking:normalize('off','gemini')})))
+ expect(calls).toBe(MAX_TURNS);expect(execute).not.toHaveBeenCalled()
+ expect(events.filter(e=>e.type==='message'||e.type==='proposal')).toEqual([])
+ expect(events.filter(e=>e.type==='error')).toEqual([])
+ expect(events.find(e=>e.type==='budget_paused')).toMatchObject({checkpoint:{status:'paused',used:20,limit:20}})
+ expect(events.filter(e=>e.type==='end')).toHaveLength(1)
+})
+
+it.each(['openai-compatible','anthropic','gemini'] as const)('resumes %s after budget approval with exact tool results and task progress',async family=>{
+ const {extendExecution,readExecution}=await import('../../execution/state')
+ const wire=family==='anthropic'?anthropicTurn:family==='gemini'?geminiTurn:turn
+ let calls=0
+ const executionInput={message:'Fix the exception, test it and propose the change.',input:'Current pack revision 4; keep expectations unchanged.'}
+ const call:ModelCall=async(_suffix,request)=>{
+  calls++;const body=JSON.parse(request.body),text=JSON.stringify(body).replaceAll('\\"','"')
+  const step=calls===1?{tool:{name:'update_plan',args:{explanation:'Inspect then verify the proposed fix',plan:[{step:'Inspect exception',status:'completed'},{step:'Verify fix',status:'in_progress'}]}}}
+   :calls<20?{tool:{name:'get_schema',args:{section:calls}}}
+   :calls===20?{text:''}
+   :{text:'The saved check result supports the fix. The proposed change still needs review.'}
+  if(calls===21){expect(text).toContain('Verify fix');expect(text).toContain('retainedOperations');expect(text).toContain('"used":20');expect(text).toContain('"limit":30')}
+  return new Response(wire(step),{status:200,headers:{'content-type':'text/event-stream'}})
+ }
+ const callTool=vi.fn(async()=>({content:[{type:'text',text:'EXACT CONTRACT: preserve decimals as strings'}]}))
+ const input=session(call,{prompt:executionInput.input,context:{currentRequest:executionInput},tools:[{name:'get_schema',inputSchema:{type:'object',properties:{}}}],callTool,allowConversation:true,interactive:true,adversarialReview:false,model:{family,model:'fixture',call},thinking:normalize('off',family)})
+ const first=await drain(vercel.start(input)),pause=first.find(e=>e.type==='budget_paused')
+ expect(pause?.type).toBe('budget_paused');if(pause?.type!=='budget_paused')return
+ expect(callTool).toHaveBeenCalledTimes(18)
+ const saved=readExecution(JSON.parse(JSON.stringify(pause.checkpoint)))!
+ expect(saved.operations.some(op=>JSON.stringify(op.result).includes('EXACT CONTRACT'))).toBe(true)
+ const second=await drain(vercel.start({...input,context:{...input.context,execution:extendExecution(saved)}}))
+ expect(calls).toBe(21);expect(callTool).toHaveBeenCalledTimes(18)
+ expect(second.filter(e=>e.type==='error')).toEqual([])
+ expect(second.find(e=>e.type==='message')).toMatchObject({text:expect.stringContaining('proposed change still needs review')})
+ expect(second.filter(e=>e.type==='execution_checkpoint').at(-1)).toMatchObject({checkpoint:{status:'complete',used:21,limit:30,grants:[{from:20,to:30}]}})
+})
+
+it('honors a model-requested budget pause without spending the reserved final request',async()=>{
+ let calls=0
+ const call:ModelCall=async()=>{
+  calls++
+  return new Response(turn({tool:calls===19?{name:'request_budget_increase',args:{reason:'Boundary checks remain.',nextStep:'Verify the two boundaries.'}}:{name:'get_schema',args:{section:calls}}}),{status:200,headers:{'content-type':'text/event-stream'}})
+ }
+ const input=session(call,{allowConversation:true,interactive:true,adversarialReview:false,context:{currentRequest:{message:'Verify the repair',input:'Current pack'}},tools:[{name:'get_schema',inputSchema:{type:'object',properties:{}}}],callTool:async()=>({content:[{type:'text',text:'Contract'}]})})
+ const events=await drain(vercel.start(input))
+ expect(calls).toBe(19)
+ expect(events.find(e=>e.type==='budget_paused')).toMatchObject({checkpoint:{used:19,limit:20,reason:'Boundary checks remain. Next: Verify the two boundaries.'}})
+ expect(events.filter(e=>e.type==='end')).toHaveLength(1)
+ expect(events.filter(e=>e.type==='error')).toEqual([])
 })

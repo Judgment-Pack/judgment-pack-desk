@@ -38,6 +38,7 @@ import { OverflowTooltip } from './Tooltip'
 export interface SelectOption {
   value: string
   label: string
+  disabled?: boolean
 }
 
 export function Select({
@@ -48,6 +49,7 @@ export function Select({
   placeholder,
   disabled,
   quiet = false,
+  size = 'default',
   ...described
 }: {
   id: string
@@ -57,6 +59,7 @@ export function Select({
   placeholder?: string
   disabled?: boolean
   quiet?: boolean
+  size?: 'default' | 'small'
   'aria-describedby'?: string
   'aria-invalid'?: boolean
 }) {
@@ -72,10 +75,10 @@ export function Select({
       // selected", which is the state that was meant.
       value={value ?? ''}
       onValueChange={(next) => {
-        if (offered.has(next)) onValueChange(next)
+        if (offered.has(next) && !options.find(option => option.value === next)?.disabled) onValueChange(next)
       }}
     >
-      <OverflowTooltip selector="[data-value]" content={options.find(option => option.value === value)?.label}><RadixSelect.Trigger id={id} className={styles.trigger} data-quiet={quiet || undefined} {...described}>
+      <OverflowTooltip selector="[data-value]" content={options.find(option => option.value === value)?.label}><RadixSelect.Trigger id={id} className={[styles.trigger, size === 'small' && styles.small].filter(Boolean).join(' ')} data-quiet={quiet || undefined} {...described}>
         <RadixSelect.Value data-value placeholder={placeholder} />
         <RadixSelect.Icon className={styles.icon}>
           <IconChevronDown />
@@ -85,7 +88,7 @@ export function Select({
         <RadixSelect.Content className={styles.content} position="popper" sideOffset={4}>
           <RadixSelect.Viewport className={styles.viewport}>
             {options.map((option) => (
-              <RadixSelect.Item key={option.value} value={option.value} className={styles.item}>
+              <RadixSelect.Item key={option.value} value={option.value} disabled={option.disabled} className={styles.item}>
                 <RadixSelect.ItemText>{option.label}</RadixSelect.ItemText>
               </RadixSelect.Item>
             ))}

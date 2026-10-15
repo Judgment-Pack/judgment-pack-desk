@@ -42,6 +42,15 @@ session-bound run method re-verifies subscription authentication before starting
 a constrained turn; neither path grants native permission requests. Ordinary chat backups remain allowlisted
 and do not include this profile.
 
+Ordinary status, model discovery and run preflight use `account/read` with
+`refreshToken: false`. Loading the composer must not force credential renewal:
+the pinned Codex process can return an empty account after a failed forced
+refresh and retain that empty state until restarted, while its saved credential
+is still present. Native execution owns token renewal. Explicit `/refresh`
+remains separate. Password setup, password changes and Desk session revocation
+do not disconnect a completed ChatGPT connection; pending login attempts remain
+bound to their initiating session and policy.
+
 ## Closed HTTP contract
 
 All routes require a minted Desk browser session and the existing origin

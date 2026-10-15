@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { useQuery } from '@tanstack/react-query'
@@ -34,7 +35,7 @@ export function GraphPlanView({ graphId }: { graphId: string }) {
         {query.isPending && <Loading what={msg("the plan")} />}
         {query.error && <p className="note note-warn">{query.error.message}</p>}
         {plan && <PlanBody plan={plan} />}
-        <Button variant="quiet" onClick={() => void query.refetch()} disabled={query.isFetching}>{query.isFetching && !query.isPending ? msg("Reading…") : msg("Read the plan again")}</Button>
+        <Button variant="quiet" onClick={() => void query.refetch()} disabled={query.isFetching}>{query.isFetching && !query.isPending ? <LoadingState inline>{msg('Reading…')}</LoadingState> : msg("Read the plan again")}</Button>
       </>
     </Section>
     <GraphFindingsPanel graphId={graphId} sha256={sha256} />

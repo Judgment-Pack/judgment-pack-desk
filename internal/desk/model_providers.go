@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"path/filepath"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
 )
@@ -37,7 +36,7 @@ func (s *Server) initModelProviders() {
 		return
 	}
 	s.codex = codexbridge.NewLazyManager(codexbridge.Options{
-		Binary: s.cfg.CodexBin, ProfileDir: filepath.Join(s.configDir, "codex"), ProjectDir: s.projectDir,
+		Binary: s.cfg.CodexBin, ProfileDir: platformPath(s.configDir, "codex"), ProjectDir: s.projectDir,
 	})
 	// No profile lease, subprocess or download until an account operation.
 

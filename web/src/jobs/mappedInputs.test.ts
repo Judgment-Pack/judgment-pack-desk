@@ -6,11 +6,11 @@ import { acquire, seal } from '../research/gatewayClient'
 import type { Acquired } from '../research/gatewayClient'
 import { ConnectionRequestError } from '../connections/client'
 import { DESK_DEFAULTS } from '../config/deskConfig'
-import type { MappingV2, ProfileEntry } from './mappingTypes'
+import type { DialectV2, ProfileEntry } from './dialectTypes'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('../research/gatewayClient',()=>({acquire:vi.fn(),seal:vi.fn(),newResearchSession:()=> 'one-session'}))
 const profile: ProfileEntry={digest:'sha256:pin',profile:{id:'records',publicKey:'ab'.repeat(32),authority:'gateway:test',source:'records',class:'record',shape:'mcp',adapter:{name:'mcp',version:'1',digest:'sha256:adapter'},endpoint:null,tools:['lookup']}}
-const mapping: MappingV2={version:2,sources:[{name:'first',kind:'operation',profile:'records',profileDigest:profile.digest,maxAge:300,arguments:{tool:'lookup',arguments:{}},read:{copy:{facts:[{target:'/id',source:'/id'}],evidence:[]}}},{name:'second',kind:'operation',profile:'records',profileDigest:profile.digest,maxAge:300,arguments:{tool:'lookup',arguments:{id:{$param:'id'}}},parameters:{id:{from:'first',pointer:'/id',type:'integer'}},read:{copy:{facts:[{target:'/name',source:'/name'}],evidence:[]}}}]}
+const mapping: DialectV2={version:2,sources:[{name:'first',kind:'operation',profile:'records',profileDigest:profile.digest,maxAge:300,arguments:{tool:'lookup',arguments:{}},read:{copy:{facts:[{target:'/id',source:'/id'}],evidence:[]}}},{name:'second',kind:'operation',profile:'records',profileDigest:profile.digest,maxAge:300,arguments:{tool:'lookup',arguments:{id:{$param:'id'}}},parameters:{id:{from:'first',pointer:'/id',type:'integer'}},read:{copy:{facts:[{target:'/name',source:'/name'}],evidence:[]}}}]}
 const config={...DESK_DEFAULTS.research,gateway:{url:'http://127.0.0.1:1',authority:profile.profile.authority,signer:{algorithm:'ed25519' as const,public:profile.profile.publicKey}}}
 const options=()=>({mapping,caseValue:{},files:{},selections:{},config,profiles:[profile],signal:new AbortController().signal,progress:vi.fn()})
 beforeEach(()=>{vi.resetAllMocks();vi.mocked(seal).mockResolvedValue(undefined as never)})
@@ -58,7 +58,7 @@ it('ignores late replies after cancellation',async()=>{
  expect(acquire).not.toHaveBeenCalled()
 })
 it('places picker values only at explicit typed case parameters',()=>{
- const drive: MappingV2={version:2,case:{parameters:{file:{pointer:'/picked/id',type:'string'},grant:{pointer:'/picked/grant',type:'string'}},facts:[],evidence:[]},sources:[{name:'drive',kind:'selected-file',provider:'google-drive',arguments:{fileId:{$param:'file'},grant:{$param:'grant'}},read:{copy:{facts:[],evidence:[]}}}]}
+ const drive: DialectV2={version:2,case:{parameters:{file:{pointer:'/picked/id',type:'string'},grant:{pointer:'/picked/grant',type:'string'}},facts:[],evidence:[]},sources:[{name:'drive',kind:'selected-file',provider:'google-drive',arguments:{fileId:{$param:'file'},grant:{$param:'grant'}},read:{copy:{facts:[],evidence:[]}}}]}
  expect(mappedCase(drive,{subject:'test'},{drive:{fileId:'selected',grant:'grant'}})).toEqual({subject:'test',picked:{id:'selected',grant:'grant'}})
  drive.case!.parameters!.file!.pointer='/__proto__/polluted'
  expect(()=>mappedCase(drive,{}, {drive:{fileId:'selected',grant:'grant'}})).toThrow()
@@ -66,7 +66,7 @@ it('places picker values only at explicit typed case parameters',()=>{
 })
 
 it('normalizes a Drive acquisition reconnect refusal and still seals the abandoned session',async()=>{
- const drive:MappingV2={version:2,case:{parameters:{file:{pointer:'/id',type:'string'},grant:{pointer:'/grant',type:'string'}},facts:[],evidence:[]},sources:[{name:'drive',kind:'selected-file',provider:'google-drive',profile:'records',profileDigest:profile.digest,arguments:{fileId:{$param:'file'},grant:{$param:'grant'}},read:{copy:{facts:[],evidence:[]}}}]}
+ const drive:DialectV2={version:2,case:{parameters:{file:{pointer:'/id',type:'string'},grant:{pointer:'/grant',type:'string'}},facts:[],evidence:[]},sources:[{name:'drive',kind:'selected-file',provider:'google-drive',profile:'records',profileDigest:profile.digest,arguments:{fileId:{$param:'file'},grant:{$param:'grant'}},read:{copy:{facts:[],evidence:[]}}}]}
  vi.mocked(jobsAPI).mockResolvedValue({next:{name:'drive',kind:'selected-file',provider:'google-drive',profile:'records',source:'records',arguments:{fileId:'chosen',grant:'grant'}}})
  vi.mocked(acquire).mockRejectedValue(Error('source failed: reconnect-required'))
  await expect(prepareMappedInputs({...options(),mapping:drive,selections:{drive:{fileId:'chosen',grant:'grant'}},config:{...config,managedLocal:true,documents:{enabled:true,source:'documents',maxFileBytes:200000,maxRequestBytes:1000000,maxResponseBytes:1000000}}})).rejects.toEqual(new ConnectionRequestError('reconnect-required','google-drive'))

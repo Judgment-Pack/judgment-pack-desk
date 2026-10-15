@@ -57,7 +57,7 @@ describe('the pack testing workspace', () => {
     await waitFor(() => expect(finish).toBeDefined())
     fireEvent.change(facts, { target: { value: '{"amount":20}' } })
     await act(async () => finish(answer))
-    await screen.findByText(/Inputs changed since this result/)
+    await screen.findByText(/Dialects changed since this result/)
     expect(facts.value).toBe('{"amount":20}')
     const call = calls.find((entry) => entry.name === 'experimental_evaluate')!
     expect(call.args).toEqual({ pack_id: 'sample', facts: '{"amount":10}', rehearsal: true })
@@ -66,7 +66,7 @@ describe('the pack testing workspace', () => {
     ])
     fireEvent.click(screen.getByRole('button', { name: 'Restore last run inputs' }))
     expect(facts.value).toBe('{"amount":10}')
-    expect(screen.queryByText(/Inputs changed since this result/)).toBeNull()
+    expect(screen.queryByText(/Dialects changed since this result/)).toBeNull()
   })
 
   it('keeps invalid input local and offers saved cases separately from exploratory runs', async () => {

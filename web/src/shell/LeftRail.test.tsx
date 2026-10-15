@@ -8,11 +8,19 @@ import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { LeftRail } from './LeftRail'
 import { HeaderBar } from './HeaderBar'
-import { forgetAuthorBridge, publishDirty } from './authorBridge'
+import {useState} from 'react'
+import {UnsavedChangesProvider,useRegisteredChanges} from './UnsavedChanges'
+let publishDirty: (path:string,dirty:boolean)=>void
+function Editors(){
+ const [values,setValues]=useState<Record<string,boolean>>({})
+ publishDirty=(path,dirty)=>setValues(previous=>({...previous,[path]:dirty}))
+ useRegisteredChanges(!!values['jpack.json'],'Leave?',{name:'jpack.json'})
+ useRegisteredChanges(!!values['packs/vendor-onboarding.pack.json'],'Leave?',{name:'packs/vendor-onboarding.pack.json'})
+ return null
+}
 
 afterEach(() => {
   cleanup()
-  forgetAuthorBridge()
 })
 
 function packs(ids: string[]) {
@@ -37,7 +45,7 @@ function renderRail(
         path: '*',
         element: (
           <McpContext.Provider value={value}>
-            <Tooltip.Provider>
+            <Tooltip.Provider><UnsavedChangesProvider><Editors/>
               {header && <HeaderBar railIsDrawer={false} railOpen onToggleRail={() => {}} />}
               <LeftRail
                 mode={mode}
@@ -45,7 +53,7 @@ function renderRail(
                 drawerOpen={false}
                 onDrawerOpenChange={() => {}}
               />
-            </Tooltip.Provider>
+            </UnsavedChangesProvider></Tooltip.Provider>
           </McpContext.Provider>
         )
       }
@@ -108,7 +116,7 @@ describe('the left rail', () => {
     // when it would start being useful.
     renderRail(packs(['intake-triage', 'vendor-onboarding']))
     const link = await screen.findByRole('link', { name: /^Library/ })
-    expect(link.getAttribute('href')).toBe('/packs')
+    expect(link.getAttribute('href')).toBe('/library')
     // The **accessible name**, not the markup. Every rail entry carries an
     // `aria-label`, which replaces its contents, so a count that lived only in
     // a child span was a number no screen reader ever reached.
@@ -136,7 +144,7 @@ describe('the left rail', () => {
     expect(link.getAttribute('aria-label')).toBe('Library')
   })
 
-  it.each(['/packs', '/packs/vendor', '/packs/vendor/matrix'])('marks Packs active at %s', async path => {
+  it.each(['/library', '/packs/vendor', '/packs/vendor/matrix', '/graphs', '/graphs/flow'])('marks Library active at %s', async path => {
     renderRail(packs([]), {}, path)
     await waitFor(() =>
       expect(
@@ -150,7 +158,7 @@ describe('the left rail', () => {
     renderRail(stub, {}, '/graphs/onboarding', false, mode)
     await waitFor(() => expect(stub.calls).toHaveLength(1))
     const links = screen.getAllByRole('link')
-    expect(links.slice(0, 2).map(link => link.getAttribute('href'))).toEqual(['/packs', '/jobs'])
+    expect(links.slice(0, 3).map(link => link.getAttribute('href'))).toEqual(['/library', '/dialects', '/jobs'])
     expect(screen.queryByRole('link', { name: 'Graphs' })).toBeNull()
     expect(screen.getByRole('link', { name: /^Library/ }).getAttribute('aria-current')).toBe('page')
     expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])

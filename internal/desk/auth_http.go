@@ -26,6 +26,9 @@ func (s *Server) registerSignIn() {
 	s.mux.HandleFunc("GET /api/auth/callback", s.handleSignInCallback)
 	s.mux.HandleFunc("POST /api/auth/complete", s.handleSignInComplete)
 	s.mux.HandleFunc("POST /api/auth/enable", s.handleSignInEnable)
+	s.mux.HandleFunc("POST /api/auth/password/set", s.handlePasswordSave)
+	s.mux.HandleFunc("POST /api/auth/password/change", s.handlePasswordSave)
+	s.mux.HandleFunc("POST /api/auth/password/login", s.handlePasswordLogin)
 }
 func (s *Server) signInCallbackURL() string {
 	return fmt.Sprintf("http://127.0.0.1:%d/api/auth/callback", s.cfg.Port)
@@ -102,6 +105,10 @@ func (a *signInState) admitLocked() bool {
 	return true
 }
 func (s *Server) handleSignInStatus(w http.ResponseWriter, r *http.Request) {
+	// An optional bearer reports only whether this tab has a usable session.
+	// No session is minted, and an anonymous visit is a normal status read.
+	// sessionOf checks policy itself, so call it before taking the policy lock.
+	_, sessionActive := s.sessionOf(r)
 	a := s.signIn
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -109,7 +116,7 @@ func (s *Server) handleSignInStatus(w http.ResponseWriter, r *http.Request) {
 	if a.active != nil {
 		label = a.active.Provider.Label
 	}
-	signInReply(w, 200, map[string]any{"enabled": a.active != nil, "label": label, "unavailable": a.problem, "localAccess": s.cfg.LocalAccess && a.active == nil && !a.problem})
+	signInReply(w, 200, map[string]any{"enabled": a.active != nil, "mode": a.modeLocked(), "label": label, "unavailable": a.problem, "localAccess": s.cfg.LocalAccess && a.active == nil && !a.problem, "sessionActive": sessionActive})
 }
 func (s *Server) handleSignInSetup(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.signInBrowser(w, r); !ok {
@@ -162,8 +169,8 @@ func (s *Server) handleSignInSettings(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.pruneLocked()
-	out := map[string]any{"enabled": a.active != nil, "callbackUrl": s.signInCallbackURL(), "storageAvailable": s.assistant.usable()}
-	if a.active != nil {
+	out := map[string]any{"mode": a.modeLocked(), "enabled": a.active != nil, "callbackUrl": s.signInCallbackURL(), "storageAvailable": s.assistant.usable()}
+	if a.active != nil && a.active.Password == nil {
 		cfg := a.active.Provider
 		cfg.Secret = ""
 		out["provider"] = cfg
@@ -217,7 +224,7 @@ func (s *Server) handleSignInStart(w http.ResponseWriter, r *http.Request) {
 	}
 	a := s.signIn
 	a.mu.Lock()
-	if a.problem || (!testing && a.active == nil) {
+	if a.problem || a.modeLocked() == "password" || (!testing && a.active == nil) {
 		a.mu.Unlock()
 		signInFailure(w, 503, "setup-required")
 		return
@@ -427,6 +434,10 @@ func (s *Server) handleSignInEnable(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.pruneLocked()
+	if a.problem || a.modeLocked() == "password" {
+		signInFailure(w, 409, "password-mode-changed")
+		return
+	}
 	attempt := a.attempts[body.ID]
 	if attempt == nil || !attempt.tested || attempt.admin != admin || a.lastTest[admin] != attempt.id || attempt.generation != a.generation {
 		signInFailure(w, 409, "test-required")

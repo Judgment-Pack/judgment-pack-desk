@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { RadioGroup } from 'radix-ui'
 import { msg } from '../i18n'
 import { IconCheck } from '../shell/icons'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import styles from './ModelMenuList.module.css'
 
 export interface ModelMenuOption { value: string; label: string; group?:string }
@@ -14,8 +14,8 @@ export function ModelMenuList({options,search,onSearch,value,onValueChange,selec
 }) {
   const rows=options.filter(row=>`${row.group??''} ${row.label} ${row.value}`.toLowerCase().includes(search.trim().toLowerCase()))
   return <>
-    <div className={styles.search}><Input type="search" aria-label={msg('Search models')} placeholder={msg('Search models')} value={search} onChange={event=>onSearch(event.target.value)} onKeyDown={event=>{
-      if(event.key==='ArrowDown'){event.preventDefault();event.currentTarget.parentElement?.nextElementSibling?.querySelector<HTMLElement>('[data-model-option]')?.focus()}
+    <div className={styles.search} data-model-search><SearchInput type="search" aria-label={msg('Search models')} placeholder={msg('Search models')} value={search} onChange={event=>onSearch(event.target.value)} onKeyDown={event=>{
+      if(event.key==='ArrowDown'){event.preventDefault();event.currentTarget.closest('[data-model-search]')?.nextElementSibling?.querySelector<HTMLElement>('[data-model-option]:not(:disabled)')?.focus()}
     }}/></div>
     {selected ? <div className={styles.list} role="group" aria-label={msg('Allowed models')} onKeyDown={event=>{
       if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return

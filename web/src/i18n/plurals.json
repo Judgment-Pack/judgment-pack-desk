@@ -1,8 +1,6 @@
 {
   "Work · {{count}} steps": "Work · {{count}} step",
   "{{count}} required evidence items": "{{count}} required evidence item",
-  "{{count}} members unchanged: {{members}}": "{{count}} member unchanged: {{members}}",
-  "{{count}} elements unchanged, in the same place.": "{{count}} element unchanged, in the same place.",
   "{{count}} expectations did not pass runtime expectation validation. Testing is paused until each correction is reviewed and approved.": "{{count}} expectation did not pass runtime expectation validation. Testing is paused until each correction is reviewed and approved.",
   "{{count}} excerpts": "{{count}} excerpt",
   "{{count}} invalid expectations · testing paused": "{{count}} invalid expectation · testing paused",
@@ -26,5 +24,19 @@
   "{{count}} loaded items": "{{count}} loaded item",
   "{{count}} more outcomes in Logic.": "{{count}} more outcome in Logic.",
   "{{count}} steps": "{{count}} step",
-  "{{count}} distinct packs": "{{count}} distinct pack"
+  "{{count}} distinct packs": "{{count}} distinct pack",
+  "Evaluate {{count}} records": "Evaluate {{count}} record",
+  "{{count}} records saved": "{{count}} record saved",
+  "{{count}} sources unavailable": "{{count}} source unavailable",
+  "Set review decision · {{count}} records": "Set review decision · {{count}} record",
+  "Selected records ({{count}})": "Selected record ({{count}})",
+  "Save {{count}} reviews": "Save {{count}} review",
+  "Applies the same decision and note to all {{count}} selected records.": "Applies the same decision and note to {{count}} selected record.",
+  "{{count}} retained sources · Record count is for this run.": "{{count}} retained source · Record count is for this run.",
+  "Reprocess {{count}} records": "Reprocess {{count}} record",
+  "{{count}} need correction": "{{count}} needs correction",
+  "{{count}} AI requests": "{{count}} AI request",
+  "{{count}} source requests": "{{count}} source request",
+  "Up to {{count}} concurrent AI tasks": "Up to {{count}} concurrent AI task",
+  "{{count}} coverage gaps": "{{count}} coverage gap"
 }

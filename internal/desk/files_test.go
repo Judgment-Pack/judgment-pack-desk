@@ -944,7 +944,7 @@ func TestStaleStagingFilesAreClearedAtStartup(t *testing.T) {
 
 	// This one never starts a server, so the port is only the field's
 	// requirement being met. See `startDesk` for the ones where it matters.
-	s, err := New(Config{ProjectDir: project, JpackBin: "jpack", Token: testToken, Port: testPort, Logger: log.New(io.Discard, "", 0)})
+	s, err := New(Config{DeskConfigDir: t.TempDir(), ProjectDir: project, JpackBin: "jpack", Token: testToken, Port: testPort, Logger: log.New(io.Discard, "", 0)})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -1514,7 +1514,7 @@ func TestRuntimeAndFileAPIShareOneProject(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	s, err := New(Config{ProjectDir: link, JpackBin: "jpack", Token: testToken, Port: testPort, Logger: log.New(io.Discard, "", 0)})
+	s, err := New(Config{DeskConfigDir: t.TempDir(), ProjectDir: link, JpackBin: "jpack", Token: testToken, Port: testPort, Logger: log.New(io.Discard, "", 0)})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

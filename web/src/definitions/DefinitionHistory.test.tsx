@@ -18,7 +18,7 @@ it('loads records only for the exact definition and never evaluates on tab navig
   expect(await screen.findByRole('heading',{name:'Decision recorded'})).toBeTruthy()
   expect(screen.getByText(/Signatures, checkpoints and timestamps have not been checked/)).toBeTruthy()
   fireEvent.click(screen.getByText('Technical details'))
-  fireEvent.click(screen.getByText('Inputs as evaluated'))
+  fireEvent.click(screen.getByText('Dialects as evaluated'))
   expect(screen.getByRole('region',{name:'Recorded inputs'}).textContent).toContain('9007199254740993')
   expect(fetcher.mock.calls.some(([url])=>url==='/api/definitions/history?kind=pack&id=urn%3Aone')).toBe(true)
   expect(fetcher.mock.calls.every(([url])=>['/api/definitions/history?','/api/briefs?','/api/pack-tests'].some(prefix=>url.startsWith(prefix)))).toBe(true)

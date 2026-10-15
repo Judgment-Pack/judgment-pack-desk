@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import type { NodePositions } from '../components/RelationshipMap'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
@@ -5,7 +6,7 @@ import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState, type ReactN
 import type { Viewport } from '@xyflow/react'
 import type { TraceEntry } from '../mcp/types'
 import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
+import { CollectionToolbar } from '../ui/CollectionToolbar'
 import { InspectionRow } from '../ui/InspectionRow'
 import { Menu, OptionsMenu } from '../ui/Menu'
 import { BuilderSplit } from '../builders/BuilderSplit'
@@ -152,19 +153,18 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
         : <p className={styles.note}>{msg("None declared.")}</p>}
     </section>
   }
-  const toolbar = <div className={styles.toolbar}>
+  const toolbar = <CollectionToolbar padded label={msg('Logic controls')} searchLabel={msg('Find pack item')} search={query} onSearch={onQuery}
+    onSearchKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();requestMatch()}}}
+    actions={()=><>
       {tools}
       <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'map', label: msg("Diagram") }, { value: 'list', label: msg("List") }]} />
-      <div role="search" className={styles.search}>
-        <Input type="search" aria-label={msg("Find pack item")} value={query} onChange={e => onQuery(e.target.value)} onKeyDown={event => {if (event.key === 'Enter') {event.preventDefault(); requestMatch()}}} placeholder={mode === 'map' ? msg("Find in map…") : msg("Filter items…")} />
-      </div>
       {searching && <Button variant="quiet" onClick={requestMatch} disabled={!matchPointers.size}>{msg("Next match")}</Button>}
       <OptionsMenu label={msg('Logic display options')}>
         <Menu.CheckboxItem checked={display.conditions} onCheckedChange={value=>updateDisplay({...display,conditions:!!value})}>{msg('Show list conditions')}</Menu.CheckboxItem>
         <Menu.CheckboxItem checked={display.grouped} onCheckedChange={value=>{setExpanded(new Set());updateDisplay({...display,grouped:!!value})}}>{msg('Group diagram items by effect')}</Menu.CheckboxItem>
       </OptionsMenu>
       <PackJumpTo model={model} at={at} onJump={pointer => { onQuery(''); if (mode === 'map' && !graph.nodes.some(node => node.items.some(item => item.pointer === pointer))) showDetails(pointer); else { select(pointer); setJump(pointer) } }} />
-    </div>
+    </>}/>
   const body = <section ref={root} className={styles.logic} data-mode={mode} aria-label={msg("Pack logic")}>
     <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
     {toolbar}
@@ -178,7 +178,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
     {mode === 'map' ? mapUnavailable ? <div className={styles.unavailable} role="status">
       <h2>{msg("Map unavailable")}</h2><p>{mapUnavailable}</p><Button onClick={() => onMode('list')}>{msg("Read List")}</Button>
     </div> : <>
-      <div className={styles.canvas} data-logic-canvas><Suspense fallback={<p role="status">{msg("Loading map…")}</p>}><RelationshipMap onClearSelection={onClearSelection} nodePositions={nodePositions} onNodePositionsChange={onNodePositionsChange} nodes={graphNodes} edges={graph.edges} unit={rem} nodeWidth={16 * rem} columnGap={3} viewport={viewport}
+      <div className={styles.canvas} data-logic-canvas><Suspense fallback={<LoadingState inset>{msg("Loading map…")}</LoadingState>}><RelationshipMap onClearSelection={onClearSelection} nodePositions={nodePositions} onNodePositionsChange={onNodePositionsChange} nodes={graphNodes} edges={graph.edges} unit={rem} nodeWidth={16 * rem} columnGap={3} viewport={viewport}
         focusRequest={focusRequest} onViewportChange={onViewport} onSelect={id => {
           const node = graph.nodes.find(n => n.id === id)
           if (!node) return

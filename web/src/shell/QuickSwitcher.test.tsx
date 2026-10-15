@@ -17,7 +17,7 @@ it('searches all destinations, navigates by keyboard, and records only the visit
  fireEvent.change(input,{target:{value:'finance'}})
  expect(screen.getAllByRole('option')).toHaveLength(1)
  fireEvent.keyDown(input,{key:'Enter'})
- await waitFor(()=>expect(screen.getByTestId('location').textContent).toBe('/packs?folder=finance'))
+ await waitFor(()=>expect(screen.getByTestId('location').textContent).toBe('/library?folder=finance'))
  expect(localStorage.getItem('jpack.quick-switch.v1:/fixture')).toContain('finance')
  fireEvent.keyDown(document.body,{key:'k',ctrlKey:true})
  fireEvent.change(screen.getByRole('combobox'),{target:{value:'policy draft'}})
