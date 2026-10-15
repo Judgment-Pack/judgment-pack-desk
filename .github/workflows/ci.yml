@@ -106,7 +106,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: Judgment-Pack/judgment-pack-spec
-          ref: a550d41
+          ref: a550d414b5a3159fe3526a93f6f56b8c0ccdb76d
           path: .spec
           persist-credentials: false
 
