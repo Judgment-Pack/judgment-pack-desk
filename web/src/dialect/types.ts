@@ -97,7 +97,7 @@ export interface Admission {
   facts?: Record<Pointer, string[]>; evidence?: Record<string, string[]>
 }
 interface DialectMembers {
-  case: DialectCase; admits?: Admission; unmapped?: Pointer[]; unmappedEvidence?: string[]
+  case?: DialectCase; admits?: Admission; unmapped?: Pointer[]; unmappedEvidence?: string[]
   provider?: ''; facts?: null; evidence?: null
 }
 export interface DialectDocumentV2 extends DialectMembers { version: 2; sources?: DialectSourceV2[] }

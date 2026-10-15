@@ -1,15 +1,17 @@
 import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
-import { dialectDigest } from '../dialect/canon'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { prepareMappedInputs, parseMappedObject, parseMapping, mappedCase } from './mappedInputs'
 import { jobsRequest, RetainedJSON } from './wire'
 import { jobsAPI } from './client'
+import { parseMapping as legacyParse, prepareMappedInputs as legacyPrepare } from '../dialect/__fixtures__/legacy-producer/producer/mappedInputs'
+import { jobsAPI as legacyAPI } from '../dialect/__fixtures__/legacy-producer/producer/client'
 import { acquire, seal } from '../research/gatewayClient'
 import type { Acquired } from '../research/gatewayClient'
 import { ConnectionRequestError } from '../connections/client'
 import { DESK_DEFAULTS } from '../config/deskConfig'
 import type { MappingV2, ProfileEntry } from './mappingTypes'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
+vi.mock('../dialect/__fixtures__/legacy-producer/producer/client',()=>({jobsAPI:vi.fn()}))
 vi.mock('../research/gatewayClient',()=>({acquire:vi.fn(),seal:vi.fn(),newResearchSession:()=> 'one-session'}))
 const profile: ProfileEntry={digest:'sha256:pin',profile:{id:'records',publicKey:'ab'.repeat(32),authority:'gateway:test',source:'records',class:'record',shape:'mcp',adapter:{name:'mcp',version:'1',digest:'sha256:adapter'},endpoint:null,tools:['lookup']}}
 const mapping: MappingV2=mappingFixture('sequential')
@@ -24,15 +26,24 @@ it('retains signed numeric spelling, rejects duplicate keys and bounds the wire 
  expect(()=>parseMappedObject('{"id":9007199254740993}')).toThrow()
  expect(parseMappedObject('{"id":7}')).toEqual({id:7})
 })
-it('preserves optional dialect members exactly, including omitted sources and explicit legacy members',()=>{
+it('restores the legacy default sources while retaining explicit members',()=>{
  for(const text of ['{"version":2,"case":{"facts":[],"evidence":[]}}','{"version":2,"case":{"facts":[],"evidence":[]},"provider":"","facts":null,"evidence":null}']) {
-  expect(parseMapping(text)).toEqual(JSON.parse(text))
-  expect(parseMapping(text)).not.toHaveProperty('sources')
+  expect(parseMapping(text)).toEqual({...JSON.parse(text),sources:[]})
  }
- expect(()=>parseMapping('{"version":2}')).toThrow()
+ expect(parseMapping('{"version":2}')).toEqual({version:2,sources:[]})
  expect(()=>parseMapping('{"version":2,"case":{"facts":[],"evidence":[]},"sources":null}')).toThrow()
- expect(()=>parseMapping('{"version":2,"version":2,"case":{"facts":[],"evidence":[]}}')).toThrow(/duplicate/)
- expect(Object.is(mappedCase(mapping,{zero:-0},{}).zero,-0)).toBe(true)
+ expect(()=>parseMapping('{"version":2,"version":2,"case":{"facts":[],"evidence":[]}}')).toThrow(/duplicate_member/)
+ expect(Object.is(mappedCase(mapping,{zero:-0},{}).zero,-0)).toBe(false)
+})
+it('accepts the legacy sequential mapping without case',()=>{
+ expect(mapping).not.toHaveProperty('case')
+ expect(parseMapping(JSON.stringify(mapping))).toEqual(legacyParse(JSON.stringify(mapping)))
+})
+it.each([{}, {facts:[]}, {evidence:[]}])('refuses partial copy arrays as the legacy producer did: %j',copy=>{
+ expect(()=>parseMapping(JSON.stringify({version:2,sources:[{name:'local',kind:'selected-file',provider:'local-file',read:{copy}}]}))).toThrow('The inputs could not be mapped.')
+ expect(()=>parseMapping(JSON.stringify({version:2,case:copy}))).toThrow('The inputs could not be mapped.')
+ expect(()=>legacyParse(JSON.stringify({version:2,sources:[{name:'local',kind:'selected-file',provider:'local-file',read:{copy}}]}))).toThrow('The inputs could not be mapped.')
+ expect(()=>legacyParse(JSON.stringify({version:2,case:copy}))).toThrow('The inputs could not be mapped.')
 })
 it('uses only Runner-expanded requests and one session, preserving exact responses in the final input',async()=>{
  const raw='{"result":{"id":7,"unused":1.000},"receipt":{},"salts":{}}'
@@ -56,10 +67,13 @@ it('does not fetch a skipped dependent source or invoke operational evaluation',
  expect(acquire).not.toHaveBeenCalled();expect(seal).not.toHaveBeenCalled()
  expect(jobsAPI).toHaveBeenCalledWith('inputs/next',expect.anything(),undefined,expect.any(AbortSignal))
 })
-it('uses the dialect digest when the preview returns no retained mapping digest',async()=>{
+it('leaves a missing Runner mapping digest undefined, as the legacy producer did',async()=>{
  vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{}},factsText:'{}'})
+ vi.mocked(legacyAPI).mockResolvedValue({input:{facts:{}},factsText:'{}'})
  const result=await prepareMappedInputs(options())
- expect(result.input.source?.mappingDigest).toBe(await dialectDigest(mapping))
+ expect(result).toEqual(await legacyPrepare({...options(),mapping:legacyParse(JSON.stringify(mapping)),profiles:[{...profile,profile:{...profile.profile,shape:'mcp'}}]}))
+ expect(result.input.source?.mappingDigest).toBeUndefined()
+ expect(jobsRequest(result.input)).not.toContain('"mappingDigest"')
  expect(vi.mocked(jobsAPI).mock.calls[0][1]).toEqual(expect.objectContaining({source:expect.not.objectContaining({mappingDigest:expect.anything()})}))
 })
 it('rejects changed relay pins and profile digests before any acquisition',async()=>{

@@ -1,0 +1,10 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"case\":{\"facts\":[],\"evidence\":[]},\"sources\":[{\"name\":\"conversion\",\"kind\":\"operation\",\"profile\":\"fx\",\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}},\"calculation\":{\"inputs\":{\"amount\":\"invoiceAmount\",\"currency\":\"invoiceCurrency\"},\"tables\":{\"ecb-rates\":86400,\"spot-rates\":3601}}}]}",
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {},
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"case\":{\"facts\":[],\"evidence\":[]},\"sources\":[{\"name\":\"conversion\",\"kind\":\"operation\",\"profile\":\"fx\",\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}},\"calculation\":{\"inputs\":{\"amount\":\"invoiceAmount\",\"currency\":\"invoiceCurrency\"},\"tables\":{\"ecb-rates\":86400,\"spot-rates\":3601}}}]},\"case\":{\"count\":7},\"sources\":{}}}",
+  "mappingDigest": "sha256:6c6e26a944a0e4a5419cef7d6a4be01627158e737b960c882b7745e236391e0e"
+}

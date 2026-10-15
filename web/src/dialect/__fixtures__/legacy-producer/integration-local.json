@@ -1,0 +1,11 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"case\":{\"facts\":[{\"target\":\"/manual\",\"source\":\"/manual\"}],\"evidence\":[]},\"sources\":[]}",
+  "integration": null,
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {},
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"case\":{\"facts\":[{\"target\":\"/manual\",\"source\":\"/manual\"}],\"evidence\":[]},\"sources\":[{\"name\":\"source1\",\"kind\":\"selected-file\",\"provider\":\"local-file\",\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}}]},\"case\":{\"count\":7},\"sources\":{}}}",
+  "mappingDigest": "sha256:e1be4d782beffb90419dbd3a07a5fd2ac547c8f0ad9169b41a7f6654ad981e81"
+}

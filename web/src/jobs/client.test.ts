@@ -1,12 +1,8 @@
-import { createHash, webcrypto } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { canonicalJobsRequest, jobsAPI, JobsRequestError } from './client'
-import { canonicalize, dialectDigest } from '../dialect/canon'
-import { canonicalText as oldCanonicalText } from '../research/verify/canon'
+import { canonicalize } from '../dialect/canon'
 import { deskMappings } from '../dialect/__fixtures__/desk-mappings'
 import { jobsRequest, RetainedJSON } from './wire'
-import { setSourceIntegration } from './jobIntegrations'
-import { setBinding } from './mappingEditorModel'
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }))
 vi.mock('../files/client', async original => ({ ...await original<typeof import('../files/client')>(), deskFetch: mocks.fetch }))
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals() })
@@ -33,35 +29,6 @@ it('carries no code for a Desk answer that has none', async () => {
   const refusal = await jobsAPI('jobs').catch(e => e)
   expect(refusal).toBeInstanceOf(JobsRequestError)
   expect(refusal).toMatchObject({ status: 503, code: undefined })
-})
-
-it.each(Object.entries(deskMappings))('%s: the existing mapping fixture keeps its canonical bytes and digest', async (_name, mapping) => {
-  vi.stubGlobal('crypto', webcrypto)
-  const oldBytes = oldCanonicalText(jobsRequest(mapping))
-  const oldDigest = 'sha256:' + createHash('sha256').update(oldBytes).digest('hex')
-  const canonical = new TextDecoder().decode(oldBytes)
-  expect(canonicalize(mapping)).toBe(canonical)
-  expect(await dialectDigest(mapping)).toBe(oldDigest)
-  const body = {source:{mapping,case:{},sources:{}}}
-  const encoded = canonicalJobsRequest(body)
-  expect(encoded).toBe(`{"source":{"mapping":${canonical},"case":{},"sources":{}}}`)
-  expect(JSON.parse(encoded)).toEqual(JSON.parse(jobsRequest(body)))
-  mocks.fetch.mockResolvedValue(answer(200, {}))
-  await jobsAPI('inputs/next', body)
-  expect(mocks.fetch.mock.calls[0][1].body).toBe(encoded)
-})
-
-it('keeps editor-produced local, Drive, operation and calculator mappings on the same canonical contract', async () => {
-  vi.stubGlobal('crypto', webcrypto)
-  const ordinary = {digest:'pin',profile:{id:'registry',shape:'mcp' as const,source:'registry',class:'record' as const,authority:'gateway',publicKey:'key',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,tools:['read']}}
-  const drive = {...ordinary,profile:{...ordinary.profile,source:'drive',shape:'http' as const}}
-  const calculator = {...ordinary,profile:{...ordinary.profile,calculator:{name:'calculator',version:'1'}}}
-  for (const entry of [undefined, ordinary, drive, calculator]) {
-    const mapping = setBinding(setSourceIntegration(deskMappings['integration-base'],entry),'facts','/manual','source1','/answer')
-    const oldBytes = oldCanonicalText(jobsRequest(mapping))
-    expect(canonicalize(mapping)).toBe(new TextDecoder().decode(oldBytes))
-    expect(await dialectDigest(mapping)).toBe('sha256:' + createHash('sha256').update(oldBytes).digest('hex'))
-  }
 })
 
 it('canonicalizes nested preview and constant-trigger mappings while preserving signed numbers and case data', () => {
@@ -95,7 +62,7 @@ it('leaves version-1 mappings and non-mapping requests byte for byte as before',
 })
 
 it('refuses a constant mapping with an exponent before fetch, while retaining non-mapping number literals', async () => {
-  await expect(jobsAPI('jobs/job/triggers', {input:{kind:'constant',value:'{"source":{"mapping":{"version":2,"maxAge":1e2}}}'}})).rejects.toThrow(/fraction or exponent/)
+  await expect(jobsAPI('jobs/job/triggers', {input:{kind:'constant',value:'{"source":{"mapping":{"version":2,"maxAge":1e2}}}'}})).rejects.toThrow(/integer_literal/)
   expect(mocks.fetch).not.toHaveBeenCalled()
   expect(JSON.parse(canonicalJobsRequest({input:{kind:'constant',value:'{"facts":{"n":1.0}}'}})).input.value).toBe('{"facts":{"n":1.0}}')
 })

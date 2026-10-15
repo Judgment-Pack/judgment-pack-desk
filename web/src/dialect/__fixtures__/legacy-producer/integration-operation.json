@@ -1,0 +1,30 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"case\":{\"facts\":[{\"target\":\"/manual\",\"source\":\"/manual\"}],\"evidence\":[]},\"sources\":[]}",
+  "integration": {
+    "digest": "pin",
+    "profile": {
+      "id": "registry",
+      "shape": "mcp",
+      "source": "registry",
+      "class": "record",
+      "authority": "gateway",
+      "publicKey": "key",
+      "adapter": {
+        "name": "mcp",
+        "version": "1",
+        "digest": "digest"
+      },
+      "endpoint": null,
+      "tools": [
+        "read"
+      ]
+    }
+  },
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {},
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"case\":{\"facts\":[{\"target\":\"/manual\",\"source\":\"/manual\"}],\"evidence\":[]},\"sources\":[{\"name\":\"source1\",\"kind\":\"operation\",\"profile\":\"registry\",\"profileDigest\":\"pin\",\"maxAge\":300,\"arguments\":{\"tool\":\"read\",\"arguments\":{}},\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}}]},\"case\":{\"count\":7},\"sources\":{}}}",
+  "mappingDigest": "sha256:e590dd0f10f904a70972d44d0c951ca47a8987557fb726d87b2c27a0d37a26dc"
+}

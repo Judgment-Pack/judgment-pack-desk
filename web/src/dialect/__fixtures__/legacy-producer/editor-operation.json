@@ -1,0 +1,10 @@
+{
+  "producer": "8d51f6d4470a885ce904fe0ebbc93053286f9cc9",
+  "input": "{\"version\":2,\"case\":{\"facts\":[],\"evidence\":[]},\"sources\":[{\"name\":\"records\",\"kind\":\"operation\",\"profile\":\"lookup\",\"maxAge\":300,\"arguments\":{\"tool\":\"lookup\",\"arguments\":{}},\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}}]}",
+  "caseValue": {
+    "count": 7
+  },
+  "selections": {},
+  "request": "{\"source\":{\"mapping\":{\"version\":2,\"case\":{\"facts\":[],\"evidence\":[]},\"sources\":[{\"name\":\"records\",\"kind\":\"operation\",\"profile\":\"lookup\",\"maxAge\":300,\"arguments\":{\"tool\":\"lookup\",\"arguments\":{}},\"read\":{\"copy\":{\"facts\":[],\"evidence\":[]}}}]},\"case\":{\"count\":7},\"sources\":{}}}",
+  "mappingDigest": "sha256:c6e8692402e58fafd3ebdc4c0a24fbd99a295e2699230f4ddf2fb7e990b680a4"
+}

@@ -4663,5 +4663,12 @@
   "{{count}} steps_one": "{{count}} paso",
   "{{count}} steps_other": "{{count}} pasos",
   "{{required}} required · {{optional}} optional": "{{required}} obligatorios · {{optional}} opcionales",
-  "{{status}} · recorded for these inputs": "{{status}} · registrado para estas entradas"
+  "{{status}} · recorded for these inputs": "{{status}} · registrado para estas entradas",
+  "Use valid Unicode characters without lone surrogates ({{section}}).": "Use caracteres Unicode válidos sin sustitutos aislados ({{section}}).",
+  "Write integers without fractions or exponents ({{section}}).": "Escriba números enteros sin fracciones ni exponentes ({{section}}).",
+  "Use whole numbers between −9007199254740991 and 9007199254740991 ({{section}}).": "Use números enteros entre −9007199254740991 y 9007199254740991 ({{section}}).",
+  "JSON may contain at most 64 nested containers ({{section}}).": "JSON puede contener como máximo 64 contenedores anidados ({{section}}).",
+  "Enter one valid JSON value. Check position {{offset}} ({{section}}).": "Introduzca un único valor JSON válido. Revise la posición {{offset}} ({{section}}).",
+  "JSON member “{{member}}” appears more than once ({{section}}).": "El miembro JSON «{{member}}» aparece más de una vez ({{section}}).",
+  "Use only JSON values with string member names and plain values ({{section}}).": "Use solo valores JSON con nombres de miembros de tipo cadena y valores simples ({{section}})."
 }

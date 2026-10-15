@@ -5,9 +5,10 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {afterEach,expect,it,vi} from 'vitest'
 import {MappingEditor} from './MappingEditor'
+import { languageReady, setLanguage } from '../i18n'
 import type {PackDocument} from '../mcp/types'
 import type {MappingV2} from './mappingTypes'
-afterEach(cleanup)
+afterEach(async()=>{cleanup();setLanguage('en');await languageReady()})
 it('keeps source edits pending until valid configuration is explicitly applied',async()=>{
  const onChange=vi.fn(),onInvalid=vi.fn(),onDirty=vi.fn()
  const mapping:MappingV2=mappingFixture('editor-operation')
@@ -61,4 +62,15 @@ it('explains calculator binding setup on adding a source and keeps ordinary sour
  expect(screen.getByLabelText('Request parameters (JSON)')).toBeTruthy()
  ui.rerender(draw(setSourceIntegration({version:2,case:{facts:[],evidence:[]}})))
  expect(screen.queryByText(/This source is a calculator/)).toBeNull()
+})
+
+it('translates a canonical rule error at the request editor boundary',async()=>{
+ setLanguage('fr');await languageReady()
+ const onChange=vi.fn()
+ render(<QueryClientProvider client={new QueryClient()}><MappingEditor doc={{} as PackDocument} mapping={mappingFixture('editor-operation')} profiles={[]} disabled={false} onChange={onChange} onInvalid={vi.fn()} onDirty={vi.fn()}/></QueryClientProvider>)
+ fireEvent.click(screen.getByRole('button',{name:'records'}))
+ fireEvent.change(screen.getByLabelText('Paramètres de requête (JSON)'),{target:{value:'{"count":1.0}'}})
+ fireEvent.click(screen.getByRole('button',{name:'Appliquer la configuration'}))
+ expect(screen.getByRole('alert').textContent).toBe('Écrivez des entiers sans fractions ni exposants (§1).')
+ expect(onChange).not.toHaveBeenCalled()
 })

@@ -1,33 +1,46 @@
 /** The two canonical forms of spec/dialect.md §§1 and 9.5. No schema interpretation. */
 export type JSONValue = null | boolean | number | string | JSONValue[] | { [name: string]: JSONValue }
 
+const sections = {
+  invalid_unicode: '§1', integer_literal: '§1', integer_range: '§1',
+  nesting_limit: '§12', invalid_json: '§1', duplicate_member: '§1',
+  non_json_object: '§1', non_string_member: '§1', accessor_member: '§1', non_json_value: '§1',
+} as const
+export type CanonErrorCode = keyof typeof sections
+
+/** Machine-readable rule failure. Presentation and translation belong to callers. */
 export class CanonError extends Error {
-  constructor(rule: string) { super(rule); this.name = 'CanonError' }
+  readonly section: typeof sections[CanonErrorCode]
+  constructor(readonly code: CanonErrorCode, readonly details: { offset?: number; member?: string } = {}) {
+    super(`${sections[code]}: ${code}`)
+    this.name = 'CanonError'
+    this.section = sections[code]
+  }
 }
 
 function unicode(value: string): void {
   for (const ch of value) {
     const point = ch.codePointAt(0)!
-    if (point >= 0xd800 && point <= 0xdfff) throw new CanonError('§1: strings must be well-formed Unicode (no lone surrogate)')
+    if (point >= 0xd800 && point <= 0xdfff) throw new CanonError('invalid_unicode')
   }
 }
 
 /** Validate the literal before conversion: JSON.parse alone loses 1.0 and 1e2. */
 function integer(literal: string): number {
-  if (!/^-?(0|[1-9][0-9]*)$/.test(literal)) throw new CanonError('§1: an integer has no fraction or exponent')
+  if (!/^-?(0|[1-9][0-9]*)$/.test(literal)) throw new CanonError('integer_literal')
   const value = Number(literal)
-  if (!Number.isSafeInteger(value)) throw new CanonError('§1: an integer must be within ±(2^53−1)')
+  if (!Number.isSafeInteger(value)) throw new CanonError('integer_range')
   return value // All accepted literals are exact in JS, including -0.
 }
 
 function nesting(depth: number): void {
-  if (depth >= 64) throw new CanonError('§12: document nesting exceeds 64 containers')
+  if (depth >= 64) throw new CanonError('nesting_limit')
 }
 
 /** Read one canonical-domain JSON value, refusing duplicates before they can be lost. */
 export function parseJSON(text: string): JSONValue {
   let at = 0
-  const fail = (): never => { throw new CanonError(`§1: expected exactly one RFC 8259 JSON value (offset ${at})`) }
+  const fail = (): never => { throw new CanonError('invalid_json', { offset: at }) }
   const space = () => { while (/[\x20\t\r\n]/.test(text[at] ?? '') && at < text.length) at++ }
   const string = (): string => {
     const start = at++
@@ -59,7 +72,7 @@ export function parseJSON(text: string): JSONValue {
           if (object) {
             if (text[at] !== '"') return fail()
             const name = string()
-            if (names.has(name)) throw new CanonError('§1: duplicate member name ' + JSON.stringify(name))
+            if (names.has(name)) throw new CanonError('duplicate_member', { member: name })
             names.add(name)
             space()
             if (text[at++] !== ':') return fail()
@@ -99,7 +112,7 @@ function render(value: unknown, preparation: boolean, depth = 0): string {
   if (value === null) return 'null'
   if (typeof value === 'boolean') return value ? 'true' : 'false'
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value)) throw new CanonError('§1: an integer must be within ±(2^53−1), with no fraction or exponent')
+    if (!Number.isSafeInteger(value)) throw new CanonError('integer_range')
     return preparation && Object.is(value, -0) ? '-0' : String(value)
   }
   if (typeof value === 'string') {
@@ -111,15 +124,15 @@ function render(value: unknown, preparation: boolean, depth = 0): string {
     nesting(depth)
     if (Array.isArray(value)) return '[' + Array.from(value, item => render(item, preparation, depth + 1)).join(',') + ']'
     const proto = Object.getPrototypeOf(value)
-    if (proto !== Object.prototype && proto !== null) throw new CanonError('§1: only JSON objects have a canonical form')
-    if (Object.getOwnPropertySymbols(value).length) throw new CanonError('§1: JSON member names must be strings')
+    if (proto !== Object.prototype && proto !== null) throw new CanonError('non_json_object')
+    if (Object.getOwnPropertySymbols(value).length) throw new CanonError('non_string_member')
     return '{' + Object.keys(value).sort(compareNames).map(name => {
       const descriptor = Object.getOwnPropertyDescriptor(value, name)!
-      if (!('value' in descriptor)) throw new CanonError('§1: a JSON member must hold a value, not an accessor')
+      if (!('value' in descriptor)) throw new CanonError('accessor_member')
       return render(name, preparation, depth + 1) + ':' + render(descriptor.value, preparation, depth + 1)
     }).join(',') + '}'
   }
-  throw new CanonError('§1: value is outside the JSON canonical domain')
+  throw new CanonError('non_json_value')
 }
 
 /** §1 gateway form: code point order, raw Unicode, -0 becomes 0. */

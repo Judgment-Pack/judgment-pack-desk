@@ -133,3 +133,11 @@ it.each(['complete','cancel','unmount'] as const)('offers explicit reconnect for
  if(action==='cancel'){expect(screen.getByText('Selected')).toBeTruthy();expect(screen.getByRole('button',{name:'Reconnect'})).toBeTruthy()}
  else {expect(screen.queryByText('Selected')).toBeNull();expect(screen.getByText('This selection expired. Search again and reselect your sources.')).toBeTruthy()}
 })
+
+it('shows the translated canonical rule in the advanced mapping error',async()=>{
+ await view()
+ fireEvent.click(screen.getByText('Edit mapping'))
+ fireEvent.change(screen.getByLabelText('Mapping JSON'),{target:{value:'{"version":2,"version":2}'}})
+ expect(screen.getByRole('alert').textContent).toBe('JSON member “version” appears more than once (§1).')
+ expect(prepareMappedInputs).not.toHaveBeenCalled()
+})

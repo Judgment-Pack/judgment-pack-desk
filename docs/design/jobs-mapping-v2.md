@@ -9,10 +9,11 @@ V1 local-file and Drive jobs keep their original picker and mapping workflow.
 [`spec/dialect.md` §2](https://github.com/Judgment-Pack/judgment-pack-spec/blob/a550d41/spec/dialect.md#2-the-dialect-document),
 and `mappingDigest` is its §2 digest. `web/src/dialect/` owns its types and the
 canonical writer: mappings use §1's gateway form, preparations use §9.5's distinct
-form. The Runner contract and canonical mapping digests are unchanged; the Desk
-now sorts mapping members at the wire boundary, retaining every optional member
-as given. It interprets no preparation. Version-3 research sources and publishing
-an unbound dialect are later work ([ADR-0013](../adr/0013-the-desks-inputs-are-dialect-documents.md)).
+form. The existing producer normalization is retained, including `sources: []`
+when omitted. The Runner contract and mapping digests are unchanged; wire bytes
+differ from before by member order only. Runner digests the canonical form and
+re-emits mappings in its struct order. Desk interprets no preparation. Version-3
+research sources and publishing an unbound dialect are later work ([ADR-0013](../adr/0013-the-desks-inputs-are-dialect-documents.md)).
 
 The first editor is intentionally advanced: named sources are listed compactly,
 and **Edit mapping** exposes the JSON request templates, projections, derivation

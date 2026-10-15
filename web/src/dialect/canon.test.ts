@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
-import { canonicalize, canonicalPreparation, dialectDigest, digestBytes, parseJSON, preparationDigest } from './canon'
+import { CanonError, canonicalize, canonicalPreparation, dialectDigest, digestBytes, parseJSON, preparationDigest } from './canon'
 import { canonicalText as oldCanonicalText } from '../research/verify/canon'
 
 beforeAll(() => vi.stubGlobal('crypto', webcrypto))
@@ -35,14 +35,14 @@ it.each(manifest.vectors)('$name: retains the upstream bytes and round-trips bot
 })
 
 it.each([
-  ['1e2', /no fraction or exponent/], ['1.0', /no fraction or exponent/],
-  ['9007199254740992', /2\^53/], ['-9007199254740992', /2\^53/],
-  ['{"x":1,"x":2}', /duplicate member/], ['{"x":1,"\\u0078":2}', /duplicate member/],
-  ['"\\ud800"', /Unicode/], ['"\udfff"', /Unicode/],
-  ['{}{}', /one RFC 8259/], ['[1,]', /one RFC 8259/], ['{"x":true,}', /one RFC 8259/],
-  ['NaN', /one RFC 8259/], ['\ufeff{}', /one RFC 8259/],
+  ['1e2', 'integer_literal'], ['1.0', 'integer_literal'],
+  ['9007199254740992', 'integer_range'], ['-9007199254740992', 'integer_range'],
+  ['{"x":1,"x":2}', 'duplicate_member'], ['{"x":1,"\\u0078":2}', 'duplicate_member'],
+  ['"\\ud800"', 'invalid_unicode'], ['"\udfff"', 'invalid_unicode'],
+  ['{}{}', 'invalid_json'], ['[1,]', 'invalid_json'], ['{"x":true,}', 'invalid_json'],
+  ['NaN', 'invalid_json'], ['\ufeff{}', 'invalid_json'],
 ] as const)('refuses %s before its spelling can be lost', (text, rule) => {
-  expect(() => parseJSON(text)).toThrow(rule)
+  expect(() => parseJSON(text)).toThrow(expect.objectContaining({name:'CanonError',code:rule,section:'§1'}))
 })
 
 it('distinguishes §1 and §9.5 without losing safe integer literals, nesting, or string escapes', () => {
@@ -79,4 +79,10 @@ it('does not interpret prototype names or invoke object serialization hooks', ()
 
 it('names SHA-256 digests with 64 lowercase hexadecimal characters', async () => {
   expect(await digestBytes(new Uint8Array())).toBe('sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
+})
+
+it('carries rule context without translating it', () => {
+  expect(() => parseJSON('{"x":1,"x":2}')).toThrow(expect.objectContaining({code:'duplicate_member',section:'§1',details:{member:'x'}}))
+  expect(() => parseJSON('{')).toThrow(expect.objectContaining({code:'invalid_json',section:'§1',details:{offset:1}}))
+  expect(new CanonError('nesting_limit')).toMatchObject({code:'nesting_limit',section:'§12'})
 })

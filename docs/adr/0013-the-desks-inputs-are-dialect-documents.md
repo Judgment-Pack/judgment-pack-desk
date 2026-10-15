@@ -15,8 +15,9 @@ between authoring that format and preparing or verifying an evaluation.
 RFC 0018 was accepted on 2026-10-15 at draft maturity. Its companion document,
 [`spec/dialect.md`](https://github.com/Judgment-Pack/judgment-pack-spec/blob/a550d41/spec/dialect.md),
 defines the dialect document, preparation and preparation verifier. Its version
-2 is the Runner's mapping v2, byte for byte, with the same digest. Its staged
-vectors came from the Runner; no released specification version publishes them
+2 uses the Runner's mapping v2 values and canonical digest. Desk's wire bytes
+differ from before by member order only. Its staged vectors came from the
+Runner; no released specification version publishes them
 and no preparation-verifier conformance claim is available yet.
 
 Desk already authors mapping v2: case parameters and copies, ordered file and
@@ -48,17 +49,21 @@ digest. `MappingV2` aliases that document's type so their declarations cannot
 drift. A pure `web/src/dialect/` module owns the types and the two canonical
 forms, with no React or I/O.
 
-Every mapping handed to Runner is written in §1's canonical form, keeping
-optional members exactly as supplied. This sorts members on the wire; the
-canonical bytes Runner digests do not change. Preparations use §9.5's separate
-form: negative zero stays negative zero, and the additional string escapes
-are retained. A writer refuses duplicate member names, malformed Unicode and
+Every mapping handed to Runner is written in §1's canonical form after the
+existing producer normalization, including adding `sources: []` when omitted.
+Mapping digests are unchanged; wire bytes differ from before by member order
+only. Runner digests the canonical form and re-emits mappings in its struct
+order. Preparations use §9.5's separate form: negative zero stays negative zero,
+and the additional string escapes are retained. A writer refuses duplicate member names, malformed Unicode and
 numbers outside the integer domain before a digest can conceal the difference.
 
 The ten staged vectors are vendored unchanged in the three files needed for
 writer tests. The preparation bytes and digests are checked exactly. The raw
 mapping files use Runner's struct order, so their canonical bytes and digests
 are compared instead of pretending those files already have sorted members.
+Frozen outputs captured from the old producer cover parsing, editor changes,
+request bytes and digests. The complete parse-and-send path preserves those
+values and digests, changing only mapping member order on the wire.
 CI runs the specification's verifier over a vector rewritten by Desk's writer,
 and requires a reading and exit status 0.
 
