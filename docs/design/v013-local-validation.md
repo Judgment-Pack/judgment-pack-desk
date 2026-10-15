@@ -40,11 +40,12 @@ the Runner state and signing-key history for a full move or restore. Issue
 #345 still needs its independent review before closure.
 
 The early checks below included complete translations for their then-current
-messages. Later Dialect and shared AI changes introduce a translation backlog;
-see [localization status](../localization.md). Dialect discovery and reviewed
-evaluation (#369 / #371), together with portable Dialect integration (#398),
-are now part of v0.13. Before release: integrate both contributors’ work, finish
-translations, complete independent review and full release validation, and
+messages. The 2026-10-15 translation pass completes the current Dialect and shared
+AI message backlog; see [localization status](../localization.md). Dialect
+discovery and reviewed evaluation (#369 / #371), together with portable Dialect
+integration (#398),
+are now part of v0.13. Before release: integrate both contributors’ work, translate
+any new messages, complete independent review and full release validation, and
 obtain user acceptance. See the [Dialect foundation](input-preparations.md)
 and the combined release scope for implementation boundaries.
 
@@ -478,3 +479,39 @@ Checkpoint verification:
 These checks establish this local checkpoint only. The integrated revision still
 needs the shared release gates, translations and final acceptance recorded in the
 release scope.
+
+## Current v0.13 translations — 2026-10-15
+
+The user requested translation immediately, superseding the extraction-only
+sequence above. All 11 non-English catalogs now cover the current 5,696 English
+messages. The pass adds 10,922 entries, including required plural forms, without
+changing any previously translated value. Technical identifiers, interpolation
+values and numeric limits were checked separately from wording.
+
+The browser audit now uses the current Library route and includes Dialects,
+the new-dialect form, Jobs and job creation. Screenshot review found a shared
+chat-context button using the browser's default font, leaving Korean text as
+missing glyphs. The button now inherits Desk's existing font stack; a browser
+assertion checks the Korean fallback on that control.
+
+Validation for this translation pass:
+
+- Strict catalog/source checks passed for all 11 locales: 5,696/5,696 messages,
+  zero placeholder errors, and no untranslated source literals.
+- All 56 localization tests and all 846 palette/convention tests passed.
+- Production frontend build and Go build with embedded frontend passed. The Go
+  build used `-buildvcs=false` because VCS stamping was unavailable in this local
+  environment. The existing frontend chunk-size advisory remains.
+- The isolated browser sweep passed for English plus all 11 locales, including
+  live language switching, unsent-draft preservation and reload persistence.
+  German, Cantonese and Japanese also passed both themes at 1440, 768 and 390
+  pixels. The sweep reported no browser errors, untranslated checked labels,
+  horizontal page overflow or saved conversations; it made no AI-provider calls.
+- After the font and final wording corrections, a focused browser rerun passed
+  for Korean, European Portuguese and German, including the new font assertion
+  and German’s narrow layouts.
+- Original-catalog comparisons and `git diff --check` passed.
+
+Claude's portable-Dialect integration remains separate. This completes the
+current translation backlog; re-extract and translate any new messages after
+integration before final release acceptance.

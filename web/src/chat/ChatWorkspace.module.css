@@ -195,7 +195,7 @@
 .composerShortcut { text-align: end; }
 
 .composerContext { margin-bottom: var(--space-2); min-width: 0; }
-.composerContext > button, .composerContext > div { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; padding: var(--space-2); color: var(--ink-soft); text-align: start; font-size: var(--text-xs); background: transparent; border-width: 0; border-radius: var(--radius-sm); }
+.composerContext > button, .composerContext > div { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; padding: var(--space-2); color: var(--ink-soft); text-align: start; font: inherit; font-size: var(--text-xs); background: transparent; border-width: 0; border-radius: var(--radius-sm); }
 .composerContext > button { cursor: pointer; }
 .composerContext > button:hover { background: var(--false-soft); color: var(--ink); }
 .composerContext svg { width: 16px; height: 16px; flex: none; }

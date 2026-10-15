@@ -16,7 +16,7 @@ claim that every item has passed acceptance.
 | Portable Dialects | Spec-backed document types, canonical form/digest, staged-vector verification, mapping production and research/import source authoring. Claude's ongoing [#398](https://github.com/Judgment-Pack/judgment-pack-desk/issues/398) integration is part of this same release. |
 | Reusable templates | Generic authoring and pinned Exchange-template consumption with local connection binding are the agreed portability direction. These remain implementation/acceptance work; #398 itself explicitly excludes Exchange publishing. |
 | Existing v0.13 foundations | Reviewed Web access, private-data freshness, local install/restart behavior, Jobs activity, retained input/release references and saved-record verification. |
-| Localization and release quality | Extract/check catalogs now; complete all 11 non-English translations after integrating both contributors' work, then run strict checks and release acceptance. |
+| Localization and release quality | Current catalogs translated in all 11 non-English languages; re-extract after integration, translate any new messages, then repeat strict checks and release acceptance. |
 
 ## Implementation lanes
 
@@ -64,7 +64,8 @@ and external CRM writes remain outside this work.
   cancellation, partial results, stale revisions and unavailable connections.
 - [ ] Complete the reviewed live pilot and usage/reliability assessment required
   by #369. Fixture success alone does not establish live discovery quality.
-- [ ] Re-extract catalogs after integration, translate remaining messages in all
+- [x] Complete the current 5,696-message catalog in all 11 non-English languages.
+- [ ] Re-extract catalogs after integration, translate any new messages in all
   11 languages, and pass strict locale/source and representative layout checks.
 - [ ] Pass frontend/backend checks, packaging and companion verification on the
   final integrated revision, then obtain release acceptance before publishing.

@@ -1,6 +1,6 @@
 # Desk localization
 
-The English catalogue covers the current Desk UI messages. The combined v0.13 development work has a translation backlog in all 11 non-English catalogues; the completed v0.12 translation review is recorded below. Existing translations were authored and reviewed directly, without sending UI text or project data to an external translation API. English remains the fallback for missing messages, an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects invalid placeholders, keys that `en.json` lacks, and untranslated UI literals, and warns about a message missing from a translated catalogue (English is shown); `--strict` makes that a failure, for the release's translation pull request.
+All 5,696 current English messages are covered in the 11 non-English catalogues, including required CLDR plural forms. The v0.13 translation pass preserves every existing translation and completes the current development backlog; new messages introduced by the pending combined integration still need extraction and translation. Translations were authored and reviewed directly, without sending UI text or project data to an external translation API. English remains the fallback for missing messages, an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects invalid placeholders, keys that `en.json` lacks, and untranslated UI literals, and warns about a message missing from a translated catalogue (English is shown); `--strict` makes that a failure, for the release's translation pull request.
 
 ## Language choice
 
@@ -37,7 +37,7 @@ The checks cover language negotiation, live switching with draft preservation, s
 
 CI runs catalogue validation and the UI-message guard alongside the component suite, type check and production build. The source guard checks literal JSX text, display and accessibility properties, option captions, confirmations, and captions inside `Message` slots. It cannot prove that every string passed through a variable is translated: imported labels and generated notices still require source and rendered review.
 
-The browser audit exercises every language in an isolated project: home, Library, all eight pack and graph sections, Assistant settings, storage, identity settings, Help, and pack editing. It checks the sign-in setup entry, the configuration dialog, the language menu, draft preservation, reload persistence and visible untranslated labels. German, Cantonese and Japanese are also checked in both themes at 1440, 768 and 390 pixels. It does not send a message, call an AI provider or modify real chat data.
+The browser audit exercises every language in an isolated project: home, Library, Dialects and the new-dialect form, Jobs and job creation, all eight pack and graph sections, Assistant settings, storage, identity settings, Help, and pack editing. It checks the sign-in setup entry, the configuration dialog, the language menu, draft preservation, reload persistence and visible untranslated labels. German, Cantonese and Japanese are also checked in both themes at 1440, 768 and 390 pixels. It does not send a message, call an AI provider or modify real chat data.
 
 After building Desk, run it with Node 22 or later and a runtime fixture:
 
@@ -59,8 +59,10 @@ Release verification includes strict catalogue/source checks and the browser swe
 ## Combined v0.13 catalog checkpoint — 2026-10-15
 
 The [combined release scope](design/v013-release-scope.md) includes both Codex's
-Desk changes and Claude's ongoing portable-Dialect integration. The agreed
-sequence is extraction/checking now, followed by translation after integration.
+Desk changes and Claude's ongoing portable-Dialect integration. The initial
+sequence was extraction/checking first, with translation deferred until integration.
+The user subsequently requested translation of the current catalog immediately;
+that completed pass is recorded below.
 
 Extraction contains **5,696 English message keys**: 41 newly extracted keys and
 7 obsolete keys removed from the previous English catalog. Five obsolete keys
@@ -73,13 +75,53 @@ were not filled with English text.
 | German, Japanese, Korean, Cantonese, simplified Chinese, traditional Chinese | 987 | 0 | 987 |
 | Spanish, French, Italian, Brazilian Portuguese, European Portuguese | 987 | 13 | 1,000 |
 
-The normal catalog check permits this explicit English fallback; the strict
-release check must remain failing until the translations are completed. After
-both contributors' work is integrated, extract again, translate the final delta,
-review terminology in context, and run strict validation and representative
-layout checks. This checkpoint is not a translation-complete release.
+At this extraction-only checkpoint, the normal catalog check permitted English
+fallback and the strict check failed on the backlog. That historical result is
+superseded by the completed translation pass below. After integration, extract
+again, translate any new messages, review terminology in context, and repeat the
+strict and representative layout checks.
 
 Checkpoint validation passed the normal catalog/source check, all 56 localization
 unit tests and the production frontend build. All 11 translated catalogs have
 zero placeholder errors. The strict check was also run and failed only on the
 missing translations listed above, as expected for this extraction-only stage.
+
+
+## Combined v0.13 translation pass — 2026-10-15
+
+At the user's request, translation proceeded against the current checkpoint
+before Claude's separate integration. All **5,696 source messages** now have
+translations in German, Spanish, French, Italian, Japanese, Korean, Brazilian
+Portuguese, European Portuguese, Cantonese, simplified Chinese and traditional
+Chinese. This adds **10,922 entries**: 987 new source messages per locale and 13
+additional CLDR forms in each of Spanish, French, Italian and both Portuguese
+catalogs. Every previously translated value is preserved.
+
+The pass covers Dialect recipes and mappings, research review and recovery,
+Jobs, shared AI context and memory, Plan mode, scoped approvals, proposal
+correction, loading states, and local sign-in/storage messages. Terminology
+review preserves the distinctions between proposed and saved work, evidence
+review and verification, and permission and request limits. Schema keys, tool
+names, enums, commands, paths and interpolation values remain exact. Numeric
+limits and the few legitimate English-identical labels were reviewed separately.
+The Portuguese variants and Cantonese were reviewed for regional wording.
+
+Strict catalog/source validation passes for all 11 locales with zero placeholder
+errors. All 56 localization tests and the production frontend build pass.
+Catalog comparisons confirm that no existing translation was overwritten.
+The isolated browser sweep passed in English and all 11 translated languages,
+covering current routes, new-dialect setup, language switching, unsent draft
+preservation and reload persistence. German, Cantonese and Japanese passed both
+themes at 1440, 768 and 390 pixels. No page overflow, untranslated checked labels,
+browser errors or saved conversations were reported.
+
+Visual review also found that the shared chat-context button did not inherit
+Desk’s font, leaving Korean glyphs unreadable on hosts without a Korean system
+font. It now inherits the existing shared font stack; the browser audit checks
+that the Korean fallback reaches that control. The final focused browser rerun
+passed in Korean, European Portuguese and German after the font and wording
+corrections, including German’s narrow layouts.
+
+This completes translation of the current checkpoint, not the pending combined
+release. Extract again after integration and translate any new messages before
+running the final release gates.
