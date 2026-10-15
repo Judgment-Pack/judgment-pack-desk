@@ -90,7 +90,7 @@ describe('what a run record holds', () => {
   })
 
   it('counts acquisition receipts only where the preparation cites one', () => {
-    const preparation = { version: 2 as const, verifiedAt: at(1), mappingDigest: 'sha256:m', verification: 'v', lineage: [], outcomes: [] }
+    const preparation = { version: 2 as const, verifiedAt: at(1), mappingDigest: 'sha256:m', verification: 'verified acquisitions; session sealing and input truth are not established' as const, lineage: [], outcomes: [] }
     expect(evidenceOf({ ...runs.signed, input: { facts: {}, preparation: { ...preparation, cites: [{ sessionId: 's', callIndex: 0, signature: 'x' }] } } }).receipts).toBe(true)
     expect(evidenceOf({ ...runs.signed, input: { facts: {}, preparation: { ...preparation, cites: [] } } }).receipts).toBe(false)
   })

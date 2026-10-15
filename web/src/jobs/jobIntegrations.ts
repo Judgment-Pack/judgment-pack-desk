@@ -1,5 +1,6 @@
 import type { ResearchConfig } from '../config/deskConfig'
 import type { MappingV2, ProfileEntry } from './mappingTypes'
+import { canonicalize } from '../dialect/canon'
 
 export function supportsJobProfile({profile}: ProfileEntry) {
  return profile.shape === 'mcp' && Boolean(profile.tools?.length) || profile.source === 'drive' && profile.shape === 'http' && profile.class === 'record'
@@ -33,7 +34,7 @@ export function setSourceIntegration(mapping: MappingV2, entry?: ProfileEntry, r
  if(previous?.provider==='google-drive' && source.provider!=='google-drive' && next.case?.parameters) {
   for(const field of ['fileId','grant']) {
    const param=(previous.arguments?.[field] as {$param?:string}|undefined)?.$param
-   if(param && next.case.parameters[param]?.pointer===`/selections/${name}/${field}` && !JSON.stringify(next.sources).includes(JSON.stringify({$param:param})))delete next.case.parameters[param]
+   if(param && next.case.parameters[param]?.pointer===`/selections/${name}/${field}` && !canonicalize(next.sources).includes(canonicalize({$param:param})))delete next.case.parameters[param]
   }
  }
  if(source.provider==='google-drive') {

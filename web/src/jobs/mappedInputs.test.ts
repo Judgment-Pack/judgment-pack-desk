@@ -1,5 +1,7 @@
+import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
+import { dialectDigest } from '../dialect/canon'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { prepareMappedInputs, parseMappedObject, mappedCase } from './mappedInputs'
+import { prepareMappedInputs, parseMappedObject, parseMapping, mappedCase } from './mappedInputs'
 import { jobsRequest, RetainedJSON } from './wire'
 import { jobsAPI } from './client'
 import { acquire, seal } from '../research/gatewayClient'
@@ -10,7 +12,7 @@ import type { MappingV2, ProfileEntry } from './mappingTypes'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('../research/gatewayClient',()=>({acquire:vi.fn(),seal:vi.fn(),newResearchSession:()=> 'one-session'}))
 const profile: ProfileEntry={digest:'sha256:pin',profile:{id:'records',publicKey:'ab'.repeat(32),authority:'gateway:test',source:'records',class:'record',shape:'mcp',adapter:{name:'mcp',version:'1',digest:'sha256:adapter'},endpoint:null,tools:['lookup']}}
-const mapping: MappingV2={version:2,sources:[{name:'first',kind:'operation',profile:'records',profileDigest:profile.digest,maxAge:300,arguments:{tool:'lookup',arguments:{}},read:{copy:{facts:[{target:'/id',source:'/id'}],evidence:[]}}},{name:'second',kind:'operation',profile:'records',profileDigest:profile.digest,maxAge:300,arguments:{tool:'lookup',arguments:{id:{$param:'id'}}},parameters:{id:{from:'first',pointer:'/id',type:'integer'}},read:{copy:{facts:[{target:'/name',source:'/name'}],evidence:[]}}}]}
+const mapping: MappingV2=mappingFixture('sequential')
 const config={...DESK_DEFAULTS.research,gateway:{url:'http://127.0.0.1:1',authority:profile.profile.authority,signer:{algorithm:'ed25519' as const,public:profile.profile.publicKey}}}
 const options=()=>({mapping,caseValue:{},files:{},selections:{},config,profiles:[profile],signal:new AbortController().signal,progress:vi.fn()})
 beforeEach(()=>{vi.resetAllMocks();vi.mocked(seal).mockResolvedValue(undefined as never)})
@@ -21,6 +23,16 @@ it('retains signed numeric spelling, rejects duplicate keys and bounds the wire 
  expect(()=>jobsRequest({x:'a'.repeat(2<<20)})).toThrow(/2 MiB/)
  expect(()=>parseMappedObject('{"id":9007199254740993}')).toThrow()
  expect(parseMappedObject('{"id":7}')).toEqual({id:7})
+})
+it('preserves optional dialect members exactly, including omitted sources and explicit legacy members',()=>{
+ for(const text of ['{"version":2,"case":{"facts":[],"evidence":[]}}','{"version":2,"case":{"facts":[],"evidence":[]},"provider":"","facts":null,"evidence":null}']) {
+  expect(parseMapping(text)).toEqual(JSON.parse(text))
+  expect(parseMapping(text)).not.toHaveProperty('sources')
+ }
+ expect(()=>parseMapping('{"version":2}')).toThrow()
+ expect(()=>parseMapping('{"version":2,"case":{"facts":[],"evidence":[]},"sources":null}')).toThrow()
+ expect(()=>parseMapping('{"version":2,"version":2,"case":{"facts":[],"evidence":[]}}')).toThrow(/duplicate/)
+ expect(Object.is(mappedCase(mapping,{zero:-0},{}).zero,-0)).toBe(true)
 })
 it('uses only Runner-expanded requests and one session, preserving exact responses in the final input',async()=>{
  const raw='{"result":{"id":7,"unused":1.000},"receipt":{},"salts":{}}'
@@ -44,6 +56,12 @@ it('does not fetch a skipped dependent source or invoke operational evaluation',
  expect(acquire).not.toHaveBeenCalled();expect(seal).not.toHaveBeenCalled()
  expect(jobsAPI).toHaveBeenCalledWith('inputs/next',expect.anything(),undefined,expect.any(AbortSignal))
 })
+it('uses the dialect digest when the preview returns no retained mapping digest',async()=>{
+ vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{}},factsText:'{}'})
+ const result=await prepareMappedInputs(options())
+ expect(result.input.source?.mappingDigest).toBe(await dialectDigest(mapping))
+ expect(vi.mocked(jobsAPI).mock.calls[0][1]).toEqual(expect.objectContaining({source:expect.not.objectContaining({mappingDigest:expect.anything()})}))
+})
 it('rejects changed relay pins and profile digests before any acquisition',async()=>{
  for(const modified of [{...config,gateway:null},{...config,gateway:{...config.gateway,authority:'different'}}]) {
   await expect(prepareMappedInputs({...options(),config:modified})).rejects.toThrow(/profile/)
@@ -58,7 +76,7 @@ it('ignores late replies after cancellation',async()=>{
  expect(acquire).not.toHaveBeenCalled()
 })
 it('places picker values only at explicit typed case parameters',()=>{
- const drive: MappingV2={version:2,case:{parameters:{file:{pointer:'/picked/id',type:'string'},grant:{pointer:'/picked/grant',type:'string'}},facts:[],evidence:[]},sources:[{name:'drive',kind:'selected-file',provider:'google-drive',arguments:{fileId:{$param:'file'},grant:{$param:'grant'}},read:{copy:{facts:[],evidence:[]}}}]}
+ const drive: MappingV2=mappingFixture('drive-selection')
  expect(mappedCase(drive,{subject:'test'},{drive:{fileId:'selected',grant:'grant'}})).toEqual({subject:'test',picked:{id:'selected',grant:'grant'}})
  drive.case!.parameters!.file!.pointer='/__proto__/polluted'
  expect(()=>mappedCase(drive,{}, {drive:{fileId:'selected',grant:'grant'}})).toThrow()
@@ -66,7 +84,7 @@ it('places picker values only at explicit typed case parameters',()=>{
 })
 
 it('normalizes a Drive acquisition reconnect refusal and still seals the abandoned session',async()=>{
- const drive:MappingV2={version:2,case:{parameters:{file:{pointer:'/id',type:'string'},grant:{pointer:'/grant',type:'string'}},facts:[],evidence:[]},sources:[{name:'drive',kind:'selected-file',provider:'google-drive',profile:'records',profileDigest:profile.digest,arguments:{fileId:{$param:'file'},grant:{$param:'grant'}},read:{copy:{facts:[],evidence:[]}}}]}
+ const drive:MappingV2=mappingFixture('drive-reconnect')
  vi.mocked(jobsAPI).mockResolvedValue({next:{name:'drive',kind:'selected-file',provider:'google-drive',profile:'records',source:'records',arguments:{fileId:'chosen',grant:'grant'}}})
  vi.mocked(acquire).mockRejectedValue(Error('source failed: reconnect-required'))
  await expect(prepareMappedInputs({...options(),mapping:drive,selections:{drive:{fileId:'chosen',grant:'grant'}},config:{...config,managedLocal:true,documents:{enabled:true,source:'documents',maxFileBytes:200000,maxRequestBytes:1000000,maxResponseBytes:1000000}}})).rejects.toEqual(new ConnectionRequestError('reconnect-required','google-drive'))

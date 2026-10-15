@@ -101,6 +101,33 @@ jobs:
       - name: component tests
         run: npm test
 
+      # Read-only test input, excluded from the Desk checkout and never committed.
+      - name: Check out the pinned dialect specification
+        uses: actions/checkout@v7
+        with:
+          repository: Judgment-Pack/judgment-pack-spec
+          ref: a550d41
+          path: .spec
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Read a Desk-produced dialect preparation
+        working-directory: .
+        run: |
+          printf '/.spec/\n' >> .git/info/exclude
+          python3 -m pip install -r .spec/requirements-dev.txt
+          vector=$(cd web && node --import tsx scripts/dialect-roundtrip.mjs)
+          trap 'rm -rf "$vector"' EXIT
+          python3 .spec/tools/dialect_verify.py \
+            --dialect "$vector/mapping.json" --case "$vector/case.json" \
+            --acquisitions "$vector/sources.json" --profiles "$vector/profiles.json" \
+            --preparation "$vector/preparation.json" --record "$vector/record.json" \
+            --require-binding > "$vector/report.json"
+          python3 -c 'import json, sys; report = json.load(open(sys.argv[1])); print(json.dumps(report)); assert report["result"] == "reading"' "$vector/report.json"
+
   local-gateway:
     name: Local gateway (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

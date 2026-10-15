@@ -1,3 +1,4 @@
+import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import {useState} from 'react'
 import {DetailsSlotContext} from '../shell/DetailsSlot'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
@@ -9,7 +10,7 @@ import type {MappingV2} from './mappingTypes'
 afterEach(cleanup)
 it('keeps source edits pending until valid configuration is explicitly applied',async()=>{
  const onChange=vi.fn(),onInvalid=vi.fn(),onDirty=vi.fn()
- const mapping:MappingV2={version:2,case:{facts:[],evidence:[]},sources:[{name:'records',kind:'operation',profile:'lookup',maxAge:300,arguments:{tool:'lookup',arguments:{}},read:{copy:{facts:[],evidence:[]}}}]}
+ const mapping:MappingV2=mappingFixture('editor-operation')
  function Editor(){const [value,setValue]=useState(mapping);return <MappingEditor doc={{} as PackDocument} mapping={value} profiles={[]} disabled={false} onChange={next=>{onChange(next);setValue(next)}} {...{onInvalid,onDirty}}/>}
  render(<QueryClientProvider client={new QueryClient()}><Editor/></QueryClientProvider>)
  fireEvent.click(screen.getByRole('button',{name:'records'}))
@@ -27,7 +28,7 @@ it('keeps source edits pending until valid configuration is explicitly applied',
 it('retains the integration chooser and pending request when the details portal moves',async()=>{
  const dock=document.createElement('div'),drawer=document.createElement('div');document.body.append(dock,drawer)
  const query=new QueryClient({defaultOptions:{queries:{retry:false}}}),claim=()=>()=>{},reveal=vi.fn()
- const mapping:MappingV2={version:2,case:{facts:[],evidence:[]},sources:[{name:'records',kind:'operation',profile:'lookup',arguments:{tool:'lookup',arguments:{}},read:{copy:{facts:[],evidence:[]}}}]}
+ const mapping:MappingV2=mappingFixture('editor-operation-2')
  const props={doc:{} as PackDocument,mapping,profiles:[],disabled:false,onChange:vi.fn(),onInvalid:vi.fn(),onDirty:vi.fn()}
  function Editor({target}:{target:HTMLElement}){const [value,setValue]=useState(mapping);return <QueryClientProvider client={query}><DetailsSlotContext.Provider value={{target,open:true,claim,reveal}}><MappingEditor {...props} mapping={value} onChange={next=>{props.onChange(next);setValue(next)}}/></DetailsSlotContext.Provider></QueryClientProvider>}
  const view=(target:HTMLElement)=><Editor target={target}/>
@@ -54,10 +55,10 @@ it('explains calculator binding setup on adding a source and keeps ordinary sour
  const query=new QueryClient({defaultOptions:{queries:{retry:false}}})
  const props={doc:{} as PackDocument,profiles:[calculator],disabled:false,onChange:vi.fn(),onInvalid:vi.fn(),onDirty:vi.fn()}
  const draw=(mapping:MappingV2)=><QueryClientProvider client={query}><MappingEditor {...props} mapping={mapping}/></QueryClientProvider>
- const ui=render(draw({version:2,sources:[]}))
- ui.rerender(draw(setSourceIntegration({version:2},calculator)))
+ const ui=render(draw({version:2,case:{facts:[],evidence:[]},sources:[]}))
+ ui.rerender(draw(setSourceIntegration({version:2,case:{facts:[],evidence:[]}},calculator)))
  expect(await screen.findByText('This source is a calculator. In Advanced mapping → Edit mapping, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.')).toBeTruthy()
  expect(screen.getByLabelText('Request parameters (JSON)')).toBeTruthy()
- ui.rerender(draw(setSourceIntegration({version:2})))
+ ui.rerender(draw(setSourceIntegration({version:2,case:{facts:[],evidence:[]}})))
  expect(screen.queryByText(/This source is a calculator/)).toBeNull()
 })

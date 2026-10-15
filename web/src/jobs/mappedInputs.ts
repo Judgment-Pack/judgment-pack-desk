@@ -1,7 +1,7 @@
 import { msg } from '../i18n'
 import type { ResearchConfig } from '../config/deskConfig'
 import { acquire, newResearchSession, seal } from '../research/gatewayClient'
-import { canonicalize, parseJsonText } from '../research/verify/canon'
+import { dialectDigest, parseJSON } from '../dialect/canon'
 import { readDocumentRecord } from '../documents/record'
 import { connectionFailure, type DriveSelection } from '../connections/client'
 import type { SourceInput, InputPreview } from './client'
@@ -11,22 +11,20 @@ import { RetainedJSON } from './wire'
 import { sourcePaths } from './sourceInputs'
 
 export function parseMappedObject(text: string): Record<string, unknown> {
- const node = parseJsonText(text)
- // The gateway's canonical domain rejects lossy numbers and duplicate keys.
- canonicalize(node)
- if (node.kind !== 'object') throw Error(msg('Choose one JSON object describing a single input record.'))
- return JSON.parse(text) as Record<string, unknown>
+ const value = parseJSON(text)
+ if (value === null || typeof value !== 'object' || Array.isArray(value)) throw Error(msg('Choose one JSON object describing a single input record.'))
+ return value
 }
 export function parseMapping(text: string): MappingV2 {
  const value = parseMappedObject(text)
- if (value.sources === undefined) value.sources = []
  const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
- const copy = (v: unknown) => object(v) && Array.isArray(v.facts) && Array.isArray(v.evidence) && v.facts.every(f => object(f) && typeof f.target === 'string' && typeof f.source === 'string') && v.evidence.every(e => object(e) && typeof e.requirement === 'string' && typeof e.source === 'string')
- if (value.version !== 2 || (value.case !== undefined && !copy(value.case)) || !Array.isArray(value.sources) || value.sources.length > 16 || value.sources.some(s => !object(s) || typeof s.name !== 'string' || !/^[a-z][a-zA-Z0-9_-]{0,63}$/.test(s.name) || !['operation','selected-file'].includes(String(s.kind)) || !object(s.read) || (s.read.copy !== undefined && !copy(s.read.copy)))) throw Error(msg('The inputs could not be mapped.'))
+ const copy = (v: unknown) => object(v) && (v.facts === undefined || Array.isArray(v.facts) && v.facts.every(f => object(f) && typeof f.target === 'string' && typeof f.source === 'string')) && (v.evidence === undefined || Array.isArray(v.evidence) && v.evidence.every(e => object(e) && typeof e.requirement === 'string' && typeof e.source === 'string'))
+ const sources = value.sources === undefined ? [] : value.sources
+ if (value.version !== 2 || !object(value.case) || !copy(value.case) || !Array.isArray(value.case.facts) || !Array.isArray(value.case.evidence) || !Array.isArray(sources) || sources.length > 16 || sources.some(s => !object(s) || typeof s.name !== 'string' || !/^[a-z][a-zA-Z0-9_-]{0,63}$/.test(s.name) || !['operation','selected-file'].includes(String(s.kind)) || !object(s.read) || (s.read.copy !== undefined && !copy(s.read.copy)))) throw Error(msg('The inputs could not be mapped.'))
  return value as unknown as MappingV2 // Runner performs authoritative schema validation before acquisition.
 }
 export function mappedCase(mapping: MappingV2, value: Record<string, unknown>, selections: Record<string, DriveSelection>): Record<string, unknown> {
- const result = JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+ const result = structuredClone(value)
  for (const source of (mapping.sources ?? []).filter(s => s.provider === 'google-drive')) {
   const selection = selections[source.name]
   if (!selection) throw Error(msg('Choose from Google Drive'))
@@ -70,7 +68,7 @@ export async function prepareMappedInputs(options: {
    signal.throwIfAborted()
    if (plan.input) {
     // Keep the exact acquired bytes; response.json() would round signed numbers.
-    return {input:{...plan.input, source:{...source, mappingDigest:plan.input.source?.mappingDigest}}, factsText:plan.factsText ?? '{}', evidenceText:plan.evidenceText ?? ''}
+    return {input:{...plan.input, source:{...source, mappingDigest:plan.input.source?.mappingDigest ?? await dialectDigest(mapping)}}, factsText:plan.factsText ?? '{}', evidenceText:plan.evidenceText ?? ''}
    }
    const next = plan.next, declared = (mapping.sources ?? []).find(s => s.name === next?.name)
    if (!next || !declared || Object.hasOwn(source.sources,next.name) || next.kind !== declared.kind || next.profile !== declared.profile || next.provider !== declared.provider) throw Error(msg('The inputs could not be mapped.'))
