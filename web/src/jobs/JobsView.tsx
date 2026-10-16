@@ -1,3 +1,4 @@
+import {PersistentMappedRunInputs} from './PersistentMappedRunInputs'
 import {dialectAPI,type DialectEvaluation} from '../dialects/client'
 import {UpgradeRecords} from './UpgradeRecords'
 import {readUpgradeReceipt,needsRecordReview,upgradeDraft,upgradeDraftState,upgradePackKey,type JobUpgrade} from './upgrade'
@@ -220,6 +221,9 @@ function CreateJobEditor({initial,upgrade,seed=initial?.draft.values}: {initial?
   const [upgradeBasis,setUpgradeBasis]=useState(seed?.upgrade)
   const values: JobDraftValues = { ...(upgradeBasis?{upgrade:upgradeBasis}:{}), name, packId, inputMode, facts, supplied, evidence, ...(mapped ? {mapped} : {}), ...(trigger ? {trigger} : {}) }
   const [baseline, setBaseline] = useState(() => JSON.stringify(values)), [notice,setNotice] = useState('')
+  const mounted=useRef(false),currentValues=useRef(JSON.stringify(values))
+  currentValues.current=JSON.stringify(values)
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
   const dirty = JSON.stringify(values) !== baseline || pendingConfig || unwritten || transientWork
   const confirmDiscard = useConfirmDiscard()
   async function saveDraft() {
@@ -232,6 +236,20 @@ function CreateJobEditor({initial,upgrade,seed=initial?.draft.values}: {initial?
       void queryClient.invalidateQueries({queryKey:['job-drafts']})
       if(upgrade){queryClient.setQueryData(['job-draft',draftId.current],saved.current);clearGuard();navigate(`/jobs/new?upgrade=${encodeURIComponent(upgrade.job.id)}&draft=${draftId.current}`,{replace:true})}
     } finally { setBusy(false) }
+  }
+  async function persistResearchDraft(next:MappedDraft,signal:AbortSignal){
+    signal.throwIfAborted()
+    const snapshot={...values,mapped:next},basis=JSON.stringify(values)
+    setBusy(true)
+    try{
+      // Reconcile the durable write even if the caller leaves; never replay it.
+      saved.current=await saveJobDraft(draftId.current,snapshot,saved.current?.file.sha256)
+      if(signal.aborted||!mounted.current||currentValues.current!==basis)return
+      setMapped(next);setBaseline(JSON.stringify(snapshot))
+      void queryClient.invalidateQueries({queryKey:['job-drafts']})
+      const target=new URLSearchParams(params);target.set('draft',draftId.current)
+      if(params.get('draft')!==draftId.current){clearGuard();navigate('/jobs/new?'+target.toString(),{replace:true})}
+    }finally{if(mounted.current)setBusy(false)}
   }
   const clearGuard = useDirtyGuard(dirty, msg('Leave without saving this job?'), { name, busy, saveDraft: pendingConfig || unwritten || !triggerValid ? undefined : saveDraft, shouldBlock: ({currentLocation,nextLocation}) => currentLocation.pathname !== nextLocation.pathname || new URLSearchParams(currentLocation.search).get('draft') !== new URLSearchParams(nextLocation.search).get('draft') || new URLSearchParams(currentLocation.search).get('upgrade') !== new URLSearchParams(nextLocation.search).get('upgrade') })
   async function changePack(next: string) {
@@ -338,7 +356,7 @@ function CreateJobEditor({initial,upgrade,seed=initial?.draft.values}: {initial?
       <div className={styles.field}><label htmlFor="job-pack">{msg('Pack')}</label><Select id="job-pack" value={packId} disabled={busy} placeholder={msg('Choose a saved pack')} options={(packs.data?.packs ?? []).map(p => ({ value: p.id, label: p.id }))} onValueChange={next=>void changePack(next)} />{pack.data && <p className={styles.note}>{pack.data.document.title} · {pack.data.document.version}</p>}</div>
       </section><section hidden={step!==1} className={styles.stack}><div className={styles.inputHeading}><div><h2>{msg('Where inputs come from')}</h2></div><div className={styles.inputMode}><Select id="job-input-source" aria-label={msg('Input configuration')} value={inputMode} disabled={busy} options={[{value:'mapped',label:msg('Integrations and case inputs')},{value:'manual',label:msg('Manual / API')}]} onValueChange={async v=>{if(trigger&&!await confirmDiscard(msg('Discard unsaved trigger changes?'),{name:trigger.name}))return;setInputMode(v as typeof inputMode);setSource(undefined);setTrigger(undefined)}}/></div></div><p className={styles.note}>{msg('Assign facts and evidence to sources, then preview one sample before creating the job.')}</p>
         <div hidden={inputMode!=='manual'}><InputFields doc={pack.data?.document} onValid={setInputsValid} onUnwritten={setUnwritten} {...{ facts, setFacts, supplied, setSupplied, evidence, setEvidence }} disabled={busy} /></div>
-        <div hidden={inputMode!=='mapped'}>{pack.data&&(upgrade&&needsRecordReview(upgrade)?<UpgradeRecords packText={pack.data.raw} disabled={busy} onChange={setSource} onChecked={checkedRecords}/>:upgrade?.release.inputMapping?.version===1?<SourceInputFields doc={pack.data.document} provider={upgrade.release.inputMapping.provider} fixed={upgrade.release.inputMapping} disabled={busy} onChange={setSource}/>:<MappedInputFields active={step===1&&inputMode==='mapped'} key={`${packId}:mapped`} doc={pack.data.document} packText={pack.data.raw} disabled={busy} onChange={setSource} draft={mapped} onDraftChange={setMapped} onWorkChange={setMappedWork} onPendingChange={setPendingConfig} onTransientChange={()=>setTransientWork(true)}/> )}</div>
+        <div hidden={inputMode!=='mapped'}>{pack.data&&(upgrade&&needsRecordReview(upgrade)?<UpgradeRecords packText={pack.data.raw} disabled={busy} onChange={setSource} onChecked={checkedRecords}/>:upgrade?.release.inputMapping?.version===1?<SourceInputFields doc={pack.data.document} provider={upgrade.release.inputMapping.provider} fixed={upgrade.release.inputMapping} disabled={busy} onChange={setSource}/>:<MappedInputFields active={step===1&&inputMode==='mapped'} key={`${packId}:mapped`} doc={pack.data.document} packText={pack.data.raw} disabled={busy} onChange={setSource} draft={mapped} onDraftChange={setMapped} onPersistResearchDraft={persistResearchDraft} onWorkChange={setMappedWork} onPendingChange={setPendingConfig} onTransientChange={()=>setTransientWork(true)}/> )}</div>
 
       </section>
       <section hidden={step!==2} className={styles.stack}>{upgrade?<p className={styles.note}>{msg('Pause existing triggers and finish pending occurrences before upgrading. Triggers stay paused; connected Dialects need a new subscription review.')}</p>:pack.data&&<TriggerChoice doc={pack.data.document} mapping={inputMode==='manual'?undefined:source?.mapping} value={trigger} onChange={setTrigger} onValid={setTriggerValid} disabled={busy}/>}</section>
@@ -382,7 +400,7 @@ function JobView({ jobId }: { jobId: string }) {
         <p className={styles.note}>{msg('Runs are stored by the local runner, separately from chat backups. Keep Desk running to process the queue.')}</p></div><div hidden={showInputs||tab!=='release'} className={styles.release}><h2>{data.release.title}</h2><p className="quiet">{msg('Fixed version {{version}}', { version: data.release.packVersion })}</p>{data.release.inputMapping && <p className={styles.note}>{isExecutableDialect(data.release.inputMapping) ? msg('Mapped sources') : data.release.inputMapping.provider === 'local-file' ? msg('Local JSON file · Fixed dialect') : msg('Google Drive · Fixed dialect')}</p>}<ReleaseReadiness release={data.release} job />{isExecutableDialect(data.release.inputMapping) && <DialectReview mapping={data.release.inputMapping} profiles={data.release.inputProfiles} warnings={data.release.mappingWarnings} />}<Disclosure title={msg('Release details')}><dl className={styles.properties}>{data.release.dialect&&<><div><dt>{msg('Dialect')}</dt><dd>{data.release.dialect.id} · {data.release.dialect.version}</dd></div><div><dt>{msg('Dialect digest')}</dt><dd><code>{data.release.dialect.digest}</code></dd></div></>}<div><dt>{msg('Pack digest')}</dt><dd><code>{data.release.packDigest}</code></dd></div><div><dt>{msg('Runtime digest')}</dt><dd><code>{data.release.runtimeDigest}</code></dd></div></dl>{capabilities.data?.capabilities?.includes('job-upgrades')?<ButtonLink to={`/jobs/new?upgrade=${jobId}`}>{msg('Upgrade job')}</ButtonLink>:<p className={styles.note}>{msg('To use a changed pack, create a new job and review its new release.')}</p>}</Disclosure></div>
         {!showInputs&&tab==='triggers'&&<><DialectSubscriptions jobId={jobId}/><TriggersView jobId={jobId} release={data.release} managedTriggers={(subscriptions.data?.items??[]).filter(b=>b.jobId===jobId).flatMap(b=>b.subscription?.triggerId?[b.subscription.triggerId]:[])}/></>}
         {!showInputs&&tab==='activity'&&<ActivityView key={jobId} jobId={jobId} release={data.release}/>}
-        {showInputs && <RunForm job={data.job} release={data.release} />}
+        {showInputs && <RunForm key={data.job.id+data.release.id} job={data.job} release={data.release} />}
         <section hidden={showInputs||tab!=='runs'} className={styles.runCollection}><CollectionLayout label={msg('Run history')} loading={runs.isPending?msg('Loading runs…'):undefined} scrollKey={JSON.stringify([jobId,pagination.page,pagination.size])} footer={<><Pagination pagination={pagination} complete={!runs.hasNextPage&&!runs.error&&!runs.isPending}/><More {...runs}/></>} toolbar={<>{!showInputs&&tab==='runs'&&<SourcePreparations jobId={jobId} onHasItems={setHasPreparations}/>}<div className={styles.actions}><h2>{msg('Run history')}</h2><SelectionActions selection={runSelection} onExport={()=>exportSelectedRows('run-history',runSelection.selectedRows)}/></div>
 
           {!hasPreparations && !runs.isPending && !runs.error && runs.data?.pages.every(p => p.items.length === 0) && <p className="quiet">{msg('No runs yet. Run this job with a new dialect to record its first decision.')}</p>}
@@ -414,7 +432,7 @@ function RunForm({ job, release }: { job: Job; release: Release }) {
       clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', `jobs/${job.id}/runs`] }); navigate(`/jobs/${job.id}/runs/${run.id}`)
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
-  return <section className={styles.runForm}><h2>{msg('New run')}</h2><p className="quiet">{msg('These inputs start an operational run and will be retained with its audit record.')}</p>{isExecutableDialect(release.inputMapping) ? <MappedInputFields doc={JSON.parse(release.pack) as PackDocument} packText={release.pack} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : release.inputMapping ? <SourceInputFields doc={JSON.parse(release.pack) as PackDocument} provider={release.inputMapping.provider} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : <InputFields doc={JSON.parse(release.pack) as PackDocument} onValid={setInputsValid} onUnwritten={setUnwritten} {...{ facts, setFacts, supplied, setSupplied, evidence, setEvidence }} disabled={busy} />}<Problem error={error} /><div><Button variant="primary" disabled={busy || !inputsValid || Boolean(release.inputMapping && !source)} onClick={() => { void submit() }}>{busy ? msg('Submitting…') : msg('Submit run')}</Button></div></section>
+  return <section className={styles.runForm}><h2>{msg('New run')}</h2><p className="quiet">{msg('These inputs start an operational run and will be retained with its audit record.')}</p>{isExecutableDialect(release.inputMapping) ? <PersistentMappedRunInputs job={job} release={release} mapping={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork}/> : release.inputMapping ? <SourceInputFields doc={JSON.parse(release.pack) as PackDocument} provider={release.inputMapping.provider} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : <InputFields doc={JSON.parse(release.pack) as PackDocument} onValid={setInputsValid} onUnwritten={setUnwritten} {...{ facts, setFacts, supplied, setSupplied, evidence, setEvidence }} disabled={busy} />}<Problem error={error} /><div><Button variant="primary" disabled={busy || !inputsValid || Boolean(release.inputMapping && !source)} onClick={() => { void submit() }}>{busy ? msg('Submitting…') : msg('Submit run')}</Button></div></section>
 }
 function RunView({ runId }: { runId: string }) {
   const query = useQuery({ ...privateQuery, queryKey: ['job-run', runId], queryFn: () => jobsAPI<Run>(`runs/${runId}`), refetchInterval: q => ['queued', 'running'].includes(q.state.data?.state ?? '') ? 1000 : false })

@@ -107,6 +107,10 @@ func (s *Server) scanInputResearch(ctx context.Context) {
 	}
 }
 func (s *Server) executeInputResearch(parent context.Context, root *os.Root, run inputResearchRun) {
+	if run.Portable != nil {
+		s.executePortableResearch(parent, s.researchRunStore(root, run.ID), run)
+		return
+	}
 	executeInputResearch(parent, s.researchRunStore(root, run.ID), run, inputResearchOperations{
 		validateSearch: s.validateResearchSearchConnection, validateAI: s.validateResearchConnection,
 		model: s.inputResearchModel, source: s.researchSource(root), publish: s.publishResearchRecords,

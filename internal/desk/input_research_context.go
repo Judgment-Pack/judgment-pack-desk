@@ -65,7 +65,11 @@ func researchContextSelection(run inputResearchRun, taskID string) map[string]an
 // The immutable journal holds full sources. Only this disposable projection is
 // reduced, retaining the current recipe, limits, outcomes and exact source IDs.
 func fitResearchContext(prompt string, policy aicontext.Policy) (string, error) {
-	budget := policy.InputBytes() - len(inputResearchInstructions) - len(researchContextInstructions) - policy.BriefBytes - policy.MemoryBytes - 4608
+	return fitResearchContextWithInstructions(prompt, policy, inputResearchInstructions+researchContextInstructions)
+}
+
+func fitResearchContextWithInstructions(prompt string, policy aicontext.Policy, instructions string) (string, error) {
+	budget := policy.InputBytes() - len(instructions) - policy.BriefBytes - policy.MemoryBytes - 4608
 	if budget < 1024 {
 		return "", errors.New("The model context budget is too small for research instructions.")
 	}

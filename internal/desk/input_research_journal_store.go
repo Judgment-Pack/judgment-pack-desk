@@ -72,12 +72,18 @@ func decodeResearchJournal(raw []byte, id string) (inputResearchRun, error) {
 	if err := validateResearchJournal(run, id); err != nil {
 		return inputResearchRun{}, err
 	}
-	if run.Recipe.Target == "" {
+	if run.Version == 1 && run.Recipe.Target == "" {
 		run.Recipe.Target = "records"
 	}
 	return run, nil
 }
 func validateResearchJournal(run inputResearchRun, id string) error {
+	if run.Version == 2 {
+		return validatePortableResearchJournal(run, id)
+	}
+	if run.Portable != nil {
+		return errors.New("Portable research requires its own journal version.")
+	}
 	if run.Version != 1 || !inputResearchID.MatchString(id) || run.ID != id || !inputPreparationID.MatchString(run.PreparationID) || len(run.Records) > 50 || len(run.Attempts) > 250 || len(run.Sources) > 130 {
 		return errors.New("Invalid research record.")
 	}
@@ -97,12 +103,23 @@ func encodeResearchJournal(run inputResearchRun, id string) ([]byte, error) {
 	if err := validateResearchJournal(run, id); err != nil {
 		return nil, err
 	}
-	raw, err := json.Marshal(run)
+	var raw []byte
+	var err error
+	if run.Portable != nil {
+		raw, err = portableResearchJSON(run)
+	} else {
+		raw, err = json.Marshal(run)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if len(raw) > inputResearchRecordLimit {
 		return nil, errors.New("Research storage limit reached.")
+	}
+	// Validate the actual stored representation before any provider commits it.
+	// Raw JSON escaping can otherwise turn an accepted snapshot unreadable.
+	if _, err := decodeResearchJournal(raw, id); err != nil {
+		return nil, err
 	}
 	return raw, nil
 }
@@ -120,6 +137,11 @@ func changeResearchJournal(raw []byte, id string, change func(*inputResearchRun)
 	}
 	if next.ID != before.ID || next.Version != before.Version || next.PreparationID != before.PreparationID || next.CreatedAt != before.CreatedAt || len(next.Attempts) < len(before.Attempts) {
 		return nil, errors.New("Research history cannot be replaced.")
+	}
+	if before.Portable != nil {
+		if next.Portable == nil || next.Revision != before.Revision || next.Gateway != before.Gateway || portableResearchRevision(next.Portable.Frozen) != portableResearchRevision(before.Portable.Frozen) || len(before.Portable.Response) > 0 && !bytes.Equal(before.Portable.Response, next.Portable.Response) {
+			return nil, errors.New("The reviewed portable research contract and retained result cannot change.")
+		}
 	}
 	for i, old := range before.Attempts {
 		a := next.Attempts[i]

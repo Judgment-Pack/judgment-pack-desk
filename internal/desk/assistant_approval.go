@@ -53,8 +53,9 @@ type assistantActionAdapter struct {
 // Adapters own resource admission; the dispatcher owns session/phase scope,
 // explicit permission, expiry and single use. Unknown actions stay manual.
 var assistantActionAdapters = map[string]assistantActionAdapter{
-	"pack-update":     {resolve: resolvePackApproval},
-	"dialect-publish": {resolve: resolveDialectPublicationApproval, manual: true},
+	"pack-update":       {resolve: resolvePackApproval},
+	"portable-research": {resolve: resolvePortableResearchApproval, manual: true},
+	"dialect-publish":   {resolve: resolveDialectPublicationApproval, manual: true},
 }
 
 type assistantApprovalRequest struct {

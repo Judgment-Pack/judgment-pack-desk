@@ -1,0 +1,49 @@
+import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
+import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
+import {afterEach,beforeEach,expect,it,vi} from 'vitest'
+import {PortableResearchControls} from './PortableResearchControls'
+import {portableResearchAPI,type PortableResearchRun} from './portableResearch'
+import type {ResearchSource} from '../dialect/types'
+vi.mock('./portableResearch',async original=>({...await original<object>(),portableResearchAPI:vi.fn(),registerResearchModel:vi.fn()}))
+vi.mock('../config/DeskConfigProvider',()=>({useEffectiveConfig:()=>({})}))
+vi.mock('../assistant/AIConnectionPicker',()=>({AIConnectionPicker:()=>null}))
+vi.mock('../assistant/aiConnections',()=>({resolveAIConnection:()=>({connection:{id:'connection',revision:'revision'},assistant:{engine:'vercel',endpoint:{models:['generic-model']}}})}))
+const source:ResearchSource={name:'procurement',kind:'research',model:'generic-model',question:'Assess the record',constraints:{},maxAge:3600,evidence:[],fields:[{name:'eligible',type:'boolean',required:true}],capabilities:['answer'],read:{copy:{facts:[],evidence:[]}}}
+const reference={id:'research_'+'a'.repeat(32),context:'b'.repeat(64)}
+function run(state:PortableResearchRun['state']='review'):PortableResearchRun{return {id:reference.id,revision:'revision',state,createdAt:'2026-10-16T00:00:00Z',choice:{connection:'connection',revision:'revision',model:'generic-model'},limits:{records:1,modelCalls:8,pages:0,searches:0},plan:{name:source.name,kind:'research',arguments:{question:'Assess this procurement record',constraints:{},fields:source.fields,capabilities:['answer']}},inputText:'{}',responseText:state==='completed'?'{}':'',activity:{id:reference.id,state,updatedAt:'2026-10-16T00:00:00Z',recordCount:0,stopRequested:false,steps:[]}}}
+function view(context=reference.context){const cache=new QueryClient({defaultOptions:{queries:{retry:false}}});const review=vi.fn();return {review,...render(<QueryClientProvider client={cache}><PortableResearchControls source={source} reference={reference} currentContext={context} profiles={[]} disabled={false} onBind={vi.fn()} onReview={review}/></QueryClientProvider>)}}
+beforeEach(()=>vi.mocked(portableResearchAPI).mockResolvedValue(run()))
+afterEach(()=>{cleanup();vi.resetAllMocks()})
+it('restores a saved review after remount, and starts only on its explicit compact action',async()=>{
+ const first=view();await screen.findByText('Assess this procurement record');first.unmount()
+ view();await screen.findByText('Assess this procurement record')
+ expect(vi.mocked(portableResearchAPI).mock.calls.every(call=>call[1]===undefined)).toBe(true)
+ const button=screen.getByRole('button',{name:'Run research'})
+ expect(button.className).toContain('small')
+ vi.mocked(portableResearchAPI).mockResolvedValue(run('queued'))
+ fireEvent.click(button)
+ await waitFor(()=>expect(portableResearchAPI).toHaveBeenCalledWith('/'+reference.id+'/confirm',{},'revision'))
+ expect(await screen.findByRole('button',{name:'Stop'})).toBeTruthy()
+})
+it('keeps old run history readable but refuses execution against changed draft inputs',async()=>{
+ view('c'.repeat(64));await screen.findByText('Assess this procurement record')
+ expect((screen.getByRole('button',{name:'Run research'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(screen.getByText('Research was reviewed for different inputs. Review research again.')).toBeTruthy()
+ expect(vi.mocked(portableResearchAPI).mock.calls.every(call=>call[1]===undefined)).toBe(true)
+})
+it('reloads a completed result without queueing or replaying it',async()=>{
+ vi.mocked(portableResearchAPI).mockResolvedValue(run('completed'))
+ view();await screen.findByText('Result retained. Read sources and preview to verify mapped values.')
+ expect(screen.queryByRole('button',{name:'Run research'})).toBeNull()
+ expect(vi.mocked(portableResearchAPI).mock.calls.every(call=>call[1]===undefined)).toBe(true)
+})
+it('shows the exact proposed allowance before approving a paused run',async()=>{
+ const paused=run('paused')
+ paused.activity.budgetRequest={id:'budget-a',state:'pending',createdAt:paused.createdAt,reason:'More requests needed',current:paused.limits,proposed:{...paused.limits,modelCalls:14},used:{records:0,modelCalls:8,pages:0,searches:0}}
+ vi.mocked(portableResearchAPI).mockResolvedValue(paused)
+ view();await screen.findByRole('table',{name:'Research request allowance'})
+ expect(vi.mocked(portableResearchAPI).mock.calls.every(call=>call[1]===undefined)).toBe(true)
+ vi.mocked(portableResearchAPI).mockResolvedValue(run('queued'))
+ fireEvent.click(screen.getByRole('button',{name:'Approve and continue'}))
+ await waitFor(()=>expect(portableResearchAPI).toHaveBeenCalledWith('/'+reference.id+'/budget-decision',{requestId:'budget-a',decision:'approve'},'revision'))
+})

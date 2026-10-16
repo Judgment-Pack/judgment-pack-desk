@@ -1,8 +1,8 @@
 import { loadJobDraft,saveJobDraft } from './drafts'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate, Routes, Route } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateJobContent } from './JobsView'
 import { jobsAPI, JobsRequestError } from './client'
@@ -12,7 +12,8 @@ import { DeskConfigProvider } from '../config/DeskConfigProvider'
 import { createHash } from 'node:crypto'
 import { readReview, type Review } from '../packs/review/client'
 vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn(),saveJobDraft:vi.fn()}))
-vi.mock('./MappedInputFields',()=>({MappedInputFields:()=>null}))
+const mappedEditor=vi.hoisted(()=>({props:undefined as import('react').ComponentProps<typeof import('./MappedInputFields').MappedInputFields>|undefined}))
+vi.mock('./MappedInputFields',()=>({MappedInputFields:(props:import('react').ComponentProps<typeof import('./MappedInputFields').MappedInputFields>)=>{mappedEditor.props=props;return null}}))
 vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
 vi.mock('./releaseTests', () => ({ readReleaseTests: vi.fn() }))
 vi.mock('./runnerKey', async original => ({ ...await original<typeof import('./runnerKey')>(), refreshRunnerKey: vi.fn() }))
@@ -325,4 +326,23 @@ it('reconciles an interrupted attempt before checking changed inputs on an expli
  await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith(expect.stringContaining('/upgrade-receipt?')))
  expect(readReleaseTests).toHaveBeenCalledTimes(reads)
  expect(vi.mocked(jobsAPI).mock.calls.filter(([path])=>path.endsWith('/upgrade'))).toHaveLength(1)
+})
+
+
+it.each(['cancel','leave'] as const)('does not navigate after a delayed research checkpoint when its owner will %s',async action=>{
+ let finish!:(value:Awaited<ReturnType<typeof saveJobDraft>>)=>void
+ vi.mocked(saveJobDraft).mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+ function Location(){const location=useLocation(),navigate=useNavigate();return <><output data-testid="location">{location.pathname+location.search}</output><button onClick={()=>navigate('/elsewhere')}>Leave editor</button></>}
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/new?pack=pack']}><Location/><Routes><Route path="/jobs/new" element={<CreateJobContent/>}/><Route path="/elsewhere" element={<span>Another page</span>}/></Routes></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
+ await waitFor(()=>expect(mappedEditor.props?.onPersistResearchDraft).toBeDefined())
+ const task=new AbortController(),draft={text:'{}',caseText:'{}'}
+ let pending!:Promise<void>
+ act(()=>{pending=mappedEditor.props!.onPersistResearchDraft!(draft,task.signal)})
+ expect((screen.getByLabelText('Job name') as HTMLInputElement).disabled).toBe(true)
+ expect(screen.getByRole('combobox',{name:'Input configuration',hidden:true}).getAttribute('data-disabled')).not.toBeNull()
+ if(action==='leave')fireEvent.click(screen.getByRole('button',{name:'Leave editor'}))
+ else task.abort()
+ await act(async()=>{const [id,values]=vi.mocked(saveJobDraft).mock.calls[0]!;finish({file:{path:'draft',content:'',bytes:0,sha256:'saved'},draft:{version:1,id,updatedAt:new Date().toISOString(),status:'draft',values}});await pending})
+ expect(screen.getByTestId('location').textContent).toBe(action==='leave'?'/elsewhere':'/jobs/new?pack=pack')
+ if(action==='cancel')expect((screen.getByLabelText('Job name') as HTMLInputElement).disabled).toBe(false)
 })

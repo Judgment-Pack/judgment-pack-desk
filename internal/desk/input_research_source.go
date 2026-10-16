@@ -147,6 +147,11 @@ func verifyResearchProof(ctx context.Context, program string, p inputResearchPro
 	return result, receipt.Digest, nil
 }
 func (s *Server) researchSourceCall(ctx context.Context, pin inputResearchPin, path string, body any) ([]byte, error) {
+	return s.researchSourceCallWithAdmission(ctx, pin, path, body, nil)
+}
+
+// Admission is checked after shared capacity is obtained, immediately before dispatch.
+func (s *Server) researchSourceCallWithAdmission(ctx context.Context, pin inputResearchPin, path string, body any, admission func() error) ([]byte, error) {
 	gateway, e := s.configuredResearch()
 	if e != nil {
 		return nil, e
@@ -169,6 +174,11 @@ func (s *Server) researchSourceCall(ctx context.Context, pin inputResearchPin, p
 		defer func() { <-s.researchSlots }()
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	}
+	if admission != nil {
+		if err := admission(); err != nil {
+			return nil, err
+		}
 	}
 	transport := relayTransport
 	if transport == nil {
