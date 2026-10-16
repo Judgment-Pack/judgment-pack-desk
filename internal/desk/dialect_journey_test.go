@@ -17,10 +17,28 @@ import (
 // Only the AI and public website content are deterministic fixtures.
 func TestDialectCompanyPeopleTestedJobJourney(t *testing.T) {
 	for _, backend := range []string{"file", "memory"} {
-		t.Run(backend, func(t *testing.T) { testDialectCompanyPeopleTestedJobJourney(t, backend) })
+		t.Run(backend, func(t *testing.T) { testDialectResearchTestedJobJourney(t, backend, false) })
 	}
 }
-func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
+func TestDialectProcurementTestedJobJourney(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		t.Run(backend, func(t *testing.T) { testDialectResearchTestedJobJourney(t, backend, true) })
+	}
+}
+func testDialectResearchTestedJobJourney(t *testing.T, backend string, generic bool) {
+	rootFact, field, fieldType := "contact", "role", "string"
+	var value, other any = "Operations director", "Other role"
+	parentName, childName := "Example company", "Alex Example"
+	childURL, childText := "https://example.com/team/alex", "Alex Example is Operations director at Example."
+	parentKind, childKind := "company", "person"
+	if generic {
+		rootFact, field, fieldType = "notice", "is_open", "boolean"
+		value, other = true, false
+		parentName, childName = "Example procurement agency", "Open imaging procurement"
+		childURL, childText = "https://example.com/notices/imaging", "The imaging procurement is open for submissions."
+		parentKind, childKind = "record", "record"
+	}
+	target := "/" + rootFact + "/" + field
 	bundle, runner, runtime := os.Getenv("JPS_TEST_GATEWAY_BUNDLE"), os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
 	if bundle == "" || runner == "" || runtime == "" {
 		t.Skip("requires installed Gateway, Runner and Runtime")
@@ -34,14 +52,20 @@ func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 	var pack map[string]any
 	json.Unmarshal(packBytes, &pack)
 	pack["title"] = "Professional contact shortlist"
+	if generic {
+		pack["title"] = "Open procurement shortlist"
+	}
 	pack["rules"] = []any{
-		map[string]any{"id": "operations", "description": "Public operations role", "when": map[string]any{"op": "fact", "path": "/contact/role", "operator": "equals", "value": "Operations director"}, "outcome": "proceed", "onUnknown": "escalate"},
+		map[string]any{"id": "operations", "description": "Public operations role", "when": map[string]any{"op": "fact", "path": target, "operator": "equals", "value": value}, "outcome": "proceed", "onUnknown": "escalate"},
 	}
 	pack["fallbackOutcome"] = "hold"
 	packBytes, _ = json.Marshal(pack)
 	cases := []any{}
-	for _, c := range []struct{ id, role, outcome string }{{"operations", "Operations director", "proceed"}, {"other-role", "Other role", "hold"}} {
-		cases = append(cases, map[string]any{"id": c.id, "facts": map[string]any{"contact": map[string]string{"role": c.role}}, "expectedDisposition": map[string]any{"kind": "outcome", "outcomeId": c.outcome, "reasons": []any{}, "handoff": map[string]string{"state": "none"}}})
+	for _, c := range []struct {
+		id, outcome string
+		value       any
+	}{{"matching", "proceed", value}, {"nonmatching", "hold", other}} {
+		cases = append(cases, map[string]any{"id": c.id, "facts": map[string]any{rootFact: map[string]any{field: c.value}}, "expectedDisposition": map[string]any{"kind": "outcome", "outcomeId": c.outcome, "reasons": []any{}, "handoff": map[string]string{"state": "none"}}})
 	}
 	cases = append(cases, map[string]any{"id": "missing-role", "facts": map[string]any{}, "expectedDisposition": map[string]any{"kind": "unresolved", "reasons": []string{"unknown"}, "handoff": map[string]string{"state": "none"}}})
 	matrix, _ := json.Marshal(map[string]any{"matrixVersion": "3", "cases": cases})
@@ -79,15 +103,19 @@ func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 			return w.Body.Bytes()
 		}
 	}
-	discover := func(name, kind, url, text, field, value string, companies *inputPreparationReply) inputPreparationReply {
+	discover := func(name, kind, url, text, field, fieldType string, value any, companies *inputPreparationReply) inputPreparationReply {
 		t.Helper()
 		recipe := researchRecipeFixture()
 		recipe.Target = "companies"
-		recipe.Fields = []inputResearchField{{Name: field, Description: field, Type: "string"}}
+		recipe.Fields = []inputResearchField{{Name: field, Description: field, Type: fieldType}}
 		recipe.Limits = inputResearchLimits{Records: 1, Pages: 1, ModelCalls: 6}
 		if companies != nil {
 			recipe.Target = "people-at-companies"
 			recipe.CompanyInputs = []inputResearchCompanyRef{{PreparationID: companies.Document.ID, Revision: companies.SHA256, EntityID: companies.Document.Records[0].Research.Entity.ID}}
+		}
+		if generic {
+			recipe.Target = "records"
+			recipe.RequireParents = companies != nil
 		}
 		var saved inputPreparationReply
 		json.Unmarshal(call("POST", "/api/input-preparations", map[string]any{"name": name, "recipe": inputRecipe{Intent: "Fixture public research", Research: &recipe}}, ""), &saved)
@@ -101,7 +129,7 @@ func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 		run.PreparationID = saved.Document.ID
 		run.RelationshipVersion = 1
 		run.ContractVersion = 2
-		run.IdentityVersion = 1
+		run.IdentityVersion = 2
 		run.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 		run.Recipe = recipe
 		run.Seeds = []string{url}
@@ -176,13 +204,16 @@ func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 		}
 		return saved
 	}
-	companies := discover("Example company", "company", "https://example.com/", "Example operates in CA.", "country", "CA", nil)
-	contacts := discover("Alex Example", "person", "https://example.com/team/alex", "Alex Example is Operations director at Example.", "role", "Operations director", &companies)
+	companies := discover(parentName, parentKind, "https://example.com/", "Example operates in CA.", "country", "text", "CA", nil)
+	contacts := discover(childName, childKind, childURL, childText, field, fieldType, value, &companies)
 	contact := contacts.Document.Records[0]
-	if contact.Research.Entity.CompanyID != companies.Document.Records[0].Research.Entity.ID || contact.Values["company_name"] != "Example company" {
+	if contact.Research.Entity.CompanyID != companies.Document.Records[0].Research.Entity.ID || contact.Values["company_name"] != parentName {
 		t.Fatal("company lineage missing")
 	}
-	q := &inputQualification{Kind: "pack", Key: "contacts", Pack: string(packBytes), Digest: sha256Digest(packBytes), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{Target: "/contact/role", Source: "/values/role"}}, Evidence: []inputDialectEvidence{}}, Sources: []json.RawMessage{}}}
+	q := &inputQualification{Kind: "pack", Key: "contacts", Pack: string(packBytes), Digest: sha256Digest(packBytes), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{Target: target, Source: "/values/" + field}}, Evidence: []inputDialectEvidence{}}, Sources: []json.RawMessage{}}}
+	if generic {
+		q.Conversions = map[string]inputConversion{target: {Kind: "research-value"}}
+	}
 	contacts.Document.Recipe.Qualification = q
 	path := "/api/input-preparations/" + contacts.Document.ID
 	json.Unmarshal(call("PUT", path, map[string]any{"name": contacts.Document.Name, "recipe": contacts.Document.Recipe}, contacts.SHA256), &contacts)
@@ -200,8 +231,13 @@ func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 	}
 
 	rows, e := prepareInputSelection(contacts.Document, []string{contact.ID})
-	if e != nil || len(rows) != 1 || rows[0].Prepared["/contact/role"] != "Operations director" {
+	if e != nil || len(rows) != 1 {
 		t.Fatal("conversion", e, rows)
+	}
+	preparedValue, _ := json.Marshal(rows[0].Prepared[target])
+	wantValue, _ := json.Marshal(value)
+	if string(preparedValue) != string(wantValue) {
+		t.Fatalf("typed value changed: %s want %s", preparedValue, wantValue)
 	}
 	var batch inputEvaluation
 	json.Unmarshal(call("POST", path+"/evaluations", map[string]any{"recordIds": []string{contact.ID}}, contacts.SHA256), &batch)
@@ -238,7 +274,7 @@ func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, part := range []string{publication.Digest, `"formatVersion":"3.0.0"`, `"class":"generated"`, `"outcomeId":"proceed"`, contact.Research.Entity.CompanyID, `"company_name":"Example company"`, `"modelResponses"`} {
+	for _, part := range []string{publication.Digest, `"formatVersion":"3.0.0"`, `"class":"generated"`, `"outcomeId":"proceed"`, contact.Research.Entity.CompanyID, `"company_name":"` + parentName + `"`, `"modelResponses"`} {
 		if !strings.Contains(string(raw), part) {
 			t.Fatal("verification export missing", part)
 		}
@@ -253,5 +289,5 @@ func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 		assertNoResearchJournalFiles(t, s)
 		assertNoEvaluationFiles(t, s)
 	}
-	t.Log("company discovery -> person discovery -> dedup -> pinned company lineage -> mapping -> review -> tested release -> Job -> verified generated-origin export passed")
+	t.Log("parent discovery -> related record discovery -> dedup -> pinned parent lineage -> typed mapping -> review -> tested release -> Job -> verified generated-origin export passed")
 }
