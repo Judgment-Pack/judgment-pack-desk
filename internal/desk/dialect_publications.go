@@ -29,18 +29,23 @@ func (c *dialectPublicationContext) valid(p artifactPublication) bool {
 }
 
 type dialectPublicationRequest struct {
-	Action      string `json:"action"`
-	Revision    string `json:"revision"`
-	Variant     string `json:"variant"`
-	Version     string `json:"version"`
-	CheckDigest string `json:"checkDigest,omitempty"`
-	Reviewed    bool   `json:"reviewed,omitempty"`
+	Action          string               `json:"action"`
+	Revision        string               `json:"revision"`
+	Variant         string               `json:"variant"`
+	Version         string               `json:"version"`
+	CheckDigest     string               `json:"checkDigest,omitempty"`
+	Reviewed        bool                 `json:"reviewed,omitempty"`
+	BasePublication *string              `json:"basePublication,omitempty"`
+	Impact          artifactImpact       `json:"impact"`
+	Review          *retainedArtifactRef `json:"review,omitempty"`
 }
 type dialectPublicationAnswer struct {
-	Publication artifactPublication `json:"publication"`
-	Document    string              `json:"document"`
-	Digest      string              `json:"digest"`
-	Saved       bool                `json:"saved"`
+	Publication     artifactPublication  `json:"publication"`
+	Document        string               `json:"document"`
+	Digest          string               `json:"digest"`
+	Saved           bool                 `json:"saved"`
+	BasePublication string               `json:"basePublication"`
+	Review          *retainedArtifactRef `json:"review,omitempty"`
 }
 
 func dialectPublicationRequestID(id string, req dialectPublicationRequest) string {
@@ -102,7 +107,7 @@ func (s *Server) publicationAnswer(ctx context.Context, p artifactPublication) (
 	if err != nil {
 		return answer, err
 	}
-	return dialectPublicationAnswer{p, string(raw), "sha256:" + digestOf(raw), true}, nil
+	return dialectPublicationAnswer{Publication: p, Document: string(raw), Digest: "sha256:" + digestOf(raw), Saved: true, Review: p.Review}, nil
 }
 func (s *Server) readDialectPublicationLedger() (publicationLedger, error) {
 	root, _, err := openOwnFolder(s.root, strings.Split(publicationDirectory, "/"), false, "artifact versions")
@@ -129,6 +134,20 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 	ledger, err := s.readDialectPublicationLedger()
 	if err != nil {
 		fail(503, err)
+		return
+	}
+	if r.Method == "GET" && r.URL.Query().Get("review") == "latest" {
+		variant := r.URL.Query().Get("variant")
+		if variant != "asserted" && variant != "generated" {
+			fail(400, errors.New("Choose a record kind."))
+			return
+		}
+		review, e := s.latestArtifactReview(r.Context(), dialectArtifactID(id, variant))
+		if e != nil {
+			fail(503, e)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"review": review})
 		return
 	}
 	if r.Method == "GET" {
@@ -180,7 +199,7 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 	request := dialectPublicationRequestID(id, req)
 	// Completed publication wins over unavailable Runtime or a subsequently edited recipe.
 	for _, p := range ledger.Items {
-		if p.Dialect != nil && p.Dialect.Request == request {
+		if p.Dialect != nil && (p.Dialect.Request == request || ledger.Receipts[request] == p.ID) {
 			answer, e := s.publicationAnswer(r.Context(), p)
 			if e != nil {
 				fail(503, e)
@@ -192,6 +211,11 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 	}
 	if req.Action == "publish" && (!req.Reviewed || req.CheckDigest == "") {
 		fail(400, errors.New("Check and review this exact version before publishing."))
+		return
+	}
+	base := latestDialectPublication(ledger, id, req.Variant)
+	if !req.Impact.valid() {
+		fail(400, errors.New("Describe the compatibility impact before checking this version."))
 		return
 	}
 	view, err := s.preparationRepository().Read(r.Context())
@@ -240,6 +264,10 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 			continue
 		}
 		if prior.Dialect.Recipe == candidate.Dialect.Recipe && prior.Documents[0] == candidate.Documents[0] {
+			if err = s.retainPublicationReceipt(r.Context(), request, prior.ID); err != nil {
+				fail(503, err)
+				return
+			}
 			answer, err := s.publicationAnswer(r.Context(), prior)
 			if err != nil {
 				fail(503, err)
@@ -249,6 +277,10 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		break
+	}
+	if req.Action == "publish" && (req.BasePublication == nil || *req.BasePublication != base || req.Review == nil) {
+		fail(409, errors.New("The publication base changed or its review is missing. Check and review this version again."))
+		return
 	}
 	held, err := holdDeskFolder(s.root, s.root.Name())
 	if err != nil {
@@ -260,8 +292,22 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 		fail(409, err)
 		return
 	}
-	answer := dialectPublicationAnswer{candidate, checked.Document, checked.Digest, false}
+	answer := dialectPublicationAnswer{Publication: candidate, Document: checked.Document, Digest: checked.Digest, BasePublication: base}
+	preview, _ := json.Marshal(answer)
+	review := artifactReview{Version: 1, Target: dialectArtifactID(id, req.Variant), BasePublication: base, StorageRevision: saved.SHA256, Candidate: candidate.Documents[0].Content, ProposedVersion: req.Version, Impact: req.Impact, Dependencies: []retainedArtifactRef{candidate.Dialect.Recipe, candidate.Dialect.Pack}, Preview: preview}
 	if req.Action == "check" {
+		for _, data := range [][]byte{[]byte(checked.Document), recipe, pack} {
+			if _, err = s.artifactRepository().Put(r.Context(), data); err != nil {
+				fail(503, err)
+				return
+			}
+		}
+		retained, e := s.retainArtifactReview(r.Context(), review)
+		if e != nil {
+			fail(503, e)
+			return
+		}
+		answer.Review = &retained.Reference
 		writeJSON(w, 200, answer)
 		return
 	}
@@ -269,6 +315,18 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 		fail(409, errors.New("The checked document changed. Review it again."))
 		return
 	}
+	retained, e := s.artifactReview(r.Context(), *req.Review)
+	if e != nil {
+		fail(409, e)
+		return
+	}
+	// Preview timestamps are display metadata. All binding fields must still agree.
+	review.Preview = retained.Review.Preview
+	if !sameDraftValue(review, retained.Review) {
+		fail(409, errors.New("The candidate or compatibility review changed. Check this version again."))
+		return
+	}
+	answer.Review = req.Review
 	transaction, err := s.openPublicationTransaction(r.Context())
 	if err != nil {
 		fail(409, err)
@@ -276,7 +334,7 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 	}
 	defer transaction.close()
 	for _, p := range transaction.ledger.Items {
-		if p.Dialect != nil && p.Dialect.Request == request {
+		if p.Dialect != nil && (p.Dialect.Request == request || transaction.ledger.Receipts[request] == p.ID) {
 			a, e := s.publicationAnswer(r.Context(), p)
 			if e != nil {
 				fail(503, e)
@@ -286,6 +344,13 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	if latestDialectPublication(transaction.ledger, id, req.Variant) != base {
+		fail(409, errors.New("Another version was published. Review against the new publication."))
+		return
+	}
+	candidate.Review = req.Review
+	candidate.ID = publicationID(candidate)
+	answer.Publication = candidate
 	transaction.candidate = candidate
 	if err = admitPublication(transaction.ledger, candidate); err != nil {
 		fail(409, err)
@@ -434,4 +499,48 @@ func verifyPublishedRelease(input, actual json.RawMessage, pin *struct{ ID, Vers
 		return errors.New("The release does not match the reviewed Dialect publication and execution mapping.")
 	}
 	return nil
+}
+
+func latestDialectPublication(ledger publicationLedger, id, variant string) string {
+	for i := len(ledger.Items) - 1; i >= 0; i-- {
+		p := ledger.Items[i]
+		if p.Dialect != nil && p.Dialect.PreparationID == id && p.Dialect.Variant == variant {
+			return p.ID
+		}
+	}
+	return ""
+}
+
+// Record a no-op's completed request without publishing another version. This
+// makes recovery independent of later recipe edits and Runtime availability.
+func (s *Server) retainPublicationReceipt(ctx context.Context, request, id string) error {
+	tx, err := s.openPublicationTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.close()
+	if existing, ok := tx.ledger.Receipts[request]; ok {
+		if existing != id {
+			return errors.New("Publication request already has another receipt.")
+		}
+		return nil
+	}
+	found := false
+	for _, p := range tx.ledger.Items {
+		if p.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errors.New("Publication is no longer available.")
+	}
+	if len(tx.ledger.Receipts) >= 4096 {
+		return errors.New("Artifact publication receipts reached their storage limit.")
+	}
+	if tx.ledger.Receipts == nil {
+		tx.ledger.Receipts = map[string]string{}
+	}
+	tx.ledger.Receipts[request] = id
+	return writePublicationLedger(tx.root, tx.ledger)
 }

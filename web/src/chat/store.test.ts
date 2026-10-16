@@ -398,3 +398,18 @@ it('retries failed initial hydration without replaying writes or reloading a liv
  expect(store.getSnapshot().drafts[0].composer).toBe('Keep this unfinished message')
  expect(write).not.toHaveBeenCalled()
 })
+
+it('restores refused Dialect candidates and exact findings without saved-action authority',async()=>{
+ const {store,write}=setup();await store.load();const chat=store.create()
+ const action={version:1 as const,id:'mapping-attempt',createdAt:'2026-10-16',inputId:'prep_'+'a'.repeat(32),name:'Triage',revision:'a'.repeat(64),recipeVersion:1,kind:'update-dialect' as const,
+  dialect:{packKey:'triage',packDigest:'sha256:'+'b'.repeat(64),facts:[],evidence:[],summary:'Unknown fields remain unknown.'},
+  dialectCheck:{document:'{"version":3,"case":{"facts":[],"evidence":[]}}',report:{status:'refused',diagnostics:[{code:'JPS-DIALECT-FORM',instancePath:'/case',message:'Review this declaration.'}]}}}
+ store.update(chat.id,{inputActions:[action]});await store.flush()
+ const saved=write.mock.calls.at(-1)![0]
+ const restored=setup({read:async()=>({project:'/project',sha256:'loaded',content:saved})});await restored.store.load()
+ expect(restored.store.getSnapshot().chats[0].inputActions).toEqual([action])
+ expect(restored.store.getSnapshot().chats[0].inputActions?.[0].applied).toBeUndefined()
+ const bad=structuredClone(saved) as any;bad.chats[0].inputActions[0].dialectCheck.report.compatibility={notes:'not findings'}
+ const invalid=setup({read:async()=>({project:'/project',sha256:'loaded',content:bad})});await invalid.store.load()
+ expect(invalid.store.getSnapshot().ready).toBe(false);expect(invalid.write).not.toHaveBeenCalled()
+})

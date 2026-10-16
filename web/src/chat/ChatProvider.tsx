@@ -117,11 +117,15 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
     if ((current.graphDrafts?.length ?? 0) >= 16) throw new Error('This chat has 16 graph drafts. Start a new chat to create another.')
     store.update(chat.id, {graphDrafts: [...(current.graphDrafts ?? []), draft]})
   }})
-  const dialects = dialectChatTools({afterTurnId:()=>currentTurns?.id,addAction:action=>{
+  const dialects = dialectChatTools({afterTurnId:()=>currentTurns?.id,retainAction:async(action,signal)=>{
     const current=chatOf(store,chat.id)
     if(!current||store.getSnapshot().error)throw Error('Save or recover this chat before proposing a dialect.')
-    if((current.inputActions?.length??0)>=32)throw Error('This chat has 32 actions. Start a new chat to propose another.')
-    store.update(chat.id,{inputActions:[...(current.inputActions??[]),action]})
+    const actions=current.inputActions??[],exists=actions.some(item=>item.id===action.id)
+    if(!exists&&actions.length>=32)throw Error('This chat has 32 actions. Start a new chat to propose another.')
+    store.update(chat.id,{inputActions:exists?actions.map(item=>item.id===action.id?action:item):[...actions,action]})
+    const binding=store.getSnapshot().bindings.get(chat.id)
+    if(binding?.run)store.report(chat.id,{...binding,state:binding.run.getSnapshot()})
+    await store.checkpoint(signal)
   }})
   const tests = testChatTools({
     chatId: chat.id,

@@ -868,7 +868,6 @@
   "Configured graph id": "Konfigurierte Graph-ID",
   "Configured reference": "Konfigurierte Referenz",
   "Configured · Availability checked when used": "Konfiguriert · Verfügbarkeit wird bei Nutzung geprüft",
-  "Configuring and running imported presets is not available yet.": "Importierte Vorlagen können noch nicht konfiguriert oder ausgeführt werden.",
   "Confirm": "Bestätigen",
   "Confirm and lock {{count}} differences": "{{count}} Unterschiede bestätigen und sperren",
   "Confirm and lock {{count}} differences_one": "{{count}} Unterschied bestätigen und sperren",
@@ -5793,5 +5792,18 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— ein Locator für die Repository-Datei, die diese Behauptung aufstellt. Diese Nutzlast stellt keine auf, und was auch immer diese Datei behauptet, bezieht sich auf die Runtime, nicht auf die Pakete dieses Graphen, diese Fakten oder darauf, ob das Handeln nach dem Entscheidungsergebnis korrekt ist.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— ein Verweis auf die Repository-Datei mit der Aussage. Diese Nutzdaten treffen keine solche Aussage. Die Datei bezieht sich auf die Laufzeit, nicht auf dieses Paket, diese Fakten oder die Richtigkeit einer Handlung nach der Disposition.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "„Im überprüften Satz“ bedeutet, dass die jpack.lock.json des Projekts für diese Entscheidungs-ID genau diese Bytes festlegt. Es sagt nicht, dass das Paket richtig ist oder wer es überprüft hat. Es wird angezeigt, nicht erzwungen: Der Job wird in jedem Fall gleich erstellt.",
-  "… (truncated for display)": "… (für die Anzeige gekürzt)"
+  "… (truncated for display)": "… (für die Anzeige gekürzt)",
+  "Compatibility impact": "Auswirkung auf die Kompatibilität",
+  "First publication": "Erste Veröffentlichung",
+  "Reason for this version": "Grund für diese Version",
+  "Discard unsaved template configuration?": "Nicht gespeicherte Vorlagenkonfiguration verwerfen?",
+  "Configure template": "Vorlage konfigurieren",
+  "These source kinds are not supported by the current Runner.": "Diese Quelltypen werden vom aktuellen Runner nicht unterstützt.",
+  "The template stays unchanged. Connection assignments and case values are saved in a job draft for review.": "Die Vorlage bleibt unverändert. Verbindungszuweisungen und Falldaten werden zur Prüfung in einem Auftragsentwurf gespeichert.",
+  "Research sources currently require retained response files. Runner verifies their receipts before preparing inputs.": "Recherchequellen benötigen derzeit Dateien mit aufbewahrten Antworten. Runner prüft deren Belege vor der Datenaufbereitung.",
+  "Create job draft": "Auftragsentwurf erstellen",
+  "The file is too large.": "Die Datei ist zu groß.",
+  "Retained research responses": "Aufbewahrte Rechercheantworten",
+  "The imported definition changed. Review a new local dialect before preparing inputs.": "Die importierte Definition wurde geändert. Prüfen Sie vor der Datenaufbereitung einen neuen lokalen Dialekt.",
+  "Supply retained research responses for this source before preparing inputs.": "Stellen Sie vor der Datenaufbereitung aufbewahrte Rechercheantworten für diese Quelle bereit."
 }

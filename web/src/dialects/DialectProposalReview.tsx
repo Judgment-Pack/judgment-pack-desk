@@ -12,6 +12,7 @@ import {ConversionPreview} from './ConversionPreview'
 import {buildDialect,readDialectPack} from './dialect'
 import {type DialectPackBinding,type PreparationReply} from './client'
 import type {DialectChatAction} from './chatActions'
+import {DialectCheckError} from '../dialect/authoring'
 import {boundPack} from './qualification'
 import styles from './DialectsView.module.css'
 
@@ -43,6 +44,7 @@ function DialectReviewForm({saved,action,initial,blocked,opener,onClose,onSaved}
   <strong>{saved.document.name} → {pack.title??value.key}</strong>
   <p className={styles.note}>{msg('Recipe version {{version}}',{version:saved.document.recipeVersion})} · {pack.version}</p>
   <p className={styles.reviewNote}>{action.dialect!.summary}</p>
+  {!dirty&&checked!==identity&&action.dialectCheck?.report&&!['complete','review-required'].includes(action.dialectCheck.report.status)&&<Notice tone="warning">{new DialectCheckError(action.dialectCheck.report).message}</Notice>}
   {blocked&&<Notice tone="warning">{msg('The dialect changed or has unsaved edits. Close this review and request a fresh proposal before saving.')}</Notice>}
   <p className={styles.note}>{msg('Review the complete dialect below. Unassigned facts stay unknown. Saving replaces the previous bindings; it does not run decisions or enable Jobs.')}</p>
   <DialectEditor value={value} records={saved.document.records} research={saved.document.recipe.research} disabled={busy||blocked===true} onChange={setValue}/>

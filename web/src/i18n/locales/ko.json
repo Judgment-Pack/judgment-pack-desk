@@ -868,7 +868,6 @@
   "Configured graph id": "구성된 그래프 ID",
   "Configured reference": "설정된 참조",
   "Configured · Availability checked when used": "설정됨 · 사용 시 가용성 확인",
-  "Configuring and running imported presets is not available yet.": "가져온 템플릿의 구성 및 실행은 아직 지원되지 않습니다.",
   "Confirm": "확인",
   "Confirm and lock {{count}} differences": "차이 {{count}}개를 확인하고 잠그기",
   "Confirm and lock {{count}} differences_one": "차이 {{count}}개를 확인하고 잠그기",
@@ -5793,5 +5792,18 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— 주장을 제기하는 리포지토리 파일의 로케이터입니다. 이 페이로드는 아무 주장도 제기하지 않으며, 해당 파일이 주장하는 바가 무엇이든 그것은 런타임에 관한 것이지, 이 그래프의 팩이나 이들 사실, 또는 판정 결과에 따라 행동하는 것이 올바른지에 관한 것이 아닙니다.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 주장을 담은 저장소 파일의 위치 정보입니다. 이 페이로드는 그런 주장을 하지 않습니다. 해당 파일의 주장은 런타임에 관한 것이며 이 팩, 사실 또는 처분에 따라 행동하는 것이 올바른지에 관한 것이 아닙니다.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "‘검토된 집합에 있음’은 프로젝트의 jpack.lock.json이 이 결정 ID에 대해 바로 이 바이트를 고정한다는 뜻입니다. 팩이 올바르다거나 누가 검토했는지는 말하지 않습니다. 표시만 할 뿐 강제하지 않습니다. 어느 경우든 작업은 똑같이 만들어집니다.",
-  "… (truncated for display)": "… (표시를 위해 잘림)"
+  "… (truncated for display)": "… (표시를 위해 잘림)",
+  "Compatibility impact": "호환성 영향",
+  "First publication": "첫 게시",
+  "Reason for this version": "이 버전의 이유",
+  "Discard unsaved template configuration?": "저장하지 않은 템플릿 설정을 삭제할까요?",
+  "Configure template": "템플릿 설정",
+  "These source kinds are not supported by the current Runner.": "현재 Runner는 이러한 소스 유형을 지원하지 않습니다.",
+  "The template stays unchanged. Connection assignments and case values are saved in a job draft for review.": "템플릿은 변경되지 않습니다. 연결 할당과 사례 값은 검토할 작업 초안에 저장됩니다.",
+  "Research sources currently require retained response files. Runner verifies their receipts before preparing inputs.": "연구 소스에는 현재 보관된 응답 파일이 필요합니다. Runner는 입력을 준비하기 전에 해당 영수증을 검증합니다.",
+  "Create job draft": "작업 초안 만들기",
+  "The file is too large.": "파일이 너무 큽니다.",
+  "Retained research responses": "보관된 연구 응답",
+  "The imported definition changed. Review a new local dialect before preparing inputs.": "가져온 정의가 변경되었습니다. 입력을 준비하기 전에 새 로컬 Dialect를 검토하세요.",
+  "Supply retained research responses for this source before preparing inputs.": "입력을 준비하기 전에 이 소스의 보관된 연구 응답을 제공하세요."
 }
