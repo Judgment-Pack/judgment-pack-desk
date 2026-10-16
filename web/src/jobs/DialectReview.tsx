@@ -12,8 +12,8 @@ export function DialectReview({mapping, binding, profiles = [], warnings = [], d
   <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{msg('Source')}</th><th>{msg('Type')}</th><th>{msg('Input class')}</th></tr></thead><tbody>
    {mapping.case && <tr><td>{msg('Case inputs')}</td><td>{msg('Manual / API')}</td><td><code>asserted</code></td></tr>}
    {(mapping.sources ?? []).map(s => {
-    const pin=sourcePin(s,binding),profile = profiles.find(p => p.id === pin?.profile)
-    return <tr key={s.name}><td>{s.name}</td><td>{s.kind === 'research' ? msg('Research') : s.kind === 'selected-file' ? s.provider === 'local-file' ? msg('Local JSON file') : msg('Google Drive') : pin?.profile??s.kind}
+    const pin=sourcePin(s,binding),profileId=pin?.profile??s.profile,profile = profiles.find(p => p.id === profileId)
+    return <tr key={s.name}><td>{s.name}</td><td>{s.kind === 'research' ? msg('Research') : s.kind === 'selected-file' ? s.provider === 'local-file' ? msg('Local JSON file') : msg('Google Drive') : profileId??s.kind}
      {pin&&<div className={styles.note}>{pin.profile} · <code>{pin.profileDigest}</code>{Object.entries(binding?.sources[s.name]?.webProfiles??{}).map(([role,web])=><div key={role}>{role} · {web.profile}</div>)}</div>}
      {profile?.calculator && <div className={styles.note}>
       <div>{calculatorLabel(profile.calculator)}</div>
