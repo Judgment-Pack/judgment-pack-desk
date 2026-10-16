@@ -24,7 +24,7 @@ type inputResearchBudgetRequest struct {
 }
 
 func researchApprovedLimits(run inputResearchRun) inputResearchLimits {
-	limits := run.Recipe.Limits
+	limits := researchBaseLimits(run)
 	for _, request := range run.BudgetRequests {
 		if request.State == "approved" {
 			limits = request.Proposed
@@ -34,6 +34,9 @@ func researchApprovedLimits(run inputResearchRun) inputResearchLimits {
 }
 func researchBudgetUsage(run inputResearchRun) inputResearchLimits {
 	used := inputResearchLimits{Records: len(run.Records)}
+	if run.Portable != nil && len(run.Portable.Response) > 0 {
+		used.Records = 1
+	}
 	for _, a := range run.Attempts {
 		if a.State == "waiting" || a.State == "not-started" {
 			continue
@@ -61,7 +64,7 @@ func validateResearchBudgets(run inputResearchRun) error {
 	if len(run.BudgetRequests) > 16 {
 		return bad
 	}
-	current := run.Recipe.Limits
+	current := researchBaseLimits(run)
 	seen := map[string]bool{}
 	for i, request := range run.BudgetRequests {
 		proposed := request.Proposed
@@ -72,9 +75,7 @@ func validateResearchBudgets(run inputResearchRun) error {
 		if proposed.Records != current.Records || proposed.Searches < current.Searches || proposed.Pages < current.Pages || proposed.ModelCalls < current.ModelCalls || proposed == current {
 			return bad
 		}
-		recipe := run.Recipe
-		recipe.Limits = proposed
-		if validateInputResearch(&recipe) != nil || (run.ContinuationOf != "" || run.Reprocess) {
+		if validateResearchProposedLimits(run, proposed) != nil || (run.ContinuationOf != "" || run.Reprocess) {
 			return bad
 		}
 		if _, err := time.Parse(time.RFC3339Nano, request.CreatedAt); err != nil {
@@ -107,6 +108,9 @@ func validateResearchBudgets(run inputResearchRun) error {
 // A conservative, bounded host recommendation. It is an offer, never a grant.
 // Only a genuine budget stop can create it; provider/auth/policy failures cannot.
 func researchBudgetProposal(run inputResearchRun) *inputResearchBudgetRequest {
+	if run.Portable != nil {
+		return portableResearchBudgetProposal(run)
+	}
 	if request := pendingResearchBudget(run); request != nil {
 		return request
 	}
@@ -179,6 +183,9 @@ func decideResearchBudget(run *inputResearchRun, id, decision string, actor inpu
 	if decision == "decline" {
 		held.State = "declined"
 		run.State = "completed-with-gaps"
+		if run.Portable != nil {
+			run.State = "partial"
+		}
 		run.Problem = researchKeptResults(*run)
 	} else {
 		held.State = "approved"
@@ -191,5 +198,24 @@ func decideResearchBudget(run *inputResearchRun, id, decision string, actor inpu
 }
 
 func researchKeptResults(run inputResearchRun) string {
+	if run.Portable != nil {
+		responses, _ := portableResearchResponses(run)
+		return fmt.Sprintf("Research ended with %d retained acquisitions. No additional requests were authorized.", len(responses))
+	}
 	return fmt.Sprintf("Research ended. Saved records: %d. Retained sources: %d. No additional requests were authorized.", len(run.Records), len(run.Sources))
+}
+
+func researchBaseLimits(run inputResearchRun) inputResearchLimits {
+	if run.Portable != nil {
+		return run.Portable.Frozen.Limits
+	}
+	return run.Recipe.Limits
+}
+func validateResearchProposedLimits(run inputResearchRun, limits inputResearchLimits) error {
+	if run.Portable != nil {
+		return validatePortableResearchLimits(limits)
+	}
+	recipe := run.Recipe
+	recipe.Limits = limits
+	return validateInputResearch(&recipe)
 }

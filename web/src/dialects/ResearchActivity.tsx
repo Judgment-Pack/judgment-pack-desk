@@ -82,6 +82,10 @@ export function ResearchWebRecovery({compact=false}:{compact?:boolean}){
 }
 function stepResult(result?:string){
  switch(result){
+  case 'portable-answer':return msg('AI proposed typed research fields for contract verification.')
+  case 'portable-search':return msg('AI requested a source search.')
+  case 'portable-page':return msg('AI requested a website read.')
+  case 'portable-read_context':return msg('AI requested a retained source section.')
   case 'search':return msg('AI requested a source search.')
   case 'read':return msg('AI requested a website read.')
   case 'delegate':return msg('AI assigned independent research tasks.')

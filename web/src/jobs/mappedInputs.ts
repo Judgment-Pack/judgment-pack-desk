@@ -58,12 +58,27 @@ export function mappedCase(mapping: ExecutableDialect, value: Record<string, unk
  }
  return result
 }
+export class PortableResearchRequired extends Error {
+ constructor(readonly name:string,readonly input:RetainedJSON){super(msg('Review research for {{source}} before continuing.',{source:name}))}
+}
+export interface RetainedResearchPrefix {input:RetainedJSON;name:string;response:RetainedJSON}
+// Compare general JSON without passing its numbers through floating point.
+function sameJSON(a:unknown,b:unknown):boolean {
+ if(a===undefined||b===undefined)return a===b
+ const order=(n:JsonNode):unknown=>n.kind==='object'?{kind:n.kind,members:[...n.members].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0).map(m=>[m.name,order(m.value)])}:n.kind==='array'?{kind:n.kind,items:n.items.map(order)}:n
+ return JSON.stringify(order(parseJsonText(jobsRequest(a))))===JSON.stringify(order(parseJsonText(jobsRequest(b))))
+}
 export async function prepareMappedInputs(options: {
  imported?:{dialect:ExecutableDialect;binding:unknown}; mapping: ExecutableDialect; caseValue: Record<string, unknown>; files: Record<string, SourceInput['snapshot']>; selections: Record<string, DriveSelection>;
- retainedResearch?:Record<string,RetainedJSON>; config: ResearchConfig; profiles: ProfileEntry[]; signal: AbortSignal; progress: (name: string) => void;
+ reviewResearch?:boolean;retainedPrefix?:RetainedResearchPrefix;retainedResearch?:Record<string,RetainedJSON>; config: ResearchConfig; profiles: ProfileEntry[]; signal: AbortSignal; progress: (name: string) => void;
 }): Promise<InputPreview> {
  const {mapping, config, profiles, signal} = options
- const source: Omit<SourceV2,'mapping'>&{mapping?:ExecutableDialect} = {...(options.imported?{import:options.imported}:{mapping}), case: mappedCase(mapping, options.caseValue, options.selections), sources: {}}
+ const prefix=options.retainedPrefix
+ const retained=prefix?parseMappedCase(prefix.input.text).source as SourceV2:undefined
+ const priorSelections=Object.fromEntries(Object.entries(retained?.sources??{}).flatMap(([name,value])=>value.snapshot?.proof?.drive?[[name,value.snapshot.proof.drive]]:[]))
+ const expected:{import?:SourceV2['import'];mapping?:ExecutableDialect;case:Record<string,unknown>}={...(options.imported?{import:options.imported}:{mapping}),case:mappedCase(mapping,options.caseValue,{...priorSelections,...options.selections})}
+ if(retained&&(!sameJSON(retained.import,expected.import)||!sameJSON(retained.mapping,expected.mapping)||!sameJSON(retained.case,expected.case)||Object.hasOwn(retained.sources,prefix!.name)))throw Error(msg('Research was reviewed for different inputs. Review research again.'))
+ const source: Omit<SourceV2,'mapping'>&{mapping?:ExecutableDialect} = {...expected,sources:retained?{...retained.sources,[prefix!.name]:{response:prefix!.response}}:{}}
  if(options.imported&&canonicalize(mapping as never)!==canonicalize(options.imported.dialect as never))throw Error(msg('The imported definition changed. Review a new local dialect before preparing inputs.'))
  const binding=options.imported?importBindings(options.imported.binding):undefined
  // Check all browser relay pins before any call, not only the first source.
@@ -72,12 +87,11 @@ export async function prepareMappedInputs(options: {
   if (!pin) continue
   const trusted = profiles.find(p => p.profile.id === pin.profile && p.digest === pin.profileDigest)?.profile
   // Offline retained research is verified by Runner under its pinned profiles.
-  if (s.kind==='research'&&options.retainedResearch?.[s.name])continue
+  if (Object.hasOwn(source.sources,s.name)||s.kind==='research'&&options.retainedResearch?.[s.name])continue
   if (!trusted || !config.gateway || trusted.authority !== config.gateway.authority || trusted.publicKey !== config.gateway.signer.public) throw Error(msg('The source profile does not match this Desk gateway.'))
   if (s.provider === 'google-drive' && (!config.documents?.enabled || config.managedLocal !== true)) throw Error(msg('Enable document processing in Admin → Document processing before attaching Drive files.'))
  }
- const session = newResearchSession()
- let calledGateway = false
+ const sessions:string[]=[]
  try {
   for (let count=0; count<=(mapping.sources ?? []).length; count++) {
    signal.throwIfAborted()
@@ -94,7 +108,7 @@ export async function prepareMappedInputs(options: {
    options.progress(next.name)
    if(declared.kind==='research') {
     const retained=options.retainedResearch?.[next.name]
-    if(!retained)throw Error(msg('Supply retained research responses for this source before preparing inputs.'))
+    if(!retained){if(options.reviewResearch)throw new PortableResearchRequired(next.name,new RetainedJSON(jobsRequest({source})));throw Error(msg('Supply retained research responses for this source before preparing inputs.'))}
     source.sources[next.name]={response:retained};continue
    }
    if (declared.provider === 'local-file') {
@@ -105,7 +119,7 @@ export async function prepareMappedInputs(options: {
    const profile = profiles.find(p => p.profile.id === next.profile)?.profile
    if (!profile || next.source !== profile.source || !next.arguments) throw Error(msg('The inputs could not be mapped.'))
    if (declared.provider === 'google-drive' && (next.arguments.fileId !== options.selections[next.name]?.fileId || next.arguments.grant !== options.selections[next.name]?.grant)) throw Error(msg('The inputs could not be mapped.'))
-   calledGateway = true
+   const session=newResearchSession();sessions.push(session)
    const response = await acquire(session, profile.source, next.arguments, 1 << 20, signal, declared.provider === 'google-drive' ? 'local-documents' : undefined).catch(cause => {
     if (declared.provider === 'google-drive') {
      const failure = connectionFailure(cause, 'google-drive')
@@ -126,6 +140,6 @@ export async function prepareMappedInputs(options: {
  } finally {
   // Close the gateway session for housekeeping; Runner verifies receipts, not
   // the seal. A cleanup failure must not replace the actual preparation error.
-  if (calledGateway) { const cleanup = AbortSignal.timeout(3000); await seal(session, cleanup, config.managedLocal ? 'local-documents' : undefined).catch(() => {}) }
+  await Promise.all(sessions.map(session=>seal(session,AbortSignal.timeout(3000),config.managedLocal?'local-documents':undefined).catch(()=>{})))
  }
 }

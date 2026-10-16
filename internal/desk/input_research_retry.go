@@ -216,14 +216,14 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 				return err
 			}
 			size := len(raw)
-			if kind != "model" && callErr == nil {
+			if kind != "model" && callErr == nil && r.Portable == nil {
 				var source inputResearchSource
 				if json.Unmarshal(raw, &source) != nil {
 					return errors.New("Invalid source metadata.")
 				}
 				size += source.Bytes
 			}
-			if kind != "model" && callErr != nil {
+			if kind != "model" && callErr != nil && r.Portable == nil {
 				// Acquisition can leave a proof even when extraction has no
 				// usable text. Count those bytes before continuing to another
 				// source, rather than allowing empty pages to evade the cap.

@@ -154,3 +154,30 @@ it('does not invent a bound mapping when Runner omits it for an import',async()=
  await expect(prepareMappedInputs({...options(),mapping:definition,imported:{dialect:definition,binding:{dialect:'sha256:'+'c'.repeat(64),sources:{}}}})).rejects.toThrow('could not be mapped')
  expect(acquire).not.toHaveBeenCalled()
 })
+
+it('suspends for a pure research review and preserves preceding signed bytes',async()=>{
+ const raw='{"result":{"id":9007199254740993},"receipt":{},"salts":{}}'
+ const research={name:'research',kind:'research',profile:'records',profileDigest:profile.digest,maxAge:3600,model:'fixture',question:'Check',constraints:{},fields:[],evidence:[],capabilities:['answer'],read:{copy:{facts:[],evidence:[]}}}
+ const declaration=parseMapping(JSON.stringify({version:3,case:{parameters:{},facts:[],evidence:[]},sources:[mapping.sources![0],research]}))
+ vi.mocked(acquire).mockResolvedValue({text:raw} as Acquired)
+ vi.mocked(jobsAPI).mockResolvedValueOnce({next:{name:'first',kind:'operation',profile:'records',source:'records',arguments:{tool:'lookup',arguments:{}}}}).mockResolvedValueOnce({next:{name:'research',kind:'research',profile:'records',source:'answer',arguments:{question:'Check'}}})
+ const {PortableResearchRequired}=await import('./mappedInputs')
+ const problem=await prepareMappedInputs({...options(),mapping:declaration,reviewResearch:true}).catch(e=>e)
+ expect(problem).toBeInstanceOf(PortableResearchRequired)
+ expect(problem.name).toBe('research');expect(problem.input.text).toContain(raw)
+ expect(acquire).toHaveBeenCalledTimes(1)
+})
+it('resumes from a retained frozen prefix without rereading earlier sources and rejects changed case values',async()=>{
+ const declaration=parseMapping(JSON.stringify({version:3,case:{parameters:{},facts:[],evidence:[]},sources:[mapping.sources![0],{name:'research',kind:'research',profile:'records',profileDigest:profile.digest,read:{copy:{facts:[],evidence:[]}}}]}))
+ const raw='{"result":{"id":9007199254740993},"receipt":{}}'
+ const caseValue=parseMappedCase('{"large":9007199254740993,"fraction":1.0000,"no":false}')
+ const input=new RetainedJSON(jobsRequest({source:{mapping:declaration,case:caseValue,sources:{first:{response:new RetainedJSON(raw)}}}}))
+ const response=new RetainedJSON('{"result":{"fields":{"decimal":{"status":"found","value":"1.00","cites":[0]}},"responses":[]}}')
+ vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{},source:{mappingDigest:'digest'}},factsText:'{}'})
+ const result=await prepareMappedInputs({...options(),mapping:declaration,caseValue,retainedPrefix:{input,name:'research',response},profiles:[],config:{...config,gateway:null}})
+ expect(jobsRequest(result.input)).toContain(raw);expect(jobsRequest(result.input)).toContain(response.text)
+ expect(acquire).not.toHaveBeenCalled();expect(seal).not.toHaveBeenCalled()
+ vi.mocked(jobsAPI).mockClear()
+ await expect(prepareMappedInputs({...options(),mapping:declaration,caseValue:{...caseValue,no:true},retainedPrefix:{input,name:'research',response}})).rejects.toThrow('different inputs')
+ expect(jobsAPI).not.toHaveBeenCalled()
+})

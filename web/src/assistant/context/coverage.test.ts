@@ -23,7 +23,9 @@ it('keeps both frontend and backend execution paths inside the context boundary'
   const source=readFileSync(resolve(root,path),'utf8');expect(source).toContain('managedContext(');expect(source).toContain('context.result(');expect(source).toContain('context.beginIsolatedPhase()')
  }
  for(const path of ['assistant/useAssistantRun.ts','research/useResearchRun.ts'])expect(readFileSync(resolve(root,path),'utf8')).toContain('configuration:settings.current.contextConfiguration')
- expect(readFileSync(resolve(root,'../../internal/desk/input_research_model.go'),'utf8')).toContain('s.runBackgroundModel(')
+ for(const file of ['input_research_model.go','portable_research_worker.go'])expect(readFileSync(resolve(root,'../../internal/desk',file),'utf8')).toContain('s.runBackgroundModel(')
+ const portable=readFileSync(resolve(root,'../../internal/desk/portable_research_worker.go'),'utf8')
+ for(const boundary of ['fitResearchContextWithInstructions(', 'researchContextRead(', 'researchAttempt(', 'portableResearchChatWork(', 'pauseResearchForBudget('])expect(portable).toContain(boundary)
  const backend=resolve(root,'../../internal/desk')
  const runners=readdirSync(backend).filter(p=>p.endsWith('.go')&&!p.endsWith('_test.go')&&/runner\.Run\(/.test(readFileSync(resolve(backend,p),'utf8'))).sort()
  expect(runners).toEqual(['agent_run.go','background_model.go'])

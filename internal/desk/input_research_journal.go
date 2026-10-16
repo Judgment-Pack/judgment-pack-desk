@@ -45,6 +45,7 @@ type inputResearchAttempt struct {
 	AcquisitionRefusal bool            `json:"acquisitionRefusal,omitempty"`
 }
 type inputResearchRun struct {
+	Portable            *portableResearchJournal    `json:"portable,omitempty"`
 	RelationshipVersion int                         `json:"relationshipVersion,omitempty"`
 	Execution           *delegation.Execution       `json:"execution,omitempty"`
 	Tasks               []researchTask              `json:"tasks,omitempty"`
