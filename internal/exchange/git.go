@@ -35,6 +35,7 @@ func OpenRelease(ctx context.Context, location, tag string) (*GitTree, func(), e
 			return nil, close, e
 		}
 		tree.directory = temp
+		tree.remote = location
 		close = func() { os.RemoveAll(temp) }
 		if _, e = tree.git(ctx, 4096, "init", "--bare", "--quiet"); e != nil {
 			close()
@@ -104,6 +105,7 @@ func OpenRelease(ctx context.Context, location, tag string) (*GitTree, func(), e
 
 type GitTree struct {
 	directory string
+	remote    string
 	Commit    string
 	root      string
 	trees     map[string][]treeEntry

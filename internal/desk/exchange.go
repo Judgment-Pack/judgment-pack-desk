@@ -102,7 +102,7 @@ func (s *Server) exchangeCheck(ctx context.Context, document []byte) (string, st
 		return "", "", err
 	}
 	if report.Status != "document-valid" || report.Document == "" || report.Digest == "" {
-		return "", "", errors.New("Runtime cannot validate this preset's document form")
+		return "", "", errors.New("Runtime cannot validate this template's document form")
 	}
 	return report.Document, report.Digest, nil
 }
@@ -169,7 +169,7 @@ func (s *Server) handleExchange(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer close()
-		release, e := exchangeCatalog.Review(r.Context(), tree, request.Location, request.Tag, tree.Commit, s.exchangeCheck)
+		release, e := exchangeCatalog.Review(r.Context(), tree, request.Location, request.Tag, tree.Commit, s.exchangeCheck, s.exchangeReplay)
 		if e != nil {
 			fail(422, e)
 			return
@@ -180,8 +180,29 @@ func (s *Server) handleExchange(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		pins := []exchangeCatalog.Pin{}
+		identities := append([]exchangeCatalog.Candidate(nil), release.Candidates...)
 		for _, record := range h.Imports {
 			pins = append(pins, exchangeCatalog.Pin{Location: record.Location, Tag: record.Tag, Commit: record.Commit})
+			previous, candidate, err := s.readExchangeImport(r.Context(), record)
+			if err != nil {
+				fail(503, err)
+				return
+			}
+			pins = append(pins, previous.Release.History...)
+			identities = append(identities, candidate)
+		}
+		if err := exchangeCatalog.CheckArtifactPairs(identities); err != nil {
+			fail(409, err)
+			return
+		}
+		// Historical tags already seen must keep their pinned commits too.
+		for _, historical := range release.History {
+			for _, pin := range pins {
+				if historical.Location == pin.Location && historical.Tag == pin.Tag && historical.Commit != pin.Commit {
+					fail(409, errors.New("A previously reviewed catalog tag moved"))
+					return
+				}
+			}
 		}
 		if e = exchangeCatalog.CheckReleasePins(release, pins); e != nil {
 			fail(409, e)
@@ -276,7 +297,7 @@ func (s *Server) handleExchange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if selected == nil {
-		fail(422, errors.New("Only a successfully checked preset can be imported"))
+		fail(422, errors.New("Only a successfully checked template can be imported"))
 		return
 	}
 	actor := inputReviewActor{Kind: "local-access"}

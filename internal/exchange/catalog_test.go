@@ -230,7 +230,13 @@ func TestCurrentEntryVersionIsSeparateFromDocumentVersion(t *testing.T) {
 			json.Unmarshal(tree["manifest.json"], &rows)
 			rows[0].EntryDigest = Digest(tree[path])
 			tree["manifest.json"], _ = json.Marshal(rows)
-			result := review(t, tree)
+			result, err := Review(context.Background(), tree, "catalog", "v1.0.0", strings.Repeat("a", 40), testCheck)
+			if err != nil {
+				if version == nil {
+					return
+				}
+				t.Fatal(err)
+			}
 			if version == 3 {
 				if len(result.Candidates) != 1 || result.Candidates[0].Entry.EntryVersion != 3 || result.Candidates[0].Entry.Dialect.Version != 3 {
 					t.Fatal(result)
@@ -260,7 +266,7 @@ func TestCurrentEntryVersionIsSeparateFromDocumentVersion(t *testing.T) {
 			json.Unmarshal(tree["manifest.json"], &rows)
 			rows[0].EntryDigest = Digest(tree[path])
 			tree["manifest.json"], _ = json.Marshal(rows)
-			if result := review(t, tree); len(result.Candidates) != 0 {
+			if result, _ := Review(context.Background(), tree, "catalog", "v1.0.0", strings.Repeat("a", 40), testCheck); len(result.Candidates) != 0 {
 				t.Fatal("named artifact admitted as preset", result)
 			}
 		})

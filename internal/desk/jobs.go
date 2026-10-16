@@ -538,6 +538,13 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 		writeJSONCoded(w, 413, CodeTooLarge, "Jobs requests are limited to 2 MiB.")
 		return
 	}
+	if tail == "previews" && r.Method == http.MethodPost {
+		data, err = s.checkExchangePreview(r.Context(), data)
+		if err != nil {
+			writeJSONCoded(w, 422, CodeBadRequest, err.Error())
+			return
+		}
+	}
 	request, err := http.NewRequestWithContext(r.Context(), r.Method, endpoint+"/v1/"+tail, bytes.NewReader(data))
 	if err != nil {
 		writeJSONCoded(w, 400, CodeBadRequest, "Invalid Jobs request.")
