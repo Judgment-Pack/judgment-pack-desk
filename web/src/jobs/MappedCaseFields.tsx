@@ -5,13 +5,13 @@ import { factFields, pointerGet, pointerSet } from '../packs/test-workspace/mode
 import { FactInput } from '../packs/test-workspace/CaseEditor'
 import { Select } from '../ui/Select'
 import { parseMappedObject } from './mappedInputs'
-import type { DialectV2 } from './dialectTypes'
+import type { ExecutableDialect } from './dialectTypes'
 import { mappingErrorMessage } from './mappingError'
 import styles from './JobsView.module.css'
 
 const parseCaseValue=(text:string)=>parseMappedObject('{"value":'+text+'}').value
 
-export function MappedCaseFields({doc,mapping,text,disabled,onChange,onValid}:{doc:PackDocument;mapping:DialectV2;text:string;disabled:boolean;onChange:(text:string)=>void;onValid:(valid:boolean)=>void}){
+export function MappedCaseFields({doc,mapping,text,disabled,onChange,onValid}:{doc:PackDocument;mapping:ExecutableDialect;text:string;disabled:boolean;onChange:(text:string)=>void;onValid:(valid:boolean)=>void}){
  const id=useId()
  const [invalid,setInvalid]=useState<Record<string,boolean>>({}),[editError,setEditError]=useState('')
  let value:unknown,error=''

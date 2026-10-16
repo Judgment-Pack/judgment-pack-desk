@@ -7,11 +7,11 @@ import {afterEach,expect,it,vi} from 'vitest'
 import {DialectEditor} from './DialectEditor'
 import { languageReady, setLanguage } from '../i18n'
 import type {PackDocument} from '../mcp/types'
-import type {DialectV2} from './dialectTypes'
+import type {ExecutableDialect} from './dialectTypes'
 afterEach(async()=>{cleanup();setLanguage('en');await languageReady()})
 it('keeps source edits pending until valid configuration is explicitly applied',async()=>{
  const onChange=vi.fn(),onInvalid=vi.fn(),onDirty=vi.fn()
- const mapping:DialectV2=mappingFixture('editor-operation')
+ const mapping:ExecutableDialect=mappingFixture('editor-operation')
  function Editor(){const [value,setValue]=useState(mapping);return <DialectEditor doc={{} as PackDocument} mapping={value} profiles={[]} disabled={false} onChange={next=>{onChange(next);setValue(next)}} {...{onInvalid,onDirty}}/>}
  render(<QueryClientProvider client={new QueryClient()}><Editor/></QueryClientProvider>)
  fireEvent.click(screen.getByRole('button',{name:'records'}))
@@ -29,7 +29,7 @@ it('keeps source edits pending until valid configuration is explicitly applied',
 it('retains the integration chooser and pending request when the details portal moves',async()=>{
  const dock=document.createElement('div'),drawer=document.createElement('div');document.body.append(dock,drawer)
  const query=new QueryClient({defaultOptions:{queries:{retry:false}}}),claim=()=>()=>{},reveal=vi.fn()
- const mapping:DialectV2=mappingFixture('editor-operation-2')
+ const mapping:ExecutableDialect=mappingFixture('editor-operation-2')
  const props={doc:{} as PackDocument,mapping,profiles:[],disabled:false,onChange:vi.fn(),onInvalid:vi.fn(),onDirty:vi.fn()}
  function Editor({target}:{target:HTMLElement}){const [value,setValue]=useState(mapping);return <QueryClientProvider client={query}><DetailsSlotContext.Provider value={{target,open:true,claim,reveal}}><DialectEditor {...props} mapping={value} onChange={next=>{props.onChange(next);setValue(next)}}/></DetailsSlotContext.Provider></QueryClientProvider>}
  const view=(target:HTMLElement)=><Editor target={target}/>
@@ -55,7 +55,7 @@ it('explains calculator binding setup on adding a source and keeps ordinary sour
  const calculator={digest:'digest',profile:{id:'fx',shape:'mcp' as const,source:'finance',class:'record' as const,authority:'gateway',publicKey:'key',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,tools:['convert'],calculator:{name:'fx-convert',version:'2.1.0'}}}
  const query=new QueryClient({defaultOptions:{queries:{retry:false}}})
  const props={doc:{} as PackDocument,profiles:[calculator],disabled:false,onChange:vi.fn(),onInvalid:vi.fn(),onDirty:vi.fn()}
- const draw=(mapping:DialectV2)=><QueryClientProvider client={query}><DialectEditor {...props} mapping={mapping}/></QueryClientProvider>
+ const draw=(mapping:ExecutableDialect)=><QueryClientProvider client={query}><DialectEditor {...props} mapping={mapping}/></QueryClientProvider>
  const ui=render(draw({version:2,case:{facts:[],evidence:[]},sources:[]}))
  ui.rerender(draw(setSourceIntegration({version:2,case:{facts:[],evidence:[]}},calculator)))
  expect(await screen.findByText('This source is a calculator. In Advanced dialect → Edit dialect, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.')).toBeTruthy()

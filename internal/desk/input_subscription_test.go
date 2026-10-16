@@ -114,9 +114,19 @@ func testInputSubscriptionRealRunnerOutbox(t *testing.T, backend, phase string) 
 	json.Unmarshal(call("/api/input-preparations", map[string]any{"name": "Incremental", "recipe": inputRecipe{Qualification: q}}, ""), &saved)
 	path := "/api/input-preparations/" + saved.Document.ID
 	json.Unmarshal(call(path+"/imports", map[string]any{"kind": "csv", "name": "baseline.csv", "content": "Name,Matches,Evidence\nBaseline,0,present\n"}, saved.SHA256), &saved)
+	// One branch starts named, the other starts legacy. Both must keep their
+	// reviewed executable mapping when newer publications appear later.
+	if phase == "after" {
+		checkAndPublishDialect(t, s, saved, "asserted", "1.0.0")
+	}
 	var b inputEvaluation
 	json.Unmarshal(call(path+"/evaluations", map[string]any{"recordIds": []string{saved.Document.Records[0].ID}}, saved.SHA256), &b)
 	json.Unmarshal(call(path+"/evaluations/"+b.ID+"/confirm", map[string]any{"reviewed": true, "subscription": map[string]any{"mode": "changed", "includeExisting": false}}, saved.SHA256), &b)
+	if phase == "after" {
+		checkAndPublishDialect(t, s, saved, "asserted", "1.0.1")
+	} else {
+		checkAndPublishDialect(t, s, saved, "asserted", "1.0.0")
+	}
 	root, e := s.inputEvaluationRoot(false)
 	if e != nil {
 		t.Fatal(e)

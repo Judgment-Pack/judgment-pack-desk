@@ -47,6 +47,38 @@ pass retained pack bytes, including a JSON integer outside JavaScript's exact
 range, instead of serializing a parsed pack object. Runner integration tests
 exercise retained records and incremental subscriptions.
 
-Portable artifact identity with an x.y.z version remains Spec #180. The integer
-`version` on format-2/3 documents is a format discriminator, and this integration
-does not reinterpret it as an artifact release version.
+The integer `version` on historical format-2/3 documents remains a format
+discriminator. Named publications below use a separate artifact release version.
+
+## Named publications and frozen jobs
+
+Spec #180 is implemented by merged Spec #187 (RFC 0021). The named forms use
+`formatVersion: "2.0.0"` or `"3.0.0"`, an opaque `id`, and a separate x.y.z
+artifact `version`. Integer formats retain their original meaning and bytes.
+Runtime supplies all validation, canonical identity and version arithmetic.
+
+Recipe → Pack → Published dialect checks the saved recipe, its exact pack bytes
+and the selected imported-record or reviewed-research translation. Explicit
+publication retains the canonical document, recipe and pack in the private
+artifact repository and the shared immutable version ledger. History is paged.
+Unchanged completed requests reconcile from that receipt even if Runtime is
+unavailable. A changed candidate or version needs another check; a check does
+not grant publication permission. This manual endpoint is not an assistant
+Auto/Plan capability. Future chat publication must use a scoped action adapter.
+
+New job reviews use the matching published translation. Once a dialect has a
+publication, changed recipes require republishing before another job review.
+Imported records use the named family-2 form. Reviewed research uses an unbound
+family-3 operation and retains its separate binding and bound execution digest;
+its generated origin is not relabeled asserted. Existing integer-format jobs
+continue unchanged. Every incremental subscription prepares new records against
+its retained release, including when the first or a newer publication appears.
+Jobs never silently adopt the latest dialect. Recipe changes still pause a
+subscription for explicit review. Shared form edits omit optional empty members
+for strict formats; imported JSON is validated unchanged, never auto-repaired.
+
+Real Gateway/Runner/Runtime tests cover both handoff forms, named company →
+selected company → people → tested job execution, generated export provenance,
+and subscription restart/outbox recovery across later publications. Both local
+file and memory repository adapters run the journey. This does not claim a
+cloud database backend or acquisition for unimplemented Spec source kinds.

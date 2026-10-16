@@ -6,7 +6,7 @@ import { readDocumentRecord } from '../documents/record'
 import { connectionFailure, type DriveSelection } from '../connections/client'
 import type { SourceInput, InputPreview } from './client'
 import { jobsAPI } from './client'
-import type { InputPlan, DialectV2, ProfileEntry, SourceV2 } from './dialectTypes'
+import type { InputPlan, ExecutableDialect, ProfileEntry, SourceV2 } from './dialectTypes'
 import { RetainedJSON } from './wire'
 import { sourcePaths } from './sourceInputs'
 
@@ -15,15 +15,17 @@ export function parseMappedObject(text: string): Record<string, unknown> {
  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw Error(msg('Choose one JSON object describing a single input record.'))
  return value
 }
-export function parseMapping(text: string): DialectV2 {
+export function parseMapping(text: string): ExecutableDialect {
  const value = parseMappedObject(text)
- if (value.sources === undefined) value.sources = []
+ const sources=value.sources===undefined?[]:value.sources
+ const named=value.formatVersion==='2.0.0'||value.formatVersion==='3.0.0'
+ if (!named && value.version === 2 && value.sources === undefined) value.sources = []
  const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
  const copy = (v: unknown) => object(v) && Array.isArray(v.facts) && Array.isArray(v.evidence) && v.facts.every(f => object(f) && typeof f.target === 'string' && typeof f.source === 'string') && v.evidence.every(e => object(e) && typeof e.requirement === 'string' && typeof e.source === 'string')
- if (value.version !== 2 || (value.case !== undefined && !copy(value.case)) || !Array.isArray(value.sources) || value.sources.length > 16 || value.sources.some(s => !object(s) || typeof s.name !== 'string' || !/^[a-z][a-zA-Z0-9_-]{0,63}$/.test(s.name) || !['operation','selected-file'].includes(String(s.kind)) || !object(s.read) || (s.read.copy !== undefined && !copy(s.read.copy)))) throw Error(msg('The inputs could not be mapped.'))
- return value as unknown as DialectV2 // Runner performs authoritative schema validation before acquisition.
+ if ((!named && value.version !== 2 && value.version !== 3) || (named && (typeof value.id!=='string'||typeof value.version!=='string')) || (value.case !== undefined && !copy(value.case)) || !Array.isArray(sources) || sources.length > 16 || sources.some(s => !object(s) || typeof s.name !== 'string' || !/^[a-z][a-zA-Z0-9_-]{0,63}$/.test(s.name) || !['operation','selected-file'].includes(String(s.kind)) || !object(s.read) || (s.read.copy !== undefined && !copy(s.read.copy)))) throw Error(msg('The inputs could not be mapped.'))
+ return value as unknown as ExecutableDialect // Runner performs authoritative schema validation before acquisition.
 }
-export function mappedCase(mapping: DialectV2, value: Record<string, unknown>, selections: Record<string, DriveSelection>): Record<string, unknown> {
+export function mappedCase(mapping: ExecutableDialect, value: Record<string, unknown>, selections: Record<string, DriveSelection>): Record<string, unknown> {
  const result = JSON.parse(JSON.stringify(value)) as Record<string, unknown>
  for (const source of (mapping.sources ?? []).filter(s => s.provider === 'google-drive')) {
   const selection = selections[source.name]
@@ -47,7 +49,7 @@ export function mappedCase(mapping: DialectV2, value: Record<string, unknown>, s
  return result
 }
 export async function prepareMappedInputs(options: {
- mapping: DialectV2; caseValue: Record<string, unknown>; files: Record<string, SourceInput['snapshot']>; selections: Record<string, DriveSelection>;
+ mapping: ExecutableDialect; caseValue: Record<string, unknown>; files: Record<string, SourceInput['snapshot']>; selections: Record<string, DriveSelection>;
  config: ResearchConfig; profiles: ProfileEntry[]; signal: AbortSignal; progress: (name: string) => void;
 }): Promise<InputPreview> {
  const {mapping, config, profiles, signal} = options

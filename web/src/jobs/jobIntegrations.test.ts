@@ -1,10 +1,10 @@
 import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import {expect,it} from 'vitest'
 import {canChangeIntegration,matchesJobGateway,setSourceIntegration,supportsJobProfile} from './jobIntegrations'
-import type {DialectV2,ProfileEntry} from './dialectTypes'
+import type {ExecutableDialect,ProfileEntry} from './dialectTypes'
 import type {ResearchConfig} from '../config/deskConfig'
 const entry:ProfileEntry={digest:'new-digest',profile:{id:'registry',shape:'mcp',source:'registry',class:'record',authority:'gateway',publicKey:'key',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,tools:['read_case']}}
-const base:DialectV2=mappingFixture('integration-base')
+const base:ExecutableDialect=mappingFixture('integration-base')
 it('requires a supported execution contract and the configured signer/authority',()=>{
  expect(supportsJobProfile(entry)).toBe(true)
  expect(supportsJobProfile({...entry,profile:{...entry.profile,shape:'http'}})).toBe(false)
@@ -84,4 +84,14 @@ it('switching calculators resets old bindings rather than guessing bindings for 
  expect(next.sources![0]!.calculation).toEqual({inputs:{},tables:{}})
  expect(next.sources![0]!.arguments).toEqual({tool:'tax',arguments:{}})
  expect(prior.sources![0]!.calculation).toEqual({inputs:{amount:'amount'},tables:{rates:86400}})
+})
+
+it.each([3,'2.0.0','3.0.0'] as const)('omits retired Drive parameters in strict format %s',format=>{
+ const strict:ExecutableDialect={...(format===3?{version:3 as const}:{formatVersion:format,id:'urn:test:editing',version:'1.0.0'}),case:{facts:[],evidence:[]}}
+ const drive={...entry,profile:{...entry.profile,id:'drive',source:'drive',shape:'http' as const}}
+ const selected=setSourceIntegration(strict,drive)
+ const local=setSourceIntegration(selected,undefined,'source1')
+ expect(local.case).toEqual({facts:[],evidence:[]})
+ expect(local.sources![0]!.read.copy).toEqual({facts:[],evidence:[]})
+ expect(selected.case?.parameters).toHaveProperty('source1File')
 })

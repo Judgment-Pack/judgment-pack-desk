@@ -534,6 +534,8 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/input-subscriptions", s.handleInputSubscriptions)
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/subscription-state", s.handleInputEvaluation)
 	s.mux.HandleFunc("POST /api/dialect-authoring/check", s.handleDialectAuthoringCheck)
+	s.mux.HandleFunc("GET /api/input-preparations/{preparation}/publications", s.handleDialectPublications)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/publications", s.handleDialectPublications)
 	s.mux.HandleFunc("GET /api/dialect-drafts", s.handleDialectDrafts)
 	s.mux.HandleFunc("POST /api/dialect-drafts", s.handleDialectDrafts)
 	s.mux.HandleFunc("GET /api/dialect-drafts/{draft}", s.handleDialectDrafts)

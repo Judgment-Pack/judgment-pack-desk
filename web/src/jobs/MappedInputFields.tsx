@@ -16,7 +16,7 @@ import { JobIntegrationPicker } from './JobIntegrationPicker'
 import { setSourceIntegration } from './jobIntegrations'
 import { Disclosure } from '../ui/Disclosure'
 import { jobsAPI, type SourceInput, type InputPreview } from './client'
-import type { DialectV2, ProfileEntry, SourceV2 } from './dialectTypes'
+import type { ExecutableDialect, ProfileEntry, SourceV2 } from './dialectTypes'
 import { isSourceV2 } from './dialectTypes'
 import { parseMapping, parseMappedObject, prepareMappedInputs } from './mappedInputs'
 import { localSnapshot, pointerEscape } from './sourceInputs'
@@ -26,10 +26,10 @@ import { DialectReview, InputLineage } from './DialectReview'
 import { mappingErrorMessage } from './mappingError'
 import styles from './JobsView.module.css'
 
-function starter(doc: PackDocument): DialectV2 {
+function starter(doc: PackDocument): ExecutableDialect {
  return {version:2,case:{parameters:{},facts:factFields(doc).map(f => ({target:f.path,source:`/facts${f.path}`})),evidence:(doc.evidenceRequirements ?? []).map(e => ({requirement:e.id,source:`/evidence/${pointerEscape(e.id)}`}))},sources:[]}
 }
-export function MappedInputFields({doc, packText, fixed, disabled, active=true, onChange, draft, onDraftChange, onWorkChange, onPendingChange, onTransientChange}: {doc: PackDocument; packText:string; fixed?: DialectV2; disabled: boolean; active?: boolean; onChange: (source: SourceV2 | undefined) => void; draft?: MappedDraft; onDraftChange?: (draft: MappedDraft) => void; onWorkChange?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void; onTransientChange?: () => void}) {
+export function MappedInputFields({doc, packText, fixed, disabled, active=true, onChange, draft, onDraftChange, onWorkChange, onPendingChange, onTransientChange}: {doc: PackDocument; packText:string; fixed?: ExecutableDialect; disabled: boolean; active?: boolean; onChange: (source: SourceV2 | undefined) => void; draft?: MappedDraft; onDraftChange?: (draft: MappedDraft) => void; onWorkChange?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void; onTransientChange?: () => void}) {
  const effective=useEffectiveConfig(),config=effective.config.research
  const localConnections=effective.desk?.localGateway?.status==='ready'&&!effective.desk?.decoded?.values?.research?.gateway
  const connections=useConnections(localConnections)
@@ -52,7 +52,7 @@ export function MappedInputFields({doc, packText, fixed, disabled, active=true, 
  function invalidate() {setPreview(undefined); onChange(undefined); setError('')}
  useEffect(() => {setReconnect(false);setChoosing(undefined);setPreview(undefined); onChange(undefined); setSelections({}); setProgress(''); setError(''); return () => {operation.current?.abort(); operation.current=null}},[context,onChange])
  useEffect(() => {if(fixed) {setText(JSON.stringify(fixed,null,2));setFiles({});setSelections({})}},[fixed])
- function updateMapping(next: DialectV2) {
+ function updateMapping(next: ExecutableDialect) {
   invalidate(); setText(JSON.stringify(next,null,2))
   // Output-pointer edits do not change the selected artifact. Retire it only
   // when the source's provider or verified profile changes.

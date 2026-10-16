@@ -434,7 +434,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 			problem(errors.New("An eligible record has conversion issues. Review its dialect."))
 			return
 		}
-		if e = s.prepareReviewedInputs(ctx, saved.Document, rows); e != nil {
+		if e = s.prepareReviewedInputsForRelease(ctx, saved.Document, rows, b.Release); e != nil {
 			problem(e)
 			return
 		}

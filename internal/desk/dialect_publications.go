@@ -1,0 +1,437 @@
+package desk
+
+// Portable translations and Desk recipes have distinct identities. A publication
+// retains one final executable translation and its reviewed local recipe snapshot.
+// Generated inputs retain the signed operation; they never become asserted facts.
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+type dialectPublicationContext struct {
+	PreparationID string              `json:"preparationId"`
+	Revision      string              `json:"revision"`
+	Variant       string              `json:"variant"`
+	Recipe        retainedArtifactRef `json:"recipe"`
+	Pack          retainedArtifactRef `json:"pack"`
+	Request       string              `json:"request"`
+}
+
+func (c *dialectPublicationContext) valid(p artifactPublication) bool {
+	return p.Config == nil && inputPreparationID.MatchString(c.PreparationID) && retainedArtifactDigest.MatchString(c.Revision) && (c.Variant == "asserted" || c.Variant == "generated") && c.Recipe.valid() && c.Pack.valid() && retainedArtifactDigest.MatchString(c.Request) && len(p.Documents) == 1 && p.Documents[0].Kind == "dialect"
+}
+
+type dialectPublicationRequest struct {
+	Action      string `json:"action"`
+	Revision    string `json:"revision"`
+	Variant     string `json:"variant"`
+	Version     string `json:"version"`
+	CheckDigest string `json:"checkDigest,omitempty"`
+	Reviewed    bool   `json:"reviewed,omitempty"`
+}
+type dialectPublicationAnswer struct {
+	Publication artifactPublication `json:"publication"`
+	Document    string              `json:"document"`
+	Digest      string              `json:"digest"`
+	Saved       bool                `json:"saved"`
+}
+
+func dialectPublicationRequestID(id string, req dialectPublicationRequest) string {
+	raw, _ := json.Marshal([]string{id, req.Revision, req.Variant, req.Version})
+	return digestOf(raw)
+}
+func dialectRecipeBytes(doc inputPreparation) []byte { raw, _ := json.Marshal(doc.Recipe); return raw }
+func dialectArtifactID(id, variant string) string {
+	return "urn:judgmentpack:dialect:" + id + ":" + variant
+}
+
+func executableDialect(doc inputPreparation, variant, version string) ([]byte, error) {
+	q := doc.Recipe.Qualification
+	if q == nil || q.Mapping.Case == nil {
+		return nil, errors.New("Choose a pack and save its mapping first.")
+	}
+	facts := append([]inputDialectFact{}, q.Mapping.Case.Facts...)
+	evidence := append([]inputDialectEvidence{}, q.Mapping.Case.Evidence...)
+	for i := range facts {
+		facts[i].Source = "/prepared/" + inputEscape(facts[i].Target)
+	}
+	m := map[string]any{"formatVersion": "2.0.0", "id": dialectArtifactID(doc.ID, variant), "version": version, "case": map[string]any{"facts": facts, "evidence": evidence}}
+	if variant == "generated" {
+		m["formatVersion"] = "3.0.0"
+		m["case"] = map[string]any{"parameters": map[string]any{"grant": map[string]string{"pointer": "/grant", "type": "string"}, "digest": map[string]string{"pointer": "/digest", "type": "string"}}, "facts": []any{}, "evidence": []any{}}
+		m["sources"] = []any{map[string]any{"name": "research", "kind": "operation", "platform": "jpack-desk", "operation": "reviewed-input.read", "shape": "mcp", "record": "jpack-desk/reviewed-input", "maxAge": 86400, "arguments": map[string]any{"tool": reviewedInputTool, "arguments": map[string]any{"grant": map[string]string{"$param": "grant"}, "digest": map[string]string{"$param": "digest"}}}, "read": map[string]any{"copy": map[string]any{"facts": facts, "evidence": evidence}}}}
+		af, ae := map[string][]string{}, map[string][]string{}
+		for _, f := range facts {
+			af[f.Target] = []string{"generated"}
+		}
+		for _, e := range evidence {
+			ae[e.Requirement] = []string{"generated"}
+		}
+		admits := map[string]any{}
+		if len(af) > 0 {
+			admits["facts"] = af
+		}
+		if len(ae) > 0 {
+			admits["evidence"] = ae
+		}
+		m["admits"] = admits
+	} else if variant != "asserted" {
+		return nil, errors.New("Choose imported data or reviewed research.")
+	}
+	if len(q.Mapping.Unmapped) > 0 {
+		m["unmapped"] = q.Mapping.Unmapped
+	}
+	if len(q.Mapping.UnmappedEvidence) > 0 {
+		m["unmappedEvidence"] = q.Mapping.UnmappedEvidence
+	}
+	return json.Marshal(m)
+}
+func (s *Server) publicationAnswer(ctx context.Context, p artifactPublication) (dialectPublicationAnswer, error) {
+	var answer dialectPublicationAnswer
+	if p.Dialect == nil || !p.Dialect.valid(p) {
+		return answer, errors.New("Dialect publication is unreadable.")
+	}
+	raw, err := s.artifactRepository().Get(ctx, p.Documents[0].Content)
+	if err != nil {
+		return answer, err
+	}
+	return dialectPublicationAnswer{p, string(raw), "sha256:" + digestOf(raw), true}, nil
+}
+func (s *Server) readDialectPublicationLedger() (publicationLedger, error) {
+	root, _, err := openOwnFolder(s.root, strings.Split(publicationDirectory, "/"), false, "artifact versions")
+	if errors.Is(err, os.ErrNotExist) {
+		return publicationLedger{Version: 1, Items: []artifactPublication{}}, nil
+	}
+	if err != nil {
+		return publicationLedger{}, err
+	}
+	defer root.Close()
+	return readPublicationLedger(root)
+}
+func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Request) {
+	if !s.guard(w, r) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	id := r.PathValue("preparation")
+	fail := func(status int, err error) { writeJSONCoded(w, status, CodeBadRequest, err.Error()) }
+	if !inputPreparationID.MatchString(id) {
+		fail(400, errors.New("Choose a saved dialect."))
+		return
+	}
+	ledger, err := s.readDialectPublicationLedger()
+	if err != nil {
+		fail(503, err)
+		return
+	}
+	if r.Method == "GET" {
+		variant := r.URL.Query().Get("variant")
+		before := len(ledger.Items) + 1
+		if raw := r.URL.Query().Get("before"); raw != "" {
+			n, e := strconv.Atoi(raw)
+			if e != nil || n < 1 {
+				fail(400, errors.New("Choose a valid history page."))
+				return
+			}
+			before = n
+		}
+		if variant != "" && variant != "asserted" && variant != "generated" {
+			fail(400, errors.New("Choose a record kind."))
+			return
+		}
+		answer := struct {
+			Items []dialectPublicationAnswer `json:"items"`
+			Next  int                        `json:"next,omitempty"`
+		}{Items: []dialectPublicationAnswer{}}
+		budget := 0
+		for i := len(ledger.Items) - 1; i >= 0; i-- {
+			p := ledger.Items[i]
+			if i+1 >= before || p.Dialect == nil || p.Dialect.PreparationID != id || variant != "" && p.Dialect.Variant != variant {
+				continue
+			}
+			if len(answer.Items) >= 25 || budget >= reviewReadingLimit {
+				answer.Next = i + 2
+				break
+			}
+			a, e := s.publicationAnswer(r.Context(), p)
+			if e != nil {
+				fail(503, e)
+				return
+			}
+			budget += len(a.Document)
+			answer.Items = append(answer.Items, a)
+		}
+		writeJSON(w, 200, answer)
+		return
+	}
+
+	var req dialectPublicationRequest
+	if inputRequest(r, &req) != nil || (req.Action != "check" && req.Action != "publish") || !retainedArtifactDigest.MatchString(req.Revision) || (req.Variant != "asserted" && req.Variant != "generated") || len(req.Version) > 256 {
+		fail(400, errors.New("Review a saved recipe, input kind and artifact version."))
+		return
+	}
+	request := dialectPublicationRequestID(id, req)
+	// Completed publication wins over unavailable Runtime or a subsequently edited recipe.
+	for _, p := range ledger.Items {
+		if p.Dialect != nil && p.Dialect.Request == request {
+			answer, e := s.publicationAnswer(r.Context(), p)
+			if e != nil {
+				fail(503, e)
+			} else {
+				writeJSON(w, 200, answer)
+			}
+			return
+		}
+	}
+	if req.Action == "publish" && (!req.Reviewed || req.CheckDigest == "") {
+		fail(400, errors.New("Check and review this exact version before publishing."))
+		return
+	}
+	view, err := s.preparationRepository().Read(r.Context())
+	if err != nil {
+		fail(409, err)
+		return
+	}
+	defer view.Close()
+	saved, err := view.Get(id)
+	if err != nil {
+		fail(404, err)
+		return
+	}
+	if saved.SHA256 != req.Revision {
+		fail(409, errors.New("The dialect changed. Refresh and review the saved recipe again."))
+		return
+	}
+	doc := saved.Document
+	raw, err := executableDialect(doc, req.Variant, req.Version)
+	if err != nil {
+		fail(422, err)
+		return
+	}
+	checked, err := s.checkedDialectMapping(r.Context(), raw, doc.Recipe.Qualification.Pack)
+	if err != nil {
+		fail(422, err)
+		return
+	}
+	if checked.ArtifactID != dialectArtifactID(id, req.Variant) || checked.ArtifactVersion != req.Version {
+		fail(502, errDialectChecksUnavailable)
+		return
+	}
+	recipe := dialectRecipeBytes(doc)
+	pack := []byte(doc.Recipe.Qualification.Pack)
+	candidate := artifactPublication{At: time.Now().UTC().Format(time.RFC3339Nano), Dialect: &dialectPublicationContext{id, saved.SHA256, req.Variant, artifactReference(recipe), artifactReference(pack), request}, Documents: []publishedDocument{{Kind: "dialect", Alias: req.Variant, ID: checked.ArtifactID, Version: req.Version, Content: artifactReference([]byte(checked.Document))}}}
+	candidate.ID = publicationID(candidate)
+	if err = admitPublication(ledger, candidate); err != nil {
+		fail(409, err)
+		return
+	}
+	// A record refresh does not create another artifact publication. The newest
+	// matching recipe and document remain the same immutable release.
+	for i := len(ledger.Items) - 1; i >= 0; i-- {
+		prior := ledger.Items[i]
+		if prior.Dialect == nil || prior.Dialect.PreparationID != id || prior.Dialect.Variant != req.Variant {
+			continue
+		}
+		if prior.Dialect.Recipe == candidate.Dialect.Recipe && prior.Documents[0] == candidate.Documents[0] {
+			answer, err := s.publicationAnswer(r.Context(), prior)
+			if err != nil {
+				fail(503, err)
+			} else {
+				writeJSON(w, 200, answer)
+			}
+			return
+		}
+		break
+	}
+	held, err := holdDeskFolder(s.root, s.root.Name())
+	if err != nil {
+		fail(503, err)
+		return
+	}
+	defer held.file.Close()
+	if err = s.checkPublicationVersions(r.Context(), held, &publicationTransaction{ledger: ledger, candidate: candidate}); err != nil {
+		fail(409, err)
+		return
+	}
+	answer := dialectPublicationAnswer{candidate, checked.Document, checked.Digest, false}
+	if req.Action == "check" {
+		writeJSON(w, 200, answer)
+		return
+	}
+	if req.CheckDigest != checked.Digest {
+		fail(409, errors.New("The checked document changed. Review it again."))
+		return
+	}
+	transaction, err := s.openPublicationTransaction(r.Context())
+	if err != nil {
+		fail(409, err)
+		return
+	}
+	defer transaction.close()
+	for _, p := range transaction.ledger.Items {
+		if p.Dialect != nil && p.Dialect.Request == request {
+			a, e := s.publicationAnswer(r.Context(), p)
+			if e != nil {
+				fail(503, e)
+			} else {
+				writeJSON(w, 200, a)
+			}
+			return
+		}
+	}
+	transaction.candidate = candidate
+	if err = admitPublication(transaction.ledger, candidate); err != nil {
+		fail(409, err)
+		return
+	}
+	if err = s.checkPublicationVersions(r.Context(), held, transaction); err != nil {
+		fail(409, err)
+		return
+	}
+	// Retain all inputs before a single durable ledger commit. No second recipe write.
+	for _, data := range [][]byte{[]byte(checked.Document), recipe, pack} {
+		if _, err = s.artifactRepository().Put(r.Context(), data); err != nil {
+			fail(503, err)
+			return
+		}
+	}
+	if err = transaction.commit(); err != nil {
+		fail(503, err)
+		return
+	}
+	answer.Saved = true
+	writeJSON(w, 200, answer)
+}
+
+// Select a retained publication for the exact reviewed recipe. This never uses
+// a newer recipe or changes an existing job's release. Legacy recipes stay usable.
+func (s *Server) publishedExecutable(ctx context.Context, doc inputPreparation, variant string) (*dialectPublicationAnswer, error) {
+	ledger, err := s.readDialectPublicationLedger()
+	if err != nil {
+		return nil, err
+	}
+	recipe := artifactReference(dialectRecipeBytes(doc))
+	found := false
+	for i := len(ledger.Items) - 1; i >= 0; i-- {
+		p := ledger.Items[i]
+		if p.Dialect == nil || p.Dialect.PreparationID != doc.ID || p.Dialect.Variant != variant {
+			continue
+		}
+		found = true
+		if p.Dialect.Recipe != recipe {
+			continue
+		}
+		answer, err := s.publicationAnswer(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		// Re-materialize with the retained identity, and compare Runtime canonical bytes.
+		raw, err := executableDialect(doc, variant, p.Documents[0].Version)
+		if err != nil {
+			return nil, err
+		}
+		checked, err := s.checkedDialectMapping(ctx, raw, doc.Recipe.Qualification.Pack)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal([]byte(checked.Document), []byte(answer.Document)) {
+			return nil, errors.New("The published mapping no longer matches this recipe. Review a new version.")
+		}
+		return &answer, nil
+	}
+	if found {
+		return nil, errors.New("The recipe changed since publication. Review its mapping version before running it.")
+	}
+	return nil, nil
+}
+
+type reviewedInputRelease struct {
+	ID           string                                `json:"id"`
+	Pack         string                                `json:"pack"`
+	InputMapping json.RawMessage                       `json:"inputMapping"`
+	Dialect      *struct{ ID, Version, Digest string } `json:"dialect"`
+	Sample       struct {
+		Source struct {
+			Import *struct {
+				Dialect json.RawMessage `json:"dialect"`
+			} `json:"import"`
+		} `json:"source"`
+	} `json:"sample"`
+}
+
+func sameDialectJSON(a, b []byte) bool {
+	if rejectDuplicateMembers(a) != nil || rejectDuplicateMembers(b) != nil {
+		return false
+	}
+	var av, bv any
+	da, db := json.NewDecoder(bytes.NewReader(a)), json.NewDecoder(bytes.NewReader(b))
+	da.UseNumber()
+	db.UseNumber()
+	if da.Decode(&av) != nil || db.Decode(&bv) != nil {
+		return false
+	}
+	ar, _ := json.Marshal(dialectComparable(av))
+	br, _ := json.Marshal(dialectComparable(bv))
+	return bytes.Equal(ar, br)
+}
+func (s *Server) frozenExecutable(ctx context.Context, doc inputPreparation, release reviewedInputRelease) (*dialectPublicationAnswer, error) {
+	var head struct{ FormatVersion string }
+	raw := release.InputMapping
+	if json.Unmarshal(raw, &head) != nil {
+		return nil, errors.New("The subscription's retained mapping is unavailable.")
+	}
+	if head.FormatVersion == "" {
+		return nil, nil
+	} // Existing integer releases never adopt a new publication.
+	if release.Sample.Source.Import != nil {
+		raw = release.Sample.Source.Import.Dialect
+	}
+	checked, err := s.checkedDialectMapping(ctx, raw, doc.Recipe.Qualification.Pack)
+	if err != nil {
+		return nil, err
+	}
+	if release.Dialect == nil || release.Dialect.ID != checked.ArtifactID || release.Dialect.Version != checked.ArtifactVersion || release.Dialect.Digest != checked.Digest {
+		return nil, errors.New("The subscription's retained publication is inconsistent.")
+	}
+	return &dialectPublicationAnswer{Document: checked.Document, Digest: checked.Digest, Saved: true}, nil
+}
+
+func verifyPublishedRelease(input, actual json.RawMessage, pin *struct{ ID, Version, Digest string }) error {
+	var row struct {
+		Source struct {
+			Mapping       json.RawMessage `json:"mapping"`
+			MappingDigest string          `json:"mappingDigest"`
+			Import        *struct {
+				Dialect json.RawMessage `json:"dialect"`
+				Binding struct {
+					Dialect string `json:"dialect"`
+				} `json:"binding"`
+			} `json:"import"`
+		} `json:"source"`
+	}
+	if json.Unmarshal(input, &row) != nil {
+		return errors.New("Reviewed input is unreadable.")
+	}
+	var head struct{ FormatVersion, ID, Version string }
+	published := row.Source.Mapping
+	publishedDigest := row.Source.MappingDigest
+	if row.Source.Import != nil {
+		published = row.Source.Import.Dialect
+		publishedDigest = row.Source.Import.Binding.Dialect
+	}
+	if json.Unmarshal(published, &head) != nil || head.FormatVersion == "" {
+		return nil
+	}
+
+	if pin == nil || pin.ID != head.ID || pin.Version != head.Version || publishedDigest == "" || pin.Digest != publishedDigest || !sameDialectJSON(row.Source.Mapping, actual) {
+		return errors.New("The release does not match the reviewed Dialect publication and execution mapping.")
+	}
+	return nil
+}

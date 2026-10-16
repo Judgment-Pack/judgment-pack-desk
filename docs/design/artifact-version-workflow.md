@@ -70,9 +70,10 @@ publication/admission policies. None of these operations infers compatibility,
 automatic major bumps, permission to write, or passing expected outcomes. Plan,
 Ask me/Auto, and the shared AI correction framework retain their existing guards.
 
-The new portable Dialect artifact identity still depends on Spec #180. First-job
-promotion and the impact policy after job use must be settled separately. Current
-integer Dialect formats 2 and 3 are preserved.
+Named Dialect identity is available through Spec #187 and the shared publication
+workflow described in runtime-dialect-authoring.md. Historical integer formats
+2 and 3 are preserved. First-job promotion and automatic impact classification
+remain separate product policies; the version selector offers explicit choices.
 
 ## Shared workflow
 

@@ -1,3 +1,4 @@
+import {saveDialectRecipe} from './saveRecipe'
 import {LoadingState} from '../ui/LoadingState'
 import {useState,useRef,type RefObject} from 'react'
 import {useQuery} from '@tanstack/react-query'
@@ -9,7 +10,7 @@ import {useConfirmDiscard,useRegisteredChanges} from '../shell/UnsavedChanges'
 import {DialectEditor} from './DialectEditor'
 import {ConversionPreview} from './ConversionPreview'
 import {buildDialect,readDialectPack} from './dialect'
-import {dialectAPI,type DialectPackBinding,type PreparationReply} from './client'
+import {type DialectPackBinding,type PreparationReply} from './client'
 import type {DialectChatAction} from './chatActions'
 import {boundPack} from './qualification'
 import styles from './DialectsView.module.css'
@@ -34,7 +35,7 @@ function DialectReviewForm({saved,action,initial,blocked,opener,onClose,onSaved}
   try{
    const current=await readDialectPack(value.key)
    if(current.digest!==value.digest)throw Error(msg('The pack changed. Request a new dialect proposal before saving.'))
-   const next=await dialectAPI<PreparationReply>('/'+saved.document.id,'PUT',{name:saved.document.name,recipe:{...saved.document.recipe,qualification:value}},saved.sha256)
+   const next=await saveDialectRecipe(saved,saved.document.name,{...saved.document.recipe,qualification:value})
    onSaved(next);clear();onClose()
   }catch(e){setError((e as Error).message)}finally{inFlight.current=false;setBusy(false)}
  }

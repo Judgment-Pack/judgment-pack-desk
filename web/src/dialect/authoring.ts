@@ -5,6 +5,9 @@ import {canonicalize,parseJSON} from './canon'
 export interface DialectAuthoringReport {
  status:string
  dialectVersion?:number
+ formatVersion?:string
+ artifactID?:string
+ artifactVersion?:string
  document?:string
  digest?:string
  diagnostics:{code:string;instancePath?:string;message:string}[]

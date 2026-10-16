@@ -27,11 +27,12 @@ type publishedDocument struct {
 	Content retainedArtifactRef `json:"content"`
 }
 type artifactPublication struct {
-	ID        string              `json:"id"`
-	At        string              `json:"at"`
-	Imported  bool                `json:"imported,omitempty"`
-	Config    retainedArtifactRef `json:"config"`
-	Documents []publishedDocument `json:"documents"`
+	ID        string                     `json:"id"`
+	At        string                     `json:"at"`
+	Imported  bool                       `json:"imported,omitempty"`
+	Config    *retainedArtifactRef       `json:"config,omitempty"`
+	Dialect   *dialectPublicationContext `json:"dialect,omitempty"`
+	Documents []publishedDocument        `json:"documents"`
 }
 type publicationLedger struct {
 	Version int                   `json:"version"`
@@ -72,12 +73,12 @@ func readPublicationLedger(root *os.Root) (publicationLedger, error) {
 	}
 	ids := map[string]bool{}
 	for _, p := range ledger.Items {
-		if p.ID != publicationID(p) || ids[p.ID] || !p.Config.valid() || p.At == "" {
+		if p.ID != publicationID(p) || ids[p.ID] || (p.Dialect == nil && (p.Config == nil || !p.Config.valid()) || p.Dialect != nil && !p.Dialect.valid(p)) || p.At == "" {
 			return ledger, errors.New("Artifact version history is inconsistent.")
 		}
 		ids[p.ID] = true
 		for _, d := range p.Documents {
-			if d.ID == "" || d.Version == "" || (d.Kind != "pack" && d.Kind != "graph") || !d.Content.valid() {
+			if d.ID == "" || d.Version == "" || (d.Kind != "pack" && d.Kind != "graph" && d.Kind != "dialect") || !d.Content.valid() {
 				return ledger, errors.New("Artifact version history is inconsistent.")
 			}
 		}
@@ -102,7 +103,8 @@ func admitPublication(ledger publicationLedger, candidate artifactPublication) e
 	return nil
 }
 func publicationFromSnapshot(snap *reviewSnapshot) (artifactPublication, error) {
-	p := artifactPublication{At: time.Now().UTC().Format(time.RFC3339Nano), Config: artifactReference(snap.config), Documents: []publishedDocument{}}
+	config := artifactReference(snap.config)
+	p := artifactPublication{At: time.Now().UTC().Format(time.RFC3339Nano), Config: &config, Documents: []publishedDocument{}}
 	for _, d := range snap.docs {
 		var head struct {
 			ID      string `json:"id"`
@@ -131,34 +133,16 @@ func (s *Server) retainPublicationSnapshot(ctx context.Context, snap *reviewSnap
 // Called only while holding the cross-process project lock. Lock ordering is
 // project -> publication ledger -> retained artifacts, for every writer.
 func (s *Server) beginPublication(ctx context.Context, snap *reviewSnapshot) (*publicationTransaction, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(publicationDirectory, "/"), true, "artifact versions")
+	p, err := s.openPublicationTransaction(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if made {
-		if err = writePrivateData(root, ".gitignore", []byte("*\n")); err != nil {
-			root.Close()
-			return nil, err
-		}
-	}
-	p := &publicationTransaction{root: root}
 	failed := true
 	defer func() {
 		if failed {
 			p.close()
 		}
 	}()
-	p.lock, err = root.Open(".")
-	if err != nil {
-		return nil, err
-	}
-	if err = waitPrivateDataLock(ctx, p.lock, true); err != nil {
-		return nil, err
-	}
-	p.ledger, err = readPublicationLedger(root)
-	if err != nil {
-		return nil, err
-	}
 	p.candidate, err = publicationFromSnapshot(snap)
 	if err != nil {
 		return nil, err
@@ -375,8 +359,8 @@ func (s *Server) handleArtifactVersions(w http.ResponseWriter, r *http.Request) 
 		}
 		before = n
 	}
-	if (kind != "pack" && kind != "graph") || id == "" || len(id) > 4096 {
-		writeJSONCoded(w, 400, CodeBadRequest, "Choose a pack or graph identity.")
+	if (kind != "pack" && kind != "graph" && kind != "dialect") || id == "" || len(id) > 4096 {
+		writeJSONCoded(w, 400, CodeBadRequest, "Choose an artifact identity.")
 		return
 	}
 	type item struct {
@@ -444,4 +428,38 @@ func (s *Server) handleArtifactVersions(w http.ResponseWriter, r *http.Request) 
 		answer.Items = append(answer.Items, item{ledger.Items[entry.index], entry.document, string(raw)})
 	}
 	writeJSON(w, 200, answer)
+}
+
+// Lock ordering for all writers: project/preparation -> ledger -> retained artifacts.
+func (s *Server) openPublicationTransaction(ctx context.Context) (*publicationTransaction, error) {
+	root, made, err := openOwnFolder(s.root, strings.Split(publicationDirectory, "/"), true, "artifact versions")
+	if err != nil {
+		return nil, err
+	}
+	if made {
+		if err = writePrivateData(root, ".gitignore", []byte("*\n")); err != nil {
+			root.Close()
+			return nil, err
+		}
+	}
+	p := &publicationTransaction{root: root}
+	failed := true
+	defer func() {
+		if failed {
+			p.close()
+		}
+	}()
+	p.lock, err = root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	if err = waitPrivateDataLock(ctx, p.lock, true); err != nil {
+		return nil, err
+	}
+	p.ledger, err = readPublicationLedger(root)
+	if err != nil {
+		return nil, err
+	}
+	failed = false
+	return p, nil
 }

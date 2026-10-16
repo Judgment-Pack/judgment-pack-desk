@@ -443,12 +443,13 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 409, CodeStale, "The project or saved tests changed. Review evaluation again.")
 		return
 	}
-	var releaseData struct {
-		ID   string `json:"id"`
-		Pack string `json:"pack"`
-	}
+	var releaseData reviewedInputRelease
 	if json.Unmarshal(release, &releaseData) != nil || !referenceReleaseID.MatchString(releaseData.ID) || releaseData.Pack != saved.Document.Recipe.Qualification.Pack {
 		fail(502, errors.New("The release does not match the reviewed pack."))
+		return
+	}
+	if e = verifyPublishedRelease(rows[0].Input, releaseData.InputMapping, releaseData.Dialect); e != nil {
+		fail(502, e)
 		return
 	}
 	nonce := make([]byte, 16)

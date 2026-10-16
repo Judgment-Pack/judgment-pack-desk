@@ -269,10 +269,61 @@ func (s *Server) reviewedInputSnapshot(ctx context.Context, doc inputPreparation
 	return raw, err
 }
 func (s *Server) prepareReviewedInputs(ctx context.Context, doc inputPreparation, rows []inputPreparedRow) error {
+	return s.prepareReviewedInputsWithRelease(ctx, doc, rows, nil)
+}
+func (s *Server) prepareReviewedInputsForRelease(ctx context.Context, doc inputPreparation, rows []inputPreparedRow, raw json.RawMessage) error {
+	var release reviewedInputRelease
+	if json.Unmarshal(raw, &release) != nil || len(release.InputMapping) == 0 || doc.Recipe.Qualification == nil || release.Pack != doc.Recipe.Qualification.Pack {
+		return errors.New("The subscription's reviewed release is unavailable.")
+	}
+	if err := s.prepareReviewedInputsWithRelease(ctx, doc, rows, &release); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		var input struct {
+			Source struct {
+				Mapping json.RawMessage `json:"mapping"`
+			} `json:"source"`
+		}
+		if json.Unmarshal(row.Input, &input) != nil || !sameDialectJSON(input.Source.Mapping, release.InputMapping) {
+			return errors.New("The prepared mapping differs from the subscription's reviewed release. Review an upgrade before continuing.")
+		}
+		if err := verifyPublishedRelease(row.Input, release.InputMapping, release.Dialect); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (s *Server) prepareReviewedInputsWithRelease(ctx context.Context, doc inputPreparation, rows []inputPreparedRow, release *reviewedInputRelease) error {
 	if len(rows) == 0 {
 		return nil
 	}
+	variant := "asserted"
+	if rows[0].Origin == "generated" {
+		variant = "generated"
+	}
+	var published *dialectPublicationAnswer
+	var publicationErr error
+	if release == nil {
+		published, publicationErr = s.publishedExecutable(ctx, doc, variant)
+	} else {
+		published, publicationErr = s.frozenExecutable(ctx, doc, *release)
+	}
+	if publicationErr != nil {
+		return publicationErr
+	}
 	if rows[0].Origin != "generated" {
+		if published != nil {
+			for i := range rows {
+				var input, source map[string]json.RawMessage
+				if json.Unmarshal(rows[i].Input, &input) != nil || json.Unmarshal(input["source"], &source) != nil {
+					return errors.New("Prepared input is unavailable.")
+				}
+				source["mapping"] = json.RawMessage(published.Document)
+				input["source"], _ = json.Marshal(source)
+				rows[i].Input, _ = json.Marshal(input)
+			}
+		}
 		return s.checkPreparedMappings(ctx, doc, rows)
 	}
 	if s.localGateway == nil {
@@ -342,6 +393,27 @@ func (s *Server) prepareReviewedInputs(ctx context.Context, doc inputPreparation
 	if len(q.Mapping.UnmappedEvidence) > 0 {
 		mapping["unmappedEvidence"] = q.Mapping.UnmappedEvidence
 	}
+	var imported map[string]any
+	if published != nil {
+		mapping = map[string]any{}
+		if err = json.Unmarshal([]byte(published.Document), &mapping); err != nil {
+			return err
+		}
+		sources, ok := mapping["sources"].([]any)
+		if !ok || len(sources) != 1 {
+			return errors.New("Published research mapping is unavailable.")
+		}
+		source, ok := sources[0].(map[string]any)
+		if !ok {
+			return errors.New("Published research mapping is unavailable.")
+		}
+		for _, key := range []string{"platform", "operation", "shape", "record"} {
+			delete(source, key)
+		}
+		source["profile"] = reviewedInputProfile
+		source["profileDigest"] = digest
+		imported = map[string]any{"dialect": json.RawMessage(published.Document), "binding": map[string]any{"dialect": published.Digest, "sources": map[string]any{"research": map[string]string{"profile": reviewedInputProfile, "profileDigest": digest}}}}
+	}
 	mappingBytes, err := json.Marshal(mapping)
 	if err != nil {
 		return err
@@ -379,7 +451,11 @@ func (s *Server) prepareReviewedInputs(ctx context.Context, doc inputPreparation
 			return err
 		}
 
-		rows[i].Input, err = json.Marshal(map[string]any{"source": map[string]any{"mapping": json.RawMessage(checked.Document), "mappingDigest": checked.Digest, "case": map[string]string{"grant": id, "digest": resultDigest}, "sources": map[string]any{"research": map[string]any{"response": json.RawMessage(response)}}}})
+		source := map[string]any{"mapping": json.RawMessage(checked.Document), "mappingDigest": checked.Digest, "case": map[string]string{"grant": id, "digest": resultDigest}, "sources": map[string]any{"research": map[string]any{"response": json.RawMessage(response)}}}
+		if imported != nil {
+			source["import"] = imported
+		}
+		rows[i].Input, err = json.Marshal(map[string]any{"source": source})
 		if err != nil {
 			return err
 		}
