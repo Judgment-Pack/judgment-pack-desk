@@ -1,3 +1,4 @@
+import type {ArtifactImpact,ArtifactReference,ArtifactReview} from '../../artifacts/review'
 /**
  * Review and lock (ADR-0009, section 2), as the page calls it.
  *
@@ -28,7 +29,10 @@ export type ReviewFile = {
   /** The bytes the lock names, where it names other bytes or only the lock names this file. */
   earlier?: ReviewSide
 }
+export interface ProjectArtifactReview {key:string;path:string;artifactId:string;version:string;baseVersion?:string;required:boolean;review?:ArtifactReview<unknown>}
 export type Review = {
+  publicationPending?:boolean
+  artifactReviews?:ProjectArtifactReview[]
   status: string
   locked: boolean
   findings: ReviewFinding[]
@@ -39,7 +43,7 @@ export type Review = {
   token?: string
   blocked?: string
 }
-export type Locked = { files: number; copies: 'stored' | 'not-stored'; copiesProblem?: string }
+export type Locked = { reconciled?:boolean; files: number; copies: 'stored' | 'not-stored'; copiesProblem?: string }
 
 export const REVIEW_KEY = ['desk-review'] as const
 
@@ -54,6 +58,8 @@ export function isReview(value: unknown): value is Review {
   if (!object(value) || !text(value.status) || typeof value.locked !== 'boolean' || !Array.isArray(value.findings) || !Array.isArray(value.diagnostics) || !Array.isArray(value.files) || !object(value.contents) || !Object.values(value.contents).every(text)) return false
   if (!value.findings.every(item => object(item) && text(item.name))) return false
   if (!value.files.every(file => object(file) && text(file.kind) && text(file.path) && ['same', 'other', 'none', 'removed'].includes(file.lock as string) && (file.locked === undefined || text(file.locked)) && object(file.now) && side(file.now) && side(file.earlier))) return false
+  if(value.publicationPending!==undefined&&typeof value.publicationPending!=='boolean')return false
+  if(value.artifactReviews!==undefined&&(!Array.isArray(value.artifactReviews)||!value.artifactReviews.every(isArtifactReviewRow)))return false
   return (value.token === undefined || text(value.token)) && (value.blocked === undefined || text(value.blocked))
 }
 
@@ -73,8 +79,8 @@ export async function readReview(signal?: AbortSignal): Promise<Review> {
 }
 
 /** Lock exactly the reading the review's token names. */
-export async function confirmLock(token: string): Promise<Locked> {
-  const response = await deskFetch('/api/review/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+export async function confirmLock(token: string, reviews?:Record<string,ArtifactReference>,reconcile=false): Promise<Locked> {
+  const response = await deskFetch('/api/review/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, ...(reconcile?{reconcile:true}:{}), ...(reviews&&Object.keys(reviews).length?{reviews}:{}) }) })
   if (!response.ok) throw await refusal(response)
   const value: unknown = await response.json()
   if (!object(value) || typeof value.files !== 'number' || (value.copies !== 'stored' && value.copies !== 'not-stored') || (value.copiesProblem !== undefined && !text(value.copiesProblem))) throw new Error(msg('The review could not be loaded. Please try again.'))
@@ -84,4 +90,20 @@ export async function confirmLock(token: string): Promise<Locked> {
 /** The text a side of the review shows, if it shows one. */
 export function textOf(review: Review, side: ReviewSide | undefined): string | undefined {
   return side?.state === 'text' && side.digest !== undefined ? review.contents[side.digest] : undefined
+}
+
+export async function checkArtifactReviews(token:string,impacts:Record<string,ArtifactImpact>):Promise<ProjectArtifactReview[]> {
+ const response=await deskFetch('/api/review/artifacts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,impacts})})
+ if(!response.ok)throw await refusal(response)
+ const value:unknown=await response.json()
+ if(!object(value)||!Array.isArray(value.items)||!value.items.every(isArtifactReviewRow))throw Error(msg('The review could not be loaded. Please try again.'))
+ return value.items as ProjectArtifactReview[]
+}
+function isArtifactReviewRow(value:unknown):boolean {
+ if(!object(value)||!text(value.key)||!text(value.path)||!text(value.artifactId)||!text(value.version)||typeof value.required!=='boolean'||value.baseVersion!==undefined&&!text(value.baseVersion))return false
+ if(value.review===undefined)return true
+ const kept=value.review
+ if(!object(kept)||!object(kept.reference)||!text(kept.reference.sha256)||!/^[a-f0-9]{64}$/.test(kept.reference.sha256)||!Number.isSafeInteger(kept.reference.bytes)||!object(kept.review))return false
+ const impact=kept.review.impact
+ return object(impact)&&['initial','patch','minor','major','unknown'].includes(String(impact.classification))&&text(impact.rationale)
 }

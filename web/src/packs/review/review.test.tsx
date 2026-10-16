@@ -1,3 +1,4 @@
+import {Tooltip} from 'radix-ui'
 import { formatJson } from '../../files/formatJson'
 const displayJSON = (raw: string) => { const result = formatJson(raw); return result.ok ? result.content.trimEnd() : raw }
 /**
@@ -59,7 +60,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 function show() {
-  render(<QueryClientProvider client={testQueryClient()}><MemoryRouter><ReviewProvider><ReviewAndLockView /></ReviewProvider></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={testQueryClient()}><Tooltip.Provider><MemoryRouter><ReviewProvider><ReviewAndLockView /></ReviewProvider></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
 }
 const file = (path: string) => document.querySelector(`[data-file="${path}"]`) as HTMLElement
 
@@ -153,4 +154,72 @@ describe('the collection', () => {
     expect(screen.queryByRole('button', { name: 'Collection options' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Review and lock' })).toBeNull()
   })
+})
+
+const retainedReview={reference:{sha256:'a'.repeat(64),bytes:100},review:{version:1 as const,target:'urn:judgmentpack:project-review:pack:alpha',basePublication:'b'.repeat(64),storageRevision:'c'.repeat(64),candidate:{sha256:'d'.repeat(64),bytes:100},proposedVersion:'1.0.1',impact:{classification:'patch' as const,rationale:'Corrected a compatible conversion'},dependencies:[],preview:{}}}
+const reviewedVersion={key:'pack:alpha',path:'packs/a.json',artifactId:'urn:alpha',version:'1.0.1',baseVersion:'1.0.0',required:true,review:retainedReview}
+it('restores a retained compatibility judgment, but only publishes after explicit confirmation',async()=>{
+ reviews=[{...differing,artifactReviews:[reviewedVersion]}]
+ show()
+ const button=await screen.findByRole('button',{name:'Confirm and lock 2 differences'}) as HTMLButtonElement
+ expect((screen.getByLabelText('Reason for this version') as HTMLInputElement).value).toBe(retainedReview.review.impact.rationale)
+ expect(button.disabled).toBe(false);expect(posted).toHaveLength(0)
+ fireEvent.click(button)
+ await waitFor(()=>expect(posted).toHaveLength(1))
+ expect((posted[0] as any).body).toEqual({token,reviews:{'pack:alpha':retainedReview.reference}})
+})
+it('invalidates compatibility findings on edit and checkpoints the exact replacement judgment before lock',async()=>{
+ reviews=[{...differing,artifactReviews:[reviewedVersion]}]
+ const checks:any[]=[]
+ const original=vi.mocked(deskFetch).getMockImplementation()!
+ vi.mocked(deskFetch).mockImplementation(async(url,init)=>{
+  if(url==='/api/review/artifacts'){
+   const body=JSON.parse(String(init?.body));checks.push(body)
+   return json(200,{items:[{...reviewedVersion,review:{...retainedReview,reference:{sha256:'e'.repeat(64),bytes:110},review:{...retainedReview.review,impact:body.impacts['pack:alpha']}}}]})
+  }
+  return original(url,init)
+ })
+ show()
+ const button=await screen.findByRole('button',{name:'Confirm and lock 2 differences'}) as HTMLButtonElement
+ fireEvent.change(screen.getByLabelText('Reason for this version'),{target:{value:'Reviewed with the downstream owner'}})
+ expect(button.disabled).toBe(true);fireEvent.click(button);expect(posted).toHaveLength(0)
+ fireEvent.click(screen.getByRole('button',{name:'Check versions'}))
+ await waitFor(()=>expect(button.disabled).toBe(false))
+ expect(checks).toEqual([{token,impacts:{'pack:alpha':{classification:'patch',rationale:'Reviewed with the downstream owner'}}}])
+ expect(posted).toHaveLength(0)
+ fireEvent.click(button)
+ await waitFor(()=>expect((posted[0] as any).body.reviews['pack:alpha'].sha256).toBe('e'.repeat(64)))
+})
+it('blocks publication when compatibility remains unreviewed',async()=>{
+ reviews=[{...differing,artifactReviews:[{...reviewedVersion,review:undefined}]}]
+ show()
+ const button=await screen.findByRole('button',{name:'Confirm and lock 2 differences'}) as HTMLButtonElement
+ expect(button.disabled).toBe(true)
+ expect((screen.getByRole('button',{name:'Check versions'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(posted).toHaveLength(0)
+})
+
+it('protects unsaved compatibility edits when navigating away',async()=>{
+ const {createMemoryRouter,RouterProvider}=await import('react-router-dom')
+ const {UnsavedChangesProvider}=await import('../../shell/UnsavedChanges')
+ reviews=[{...differing,artifactReviews:[reviewedVersion]}]
+ const router=createMemoryRouter([{path:'/',element:<UnsavedChangesProvider><ReviewProvider><ReviewAndLockView/></ReviewProvider></UnsavedChangesProvider>},{path:'/library',element:<p>Library destination</p>}])
+ render(<QueryClientProvider client={testQueryClient()}><Tooltip.Provider><RouterProvider router={router}/></Tooltip.Provider></QueryClientProvider>)
+ fireEvent.change(await screen.findByLabelText('Reason for this version'),{target:{value:'An unfinished compatibility judgment'}})
+ fireEvent.click(screen.getByRole('link',{name:'Back to packs'}))
+ await screen.findByRole('dialog',{name:'Unsaved changes'})
+ expect(router.state.location.pathname).toBe('/')
+ fireEvent.click(screen.getByRole('button',{name:'Keep editing'}))
+ expect((screen.getByLabelText('Reason for this version') as HTMLInputElement).value).toBe('An unfinished compatibility judgment')
+})
+
+it('offers explicit receipt recovery when every file already matches, without requesting another lock',async()=>{
+ reviews=[{...first,status:'valid',locked:true,diagnostics:[],publicationPending:true,files:first.files.map(item=>({...item,lock:'same' as const}))}]
+ lockAnswer=()=>json(200,{files:3,copies:'stored',reconciled:true})
+ show()
+ await screen.findByText('Publication saved; history confirmation is pending.')
+ expect(posted).toHaveLength(0)
+ fireEvent.click(screen.getByRole('button',{name:'Confirm publication history'}))
+ await screen.findByText('Publication history confirmed.')
+ expect(posted).toEqual([{method:'POST',type:'application/json',body:{token,reconcile:true}}])
 })

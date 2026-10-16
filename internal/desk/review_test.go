@@ -203,7 +203,51 @@ func readReview(t *testing.T, ts *httptest.Server, desk string) reviewAnswer {
 
 func confirm(t *testing.T, ts *httptest.Server, desk, token string) (int, []byte) {
 	t.Helper()
-	return reviewCall(t, ts, "POST", "/api/review/lock", desk, map[string]any{"token": token}, bearer)
+	body := map[string]any{"token": token}
+	status, raw := reviewCall(t, ts, "GET", "/api/review", desk, nil, bearer)
+	var review reviewAnswer
+	if status == 200 && json.Unmarshal(raw, &review) == nil && review.Token == token {
+		impacts := map[string]artifactImpact{}
+		for _, row := range review.ArtifactReviews {
+			if !row.Required {
+				continue
+			}
+			kind := "initial"
+			if row.BaseVersion != "" {
+				a, b := strings.Split(row.BaseVersion, "."), strings.Split(row.Version, ".")
+				kind = "patch"
+				if len(a) == 3 && len(b) == 3 {
+					if a[0] != b[0] {
+						kind = "major"
+					} else if a[1] != b[1] {
+						kind = "minor"
+					}
+				}
+			}
+			impacts[row.Key] = artifactImpact{kind, "Reviewed fixture compatibility"}
+		}
+		if len(impacts) == 0 {
+			return reviewCall(t, ts, "POST", "/api/review/lock", desk, body, bearer)
+		}
+		status, raw = reviewCall(t, ts, "POST", "/api/review/artifacts", desk, map[string]any{"token": token, "impacts": impacts}, bearer)
+		if status != 200 {
+			return status, raw
+		}
+		var checked struct {
+			Items []projectArtifactReview `json:"items"`
+		}
+		if json.Unmarshal(raw, &checked) != nil {
+			t.Fatal(string(raw))
+		}
+		refs := map[string]retainedArtifactRef{}
+		for _, row := range checked.Items {
+			if row.Required && row.Review != nil {
+				refs[row.Key] = row.Review.Reference
+			}
+		}
+		body["reviews"] = refs
+	}
+	return reviewCall(t, ts, "POST", "/api/review/lock", desk, body, bearer)
 }
 
 func countCalls(t *testing.T, calls, prefix string) int {
@@ -320,8 +364,10 @@ func TestTheReviewShowsEveryFileAndTheRuntimesFindings(t *testing.T) {
 	if delta := fileOf(t, answer, "packs/d.json"); delta.Lock != "removed" || delta.Now.State != "absent" || shown(answer, *delta.Earlier) != removed {
 		t.Errorf("what only the lock names is shown as %+v", delta)
 	}
-	if len(answer.Token) != 64 || answer.Blocked != "" {
-		t.Errorf("a review of files that can all be shown gave token %q, blocked %q", answer.Token, answer.Blocked)
+	// Inspection remains available, but missing/corrupt base bytes cannot
+	// authorize publishing a changed identity without its prior version.
+	if len(answer.Token) != 64 || answer.Blocked != errRetainedArtifactChanged.Error() {
+		t.Errorf("the missing base did not block publication: token %q, blocked %q", answer.Token, answer.Blocked)
 	}
 	if got := readFile(t, rig.calls); got != "packs verify --config jpack.json --format json [JPACK_CONFIG=unset]\n" {
 		t.Errorf("the review ran %q, want only packs verify", got)

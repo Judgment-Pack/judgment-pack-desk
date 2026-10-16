@@ -19,7 +19,24 @@ func publicationCall(t *testing.T, s *Server, id string, req dialectPublicationR
 }
 func checkAndPublishDialect(t *testing.T, s *Server, saved inputPreparationReply, variant, version string) dialectPublicationAnswer {
 	t.Helper()
-	req := dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: variant, Version: version, Impact: artifactImpact{"unknown", "Reviewed compatibility for this test"}}
+	kind := "initial"
+	ledger, e := s.readDialectPublicationLedger()
+	if e != nil {
+		t.Fatal(e)
+	}
+	base := latestDialectPublication(ledger, saved.Document.ID, variant)
+	for _, prior := range ledger.Items {
+		if prior.ID == base {
+			a, b := strings.Split(prior.Documents[0].Version, "."), strings.Split(version, ".")
+			kind = "patch"
+			if a[0] != b[0] {
+				kind = "major"
+			} else if a[1] != b[1] {
+				kind = "minor"
+			}
+		}
+	}
+	req := dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: variant, Version: version, Impact: artifactImpact{kind, "Reviewed compatibility for this test"}}
 	code, raw := publicationCall(t, s, saved.Document.ID, req)
 	var checked dialectPublicationAnswer
 	if code != 200 || json.Unmarshal(raw, &checked) != nil {
@@ -206,7 +223,7 @@ func TestDialectPublicationReviewBaseAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: "asserted", Version: "1.0.2", Impact: artifactImpact{"patch", "A reviewed conversion fix"}}
+	req := dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: "asserted", Version: "1.0.2", Impact: artifactImpact{"initial", "A reviewed initial definition"}}
 	code, raw := publicationCall(t, s, doc.ID, req)
 	var checked dialectPublicationAnswer
 	if code != 200 || json.Unmarshal(raw, &checked) != nil || checked.Review == nil {
@@ -228,8 +245,9 @@ func TestDialectPublicationReviewBaseAndRecovery(t *testing.T) {
 	if code != 409 {
 		t.Fatalf("changed base accepted %d %s", code, raw)
 	}
-	// Rechecking captures the new base, but changing the impact invalidates it.
+	// Rechecking captures the new base and its compatible patch; changing the impact invalidates it.
 	req.Action = "check"
+	req.Impact = artifactImpact{"patch", "Reviewed compatible correction"}
 	code, raw = publicationCall(t, s, doc.ID, req)
 	if code != 200 || json.Unmarshal(raw, &checked) != nil {
 		t.Fatalf("recheck %d %s", code, raw)
