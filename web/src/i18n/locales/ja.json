@@ -868,7 +868,6 @@
   "Configured graph id": "設定されたグラフID",
   "Configured reference": "設定済みの参照",
   "Configured · Availability checked when used": "設定済み · 使用時に利用可否を確認",
-  "Configuring and running imported presets is not available yet.": "インポートしたテンプレートの設定と実行は、まだ利用できません。",
   "Confirm": "確認",
   "Confirm and lock {{count}} differences": "{{count}} 件の差分を確認してロック",
   "Confirm and lock {{count}} differences_one": "{{count}} 件の差分を確認してロック",
@@ -5793,5 +5792,18 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— 主張を行うリポジトリファイルのロケーター。このペイロードはいかなる主張も行わず、そのファイルが主張する内容はランタイムに関するものであり、このグラフのパック、これらの事実、または判定結果に基づいて行動することが正しいかどうかに関するものではありません。",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 主張を記載したリポジトリ内ファイルの所在です。このペイロードは主張を行いません。ファイルの主張はランタイムに関するもので、このパックや事実、処置結果に従うことの正しさについてではありません。",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "「レビュー済み集合に含まれる」とは、プロジェクトの jpack.lock.json がこの判断 ID にまさにこのバイトを固定していることを意味します。パックが正しいことや、誰がレビューしたかは示しません。表示するだけで強制はしません。どちらの場合もジョブは同じように作成されます。",
-  "… (truncated for display)": "…（表示用に省略）"
+  "… (truncated for display)": "…（表示用に省略）",
+  "Compatibility impact": "互換性への影響",
+  "First publication": "初回公開",
+  "Reason for this version": "このバージョンの理由",
+  "Discard unsaved template configuration?": "未保存のテンプレート設定を破棄しますか？",
+  "Configure template": "テンプレートを設定",
+  "These source kinds are not supported by the current Runner.": "これらのソース種別は現在の Runner ではサポートされていません。",
+  "The template stays unchanged. Connection assignments and case values are saved in a job draft for review.": "テンプレートは変更されません。接続の割り当てとケースの値は、レビュー用のジョブ下書きに保存されます。",
+  "Research sources currently require retained response files. Runner verifies their receipts before preparing inputs.": "調査ソースには現在、保持された応答ファイルが必要です。Runner は入力を準備する前に、その受領証を検証します。",
+  "Create job draft": "ジョブの下書きを作成",
+  "The file is too large.": "ファイルが大きすぎます。",
+  "Retained research responses": "保持された調査応答",
+  "The imported definition changed. Review a new local dialect before preparing inputs.": "インポートした定義が変更されました。入力を準備する前に、新しいローカル Dialect をレビューしてください。",
+  "Supply retained research responses for this source before preparing inputs.": "入力を準備する前に、このソースの保持された調査応答を提供してください。"
 }

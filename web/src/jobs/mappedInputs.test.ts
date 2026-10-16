@@ -123,11 +123,34 @@ it('does not add legacy defaults or repair explicit invalid omissions in integer
 it('preserves every case number spelling through picker insertion and imported preparation',async()=>{
  const text='{"large":9007199254740993,"scale":1.000,"exponent":1e2,"negativeZero":-0,"null":null,"false":false}'
  const mapping:ExecutableDialect={formatVersion:'3.0.0',id:'urn:test',version:'1.0.0',case:{facts:[],evidence:[]}}
- const imported={dialect:mapping,binding:{dialect:'sha256:original',sources:{}}}
- vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{},source:{mappingDigest:'sha256:bound'}}})
+ const imported={dialect:mapping,binding:{dialect:'sha256:'+'a'.repeat(64),sources:{}}}
+ vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{},source:{mapping,mappingDigest:'sha256:bound'}}})
  const result=await prepareMappedInputs({...options(),mapping,caseValue:parseMappedCase(text),imported})
  expect(jobsRequest((result.input.source as import('./dialectTypes').SourceV2)?.case)).toBe(text)
  expect(result.input.source).toHaveProperty('import',imported)
  expect(jobsAPI).toHaveBeenCalledWith('inputs/next',expect.objectContaining({source:expect.objectContaining({import:imported})}),undefined,expect.any(AbortSignal))
+ expect(acquire).not.toHaveBeenCalled()
+})
+
+it('lets Runner bind an imported research definition and verifies retained bytes without gateway replay',async()=>{
+ const digest='sha256:'+'b'.repeat(64)
+ const definition=parseMapping(JSON.stringify({version:3,case:{parameters:{dataset:{pointer:'/dataset',type:'string'}},facts:[],evidence:[]},sources:[{name:'classification',kind:'research',maxAge:3600,model:'model-a',question:{$param:'dataset'},constraints:{},evidence:[],fields:[{name:'size',type:'decimal',required:false}],capabilities:['answer'],read:{copy:{facts:[],evidence:[]}}}]}))
+ const binding={dialect:digest,sources:{classification:{profile:'ai',profileDigest:digest,webProfiles:{}}}}
+ const bound={...definition,sources:definition.sources!.map(s=>({...s,profile:'ai',profileDigest:digest,webProfiles:{}}))}
+ const raw='{"result":{"fields":{"size":{"status":"found","value":"1.00","cites":[0]}},"responses":[{"result":{"large":9007199254740993,"scale":1.000},"receipt":{},"salts":{}}]}}'
+ const requests:string[]=[]
+ vi.mocked(jobsAPI).mockImplementation(async(_path,body)=>{requests.push(jobsRequest(body));return requests.length===1?{next:{name:'classification',kind:'research',profile:'ai',source:'answer',arguments:{question:'Data'}}}:{input:{facts:{},source:{mapping:bound,mappingDigest:digest}},factsText:'{}'} as any})
+ const result=await prepareMappedInputs({...options(),mapping:definition,imported:{dialect:definition,binding},caseValue:{dataset:'Data'},retainedResearch:{classification:new RetainedJSON(raw)},profiles:[],config:{...config,gateway:null}})
+ expect(JSON.parse(requests[0]).source).not.toHaveProperty('mapping')
+ expect(JSON.parse(requests[0]).source.import.dialect).toEqual(definition)
+ expect(requests[1]).toContain(raw)
+ expect(jobsRequest(result.input)).toContain(raw)
+ expect(result.input.source?.mapping).toEqual(bound)
+ expect(acquire).not.toHaveBeenCalled();expect(seal).not.toHaveBeenCalled()
+})
+it('does not invent a bound mapping when Runner omits it for an import',async()=>{
+ const definition:ExecutableDialect={version:3,case:{facts:[],evidence:[]}}
+ vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{}}})
+ await expect(prepareMappedInputs({...options(),mapping:definition,imported:{dialect:definition,binding:{dialect:'sha256:'+'c'.repeat(64),sources:{}}}})).rejects.toThrow('could not be mapped')
  expect(acquire).not.toHaveBeenCalled()
 })

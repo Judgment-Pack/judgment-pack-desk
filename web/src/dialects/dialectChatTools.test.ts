@@ -18,7 +18,7 @@ const call=(name:string,args:Record<string,unknown>,s=signal())=>tools.find(t=>t
 const context=()=>call('read_dialect',{id,packKey:'fit'})
 const propose=()=>call('propose_dialect',{id,revision,...proposal})
 beforeEach(async()=>{
- vi.resetAllMocks();vi.mocked(checkDialect).mockResolvedValue({status:'complete',digest:'sha256:checked',diagnostics:[]});saved=structuredClone(base);packText=pack;actions=[];tools=dialectChatTools({afterTurnId:()=> 'turn',addAction:a=>actions.push(a)})
+ vi.resetAllMocks();vi.mocked(checkDialect).mockResolvedValue({status:'complete',digest:'sha256:checked',diagnostics:[]});saved=structuredClone(base);packText=pack;actions=[];tools=dialectChatTools({afterTurnId:()=> 'turn',retainAction:async a=>{const i=actions.findIndex(item=>item.id===a.id);if(i<0)actions.push(structuredClone(a));else actions[i]=structuredClone(a)}})
  proposal={packKey:'fit',packDigest:(await packBinding('fit',pack)).digest,facts:[{target:'/size',column:'size/~estimate',conversion:{kind:'decimal'}},{target:'/active',column:'active',conversion:{kind:'boolean',trueValue:'yes',falseValue:'no'}}],evidence:[{requirement:'source',column:'evidence'}],summary:'Use size as a decimal and explicit yes/no values; country remains unknown.'}
  vi.mocked(readFile).mockImplementation(async path=>({content:path==='jpack.json'?JSON.stringify({packs:{fit:{path:'fit.pack.json'}}}):packText}) as any)
  vi.mocked(dialectAPI).mockImplementation(async(_path,method)=>method==='POST'?{rows:[{id:rowId,prepared:{'/size':'50','/active':true},issues:[]}]} as any:structuredClone(saved) as any)
@@ -56,14 +56,15 @@ it('keeps preview issues visible without inventing or approving facts',async()=>
  await context();const r=await propose();expect(JSON.parse((r as any).content[0].text)).toMatchObject({recordsWithIssues:1,issues:[{recordId:rowId,issues:[{target:'/size',message:'Not a decimal'}]}]})
  expect(actions).toHaveLength(1);expect(saved.document.records[0].review).toBeUndefined()
 })
-it('does not retain proposals after preview failure, cancellation or a concurrent change',async()=>{
+it('retains checked proposals after preview failure or concurrent change, without applying them',async()=>{
  await context()
  vi.mocked(dialectAPI).mockImplementation(async(_path,method)=>{if(method==='POST')throw Error('Preview failed');return structuredClone(saved) as any})
  await expect(propose()).rejects.toThrow('Preview failed')
  vi.mocked(dialectAPI).mockImplementation(async(_path,method)=>{if(method==='POST'){saved.sha256='c'.repeat(64);return {rows:[]} as any}return structuredClone(saved) as any})
  await expect(propose()).rejects.toThrow('changed during preview')
  const controller=new AbortController();controller.abort();await expect(call('read_dialect',{id,packKey:'fit'},controller.signal)).rejects.toThrow()
- expect(actions).toHaveLength(0)
+ expect(actions).toHaveLength(2)
+ expect(actions.every(a=>!a.applied&&a.dialectCheck?.document)).toBe(true)
 })
 it('keeps planned research columns explicit without creating record values',async()=>{
  saved.document.recipe.research={version:1,target:'companies',fields:[{name:'country',type:'string',description:'Country'}],criteria:[],limits:{records:10,searches:10,pages:20,modelCalls:40},ai:{connection:'private',revision:'secret',model:'model'}}
@@ -82,11 +83,28 @@ it('exposes host company lineage before people research without sample data',asy
  for(const name of ['company_id','company_name','company_url'])expect(body.columns.find((c:any)=>c.name===name)).toEqual({name,planned:true,samples:[]})
  expect(saved.document.records).toEqual([])
 })
-it('uses authoritative Runtime diagnostics before proposing and never saves a refused candidate',async()=>{
+it('retains authoritative Runtime diagnostics and the exact refused candidate without saving a recipe',async()=>{
  await context()
  const report={status:'refused',diagnostics:[{code:'JPS-DIALECT-FORM',instancePath:'/case/facts',message:'Duplicate target.'}]}
  vi.mocked(checkDialect).mockRejectedValue(new DialectCheckError(report))
  await expect(propose()).rejects.toThrow('Duplicate target')
- expect(actions).toHaveLength(0)
+ expect(actions).toHaveLength(1)
+ expect(actions[0]).toMatchObject({dialectCheck:{report},dialect:proposal})
+ expect(JSON.parse(actions[0].dialectCheck!.document)).toEqual(buildDialect(saved,proposal,await packBinding('fit',pack)).mapping)
+ expect(validDialectChatAction(JSON.parse(JSON.stringify(actions[0])))).toBe(true)
+ expect(actions[0].applied).toBeUndefined()
  expect(vi.mocked(dialectAPI).mock.calls.filter(([,method])=>method==='POST')).toHaveLength(0)
+})
+
+it('does not check or continue when the initial candidate cannot be persisted',async()=>{
+ tools=dialectChatTools({afterTurnId:()=> 'turn',retainAction:async()=>{throw Error('Checkpoint failed')}})
+ await context();await expect(propose()).rejects.toThrow('Checkpoint failed')
+ expect(checkDialect).not.toHaveBeenCalled()
+ expect(vi.mocked(dialectAPI).mock.calls.filter(([,method])=>method==='POST')).toHaveLength(0)
+})
+it('retains the exact pending candidate after a transport failure without pretending it passed',async()=>{
+ await context();vi.mocked(checkDialect).mockRejectedValue(Error('Runtime unavailable'))
+ await expect(propose()).rejects.toThrow('Runtime unavailable')
+ expect(actions).toHaveLength(1);expect(actions[0].dialectCheck?.document).toBeTruthy()
+ expect(actions[0].dialectCheck?.report).toBeUndefined();expect(actions[0].applied).toBeUndefined()
 })

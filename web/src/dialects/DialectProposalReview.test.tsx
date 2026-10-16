@@ -69,3 +69,15 @@ it('keeps saving disabled when the shared Runtime check refuses the candidate',a
  expect(vi.mocked(dialectAPI).mock.calls.filter(([,method])=>method==='PUT')).toHaveLength(0)
  expect(fake.update).not.toHaveBeenCalled()
 })
+
+it('shows retained Runtime findings after reload and requires a fresh successful preview',async()=>{
+ action=JSON.parse(JSON.stringify({...action,dialectCheck:{document:'{}',report:{status:'refused',diagnostics:[{code:'JPS-DIALECT-FORM',instancePath:'/case/facts',message:'A retained finding.'}]}}}))
+ fake.chats=[{id:'chat',inputActions:[action]}]
+ show();fireEvent.click(screen.getByRole('button',{name:'Review dialect'}))
+ await screen.findByText('JPS-DIALECT-FORM · /case/facts · A retained finding.')
+ const save=screen.getByRole('button',{name:'Save dialect'}) as HTMLButtonElement
+ expect(save.disabled).toBe(true)
+ expect(vi.mocked(dialectAPI).mock.calls.every(([,m])=>!m)).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:'Preview conversions'}))
+ await waitFor(()=>expect(save.disabled).toBe(false));expect(checkDialect).toHaveBeenCalledOnce()
+})

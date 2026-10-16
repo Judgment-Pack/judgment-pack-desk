@@ -1,3 +1,4 @@
+import {TemplateConfiguration} from './TemplateConfiguration'
 import {useRef,useState} from 'react'
 import {useQuery,useQueryClient} from '@tanstack/react-query'
 import {FileRequestError,StaleWrite} from '../files/client'
@@ -55,9 +56,9 @@ export function TemplatesPage(){
    </section>}
    <section className={styles.stack} aria-label={msg('Imported templates')}><h2>{msg('Imported templates')}</h2>
     {history.isPending?<LoadingState>{msg('Loading templates…')}</LoadingState>:history.data?.items.length?<Field label={msg('Version history')}>{props=><Select {...props} value={installed} placeholder={msg('Choose a template')} options={[...history.data.items].reverse().map(r=>({value:r.id,label:`${r.entryId} · ${r.tag}`}))} onValueChange={setInstalled}/>}</Field>:!history.error&&<p className={styles.note}>{msg('No imported templates.')}</p>}
-    {installed&&<>{retained.isPending&&<LoadingState>{msg('Loading template…')}</LoadingState>}{retained.error&&<Notice tone="warning" actions={<Button size="small" onClick={()=>void retained.refetch()}>{msg('Retry')}</Button>}>{retained.error.message}</Notice>}{retained.data&&<><TemplateDetails candidate={retained.data.candidate}/><p className={styles.note}>{retained.data.import.tag} · <code>{retained.data.import.commit}</code></p></>}</>}
+    {installed&&<>{retained.isPending&&<LoadingState>{msg('Loading template…')}</LoadingState>}{retained.error&&<Notice tone="warning" actions={<Button size="small" onClick={()=>void retained.refetch()}>{msg('Retry')}</Button>}>{retained.error.message}</Notice>}{retained.data&&<><TemplateDetails candidate={retained.data.candidate}/><TemplateConfiguration key={retained.data.import.id} candidate={retained.data.candidate} origin={retained.data.import}/><p className={styles.note}>{retained.data.import.tag} · <code>{retained.data.import.commit}</code></p></>}</>}
 
-    <p className={styles.note}>{msg('Configuring and running imported presets is not available yet.')}</p>
+
    </section>
   </div></PageBody></>
 }

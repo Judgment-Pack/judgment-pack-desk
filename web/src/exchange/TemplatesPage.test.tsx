@@ -6,6 +6,7 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {answer} from '../files/client'
 import {TemplatesPage} from './TemplatesPage'
 import {exchangeAPI,type CatalogReview,type Candidate} from './client'
+vi.mock('./TemplateConfiguration',()=>({TemplateConfiguration:()=> <div>Configure template</div>}))
 const queryState=vi.hoisted(()=>({failure:false}))
 vi.mock('./client',async original=>{const actual=await original<typeof import('./client')>();return {...actual,exchangeAPI:vi.fn(),exchangeImportsQuery:()=>({queryKey:['exchange-imports'],queryFn:async()=>({items:[],revision:'base'})}),exchangeImportQuery:(id:string)=>({queryKey:['exchange-imports',id],queryFn:async()=>{if(queryState.failure)throw Error('Refresh unavailable');return {import:{id,tag:'v1.0.0',commit:'a'.repeat(40)},candidate}}})}})
 vi.mock('../shell/QueryStatusNotice',()=>({QueryStatusNotice:({error,onRetry}:{error?:Error;onRetry:()=>void})=>error?<div role="alert">{error.message}<button onClick={onRetry}>Retry</button></div>:null}))
@@ -22,7 +23,7 @@ it('imports only exact checked identity on explicit action, with no binding or r
  expect(vi.mocked(exchangeAPI).mock.calls[1]).toEqual(['imports',{reviewId:'review',entryId:'example.non-gtm',base:'base',reviewed:true}])
  expect(screen.queryByRole('button',{name:'Import template'})).toBeNull()
  expect(vi.mocked(exchangeAPI).mock.calls.map(([path])=>path)).toEqual(['review','imports'])
- expect(screen.getByText('Configuring and running imported presets is not available yet.')).toBeTruthy()
+ await screen.findByText('Configure template')
 })
 it('invalidates review when release selection changes and retains no import authority on reload',async()=>{
  const page=show();await check();fireEvent.change(screen.getByLabelText('Release tag'),{target:{value:'v1.1.0'}})

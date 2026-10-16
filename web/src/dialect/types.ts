@@ -37,7 +37,7 @@ export interface DerivationRule {
   ruleVersion: '1'; parameters: Record<string, ParameterType>
   clauses: { when: Condition; claim: ClaimForm; reason: string }[]
 }
-export interface Read { unwrap?: Pointer[]; copy?: CopyMapping; rule?: DerivationRule }
+export interface Read { sources?: string[]; unwrap?: Pointer[]; copy?: CopyMapping; rule?: DerivationRule }
 export interface Claim {
   facts: Record<string, JSONValue>; evidenceAvailability: Record<string, EvidenceAvailability>
   acquisitionStatus: AcquisitionStatus; reason: string; basis: Pointer[]
@@ -54,7 +54,7 @@ export interface CalculationLineage {
   inputs: { name: string; parameter: string; source: string; pointer: Pointer }[]
   asOf: Record<string, Timestamp>
 }
-export interface SourceBase { name: string; parameters?: Record<string, SourceParameter>; read: Read }
+export interface SourceBase { name: string; parameters?: Record<string, SourceParameter>; read: Read; provider?: 'local-file'|'google-drive'; arguments?:Record<string,unknown>; calculation?:CalculationBinding; profile?:string; profileDigest?:Digest }
 /** §4.1/§4.2: pins and request are required for acquired sources, absent for a
  * local file. Optional here so the existing editor can retain incomplete drafts. */
 export interface DialectSourceV2 extends SourceBase {
@@ -65,7 +65,7 @@ export interface DialectSourceV2 extends SourceBase {
   platform?: never; operation?: never; shape?: never; record?: never
 }
 export interface ProfileBinding { profile: string; profileDigest: Digest }
-export interface AcquiredSource extends SourceBase, ProfileBinding { maxAge: number }
+export interface AcquiredSource extends SourceBase { profile:string;profileDigest:Digest;maxAge:number }
 /** Version 3, proposed: §4.3. Exact request bytes await implementation vectors. */
 export type HTTPSource = AcquiredSource & {
   kind: 'http'; path: Template; query?: Record<string, StringTemplate>; headers?: string[]
@@ -77,11 +77,13 @@ export interface SQLSource extends AcquiredSource {
 }
 /** Version 3, proposed: §4.3. */
 export interface WebSource extends AcquiredSource { kind: 'web'; url: string | ParameterTemplate }
-/** Version 3, proposed: §4.3. Constraints and evidence fields have no fixed schema
- * yet; a research record must arrive through a generated gateway profile. */
-export interface ResearchSource extends AcquiredSource {
-  kind: 'research'; question: StringTemplate; constraints: Record<string, JSONValue>
-  model: string; evidence: JSONValue
+export type ResearchCapability = 'answer'|'search'|'page'
+export interface ResearchField {name:string;type:'integer'|'decimal'|'boolean'|'text'|'text-list'|'range';required:boolean;description?:string}
+/** Portable research recipes are independent of an installation's AI/web bindings. */
+export interface ResearchSource extends SourceBase {
+ kind:'research';maxAge:number;question:StringTemplate;constraints:Record<string,JSONValue>
+ model:string;evidence:JSONValue;fields:ResearchField[];capabilities:ResearchCapability[]
+ webProfiles?:Partial<Record<'search'|'page',ProfileBinding>>
 }
 /** Version 3, proposed: §4.4. These catalog names replace the profile pin. */
 export interface UnboundOperation extends SourceBase {
@@ -90,7 +92,7 @@ export interface UnboundOperation extends SourceBase {
   profile?: never; profileDigest?: never
 }
 /** Version 3, proposed: §4.4; distinct from a record's preparation binding. */
-export interface BindingDocument { dialect: Digest; sources: Record<string, ProfileBinding> }
+export interface BindingDocument { dialect: Digest; sources: Record<string, ProfileBinding & {webProfiles?:Partial<Record<'search'|'page',ProfileBinding>>}> }
 export type DialectSourceV3 = DialectSourceV2 | HTTPSource | SQLSource | WebSource | ResearchSource | UnboundOperation
 export interface Admission {
   // The authoring editor retains unvalidated class names; §8.2 permits only SourceClass.
@@ -101,8 +103,7 @@ interface DialectMembers {
   provider?: ''; facts?: null; evidence?: null
 }
 export interface DialectDocumentV2 extends DialectMembers { version: 2; sources?: DialectSourceV2[] }
-/** Version 3: §§4.3–4.4. Runtime/Runner support operation and selected-file
- * sources. Other declared source kinds remain explicitly unsupported. */
+/** Version 3: portable research, acquisitions and source reconciliation. */
 export interface DialectDocumentV3 extends DialectMembers { version: 3; sources?: DialectSourceV3[] }
 export type DialectDocument = DialectDocumentV2 | DialectDocumentV3
 
@@ -110,7 +111,7 @@ export interface InputProfile {
   id: string; publicKey: string; class: 'record' | 'generated'; source: string; authority: string
   shape: 'airbyte' | 'mcp' | 'http' | 'command'
   adapter: { name: string; version: string; digest: Digest }; endpoint: string | null
-  tools?: string[]; calculator?: CalculatorPin
+  tools?: string[]; calculator?: CalculatorPin; research?:{capabilities:ResearchCapability[];model?:string}
 }
 /** §5.2: receipt internals belong to gateway §1.2a, not the dialect's schema. */
 export interface Acquisition { response: { result: JSONValue; receipt: Record<string, JSONValue>; salts: { args: string; statement?: string } } }

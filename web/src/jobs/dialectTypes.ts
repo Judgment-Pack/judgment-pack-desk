@@ -1,10 +1,12 @@
 /** Desk names these documents Dialects; mapping remains the Runner wire member. */
 import type { SourceInput, JobInput } from './client'
 import type { RetainedJSON } from './wire'
-import type { DialectDocumentV2, InputProfile } from '../dialect/types'
+import type { DialectDocumentV2, DialectDocumentV3, DialectSourceV3, InputProfile } from '../dialect/types'
 export type { CalculatorPin, CalculationBinding, CalculationLineage, InputProfile, Parameter } from '../dialect/types'
-export type { CopyMapping as DialectCopies, DialectSourceV2 as DialectSource, PreparationV2 as Preparation } from '../dialect/types'
-export type ExecutableDialect = DialectDocumentV2 | (Omit<DialectDocumentV2,'version'|'provider'|'facts'|'evidence'> & {version:3}) | (Omit<DialectDocumentV2,'version'|'provider'|'facts'|'evidence'|'case'> & {formatVersion:'2.0.0'|'3.0.0';id:string;version:string;case:NonNullable<DialectDocumentV2['case']>})
+export type { CopyMapping as DialectCopies, DialectSourceV3 as DialectSource, PreparationV2 as Preparation } from '../dialect/types'
+/** Authoring values can be incomplete; Runner validates the source/version combination. */
+export type ExecutableDialect = (Omit<DialectDocumentV2,'sources'> | Omit<DialectDocumentV3,'sources'> | (Omit<DialectDocumentV3,'sources'|'version'|'provider'|'facts'|'evidence'|'case'> & {formatVersion:'2.0.0'|'3.0.0';id:string;version:string;case:NonNullable<DialectDocumentV3['case']>})) & {sources?:DialectSourceV3[]}
+
 export function isExecutableDialect(mapping: SourceInput['mapping'] | ExecutableDialect | undefined): mapping is ExecutableDialect {
  return !!mapping && (mapping.version===2 || mapping.version===3 || 'formatVersion' in mapping && (mapping.formatVersion==='2.0.0'||mapping.formatVersion==='3.0.0'))
 }

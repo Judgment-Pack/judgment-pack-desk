@@ -870,7 +870,6 @@
   "Configured graph id": "ID graph configurato",
   "Configured reference": "Riferimento configurato",
   "Configured · Availability checked when used": "Configurato · Disponibilità verificata durante l’uso",
-  "Configuring and running imported presets is not available yet.": "La configurazione e l’esecuzione dei modelli importati non sono ancora disponibili.",
   "Confirm": "Conferma",
   "Confirm and lock {{count}} differences": "Conferma e blocca {{count}} differenze",
   "Confirm and lock {{count}} differences_many": "Conferma e blocca {{count}} differenze",
@@ -5833,5 +5832,18 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— un localizzatore per il file di repository che effettua la dichiarazione. Questo payload non ne effettua alcuna, e qualsiasi cosa tale file dichiari riguarda il runtime, non i pacchetti di questo graph, questi fatti o la correttezza dell'agire in base alla decisione risultante.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— un localizzatore del file del repository che contiene l’affermazione. Questo payload non ne fa alcuna. L’affermazione riguarda il motore, non questo pacchetto, questi fatti o la correttezza di agire in base alla disposizione.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "«Nell’insieme revisionato» significa che il jpack.lock.json del progetto fissa esattamente questi byte per questo id di decisione. Non dice che il pacchetto sia corretto, né chi lo ha revisionato. È mostrato, non imposto: il job viene creato allo stesso modo in ogni caso.",
-  "… (truncated for display)": "… (troncato per la visualizzazione)"
+  "… (truncated for display)": "… (troncato per la visualizzazione)",
+  "Compatibility impact": "Impatto sulla compatibilità",
+  "First publication": "Prima pubblicazione",
+  "Reason for this version": "Motivo di questa versione",
+  "Discard unsaved template configuration?": "Scartare la configurazione del modello non salvata?",
+  "Configure template": "Configura modello",
+  "These source kinds are not supported by the current Runner.": "Questi tipi di origine non sono supportati dal Runner attuale.",
+  "The template stays unchanged. Connection assignments and case values are saved in a job draft for review.": "Il modello rimane invariato. Le connessioni assegnate e i valori dei casi vengono salvati in una bozza di processo per la revisione.",
+  "Research sources currently require retained response files. Runner verifies their receipts before preparing inputs.": "Le origini di ricerca richiedono attualmente file di risposte conservate. Runner ne verifica le ricevute prima di preparare i dati.",
+  "Create job draft": "Crea bozza di processo",
+  "The file is too large.": "Il file è troppo grande.",
+  "Retained research responses": "Risposte di ricerca conservate",
+  "The imported definition changed. Review a new local dialect before preparing inputs.": "La definizione importata è cambiata. Rivedi un nuovo dialetto locale prima di preparare i dati.",
+  "Supply retained research responses for this source before preparing inputs.": "Fornisci le risposte di ricerca conservate per questa origine prima di preparare i dati."
 }

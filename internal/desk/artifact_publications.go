@@ -33,10 +33,12 @@ type artifactPublication struct {
 	Config    *retainedArtifactRef       `json:"config,omitempty"`
 	Dialect   *dialectPublicationContext `json:"dialect,omitempty"`
 	Documents []publishedDocument        `json:"documents"`
+	Review    *retainedArtifactRef       `json:"review,omitempty"`
 }
 type publicationLedger struct {
-	Version int                   `json:"version"`
-	Items   []artifactPublication `json:"items"`
+	Version  int                   `json:"version"`
+	Items    []artifactPublication `json:"items"`
+	Receipts map[string]string     `json:"receipts,omitempty"`
 }
 type publicationTransaction struct {
 	root      *os.Root
@@ -73,7 +75,7 @@ func readPublicationLedger(root *os.Root) (publicationLedger, error) {
 	}
 	ids := map[string]bool{}
 	for _, p := range ledger.Items {
-		if p.ID != publicationID(p) || ids[p.ID] || (p.Dialect == nil && (p.Config == nil || !p.Config.valid()) || p.Dialect != nil && !p.Dialect.valid(p)) || p.At == "" {
+		if p.Review != nil && !p.Review.valid() || p.ID != publicationID(p) || ids[p.ID] || (p.Dialect == nil && (p.Config == nil || !p.Config.valid()) || p.Dialect != nil && !p.Dialect.valid(p)) || p.At == "" {
 			return ledger, errors.New("Artifact version history is inconsistent.")
 		}
 		ids[p.ID] = true
@@ -81,6 +83,14 @@ func readPublicationLedger(root *os.Root) (publicationLedger, error) {
 			if d.ID == "" || d.Version == "" || (d.Kind != "pack" && d.Kind != "graph" && d.Kind != "dialect") || !d.Content.valid() {
 				return ledger, errors.New("Artifact version history is inconsistent.")
 			}
+		}
+	}
+	if len(ledger.Receipts) > 4096 {
+		return ledger, errors.New("Artifact publication receipts reached their storage limit.")
+	}
+	for request, id := range ledger.Receipts {
+		if !retainedArtifactDigest.MatchString(request) || !ids[id] {
+			return ledger, errors.New("Artifact publication receipt is inconsistent.")
 		}
 	}
 	if err = admitPublication(ledger, artifactPublication{}); err != nil {
@@ -309,7 +319,7 @@ func (s *Server) checkPublicationVersions(ctx context.Context, dir heldDir, p *p
 	return nil
 }
 func (p *publicationTransaction) withCandidate() publicationLedger {
-	ledger := publicationLedger{Version: 1, Items: append([]artifactPublication{}, p.ledger.Items...)}
+	ledger := publicationLedger{Version: 1, Items: append([]artifactPublication{}, p.ledger.Items...), Receipts: p.ledger.Receipts}
 	for _, v := range ledger.Items {
 		if v.ID == p.candidate.ID {
 			return ledger

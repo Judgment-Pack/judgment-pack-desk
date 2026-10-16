@@ -868,7 +868,6 @@
   "Configured graph id": "已設定的 Graph ID",
   "Configured reference": "已設定的參照",
   "Configured · Availability checked when used": "已設定 · 使用時檢查可用性",
-  "Configuring and running imported presets is not available yet.": "暫不支援設定和執行匯入的範本。",
   "Confirm": "確認",
   "Confirm and lock {{count}} differences": "確認並鎖定 {{count}} 處差異",
   "Confirm and lock {{count}} differences_one": "確認並鎖定 {{count}} 處差異",
@@ -5793,5 +5792,18 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— 做出宣告的存放庫檔案定位器。此承載未做出任何宣告，且該檔案無論宣告何內容，均僅與執行時期相關，與此 Graph 的規則包、這些事實或根據判定結果採取行動是否正確無關。",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 指向作出該聲明的儲存庫檔案的定位資訊。此承載資料不作聲明。檔案中的聲明針對執行環境，而非此規則包、這些事實或依處置結果行動是否正確。",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "「在已審核集合中」表示專案的 jpack.lock.json 為此決策 ID 固定了正是這些位元組。它不說明規則包是否正確，也不說明是誰審核的。這裡只顯示，不強制：無論哪種情況，工作的建立方式都相同。",
-  "… (truncated for display)": "…（已截斷顯示）"
+  "… (truncated for display)": "…（已截斷顯示）",
+  "Compatibility impact": "相容性影響",
+  "First publication": "首次發佈",
+  "Reason for this version": "此版本的原因",
+  "Discard unsaved template configuration?": "捨棄尚未儲存的範本設定？",
+  "Configure template": "設定範本",
+  "These source kinds are not supported by the current Runner.": "目前的 Runner 不支援這些來源類型。",
+  "The template stays unchanged. Connection assignments and case values are saved in a job draft for review.": "範本維持不變。連線指派與案例值會儲存至工作草稿以供審核。",
+  "Research sources currently require retained response files. Runner verifies their receipts before preparing inputs.": "研究來源目前需要已保留的回應檔案。Runner 會在準備資料前驗證其憑證。",
+  "Create job draft": "建立工作草稿",
+  "The file is too large.": "檔案過大。",
+  "Retained research responses": "已保留的研究回應",
+  "The imported definition changed. Review a new local dialect before preparing inputs.": "匯入的定義已變更。請在準備資料前審核新的本機 Dialect。",
+  "Supply retained research responses for this source before preparing inputs.": "請在準備資料前提供此來源已保留的研究回應。"
 }

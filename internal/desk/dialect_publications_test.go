@@ -19,7 +19,7 @@ func publicationCall(t *testing.T, s *Server, id string, req dialectPublicationR
 }
 func checkAndPublishDialect(t *testing.T, s *Server, saved inputPreparationReply, variant, version string) dialectPublicationAnswer {
 	t.Helper()
-	req := dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: variant, Version: version}
+	req := dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: variant, Version: version, Impact: artifactImpact{"unknown", "Reviewed compatibility for this test"}}
 	code, raw := publicationCall(t, s, saved.Document.ID, req)
 	var checked dialectPublicationAnswer
 	if code != 200 || json.Unmarshal(raw, &checked) != nil {
@@ -27,6 +27,8 @@ func checkAndPublishDialect(t *testing.T, s *Server, saved inputPreparationReply
 	}
 	req.Action = "publish"
 	req.CheckDigest = checked.Digest
+	req.BasePublication = &checked.BasePublication
+	req.Review = checked.Review
 	req.Reviewed = true
 	code, raw = publicationCall(t, s, saved.Document.ID, req)
 	if code != 200 || json.Unmarshal(raw, &checked) != nil || !checked.Saved {
@@ -82,7 +84,7 @@ func TestDialectPublicationIdentityAndRecovery(t *testing.T) {
 		t.Fatal("changed recipe executed without review")
 	}
 	req.Revision = original
-	code, _ = publicationCall(t, s, doc.ID, dialectPublicationRequest{Action: "check", Revision: original, Variant: "asserted", Version: "1.0.1"})
+	code, _ = publicationCall(t, s, doc.ID, dialectPublicationRequest{Action: "check", Revision: original, Variant: "asserted", Version: "1.0.1", Impact: artifactImpact{"patch", "Compatible correction"}})
 	if code != 409 {
 		t.Fatal("stale review accepted", code)
 	}
@@ -90,7 +92,7 @@ func TestDialectPublicationIdentityAndRecovery(t *testing.T) {
 	if p2.Digest == p.Digest {
 		t.Fatal("version missing from digest")
 	}
-	code, raw = publicationCall(t, s, doc.ID, dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: "asserted", Version: "0.9.0"})
+	code, raw = publicationCall(t, s, doc.ID, dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: "asserted", Version: "0.9.0", Impact: artifactImpact{"patch", "Compatible correction"}})
 	if code != 409 {
 		t.Fatalf("backwards check %d %s", code, raw)
 	}
@@ -102,7 +104,7 @@ func TestDialectPublicationIdentityAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, raw = publicationCall(t, s, doc.ID, dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: "asserted", Version: "1.0.1"})
+	code, raw = publicationCall(t, s, doc.ID, dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: "asserted", Version: "1.0.1", Impact: artifactImpact{"patch", "Compatible correction"}})
 	if code != 409 {
 		t.Fatalf("identity reused %d %s", code, raw)
 	}
@@ -134,6 +136,7 @@ func TestDialectPublicationGeneratedOrigin(t *testing.T) {
 	}
 	req.Reviewed = true
 	req.CheckDigest = "sha256:wrong"
+	req.Impact = artifactImpact{"patch", "Compatible correction"}
 	code, _ = publicationCall(t, s, doc.ID, req)
 	if code != 409 {
 		t.Fatal("changed digest published", code)
@@ -191,5 +194,111 @@ func TestDialectPublicationHistoryPagesAndVariants(t *testing.T) {
 		if tc.id == "" && (len(reply.Items) != 1 || reply.Items[0].Publication.Dialect.Variant != "generated") {
 			t.Fatal("variant crossed")
 		}
+	}
+}
+
+func TestDialectPublicationReviewBaseAndRecovery(t *testing.T) {
+	requireBinary(t)
+	s, _ := newTestServer(t, false)
+	doc := repositoryDocument(94)
+	doc.Recipe.Qualification = qualificationFixture()
+	saved, err := s.preparationRepository().CompareAndSwap(context.Background(), doc, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: "asserted", Version: "1.0.2", Impact: artifactImpact{"patch", "A reviewed conversion fix"}}
+	code, raw := publicationCall(t, s, doc.ID, req)
+	var checked dialectPublicationAnswer
+	if code != 200 || json.Unmarshal(raw, &checked) != nil || checked.Review == nil {
+		t.Fatalf("check %d %s", code, raw)
+	}
+	retained, err := s.latestArtifactReview(context.Background(), dialectArtifactID(doc.ID, "asserted"))
+	if err != nil || retained == nil || retained.Reference != *checked.Review || retained.Review.Candidate != artifactReference([]byte(checked.Document)) {
+		t.Fatal("exact candidate not retained", err)
+	}
+	// A lower version can land after the check. Merely checking the moving version
+	// floor would accept 1.0.2; the frozen first-publication base must refuse it.
+	checkAndPublishDialect(t, s, saved, "asserted", "1.0.1")
+	req.Action = "publish"
+	req.CheckDigest = checked.Digest
+	req.Reviewed = true
+	req.BasePublication = &checked.BasePublication
+	req.Review = checked.Review
+	code, raw = publicationCall(t, s, doc.ID, req)
+	if code != 409 {
+		t.Fatalf("changed base accepted %d %s", code, raw)
+	}
+	// Rechecking captures the new base, but changing the impact invalidates it.
+	req.Action = "check"
+	code, raw = publicationCall(t, s, doc.ID, req)
+	if code != 200 || json.Unmarshal(raw, &checked) != nil {
+		t.Fatalf("recheck %d %s", code, raw)
+	}
+	req.Action = "publish"
+	req.BasePublication = &checked.BasePublication
+	req.Review = checked.Review
+	req.Impact.Rationale = "Different judgment"
+	code, raw = publicationCall(t, s, doc.ID, req)
+	if code != 409 {
+		t.Fatalf("changed review accepted %d %s", code, raw)
+	}
+}
+
+func TestDialectPublicationKeepsAcceptedReviewAndNoopReceipt(t *testing.T) {
+	requireBinary(t)
+	s, _ := newTestServer(t, false)
+	ctx := context.Background()
+	doc := repositoryDocument(95)
+	doc.Recipe.Qualification = qualificationFixture()
+	saved, err := s.preparationRepository().CompareAndSwap(ctx, doc, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := dialectPublicationRequest{Action: "check", Revision: saved.SHA256, Variant: "asserted", Version: "1.0.0", Impact: artifactImpact{"initial", "Judgment A"}}
+	code, raw := publicationCall(t, s, doc.ID, req)
+	var a dialectPublicationAnswer
+	if code != 200 || json.Unmarshal(raw, &a) != nil {
+		t.Fatalf("check A %d %s", code, raw)
+	}
+	b := req
+	b.Impact.Rationale = "Judgment B"
+	code, raw = publicationCall(t, s, doc.ID, b)
+	if code != 200 {
+		t.Fatalf("check B %d %s", code, raw)
+	}
+	req.Action = "publish"
+	req.CheckDigest = a.Digest
+	req.Reviewed = true
+	req.BasePublication = &a.BasePublication
+	req.Review = a.Review
+	code, raw = publicationCall(t, s, doc.ID, req)
+	var published dialectPublicationAnswer
+	if code != 200 || json.Unmarshal(raw, &published) != nil || published.Publication.Review == nil || *published.Publication.Review != *a.Review {
+		t.Fatalf("accepted review lost %d %s", code, raw)
+	}
+	ledger, err := s.readDialectPublicationLedger()
+	if err != nil || len(ledger.Items) != 1 || *ledger.Items[0].Review != *a.Review {
+		t.Fatal("accepted review absent from durable history", err)
+	}
+	// A new record revision, identical recipe: no new publication, durable alias.
+	doc.Records[0].Values["count"] = "987"
+	saved, err = s.preparationRepository().CompareAndSwap(ctx, doc, saved.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same := checkAndPublishDialect(t, s, saved, "asserted", "1.0.0")
+	if same.Publication.ID != published.Publication.ID {
+		t.Fatal("no-op published again")
+	}
+	request := dialectPublicationRequest{Action: "publish", Revision: saved.SHA256, Variant: "asserted", Version: "1.0.0"}
+	doc.Recipe.Intent = "edited later"
+	_, err = s.preparationRepository().CompareAndSwap(ctx, doc, saved.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.cfg.JpackBin = "/unavailable-runtime"
+	code, raw = publicationCall(t, s, doc.ID, request)
+	if code != 200 || !strings.Contains(string(raw), published.Publication.ID) {
+		t.Fatalf("no-op receipt did not recover %d %s", code, raw)
 	}
 }
