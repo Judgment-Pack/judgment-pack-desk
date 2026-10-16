@@ -136,6 +136,26 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 		fail(503, err)
 		return
 	}
+	if r.Method == "GET" && r.URL.Query().Get("request") != "" {
+		request := r.URL.Query().Get("request")
+		if !retainedArtifactDigest.MatchString(request) {
+			fail(400, errors.New("Choose a retained publication request."))
+			return
+		}
+		for _, p := range ledger.Items {
+			if p.Dialect != nil && p.Dialect.PreparationID == id && (p.Dialect.Request == request || ledger.Receipts[request] == p.ID) {
+				answer, e := s.publicationAnswer(r.Context(), p)
+				if e != nil {
+					fail(503, e)
+				} else {
+					writeJSON(w, 200, map[string]any{"result": answer})
+				}
+				return
+			}
+		}
+		writeJSON(w, 200, map[string]any{"result": nil})
+		return
+	}
 	if r.Method == "GET" && r.URL.Query().Get("review") == "latest" {
 		variant := r.URL.Query().Get("variant")
 		if variant != "asserted" && variant != "generated" {
@@ -196,65 +216,70 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 		fail(400, errors.New("Review a saved recipe, input kind and artifact version."))
 		return
 	}
+	status, answer := s.publishCheckedDialect(r.Context(), id, req, nil)
+	writeJSON(w, status, answer)
+}
+
+// Manual and chat publication use this exact admission, immutable ledger and
+// receipt reconciliation boundary. A supplied view remains held by its caller.
+func (s *Server) publishCheckedDialect(ctx context.Context, id string, req dialectPublicationRequest, reader inputPreparationReader) (int, any) {
+	fail := func(status int, err error) (int, any) { return status, codedBody(CodeBadRequest, err.Error()) }
+	ledger, err := s.readDialectPublicationLedger()
+	if err != nil {
+		return fail(503, err)
+	}
 	request := dialectPublicationRequestID(id, req)
 	// Completed publication wins over unavailable Runtime or a subsequently edited recipe.
 	for _, p := range ledger.Items {
 		if p.Dialect != nil && (p.Dialect.Request == request || ledger.Receipts[request] == p.ID) {
-			answer, e := s.publicationAnswer(r.Context(), p)
+			answer, e := s.publicationAnswer(ctx, p)
 			if e != nil {
-				fail(503, e)
+				return fail(503, e)
 			} else {
-				writeJSON(w, 200, answer)
+				return 200, answer
 			}
-			return
 		}
 	}
 	if req.Action == "publish" && (!req.Reviewed || req.CheckDigest == "") {
-		fail(400, errors.New("Check and review this exact version before publishing."))
-		return
+		return fail(400, errors.New("Check and review this exact version before publishing."))
 	}
 	base := latestDialectPublication(ledger, id, req.Variant)
 	if !req.Impact.valid() {
-		fail(400, errors.New("Describe the compatibility impact before checking this version."))
-		return
+		return fail(400, errors.New("Describe the compatibility impact before checking this version."))
 	}
-	view, err := s.preparationRepository().Read(r.Context())
-	if err != nil {
-		fail(409, err)
-		return
+	if reader == nil {
+		view, e := s.preparationRepository().TryRead(ctx)
+		if e != nil {
+			return fail(409, e)
+		}
+		defer view.Close()
+		reader = view
 	}
-	defer view.Close()
-	saved, err := view.Get(id)
+	saved, err := reader.Get(id)
 	if err != nil {
-		fail(404, err)
-		return
+		return fail(404, err)
 	}
 	if saved.SHA256 != req.Revision {
-		fail(409, errors.New("The dialect changed. Refresh and review the saved recipe again."))
-		return
+		return fail(409, errors.New("The dialect changed. Refresh and review the saved recipe again."))
 	}
 	doc := saved.Document
 	raw, err := executableDialect(doc, req.Variant, req.Version)
 	if err != nil {
-		fail(422, err)
-		return
+		return fail(422, err)
 	}
-	checked, err := s.checkedDialectMapping(r.Context(), raw, doc.Recipe.Qualification.Pack)
+	checked, err := s.checkedDialectMapping(ctx, raw, doc.Recipe.Qualification.Pack)
 	if err != nil {
-		fail(422, err)
-		return
+		return fail(422, err)
 	}
 	if checked.ArtifactID != dialectArtifactID(id, req.Variant) || checked.ArtifactVersion != req.Version {
-		fail(502, errDialectChecksUnavailable)
-		return
+		return fail(502, errDialectChecksUnavailable)
 	}
 	recipe := dialectRecipeBytes(doc)
 	pack := []byte(doc.Recipe.Qualification.Pack)
 	candidate := artifactPublication{At: time.Now().UTC().Format(time.RFC3339Nano), Dialect: &dialectPublicationContext{id, saved.SHA256, req.Variant, artifactReference(recipe), artifactReference(pack), request}, Documents: []publishedDocument{{Kind: "dialect", Alias: req.Variant, ID: checked.ArtifactID, Version: req.Version, Content: artifactReference([]byte(checked.Document))}}}
 	candidate.ID = publicationID(candidate)
 	if err = admitPublication(ledger, candidate); err != nil {
-		fail(409, err)
-		return
+		return fail(409, err)
 	}
 	// A record refresh does not create another artifact publication. The newest
 	// matching recipe and document remain the same immutable release.
@@ -264,33 +289,28 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 			continue
 		}
 		if prior.Dialect.Recipe == candidate.Dialect.Recipe && prior.Documents[0] == candidate.Documents[0] {
-			if err = s.retainPublicationReceipt(r.Context(), request, prior.ID); err != nil {
-				fail(503, err)
-				return
+			if err = s.retainPublicationReceipt(ctx, request, prior.ID); err != nil {
+				return fail(503, err)
 			}
-			answer, err := s.publicationAnswer(r.Context(), prior)
+			answer, err := s.publicationAnswer(ctx, prior)
 			if err != nil {
-				fail(503, err)
+				return fail(503, err)
 			} else {
-				writeJSON(w, 200, answer)
+				return 200, answer
 			}
-			return
 		}
 		break
 	}
 	if req.Action == "publish" && (req.BasePublication == nil || *req.BasePublication != base || req.Review == nil) {
-		fail(409, errors.New("The publication base changed or its review is missing. Check and review this version again."))
-		return
+		return fail(409, errors.New("The publication base changed or its review is missing. Check and review this version again."))
 	}
 	held, err := holdDeskFolder(s.root, s.root.Name())
 	if err != nil {
-		fail(503, err)
-		return
+		return fail(503, err)
 	}
 	defer held.file.Close()
-	if err = s.checkPublicationVersions(r.Context(), held, &publicationTransaction{ledger: ledger, candidate: candidate}); err != nil {
-		fail(409, err)
-		return
+	if err = s.checkPublicationVersions(ctx, held, &publicationTransaction{ledger: ledger, candidate: candidate}); err != nil {
+		return fail(409, err)
 	}
 	var baseVersion string
 	for _, prior := range ledger.Items {
@@ -299,91 +319,77 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 			break
 		}
 	}
-	if err = s.checkArtifactImpact(r.Context(), held, baseVersion, req.Version, req.Impact); err != nil {
-		fail(409, err)
-		return
+	if err = s.checkArtifactImpact(ctx, held, baseVersion, req.Version, req.Impact); err != nil {
+		return fail(409, err)
 	}
 	answer := dialectPublicationAnswer{Publication: candidate, Document: checked.Document, Digest: checked.Digest, BasePublication: base}
 	preview, _ := json.Marshal(answer)
 	review := artifactReview{Version: 1, Target: dialectArtifactID(id, req.Variant), BasePublication: base, StorageRevision: saved.SHA256, Candidate: candidate.Documents[0].Content, ProposedVersion: req.Version, Impact: req.Impact, Dependencies: []retainedArtifactRef{candidate.Dialect.Recipe, candidate.Dialect.Pack}, Preview: preview}
 	if req.Action == "check" {
 		for _, data := range [][]byte{[]byte(checked.Document), recipe, pack} {
-			if _, err = s.artifactRepository().Put(r.Context(), data); err != nil {
-				fail(503, err)
-				return
+			if _, err = s.artifactRepository().Put(ctx, data); err != nil {
+				return fail(503, err)
 			}
 		}
-		retained, e := s.retainArtifactReview(r.Context(), review)
+		retained, e := s.retainArtifactReview(ctx, review)
 		if e != nil {
-			fail(503, e)
-			return
+			return fail(503, e)
 		}
 		answer.Review = &retained.Reference
-		writeJSON(w, 200, answer)
-		return
+		return 200, answer
 	}
 	if req.CheckDigest != checked.Digest {
-		fail(409, errors.New("The checked document changed. Review it again."))
-		return
+		return fail(409, errors.New("The checked document changed. Review it again."))
 	}
-	retained, e := s.artifactReview(r.Context(), *req.Review)
+	retained, e := s.artifactReview(ctx, *req.Review)
 	if e != nil {
-		fail(409, e)
-		return
+		return fail(409, e)
 	}
 	// Preview timestamps are display metadata. All binding fields must still agree.
 	review.Preview = retained.Review.Preview
 	if !sameDraftValue(review, retained.Review) {
-		fail(409, errors.New("The candidate or compatibility review changed. Check this version again."))
-		return
+		return fail(409, errors.New("The candidate or compatibility review changed. Check this version again."))
 	}
 	answer.Review = req.Review
-	transaction, err := s.openPublicationTransaction(r.Context())
+	transaction, err := s.openPublicationTransaction(ctx)
 	if err != nil {
-		fail(409, err)
-		return
+		return fail(409, err)
 	}
 	defer transaction.close()
 	for _, p := range transaction.ledger.Items {
 		if p.Dialect != nil && (p.Dialect.Request == request || transaction.ledger.Receipts[request] == p.ID) {
-			a, e := s.publicationAnswer(r.Context(), p)
+			a, e := s.publicationAnswer(ctx, p)
 			if e != nil {
-				fail(503, e)
+				return fail(503, e)
 			} else {
-				writeJSON(w, 200, a)
+				return 200, a
 			}
-			return
 		}
 	}
 	if latestDialectPublication(transaction.ledger, id, req.Variant) != base {
-		fail(409, errors.New("Another version was published. Review against the new publication."))
-		return
+		return fail(409, errors.New("Another version was published. Review against the new publication."))
 	}
 	candidate.Review = req.Review
 	candidate.ID = publicationID(candidate)
 	answer.Publication = candidate
 	transaction.candidate = candidate
 	if err = admitPublication(transaction.ledger, candidate); err != nil {
-		fail(409, err)
-		return
+		return fail(409, err)
 	}
-	if err = s.checkPublicationVersions(r.Context(), held, transaction); err != nil {
-		fail(409, err)
-		return
+	if err = s.checkPublicationVersions(ctx, held, transaction); err != nil {
+		return fail(409, err)
 	}
 	// Retain all inputs before a single durable ledger commit. No second recipe write.
 	for _, data := range [][]byte{[]byte(checked.Document), recipe, pack} {
-		if _, err = s.artifactRepository().Put(r.Context(), data); err != nil {
-			fail(503, err)
-			return
+		if _, err = s.artifactRepository().Put(ctx, data); err != nil {
+			return fail(503, err)
 		}
 	}
 	if err = transaction.commit(); err != nil {
-		fail(503, err)
-		return
+		return fail(503, err)
 	}
 	answer.Saved = true
-	writeJSON(w, 200, answer)
+	return 200, answer
 }
 
 // Select a retained publication for the exact reviewed recipe. This never uses

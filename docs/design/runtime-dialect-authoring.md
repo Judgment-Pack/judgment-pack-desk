@@ -63,8 +63,22 @@ publication retains the canonical document, recipe and pack in the private
 artifact repository and the shared immutable version ledger. History is paged.
 Unchanged completed requests reconcile from that receipt even if Runtime is
 unavailable. A changed candidate or version needs another check; a check does
-not grant publication permission. This manual endpoint is not an assistant
-Auto/Plan capability. Future chat publication must use a scoped action adapter.
+not grant publication permission. Chat publication uses the same writer through the shared `assistantActionAdapters`
+registry. `read_dialect_publication` is available in Plan; the proposal tool checks
+and retains an exact candidate but never grants permission or publishes. Ask me
+uses explicit **Publish version** review. Auto requires a separate, single-use,
+15-minute allowance bound to the signed-in session, chat, action ID, resource,
+recipe revision, version, compatibility review and publication base. Plan blocks
+both grant and apply. Research and pack allowances cannot authorize publication.
+
+Both main chat and the side pane persist the proposal with the conversation.
+Recipe and publication editor changes block competing saves. The shared automatic
+dispatcher rechecks live editor ownership before recording an attempt. A failed
+or uncertain dispatch consumes its allowance and does not retry automatically.
+**Check saved result** reads the immutable receipt, even after a recipe changes
+or disappears; a verified result reconciles the chat without another write.
+Fresh writes recheck retained dependencies and Runtime identity under the saved
+recipe read view, then use the shared ledger's publication transaction.
 
 New job reviews use the matching published translation. Once a dialect has a
 publication, changed recipes require republishing before another job review.

@@ -1,3 +1,4 @@
+import {publicationChatTools} from './publicationChatTools'
 import {canonicalize} from '../dialect/canon'
 import {checkArtifact} from '../assistant/execution/checkArtifact'
 import {checkDialect,DialectCheckError} from '../dialect/authoring'
@@ -23,6 +24,7 @@ export function dialectChatTools(options:{retainAction:(action:DialectChatAction
   signal.throwIfAborted();return {saved,pack}
  }
  return [
+  ...publicationChatTools(options),
   {name:'read_dialect',delegation:'read',description:'Read a saved Dialects collection, available columns, the selected saved pack and its fact/evidence requirements. Required before propose_dialect. Returns bounded value samples and current revision/digest. Does not change or evaluate records.',inputSchema:schema({id,packKey},['id','packKey']),execute:async(args,signal)=>{
    if(Object.keys(args).some(k=>!['id','packKey'].includes(k)))throw toolInputFailure('Provide only a dialect ID and a saved pack key.')
    const {saved,pack}=await read(args,signal),doc=boundPack(pack),columns=dialectColumns(saved)

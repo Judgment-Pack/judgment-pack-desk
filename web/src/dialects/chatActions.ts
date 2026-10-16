@@ -1,3 +1,4 @@
+import {validPublicationProposal,type DialectPublicationProposal} from './publicationProposal'
 import {validDialectCheckCheckpoint,type DialectCheckCheckpoint} from '../dialect/checkpoint'
 import {validDialectProposal,type DialectProposal} from './dialect'
 import {defaultResearchRetries} from './research'
@@ -8,8 +9,8 @@ export type DialectRecipePatch={name?:string;intent?:string;research?:Partial<Pi
 export interface DialectChatAction {
  version:1;id:string;createdAt:string;afterTurnId?:string
  inputId:string;name:string;revision:string;recipeVersion:number
- kind:'update-dialect'|'update-recipe'|'remove-recipe'|'research'|'reprocess'|'stop-research'|'evaluate'
- dialect?:DialectProposal;dialectCheck?:DialectCheckCheckpoint;patch?:DialectRecipePatch;section?:'research'|'qualification'|'all';recordIds?:string[];runId?:string
+ kind:'publish-dialect'|'update-dialect'|'update-recipe'|'remove-recipe'|'research'|'reprocess'|'stop-research'|'evaluate'
+ publication?:DialectPublicationProposal;dialect?:DialectProposal;dialectCheck?:DialectCheckCheckpoint;patch?:DialectRecipePatch;section?:'research'|'qualification'|'all';recordIds?:string[];runId?:string
  applied?:{at:string;revision?:string;runId?:string}
 }
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value)
@@ -25,12 +26,14 @@ export function validDialectRecipePatch(value:unknown):value is DialectRecipePat
  return validDialectRecipeContent({name:'Review',intent:'Review',target:'records',fields:[{name:'description',description:'Description',type:'string'}],criteria:[],limits:{records:3,searches:0,pages:3,modelCalls:10},...value.research})
 }
 export function validDialectChatAction(value:unknown):value is DialectChatAction {
- if(!object(value)||!keys(value,['version','id','createdAt','afterTurnId','inputId','name','revision','recipeVersion','kind','patch','section','recordIds','runId','applied','dialect','dialectCheck']))return false
+ if(!object(value)||!keys(value,['version','id','createdAt','afterTurnId','inputId','name','revision','recipeVersion','kind','patch','section','recordIds','runId','applied','dialect','dialectCheck','publication']))return false
  if(value.version!==1||!text(value.id,80)||!/^[a-zA-Z0-9-]+$/.test(value.id as string)||!validDialectId(value.inputId)||!validDialectRevision(value.revision)||!text(value.name,160)||!Number.isSafeInteger(value.recipeVersion)||(value.recipeVersion as number)<1||typeof value.createdAt!=='string'||!Number.isFinite(Date.parse(value.createdAt))||value.afterTurnId!==undefined&&!text(value.afterTurnId,160))return false
  if(value.applied!==undefined&&(!object(value.applied)||!keys(value.applied,['at','revision','runId'])||typeof value.applied.at!=='string'||!Number.isFinite(Date.parse(value.applied.at))||value.applied.revision!==undefined&&!validDialectRevision(value.applied.revision)||value.applied.runId!==undefined&&!/^research_[a-f0-9]{32}$/.test(String(value.applied.runId))))return false
  if(value.kind!=='update-dialect'&&value.dialect!==undefined)return false
  if(value.dialectCheck!==undefined&&(value.kind!=='update-dialect'||!validDialectCheckCheckpoint(value.dialectCheck)))return false
+ if(value.kind!=='publish-dialect'&&value.publication!==undefined)return false
  switch(value.kind){
+  case 'publish-dialect':return validPublicationProposal(value.publication)&&value.publication.answer.publication.dialect.preparationId===value.inputId&&value.publication.answer.publication.dialect.revision===value.revision&&value.patch===undefined&&value.section===undefined&&value.recordIds===undefined&&value.runId===undefined
   case 'update-dialect':return validDialectProposal(value.dialect)&&value.patch===undefined&&value.section===undefined&&value.recordIds===undefined&&value.runId===undefined
   case 'update-recipe':return validDialectRecipePatch(value.patch)&&value.section===undefined&&value.recordIds===undefined&&value.runId===undefined
   case 'remove-recipe':return ['research','qualification','all'].includes(String(value.section))&&value.patch===undefined&&value.recordIds===undefined&&value.runId===undefined

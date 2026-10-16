@@ -1,3 +1,4 @@
+import {usePublishDialectEditing} from './recipeEditing'
 import {useEffect,useRef,useState} from 'react'
 import {useInfiniteQuery,useQuery,useQueryClient} from '@tanstack/react-query'
 import {formatDate,msg} from '../i18n'
@@ -19,7 +20,7 @@ import {dialectAPI,type PreparationReply} from './client'
 import styles from './DialectsView.module.css'
 
 export interface DialectPublicationAnswer {
- publication:{id:string;at:string;dialect:{preparationId:string;revision:string;variant:string};documents:{id:string;version:string}[]}
+ publication:{id:string;at:string;dialect:{preparationId:string;revision:string;variant:string;request:string};documents:{id:string;version:string}[]}
  document:string;digest:string;saved:boolean;basePublication:string;review?:ArtifactReference
 }
 /** Publishing is separate from recipe autosave. Checks bind the exact saved
@@ -34,6 +35,8 @@ export function DialectPublication({saved,disabled=false}:{saved:PreparationRepl
  const history=useInfiniteQuery({...privateQuery,queryKey:[...key,variant],initialPageParam:0,getNextPageParam:(last:{items:DialectPublicationAnswer[];next?:number})=>last.next,queryFn:({signal,pageParam})=>dialectAPI<{items:DialectPublicationAnswer[];next?:number}>(`${path}?variant=${variant}${pageParam?'&before='+pageParam:''}`,'GET',undefined,undefined,signal)})
  const recovery=useQuery({...privateQuery,queryKey:[...key,variant,saved.sha256,'review'],queryFn:({signal})=>dialectAPI<{review:ArtifactReview<DialectPublicationAnswer>|null}>(`${path}?variant=${variant}&review=latest`,'GET',undefined,undefined,signal)})
  const [edited,setEdited]=useState(false)
+ // Guard competing chat writes without marking a busy operation as unsaved.
+ usePublishDialectEditing(saved.document.id,edited||busy)
  const scope=saved.document.id+':'+saved.sha256+':'+variant
  useEffect(()=>{
   if(edited||recovery.isPending||recovery.isFetching||recovery.isPaused||!recovery.isFetchedAfterMount||recovery.error||restored===scope)return

@@ -3,6 +3,7 @@ package desk
 // Scoped host permissions. Model output, chat preferences and restored checks
 // cannot mint an allowance. Each explicit user grant admits one artifact commit.
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 )
 
 type assistantActionGrant struct {
+	Target        string    `json:"target,omitempty"`
 	ID            string    `json:"id"`
 	Action        string    `json:"action"`
 	ChatID        string    `json:"chatId"`
@@ -26,9 +28,10 @@ type assistantActionGrant struct {
 	ExpiresAt     time.Time `json:"expiresAt"`
 }
 type assistantApprovalChat struct {
-	ID          string `json:"id"`
-	Interaction string `json:"interaction"`
-	Pack        *struct {
+	InputActions []assistantPublicationAction `json:"inputActions"`
+	ID           string                       `json:"id"`
+	Interaction  string                       `json:"interaction"`
+	Pack         *struct {
 		ID   string `json:"id"`
 		Path string `json:"path"`
 	} `json:"pack"`
@@ -36,18 +39,27 @@ type assistantApprovalChat struct {
 		State json.RawMessage `json:"state"`
 	} `json:"checkpoint"`
 }
+type assistantActionResource struct {
+	Path, Name, Revision, Checks string
+	Verify                       func(string) error
+	Commit                       func(string) (int, any)
+	Close                        func()
+}
 type assistantActionAdapter struct {
-	target func(*Server, assistantApprovalChat) (string, string, error)
-	verify func(*Server, assistantApprovalChat, string, string, json.RawMessage) error
+	resolve func(context.Context, *Server, assistantApprovalChat, json.RawMessage, string) (assistantActionResource, error)
+	manual  bool
 }
 
-// New automatic actions must declare their target and check contract here.
-// Unsupported actions remain manual; a research grant never matches a file edit.
+// Adapters own resource admission; the dispatcher owns session/phase scope,
+// explicit permission, expiry and single use. Unknown actions stay manual.
 var assistantActionAdapters = map[string]assistantActionAdapter{
-	"pack-update": {target: packApprovalTarget, verify: verifyPackApproval},
+	"pack-update":     {resolve: resolvePackApproval},
+	"dialect-publish": {resolve: resolveDialectPublicationApproval, manual: true},
 }
 
 type assistantApprovalRequest struct {
+	Target   string `json:"target,omitempty"`
+	Reviewed bool   `json:"reviewed,omitempty"`
 	Action   string `json:"action"`
 	ID       string `json:"id"`
 	Revision string `json:"revision"`
@@ -145,11 +157,10 @@ func (s *Server) assistantApprovalTransaction(r *http.Request, chatID string, re
 			adapter, supported := assistantActionAdapters[grant.Action]
 			stale := err != nil || !supported || chat.Interaction == "plan"
 			if !stale {
-				path, name, err := adapter.target(s, chat)
-				stale = err != nil || path != grant.Path || name != grant.Name || approvalSuiteRevision(tests, chat) != grant.SuiteRevision
-				if !stale {
-					data, _, err := s.readThroughRoot(path)
-					stale = err != nil || digestOf(data) != grant.Revision
+				resource, err := adapter.resolve(r.Context(), s, chat, tests, grant.Target)
+				stale = err != nil || resource.Path != grant.Path || resource.Name != grant.Name || resource.Revision != grant.Revision || resource.Checks != grant.SuiteRevision
+				if resource.Close != nil {
+					resource.Close()
 				}
 			}
 			if stale {
@@ -179,25 +190,29 @@ func (s *Server) assistantApprovalTransaction(r *http.Request, chatID string, re
 	if chat.Interaction == "plan" {
 		return fail(errors.New("Switch to Work before allowing or saving an automatic action."))
 	}
-	path, name, e := adapter.target(s, chat)
+	resource, e := adapter.resolve(r.Context(), s, chat, tests, req.Target)
 	if e != nil {
 		return fail(e)
 	}
-	if e = s.refuseSymlinkedPath(path); e != nil {
-		return statusForRefusal(e), errorBody(e)
+	if resource.Close != nil {
+		defer resource.Close()
 	}
-	bytes, status, e := s.readThroughRoot(path)
-	if e != nil {
-		return status, errorBody(e)
-	}
-	revision := digestOf(bytes)
-	info, _ := s.root.Lstat(osPath(path))
-	if s.fileAccessPolicy().readOnlyReason(path, info) != "" {
-		return fail(errors.New("This file is read-only."))
+	path, name, revision := resource.Path, resource.Name, resource.Revision
+	if strings.HasSuffix(r.URL.Path, "/apply") {
+		if !adapter.manual || !req.Reviewed || req.Revision != revision {
+			return fail(errors.New("Review this exact resource before saving."))
+		}
+		if len(req.Content) > maxFileBytes {
+			return 413, codedBody(CodeTooLarge, "The proposal is too large.")
+		}
+		if e = resource.Verify(req.Content); e != nil {
+			return fail(e)
+		}
+		return resource.Commit(req.Content)
 	}
 	if strings.HasSuffix(r.URL.Path, "/grant") {
 		if req.Revision != revision {
-			return fail(errors.New("The file changed. Review the allowance again."))
+			return fail(errors.New("The resource changed. Review the allowance again."))
 		}
 		for k, g := range s.actionGrants {
 			if g.State != "ready" || !time.Now().Before(g.ExpiresAt) {
@@ -211,27 +226,53 @@ func (s *Server) assistantApprovalTransaction(r *http.Request, chatID string, re
 		if _, e = rand.Read(random[:]); e != nil {
 			return fail(errors.New("The allowance could not be created."))
 		}
-		grant = assistantActionGrant{ID: hex.EncodeToString(random[:]), Action: req.Action, ChatID: chatID, Path: path, Name: name, Revision: revision, SuiteRevision: approvalSuiteRevision(tests, chat), Scope: scope, State: "ready", ExpiresAt: time.Now().Add(15 * time.Minute)}
+		grant = assistantActionGrant{ID: hex.EncodeToString(random[:]), Action: req.Action, ChatID: chatID, Path: path, Name: name, Revision: revision, SuiteRevision: resource.Checks, Target: req.Target, Scope: scope, State: "ready", ExpiresAt: time.Now().Add(15 * time.Minute)}
 		s.actionGrants[key] = grant
 		exists = true
 		return respond()
 	}
-	if !strings.HasSuffix(r.URL.Path, "/commit") || !exists || grant.ID != req.ID || grant.Action != req.Action || grant.Path != path || grant.Name != name || grant.Scope != scope || grant.State != "ready" {
+	if !strings.HasSuffix(r.URL.Path, "/commit") || !exists || grant.ID != req.ID || grant.Action != req.Action || grant.Path != path || grant.Name != name || grant.Target != req.Target || grant.Scope != scope || grant.State != "ready" {
 		return fail(errors.New("Review and allow this action before saving automatically."))
 	}
-	if req.Revision != grant.Revision || revision != grant.Revision || approvalSuiteRevision(tests, chat) != grant.SuiteRevision {
+	if req.Revision != grant.Revision || revision != grant.Revision || resource.Checks != grant.SuiteRevision {
 		grant.State = "stale"
 		s.actionGrants[key] = grant
-		return fail(errors.New("The file or test suite changed. Review a new allowance."))
+		return fail(errors.New("The resource or its checks changed. Review a new allowance."))
 	}
 	if len(req.Content) > maxFileBytes {
 		return 413, codedBody(CodeTooLarge, "The proposal is too large.")
 	}
-	if e = adapter.verify(s, chat, req.Content, grant.Revision, tests); e != nil {
+	if e = resource.Verify(req.Content); e != nil {
 		return fail(e)
 	}
 	// Consume before dispatch, including uncertain write outcomes. Never replay.
 	grant.State = "used"
 	s.actionGrants[key] = grant
-	return s.commitWriteLocked(path, WriteRequest{Path: path, Content: req.Content, BaseSHA256: grant.Revision})
+	return resource.Commit(req.Content)
+}
+
+func resolvePackApproval(ctx context.Context, s *Server, chat assistantApprovalChat, tests json.RawMessage, target string) (assistantActionResource, error) {
+	var result assistantActionResource
+	if target != "" {
+		return result, errors.New("This pack allowance has a different target.")
+	}
+	path, name, err := packApprovalTarget(s, chat)
+	if err != nil {
+		return result, err
+	}
+	if err = s.refuseSymlinkedPath(path); err != nil {
+		return result, err
+	}
+	raw, _, err := s.readThroughRoot(path)
+	if err != nil {
+		return result, err
+	}
+	info, _ := s.root.Lstat(osPath(path))
+	if s.fileAccessPolicy().readOnlyReason(path, info) != "" {
+		return result, errors.New("This file is read-only.")
+	}
+	revision := digestOf(raw)
+	return assistantActionResource{Path: path, Name: name, Revision: revision, Checks: approvalSuiteRevision(tests, chat), Verify: func(content string) error { return verifyPackApproval(s, chat, content, revision, tests) }, Commit: func(content string) (int, any) {
+		return s.commitWriteLocked(path, WriteRequest{Path: path, Content: content, BaseSHA256: revision})
+	}}, nil
 }
