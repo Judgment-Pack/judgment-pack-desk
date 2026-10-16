@@ -323,7 +323,7 @@ func (s *Server) handleSubscriptionUpgrade(w http.ResponseWriter, r *http.Reques
 				fail(err)
 				return
 			}
-			fail(errors.New(b.Upgrade.Problem))
+			writeJSON(w, 200, b)
 			return
 		}
 		if b.Upgrade.Phase == "submitted" {

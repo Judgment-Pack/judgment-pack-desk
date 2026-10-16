@@ -2032,7 +2032,7 @@
   "Keep this draft before generating a brief.": "브리프를 생성하기 전에 이 초안을 유지하세요.",
   "Keep useful preferences and corrections across chats in this project. Current saved objects and your latest instructions take precedence.": "이 프로젝트의 채팅 간에 유용한 선호 사항과 수정 내용을 유지합니다. 현재 저장된 객체와 최신 지침이 우선합니다.",
   "Keep {{count}} records": "레코드 {{count}}개 유지",
-  "Keeps prior results and replaces this subscription with a paused revision. Records present at this review are skipped; future eligible records use the new release after you enable it.": "이전 결과를 보존하고 이 구독을 일시 중지된 리비전으로 교체합니다. 이 검토 시점에 존재하는 레코드는 건너뛰며, 활성화한 후에는 이후의 적격 레코드에 새 릴리스를 사용합니다.",
+  "Keeps prior results and replaces this subscription with a paused revision. Records present at the saved review time are skipped; future eligible records use the new release after you enable it.": "이전 결과를 보존하고 이 구독을 일시 중지된 리비전으로 교체합니다. 저장된 검토 시점에 존재했던 레코드는 건너뛰며, 활성화한 후에는 이후의 적격 레코드에 새 릴리스를 사용합니다.",
   "Kept at its name, not in the archive: no start of this Desk’s decides it.": "보관함이 아니라 자기 이름으로 유지됨: 이 Desk의 어떤 시작도 이를 결정하지 않습니다.",
   "Kept by the gateway in its private store on this computer, outside the project. It is never shown again.": "프로젝트 밖에 있는 이 컴퓨터의 게이트웨이 비공개 저장소에 유지됩니다. 다시 표시되지 않습니다.",
   "Kept for Runner under {{identity}}": "{{identity}} 아래 Runner용으로 유지됨",

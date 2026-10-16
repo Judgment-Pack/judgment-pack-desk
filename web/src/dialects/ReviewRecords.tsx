@@ -1,4 +1,5 @@
 import {LoadingState} from '../ui/LoadingState'
+import {SubscriptionUpgradeSummary} from './SubscriptionUpgradeSummary'
 import {useState} from 'react'
 import {useQuery} from '@tanstack/react-query'
 import {Link} from 'react-router-dom'
@@ -42,10 +43,7 @@ export function ReviewRecords({saved:current,records,opener,onClose,onEvaluated,
   {evaluation?<>
    <dl className={styles.detail}><dt>{msg('Pack')}</dt><dd>{evaluation.release.title} · {evaluation.release.packVersion}</dd><dt>{msg('Dialects')}</dt><dd>{msg('Recipe {{version}} · {{count}} selected records',{version:evaluation.recipeVersion,count:selection.length})}</dd><dt>{msg('Saved tests')}</dt><dd>{evaluation.release.tests==='passed'?msg('Passed'):evaluation.release.tests==='not-run'?msg('Not run'):msg('Needs attention')}</dd><dt>{msg('Project reviewed-set requirement')}</dt><dd>{evaluation.projectReviewed?msg('On'):msg('Off')}</dd></dl>
    {!subscriptionOnly&&!upgradeSource&&<label className="checkbox"><input type="checkbox" checked={automatic} disabled={busy} onChange={e=>{setAutomatic(e.target.checked);setReviewed(false)}}/>{msg('Connect these Dialects to an incremental job')}</label>}
-   {upgradeSource?<>
-    <dl className={styles.detail}><dt>{msg('Current release')}</dt><dd><code>{evaluation.subscriptionUpgrade?.baseReleaseId}</code></dd><dt>{msg('Proposed release')}</dt><dd><code>{evaluation.releaseId}</code></dd><dt>{msg('Records to process')}</dt><dd>{evaluation.subscriptionUpgrade?.mode==='changed'?msg('New and changed records'):msg('New records only')}</dd></dl>
-    <p className={styles.note}>{msg('Keeps prior results and replaces this subscription with a paused revision. Records present at this review are skipped; future eligible records use the new release after you enable it.')}</p>
-   </>:automatic?<>
+   {upgradeSource?<SubscriptionUpgradeSummary evaluation={evaluation}/>:automatic?<>
     <Field label={msg('Records to process')}>{props=><Select {...props} disabled={busy} value={mode} onValueChange={value=>{setMode(value);setReviewed(false)}} options={[{value:'new',label:msg('New records only')},{value:'changed',label:msg('New and changed records')}]}/>}</Field>
     <label className="checkbox"><input type="checkbox" checked={includeExisting} disabled={busy} onChange={e=>{setIncludeExisting(e.target.checked);setReviewed(false)}}/>{msg('Include existing eligible records when enabled')}</label>
     <p className={styles.note}>{msg('Uses this collection, saved dialect and record origin. AI research requires a current accepted review. Save paused, then review and enable from Jobs.')}</p>

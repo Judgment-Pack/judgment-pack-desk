@@ -2032,7 +2032,7 @@
   "Keep this draft before generating a brief.": "请先保留此草稿，再生成简报。",
   "Keep useful preferences and corrections across chats in this project. Current saved objects and your latest instructions take precedence.": "在此项目的不同聊天之间保留有用的偏好和修正。当前已保存的对象和您的最新指令优先。",
   "Keep {{count}} records": "保留 {{count}} 条记录",
-  "Keeps prior results and replaces this subscription with a paused revision. Records present at this review are skipped; future eligible records use the new release after you enable it.": "保留以往结果，并将此订阅替换为暂停状态的修订版本。本次审核时已存在的记录将被跳过；启用后，未来符合条件的记录将使用新发布版本。",
+  "Keeps prior results and replaces this subscription with a paused revision. Records present at the saved review time are skipped; future eligible records use the new release after you enable it.": "保留以往结果，并将此订阅替换为暂停状态的修订版本。在已保存的审核时间点已存在的记录将被跳过；启用后，未来符合条件的记录将使用新发布版本。",
   "Kept at its name, not in the archive: no start of this Desk’s decides it.": "按其名称保管，不在归档中：此 Desk 的任何一次启动都不会决定它。",
   "Kept by the gateway in its private store on this computer, outside the project. It is never shown again.": "由网关保管在此计算机上、项目之外的私有存储中。不会再次显示。",
   "Kept for Runner under {{identity}}": "以 {{identity}} 为名，为 Runner 保管",

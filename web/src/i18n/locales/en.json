@@ -2032,7 +2032,7 @@
   "Keep this draft before generating a brief.": "Keep this draft before generating a brief.",
   "Keep useful preferences and corrections across chats in this project. Current saved objects and your latest instructions take precedence.": "Keep useful preferences and corrections across chats in this project. Current saved objects and your latest instructions take precedence.",
   "Keep {{count}} records": "Keep {{count}} records",
-  "Keeps prior results and replaces this subscription with a paused revision. Records present at this review are skipped; future eligible records use the new release after you enable it.": "Keeps prior results and replaces this subscription with a paused revision. Records present at this review are skipped; future eligible records use the new release after you enable it.",
+  "Keeps prior results and replaces this subscription with a paused revision. Records present at the saved review time are skipped; future eligible records use the new release after you enable it.": "Keeps prior results and replaces this subscription with a paused revision. Records present at the saved review time are skipped; future eligible records use the new release after you enable it.",
   "Kept at its name, not in the archive: no start of this Desk’s decides it.": "Kept at its name, not in the archive: no start of this Desk’s decides it.",
   "Kept by the gateway in its private store on this computer, outside the project. It is never shown again.": "Kept by the gateway in its private store on this computer, outside the project. It is never shown again.",
   "Kept for Runner under {{identity}}": "Kept for Runner under {{identity}}",

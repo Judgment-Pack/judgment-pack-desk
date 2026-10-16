@@ -2032,7 +2032,7 @@
   "Keep this draft before generating a brief.": "請先保留呢份草稿，再生成簡報。",
   "Keep useful preferences and corrections across chats in this project. Current saved objects and your latest instructions take precedence.": "喺呢個專案嘅唔同聊天之間保留有用嘅偏好同修正。而家已儲存嘅對象同你嘅最新指令優先。",
   "Keep {{count}} records": "保留 {{count}} 筆記錄",
-  "Keeps prior results and replaces this subscription with a paused revision. Records present at this review are skipped; future eligible records use the new release after you enable it.": "保留之前嘅結果，並用暫停狀態嘅修訂版本取代呢個訂閱。今次檢視時已有嘅記錄會略過；啟用之後，未來符合資格嘅記錄會用新嘅發佈版本。",
+  "Keeps prior results and replaces this subscription with a paused revision. Records present at the saved review time are skipped; future eligible records use the new release after you enable it.": "保留之前嘅結果，並用暫停狀態嘅修訂版本取代呢個訂閱。喺已儲存嘅檢視時間點已存在嘅記錄會略過；啟用之後，未來符合資格嘅記錄會用新嘅發佈版本。",
   "Kept at its name, not in the archive: no start of this Desk’s decides it.": "按佢嘅名稱保管，唔喺封存入面：呢個 Desk 嘅任何一次啟動都唔會決定佢。",
   "Kept by the gateway in its private store on this computer, outside the project. It is never shown again.": "由閘道保管喺部電腦上、專案之外嘅私有儲存空間入面。唔會再次顯示。",
   "Kept for Runner under {{identity}}": "以 {{identity}} 為名，為 Runner 保管",
