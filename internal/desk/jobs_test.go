@@ -1502,3 +1502,32 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 		t.Errorf("the refused folder was changed to %v", mode)
 	}
 }
+
+func TestJobsInstallationConfigurationIsReadOnlyAtBrowserBoundary(t *testing.T) {
+	var forwarded []string
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = append(forwarded, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[]`))
+	}))
+	defer companion.Close()
+	s, _ := newTestServer(t, false)
+	s.jobs = &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{}), stop: make(chan struct{})}
+	t.Cleanup(func() { s.jobs.closed = true })
+	for _, path := range []string{"input-profiles", "background-connections", "status"} {
+		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+			forwarded = nil
+			request := httptest.NewRequest(method, "/api/operations/"+path, strings.NewReader(`{"id":"browser-profile"}`))
+			request.Header.Set("Authorization", "Bearer "+testToken)
+			response := httptest.NewRecorder()
+			s.ServeHTTP(response, request)
+			if method == "GET" {
+				if response.Code != 200 || !slices.Equal(forwarded, []string{"GET /v1/" + path}) {
+					t.Fatalf("read %s: %d %v", path, response.Code, forwarded)
+				}
+			} else if response.Code != 404 || len(forwarded) != 0 {
+				t.Fatalf("browser write reached installation authority: %s %s %d %v", method, path, response.Code, forwarded)
+			}
+		}
+	}
+}
