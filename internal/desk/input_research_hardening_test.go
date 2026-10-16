@@ -83,8 +83,8 @@ func TestResearchInvalidBatchCorrectsAtomicallyAndRetainsFeedback(t *testing.T) 
 		}
 		if calls == 2 {
 			saved, _ := readInputResearch(root)
-			if len(saved.Records) != 0 || !strings.Contains(prompt, "Expected text") {
-				t.Fatal("invalid batch partly committed or no feedback")
+			if len(saved.Records) != 0 || !strings.Contains(prompt, "Field country requires a value in its declared string encoding.") {
+				t.Fatalf("invalid batch partly committed or no typed correction feedback: records=%d prompt=%s", len(saved.Records), prompt)
 			}
 			return recoveryAction("records", map[string]any{"records": []any{first, second}}), nil
 		}
