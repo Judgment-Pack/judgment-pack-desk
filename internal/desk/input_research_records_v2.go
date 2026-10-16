@@ -21,6 +21,7 @@ type researchRecordSnapshot struct {
 	SourceIDs     []string            `json:"sourceIds,omitempty"`
 }
 type researchRecordOutcome struct {
+	ParentID    string `json:"parentId,omitempty"`
 	Key         string `json:"key"`
 	RecordID    string `json:"recordId,omitempty"`
 	EntityID    string `json:"entityId,omitempty"`
@@ -43,7 +44,7 @@ func researchRecordSnapshots(doc inputPreparation) []researchRecordSnapshot {
 func researchExistingContext(run inputResearchRun) []map[string]any {
 	result := []map[string]any{}
 	for _, row := range run.Existing {
-		result = append(result, map[string]any{"recordId": row.RecordID, "kind": row.Entity.Kind, "name": row.Entity.Name, "evidenceUrl": row.Entity.URL, "website": row.Entity.Website})
+		result = append(result, map[string]any{"recordId": row.RecordID, "kind": row.Entity.Kind, "name": row.Entity.Name, "evidenceUrl": row.Entity.URL, "website": row.Entity.Website, "companyId": row.Entity.CompanyID})
 	}
 	return result
 }
@@ -283,12 +284,18 @@ func applyResearchRecordsV2(run *inputResearchRun, args json.RawMessage) error {
 		if proposed.RecordID == "" && proposed.CandidateID == "" {
 			key += ":" + proposed.URLRef + ":" + entity.URL
 		}
+		if run.IdentityVersion >= 2 && proposed.RecordID == "" && entity.CompanyID != "" {
+			key += ":parent:" + entity.CompanyID
+		}
 		out := researchRecordOutcome{Key: key, RecordID: proposed.RecordID, Name: entity.Name, State: "needs-correction", AttemptID: attemptID}
+		if run.IdentityVersion >= 2 {
+			out.ParentID = entity.CompanyID
+		}
 		err := func() error {
 			if proposed.CorrectionOf != "" {
 				matched := false
 				for _, previous := range run.Outcomes {
-					if previous.Key == proposed.CorrectionOf && previous.State == "needs-correction" && researchName(previous.Name) == researchName(entity.Name) && previous.RecordID == proposed.RecordID {
+					if previous.Key == proposed.CorrectionOf && previous.State == "needs-correction" && researchName(previous.Name) == researchName(entity.Name) && previous.RecordID == proposed.RecordID && (run.IdentityVersion < 2 || previous.ParentID == entity.CompanyID) {
 						out.Key = previous.Key
 						matched = true
 						break
@@ -312,7 +319,7 @@ func applyResearchRecordsV2(run *inputResearchRun, args json.RawMessage) error {
 			if proposed.RecordID != "" && snapshot == nil {
 				return errors.New("The recordId is not in existingRecords.")
 			}
-			if snapshot != nil && (entity.Kind != snapshot.Entity.Kind || researchName(entity.Name) != researchName(snapshot.Entity.Name)) {
+			if snapshot != nil && (entity.Kind != snapshot.Entity.Kind || researchName(entity.Name) != researchName(snapshot.Entity.Name) || run.IdentityVersion >= 2 && entity.CompanyID != snapshot.Entity.CompanyID) {
 				return errors.New("Keep the selected record's identity and name.")
 			}
 			if proposed.CandidateID != "" {
@@ -411,7 +418,7 @@ func applyResearchRecordsV2(run *inputResearchRun, args json.RawMessage) error {
 			}
 			if snapshot == nil {
 				for _, s := range run.Existing {
-					if researchSameIdentity(s.Entity, entity) {
+					if researchSameIdentityForRun(*run, s.Entity, entity) {
 						if snapshot != nil {
 							return errors.New("Multiple existing records match this company. Supply the intended recordId.")
 						}
@@ -424,15 +431,15 @@ func applyResearchRecordsV2(run *inputResearchRun, args json.RawMessage) error {
 				entity.ID = snapshot.Entity.ID
 				out.RecordID = snapshot.RecordID
 			} else {
-				entity.ID = "entity_" + digestOf([]byte(researchEntityKey(entity)))
+				entity.ID = "entity_" + digestOf([]byte(researchEntityKeyForRun(*run, entity)))
 				for _, saved := range run.Records {
-					if researchSameIdentity(saved, entity) {
+					if researchSameIdentityForRun(*run, saved, entity) {
 						entity.ID = saved.ID
 						break
 					}
 				}
 				if entity.ID == "" {
-					entity.ID = "entity_" + digestOf([]byte(researchEntityKey(entity)))
+					entity.ID = "entity_" + digestOf([]byte(researchEntityKeyForRun(*run, entity)))
 				}
 				out.RecordID = "row_" + digestOf([]byte(run.PreparationID+"\n"+entity.ID))
 			}
@@ -583,7 +590,7 @@ func (s *Server) publishResearchRecordsV2(run inputResearchRun) error {
 					return errors.New("Reprocessing cannot add records.")
 				}
 				for _, r := range doc.Records {
-					if r.Research != nil && researchSameIdentity(r.Research.Entity, *entity) {
+					if r.Research != nil && researchSameIdentityForRun(run, r.Research.Entity, *entity) {
 						return errors.New("A matching record was added while research was running. Review the current records.")
 					}
 				}
@@ -695,6 +702,9 @@ func countResearchOutcomes(run inputResearchRun) researchOutcomeCounts {
 }
 
 func validateResearchRecordScope(run inputResearchRun) error {
+	if run.IdentityVersion < 0 || run.IdentityVersion > 2 {
+		return errors.New("Unsupported research identity version.")
+	}
 	if run.ContractVersion < 0 || run.ContractVersion > 2 {
 		return errors.New("Unsupported research record contract.")
 	}
