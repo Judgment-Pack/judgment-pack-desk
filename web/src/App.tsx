@@ -1,4 +1,4 @@
-import {TemplatesPage} from './exchange/TemplatesPage'
+import {TemplatesPage} from './routes/TemplatesPage'
 import { DialectsView } from './routes/DialectsView'
 import { JobsView } from './routes/JobsView'
 import { DraftPackView, NewPackView } from './routes/DraftPackView'
