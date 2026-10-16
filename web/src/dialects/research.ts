@@ -1,7 +1,9 @@
 export type ResearchLimits = ResearchRecipe['limits']
 export interface ResearchBudgetRequest {id:string;state:'pending'|'approved'|'declined';createdAt:string;resolvedAt?:string;reviewer?:{kind:string;name?:string};reason:string;current:ResearchLimits;proposed:ResearchLimits;used:ResearchLimits}
 export interface ResearchBudgetReview {runId:string;revision:string;recipeVersion:number;recordCount:number;sourceCount:number;request:ResearchBudgetRequest}
-export interface ResearchField {name:string;description:string;type:'string'|'number'|'boolean'}
+export const researchFieldTypes = ['text','integer','decimal','boolean','text-list','range','string','number'] as const
+export type ResearchFieldType = typeof researchFieldTypes[number]
+export interface ResearchField {name:string;description:string;type:ResearchFieldType}
 export interface ResearchRetryPolicy {mode:'off'|'temporary';maxRetries:number;searchTimeouts:boolean}
 export const defaultResearchRetries = ():ResearchRetryPolicy=>({mode:'temporary',maxRetries:2,searchTimeouts:false})
 export interface ResearchPendingRetry {afterAttempt:string;at:string;number:number;maxAttempts:number;problemCode:string}
@@ -11,7 +13,7 @@ export interface ResearchTask {id:string;title:string;objective:string;profile:s
 /** Legacy targets are read-compatible metadata; new recipes always research records. */
 export interface ResearchRecipe {execution?:ResearchExecutionPolicy;retries?:ResearchRetryPolicy;version:1;target:'records'|'companies'|'people'|'people-at-companies';fields:ResearchField[];criteria:{id:string;description:string;qualificationTarget?:string}[];companyIds?:string[];companyInputs?:{preparationId:string;revision:string;entityId:string}[];ai:{connection:string;revision:string;model:string;effort?:string};search?:{connection:string;revision:string};limits:{records:number;searches:number;pages:number;modelCalls:number}}
 // Empty Go citation slices are retained as null in existing records and reviews.
-export interface ResearchValue {value?:string|number|boolean|null;status:'supported'|'interpretation'|'missing'|'conflicting'|'inaccessible'|'stale';sources?:{sourceId:string;quote:string}[]|null;note?:string}
+export interface ResearchValue {value?:string|number|boolean|string[]|{min:number;max:number}|{min:string;max:string}|null;status:'supported'|'interpretation'|'missing'|'conflicting'|'inaccessible'|'stale';sources?:{sourceId:string;quote:string}[]|null;note?:string}
 export interface ResearchEntity {website?:string;id:string;kind:'record'|'company'|'person';name:string;url:string;companyId?:string;fields:Record<string,ResearchValue>}
 export interface ResearchSource {id:string;kind:'search'|'page';url?:string;query?:string;at:string;digest:string;text:string;verification:string}
 export interface ResearchRun {execution?:ResearchExecution;contractVersion?:number;reprocess?:boolean;selection?:{recordId:string;entity:ResearchEntity}[];budgetRequests?:ResearchBudgetRequest[];phase?:string;continuationOf?:string;inheritedRecords?:number;version:1;id:string;preparationId:string;recipeVersion:number;createdAt:string;updatedAt:string;state:'review'|'queued'|'running'|'paused'|'stopped'|'completed'|'completed-with-gaps'|'partial'|'blocked'|'interrupted';problem?:string;recipe:ResearchRecipe;intent:string;records:ResearchEntity[];companies:ResearchEntity[];sources:ResearchSource[];attempts:{id:string;kind:'model'|'search'|'page';state:string;problem?:string}[];stopRequested:boolean}

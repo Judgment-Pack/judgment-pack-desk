@@ -108,7 +108,7 @@ func validateDialectDraft(name string, recipe inputRecipe) error {
 			return bad
 		}
 		for _, f := range r.Fields {
-			if len(f.Name) > 64 || len(f.Description) > 1000 || !contains([]string{"string", "number", "boolean"}, f.Type) {
+			if len(f.Name) > 64 || len(f.Description) > 1000 || !contains(researchFieldTypes, f.Type) {
 				return bad
 			}
 		}

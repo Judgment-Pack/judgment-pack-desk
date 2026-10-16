@@ -1,5 +1,5 @@
 import type {DialectRecipeFailureCode} from './proposalFailure'
-import {defaultResearchRetries} from './research'
+import {defaultResearchRetries,researchFieldTypes,type ResearchFieldType} from './research'
 import type {ResearchExecutionPolicy,ResearchRecipe,ResearchField} from './research'
 
 /** A chat proposal contains portable intent, never execution authority. */
@@ -20,7 +20,7 @@ export function dialectRecipeContentProblem(value:unknown):DialectRecipeFailureC
  if(!text(value.name,160))return 'name'
  if(!text(value.intent,12000))return 'intent'
  if(!['records','companies','people','people-at-companies'].includes(value.target as string))return 'target'
- if(!Array.isArray(value.fields)||value.fields.length<1||value.fields.length>30||!value.fields.every(f=>object(f)&&keys(f,['name','description','type'])&&typeof f.name==='string'&&/^[a-z][a-zA-Z0-9_]{0,63}$/.test(f.name)&&!['constructor','prototype','__proto__'].includes(f.name)&&text(f.description,1000)&&['string','number','boolean'].includes(f.type as string))||new Set(value.fields.map(f=>f.name)).size!==value.fields.length)return 'fields'
+ if(!Array.isArray(value.fields)||value.fields.length<1||value.fields.length>30||!value.fields.every(f=>object(f)&&keys(f,['name','description','type'])&&typeof f.name==='string'&&/^[a-z][a-zA-Z0-9_]{0,63}$/.test(f.name)&&!['constructor','prototype','__proto__'].includes(f.name)&&text(f.description,1000)&&researchFieldTypes.includes(f.type as ResearchFieldType))||new Set(value.fields.map(f=>f.name)).size!==value.fields.length)return 'fields'
  if(!Array.isArray(value.criteria)||value.criteria.length>30||!value.criteria.every(c=>object(c)&&keys(c,['id','description','qualificationTarget'])&&typeof c.id==='string'&&/^[a-z][a-zA-Z0-9_]{0,63}$/.test(c.id)&&text(c.description,2000)&&(c.qualificationTarget===undefined||text(c.qualificationTarget,512)))||new Set(value.criteria.map(c=>c.id)).size!==value.criteria.length)return 'criteria'
  if(value.execution!==undefined&&(!object(value.execution)||!keys(value.execution,['approach','concurrency'])||!['standard','delegated'].includes(String(value.execution.approach))||![0,1,2].includes(value.execution.concurrency as number)))return 'content'
  const limits=value.limits

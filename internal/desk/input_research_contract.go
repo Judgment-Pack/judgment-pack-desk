@@ -160,7 +160,7 @@ func validateInputResearch(r *inputResearchRecipe) error {
 	}
 	seen = map[string]bool{}
 	for _, f := range r.Fields {
-		if !researchFieldName.MatchString(f.Name) || contains([]string{"constructor", "prototype", "__proto__"}, f.Name) || seen[f.Name] || strings.TrimSpace(f.Description) == "" || len(f.Description) > 1000 || !contains([]string{"string", "number", "boolean"}, f.Type) {
+		if !researchFieldName.MatchString(f.Name) || contains([]string{"constructor", "prototype", "__proto__"}, f.Name) || seen[f.Name] || strings.TrimSpace(f.Description) == "" || len(f.Description) > 1000 || !contains(researchFieldTypes, f.Type) {
 			return bad
 		}
 		seen[f.Name] = true
@@ -237,23 +237,8 @@ func validateResearchEntity(entity *inputResearchEntity, recipe inputResearchRec
 				return errors.New("Unresolved fields cannot silently supply a value.")
 			}
 		} else {
-			var value any
-			if len(v.Value) == 0 || len(v.Value) > 8192 || json.Unmarshal(v.Value, &value) != nil || value == nil {
-				return errors.New("Resolved fields require a typed value.")
-			}
-			switch field.Type {
-			case "string":
-				if _, ok := value.(string); !ok {
-					return errors.New("Expected text.")
-				}
-			case "number":
-				if _, ok := value.(float64); !ok {
-					return errors.New("Expected a number.")
-				}
-			case "boolean":
-				if _, ok := value.(bool); !ok {
-					return errors.New("Expected yes or no.")
-				}
+			if !validResearchValue(v.Value, field.Type) {
+				return fmt.Errorf("Field %s requires a value in its declared %s encoding.", field.Name, field.Type)
 			}
 		}
 		if v.Status == "supported" && len(v.Sources) == 0 {

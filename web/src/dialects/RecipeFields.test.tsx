@@ -37,3 +37,15 @@ it('adds and removes fields in the parent buffer and prevents removing the last 
  expect(screen.getAllByRole('textbox',{name:'Field name'})).toHaveLength(1)
  expect(document.activeElement).toBe(screen.getByRole('button',{name:'Add field'}))
 })
+
+it('shows portable types and keeps legacy fields unchanged until edited',()=>{
+ const changed=vi.fn()
+ const value:ResearchRecipe['fields']=[{name:'old',description:'Saved text',type:'string'},...(['integer','decimal','boolean','text-list','range'] as const).map(type=>({name:type.replace('-','_'),description:'Portable '+type,type}))]
+ render(<Tooltip.Provider><RecipeFields value={value} disabled={false} onChange={changed}/></Tooltip.Provider>)
+ const table=screen.getByRole('table',{name:'Requested fields'})
+ expect(within(table).getAllByRole('combobox',{name:'Type'}).map(element=>element.textContent)).toEqual(expect.arrayContaining([expect.stringContaining('Text'),expect.stringContaining('Integer'),expect.stringContaining('Decimal'),expect.stringContaining('Text list'),expect.stringContaining('Range')]))
+ expect(changed).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button',{name:'Add field'}))
+ expect(changed.mock.calls.at(-1)![0].at(-1)).toMatchObject({type:'text'})
+ expect(changed.mock.calls.at(-1)![0][0]).toEqual(value[0])
+})

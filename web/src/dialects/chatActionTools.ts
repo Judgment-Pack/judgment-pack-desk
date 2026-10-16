@@ -1,3 +1,4 @@
+import {researchFieldTypes} from './research'
 import {toolInputFailure} from '../assistant/failures'
 import {researchApprovalAPI} from './researchApproval'
 import type {HostTool} from '../assistant/engine'
@@ -10,7 +11,7 @@ const execution=schema({approach:{type:'string',enum:['standard','delegated']},c
 const result=(value:unknown)=>({content:[{type:'text' as const,text:JSON.stringify(value)}]})
 const id={type:'string',pattern:'^prep_[a-f0-9]{32}$'}
 const revision={type:'string',pattern:'^[a-f0-9]{64}$'}
-const field=schema({name:{type:'string'},description:{type:'string'},type:{type:'string',enum:['string','number','boolean']}},['name','description','type'])
+const field=schema({name:{type:'string'},description:{type:'string'},type:{type:'string',enum:researchFieldTypes}},['name','description','type'])
 const criterion=schema({id:{type:'string'},description:{type:'string'},qualificationTarget:{type:'string'}},['id','description'])
 const limits=schema(Object.fromEntries(['records','searches','pages','modelCalls'].map(key=>[key,{type:'integer'}])),['records','searches','pages','modelCalls'])
 const read=async(args:Record<string,unknown>,signal:AbortSignal)=>{
