@@ -13214,8 +13214,8 @@ export function assistantTransport(id: string): Transport {
     "    : finding.kind === file.kind && finding.id === file.id)" \
     "    : finding.id === file.id)"
   mutate web "review: the confirmation does not carry the token" "$RC" \
-    "body: JSON.stringify({ token }) })" \
-    "body: JSON.stringify({}) })"
+    "body: JSON.stringify({ token, " \
+    "body: JSON.stringify({ "
   mutate web "review: a stale confirmation reads as any failure" "$RC" \
     "  return body.code === 'stale' ? new StaleReview(message) : new Error(message)" \
     "  return new Error(message)"
@@ -13229,7 +13229,7 @@ export function assistantTransport(id: string): Transport {
     "    {before !== undefined && after !== undefined" \
     "    {after !== undefined"
   mutate web "review: a lock is offered when every file matches" "$RVV" \
-    "            : review.token && !matches && <section" \
+    "            : review.token && (!matches||review.publicationPending) && <section" \
     "            : review.token && <section"
   mutate web "review: a lock is offered over a file that cannot be shown" "$RVV" \
     "          {review.blocked ? <Alert" \
