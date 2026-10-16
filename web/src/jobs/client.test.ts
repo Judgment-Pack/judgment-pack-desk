@@ -76,3 +76,15 @@ it('splices only the mapping bytes of a constant trigger with escaped member nam
   const untouched = {input:{kind:'constant',value:' { "facts": { "n": 1.0 } } '}}
   expect(canonicalJobsRequest(untouched)).toBe(jobsRequest(untouched))
 })
+
+it('canonicalizes named mappings without re-encoding signed source payloads',async()=>{
+ const mapping={formatVersion:'3.0.0',id:'urn:test',version:'1.0.0',case:{facts:[],evidence:[]}}
+ const raw='{"source":{"mapping":'+JSON.stringify(mapping)+',"case":{},"sources":{"a":{"response":{"result":{"exact":1.000},"receipt":{}}}}}}'
+ const {canonicalJobsRequest}=await import('./client')
+ const encoded=canonicalJobsRequest({input:{kind:'constant',value:raw}})
+ const inner=JSON.parse(encoded).input.value
+ expect(inner).toContain('"exact":1.000')
+ expect(inner).toContain('"formatVersion":"3.0.0"')
+ expect(inner).toContain('"version":"1.0.0"')
+ expect(inner).not.toContain('"provider":""')
+})

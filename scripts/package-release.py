@@ -26,6 +26,9 @@ def source(component, destination):
     run(['git', 'checkout', '--detach', 'FETCH_HEAD'], destination)
     actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=destination, text=True).strip()
     if actual != component['revision']: raise ValueError('Component checkout disagrees with lock')
+    # Development identities pin a reviewed commit, not a published version tag.
+    # Stable release admission still rejects them before any build.
+    if component['channel'] == 'development': return
     tag = 'refs/tags/' + component['version']
     run(['git', 'fetch', '--depth=1', 'https://github.com/' + component['repository'] + '.git', tag], destination)
     tagged = subprocess.check_output(['git', 'rev-parse', 'FETCH_HEAD^{commit}'], cwd=destination, text=True).strip()

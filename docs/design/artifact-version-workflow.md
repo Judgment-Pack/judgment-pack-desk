@@ -1,9 +1,6 @@
 # Pack and Dialect artifact versions
 
-Status: agreed product direction; shared-contract and authoring implementation are
-tracked in [Spec #180](https://github.com/Judgment-Pack/judgment-pack-spec/issues/180)
-and [Desk #404](https://github.com/Judgment-Pack/judgment-pack-desk/issues/404).
-These issues are assigned to Brian Jin. The new portable format is not enabled.
+Status: named Dialect formats are implemented by [Spec #187](https://github.com/Judgment-Pack/judgment-pack-spec/pull/187), Runtime #288 and Runner #96. Desk publication and frozen job integration are tracked in [Desk #405](https://github.com/Judgment-Pack/judgment-pack-desk/issues/405). Broader version policy remains in [Desk #404](https://github.com/Judgment-Pack/judgment-pack-desk/issues/404).
 
 ## What the audit found
 
@@ -70,9 +67,10 @@ publication/admission policies. None of these operations infers compatibility,
 automatic major bumps, permission to write, or passing expected outcomes. Plan,
 Ask me/Auto, and the shared AI correction framework retain their existing guards.
 
-The new portable Dialect artifact identity still depends on Spec #180. First-job
-promotion and the impact policy after job use must be settled separately. Current
-integer Dialect formats 2 and 3 are preserved.
+Named Dialect identity is available through Spec #187 and the shared publication
+workflow described in runtime-dialect-authoring.md. Historical integer formats
+2 and 3 are preserved. First-job promotion and automatic impact classification
+remain separate product policies; the version selector offers explicit choices.
 
 ## Shared workflow
 
@@ -100,12 +98,13 @@ integer Dialect formats 2 and 3 are preserved.
 
 ## Format version and storage revision
 
-The new Dialect format needs separate members for its format discriminator and
-artifact identity/version. `formatVersion` is a proposed field name, not a current
-Spec member. Both existing format families need explicit treatment; supporting a
-string `"2.0.0"` must not silently discard version-3 sources or bindings.
+Named Dialects use `formatVersion: "2.0.0"` or `"3.0.0"` for the document
+grammar, an opaque `id` for the artifact identity, and `version: "x.y.z"` for
+the artifact release. Historical integer formats 2 and 3 remain readable. Both
+named families retain their own source and binding rules; the format label does
+not convert version-3 sources into version-2 sources.
 
-Spec owns this decision and the canonical identity rules. Runtime supplies the
+Spec owns these members and the canonical identity rules. Runtime supplies the
 canonical writer, validator and digest/version tooling; Runner pins execution to
 those artifacts; Exchange enforces publication identity. Desk owns the shared
 review/save experience. Gateway changes only where its actual references require

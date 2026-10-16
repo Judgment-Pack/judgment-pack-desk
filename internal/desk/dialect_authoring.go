@@ -25,13 +25,17 @@ type dialectAuthoringReport struct {
 	ContractVersion string              `json:"contractVersion"`
 	Command         string              `json:"command"`
 	Status          string              `json:"status"`
+	FormatVersion   string              `json:"formatVersion"`
+	ArtifactID      string              `json:"artifactId"`
+	ArtifactVersion string              `json:"artifactVersion"`
 	DialectVersion  int                 `json:"dialectVersion"`
 	Document        string              `json:"document"`
 	Digest          string              `json:"digest"`
 	Diagnostics     []runtimeDiagnostic `json:"diagnostics"`
 	Capabilities    *struct {
-		ValidationVersions []int `json:"validationVersions"`
-		PackCheckVersions  []int `json:"packCheckVersions"`
+		FormatVersions     []string `json:"formatVersions"`
+		ValidationVersions []int    `json:"validationVersions"`
+		PackCheckVersions  []int    `json:"packCheckVersions"`
 	} `json:"capabilities"`
 	Compatibility *struct {
 		Scope string `json:"scope"`
@@ -93,7 +97,8 @@ func (s *Server) checkDialectAuthoring(ctx context.Context, document []byte, pac
 	}
 	// Malformed documents still go to Runtime for its authoritative diagnostic.
 	var head struct {
-		Version int `json:"version"`
+		Version       json.RawMessage `json:"version"`
+		FormatVersion string          `json:"formatVersion"`
 	}
 	_ = json.Unmarshal(document, &head)
 	versions := contract.Capabilities.ValidationVersions
@@ -104,7 +109,9 @@ func (s *Server) checkDialectAuthoring(ctx context.Context, document []byte, pac
 		operation = "check"
 		args = append(args, "--pack", "pack.json")
 	}
-	if head.Version != 0 && !slices.Contains(versions, head.Version) {
+	var family int
+	_ = json.Unmarshal(head.Version, &family)
+	if head.FormatVersion != "" && !slices.Contains(contract.Capabilities.FormatVersions, head.FormatVersion) || family != 0 && !slices.Contains(versions, family) {
 		return nil, empty, errors.New("This Runtime does not support the requested dialect format.")
 	}
 	if pack != "" {
@@ -198,14 +205,20 @@ func (s *Server) checkPreparedMappings(ctx context.Context, doc inputPreparation
 		if json.Unmarshal(source["mapping"], &mapping) != nil {
 			return errors.New("The prepared dialect mapping is unavailable.")
 		}
-		if !bytes.Equal(bytes.TrimSpace(mapping["version"]), []byte("2")) {
-			return errors.New("The prepared dialect format is unsupported.")
-		}
-		mapping["provider"] = json.RawMessage(`""`)
-		mapping["facts"] = json.RawMessage(`null`)
-		mapping["evidence"] = json.RawMessage(`null`)
-		if bytes.Equal(bytes.TrimSpace(mapping["sources"]), []byte(`[]`)) {
-			delete(mapping, "sources")
+		if selector, named := mapping["formatVersion"]; named {
+			if !bytes.Equal(selector, []byte(`"2.0.0"`)) {
+				return errors.New("The prepared dialect format is unsupported.")
+			}
+		} else {
+			if !bytes.Equal(bytes.TrimSpace(mapping["version"]), []byte("2")) {
+				return errors.New("The prepared dialect format is unsupported.")
+			}
+			mapping["provider"] = json.RawMessage(`""`)
+			mapping["facts"] = json.RawMessage(`null`)
+			mapping["evidence"] = json.RawMessage(`null`)
+			if bytes.Equal(bytes.TrimSpace(mapping["sources"]), []byte(`[]`)) {
+				delete(mapping, "sources")
+			}
 		}
 		source["mapping"], _ = json.Marshal(mapping)
 		key := string(source["mapping"])

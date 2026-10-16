@@ -193,7 +193,11 @@ func TestReviewedInputSelectionRefusesStaleExcludedAndMissingReviews(t *testing.
 		t.Fatal("mixed selection silently skipped")
 	}
 }
-func TestReviewedInputRealGatewayRunner(t *testing.T) {
+func TestReviewedInputRealGatewayRunner(t *testing.T) { reviewedInputRealGatewayRunner(t, false) }
+func TestPublishedReviewedInputRealGatewayRunner(t *testing.T) {
+	reviewedInputRealGatewayRunner(t, true)
+}
+func reviewedInputRealGatewayRunner(t *testing.T, published bool) {
 	bundle, bin, runtime := os.Getenv("JPS_TEST_GATEWAY_BUNDLE"), os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
 	if bundle == "" || bin == "" || runtime == "" {
 		t.Skip("requires pinned companions")
@@ -220,6 +224,9 @@ func TestReviewedInputRealGatewayRunner(t *testing.T) {
 	defer s.Close()
 	saved, run := reviewedFixture(t, s, q)
 	saved = acceptFixture(t, s, saved)
+	if published {
+		checkAndPublishDialect(t, s, saved, "generated", "1.0.0")
+	}
 	if script := os.Getenv("JPS_INPUT_REVIEW_BROWSER"); script != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()

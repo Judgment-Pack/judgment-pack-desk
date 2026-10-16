@@ -1,5 +1,6 @@
+import { finishDialectEdit } from './dialectEditorModel'
 import type { ResearchConfig } from '../config/deskConfig'
-import type { DialectV2, ProfileEntry } from './dialectTypes'
+import type { ExecutableDialect, ProfileEntry } from './dialectTypes'
 
 export function supportsJobProfile({profile}: ProfileEntry) {
  return profile.shape === 'mcp' && Boolean(profile.tools?.length) || profile.source === 'drive' && profile.shape === 'http' && profile.class === 'record'
@@ -9,12 +10,12 @@ export function matchesJobGateway({profile}: ProfileEntry, config: ResearchConfi
 }
 /** Change authority explicitly, reset its request, and retain only simple output
  * assignments. Advanced derivations/dependencies must be reviewed as JSON. */
-export function canChangeIntegration(mapping: DialectV2, name: string) {
+export function canChangeIntegration(mapping: ExecutableDialect, name: string) {
  const source = mapping.sources?.find(s => s.name === name)
  return Boolean(source?.read.copy && !source.read.rule && !source.read.unwrap?.length && !Object.keys(source.parameters ?? {}).length &&
   !mapping.sources?.some(s => Object.values(s.parameters ?? {}).some(p => p.from === name)))
 }
-export function setSourceIntegration(mapping: DialectV2, entry?: ProfileEntry, replace?: string): DialectV2 {
+export function setSourceIntegration(mapping: ExecutableDialect, entry?: ProfileEntry, replace?: string): ExecutableDialect {
  if(entry && !supportsJobProfile(entry))throw Error('Unsupported job integration')
  const next=structuredClone(mapping)
  const previous=replace ? next.sources?.find(s=>s.name===replace) : undefined
@@ -46,5 +47,5 @@ export function setSourceIntegration(mapping: DialectV2, entry?: ProfileEntry, r
    next.case.parameters[key]={pointer,type:'string'}
   }
  }
- return next
+ return finishDialectEdit(next)
 }

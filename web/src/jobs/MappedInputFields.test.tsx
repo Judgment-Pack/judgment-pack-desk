@@ -16,18 +16,18 @@ import { jobsAPI } from './client'
 import { localSnapshot } from './sourceInputs'
 import { prepareMappedInputs } from './mappedInputs'
 import type { PackDocument } from '../mcp/types'
-import type { DialectV2 } from './dialectTypes'
+import type { ExecutableDialect } from './dialectTypes'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('./mappedInputs',async original=>({...await original<object>(),prepareMappedInputs:vi.fn()}))
 vi.mock('./sourceInputs',async original=>({...await original<object>(),localSnapshot:vi.fn()}))
 const doc={rules:[{condition:{op:'fact',path:'/score',value:7}}],evidenceRequirements:[]} as unknown as PackDocument
 const packText='{ "precise":9007199254740993, "record":"non-GTM" }'
-const mapping: DialectV2=mappingFixture('case-score')
+const mapping: ExecutableDialect=mappingFixture('case-score')
 const source={mapping,case:{facts:{score:7}},sources:{},mappingDigest:'digest'}
 const result={input:{source,facts:{score:7}},factsText:'{"score":7}',evidenceText:''}
 beforeEach(()=>{vi.mocked(checkDialect).mockResolvedValue({status:'complete',digest:'sha256:checked',diagnostics:[]});vi.mocked(jobsAPI).mockResolvedValue([]);vi.mocked(prepareMappedInputs).mockResolvedValue(result)})
 afterEach(()=>{cleanup();vi.resetAllMocks()})
-async function view(fixed?:DialectV2) {
+async function view(fixed?:ExecutableDialect) {
  const onChange=vi.fn(), query=new QueryClient({defaultOptions:{queries:{retry:false}}})
  const rendered=render(<QueryClientProvider client={query}><Tooltip.Provider><MappedInputFields doc={doc} packText={packText} fixed={fixed} disabled={false} onChange={onChange}/></Tooltip.Provider></QueryClientProvider>)
  await waitFor(()=>expect((screen.getByRole('button',{name:'Read sources and preview'}) as HTMLButtonElement).disabled).toBe(false))

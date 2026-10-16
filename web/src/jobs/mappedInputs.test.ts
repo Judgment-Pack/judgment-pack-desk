@@ -9,12 +9,12 @@ import { acquire, seal } from '../research/gatewayClient'
 import type { Acquired } from '../research/gatewayClient'
 import { ConnectionRequestError } from '../connections/client'
 import { DESK_DEFAULTS } from '../config/deskConfig'
-import type { DialectV2, ProfileEntry } from './dialectTypes'
+import type { ExecutableDialect, ProfileEntry } from './dialectTypes'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('../dialect/__fixtures__/legacy-producer/producer/client',()=>({jobsAPI:vi.fn()}))
 vi.mock('../research/gatewayClient',()=>({acquire:vi.fn(),seal:vi.fn(),newResearchSession:()=> 'one-session'}))
 const profile: ProfileEntry={digest:'sha256:pin',profile:{id:'records',publicKey:'ab'.repeat(32),authority:'gateway:test',source:'records',class:'record',shape:'mcp',adapter:{name:'mcp',version:'1',digest:'sha256:adapter'},endpoint:null,tools:['lookup']}}
-const mapping: DialectV2=mappingFixture('sequential')
+const mapping: ExecutableDialect=mappingFixture('sequential')
 const config={...DESK_DEFAULTS.research,gateway:{url:'http://127.0.0.1:1',authority:profile.profile.authority,signer:{algorithm:'ed25519' as const,public:profile.profile.publicKey}}}
 const options=()=>({mapping,caseValue:{},files:{},selections:{},config,profiles:[profile],signal:new AbortController().signal,progress:vi.fn()})
 beforeEach(()=>{vi.resetAllMocks();vi.mocked(seal).mockResolvedValue(undefined as never)})
@@ -90,7 +90,7 @@ it('ignores late replies after cancellation',async()=>{
  expect(acquire).not.toHaveBeenCalled()
 })
 it('places picker values only at explicit typed case parameters',()=>{
- const drive: DialectV2=mappingFixture('drive-selection')
+ const drive: ExecutableDialect=mappingFixture('drive-selection')
  expect(mappedCase(drive,{subject:'test'},{drive:{fileId:'selected',grant:'grant'}})).toEqual({subject:'test',picked:{id:'selected',grant:'grant'}})
  drive.case!.parameters!.file!.pointer='/__proto__/polluted'
  expect(()=>mappedCase(drive,{}, {drive:{fileId:'selected',grant:'grant'}})).toThrow()
@@ -98,9 +98,24 @@ it('places picker values only at explicit typed case parameters',()=>{
 })
 
 it('normalizes a Drive acquisition reconnect refusal and still seals the abandoned session',async()=>{
- const drive:DialectV2=mappingFixture('drive-reconnect')
+ const drive:ExecutableDialect=mappingFixture('drive-reconnect')
  vi.mocked(jobsAPI).mockResolvedValue({next:{name:'drive',kind:'selected-file',provider:'google-drive',profile:'records',source:'records',arguments:{fileId:'chosen',grant:'grant'}}})
  vi.mocked(acquire).mockRejectedValue(Error('source failed: reconnect-required'))
  await expect(prepareMappedInputs({...options(),mapping:drive,selections:{drive:{fileId:'chosen',grant:'grant'}},config:{...config,managedLocal:true,documents:{enabled:true,source:'documents',maxFileBytes:200000,maxRequestBytes:1000000,maxResponseBytes:1000000}}})).rejects.toEqual(new ConnectionRequestError('reconnect-required','google-drive'))
  expect(seal).toHaveBeenCalledWith('one-session',expect.any(AbortSignal),'local-documents')
+})
+
+it('retains named identity and absent optional members while refusing null sources',()=>{
+ for(const formatVersion of ['2.0.0','3.0.0']) {
+  const mapping={formatVersion,id:'urn:test',version:'1.0.0',case:{facts:[],evidence:[]}}
+  expect(parseMapping(JSON.stringify(mapping))).toEqual(mapping)
+  expect(()=>parseMapping(JSON.stringify({...mapping,sources:null}))).toThrow()
+ }
+})
+
+it('does not add legacy defaults or repair explicit invalid omissions in integer v3',()=>{
+ const value={version:3,case:{facts:[],evidence:[]}}
+ expect(parseMapping(JSON.stringify(value))).toEqual(value)
+ const explicit={...value,sources:[]}
+ expect(parseMapping(JSON.stringify(explicit))).toEqual(explicit)
 })

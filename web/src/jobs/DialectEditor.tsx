@@ -10,16 +10,16 @@ import { Disclosure } from '../ui/Disclosure'
 import { TextArea } from '../ui/TextArea'
 import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
 import { IconChevronRight, IconDetails, IconFolder, IconGear } from '../shell/icons'
-import type { DialectSource, DialectV2, ProfileEntry } from './dialectTypes'
+import type { DialectSource, ExecutableDialect, ProfileEntry } from './dialectTypes'
 import { parseMappedObject } from './mappedInputs'
-import { setBinding, getBinding } from './dialectEditorModel'
+import { finishDialectEdit, setBinding, getBinding } from './dialectEditorModel'
 import { JobIntegrationPicker } from './JobIntegrationPicker'
 import { canChangeIntegration, setSourceIntegration } from './jobIntegrations'
 import { mappingErrorMessage } from './mappingError'
 import styles from './JobsView.module.css'
 
 type Assignment={kind:'facts'|'evidence';target:string;label:string;description?:string}
-type EditorProps={casePaths?:{value:string;label:string}[];doc:PackDocument;mapping:DialectV2;profiles:ProfileEntry[];disabled:boolean;active?:boolean;fileControls?:(source:DialectSource)=>ReactNode;onChange:(m:DialectV2)=>void;onInvalid:(invalid:boolean)=>void;onDirty:()=>void}
+type EditorProps={casePaths?:{value:string;label:string}[];doc:PackDocument;mapping:ExecutableDialect;profiles:ProfileEntry[];disabled:boolean;active?:boolean;fileControls?:(source:DialectSource)=>ReactNode;onChange:(m:ExecutableDialect)=>void;onInvalid:(invalid:boolean)=>void;onDirty:()=>void}
 export function DialectEditor({casePaths,doc,mapping,profiles,disabled,active=true,fileControls,onChange,onInvalid,onDirty}:EditorProps){
  useLocale()
  const [selected,setSelected]=useState(''),[assignment,setAssignment]=useState<Assignment>(),[pending,setPending]=useState(false),details=useDetailsSlot()
@@ -45,7 +45,7 @@ export function DialectEditor({casePaths,doc,mapping,profiles,disabled,active=tr
    {(mapping.sources??[]).map(s=><button type="button" key={s.name} className={styles.sourceSummary} disabled={disabled||pending} onClick={()=>choose(s.name)} aria-label={s.name} aria-current={s.name===selected&&!assignment&&details.open?'true':undefined}>{s.provider==='local-file'?<IconFolder/>:<IconGear/>}<span><strong>{s.name}</strong><small>{s.provider==='local-file'?msg('Local JSON file'):s.provider==='google-drive'?msg('Google Drive'):s.profile} · {s.kind==='operation'?msg('Read operation'):msg('Selected file')}</small></span><IconChevronRight/></button>)}
   </div>
   {source&&!assignment&&<JobIntegrationPicker triggerTarget={integrationTarget} current={source} profiles={profiles} disabled={disabled||pending||!canChangeIntegration(mapping,source.name)} onPick={entry=>{onDirty();onChange(setSourceIntegration(mapping,entry,source.name))}}/>}
-  {source&&<SourceEditor active={active&&!assignment} fileControls={fileControls?.(source)} integration={integration} key={`${source.name}:${source.profile??source.provider}:${source.profileDigest??''}`} source={source} calculator={Boolean(profile?.calculator)} tools={profile?.tools??[]} sourceClass={profile?.class??'asserted'} disabled={disabled} onInvalid={invalid} onDirty={onDirty} onApply={value=>onChange({...mapping,sources:mapping.sources?.map(s=>s.name===source.name?value:s)})}/>}
+  {source&&<SourceEditor active={active&&!assignment} fileControls={fileControls?.(source)} integration={integration} key={`${source.name}:${source.profile??source.provider}:${source.profileDigest??''}`} source={source} calculator={Boolean(profile?.calculator)} tools={profile?.tools??[]} sourceClass={profile?.class??'asserted'} disabled={disabled} onInvalid={invalid} onDirty={onDirty} onApply={value=>onChange(finishDialectEdit({...mapping,sources:mapping.sources?.map(s=>s.name===source.name?value:s)}))}/>}
   {assignment&&<AssignmentEditor key={`${assignment.kind}:${assignment.target}`} {...{assignment,mapping,profiles,disabled,active,onChange,casePaths}} onSource={choose}/>}
   <div className={styles.readinessHeading}><h3>{msg('Facts and evidence')}</h3><span className={styles.note}>{msg('{{assigned}} of {{total}} assigned',{assigned,total:all.length})}</span></div>
   <p className={styles.note}>{msg('Choose an assignment to configure its source and method. Unmapped values remain unknown.')}</p>
@@ -53,7 +53,7 @@ export function DialectEditor({casePaths,doc,mapping,profiles,disabled,active=tr
   {Boolean(doc.evidenceRequirements?.length)&&<section className={styles.assignmentGroup}><h4>{msg('Evidence availability')} · {doc.evidenceRequirements!.length}</h4>{all.filter(a=>a.kind==='evidence').map(row)}</section>}
  </div>
 }
-function AssignmentEditor({casePaths,assignment:a,mapping,profiles,disabled,active,onChange,onSource}:{casePaths?:{value:string;label:string}[];assignment:Assignment;mapping:DialectV2;profiles:ProfileEntry[];disabled:boolean;active:boolean;onChange:(m:DialectV2)=>void;onSource:(name:string)=>void}){
+function AssignmentEditor({casePaths,assignment:a,mapping,profiles,disabled,active,onChange,onSource}:{casePaths?:{value:string;label:string}[];assignment:Assignment;mapping:ExecutableDialect;profiles:ProfileEntry[];disabled:boolean;active:boolean;onChange:(m:ExecutableDialect)=>void;onSource:(name:string)=>void}){
  const id=useId(),binding=getBinding(mapping,a.kind,a.target)
  const source=mapping.sources?.find(s=>s.name===binding.owner),sourceClass=profiles.find(p=>p.profile.id===source?.profile)?.profile.class??'asserted'
  const mutate=(owner:string,path:string)=>onChange(setBinding(mapping,a.kind,a.target,owner,path))
@@ -62,7 +62,7 @@ function AssignmentEditor({casePaths,assignment:a,mapping,profiles,disabled,acti
   <div className={styles.field}><label htmlFor={`${id}-source`}>{msg('Source')}</label><Select id={`${id}-source`} disabled={disabled||binding.complex} value={binding.complex?'advanced':binding.owner} options={opts} onValueChange={owner=>mutate(owner,owner==='case'?(casePaths?'':a.kind==='facts'?`/facts${a.target}`:`/evidence/${a.target.replace(/~/g,'~0').replace(/\//g,'~1')}`):binding.path)}/></div>
   {binding.complex?<p className={styles.note}>{msg('This assignment uses a derivation rule. Review it in Edit dialect.')}</p>:binding.owner==='omitted'?<p className={styles.note}>{msg('Unknown')}</p>:<div className={styles.field}><label htmlFor={`${id}-path`}>{msg('Source path')}</label>{casePaths&&binding.owner==='case'?<Select id={`${id}-path`} disabled={disabled} placeholder={msg('Choose a column')} value={binding.path} options={casePaths} onValueChange={path=>mutate(binding.owner,path)}/>:<Input id={`${id}-path`} disabled={disabled} placeholder={msg('Source path, e.g. /request/type')} value={binding.path} onChange={e=>mutate(binding.owner,e.target.value)}/>}<p className={styles.note}>{casePaths&&binding.owner==='case'?msg('Choose the supplied column for this dialect.'):msg('JSON pointer into the selected source response.')}</p></div>}
   {source&&<Button variant="quiet" onClick={()=>onSource(source.name)}>{msg('Configure source')}</Button>}
-  {sourceClass==='generated'&&!binding.complex&&<label className={styles.admission}><input type="checkbox" disabled={disabled} checked={(mapping.admits?.[a.kind]?.[a.target]??[]).includes('generated')} onChange={e=>{const next=structuredClone(mapping);next.admits??={};next.admits[a.kind]??={};const classes=next.admits[a.kind]![a.target]??['asserted','record'];next.admits[a.kind]![a.target]=e.target.checked?[...new Set([...classes,'generated'])]:classes.filter(c=>c!=='generated');onChange(next)}}/>{msg('Allow generated values')}</label>}
+  {sourceClass==='generated'&&!binding.complex&&<label className={styles.admission}><input type="checkbox" disabled={disabled} checked={(mapping.admits?.[a.kind]?.[a.target]??[]).includes('generated')} onChange={e=>{const next=structuredClone(mapping);next.admits??={};next.admits[a.kind]??={};const classes=next.admits[a.kind]![a.target]??['asserted','record'];next.admits[a.kind]![a.target]=e.target.checked?[...new Set([...classes,'generated'])]:classes.filter(c=>c!=='generated');onChange(finishDialectEdit(next))}}/>{msg('Allow generated values')}</label>}
   <Disclosure title={msg('Technical details')}><dl className={styles.properties}><div><dt>{msg('Target')}</dt><dd><code>{a.target}</code></dd></div><div><dt>{msg('Input class')}</dt><dd>{binding.complex?msg('Advanced dialect'):sourceClass}</dd></div></dl></Disclosure>
  </div>
  const portal=useDetailsPortal(active?content:null)

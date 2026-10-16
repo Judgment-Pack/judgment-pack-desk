@@ -3,10 +3,10 @@ import {cleanup, fireEvent, render, screen, within} from '@testing-library/react
 import {afterEach, expect, it} from 'vitest'
 import {languageReady, setLanguage} from '../i18n'
 import {DialectReview, InputLineage} from './DialectReview'
-import type {InputProfile, DialectV2, Preparation} from './dialectTypes'
+import type {InputProfile, ExecutableDialect, Preparation} from './dialectTypes'
 
 const profile: InputProfile = {id:'fx',publicKey:'key',class:'record',source:'finance',authority:'gateway',shape:'mcp',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,calculator:{name:'fx-convert',version:'2.1.0'}}
-const mapping: DialectV2 =mappingFixture('calculator-review')
+const mapping: ExecutableDialect =mappingFixture('calculator-review')
 const line: Preparation['lineage'][number] = {target:'/converted',kind:'fact',source:'conversion',class:'record',generatedInfluence:false,present:true,status:'resolved',reason:'',basis:[],readDigest:'digest',calculation:{calculator:{name:'fx-convert',version:'2.1.0'},status:'computed',inputs:[{name:'amount',parameter:'invoiceAmount',source:'case',pointer:'/invoice/amount'},{name:'currency',parameter:'invoiceCurrency',source:'invoice-record',pointer:'/currency'}],asOf:{'ecb-rates':'2026-10-01T14:00:00Z','spot-rates':'2026-10-01T13:00:00Z'}}}
 const preparation = (...lineage: Preparation['lineage']): Preparation => ({version:2,verifiedAt:'2026-10-01T14:01:00Z',mappingDigest:'digest',verification:'verified acquisitions; session sealing and input truth are not established',lineage,cites:[],outcomes:[]})
 afterEach(async()=>{cleanup();setLanguage('en');await languageReady()})

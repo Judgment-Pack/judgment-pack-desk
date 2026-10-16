@@ -1,3 +1,4 @@
+import {isExecutableDialect} from './dialectTypes'
 import {privateQuery} from '../data/privateQuery'
 import {LoadingState} from '../ui/LoadingState'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
@@ -17,11 +18,11 @@ import {MappedCaseFields} from './MappedCaseFields'
 import {editableJSON,parseInput} from './inputModel'
 import {jobsRequest} from './wire'
 import {jobsAPI,type LegacyDialect,type JobInput} from './client'
-import type {DialectV2} from './dialectTypes'
+import type {ExecutableDialect} from './dialectTypes'
 import type {AutomaticInput,Schedule,TriggerConfig} from './triggerTypes'
 import styles from './JobsView.module.css'
 
-type Mapping=LegacyDialect|DialectV2
+type Mapping=LegacyDialect|ExecutableDialect
 export function triggerName(kind:string){return kind==='cloud'?msg('Google Cloud Scheduler'):kind==='schedule'?msg('Schedule'):kind==='file'?msg('File changes'):msg('Authenticated event')}
 export function defaultTrigger(kind:TriggerConfig['kind'],mapping?:Mapping):TriggerConfig{
  const config:TriggerConfig={name:triggerName(kind),kind,missed:'skip',overlap:'skip',queueSeconds:3600}
@@ -32,7 +33,7 @@ export function defaultTrigger(kind:TriggerConfig['kind'],mapping?:Mapping):Trig
  return config
 }
 function defaultAutomatic(mapping?:Mapping,fileOnly=false):AutomaticInput {
- return mapping?{kind:!fileOnly&&mapping.version===2&&mapping.sources?.some(s=>s.kind==='operation')?'mapped-sources':'mapped-files',...(mapping.version===2?{case:{}}:{}),files:Object.fromEntries((mapping.version===1?['file']:mapping.sources?.filter(s=>s.provider==='local-file').map(s=>s.name)??[]).map(name=>[name,'']))}:{kind:'input-file',path:''}
+ return mapping?{kind:!fileOnly&&isExecutableDialect(mapping)&&mapping.sources?.some(s=>s.kind==='operation')?'mapped-sources':'mapped-files',...(isExecutableDialect(mapping)?{case:{}}:{}),files:Object.fromEntries((mapping.version===1?['file']:mapping.sources?.filter(s=>s.provider==='local-file').map(s=>s.name)??[]).map(name=>[name,'']))}:{kind:'input-file',path:''}
 }
 export function TriggerChoice({doc,mapping,value,onChange,onValid,disabled}:{doc:PackDocument;mapping?:Mapping;value?:TriggerConfig;onChange:(value:TriggerConfig|undefined)=>void;onValid:(v:boolean)=>void;disabled:boolean}){
  const id=useId()
@@ -40,9 +41,9 @@ export function TriggerChoice({doc,mapping,value,onChange,onValid,disabled}:{doc
 }
 export function TriggerForm({doc,mapping,value,onChange,onValid,onUnwritten,disabled}:{doc:PackDocument;mapping?:Mapping;value:TriggerConfig;onChange:(value:TriggerConfig)=>void;onValid:(v:boolean)=>void;onUnwritten?:(value:boolean)=>void;disabled:boolean}){
  const id=useId(),[inputsValid,setInputsValid]=useState(true),[startValid,setStartValid]=useState(true),[endValid,setEndValid]=useState(true)
- const connections=useQuery({...privateQuery,queryKey:['job-background-connections'],queryFn:()=>jobsAPI<{cloudConnections:{id:string;subscription:string;problem?:string}[];gatewayProfiles:string[];durableGatewayProfiles?:string[]}>('background-connections'),enabled:value.kind==='cloud'||mapping?.version===2&&Boolean(mapping.sources?.some(s=>s.kind==='operation'))})
+ const connections=useQuery({...privateQuery,queryKey:['job-background-connections'],queryFn:()=>jobsAPI<{cloudConnections:{id:string;subscription:string;problem?:string}[];gatewayProfiles:string[];durableGatewayProfiles?:string[]}>('background-connections'),enabled:value.kind==='cloud'||isExecutableDialect(mapping)&&Boolean(mapping.sources?.some(s=>s.kind==='operation'))})
  const supported=!mapping||(mapping.version===1?mapping.provider==='local-file':!(mapping.sources??[]).some(s=>!(s.kind==='selected-file'&&s.provider==='local-file'||value.kind!=='file'&&s.kind==='operation'&&connections.data?.gatewayProfiles.includes(s.profile??''))))
- const durable=value.input?.kind==='mapped-sources'&&mapping?.version===2&&mapping.sources?.filter(s=>s.kind==='operation').every(s=>connections.data?.durableGatewayProfiles?.includes(s.profile??''))
+ const durable=value.input?.kind==='mapped-sources'&&isExecutableDialect(mapping)&&mapping.sources?.filter(s=>s.kind==='operation').every(s=>connections.data?.durableGatewayProfiles?.includes(s.profile??''))
  const preparationValid=value.preparationSeconds===undefined||value.preparationSeconds===0||Boolean(durable&&Number.isInteger(value.preparationSeconds)&&value.preparationSeconds>=60&&value.preparationSeconds<=604800)
  const incomplete=!startValid||!endValid||value.input?.kind==='constant'&&!inputsValid
  useEffect(()=>{onUnwritten?.(incomplete);return()=>onUnwritten?.(false)},[incomplete,onUnwritten])
@@ -87,7 +88,7 @@ function AutomaticInputs({doc,mapping,value,onChange,onValid,disabled,fileOnly}:
  const paths=[value.path??'',...Object.values(value.files??{})].filter(Boolean)
  const valid=value.kind==='constant'?fieldValid:(paths.length>0||value.kind==='mapped-sources')&&paths.every(p=>!p.includes('\\')&&!p.startsWith('/')&&!p.split('/').some(s=>!s||s==='..'||s==='.')&&p.toLowerCase().endsWith('.json'))&&(!mapping?true:mapping.version===1?Boolean(value.files?.file):mapping.sources?.filter(s=>s.provider==='local-file').every(s=>Boolean(value.files?.[s.name]))??true)&&fieldValid
  useEffect(()=>onValid(valid),[valid,onValid])
- const canConstant=!mapping||mapping.version===2&&!mapping.sources?.length
+ const canConstant=!mapping||isExecutableDialect(mapping)&&!mapping.sources?.length
  const changeKind=(kind:string)=>onChange(kind==='constant'?{kind:'constant',value:jobsRequest(mapping?{source:{mapping,case:{},sources:{}}}:{facts:{}})}:defaultAutomatic(mapping,true))
  return <section className={styles.fields}><h3>{msg('Dialects for each occurrence')}</h3>
   {value.kind==='mapped-sources'&&<p className={styles.note}>{msg('Fetch each operation through its installed Gateway connection. Durable connections validate configuration without a preview call. Enabled triggers can make provider calls and incur charges.')}</p>}
@@ -95,7 +96,7 @@ function AutomaticInputs({doc,mapping,value,onChange,onValid,disabled,fileOnly}:
   {value.kind==='constant'&&<p className={styles.callout}>{msg('These values repeat on every occurrence. Choose a file or connected source when inputs should change.')}</p>}
   {value.kind==='constant'?<ConstantInputs doc={doc} mapping={mapping} value={value} onChange={onChange} onValid={setFieldValid} disabled={disabled}/>:value.kind==='input-file'?<><ProjectFile label={msg('Input file')} value={value.path??''} onChange={path=>onChange({...value,path})} disabled={disabled}/><p className={styles.note}>{msg('One JSON object containing facts and optional evidence availability. The file is read again for each occurrence.')}</p></>:<>
    {Object.keys(value.files??{}).map(name=><ProjectFile key={name} label={name} value={value.files![name]!} disabled={disabled} onChange={p=>onChange({...value,files:{...value.files,[name]:p}})}/>)}
-   {mapping?.version===2&&<><ProjectFile label={msg('Case file (optional)')} value={value.path??''} disabled={disabled} onChange={path=>onChange({...value,path:path||undefined,case:path?undefined:{}})}/>{!value.path&&<Disclosure title={msg('Fixed case parameters')}><MappedCaseFields doc={doc} mapping={mapping} text={JSON.stringify(value.case??{})} disabled={disabled} onValid={setFieldValid} onChange={text=>onChange({...value,case:JSON.parse(text)})}/></Disclosure>}</>}
+   {isExecutableDialect(mapping)&&<><ProjectFile label={msg('Case file (optional)')} value={value.path??''} disabled={disabled} onChange={path=>onChange({...value,path:path||undefined,case:path?undefined:{}})}/>{!value.path&&<Disclosure title={msg('Fixed case parameters')}><MappedCaseFields doc={doc} mapping={mapping} text={JSON.stringify(value.case??{})} disabled={disabled} onValid={setFieldValid} onChange={text=>onChange({...value,case:JSON.parse(text)})}/></Disclosure>}</>}
   </>}
  </section>
 }
@@ -108,7 +109,7 @@ function ConstantInputs({doc,mapping,value,onChange,onValid,disabled}:{doc:PackD
  useDirtyGuard(!valid,msg('Discard the unfinished input values?'),{shouldBlock:({currentLocation,nextLocation})=>currentLocation.pathname!==nextLocation.pathname||currentLocation.search!==nextLocation.search})
  function commit(f:string,s:boolean,e:string){try{onChange({...value,value:jobsRequest(parseInput(f,s,e))});setValid(true)}catch{setValid(false)}}
  if(!initial)return <div className={styles.field}><TextArea aria-label={msg('Constant inputs (JSON)')} value={value.value} disabled={disabled} onChange={e=>{onChange({...value,value:e.target.value});try{const v=JSON.parse(e.target.value);if(!v||typeof v!=='object'||Array.isArray(v)||!('facts' in v))throw Error();setValid(true)}catch{setValid(false)}}}/><p className={styles.note}>{msg('Keep exact JSON values. Dialects are checked again before enabling.')}</p></div>
- if(mapping?.version===2)return <MappedCaseFields doc={doc} mapping={mapping} text={caseText} disabled={disabled} onValid={setValid} onChange={text=>{setCaseText(text);onChange({...value,value:jobsRequest({source:{mapping,case:JSON.parse(text),sources:{}}})})}}/>
+ if(isExecutableDialect(mapping))return <MappedCaseFields doc={doc} mapping={mapping} text={caseText} disabled={disabled} onValid={setValid} onChange={text=>{setCaseText(text);onChange({...value,value:jobsRequest({source:{mapping,case:JSON.parse(text),sources:{}}})})}}/>
  return <InputFields doc={doc} facts={facts} setFacts={text=>{setFacts(text);commit(text,supplied,evidence)}} supplied={supplied} setSupplied={s=>{setSupplied(s);commit(facts,s,evidence)}} evidence={evidence} setEvidence={text=>{setEvidence(text);commit(facts,supplied,text)}} onValid={setValid} disabled={disabled}/>
 }
 

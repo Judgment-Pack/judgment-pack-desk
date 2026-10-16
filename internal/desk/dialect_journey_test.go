@@ -187,6 +187,7 @@ func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 	path := "/api/input-preparations/" + contacts.Document.ID
 	json.Unmarshal(call("PUT", path, map[string]any{"name": contacts.Document.Name, "recipe": contacts.Document.Recipe}, contacts.SHA256), &contacts)
 	contacts = acceptFixture(t, s, contacts)
+	publication := checkAndPublishDialect(t, s, contacts, "generated", "1.0.0")
 	if script := os.Getenv("JPS_DIALECT_JOB_BROWSER"); script != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
@@ -237,7 +238,7 @@ func testDialectCompanyPeopleTestedJobJourney(t *testing.T, backend string) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, part := range []string{`"class":"generated"`, `"outcomeId":"proceed"`, contact.Research.Entity.CompanyID, `"company_name":"Example company"`, `"modelResponses"`} {
+	for _, part := range []string{publication.Digest, `"formatVersion":"3.0.0"`, `"class":"generated"`, `"outcomeId":"proceed"`, contact.Research.Entity.CompanyID, `"company_name":"Example company"`, `"modelResponses"`} {
 		if !strings.Contains(string(raw), part) {
 			t.Fatal("verification export missing", part)
 		}

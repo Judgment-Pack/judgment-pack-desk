@@ -2,7 +2,7 @@ import type {TriggerOrigin} from './triggerTypes'
 import { jobsRequest, RetainedJSON } from './wire'
 import { canonicalize, parseJSON } from '../dialect/canon'
 import { parseJsonText, memberOf } from '../research/verify/canon'
-import type { DialectV2, SourceV2, Preparation, InputProfile } from './dialectTypes'
+import type { ExecutableDialect, SourceV2, Preparation, InputProfile } from './dialectTypes'
 import type { DocumentObject } from '../documents/client'
 import type { PackTest } from '../mcp/types'
 import { deskFetch } from '../files/client'
@@ -12,7 +12,7 @@ export interface SourceInput { mapping: LegacyDialect; snapshot: DocumentObject 
 export interface InputPreview { input: JobInput; factsText: string; evidenceText: string }
 export interface JobInput { source?: SourceInput | SourceV2; preparation?: Preparation; facts?: unknown; evidence?: Record<string, 'present' | 'absent' | 'unknown'> }
 export interface Decision { disposition: { kind: string; outcomeId?: string; reasons: string[]; handoff: { state: string; triggeredBy?: string[] } }; handoffTarget?: { kind?: string; name?: string } }
-export interface Release { inputMapping?: LegacyDialect | DialectV2; inputProfiles?: InputProfile[]; mappingWarnings?: string[]; id: string; title: string; packId: string; packVersion: string; packDigest: string; runtimeDigest: string; createdAt: string; pack: string; sample: JobInput; preview: Decision; tests: 'not-run' | 'passed' | 'failed' | 'error'; testEvidence?: ReleaseTests }
+export interface Release { dialect?:{id:string;version:string;digest:string}; inputMapping?: LegacyDialect | ExecutableDialect; inputProfiles?: InputProfile[]; mappingWarnings?: string[]; id: string; title: string; packId: string; packVersion: string; packDigest: string; runtimeDigest: string; createdAt: string; pack: string; sample: JobInput; preview: Decision; tests: 'not-run' | 'passed' | 'failed' | 'error'; testEvidence?: ReleaseTests }
 export interface Job { initialTriggerId?:string; triggers?:{id:string;kind:string;paused:boolean;nextAt?:string}[]; id: string; name: string; releaseId: string; revision: number; createdAt: string; packTitle?: string; packVersion?: string; recentRuns?: Pick<Run, 'id' | 'state' | 'createdAt'>[] }
 /**
  * A run as Runner (v0.5.0, `internal/runner/model.go`) returns it. `startedAt`
@@ -33,11 +33,12 @@ export class JobsRequestError extends Error {
  * must keep their own bytes and numeric spellings, including in constant triggers. */
 export function canonicalJobsRequest(body: unknown): string {
   const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof RetainedJSON)
-  const mapping = (value: unknown) => object(value) && value.version === 2 ? new RetainedJSON(canonicalize(value)) : value
+  const mapping = (value: unknown) => object(value) && (value.version === 2 || value.version === 3 || value.formatVersion==='2.0.0'||value.formatVersion==='3.0.0') ? new RetainedJSON(canonicalize(value)) : value
   const inputText = (text: string): string => {
     const root = parseJsonText(text), source = memberOf(root, 'source')
     const declared = source && memberOf(source, 'mapping'), version = declared && memberOf(declared, 'version')
-    if (version?.kind !== 'number' || Number(version.literal) !== 2) return text
+    const named=declared&&memberOf(declared,'formatVersion')
+    if (!(version?.kind==='number' && ['2','3'].includes(version.literal)) && !(named?.kind==='string' && ['2.0.0','3.0.0'].includes(named.value))) return text
     // Locate just source.mapping in the already strictly parsed text. Splice
     // only that value, leaving signed response strings, whitespace and numbers
     // byte for byte as retained by the trigger.

@@ -1,10 +1,10 @@
 import { formatDate, msg, useLocale } from '../i18n'
 import { Disclosure } from '../ui/Disclosure'
-import type { DialectV2, InputProfile, Preparation, CalculationLineage } from './dialectTypes'
+import type { ExecutableDialect, InputProfile, Preparation, CalculationLineage } from './dialectTypes'
 import { calculationAge, calculationStatus, calculatorLabel } from './calculatedValues'
 import styles from './JobsView.module.css'
 
-export function DialectReview({mapping, profiles = [], warnings = [], details = true}: {mapping: DialectV2; profiles?: InputProfile[]; warnings?: string[]; details?: boolean}) {
+export function DialectReview({mapping, profiles = [], warnings = [], details = true}: {mapping: ExecutableDialect; profiles?: InputProfile[]; warnings?: string[]; details?: boolean}) {
  useLocale()
  return <div className={styles.fields}>
   <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{msg('Source')}</th><th>{msg('Type')}</th><th>{msg('Input class')}</th></tr></thead><tbody>

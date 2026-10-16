@@ -57,6 +57,7 @@ func TestInputQualificationRefusesUnboundOrGeneratedMappings(t *testing.T) {
 	}
 }
 func TestInputRecipeRetainsBoundPackAndMappingsAcrossEdits(t *testing.T) {
+	requireBinary(t)
 	s, _ := newTestServer(t, false)
 	call := func(method, path string, recipe inputRecipe, sha string) (int, inputPreparationReply) {
 		raw, _ := json.Marshal(map[string]any{"name": "Companies", "recipe": recipe})

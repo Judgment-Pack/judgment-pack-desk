@@ -226,7 +226,7 @@ func TestArtifactVersionHistoryOnlyReadsItsPage(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		p := artifactPublication{At: "2026-10-15T00:00:00Z", Config: config, Documents: []publishedDocument{{Kind: "pack", Alias: "main", ID: "urn:history", Version: fmt.Sprintf("0.%d.0", i), Path: "pack.json", Content: ref}}}
+		p := artifactPublication{At: "2026-10-15T00:00:00Z", Config: &config, Documents: []publishedDocument{{Kind: "pack", Alias: "main", ID: "urn:history", Version: fmt.Sprintf("0.%d.0", i), Path: "pack.json", Content: ref}}}
 		p.ID = publicationID(p)
 		ledger.Items = append(ledger.Items, p)
 	}

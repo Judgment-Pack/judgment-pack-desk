@@ -1,4 +1,4 @@
-import type { DialectV2 } from '../jobs/dialectTypes'
+import type { DialectDocumentV2 as DialectV2 } from '../dialect/types'
 import { answer, deskFetch } from '../files/client'
 export interface RecordReview {recordId:string;recordDigest:string;recipeVersion:number;decision:'accepted'|'needs-information'|'rejected';note:string;at:string;reviewer:{kind:'session'|'local-access';subject?:string;issuer?:string;name?:string}}
 export interface RecordReviewEvent {review:RecordReview;record:DialectRecord}
