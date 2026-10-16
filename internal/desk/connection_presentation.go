@@ -10,9 +10,11 @@ import (
 )
 
 type connectionSourceContract struct {
-	ID     string `json:"id"`
-	Shape  string `json:"shape"`
-	Record string `json:"record"`
+	ID           string   `json:"id"`
+	Shape        string   `json:"shape"`
+	Record       string   `json:"record"`
+	Adapter      string   `json:"adapter,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 type connectionSetupField struct {
 	Key      string            `json:"key"`

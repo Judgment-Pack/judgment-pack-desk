@@ -15,7 +15,19 @@ export interface ConnectionDescriptor {
  presentation?: { icon: string; name: string; description: Localized; instructions: Localized }
  setup?: SetupField[]
  authorizationEndpoints?: string[]
- source?: { id: string; shape: 'command' | 'http' | 'mcp'; record: 'drive-v1' | 'mail-v1' | 'note-v1' | 'resource-v1' }
+ source?: { id: string; shape: 'command' | 'http' | 'mcp'; record: 'drive-v1' | 'mail-v1' | 'note-v1' | 'resource-v1'; adapter?: string; capabilities?: ResearchCapability[] }
+}
+export type ResearchCapability = 'answer' | 'search' | 'page'
+export interface ResearchSourceContract { id: string; adapter?: string; capabilities: ResearchCapability[] }
+export function validResearchCapabilities(raw: unknown): raw is ResearchCapability[] {
+ if (!Array.isArray(raw)) return false
+ const order: readonly unknown[] = ['answer','search','page']
+ let last=-1
+ return raw.every(name=>{const rank=order.indexOf(name);if(rank<=last)return false;last=rank;return true})
+}
+function validResearchSource(raw: unknown, provider: boolean): raw is ResearchSourceContract {
+ const v=raw as (ResearchSourceContract & {shape?:string})|null
+ return Boolean(v && validResearchCapabilities(v.capabilities) && (provider && v.shape==='command' ? !Object.hasOwn(v,'adapter') : provider ? identifier(v.adapter) : !Object.hasOwn(v,'adapter') || identifier(v.adapter)))
 }
 export type Localized = Record<string, string>
 export interface SetupField { key: string; type: 'text' | 'password'; label: Localized; required: boolean }
@@ -51,13 +63,13 @@ const handlers = {
 
 export function parseConnectionCatalog(raw: unknown) {
  const value = raw as { version?: unknown; providers?: unknown; sources?: unknown }
- if (!value || (value.version !== 2 && value.version !== 3) || !Array.isArray(value.sources) || !Array.isArray(value.providers) || value.providers.length > 32) throw new Error('Invalid connection catalog')
+ if (!value || (value.version !== 2 && value.version !== 3 && value.version !== 4) || !Array.isArray(value.sources) || !Array.isArray(value.providers) || value.providers.length > 32) throw new Error('Invalid connection catalog')
  const seen = new Set<string>(), providers: ConnectionDescriptor[] = [], unsupported: ConnectionDescriptor[] = []
  for (const item of value.providers) {
   if (!item || typeof item.id !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(item.id) || seen.has(item.id) || typeof item.queryRequired !== 'boolean' || !Array.isArray(item.operations) || item.operations.length > 16 || !item.operations.every((op: unknown) => typeof op === 'string' && /^[a-z][a-z0-9-]{0,47}$/.test(op)) || new Set(item.operations).size !== item.operations.length) throw new Error('Invalid connection catalog')
   seen.add(item.id)
-  if (value.version === 3) {
-   if (!validPresentation(item)) throw new Error('Invalid connection catalog')
+  if (value.version === 3 || value.version === 4) {
+   if (!validPresentation(item) || value.version === 4 && !validResearchSource(item.source,true)) throw new Error('Invalid connection catalog')
    if (item.protocol === "web-search-v1" && item.source?.id === "web-search" && item.source.record === "web-search-v1") continue
    if (supported(item)) providers.push(item); else unsupported.push(item)
    continue
@@ -69,10 +81,11 @@ export function parseConnectionCatalog(raw: unknown) {
  }
  const sources = value.sources as { id?: unknown; input?: unknown; mediaTypes?: unknown; maxBytes?: unknown }[]
  if (sources.length > 32 || new Set(sources.map(s => s?.id)).size !== sources.length || sources.some(s => !s || typeof s.id !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(s.id) || typeof s.input !== 'string' || !Array.isArray(s.mediaTypes) || !Number.isSafeInteger(s.maxBytes))) throw new Error('Invalid source catalog')
+ if (value.version === 4 && sources.some(s=>!validResearchSource(s,false))) throw new Error('Invalid source catalog')
  const web = sources.some(s => s.id === 'web' && s.input === 'url' && s.maxBytes === 4 << 20 && ['text/html','text/plain','application/pdf'].every(type => (s.mediaTypes as string[]).includes(type)))
  const discovery = sources.some(s=>s.id==='web-discovery' && s.input==='url' && s.maxBytes===1<<20 && (s.mediaTypes as string[]).includes('application/vnd.jpack.web-discovery+json'))
  const webSearch = sources.some(s=>s.id==='web-search' && s.input==='query' && s.maxBytes===1<<20 && (s.mediaTypes as string[]).includes('application/vnd.jpack.web-search+json'))
- return { providers, web, discovery, webSearch, ...(unsupported.length ? { unsupported } : {}) }
+ return { providers, web, discovery, webSearch, ...(value.version === 4 ? {researchSources: [...value.providers.map(item=>item.source), ...sources] as ResearchSourceContract[]} : {}), ...(unsupported.length ? { unsupported } : {}) }
 }
 
 export function useConnections(enabled: boolean) {

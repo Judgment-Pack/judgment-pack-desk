@@ -43,3 +43,12 @@ it('holds each connection timeout to the advertised bounds, or to 10 to 120 seco
  for(const timeout of [{minSeconds:0,maxSeconds:120,defaultSeconds:45},{minSeconds:10,maxSeconds:121,defaultSeconds:45},{minSeconds:50,maxSeconds:40,defaultSeconds:45}])expect(()=>decodeSearchStatus({version:1,providers:[],connections:[],timeout})).toThrow('Invalid search timeout limits')
  expect(decodeSearchStatus({version:1,providers:[],connections:[],timeout:{minSeconds:1,maxSeconds:120,defaultSeconds:120}}).timeout?.maxSeconds).toBe(120)
 })
+
+it('retains declared research capabilities and refuses incomplete model bindings',()=>{
+ const provider={id:'grounded',name:'Grounded',kind:'grounded-answer',fields:['api-key'],docs:'https://example.test/docs'}
+ const connection={id:'demo',revision:'ab'.repeat(32),name:'Demo',provider:'grounded',dailyLimit:100}
+ const status=(research:unknown)=>({version:1,providers:[provider],connections:[{...connection,research}]})
+ expect(decodeSearchStatus(status({capabilities:['answer','search'],model:'model-a'})).connections[0]?.research?.model).toBe('model-a')
+ expect(decodeSearchStatus(status({capabilities:['search']})).connections[0]?.research?.capabilities).toEqual(['search'])
+ for(const r of [null,{capabilities:[]},{capabilities:['answer']},{capabilities:['search'],model:'model-a'},{capabilities:['search','answer'],model:'model-a'}])expect(()=>decodeSearchStatus(status(r))).toThrow()
+})

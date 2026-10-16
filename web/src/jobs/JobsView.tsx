@@ -279,7 +279,7 @@ function CreateJobEditor({initial,upgrade,seed=initial?.draft.values}: {initial?
       const input = inputMode === 'manual' ? parseInput(facts, supplied, evidence) : { source }
       const current = await currentInputs()
       if(upgrade && current.pack.document.id!==upgrade.release.packId) throw Error(msg('Choose a saved version of the same pack.'))
-      const release = await jobsAPI<Release>('previews', { pack: current.pack.raw, input, ...(current.tests.matrix ? { matrix: current.tests.matrix, testSource: current.tests.testSource } : {}) })
+      const release = await jobsAPI<Release>('previews', { pack: current.pack.raw, input, ...(inputMode==='mapped'&&mapped?.exchangeImportId?{exchangeImportId:mapped.exchangeImportId}:{}), ...(current.tests.matrix ? { matrix: current.tests.matrix, testSource: current.tests.testSource } : {}) })
       // The decision id the release's bytes were served for: the project's lock is keyed by it.
       setPreview({ signature: JSON.stringify([current.pack.raw, facts, supplied, evidence, inputMode, source]), release, matrix: current.tests.matrix, project: current.tests.project, packId })
     } catch (e) { setError(e) } finally { setBusy(false) }

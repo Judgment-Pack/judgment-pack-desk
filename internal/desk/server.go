@@ -611,6 +611,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/exchange/imports/{importId}", s.handleExchange)
 	s.mux.HandleFunc("POST /api/exchange/imports", s.handleExchange)
 	s.mux.HandleFunc("POST /api/exchange/review", s.handleExchange)
+	s.mux.HandleFunc("POST /api/exchange/imports/{importId}/check", s.handleExchangeTarget)
 	s.mux.HandleFunc("GET /api/source-reviews", s.handleSourceReviews)
 	s.mux.HandleFunc("PUT /api/source-reviews", s.handleSourceReviews)
 	s.mux.HandleFunc("GET /api/briefs", s.handlePackTests)

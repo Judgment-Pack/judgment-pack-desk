@@ -5,11 +5,12 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {TemplateConfiguration} from './TemplateConfiguration'
 import {jobsAPI} from '../jobs/client'
 import {saveJobDraft} from '../jobs/drafts'
-import type {Candidate,ImportRecord} from './client'
+import {exchangeAPI,type Candidate,type ImportRecord} from './client'
 const mocks=vi.hoisted(()=>({navigate:vi.fn(),clear:vi.fn()}))
 vi.mock('react-router-dom',async original=>({...await original<object>(),useNavigate:()=>mocks.navigate}))
-vi.mock('../mcp/queries',()=>({usePacks:()=>({data:{packs:[{id:'classification-pack'}]}}),usePack:(id:string)=>({data:id?{document:{id,version:'1.0.0',rules:[],outcomes:[]}}:undefined})}))
+vi.mock('../mcp/queries',()=>({usePacks:()=>({data:{packs:[{id:'classification-pack'}]}}),usePack:(id:string)=>({data:id?{raw:JSON.stringify({id,version:'1.0.0'}),document:{id,version:'1.0.0',rules:[],outcomes:[]}}:undefined})}))
 vi.mock('../jobs/client',()=>({jobsAPI:vi.fn()}))
+vi.mock('./client',()=>({exchangeAPI:vi.fn()}))
 vi.mock('../jobs/drafts',()=>({saveJobDraft:vi.fn()}))
 vi.mock('../shell/UnsavedChanges',()=>({useRegisteredChanges:()=>mocks.clear}))
 vi.mock('../ui/Select',()=>({Select:({options,onValueChange,...props}:any)=><select {...props} onChange={e=>onValueChange(e.target.value)}><option value=""/>{options.map((o:any)=><option key={o.value} value={o.value}>{o.label}</option>)}</select>}))
@@ -18,7 +19,7 @@ const origin={id:'b'.repeat(64)} as ImportRecord
 const source={name:'classification',kind:'research',maxAge:300,model:'model-a',question:'Classify a dataset',constraints:{},evidence:[],fields:[{name:'classification',type:'text',required:true,description:'Dataset classification'}],capabilities:['answer'],read:{copy:{facts:[],evidence:[]}}}
 const candidate=(sources:unknown[]):Candidate=>({row:{id:'dataset',entryDigest:digest,dialectDigest:digest},entry:{title:'Dataset governance',author:'Example',licence:'Apache-2.0',sourceKinds:['research']},files:{},document:JSON.stringify({version:3,case:{facts:[],evidence:[]},sources}),digest})
 let cache:QueryClient
-beforeEach(()=>{vi.resetAllMocks();cache=new QueryClient({defaultOptions:{queries:{retry:false}}});vi.mocked(jobsAPI).mockResolvedValue([{digest,profile:{id:'local-ai',class:'generated',research:{capabilities:['answer'],model:'model-a'}}}]);vi.mocked(saveJobDraft).mockImplementation(async(id,values)=>({draft:{id,values}} as any))})
+beforeEach(()=>{vi.resetAllMocks();vi.mocked(exchangeAPI).mockResolvedValue({status:'checked'});cache=new QueryClient({defaultOptions:{queries:{retry:false}}});vi.mocked(jobsAPI).mockResolvedValue([{digest,profile:{id:'local-ai',class:'generated',research:{capabilities:['answer'],model:'model-a'}}}]);vi.mocked(saveJobDraft).mockImplementation(async(id,values)=>({draft:{id,values}} as any))})
 afterEach(()=>{cleanup();cache.clear()})
 const show=(value:Candidate)=>render(<MemoryRouter><QueryClientProvider client={cache}><TemplateConfiguration candidate={value} origin={origin}/></QueryClientProvider></MemoryRouter>)
 it('configures a non-GTM research preset without rewriting its model or requested fields',async()=>{
@@ -30,6 +31,7 @@ it('configures a non-GTM research preset without rewriting its model or requeste
  await waitFor(()=>expect(save.disabled).toBe(false));fireEvent.click(save)
  await waitFor(()=>expect(saveJobDraft).toHaveBeenCalledTimes(1))
  const values=vi.mocked(saveJobDraft).mock.calls[0][1]
+ expect(exchangeAPI).toHaveBeenCalledWith('imports/'+origin.id+'/check',{pack:JSON.stringify({id:'classification-pack',version:'1.0.0'}),document:value.document})
  expect(values.mapped?.text).toBe(value.document)
  expect(values.mapped?.exchangeImportId).toBe(origin.id)
  const imported=JSON.parse(values.mapped!.importText!)
@@ -56,4 +58,23 @@ it('does not offer a mismatched model or create a runnable draft for unsupported
  cleanup();show(candidate([{name:'sql',kind:'sql',read:{copy:{facts:[],evidence:[]}}}]))
  expect(screen.getByText(/These source kinds are not supported/)).toBeTruthy()
  expect((screen.getByRole('button',{name:'Create job draft'}) as HTMLButtonElement).disabled).toBe(true)
+})
+
+it('does not save a draft or navigate when the authoritative pack check refuses it',async()=>{
+ vi.mocked(exchangeAPI).mockRejectedValue(Error('Pack version does not match'))
+ show(candidate([{name:'records',kind:'selected-file',provider:'local-file',read:{copy:{facts:[],evidence:[]}}}]))
+ fireEvent.change(screen.getByLabelText('Pack'),{target:{value:'classification-pack'}})
+ const save=screen.getByRole('button',{name:'Create job draft'}) as HTMLButtonElement
+ await waitFor(()=>expect(save.disabled).toBe(false));fireEvent.click(save)
+ await screen.findByText('Pack version does not match')
+ expect(saveJobDraft).not.toHaveBeenCalled();expect(mocks.navigate).not.toHaveBeenCalled()
+})
+it('keeps an already bound research source pinned instead of asking for another connection',async()=>{
+ show(candidate([{...source,profile:'pinned-ai',profileDigest:digest,webProfiles:{}}]))
+ fireEvent.change(screen.getByLabelText('Pack'),{target:{value:'classification-pack'}})
+ const save=screen.getByRole('button',{name:'Create job draft'}) as HTMLButtonElement
+ await waitFor(()=>expect(save.disabled).toBe(false))
+ expect(screen.queryByLabelText('classification · answer')).toBeNull()
+ fireEvent.click(save);await waitFor(()=>expect(saveJobDraft).toHaveBeenCalledTimes(1))
+ expect(vi.mocked(saveJobDraft).mock.calls[0][1].mapped).not.toHaveProperty('importText')
 })

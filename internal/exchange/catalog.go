@@ -49,11 +49,34 @@ type Row struct {
 	Fixtures      []Fixture `json:"fixtures"`
 }
 type Document struct {
-	Path    string `json:"path"`
-	Version int    `json:"dialectVersion"`
-	Digest  string `json:"digest"`
+	Path          string `json:"path"`
+	Version       int    `json:"dialectVersion,omitempty"`
+	FormatVersion string `json:"formatVersion,omitempty"`
+	Digest        string `json:"digest"`
 }
+type PackReference struct {
+	ID       string   `json:"id"`
+	Versions string   `json:"versions,omitempty"`
+	Digests  []string `json:"digests,omitempty"`
+}
+type ArtifactIdentity struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+type EntryFixture struct {
+	Name              string `json:"name"`
+	Path              string `json:"path"`
+	PreparationDigest string `json:"preparationDigest"`
+}
+type ReplayInput struct {
+	Dialect, Case, Acquisitions, Profiles, Preparation, Binding []byte
+	ExpectedDigest                                              string
+}
+type Replay func(context.Context, ReplayInput) (json.RawMessage, error)
 type Preset struct {
+	Pack          *PackReference    `json:"pack,omitempty"`
+	Artifact      *ArtifactIdentity `json:"artifact,omitempty"`
+	Fixtures      []EntryFixture    `json:"fixtures,omitempty"`
 	EntryVersion  int               `json:"entryVersion"`
 	Kind          string            `json:"kind"`
 	ID            string            `json:"id"`
@@ -71,17 +94,19 @@ type Preset struct {
 	Upgrade       map[string]string `json:"upgrade,omitempty"`
 }
 type Candidate struct {
-	Row      Row               `json:"row"`
-	Entry    Preset            `json:"entry"`
-	Files    map[string]string `json:"files"`
-	Document string            `json:"document"`
-	Digest   string            `json:"digest"`
+	Row            Row                        `json:"row"`
+	Entry          Preset                     `json:"entry"`
+	Files          map[string]string          `json:"files"`
+	Document       string                     `json:"document"`
+	Digest         string                     `json:"digest"`
+	FixtureReports map[string]json.RawMessage `json:"fixtureReports,omitempty"`
 }
 type Unavailable struct {
 	ID     string `json:"id"`
 	Reason string `json:"reason"`
 }
 type Release struct {
+	History     []Pin         `json:"history,omitempty"`
 	Location    string        `json:"location"`
 	Tag         string        `json:"tag"`
 	Commit      string        `json:"commit"`
@@ -283,7 +308,7 @@ func validRange(s string) bool {
 // Review verifies the entire manifest and directory correspondence before
 // offering any preset. Other entry kinds remain explicitly unavailable until
 // their fixture replay and output contracts have a supported consumer.
-func Review(ctx context.Context, tree Tree, location, tag, commit string, check Check) (Release, error) {
+func Review(ctx context.Context, tree Tree, location, tag, commit string, check Check, replays ...Replay) (Release, error) {
 	out := Release{Location: location, Tag: tag, Commit: commit, Candidates: []Candidate{}, Unavailable: []Unavailable{}}
 	if _, e := CompareTags(tag, tag); e != nil {
 		return out, e
@@ -364,13 +389,25 @@ func Review(ctx context.Context, tree Tree, location, tag, commit string, check 
 	if len(sets) != len(declared) {
 		return out, errors.New("manifest does not enumerate every entry directory")
 	}
+	identities := make([]Candidate, 0, len(rows))
+	for _, row := range rows {
+		metadata, err := tree.Read(ctx, row.Path+"/entry.json", 64<<10)
+		if err != nil {
+			return out, err
+		}
+		identity, err := catalogIdentity(ctx, tree, row, metadata, check, true)
+		if err != nil {
+			return out, err
+		}
+		identities = append(identities, identity)
+	}
 	totalBytes := 0
 	for _, row := range rows {
-		if row.Kind != "preset" {
+		if row.Kind != "preset" && (len(replays) == 0 || replays[0] == nil) {
 			out.Unavailable = append(out.Unavailable, Unavailable{row.ID, "This entry requires fixture replay or output validation, which this importer does not yet support."})
 			continue
 		}
-		candidate, e := reviewPreset(ctx, tree, row, sets[row.Path], check)
+		candidate, e := reviewPreset(ctx, tree, row, sets[row.Path], check, replays...)
 		if e != nil {
 			out.Unavailable = append(out.Unavailable, Unavailable{row.ID, e.Error()})
 			continue
@@ -383,19 +420,39 @@ func Review(ctx context.Context, tree Tree, location, tag, commit string, check 
 		}
 		out.Candidates = append(out.Candidates, candidate)
 	}
-	return out, nil
+	err := checkCatalogHistory(ctx, tree, &out, check, identities)
+	return out, err
 }
-func reviewPreset(ctx context.Context, tree Tree, row Row, files []string, check Check) (Candidate, error) {
+func reviewPreset(ctx context.Context, tree Tree, row Row, files []string, check Check, replays ...Replay) (Candidate, error) {
 	c := Candidate{Row: row, Files: map[string]string{}}
 	want := []string{row.Path + "/README.md", row.Path + "/dialect.json", row.Path + "/entry.json"}
-	slices.Sort(files)
-	if !slices.Equal(files, want) {
-		return c, errors.New("a preset must contain exactly README.md, dialect.json and entry.json")
+	if row.Kind == "dialect" {
+		for _, f := range row.Fixtures {
+			for _, name := range f.Files {
+				want = append(want, row.Path+"/fixtures/"+f.Name+"/"+name)
+			}
+		}
 	}
-	for _, name := range []string{"README.md", "entry.json", "dialect.json"} {
+	slices.Sort(files)
+	slices.Sort(want)
+	if !slices.Equal(files, want) {
+		return c, errors.New("entry files do not match its declared manifest")
+	}
+	retainedBytes := 0
+	for _, path := range want {
+		name := strings.TrimPrefix(path, row.Path+"/")
 		limit := 64 << 10
 		if name == "dialect.json" {
 			limit = 128 << 10
+		}
+		if strings.HasPrefix(name, "fixtures/") {
+			limit = 2 << 20
+			if strings.HasSuffix(name, "/preparation.json") {
+				limit = 8 << 20
+			}
+			if strings.HasSuffix(name, "/profiles.json") || strings.HasSuffix(name, "/binding.json") {
+				limit = 64 << 10
+			}
 		}
 		raw, e := tree.Read(ctx, row.Path+"/"+name, limit)
 		if e != nil {
@@ -408,6 +465,10 @@ func reviewPreset(ctx context.Context, tree Tree, row Row, files []string, check
 			if pattern.Match(raw) {
 				return c, errors.New("entry contains a recognized credential or local path")
 			}
+		}
+		retainedBytes += len(raw)
+		if retainedBytes > 16<<20 {
+			return c, errors.New("entry exceeds the retained-file limit")
 		}
 		c.Files[name] = string(raw)
 	}
@@ -433,10 +494,10 @@ func reviewPreset(ctx context.Context, tree Tree, row Row, files []string, check
 	if _, present := entryMembers["description"]; present && !bounded(entry.Description, 4096) {
 		return c, errors.New("invalid preset description")
 	}
-	if entry.EntryVersion != 3 || entry.Kind != row.Kind || entry.ID != row.ID || entry.Direction != "input" || !bounded(entry.Title, 200) || entry.Description != "" && !bounded(entry.Description, 4096) || entry.Dialect.Path != "dialect.json" || entry.Dialect.Version != 3 || !digestPattern.MatchString(entry.Dialect.Digest) || !bounded(entry.Author, 100) || entry.Assertion != assertion || entry.Verification == nil || len(entry.Verification) != 0 || entry.Requires == nil || len(entry.SourceKinds) == 0 || len(entry.SourceKinds) > 16 || len(entry.Licence) > 64 || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+-]*$`).MatchString(entry.Licence) {
+	if entry.EntryVersion != 3 || entry.Kind != row.Kind || entry.ID != row.ID || entry.Direction != "input" || !bounded(entry.Title, 200) || entry.Description != "" && !bounded(entry.Description, 4096) || entry.Dialect.Path != "dialect.json" || (row.Kind == "preset" && (entry.Dialect.Version != 3 || entry.Dialect.FormatVersion != "")) || !digestPattern.MatchString(entry.Dialect.Digest) || !bounded(entry.Author, 100) || entry.Assertion != assertion || entry.Verification == nil || len(entry.Verification) > 32 || (row.Kind == "preset" && len(entry.Verification) != 0) || entry.Requires == nil || len(entry.SourceKinds) == 0 || len(entry.SourceKinds) > 16 || len(entry.Licence) > 64 || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+-]*$`).MatchString(entry.Licence) {
 		return c, errors.New("invalid preset metadata")
 	}
-	if len(entry.Requires) > 1 || len(entry.Requires) == 1 && (entry.Requires["platform"] == "" || len(entry.Requires["platform"]) > 64 || !regexp.MustCompile(`^[a-z][a-z0-9-]*$`).MatchString(entry.Requires["platform"])) {
+	if row.Kind == "preset" && (len(entry.Requires) > 1 || len(entry.Requires) == 1 && (entry.Requires["platform"] == "" || len(entry.Requires["platform"]) > 64 || !regexp.MustCompile(`^[a-z][a-z0-9-]*$`).MatchString(entry.Requires["platform"]))) {
 		return c, errors.New("a preset cannot carry installation profiles")
 	}
 	if entry.Compatibility != nil && (len(entry.Compatibility) != 2 || !validRange(entry.Compatibility["desk"]) || !validRange(entry.Compatibility["runner"])) {
@@ -451,15 +512,20 @@ func reviewPreset(ctx context.Context, tree Tree, row Row, files []string, check
 				return c, errors.New("invalid upgrade note")
 			}
 		}
-		return c, errors.New("Upgrade notes require verification against earlier catalog releases; this importer cannot yet verify that history.")
+		// Historical references are checked after every current entry is read.
+	}
+	if err := entryKindForm(entry, entryMembers); err != nil {
+		return c, err
 	}
 	// Runtime validates the actual document; this consumer additionally holds
 	// the preset-specific unbound-only and manifest source-kind constraints.
 	var doc struct {
-		Version int                          `json:"version"`
-		Sources []map[string]json.RawMessage `json:"sources"`
+		Version       json.RawMessage              `json:"version"`
+		FormatVersion string                       `json:"formatVersion"`
+		ID            string                       `json:"id"`
+		Sources       []map[string]json.RawMessage `json:"sources"`
 	}
-	if json.Unmarshal([]byte(c.Files["dialect.json"]), &doc) != nil || doc.Version != 3 {
+	if json.Unmarshal([]byte(c.Files["dialect.json"]), &doc) != nil || (row.Kind == "preset" && string(doc.Version) != "3") {
 		return c, errors.New("a preset requires a version-3 dialect")
 	}
 	kinds := map[string]bool{}
@@ -469,7 +535,7 @@ func reviewPreset(ctx context.Context, tree Tree, row Row, files []string, check
 			return c, errors.New("invalid source kind")
 		}
 		kinds[kind] = true
-		if kind == "operation" || kind == "research" {
+		if row.Kind == "preset" && (kind == "operation" || kind == "research") {
 			for _, member := range []string{"profile", "profileDigest", "webProfiles"} {
 				if _, present := source[member]; present {
 					return c, errors.New("preset sources must be unbound")
@@ -496,6 +562,19 @@ func reviewPreset(ctx context.Context, tree Tree, row Row, files []string, check
 	}
 	if digest != entry.Dialect.Digest || Digest([]byte(document)) != digest {
 		return c, errors.New("canonical dialect digest mismatch")
+	}
+	if row.Kind == "dialect" {
+		if err := checkInputReference(entry, []byte(c.Files["dialect.json"])); err != nil {
+			return c, err
+		}
+		if len(replays) == 0 || replays[0] == nil {
+			return c, errors.New("Offline preparation verification is unavailable")
+		}
+		reports, err := replayFixtures(ctx, c.Files, row, entry, replays[0])
+		if err != nil {
+			return c, err
+		}
+		c.FixtureReports = reports
 	}
 	c.Entry = entry
 	c.Document = document

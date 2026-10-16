@@ -19,7 +19,7 @@ import type {ProfileEntry} from '../jobs/dialectTypes'
 import type {BindingDocument} from '../dialect/types'
 import {profileMatches} from '../dialect/bindings'
 import {useRegisteredChanges} from '../shell/UnsavedChanges'
-import type {Candidate,ImportRecord} from './client'
+import {exchangeAPI,type Candidate,type ImportRecord} from './client'
 import styles from './TemplatesPage.module.css'
 
 /** Definitions remain immutable. Only installation assignments and case values
@@ -33,7 +33,7 @@ export function TemplateConfiguration({candidate,origin}:{candidate:Candidate;or
  const flight=useRef(false),draftKey=useRef(crypto.randomUUID())
  const parsed=useMemo(()=>{try{return {mapping:parseMapping(candidate.document)}}catch(e){return {error:(e as Error).message}}},[candidate.document])
  const mapping=parsed.mapping
- const sources=(mapping?.sources??[]).filter(source=>source.kind==='research'||source.kind==='operation'&&!source.profile)
+ const sources=(mapping?.sources??[]).filter(source=>(source.kind==='research'||source.kind==='operation')&&!source.profile)
  const unsupported=(mapping?.sources??[]).filter(source=>!['operation','selected-file','research'].includes(source.kind))
  const assignments=sources.flatMap(source=>[{source,role:'answer' as const},...(source.kind==='research'?source.capabilities.filter((c):c is 'search'|'page'=>c==='search'||c==='page').map(role=>({source,role})):[])])
  const chosen=(key:string)=>profiles.data?.find(p=>p.profile.id===selection[key])
@@ -43,6 +43,7 @@ export function TemplateConfiguration({candidate,origin}:{candidate:Candidate;or
   if(flight.current||!complete||!mapping)return
   flight.current=true;setBusy(true);setError('')
   try{
+   await exchangeAPI('imports/'+origin.id+'/check',{pack:pack.data!.raw,document:candidate.document})
    const binding:BindingDocument={dialect:candidate.digest,sources:{}}
    for(const source of sources){
     const ai=chosen(source.name+':answer')!

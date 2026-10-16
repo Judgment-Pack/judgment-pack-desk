@@ -1,7 +1,7 @@
 import {answer,deskFetch,FileRequestError} from '../files/client'
 import {privateQuery} from '../data/privateQuery'
 export interface ImportRecord {id:string;entryId:string;location:string;tag:string;commit:string;at:string;previousCommit?:string;reviewer:{kind:string;name?:string;subject?:string}}
-export interface Candidate {row:{id:string;entryDigest:string;dialectDigest:string};entry:{title:string;description?:string;licence:string;author:string;sourceKinds:string[];compatibility?:Record<string,string>};files:Record<string,string>;document:string;digest:string}
+export interface Candidate {row:{id:string;entryDigest:string;dialectDigest:string};entry:{kind?:string;pack?:{id:string;versions?:string;digests?:string[]};artifact?:{id:string;version:string};title:string;description?:string;licence:string;author:string;sourceKinds:string[];compatibility?:Record<string,string>};files:Record<string,string>;document:string;digest:string;fixtureReports?:Record<string,unknown>}
 export interface CatalogReview {previous:Record<string,string>;review:{id:string;base:string;release:{location:string;tag:string;commit:string;candidates:Candidate[];unavailable:{id:string;reason:string}[]}};changes:Record<string,{withdrawn:boolean;files:string[];upgradeNote?:string;compatibility?:Record<string,string>}>}
 export const EXCHANGE_KEY=['exchange-imports']
 export async function exchangeAPI<T>(path:string,body?:unknown,signal?:AbortSignal):Promise<T>{

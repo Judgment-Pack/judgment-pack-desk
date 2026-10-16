@@ -30,10 +30,12 @@ type connectionDescriptor struct {
 	Operations             []string                  `json:"operations"`
 }
 type sourceDescriptor struct {
-	ID         string   `json:"id"`
-	Input      string   `json:"input"`
-	MediaTypes []string `json:"mediaTypes"`
-	MaxBytes   int      `json:"maxBytes"`
+	ID           string   `json:"id"`
+	Input        string   `json:"input"`
+	MediaTypes   []string `json:"mediaTypes"`
+	MaxBytes     int      `json:"maxBytes"`
+	Adapter      string   `json:"adapter,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 type connectionCatalog struct {
 	Sources   []sourceDescriptor     `json:"sources"`
@@ -50,7 +52,7 @@ func readConnectionCatalog(ctx context.Context, bundle string) (json.RawMessage,
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(bundle, executableName("gateway-connections")), "--catalog-v3")
+	cmd := exec.CommandContext(ctx, filepath.Join(bundle, executableName("gateway-connections")), "--catalog-v4")
 	return runConnectionCatalog(ctx, cmd)
 }
 
@@ -93,7 +95,7 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 				return nil, errConnectionCatalog
 			}
 			for _, row := range rows {
-				if _, ok := catalogMembers(row, "id", "input", "mediaTypes", "maxBytes"); !ok {
+				if !catalogSourceMembers(row, version.Version, false) {
 					return nil, errConnectionCatalog
 				}
 			}
@@ -105,17 +107,17 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 			}
 			for _, row := range rows {
 				keys := []string{"id", "auth", "registration", "selection", "queryRequired", "operations"}
-				if version.Version == 3 {
+				if version.Version >= 3 {
 					keys = append(keys, "queryMode", "protocol", "presentation", "setup", "authorizationEndpoints", "source")
 				}
 				providerMembers, ok := catalogMembers(row, keys...)
 				if !ok {
 					return nil, errConnectionCatalog
 				}
-				if version.Version == 3 {
+				if version.Version >= 3 {
 					for _, field := range providerMembers {
 						if field.name == "source" {
-							if _, ok := catalogMembers(field.raw, "id", "shape", "record"); !ok {
+							if !catalogSourceMembers(field.raw, version.Version, true) {
 								return nil, errConnectionCatalog
 							}
 						}
@@ -125,7 +127,7 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 		}
 	}
 	var catalog connectionCatalog
-	if decodeDataJSON(raw, &catalog) != nil || (catalog.Version != 2 && catalog.Version != 3) || catalog.Sources == nil || len(catalog.Sources) > 32 || catalog.Providers == nil || len(catalog.Providers) > 32 {
+	if decodeDataJSON(raw, &catalog) != nil || (catalog.Version != 2 && catalog.Version != 3 && catalog.Version != 4) || catalog.Sources == nil || len(catalog.Sources) > 32 || catalog.Providers == nil || len(catalog.Providers) > 32 {
 		return nil, errConnectionCatalog
 	}
 	seen := map[string]bool{}
@@ -133,7 +135,10 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 		if provider.QueryRequired == nil || seen[provider.ID] || !catalogIdentifier.MatchString(provider.ID) || !catalogIdentifier.MatchString(provider.Auth) || !catalogIdentifier.MatchString(provider.Registration) || !catalogIdentifier.MatchString(provider.Selection) || len(provider.Operations) == 0 || len(provider.Operations) > 16 {
 			return nil, errConnectionCatalog
 		}
-		if catalog.Version == 3 && !validConnectionPresentation(provider) {
+		if catalog.Version >= 3 && !validConnectionPresentation(provider) {
+			return nil, errConnectionCatalog
+		}
+		if catalog.Version == 4 && (!validResearchCapabilities(provider.Source.Capabilities) || !validCatalogAdapter(provider.Source.Shape, provider.Source.Adapter)) {
 			return nil, errConnectionCatalog
 		}
 		seen[provider.ID] = true
@@ -148,6 +153,9 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 	seenSources := map[string]bool{}
 	for _, source := range catalog.Sources {
 		if seenSources[source.ID] || !catalogIdentifier.MatchString(source.ID) || !catalogIdentifier.MatchString(source.Input) || source.MaxBytes < 1 || source.MaxBytes > 16<<20 || len(source.MediaTypes) == 0 || len(source.MediaTypes) > 8 {
+			return nil, errConnectionCatalog
+		}
+		if catalog.Version == 4 && (!validResearchCapabilities(source.Capabilities) || source.Adapter != "" && !catalogIdentifier.MatchString(source.Adapter)) {
 			return nil, errConnectionCatalog
 		}
 		seenSources[source.ID] = true
