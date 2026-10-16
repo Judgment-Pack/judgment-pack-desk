@@ -98,12 +98,13 @@ remain separate product policies; the version selector offers explicit choices.
 
 ## Format version and storage revision
 
-The new Dialect format needs separate members for its format discriminator and
-artifact identity/version. `formatVersion` is a proposed field name, not a current
-Spec member. Both existing format families need explicit treatment; supporting a
-string `"2.0.0"` must not silently discard version-3 sources or bindings.
+Named Dialects use `formatVersion: "2.0.0"` or `"3.0.0"` for the document
+grammar, an opaque `id` for the artifact identity, and `version: "x.y.z"` for
+the artifact release. Historical integer formats 2 and 3 remain readable. Both
+named families retain their own source and binding rules; the format label does
+not convert version-3 sources into version-2 sources.
 
-Spec owns this decision and the canonical identity rules. Runtime supplies the
+Spec owns these members and the canonical identity rules. Runtime supplies the
 canonical writer, validator and digest/version tooling; Runner pins execution to
 those artifacts; Exchange enforces publication identity. Desk owns the shared
 review/save experience. Gateway changes only where its actual references require

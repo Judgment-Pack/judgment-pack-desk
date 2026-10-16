@@ -16,6 +16,10 @@ from unittest.mock import call, patch
 spec = importlib.util.spec_from_file_location('published', Path(__file__).with_name('published-components.py'))
 p = importlib.util.module_from_spec(spec); spec.loader.exec_module(p)
 PLAN = json.loads((Path(__file__).resolve().parents[1] / 'internal/releaseplan/components.json').read_text())
+# These tests synthesize published bytes and attestations. Their fixture must
+# stay published even while the development checkout pins unreleased commits.
+for component in PLAN['components'].values():
+    component.update(channel='stable', version='v1.2.3')
 
 
 def archive(path, entries):
