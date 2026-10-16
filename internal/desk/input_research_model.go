@@ -1,16 +1,9 @@
 package desk
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/Judgment-Pack/judgment-pack-desk/internal/aifailure"
-	"io"
-	"net"
-	"net/http"
-	"strings"
-	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
 )
@@ -44,53 +37,15 @@ func researchModelInstructions(prompt string) string {
 	return legacyResearchInstructions + researchContextInstructions
 }
 
-func researchAIRequest(ctx context.Context, choice inputResearchAI) *http.Request {
-	r, _ := http.NewRequestWithContext(ctx, "POST", "http://desk.invalid/", nil)
-	r.Header.Set(aiConnectionHeader, choice.Connection)
-	r.Header.Set(aiRevisionHeader, choice.Revision)
-	return r
-}
 func (s *Server) validateResearchConnection(ctx context.Context, choice inputResearchAI) error {
-	c, e := s.selectedAIConnection(researchAIRequest(ctx, choice), true)
-	if e != nil {
-		return e
-	}
-	if c == nil {
-		return aifailure.Authored("configuration", "model", "not-started", "Select a named AI connection.")
-	}
-	p, e := s.readAssistantProfile()
-	if e != nil {
-		return aifailure.Authored("configuration", "model", "not-started", assistantProfileProblem)
-	}
-	if !contains(connectionModels(c, p), choice.Model) {
-		return aifailure.Authored("permission", "model", "not-started", "The research model is not enabled for this connection and desk.")
-	}
-	if c.Assistant.Engine == "codex" {
-		return nil
-	}
-	endpoint, keyName, _, e := s.endpointForConnection(researchAIRequest(ctx, choice), true)
-	if e != nil {
-		return e
-	}
-	stored, e := s.assistant.readKeyNamed(keyName)
-	if e != nil || !stored.present {
-		return aifailure.Authored("authentication", "model", "not-started", "This AI connection needs its saved API key.")
-	}
-	if reason := bindingProblem(stored, endpoint); reason != "" {
-		return aifailure.Authored("configuration", "model", "not-started", reason)
-	}
-	// API reasoning defaults are kept until a shared server-side mapping exists;
-	// never silently reinterpret a native effort as a different protocol's budget.
-	if choice.Effort != "" && endpoint.kind != "openai-compatible" {
-		return aifailure.Authored("configuration", "model", "not-started", "Use the provider default reasoning setting for this API connection.")
-	}
-	return nil
+	return s.validateBackgroundModelConnection(ctx, choice)
 }
+
 func (s *Server) inputResearchModel(ctx context.Context, choice inputResearchAI, prompt string, availability func(bool) error) (result json.RawMessage, modelErr error) {
 	defer func() { modelErr = aiModelFailure(modelErr) }()
-	if e := s.validateResearchConnection(ctx, choice); e != nil {
-		return nil, e
-	}
+	// The feature adapter owns the research context projection and response contract.
+	// Provider transport, capacity and error normalization are shared with every
+	// background feature; authorization and request accounting stay with the worker.
 	policy, _, err := s.aiContext(choice.Model)
 	if err != nil {
 		return nil, err
@@ -99,238 +54,16 @@ func (s *Server) inputResearchModel(ctx context.Context, choice inputResearchAI,
 	if err != nil {
 		return nil, err
 	}
-	request := researchAIRequest(ctx, choice)
-	connection, e := s.selectedAIConnection(request, true)
-	if e != nil {
-		return nil, e
-	}
-	if connection.Assistant.Engine == "codex" {
-		account, e := s.accountForConnection(request)
-		if e != nil {
-			return nil, e
-		}
-		runner, ok := account.(providerRunner)
-		if !ok {
-			return nil, codexbridge.ErrUnavailable
-		}
-		var action json.RawMessage
-		schema := json.RawMessage(`{"type":"object","properties":{"tool":{"type":"string","enum":["search","candidates","read","read_context","records","finish","delegate"]},"arguments":{"type":"object"}},"required":["tool","arguments"],"additionalProperties":false}`)
-		s.signIn.mu.Lock()
-		policy := s.signIn.epoch
-		s.signIn.mu.Unlock()
-		req := codexbridge.RunRequest{WaitForAvailability: true, Model: choice.Model, Effort: choice.Effort, Prompt: prompt, Instructions: researchModelInstructions(prompt) + " Submit your one action with desk_research_action, then stop.", Tools: []codexbridge.Tool{{Name: "desk_research_action", Description: "Submit one research action. The host validates it before any source call or record change.", InputSchema: schema}}}
-		if e = s.prepareAgentContext(&req); e != nil {
-			return nil, e
-		}
-		e = runner.Run(ctx, codexbridge.Owner{ID: "input-research", Session: ctx, Policy: policy}, req, func(event codexbridge.RunEvent) error {
-			if event.Type != "waiting" && event.Type != "admitted" {
-				return nil
-			}
-			if event.Type == "admitted" {
-				// A user may have changed the connection while this run waited.
-				if err := s.validateResearchConnection(ctx, choice); err != nil {
-					return err
-				}
-			}
-			if availability != nil {
-				return availability(event.Type == "waiting")
-			}
-			return nil
-		}, func(_ context.Context, call codexbridge.ToolCall) (codexbridge.ToolAnswer, error) {
-			if call.Name != "desk_research_action" || len(action) > 0 || len(call.Arguments) > 128<<10 {
-				return codexbridge.ToolAnswer{Text: "Only one bounded research action is accepted.", IsError: true}, nil
-			}
-			if _, e := decodeResearchAction(call.Arguments); e != nil {
-				return codexbridge.ToolAnswer{Text: e.Error(), IsError: true}, nil
-			}
-			action = append(json.RawMessage(nil), call.Arguments...)
-			return codexbridge.ToolAnswer{Text: "Action received. Stop this turn now."}, nil
-		})
-		if e != nil {
-			return nil, aiAgentFailure(e)
-		}
-		if len(action) == 0 {
-			return nil, aifailure.New("invalid-response", "model", "unknown")
-		}
-		if e = s.validateResearchConnection(ctx, choice); e != nil {
-			return nil, e
-		}
-		return action, nil
-	}
-	endpoint, keyName, _, e := s.endpointForConnection(request, true)
-	if e != nil {
-		return nil, e
-	}
-	stored, e := s.assistant.readKeyNamed(keyName)
-	if e != nil || !stored.present {
-		return nil, aifailure.Authored("authentication", "model", "not-started", "The AI credential is unavailable.")
-	}
-	if reason := bindingProblem(stored, endpoint); reason != "" {
-		return nil, aifailure.Authored("configuration", "model", "not-started", reason)
-	}
-	var body map[string]any
-	path := ""
-	switch endpoint.kind {
-	case "openai-compatible":
-		path = "chat/completions"
-		body = map[string]any{"model": choice.Model, "stream": false, "max_tokens": policy.OutputTokens, "messages": []any{map[string]any{"role": "system", "content": researchModelInstructions(prompt)}, map[string]any{"role": "user", "content": prompt}}}
-		if choice.Effort != "" {
-			body["reasoning_effort"] = choice.Effort
-		}
-	case "anthropic":
-		path = "v1/messages"
-		body = map[string]any{"model": choice.Model, "max_tokens": policy.OutputTokens, "system": researchModelInstructions(prompt), "messages": []any{map[string]any{"role": "user", "content": prompt}}}
-	case "gemini":
-		if strings.ContainsAny(choice.Model, "/:\\") {
-			return nil, aifailure.Authored("configuration", "model", "not-started", "Unsupported model ID for this API.")
-		}
-		path = "v1beta/models/" + choice.Model + ":generateContent"
-		body = map[string]any{"systemInstruction": map[string]any{"parts": []any{map[string]any{"text": researchModelInstructions(prompt)}}}, "contents": []any{map[string]any{"role": "user", "parts": []any{map[string]any{"text": prompt}}}}, "generationConfig": map[string]any{"maxOutputTokens": policy.OutputTokens, "responseMimeType": "application/json"}}
-	default:
-		return nil, aifailure.Authored("configuration", "model", "not-started", "This AI protocol does not support internal research.")
-	}
-	target, e := relayTarget(endpoint.url, path, "")
-	if e != nil {
-		return nil, e
-	}
-	raw, _ := json.Marshal(body)
-	raw, e = s.prepareModelContext(endpoint.kind, path, raw)
-	if e != nil {
-		return nil, e
-	}
-	outbound, e := http.NewRequestWithContext(ctx, "POST", target.String(), bytes.NewReader(raw))
-	if e != nil {
-		return nil, e
-	}
-	header, value, ok := credentialHeader(endpoint.kind, stored.key)
-	if !ok {
-		return nil, aifailure.Authored("configuration", "model", "not-started", "Unsupported credential protocol.")
-	}
-	outbound.Header.Set(header, value)
-	outbound.Header.Set("Content-Type", "application/json")
-	if endpoint.kind == "anthropic" {
-		outbound.Header.Set("anthropic-version", "2023-06-01")
-	}
-	transport := relayTransport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-
-	capacityKey := s.modelCapacityKey(endpoint.url, keyName)
-	if availability != nil {
-		if err := availability(true); err != nil {
-			return nil, err
-		}
-	}
-	release, e := modelCapacity.Acquire(ctx, capacityKey)
-	if e != nil {
-		return nil, e
-	}
-	defer release()
-	if e = s.validateResearchConnection(ctx, choice); e != nil {
-		return nil, e
-	}
-	stored, e = s.assistant.readKeyNamed(keyName)
-	if e != nil || !stored.present {
-		return nil, aifailure.Authored("authentication", "model", "not-started", "The AI credential is unavailable.")
-	}
-	if reason := bindingProblem(stored, endpoint); reason != "" {
-		return nil, aifailure.Authored("configuration", "model", "not-started", reason)
-	}
-	header, value, ok = credentialHeader(endpoint.kind, stored.key)
-	if !ok {
-		return nil, aifailure.Authored("configuration", "model", "not-started", "Unsupported credential protocol.")
-	}
-	outbound.Header.Set(header, value)
-	if availability != nil {
-		if err := availability(false); err != nil {
-			return nil, err
-		}
-	}
-	response, e := transport.RoundTrip(outbound)
-	if e != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		var timeout net.Error
-		if errors.As(e, &timeout) && timeout.Timeout() {
-			return nil, aifailure.New("timeout", "model", "unknown")
-		}
-		return nil, aifailure.New("connection-lost", "model", "unknown")
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusTooManyRequests {
-		modelCapacity.Throttle(capacityKey)
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		failureBody, _ := io.ReadAll(io.LimitReader(response.Body, 16385))
-		return nil, aifailure.HTTPResponse(response.StatusCode, response.Header, failureBody, "model", time.Now())
-	}
-	raw, e = readBounded(response.Body, 2<<20)
-	if e != nil {
-		return nil, aifailure.New("invalid-response", "model", "unknown")
-	}
-	if bytes.Contains(raw, []byte(stored.key)) {
-		return nil, aifailure.New("invalid-response", "model", "unknown")
-	}
-	var wire struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text    string `json:"text"`
-					Thought bool   `json:"thought"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-	if json.Unmarshal(raw, &wire) != nil {
-		return nil, aifailure.New("invalid-response", "model", "unknown")
-	}
-	text := ""
-	switch endpoint.kind {
-	case "openai-compatible":
-		if len(wire.Choices) == 1 {
-			text = wire.Choices[0].Message.Content
-		}
-	case "anthropic":
-		for _, part := range wire.Content {
-			if part.Type == "text" {
-				text += part.Text
-			}
-		}
-	case "gemini":
-		if len(wire.Candidates) == 1 {
-			for _, part := range wire.Candidates[0].Content.Parts {
-				if !part.Thought {
-					text += part.Text
-				}
-			}
-		}
-	}
-	action := json.RawMessage(strings.TrimSpace(text))
-	if len(action) > 128<<10 {
-		return nil, aifailure.Authored("invalid-response", "model", "unknown", "The model action exceeded its response limit.")
-	}
-	if !json.Valid(action) {
-		// Retain unstructured output as a JSON string so the journal remains
-		// valid and the host can reject it as an action with bounded feedback.
-		action, _ = json.Marshal(string(action))
-	}
-	// Retain malformed actions as completed responses. The host can provide
-	// bounded correction feedback without replaying an uncertain request.
-	if e = s.validateResearchConnection(ctx, choice); e != nil {
-		return nil, e
-	}
-	return action, nil
+	return s.runBackgroundModel(ctx, backgroundModelRequest{
+		Choice: choice, Owner: "input-research", Prompt: prompt,
+		Instructions: researchModelInstructions(prompt),
+		Response: codexbridge.Tool{
+			Name:        "desk_research_action",
+			Description: "Submit one research action. The host validates it before any source call or record change.",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"tool":{"type":"string","enum":["search","candidates","read","read_context","records","finish","delegate"]},"arguments":{"type":"object"}},"required":["tool","arguments"],"additionalProperties":false}`),
+		},
+		Validate: func(raw json.RawMessage) error { _, err := decodeResearchAction(raw); return err },
+	}, availability)
 }
 func decodeResearchAction(raw []byte) (inputResearchAction, error) {
 	var a inputResearchAction

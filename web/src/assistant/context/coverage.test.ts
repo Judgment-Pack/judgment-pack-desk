@@ -23,11 +23,12 @@ it('keeps both frontend and backend execution paths inside the context boundary'
   const source=readFileSync(resolve(root,path),'utf8');expect(source).toContain('managedContext(');expect(source).toContain('context.result(');expect(source).toContain('context.beginIsolatedPhase()')
  }
  for(const path of ['assistant/useAssistantRun.ts','research/useResearchRun.ts'])expect(readFileSync(resolve(root,path),'utf8')).toContain('configuration:settings.current.contextConfiguration')
+ expect(readFileSync(resolve(root,'../../internal/desk/input_research_model.go'),'utf8')).toContain('s.runBackgroundModel(')
  const backend=resolve(root,'../../internal/desk')
  const runners=readdirSync(backend).filter(p=>p.endsWith('.go')&&!p.endsWith('_test.go')&&/runner\.Run\(/.test(readFileSync(resolve(backend,p),'utf8'))).sort()
- expect(runners).toEqual(['agent_run.go','input_research_model.go'])
+ expect(runners).toEqual(['agent_run.go','background_model.go'])
  for(const file of runners){const text=readFileSync(resolve(backend,file),'utf8');expect(text.indexOf('prepareAgentContext(')).toBeLessThan(text.indexOf('runner.Run('))}
- for(const file of ['input_research_model.go','modelrelay.go'])expect(readFileSync(resolve(backend,file),'utf8')).toContain('prepareModelContext(')
+ for(const file of ['background_model.go','modelrelay.go'])expect(readFileSync(resolve(backend,file),'utf8')).toContain('prepareModelContext(')
 })
 
 it('keeps future conversational progress and request accounting in the shared execution boundary',()=>{
@@ -48,7 +49,7 @@ it('keeps future AI failures behind the shared contract and recovery UI',()=>{
  expect(readFileSync(resolve(root,'chat/checkpoint.ts'),'utf8')).toContain('readFailure(')
  expect(readFileSync(resolve(root,'chat/ChatPanel.tsx'),'utf8')).toContain('<ResponseRecovery')
  const backend=resolve(root,'../../internal/desk')
- for(const file of ['input_research_model.go','agent_run.go'])expect(readFileSync(resolve(backend,file),'utf8')).toContain('aifailure.')
+ for(const file of ['background_model.go','agent_run.go'])expect(readFileSync(resolve(backend,file),'utf8')).toContain('aifailure.')
  expect(readFileSync(resolve(backend,'input_research_retry.go'),'utf8')).toContain('*aifailure.Failure')
  const sdk=readFileSync(resolve(root,'assistant/engines/vercel/loop.ts'),'utf8')
  expect(sdk).not.toContain('function describe(')

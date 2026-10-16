@@ -149,3 +149,25 @@ See [the recovery validation](../validation/2026-10-14-retry-and-execution-progr
 The [Codex harness](https://developers.openai.com/blog/codex-as-a-platform) owns conversation state, execution events, tool use and approval boundaries; the embedding application owns product context and business rules. [Vercel AI SDK loop control](https://ai-sdk.dev/docs/agents/loop-control) provides `stopWhen`, `prepareStep`, tool selection and message projection; semantic progress and product recovery remain application policies. The installed SDK version uses `stepCountIs`, so the implementation follows its local API, not names shown in newer documentation. [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/agent-loop) distinguishes turn/budget exhaustion from success, and [sessions](https://code.claude.com/docs/en/agent-sdk/sessions) preserve context for explicit continuation after a limit.
 
 A tool-call finish reason is a normal continuation signal. Desk must not equate it with a provider failure simply because its own repetition guard closed dispatch. Neither Codex nor Claude's documentation establishes a universal three-repeat policy: the exact-repeat threshold and one corrective opportunity are Desk choices, tested across API families. Plans express intended work; they neither predict an exact number of tool calls nor authorize more compute. A useful unfinished task can request an explicit extension; an unchanged loop needs correction before further spending.
+
+
+### Background feature contracts
+
+`internal/desk/background_model.go` owns the one-operation provider transport for
+background features. Feature adapters pass the exact connection revision and model,
+a host-authored prompt, instructions and a bounded response tool contract. Existing
+local research supplies its action schema and retained-context projection through
+`inputResearchModel`; it retains its existing journal encoding and allowance rules.
+
+The shared executor rechecks the connection after capacity admission, uses the same
+project-context boundary for subscription and API providers, reports availability,
+and normalizes failures. It never executes proposed actions or retries a request.
+The owning worker must durably record approval, Plan admission and allowance before
+dispatch, and persist completed output or an uncertain attempt before continuation.
+API results that do not parse as JSON remain a bounded JSON string for the host's
+journaled correction. Subscription tool submissions use the adapter's validator.
+
+This boundary is a prerequisite for fresh portable Dialect research (#423). It does
+not itself add a Gateway answer adapter, portable research record producer or new
+research-review UI. Those paths must use the same executor and existing admission
+and persistence contracts when implemented.
