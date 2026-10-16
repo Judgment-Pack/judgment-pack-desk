@@ -10,8 +10,8 @@
     },
     "runner": {
       "repository": "Judgment-Pack/judgment-pack-runner",
-      "version": "v0.17.0-dev.b37a2d7",
-      "revision": "b37a2d7068a63259d0e9095d45ecc20414fc88ec",
+      "version": "v0.17.0-dev.9cb30a2",
+      "revision": "9cb30a2c57ec75fc5282315a5e1af87a98ae98e6",
       "channel": "development"
     },
     "gateway": {

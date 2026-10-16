@@ -10,7 +10,7 @@ import {Button,ButtonLink} from '../ui/Button'
 import {LoadingState} from '../ui/LoadingState'
 import {QueryStatusNotice} from '../shell/QueryStatusNotice'
 import type {DialectTemplate,TemplateOrigin} from './templates'
-import {researchDraftFromPreset} from './exchangeResearchTemplate'
+import {researchDraftFromPreset} from './presetResearchDraft'
 import styles from './DialectDraftPage.module.css'
 
 export function ExchangeResearchTemplate({current,purpose,disabled,onApply}:{current?:TemplateOrigin;purpose:string;disabled:boolean;onApply:(template:DialectTemplate,origin:TemplateOrigin)=>Promise<void>}){

@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest'
 import type {Candidate,ImportRecord} from '../exchange/client'
-import {researchDraftFromPreset} from './exchangeResearchTemplate'
+import {researchDraftFromPreset} from './presetResearchDraft'
 const digest='sha256:'+'a'.repeat(64)
 const record={id:'b'.repeat(64),entryId:'example/research',tag:'v1.0.0'} as ImportRecord
 const fields=[{name:'description',type:'text',required:true},{name:'count',type:'integer',description:'Count'},{name:'amount',type:'decimal',description:'Exact amount'},{name:'approved',type:'boolean',description:'Approved'},{name:'tags',type:'text-list',description:'Tags'},{name:'size',type:'range',description:'Size range'}]
