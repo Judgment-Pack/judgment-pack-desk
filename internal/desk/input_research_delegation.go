@@ -40,7 +40,7 @@ func delegatedResearch(r inputResearchRun) bool {
 	return r.ContractVersion >= 2 && r.Execution != nil && r.Execution.Approach == "delegated"
 }
 func (s *Server) researchExecution(ctx context.Context, r *inputResearchRecipe) (delegation.Execution, error) {
-	c, e := s.selectedAIConnection(researchAIRequest(ctx, r.AI), true)
+	c, e := s.selectedAIConnection(backgroundAIRequest(ctx, r.AI), true)
 	if e != nil {
 		return delegation.Execution{}, e
 	}

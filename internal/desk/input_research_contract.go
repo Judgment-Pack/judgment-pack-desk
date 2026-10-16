@@ -25,12 +25,7 @@ type inputResearchRetryPolicy struct {
 	MaxRetries     int    `json:"maxRetries"`
 	SearchTimeouts bool   `json:"searchTimeouts"`
 }
-type inputResearchAI struct {
-	Connection string `json:"connection"`
-	Revision   string `json:"revision"`
-	Model      string `json:"model"`
-	Effort     string `json:"effort,omitempty"`
-}
+type inputResearchAI = backgroundModelChoice
 type inputResearchSearch struct {
 	Connection string `json:"connection"`
 	Revision   string `json:"revision"`
