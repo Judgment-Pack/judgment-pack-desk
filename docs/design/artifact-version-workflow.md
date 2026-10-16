@@ -59,8 +59,26 @@ wizard. Runner requires an explicit review plus the current job revision/release
 retains every creation and upgrade receipt, and leaves older runs pinned. Pending
 source occurrences block the upgrade. Existing triggers must be paused and stay
 paused with a new trigger revision; resuming a trigger needs a fresh review.
-Connected Dialect subscriptions need a new subscription review. The UI discovers
-the `job-upgrades` capability and hides this action on older Runner versions.
+Connected Dialect subscriptions use **Review upgrade** while paused. The shared
+record review freezes the candidate release, source class, processing mode and
+baseline at review time. Confirmation upgrades the existing job and retains a
+new paused subscription revision with the same trigger. The old revision and
+its execution history remain unchanged; existing records are skipped by the new
+baseline. Records arriving after review remain eligible when the replacement is
+explicitly enabled. A superseded revision cannot enable or deliver again.
+
+The coordinator leases both journals, retains intent before Runner's exact CAS,
+and resolves acknowledgement loss from the immutable upgrade receipt. **Check
+result** only reads that receipt, even if the preparation is unavailable or the
+job has advanced again. A separate, explicitly reviewed **Retry exact upgrade**
+revalidates the frozen inputs and resubmits the identical CAS once. It journals
+the retry before dispatch and preserves uncertainty after transport or retry
+authorization failure. Only an accepted receipt or Runner's immutable conflicting
+revision can resolve an uncertain attempt. A prepared, undispatched attempt can
+be explicitly cancelled. History and recovery share the file/memory journal
+contract; no host-side retry starts a second job or a record run.
+
+The UI discovers the `job-upgrades` capability and hides this action on older Runner versions.
 
 Runtime owns strict numeric version operations; Desk and Runner own their separate
 publication/admission policies. None of these operations infers compatibility,
