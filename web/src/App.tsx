@@ -1,3 +1,4 @@
+import {TemplatesPage} from './routes/TemplatesPage'
 import { DialectsView } from './routes/DialectsView'
 import { JobsView } from './routes/JobsView'
 import { DraftPackView, NewPackView } from './routes/DraftPackView'
@@ -29,6 +30,7 @@ export function App() {
           <Route path="/matrix" element={<Navigate to="/library" replace />} />
           <Route path="/connections/:provider/files" element={<StorageFilesView />} />
           <Route path="/author" element={<AuthorView />} />
+          <Route path="/dialects/templates" element={<TemplatesPage />} />
           <Route path="/dialects/new" element={<DialectsView />} />
           <Route path="/dialects/drafts/:draftId" element={<DialectsView />} />
           <Route path="/dialects" element={<DialectsView />} />

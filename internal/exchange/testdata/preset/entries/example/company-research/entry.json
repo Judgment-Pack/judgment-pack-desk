@@ -1,0 +1,22 @@
+{
+  "entryVersion": 2,
+  "kind": "preset",
+  "id": "example.company-research",
+  "title": "Example: a company's headcount, from a registry and two research recipes",
+  "description": "A preset: an unbound registry read and three unbound research recipes, the last reconciling the first two. No pack and no fixtures: a desk pairs it with a pack locally before any run.",
+  "direction": "input",
+  "dialect": {
+    "path": "dialect.json",
+    "dialectVersion": 3,
+    "digest": "sha256:0de8781137aadd71c89ad657d25e4027de9ac69d2a25388f86dfb15c59d6aa8f"
+  },
+  "requires": {},
+  "sourceKinds": [
+    "operation",
+    "research"
+  ],
+  "licence": "Apache-2.0",
+  "author": "example",
+  "assertion": "The author asserts that these rules derive these facts and this evidence-availability from records of that shape, or these arguments from that disposition, and asserts nothing about any record's truth.",
+  "verification": []
+}
