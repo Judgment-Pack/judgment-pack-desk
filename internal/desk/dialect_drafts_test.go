@@ -283,3 +283,23 @@ func TestDialectDraftPortableFieldTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestDialectDraftEmptyRelatedScopePersistsButCannotPublish(t *testing.T) {
+	s, _ := draftRepositoryFixture(t, "memory")
+	recipe := researchRecipeFixture()
+	recipe.Target = "records"
+	recipe.RequireParents = true
+	recipe.CompanyIDs = nil
+	recipe.CompanyInputs = nil
+	request := dialectDraftRequest{Key: "review-parents", Name: "Related records", Recipe: inputRecipe{Intent: "Find related records", Research: &recipe}}
+	saved := draftResult(t, draftCall(s, "POST", "/api/dialect-drafts", request, ""))
+	reloaded := draftResult(t, draftCall(s, "GET", "/api/dialect-drafts/"+saved.Document.ID, nil, ""))
+	if !reloaded.Document.Recipe.Research.RequireParents {
+		t.Fatal("scope lost on reload")
+	}
+	w := draftCall(s, "POST", "/api/dialect-drafts/"+saved.Document.ID+"/publish", map[string]any{}, saved.SHA256)
+	if w.Code != 422 {
+		t.Fatalf("empty required parent scope published: %d %s", w.Code, w.Body.String())
+	}
+	t.Logf("empty required scope refused: %d %s", w.Code, w.Body.String())
+}

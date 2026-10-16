@@ -8,9 +8,6 @@ import {useChats} from '../chat/ChatProvider'
 import {PageHeader,PageBody} from '../ui/PageLayout'
 import {Button,ButtonLink} from '../ui/Button'
 import {Tabs} from '../ui/Tabs'
-import {Field} from '../ui/Field'
-import {Input} from '../ui/Input'
-import {Select} from '../ui/Select'
 import {Disclosure} from '../ui/Disclosure'
 import {LoadingState} from '../ui/LoadingState'
 import {QueryStatusNotice} from '../shell/QueryStatusNotice'
@@ -20,9 +17,10 @@ import {RecipePurpose,RecipeSection} from './RecipeSection'
 import {RecipeFields} from './RecipeFields'
 import {ResearchRecipe} from './ResearchRecipe'
 import {RecipePackSection} from './RecipePackSection'
-import {defaultResearchRetries,type ResearchRecipe as Research} from './research'
+import {defaultResearchRetries,requiresResearchParents,type ResearchRecipe as Research} from './research'
 import type {PreparationReply} from './client'
-import {dialectTemplates,readDialectTemplate,templateOrigin,type DialectTemplate} from './templates'
+import {dialectTemplates,templateOrigin,type DialectTemplate,type TemplateOrigin} from './templates'
+import {ExchangeResearchTemplate} from './ExchangeResearchTemplate'
 import {DIALECT_DRAFTS_KEY,dialectDraftQuery,dialectDraftAPI,dialectDraftHref,type DialectDraftReply} from './drafts'
 import {useDialectDraft} from './useDialectDraft'
 import styles from './DialectDraftPage.module.css'
@@ -30,7 +28,7 @@ import styles from './DialectDraftPage.module.css'
 function DraftPanel({children,full=false}:{children:ReactNode;full?:boolean}){return <div className={styles.panel}><PageBody width={full?'full':'wide'}>{children}</PageBody></div>}
 type Companies={source:PreparationReply;recordIds:string[]}
 function researchFor(template:DialectTemplate,ai:Research['ai'],companies?:Companies):Research|undefined{
- return template.research?{version:1,...structuredClone(template.research),target:'records',retries:defaultResearchRetries(),limits:{...template.research.limits,searches:0},ai,...(companies?{companyInputs:companies.source.document.records.filter(r=>companies.recordIds.includes(r.id)&&(r.research?.entity.kind==='company'||r.research?.entity.kind==='record')).map(r=>({preparationId:companies.source.document.id,revision:companies.source.sha256,entityId:r.research!.entity.id}))}:{})}:undefined
+ return template.research?{version:1,...structuredClone(template.research),target:'records',retries:defaultResearchRetries(),limits:{...template.research.limits,searches:0},ai,...(companies?{requireParents:true,companyInputs:companies.source.document.records.filter(r=>companies.recordIds.includes(r.id)&&(r.research?.entity.kind==='company'||r.research?.entity.kind==='record')).map(r=>({preparationId:companies.source.document.id,revision:companies.source.sha256,entityId:r.research!.entity.id}))}:{})}:undefined
 }
 /** Creation persists an incomplete draft before opening its editor. The stable
  * request key makes StrictMode, interrupted replies and Retry idempotent. */
@@ -39,9 +37,9 @@ export function NewDialectPage(){
  const [error,setError]=useState<unknown>(),[attempt,setAttempt]=useState(0),key=useRef(crypto.randomUUID()),request=useRef<Promise<DialectDraftReply>|undefined>(undefined)
  useEffect(()=>{let current=true;setError(undefined)
   if(!request.current){
-   const companies=(location.state as {companies?:Companies}|null)?.companies,template=dialectTemplates().find(t=>t.id===(companies?'company-people':'blank'))!
+   const companies=(location.state as {companies?:Companies}|null)?.companies,template=dialectTemplates().find(t=>t.id===(companies?'related-records':'blank'))!
    const resolved=resolveAIConnection(effective),assistant=resolved.assistant,config=assistant.engine==='codex'?assistant.agent:assistant.endpoint
-   request.current=templateOrigin(template).then(origin=>dialectDraftAPI<DialectDraftReply>('','POST',{key:key.current,name:companies?msg('People at {{name}}',{name:companies.source.document.name}):'',recipe:{intent:template.intent,template:origin,research:researchFor(template,{connection:resolved.connection?.id??'',revision:resolved.connection?.revision??'',model:config?.model??''},companies)}}))
+   request.current=templateOrigin(template).then(origin=>dialectDraftAPI<DialectDraftReply>('','POST',{key:key.current,name:companies?msg('Records related to {{name}}',{name:companies.source.document.name}):'',recipe:{intent:template.intent,template:origin,research:researchFor(template,{connection:resolved.connection?.id??'',revision:resolved.connection?.revision??'',model:config?.model??''},companies)}}))
   }
   void request.current.then(saved=>{if(current){cache.setQueryData([...DIALECT_DRAFTS_KEY,saved.document.id],saved);void cache.invalidateQueries({queryKey:DIALECT_DRAFTS_KEY,exact:true});navigate(dialectDraftHref(saved.document),{replace:true})}},e=>{if(current){request.current=undefined;setError(e)}})
   return()=>{current=false}
@@ -56,12 +54,11 @@ export function DialectDraftEditor({initial}:{initial:DialectDraftReply}){
  const editor=useDialectDraft(initial),{value,setValue,saved,busy,dirty,error,flush,clear,reload}=editor
  const [params,setParams]=useSearchParams(),navigate=useNavigate(),cache=useQueryClient(),confirm=useConfirmDiscard(),{store}=useChats()
  const [working,setWorking]=useState(false),[pending,setPending]=useState(false),[problem,setProblem]=useState<unknown>(),active=useRef(false)
- const templateRead=useRef(0),[imported,setImported]=useState<DialectTemplate>()
  const section=['overview','fields','sources','execution','pack'].includes(params.get('tab')??'')?params.get('tab')!:'overview'
  const setSection=(tab:string)=>setParams(previous=>{const next=new URLSearchParams(previous);next.set('tab',tab);return next},{replace:true})
  const clearWork=useRegisteredChanges(false,msg('Wait for the dialect to finish saving.'),{kind:'activity',busy:working})
  const disabled=working||pending,research=value.recipe.research
- const companySelection=value.recipe.template?.id==='company-people'||research?.target==='people-at-companies'||!!(research?.companyIds?.length||research?.companyInputs?.length)
+ const companySelection=['company-people','related-records'].includes(value.recipe.template?.id??'')||requiresResearchParents(research)
  const update=(recipe:typeof value.recipe)=>setValue({...value,recipe})
  const publish=async()=>{
   if(active.current)return;active.current=true;setWorking(true);setProblem(undefined)
@@ -77,21 +74,17 @@ export function DialectDraftEditor({initial}:{initial:DialectDraftReply}){
  const discard=async()=>{if(active.current||busy||!await confirm(msg('Discard this dialect draft? Its chat will remain.')))return;active.current=true;setWorking(true);setProblem(undefined);try{
   await editor.settled();const current=editor.current();await dialectDraftAPI('/'+current.document.id,'DELETE',undefined,current.sha256);clear();clearWork();void cache.invalidateQueries({queryKey:DIALECT_DRAFTS_KEY});navigate('/dialects')
  }catch(e){setProblem(e)}finally{active.current=false;setWorking(false)}}
- const templates=dialectTemplates(),templateId=value.recipe.template?.id??''
- const options=templates.map(t=>({value:t.id,label:t.name}))
- if(templateId&&!options.some(t=>t.value===templateId))options.push({value:templateId,label:value.recipe.template!.name})
- const applyTemplate=async(template:DialectTemplate)=>{
-  if((value.recipe.intent||research?.fields.length)&&!await confirm(msg('Replace this draft’s instructions and fields with the selected template?')))return
+ const applyTemplate=async(template:DialectTemplate,source?:TemplateOrigin)=>{
+  if(active.current)return;active.current=true
+  if((value.recipe.intent||research?.fields.length)&&!await confirm(msg('Replace this draft’s instructions and fields with the selected template?'))){active.current=false;return}
   setWorking(true);setProblem(undefined)
-  try{const origin=await templateOrigin(template),next=researchFor(template,research?.ai??{connection:'',revision:'',model:''});if(next&&research){next.companyInputs=research.companyInputs;next.companyIds=research.companyIds}update({...value.recipe,intent:template.intent,template:origin,research:next})}catch(e){setProblem(e)}finally{setWorking(false)}
+  try{const origin=source??await templateOrigin(template),next=researchFor(template,research?.ai??{connection:'',revision:'',model:''});if(next&&research){next.requireParents=companySelection;next.companyInputs=research.companyInputs;next.companyIds=research.companyIds}update({...value.recipe,intent:template.intent,template:origin,research:next})}catch(e){setProblem(e)}finally{active.current=false;setWorking(false)}
  }
  const overview=<div className={styles.stack}>
   <p className={styles.note}>{msg('Draft changes save automatically and stay in Dialects if this chat is deleted. Research starts after a separate review.')}</p>
   <RecipePurpose name={value.name} intent={value.recipe.intent} onName={name=>setValue({...value,name})} onIntent={intent=>update({...value.recipe,intent})} disabled={disabled}/>
   <ResearchRecipe key="overview" value={research} section="overview" companySelection={companySelection} records={[]} disabled={disabled} allowRemove={false} onChange={research=>update({...value.recipe,research})}/>
-  <RecipeSection title={msg('Template')}><div className={styles.stack}><div><ButtonLink to="/dialects/templates" size="small" variant="quiet">{msg('Exchange templates')}</ButtonLink></div><Field label={msg('Template')}>{props=><Select {...props} disabled={disabled} value={templateId} placeholder={msg('Choose a template')} options={options} onValueChange={id=>{const template=templates.find(t=>t.id===id)??imported;if(template)void applyTemplate(template)}}/>}</Field>
-   {value.recipe.template&&<p className={styles.note}>{msg('Template license: {{license}}',{license:value.recipe.template.license})}</p>}
-   <Field label={msg('Template file')} hint={msg('Choose a Desk template JSON file. Review its instructions and settings before creating. Connections and approvals are configured here.')}>{props=><Input {...props} disabled={disabled} type="file" accept=".json,application/json" onChange={async event=>{const file=event.target.files?.[0],token=++templateRead.current;if(!file)return;try{if(file.size>65536)throw Error(msg('Choose a template smaller than 64 KB.'));const template=readDialectTemplate(await file.text());if(token!==templateRead.current)return;setImported(template);await applyTemplate(template)}catch(e){setProblem(e)}}}/>}</Field></div></RecipeSection>
+  <RecipeSection title={msg('Template')}><ExchangeResearchTemplate current={value.recipe.template} purpose={value.recipe.intent} disabled={disabled} onApply={applyTemplate}/></RecipeSection>
   <Disclosure title={msg('Discard draft')}><Button variant="danger" disabled={disabled||busy} onClick={()=>void discard()}>{msg('Discard draft')}</Button></Disclosure>
  </div>
  const fieldsIssue=research&&(!research.fields.length||new Set(research.fields.map(f=>f.name)).size!==research.fields.length||research.fields.some(f=>! /^[a-z][a-zA-Z0-9_]{0,63}$/.test(f.name)||['constructor','prototype','__proto__'].includes(f.name)||!f.description.trim()))

@@ -11,7 +11,7 @@ export interface ResearchExecutionPolicy {approach:'standard'|'delegated';concur
 export interface ResearchExecution {approach:'standard'|'delegated';requestedConcurrency:number;concurrency:number;connectionLimit:number}
 export interface ResearchTask {id:string;title:string;objective:string;profile:string;state:'queued'|'running'|'complete'|'failed'|'interrupted';createdAt:string;startedAt?:string;finishedAt?:string;problem?:string;result?:string;modelRequests:number;sourceRequests:number}
 /** Legacy targets are read-compatible metadata; new recipes always research records. */
-export interface ResearchRecipe {execution?:ResearchExecutionPolicy;retries?:ResearchRetryPolicy;version:1;target:'records'|'companies'|'people'|'people-at-companies';fields:ResearchField[];criteria:{id:string;description:string;qualificationTarget?:string}[];companyIds?:string[];companyInputs?:{preparationId:string;revision:string;entityId:string}[];ai:{connection:string;revision:string;model:string;effort?:string};search?:{connection:string;revision:string};limits:{records:number;searches:number;pages:number;modelCalls:number}}
+export interface ResearchRecipe {requireParents?:boolean;execution?:ResearchExecutionPolicy;retries?:ResearchRetryPolicy;version:1;target:'records'|'companies'|'people'|'people-at-companies';fields:ResearchField[];criteria:{id:string;description:string;qualificationTarget?:string}[];companyIds?:string[];companyInputs?:{preparationId:string;revision:string;entityId:string}[];ai:{connection:string;revision:string;model:string;effort?:string};search?:{connection:string;revision:string};limits:{records:number;searches:number;pages:number;modelCalls:number}}
 // Empty Go citation slices are retained as null in existing records and reviews.
 export interface ResearchValue {value?:string|number|boolean|string[]|{min:number;max:number}|{min:string;max:string}|null;status:'supported'|'interpretation'|'missing'|'conflicting'|'inaccessible'|'stale';sources?:{sourceId:string;quote:string}[]|null;note?:string}
 export interface ResearchEntity {website?:string;id:string;kind:'record'|'company'|'person';name:string;url:string;companyId?:string;fields:Record<string,ResearchValue>}
@@ -27,3 +27,6 @@ export interface ResearchActivity extends ResearchSummary {approval?:import('./r
 export function visibleResearchRun(runs:ResearchSummary[]):ResearchSummary|undefined {
  return runs.find(run=>run.state==='running')??runs.find(run=>run.state==='queued')??runs.find(run=>run.state==='paused')??runs.find(run=>run.state!=='review')
 }
+
+/** Parent-selection intent survives temporarily empty selections and reloads. */
+export function requiresResearchParents(value?:ResearchRecipe){return !!(value?.requireParents||value?.target==='people-at-companies'||value?.companyIds?.length||value?.companyInputs?.length)}
