@@ -257,6 +257,31 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 	}
 	// Reconcile accepted deliveries without resubmitting them or acquiring sources.
 	budget := 20
+	if !a.Enabled {
+		// Pausing closes admission, not receipt recovery. A delivery may have
+		// been accepted immediately before Desk lost its acknowledgement.
+		// Only read that exact receipt; 404 keeps the intent and signed bytes.
+		for i := range b.Rows {
+			row := &b.Rows[i]
+			if row.State != "pending" || row.OccurrenceID != "" || row.EventID == "" {
+				continue
+			}
+			if budget == 0 {
+				break
+			}
+			budget--
+			found, err := recoverPausedSubscriptionDelivery(ctx, *b, row, func(ctx context.Context, path string) (json.RawMessage, error) {
+				return s.inputRunner(ctx, path, nil, "")
+			})
+			if err != nil {
+				problem(err)
+				return
+			}
+			if found && !save() {
+				return
+			}
+		}
+	}
 	for i := range b.Rows {
 		row := &b.Rows[i]
 		if row.OccurrenceID == "" || row.State == "completed" || row.State == "failed" || row.State == "expired" || row.State == "skipped" || row.State == "cancelled" || row.State == "interrupted" {
@@ -454,4 +479,32 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 	a.RetryAt = ""
 	b.Problem = ""
 	save()
+}
+
+// The reader has no write arguments: receipt recovery cannot resubmit delivery,
+// acquire sources, or enable a trigger. A missing acknowledgement stays unknown.
+func recoverPausedSubscriptionDelivery(ctx context.Context, b inputEvaluation, row *inputEvaluationRow, read func(context.Context, string) (json.RawMessage, error)) (bool, error) {
+	raw, err := read(ctx, "triggers/"+b.Subscription.TriggerID+"/deliveries/"+row.EventID)
+	var refusal *inputRunnerError
+	if errors.As(err, &refusal) && refusal.Status == 404 {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var reply struct {
+		Occurrence struct {
+			ID, JobID, ReleaseID, TriggerID, EventID, State, RunID, Reason string
+		} `json:"occurrence"`
+	}
+	if json.Unmarshal(raw, &reply) != nil {
+		return false, errors.New("The retained delivery could not be read.")
+	}
+	o := reply.Occurrence
+	if !strings.HasPrefix(o.ID, "occ_") || o.JobID != b.JobID || o.ReleaseID != b.ReleaseID || o.TriggerID != b.Subscription.TriggerID || o.EventID != row.EventID || !contains([]string{"accepted", "preparing", "ready", "submitted", "skipped", "failed", "expired", "needs-attention", "cancelled"}, o.State) {
+		return false, errors.New("The retained delivery does not match the paused subscription.")
+	}
+	row.OccurrenceID, row.RunID, row.State, row.Problem = o.ID, o.RunID, o.State, o.Reason
+	row.Input = nil
+	return true, nil
 }
