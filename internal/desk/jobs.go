@@ -315,6 +315,14 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
 		return
 	}
+	// Installation configuration is read-only at the browser proxy. Runner may
+	// expose trusted-host writes (such as immutable profile registration); a new
+	// companion capability must never implicitly grant that authority here.
+	installationRead := tail == "status" || tail == "background-connections" || tail == "input-profiles"
+	if installationRead && r.Method != http.MethodGet {
+		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
+		return
+	}
 	// The chain of runs and a job's journal are read, never written: Runner
 	// serves each on GET alone.
 	if strings.HasSuffix(tail, "/upgrade") && r.Method != http.MethodPost || strings.HasSuffix(tail, "/upgrade-receipt") && r.Method != http.MethodGet {
