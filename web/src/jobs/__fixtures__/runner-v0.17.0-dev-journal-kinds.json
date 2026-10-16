@@ -1,6 +1,6 @@
 {
-  "source": "judgment-pack-runner openapi.json at b37a2d7068a63259d0e9095d45ecc20414fc88ec: components.schemas.JournalEntry.properties.kind.enum and JournalActor forms",
-  "tag": "v0.17.0-dev.b37a2d7",
+  "source": "judgment-pack-runner openapi.json at 9cb30a2c57ec75fc5282315a5e1af87a98ae98e6: components.schemas.JournalEntry.properties.kind.enum and JournalActor forms",
+  "tag": "v0.17.0-dev.9cb30a2",
   "kinds": [
     "trigger.configured",
     "trigger.paused",
