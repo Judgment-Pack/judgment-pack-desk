@@ -59,3 +59,15 @@ it('does not expose a target choice and always retains generic records',async()=
  expect(add).toHaveBeenCalledOnce()
  expect(validDialectRecipeProposal({...add.mock.calls[0][0],target:'people'})).toBe(true)
 })
+
+it('retains every portable field type unchanged in a chat proposal',async()=>{
+ const add=vi.fn(),tool=tools(add).find(t=>t.name==='propose_dialect_recipe')!
+ const fields=(['text','integer','decimal','boolean','text-list','range'] as const).map((type,index)=>({name:'field_'+index,description:'Requested '+type,type}))
+ await tool.execute({...content,fields},new AbortController().signal)
+ expect(add).toHaveBeenCalledOnce()
+ const proposal=add.mock.calls[0][0] as DialectRecipeProposal
+ expect(proposal.fields).toEqual(fields)
+ expect(recipeFromProposal(proposal).fields).toEqual(fields)
+ expect(validDialectRecipeProposal(proposal)).toBe(true)
+ expect(validDialectRecipeProposal({...proposal,fields:[{name:'bad',description:'Unspecified arbitrary structure',type:'object'}]})).toBe(false)
+})

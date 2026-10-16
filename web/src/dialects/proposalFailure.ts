@@ -7,7 +7,7 @@ export function dialectRecipeFailureMessage(code: unknown): string | undefined {
   case 'name': return sourceMessage('Give the recipe a name between 1 and 160 characters.')
   case 'intent': return sourceMessage('Provide research instructions between 1 and 12,000 characters.')
   case 'target': return sourceMessage('Dialects research records. Describe what to find in the instructions and requested fields.')
-  case 'fields': return sourceMessage('Provide 1–30 uniquely named fields. Each needs a description and type: string, number or boolean. Field names must start with a lowercase letter and contain only letters, numbers or underscores; constructor and prototype are reserved.')
+  case 'fields': return sourceMessage('Provide 1–30 uniquely named fields. Each needs a description and type: text, integer, decimal, boolean, text-list or range. Saved string and number fields remain supported. Field names must start with a lowercase letter and contain only letters, numbers or underscores; constructor and prototype are reserved.')
   case 'criteria': return sourceMessage('Use up to 30 criteria with unique IDs and descriptions. Omit qualificationTarget when unused; otherwise provide a non-empty string of at most 512 characters.')
   case 'limits': return sourceMessage('Use integer limits: 1–50 records, 0–30 searches, 0–100 pages and 1–60 modelCalls.')
   case 'draft-limit': return sourceMessage('This chat has 16 dialect recipe drafts. Start a new chat to create another.')

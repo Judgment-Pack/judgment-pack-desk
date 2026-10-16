@@ -265,3 +265,21 @@ func testDialectDraftAndLegacySaveShareOneOperation(t *testing.T, s *Server) {
 		t.Fatal("older client created a duplicate")
 	}
 }
+
+func TestDialectDraftPortableFieldTypes(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		t.Run(backend, func(t *testing.T) {
+			s, _ := draftRepositoryFixture(t, backend)
+			for _, kind := range researchFieldTypes {
+				recipe := inputRecipe{Intent: "Find records", Research: &inputResearchRecipe{Version: 1, Target: "records", Fields: []inputResearchField{{Name: "value", Description: "Requested value", Type: kind}}}}
+				first := draftResult(t, draftCall(s, "POST", "/api/dialect-drafts", dialectDraftRequest{Key: "portable-" + kind, Name: kind, Recipe: recipe}, ""))
+				recipe.Research.Fields[0].Description = "Edited description"
+				edited := draftResult(t, draftCall(s, "PUT", "/api/dialect-drafts/"+first.Document.ID, map[string]any{"name": kind, "recipe": recipe}, first.SHA256))
+				reloaded := draftResult(t, draftCall(s, "GET", "/api/dialect-drafts/"+first.Document.ID, nil, ""))
+				if reloaded.SHA256 != edited.SHA256 || reloaded.Document.Recipe.Research.Fields[0].Type != kind || reloaded.Document.Recipe.Research.Fields[0].Description != "Edited description" {
+					t.Fatal("draft changed the field", kind, reloaded)
+				}
+			}
+		})
+	}
+}
