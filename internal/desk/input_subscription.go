@@ -234,6 +234,23 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 			return
 		}
 		if a.StatePending {
+			if a.Enabled {
+				// Read the trigger revision first, then the job. Runner bumps
+				// trigger revisions atomically with a job upgrade, so the CAS
+				// below cannot enable a later release after this pin check.
+				jobRaw, err := s.inputRunner(ctx, "jobs/"+b.JobID, nil, "")
+				var current struct {
+					Job struct{ ID, ReleaseID string } `json:"job"`
+				}
+				if err != nil {
+					problem(err)
+					return
+				}
+				if json.Unmarshal(jobRaw, &current) != nil || current.Job.ID != b.JobID || current.Job.ReleaseID != b.ReleaseID {
+					problem(errors.New("The job release changed. Review a new subscription before enabling it."))
+					return
+				}
+			}
 			if tr.Paused == a.Enabled {
 				if _, e = s.inputRunner(ctx, "triggers/"+tr.ID+"/state", map[string]any{"revision": tr.Revision, "paused": !a.Enabled, "reviewed": a.Enabled}, ""); e != nil {
 					problem(e)
