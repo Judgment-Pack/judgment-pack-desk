@@ -2409,20 +2409,20 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # in a query that does not parse, is refused, while none means the start.
   # No Jobs path at all may be percent-encoded (review of #228).
   mutate go "jobs journal (route): not on the route list" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|'
   mutate go "jobs journal (route): a path that begins with it forwarded" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events.*|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events.*|'
   mutate go "jobs journal (route): the store-wide journal forwarded" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|events|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|events|'
   mutate go "jobs journal (route): an id in upper-case hex forwarded" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-fA-F0-9]{32}/events|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-fA-F0-9]{32}/events|'
   mutate go "jobs journal (route): an id with hex letters refused" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[0-9]{32}/events|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[0-9]{32}/events|'
   mutate go "jobs journal (route): written with POST" "$J" \
     ' || (tail == runChainRoute || journalPath.MatchString(tail)) && r.Method != http.MethodGet {' \
     ' || tail == runChainRoute && r.Method != http.MethodGet {'
@@ -2430,12 +2430,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/events$`)' \
     'var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/eventz$`)'
   mutate go "jobs journal (cursor): the shared query keys forwarded" "$J" \
-    '		query = url.Values{}
-		if after != "" {' \
-    '		if after != "" {'
+    '		query = paging' \
+    '		_ = paging'
+
   mutate go "jobs journal (cursor): a repeated cursor read as its first" "$J" \
-    '	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):' \
-    '	case len(cursor) >= 1 && journalSequence.MatchString(cursor[0]):'
+    '			if len(cursor) != 1 || !journalSequence.MatchString(cursor[0]) {' \
+    '			if len(cursor) < 1 || !journalSequence.MatchString(cursor[0]) {'
+
   mutate go "jobs journal (cursor): a cursor that only begins with digits forwarded" "$J" \
     'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)' \
     'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}`)'
@@ -2446,12 +2447,15 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)' \
     'var journalSequence = regexp.MustCompile(`^[0-9]+$`)'
   mutate go "jobs journal (cursor): a query that does not parse read leniently" "$J" \
-    '	case malformed != nil:
-		// Refused below, as Runner refuses it.' \
-    '	case malformed != nil && false:'
+    '	values, err := url.ParseQuery(raw)
+	if err != nil {' \
+    '	values, err := url.ParseQuery(raw)
+	if err != nil && false {'
+
   mutate go "jobs journal (cursor): no cursor refused rather than read as the start" "$J" \
-    '	case !given:' \
-    '	case !given && false:'
+    '		if cursor, given := values[name]; given {' \
+    '		if cursor, given := values[name]; given || true {'
+
   mutate go "jobs proxy (path): a percent-encoded path forwarded" "$J" \
     '	if strings.Contains(r.URL.EscapedPath(), "%") {' \
     '	if false {'
@@ -2587,11 +2591,9 @@ func (b *cappedBuffer) exceeded() bool {'
   # JPACK_CONFIG before ./jpack.json; inherited, it put a gated desk under
   # another project's law. The startup desk keeps it, and the launch says so.
   mutate go "named desk: the relay inherits JPACK_CONFIG" "$NRT" \
-    '	if s.cfg.deskID == "" {
-		return nil
-	}
-	return withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv)' \
-    '	return nil'
+    '		env = withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)' \
+    '		env = withoutVariables(os.Environ(), runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)'
+
   mutate go "named desk: the relay's environment is never set" internal/desk/relay.go \
     '	cmd.Env = s.runtimeEnv()
 ' \
@@ -2607,12 +2609,10 @@ func (b *cappedBuffer) exceeded() bool {'
 ' \
     ''
   mutate go "startup desk: an inherited JPACK_CONFIG is dropped" "$NRT" \
-    '	if s.cfg.deskID == "" {
-		return nil
-	}' \
-    '	if s.cfg.deskID == "" {
-		return withoutVariables(os.Environ(), runtimeConfigEnv)
-	}'
+    'func (s *Server) runtimeEnv() []string {' \
+    'func (s *Server) runtimeEnv() []string {
+	if s.usesStartupRuntimeEnvironment() { return withoutVariables(os.Environ(), runtimeConfigEnv) }'
+
   mutate go "startup desk: the inherited JPACK_CONFIG is not said" internal/desk/server.go \
     '		s.log.Printf("desk: JPACK_CONFIG is set, so this project'"'"'s runtime reads %s, not the project'"'"'s own jpack.json; desks Desk made ignore it", path)' \
     '		_ = path'
@@ -2624,31 +2624,32 @@ func (b *cappedBuffer) exceeded() bool {'
   # in the commands Desk runs over it or a private copy of it; the launch says
   # so without naming it, and the desk-config answer reports it there only.
   mutate go "signing key: a named desk's relay inherits it" "$NRT" \
-    '	return withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv)' \
-    '	return withoutVariables(os.Environ(), runtimeConfigEnv)'
+    '		env = withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)' \
+    '		env = withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningPublicKeyEnv)'
+
   mutate go "signing key: a made desk's commands inherit it" "$NRT" \
     '	if !dir.startup {
-		drop = append(drop, runtimeSigningKeyEnv)' \
+		drop = append(drop, runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)' \
     '	if false {
-		drop = append(drop, runtimeSigningKeyEnv)'
+		drop = append(drop, runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)'
+
   mutate go "signing key: the startup desk's relay drops it" "$NRT" \
-    '	if s.cfg.deskID == "" {
-		return nil
-	}' \
-    '	if s.cfg.deskID == "" {
-		return withoutVariables(os.Environ(), runtimeSigningKeyEnv)
-	}'
+    'func (s *Server) runtimeEnv() []string {' \
+    'func (s *Server) runtimeEnv() []string {
+	if s.usesStartupRuntimeEnvironment() { return withoutVariables(os.Environ(), runtimeSigningKeyEnv) }'
+
   mutate go "signing key: the startup desk's commands drop it" "$NRT" \
     '	if !dir.startup {
-		drop = append(drop, runtimeSigningKeyEnv)' \
+		drop = append(drop, runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)' \
     '	if true {
-		drop = append(drop, runtimeSigningKeyEnv)'
+		drop = append(drop, runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)'
+
   mutate go "signing key: the startup desk's project is not marked" internal/desk/review.go \
-    'info: s.project.info, startup: s.cfg.deskID == ""}' \
-    'info: s.project.info}'
+    'info: s.project.info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation}' \
+    'info: s.project.info, expectedSigning: s.runtimeSigningExpectation}'
   mutate go "signing key: the startup desk's private copy is not marked" internal/desk/review.go \
-    'info: info, startup: s.cfg.deskID == ""})' \
-    'info: info})'
+    'info: info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation})' \
+    'info: info, expectedSigning: s.runtimeSigningExpectation})'
   mutate go "signing key: a named desk's review of an unreadable project inherits it" internal/desk/review.go \
     '		verified, err = s.runVerify(ctx, dir)' \
     '		dir.startup = true
@@ -2658,17 +2659,17 @@ func (b *cappedBuffer) exceeded() bool {'
     'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (any, *lockFailure) {
 	dir.startup = false'
   mutate go "signing key: a named desk's project is marked the startup desk's" internal/desk/review.go \
-    'info: s.project.info, startup: s.cfg.deskID == ""}' \
-    'info: s.project.info, startup: true}'
+    'info: s.project.info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation}' \
+    'info: s.project.info, startup: true, expectedSigning: s.runtimeSigningExpectation}'
   mutate go "signing key: a named desk's private copy is marked the startup desk's" internal/desk/review.go \
-    'info: info, startup: s.cfg.deskID == ""})' \
-    'info: info, startup: true})'
+    'info: info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation})' \
+    'info: info, startup: true, expectedSigning: s.runtimeSigningExpectation})'
   mutate go "signing key: a named desk reports the startup desk's" "$NRT" \
-    '	return s.cfg.deskID == "" && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
+    '	return s.usesStartupRuntimeEnvironment() && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
     '	return strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""'
   mutate go "signing key: a blank value counts as one" "$NRT" \
-    '	return s.cfg.deskID == "" && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
-    '	return s.cfg.deskID == "" && os.Getenv(runtimeSigningKeyEnv) != ""'
+    '	return s.usesStartupRuntimeEnvironment() && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
+    '	return s.usesStartupRuntimeEnvironment() && os.Getenv(runtimeSigningKeyEnv) != ""'
   mutate go "signing key: desk-config reports it never" internal/desk/assistant.go \
     'InheritsSigningKey: s.inheritsSigningKey()}' \
     'InheritsSigningKey: false}'
@@ -5252,7 +5253,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if false {'
   mutate go "runner key: the key commands inherit JPACK_SIGNING_KEY" "$RK" \
     '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info}, true' \
-    '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}, true'
+    '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation}, true'
   mutate go "runner key: the folder opened is not held to custody" "$RK" \
     '	if err := safeDirectory(path, checked, true); err != nil {
 		return failed(err)
@@ -5824,8 +5825,8 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'repair: offered without the finding' "$RPR" \
     '		if finding.Name == incompleteLastLine {' \
     '		if finding.Name != "" {'
-  mutate go 'repair: the decision record offers no repair' "$RPA" \
-    '	answer.Repair = s.repairOffer(ctx, answer.Report)
+  mutate go 'repair: the decision record offers no repair' internal/desk/audit_record.go \
+    '	answer.Repair = s.repairOffer(ctx, answer.Report, schema.version)
 ' \
     ''
   mutate go 'repair: the token is not the desk'"'"'s own' "$RPR" \
@@ -6076,9 +6077,9 @@ func (b *cappedBuffer) exceeded() bool {'
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, stampingConfirmWords)' \
     '	if len(request.Token) < stampingNonceLength {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, stampingConfirmWords)'
-  mutate go 'stamping: the settings are kept in the project' "$STP" \
-    'root, _, err := openOwnFolder(s.assistant.root, []string{stampingDirName, name}, create, stampingKept)' \
-    'root, _, err := openOwnFolder(s.root, []string{stampingDirName, name}, create, stampingKept)'
+  mutate go 'stamping: legacy-project settings leak into the project' internal/desk/stamping.go \
+    'base, parts := s.assistant.root, []string{stampingDirName, name}' \
+    'base, parts := s.root, []string{stampingDirName, name}'
   mutate go 'stamping: the startup desk keeps its settings under another name' "$STP" \
     '	name := s.signingKeyName()
 	if !stampingName.MatchString(name) {' \
@@ -7230,8 +7231,8 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   # cue it was indistinguishable from having no configuration file at all
   # anywhere except /admin.
   mutate web 'a refused configuration is silent outside Admin' web/src/shell/StatusStrip.tsx \
-    '        {refused && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}' \
-    '        {false && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}'
+    '{refused && <DeskStatusNotice id="configuration"' \
+    '{false && <DeskStatusNotice id="configuration"'
   mutate web 'main remounts on a pane change' web/src/shell/AppShell.tsx \
     '            <main id="main" tabIndex={-1} className="desk-main" inert={covering || undefined}>' \
     '            <main id="main" key={shell.left.mode} tabIndex={-1} className="desk-main" inert={covering || undefined}>'
@@ -7545,9 +7546,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the field describes an element it did not render" "$FD" \
     '  const described = [hint ? hintId : undefined, error ? errorId : undefined].filter(Boolean)' \
     '  const described = [hintId, errorId]'
-  mutate web "the select reports back a value nobody offered" "$SEL" \
-    '        if (offered.has(next)) onValueChange(next)' \
-    '        onValueChange(next)'
+  mutate web 'the select reports back a value nobody offered' web/src/ui/Select.tsx \
+    'if (offered.has(next) && !options.find(option => option.value === next)?.disabled) onValueChange(next)' \
+    'if (!options.find(option => option.value === next)?.disabled) onValueChange(next)'
   # Admin's storage section, and the decoder behind it.
   mutate web "Admin claims a location the listing does not show" "$V" \
     "  if (files.some((file) => file.path.startsWith(\`\${dir}/\`))) return 'holds-files'" \
@@ -7744,18 +7745,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      if (true) {
         return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel, undefined, undefined, await profile)
       }'
-  mutate web "an unreadable configuration is silent outside Admin" "$S" \
-    '        {!refused && unread && (' \
-    '        {false && unread && ('
-  mutate web "the strip's warning is the half that disappears" "$G" \
-    '  .desk-strip-warn {
-    flex: 0 0 auto;
-    white-space: nowrap;
-    color: var(--warn);
-  }' \
-    '  .desk-strip-warn {
-    color: var(--warn);
-  }'
+  mutate web 'an unreadable configuration is silent outside Admin' web/src/shell/StatusStrip.tsx \
+    '{!refused && unread && <DeskStatusNotice id="configuration"' \
+    '{false && unread && <DeskStatusNotice id="configuration"'
+  # Retired (2026-10-16): the strip's warning is the half that disappears. ConfigCue and its full/short responsive markup were replaced by shared DeskStatusNotice and DeskNotices. Current configuration-notice mutations remain above; the removed layout has no equivalent.
 
   # 14. The identity slot's guard was a blacklist of five names, so the rule it
   # held was "not these five" rather than "one field".
@@ -7842,21 +7835,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 4. The full cue is wider than a 320px strip has beside the console button,
   # and it neither shrinks nor wraps.
-  mutate web "the narrow strip paints the full sentence over the console control" "$S" \
-    '      <span className="desk-strip-warn-short" aria-hidden="true">
-        {short}
-      </span>' \
-    ''
-  mutate web "the short cue is never the one painted" "$G" \
-    '    .desk-strip-warn-short {
-      display: inline;
-    }' \
-    '    .desk-strip-warn-short {
-      display: none;
-    }'
-  mutate web "the cue's accessible name is whichever spelling is painted" "$S" \
-    '    <Link className="desk-strip-warn" to="/admin" aria-label={full}>' \
-    '    <Link className="desk-strip-warn" to="/admin">'
+  # Retired (2026-10-16): the narrow strip paints the full sentence over the console control. ConfigCue and its full/short responsive markup were replaced by shared DeskStatusNotice and DeskNotices. Current configuration-notice mutations remain above; the removed layout has no equivalent.
+  # Retired (2026-10-16): the short cue is never the one painted. ConfigCue and its full/short responsive markup were replaced by shared DeskStatusNotice and DeskNotices. Current configuration-notice mutations remain above; the removed layout has no equivalent.
+  # Retired (2026-10-16): the cue's accessible name is whichever spelling is painted. ConfigCue and its full/short responsive markup were replaced by shared DeskStatusNotice and DeskNotices. Current configuration-notice mutations remain above; the removed layout has no equivalent.
 
   # 5. The live layout was cleared even where the deletion was refused, so
   # Admin said "the layout is unchanged" over panes that had visibly moved.
@@ -8066,12 +8047,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "run chain: earlier saved line kept after a failed attempt" "$JV" \
     'setBusy(true);setError(undefined);setChainSaved(false)' \
     'setBusy(true);setError(undefined)'
-  mutate web "run chain: not said to be unverified" "$JV" \
-    "  <span className={styles.note}>{msg('The file is the runner’s whole chain of runs, byte for byte as the runner sent it, unverified here.')}</span>" \
+  mutate web 'run chain: not said to be unverified' web/src/jobs/JobsView.tsx \
+    '  <p className={styles.note}>{msg('"'"'Downloads the runner’s full run-history file, regardless of table filters. Desk saves the original file without verifying it.'"'"')}</p>' \
     ''
-  mutate web "run chain: not offered on the Jobs page" "$JV" \
-    '      <RunChainDownload/>
-' \
+  mutate web 'run chain: not offered on the Jobs page' web/src/jobs/JobsView.tsx \
+    '   <RunChainDownload onClose={()=>setOpen(false)}/>' \
     ''
 
   # 4. Admin printed a decoded number with nothing said about what bounds it,
@@ -8965,10 +8945,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '"op": "alll"'
 
   # react-query keeps the last good data through a refetch error. Failed
-  # refreshes must replace those stale rows with the retry state.
-  mutate web "a failed refresh still displays stale packs" "$PN" \
-    '    {includePacks && error ? <section' \
-    '    {error && !data ? <section'
+  # refreshes retain cached rows and expose the refresh failure separately.
+  mutate web 'a failed refresh discards previously loaded packs' web/src/packs/PacksPane.tsx \
+    '(data?.packs ?? []).map' \
+    '(error ? [] : data?.packs ?? []).map'
   mutate web "an empty version is drawn as a version" "$PN" \
     'isSpelled(pack.packVersion) ?' \
     'pack.packVersion !== undefined ?'
@@ -10286,8 +10266,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # A fetch TypeError quotes the URL, so the browser's own error is the token.
   # Anchored on the catch it belongs to: the opaque-redirect branch throws the
   # same sentence, so a needle naming only the throw matched the wrong one.
-  mutate web "a failed model call rethrows the browser's own error" "$ASN" \
-    '      throw new Error(CALL_FAILED)
+  mutate web 'a failed model call rethrows the browser'"'"'s own error' web/src/assistant/session.ts \
+    '      throw failureError('"'"'connection-lost'"'"','"'"'model'"'"')
     }
     // **An opaque redirect is not an answer.**' \
     '      throw cause
@@ -10507,8 +10487,8 @@ export function assistantTransport(id: string): Transport {
   # picker and a standing line both showing something else.
   # Repaired: the run carries the AI connection it was started on.
   mutate web 'the run ignores the model that was picked' web/src/assistant/useAssistantRun.ts \
-    '              ...bindExecution({ endpoint, agent, engine, ...connectionTarget }, modelOf(model), thinking),' \
-    '              ...bindExecution({ endpoint, agent, engine, ...connectionTarget }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking),'
+    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, modelOf(model), thinking),' \
+    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking),'
   mutate web "Stop writes no terminal event" "$AR" \
     '    finish(run)
     release(run)
@@ -10933,11 +10913,11 @@ export function assistantTransport(id: string): Transport {
   # model said about its own reasoning is not worth showing.
   # (Needled with the comment above it, because the critic's second stream now
   # reads the same part type and a bare needle would be ambiguous.)
-  mutate web "the SDK's reasoning parts are dropped" "$VL" \
-    "      // own reasoning is not worth showing.
-      if (part.type === 'reasoning-delta') {" \
-    '      // own reasoning is not worth showing.
-      if (false) {'
+  mutate web 'the SDK'"'"'s reasoning parts are dropped' web/src/assistant/engines/vercel/loop.ts \
+    '// own reasoning is not worth showing.
+        if (part.type === '"'"'reasoning-delta'"'"') {' \
+    '// own reasoning is not worth showing.
+        if (false) {'
   # K2's other half: the model is shown the contract the runtime enforces **or
   # it is shown nothing**. A permissive schema written here is this desk telling
   # the model that anything goes for a tool whose contract it does not know.
@@ -10979,46 +10959,13 @@ export function assistantTransport(id: string): Transport {
   # `finally` and nothing pushed on the channel. The return-semantics test then
   # fails for the reason it is named after: the first `return()` answers
   # `{ done: false }` carrying an event.
-  mutate web "the run is a generator again, with end yielded from its finally" "$VL" \
-    '  const finish = async (): Promise<void> => {
-    await channel.push({ type: '"'"'end'"'"' })
-    channel.close()
-  }
-  /**
-   * The run itself starts on the consumer'"'"'s first `next()`.
-   *
-   * A consumer that opens a session and leaves without asking for an event has
-   * asked the model nothing, and this is what makes that true.
-   */
-  const open = (): AsyncGenerator<AssistantEvent> => {
-    const loop = drive().catch(async (cause: unknown) => {
-      // A cancelled run is the viewer stopping the session, or a consumer
-      // walking away: it ends the run and there is no failure to report.
-      if (isCancelled(cause) || gate.signal.aborted) return
-      await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
-    })
-    // Nothing else awaits this; a rejection out of the catch above would be
-    // unhandled. It cannot reject, and this is what says so.
-    void loop.then(finish, finish)
-    return channel.drain()
-  }
-
-  return eventIterator({ gate, open })' \
-    '  const finish = async (): Promise<void> => {
-    channel.close()
-  }
-  const open = (): AsyncGenerator<AssistantEvent> => {
-    const loop = drive().catch(async (cause: unknown) => {
-      if (isCancelled(cause) || gate.signal.aborted) return
-      await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
-    })
-    void loop.then(finish, finish)
-    return channel.drain()
-  }
-  void eventIterator
-  return (async function* (): AsyncGenerator<AssistantEvent> {
+  mutate web 'the run is a generator again, with end yielded from its finally' web/src/assistant/engines/vercel/loop.ts \
+    '  return eventIterator({ gate, open })' \
+    '  return (async function* (): AsyncGenerator<AssistantEvent> {
     try {
-      yield* open()
+      for await (const event of eventIterator({ gate, open })) {
+        if (event.type !== '"'"'end'"'"') yield event
+      }
     } finally {
       gate.close()
       yield { type: '"'"'end'"'"' }
@@ -11675,19 +11622,18 @@ export function assistantTransport(id: string): Transport {
 
   # And the selector itself: a failure reported after the terminal event
   # withdraws the proposal for everybody that reads it.
-  mutate web "a post-end failure does not withdraw the proposal" "$RO" \
-    '  const spoiled =
-    run.failure ?? (proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1)))' \
-    '  const spoiled = proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1))'
+  mutate web 'a post-end failure does not withdraw the proposal' web/src/assistant/runOutcome.ts \
+    'run.failure ?? (pause?'"'"'Work paused at the approved request limit. Completed work is retained.'"'"':undefined)' \
+    '(pause?'"'"'Work paused at the approved request limit. Completed work is retained.'"'"':undefined)'
 
   # **A failure after the terminal event is still a failure.** One `end` is the
   # contract, so a throw while an engine unwinds cannot go on the stream — and
   # dropping it made `proposal -> end -> throw` read as a clean run to
   # everything downstream, which offered the proposal for writing.
-  mutate web "a failure after the run's terminal event is dropped" "$AR" \
+  mutate web 'a failure after the run'"'"'s terminal event is dropped' web/src/assistant/useAssistantRun.ts \
     '            setFailure(said)
-            if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })' \
-    '            if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })'
+            if (!run.ended) push(run, event)' \
+    '            if (!run.ended) push(run, event)'
 
   # **Every diagnostic, or the author cannot see what is wrong.** The refusal
   # prevents the page that would have shown the rest from existing, so this is
@@ -12509,9 +12455,9 @@ export function assistantTransport(id: string): Transport {
   # the same refusal before it checks anything, which is why nothing reaches the
   # copy in `settleReview`; where a passing check and an open issue do coexist,
   # it is the only thing between them and `ready`.
-  mutate web "a run settles at ready with an expectation still open" "$RR" \
+  mutate web 'a run settles at ready with an expectation still open' web/src/research/run.ts \
     '    if (this.unresolvedExpectations()) {
-      this.set({ phase: '"'"'review'"'"', status: '"'"'needs-input'"'"', detail: this.unresolvedExpectations()!, readiness: '"'"''"'"' })
+      this.setReviewResult({ status: '"'"'needs-input'"'"', detail: this.unresolvedExpectations()!, readiness: '"'"''"'"' }, owner)
       return
     }
     const passing = completeCurrentCheck(this.state)' \
@@ -12850,8 +12796,8 @@ export function assistantTransport(id: string): Transport {
   # convention. The full measure now belongs to PageBody; dropping it makes
   # the graph content silently become the default reading column.
   mutate web 'the page measure unstated by a route (graphs takes the default)' web/src/routes/GraphView.tsx \
-    '    <PageBody width="full">' \
-    '    <PageBody>'
+    '<PageBody width="full" fill=' \
+    '<PageBody fill='
 
   # **And the rule that reads the attribute.** The other half: a route may
   # state `form` and be given the wide measure anyway, because the `:has` rule
@@ -13087,13 +13033,9 @@ export function assistantTransport(id: string): Transport {
   # reload, because this desk cannot tell whose spend it was.
   # **An opaque redirect is not an answer**, and an engine handed one is handed
   # nothing it can read.
-  mutate web "an opaque redirect is delivered to the engine" "$ASN2" \
-    "    if (answered.type === 'opaqueredirect' || (answered.status === 0 && answered.redirected)) {
-      throw new Error(CALL_FAILED)
-    }" \
-    '    if (false) {
-      throw new Error(CALL_FAILED)
-    }'
+  mutate web 'an opaque redirect is delivered to the engine' web/src/assistant/session.ts \
+    'if (answered.type === '"'"'opaqueredirect'"'"' || (answered.status === 0 && answered.redirected)) {' \
+    'if (false) {'
   # **The dialog's proposal goes with the session.** Stopping the run leaves
   # `offered` true and Create willing to write it.
   mutate web 'the Describe-it proposal survives the session'"'"'s end' web/src/shell/DescribeIt.tsx \
@@ -13496,15 +13438,15 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs journal (reading): a refusal that is not JSON loses its status" web/src/jobs/client.ts \
     "  const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })" \
     "  const result = await response.json()"
-  mutate web "jobs journal (order): a record stands by its time, not its creation entry" "$JAC" \
-    "return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }" \
-    "return [0, row.when.time] }"
+  mutate web 'jobs journal (order): a record stands by its time, not its creation entry' web/src/jobs/activity.ts \
+    'return at === undefined ? [0, row.when.time] : [1, entryPlace(at) + 0.5] }' \
+    'return [0, row.when.time] }'
   mutate web "jobs journal (order): entries are ordered by their time, not Runner's order" "$JAC" \
     "entry: journal.entries[index]!, place: at }, at: [1, at] })" \
     "entry: journal.entries[index]!, place: at }, at: [1, Date.parse(String(journal.entries[index]!.at))] })"
-  mutate web "jobs journal (order): a place does not count the entries read and not kept" "$JAC" \
-    "return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }" \
-    "return at === undefined ? [0, row.when.time] : [1, at + 0.5] }"
+  mutate web 'jobs journal (order): a place does not count the entries read and not kept' web/src/jobs/activity.ts \
+    'return at === undefined ? [0, row.when.time] : [1, entryPlace(at) + 0.5] }' \
+    'return at === undefined ? [0, row.when.time] : [1, at + 0.5] }'
   mutate web "jobs journal (order): the oldest record's own creation entry is held back" "$JAC" \
     "return lowest(oldest, at[0] === 1 ? [1, at[1] - 0.5] : at) }" \
     "return lowest(oldest, at) }"
@@ -13529,15 +13471,15 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs journal (record): a run row takes its state from the journal" "$JAC" \
     "    runs: rowsOf(streams.runs?.records.map(runRow))," \
     "    runs: rowsOf(streams.runs?.records.map(run => runRow({ ...run, state: ([...(journal?.entries ?? [])].reverse().find(entry => entry.concerns?.run === run.id && typeof entry.to === 'string')?.to as Run['state'] | undefined) ?? run.state })))," 
-  mutate web "jobs journal (filters): entries are shown under a filter" "$JAV" \
-    "served && { entries: served.entries, dropped: served.dropped, from, show: !filtered })" \
-    "served && { entries: served.entries, dropped: served.dropped, from, show: true })"
+  mutate web 'jobs journal (filters): entries are shown under a filter' web/src/jobs/ActivityView.tsx \
+    'served && { entries: served.entries, dropped: served.dropped, from, show: !filtered, sequence: !!backward })' \
+    'served && { entries: served.entries, dropped: served.dropped, from, show: true, sequence: !!backward })'
   mutate web "jobs journal (progress): entries are shown before the journal is read to its end" "$JJ" \
     "          await catchUp(journal, page, keep, () => status('reading'), yieldToBrowser, controller.signal)" \
     "          await catchUp(journal, page, keep, () => { reading.snapshot = { entries: journal.entries.slice(), dropped: journal.dropped, began: journal.began }; status('reading') }, yieldToBrowser, controller.signal)"
-  mutate web "jobs journal (progress): the reading's progress is not said" "$JAV" \
-    "  if (state.phase === 'reading') return <p className=\"quiet\" role=\"status\">" \
-    "  if (state.phase === 'reading') return null; if (false) return <p className=\"quiet\" role=\"status\">"
+  mutate web 'jobs journal (progress): the reading'"'"'s progress is not said' web/src/jobs/ActivityView.tsx \
+    '  if (state.phase === '"'"'reading'"'"') return <LoadingState>' \
+    '  if (state.phase === '"'"'reading'"'"') return null; if (false) return <LoadingState>'
   mutate web "jobs journal (progress): the table is not said to wait for the end" "$JAV" \
     "    : msg('Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.')" \
     "    : ''"
@@ -13553,9 +13495,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs journal (window): the newest-entries line is not shown" "$JAV" \
     "    {served && !filtered && !pending && entriesShown < readTotal && " \
     "    {false && "
-  mutate web "jobs journal (window): the step control shows nothing more" "$JAV" \
-    "setWindowFor({ jobId, size: windowSize + limits.step })" \
-    "setWindowFor({ jobId, size: windowSize })"
+  mutate web 'jobs journal (window): the step control shows nothing more' web/src/jobs/ActivityView.tsx \
+    'onClick={() => setWindowFor({ jobId, size: windowSize + limits.step })}' \
+    'onClick={() => setWindowFor({ jobId, size: windowSize })}'
   mutate web "jobs journal (window): the step control is offered past what is kept" "$JAV" \
     "  const earlier = served && !filtered && !pending && from > served.dropped && merged.heldEntries === 0" \
     "  const earlier = served && !filtered && !pending && merged.heldEntries === 0"
@@ -13607,12 +13549,12 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs run times (#223): the Runs table formats the time unguarded" web/src/jobs/JobsView.tsx \
     "<td className=\"quiet\">{submitted(r.createdAt)}</td>" \
     "<td className=\"quiet\">{date(r.createdAt)}</td>"
-  mutate web "jobs run times (#223): the index dot's label formats the time unguarded" web/src/jobs/JobsView.tsx \
-    'aria-label={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}' \
-    'aria-label={`${stateLabel(r.state)} · ${date(r.createdAt)}`}'
-  mutate web "jobs run times (#223): the index dot's tooltip formats the time unguarded" web/src/jobs/JobsView.tsx \
-    'content={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}' \
-    'content={`${stateLabel(r.state)} · ${date(r.createdAt)}`}'
+  mutate web 'jobs run times (#223): the index dot'"'"'s label formats the time unguarded' web/src/jobs/JobsView.tsx \
+    'aria-label={`${msg('"'"'View run'"'"')} · ${stateLabel(run.state)} · ${msg('"'"'Submitted'"'"')}: ${submitted(run.createdAt)}`}' \
+    'aria-label={`${msg('"'"'View run'"'"')} · ${stateLabel(run.state)} · ${msg('"'"'Submitted'"'"')}: ${date(run.createdAt)}`}'
+  mutate web 'jobs run times (#223): the index dot'"'"'s tooltip formats the time unguarded' web/src/jobs/JobsView.tsx \
+    'content={`${stateLabel(run.state)}\n${msg('"'"'Submitted'"'"')}: ${submitted(run.createdAt)}`}' \
+    'content={`${stateLabel(run.state)}\n${msg('"'"'Submitted'"'"')}: ${date(run.createdAt)}`}'
   mutate web "jobs run times (#223): the run page formats a time that does not read as one" "$JRV" \
     "return stored ? when(stored.at) : at ? msg('Not recorded') : absent" \
     "return at ? when(at) : absent"
@@ -13685,9 +13627,7 @@ export function assistantTransport(id: string): Transport {
   mutate web "upgrade: the note is shown where the gates are on" "$UN" \
     "  if (hidden || offer.data?.state !== 'offer' || offer.data.gated) return null" \
     "  if (hidden || offer.data?.state !== 'offer') return null"
-  mutate web "upgrade: the note is not on Packs" web/src/packs/PacksPane.tsx \
-    "    {review && <UpgradeNote/>}" \
-    "    {false && <UpgradeNote/>}"
+  # Retired (2026-10-16): upgrade: the note is not on Packs. PacksPane no longer imports or renders UpgradeNote. No current equivalent exists in this assigned file; retire this location-specific row rather than reintroducing removed UI. Any upgrade affordance elsewhere requires a separate scoped audit.
   mutate web "upgrade: Admin → Project does not offer it" "$UN" \
     "              <div><ButtonLink to=\"/packs/_upgrade\">{msg('Review the upgrade')}</ButtonLink></div>" \
     "              <div />"
@@ -13959,9 +13899,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "key panel: a made desk without a key is not said" "$DR" \
     "{keys?.state === 'none' && <p>" \
     "{false && <p>"
-  mutate web "key panel: keys Desk could not read are not said" "$DR" \
-    "<p role=\"alert\">{systemMessage(keys.problem)}</p>" \
-    "<p role=\"alert\"></p>"
+  mutate web 'key panel: keys Desk could not read are not said' web/src/audit/DecisionRecord.tsx \
+    '<SettingsFeedback tone="error">{systemMessage(keys.problem)}</SettingsFeedback>' \
+    '<SettingsFeedback tone="error"></SettingsFeedback>'
   mutate web "key panel: the runtime's diagnostics on the key are not shown" "$DR" \
     "aria-label={msg('What the runtime said of the key')}>{signing.diagnostics.map(" \
     "aria-label={msg('What the runtime said of the key')}>{signing.diagnostics.slice(0, 0).map("
@@ -14284,9 +14224,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "hand-over page: the held statement is not said" "$DR" \
     "  const held = (record.expected ?? 0) > 0" \
     "  const held = false"
-  mutate web "hand-over page: a holder's file passed over is not named" "$DR" \
-    "{record.expectUnread && <p role=\"alert\">" \
-    "{record.expectUnread && record.expectUnread.length < 0 && <p role=\"alert\">"
+  mutate web 'hand-over page: a holder'"'"'s file passed over is not named' web/src/audit/DecisionRecord.tsx \
+    '{record.expectUnread && <SettingsFeedback tone="error">' \
+    '{record.expectUnread && record.expectUnread.length < 0 && <SettingsFeedback tone="error">'
   mutate web 'hand-over page: not beside the report' 'web/src/audit/DecisionRecord.tsx' \
     '                    {archiveSection(record.archive)}
                     {handoverSection(record.since)}' \
@@ -14299,16 +14239,16 @@ export function assistantTransport(id: string): Transport {
     "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt])" \
     "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt > 0])"
   # Review round 1 (finding 3): a record Desk could not read is said.
-  mutate web "hand-over page: a record Desk could not read is not said beside the report" "$DR" \
-    "{record.handoverProblem && <p role=\"alert\">{systemMessage(record.handoverProblem)}</p>}
-                    {record.expectUnread" \
-    "{record.handoverProblem && record.handoverProblem.length < 0 && <p role=\"alert\">{systemMessage(record.handoverProblem)}</p>}
-                    {record.expectUnread"
-  mutate web "hand-over page: a record Desk could not read is not said beside the runtime's refusal" "$DR" \
-    "</ul>
-                  {record.handoverProblem && <p role=\"alert\">" \
-    "</ul>
-                  {record.handoverProblem && record.handoverProblem.length < 0 && <p role=\"alert\">"
+  mutate web 'hand-over page: a record Desk could not read is not said beside the report' web/src/audit/DecisionRecord.tsx \
+    '{record.handoverProblem && <SettingsFeedback tone="error">{systemMessage(record.handoverProblem)}</SettingsFeedback>}
+                    {record.expectUnread' \
+    '{record.handoverProblem && record.handoverProblem.length < 0 && <SettingsFeedback tone="error">{systemMessage(record.handoverProblem)}</SettingsFeedback>}
+                    {record.expectUnread'
+  mutate web 'hand-over page: a record Desk could not read is not said beside the runtime'"'"'s refusal' web/src/audit/DecisionRecord.tsx \
+    '</ul>
+                  {record.handoverProblem && <SettingsFeedback tone="error">' \
+    '</ul>
+                  {record.handoverProblem && record.handoverProblem.length < 0 && <SettingsFeedback tone="error">'
   mutate web "hand-over client: an empty word on the record is read" "$AC" \
     " || !optional(value.handoverProblem, named)) return false" \
     " || !optional(value.handoverProblem, text)) return false"
@@ -14360,9 +14300,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs record page: the copy's lines are not said" "$JRP" \
     '{msg('"'"'Lines in Desk’s copy of the chain: {{number}}'"'"', { number: record.chainLines })}' \
     '{msg('"'"'Lines in Desk’s copy of the chain: {{number}}'"'"', { number: 0 })}'
-  mutate web "jobs record page: a holder's file passed over is not named" "$JRP" \
-    '      {record.expectUnread && <p role="alert">' \
-    '      {record.expectUnread && record.expectUnread.length < 0 && <p role="alert">'
+  mutate web 'jobs record page: a holder'"'"'s file passed over is not named' web/src/audit/JobsRecord.tsx \
+    '{record.expectUnread && <SettingsFeedback tone="error">' \
+    '{record.expectUnread && record.expectUnread.length < 0 && <SettingsFeedback tone="error">'
   mutate web "jobs record page: no Runner is not said" "$JRP" \
     '    case '"'"'no-runner'"'"': return <p>' \
     '    case '"'"'no-runner'"'"': return null && <p>'
@@ -14440,9 +14380,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs record client: the check after a confirmation follows every change to the project" "$AC" \
     'queryFn: ({ signal }) => readJobsRecord(signal), meta: ON_REQUEST_ONLY, staleTime: 0, retry: false' \
     'queryFn: ({ signal }) => readJobsRecord(signal), staleTime: 0, retry: false'
-  mutate web "jobs record page: an error leaves an earlier report shown" "$JRP" \
-    '        : query.error ? <p role="alert">{systemMessage(query.error.message)}</p>' \
-    '        : query.error && !record ? <p role="alert">{systemMessage(query.error.message)}</p>'
+  mutate web 'jobs record page: an error leaves an earlier report shown' web/src/audit/JobsRecord.tsx \
+    ': query.error ? <SettingsFeedback tone="error">{systemMessage(query.error.message)}</SettingsFeedback>' \
+    ': query.error && !record ? <SettingsFeedback tone="error">{systemMessage(query.error.message)}</SettingsFeedback>'
   # ADR-0010 row 6, the repair offer, on the page (RepairTrail.tsx) and in the
   # client: the confirmation before anything runs, its three sentences; the
   # record checked again after a repair; what a repair answered, and when it
@@ -14463,14 +14403,14 @@ export function assistantTransport(id: string): Transport {
   mutate web 'repair page: the repair'"'"'s sentence is not said' "$RTP" \
     '{outcome?.kind === '"'"'repaired'"'"' && <p role="status">' \
     '{false && <p role="status">'
-  mutate web 'repair page: a refusal is not said' "$RTP" \
-    '{outcome?.kind === '"'"'failed'"'"' && <>' \
-    '{false && <>'
-  mutate web 'repair page: the runtime'"'"'s words are not shown' "$RTP" \
-    '{outcome.diagnostics.length > 0 && <ul' \
-    '{false && <ul'
-  mutate web 'repair page: the decision record is not checked again after a repair' "$RDR" \
-    'onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />' \
+  mutate web 'repair page: a refusal is not said' web/src/audit/RepairTrail.tsx \
+    '{outcome?.kind === '"'"'failed'"'"' && <Notice' \
+    '{outcome?.kind === '"'"'failed'"'"' && false && <Notice'
+  mutate web 'repair page: the runtime'"'"'s words are not shown' web/src/audit/RepairTrail.tsx \
+    'detail={outcome.diagnostics.length ? <ul' \
+    'detail={false ? <ul'
+  mutate web 'repair page: the decision record is not checked again after a repair' web/src/audit/DecisionRecord.tsx \
+    'onOutcome={outcome => { setRepaired(outcome); if(outcome.kind!=='"'"'failed'"'"'||!outcome.stale)void query.refetch() }} />' \
     'onOutcome={outcome => { setRepaired(outcome) }} />'
   mutate web 'repair page: an outcome outlives a later check' 'web/src/audit/DecisionRecord.tsx' \
     '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }' \
@@ -14500,9 +14440,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'repair client: the runtime'"'"'s words are dropped from a refusal' "$RAC" \
     'list(body.diagnostics, isDiagnostic) ? body.diagnostics : []' \
     '[]'
-  mutate web 'repair page: an offer that is not available opens a confirmation' "$RTP" \
-    '{repair?.state === '"'"'available'"'"' && <>' \
-    '{repair && <>'
+  mutate web 'repair page: an offer that is not available opens a confirmation' web/src/audit/RepairTrail.tsx \
+    '{repair?.state === '"'"'available'"'"' && !(outcome?.kind==='"'"'failed'"'"' && outcome.stale) && <>' \
+    '{repair && !(outcome?.kind==='"'"'failed'"'"' && outcome.stale) && <>'
   mutate web 'repair page: why no repair is offered is not said' "$RTP" \
     '{repair?.state === '"'"'unavailable'"'"' && <p' \
     '{false && <p'
@@ -14836,9 +14776,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'audit r2 fix: the identity question is not asked where no trail is kept' 'web/src/audit/DecisionRecord.tsx' \
     'deciding runs.'"'"')}</p>{identitySection(record.identity)}{archiveSection(record.archive)}</>' \
     'deciding runs.'"'"')}</p>{archiveSection(record.archive)}</>'
-  mutate web 'audit r2 fix: the identity question is not asked beside a refusal' 'web/src/audit/DecisionRecord.tsx' \
-    '{systemMessage(query.error.message)}</p>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
-    '{systemMessage(query.error.message)}</p>{archiveSection(archiveOf(query.error))}</>'
+  mutate web 'audit r2 fix: the identity question is not asked beside a refusal' web/src/audit/DecisionRecord.tsx \
+    '</SettingsFeedback>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
+    '</SettingsFeedback>{archiveSection(archiveOf(query.error))}</>'
   mutate web 'audit r2 fix: a refusal'"'"'s identity question is not read' 'web/src/audit/client.ts' \
     '  if (isAuditIdentity(body.identity)) Object.assign(error, { identity: body.identity })' \
     ''
@@ -14860,9 +14800,9 @@ export function assistantTransport(id: string): Transport {
     '                    {archiveSection(record.archive)}
                     {handoverSection(record.since)}' \
     '                    {handoverSection(record.since)}'
-  mutate web 'archive page: not beside a refusal' 'web/src/audit/DecisionRecord.tsx' \
-    '</p>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
-    '</p>{identitySection(identityOf(query.error))}</>'
+  mutate web 'archive page: not beside a refusal' web/src/audit/DecisionRecord.tsx \
+    '</SettingsFeedback>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
+    '</SettingsFeedback>{identitySection(identityOf(query.error))}</>'
   mutate web 'archive page: a refusal'"'"'s archive is not read' 'web/src/audit/client.ts' \
     '  if (isAuditArchive(body.archive)) Object.assign(error, { archive: body.archive })' \
     ''
@@ -14900,9 +14840,9 @@ export function assistantTransport(id: string): Transport {
     "      <Head status={says.state === 'read' ? undefined : says}/>" \
     "      <Head status={undefined}/>"
   # "Could not read now" is never "still loading".
-  mutate web "ui pass: the desk name loads for ever when it could not be read" "$UIV" \
-    "{directory.data?.current.name ?? (directory.isError ? msg('could not be read') : msg('Loading…'))}" \
-    "{directory.data?.current.name ?? msg('Loading…')}"
+  mutate web 'ui pass: the desk name loads for ever when it could not be read' web/src/routes/AdminView.tsx \
+    '{directory.data?.current.name ?? (directory.isError ? msg('"'"'could not be read'"'"') : <LoadingState inline>{msg('"'"'Loading…'"'"')}</LoadingState>)}' \
+    '{directory.data?.current.name ?? <LoadingState inline>{msg('"'"'Loading…'"'"')}</LoadingState>}'
   # Every panel the Project section carried is kept: the Jobs record is
   # Decision safeguards', beside the decision record, and runs only while that
   # section is open.
@@ -15187,7 +15127,7 @@ export function assistantTransport(id: string): Transport {
     'digest(value.graphSha256)' \
     'digest(value.graphSha256 ?? (value as {artifact?: {bundleDigest?: string}}).artifact?.bundleDigest)'
   mutate web 'graph row 4: trail silence omitted' web/src/graphs/GraphRehearsal.tsx \
-    'Inputs and results on this page last until you leave. Rehearsals requested in chat are retained with the conversation and sent to its selected model provider.' \
+    'Dialects and results on this page last until you leave. Rehearsals requested in chat are retained with the conversation and sent to its selected model provider.' \
     'Desk keeps a trail of rehearsals.'
 
   mutate web 'graph row 4: rehearsal does not unmount on leaving' web/src/routes/GraphView.tsx \

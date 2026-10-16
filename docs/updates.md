@@ -275,14 +275,15 @@ unpublished local change from GitHub.
 
 ## Development start and restart
 
-The VS Code `desk: start` and `desk: restart` tasks (`scripts/desk-dev.py`)
+The VS Code `desk: dev start` and `desk: dev restart` tasks (`scripts/desk-dev.py`)
 synchronize Runtime, Runner, its source worker, Gateway and adapters from the
 same lock before building Desk (`scripts/dev-components.py`). They no longer use
-`jpack` from `PATH` or companions left in `bin`.
+`jpack` from `PATH` or companions left in `bin`. The separate `desk: start` task
+launches the installed Desk.
 
 On a cache miss, each locked commit is fetched into a temporary checkout and
-checked against its version tag. Sibling repositories are never pulled, reset or
-built. Runtime, Runner and the source worker must carry the locked commit, with no
+verified exactly. Non-development pins are additionally checked against their
+version tags. Sibling repositories are never pulled, reset or built. Runtime, Runner and the source worker must carry the locked commit, with no
 local modification, in their Go build stamp; Gateway and adapters are built from
 the locked commit's archive. These builds ignore `go.work` and any `GOFLAGS`
 saved with `go env -w`. Each completed set records its lock, build-recipe
@@ -303,7 +304,7 @@ executes. The default Runtime and Runner paths are passed explicitly.
 Starts never delete anything, so each leaves its launch directory, more than
 100 MB, behind, and a failed build leaves its marked `.building-*` staging
 directory. Remove old ones explicitly with Desk stopped:
-`python3 scripts/desk-dev.py prune`, or the **desk: prune** task. It refuses
+`python3 scripts/desk-dev.py prune`, or the **desk: dev prune** task. It refuses
 while servers this launcher started are running, keeps the launch the last start
 used, removes only directories the launcher marked as launches in this
 checkout's `bin/dev-launches`, and never follows a link: `bin`,

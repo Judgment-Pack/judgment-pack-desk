@@ -430,9 +430,12 @@ class LifecycleTests(unittest.TestCase):
     def test_tasks_use_structured_arguments_and_no_missing_settings(self):
         tasks = json.loads((dev.ROOT / '.vscode/tasks.json').read_text())['tasks']
         for action in ('start', 'stop', 'restart', 'prune'):
-            task = next(task for task in tasks if task['label'] == f'desk: {action}')
+            task = next(task for task in tasks if task['label'] == f'desk: dev {action}')
             self.assertEqual(task['type'], 'process')
             self.assertEqual(task['args'], ['${workspaceFolder}/scripts/desk-dev.py', action])
+        installed = next(task for task in tasks if task['label'] == 'desk: start')
+        self.assertEqual(installed['command'], '${env:HOME}/.local/bin/jpack-desk')
+        self.assertEqual(installed['args'], ['--port', '5173'])
         self.assertNotIn('${config:', json.dumps(tasks))
 
 

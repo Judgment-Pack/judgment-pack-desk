@@ -2,9 +2,9 @@
 """Synchronize development companions from Desk's reviewed component lock.
 
 Runtime, Runner, its source worker, Gateway and adapters are built from fresh
-checkouts of the exact locked commits (each checked against its version tag)
-into a new cache directory; a running installation or a sibling checkout is
-never changed. A verified cache works offline until the lock or recipe changes.
+checkouts of the exact locked commits (non-development pins are also checked
+against their version tags) into a new cache directory; a running installation
+or a sibling checkout is never changed. A verified cache works offline until the lock or recipe changes.
 
 The cache record guards against accidental change: every reuse rechecks file
 hashes and the Go build stamps of Runtime, Runner and the worker. It is not a

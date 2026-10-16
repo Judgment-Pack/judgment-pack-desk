@@ -1072,7 +1072,7 @@ go	stamping: the scheduler stamps before the interval	TestEachStampFailureIsShow
 go	stamping: the scheduler stamps whatever the head	TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	stamping: the scheduler stamps without an authority	TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	stamping: the server does not stop its scheduler	TestTheSchedulerStopsWithTheServer
-go	stamping: the settings are kept in the project	TestAStampingTokenIsBoundToWhatWasShown,TestEachDeskKeepsItsOwnStampingSettings,TestRemovingTheAuthorityKeepsTheStamps,TestRootsWhosePathNamesAnotherFileAreNotPassed,TestStampingSettingsAreKeptByDeskOutsideTheProject,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved,TestTheStampsAndThePendingRecordsAreTheRuntimes
+go	stamping: legacy-project settings leak into the project	TestAStampingTokenIsBoundToWhatWasShown,TestEachDeskKeepsItsOwnStampingSettings,TestRemovingTheAuthorityKeepsTheStamps,TestRootsWhosePathNamesAnotherFileAreNotPassed,TestStampingSettingsAreKeptByDeskOutsideTheProject,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved,TestTheStampsAndThePendingRecordsAreTheRuntimes
 go	stamping: the settings are not read again before the stamp	TestAChangeOrRemovalWhileARunChecksIsHonoured
 go	stamping: the startup desk keeps its settings under another name	TestAStampingTokenIsBoundToWhatWasShown,TestEachDeskKeepsItsOwnStampingSettings,TestRemovingTheAuthorityKeepsTheStamps,TestRootsWhosePathNamesAnotherFileAreNotPassed,TestStampingSettingsAreKeptByDeskOutsideTheProject,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved,TestTheStampsAndThePendingRecordsAreTheRuntimes
 go	stamping: the timeout is not the runtime's own	TestStampNowIsTheOwnersRequest,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
@@ -1432,7 +1432,7 @@ web	a draft run drops the rehearsal declaration	src/mcp/buildEvaluateArguments.t
 web	a draft run sends both pack and pack_id	src/mcp/buildEvaluateArguments.test.ts,src/packs/edit/TryItPane.test.tsx,src/routes/PackEvaluate.test.tsx
 web	a duplicated id is resolved to one of the two	src/packs/inspector/PackInspector.test.tsx,src/packs/references.test.ts
 web	a failed model call rethrows the browser's own error	src/assistant/session.test.ts
-web	a failed refresh still displays stale packs	src/packs/PacksPane.test.tsx
+web	a failed refresh discards previously loaded packs	src/packs/PacksPane.test.tsx
 web	a failed reload leaves the page with nothing on it	src/packs/edit/save.test.tsx
 web	a failed reload names whatever file is on screen	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx
 web	a failed setup leaves the connection open	src/assistant/session.test.ts

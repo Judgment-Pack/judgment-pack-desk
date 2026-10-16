@@ -36,7 +36,7 @@ import { JobsRequestError, jobsAPI } from './client'
  * (`JournalEntry.kind`), at the source tag below. A Runner that adds a kind
  * fails a test until the kind is worded here.
  */
-export const JOURNAL_SOURCE = 'v0.13.0-dev.e6760a4'
+export const JOURNAL_SOURCE = 'v0.13.0-dev.d1b4a1b'
 export const JOURNAL_KINDS = [
   'trigger.configured', 'trigger.paused', 'trigger.resumed', 'trigger.key-rotated',
   'occurrence.received', 'occurrence.skipped', 'occurrence.preparing', 'occurrence.ready', 'occurrence.submitted',
