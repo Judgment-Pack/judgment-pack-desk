@@ -1,6 +1,6 @@
 # Pack and Dialect artifact versions
 
-Status: named Dialect formats are implemented by [Spec #187](https://github.com/Judgment-Pack/judgment-pack-spec/pull/187), Runtime #288 and Runner #96. Desk publication and frozen job integration are tracked in [Desk #405](https://github.com/Judgment-Pack/judgment-pack-desk/issues/405). Broader version policy remains in [Desk #404](https://github.com/Judgment-Pack/judgment-pack-desk/issues/404).
+Status: named Dialect formats are implemented by [Spec #187](https://github.com/Judgment-Pack/judgment-pack-spec/pull/187), Runtime #288 and Runner #96. Desk publication and frozen job integration are tracked in [Desk #405](https://github.com/Judgment-Pack/judgment-pack-desk/issues/405). Shared manual/chat publication and reviewed job upgrades are implemented under [Desk #404](https://github.com/Judgment-Pack/judgment-pack-desk/issues/404).
 
 ## What the audit found
 
@@ -86,7 +86,8 @@ automatic major bumps, permission to write, or passing expected outcomes. Plan,
 Ask me/Auto, and the shared AI correction framework retain their existing guards.
 
 Named Dialect identity is available through Spec #187 and the shared publication
-workflow described in runtime-dialect-authoring.md. Historical integer formats
+workflow described in runtime-dialect-authoring.md, including resource-scoped Ask me/Auto
+approvals, server-enforced Plan restrictions and receipt-only recovery. Historical integer formats
 2 and 3 are preserved. First-job promotion and automatic impact classification
 remain separate product policies; the version selector offers explicit choices.
 

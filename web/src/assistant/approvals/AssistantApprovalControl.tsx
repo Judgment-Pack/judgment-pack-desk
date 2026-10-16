@@ -1,3 +1,5 @@
+import {DialectPublicationApprovalControl} from './DialectPublicationApprovalControl'
+import type {DialectChatAction} from '../../dialects/chatActions'
 import {ChatAction} from '../../chat/ChatActions'
 import {useRef,useState} from 'react'
 import {useQueryClient} from '@tanstack/react-query'
@@ -16,8 +18,8 @@ import {IconCheck,IconChevronDown} from '../../shell/icons'
 import {msg} from '../../i18n'
 /** One approval control, with explicit resource-specific capabilities. An Auto
  * allowance for research cannot authorize a pack save or another workflow. */
-export function AssistantApprovalControl({chatId,pack,inputId,disabled=false,checkpoint}:{chatId:string;pack?:{id:string;path:string};inputId?:string;disabled?:boolean;checkpoint:()=>Promise<void>}) {
- return pack?<ArtifactApprovalControl chatId={chatId} pack={pack} disabled={disabled} checkpoint={checkpoint}/>:<ResearchApprovalControl chatId={chatId} inputId={inputId} disabled={disabled}/>
+export function AssistantApprovalControl({chatId,pack,inputId,publication,disabled=false,checkpoint}:{chatId:string;pack?:{id:string;path:string};inputId?:string;publication?:DialectChatAction;disabled?:boolean;checkpoint:()=>Promise<void>}) {
+ return publication?<DialectPublicationApprovalControl key={publication.id} chatId={chatId} action={publication} disabled={disabled} checkpoint={checkpoint}/>:pack?<ArtifactApprovalControl chatId={chatId} pack={pack} disabled={disabled} checkpoint={checkpoint}/>:<ResearchApprovalControl chatId={chatId} inputId={inputId} disabled={disabled}/>
 }
 function ArtifactApprovalControl({chatId,pack,disabled,checkpoint}:{chatId:string;pack:{id:string;path:string};disabled:boolean;checkpoint:()=>Promise<void>}){
  const status=useActionApproval(chatId),file=useFileContent(pack.path),cache=useQueryClient(),opener=useRef<HTMLButtonElement>(null),flight=useRef(false)

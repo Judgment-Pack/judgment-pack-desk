@@ -23,6 +23,7 @@ export function usePackAutoSave({chat,store,binding,restored,call,project}:{chat
  const latest=useRef({chat,binding,candidate});latest.current={chat,binding,candidate}
  useAutomaticAction({grant:approval.isError?undefined:approval.data?.grant,action:'pack-update',path:chat.pack?.path,revision:file.data?.sha256,fingerprint:candidate?.digest,
   ready:!!(restored&&chat.pack&&chat.interaction!=='plan'&&binding.state.status==='complete'&&basis&&basis.packId===chat.pack.id&&basis.path===chat.pack.path&&basis.text===file.data?.content&&check?.documentDigest===candidate?.digest&&packCheckAllowsAuto(check)&&!binding.state.unknowns.length&&!binding.state.questions?.some(q=>!q.resolution)&&!isPathDirty(basis.path)),
+  canStart:()=>!!basis&&mounted.current&&!isPathDirty(basis.path),
   execute:async grant=>{
    if(!candidate||!basis||!check)return
    store.report(chat.id,binding);await store.checkpoint(new AbortController().signal)

@@ -1,3 +1,4 @@
+import {dialectRecipeIsEditing} from './recipeEditing'
 import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {Tooltip} from 'radix-ui'
@@ -7,7 +8,7 @@ import {dialectAPI,type PreparationReply} from './client'
 vi.mock('./client',async original=>({...await original<object>(),dialectAPI:vi.fn()}))
 vi.mock('../artifacts/ArtifactVersionOptions',()=>({ArtifactVersionOptions:()=>null}))
 const saved={sha256:'a'.repeat(64),document:{id:'prep_'+'b'.repeat(32),name:'Companies'}} as PreparationReply
-const checked:DialectPublicationAnswer={publication:{id:'p',at:'2026-10-16',dialect:{preparationId:saved.document.id,revision:saved.sha256,variant:'asserted'},documents:[{id:'urn:test',version:'1.0.0'}]},document:'{"formatVersion":"2.0.0","id":"urn:test","version":"1.0.0","case":{"facts":[],"evidence":[]}}',digest:'sha256:exact',saved:false,basePublication:'',review:{sha256:'d'.repeat(64),bytes:1024}}
+const checked:DialectPublicationAnswer={publication:{id:'p',at:'2026-10-16',dialect:{preparationId:saved.document.id,revision:saved.sha256,variant:'asserted',request:'e'.repeat(64)},documents:[{id:'urn:test',version:'1.0.0'}]},document:'{"formatVersion":"2.0.0","id":"urn:test","version":"1.0.0","case":{"facts":[],"evidence":[]}}',digest:'sha256:exact',saved:false,basePublication:'',review:{sha256:'d'.repeat(64),bytes:1024}}
 let cache:QueryClient
 beforeEach(()=>{vi.resetAllMocks();cache=new QueryClient({defaultOptions:{queries:{retry:false}}});vi.mocked(dialectAPI).mockImplementation(async(path,method,body)=>method==='GET'?(path?.includes('review=latest')?{review:null}:{items:[]}) as any:{...checked,saved:(body as any).action==='publish'} as any)})
 afterEach(()=>{cleanup();cache.clear()})
@@ -93,4 +94,12 @@ it('preserves manual review edits when the saved recipe changes and refuses thei
  expect((screen.getByRole('button',{name:'Check proposal'}) as HTMLButtonElement).disabled).toBe(true)
  expect((screen.getByRole('button',{name:'Publish version'}) as HTMLButtonElement).disabled).toBe(true)
  expect(vi.mocked(dialectAPI).mock.calls.every(([,method])=>method==='GET')).toBe(true)
+})
+
+it('guards competing chat publication while the manual compatibility review has unsaved edits',async()=>{
+ await show(saved,false);expect(dialectRecipeIsEditing(saved.document.id)).toBe(false)
+ fireEvent.change(screen.getByLabelText('Reason for this version'),{target:{value:'Manual change under review'}})
+ expect(dialectRecipeIsEditing(saved.document.id)).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:'Discard'}))
+ await waitFor(()=>expect(dialectRecipeIsEditing(saved.document.id)).toBe(false))
 })

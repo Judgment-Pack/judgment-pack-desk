@@ -1,3 +1,4 @@
+import {DialectPublicationReview} from './DialectPublicationReview'
 import {privateQuery} from '../data/privateQuery'
 import {LoadingState} from '../ui/LoadingState'
 import {DialectProposalReview} from './DialectProposalReview'
@@ -32,6 +33,7 @@ import chatStyles from '../chat/ChatWorkspace.module.css'
 
 export function dialectActionTitle(action:DialectChatAction){
  switch(action.kind){
+  case 'publish-dialect':return msg('Proposed publication')
   case 'update-dialect':return msg('Proposed dialect')
   case 'update-recipe':return msg('Proposed recipe update')
   case 'remove-recipe':return msg('Remove recipe setup')
@@ -42,17 +44,17 @@ export function dialectActionTitle(action:DialectChatAction){
  }
 }
 export function dialectActionOutcome(action:DialectChatAction){
- return action.kind==='update-dialect'?msg('Dialect saved'):action.kind==='reprocess'?msg('Reprocessing started'):action.kind==='research'?msg('Research started'):action.kind==='evaluate'?msg('Evaluation submitted'):action.kind==='stop-research'?msg('Stop requested'):action.kind==='remove-recipe'?msg('Setup removed'):msg('Recipe saved')
+ return action.kind==='publish-dialect'?msg('Version published'):action.kind==='update-dialect'?msg('Dialect saved'):action.kind==='reprocess'?msg('Reprocessing started'):action.kind==='research'?msg('Research started'):action.kind==='evaluate'?msg('Evaluation submitted'):action.kind==='stop-research'?msg('Stop requested'):action.kind==='remove-recipe'?msg('Setup removed'):msg('Recipe saved')
 }
 export function DialectActionReference({chatId,action,disabled=false,presentation='card'}:{chatId:string;action:DialectChatAction;disabled?:boolean;presentation?:'card'|'action'}){
  const editing=useDialectRecipeEditing(action.inputId)
  const [open,setOpen]=useState(false),opener=useRef<HTMLButtonElement|null>(null)
- const reviewLabel=action.kind==='update-dialect'?msg('Review dialect'):action.kind==='update-recipe'?msg('Review changes'):action.kind==='reprocess'?msg('Review reprocessing'):action.kind==='research'?msg('Review research'):msg('Review action')
- return <>{presentation==='action'&&!action.applied?<ChatAction disabled={disabled||editing} onClick={event=>{opener.current=event.currentTarget;setOpen(true)}}>{reviewLabel}</ChatAction>:<ArtifactReference compact title={dialectActionTitle(action)} description={<>{action.name} · {msg('Recipe version {{version}}',{version:action.recipeVersion})}{action.applied&&<> · {dialectActionOutcome(action)}</>}</>}
-  action={action.applied?msg('Open dialect'):action.kind==='update-dialect'?msg('Review dialect'):action.kind==='update-recipe'?msg('Review changes'):action.kind==='reprocess'?msg('Review reprocessing'):action.kind==='research'?msg('Review research'):msg('Review action')} href={action.applied?dialectChatHref(action.inputId,chatId):undefined} disabled={disabled||editing}
+ const reviewLabel=action.kind==='publish-dialect'?msg('Review publication'):action.kind==='update-dialect'?msg('Review dialect'):action.kind==='update-recipe'?msg('Review changes'):action.kind==='reprocess'?msg('Review reprocessing'):action.kind==='research'?msg('Review research'):msg('Review action')
+ return <>{presentation==='action'&&!action.applied?<ChatAction disabled={action.kind==='publish-dialect'?false:disabled||editing} onClick={event=>{opener.current=event.currentTarget;setOpen(true)}}>{reviewLabel}</ChatAction>:<ArtifactReference compact title={dialectActionTitle(action)} description={<>{action.name} · {msg('Recipe version {{version}}',{version:action.recipeVersion})}{action.applied&&<> · {dialectActionOutcome(action)}</>}</>}
+  action={action.applied?msg('Open dialect'):action.kind==='publish-dialect'?msg('Review publication'):action.kind==='update-dialect'?msg('Review dialect'):action.kind==='update-recipe'?msg('Review changes'):action.kind==='reprocess'?msg('Review reprocessing'):action.kind==='research'?msg('Review research'):msg('Review action')} href={action.applied?dialectChatHref(action.inputId,chatId):undefined} disabled={action.kind==='publish-dialect'?false:disabled||editing}
   onOpen={()=>{opener.current=document.activeElement instanceof HTMLButtonElement?document.activeElement:null;setOpen(true)}}/>}
   {editing&&presentation==='card'&&<p className={chatStyles.caption}>{msg('Save or discard Recipe edits before reviewing this action.')}</p>}
-  {open&&<DialectActionReview chatId={chatId} action={action} disabled={disabled} opener={opener} onClose={()=>setOpen(false)}/>}
+  {open&&(action.kind==='publish-dialect'?<DialectPublicationReview chatId={chatId} action={action} disabled={disabled} opener={opener} onClose={()=>setOpen(false)}/>:<DialectActionReview chatId={chatId} action={action} disabled={disabled} opener={opener} onClose={()=>setOpen(false)}/>)}
  </>
 }
 export function DialectActionNotice({chatId,actions,disabled}:{chatId:string;actions:DialectChatAction[];disabled?:boolean}){
