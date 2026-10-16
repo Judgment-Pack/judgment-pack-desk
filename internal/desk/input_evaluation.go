@@ -42,32 +42,37 @@ type inputEvaluationRow struct {
 	Problem      string          `json:"problem,omitempty"`
 }
 type inputUpgradeReview struct {
+	RetryAt       []string        `json:"retryAt,omitempty"`
+	Phase         string          `json:"phase,omitempty"`
+	Problem       string          `json:"problem,omitempty"`
 	JobID         string          `json:"jobId"`
 	BaseReleaseID string          `json:"baseReleaseId"`
 	BaseRevision  int             `json:"baseRevision"`
 	Result        json.RawMessage `json:"result,omitempty"`
 }
 type inputEvaluation struct {
-	Upgrade         *inputUpgradeReview  `json:"upgrade,omitempty"`
-	Subscription    *inputSubscription   `json:"subscription,omitempty"`
-	Version         int                  `json:"version"`
-	ID              string               `json:"id"`
-	PreparationID   string               `json:"preparationId"`
-	Revision        string               `json:"revision"`
-	RecipeVersion   int                  `json:"recipeVersion"`
-	Recipe          inputRecipe          `json:"recipe"`
-	Name            string               `json:"name"`
-	Fingerprint     string               `json:"fingerprint"`
-	Release         json.RawMessage      `json:"release,omitempty"`
-	ReleaseID       string               `json:"releaseId"`
-	JobID           string               `json:"jobId,omitempty"`
-	CreatedAt       string               `json:"createdAt"`
-	ConfirmedAt     string               `json:"confirmedAt,omitempty"`
-	State           string               `json:"state"`
-	Problem         string               `json:"problem,omitempty"`
-	Rows            []inputEvaluationRow `json:"rows"`
-	RequireTested   bool                 `json:"requireTested"`
-	ProjectReviewed bool                 `json:"projectReviewed"`
+	SubscriptionUpgrade *subscriptionUpgradeReview `json:"subscriptionUpgrade,omitempty"`
+	Successors          []subscriptionSuccessor    `json:"successors,omitempty"`
+	Upgrade             *inputUpgradeReview        `json:"upgrade,omitempty"`
+	Subscription        *inputSubscription         `json:"subscription,omitempty"`
+	Version             int                        `json:"version"`
+	ID                  string                     `json:"id"`
+	PreparationID       string                     `json:"preparationId"`
+	Revision            string                     `json:"revision"`
+	RecipeVersion       int                        `json:"recipeVersion"`
+	Recipe              inputRecipe                `json:"recipe"`
+	Name                string                     `json:"name"`
+	Fingerprint         string                     `json:"fingerprint"`
+	Release             json.RawMessage            `json:"release,omitempty"`
+	ReleaseID           string                     `json:"releaseId"`
+	JobID               string                     `json:"jobId,omitempty"`
+	CreatedAt           string                     `json:"createdAt"`
+	ConfirmedAt         string                     `json:"confirmedAt,omitempty"`
+	State               string                     `json:"state"`
+	Problem             string                     `json:"problem,omitempty"`
+	Rows                []inputEvaluationRow       `json:"rows"`
+	RequireTested       bool                       `json:"requireTested"`
+	ProjectReviewed     bool                       `json:"projectReviewed"`
 }
 
 func (s *Server) inputEvaluationRoot(create bool) (*os.Root, error) {
@@ -89,11 +94,11 @@ func openInputEvaluation(root *os.Root, id string, create bool) (*os.Root, error
 }
 func (s *Server) inputRunner(ctx context.Context, path string, body any, key string) (json.RawMessage, error) {
 	if s.jobs == nil {
-		return nil, &inputRunnerError{0, "The local runner is unavailable."}
+		return nil, &inputRunnerError{Status: 0, Message: "The local runner is unavailable."}
 	}
 	endpoint, token, e := s.jobs.endpoint()
 	if e != nil {
-		return nil, &inputRunnerError{0, "The local runner is unavailable."}
+		return nil, &inputRunnerError{Status: 0, Message: "The local runner is unavailable."}
 	}
 	var raw []byte
 	if body != nil {
@@ -120,24 +125,25 @@ func (s *Server) inputRunner(ctx context.Context, path string, body any, key str
 	defer client.CloseIdleConnections()
 	resp, e := client.Do(req)
 	if e != nil {
-		return nil, &inputRunnerError{0, "The runner did not respond. Accepted work will be reconciled with the same submission key."}
+		return nil, &inputRunnerError{Status: 0, Message: "The runner did not respond. Accepted work will be reconciled with the same submission key."}
 	}
 	defer resp.Body.Close()
 	data, e := io.ReadAll(io.LimitReader(resp.Body, int64(runnerExportLimit)+1))
 	if e != nil || len(data) > runnerExportLimit {
-		return nil, &inputRunnerError{0, "The runner response could not be read. Accepted work will be reconciled."}
+		return nil, &inputRunnerError{Status: 0, Message: "The runner response could not be read. Accepted work will be reconciled."}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var failure struct {
 			Error struct {
 				Message string `json:"message"`
+				Code    string `json:"code"`
 			} `json:"error"`
 		}
 		json.Unmarshal(data, &failure)
 		if failure.Error.Message == "" {
 			failure.Error.Message = "The runner refused this request."
 		}
-		return nil, &inputRunnerError{resp.StatusCode, failure.Error.Message}
+		return nil, &inputRunnerError{Status: resp.StatusCode, Message: failure.Error.Message, Code: failure.Error.Code}
 	}
 	if !json.Valid(data) {
 		return nil, errors.New("The runner response is invalid.")
@@ -153,6 +159,7 @@ func (s *Server) inputRunner(ctx context.Context, path string, body any, key str
 type inputRunnerError struct {
 	Status  int
 	Message string
+	Code    string
 }
 
 func (e *inputRunnerError) Error() string { return e.Message }
@@ -409,9 +416,10 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		RecordIDs []string `json:"recordIds"`
+		RecordIDs      []string `json:"recordIds"`
+		SubscriptionID string   `json:"subscriptionId,omitempty"`
 	}
-	if inputRequest(r, &request) != nil {
+	if inputRequest(r, &request) != nil || request.SubscriptionID != "" && strings.HasSuffix(r.URL.Path, "/prepare") {
 		fail(400, errors.New("Choose the records to review."))
 		return
 	}
@@ -470,6 +478,12 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		b.Rows = append(b.Rows, inputEvaluationRow{RecordID: row.ID, Input: row.Input, State: "pending"})
 	}
+	if request.SubscriptionID != "" {
+		if e = s.reviewSubscriptionUpgrade(r.Context(), saved, &b, request.SubscriptionID); e != nil {
+			fail(409, e)
+			return
+		}
+	}
 	er, e := s.inputEvaluationRoot(true)
 	if e != nil {
 		fail(409, e)
@@ -495,7 +509,7 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	upgrading := strings.HasSuffix(r.URL.Path, "/upgrade")
-	if upgrading != (request.Upgrade != nil) || upgrading && (request.Subscription != nil || request.Enabled != nil || !evaluationJobID.MatchString(request.Upgrade.JobID) || !referenceReleaseID.MatchString(request.Upgrade.BaseReleaseID) || request.Upgrade.BaseRevision < 1 || len(request.Upgrade.Result) != 0) {
+	if upgrading != (request.Upgrade != nil) || upgrading && (request.Subscription != nil || request.Enabled != nil || !evaluationJobID.MatchString(request.Upgrade.JobID) || !referenceReleaseID.MatchString(request.Upgrade.BaseReleaseID) || request.Upgrade.BaseRevision < 1 || len(request.Upgrade.Result) != 0 || request.Upgrade.Phase != "" || request.Upgrade.Problem != "" || len(request.Upgrade.RetryAt) > 0) {
 		writeJSONCoded(w, 400, CodeBadRequest, "Choose an existing job revision and review its upgrade.")
 		return
 	}
@@ -528,7 +542,11 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 		fail(errors.New("The evaluation review does not belong to these inputs."))
 		return
 	}
-	if b.Upgrade != nil && !upgrading {
+	if b.SubscriptionUpgrade != nil && (b.Subscription == nil || upgrading) || subscriptionReserved(b) {
+		fail(errors.New("This evaluation belongs to a pending or completed subscription upgrade."))
+		return
+	}
+	if b.Upgrade != nil && b.SubscriptionUpgrade == nil && !upgrading {
 		fail(errors.New("This evaluation is reserved for a reviewed job upgrade."))
 		return
 	}
@@ -802,6 +820,9 @@ func (s *Server) resumeInputEvaluations(ctx context.Context) {
 				return
 			}
 			if b.Subscription != nil {
+				if subscriptionReserved(b) {
+					return
+				}
 				s.advanceInputSubscription(ctx, &checkpoint, &b)
 			} else {
 				s.advanceInputEvaluation(ctx, &checkpoint, &b)

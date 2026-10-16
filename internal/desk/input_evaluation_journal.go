@@ -79,8 +79,11 @@ func validateEvaluationJournal(b inputEvaluation, id string) error {
 	if b.Version != 1 || !inputEvaluationID.MatchString(id) || b.ID != id || !inputPreparationID.MatchString(b.PreparationID) || len(b.Rows) > inputRecordLimit {
 		return errors.New("Invalid evaluation record.")
 	}
+	if err := validateSubscriptionUpgradeJournal(b); err != nil {
+		return err
+	}
 	if u := b.Upgrade; u != nil {
-		if b.ConfirmedAt != "" || b.Subscription != nil || !evaluationJobID.MatchString(u.JobID) || !referenceReleaseID.MatchString(u.BaseReleaseID) || u.BaseRevision < 1 {
+		if (b.SubscriptionUpgrade == nil && (b.ConfirmedAt != "" || b.Subscription != nil)) || !evaluationJobID.MatchString(u.JobID) || !referenceReleaseID.MatchString(u.BaseReleaseID) || u.BaseRevision < 1 {
 			return errors.New("Invalid upgrade review.")
 		}
 		if len(u.Result) != 0 {
@@ -136,6 +139,7 @@ func frozenEvaluation(b inputEvaluation) inputEvaluation {
 	b.Rows = nil
 	b.Subscription = nil
 	b.Upgrade = nil
+	b.Successors = nil
 	return b
 }
 func evaluationRowTerminal(state string) bool {
@@ -149,6 +153,9 @@ func validateEvaluationTransition(before, next inputEvaluation) error {
 	if !sameEvaluationValue(frozenEvaluation(before), frozenEvaluation(next)) || before.ConfirmedAt != "" && before.ConfirmedAt != next.ConfirmedAt || before.JobID != "" && before.JobID != next.JobID {
 		return bad
 	}
+	if err := validateSubscriptionSuccessors(before, next); err != nil {
+		return err
+	}
 	if before.Upgrade != nil {
 		if next.Upgrade == nil {
 			return bad
@@ -156,6 +163,13 @@ func validateEvaluationTransition(before, next inputEvaluation) error {
 		a, b := *before.Upgrade, *next.Upgrade
 		a.Result = nil
 		b.Result = nil
+		if before.SubscriptionUpgrade != nil {
+			if !validSubscriptionUpgradePhase(before.Upgrade, next.Upgrade) {
+				return bad
+			}
+			a.Phase, b.Phase, a.Problem, b.Problem = "", "", "", ""
+			a.RetryAt, b.RetryAt = nil, nil
+		}
 		if !sameEvaluationValue(a, b) || len(before.Upgrade.Result) != 0 && !sameEvaluationValue(before.Upgrade.Result, next.Upgrade.Result) {
 			return bad
 		}

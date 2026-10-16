@@ -175,7 +175,7 @@ func (s *Server) handleInputSubscriptions(w http.ResponseWriter, r *http.Request
 	writeJSON(w, 200, map[string]any{"items": items})
 }
 func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evaluationCheckpoint, b *inputEvaluation) {
-	if checkpoint.failure != nil {
+	if checkpoint.failure != nil || subscriptionReserved(*b) {
 		return
 	}
 	a := b.Subscription

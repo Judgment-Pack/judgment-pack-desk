@@ -83,3 +83,19 @@ it('saves automatic configuration paused and keeps enablement a separate reviewe
  await waitFor(()=>expect(dialectAPI).toHaveBeenCalledWith('/prep/evaluations/eval/confirm','POST',{reviewed:true,subscription:{mode:'new',includeExisting:true}},'saved'))
  expect(vi.mocked(dialectAPI).mock.calls.some(c=>c[0]?.endsWith('/subscription-state'))).toBe(false)
 })
+
+it('reviews an immutable subscription replacement and saves paused without creating another job',async()=>{
+ vi.mocked(prepareRecords).mockResolvedValue({rows:[{id:'row',original:record.values,prepared:{'/active':false},issues:[],input:{facts:{active:false}}}]})
+ vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{active:false}}})
+ const source={id:'old'} as DialectEvaluation,candidate={...evaluation,releaseId:'new-release',subscriptionUpgrade:{baseReleaseId:'old-release',mode:'changed'}} as DialectEvaluation
+ vi.mocked(dialectAPI).mockResolvedValue(candidate)
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}}),done=vi.fn()
+ render(<QueryClientProvider client={client}><Tooltip.Provider><MemoryRouter><ReviewRecords saved={saved} records={[record]} opener={{current:null}} onClose={()=>{}} onEvaluated={done} upgradeSource={source}/></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
+ await waitFor(()=>expect((screen.getByRole('button',{name:'Review evaluation'}) as HTMLButtonElement).disabled).toBe(false))
+ fireEvent.click(screen.getByRole('button',{name:'Review evaluation'}));await screen.findByText('new-release')
+ expect(screen.queryByRole('checkbox',{name:'Include existing eligible records when enabled'})).toBeNull()
+ expect((screen.getByRole('button',{name:'Apply upgrade'}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.click(screen.getByRole('checkbox',{name:'I reviewed the selected inputs and this release’s test status.'}));fireEvent.click(screen.getByRole('button',{name:'Apply upgrade'}))
+ await waitFor(()=>expect(done).toHaveBeenCalled())
+ expect(vi.mocked(dialectAPI).mock.calls).toEqual([['/prep/evaluations','POST',{recordIds:['row'],subscriptionId:'old'},'saved'],['/prep/evaluations/eval/subscription-upgrade','POST',{reviewed:true,action:'apply'},'saved']])
+})

@@ -334,10 +334,10 @@ func TestPausedSubscriptionReceiptDoesNotDiscardUnknownIntent(t *testing.T) {
 					t.Fatal("wrong receipt", path)
 				}
 				if scenario == "absent" {
-					return nil, &inputRunnerError{404, "absent"}
+					return nil, &inputRunnerError{Status: 404, Message: "absent"}
 				}
 				if scenario == "unavailable" {
-					return nil, &inputRunnerError{503, "unavailable"}
+					return nil, &inputRunnerError{Status: 503, Message: "unavailable"}
 				}
 				raw, _ := json.Marshal(map[string]any{"occurrence": receipt})
 				return raw, nil
