@@ -3261,6 +3261,8 @@
   "Research suggested": "Research suggested",
   "Research target updated": "Research target updated",
   "Research the requested records using public sources. Keep unsupported information missing and separate interpretation from observations.": "Research the requested records using public sources. Keep unsupported information missing and separate interpretation from observations.",
+  "Research value": "Research value",
+  "Research value preserves the original field type, including empty text, zero and false. Only declared research fields support it. Imported columns and record metadata need another conversion. Missing or unresolved fields remain unknown.": "Research value preserves the original field type, including empty text, zero and false. Only declared research fields support it. Imported columns and record metadata need another conversion. Missing or unresolved fields remain unknown.",
   "Research with AI…": "Research with AI…",
   "Research won’t restart automatically.": "Research won’t restart automatically.",
   "Researching…": "Researching…",

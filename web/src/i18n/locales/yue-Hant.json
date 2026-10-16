@@ -3261,6 +3261,8 @@
   "Research suggested": "建議用研究模式",
   "Research target updated": "研究目標已更新",
   "Research the requested records using public sources. Keep unsupported information missing and separate interpretation from observations.": "使用公開來源研究所請求嘅記錄。無依據嘅資訊保持缺失，並將解讀與觀察分開。",
+  "Research value": "研究值",
+  "Research value preserves the original field type, including empty text, zero and false. Only declared research fields support it. Imported columns and record metadata need another conversion. Missing or unresolved fields remain unknown.": "研究值會保留原本嘅欄位類型，包括空白文字、零同 false。只有已宣告嘅研究欄位先支援。匯入嘅欄同記錄中繼資料需要用其他轉換。缺少或者未解決嘅欄位會維持未知。",
   "Research with AI…": "使用 AI 研究…",
   "Research won’t restart automatically.": "研究唔會自動重新開始。",
   "Researching…": "正在研究…",

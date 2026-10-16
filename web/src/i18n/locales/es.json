@@ -3270,6 +3270,8 @@
   "Research suggested": "Investigación sugerida",
   "Research target updated": "Objetivo de investigación actualizado",
   "Research the requested records using public sources. Keep unsupported information missing and separate interpretation from observations.": "Investigue los registros solicitados usando fuentes públicas. Deje ausente la información sin respaldo y separe las interpretaciones de las observaciones.",
+  "Research value": "Valor investigado",
+  "Research value preserves the original field type, including empty text, zero and false. Only declared research fields support it. Imported columns and record metadata need another conversion. Missing or unresolved fields remain unknown.": "Valor investigado conserva el tipo original del campo, incluidos el texto vacío, cero y false. Solo admite campos de investigación declarados. Las columnas importadas y los metadatos del registro necesitan otra conversión. Los campos ausentes o sin resolver siguen siendo desconocidos.",
   "Research with AI…": "Investigar con IA…",
   "Research won’t restart automatically.": "La investigación no se reiniciará automáticamente.",
   "Researching…": "Investigando…",

@@ -1,7 +1,7 @@
 package desk
 
 // Conversions belong to a Desk recipe, never to the released mapping-v2 DSL.
-// Only supplied assertions enter this path. Original source bytes and values
+// Supplied assertions and reviewed generated records enter this path. Original source bytes and values
 // stay immutable; the source case retains the conversion policy and provenance.
 import (
 	"encoding/json"
@@ -53,7 +53,7 @@ func validateInputConversions(q *inputQualification) error {
 			return errors.New("Conversions must belong to a mapped input.")
 		}
 		switch c.Kind {
-		case "text", "number", "decimal":
+		case "text", "number", "decimal", "research-value":
 			if c.TrueValue != "" || c.FalseValue != "" {
 				return errors.New("Only Yes / No conversions have matching values.")
 			}
@@ -140,7 +140,13 @@ func prepareInputRecord(doc inputPreparation, record preparedInputRecord) (input
 		mapping.Case = &copied
 		for i, f := range copied.Facts {
 			column := inputUnescape(strings.TrimPrefix(f.Source, "/values/"))
-			v, err := convertInput(values[column], q.Conversions[f.Target])
+			var v any
+			var err error
+			if q.Conversions[f.Target].Kind == "research-value" {
+				v, err = typedResearchValue(doc, record, column)
+			} else {
+				v, err = convertInput(values[column], q.Conversions[f.Target])
+			}
 			if err != nil {
 				row.Issues = append(row.Issues, inputConversionIssue{f.Target, err.Error()})
 			} else if v != nil {

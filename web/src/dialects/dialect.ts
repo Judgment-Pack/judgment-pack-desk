@@ -22,7 +22,7 @@ export function validDialectProposal(v:unknown):v is DialectProposal {
  if(!v.facts.every(f=>{
   if(!object(f)||!keys(f,['target','column','conversion'])||!text(f.target,1024)||!safeColumn(f.column)||!object(f.conversion)||!keys(f.conversion,['kind','trueValue','falseValue']))return false
   const c=f.conversion
-  return c.kind==='boolean'?text(c.trueValue,160)&&text(c.falseValue,160)&&c.trueValue!==c.falseValue:['text','decimal','number'].includes(String(c.kind))&&c.trueValue===undefined&&c.falseValue===undefined
+  return c.kind==='boolean'?text(c.trueValue,160)&&text(c.falseValue,160)&&c.trueValue!==c.falseValue:['text','decimal','number','research-value'].includes(String(c.kind))&&c.trueValue===undefined&&c.falseValue===undefined
  }))return false
  return v.evidence.every(e=>object(e)&&keys(e,['requirement','column'])&&text(e.requirement,1024)&&safeColumn(e.column))&&new Set(v.facts.map(f=>f.target)).size===v.facts.length&&new Set(v.evidence.map(e=>e.requirement)).size===v.evidence.length
 }
