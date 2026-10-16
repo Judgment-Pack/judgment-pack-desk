@@ -24,6 +24,8 @@ func TestMain(m *testing.M) {
 	if len(os.Args) == 2 {
 		var err error
 		switch os.Args[1] {
+		case "--model-source-adapter":
+			err = RunModelSourceAdapter(os.Stdin, os.Stdout)
 		case "--input-source-adapter":
 			err = RunInputSourceAdapter(os.Stdin, os.Stdout)
 		case "--local-gateway-worker":

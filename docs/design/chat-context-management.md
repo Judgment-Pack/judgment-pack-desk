@@ -171,3 +171,16 @@ This boundary is a prerequisite for fresh portable Dialect research (#423). It d
 not itself add a Gateway answer adapter, portable research record producer or new
 research-review UI. Those paths must use the same executor and existing admission
 and persistence contracts when implemented.
+
+### Private model acquisition
+
+The managed Gateway's `desk-model` source consumes a one-use operation admitted
+by a Desk workflow; it is not a public model endpoint. The owning workflow must
+persist admission and completion and retain the exact Gateway response. The
+adapter preserves response bytes, has no retries, and calls the same background
+model executor used by other server features. Its signed acquisition endpoint
+binds the exact named connection, revision, model and effort. Generated profiles
+are immutable installation records; registration neither authorizes nor invokes
+research. The trusted host helper is not available through the browser's generic
+Runner proxy. This boundary alone does not implement portable research review or
+execution.

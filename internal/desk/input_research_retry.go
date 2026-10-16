@@ -201,7 +201,7 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 		}
 		deadline := 180 * time.Second
 		if kind == "model" {
-			deadline = 5 * time.Minute
+			deadline = backgroundModelTimeout
 		}
 		callCtx, cancel := context.WithTimeout(ctx, deadline)
 		raw, callErr := call(callCtx, run, attempt)
