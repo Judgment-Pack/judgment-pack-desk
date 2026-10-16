@@ -16,7 +16,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { msg, useLocale, formatDate } from '../i18n'
-import { Button } from '../ui/Button'
+import { Button, ButtonLink } from '../ui/Button'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { Field, FieldGroup } from '../ui/Field'
 import { Input } from '../ui/Input'
@@ -62,7 +62,7 @@ function PreparationList(){
  const pagination=usePagination(rows.length,[search,filter,sort].join('|'))
 
  const selection=useCollectionSelection(rows,row=>row.id,'inputs')
- return <><QueryStatusNotice id="dialect-drafts" label={msg('Dialect drafts unavailable')} error={drafts.error} retrying={drafts.isFetching} onRetry={()=>drafts.refetch()}/><QueryStatusNotice id="inputs" label={msg('Dialects unavailable')} error={list.error} retrying={list.isFetching} onRetry={()=>list.refetch()}>{msg('Dialects could not be refreshed. Previously loaded dialects may be out of date.')}</QueryStatusNotice><DialectAssistant/><PageHeader title={msg('Dialects')} variant="collection" navigation={<CollectionHeading>{msg('Dialects')}</CollectionHeading>} actions={<Button variant="primary" onClick={()=>navigate('/dialects/new')}>{msg('New dialect')}</Button>}/><CollectionLayout label={msg('Dialects')} loading={list.isPending||drafts.isPending?msg('Loading dialects…'):undefined} scrollKey={JSON.stringify([pagination.page,pagination.size,search,filter,sort])} footer={!list.isPending&&!list.error&&<Pagination pagination={pagination}/>} toolbar={<CollectionToolbar label={msg('Dialects')} searchLabel={msg('Search dialects')} search={search} onSearch={setSearch}
+ return <><QueryStatusNotice id="dialect-drafts" label={msg('Dialect drafts unavailable')} error={drafts.error} retrying={drafts.isFetching} onRetry={()=>drafts.refetch()}/><QueryStatusNotice id="inputs" label={msg('Dialects unavailable')} error={list.error} retrying={list.isFetching} onRetry={()=>list.refetch()}>{msg('Dialects could not be refreshed. Previously loaded dialects may be out of date.')}</QueryStatusNotice><DialectAssistant/><PageHeader title={msg('Dialects')} variant="collection" navigation={<CollectionHeading>{msg('Dialects')}</CollectionHeading>} actions={<><ButtonLink to="/dialects/templates" variant="quiet">{msg('Templates')}</ButtonLink><Button variant="primary" onClick={()=>navigate('/dialects/new')}>{msg('New dialect')}</Button></>}/><CollectionLayout label={msg('Dialects')} loading={list.isPending||drafts.isPending?msg('Loading dialects…'):undefined} scrollKey={JSON.stringify([pagination.page,pagination.size,search,filter,sort])} footer={!list.isPending&&!list.error&&<Pagination pagination={pagination}/>} toolbar={<CollectionToolbar label={msg('Dialects')} searchLabel={msg('Search dialects')} search={search} onSearch={setSearch}
   filters={[{label:msg('State'),value:filter,onValueChange:setFilter,options:[{value:'all',label:msg('All states')},{value:'draft',label:msg('Draft')},{value:'provided',label:msg('Records provided')},{value:'empty',label:msg('No records')}]}]}
   sort={{label:msg('Sort inputs'),value:sort,onValueChange:setSort,options:[{value:'recent',label:msg('Recently updated')},{value:'name',label:msg('Name')}]}}
   filtered={!!search||filter!=='all'} onReset={()=>{setSearch('');setFilter('all')}}

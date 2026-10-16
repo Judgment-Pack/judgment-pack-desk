@@ -242,6 +242,14 @@ jobs:
         run: |
           JPACK_BIN="$RUNNER_TEMP/jpack" JPACK_TEST_BIN="$RUNNER_TEMP/jpack" go test ./internal/desk -run 'TestNewDeskWithTheRuntime|TestInputRecipeRetainsBoundPackAndMappingsAcrossEdits|TestDialectAuthoring|TestReviewAndLockWithTheRuntime|TestArtifactPublication|TestArtifactVersionHistory|TestDialectPublication|TestPublishedRelease|TestFailedCreationNeverCleansThroughSubstitutedReviewedSymlink|TestUpgradeWithTheRuntime|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1 -v
 
+      - name: Exchange preset integrity and retained import lifecycle
+        run: |
+          set -o pipefail
+          JPACK_EXCHANGE_TEST_BIN="$RUNNER_TEMP/jpack" go test ./internal/exchange ./internal/desk -run 'TestPreset|TestManifest|TestReleaseUpdate|TestGitRelease|TestClosedMetadata|TestLocalGit|TestExchange' -count=1 -v | tee "$RUNNER_TEMP/exchange-import.log"
+          for name in TestPresetUsesRuntimeOnTwoInstallations TestExchangeReviewImportAndWithdrawal; do
+            grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/exchange-import.log" || { echo "$name did not run and pass"; exit 1; }
+          done
+
       - name: Build Gateway for named Dialect journeys
         run: python3 scripts/build-bundle.py --gateway-only --output "$RUNNER_TEMP/dialect-gateway"
       - name: Named publication, subscriptions and company-to-person jobs

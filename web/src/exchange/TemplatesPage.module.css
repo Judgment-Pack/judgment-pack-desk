@@ -1,0 +1,6 @@
+.stack { display:grid; gap:var(--density-block); min-width:0; }
+.stack h2,.stack h3 { margin:0; font-size:var(--text-sm); }
+.stack section { padding-block:var(--density-block); border-top:1px solid var(--border); }
+.note { margin:0; color:var(--ink-soft); font-size:var(--text-sm); overflow-wrap:anywhere; }
+.actions { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-2); }
+.documentation { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; color:var(--ink-soft); }
