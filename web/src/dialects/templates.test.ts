@@ -5,7 +5,7 @@ describe('Desk authoring templates',()=>{
   for(const t of dialectTemplates())expect(readDialectTemplate(JSON.stringify(t))).toEqual(t)
   expect(dialectTemplates()[0].research).toBeUndefined()
   expect(dialectTemplates().filter(t=>t.research).every(t=>t.research!.target==='records')).toBe(true)
-  expect(dialectTemplates().find(t=>t.id==='work-items')!.research).toBeUndefined()
+  expect(dialectTemplates().map(t=>t.id)).toEqual(['blank','research-records','related-records','table-records'])
  })
  it.each([{connection:'secret'},{records:[{}]},{script:'run()'},{approved:true},{qualification:{kind:'pack'}}])('rejects execution authority or data in templates: %j',extra=>{
   expect(()=>readDialectTemplate(JSON.stringify({...dialectTemplates()[0],...extra}))).toThrow()

@@ -52,17 +52,18 @@ type inputResearchCompanyRef struct {
 	EntityID      string `json:"entityId"`
 }
 type inputResearchRecipe struct {
-	Execution     *delegation.Policy        `json:"execution,omitempty"`
-	CompanyInputs []inputResearchCompanyRef `json:"companyInputs,omitempty"`
-	Version       int                       `json:"version"`
-	Target        string                    `json:"target"`
-	Fields        []inputResearchField      `json:"fields"`
-	Criteria      []inputResearchCriterion  `json:"criteria"`
-	CompanyIDs    []string                  `json:"companyIds,omitempty"`
-	AI            inputResearchAI           `json:"ai"`
-	Search        *inputResearchSearch      `json:"search,omitempty"`
-	Limits        inputResearchLimits       `json:"limits"`
-	Retries       *inputResearchRetryPolicy `json:"retries,omitempty"`
+	RequireParents bool                      `json:"requireParents,omitempty"`
+	Execution      *delegation.Policy        `json:"execution,omitempty"`
+	CompanyInputs  []inputResearchCompanyRef `json:"companyInputs,omitempty"`
+	Version        int                       `json:"version"`
+	Target         string                    `json:"target"`
+	Fields         []inputResearchField      `json:"fields"`
+	Criteria       []inputResearchCriterion  `json:"criteria"`
+	CompanyIDs     []string                  `json:"companyIds,omitempty"`
+	AI             inputResearchAI           `json:"ai"`
+	Search         *inputResearchSearch      `json:"search,omitempty"`
+	Limits         inputResearchLimits       `json:"limits"`
+	Retries        *inputResearchRetryPolicy `json:"retries,omitempty"`
 }
 type inputResearchCitation struct {
 	SourceID string `json:"sourceId"`
@@ -142,7 +143,7 @@ func validateInputResearch(r *inputResearchRecipe) error {
 	if len(r.Fields) < 1 || len(r.Fields) > 30 || len(r.Criteria) > 30 || len(r.CompanyIDs)+len(r.CompanyInputs) > 50 {
 		return bad
 	}
-	if r.Target == "people-at-companies" && len(r.CompanyIDs)+len(r.CompanyInputs) == 0 || r.Target != "records" && r.Target != "people-at-companies" && len(r.CompanyIDs)+len(r.CompanyInputs) > 0 {
+	if (r.RequireParents || r.Target == "people-at-companies") && len(r.CompanyIDs)+len(r.CompanyInputs) == 0 || r.Target != "records" && r.Target != "people-at-companies" && len(r.CompanyIDs)+len(r.CompanyInputs) > 0 {
 		return errors.New("People at selected companies requires a reviewed company selection.")
 	}
 	seen := map[string]bool{}
@@ -211,7 +212,7 @@ func validateResearchEntity(entity *inputResearchEntity, recipe inputResearchRec
 		return errors.New("A record URL must come from supplied inputs or retained search/page results.")
 	}
 	entity.URL = normalized
-	if (recipe.Target == "people-at-companies" || len(recipe.CompanyIDs)+len(recipe.CompanyInputs) > 0) && !companyIDs[entity.CompanyID] || entity.CompanyID != "" && !companyIDs[entity.CompanyID] {
+	if (recipe.RequireParents || recipe.Target == "people-at-companies" || len(recipe.CompanyIDs)+len(recipe.CompanyInputs) > 0) && !companyIDs[entity.CompanyID] || entity.CompanyID != "" && !companyIDs[entity.CompanyID] {
 		return errors.New("The company relationship must name a reviewed company record.")
 	}
 	identity := normalized

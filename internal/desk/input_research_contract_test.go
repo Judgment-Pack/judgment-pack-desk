@@ -153,3 +153,32 @@ func TestInputResearchExternalCompanySnapshotRejectsStaleOrInventedSelection(t *
 	}
 
 }
+
+func TestRelatedResearchCannotLoseRequiredParentScope(t *testing.T) {
+	recipe := researchRecipeFixture()
+	recipe.Target = "records"
+	recipe.RequireParents = true
+	raw, err := json.Marshal(recipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored inputResearchRecipe
+	if err = decodeDataJSON(raw, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if !restored.RequireParents {
+		t.Fatal("parent scope lost on reload")
+	}
+	if validateInputResearch(&restored) == nil {
+		t.Fatal("empty required parent scope accepted")
+	}
+	restored.CompanyIDs = []string{"parent-1"}
+	if err = validateInputResearch(&restored); err != nil {
+		t.Fatal(err)
+	}
+	restored.CompanyIDs = nil
+	restored.RequireParents = false
+	if err = validateInputResearch(&restored); err != nil {
+		t.Fatal("unrelated generic research refused", err)
+	}
+}

@@ -1,7 +1,7 @@
 import {useRef} from 'react'
 import {ResearchExecutionSettings} from './ResearchExecution'
 import {ResearchRetrySettings} from './ResearchRetries'
-import {defaultResearchRetries} from './research'
+import {defaultResearchRetries,requiresResearchParents} from './research'
 import {ResearchCompanies} from './ResearchCompanies'
 import {msg} from '../i18n'
 import {useEffectiveConfig} from '../config/DeskConfigProvider'
@@ -35,13 +35,13 @@ export function ResearchRecipe({value,onChange,records,disabled,allowRemove=true
  const aiChanged=!!resolved.connection&&resolved.connection.revision!==value.ai.revision
  const searchChanged=!!searchConnection&&searchConnection.revision!==value.search?.revision
  const companyCount=(value.companyIds?.length??0)+(value.companyInputs?.length??0)
- const selectCompanies=companySelection||value.target==='people-at-companies'||companyCount>0
+ const selectCompanies=companySelection||requiresResearchParents(value)
  const companyMissing=selectCompanies&&!companyCount
  const searchProvider=searches.data?.providers?.find(provider=>provider.id===searchConnection?.provider)
  return <section className={section.stack} aria-label={msg('Research')}>
   {visible==='all'&&(!aiReady||companyMissing)&&<p className={section.attention} role="status">{msg('Setup needed')} · {!aiReady?msg('Choose an AI connection and model.'):msg('Select companies to research.')} <Button variant="inline" size="small" disabled={disabled} onClick={()=>{const element=(!aiReady?executionSection:companySection).current;element?.scrollIntoView({block:'center',behavior:'smooth'});element?.focus({preventScroll:true})}}>{msg('Review settings')}</Button></p>}
   {(visible==='all'||visible==='overview')&&<>
-  {selectCompanies&&<RecipeSection title={msg('Selected companies')} sectionRef={companySection}><ResearchCompanies value={value} records={records} disabled={disabled} onChange={edit}/></RecipeSection>}
+  {selectCompanies&&<RecipeSection title={msg('Selected companies')} sectionRef={companySection}><ResearchCompanies value={value} records={records} disabled={disabled} onChange={change=>edit({requireParents:true,...change})}/></RecipeSection>}
   {visible==='all'&&<RecipeFields value={value.fields} onChange={fields=>edit({fields})} disabled={disabled}/>}
   {value.criteria.length>0&&<RecipeSection title={msg('Research criteria')}><div className={styles.stack}><p className={styles.note}>{msg('These instructions guide research. They do not change qualification rules.')}</p>{value.criteria.map((criterion,index)=><Field key={criterion.id} label={criterion.id} hint={criterion.qualificationTarget?msg('Suggested pack input: {{target}}',{target:criterion.qualificationTarget}):undefined}>{props=><TextArea {...props} rows={3} disabled={disabled} maxLength={2000} value={criterion.description} onChange={event=>edit({criteria:value.criteria.map((c,i)=>i===index?{...c,description:event.target.value}:c)})}/>}</Field>)}</div></RecipeSection>}
   </>}
