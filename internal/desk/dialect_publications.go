@@ -292,6 +292,17 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 		fail(409, err)
 		return
 	}
+	var baseVersion string
+	for _, prior := range ledger.Items {
+		if prior.ID == base {
+			baseVersion = prior.Documents[0].Version
+			break
+		}
+	}
+	if err = s.checkArtifactImpact(r.Context(), held, baseVersion, req.Version, req.Impact); err != nil {
+		fail(409, err)
+		return
+	}
 	answer := dialectPublicationAnswer{Publication: candidate, Document: checked.Document, Digest: checked.Digest, BasePublication: base}
 	preview, _ := json.Marshal(answer)
 	review := artifactReview{Version: 1, Target: dialectArtifactID(id, req.Variant), BasePublication: base, StorageRevision: saved.SHA256, Candidate: candidate.Documents[0].Content, ProposedVersion: req.Version, Impact: req.Impact, Dependencies: []retainedArtifactRef{candidate.Dialect.Recipe, candidate.Dialect.Pack}, Preview: preview}

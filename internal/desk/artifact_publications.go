@@ -34,6 +34,7 @@ type artifactPublication struct {
 	Dialect   *dialectPublicationContext `json:"dialect,omitempty"`
 	Documents []publishedDocument        `json:"documents"`
 	Review    *retainedArtifactRef       `json:"review,omitempty"`
+	Reviews   []retainedArtifactRef      `json:"reviews,omitempty"`
 }
 type publicationLedger struct {
 	Version  int                   `json:"version"`
@@ -53,6 +54,13 @@ func (p *publicationTransaction) close() {
 		p.lock.Close()
 	}
 	p.root.Close()
+}
+func samePublicationContent(a, b artifactPublication) bool {
+	a.Review = nil
+	a.Reviews = nil
+	b.Review = nil
+	b.Reviews = nil
+	return publicationID(a) == publicationID(b)
 }
 func publicationID(p artifactPublication) string {
 	p.ID = ""
@@ -79,6 +87,11 @@ func readPublicationLedger(root *os.Root) (publicationLedger, error) {
 			return ledger, errors.New("Artifact version history is inconsistent.")
 		}
 		ids[p.ID] = true
+		for _, ref := range p.Reviews {
+			if !ref.valid() {
+				return ledger, errors.New("Artifact compatibility review is inconsistent.")
+			}
+		}
 		for _, d := range p.Documents {
 			if d.ID == "" || d.Version == "" || (d.Kind != "pack" && d.Kind != "graph" && d.Kind != "dialect") || !d.Content.valid() {
 				return ledger, errors.New("Artifact version history is inconsistent.")
@@ -198,13 +211,24 @@ func (s *Server) beginPublication(ctx context.Context, snap *reviewSnapshot) (*p
 				return nil, e
 			}
 			saved.Imported = true
+			// The public lock can commit immediately before its ledger receipt.
+			// Recover the accepted compatibility references from the staged intent,
+			// only when the lock names that exact dependency closure.
+			pending, e := readPendingPublication(p.root)
+			if e != nil {
+				return nil, e
+			}
+			if pending != nil && samePublicationContent(*pending, saved) {
+				saved = *pending
+			}
 			p.base = &saved
 			if e = s.retainPublicationSnapshot(ctx, old); e != nil {
 				return nil, e
 			}
 			known := false
 			for _, entry := range p.ledger.Items {
-				if entry.ID == saved.ID {
+				if samePublicationContent(entry, saved) {
+					p.base = &entry
 					known = true
 					break
 				}

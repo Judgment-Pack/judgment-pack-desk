@@ -740,6 +740,9 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 	if err != nil || plan.upgraded == nil || !hmac.Equal([]byte(s.upgradeToken(plan)), []byte(token)) {
 		return nil, stale
 	}
+	if err := s.checkUpgradePublication(ctx, dir, plan.snap, plan.upgraded); err != nil {
+		return nil, &lockFailure{http.StatusConflict, CodeStale, err.Error()}
+	}
 	var key *madeKey
 	undo := &upgradeUndo{s: s, plan: plan}
 	defer undo.close()
