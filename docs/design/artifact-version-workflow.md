@@ -17,8 +17,13 @@ Desk's `recipeVersion` counts local recipe changes. Those are different identiti
 
 ## Implemented authoring slice
 
-Runtime PRs #276, #278 and #279 provide offline Dialect encoding, version-2 document
-validation, authoring resources and declared pack coverage. PR #281 adds strict
+Runtime PRs #276, #278 and #279 provide offline Dialect encoding, document
+validation, authoring resources and declared pack coverage. PR #285 extends shared
+validation, schema and pack checks to integer format 3 for `operation` (bound or
+unbound declarations) and `selected-file`. Unsupported `http`, `sql`, `web` and
+`research` kinds return explicit findings; these checks do not resolve installation
+bindings or verify preparations. Existing canonical identities are unchanged.
+PR #281 adds strict
 x.y.z validation, exact comparison and all three bump choices through
 `get_artifact_version_options` and `jpack artifact version`. Numeric arithmetic
 does not determine compatibility or grant save permission.
