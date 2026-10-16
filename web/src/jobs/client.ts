@@ -1,7 +1,8 @@
+import {msg} from '../i18n'
 import type {TriggerOrigin} from './triggerTypes'
 import { jobsRequest, RetainedJSON } from './wire'
 import { canonicalize, parseJSON } from '../dialect/canon'
-import { parseJsonText, memberOf } from '../research/verify/canon'
+import { parseJsonText, memberOf, type JsonNode } from '../research/verify/canon'
 import type { ExecutableDialect, SourceV2, Preparation, InputProfile } from './dialectTypes'
 import type { DocumentObject } from '../documents/client'
 import type { PackTest } from '../mcp/types'
@@ -89,11 +90,42 @@ export function canonicalJobsRequest(body: unknown): string {
   }
   return jobsRequest(envelope(body))
 }
+// Retain the response's numeric tokens when copying an immutable release into an
+// editor. Presentation can keep ordinary JSON values; new inputs use these bytes.
+const retainedResponses = new WeakMap<object, string>()
+export function retainedJobMember(value: object, path: string[]): string | undefined {
+  const raw = retainedResponses.get(value)
+  if (!raw) {
+    let item: unknown = value
+    for (const key of path) item = item && typeof item === 'object' ? (item as Record<string, unknown>)[key] : undefined
+    const exact = (v: unknown): boolean => typeof v === 'number' ? Number.isSafeInteger(v) : Array.isArray(v) ? v.every(exact) : v !== null && typeof v === 'object' ? Object.values(v).every(exact) : true
+    if (!exact(item)) throw new Error(msg('The retained input must be read again to preserve its exact numeric values.'))
+    return JSON.stringify(item)
+  }
+  let node: JsonNode | undefined = parseJsonText(raw)
+  for (const key of path) node = node && memberOf(node, key)
+  const encode = (v: JsonNode): string => {
+    if (v.kind === 'number') return v.literal
+    if (v.kind === 'object') return '{' + v.members.map(m => JSON.stringify(m.name) + ':' + encode(m.value)).join(',') + '}'
+    if (v.kind === 'array') return '[' + v.items.map(encode).join(',') + ']'
+    return JSON.stringify(v.kind === 'null' ? null : v.value)
+  }
+  return node && encode(node)
+}
 export async function jobsAPI<T>(path: string, body?: unknown, key?: string, signal?: AbortSignal): Promise<T> {
   const response = await deskFetch(`/api/operations/${path}`, body === undefined ? { signal } : { signal, method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? { 'Idempotency-Key': key } : {}) }, body: canonicalJobsRequest(body) })
   // A refusal whose body is not JSON, such as an earlier Runner's plain-text
   // 404 for a route it does not serve, is still a refusal with its status.
-  const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })
+  const raw = await response.text()
+  let result: any
+  try { result = JSON.parse(raw) } catch (error) { if (response.ok) throw error; result = {} }
+  if (result !== null && typeof result === 'object') {
+    retainedResponses.set(result, raw)
+    if(result.release && typeof result.release==='object') {
+      const release=retainedJobMember(result,['release'])
+      if(release!==undefined)retainedResponses.set(result.release,release)
+    }
+  }
   if (!response.ok) throw new JobsRequestError(result.error?.message ?? result.message ?? 'The local runner could not complete this request.', response.status, typeof result.error?.code === 'string' ? result.error.code : undefined)
   return result as T
 }

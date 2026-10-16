@@ -1,6 +1,6 @@
 import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { prepareMappedInputs, parseMappedObject, parseMapping, mappedCase } from './mappedInputs'
+import { prepareMappedInputs, parseMappedCase, parseMappedObject, parseMapping, mappedCase } from './mappedInputs'
 import { jobsRequest, RetainedJSON } from './wire'
 import { jobsAPI } from './client'
 import { parseMapping as legacyParse, prepareMappedInputs as legacyPrepare } from '../dialect/__fixtures__/legacy-producer/producer/mappedInputs'
@@ -118,4 +118,16 @@ it('does not add legacy defaults or repair explicit invalid omissions in integer
  expect(parseMapping(JSON.stringify(value))).toEqual(value)
  const explicit={...value,sources:[]}
  expect(parseMapping(JSON.stringify(explicit))).toEqual(explicit)
+})
+
+it('preserves every case number spelling through picker insertion and imported preparation',async()=>{
+ const text='{"large":9007199254740993,"scale":1.000,"exponent":1e2,"negativeZero":-0,"null":null,"false":false}'
+ const mapping:ExecutableDialect={formatVersion:'3.0.0',id:'urn:test',version:'1.0.0',case:{facts:[],evidence:[]}}
+ const imported={dialect:mapping,binding:{dialect:'sha256:original',sources:{}}}
+ vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{},source:{mappingDigest:'sha256:bound'}}})
+ const result=await prepareMappedInputs({...options(),mapping,caseValue:parseMappedCase(text),imported})
+ expect(jobsRequest((result.input.source as import('./dialectTypes').SourceV2)?.case)).toBe(text)
+ expect(result.input.source).toHaveProperty('import',imported)
+ expect(jobsAPI).toHaveBeenCalledWith('inputs/next',expect.objectContaining({source:expect.objectContaining({import:imported})}),undefined,expect.any(AbortSignal))
+ expect(acquire).not.toHaveBeenCalled()
 })

@@ -300,7 +300,7 @@ func (j *jobsCompanion) close() {
 // job's journal of job activity (Runner v0.6.0, `GET /v1/jobs/{job}/events`),
 // which the Activity tab reads; see journalPath. Runner's store-wide `events`
 // route is not forwarded.
-var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|run-chain|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
+var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|run-chain|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
@@ -317,7 +317,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	// The chain of runs and a job's journal are read, never written: Runner
 	// serves each on GET alone.
-	if strings.HasSuffix(tail, "/upgrade") && r.Method != http.MethodPost {
+	if strings.HasSuffix(tail, "/upgrade") && r.Method != http.MethodPost || strings.HasSuffix(tail, "/upgrade-receipt") && r.Method != http.MethodGet {
 		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
 		return
 	}
@@ -494,6 +494,13 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	}
 	limit := runnerAnswerLimit
 	switch {
+	case strings.HasSuffix(tail, "/upgrade-receipt"):
+		parsed, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(parsed) != 3 || len(parsed["baseRevision"]) != 1 || len(parsed["baseReleaseId"]) != 1 || len(parsed["releaseId"]) != 1 || !referenceReleaseID.MatchString(parsed.Get("baseReleaseId")) || !referenceReleaseID.MatchString(parsed.Get("releaseId")) || !regexp.MustCompile(`^[1-9][0-9]{0,18}$`).MatchString(parsed.Get("baseRevision")) {
+			writeJSONCoded(w, 400, CodeBadRequest, "Choose the exact job upgrade to reconcile.")
+			return
+		}
+		query = parsed
 	case tail == runChainRoute:
 		query = url.Values{}
 		limit = runChainLimit

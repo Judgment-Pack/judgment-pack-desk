@@ -567,6 +567,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations", s.handleInputEvaluation)
 	s.mux.HandleFunc("GET /api/input-preparations/{preparation}/evaluations", s.handleInputEvaluation)
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/confirm", s.handleInputEvaluation)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/upgrade", s.handleInputEvaluation)
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/resume", s.handleInputEvaluation)
 	s.mux.HandleFunc("GET /api/web-access", s.handleWebAccess)
 	s.mux.HandleFunc("POST /api/web-access", s.handleWebAccess)

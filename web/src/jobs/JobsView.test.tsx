@@ -1,4 +1,4 @@
-import { loadJobDraft } from './drafts'
+import { loadJobDraft,saveJobDraft } from './drafts'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
@@ -11,21 +11,22 @@ import { refreshRunnerKey } from './runnerKey'
 import { DeskConfigProvider } from '../config/DeskConfigProvider'
 import { createHash } from 'node:crypto'
 import { readReview, type Review } from '../packs/review/client'
-vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn()}))
+vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn(),saveJobDraft:vi.fn()}))
 vi.mock('./MappedInputFields',()=>({MappedInputFields:()=>null}))
 vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
 vi.mock('./releaseTests', () => ({ readReleaseTests: vi.fn() }))
 vi.mock('./runnerKey', async original => ({ ...await original<typeof import('./runnerKey')>(), refreshRunnerKey: vi.fn() }))
 vi.mock('../packs/review/client', async original => ({ ...await original<typeof import('../packs/review/client')>(), readReview: vi.fn() }))
 const { pack, packs } = vi.hoisted(() => ({
- pack: { data: { raw: '{"version":"1"}', document: { title: 'Example pack', version: '1' } }, refetch: vi.fn() },
- packs: { data: { packs: [{ id: 'pack', matrixPath: 'cases.json' }] }, refetch: vi.fn() },
+ pack: { data: { raw: '{"version":"1"}', document: { id:'policy',title: 'Example pack', version: '1' } }, refetch: vi.fn() },
+ packs: { data: { packs: [{ id: 'pack', packId:'policy', matrixPath: 'cases.json' }] }, refetch: vi.fn() },
 }))
 vi.mock('../mcp/queries', () => ({ usePacks: () => packs, usePack: () => pack }))
 const source = { packKey: 'pack', suiteRevision: 1, caseNames: { clean: 'Clean case' }, exploratoryCount: 0 }
 const saved = { project: 'project', matrix: '{"matrixVersion":"3","cases":[{"id":"clean"}]}', testSource: source }
-const release = { id: 'release', pack: '{"version":"1"}', packVersion: '1', tests: 'passed', preview: { disposition: { kind: 'outcome', outcomeId: 'accept', reasons: [], handoff: { state: 'none' } } } }
+const release = { packId:'policy',sample:{facts:{}},id: 'release', pack: '{"version":"1"}', packVersion: '1', tests: 'passed', preview: { disposition: { kind: 'outcome', outcomeId: 'accept', reasons: [], handoff: { state: 'none' } } } }
 beforeEach(() => {
+ vi.mocked(saveJobDraft).mockImplementation(async(id,values)=>{const result={file:{path:'draft',sha256:'sha',content:'',bytes:0},draft:{version:1 as const,id,updatedAt:new Date().toISOString(),status:'draft' as const,values}};vi.mocked(loadJobDraft).mockResolvedValue(result);return result})
  pack.refetch.mockResolvedValue(pack); packs.refetch.mockResolvedValue(packs)
  vi.mocked(readReview).mockRejectedValue(new Error('The review could not be loaded. Please try again.'))
  vi.mocked(readReleaseTests).mockResolvedValue(saved)
@@ -277,16 +278,51 @@ it('leaves the tested-releases policy as it was: a reviewed release whose tests 
 })
 
 it('upgrades only the reviewed frozen job revision through the existing checked-release flow',async()=>{
- const base={job:{id:'job-base',name:'Existing',releaseId:'old-release',revision:4},release:{...release,packId:undefined,packVersion:'0.1.0'}}
+ const base={job:{id:'job-base',name:'Existing',releaseId:'old-release',revision:4},release:{...release,packId:'policy',packVersion:'0.1.0'}}
  vi.mocked(jobsAPI).mockImplementation(async(path)=>path==='jobs/job-base'?base:path==='previews'?release:base.job)
- renderCreate('/jobs/new?pack=pack&upgrade=job-base')
+ renderCreate('/jobs/new?upgrade=job-base')
  await screen.findByDisplayValue('Existing')
  expect((screen.getByLabelText('Job name') as HTMLInputElement).disabled).toBe(true)
- expect(screen.queryByRole('button',{name:'Save draft'})).toBeNull()
+ expect(screen.getByRole('button',{name:'Save draft'})).toBeTruthy()
  next();next();next();fireEvent.click(screen.getByRole('button',{name:'Check release'}))
  await screen.findByText('Review this release')
  expect((screen.getByRole('button',{name:'Upgrade job'}) as HTMLButtonElement).disabled).toBe(true)
  fireEvent.click(review());fireEvent.click(screen.getByRole('button',{name:'Upgrade job'}))
  await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith('jobs/job-base/upgrade',{releaseId:release.id,baseReleaseId:'old-release',baseRevision:4,reviewed:true}))
  expect(vi.mocked(jobsAPI).mock.calls.some(([path])=>path==='jobs')).toBe(false)
+})
+
+it('recovers a historical completed upgrade after reload without restoring approval or checking changed project inputs',async()=>{
+ const attempt={jobId:'job-base',baseReleaseId:'old-release',baseRevision:4,submittedReleaseId:'accepted-release'}
+ const values={name:'Existing',packId:'pack',facts:'{}',supplied:false,evidence:'{}',inputMode:'manual' as const,upgrade:attempt}
+ vi.mocked(loadJobDraft).mockResolvedValue({file:{path:'draft',content:'',bytes:0,sha256:'retained'},draft:{version:1,id:'recover',status:'draft',updatedAt:'2026-10-16T12:00:00Z',values}})
+ const receipt={id:'job-base',name:'Existing',releaseId:'accepted-release',revision:5,createdAt:''}
+ vi.mocked(jobsAPI).mockImplementation(async(path)=>path.includes('/upgrade-receipt?')?receipt:{job:{...receipt,releaseId:'later-release',revision:6},release})
+ vi.mocked(readReleaseTests).mockRejectedValue(Error('Project changed'))
+ renderCreate('/jobs/new?draft=recover')
+ await screen.findByText('This upgrade has already been applied.')
+ expect(screen.getByRole('link',{name:'Open job'}).getAttribute('href')).toBe('/jobs/job-base')
+ expect(readReleaseTests).not.toHaveBeenCalled()
+ expect(vi.mocked(jobsAPI).mock.calls.every(([,body])=>body===undefined)).toBe(true)
+ expect(saveJobDraft).not.toHaveBeenCalled()
+})
+
+it('reconciles an interrupted attempt before checking changed inputs on an explicit retry',async()=>{
+ const base={job:{id:'job-base',name:'Existing',releaseId:'old-release',revision:4},release:{...release,packId:'policy',packVersion:'0.1.0'}}
+ const receipt={...base.job,releaseId:release.id,revision:5}
+ vi.mocked(jobsAPI).mockImplementation(async(path)=>{
+  if(path==='jobs/job-base')return base
+  if(path==='previews')return release
+  if(path.includes('/upgrade-receipt?'))return receipt
+  if(path.endsWith('/upgrade')){vi.mocked(readReleaseTests).mockRejectedValue(Error('Project changed'));throw Error('Response lost')}
+  throw Error('Unexpected write')
+ })
+ renderCreate('/jobs/new?upgrade=job-base');await screen.findByDisplayValue('Existing')
+ next();next();next();fireEvent.click(screen.getByRole('button',{name:'Check release'}));await screen.findByText('Review this release')
+ fireEvent.click(review());fireEvent.click(screen.getByRole('button',{name:'Upgrade job'}));await screen.findByText('Response lost')
+ const reads=vi.mocked(readReleaseTests).mock.calls.length
+ fireEvent.click(screen.getByRole('button',{name:'Upgrade job'}))
+ await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith(expect.stringContaining('/upgrade-receipt?')))
+ expect(readReleaseTests).toHaveBeenCalledTimes(reads)
+ expect(vi.mocked(jobsAPI).mock.calls.filter(([path])=>path.endsWith('/upgrade'))).toHaveLength(1)
 })

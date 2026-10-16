@@ -18,7 +18,7 @@ import { Disclosure } from '../ui/Disclosure'
 import { jobsAPI, type SourceInput, type InputPreview } from './client'
 import type { ExecutableDialect, ProfileEntry, SourceV2 } from './dialectTypes'
 import { isSourceV2 } from './dialectTypes'
-import { parseMapping, parseMappedObject, prepareMappedInputs } from './mappedInputs'
+import { parseMapping, parseMappedObject, parseMappedCase, prepareMappedInputs } from './mappedInputs'
 import { localSnapshot, pointerEscape } from './sourceInputs'
 import { DialectEditor } from './DialectEditor'
 import { MappedCaseFields } from './MappedCaseFields'
@@ -43,7 +43,7 @@ export function MappedInputFields({doc, packText, fixed, disabled, active=true, 
  const operation = useRef<AbortController | null>(null), uploads = useRef<Record<string, HTMLInputElement | null>>({})
  const initial = useRef({text,caseText})
  const draftChanged = useRef(onDraftChange); draftChanged.current = onDraftChange
- useEffect(() => { if (text !== initial.current.text || caseText !== initial.current.caseText || draft) draftChanged.current?.({text,caseText}) }, [text,caseText])
+ useEffect(() => { if (text !== initial.current.text || caseText !== initial.current.caseText || draft) draftChanged.current?.({text,caseText,...(draft?.importText?{importText:draft.importText}:{})}) }, [text,caseText])
  useEffect(() => { onWorkChange?.(text !== initial.current.text || caseText !== initial.current.caseText || editorInvalid || Object.keys(files).length > 0 || Object.keys(selections).length > 0) }, [text,caseText,editorInvalid,files,selections,onWorkChange])
  useEffect(() => { onPendingChange?.(editorInvalid || !caseValid) }, [editorInvalid,caseValid,onPendingChange])
  const {mapping,mappingError} = useMemo(() => {try {return {mapping:parseMapping(text)}} catch(error) {return {mappingError:error}}},[text])
@@ -79,7 +79,7 @@ export function MappedInputFields({doc, packText, fixed, disabled, active=true, 
    await checkDialect(mapping,packText,active.signal)
    // Refresh installation pins before each explicit acquisition.
    const trusted=await profiles.refetch();active.signal.throwIfAborted();if(trusted.error)throw trusted.error
-   const result=await prepareMappedInputs({mapping,caseValue:parseMappedObject(caseText),files,selections,profiles:trusted.data ?? [],config,signal:active.signal,progress:name=>setProgress(msg('Reading {{source}}…',{source:name}))})
+   const result=await prepareMappedInputs({mapping,caseValue:parseMappedCase(caseText),...(draft?.importText?{imported:parseMappedObject(draft.importText) as unknown as NonNullable<SourceV2['import']>}:{}),files,selections,profiles:trusted.data ?? [],config,signal:active.signal,progress:name=>setProgress(msg('Reading {{source}}…',{source:name}))})
    active.signal.throwIfAborted();setPreview(result)
    if(result.input.source && isSourceV2(result.input.source))onChange(result.input.source)
   } catch(e) {if(!active.signal.aborted){setError(mappingErrorMessage(e));if(e instanceof ConnectionRequestError && e.provider==='google-drive' && e.reconnectRequired)setReconnect(true)}}
