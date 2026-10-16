@@ -61,11 +61,13 @@ func TestInputSubscriptionRevisionEligibility(t *testing.T) {
 func TestInputSubscriptionRealRunnerOutbox(t *testing.T) {
 	for _, backend := range []string{"file", "memory"} {
 		for _, phase := range []string{"before", "after"} {
-			t.Run(backend+"/"+phase, func(t *testing.T) { testInputSubscriptionRealRunnerOutbox(t, backend, phase) })
+			for _, state := range []string{"enabled", "paused"} {
+				t.Run(backend+"/"+phase+"/"+state, func(t *testing.T) { testInputSubscriptionRealRunnerOutbox(t, backend, phase, state == "paused") })
+			}
 		}
 	}
 }
-func testInputSubscriptionRealRunnerOutbox(t *testing.T, backend, phase string) {
+func testInputSubscriptionRealRunnerOutbox(t *testing.T, backend, phase string, paused bool) {
 	bin, runtime := os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
 	if bin == "" || runtime == "" {
 		t.Skip("requires Runner and Runtime")
@@ -222,6 +224,9 @@ func testInputSubscriptionRealRunnerOutbox(t *testing.T, backend, phase string) 
 	if !completed {
 		t.Fatal("accepted run did not complete")
 	}
+	if paused {
+		call(path+"/evaluations/"+b.ID+"/subscription-state", map[string]any{"reviewed": true, "enabled": false}, "")
+	}
 	// Discard that acknowledgement; the journaled outbox is still pending.
 	// Then lose the storage acknowledgement too, on either side of commit.
 	provider := s.evaluationJournals
@@ -232,6 +237,10 @@ func testInputSubscriptionRealRunnerOutbox(t *testing.T, backend, phase string) 
 			t.Fatal("unexpected batch")
 		}
 		return interceptedEvaluationJournal{evaluationJournal: journal, write: func(ctx context.Context, candidate inputEvaluation, revision string) (evaluationSnapshot, error) {
+			// The confirmed pause is reconciled before receipt-only recovery.
+			if paused && len(candidate.Rows) == 1 && candidate.Rows[0].OccurrenceID == "" {
+				return journal.CompareAndSwap(ctx, candidate, revision)
+			}
 			writes++
 			if len(candidate.Rows) != 1 || candidate.Rows[0].OccurrenceID != accepted.Occurrence.ID {
 				t.Fatal("unexpected recovery write")
@@ -294,5 +303,60 @@ func testInputSubscriptionRealRunnerOutbox(t *testing.T, backend, phase string) 
 	b, e = snapshot.Document, readErr
 	if e != nil || b.State != "blocked" || b.Rows[1].OccurrenceID != "" {
 		t.Fatal("stale recipe delivered", b, e)
+	}
+}
+
+func TestPausedSubscriptionReceiptDoesNotDiscardUnknownIntent(t *testing.T) {
+	original := inputEvaluationRow{RecordID: "row", RecordDigest: "record-digest", EventID: "event", EventAt: "2026-10-16T10:00:00Z", State: "pending", Input: json.RawMessage(`{"facts":{"zero":0,"missing":null},"signature":"retained"}`)}
+	b := inputEvaluation{JobID: "job_original", ReleaseID: "release_original", Subscription: &inputSubscription{TriggerID: "trigger_original"}}
+	valid := map[string]any{"id": "occ_original", "jobId": b.JobID, "releaseId": b.ReleaseID, "triggerId": b.Subscription.TriggerID, "eventId": original.EventID, "state": "submitted", "runId": "run_original"}
+	for _, scenario := range []string{"absent", "unavailable", "wrong-job", "wrong-release", "wrong-trigger", "wrong-event", "accepted"} {
+		t.Run(scenario, func(t *testing.T) {
+			row := original
+			receipt := map[string]any{}
+			for key, value := range valid {
+				receipt[key] = value
+			}
+			switch scenario {
+			case "wrong-job":
+				receipt["jobId"] = "job_other"
+			case "wrong-release":
+				receipt["releaseId"] = "release_other"
+			case "wrong-trigger":
+				receipt["triggerId"] = "trigger_other"
+			case "wrong-event":
+				receipt["eventId"] = "event_other"
+			}
+			calls := 0
+			found, err := recoverPausedSubscriptionDelivery(t.Context(), b, &row, func(_ context.Context, path string) (json.RawMessage, error) {
+				calls++
+				if path != "triggers/trigger_original/deliveries/event" {
+					t.Fatal("wrong receipt", path)
+				}
+				if scenario == "absent" {
+					return nil, &inputRunnerError{404, "absent"}
+				}
+				if scenario == "unavailable" {
+					return nil, &inputRunnerError{503, "unavailable"}
+				}
+				raw, _ := json.Marshal(map[string]any{"occurrence": receipt})
+				return raw, nil
+			})
+			if calls != 1 {
+				t.Fatal("receipt lookup repeated", calls)
+			}
+			if scenario == "accepted" {
+				if err != nil || !found || row.OccurrenceID != "occ_original" || row.RunID != "run_original" || len(row.Input) != 0 || row.EventID != original.EventID || row.EventAt != original.EventAt {
+					t.Fatal(found, err, row)
+				}
+			} else {
+				if found || !sameEvaluationValue(row, original) {
+					t.Fatal("unknown intent was changed", found, err, row)
+				}
+				if (err == nil) != (scenario == "absent") {
+					t.Fatal("wrong recovery outcome", err)
+				}
+			}
+		})
 	}
 }
