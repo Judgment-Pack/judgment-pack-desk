@@ -2409,20 +2409,20 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # in a query that does not parse, is refused, while none means the start.
   # No Jobs path at all may be percent-encoded (review of #228).
   mutate go "jobs journal (route): not on the route list" "$J" \
-    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/upgrade|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|'
   mutate go "jobs journal (route): a path that begins with it forwarded" "$J" \
-    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events.*|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events.*|'
   mutate go "jobs journal (route): the store-wide journal forwarded" "$J" \
-    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|events|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|events|'
   mutate go "jobs journal (route): an id in upper-case hex forwarded" "$J" \
-    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-fA-F0-9]{32}/events|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-fA-F0-9]{32}/events|'
   mutate go "jobs journal (route): an id with hex letters refused" "$J" \
-    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[0-9]{32}/events|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[0-9]{32}/events|'
   mutate go "jobs journal (route): written with POST" "$J" \
     ' || (tail == runChainRoute || journalPath.MatchString(tail)) && r.Method != http.MethodGet {' \
     ' || tail == runChainRoute && r.Method != http.MethodGet {'
@@ -13436,8 +13436,8 @@ export function assistantTransport(id: string): Transport {
     "{ setState({ phase: 'absent' }); return }" \
     "{ setState({ phase: 'absent' }); await new Promise(resolve => setTimeout(resolve, JOURNAL_REFRESH_MS)); continue }"
   mutate web "jobs journal (reading): a refusal that is not JSON loses its status" web/src/jobs/client.ts \
-    "  const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })" \
-    "  const result = await response.json()"
+    "  try { result = JSON.parse(raw) } catch (error) { if (response.ok) throw error; result = {} }" \
+    "  result = JSON.parse(raw)"
   mutate web 'jobs journal (order): a record stands by its time, not its creation entry' web/src/jobs/activity.ts \
     'return at === undefined ? [0, row.when.time] : [1, entryPlace(at) + 0.5] }' \
     'return [0, row.when.time] }'
