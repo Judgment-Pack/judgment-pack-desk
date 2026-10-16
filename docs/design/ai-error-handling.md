@@ -57,3 +57,13 @@ Execution checkpoints retain normalized finish reasons and reported token counts
 
 
 An interrupted conversational response whose model-request allowance is exhausted can offer an explicit **Retry · +10 requests** action, subject to the shared ceiling and existing retry eligibility. The grant is persisted before dispatch; it does not add a duplicate user turn or replay prior operations. Remaining-allowance failures retain ordinary **Retry response**. Both controls use the shared compact secondary button, retry icon, density tokens and right-aligned action placement. Technical diagnostics stay in the shared disclosure. A changed artifact's background validation updates readiness without stealing ownership from failed responses, pending questions or budget pauses.
+
+Background feature calls use the same normalized completion contract as chat.
+`backgroundCompletion` rejects explicit truncation, filtering and unexpected API
+tool calls before returning structured output to a feature. Valid JSON does not
+make an explicitly truncated answer complete. Failure metadata keeps sanitized
+usage totals (including Gemini reasoning and Anthropic cache input) and normalized
+stop reasons; raw provider prose is excluded. This guard performs no second model
+request. The owning workflow retains the failed attempt and decides continuation.
+Older compatible endpoints that omit stop metadata still undergo the feature's
+bounded response validation.

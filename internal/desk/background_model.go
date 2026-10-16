@@ -270,6 +270,9 @@ func (s *Server) runBackgroundModel(ctx context.Context, task backgroundModelReq
 	if bytes.Contains(raw, []byte(stored.key)) {
 		return nil, aifailure.New("invalid-response", "model", "unknown")
 	}
+	if _, err := backgroundCompletion(endpoint.kind, raw); err != nil {
+		return nil, err
+	}
 	var wire struct {
 		Choices []struct {
 			Message struct {
