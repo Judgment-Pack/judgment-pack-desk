@@ -57,3 +57,12 @@ Page profiles currently pin one exact acquisition endpoint. A generated page
 profile does not authorize arbitrary discovered URLs. General crawling needs a
 coordinated Spec/Runner/Gateway contract; Desk must not erase or rewrite the
 receipt endpoint to make it fit a profile.
+
+A separate fresh-import acceptance fixture runs the same unbound definition on
+two isolated Desk/Runner/Gateway installations, each with its own connection
+revision, registered model profile and signing key. Both execute once and replay
+twice without more model calls. Copying one installation's retained responses
+into the other's input must produce Runner's explicit profile-mismatch refusal.
+This test is required in companion CI; ordinary unit runs skip it when the pinned
+companions are absent. It does not substitute for the pending signed Exchange
+release or the two-stage workflow recording.
