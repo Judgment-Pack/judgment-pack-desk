@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { listFiles, readFile, writeFile, type FileContent } from '../files/client'
 import { msg } from '../i18n'
 import type { TriggerConfig } from './triggerTypes'
-export interface MappedDraft { text: string; caseText: string }
+export interface MappedDraft { text: string; caseText: string; importText?:string }
+export interface JobUpgradeBasis {jobId:string;baseReleaseId:string;baseRevision:number;submittedReleaseId?:string}
 export interface JobDraftValues {
+  upgrade?:JobUpgradeBasis
   name: string; packId: string; inputMode: 'manual' | 'mapped'; facts: string; supplied: boolean; evidence: string
   mapped?: MappedDraft; trigger?: TriggerConfig
 }
@@ -36,7 +38,8 @@ export function decodeJobDraft(text: string): JobDraft {
   if (!object(value) || value.version !== 1 || !['draft','created'].includes(String(value.status)) || !strings(value,['id','updatedAt']) || !object(value.values)) throw Error(msg('Invalid job draft.'))
   const v = value.values
   if (!strings(v,['name','packId','facts','evidence']) || typeof v.supplied !== 'boolean' || !['manual','mapped'].includes(String(v.inputMode)) ||
-      v.mapped !== undefined && (!object(v.mapped) || !strings(v.mapped,['text','caseText'])) || v.trigger !== undefined && !triggerShape(v.trigger)) throw Error(msg('Invalid job draft.'))
+      v.mapped !== undefined && (!object(v.mapped) || !strings(v.mapped,['text','caseText']) || v.mapped.importText!==undefined && typeof v.mapped.importText!=='string') || v.trigger !== undefined && !triggerShape(v.trigger)) throw Error(msg('Invalid job draft.'))
+  if (v.upgrade !== undefined && (!object(v.upgrade) || !strings(v.upgrade,['jobId','baseReleaseId']) || !v.upgrade.jobId || !v.upgrade.baseReleaseId || !Number.isSafeInteger(v.upgrade.baseRevision) || Number(v.upgrade.baseRevision)<1 || v.upgrade.submittedReleaseId!==undefined && (typeof v.upgrade.submittedReleaseId!=='string'||!v.upgrade.submittedReleaseId) || v.trigger!==undefined)) throw Error(msg('Invalid job draft.'))
   if (!Number.isFinite(Date.parse(value.updatedAt as string))) throw Error(msg('Invalid job draft.'))
   path(value.id as string)
   return value as unknown as JobDraft
@@ -48,7 +51,7 @@ export async function loadJobDraft(id: string): Promise<SavedJobDraft> {
 }
 /** Explicit configuration only. No picker grants, file snapshots, preview receipts or release approvals. */
 export async function saveJobDraft(id: string, values: JobDraftValues, baseSha256 = '', status: JobDraft['status'] = 'draft'): Promise<SavedJobDraft> {
-  const draft: JobDraft = { version: 1, id, updatedAt: new Date().toISOString(), status, values: structuredClone({name:values.name,packId:values.packId,inputMode:values.inputMode,facts:values.facts,supplied:values.supplied,evidence:values.evidence,...(values.mapped?{mapped:{text:values.mapped.text,caseText:values.mapped.caseText}}:{}),...(values.trigger?{trigger:values.trigger}:{})}) }
+  const draft: JobDraft = { version: 1, id, updatedAt: new Date().toISOString(), status, values: structuredClone({name:values.name,packId:values.packId,inputMode:values.inputMode,facts:values.facts,supplied:values.supplied,evidence:values.evidence,...(values.upgrade?{upgrade:{jobId:values.upgrade.jobId,baseReleaseId:values.upgrade.baseReleaseId,baseRevision:values.upgrade.baseRevision,...(values.upgrade.submittedReleaseId?{submittedReleaseId:values.upgrade.submittedReleaseId}:{})}}:{}),...(values.mapped?{mapped:{text:values.mapped.text,caseText:values.mapped.caseText,...(values.mapped.importText?{importText:values.mapped.importText}:{})}}:{}),...(values.trigger?{trigger:values.trigger}:{})}) }
   const content = JSON.stringify(draft, null, 2)
   decodeJobDraft(content)
   const file = await writeFile({ path: path(id), content, baseSha256, createParents: true })

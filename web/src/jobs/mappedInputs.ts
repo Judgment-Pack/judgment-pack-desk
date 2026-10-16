@@ -1,6 +1,8 @@
 import { msg } from '../i18n'
 import type { ResearchConfig } from '../config/deskConfig'
 import { acquire, newResearchSession, seal } from '../research/gatewayClient'
+import {parseJsonText,type JsonNode} from '../research/verify/canon'
+import {jobsRequest} from './wire'
 import { parseJSON } from '../dialect/canon'
 import { readDocumentRecord } from '../documents/record'
 import { connectionFailure, type DriveSelection } from '../connections/client'
@@ -15,6 +17,13 @@ export function parseMappedObject(text: string): Record<string, unknown> {
  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw Error(msg('Choose one JSON object describing a single input record.'))
  return value
 }
+/** Case values are general retained JSON, not the dialect's canon domain. */
+export function parseMappedCase(text:string):Record<string,unknown> {
+ const root=parseJsonText(text)
+ if(root.kind!=='object')throw Error(msg('Choose one JSON object describing a single input record.'))
+ const value=(node:JsonNode):unknown=>node.kind==='number'?(JSON.stringify(Number(node.literal))===node.literal?Number(node.literal):new RetainedJSON(node.literal)):node.kind==='array'?node.items.map(value):node.kind==='object'?Object.fromEntries(node.members.map(m=>[m.name,value(m.value)])):node.kind==='null'?null:node.value
+ return value(root) as Record<string,unknown>
+}
 export function parseMapping(text: string): ExecutableDialect {
  const value = parseMappedObject(text)
  const sources=value.sources===undefined?[]:value.sources
@@ -26,7 +35,7 @@ export function parseMapping(text: string): ExecutableDialect {
  return value as unknown as ExecutableDialect // Runner performs authoritative schema validation before acquisition.
 }
 export function mappedCase(mapping: ExecutableDialect, value: Record<string, unknown>, selections: Record<string, DriveSelection>): Record<string, unknown> {
- const result = JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+ const result = parseMappedCase(jobsRequest(value))
  for (const source of (mapping.sources ?? []).filter(s => s.provider === 'google-drive')) {
   const selection = selections[source.name]
   if (!selection) throw Error(msg('Choose from Google Drive'))
@@ -49,11 +58,11 @@ export function mappedCase(mapping: ExecutableDialect, value: Record<string, unk
  return result
 }
 export async function prepareMappedInputs(options: {
- mapping: ExecutableDialect; caseValue: Record<string, unknown>; files: Record<string, SourceInput['snapshot']>; selections: Record<string, DriveSelection>;
+ imported?:{dialect:ExecutableDialect;binding:unknown}; mapping: ExecutableDialect; caseValue: Record<string, unknown>; files: Record<string, SourceInput['snapshot']>; selections: Record<string, DriveSelection>;
  config: ResearchConfig; profiles: ProfileEntry[]; signal: AbortSignal; progress: (name: string) => void;
 }): Promise<InputPreview> {
  const {mapping, config, profiles, signal} = options
- const source: SourceV2 = {mapping, case: mappedCase(mapping, options.caseValue, options.selections), sources: {}}
+ const source: SourceV2 = {mapping,...(options.imported?{import:options.imported}:{}), case: mappedCase(mapping, options.caseValue, options.selections), sources: {}}
  // Check all browser relay pins before any call, not only the first source.
  for (const s of mapping.sources ?? []) {
   if (!s.profile) continue

@@ -9,6 +9,6 @@ export function isExecutableDialect(mapping: SourceInput['mapping'] | Executable
  return !!mapping && (mapping.version===2 || mapping.version===3 || 'formatVersion' in mapping && (mapping.formatVersion==='2.0.0'||mapping.formatVersion==='3.0.0'))
 }
 export interface ProfileEntry { profile: InputProfile; digest: string }
-export interface SourceV2 { mapping: ExecutableDialect; case: Record<string, unknown>; sources: Record<string, {snapshot?: SourceInput['snapshot']; response?: RetainedJSON | unknown}>; mappingDigest?: string }
+export interface SourceV2 { import?:{dialect:ExecutableDialect;binding:unknown}; mapping: ExecutableDialect; case: Record<string, unknown>; sources: Record<string, {snapshot?: SourceInput['snapshot']; response?: RetainedJSON | unknown}>; mappingDigest?: string }
 export interface InputPlan { next?: {name: string; kind: string; provider?: string; profile?: string; source?: string; arguments?: Record<string, unknown>}; input?: JobInput; factsText?: string; evidenceText?: string }
 export const isSourceV2 = (s: SourceInput | SourceV2): s is SourceV2 => isExecutableDialect(s.mapping)

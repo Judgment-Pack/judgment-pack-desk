@@ -14,9 +14,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -39,7 +41,14 @@ type inputEvaluationRow struct {
 	Signing      json.RawMessage `json:"signing,omitempty"`
 	Problem      string          `json:"problem,omitempty"`
 }
+type inputUpgradeReview struct {
+	JobID         string          `json:"jobId"`
+	BaseReleaseID string          `json:"baseReleaseId"`
+	BaseRevision  int             `json:"baseRevision"`
+	Result        json.RawMessage `json:"result,omitempty"`
+}
 type inputEvaluation struct {
+	Upgrade         *inputUpgradeReview  `json:"upgrade,omitempty"`
 	Subscription    *inputSubscription   `json:"subscription,omitempty"`
 	Version         int                  `json:"version"`
 	ID              string               `json:"id"`
@@ -476,12 +485,18 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, reader inputPreparationReader, saved inputPreparationReply, id string) {
 	fail := func(e error) { writeJSONCoded(w, 409, CodeStale, e.Error()) }
 	var request struct {
-		Reviewed     bool               `json:"reviewed"`
-		Subscription *inputSubscription `json:"subscription,omitempty"`
-		Enabled      *bool              `json:"enabled,omitempty"`
+		Reviewed     bool                `json:"reviewed"`
+		Upgrade      *inputUpgradeReview `json:"upgrade,omitempty"`
+		Subscription *inputSubscription  `json:"subscription,omitempty"`
+		Enabled      *bool               `json:"enabled,omitempty"`
 	}
 	if inputRequest(r, &request) != nil || !request.Reviewed {
 		writeJSONCoded(w, 400, CodeBadRequest, "Confirm the reviewed evaluation before starting it.")
+		return
+	}
+	upgrading := strings.HasSuffix(r.URL.Path, "/upgrade")
+	if upgrading != (request.Upgrade != nil) || upgrading && (request.Subscription != nil || request.Enabled != nil || !evaluationJobID.MatchString(request.Upgrade.JobID) || !referenceReleaseID.MatchString(request.Upgrade.BaseReleaseID) || request.Upgrade.BaseRevision < 1 || len(request.Upgrade.Result) != 0) {
+		writeJSONCoded(w, 400, CodeBadRequest, "Choose an existing job revision and review its upgrade.")
 		return
 	}
 	root, e := s.inputEvaluationRoot(false)
@@ -513,12 +528,55 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 		fail(errors.New("The evaluation review does not belong to these inputs."))
 		return
 	}
+	if b.Upgrade != nil && !upgrading {
+		fail(errors.New("This evaluation is reserved for a reviewed job upgrade."))
+		return
+	}
+	if upgrading {
+		if r.Header.Get("If-Match") != b.Revision {
+			fail(errors.New("Review the same evaluation revision before upgrading."))
+			return
+		}
+		if b.Upgrade != nil {
+			prior := *b.Upgrade
+			prior.Result = nil
+			if !sameEvaluationValue(prior, *request.Upgrade) {
+				fail(errors.New("This review belongs to a different job upgrade."))
+				return
+			}
+			if len(b.Upgrade.Result) != 0 {
+				writeJSON(w, 200, b.Upgrade.Result)
+				return
+			}
+			// Resolve an uncertain write before validating current mutable inputs.
+			// A read can return an older receipt, but can never admit another upgrade.
+			q := url.Values{"baseRevision": {strconv.Itoa(prior.BaseRevision)}, "baseReleaseId": {prior.BaseReleaseID}, "releaseId": {b.ReleaseID}}
+			raw, err := s.inputRunner(r.Context(), "jobs/"+prior.JobID+"/upgrade-receipt?"+q.Encode(), nil, "")
+			if err == nil {
+				if err = retainInputUpgrade(&b, &checkpoint, raw); err != nil {
+					fail(err)
+					return
+				}
+				writeJSON(w, 200, json.RawMessage(raw))
+				return
+			}
+			var refused *inputRunnerError
+			if !errors.As(err, &refused) || refused.Status != 404 {
+				fail(err)
+				return
+			}
+		}
+	}
 	if strings.HasSuffix(r.URL.Path, "/subscription-state") && (b.ConfirmedAt == "" || b.Subscription == nil) {
 		fail(errors.New("Only a saved subscription can be enabled or paused."))
 		return
 	}
 	if b.ConfirmedAt != "" && request.Subscription != nil && (b.Subscription == nil || b.Subscription.Mode != request.Subscription.Mode || b.Subscription.IncludeExisting != request.Subscription.IncludeExisting) {
 		fail(errors.New("This review already saved a different configuration. Review a new subscription."))
+		return
+	}
+	if upgrading && b.ConfirmedAt != "" {
+		fail(errors.New("This evaluation already started execution. Review a new upgrade sample."))
 		return
 	}
 	if b.ConfirmedAt != "" {
@@ -595,6 +653,40 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 		fail(errors.New("Saved tests are required. Add tests for this pack and review evaluation again."))
 		return
 	}
+	if upgrading {
+		// The preparation read view and project locks still hold the exact
+		// accepted records, publication and saved tests checked above. Runner
+		// owns the job CAS, immutable revision receipt and paused triggers.
+		if b.Upgrade == nil {
+			health, err := s.inputRunner(r.Context(), "status", nil, "")
+			var capabilities struct {
+				Capabilities []string `json:"capabilities"`
+			}
+			if err != nil || json.Unmarshal(health, &capabilities) != nil || !contains(capabilities.Capabilities, "job-upgrade-receipts") {
+				fail(errors.New("Update Runner before upgrading a job from reviewed records."))
+				return
+			}
+			b.Upgrade = request.Upgrade
+			if err := checkpoint.save(r.Context(), b); err != nil {
+				fail(err)
+				return
+			}
+		}
+		requestBody := map[string]any{"releaseId": b.ReleaseID, "baseReleaseId": request.Upgrade.BaseReleaseID, "baseRevision": request.Upgrade.BaseRevision, "reviewed": true}
+		raw, err := s.inputRunner(r.Context(), "jobs/"+request.Upgrade.JobID+"/upgrade", requestBody, "")
+		if err != nil {
+			fail(err)
+			return
+		}
+		if err = retainInputUpgrade(&b, &checkpoint, raw); err != nil {
+			fail(err)
+			return
+		}
+		// Do not confirm the evaluation batch: doing so would enqueue another
+		// job or record runs. Its retained review is the candidate's provenance.
+		writeJSON(w, 200, json.RawMessage(raw))
+		return
+	}
 	if request.Subscription != nil {
 		if request.Subscription.Mode != "new" && request.Subscription.Mode != "changed" {
 			fail(errors.New("Choose new records or new and changed records."))
@@ -617,6 +709,21 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeJSON(w, 202, b)
+}
+
+// The result is an immutable completion receipt, separate from evaluation
+// confirmation: workers must not create a second job or submit these rows.
+func retainInputUpgrade(b *inputEvaluation, checkpoint *evaluationCheckpoint, raw json.RawMessage) error {
+	var job struct {
+		ID        string `json:"id"`
+		ReleaseID string `json:"releaseId"`
+		Revision  int    `json:"revision"`
+	}
+	if b.Upgrade == nil || json.Unmarshal(raw, &job) != nil || job.ID != b.Upgrade.JobID || job.ReleaseID != b.ReleaseID || job.Revision != b.Upgrade.BaseRevision+1 {
+		return errors.New("The job response does not match the reviewed upgrade.")
+	}
+	b.Upgrade.Result = raw
+	return checkpoint.retain(*b)
 }
 
 func (s *Server) startInputEvaluations() {

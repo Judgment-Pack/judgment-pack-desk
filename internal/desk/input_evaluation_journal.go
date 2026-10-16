@@ -79,6 +79,21 @@ func validateEvaluationJournal(b inputEvaluation, id string) error {
 	if b.Version != 1 || !inputEvaluationID.MatchString(id) || b.ID != id || !inputPreparationID.MatchString(b.PreparationID) || len(b.Rows) > inputRecordLimit {
 		return errors.New("Invalid evaluation record.")
 	}
+	if u := b.Upgrade; u != nil {
+		if b.ConfirmedAt != "" || b.Subscription != nil || !evaluationJobID.MatchString(u.JobID) || !referenceReleaseID.MatchString(u.BaseReleaseID) || u.BaseRevision < 1 {
+			return errors.New("Invalid upgrade review.")
+		}
+		if len(u.Result) != 0 {
+			var j struct {
+				ID        string `json:"id"`
+				ReleaseID string `json:"releaseId"`
+				Revision  int    `json:"revision"`
+			}
+			if json.Unmarshal(u.Result, &j) != nil || j.ID != u.JobID || j.ReleaseID != b.ReleaseID || j.Revision != u.BaseRevision+1 {
+				return errors.New("Invalid upgrade receipt.")
+			}
+		}
+	}
 	seen := map[string]bool{}
 	for _, row := range b.Rows {
 		key := row.RecordID
@@ -120,6 +135,7 @@ func frozenEvaluation(b inputEvaluation) inputEvaluation {
 	b.Problem = ""
 	b.Rows = nil
 	b.Subscription = nil
+	b.Upgrade = nil
 	return b
 }
 func evaluationRowTerminal(state string) bool {
@@ -131,6 +147,19 @@ func evaluationRowTerminal(state string) bool {
 func validateEvaluationTransition(before, next inputEvaluation) error {
 	bad := errors.New("Retained evaluation intent and results cannot be replaced.")
 	if !sameEvaluationValue(frozenEvaluation(before), frozenEvaluation(next)) || before.ConfirmedAt != "" && before.ConfirmedAt != next.ConfirmedAt || before.JobID != "" && before.JobID != next.JobID {
+		return bad
+	}
+	if before.Upgrade != nil {
+		if next.Upgrade == nil {
+			return bad
+		}
+		a, b := *before.Upgrade, *next.Upgrade
+		a.Result = nil
+		b.Result = nil
+		if !sameEvaluationValue(a, b) || len(before.Upgrade.Result) != 0 && !sameEvaluationValue(before.Upgrade.Result, next.Upgrade.Result) {
+			return bad
+		}
+	} else if next.Upgrade != nil && (before.ConfirmedAt != "" || next.ConfirmedAt != "" || next.Subscription != nil) {
 		return bad
 	}
 	if before.Subscription != nil {

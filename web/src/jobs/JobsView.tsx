@@ -1,3 +1,7 @@
+import {dialectAPI,type DialectEvaluation} from '../dialects/client'
+import {UpgradeRecords} from './UpgradeRecords'
+import {readUpgradeReceipt,needsRecordReview,upgradeDraft,upgradeDraftState,upgradePackKey,type JobUpgrade} from './upgrade'
+import {UpgradeReview} from './UpgradeReview'
 import {isExecutableDialect} from './dialectTypes'
 import {privateQuery} from '../data/privateQuery'
 import {PageLoading} from '../ui/PageLoading'
@@ -142,46 +146,79 @@ function JobsTable({jobs,drafts,selection,complete}:{jobs:Job[];drafts:SavedJobD
 }
 function RunTable({runs,showJob=false,selection,complete}:{runs:Run[];showJob?:boolean;selection:CollectionSelection;complete:boolean}){return <SelectionTable selection={selection} variant={showJob?'index':undefined} aria-label={showJob?msg('Runs'):msg('Run history')} className={`${styles.table} ${showJob?styles.runsIndex:''}`}>{showJob&&<colgroup><col data-selection-column/><col data-name-column/><col className={styles.runIdColumn}/><col className={styles.runStateColumn}/><col/><col className={styles.submittedColumn}/></colgroup>}<thead><tr><SelectionHeader selection={selection} complete={complete}/>{showJob&&<th scope="col">{msg('Job')}</th>}<th scope="col">{msg('Run')}</th><th scope="col">{msg('Execution')}</th><th scope="col">{msg('Decision')}</th><th scope="col">{msg('Submitted')}</th></tr></thead><tbody>{runs.map(r=><CollectionRow key={r.id} data-selection-selected={selection.has('run:'+r.id)||undefined}><SelectionCell selection={selection} id={'run:'+r.id} name={r.id}/>{showJob&&<td><OverflowTooltip selector="[data-overflow-text]"><Link data-collection-name to={`/jobs/${r.jobId}`}><IconHistory/><span data-overflow-text>{r.jobName??r.jobId}</span></Link></OverflowTooltip></td>}<td><Link data-row-primary to={`/jobs/${r.jobId}/runs/${r.id}`}>{r.id.slice(-8)}</Link></td><td>{stateLabel(r.state)}</td><td><OverflowTooltip><span data-overflow-text>{decisionLabel(r.result)}</span></OverflowTooltip></td><td className="quiet">{submitted(r.createdAt)}</td></CollectionRow>)}</tbody></SelectionTable>}
 export function CreateJobContent() {
-  const [params] = useSearchParams(), draftId = params.get('draft'), upgradeId = params.get('upgrade')
-  const upgrade = useQuery({queryKey:['job-upgrade-base',upgradeId],queryFn:()=>jobsAPI<{job:Job;release:Release}>(`jobs/${upgradeId}`),enabled:!!upgradeId,retry:false,refetchOnWindowFocus:false,refetchOnReconnect:false})
-  const frozenUpgrade=useRef<{job:Job;release:Release}|undefined>(undefined)
-  if(upgradeId && upgrade.data && frozenUpgrade.current?.job.id!==upgradeId) frozenUpgrade.current=upgrade.data
-  const loaded = useQuery({ queryKey: ['job-draft', draftId], queryFn: () => loadJobDraft(draftId!), enabled: !!draftId, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false })
-  // Seed once from a fresh read. File-watcher refetches must never replace or
-  // unmount a working editor, including when a later read fails.
-  const hydrated = useRef<{id: string; value: SavedJobDraft} | undefined>(undefined)
-  if (!draftId) hydrated.current = undefined
-  if (draftId && hydrated.current?.id !== draftId) {
-    if (loaded.isPending || loaded.isFetching) return <PageLoading>{msg('Loading draft…')}</PageLoading>
-    if (loaded.error || !loaded.data || loaded.data.draft.status === 'created') return <><Problem error={loaded.error || Error(msg('This draft has already been used to create a job.'))} /><ButtonLink to="/jobs">{msg('Back to jobs')}</ButtonLink></>
-    hydrated.current = {id:draftId,value:loaded.data}
+ const [params]=useSearchParams()
+ return <CreateJobSession key={JSON.stringify([params.get('upgrade'),params.get('draft')])}/>
+}
+function CreateJobSession() {
+  const [params] = useSearchParams(), navigate=useNavigate(), cache=useQueryClient(), draftId=params.get('draft')
+  const loaded=useQuery({queryKey:['job-draft',draftId],queryFn:()=>loadJobDraft(draftId!),enabled:!!draftId,retry:false,staleTime:0,refetchOnMount:'always',refetchOnWindowFocus:false,refetchOnReconnect:false})
+  const upgradeId=params.get('upgrade')??loaded.data?.draft.values.upgrade?.jobId
+  const upgrade=useQuery({queryKey:['job-upgrade-base',upgradeId,draftId],queryFn:()=>jobsAPI<JobUpgrade>(`jobs/${upgradeId}`),enabled:!!upgradeId,retry:false,structuralSharing:false,staleTime:0,refetchOnMount:'always',refetchOnWindowFocus:false,refetchOnReconnect:false})
+  const packs=usePacks(), frozen=useRef<{key:string;value:JobUpgrade}|undefined>(undefined), hydrated=useRef<{id:string;value:SavedJobDraft}|undefined>(undefined)
+  const [startingError,setStartingError]=useState<unknown>(),starting=useRef<Promise<SavedJobDraft>|undefined>(undefined)
+  const session=upgradeId+':'+draftId
+  if(upgradeId&&upgrade.data&&!upgrade.error&&!upgrade.isFetching&&frozen.current?.key!==session)frozen.current={key:session,value:upgrade.data}
+  if(!draftId)hydrated.current=undefined
+  if(draftId&&loaded.data&&!loaded.error&&!loaded.isFetching&&hydrated.current?.id!==draftId)hydrated.current={id:draftId,value:loaded.data}
+  const attempt=hydrated.current?.value.draft.values.upgrade
+  const receipt=useQuery({queryKey:['job-upgrade-receipt',attempt],queryFn:()=>readUpgradeReceipt(attempt!),enabled:!!attempt?.submittedReleaseId,retry:false,staleTime:0,refetchOnMount:'always',refetchOnWindowFocus:false,refetchOnReconnect:false})
+  // Every upgrade has a durable candidate before editing. A refresh during the
+  // eventual write can recover its attempted release without replaying approval.
+  useEffect(()=>{
+    if(draftId||!upgradeId||!upgrade.data||upgrade.error||upgrade.isFetching||!packs.data||packs.error)return
+    let active=true
+    if(!starting.current){
+      const base=upgrade.data,id=crypto.randomUUID()
+      starting.current=saveJobDraft(id,upgradeDraft(base,upgradePackKey(base,packs.data.packs??[])))
+    }
+    void starting.current.then(saved=>{
+      if(!active)return
+      cache.setQueryData(['job-draft',saved.draft.id],saved)
+      navigate(`/jobs/new?upgrade=${encodeURIComponent(upgradeId)}&draft=${saved.draft.id}`,{replace:true})
+    }).catch(error=>{if(active)setStartingError(error)})
+    return()=>{active=false}
+  },[draftId,upgradeId,upgrade.data,upgrade.error,upgrade.isFetching,packs.data,packs.error,cache,navigate])
+  if(upgradeId&&!draftId)return startingError||upgrade.error||packs.error?<><Problem error={startingError||upgrade.error||packs.error}/><ButtonLink to="/jobs">{msg('Back to jobs')}</ButtonLink></>:<PageLoading>{msg('Creating draft…')}</PageLoading>
+  if(draftId&&hydrated.current?.id!==draftId)return loaded.error?<Problem error={loaded.error}/>:<PageLoading>{msg('Loading draft…')}</PageLoading>
+  const initial=hydrated.current?.value
+  if(initial?.draft.status==='created')return <><p>{msg('This draft has already been used to create a job.')}</p><ButtonLink to={initial.draft.values.upgrade?'/jobs/'+initial.draft.values.upgrade.jobId:'/jobs'}>{msg('Back to jobs')}</ButtonLink></>
+  if(attempt?.submittedReleaseId){
+    if(receipt.isPending||receipt.isFetching)return <PageLoading>{msg('Loading job…')}</PageLoading>
+    if(receipt.error)return <Problem error={receipt.error}/>
+    if(receipt.data)return <><p role="status">{msg('This upgrade has already been applied.')}</p><ButtonLink to={'/jobs/'+receipt.data.id}>{msg('Open job')}</ButtonLink></>
   }
   if(upgradeId){
-    if(!frozenUpgrade.current || frozenUpgrade.current.job.id!==upgradeId) return upgrade.error?<Problem error={upgrade.error}/>:<PageLoading>{msg('Loading job…')}</PageLoading>
-    return <CreateJobEditor key={upgradeId} upgrade={frozenUpgrade.current}/>
+    if(frozen.current?.key!==session)return upgrade.error?<Problem error={upgrade.error}/>:<PageLoading>{msg('Loading job…')}</PageLoading>
+    const base=frozen.current.value
+    if(!initial?.draft.values.upgrade)return <Problem error={Error(msg('Invalid job draft.'))}/>
+    const state=upgradeDraftState(base,initial.draft.values)
+    if(state!=='current')return <><p role="status">{state==='completed'?msg('This upgrade has already been applied.'):msg('The job changed after this draft was saved. Start a new upgrade from its current release.')}</p><ButtonLink to={'/jobs/'+base.job.id}>{msg('Open job')}</ButtonLink></>
+    return <CreateJobEditor key={session} initial={initial} upgrade={base}/>
   }
-  return <CreateJobEditor key={draftId ?? 'new'} initial={hydrated.current?.value} />
+  return <CreateJobEditor key={draftId??'new'} initial={initial}/>
 }
-function CreateJobEditor({initial,upgrade}: {initial?: SavedJobDraft;upgrade?:{job:Job;release:Release}}) {
+function CreateJobEditor({initial,upgrade,seed=initial?.draft.values}: {initial?: SavedJobDraft;upgrade?:JobUpgrade;seed?:JobDraftValues}) {
   useLocale()
   const [step,setStep]=useState(0),[inputsValid,setInputsValid]=useState(true)
   const details=useDetailsSlot(),inspector=useInspectorControls(),previousInputs=useRef(false)
-  const [trigger,setTrigger]=useState<TriggerConfig | undefined>(initial?.draft.values.trigger),[triggerValid,setTriggerValid]=useState(true)
+  const [trigger,setTrigger]=useState<TriggerConfig | undefined>(seed?.trigger),[triggerValid,setTriggerValid]=useState(true)
   const [params] = useSearchParams()
-  const [packId, setPackId] = useState(initial?.draft.values.packId ?? params.get('pack') ?? '')
+  const [packId, setPackId] = useState(seed?.packId ?? params.get('pack') ?? '')
   const packs = usePacks(), pack = usePack(packId)
   const research = useEffectiveConfig().config.research
-  const [inputMode, setInputMode] = useState<'manual' | 'mapped'>(initial?.draft.values.inputMode ?? 'mapped'), [source, setSource] = useState<SourceInput | SourceV2>()
-  const [name, setName] = useState(upgrade?.job.name ?? initial?.draft.values.name ?? ''), [facts, setFacts] = useState(initial?.draft.values.facts ?? '{}'), [supplied, setSupplied] = useState(initial?.draft.values.supplied ?? false), [evidence, setEvidence] = useState(initial?.draft.values.evidence ?? '{}')
+  const [inputMode, setInputMode] = useState<'manual' | 'mapped'>(seed?.inputMode ?? 'mapped'), [source, setSource] = useState<SourceInput | SourceV2>()
+  const [name, setName] = useState(upgrade?.job.name ?? seed?.name ?? ''), [facts, setFacts] = useState(seed?.facts ?? '{}'), [supplied, setSupplied] = useState(seed?.supplied ?? false), [evidence, setEvidence] = useState(seed?.evidence ?? '{}')
   const [preview, setPreview] = useState<{ signature: string; release: Release; matrix?: string; project: string; packId: string }>(), [reviewed, setReviewed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>()
   const [refused, setRefused] = useState<{ releaseId: string; message: string }>()
   const navigate = useNavigate(), queryClient = useQueryClient()
-  const [mapped, setMapped] = useState<MappedDraft | undefined>(initial?.draft.values.mapped)
+  const [recordReview,setRecordReview]=useState<DialectEvaluation>()
+  const [mapped, setMapped] = useState<MappedDraft | undefined>(seed?.mapped)
   const [transientWork,setTransientWork]=useState(false)
   const [unwritten,setUnwritten]=useState(false)
   const [mappedWork, setMappedWork] = useState(false), [pendingConfig, setPendingConfig] = useState(false)
   const saved = useRef(initial), draftId = useRef(initial?.draft.id ?? crypto.randomUUID())
-  const values: JobDraftValues = { name, packId, inputMode, facts, supplied, evidence, ...(mapped ? {mapped} : {}), ...(trigger ? {trigger} : {}) }
+  const [upgradeBasis,setUpgradeBasis]=useState(seed?.upgrade)
+  const values: JobDraftValues = { ...(upgradeBasis?{upgrade:upgradeBasis}:{}), name, packId, inputMode, facts, supplied, evidence, ...(mapped ? {mapped} : {}), ...(trigger ? {trigger} : {}) }
   const [baseline, setBaseline] = useState(() => JSON.stringify(values)), [notice,setNotice] = useState('')
   const dirty = JSON.stringify(values) !== baseline || pendingConfig || unwritten || transientWork
   const confirmDiscard = useConfirmDiscard()
@@ -193,9 +230,10 @@ function CreateJobEditor({initial,upgrade}: {initial?: SavedJobDraft;upgrade?:{j
       saved.current = await saveJobDraft(draftId.current, values, saved.current?.file.sha256)
       setBaseline(JSON.stringify(values)); setTransientWork(false); setNotice(msg('Draft saved locally. Reselect files and preview inputs when you resume.'))
       void queryClient.invalidateQueries({queryKey:['job-drafts']})
+      if(upgrade){queryClient.setQueryData(['job-draft',draftId.current],saved.current);clearGuard();navigate(`/jobs/new?upgrade=${encodeURIComponent(upgrade.job.id)}&draft=${draftId.current}`,{replace:true})}
     } finally { setBusy(false) }
   }
-  const clearGuard = useDirtyGuard(dirty, msg('Leave without saving this job?'), { name, busy, saveDraft: upgrade || pendingConfig || unwritten || !triggerValid ? undefined : saveDraft, shouldBlock: ({currentLocation,nextLocation}) => currentLocation.pathname !== nextLocation.pathname || new URLSearchParams(currentLocation.search).get('draft') !== new URLSearchParams(nextLocation.search).get('draft') || new URLSearchParams(currentLocation.search).get('upgrade') !== new URLSearchParams(nextLocation.search).get('upgrade') })
+  const clearGuard = useDirtyGuard(dirty, msg('Leave without saving this job?'), { name, busy, saveDraft: pendingConfig || unwritten || !triggerValid ? undefined : saveDraft, shouldBlock: ({currentLocation,nextLocation}) => currentLocation.pathname !== nextLocation.pathname || new URLSearchParams(currentLocation.search).get('draft') !== new URLSearchParams(nextLocation.search).get('draft') || new URLSearchParams(currentLocation.search).get('upgrade') !== new URLSearchParams(nextLocation.search).get('upgrade') })
   async function changePack(next: string) {
     if (next === packId) return
     if ((mappedWork || mapped || trigger || unwritten) && !await confirmDiscard(msg('Changing the pack discards its dialect and trigger configuration.'), {name})) return
@@ -221,8 +259,19 @@ function CreateJobEditor({initial,upgrade}: {initial?: SavedJobDraft;upgrade?:{j
     if (!selected) throw new Error(msg('Choose a saved pack'))
     return { pack: freshPack.data, tests: await readReleaseTests(packId, selected.matrixPath) }
   }
+  async function checkedRecords(evaluation:DialectEvaluation,signal:AbortSignal) {
+    const current=await currentInputs()
+    signal.throwIfAborted()
+    // The server's retained review owns its test snapshot. Browser imports may
+    // add metadata or serialize members differently; they are not its identity.
+    if(current.pack.raw!==evaluation.release.pack)throw Error(msg('The pack or saved tests changed. Check the release again before creating the job.'))
+    const source=evaluation.release.sample.source
+    if(!source)throw Error(msg('The inputs could not be mapped.'))
+    setSource(source);setRecordReview(evaluation);setReviewed(false)
+    setPreview({signature:JSON.stringify([current.pack.raw,facts,supplied,evidence,inputMode,source]),release:evaluation.release,matrix:current.tests.matrix,project:current.tests.project,packId})
+  }
   async function prepare() {
-    if (!pack.data) return
+    if (!pack.data || upgrade&&needsRecordReview(upgrade)) return
     setBusy(true); setError(undefined); setPreview(undefined); setReviewed(false); setRefused(undefined)
     try {
       if (inputMode !== 'manual' && !source) throw Error(msg('Configure inputs and preview them first.'))
@@ -235,22 +284,41 @@ function CreateJobEditor({initial,upgrade}: {initial?: SavedJobDraft;upgrade?:{j
       setPreview({ signature: JSON.stringify([current.pack.raw, facts, supplied, evidence, inputMode, source]), release, matrix: current.tests.matrix, project: current.tests.project, packId })
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
+  async function complete(job:Job) {
+      await queryClient.invalidateQueries({queryKey:['job',job.id]})
+      void queryClient.invalidateQueries({queryKey:['job-upgrade-base',job.id]})
+      if (saved.current) { try { saved.current = await saveJobDraft(draftId.current, saved.current.draft.values, saved.current.file.sha256, 'created'); void queryClient.invalidateQueries({queryKey:['job-drafts']}) } catch { /* The created job is durable; preserve the draft if cleanup failed. */ } }
+      clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', 'jobs'] }); navigate(`/jobs/${job.id}${job.initialTriggerId?'?tab=triggers':''}`)
+  }
   async function create() {
-    if (!validPreview || !reviewed || !canCreate || !preview || !triggerValid) return
+    if (!validPreview || !reviewed || !canCreate || !preview || !triggerValid || upgrade&&needsRecordReview(upgrade)&&!recordReview) return
     setBusy(true); setError(undefined)
     try {
+      if(upgradeBasis?.submittedReleaseId){
+        const completed=await readUpgradeReceipt(upgradeBasis)
+        if(completed){await complete(completed);return}
+      }
       const current = await currentInputs()
       if (current.pack.raw !== validPreview.pack || current.tests.matrix !== preview.matrix || current.tests.project !== preview.project) {
         setPreview(undefined); setReviewed(false)
         throw new Error(msg('The pack or saved tests changed. Check the release again before creating the job.'))
       }
       if (source && !isSourceV2(source) && inputMode !== 'manual') await verifySource(source, research.gateway)
+      // Persist the exact attempted release before sending. This is recovery
+      // information, never a restored approval or permission to replay a write.
+      if(upgradeBasis){
+        const attempted={...upgradeBasis,submittedReleaseId:validPreview.id}
+        saved.current=await saveJobDraft(draftId.current,{...values,upgrade:attempted},saved.current?.file.sha256)
+        setUpgradeBasis(attempted)
+        queryClient.setQueryData(['job-draft',draftId.current],saved.current)
+        clearGuard();navigate(`/jobs/new?upgrade=${encodeURIComponent(upgradeBasis.jobId)}&draft=${draftId.current}`,{replace:true})
+      }
       const job = upgrade
-        ? await jobsAPI<Job>(`jobs/${upgrade.job.id}/upgrade`,{releaseId:validPreview.id,baseReleaseId:upgrade.job.releaseId,baseRevision:upgrade.job.revision,reviewed})
+        ? recordReview&&needsRecordReview(upgrade)
+          ? await dialectAPI<Job>(`/${recordReview.preparationId}/evaluations/${recordReview.id}/upgrade`,'POST',{reviewed:true,upgrade:{jobId:upgrade.job.id,baseReleaseId:upgrade.job.releaseId,baseRevision:upgrade.job.revision}},recordReview.revision)
+          : await jobsAPI<Job>(`jobs/${upgrade.job.id}/upgrade`,{releaseId:validPreview.id,baseReleaseId:upgrade.job.releaseId,baseRevision:upgrade.job.revision,reviewed})
         : await jobsAPI<Job>('jobs', { name, releaseId: validPreview.id, reviewed, ...(trigger?{trigger}:{}) })
-      await queryClient.invalidateQueries({queryKey:['job',job.id]})
-      if (saved.current) { try { saved.current = await saveJobDraft(draftId.current, values, saved.current.file.sha256, 'created'); void queryClient.invalidateQueries({queryKey:['job-drafts']}) } catch { /* The created job is durable; preserve the draft if cleanup failed. */ } }
-      clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', 'jobs'] }); navigate(`/jobs/${job.id}${job.initialTriggerId?'?tab=triggers':''}`)
+      await complete(job)
     } catch (e) {
       if (e instanceof JobsRequestError && e.code === 'release_untested') { setRefused({ releaseId: validPreview.id, message: e.message }); setReviewed(false) }
       else setError(e)
@@ -270,7 +338,7 @@ function CreateJobEditor({initial,upgrade}: {initial?: SavedJobDraft;upgrade?:{j
       <div className={styles.field}><label htmlFor="job-pack">{msg('Pack')}</label><Select id="job-pack" value={packId} disabled={busy} placeholder={msg('Choose a saved pack')} options={(packs.data?.packs ?? []).map(p => ({ value: p.id, label: p.id }))} onValueChange={next=>void changePack(next)} />{pack.data && <p className={styles.note}>{pack.data.document.title} · {pack.data.document.version}</p>}</div>
       </section><section hidden={step!==1} className={styles.stack}><div className={styles.inputHeading}><div><h2>{msg('Where inputs come from')}</h2></div><div className={styles.inputMode}><Select id="job-input-source" aria-label={msg('Input configuration')} value={inputMode} disabled={busy} options={[{value:'mapped',label:msg('Integrations and case inputs')},{value:'manual',label:msg('Manual / API')}]} onValueChange={async v=>{if(trigger&&!await confirmDiscard(msg('Discard unsaved trigger changes?'),{name:trigger.name}))return;setInputMode(v as typeof inputMode);setSource(undefined);setTrigger(undefined)}}/></div></div><p className={styles.note}>{msg('Assign facts and evidence to sources, then preview one sample before creating the job.')}</p>
         <div hidden={inputMode!=='manual'}><InputFields doc={pack.data?.document} onValid={setInputsValid} onUnwritten={setUnwritten} {...{ facts, setFacts, supplied, setSupplied, evidence, setEvidence }} disabled={busy} /></div>
-        <div hidden={inputMode!=='mapped'}>{pack.data&&<MappedInputFields active={step===1&&inputMode==='mapped'} key={`${packId}:mapped`} doc={pack.data.document} packText={pack.data.raw} disabled={busy} onChange={setSource} draft={mapped} onDraftChange={setMapped} onWorkChange={setMappedWork} onPendingChange={setPendingConfig} onTransientChange={()=>setTransientWork(true)}/>}</div>
+        <div hidden={inputMode!=='mapped'}>{pack.data&&(upgrade&&needsRecordReview(upgrade)?<UpgradeRecords packText={pack.data.raw} disabled={busy} onChange={setSource} onChecked={checkedRecords}/>:upgrade?.release.inputMapping?.version===1?<SourceInputFields doc={pack.data.document} provider={upgrade.release.inputMapping.provider} fixed={upgrade.release.inputMapping} disabled={busy} onChange={setSource}/>:<MappedInputFields active={step===1&&inputMode==='mapped'} key={`${packId}:mapped`} doc={pack.data.document} packText={pack.data.raw} disabled={busy} onChange={setSource} draft={mapped} onDraftChange={setMapped} onWorkChange={setMappedWork} onPendingChange={setPendingConfig} onTransientChange={()=>setTransientWork(true)}/> )}</div>
 
       </section>
       <section hidden={step!==2} className={styles.stack}>{upgrade?<p className={styles.note}>{msg('Pause existing triggers and finish pending occurrences before upgrading. Triggers stay paused; connected Dialects need a new subscription review.')}</p>:pack.data&&<TriggerChoice doc={pack.data.document} mapping={inputMode==='manual'?undefined:source?.mapping} value={trigger} onChange={setTrigger} onValid={setTriggerValid} disabled={busy}/>}</section>
@@ -284,11 +352,11 @@ function CreateJobEditor({initial,upgrade}: {initial?: SavedJobDraft;upgrade?:{j
           <div><dt>{msg('Execution')}</dt><dd>{msg('Local runner · artifacts stored locally')}</dd></div>
         </dl>
         {!validPreview&&<p className={styles.callout}>{msg('Structure, saved tests and the sample decision have not been checked for this dialect.')}</p>}
-        <div><Button onClick={() => { void prepare() }} disabled={busy || inputMode === 'manual' && !inputsValid || !pack.data || inputMode !== 'manual' && !source}>{busy ? msg('Working…') : msg('Check release')}</Button></div>
+        <div><Button onClick={() => { void prepare() }} disabled={busy || !!upgrade&&needsRecordReview(upgrade) || inputMode === 'manual' && !inputsValid || !pack.data || inputMode !== 'manual' && !source}>{busy ? msg('Working…') : msg('Check release')}</Button></div>
 
-      {validPreview && <section className={styles.review}><h2>{msg('Review this release')}</h2>{trigger&&<><TriggerSummary config={trigger}/><p className={styles.note}>{msg('The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.')}</p></>}<dl className={styles.properties}><div><dt>{msg('Pack version')}</dt><dd>{upgrade&&<>{upgrade.release.packVersion} → </>}{validPreview.packVersion}</dd></div><div><dt>{msg('Sample decision')}</dt><dd>{decisionLabel(validPreview.preview)}</dd></div><div><dt>{msg('Structure')}</dt><dd>{msg('Validated')}</dd></div></dl><ReleaseReadiness release={validPreview} refusal={refusal} />{preview && <ReleaseStanding release={validPreview} packId={preview.packId} />}{isExecutableDialect(validPreview.inputMapping) && <DialectReview mapping={validPreview.inputMapping} profiles={validPreview.inputProfiles} warnings={validPreview.mappingWarnings} />}<p className={styles.note}>{msg('The preview is a rehearsal. Operational runs append audit records. No external actions or schedules are enabled.')}</p><JSONView title={msg('Sample result')} value={validPreview.preview} /><label className="checkbox"><input type="checkbox" checked={reviewed} disabled={busy || !canCreate} onChange={e => setReviewed(e.target.checked)} />{msg('I reviewed this release, its test status and sample result.')}</label></section>}
+      {validPreview && <section className={styles.review}>{upgrade&&<UpgradeReview base={upgrade} candidate={validPreview}/>}<h2>{msg('Review this release')}</h2>{trigger&&<><TriggerSummary config={trigger}/><p className={styles.note}>{msg('The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.')}</p></>}<dl className={styles.properties}><div><dt>{msg('Pack version')}</dt><dd>{upgrade&&<>{upgrade.release.packVersion} → </>}{validPreview.packVersion}</dd></div><div><dt>{msg('Sample decision')}</dt><dd>{decisionLabel(validPreview.preview)}</dd></div><div><dt>{msg('Structure')}</dt><dd>{msg('Validated')}</dd></div></dl><ReleaseReadiness release={validPreview} refusal={refusal} />{preview && <ReleaseStanding release={validPreview} packId={preview.packId} />}{isExecutableDialect(validPreview.inputMapping) && <DialectReview mapping={validPreview.inputMapping} profiles={validPreview.inputProfiles} warnings={validPreview.mappingWarnings} />}<p className={styles.note}>{msg('The preview is a rehearsal. Operational runs append audit records. No external actions or schedules are enabled.')}</p><JSONView title={msg('Sample result')} value={validPreview.preview} /><label className="checkbox"><input type="checkbox" checked={reviewed} disabled={busy || !canCreate} onChange={e => setReviewed(e.target.checked)} />{msg('I reviewed this release, its test status and sample result.')}</label></section>}
       </section>
-      </div><div className={styles.wizardActions}><ButtonLink to="/jobs" variant="quiet">{msg('Cancel')}</ButtonLink><div className={styles.actions}>{!upgrade&&<Button disabled={busy || pendingConfig || unwritten || !triggerValid || !dirty} onClick={()=>void saveDraft().catch(setError)}>{msg('Save draft')}</Button>}{step>0&&<Button disabled={busy} onClick={()=>setStep(step-1)}>{msg('Back')}</Button>}{step<3?<Button variant="primary" disabled={busy||step===0&&(!name.trim()||!pack.data)||step===1&&(inputMode==='manual'?!inputsValid:!source)||step===2&&!triggerValid} onClick={()=>setStep(step+1)}>{msg('Continue')}</Button>:<Button variant="primary" disabled={!validPreview||!canCreate||!reviewed||!triggerValid||!name.trim()||busy} onClick={()=>void create()}>{upgrade?msg('Upgrade job'):trigger?msg('Create paused job'):msg('Create job')}</Button>}</div></div>
+      </div><div className={styles.wizardActions}><ButtonLink to="/jobs" variant="quiet">{msg('Cancel')}</ButtonLink><div className={styles.actions}>{<Button disabled={busy || pendingConfig || unwritten || !triggerValid || (!dirty && !!saved.current)} onClick={()=>void saveDraft().catch(setError)}>{msg('Save draft')}</Button>}{step>0&&<Button disabled={busy} onClick={()=>setStep(step-1)}>{msg('Back')}</Button>}{step<3?<Button variant="primary" disabled={busy||step===0&&(!name.trim()||!pack.data)||step===1&&(inputMode==='manual'?!inputsValid:!source)||step===2&&!triggerValid} onClick={()=>setStep(step+1)}>{msg('Continue')}</Button>:<Button variant="primary" disabled={!validPreview||!canCreate||!reviewed||!triggerValid||!name.trim()||busy} onClick={()=>void create()}>{upgrade?msg('Upgrade job'):trigger?msg('Create paused job'):msg('Create job')}</Button>}</div></div>
     </div></PageBody>
   </>
 }
