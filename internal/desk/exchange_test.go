@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"context"
 	"encoding/json"
 	exchangeCatalog "github.com/Judgment-Pack/judgment-pack-desk/internal/exchange"
 	"net/http/httptest"
@@ -168,5 +169,42 @@ func TestExchangeReviewBoundsExactPersistedBytes(t *testing.T) {
 	again, other, e := encodeExchangeReview(checked)
 	if e != nil || again.ID != checked.ID || string(raw) != string(other) {
 		t.Fatal("identity changed on readback", e)
+	}
+}
+
+// A reader upgrade applies only to new catalog admission. An already reviewed
+// format-2 import keeps its exact bytes, identity and completion receipt.
+func TestExchangeRetainedFormatTwoImportSurvivesReaderUpgrade(t *testing.T) {
+	s, _ := newTestServer(t, false)
+	prefix := "../exchange/testdata/preset/entries/example/company-research/"
+	files := map[string]string{}
+	for _, name := range []string{"entry.json", "dialect.json", "README.md"} {
+		raw, err := os.ReadFile(prefix + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = string(raw)
+	}
+	files["entry.json"] = strings.Replace(files["entry.json"], `"entryVersion": 3`, `"entryVersion": 2`, 1)
+	var entry exchangeCatalog.Preset
+	if err := json.Unmarshal([]byte(files["entry.json"]), &entry); err != nil {
+		t.Fatal(err)
+	}
+	c := exchangeCatalog.Candidate{Entry: entry, Files: files, Document: files["dialect.json"], Digest: entry.Dialect.Digest, Row: exchangeCatalog.Row{ID: entry.ID, Kind: entry.Kind, EntryDigest: exchangeCatalog.Digest([]byte(files["entry.json"]))}}
+	reviewed, raw, err := encodeExchangeReview(exchangeReviewed{Base: "retained", Release: exchangeCatalog.Release{Location: "catalog", Tag: "v1.0.0", Commit: strings.Repeat("a", 40), Candidates: []exchangeCatalog.Candidate{c}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.artifactRepository().Put(context.Background(), raw); err != nil {
+		t.Fatal(err)
+	}
+	record := exchangeImport{ID: digestOf([]byte(reviewed.ID + "\n" + entry.ID)), EntryID: entry.ID, Location: "catalog", Tag: "v1.0.0", Commit: reviewed.Release.Commit, Review: artifactReference(raw)}
+	got, old, err := s.readExchangeImport(context.Background(), record)
+	if err != nil || got.ID != reviewed.ID || old.Entry.EntryVersion != 2 || !sameEvaluationValue(old, c) {
+		t.Fatal("historical import changed", err, old)
+	}
+	again, err := s.artifactRepository().Get(context.Background(), record.Review)
+	if err != nil || string(again) != string(raw) {
+		t.Fatal("historical bytes rewritten", err)
 	}
 }

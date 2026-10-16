@@ -414,6 +414,16 @@ func reviewPreset(ctx context.Context, tree Tree, row Row, files []string, check
 	if Digest([]byte(c.Files["entry.json"])) != row.EntryDigest || Digest([]byte(c.Files["dialect.json"])) != row.DialectDigest {
 		return c, errors.New("entry file digest mismatch")
 	}
+	// Entry and document versions are separate contracts. Read the exact
+	// selector before interpreting closed metadata; old retained imports are
+	// not re-imported or rewritten through this current-catalog reader.
+	var selector map[string]json.RawMessage
+	if e := strict([]byte(c.Files["entry.json"]), &selector); e != nil {
+		return c, errors.New("invalid preset metadata")
+	}
+	if string(selector["entryVersion"]) != "3" {
+		return c, errors.New("entry-version-unread: this importer requires Exchange entry format 3")
+	}
 	var entry Preset
 	if e := strict([]byte(c.Files["entry.json"]), &entry); e != nil {
 		return c, errors.New("invalid preset metadata")
@@ -423,7 +433,7 @@ func reviewPreset(ctx context.Context, tree Tree, row Row, files []string, check
 	if _, present := entryMembers["description"]; present && !bounded(entry.Description, 4096) {
 		return c, errors.New("invalid preset description")
 	}
-	if entry.EntryVersion != 2 || entry.Kind != row.Kind || entry.ID != row.ID || entry.Direction != "input" || !bounded(entry.Title, 200) || entry.Description != "" && !bounded(entry.Description, 4096) || entry.Dialect.Path != "dialect.json" || entry.Dialect.Version != 3 || !digestPattern.MatchString(entry.Dialect.Digest) || !bounded(entry.Author, 100) || entry.Assertion != assertion || entry.Verification == nil || len(entry.Verification) != 0 || entry.Requires == nil || len(entry.SourceKinds) == 0 || len(entry.SourceKinds) > 16 || len(entry.Licence) > 64 || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+-]*$`).MatchString(entry.Licence) {
+	if entry.EntryVersion != 3 || entry.Kind != row.Kind || entry.ID != row.ID || entry.Direction != "input" || !bounded(entry.Title, 200) || entry.Description != "" && !bounded(entry.Description, 4096) || entry.Dialect.Path != "dialect.json" || entry.Dialect.Version != 3 || !digestPattern.MatchString(entry.Dialect.Digest) || !bounded(entry.Author, 100) || entry.Assertion != assertion || entry.Verification == nil || len(entry.Verification) != 0 || entry.Requires == nil || len(entry.SourceKinds) == 0 || len(entry.SourceKinds) > 16 || len(entry.Licence) > 64 || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+-]*$`).MatchString(entry.Licence) {
 		return c, errors.New("invalid preset metadata")
 	}
 	if len(entry.Requires) > 1 || len(entry.Requires) == 1 && (entry.Requires["platform"] == "" || len(entry.Requires["platform"]) > 64 || !regexp.MustCompile(`^[a-z][a-z0-9-]*$`).MatchString(entry.Requires["platform"])) {

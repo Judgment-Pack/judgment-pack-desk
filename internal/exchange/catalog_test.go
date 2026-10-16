@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -213,5 +214,55 @@ func TestPresetUsesRuntimeOnTwoInstallations(t *testing.T) {
 		if e != nil || len(r.Candidates) != 1 {
 			t.Fatal(i, e, r.Unavailable)
 		}
+	}
+}
+
+func TestCurrentEntryVersionIsSeparateFromDocumentVersion(t *testing.T) {
+	for _, version := range []any{1, 2, 3, 4, "3", nil} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			tree := fixture(t)
+			path := "entries/example/company-research/entry.json"
+			var entry map[string]any
+			json.Unmarshal(tree[path], &entry)
+			entry["entryVersion"] = version
+			tree[path], _ = json.Marshal(entry)
+			var rows []Row
+			json.Unmarshal(tree["manifest.json"], &rows)
+			rows[0].EntryDigest = Digest(tree[path])
+			tree["manifest.json"], _ = json.Marshal(rows)
+			result := review(t, tree)
+			if version == 3 {
+				if len(result.Candidates) != 1 || result.Candidates[0].Entry.EntryVersion != 3 || result.Candidates[0].Entry.Dialect.Version != 3 {
+					t.Fatal(result)
+				}
+			} else if len(result.Candidates) != 0 || len(result.Unavailable) != 1 || version != nil && !strings.Contains(result.Unavailable[0].Reason, "entry-version-unread") {
+				t.Fatal("incompatible metadata interpreted", result)
+			}
+		})
+	}
+	for _, change := range []string{"artifact", "named-selector", "both-selectors"} {
+		t.Run(change, func(t *testing.T) {
+			tree := fixture(t)
+			path := "entries/example/company-research/entry.json"
+			var entry map[string]any
+			json.Unmarshal(tree[path], &entry)
+			if change == "artifact" {
+				entry["artifact"] = map[string]string{"id": "https://example.invalid/dialect", "version": "1.0.0"}
+			} else {
+				document := entry["dialect"].(map[string]any)
+				document["formatVersion"] = "3.0.0"
+				if change == "named-selector" {
+					delete(document, "dialectVersion")
+				}
+			}
+			tree[path], _ = json.Marshal(entry)
+			var rows []Row
+			json.Unmarshal(tree["manifest.json"], &rows)
+			rows[0].EntryDigest = Digest(tree[path])
+			tree["manifest.json"], _ = json.Marshal(rows)
+			if result := review(t, tree); len(result.Candidates) != 0 {
+				t.Fatal("named artifact admitted as preset", result)
+			}
+		})
 	}
 }

@@ -1,5 +1,5 @@
 {
-  "entryVersion": 2,
+  "entryVersion": 3,
   "kind": "preset",
   "id": "example.company-research",
   "title": "Example: a company's headcount, from a registry and two research recipes",
