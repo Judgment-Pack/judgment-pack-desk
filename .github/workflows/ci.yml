@@ -240,7 +240,7 @@ jobs:
       # and the upgrade offer turns an existing project's gates on.
       - name: New desks, the review step and the upgrade under the pinned runtime
         run: |
-          JPACK_BIN="$RUNNER_TEMP/jpack" JPACK_TEST_BIN="$RUNNER_TEMP/jpack" go test ./internal/desk -run 'TestNewDeskWithTheRuntime|TestReviewAndLockWithTheRuntime|TestArtifactPublication|TestArtifactVersionHistory|TestDialectPublication|TestPublishedRelease|TestFailedCreationNeverCleansThroughSubstitutedReviewedSymlink|TestUpgradeWithTheRuntime|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1 -v
+          JPACK_BIN="$RUNNER_TEMP/jpack" JPACK_TEST_BIN="$RUNNER_TEMP/jpack" go test ./internal/desk -run 'TestNewDeskWithTheRuntime|TestInputRecipeRetainsBoundPackAndMappingsAcrossEdits|TestDialectAuthoring|TestReviewAndLockWithTheRuntime|TestArtifactPublication|TestArtifactVersionHistory|TestDialectPublication|TestPublishedRelease|TestFailedCreationNeverCleansThroughSubstitutedReviewedSymlink|TestUpgradeWithTheRuntime|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1 -v
 
       - name: Build Gateway for named Dialect journeys
         run: python3 scripts/build-bundle.py --gateway-only --output "$RUNNER_TEMP/dialect-gateway"

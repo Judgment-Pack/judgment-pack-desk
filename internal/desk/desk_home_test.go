@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+// Home storage tests use the existing isolated Runtime fixture when no real
+// companion is supplied; integration runs retain their explicitly pinned binary.
+func homeRuntime(t *testing.T) string {
+	t.Helper()
+	if bin := os.Getenv("JPACK_BIN"); bin != "" {
+		return bin
+	}
+	return standInRuntime(t)
+}
+
 func homeFixture(t *testing.T) (Config, deskHomeRegistry) {
 	t.Helper()
 	base := t.TempDir()
@@ -29,7 +39,7 @@ func homeFixture(t *testing.T) (Config, deskHomeRegistry) {
 	privateFixture(t, filepath.Join(project, ".desk-private", dataLocationName), `{"version":1,"path":"data"}`)
 	marker, _ := json.Marshal(dataMarker{Version: 1, Owner: owner})
 	privateFixture(t, filepath.Join(project, ".desk-private", "data", dataMarkerName), string(marker))
-	return Config{ProjectDir: project, DeskConfigDir: config, Token: testToken, JpackBin: os.Getenv("JPACK_BIN"), LocalAccess: true}, value
+	return Config{ProjectDir: project, DeskConfigDir: config, Token: testToken, JpackBin: homeRuntime(t), LocalAccess: true}, value
 }
 
 func TestDeskHomeRetainsHistoryAndRunnerIdentityAfterMove(t *testing.T) {

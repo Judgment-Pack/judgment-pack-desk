@@ -46,7 +46,7 @@ func TestDeskHomeConfirmWithNamedDesksAndRealRunner(t *testing.T) {
 
 func TestDeskHomeExpiredConfirmationDoesNotQueue(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: os.Getenv("JPACK_BIN"), HomeMoveShutdown: func() {}}
+	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: homeRuntime(t), HomeMoveShutdown: func() {}}
 	s, _ := startDesk(t, cfg)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -78,7 +78,7 @@ func TestDeskHomeExpiredConfirmationDoesNotQueue(t *testing.T) {
 // The selected Desk differs from the one with the active trigger.
 func TestDeskHomePreviewReportsActiveTriggerAndConfirmationRechecks(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: os.Getenv("JPACK_BIN"), HomeMoveShutdown: func() {}}
+	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: homeRuntime(t), HomeMoveShutdown: func() {}}
 	privateFixture(t, filepath.Join(cfg.ProjectDir, projectConfigName), `{"deskConfigVersion":1}`)
 	s, ts := startDesk(t, cfg)
 	selected := createTestDesk(t, ts, "Research")
