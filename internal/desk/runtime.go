@@ -183,6 +183,12 @@ func runRuntime(ctx context.Context, bin string, dir heldDir, args ...string) ([
 // runRuntimeInput accepts at most the file writer's bound on standard input.
 // No proposal is staged in the project, even temporarily.
 func runRuntimeInput(ctx context.Context, bin string, dir heldDir, input []byte, args ...string) ([]byte, error) {
+	return runRuntimeInputLimit(ctx, bin, dir, input, runtimeAnswerLimit, args...)
+}
+
+// Larger offline reports use the same custody, environment and timeout guards.
+// Only internal callers choose the output bound; requests cannot increase it.
+func runRuntimeInputLimit(ctx context.Context, bin string, dir heldDir, input []byte, answerLimit int, args ...string) ([]byte, error) {
 	if len(input) > maxFileBytes {
 		return nil, errors.New("runtime standard input exceeds the file writer's limit")
 	}
@@ -216,7 +222,7 @@ func runRuntimeInput(ctx context.Context, bin string, dir heldDir, input []byte,
 			cmd.Env = append(cmd.Env, runtimeSigningPublicKeyEnv+"="+expected)
 		}
 	}
-	stdout := &cappedBuffer{limit: runtimeAnswerLimit}
+	stdout := &cappedBuffer{limit: answerLimit}
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)
 	}
@@ -235,7 +241,7 @@ func runRuntimeInput(ctx context.Context, bin string, dir heldDir, input []byte,
 		return nil, fmt.Errorf("the runtime did not finish %s within %s", command, runtimeCommandTimeout)
 	}
 	if stdout.exceeded() {
-		return nil, fmt.Errorf("the runtime's answer to %s was larger than %d bytes", command, runtimeAnswerLimit)
+		return nil, fmt.Errorf("the runtime's answer to %s was larger than %d bytes", command, answerLimit)
 	}
 	if err != nil {
 		return stdout.Bytes(), fmt.Errorf("the runtime's %s failed: %w", command, err)

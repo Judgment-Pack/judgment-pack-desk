@@ -1,5 +1,14 @@
 import { msg } from '../i18n'
 export const TOOL_LABELS: Record<string, string> = {
+ get get_dialect_contract(){return msg("Read dialect contract")},
+ get get_dialect_schema(){return msg("Read dialect schema")},
+ get get_dialect_reference(){return msg("Read dialect reference")},
+ get dialect_validate(){return msg("Validate dialect")},
+ get dialect_check(){return msg("Check dialect coverage")},
+ get dialect_canonicalize(){return msg("Canonicalize dialect")},
+ get dialect_digest(){return msg("Calculate dialect digest")},
+ get dialect_init(){return msg("Create dialect starter")},
+
   get request_budget_increase(){return msg('Request more time')},
   get update_plan(){return msg('Update task progress')},
  get propose_plan(){return msg('Propose plan')},

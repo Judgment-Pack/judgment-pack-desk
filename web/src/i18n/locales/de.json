@@ -5744,5 +5744,14 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— ein Locator für die Repository-Datei, die diese Behauptung aufstellt. Diese Nutzlast stellt keine auf, und was auch immer diese Datei behauptet, bezieht sich auf die Runtime, nicht auf die Pakete dieses Graphen, diese Fakten oder darauf, ob das Handeln nach dem Entscheidungsergebnis korrekt ist.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— ein Verweis auf die Repository-Datei mit der Aussage. Diese Nutzdaten treffen keine solche Aussage. Die Datei bezieht sich auf die Laufzeit, nicht auf dieses Paket, diese Fakten oder die Richtigkeit einer Handlung nach der Disposition.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "„Im überprüften Satz“ bedeutet, dass die jpack.lock.json des Projekts für diese Entscheidungs-ID genau diese Bytes festlegt. Es sagt nicht, dass das Paket richtig ist oder wer es überprüft hat. Es wird angezeigt, nicht erzwungen: Der Job wird in jedem Fall gleich erstellt.",
-  "… (truncated for display)": "… (für die Anzeige gekürzt)"
+  "… (truncated for display)": "… (für die Anzeige gekürzt)",
+  "Read dialect contract": "Dialektvertrag lesen",
+  "Read dialect schema": "Dialektschema lesen",
+  "Read dialect reference": "Dialektreferenz lesen",
+  "Validate dialect": "Dialekt validieren",
+  "Check dialect coverage": "Dialektabdeckung prüfen",
+  "Canonicalize dialect": "Dialekt kanonisieren",
+  "Calculate dialect digest": "Dialekt-Prüfsumme berechnen",
+  "Create dialect starter": "Dialektvorlage erstellen",
+  "Job upgraded": "Job aktualisiert"
 }

@@ -5744,5 +5744,14 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— 提出聲明嘅儲存庫檔案定位器。此有效負載未提出任何聲明，而該檔案無論聲明乜嘢都係關於執行環境，並非關於此 Graph 嘅規則包、呢啲事實，或根據判定結果採取行動是否正確。",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 指向作出聲明嘅儲存庫檔案嘅定位資訊。呢份承載資料冇作出聲明。檔案嘅聲明針對執行環境，唔係呢個規則包、呢啲事實，亦唔係按處置結果行動係咪正確。",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "「喺已審核集合入面」嘅意思係項目嘅 jpack.lock.json 為呢個決策 ID 固定咗正正呢啲位元組。佢唔代表規則包啱，亦唔講邊個審核過。呢度只係顯示，唔會強制：無論點樣，工作都會一樣咁建立。",
-  "… (truncated for display)": "…（已截短顯示）"
+  "… (truncated for display)": "…（已截短顯示）",
+  "Read dialect contract": "讀取方言契約",
+  "Read dialect schema": "讀取方言結構描述",
+  "Read dialect reference": "讀取方言參考",
+  "Validate dialect": "驗證方言",
+  "Check dialect coverage": "檢查方言涵蓋範圍",
+  "Canonicalize dialect": "正規化方言",
+  "Calculate dialect digest": "計算方言摘要",
+  "Create dialect starter": "建立方言初始範本",
+  "Job upgraded": "作業已升級"
 }

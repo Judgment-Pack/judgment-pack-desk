@@ -1,3 +1,4 @@
+import {checkDialect,DialectCheckError} from '../dialect/authoring'
 import {toolInputFailure} from '../assistant/failures'
 import type {HostTool} from '../assistant/engine'
 import {factFields} from '../packs/test-workspace/model'
@@ -35,13 +36,15 @@ export function dialectChatTools(options:{addAction:(action:DialectChatAction)=>
    const {saved,pack}=await read(args,signal),seen=snapshots.get(saved.document.id+'\n'+pack.key)
    if(!seen||seen.revision!==saved.sha256||seen.packDigest!==pack.digest||args.revision!==saved.sha256)throw toolInputFailure('The dialect or pack changed. Read the current context with read_dialect before proposing.')
    const qualification=buildDialect(saved,proposal,pack)
+   let check
+   try {check=await checkDialect(qualification.mapping,qualification.pack,signal)} catch(error) {if(error instanceof DialectCheckError)throw toolInputFailure(error.message);throw error}
    const preview=await dialectAPI<{rows:PreparedRow[]}>('/'+saved.document.id+'/conversion-preview','POST',{qualification},saved.sha256)
    signal.throwIfAborted()
    const current=await read(args,signal)
    if(current.saved.sha256!==saved.sha256||current.pack.digest!==pack.digest)throw toolInputFailure('The dialect or pack changed during preview. Read it again before proposing.')
    const action:DialectChatAction={version:1,id:crypto.randomUUID(),createdAt:new Date().toISOString(),afterTurnId:options.afterTurnId(),inputId:saved.document.id,name:saved.document.name,revision:saved.sha256,recipeVersion:saved.document.recipeVersion,kind:'update-dialect',dialect:proposal}
    signal.throwIfAborted();options.addAction(action)
-   return result({status:'review-required',actionId:action.id,recordCount:preview.rows.length,recordsWithIssues:preview.rows.filter(r=>r.issues.length).length,unmappedFacts:qualification.mapping.unmapped,unmappedEvidence:qualification.mapping.unmappedEvidence,issues:preview.rows.filter(r=>r.issues.length).slice(0,5).map(r=>({recordId:r.id,issues:r.issues.slice(0,10)})),message:'Review dialect in this chat to inspect conversions and save. No recipe, records, pack, tests or Jobs have been changed.'})
+   return result({status:'review-required',actionId:action.id,mappingDigest:check.digest,coverage:check.compatibility,recordCount:preview.rows.length,recordsWithIssues:preview.rows.filter(r=>r.issues.length).length,unmappedFacts:qualification.mapping.unmapped,unmappedEvidence:qualification.mapping.unmappedEvidence,issues:preview.rows.filter(r=>r.issues.length).slice(0,5).map(r=>({recordId:r.id,issues:r.issues.slice(0,10)})),message:'Review dialect in this chat to inspect conversions and save. No recipe, records, pack, tests or Jobs have been changed.'})
   }},
  ]
 }

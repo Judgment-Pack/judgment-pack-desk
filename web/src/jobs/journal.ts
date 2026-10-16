@@ -36,13 +36,13 @@ import { JobsRequestError, jobsAPI } from './client'
  * (`JournalEntry.kind`), at the source tag below. A Runner that adds a kind
  * fails a test until the kind is worded here.
  */
-export const JOURNAL_SOURCE = 'v0.8.0'
+export const JOURNAL_SOURCE = 'v0.13.0-dev.e6760a4'
 export const JOURNAL_KINDS = [
   'trigger.configured', 'trigger.paused', 'trigger.resumed', 'trigger.key-rotated',
   'occurrence.received', 'occurrence.skipped', 'occurrence.preparing', 'occurrence.ready', 'occurrence.submitted',
   'occurrence.failed', 'occurrence.expired', 'occurrence.needs-attention', 'occurrence.cancelled', 'occurrence.reconciled',
   'run.queued', 'run.started', 'run.expired', 'run.completed', 'run.failed', 'run.interrupted',
-  'release.previewed', 'job.created', 'admission.refused',
+  'release.previewed', 'job.created', 'job.upgraded', 'admission.refused',
   'journal.began', 'runner.started', 'runner.stopped'
 ] as const
 export type JournalKind = typeof JOURNAL_KINDS[number]
@@ -71,6 +71,7 @@ const KIND_WORDS: Record<JournalKind, () => string> = {
   'run.interrupted': () => msg('Run interrupted'),
   'release.previewed': () => msg('Release previewed'),
   'job.created': () => msg('Job created'),
+  'job.upgraded': () => msg('Job upgraded'),
   'admission.refused': () => msg('Request to start work refused'),
   'journal.began': () => msg('Journal began'),
   'runner.started': () => msg('Runner started'),

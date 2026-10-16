@@ -5784,5 +5784,14 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— un localizzatore per il file di repository che effettua la dichiarazione. Questo payload non ne effettua alcuna, e qualsiasi cosa tale file dichiari riguarda il runtime, non i pacchetti di questo graph, questi fatti o la correttezza dell'agire in base alla decisione risultante.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— un localizzatore del file del repository che contiene l’affermazione. Questo payload non ne fa alcuna. L’affermazione riguarda il motore, non questo pacchetto, questi fatti o la correttezza di agire in base alla disposizione.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "«Nell’insieme revisionato» significa che il jpack.lock.json del progetto fissa esattamente questi byte per questo id di decisione. Non dice che il pacchetto sia corretto, né chi lo ha revisionato. È mostrato, non imposto: il job viene creato allo stesso modo in ogni caso.",
-  "… (truncated for display)": "… (troncato per la visualizzazione)"
+  "… (truncated for display)": "… (troncato per la visualizzazione)",
+  "Read dialect contract": "Leggi contratto del dialetto",
+  "Read dialect schema": "Leggi schema del dialetto",
+  "Read dialect reference": "Leggi riferimento del dialetto",
+  "Validate dialect": "Convalida dialetto",
+  "Check dialect coverage": "Verifica copertura del dialetto",
+  "Canonicalize dialect": "Canonicalizza dialetto",
+  "Calculate dialect digest": "Calcola impronta del dialetto",
+  "Create dialect starter": "Crea modello di dialetto",
+  "Job upgraded": "Processo aggiornato"
 }

@@ -5744,5 +5744,14 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— 주장을 제기하는 리포지토리 파일의 로케이터입니다. 이 페이로드는 아무 주장도 제기하지 않으며, 해당 파일이 주장하는 바가 무엇이든 그것은 런타임에 관한 것이지, 이 그래프의 팩이나 이들 사실, 또는 판정 결과에 따라 행동하는 것이 올바른지에 관한 것이 아닙니다.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 주장을 담은 저장소 파일의 위치 정보입니다. 이 페이로드는 그런 주장을 하지 않습니다. 해당 파일의 주장은 런타임에 관한 것이며 이 팩, 사실 또는 처분에 따라 행동하는 것이 올바른지에 관한 것이 아닙니다.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "‘검토된 집합에 있음’은 프로젝트의 jpack.lock.json이 이 결정 ID에 대해 바로 이 바이트를 고정한다는 뜻입니다. 팩이 올바르다거나 누가 검토했는지는 말하지 않습니다. 표시만 할 뿐 강제하지 않습니다. 어느 경우든 작업은 똑같이 만들어집니다.",
-  "… (truncated for display)": "… (표시를 위해 잘림)"
+  "… (truncated for display)": "… (표시를 위해 잘림)",
+  "Read dialect contract": "다이얼렉트 계약 읽기",
+  "Read dialect schema": "다이얼렉트 스키마 읽기",
+  "Read dialect reference": "다이얼렉트 참조 읽기",
+  "Validate dialect": "다이얼렉트 검증",
+  "Check dialect coverage": "다이얼렉트 적용 범위 확인",
+  "Canonicalize dialect": "다이얼렉트 정규화",
+  "Calculate dialect digest": "다이얼렉트 다이제스트 계산",
+  "Create dialect starter": "다이얼렉트 기본 템플릿 만들기",
+  "Job upgraded": "작업 업그레이드됨"
 }

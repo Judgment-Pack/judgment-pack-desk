@@ -5744,5 +5744,14 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.",
-  "… (truncated for display)": "… (truncated for display)"
+  "… (truncated for display)": "… (truncated for display)",
+  "Read dialect contract": "Read dialect contract",
+  "Read dialect schema": "Read dialect schema",
+  "Read dialect reference": "Read dialect reference",
+  "Validate dialect": "Validate dialect",
+  "Check dialect coverage": "Check dialect coverage",
+  "Canonicalize dialect": "Canonicalize dialect",
+  "Calculate dialect digest": "Calculate dialect digest",
+  "Create dialect starter": "Create dialect starter",
+  "Job upgraded": "Job upgraded"
 }

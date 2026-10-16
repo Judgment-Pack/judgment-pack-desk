@@ -101,7 +101,8 @@ interface DialectMembers {
   provider?: ''; facts?: null; evidence?: null
 }
 export interface DialectDocumentV2 extends DialectMembers { version: 2; sources?: DialectSourceV2[] }
-/** Version 3, proposed: §§4.3–4.4. No Runner currently reads this version. */
+/** Version 3: §§4.3–4.4. Runtime/Runner support operation and selected-file
+ * sources. Other declared source kinds remain explicitly unsupported. */
 export interface DialectDocumentV3 extends DialectMembers { version: 3; sources?: DialectSourceV3[] }
 export type DialectDocument = DialectDocumentV2 | DialectDocumentV3
 

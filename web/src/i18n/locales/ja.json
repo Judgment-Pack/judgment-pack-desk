@@ -5744,5 +5744,14 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— 主張を行うリポジトリファイルのロケーター。このペイロードはいかなる主張も行わず、そのファイルが主張する内容はランタイムに関するものであり、このグラフのパック、これらの事実、または判定結果に基づいて行動することが正しいかどうかに関するものではありません。",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 主張を記載したリポジトリ内ファイルの所在です。このペイロードは主張を行いません。ファイルの主張はランタイムに関するもので、このパックや事実、処置結果に従うことの正しさについてではありません。",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "「レビュー済み集合に含まれる」とは、プロジェクトの jpack.lock.json がこの判断 ID にまさにこのバイトを固定していることを意味します。パックが正しいことや、誰がレビューしたかは示しません。表示するだけで強制はしません。どちらの場合もジョブは同じように作成されます。",
-  "… (truncated for display)": "…（表示用に省略）"
+  "… (truncated for display)": "…（表示用に省略）",
+  "Read dialect contract": "ダイアレクトの契約を読む",
+  "Read dialect schema": "ダイアレクトのスキーマを読む",
+  "Read dialect reference": "ダイアレクトのリファレンスを読む",
+  "Validate dialect": "ダイアレクトを検証",
+  "Check dialect coverage": "ダイアレクトの網羅性を確認",
+  "Canonicalize dialect": "ダイアレクトを正規化",
+  "Calculate dialect digest": "ダイアレクトのダイジェストを計算",
+  "Create dialect starter": "ダイアレクトの雛形を作成",
+  "Job upgraded": "ジョブをアップグレードしました"
 }

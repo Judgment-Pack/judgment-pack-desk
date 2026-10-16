@@ -5784,5 +5784,14 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— un localizador para el archivo de repositorio que realiza la afirmación. Esta carga útil no realiza ninguna, y cualquier cosa que ese archivo afirme es acerca del runtime, no acerca de los paquetes de este Graph, estos hechos o si actuar conforme a la decisión resultante es correcto.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— un localizador del archivo del repositorio que hace la afirmación. Esta carga útil no hace ninguna. La afirmación trata del motor, no de este paquete, estos hechos ni de si es correcto actuar según la disposición.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "«En el conjunto revisado» significa que el jpack.lock.json del proyecto fija exactamente estos bytes para este id de decisión. No indica que el paquete sea correcto ni quién lo revisó. Se muestra, no se impone: el trabajo se crea igual en cualquier caso.",
-  "… (truncated for display)": "… (recortado para mostrar)"
+  "… (truncated for display)": "… (recortado para mostrar)",
+  "Read dialect contract": "Leer contrato del dialecto",
+  "Read dialect schema": "Leer esquema del dialecto",
+  "Read dialect reference": "Leer referencia del dialecto",
+  "Validate dialect": "Validar dialecto",
+  "Check dialect coverage": "Comprobar cobertura del dialecto",
+  "Canonicalize dialect": "Canonizar dialecto",
+  "Calculate dialect digest": "Calcular resumen del dialecto",
+  "Create dialect starter": "Crear plantilla de dialecto",
+  "Job upgraded": "Trabajo actualizado"
 }

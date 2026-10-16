@@ -269,8 +269,11 @@ func (s *Server) reviewedInputSnapshot(ctx context.Context, doc inputPreparation
 	return raw, err
 }
 func (s *Server) prepareReviewedInputs(ctx context.Context, doc inputPreparation, rows []inputPreparedRow) error {
-	if len(rows) == 0 || rows[0].Origin != "generated" {
+	if len(rows) == 0 {
 		return nil
+	}
+	if rows[0].Origin != "generated" {
+		return s.checkPreparedMappings(ctx, doc, rows)
 	}
 	if s.localGateway == nil {
 		return errors.New("Install Desk's local processing components to evaluate AI research.")
@@ -310,6 +313,44 @@ func (s *Server) prepareReviewedInputs(ctx context.Context, doc inputPreparation
 	if digest == "" {
 		return errors.New("Restart Desk to load its research trust profile.")
 	}
+	// Rebuild the mapping on the server: never copy generated values from case.
+	q := doc.Recipe.Qualification
+	facts := []inputDialectFact{}
+	evidence := []inputDialectEvidence{}
+	admitsFacts, admitsEvidence := map[string][]string{}, map[string][]string{}
+	if q.Mapping.Case != nil {
+		for _, f := range q.Mapping.Case.Facts {
+			facts = append(facts, inputDialectFact{f.Target, "/prepared/" + inputEscape(f.Target)})
+			admitsFacts[f.Target] = []string{"generated"}
+		}
+		for _, f := range q.Mapping.Case.Evidence {
+			evidence = append(evidence, f)
+			admitsEvidence[f.Requirement] = []string{"generated"}
+		}
+	}
+	admits := map[string]any{}
+	if len(admitsFacts) > 0 {
+		admits["facts"] = admitsFacts
+	}
+	if len(admitsEvidence) > 0 {
+		admits["evidence"] = admitsEvidence
+	}
+	mapping := map[string]any{"version": 2, "provider": "", "facts": nil, "evidence": nil, "case": map[string]any{"parameters": map[string]any{"grant": map[string]string{"pointer": "/grant", "type": "string"}, "digest": map[string]string{"pointer": "/digest", "type": "string"}}, "facts": []any{}, "evidence": []any{}}, "sources": []any{map[string]any{"name": "research", "kind": "operation", "profile": reviewedInputProfile, "profileDigest": digest, "maxAge": 86400, "arguments": map[string]any{"tool": reviewedInputTool, "arguments": map[string]any{"grant": map[string]string{"$param": "grant"}, "digest": map[string]string{"$param": "digest"}}}, "read": map[string]any{"copy": map[string]any{"facts": facts, "evidence": evidence}}}}, "admits": admits}
+	if len(q.Mapping.Unmapped) > 0 {
+		mapping["unmapped"] = q.Mapping.Unmapped
+	}
+	if len(q.Mapping.UnmappedEvidence) > 0 {
+		mapping["unmappedEvidence"] = q.Mapping.UnmappedEvidence
+	}
+	mappingBytes, err := json.Marshal(mapping)
+	if err != nil {
+		return err
+	}
+	checked, err := s.checkedDialectMapping(ctx, mappingBytes, q.Pack)
+	if err != nil {
+		return err
+	}
+
 	pin, err := s.localGateway.ensure(s.assistant)
 	if err != nil {
 		return err
@@ -337,23 +378,8 @@ func (s *Server) prepareReviewedInputs(ctx context.Context, doc inputPreparation
 		if err != nil {
 			return err
 		}
-		// Rebuild the mapping on the server: never copy generated values from case.
-		q := doc.Recipe.Qualification
-		facts := []inputDialectFact{}
-		evidence := []inputDialectEvidence{}
-		admitsFacts, admitsEvidence := map[string][]string{}, map[string][]string{}
-		if q.Mapping.Case != nil {
-			for _, f := range q.Mapping.Case.Facts {
-				facts = append(facts, inputDialectFact{f.Target, "/prepared/" + inputEscape(f.Target)})
-				admitsFacts[f.Target] = []string{"generated"}
-			}
-			for _, f := range q.Mapping.Case.Evidence {
-				evidence = append(evidence, f)
-				admitsEvidence[f.Requirement] = []string{"generated"}
-			}
-		}
-		mapping := map[string]any{"version": 2, "case": map[string]any{"parameters": map[string]any{"grant": map[string]string{"pointer": "/grant", "type": "string"}, "digest": map[string]string{"pointer": "/digest", "type": "string"}}, "facts": []any{}, "evidence": []any{}}, "sources": []any{map[string]any{"name": "research", "kind": "operation", "profile": reviewedInputProfile, "profileDigest": digest, "maxAge": 86400, "arguments": map[string]any{"tool": reviewedInputTool, "arguments": map[string]any{"grant": map[string]string{"$param": "grant"}, "digest": map[string]string{"$param": "digest"}}}, "read": map[string]any{"copy": map[string]any{"facts": facts, "evidence": evidence}}}}, "admits": map[string]any{"facts": admitsFacts, "evidence": admitsEvidence}, "unmapped": q.Mapping.Unmapped, "unmappedEvidence": q.Mapping.UnmappedEvidence}
-		rows[i].Input, err = json.Marshal(map[string]any{"source": map[string]any{"mapping": mapping, "case": map[string]string{"grant": id, "digest": resultDigest}, "sources": map[string]any{"research": map[string]any{"response": json.RawMessage(response)}}}})
+
+		rows[i].Input, err = json.Marshal(map[string]any{"source": map[string]any{"mapping": json.RawMessage(checked.Document), "mappingDigest": checked.Digest, "case": map[string]string{"grant": id, "digest": resultDigest}, "sources": map[string]any{"research": map[string]any{"response": json.RawMessage(response)}}}})
 		if err != nil {
 			return err
 		}

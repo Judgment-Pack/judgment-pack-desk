@@ -1,3 +1,5 @@
+import {checkDialect,DialectCheckError} from '../dialect/authoring'
+vi.mock('../dialect/authoring',async original=>({...await original<object>(),checkDialect:vi.fn()}))
 import {beforeEach,expect,it,vi} from 'vitest'
 import {dialectChatTools} from './dialectChatTools'
 import {buildDialect,validDialectProposal,type DialectProposal} from './dialect'
@@ -16,7 +18,7 @@ const call=(name:string,args:Record<string,unknown>,s=signal())=>tools.find(t=>t
 const context=()=>call('read_dialect',{id,packKey:'fit'})
 const propose=()=>call('propose_dialect',{id,revision,...proposal})
 beforeEach(async()=>{
- vi.resetAllMocks();saved=structuredClone(base);packText=pack;actions=[];tools=dialectChatTools({afterTurnId:()=> 'turn',addAction:a=>actions.push(a)})
+ vi.resetAllMocks();vi.mocked(checkDialect).mockResolvedValue({status:'complete',digest:'sha256:checked',diagnostics:[]});saved=structuredClone(base);packText=pack;actions=[];tools=dialectChatTools({afterTurnId:()=> 'turn',addAction:a=>actions.push(a)})
  proposal={packKey:'fit',packDigest:(await packBinding('fit',pack)).digest,facts:[{target:'/size',column:'size/~estimate',conversion:{kind:'decimal'}},{target:'/active',column:'active',conversion:{kind:'boolean',trueValue:'yes',falseValue:'no'}}],evidence:[{requirement:'source',column:'evidence'}],summary:'Use size as a decimal and explicit yes/no values; country remains unknown.'}
  vi.mocked(readFile).mockImplementation(async path=>({content:path==='jpack.json'?JSON.stringify({packs:{fit:{path:'fit.pack.json'}}}):packText}) as any)
  vi.mocked(dialectAPI).mockImplementation(async(_path,method)=>method==='POST'?{rows:[{id:rowId,prepared:{'/size':'50','/active':true},issues:[]}]} as any:structuredClone(saved) as any)
@@ -79,4 +81,12 @@ it('exposes host company lineage before people research without sample data',asy
  const r=await context(),body=JSON.parse((r as any).content[0].text)
  for(const name of ['company_id','company_name','company_url'])expect(body.columns.find((c:any)=>c.name===name)).toEqual({name,planned:true,samples:[]})
  expect(saved.document.records).toEqual([])
+})
+it('uses authoritative Runtime diagnostics before proposing and never saves a refused candidate',async()=>{
+ await context()
+ const report={status:'refused',diagnostics:[{code:'JPS-DIALECT-FORM',instancePath:'/case/facts',message:'Duplicate target.'}]}
+ vi.mocked(checkDialect).mockRejectedValue(new DialectCheckError(report))
+ await expect(propose()).rejects.toThrow('Duplicate target')
+ expect(actions).toHaveLength(0)
+ expect(vi.mocked(dialectAPI).mock.calls.filter(([,method])=>method==='POST')).toHaveLength(0)
 })

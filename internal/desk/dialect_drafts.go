@@ -325,6 +325,9 @@ func (s *Server) publishDialectDraft(ctx context.Context, d dialectDraftDocument
 	if err := validateInputQualification(d.Recipe.Qualification); err != nil {
 		return "", err
 	}
+	if err := s.checkInputQualification(ctx, d.Recipe.Qualification); err != nil {
+		return "", err
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	doc := inputPreparation{Version: 1, ID: id, Name: strings.TrimSpace(d.Name), Recipe: d.Recipe, RecipeVersion: 1, CreatedAt: now, UpdatedAt: now, Records: []preparedInputRecord{}, Imports: []inputImport{}, Activity: []inputActivity{{Kind: "created", At: now, RecipeVersion: 1}}, Recipes: []inputRecipeRevision{{Version: 1, Name: strings.TrimSpace(d.Name), Recipe: d.Recipe, At: now}}}
 	doc.ChatOrigin = dialectDraftChatOrigin(d)

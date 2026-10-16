@@ -295,6 +295,15 @@ func (s *Server) handleInputPreparations(w http.ResponseWriter, r *http.Request)
 				return
 			}
 		}
+		// A fresh check of the exact candidate precedes the existing CAS write.
+		// Loading historical recipes never depends on an available Runtime.
+		if inputQualificationChanged(saved.Document.Recipe.Qualification, request.Recipe.Qualification) {
+			if err := s.checkInputQualification(r.Context(), request.Recipe.Qualification); err != nil {
+				writeJSONCoded(w, 422, CodeBadRequest, err.Error())
+				return
+			}
+		}
+
 		if id == "" {
 			nonce := make([]byte, 16)
 			if _, err = rand.Read(nonce); err != nil {

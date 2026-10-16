@@ -1,3 +1,4 @@
+import {checkDialect} from '../dialect/authoring'
 import {LoadingState} from '../ui/LoadingState'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -28,7 +29,7 @@ import styles from './JobsView.module.css'
 function starter(doc: PackDocument): DialectV2 {
  return {version:2,case:{parameters:{},facts:factFields(doc).map(f => ({target:f.path,source:`/facts${f.path}`})),evidence:(doc.evidenceRequirements ?? []).map(e => ({requirement:e.id,source:`/evidence/${pointerEscape(e.id)}`}))},sources:[]}
 }
-export function MappedInputFields({doc, fixed, disabled, active=true, onChange, draft, onDraftChange, onWorkChange, onPendingChange, onTransientChange}: {doc: PackDocument; fixed?: DialectV2; disabled: boolean; active?: boolean; onChange: (source: SourceV2 | undefined) => void; draft?: MappedDraft; onDraftChange?: (draft: MappedDraft) => void; onWorkChange?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void; onTransientChange?: () => void}) {
+export function MappedInputFields({doc, packText, fixed, disabled, active=true, onChange, draft, onDraftChange, onWorkChange, onPendingChange, onTransientChange}: {doc: PackDocument; packText:string; fixed?: DialectV2; disabled: boolean; active?: boolean; onChange: (source: SourceV2 | undefined) => void; draft?: MappedDraft; onDraftChange?: (draft: MappedDraft) => void; onWorkChange?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void; onTransientChange?: () => void}) {
  const effective=useEffectiveConfig(),config=effective.config.research
  const localConnections=effective.desk?.localGateway?.status==='ready'&&!effective.desk?.decoded?.values?.research?.gateway
  const connections=useConnections(localConnections)
@@ -46,7 +47,7 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
  useEffect(() => { onWorkChange?.(text !== initial.current.text || caseText !== initial.current.caseText || editorInvalid || Object.keys(files).length > 0 || Object.keys(selections).length > 0) }, [text,caseText,editorInvalid,files,selections,onWorkChange])
  useEffect(() => { onPendingChange?.(editorInvalid || !caseValid) }, [editorInvalid,caseValid,onPendingChange])
  const {mapping,mappingError} = useMemo(() => {try {return {mapping:parseMapping(text)}} catch(error) {return {mappingError:error}}},[text])
- const context = JSON.stringify([config.gateway,config.documents,config.managedLocal,profiles.data?.filter(p=>mapping?.sources?.some(s=>s.profile===p.profile.id)),fixed,connections.entries.filter(e=>mapping?.sources?.some(s=>s.provider==='google-drive'&&e.descriptor.id==='google-drive'||profiles.data?.some(p=>p.profile.id===s.profile&&p.profile.source===(e.descriptor.source?.id??e.descriptor.id)))).map(e=>[e.descriptor.id,e.status.data?.state,e.status.data?.account?.id,e.status.data?.resource?.id]),connections.isError])
+ const context = JSON.stringify([packText,config.gateway,config.documents,config.managedLocal,profiles.data?.filter(p=>mapping?.sources?.some(s=>s.profile===p.profile.id)),fixed,connections.entries.filter(e=>mapping?.sources?.some(s=>s.provider==='google-drive'&&e.descriptor.id==='google-drive'||profiles.data?.some(p=>p.profile.id===s.profile&&p.profile.source===(e.descriptor.source?.id??e.descriptor.id)))).map(e=>[e.descriptor.id,e.status.data?.state,e.status.data?.account?.id,e.status.data?.resource?.id]),connections.isError])
  const busy = disabled || Boolean(progress)
  function invalidate() {setPreview(undefined); onChange(undefined); setError('')}
  useEffect(() => {setReconnect(false);setChoosing(undefined);setPreview(undefined); onChange(undefined); setSelections({}); setProgress(''); setError(''); return () => {operation.current?.abort(); operation.current=null}},[context,onChange])
@@ -75,6 +76,7 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
   if(operation.current || !mapping || editorInvalid || !caseValid) return
   const active=new AbortController();operation.current=active;invalidate();setProgress(msg('Checking inputs…'))
   try {
+   await checkDialect(mapping,packText,active.signal)
    // Refresh installation pins before each explicit acquisition.
    const trusted=await profiles.refetch();active.signal.throwIfAborted();if(trusted.error)throw trusted.error
    const result=await prepareMappedInputs({mapping,caseValue:parseMappedObject(caseText),files,selections,profiles:trusted.data ?? [],config,signal:active.signal,progress:name=>setProgress(msg('Reading {{source}}…',{source:name}))})

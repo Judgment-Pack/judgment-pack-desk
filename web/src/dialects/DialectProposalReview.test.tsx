@@ -1,3 +1,5 @@
+import {checkDialect,DialectCheckError} from '../dialect/authoring'
+vi.mock('../dialect/authoring',async original=>({...await original<object>(),checkDialect:vi.fn()}))
 import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {MemoryRouter} from 'react-router-dom'
@@ -17,7 +19,7 @@ const id='prep_'+'a'.repeat(32),revision='a'.repeat(64),pack=JSON.stringify({id:
 const saved:PreparationReply={sha256:revision,document:{version:1,id,name:'Companies',recipe:{intent:'Keep this instruction'},recipeVersion:1,createdAt:'2026-10-14',updatedAt:'2026-10-14',records:[{id:'row_'+'b'.repeat(64),name:'Example',sourceId:'source',row:1,class:'asserted',status:'provided',values:{employees:'60'}}],imports:[],activity:[]}}
 let cache:QueryClient,action:DialectChatAction,livePack:string
 beforeEach(async()=>{
- vi.resetAllMocks();cache=new QueryClient({defaultOptions:{queries:{retry:false}}});livePack=pack
+ vi.resetAllMocks();vi.mocked(checkDialect).mockResolvedValue({status:'complete',diagnostics:[]});cache=new QueryClient({defaultOptions:{queries:{retry:false}}});livePack=pack
  action={version:1,id:'action-1',inputId:id,name:'Companies',revision,recipeVersion:1,createdAt:'2026-10-14',kind:'update-dialect',dialect:{packKey:'fit',packDigest:(await packBinding('fit',pack)).digest,facts:[{target:'/size',column:'employees',conversion:{kind:'decimal'}}],evidence:[],summary:'Read the employee count as a decimal.'}}
  fake.chats=[{id:'chat',inputActions:[action]}]
  vi.mocked(readFile).mockImplementation(async path=>({content:path==='jpack.json'?JSON.stringify({packs:{fit:{path:'fit.pack.json'}}}):livePack}) as any)
@@ -56,4 +58,14 @@ it('keeps a failed save open and does not mark the chat proposal saved',async()=
  const save=screen.getByRole('button',{name:'Save dialect'});await waitFor(()=>expect((save as HTMLButtonElement).disabled).toBe(false));fireEvent.click(save)
  expect(await screen.findByText('Could not save')).toBeTruthy();expect(fake.update).not.toHaveBeenCalled()
  expect(screen.getByRole('combobox',{name:'Source for size'}).textContent).toContain('employees')
+})
+
+it('keeps saving disabled when the shared Runtime check refuses the candidate',async()=>{
+ vi.mocked(checkDialect).mockRejectedValue(new DialectCheckError({status:'refused',diagnostics:[{code:'JPS-DIALECT-FORM',message:'Invalid mapping target.'}]}))
+ show();fireEvent.click(screen.getByRole('button',{name:'Review dialect'}))
+ fireEvent.click(await screen.findByRole('button',{name:'Preview conversions'}))
+ await screen.findByText('JPS-DIALECT-FORM · Invalid mapping target.')
+ expect((screen.getByRole('button',{name:'Save dialect'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(vi.mocked(dialectAPI).mock.calls.filter(([,method])=>method==='PUT')).toHaveLength(0)
+ expect(fake.update).not.toHaveBeenCalled()
 })

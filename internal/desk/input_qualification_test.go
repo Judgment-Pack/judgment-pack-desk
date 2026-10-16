@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const qualificationTestPack = `{"id":"example","version":"1.0.0","decision":{"question":"Ready?"},"rules":[{"when":{"op":"fact","path":"/company/country","value":"CA"}}],"evidenceRequirements":[{"id":"license"}]}`
+const qualificationTestPack = `{"specVersion":"0.2.0-draft","id":"https://example.invalid/pack/example","version":"1.0.0","decision":{"intent":"Check country","question":"Ready?"},"outcomes":[{"id":"ready","label":"Ready"},{"id":"other","label":"Other"}],"rules":[{"id":"country","when":{"op":"fact","path":"/company/country","operator":"equals","value":"CA"},"outcome":"ready","description":"Country matches","onUnknown":"escalate"}],"evidenceRequirements":[{"id":"license","description":"License","required":false}],"title":"Example"}`
 
 func qualificationFixture() *inputQualification {
 	return &inputQualification{Kind: "pack", Key: "example", Pack: qualificationTestPack, Digest: "sha256:" + digestOf([]byte(qualificationTestPack)), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{"/company/country", "/values/Country"}}, Evidence: []inputDialectEvidence{{"license", "/values/License"}}}, Sources: []json.RawMessage{}}}
@@ -41,10 +41,10 @@ func TestInputQualificationRefusesUnboundOrGeneratedMappings(t *testing.T) {
 			case "prototype":
 				q.Mapping.Case.Facts[0].Source = "/values/__proto__/x"
 			case "bad evidence shape":
-				q.Pack = strings.Replace(qualificationTestPack, `[{"id":"license"}]`, `"not an array"`, 1)
+				q.Pack = strings.Replace(qualificationTestPack, `[{"id":"license","description":"License","required":false}]`, `"not an array"`, 1)
 				q.Digest = "sha256:" + digestOf([]byte(q.Pack))
 			case "bad title":
-				q.Pack = strings.Replace(qualificationTestPack, `"version":"1.0.0"`, `"version":"1.0.0","title":{}`, 1)
+				q.Pack = strings.Replace(qualificationTestPack, `"title":"Example"`, `"title":{}`, 1)
 				q.Digest = "sha256:" + digestOf([]byte(q.Pack))
 			case "bad pack":
 				q.Pack = `{"id":"one","id":"two","decision":{}}`

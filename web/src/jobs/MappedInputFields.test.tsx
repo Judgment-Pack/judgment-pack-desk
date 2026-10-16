@@ -1,3 +1,5 @@
+import {checkDialect,DialectCheckError} from '../dialect/authoring'
+vi.mock('../dialect/authoring',async original=>({...await original<object>(),checkDialect:vi.fn()}))
 import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -19,14 +21,15 @@ vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('./mappedInputs',async original=>({...await original<object>(),prepareMappedInputs:vi.fn()}))
 vi.mock('./sourceInputs',async original=>({...await original<object>(),localSnapshot:vi.fn()}))
 const doc={rules:[{condition:{op:'fact',path:'/score',value:7}}],evidenceRequirements:[]} as unknown as PackDocument
+const packText='{ "precise":9007199254740993, "record":"non-GTM" }'
 const mapping: DialectV2=mappingFixture('case-score')
 const source={mapping,case:{facts:{score:7}},sources:{},mappingDigest:'digest'}
 const result={input:{source,facts:{score:7}},factsText:'{"score":7}',evidenceText:''}
-beforeEach(()=>{vi.mocked(jobsAPI).mockResolvedValue([]);vi.mocked(prepareMappedInputs).mockResolvedValue(result)})
+beforeEach(()=>{vi.mocked(checkDialect).mockResolvedValue({status:'complete',digest:'sha256:checked',diagnostics:[]});vi.mocked(jobsAPI).mockResolvedValue([]);vi.mocked(prepareMappedInputs).mockResolvedValue(result)})
 afterEach(()=>{cleanup();vi.resetAllMocks()})
 async function view(fixed?:DialectV2) {
  const onChange=vi.fn(), query=new QueryClient({defaultOptions:{queries:{retry:false}}})
- const rendered=render(<QueryClientProvider client={query}><Tooltip.Provider><MappedInputFields doc={doc} fixed={fixed} disabled={false} onChange={onChange}/></Tooltip.Provider></QueryClientProvider>)
+ const rendered=render(<QueryClientProvider client={query}><Tooltip.Provider><MappedInputFields doc={doc} packText={packText} fixed={fixed} disabled={false} onChange={onChange}/></Tooltip.Provider></QueryClientProvider>)
  await waitFor(()=>expect((screen.getByRole('button',{name:'Read sources and preview'}) as HTMLButtonElement).disabled).toBe(false))
  return {...rendered,onChange}
 }
@@ -140,4 +143,12 @@ it('shows the translated canonical rule in the advanced mapping error',async()=>
  fireEvent.change(screen.getByLabelText('Dialect JSON'),{target:{value:'{"version":2,"version":2}'}})
  expect(screen.getByRole('alert').textContent).toBe('JSON member “version” appears more than once (§1).')
  expect(prepareMappedInputs).not.toHaveBeenCalled()
+})
+it('checks declared coverage before acquisition and refuses a Runtime failure',async()=>{
+ await view()
+ vi.mocked(checkDialect).mockRejectedValue(new DialectCheckError({status:'incomplete',diagnostics:[{code:'missing-producer',message:'The pack input is unmapped.'}]}))
+ fireEvent.click(screen.getByRole('button',{name:'Read sources and preview'}))
+ await screen.findByText(/The pack input is unmapped/)
+ expect(prepareMappedInputs).not.toHaveBeenCalled()
+ expect(checkDialect).toHaveBeenCalledWith(expect.anything(),packText,expect.any(AbortSignal))
 })

@@ -85,3 +85,12 @@ it('allows read-only version arithmetic in Plan without allowing publication',as
  expect(before.callTool).toHaveBeenCalledWith('get_artifact_version_options',{base:'0.1.0'})
  await expect(ready.session.callTool('publish_artifact',{})).rejects.toThrow(/Plan mode/)
 })
+it('allows offline Dialect inspection in Plan while starter generation stays unavailable',async()=>{
+ const before=session()
+ const reads=['get_dialect_contract','get_dialect_schema','get_dialect_reference','dialect_validate','dialect_check','dialect_canonicalize','dialect_digest']
+ before.tools.push(...reads.map(name=>({name})),{name:'dialect_init'})
+ const ready=await contextualSession(before)
+ for(const name of reads){expect(ready.session.tools.map(t=>t.name)).toContain(name);await ready.session.callTool(name,{})}
+ expect(ready.session.tools.map(t=>t.name)).not.toContain('dialect_init')
+ await expect(ready.session.callTool('dialect_init',{})).rejects.toThrow('Plan mode')
+})
