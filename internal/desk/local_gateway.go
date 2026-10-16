@@ -73,6 +73,7 @@ type localSigner struct {
 }
 
 type localGateway struct {
+	modelSource        *modelSourceBroker
 	inputHandoffs      string
 	mu                 sync.Mutex
 	closed             bool
@@ -90,6 +91,9 @@ func (g *localGateway) close() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.closed = true
+	if g.modelSource != nil {
+		g.modelSource.close()
+	}
 	g.stop()
 }
 func (g *localGateway) stop() {
@@ -308,7 +312,13 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	if handoffs == "" {
 		handoffs = filepath.Join(store.dir, "input-handoffs")
 	}
-	options := localWorkerOptions{Bundle: g.bundle, Dir: filepath.Join(platformPath(store.dir, "local-gateway"), run), Seed: filepath.Join(store.dir, "secrets", "local-gateway.seed"), Public: public, ConnectionsDir: platformPath(store.dir, "gateway-connections"), InputHandoffs: handoffs}
+	if g.modelSource == nil {
+		g.modelSource, err = newModelSourceBroker()
+		if err != nil {
+			return nil, err
+		}
+	}
+	options := localWorkerOptions{Bundle: g.bundle, Dir: filepath.Join(platformPath(store.dir, "local-gateway"), run), Seed: filepath.Join(store.dir, "secrets", "local-gateway.seed"), Public: public, ConnectionsDir: platformPath(store.dir, "gateway-connections"), InputHandoffs: handoffs, ModelSource: &g.modelSource.config}
 	policy, _, err := webPolicyValue(store)
 	if err != nil {
 		return nil, err

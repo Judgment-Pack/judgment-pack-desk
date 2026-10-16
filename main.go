@@ -46,6 +46,9 @@ func run() error {
 		fmt.Println("1")
 		return nil
 	}
+	if len(os.Args) == 2 && os.Args[1] == "--model-source-adapter" {
+		return desk.RunModelSourceAdapter(os.Stdin, os.Stdout)
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--input-source-adapter" {
 		return desk.RunInputSourceAdapter(os.Stdin, os.Stdout)
 	}

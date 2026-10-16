@@ -25,6 +25,7 @@ type backgroundModelChoice struct {
 }
 
 const backgroundModelResponseBytes = 128 << 10
+const backgroundModelTimeout = 5 * time.Minute
 
 // A host-authored contract, never supplied directly by browser or model callers.
 // Validate gates subscription tool submissions; API results remain exact completed
