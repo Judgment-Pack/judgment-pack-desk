@@ -1,9 +1,6 @@
 # Pack and Dialect artifact versions
 
-Status: agreed product direction; shared-contract and authoring implementation are
-tracked in [Spec #180](https://github.com/Judgment-Pack/judgment-pack-spec/issues/180)
-and [Desk #404](https://github.com/Judgment-Pack/judgment-pack-desk/issues/404).
-These issues are assigned to Brian Jin. The new portable format is not enabled.
+Status: named Dialect formats are implemented by [Spec #187](https://github.com/Judgment-Pack/judgment-pack-spec/pull/187), Runtime #288 and Runner #96. Desk publication and frozen job integration are tracked in [Desk #405](https://github.com/Judgment-Pack/judgment-pack-desk/issues/405). Broader version policy remains in [Desk #404](https://github.com/Judgment-Pack/judgment-pack-desk/issues/404).
 
 ## What the audit found
 
