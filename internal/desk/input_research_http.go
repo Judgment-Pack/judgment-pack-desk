@@ -251,12 +251,12 @@ func (s *Server) handleInputResearch(w http.ResponseWriter, r *http.Request) {
 	}
 	run.Execution = &execution
 	run.Existing = researchRecordSnapshots(saved.Document)
-	run.IdentityVersion = 1
+	run.IdentityVersion = 2
 	run.RowIDs = map[string]string{}
 	run.EntityIDs = map[string]string{}
 	for _, record := range saved.Document.Records {
 		if record.Research != nil {
-			key := researchEntityKey(record.Research.Entity)
+			key := researchEntityKeyForRun(run, record.Research.Entity)
 			if run.RowIDs[key] == "" {
 				run.RowIDs[key] = record.ID
 				run.EntityIDs[key] = record.Research.Entity.ID

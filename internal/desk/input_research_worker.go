@@ -657,8 +657,8 @@ func applyResearchRecords(run *inputResearchRun, args json.RawMessage) error {
 		if e := validateResearchEntity(&entity, run.Recipe, sources, researchAllowedURLs(*run), companies); e != nil {
 			return fmt.Errorf("Record %q: %w", entity.Name, e)
 		}
-		if run.IdentityVersion == 1 {
-			key := researchEntityKey(entity)
+		if run.IdentityVersion >= 1 {
+			key := researchEntityKeyForRun(*run, entity)
 			entity.ID = run.EntityIDs[key]
 			if entity.ID == "" {
 				entity.ID = "entity_" + digestOf([]byte(key))
@@ -666,7 +666,7 @@ func applyResearchRecords(run *inputResearchRun, args json.RawMessage) error {
 		}
 		found := false
 		for i := range records {
-			if records[i].ID == entity.ID || run.IdentityVersion == 1 && researchEntityKey(records[i]) == researchEntityKey(entity) {
+			if records[i].ID == entity.ID || run.IdentityVersion >= 1 && researchEntityKeyForRun(*run, records[i]) == researchEntityKeyForRun(*run, entity) {
 				records[i] = entity
 				found = true
 				break
@@ -725,7 +725,7 @@ func (s *Server) publishResearchRecords(run inputResearchRun) error {
 		if !found {
 			duplicate := false
 			for _, existing := range doc.Records {
-				if existing.Research != nil && researchEntityKey(existing.Research.Entity) == researchEntityKey(entity) {
+				if existing.Research != nil && researchEntityKeyForRun(run, existing.Research.Entity) == researchEntityKeyForRun(run, entity) {
 					newer, err := s.researchRecordIsNewer(existing, run)
 					if err != nil {
 						return err
@@ -757,8 +757,8 @@ func (s *Server) publishResearchRecords(run inputResearchRun) error {
 
 func researchPreparedRecord(run inputResearchRun, entity inputResearchEntity) preparedInputRecord {
 	id := "row_" + digestOf([]byte(run.ID+"\n"+entity.ID))
-	if run.IdentityVersion == 1 {
-		key := researchEntityKey(entity)
+	if run.IdentityVersion >= 1 {
+		key := researchEntityKeyForRun(run, entity)
 		id = run.RowIDs[key]
 		if id == "" {
 			id = "row_" + digestOf([]byte(run.PreparationID+"\n"+key))

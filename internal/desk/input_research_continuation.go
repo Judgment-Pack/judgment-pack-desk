@@ -194,3 +194,22 @@ func (s *Server) verifyResearchContinuation(ctx context.Context, root *os.Root, 
 	}
 	return nil
 }
+
+// Version 2 keeps the selected parent in identity. A public profile may be a
+// separate research result for more than one selected organisation. Historical
+// journals retain their original key so replay never changes saved identities.
+func researchEntityKeyForRun(run inputResearchRun, entity inputResearchEntity) string {
+	key := researchEntityKey(entity)
+	if run.IdentityVersion >= 2 {
+		raw, _ := json.Marshal([]string{key, researchName(entity.Name), entity.CompanyID})
+		return string(raw)
+	}
+	return key
+}
+
+func researchSameIdentityForRun(run inputResearchRun, a, b inputResearchEntity) bool {
+	if run.IdentityVersion >= 2 && a.CompanyID != b.CompanyID {
+		return false
+	}
+	return researchSameIdentity(a, b)
+}
