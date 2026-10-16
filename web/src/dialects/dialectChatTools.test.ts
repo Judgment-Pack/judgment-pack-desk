@@ -69,7 +69,7 @@ it('retains checked proposals after preview failure or concurrent change, withou
 it('keeps planned research columns explicit without creating record values',async()=>{
  saved.document.recipe.research={version:1,target:'companies',fields:[{name:'country',type:'string',description:'Country'}],criteria:[],limits:{records:10,searches:10,pages:20,modelCalls:40},ai:{connection:'private',revision:'secret',model:'model'}}
  const r=await context(),body=JSON.parse((r as any).content[0].text)
- expect(body.columns.find((c:any)=>c.name==='country')).toEqual({name:'country',planned:true,samples:[]})
+ expect(body.columns.find((c:any)=>c.name==='country')).toEqual({name:'country',requestedType:'string',planned:true,samples:[]})
  expect(JSON.stringify(body)).not.toMatch(/private|secret/)
  const built=buildDialect(saved,{...proposal,facts:[{target:'/country',column:'country',conversion:{kind:'text'}}]},await packBinding('fit',pack))
  expect(built.mapping.case?.facts).toEqual([{target:'/country',source:'/values/country'}])
@@ -107,4 +107,14 @@ it('retains the exact pending candidate after a transport failure without preten
  await expect(propose()).rejects.toThrow('Runtime unavailable')
  expect(actions).toHaveLength(1);expect(actions[0].dialectCheck?.document).toBeTruthy()
  expect(actions[0].dialectCheck?.report).toBeUndefined();expect(actions[0].applied).toBeUndefined()
+})
+
+it('offers typed research mapping through the same checked proposal path',async()=>{
+ saved.document.recipe.research={version:1,target:'records',fields:[{name:'active',type:'boolean',description:'Explicit flag'}],criteria:[],limits:{records:10,searches:0,pages:20,modelCalls:40},ai:{connection:'private',revision:'secret',model:'model'}}
+ const contextResult=JSON.parse((await context() as any).content[0].text)
+ expect(contextResult.columns.find((c:any)=>c.name==='active').requestedType).toBe('boolean')
+ proposal.facts=[{target:'/active',column:'active',conversion:{kind:'research-value'}}]
+ await propose()
+ expect(actions[0].dialect?.facts[0].conversion).toEqual({kind:'research-value'})
+ expect(validDialectProposal({...proposal,facts:[{...proposal.facts[0],conversion:{kind:'research-value',trueValue:'yes'}}]})).toBe(false)
 })

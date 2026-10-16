@@ -3261,6 +3261,8 @@
   "Research suggested": "リサーチの提案",
   "Research target updated": "調査対象を更新しました",
   "Research the requested records using public sources. Keep unsupported information missing and separate interpretation from observations.": "公開ソースを使って要求されたレコードを調査してください。裏付けのない情報は欠損のままにし、解釈と観察内容を分けてください。",
+  "Research value": "調査値",
+  "Research value preserves the original field type, including empty text, zero and false. Only declared research fields support it. Imported columns and record metadata need another conversion. Missing or unresolved fields remain unknown.": "調査値は、空のテキスト、ゼロ、falseを含め、元のフィールドの型を保持します。宣言済みの調査フィールドのみ対応しています。インポートした列とレコードのメタデータには別の変換が必要です。欠落または未解決のフィールドは不明のままです。",
   "Research with AI…": "AI で調査…",
   "Research won’t restart automatically.": "リサーチは自動的には再開されません。",
   "Researching…": "調査中…",
