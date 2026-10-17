@@ -30,6 +30,14 @@ type exchangeResearchInstallation struct {
 	calls        atomic.Int32
 	reply        atomic.Value
 	searchStatus func() json.RawMessage
+	config       Config
+}
+
+type exchangeResearchFixture struct {
+	respond    func(*http.Request) string
+	credential string
+	dailyLimit int
+	scope      EndpointScope
 }
 
 func exchangeAcceptanceResearchRun(t *testing.T, s *Server, id string) inputResearchRun {
@@ -55,6 +63,11 @@ func exchangeAcceptanceResearchRun(t *testing.T, s *Server, id string) inputRese
 // profiles bind the unchanged declarations, but neither adapter acquires data.
 func newExchangeResearchInstallation(t *testing.T, name, runtime, runner, bundle string) *exchangeResearchInstallation {
 	t.Helper()
+	return newExchangeResearchInstallationFor(t, name, runtime, runner, bundle, exchangeResearchFixture{})
+}
+
+func newExchangeResearchInstallationFor(t *testing.T, name, runtime, runner, bundle string, fixture exchangeResearchFixture) *exchangeResearchInstallation {
+	t.Helper()
 	installation := &exchangeResearchInstallation{}
 	installation.reply.Store("")
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +76,9 @@ func newExchangeResearchInstallation(t *testing.T, name, runtime, runner, bundle
 			t.Errorf("declared model route changed: %s", r.URL.Path)
 		}
 		reply := installation.reply.Load().(string)
+		if fixture.respond != nil {
+			reply = fixture.respond(r)
+		}
 		if reply == "" {
 			t.Error("provider called outside explicitly confirmed research")
 			http.Error(w, "fixture not ready", 500)
@@ -76,10 +92,11 @@ func newExchangeResearchInstallation(t *testing.T, name, runtime, runner, bundle
 		t.Fatal(err)
 	}
 	writeProject(t, project, map[string]string{"jpack.json": `{"configVersion":"2","packs":{}}`})
-	s, ts := startDesk(t, Config{LocalAccess: true, ProjectDir: project, DeskConfigDir: config, Token: testToken, JpackBin: runtime, RunnerBin: runner, LocalGatewayBundle: bundle})
+	installation.config = Config{LocalAccess: true, ProjectDir: project, DeskConfigDir: config, Token: testToken, JpackBin: runtime, RunnerBin: runner, LocalGatewayBundle: bundle}
+	s, ts := startDesk(t, installation.config)
 	s.inputResearchCancel()
 	<-s.inputResearchDone
-	t.Cleanup(func() { ts.Close(); s.Close() })
+	t.Cleanup(func() { installation.http.Close(); installation.server.Close() })
 	installation.server, installation.http = s, ts
 	connection := aiTestConnection(testAIAlpha, "Signed preset acceptance "+name, provider.URL)
 	connection.Assistant.Endpoint.Kind = "gemini"
@@ -99,17 +116,26 @@ func newExchangeResearchInstallation(t *testing.T, name, runtime, runner, bundle
 	if code != 200 || json.Unmarshal(raw, &installation.answer) != nil {
 		t.Fatalf("answer binding %d %s", code, raw)
 	}
-	companion := s.connectionCompanion("web-search", true)
 	searchCall := func(method string, body any) json.RawMessage {
 		t.Helper()
 		encoded, _ := json.Marshal(body)
-		raw, err := companion.call(t.Context(), bundle, platformPath(s.assistant.dir, "gateway-connections"), method, encoded, "web-search", false)
+		current := installation.server
+		raw, err := current.connectionCompanion("web-search", true).call(t.Context(), bundle, platformPath(current.assistant.dir, "gateway-connections"), method, encoded, "web-search", false)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return raw
 	}
-	searchCall("configure", map[string]any{"id": "acceptance-search-" + name, "name": "Unused acceptance search", "provider": "tavily", "credential": "tvly-acceptance-fixture-only", "dailyLimit": 1})
+	if fixture.credential == "" {
+		fixture.credential = "tvly-acceptance-fixture-only"
+	}
+	if fixture.dailyLimit == 0 {
+		fixture.dailyLimit = 1
+	}
+	if fixture.scope == nil {
+		fixture.scope = EndpointScope{"https://acceptance.example.invalid/pages"}
+	}
+	searchCall("configure", map[string]any{"id": "acceptance-search-" + name, "name": "Acceptance search", "provider": "tavily", "credential": fixture.credential, "dailyLimit": fixture.dailyLimit})
 	var status struct {
 		Connections []struct{ ID, Revision string }
 	}
@@ -131,11 +157,11 @@ func newExchangeResearchInstallation(t *testing.T, name, runtime, runner, bundle
 	}
 	installation.search = searchReview.Entry
 	installation.searchStatus = func() json.RawMessage { return searchCall("status", map[string]any{}) }
-	code, pageReview, raw := pageProfileRequest(t, ts, EndpointScope{"https://acceptance.example.invalid/pages"}, "", "signed-preset-acceptance")
+	code, pageReview, raw := pageProfileRequest(t, ts, fixture.scope, "", "signed-preset-acceptance")
 	if code != 200 {
 		t.Fatalf("page preview %d %s", code, raw)
 	}
-	code, pageReview, raw = pageProfileRequest(t, ts, EndpointScope{"https://acceptance.example.invalid/pages"}, pageReview.Revision, "signed-preset-acceptance")
+	code, pageReview, raw = pageProfileRequest(t, ts, fixture.scope, pageReview.Revision, "signed-preset-acceptance")
 	if code != 200 || len(pageReview.Entry.Profile) == 0 {
 		t.Fatalf("page registration %d %s", code, raw)
 	}
@@ -146,18 +172,8 @@ func newExchangeResearchInstallation(t *testing.T, name, runtime, runner, bundle
 	return installation
 }
 
-// This acceptance is deliberately narrower than a live research claim: six
-// model-answer acquisitions (three signed presets, two installations), with all
-// fields not-found; zero search/page acquisitions and zero decisions.
-func TestExchangeSignedReleaseResearchPreparationOnTwoInstallations(t *testing.T) {
-	if os.Getenv("JPACK_EXCHANGE_RESEARCH_ACCEPTANCE") != "1" {
-		t.Skip("set JPACK_EXCHANGE_RESEARCH_ACCEPTANCE=1 for signed-release research acceptance")
-	}
-	catalog, tag, commit := os.Getenv("JPACK_EXCHANGE_ACCEPTANCE_CATALOG"), os.Getenv("JPACK_EXCHANGE_ACCEPTANCE_TAG"), os.Getenv("JPACK_EXCHANGE_ACCEPTANCE_COMMIT")
-	runtime, runner, bundle := os.Getenv("JPACK_EXCHANGE_TEST_BIN"), os.Getenv("JPACK_EXCHANGE_TEST_RUNNER"), os.Getenv("JPS_TEST_GATEWAY_BUNDLE")
-	if catalog == "" || tag == "" || commit == "" || runtime == "" || runner == "" || bundle == "" {
-		t.Fatal("requires explicit signed catalog/tag/commit, Runtime, Runner and descriptor-enabled Gateway bundle")
-	}
+func signedExchangeAcceptanceFiles(t *testing.T, catalog, tag, commit string) ([]exchangeCatalog.Row, map[string]map[string]string) {
+	t.Helper()
 	git := func(args ...string) []byte {
 		t.Helper()
 		raw, err := exec.CommandContext(t.Context(), "git", append([]string{"-C", catalog}, args...)...).Output()
@@ -188,6 +204,22 @@ func TestExchangeSignedReleaseResearchPreparationOnTwoInstallations(t *testing.T
 			t.Fatal("signed preset file digest differs", row.ID)
 		}
 	}
+	return rows, files
+}
+
+// This acceptance is deliberately narrower than a live research claim: six
+// model-answer acquisitions (three signed presets, two installations), with all
+// fields not-found; zero search/page acquisitions and zero decisions.
+func TestExchangeSignedReleaseResearchPreparationOnTwoInstallations(t *testing.T) {
+	if os.Getenv("JPACK_EXCHANGE_RESEARCH_ACCEPTANCE") != "1" {
+		t.Skip("set JPACK_EXCHANGE_RESEARCH_ACCEPTANCE=1 for signed-release research acceptance")
+	}
+	catalog, tag, commit := os.Getenv("JPACK_EXCHANGE_ACCEPTANCE_CATALOG"), os.Getenv("JPACK_EXCHANGE_ACCEPTANCE_TAG"), os.Getenv("JPACK_EXCHANGE_ACCEPTANCE_COMMIT")
+	runtime, runner, bundle := os.Getenv("JPACK_EXCHANGE_TEST_BIN"), os.Getenv("JPACK_EXCHANGE_TEST_RUNNER"), os.Getenv("JPS_TEST_GATEWAY_BUNDLE")
+	if catalog == "" || tag == "" || commit == "" || runtime == "" || runner == "" || bundle == "" {
+		t.Fatal("requires explicit signed catalog/tag/commit, Runtime, Runner and descriptor-enabled Gateway bundle")
+	}
+	rows, files := signedExchangeAcceptanceFiles(t, catalog, tag, commit)
 	manifestBytes, err := os.ReadFile(filepath.Join(bundle, "gateway-bundle.json"))
 	if err != nil {
 		t.Fatal(err)

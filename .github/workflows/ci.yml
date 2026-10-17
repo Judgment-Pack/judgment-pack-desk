@@ -288,6 +288,98 @@ jobs:
             grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/signed-exchange.log" || { echo "$name did not run and pass"; exit 1; }
           done
 
+  exchange-acquisition:
+    name: Signed Exchange acquisition acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.x'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Check out exact signed Exchange presets
+        uses: actions/checkout@v7
+        with:
+          repository: Judgment-Pack/judgment-pack-exchange
+          ref: 565ddf477c7ed986906409f19bcf8fccfaafa8a5
+          fetch-depth: 0
+          path: .ci-acquisition-exchange
+          persist-credentials: false
+      # This source pin is a test transport, separate from the official component
+      # lock. Its fixture binary is explicitly identified as a nonrelease program.
+      - name: Check out reviewed Gateway acquisition fixture
+        uses: actions/checkout@v7
+        with:
+          repository: Judgment-Pack/judgment-pack-gateway
+          ref: 09618fe82318b36e68b7a689de84140c0d2a5849
+          fetch-depth: 0
+          path: .ci-acquisition-gateway
+          persist-credentials: false
+      - name: Install attested official companion archives
+        run: |
+          python3 - <<'PYTHON'
+          import importlib.util
+          import os
+          from pathlib import Path
+          def load(name, path):
+              spec = importlib.util.spec_from_file_location(name, path)
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+          components = load('components', Path('scripts/component-releases.py'))
+          published = load('published', Path('scripts/published-components.py'))
+          plan = components.read_plan()
+          components.verify_plan(plan)
+          temporary = Path(os.environ['RUNNER_TEMP'])
+          bundle = temporary / 'acquisition-official'
+          bundle.mkdir()
+          published.install(plan, 'linux/amd64', bundle, temporary / 'acquisition-downloads')
+          PYTHON
+      - name: Build isolated acquisition transport with true fixture provenance
+        run: |
+          git -C .ci-acquisition-exchange config gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/.github/testdata/exchange-release-allowed-signers"
+          git -C .ci-acquisition-gateway config gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/.github/testdata/gateway-release-allowed-signers"
+          GOWORK=off go -C .ci-acquisition-gateway/adapters mod download
+          python3 .ci-acquisition-gateway/adapters/testdata/acquisition-fixture/build.py \
+            --base-archive "$RUNNER_TEMP/acquisition-downloads/gateway/judgment-pack-gateway_0.18.0_linux_amd64.tar.gz" \
+            --base-checksums "$RUNNER_TEMP/acquisition-downloads/gateway/checksums.txt" \
+            --base-provenance "$RUNNER_TEMP/acquisition-official/component-artifacts.json" \
+            --base-tag v0.18.0 \
+            --base-commit 552141b5e0b06cc2523387e575799fea1ab2eca6 \
+            --output "$RUNNER_TEMP/acquisition-fixture"
+          python3 .ci-acquisition-gateway/adapters/testdata/acquisition-fixture/smoke.py --bundle "$RUNNER_TEMP/acquisition-fixture"
+
+      - name: Signed presets acquire and replay found and uncertain values
+        run: |
+          set -o pipefail
+          JPACK_EXCHANGE_ACQUISITION_ACCEPTANCE=1 \
+          JPACK_EXCHANGE_ACCEPTANCE_CATALOG="$GITHUB_WORKSPACE/.ci-acquisition-exchange" \
+          JPACK_EXCHANGE_ACCEPTANCE_TAG=v0.2.0 \
+          JPACK_EXCHANGE_ACCEPTANCE_COMMIT=565ddf477c7ed986906409f19bcf8fccfaafa8a5 \
+          JPACK_EXCHANGE_TEST_BIN="$RUNNER_TEMP/acquisition-official/jpack" \
+          JPACK_EXCHANGE_TEST_RUNNER="$RUNNER_TEMP/acquisition-official/jpack-runner" \
+          JPACK_EXCHANGE_COMPONENT_PROVENANCE="$RUNNER_TEMP/acquisition-official/component-artifacts.json" \
+          JPS_TEST_GATEWAY_BUNDLE="$RUNNER_TEMP/acquisition-fixture" \
+            go test -race ./internal/desk -run '^TestExchange(SignedReleaseAcquisitionsOnTwoInstallations|AcquisitionScopeAndRedirectRefusals)$' -count=1 -v | tee "$RUNNER_TEMP/exchange-acquisition.log"
+          for name in TestExchangeSignedReleaseAcquisitionsOnTwoInstallations TestExchangeAcquisitionScopeAndRedirectRefusals; do
+            grep -Fq -- "--- PASS: $name " "$RUNNER_TEMP/exchange-acquisition.log" || { echo "$name did not run and pass"; exit 1; }
+          done
+          for name in TestExchangeAcquisitionScopeAndRedirectRefusals/before_acquisition TestExchangeAcquisitionScopeAndRedirectRefusals/final_redirect; do
+            grep -Fq -- "--- PASS: $name " "$RUNNER_TEMP/exchange-acquisition.log" || { echo "$name did not run and pass"; exit 1; }
+          done
+          for installation in first second; do
+            for preset in judgmentpack.company-research judgmentpack.people-at-company judgmentpack.procurement-opportunity; do
+              name="TestExchangeSignedReleaseAcquisitionsOnTwoInstallations/$installation/$preset"
+              grep -Fq -- "--- PASS: $name " "$RUNNER_TEMP/exchange-acquisition.log" || { echo "$name did not run and pass"; exit 1; }
+            done
+          done
+
   release-archives:
     needs: component-policy
     if: github.event_name == 'pull_request' && needs.component-policy.outputs.development == 'false'
