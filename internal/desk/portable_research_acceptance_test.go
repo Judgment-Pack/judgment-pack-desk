@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -174,5 +176,101 @@ func TestPortableResearchInterruptedCallKeepsCompletedAndNeverReplays(t *testing
 				t.Fatalf("interrupted run changed: state=%s calls=%d attempts=%+v %v", after.State, calls.Load(), after.Attempts, err)
 			}
 		})
+	}
+}
+
+// Context coverage through the portable worker: a large retained acquisition is
+// shortened to the shared fitting budget while the reviewed request and the
+// source index stay whole, and a read_context action is answered from the
+// retained text without another acquisition.
+func TestPortableResearchContextIsFittedAndReadFromRetainedSource(t *testing.T) {
+	const head = "RETAINED-HEAD-MARKER"
+	var calls atomic.Int32
+	var prompts [][]byte
+	var mu sync.Mutex
+	s, _, run := portableResearchFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct{ Content string } `json:"messages"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || len(body.Messages) < 2 {
+			t.Error("unreadable provider request")
+			return
+		}
+		mu.Lock()
+		prompts = append(prompts, []byte(body.Messages[1].Content))
+		mu.Unlock()
+		if calls.Add(1) == 1 {
+			var sent struct {
+				Responses []struct {
+					SourceID string `json:"sourceId"`
+					SHA256   string `json:"sha256"`
+				} `json:"retainedResponses"`
+			}
+			if json.Unmarshal([]byte(body.Messages[1].Content), &sent) != nil || len(sent.Responses) != 1 {
+				t.Error("retained source index missing from the prompt")
+				return
+			}
+			action, _ := json.Marshal(map[string]any{"kind": "read_context", "arguments": map[string]any{"sourceId": sent.Responses[0].SourceID, "sha256": sent.Responses[0].SHA256, "offset": 0}})
+			portableTestReply(w, string(action))
+			return
+		}
+		// Not a verifiable answer: the run stops on its bounded corrections.
+		portableTestReply(w, `{"kind":"answer","fields":{}}`)
+	})
+	retained := portableRetainedResponse{Request: json.RawMessage(`{"tool":"page"}`), Result: json.RawMessage(`"` + head + strings.Repeat("x", 400<<10) + `"`), Receipt: json.RawMessage(`{}`), Salts: json.RawMessage(`{}`)}
+	retained.Profile.ID, retained.Profile.Digest = "retained", "sha256:"+strings.Repeat("a", 64)
+	raw, _ := portableResearchJSON(retained)
+	run.Portable.Frozen.Limits.Pages = 1
+	run.Revision = portableResearchRevision(run.Portable.Frozen)
+	store := portableResearchStoreFixture(t, run, true)
+	if _, err := store.change(func(r *inputResearchRun) error {
+		r.State = "running"
+		attempt, _, err := beginResearchAttempt(r, "page", json.RawMessage(`{"tool":"page"}`))
+		if err != nil {
+			return err
+		}
+		return finishResearchAttempt(r, attempt.ID, raw, "")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.executePortableResearch(t.Context(), store, run)
+	if calls.Load() < 2 {
+		t.Fatalf("read_context was not followed by another model turn: %d", calls.Load())
+	}
+	policy, _, err := s.aiContext(run.Portable.Frozen.Choice.Model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := policy.InputBytes() - len(portableResearchInstructions) - policy.BriefBytes - policy.MemoryBytes - 4608
+	var first, second struct {
+		Request  json.RawMessage `json:"request"`
+		Note     string          `json:"contextNote"`
+		Profiles json.RawMessage `json:"profiles"`
+		Sources  []struct{ Text string }
+		Section  *struct {
+			Text       string `json:"text"`
+			TotalBytes int    `json:"totalBytes"`
+		} `json:"retainedSection"`
+	}
+	if json.Unmarshal(prompts[0], &first) != nil || json.Unmarshal(prompts[1], &second) != nil {
+		t.Fatal("prompts are not the reviewed JSON body")
+	}
+	if len(prompts[0]) > budget || first.Note == "" || len(prompts[0]) > 400<<10 {
+		t.Fatalf("prompt was not fitted: %d bytes, budget %d, note %q", len(prompts[0]), budget, first.Note)
+	}
+	if !bytes.Equal(first.Request, run.Portable.Frozen.Plan.Arguments) || !bytes.Contains(first.Request, []byte("eligible")) || len(first.Profiles) == 0 {
+		t.Fatal("fitting dropped the reviewed request or profiles")
+	}
+	if second.Section == nil || !strings.HasPrefix(second.Section.Text, `"`+head) || second.Section.TotalBytes < 400<<10 {
+		t.Fatalf("read_context was not answered from the retained source: %+v", second.Section)
+	}
+	held, err := store.read()
+	if err != nil || len(held.Attempts) < 3 || held.Attempts[0].Kind != "page" {
+		t.Fatalf("unexpected journal %+v %v", held.Attempts, err)
+	}
+	for _, a := range held.Attempts[1:] {
+		if a.Kind != "model" {
+			t.Fatalf("read_context caused a %s acquisition", a.Kind)
+		}
 	}
 }
