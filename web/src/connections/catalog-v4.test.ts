@@ -27,7 +27,7 @@ it('rejects malformed explicit source capabilities as well',()=>{
  const raw=fixture();raw.sources[0]!.capabilities=['page','page'];expect(()=>parseConnectionCatalog(raw)).toThrow()
 })
 
-// Exact output of Gateway 0ff377ab, shared with the server admission test.
+// Exact output of Gateway v0.17.0 (3132284), shared with the server admission test.
 import gatewayCatalog from '../testing/gatewayCatalogV4.json'
 it('reads the actual pinned Gateway catalog without conflating receipt program and result contract',()=>{
  const result=parseConnectionCatalog(gatewayCatalog)

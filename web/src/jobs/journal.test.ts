@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { beforeTheJournal, catchUp, creations, emptyJournal, entryOf, JOURNAL_KINDS, JOURNAL_LIMITS, JOURNAL_REFRESH_MS, JOURNAL_SOURCE, kindText, readCount, WORDED_KINDS, yieldToBrowser, type Journal, type JournalPage } from './journal'
-import runnerKinds from './__fixtures__/runner-v0.18.0-dev-journal-kinds.json'
+import runnerKinds from './__fixtures__/runner-v0.21.0-journal-kinds.json'
 import everyKind from './__fixtures__/runner-v0.15.0-dev-journal-entries.json'
 
 const missingFrom = (list: readonly string[], from: readonly string[]) => list.filter(item => !from.includes(item))
