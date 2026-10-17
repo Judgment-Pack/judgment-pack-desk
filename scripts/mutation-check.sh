@@ -7547,8 +7547,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  const described = [hint ? hintId : undefined, error ? errorId : undefined].filter(Boolean)' \
     '  const described = [hintId, errorId]'
   mutate web 'the select reports back a value nobody offered' web/src/ui/Select.tsx \
-    'if (offered.has(next) && !options.find(option => option.value === next)?.disabled) onValueChange(next)' \
-    'if (!options.find(option => option.value === next)?.disabled) onValueChange(next)'
+    'if (!offered.has(next) || options.find(option => option.value === next)?.disabled) return' \
+    'if (options.find(option => option.value === next)?.disabled) return'
   # Admin's storage section, and the decoder behind it.
   mutate web "Admin claims a location the listing does not show" "$V" \
     "  if (files.some((file) => file.path.startsWith(\`\${dir}/\`))) return 'holds-files'" \
