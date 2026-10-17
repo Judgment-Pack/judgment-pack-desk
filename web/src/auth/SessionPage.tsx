@@ -6,33 +6,24 @@ import { LANGUAGES, type LanguagePreference } from '../i18n/locales'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { TooltipProvider } from '../ui/Tooltip'
-import { applyTheme } from '../config/theme'
+import { useAppliedTheme } from '../config/theme'
+import { chooseEntryTheme, readEntryTheme } from '../config/entryTheme'
 import type { ThemeChoice } from '../config/deskConfig'
 import styles from './SessionPage.module.css'
 
 // Public product branding is available before project configuration is authorized.
 const PRODUCT_NAME = 'Unveil'
 const PRODUCT_MARK = 'U'
-const ENTRY_THEME_KEY = 'jpack-desk:entry-theme'
-
-function entryTheme(): ThemeChoice {
-  try {
-    const stored = localStorage.getItem(ENTRY_THEME_KEY)
-    if (stored === 'system' || stored === 'dark' || stored === 'light') return stored
-  } catch { /* Private browsing may deny preference storage. */ }
-  const current = document.documentElement.dataset.theme
-  return current === 'dark' || current === 'light' ? current : 'system'
-}
 
 export type AccessState = 'checking' | 'ready' | 'recovery' | 'unavailable'
 /** Local-only entry; provider sign-in is shown only once a real backend exists. */
 export function SessionPage({ state }: { state: AccessState; detail?: string }) {
   useLocale()
-  const [theme, setTheme] = useState<ThemeChoice>(entryTheme)
+  const [theme, setTheme] = useState<ThemeChoice>(readEntryTheme)
   const [languageSaved, setLanguageSaved] = useState(true)
   const [loadingLanguage, setLoadingLanguage] = useState(false)
   const heading = useRef<HTMLHeadingElement>(null)
-  useEffect(() => { applyTheme(theme) }, [theme])
+  useAppliedTheme(theme)
   useEffect(() => { if (state !== 'checking') heading.current?.focus() }, [state])
   return <TooltipProvider><div className={styles.page}>
     <header className={styles.header}>
@@ -43,8 +34,7 @@ export function SessionPage({ state }: { state: AccessState; detail?: string }) 
         }} disabled={loadingLanguage} />
         <Select id="entry-appearance" aria-label={msg('Appearance')} value={theme} quiet options={[{ value: 'system', label: msg('System') }, { value: 'light', label: msg('Light') }, { value: 'dark', label: msg('Dark') }]} onValueChange={value => {
           setTheme(value as ThemeChoice)
-          try { localStorage.setItem(ENTRY_THEME_KEY, value) } catch { /* Choice still applies for this visit. */ }
-        }} />
+        }} onValueCommit={value => chooseEntryTheme(value as ThemeChoice)} />
       </div>
     </header>
     <main className={styles.main}>
