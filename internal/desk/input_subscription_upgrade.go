@@ -276,6 +276,7 @@ func (s *Server) handleSubscriptionUpgrade(w http.ResponseWriter, r *http.Reques
 			last.State = "complete"
 			source.State = "superseded"
 			source.Problem = ""
+			source.Subscription.clearCapacityWait()
 			if err := sourceCheckpoint.retain(source); err != nil {
 				return err
 			}

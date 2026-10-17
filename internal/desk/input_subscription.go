@@ -16,6 +16,8 @@ type inputSubscription struct {
 	PolicyDigest    string            `json:"policyDigest,omitempty"`
 	RetryAt         string            `json:"retryAt,omitempty"`
 	Failures        int               `json:"failures,omitempty"`
+	CapacityBackoff int               `json:"capacityBackoff,omitempty"`
+	CapacityRetryAt string            `json:"capacityRetryAt,omitempty"`
 	Mode            string            `json:"mode"`
 	IncludeExisting bool              `json:"includeExisting"`
 	Enabled         bool              `json:"enabled"`
@@ -24,6 +26,13 @@ type inputSubscription struct {
 	Initialized     bool              `json:"initialized"`
 	TriggerID       string            `json:"triggerId,omitempty"`
 	SourceClass     string            `json:"sourceClass"`
+}
+
+const subscriptionCapacityBackoffMax = 256 // seconds, independent of refusal failures
+
+func (a *inputSubscription) clearCapacityWait() {
+	a.CapacityBackoff = 0
+	a.CapacityRetryAt = ""
 }
 
 func subscriptionTrigger() map[string]any {
@@ -186,6 +195,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 	}
 	save := func() bool { return checkpoint.retain(*b) == nil }
 	problem := func(e error) {
+		a.clearCapacityWait()
 		b.Problem = e.Error()
 		b.State = "blocked"
 		a.Failures++
@@ -263,6 +273,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 			}
 		} else if tr.Paused && a.Enabled {
 			a.Enabled = false
+			a.clearCapacityWait()
 			b.State = "paused"
 			save()
 			return
@@ -367,6 +378,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 		}
 	}
 	if !a.Enabled {
+		a.clearCapacityWait()
 		b.State = "paused"
 		b.Problem = ""
 		save()
@@ -405,6 +417,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 			if errors.As(e, &refusal) && refusal.Status == 404 {
 				row.State = "superseded"
 				row.Input = nil
+				a.clearCapacityWait()
 				if !save() {
 					return
 				}
@@ -429,14 +442,34 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 			row.State = ack.Occurrence.State
 			row.RunID = ack.Occurrence.RunID
 			row.Input = nil
+			a.clearCapacityWait()
 			if !save() {
 				return
 			}
 			continue
 		}
+		if at, err := time.Parse(time.RFC3339Nano, a.CapacityRetryAt); err == nil && time.Now().Before(at) {
+			return
+		}
 		event := map[string]any{"id": row.EventID, "occurredAt": row.EventAt, "input": row.Input}
 		raw, e := s.inputRunner(ctx, "triggers/"+a.TriggerID+"/deliveries", map[string]any{"releaseId": b.ReleaseID, "event": event}, "")
 		if e != nil {
+			var refusal *inputRunnerError
+			// Only this delivery refusal guarantees no admission. Runner's full
+			// queue paces the frozen outbox; it is not a failure or provider retry.
+			if errors.As(e, &refusal) && refusal.Status == 429 && refusal.Code == "queue_full" {
+				if a.CapacityBackoff == 0 {
+					a.CapacityBackoff = 2
+				} else if a.CapacityBackoff < subscriptionCapacityBackoffMax {
+					a.CapacityBackoff *= 2
+				}
+				a.CapacityRetryAt = time.Now().Add(time.Duration(a.CapacityBackoff) * time.Second).UTC().Format(time.RFC3339Nano)
+				a.RetryAt = ""
+				b.State = "queued"
+				b.Problem = ""
+				save()
+				return
+			}
 			problem(e)
 			return
 		}
@@ -452,6 +485,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 			return
 		}
 		row.Input = nil
+		a.clearCapacityWait()
 		row.OccurrenceID = reply.Occurrence.ID
 		row.RunID = reply.Occurrence.RunID
 		row.State = reply.Occurrence.State
@@ -494,6 +528,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 	b.State = "watching"
 	a.Failures = 0
 	a.RetryAt = ""
+	a.clearCapacityWait()
 	b.Problem = ""
 	save()
 }

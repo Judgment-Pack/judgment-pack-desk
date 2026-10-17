@@ -5060,6 +5060,7 @@
   "Waiting": "Wartend",
   "Waiting for AI connection…": "Warten auf KI-Verbindung…",
   "Waiting for AI response…": "Warten auf KI-Antwort…",
+  "Waiting for Runner capacity": "Warten auf freie Runner-Kapazität",
   "Waiting for sign-in…": "Warten auf Anmeldung…",
   "Waiting for sources": "Warten auf Quellen",
   "Waiting for the AI connection to become available. This request has not been sent.": "Es wird auf die Verfügbarkeit der KI-Verbindung gewartet. Diese Anfrage wurde noch nicht gesendet.",

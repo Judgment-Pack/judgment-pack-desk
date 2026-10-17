@@ -5060,6 +5060,7 @@
   "Waiting": "等待中",
   "Waiting for AI connection…": "正在等待 AI 連線…",
   "Waiting for AI response…": "正在等待 AI 回答…",
+  "Waiting for Runner capacity": "正在等候 Runner 的處理容量",
   "Waiting for sign-in…": "正在等待登入…",
   "Waiting for sources": "等待來源",
   "Waiting for the AI connection to become available. This request has not been sent.": "正在等待 AI 連線可用。此請求尚未發送。",

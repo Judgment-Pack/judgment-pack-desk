@@ -5060,6 +5060,7 @@
   "Waiting": "待機中",
   "Waiting for AI connection…": "AI 接続を待っています…",
   "Waiting for AI response…": "AI の回答を待っています…",
+  "Waiting for Runner capacity": "Runner の処理能力に空きが出るのを待機中",
   "Waiting for sign-in…": "サインインを待機中…",
   "Waiting for sources": "ソースを待機中",
   "Waiting for the AI connection to become available. This request has not been sent.": "AI 接続が利用可能になるのを待っています。このリクエストはまだ送信されていません。",
