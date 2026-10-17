@@ -191,6 +191,7 @@ func portableResearchProfileFor(run inputResearchRun, capability string) (portab
 		return details, errors.New("This capability was not reviewed.")
 	}
 	for _, entry := range run.Portable.Frozen.Profiles {
+		var details portableProfileDetails
 		if json.Unmarshal(entry.Profile, &details) == nil && details.ID == pin.Profile && entry.Digest == pin.Digest {
 			return details, nil
 		}
@@ -326,6 +327,9 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 						problem = err
 						break
 					}
+				} else if err := admitPortablePage(profile, action.Arguments); err != nil {
+					problem = err
+					break
 				}
 				if profile.Shape == "mcp" {
 					var args struct {
@@ -369,7 +373,15 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 					if err := s.portableResearchChatWork(current.Portable.Frozen.ChatID); err != nil {
 						return nil, err
 					}
-					raw, err := s.researchSourceCallWithAdmission(call, current.Gateway, "acquire", map[string]any{"session": current.ID + "-" + attempt.ID, "source": profile.Source, "arguments": action.Arguments}, func() error { return s.portableResearchChatWork(current.Portable.Frozen.ChatID) })
+					raw, err := s.researchSourceCallWithAdmission(call, current.Gateway, "acquire", map[string]any{"session": current.ID + "-" + attempt.ID, "source": profile.Source, "arguments": action.Arguments}, func() error {
+						if err := s.portableResearchChatWork(current.Portable.Frozen.ChatID); err != nil {
+							return err
+						}
+						if action.Kind == "page" {
+							return admitPortablePage(profile, action.Arguments)
+						}
+						return nil
+					})
 					if err != nil {
 						return nil, err
 					}

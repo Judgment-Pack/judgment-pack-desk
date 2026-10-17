@@ -5871,5 +5871,12 @@
   "This input already has retained research. Preview it before starting a new review.": "呢個輸入已經有保留嘅調研。開始新審核之前，請先預覽。",
   "Up to {{models}} model requests, {{searches}} searches and {{pages}} page reads.": "最多 {{models}} 次模型請求、{{searches}} 次搜尋同 {{pages}} 次頁面讀取。",
   "Use retained research file": "使用保留嘅調研檔案",
-  "{{model}} · {{count}} requested fields": "{{model}} · {{count}} 個要求欄位"
+  "{{model}} · {{count}} requested fields": "{{model}} · {{count}} 個要求欄位",
+  "Allowed page prefixes": "允許嘅頁面前綴",
+  "Checking page profile…": "檢查緊頁面設定檔…",
+  "Create page profile": "建立頁面設定檔",
+  "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "每行輸入一個 HTTPS 前綴，最多 32 個。只有想允許所有支援嘅 HTTPS 頁面先用 https://*。",
+  "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "註冊呢個頁面設定檔之前，請檢查確切範圍。只有另外審閱並執行研究之後，先會開始讀取頁面。",
+  "This scope allows any page in the supported HTTPS form.": "呢個範圍允許讀取支援 HTTPS 格式嘅任何頁面。",
+  "Use page profile": "使用頁面設定檔"
 }

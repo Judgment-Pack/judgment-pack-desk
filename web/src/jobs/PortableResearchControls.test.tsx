@@ -1,4 +1,4 @@
-import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {PortableResearchControls} from './PortableResearchControls'
@@ -46,4 +46,39 @@ it('shows the exact proposed allowance before approving a paused run',async()=>{
  vi.mocked(portableResearchAPI).mockResolvedValue(run('queued'))
  fireEvent.click(screen.getByRole('button',{name:'Approve and continue'}))
  await waitFor(()=>expect(portableResearchAPI).toHaveBeenCalledWith('/'+reference.id+'/budget-decision',{requestId:'budget-a',decision:'approve'},'revision'))
+})
+
+it('offers the shared page producer and binds its registered profile without starting research',async()=>{
+ const onBind=vi.fn(),onReview=vi.fn(),cache=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ const pageSource:ResearchSource={...source,capabilities:['answer','page']}
+ const preview={revision:'page-review',descriptor:{adapter:{name:'adapter-web',version:'fixture'}},profile:{endpointScope:['https://docs.example/guides']}}
+ vi.mocked(portableResearchAPI).mockResolvedValue(preview as any)
+ render(<QueryClientProvider client={cache}><PortableResearchControls source={pageSource} currentContext="page-context" profiles={[]} disabled={false} onBind={onBind} onReview={onReview}/></QueryClientProvider>)
+ fireEvent.change(screen.getByLabelText('Allowed page prefixes'),{target:{value:'https://docs.example/guides'}})
+ fireEvent.click(screen.getByRole('button',{name:'Review'}))
+ await screen.findByRole('button',{name:'Use page profile'})
+ vi.mocked(portableResearchAPI).mockResolvedValue({...preview,entry:{profile:{id:'page-profile'},digest:'page-digest'}} as any)
+ fireEvent.click(screen.getByRole('button',{name:'Use page profile'}))
+ await waitFor(()=>expect(onBind).toHaveBeenCalledWith({profile:'page-profile',profileDigest:'page-digest'},'page'))
+ expect(onReview).not.toHaveBeenCalled()
+ expect(pageSource.model).toBe('generic-model')
+ expect(pageSource.capabilities).toEqual(['answer','page'])
+ expect(vi.mocked(portableResearchAPI).mock.calls.every(([path])=>path==='/page-binding')).toBe(true)
+})
+
+it('discards late page registration when the current page pin changes before the input context hash',async()=>{
+ const onBind=vi.fn(),cache=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ const preview={revision:'page-review',descriptor:{adapter:{name:'adapter-web',version:'fixture'}},profile:{endpointScope:['https://docs.example/guides']}}
+ vi.mocked(portableResearchAPI).mockResolvedValue(preview as any)
+ const ui=(pin?:{profile:string;profileDigest:string})=><QueryClientProvider client={cache}><PortableResearchControls source={{...source,capabilities:['answer','page'],webProfiles:pin?{page:pin}:{}}} currentContext="same-input-hash" profiles={[]} disabled={false} onBind={onBind} onReview={vi.fn()}/></QueryClientProvider>
+ const view=render(ui())
+ fireEvent.change(screen.getByLabelText('Allowed page prefixes'),{target:{value:'https://docs.example/guides'}})
+ fireEvent.click(screen.getByRole('button',{name:'Review'}))
+ await screen.findByRole('button',{name:'Use page profile'})
+ let finish!:(value:unknown)=>void
+ vi.mocked(portableResearchAPI).mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+ fireEvent.click(screen.getByRole('button',{name:'Use page profile'}))
+ view.rerender(ui({profile:'newer-pages',profileDigest:'newer-digest'}))
+ await act(async()=>finish({...preview,entry:{profile:{id:'late-pages'},digest:'late-digest'}}))
+ expect(onBind).not.toHaveBeenCalled()
 })

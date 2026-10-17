@@ -48,8 +48,10 @@ history adapter or multi-user approval service.
    fixtures for executable `dialect` entries. An author assertion is not replay.
 2. Add definition-driven editing and local connection binding, preserving declared
    parameters, fields, reconciliation, source provenance and byte identities.
-3. Connect portable research acquisition to Runner/Gateway with authentic retained
-   responses. Existing decoded Desk research actions are not those responses.
+3. Extend fresh portable research acceptance to actual search/page acquisitions
+   and found values. The shared worker already retains authentic Gateway model
+   responses and passes them through Runner; decoded legacy Desk actions remain
+   separate from those responses.
 4. Complete reviewed migration from private recipe templates to published
    Exchange entries. Catalog v0.2.0 provides three research presets; import checks
    do not establish complete local binding or execution. Keep working recipes
@@ -57,9 +59,11 @@ history adapter or multi-user approval service.
 5. Implement generic downstream selection/relationships after Spec #160's workflow
    contract is accepted. The graph evaluator composes decisions; it does not
    perform research fan-out. Keep migration provenance and all saved evidence.
-6. Exercise a non-GTM definition on two installations with different local
-   connections and identical retained fixture outcomes. Current two-directory
-   Runtime form checks are not this end-to-end acceptance test.
+6. Complete two-installation acceptance for found-value extraction and search/page
+   acquisition in both GTM and other domains. The signed-release
+   [research preparation check](exchange-research-acceptance.md) already exercises
+   all three presets with different local bindings and model answers whose fields
+   are all not-found. It does not exercise the unused search/page acquisitions.
 
 ## Verification
 
@@ -90,7 +94,8 @@ uses the operator's Git trust configuration. This verifies signed-tag imports;
 release assets and attestations require their own publication checks. It neither
 runs the presets nor changes their declared model or capabilities. The presets'
 `gemini-2.5-flash` and answer/search/page declarations need matching reviewed local
-profiles; the scoped page producer tracked by Desk #423 remains separate work.
+profiles. Page assignments use the reviewed producer below; import alone does not
+register a profile or start research.
 
 RFC 0019 §§3 and 7 define entry directories as `entries/<publisher>/<name>/` and
 require manifest correspondence and closed file sets within those directories.
@@ -101,6 +106,37 @@ not a general documentation exemption: other shallow files, nested documentation
 and additional per-entry files remain refused. This fixes the actual v0.2.0 import
 failure tracked by Desk #440 while preserving each preset's exact file whitelist,
 stored-file digests and Runtime document checks.
+
+### Reviewed page assignments
+
+`PageBindingControls` is shared by portable preparation and imported-template
+configuration. A user enters one to 32 exact HTTPS prefixes, reviews the scope,
+then registers and selects the resulting installation profile. The generated-only
+`https://*` wildcard must be entered and reviewed explicitly. A late registration
+cannot replace a newer source or profile selection.
+
+Desk obtains adapter identity from the verified installed
+`adapter-web --describe-research` program, checks its bounded descriptor and
+executable digest, and supplies its own Gateway authority/key. This performs no
+page or model acquisition and needs no search connection. The profile's exact
+scope and order enter its identity. Registration uses Runner's immutable profile
+registry and its 16-profile limit; no old profile is evicted or silently rebound.
+Chat-associated registration validates the saved conversation and refuses Plan;
+manual forms require explicit profile review and registration.
+
+The shared admission boundary checks every scoped page URL before a page attempt,
+allowance charge or Gateway call. It implements Spec #207's constrained form and
+literal prefix matching. Only the first query delimiter and following query are
+removed for comparison; submitted arguments remain unchanged. Duplicate argument
+members, invalid URLs and URLs outside the scope are refused. Each profile is
+decoded independently, so absent optional members cannot inherit a prior
+profile's scope. A changed installed adapter requires a fresh binding review.
+
+Scope-absent legacy profiles retain their existing request handling, including
+queries and redirects. Runner continues to verify the receipt's exact final
+endpoint, or its scope when declared. Request admission does not establish the
+scope of intermediate redirects, page accuracy or outreach permission. The
+portable definition, retained job release and historical profiles remain distinct.
 
 Same-vendor clean-room Codex review was requested by the user. Its findings on
 metadata, Git execution/integrity and size limits were corrected. This is not a

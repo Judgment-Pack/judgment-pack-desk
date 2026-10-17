@@ -5871,5 +5871,12 @@
   "This input already has retained research. Preview it before starting a new review.": "この入力には保持済みの調査があります。新しいレビューを開始する前にプレビューしてください。",
   "Up to {{models}} model requests, {{searches}} searches and {{pages}} page reads.": "モデルへのリクエストは最大{{models}}回、検索は{{searches}}回、ページの読み取りは{{pages}}回です。",
   "Use retained research file": "保持済み調査ファイルを使用",
-  "{{model}} · {{count}} requested fields": "{{model}} · 要求フィールド数：{{count}}"
+  "{{model}} · {{count}} requested fields": "{{model}} · 要求フィールド数：{{count}}",
+  "Allowed page prefixes": "許可するページのプレフィックス",
+  "Checking page profile…": "ページプロファイルを確認中…",
+  "Create page profile": "ページプロファイルを作成",
+  "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "HTTPSプレフィックスを1行に1つ、最大32個入力してください。対応するすべてのHTTPSページを許可する場合にのみ https://* を使用してください。",
+  "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "このページプロファイルを登録する前に、対象範囲を正確に確認してください。ページの読み取りは、別途確認した調査を実行した場合にのみ開始されます。",
+  "This scope allows any page in the supported HTTPS form.": "この範囲では、対応するHTTPS形式のすべてのページが許可されます。",
+  "Use page profile": "ページプロファイルを使用"
 }

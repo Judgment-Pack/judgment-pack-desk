@@ -18,15 +18,17 @@ type portableResearchRequest struct {
 	Capabilities []string        `json:"capabilities"`
 }
 type portableProfileDetails struct {
-	ID        string   `json:"id"`
-	PublicKey string   `json:"publicKey"`
-	Class     string   `json:"class"`
-	Source    string   `json:"source"`
-	Authority string   `json:"authority"`
-	Shape     string   `json:"shape"`
-	Endpoint  string   `json:"endpoint"`
-	Tools     []string `json:"tools"`
-	Research  struct {
+	ID            string               `json:"id"`
+	PublicKey     string               `json:"publicKey"`
+	Class         string               `json:"class"`
+	Source        string               `json:"source"`
+	Authority     string               `json:"authority"`
+	Shape         string               `json:"shape"`
+	Endpoint      string               `json:"endpoint"`
+	EndpointScope EndpointScope        `json:"endpointScope,omitempty"`
+	Adapter       searchBindingAdapter `json:"adapter"`
+	Tools         []string             `json:"tools"`
+	Research      struct {
 		Capabilities []string `json:"capabilities"`
 		Model        string   `json:"model"`
 	} `json:"research"`
@@ -86,8 +88,10 @@ func (s *Server) reviewPortableResearch(ctx context.Context, input json.RawMessa
 		var selectedProfile *portableResearchProfile
 		var details portableProfileDetails
 		for i := range profiles {
-			if json.Unmarshal(profiles[i].Profile, &details) == nil && details.ID == assignment.Profile && profiles[i].Digest == assignment.Digest {
+			var candidate portableProfileDetails
+			if json.Unmarshal(profiles[i].Profile, &candidate) == nil && candidate.ID == assignment.Profile && profiles[i].Digest == assignment.Digest {
 				selectedProfile = &profiles[i]
+				details = candidate
 				break
 			}
 		}
@@ -106,6 +110,11 @@ func (s *Server) reviewPortableResearch(ctx context.Context, input json.RawMessa
 				return run, err
 			}
 			bindings[details.ID] = descriptor
+		}
+		if capability == "page" {
+			if err := s.validatePortablePageProfile(ctx, details, inputResearchPin{Authority: gateway.authority, Public: gateway.signerPublic}); err != nil {
+				return run, err
+			}
 		}
 		if !seen[details.ID] {
 			selected = append(selected, *selectedProfile)

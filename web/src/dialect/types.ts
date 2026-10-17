@@ -107,10 +107,12 @@ export interface DialectDocumentV2 extends DialectMembers { version: 2; sources?
 export interface DialectDocumentV3 extends DialectMembers { version: 3; sources?: DialectSourceV3[] }
 export type DialectDocument = DialectDocumentV2 | DialectDocumentV3
 
+export type EndpointScope = string[]
 export interface InputProfile {
   id: string; publicKey: string; class: 'record' | 'generated'; source: string; authority: string
   shape: 'airbyte' | 'mcp' | 'http' | 'command'
   adapter: { name: string; version: string; digest: Digest }; endpoint: string | null
+  endpointScope?: EndpointScope
   tools?: string[]; calculator?: CalculatorPin; research?:{capabilities:ResearchCapability[];model?:string}
 }
 /** §5.2: receipt internals belong to gateway §1.2a, not the dialect's schema. */
