@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"time"
 )
 
 // Bound once to a server-authorized workspace. The coordinator owns discovery
@@ -111,6 +112,22 @@ func validateEvaluationJournal(b inputEvaluation, id string) error {
 	if b.Subscription != nil && (b.Subscription.Mode != "new" && b.Subscription.Mode != "changed") {
 		return errors.New("Invalid subscription mode.")
 	}
+	if a := b.Subscription; a != nil {
+		backoff := a.CapacityBackoff
+		if backoff != 0 && (backoff < 2 || backoff > subscriptionCapacityBackoffMax || backoff&(backoff-1) != 0) || (backoff == 0) != (a.CapacityRetryAt == "") {
+			return errors.New("Invalid subscription capacity wait.")
+		}
+		if backoff != 0 {
+			_, err := time.Parse(time.RFC3339Nano, a.CapacityRetryAt)
+			pending := false
+			for _, row := range b.Rows {
+				pending = pending || row.State == "pending" && row.OccurrenceID == "" && row.EventID != "" && row.EventAt != "" && len(row.Input) != 0
+			}
+			if err != nil || len(a.CapacityRetryAt) > 64 || a.RetryAt != "" || !a.Enabled || a.StatePending || b.State != "queued" || b.Problem != "" || !pending {
+				return errors.New("Invalid subscription capacity wait.")
+			}
+		}
+	}
 	return nil
 }
 func encodeEvaluationJournal(b inputEvaluation, id string) ([]byte, error) {
@@ -177,11 +194,22 @@ func validateEvaluationTransition(before, next inputEvaluation) error {
 		return bad
 	}
 	if before.Subscription != nil {
-		a, b := before.Subscription, next.Subscription
-		if b == nil || a.Mode != b.Mode || a.IncludeExisting != b.IncludeExisting || a.SourceClass != b.SourceClass || a.TriggerID != "" && a.TriggerID != b.TriggerID {
+		if next.Subscription == nil {
 			return bad
 		}
-		if a.Initialized && (!b.Initialized || !sameEvaluationValue(a.Baseline, b.Baseline) || a.PolicyDigest != b.PolicyDigest) {
+		a, b := *before.Subscription, *next.Subscription
+		// Only control and scheduling metadata is mutable after initialization.
+		a.Enabled, b.Enabled, a.StatePending, b.StatePending = false, false, false, false
+		a.Failures, b.Failures, a.RetryAt, b.RetryAt = 0, 0, "", ""
+		a.clearCapacityWait()
+		b.clearCapacityWait()
+		if a.TriggerID == "" {
+			b.TriggerID = ""
+		}
+		if !a.Initialized {
+			b.Initialized, a.Baseline, b.Baseline, a.PolicyDigest, b.PolicyDigest = false, nil, nil, "", ""
+		}
+		if !sameEvaluationValue(a, b) {
 			return bad
 		}
 	} else if next.Subscription != nil {

@@ -210,6 +210,17 @@ can complete; Desk recovers the receipt and then the run result without submitti
 a new event. These are reconciliation guarantees, not a distributed exactly-once
 transaction between Desk and Runner.
 
+Runner's delivery POST can refuse with `429 queue_full` before admitting anything.
+That exact refusal keeps the row pending with its retained event ID, timestamp and
+input bytes. The outbox persists a separate capacity wait: 2, 4, 8, 16, 32, 64,
+128, then at most 256 seconds between attempts, including after restart. It does
+not consume the five consecutive-refusal limit, set a failure warning, grant
+compute, or replay a provider request. Other 429s, server/transport failures and
+errors from other endpoints retain the existing refusal handling. Capacity wait
+metadata clears after admission, ordinary errors, pause or supersession. Receipt
+recovery, trigger pause checks and current record eligibility remain available
+during the wait; pausing never submits the pending envelope.
+
 Review creation writes a hidden staging journal before directory publication. An
 uncertain create retains staging, and a repeat cannot replace it. Recovery tools
 must reconcile any backend commit and directory publication before exposing it.

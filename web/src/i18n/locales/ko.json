@@ -5060,6 +5060,7 @@
   "Waiting": "대기 중",
   "Waiting for AI connection…": "AI 연결 대기 중…",
   "Waiting for AI response…": "AI 응답 대기 중…",
+  "Waiting for Runner capacity": "Runner의 처리 여유를 기다리는 중",
   "Waiting for sign-in…": "로그인 대기 중…",
   "Waiting for sources": "소스 대기 중",
   "Waiting for the AI connection to become available. This request has not been sent.": "AI 연결을 사용할 수 있을 때까지 기다리는 중입니다. 이 요청은 아직 전송되지 않았습니다.",

@@ -615,6 +615,7 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 			b.Subscription.StatePending = true
 			b.Subscription.Failures = 0
 			b.Subscription.RetryAt = ""
+			b.Subscription.clearCapacityWait()
 			b.State = "queued"
 			b.Problem = ""
 			if e = checkpoint.save(r.Context(), b); e != nil {
