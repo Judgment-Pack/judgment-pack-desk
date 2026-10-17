@@ -64,3 +64,11 @@ using the existing development-bundle test seam. It does not change installed
 application data or global companion trust. Without the explicit research
 acceptance opt-in it skips; a partial opt-in fails instead of substituting a
 different catalog, model, adapter identity or live provider.
+
+The Jobs companion CI job runs this acceptance and the separate import check
+against Exchange commit `565ddf477c7ed986906409f19bcf8fccfaafa8a5` and signed tag
+`v0.2.0`. Its public SSH verification key is pinned in
+`.github/testdata/exchange-release-allowed-signers` and configured only on that
+disposable catalog repository. This fixture trust does not authorize application
+imports, profiles or future releases. CI requires both tests and the scoped-page
+companion tests to report a pass, so a skipped prerequisite cannot turn green.
