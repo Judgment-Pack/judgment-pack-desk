@@ -5918,5 +5918,9 @@
   "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "Insira um prefixo HTTPS por linha, até 32. Use https://* apenas para permitir qualquer página HTTPS compatível.",
   "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "Revise o escopo exato antes de registrar este perfil de página. As leituras de páginas começam apenas em uma pesquisa revisada separadamente.",
   "This scope allows any page in the supported HTTPS form.": "Este escopo permite qualquer página no formato HTTPS compatível.",
-  "Use page profile": "Usar perfil de página"
+  "Use page profile": "Usar perfil de página",
+  "Source records": "Registros de origem",
+  "Choose the source records for related research. The selected records are copied into the research review.": "Escolha os registros de origem para pesquisar registros relacionados. Os registros selecionados são copiados para a revisão da pesquisa.",
+  "No eligible records in this dialect. Choose another dialect, or research source records first.": "Não há registros elegíveis neste dialeto. Escolha outro dialeto ou pesquise primeiro os registros de origem.",
+  "Select source records for related research.": "Selecione os registros de origem para pesquisar registros relacionados."
 }

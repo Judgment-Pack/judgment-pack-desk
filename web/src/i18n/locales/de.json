@@ -5878,5 +5878,9 @@
   "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "Geben Sie ein HTTPS-Präfix pro Zeile ein, höchstens 32. Verwenden Sie https://* nur, um jede unterstützte HTTPS-Seite zuzulassen.",
   "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "Prüfen Sie den genauen Geltungsbereich, bevor Sie dieses Seitenprofil registrieren. Seiten werden erst in einem separat geprüften Recherchelauf gelesen.",
   "This scope allows any page in the supported HTTPS form.": "Dieser Geltungsbereich erlaubt jede Seite im unterstützten HTTPS-Format.",
-  "Use page profile": "Seitenprofil verwenden"
+  "Use page profile": "Seitenprofil verwenden",
+  "Source records": "Quelldatensätze",
+  "Choose the source records for related research. The selected records are copied into the research review.": "Wählen Sie die Quelldatensätze für die Recherche zu verwandten Datensätzen. Die ausgewählten Datensätze werden in die Rechercheprüfung kopiert.",
+  "No eligible records in this dialect. Choose another dialect, or research source records first.": "Keine geeigneten Datensätze in diesem Dialekt. Wählen Sie einen anderen Dialekt oder recherchieren Sie zuerst Quelldatensätze.",
+  "Select source records for related research.": "Wählen Sie Quelldatensätze für die Recherche zu verwandten Datensätzen."
 }
