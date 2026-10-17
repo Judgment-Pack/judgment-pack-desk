@@ -10,15 +10,15 @@
     },
     "runner": {
       "repository": "Judgment-Pack/judgment-pack-runner",
-      "version": "v0.18.0-dev.18d1ed3",
-      "revision": "18d1ed36d697ea3f7d89058897f85471f4de721a",
-      "channel": "development"
+      "version": "v0.21.0",
+      "revision": "e742a6b3af8bc65ad89b1c3297505b9b5deee0dc",
+      "channel": "stable"
     },
     "gateway": {
       "repository": "Judgment-Pack/judgment-pack-gateway",
-      "version": "v0.16.0-dev.0ff377a",
-      "revision": "2d9fa8ee5b03c8f72233f01a845b201eab307606",
-      "channel": "development"
+      "version": "v0.17.0",
+      "revision": "3132284723697e917858912f05d8d6098c0fc79a",
+      "channel": "stable"
     }
   }
 }
