@@ -13,7 +13,21 @@ import (
 	"testing"
 )
 
+// portablePreset is the recipe-specific part of a portable research fixture.
+// The default is the generic procurement-style record used by most tests here.
+type portablePreset struct {
+	Subject, Fact, Field, Type, Description, Reply, Want string
+}
+
+var portableProcurementPreset = portablePreset{Subject: "Generic procurement record", Fact: "/eligible", Field: "eligible", Type: "boolean", Description: "Whether this record is eligible.", Reply: `{"kind":"answer","fields":{"eligible":{"status":"found","value":false,"cites":[0]}}}`, Want: `"eligible":false`}
+
 func portableResearchFixture(t *testing.T, handler http.HandlerFunc) (*Server, *httptest.Server, inputResearchRun) {
+	return portableResearchFixtureFor(t, handler, portableProcurementPreset, "")
+}
+
+// portableResearchFixtureFor reviews one preset through one provider API family
+// ("" is the default OpenAI-compatible family).
+func portableResearchFixtureFor(t *testing.T, handler http.HandlerFunc, preset portablePreset, family string) (*Server, *httptest.Server, inputResearchRun) {
 	t.Helper()
 	bundle, runner, runtime := os.Getenv("JPS_TEST_GATEWAY_BUNDLE"), os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
 	if bundle == "" || runner == "" || runtime == "" {
@@ -25,7 +39,11 @@ func portableResearchFixture(t *testing.T, handler http.HandlerFunc) (*Server, *
 	s.inputResearchCancel()
 	<-s.inputResearchDone
 	t.Cleanup(func() { ts.Close(); s.Close() })
-	registry := saveTestAIRegistry(t, s, ts, aiRegistry{Version: 1, DefaultConnection: testAIAlpha, Connections: []aiConnection{aiTestConnection(testAIAlpha, "Portable", provider.URL)}})
+	connection := aiTestConnection(testAIAlpha, "Portable", provider.URL)
+	if family != "" {
+		connection.Assistant.Endpoint.Kind = family
+	}
+	registry := saveTestAIRegistry(t, s, ts, aiRegistry{Version: 1, DefaultConnection: testAIAlpha, Connections: []aiConnection{connection}})
 	c := registry.Connections[0]
 	code, raw := aiTestRequest(t, ts, "PUT", "/api/assistant/key", map[string]string{"key": "portable-fixture-key"}, map[string]string{aiConnectionHeader: c.ID, aiRevisionHeader: c.Revision})
 	if code != 200 {
@@ -44,14 +62,14 @@ func portableResearchFixture(t *testing.T, handler http.HandlerFunc) (*Server, *
 	if json.Unmarshal(entry.Profile, &profile) != nil {
 		t.Fatal("bad profile details")
 	}
-	mapping := map[string]any{"version": 3, "case": map[string]any{"parameters": map[string]any{"subject": map[string]string{"pointer": "/subject", "type": "string"}}, "facts": []any{}, "evidence": []any{}}, "admits": map[string]any{"facts": map[string]any{"/eligible": []string{"generated"}}}, "sources": []any{map[string]any{"name": "research", "kind": "research", "profile": profile.ID, "profileDigest": entry.Digest, "maxAge": 3600, "question": map[string]string{"$param": "subject"}, "constraints": map[string]any{}, "model": choice.Model, "capabilities": []string{"answer"}, "webProfiles": map[string]any{}, "evidence": []string{}, "fields": []any{map[string]any{"name": "eligible", "description": "Whether this record is eligible.", "type": "boolean", "required": true}}, "read": map[string]any{"copy": map[string]any{"facts": []any{map[string]string{"source": "/fields/eligible/value", "target": "/eligible"}}, "evidence": []any{}}}}}}
-	input, _ := json.Marshal(map[string]any{"source": map[string]any{"mapping": mapping, "case": map[string]any{"subject": "Generic procurement record"}, "sources": map[string]any{}}})
+	mapping := map[string]any{"version": 3, "case": map[string]any{"parameters": map[string]any{"subject": map[string]string{"pointer": "/subject", "type": "string"}}, "facts": []any{}, "evidence": []any{}}, "admits": map[string]any{"facts": map[string]any{preset.Fact: []string{"generated"}}}, "sources": []any{map[string]any{"name": "research", "kind": "research", "profile": profile.ID, "profileDigest": entry.Digest, "maxAge": 3600, "question": map[string]string{"$param": "subject"}, "constraints": map[string]any{}, "model": choice.Model, "capabilities": []string{"answer"}, "webProfiles": map[string]any{}, "evidence": []string{}, "fields": []any{map[string]any{"name": preset.Field, "description": preset.Description, "type": preset.Type, "required": true}}, "read": map[string]any{"copy": map[string]any{"facts": []any{map[string]string{"source": "/fields/" + preset.Field + "/value", "target": preset.Fact}}, "evidence": []any{}}}}}}
+	input, _ := json.Marshal(map[string]any{"source": map[string]any{"mapping": mapping, "case": map[string]any{"subject": preset.Subject}, "sources": map[string]any{}}})
 	run, err := s.reviewPortableResearch(t.Context(), input, choice, inputResearchLimits{Records: 1, ModelCalls: 3}, "", "fixture-scope")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var request portableResearchRequest
-	if json.Unmarshal(run.Portable.Frozen.Plan.Arguments, &request) != nil || request.Question != "Generic procurement record" {
+	if json.Unmarshal(run.Portable.Frozen.Plan.Arguments, &request) != nil || request.Question != preset.Subject {
 		t.Fatal("Runner-resolved question was not retained")
 	}
 	return s, ts, run
