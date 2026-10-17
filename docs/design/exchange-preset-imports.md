@@ -50,9 +50,10 @@ history adapter or multi-user approval service.
    parameters, fields, reconciliation, source provenance and byte identities.
 3. Connect portable research acquisition to Runner/Gateway with authentic retained
    responses. Existing decoded Desk research actions are not those responses.
-4. Move domain-specific content into published Exchange entries. The current
-   catalog release contains no entries; do not replace working presets with an
-   empty picker or relabel private templateVersion1 files as portable entries.
+4. Complete reviewed migration from private recipe templates to published
+   Exchange entries. Catalog v0.2.0 provides three research presets; import checks
+   do not establish complete local binding or execution. Keep working recipes
+   available until that path is ready, and retain each format's identity.
 5. Implement generic downstream selection/relationships after Spec #160's workflow
    contract is accepted. The graph evaluator composes decisions; it does not
    perform research fan-out. Keep migration provenance and all saved evidence.
@@ -70,6 +71,36 @@ Browser tests cover explicit import, stale selection, reload and uncertain-respo
 retry without run/binding authority. CI runs the core and HTTP integration checks
 with the pinned research-capable Runtime. The unchanged fixture's upstream commit,
 licence and file hashes are retained under `internal/exchange/testdata`.
+
+`TestExchangeSignedReleaseImportOnTwoInstallations` is an opt-in acceptance check
+against an actual signed local catalog tag, without copying or retagging entries:
+
+```sh
+JPACK_EXCHANGE_ACCEPTANCE_CATALOG=/path/to/catalog \
+JPACK_EXCHANGE_ACCEPTANCE_TAG=vMAJOR.MINOR.PATCH \
+JPACK_EXCHANGE_ACCEPTANCE_COMMIT=<expected-full-commit> \
+JPACK_EXCHANGE_TEST_BIN=/path/to/jpack \
+go test ./internal/desk -run '^TestExchangeSignedReleaseImportOnTwoInstallations$' -count=1 -v
+```
+
+It checks every preset in the selected release through authenticated review/import
+requests on two disposable installations, exact tagged files and Runtime canonical identity,
+explicit approval, completed receipts and restart retention. Signature verification
+uses the operator's Git trust configuration. This verifies signed-tag imports;
+release assets and attestations require their own publication checks. It neither
+runs the presets nor changes their declared model or capabilities. The presets'
+`gemini-2.5-flash` and answer/search/page declarations need matching reviewed local
+profiles; the scoped page producer tracked by Desk #423 remains separate work.
+
+RFC 0019 §§3 and 7 define entry directories as `entries/<publisher>/<name>/` and
+require manifest correspondence and closed file sets within those directories.
+Catalog documentation is outside that inventory. Desk recognizes the conventional
+catalog index `entries/README.md` as bounded UTF-8 documentation (at most 64 KiB),
+without treating it as an entry or authority. This exact path is a reader policy,
+not a general documentation exemption: other shallow files, nested documentation
+and additional per-entry files remain refused. This fixes the actual v0.2.0 import
+failure tracked by Desk #440 while preserving each preset's exact file whitelist,
+stored-file digests and Runtime document checks.
 
 Same-vendor clean-room Codex review was requested by the user. Its findings on
 metadata, Git execution/integrity and size limits were corrected. This is not a
