@@ -5878,5 +5878,9 @@
   "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "每行輸入一個 HTTPS 前綴，最多 32 個。僅在希望允許所有支援的 HTTPS 頁面時使用 https://*。",
   "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "註冊此頁面設定檔前，請檢查確切範圍。只有另外審閱並執行研究後，才會開始讀取頁面。",
   "This scope allows any page in the supported HTTPS form.": "此範圍允許讀取支援 HTTPS 格式的任何頁面。",
-  "Use page profile": "使用頁面設定檔"
+  "Use page profile": "使用頁面設定檔",
+  "Source records": "來源記錄",
+  "Choose the source records for related research. The selected records are copied into the research review.": "選擇用於研究相關記錄的來源記錄。選定記錄會複製到研究審閱中。",
+  "No eligible records in this dialect. Choose another dialect, or research source records first.": "此方言中沒有符合條件的記錄。請選擇其他方言，或先研究來源記錄。",
+  "Select source records for related research.": "請選擇用於研究相關記錄的來源記錄。"
 }

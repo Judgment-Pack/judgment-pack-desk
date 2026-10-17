@@ -5878,5 +5878,9 @@
   "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "HTTPSプレフィックスを1行に1つ、最大32個入力してください。対応するすべてのHTTPSページを許可する場合にのみ https://* を使用してください。",
   "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "このページプロファイルを登録する前に、対象範囲を正確に確認してください。ページの読み取りは、別途確認した調査を実行した場合にのみ開始されます。",
   "This scope allows any page in the supported HTTPS form.": "この範囲では、対応するHTTPS形式のすべてのページが許可されます。",
-  "Use page profile": "ページプロファイルを使用"
+  "Use page profile": "ページプロファイルを使用",
+  "Source records": "元のレコード",
+  "Choose the source records for related research. The selected records are copied into the research review.": "関連レコードの調査に使う元のレコードを選択してください。選択したレコードは調査レビューにコピーされます。",
+  "No eligible records in this dialect. Choose another dialect, or research source records first.": "このダイアレクトには選択可能なレコードがありません。別のダイアレクトを選択するか、先に元のレコードを調査してください。",
+  "Select source records for related research.": "関連レコードの調査に使う元のレコードを選択してください。"
 }

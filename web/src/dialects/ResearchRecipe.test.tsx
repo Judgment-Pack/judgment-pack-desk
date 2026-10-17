@@ -1,6 +1,7 @@
 import {cleanup,fireEvent,render,screen} from '@testing-library/react'
 import {MemoryRouter} from 'react-router-dom'
 import {Tooltip} from 'radix-ui'
+import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {afterEach,expect,it,vi} from 'vitest'
 import {ResearchRecipe} from './ResearchRecipe'
 import type {ResearchRecipe as Recipe} from './research'
@@ -9,6 +10,7 @@ vi.mock('../config/DeskConfigProvider',()=>({useEffectiveConfig:()=>({aiConnecti
 vi.mock('../assistant/aiConnections',()=>({deskAIConnections:()=>[{id:'legacy-api',name:'My AI connection'}],resolveAIConnection:()=>({assistant:{engine:'vercel',endpoint:{model:'test',models:['test']}},connection:{id:'legacy-api',revision:'a'.repeat(64)}})}))
 vi.mock('../search/connections',()=>({useSearchConnections:()=>({...state,data:{connections:[{id:'search-test',name:'Google search',revision:state.revision}]}})}))
 vi.mock('../shell/UnsavedChanges',()=>({useConfirmDiscard:()=>vi.fn()}))
+vi.mock('./queries',()=>({dialectListQuery:()=>({queryKey:['parent-inputs'],queryFn:async()=>({items:[]})}),dialectQuery:(id:string)=>({queryKey:['parent-input',id],queryFn:async()=>({document:{records:[]}})})}))
 afterEach(()=>{cleanup();Object.assign(state,{available:true,loading:false,isFetching:false,isError:false,revision:'b'.repeat(64)})})
 const recipe:Recipe={version:1,target:'companies',fields:[{name:'country',description:'Country',type:'string'}],criteria:[],ai:{connection:'legacy-api',revision:'a'.repeat(64),model:'test'},search:{connection:'search-test',revision:'a'.repeat(64)},limits:{records:3,searches:8,pages:6,modelCalls:15}}
 function show(disabled=false){const change=vi.fn();render(<MemoryRouter><Tooltip.Provider><ResearchRecipe value={recipe} onChange={change} records={[]} disabled={disabled}/></Tooltip.Provider></MemoryRouter>);return change}
@@ -65,4 +67,15 @@ it('keeps every section editable without Find, Edit or Done controls',()=>{
  expect(change).not.toHaveBeenCalled()
  fireEvent.change(screen.getByRole('spinbutton',{name:'Records'}),{target:{value:'4'}})
  expect(change.mock.calls[0][0].limits.records).toBe(4)
+})
+it.each(['records','people-at-companies'] as const)('uses the saved %s target for parent labels without changing its recipe',target=>{
+ const value:Recipe={...recipe,target,requireParents:true,companyIds:[]},change=vi.fn()
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ render(<QueryClientProvider client={client}><MemoryRouter><Tooltip.Provider><ResearchRecipe value={value} onChange={change} records={[]} disabled={false}/></Tooltip.Provider></MemoryRouter></QueryClientProvider>)
+ expect(screen.getByRole('group',{name:target==='records'?'Selected records':'Selected companies'})).toBeTruthy()
+ expect(screen.getByRole('status').textContent).toContain(target==='records'?'Select source records for related research.':'Select companies to research.')
+ expect(change).not.toHaveBeenCalled()
+ fireEvent.change(screen.getByRole('spinbutton',{name:'Records'}),{target:{value:'4'}})
+ expect(change).toHaveBeenCalledExactlyOnceWith({...value,limits:{...value.limits,records:4}})
+ client.clear()
 })

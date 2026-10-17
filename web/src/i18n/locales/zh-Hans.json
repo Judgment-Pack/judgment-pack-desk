@@ -5878,5 +5878,9 @@
   "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "每行输入一个 HTTPS 前缀，最多 32 个。仅在希望允许所有受支持的 HTTPS 页面时使用 https://*。",
   "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "注册此页面配置前，请检查确切范围。只有单独审核并运行研究后才会开始读取页面。",
   "This scope allows any page in the supported HTTPS form.": "此范围允许读取受支持 HTTPS 格式的任何页面。",
-  "Use page profile": "使用页面配置"
+  "Use page profile": "使用页面配置",
+  "Source records": "来源记录",
+  "Choose the source records for related research. The selected records are copied into the research review.": "选择用于研究相关记录的来源记录。选定记录会复制到研究审阅中。",
+  "No eligible records in this dialect. Choose another dialect, or research source records first.": "此方言中没有符合条件的记录。请选择其他方言，或先研究来源记录。",
+  "Select source records for related research.": "请选择用于研究相关记录的来源记录。"
 }
