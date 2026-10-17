@@ -15,6 +15,16 @@ import (
 // Runner and Gateway installations. Providers are deterministic test servers;
 // this is not a live website or published Exchange-release acceptance claim.
 func TestPortableResearchImportOnTwoInstallations(t *testing.T) {
+	portableImportOnTwoInstallations(t, portableProcurementPreset)
+}
+
+// The same path for an imported company/person-shaped preset: only the recipe
+// (subject, fact, field type and answer) differs from the procurement preset.
+func TestPortableResearchCompanyPersonImportOnTwoInstallations(t *testing.T) {
+	portableImportOnTwoInstallations(t, portablePreset{Subject: "Alex Example at Example company", Fact: "/contact/role", Field: "role", Type: "text", Description: "The public operations role this person holds.", Reply: `{"kind":"answer","fields":{"role":{"status":"found","value":"Operations director","cites":[0]}}}`, Want: `"role":"Operations director"`})
+}
+
+func portableImportOnTwoInstallations(t *testing.T, preset portablePreset) {
 	if os.Getenv("JPS_TEST_GATEWAY_BUNDLE") == "" || os.Getenv("JPACK_RUNNER_TEST_BIN") == "" || os.Getenv("JPACK_BIN") == "" {
 		t.Skip("requires pinned Gateway, Runner and Runtime")
 	}
@@ -24,10 +34,10 @@ func TestPortableResearchImportOnTwoInstallations(t *testing.T) {
 	var calls atomic.Int32
 	for installation := 0; installation < 2; installation++ {
 		t.Run([]string{"first", "second"}[installation], func(t *testing.T) {
-			s, _, basis := portableResearchFixture(t, func(w http.ResponseWriter, r *http.Request) {
+			s, _, basis := portableResearchFixtureFor(t, func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
-				portableTestReply(w, `{"kind":"answer","fields":{"eligible":{"status":"found","value":false,"cites":[0]}}}`)
-			})
+				portableTestReply(w, preset.Reply)
+			}, preset, "")
 			var original struct {
 				Source struct {
 					Mapping map[string]any  `json:"mapping"`
@@ -81,7 +91,7 @@ func TestPortableResearchImportOnTwoInstallations(t *testing.T) {
 			}
 			for range 2 {
 				result, err := s.inputRunner(t.Context(), "inputs/preview", completed, "")
-				if err != nil || !bytes.Contains(result, []byte(`"eligible":false`)) || !bytes.Contains(result, []byte(`"generatedInfluence":true`)) {
+				if err != nil || !bytes.Contains(result, []byte(preset.Want)) || !bytes.Contains(result, []byte(`"generatedInfluence":true`)) {
 					t.Fatalf("replay failed: %s %v", result, err)
 				}
 			}
