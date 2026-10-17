@@ -23,13 +23,14 @@ type portableResearchProfile struct {
 	Digest  string          `json:"digest"`
 }
 type portableResearchFrozen struct {
-	Input        json.RawMessage           `json:"input"`
-	Plan         portableResearchPlan      `json:"plan"`
-	Choice       backgroundModelChoice     `json:"choice"`
-	Limits       inputResearchLimits       `json:"limits"`
-	Profiles     []portableResearchProfile `json:"profiles"`
-	ChatID       string                    `json:"chatId,omitempty"`
-	SessionScope string                    `json:"sessionScope"`
+	Input          json.RawMessage                    `json:"input"`
+	Plan           portableResearchPlan               `json:"plan"`
+	Choice         backgroundModelChoice              `json:"choice"`
+	Limits         inputResearchLimits                `json:"limits"`
+	Profiles       []portableResearchProfile          `json:"profiles"`
+	SearchBindings map[string]searchBindingDescriptor `json:"searchBindings,omitempty"`
+	ChatID         string                             `json:"chatId,omitempty"`
+	SessionScope   string                             `json:"sessionScope"`
 }
 type portableResearchJournal struct {
 	Frozen portableResearchFrozen `json:"frozen"`
@@ -91,6 +92,14 @@ func validatePortableResearchJournal(run inputResearchRun, id string) error {
 			return bad
 		}
 		seen[profile.ID] = true
+	}
+	if len(frozen.SearchBindings) > 1 {
+		return bad
+	}
+	for id, binding := range frozen.SearchBindings {
+		if !seen[id] || binding.Version != 1 || binding.Shape != "http" || binding.Adapter.Name != "adapter-sources" || len(binding.FixedArguments) != 2 || !researchSourceName.MatchString(binding.FixedArguments["connection"]) || !researchConnectionRevision.MatchString(binding.FixedArguments["revision"]) || !json.Valid(binding.RequestSchema) {
+			return bad
+		}
 	}
 	if !seen[frozen.Plan.Profile] {
 		return bad

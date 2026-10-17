@@ -47,8 +47,7 @@ changed-input refusal, frozen release controls, budget review and job form
 reference persistence and delayed-save cancellation/navigation. Test providers and content are synthetic; these checks do
 not establish live research accuracy.
 
-Remaining delivery work: convenient local search profile setup from trusted
-Gateway declarations, released-template tests across two installations, and the
+Remaining delivery work: released-template tests across two installations and the
 separate draft RFC0020 company-to-selected-company/person workflow executor and
 verifier. This feature does not claim RFC0020 workflow conformance or publication
 of the pending Exchange templates.
@@ -66,3 +65,19 @@ into the other's input must produce Runner's explicit profile-mismatch refusal.
 This test is required in companion CI; ordinary unit runs skip it when the pinned
 companions are absent. It does not substitute for the pending signed Exchange
 release or the two-stage workflow recording.
+
+Local search registration uses the trusted Gateway adapter's versioned research
+binding description. The review displays its endpoint and executable version;
+explicit confirmation rechecks the same description before registering an
+immutable Runner profile. The current connection revision and executable/key
+identity participate in the profile ID. No provider URL or adapter version is
+reconstructed by Desk. Registration performs no acquisition and spends no request
+allowance.
+
+Research freezes the current descriptor with its existing journal. The model
+sees the declared request schema; the worker supplies the reviewed fixed
+connection/revision and refuses a conflicting value before acquisition. Gateway
+still enforces its own request, policy, revision and allowance checks. A changed
+connection requires a new review; old profiles remain available for historical
+verification. This local helper does not register profiles for external Gateways
+or admit an arbitrary page endpoint.

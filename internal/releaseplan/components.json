@@ -17,7 +17,7 @@
     "gateway": {
       "repository": "Judgment-Pack/judgment-pack-gateway",
       "version": "v0.16.0-dev.0ff377a",
-      "revision": "0ff377ab529d70eb47a4729de07692d20bb717bb",
+      "revision": "2d9fa8ee5b03c8f72233f01a845b201eab307606",
       "channel": "development"
     }
   }

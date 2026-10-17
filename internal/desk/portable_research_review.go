@@ -76,6 +76,7 @@ func (s *Server) reviewPortableResearch(ctx context.Context, input json.RawMessa
 		return run, err
 	}
 	selected := []portableResearchProfile{}
+	bindings := map[string]searchBindingDescriptor{}
 	seen := map[string]bool{}
 	for _, capability := range request.Capabilities {
 		assignment, ok := assignments[capability]
@@ -96,6 +97,16 @@ func (s *Server) reviewPortableResearch(ctx context.Context, input json.RawMessa
 		if capability == "answer" && (details.Source != modelSourceName || details.ID != plan.Next.Profile || details.Endpoint != modelSourceEndpoint(choice) || details.Research.Model != choice.Model || details.Shape != "mcp" || !contains(details.Tools, modelSourceTool)) {
 			return run, errors.New("Bind this source to the selected connection's model profile before research.")
 		}
+		if capability == "search" && details.Source == "web-search" && managedSearchBindingID(details.ID) {
+			if !gateway.managedLocal {
+				return run, errSearchBindingUnavailable
+			}
+			descriptor, err := s.reviewedSearchBinding(ctx, *selectedProfile, inputResearchPin{Authority: gateway.authority, Public: gateway.signerPublic})
+			if err != nil {
+				return run, err
+			}
+			bindings[details.ID] = descriptor
+		}
 		if !seen[details.ID] {
 			selected = append(selected, *selectedProfile)
 			seen[details.ID] = true
@@ -106,7 +117,7 @@ func (s *Server) reviewPortableResearch(ctx context.Context, input json.RawMessa
 		return run, err
 	}
 	at := time.Now().UTC().Format(time.RFC3339Nano)
-	frozen := portableResearchFrozen{Input: append(json.RawMessage(nil), input...), Plan: *plan.Next, Choice: choice, Limits: limits, Profiles: selected, ChatID: chat, SessionScope: scope}
+	frozen := portableResearchFrozen{Input: append(json.RawMessage(nil), input...), Plan: *plan.Next, Choice: choice, Limits: limits, Profiles: selected, SearchBindings: bindings, ChatID: chat, SessionScope: scope}
 	run = inputResearchRun{Version: 2, ID: "research_" + hex.EncodeToString(nonce[:]), Revision: portableResearchRevision(frozen), State: "review", CreatedAt: at, UpdatedAt: at, Gateway: inputResearchPin{Authority: gateway.authority, Public: gateway.signerPublic}, Portable: &portableResearchJournal{Frozen: frozen}, Attempts: []inputResearchAttempt{}}
 	return run, validateResearchJournal(run, run.ID)
 }
