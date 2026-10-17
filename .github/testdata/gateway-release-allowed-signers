@@ -1,0 +1,3 @@
+# Test-only trust pin for Gateway v0.18.0 at552141b5.
+# Applies only to the disposable fixture-source checkout, never application trust.
+kikashy@hotmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINs7vrZSLqFSn3Fk3Dz9cgNQzbD9PzXUZNEz3Hx8IT8v
