@@ -55,6 +55,7 @@ import {
   type ThemeChoice
 } from '../config/deskConfig'
 import { useAppliedDensity, useAppliedTheme } from '../config/theme'
+import { acknowledgeEntryTheme, pendingEntryTheme, type EntryThemeChoice } from '../config/entryTheme'
 import {
   identityIsResolved,
   projectKey,
@@ -277,6 +278,7 @@ interface Choice {
   key: string
   resolved: boolean
   value: AppearancePreference
+  entry?: EntryThemeChoice
 }
 
 /**
@@ -414,11 +416,22 @@ export function AppearanceProvider({
    * root that happens to encode to the provisional key's own spelling cannot be
    * read as "no project yet".
    */
-  const [choice, setChoice] = useState<Choice>(() => ({
-    key: storageKey,
-    resolved: keyResolved,
-    value: {}
-  }))
+  const [choice, setChoice] = useState<Choice>(() => {
+    // Only a selection made on the entry page this visit crosses this boundary.
+    // Its saved public-page preference must not override another project's
+    // record. Seed the existing stamped choice so normal resolution,
+    // persistence, reset and project isolation all apply to the handoff too.
+    const entry = pendingEntryTheme()
+    return {
+      key: storageKey,
+      resolved: keyResolved,
+      value: entry ? { theme: entry.theme } : {},
+      entry
+    }
+  })
+  useEffect(() => {
+    if (choice.entry) acknowledgeEntryTheme(choice.entry)
+  }, [choice.entry])
 
   /**
    * **A choice this desk has left behind is discarded, not hidden.**
