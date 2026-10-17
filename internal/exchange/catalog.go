@@ -303,6 +303,19 @@ func Review(ctx context.Context, tree Tree, location, tag, commit string, check 
 	}
 	sets := map[string][]string{}
 	for _, file := range files {
+		// RFC 0019 scopes the closed inventory to entries/<publisher>/<name>.
+		// The conventional catalog index is outside every entry directory; it
+		// supplies no candidate, requirements, bindings or execution authority.
+		if file == "entries/README.md" {
+			raw, err := tree.Read(ctx, file, 64<<10)
+			if err != nil {
+				return out, err
+			}
+			if len(raw) > 64<<10 || !utf8.Valid(raw) {
+				return out, errors.New("catalog index README is oversized or not UTF-8")
+			}
+			continue
+		}
 		if !strings.HasPrefix(file, "entries/") {
 			continue
 		}
