@@ -48,8 +48,10 @@ history adapter or multi-user approval service.
    fixtures for executable `dialect` entries. An author assertion is not replay.
 2. Add definition-driven editing and local connection binding, preserving declared
    parameters, fields, reconciliation, source provenance and byte identities.
-3. Connect portable research acquisition to Runner/Gateway with authentic retained
-   responses. Existing decoded Desk research actions are not those responses.
+3. Extend fresh portable research acceptance to actual search/page acquisitions
+   and found values. The shared worker already retains authentic Gateway model
+   responses and passes them through Runner; decoded legacy Desk actions remain
+   separate from those responses.
 4. Complete reviewed migration from private recipe templates to published
    Exchange entries. Catalog v0.2.0 provides three research presets; import checks
    do not establish complete local binding or execution. Keep working recipes
@@ -57,9 +59,11 @@ history adapter or multi-user approval service.
 5. Implement generic downstream selection/relationships after Spec #160's workflow
    contract is accepted. The graph evaluator composes decisions; it does not
    perform research fan-out. Keep migration provenance and all saved evidence.
-6. Exercise a non-GTM definition on two installations with different local
-   connections and identical retained fixture outcomes. Current two-directory
-   Runtime form checks are not this end-to-end acceptance test.
+6. Complete two-installation acceptance for found-value extraction and search/page
+   acquisition in both GTM and other domains. The signed-release
+   [research preparation check](exchange-research-acceptance.md) already exercises
+   all three presets with different local bindings and model answers whose fields
+   are all not-found. It does not exercise the unused search/page acquisitions.
 
 ## Verification
 
