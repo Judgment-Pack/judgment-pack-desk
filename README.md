@@ -6662,8 +6662,8 @@ automatically. Native provider job resumption, callbacks and recovery of
 browser-initiated acquisition are outside this implementation. Existing
 connections without `durable` retain their bounded synchronous behavior.
 
-The bundled Gateway is pinned to an exact development commit with an extended
-source timeout ceiling; this is not a new tagged Gateway release. Background
+The bundled Gateway is pinned to the tagged release `v0.17.0`, which carries the extended
+source timeout ceiling. Background
 acquisition requires a persistent Gateway and separately running source worker.
 The temporary managed Gateway used for interactive research is not a background
 connection. Keep the worker's private database and backups separate from the
