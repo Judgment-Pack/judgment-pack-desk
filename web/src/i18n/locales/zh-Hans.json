@@ -5871,5 +5871,12 @@
   "This input already has retained research. Preview it before starting a new review.": "此输入已有保留的调研。在开始新的审核前，请先预览。",
   "Up to {{models}} model requests, {{searches}} searches and {{pages}} page reads.": "最多 {{models}} 次模型请求、{{searches}} 次搜索和 {{pages}} 次页面读取。",
   "Use retained research file": "使用保留的调研文件",
-  "{{model}} · {{count}} requested fields": "{{model}} · {{count}} 个请求字段"
+  "{{model}} · {{count}} requested fields": "{{model}} · {{count}} 个请求字段",
+  "Allowed page prefixes": "允许的页面前缀",
+  "Checking page profile…": "正在检查页面配置…",
+  "Create page profile": "创建页面配置",
+  "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "每行输入一个 HTTPS 前缀，最多 32 个。仅在希望允许所有受支持的 HTTPS 页面时使用 https://*。",
+  "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "注册此页面配置前，请检查确切范围。只有单独审核并运行研究后才会开始读取页面。",
+  "This scope allows any page in the supported HTTPS form.": "此范围允许读取受支持 HTTPS 格式的任何页面。",
+  "Use page profile": "使用页面配置"
 }

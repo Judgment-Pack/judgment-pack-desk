@@ -5911,5 +5911,12 @@
   "This input already has retained research. Preview it before starting a new review.": "Questo input contiene già una ricerca conservata. Visualizzane l’anteprima prima di avviare una nuova revisione.",
   "Up to {{models}} model requests, {{searches}} searches and {{pages}} page reads.": "Fino a {{models}} richieste al modello, {{searches}} ricerche e {{pages}} letture di pagine.",
   "Use retained research file": "Usa file di ricerca conservato",
-  "{{model}} · {{count}} requested fields": "{{model}} · {{count}} campi richiesti"
+  "{{model}} · {{count}} requested fields": "{{model}} · {{count}} campi richiesti",
+  "Allowed page prefixes": "Prefissi di pagina consentiti",
+  "Checking page profile…": "Verifica del profilo di pagina…",
+  "Create page profile": "Crea profilo di pagina",
+  "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "Inserisci un prefisso HTTPS per riga, fino a 32. Usa https://* solo per consentire qualsiasi pagina HTTPS supportata.",
+  "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "Esamina l’ambito esatto prima di registrare questo profilo di pagina. La lettura delle pagine inizia solo con una ricerca esaminata separatamente.",
+  "This scope allows any page in the supported HTTPS form.": "Questo ambito consente qualsiasi pagina nel formato HTTPS supportato.",
+  "Use page profile": "Usa profilo di pagina"
 }

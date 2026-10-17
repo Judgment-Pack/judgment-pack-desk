@@ -5871,5 +5871,12 @@
   "This input already has retained research. Preview it before starting a new review.": "이 입력에는 이미 보관된 조사가 있습니다. 새 검토를 시작하기 전에 미리 보세요.",
   "Up to {{models}} model requests, {{searches}} searches and {{pages}} page reads.": "최대 모델 요청 {{models}}회, 검색 {{searches}}회, 페이지 읽기 {{pages}}회입니다.",
   "Use retained research file": "보관된 조사 파일 사용",
-  "{{model}} · {{count}} requested fields": "{{model}} · 요청한 필드 {{count}}개"
+  "{{model}} · {{count}} requested fields": "{{model}} · 요청한 필드 {{count}}개",
+  "Allowed page prefixes": "허용할 페이지 접두사",
+  "Checking page profile…": "페이지 프로필 확인 중…",
+  "Create page profile": "페이지 프로필 만들기",
+  "Enter one HTTPS prefix per line, up to 32. Use https://* only to allow any supported HTTPS page.": "줄마다 HTTPS 접두사를 하나씩, 최대 32개 입력하세요. 지원되는 모든 HTTPS 페이지를 허용하려는 경우에만 https://*를 사용하세요.",
+  "Review the exact scope before registering this page profile. Page reads start only with a separately reviewed research run.": "이 페이지 프로필을 등록하기 전에 정확한 범위를 검토하세요. 페이지 읽기는 별도로 검토한 리서치를 실행할 때만 시작됩니다.",
+  "This scope allows any page in the supported HTTPS form.": "이 범위는 지원되는 HTTPS 형식의 모든 페이지를 허용합니다.",
+  "Use page profile": "페이지 프로필 사용"
 }

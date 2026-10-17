@@ -1,10 +1,11 @@
-import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {MemoryRouter} from 'react-router-dom'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {TemplateConfiguration} from './TemplateConfiguration'
 import {jobsAPI} from '../jobs/client'
 import {saveJobDraft} from '../jobs/drafts'
+import {portableResearchAPI} from '../jobs/portableResearch'
 import {exchangeAPI,type Candidate,type ImportRecord} from './client'
 const mocks=vi.hoisted(()=>({navigate:vi.fn(),clear:vi.fn()}))
 vi.mock('react-router-dom',async original=>({...await original<object>(),useNavigate:()=>mocks.navigate}))
@@ -12,6 +13,7 @@ vi.mock('../mcp/queries',()=>({usePacks:()=>({data:{packs:[{id:'classification-p
 vi.mock('../jobs/client',()=>({jobsAPI:vi.fn()}))
 vi.mock('./client',()=>({exchangeAPI:vi.fn()}))
 vi.mock('../jobs/drafts',()=>({saveJobDraft:vi.fn()}))
+vi.mock('../jobs/portableResearch',()=>({portableResearchAPI:vi.fn()}))
 vi.mock('../shell/UnsavedChanges',()=>({useRegisteredChanges:()=>mocks.clear}))
 vi.mock('../ui/Select',()=>({Select:({options,onValueChange,...props}:any)=><select {...props} onChange={e=>onValueChange(e.target.value)}><option value=""/>{options.map((o:any)=><option key={o.value} value={o.value}>{o.label}</option>)}</select>}))
 const digest='sha256:'+'a'.repeat(64)
@@ -77,4 +79,59 @@ it('keeps an already bound research source pinned instead of asking for another 
  expect(screen.queryByLabelText('classification · answer')).toBeNull()
  fireEvent.click(save);await waitFor(()=>expect(saveJobDraft).toHaveBeenCalledTimes(1))
  expect(vi.mocked(saveJobDraft).mock.calls[0][1].mapped).not.toHaveProperty('importText')
+})
+
+it('registers and binds a scoped page profile while preserving the imported definition',async()=>{
+ const value=candidate([{...source,capabilities:['answer','page']}])
+ const preview={revision:'page-review',descriptor:{adapter:{name:'adapter-web',version:'fixture'}},profile:{endpointScope:['https://docs.example/guides']}}
+ vi.mocked(portableResearchAPI).mockResolvedValue(preview as any)
+ show(value)
+ fireEvent.change(screen.getByLabelText('Pack'),{target:{value:'classification-pack'}})
+ await screen.findByRole('option',{name:'local-ai'})
+ fireEvent.change(screen.getByLabelText('classification · answer'),{target:{value:'local-ai'}})
+ fireEvent.change(screen.getByLabelText('Allowed page prefixes'),{target:{value:'https://docs.example/guides'}})
+ fireEvent.click(screen.getByRole('button',{name:'Review'}))
+ await screen.findByRole('button',{name:'Use page profile'})
+ const existing=await vi.mocked(jobsAPI).mock.results[0].value
+ vi.mocked(jobsAPI).mockResolvedValue([...existing,{digest:'page-digest',profile:{id:'page-profile',class:'generated',research:{capabilities:['page']}}}])
+ vi.mocked(portableResearchAPI).mockResolvedValue({...preview,entry:{profile:{id:'page-profile'},digest:'page-digest'}} as any)
+ fireEvent.click(screen.getByRole('button',{name:'Use page profile'}))
+ const save=screen.getByRole('button',{name:'Create job draft'}) as HTMLButtonElement
+ await waitFor(()=>expect(save.disabled).toBe(false))
+ fireEvent.click(save)
+ await waitFor(()=>expect(saveJobDraft).toHaveBeenCalledTimes(1))
+ const mapped=vi.mocked(saveJobDraft).mock.calls[0][1].mapped!
+ expect(mapped.text).toBe(value.document)
+ const imported=JSON.parse(mapped.importText!)
+ expect(imported.dialect).toEqual(JSON.parse(value.document))
+ expect(imported.binding.sources.classification.webProfiles.page).toEqual({profile:'page-profile',profileDigest:'page-digest'})
+ expect(vi.mocked(portableResearchAPI).mock.calls.every(([path])=>path==='/page-binding')).toBe(true)
+})
+
+it('keeps a newer page-picker choice when an earlier registration completes late',async()=>{
+ const ai={digest,profile:{id:'local-ai',class:'generated',research:{capabilities:['answer'],model:'model-a'}}}
+ const narrower={digest:'narrow-digest',profile:{id:'narrow-pages',class:'generated',research:{capabilities:['page']}}}
+ vi.mocked(jobsAPI).mockResolvedValue([ai,narrower])
+ const preview={revision:'page-review',descriptor:{adapter:{name:'adapter-web',version:'fixture'}},profile:{endpointScope:['https://docs.example/guides']}}
+ vi.mocked(portableResearchAPI).mockResolvedValue(preview as any)
+ show(candidate([{...source,capabilities:['answer','page']}]))
+ fireEvent.change(screen.getByLabelText('Pack'),{target:{value:'classification-pack'}})
+ await screen.findByRole('option',{name:'local-ai'})
+ fireEvent.change(screen.getByLabelText('classification · answer'),{target:{value:'local-ai'}})
+ fireEvent.change(screen.getByLabelText('Allowed page prefixes'),{target:{value:'https://docs.example/guides'}})
+ fireEvent.click(screen.getByRole('button',{name:'Review'}))
+ await screen.findByRole('button',{name:'Use page profile'})
+ let finish!:(value:unknown)=>void
+ vi.mocked(portableResearchAPI).mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+ fireEvent.click(screen.getByRole('button',{name:'Use page profile'}))
+ fireEvent.change(screen.getByLabelText('classification · page'),{target:{value:'narrow-pages'}})
+ vi.mocked(jobsAPI).mockResolvedValue([ai,narrower,{digest:'late-digest',profile:{id:'late-pages',class:'generated',research:{capabilities:['page']}}}])
+ await act(async()=>finish({...preview,entry:{profile:{id:'late-pages'},digest:'late-digest'}}))
+ expect((screen.getByLabelText('classification · page') as HTMLSelectElement).value).toBe('narrow-pages')
+ const save=screen.getByRole('button',{name:'Create job draft'}) as HTMLButtonElement
+ await waitFor(()=>expect(save.disabled).toBe(false))
+ fireEvent.click(save)
+ await waitFor(()=>expect(saveJobDraft).toHaveBeenCalledTimes(1))
+ const imported=JSON.parse(vi.mocked(saveJobDraft).mock.calls[0][1].mapped!.importText!)
+ expect(imported.binding.sources.classification.webProfiles.page).toEqual({profile:'narrow-pages',profileDigest:'narrow-digest'})
 })
