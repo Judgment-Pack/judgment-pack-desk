@@ -159,6 +159,52 @@ func verifyGatewayBundle(dir string) error {
 	return nil
 }
 
+// verifiedGatewayProgram admits a specific executable only when the approved
+// manifest lists it. Verifying the bundle alone does not approve extra files.
+func verifiedGatewayProgram(bundle, name string) (string, string, error) {
+	if !catalogIdentifier.MatchString(name) {
+		return "", "", errors.New("invalid local component")
+	}
+	if err := verifyGatewayBundle(bundle); err != nil {
+		return "", "", err
+	}
+	file, err := os.Open(filepath.Join(bundle, "gateway-bundle.json"))
+	if err != nil {
+		return "", "", err
+	}
+	defer file.Close()
+	raw, err := readBounded(file, 8192)
+	if err != nil {
+		return "", "", err
+	}
+	var manifest struct {
+		Files map[string]string `json:"files"`
+	}
+	if !manifestRevisionApproved(raw) || json.Unmarshal(raw, &manifest) != nil {
+		return "", "", errors.New("unapproved local component manifest")
+	}
+	digest := manifest.Files[executableName(name)]
+	decoded, err := hex.DecodeString(digest)
+	if err != nil || len(decoded) != 32 || strings.ToLower(digest) != digest {
+		return "", "", errors.New("local component is absent from the approved manifest")
+	}
+	executable := filepath.Join(bundle, executableName(name))
+	program, err := os.Open(executable)
+	if err != nil {
+		return "", "", err
+	}
+	defer program.Close()
+	info, err := program.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return "", "", errors.New("local component is not a regular file")
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, program); err != nil || hex.EncodeToString(hash.Sum(nil)) != digest {
+		return "", "", errors.New("local component checksum differs from its approved manifest")
+	}
+	return executable, digest, nil
+}
+
 // Serialize first use across Desk processes. Atomic replacement is allowed only
 // for the first creation under this lock. A missing or changed established seed
 // is an error, never a reason to rotate the trust root silently.

@@ -20,6 +20,7 @@ import {Notice} from '../ui/Notice'
 import {RunStatus} from '../ui/RunStatus'
 import {IconPlay,IconStop,IconSearch} from '../shell/icons'
 import {portableResearchAPI,registerResearchModel,type PortableResearchChoice,type PortableResearchReference} from './portableResearch'
+import {SearchBindingControls} from './SearchBindingControls'
 import styles from './JobsView.module.css'
 import researchStyles from '../dialects/DialectsView.module.css'
 
@@ -58,6 +59,7 @@ export function PortableResearchControls({source,reference,currentContext,profil
     {resolved.problem&&<p className={styles.note}>{resolved.problem}</p>}
     {!supported&&resolved.connection&&<p className={styles.note}>{msg('Choose a connection that provides the model declared by this dialect.')}</p>}
     <div className={styles.actions}><Button size="small" disabled={actionDisabled||choiceLocked||!allowBinding||!choice} onClick={()=>void perform(async()=>{if(!choice)return;const entry=await registerResearchModel(choice);await cache.invalidateQueries({queryKey:['job-input-profiles']});onBind({profile:entry.profile.id,profileDigest:entry.digest},'answer')})}>{msg('Bind selected connection')}</Button></div>
+    {source.capabilities.includes('search')&&allowBinding&&<SearchBindingControls disabled={actionDisabled||choiceLocked} context={currentContext??''} onBind={pin=>onBind(pin,'search')}/>}
     {source.capabilities.filter((c):c is 'search'|'page'=>c!=='answer').map(capability=><Field key={capability} label={capability==='search'?msg('Search profile'):msg('Page profile')}>{props=><Select {...props} value={(binding?.sources[source.name]?.webProfiles??source.webProfiles)?.[capability]?.profile} disabled={actionDisabled||choiceLocked||!allowBinding} placeholder={msg('Choose source profile')} options={profiles.filter(p=>p.profile.class==='generated'&&p.profile.research?.capabilities.includes(capability)).map(p=>({value:p.profile.id,label:p.profile.id}))} onValueChange={id=>{const entry=profiles.find(p=>p.profile.id===id);if(entry)onBind({profile:id,profileDigest:entry.digest},capability)}}/>}</Field>)}
     <div className={styles.formGrid}>{([{key:'modelCalls',label:msg('Model requests'),min:1,max:30},{key:'searches',label:msg('Searches'),min:0,max:15},{key:'pages',label:msg('Page reads'),min:0,max:15}] as const).filter(item=>item.key==='modelCalls'||source.capabilities.includes(item.key==='pages'?'page':'search')).map(item=><Field key={item.key} label={item.label}>{props=><Input {...props} type="number" min={item.min} max={item.max} value={limits[item.key]} disabled={actionDisabled||choiceLocked} onChange={e=>setLimits(v=>({...v,[item.key]:Number(e.target.value)}))}/>}</Field>)}</div>
    </div>

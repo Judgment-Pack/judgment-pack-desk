@@ -552,6 +552,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/record-reviews", s.handleInputPreparations)
 	s.mux.HandleFunc("POST /api/portable-research", s.handlePortableResearch)
 	s.mux.HandleFunc("POST /api/portable-research/profiles", s.handlePortableResearch)
+	s.mux.HandleFunc("POST /api/portable-research/search-binding", s.handlePortableSearchBinding)
 	s.mux.HandleFunc("GET /api/portable-research/{research}", s.handlePortableResearch)
 	s.mux.HandleFunc("POST /api/portable-research/{research}/confirm", s.handlePortableResearch)
 	s.mux.HandleFunc("POST /api/portable-research/{research}/stop", s.handlePortableResearch)
