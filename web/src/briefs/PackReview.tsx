@@ -6,9 +6,10 @@ import { msg } from '../i18n'
 import { useTestStorage } from '../packs/test-workspace/store'
 import { jsonIdentity } from '../research/checkCandidate'
 import styles from './BriefPane.module.css'
+import { GoverningPolicies } from '../policies/GoverningPolicies'
 
-export function PackReview({ owner, content, validation, findings, attention = false }: {
-  owner: string; title: string; content: string; validation: string; findings: ReactNode; attention?: boolean
+export function PackReview({ owner, content, validation, findings, attention = false, adoptionDisabled = false }: {
+  owner: string; title: string; content: string; validation: string; findings: ReactNode; attention?: boolean; adoptionDisabled?: boolean
 }) {
   const [params]=useSearchParams()
   const testHref='/packs/'+encodeURIComponent(owner)+'/tests'+(params.get('chat')?'?chat='+encodeURIComponent(params.get('chat')!):'')
@@ -26,5 +27,6 @@ export function PackReview({ owner, content, validation, findings, attention = f
     </section>
     <Disclosure title={msg('Validation findings')} open={attention}>{findings}</Disclosure>
     <ButtonLink variant="quiet" to={testHref}>{msg('Review tests')}</ButtonLink>
+    <GoverningPolicies key={owner} owner={owner} content={content} disabled={adoptionDisabled}/>
   </div>
 }

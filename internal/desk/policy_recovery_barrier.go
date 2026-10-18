@@ -84,6 +84,10 @@ func restorePolicyRecoveryBarrier(ledger *policyLedger, snapshot policyRecoveryS
 		return policyArchiveCapacity()
 	}
 	ledger.Recoveries = append(ledger.Recoveries, snapshot)
+	for id, record := range ledger.Adoptions {
+		record.Recovery = &policyCoverageRecovery{SnapshotID: snapshot.SnapshotID, RestoredAt: snapshot.At, Sequence: len(record.Reviews)}
+		ledger.Adoptions[id] = record
+	}
 	for id, record := range ledger.Coverages {
 		record.Recovery = &policyCoverageRecovery{SnapshotID: snapshot.SnapshotID, RestoredAt: snapshot.At, Sequence: len(record.Candidates) + len(record.Reviews)}
 		ledger.Coverages[id] = record
