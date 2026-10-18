@@ -31,15 +31,17 @@ type policyLifecycleEvent struct {
 	Rationale               string      `json:"rationale,omitempty"`
 }
 type policyReleaseLifecycle struct {
-	PublicationID string `json:"publicationId"`
-	Status        string `json:"status"`
-	EffectiveAt   string `json:"effectiveAt,omitempty"`
-	ExpiresAt     string `json:"expiresAt,omitempty"`
-	SupersededBy  string `json:"supersededBy,omitempty"`
-	ActivationID  string `json:"activationId,omitempty"`
-	WithdrawalID  string `json:"withdrawalId,omitempty"`
+	ActivationAllowed *bool  `json:"activationAllowed,omitempty"`
+	PublicationID     string `json:"publicationId"`
+	Status            string `json:"status"`
+	EffectiveAt       string `json:"effectiveAt,omitempty"`
+	ExpiresAt         string `json:"expiresAt,omitempty"`
+	SupersededBy      string `json:"supersededBy,omitempty"`
+	ActivationID      string `json:"activationId,omitempty"`
+	WithdrawalID      string `json:"withdrawalId,omitempty"`
 }
 type policyLifecycleReply struct {
+	Recovery       *policyRecoveryView      `json:"recovery,omitempty"`
 	Revision       string                   `json:"revision"`
 	PolicyRevision string                   `json:"policyRevision"`
 	ObservedAt     string                   `json:"observedAt"`
@@ -158,7 +160,7 @@ func validatePolicyLifecycles(ledger policyLedger) error {
 	return nil
 }
 func policyLifecycleView(record policyStoredRecord, stream *policyLifecycleStream, now string, authority *policySourceAuthorityStream) policyLifecycleReply {
-	result := policyLifecycleReply{Revision: policyLifecycleRevision(stream), PolicyRevision: policyEffectiveRevision(record, authority), ObservedAt: now, Releases: []policyReleaseLifecycle{}, Events: []policyLifecycleEvent{}}
+	result := policyLifecycleReply{Recovery: policyRecoveryProjection(record, authority), Revision: policyLifecycleRevision(stream), PolicyRevision: policyEffectiveRevision(record, authority), ObservedAt: now, Releases: []policyReleaseLifecycle{}, Events: []policyLifecycleEvent{}}
 	activations, withdrawals := map[string]policyLifecycleEvent{}, map[string]policyLifecycleEvent{}
 	if stream != nil {
 		result.Events = append(result.Events, stream.Events...)
@@ -172,6 +174,12 @@ func policyLifecycleView(record policyStoredRecord, stream *policyLifecycleStrea
 	}
 	for _, publication := range record.Publications {
 		release := policyReleaseLifecycle{PublicationID: publication.ID, Status: "published"}
+		owner, boundary := policyAuthorityOwnership(authority)
+		boundary = policyRecoveryReviewBoundary(record, boundary)
+		_, activated := activations[publication.ID]
+		_, withdrawn := withdrawals[publication.ID]
+		allowed := owner.Mode == "desk-managed" && publication.Sequence > boundary && !activated && !withdrawn
+		release.ActivationAllowed = &allowed
 		if event, ok := activations[publication.ID]; ok {
 			release.ActivationID, release.EffectiveAt, release.ExpiresAt = event.ID, event.EffectiveAt, event.ExpiresAt
 			if now >= event.EffectiveAt {
@@ -287,7 +295,11 @@ func (s policyService) lifecycleCommand(ctx context.Context, id string, actor po
 				return false, err
 			}
 			_, boundary := policyAuthorityOwnership(ledger.SourceAuthorities[id])
+			boundary = policyRecoveryReviewBoundary(record, boundary)
 			if publication.Sequence <= boundary {
+				if record.Recovery != nil && publication.Sequence <= record.Recovery.PolicySequence {
+					return false, policyRefusal(409, "restored-review-required", "Publish a newly reviewed candidate after restoring this snapshot before activating a release. Historical publications remain available.")
+				}
 				return false, policyRefusal(409, "ownership-review-required", "Publish under current Desk ownership before newly activating this release.")
 			}
 			event.EffectiveAt = q.EffectiveAt

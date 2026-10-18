@@ -669,6 +669,11 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/storage/project-history/preview", s.handleProjectHistory)
 	s.mux.HandleFunc("POST /api/storage/project-history/relink", s.handleProjectHistory)
 	s.mux.HandleFunc("GET /api/storage/backup", s.handleStorageBackup)
+	s.mux.HandleFunc("GET /api/policy-recovery", s.handlePolicyRecovery)
+	s.mux.HandleFunc("GET /api/policy-recovery/archive", s.handlePolicyRecovery)
+	s.mux.HandleFunc("POST /api/policy-recovery/inspect", s.handlePolicyRecovery)
+	s.mux.HandleFunc("POST /api/policy-recovery/restore", s.handlePolicyRecovery)
+	s.mux.HandleFunc("GET /api/policy-recovery/operations/{operation}", s.handlePolicyRecovery)
 	s.mux.HandleFunc("POST /api/storage/restore", s.handleStorageRestore)
 	// The one write to that file, and it replaces one member of it. It is
 	// under the same guard as everything else, takes no path, composes the

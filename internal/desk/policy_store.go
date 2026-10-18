@@ -29,15 +29,16 @@ var policyEventIDForm = regexp.MustCompile(`^(revision|review|publication)_[a-f0
 var policyOperationIDForm = regexp.MustCompile(`^[a-zA-Z0-9_-]{16,128}$`)
 
 type policyStoredRecord struct {
-	SchemaVersion   int                 `json:"schemaVersion"`
-	ID              string              `json:"id"`
-	CreatedAt       string              `json:"createdAt"`
-	UpdatedAt       string              `json:"updatedAt"`
-	HeadRevisionID  string              `json:"headRevisionId"`
-	CurrentReviewID string              `json:"currentReviewId,omitempty"`
-	Revisions       []policyRevision    `json:"revisions"`
-	Reviews         []policyReview      `json:"reviews"`
-	Publications    []policyPublication `json:"publications"`
+	Recovery        *policyRecoveryBoundary `json:"recovery,omitempty"`
+	SchemaVersion   int                     `json:"schemaVersion"`
+	ID              string                  `json:"id"`
+	CreatedAt       string                  `json:"createdAt"`
+	UpdatedAt       string                  `json:"updatedAt"`
+	HeadRevisionID  string                  `json:"headRevisionId"`
+	CurrentReviewID string                  `json:"currentReviewId,omitempty"`
+	Revisions       []policyRevision        `json:"revisions"`
+	Reviews         []policyReview          `json:"reviews"`
+	Publications    []policyPublication     `json:"publications"`
 }
 
 type policyStoredOperation struct {
@@ -49,6 +50,7 @@ type policyStoredOperation struct {
 }
 
 type policyLedger struct {
+	Recoveries        []policyRecoverySnapshot                `json:"recoveries,omitempty"`
 	SourceAuthorities map[string]*policySourceAuthorityStream `json:"sourceAuthorities,omitempty"`
 	Lifecycles        map[string]*policyLifecycleStream       `json:"lifecycles,omitempty"`
 	// Optional v1 source tracking extends private v2 ledgers without changing candidate identity.
@@ -240,7 +242,10 @@ func validatePolicyLedger(ledger policyLedger) error {
 	if err := validatePolicySources(ledger); err != nil {
 		return err
 	}
-	return validatePolicySourceAuthorities(ledger)
+	if err := validatePolicySourceAuthorities(ledger); err != nil {
+		return err
+	}
+	return validatePolicyRecovery(ledger)
 }
 
 // Event sequence is committed under the same metadata lock as the history and

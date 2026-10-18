@@ -42,6 +42,14 @@ function mount({editing=false,mutate,existing=initial,draftUnavailable=false,ext
 }
 afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionStorage.clear()})
 
+it('uses canonical activation eligibility for restored publications and preserves historical withdrawal',async()=>{
+ const app=mount({existing:{...initial,recovery:{snapshotId:'restored-one',restoredAt:at,currentnessUnknown:true,freshReviewRequired:false,sourceConsentRequired:false},releases:[{...initial.releases[0]!,activationAllowed:false}]}})
+ expect(await screen.findByRole('button',{name:'Activate release'})).toHaveProperty('disabled',true);expect(screen.getByRole('button',{name:'Withdraw release'})).toHaveProperty('disabled',false)
+ expect(screen.getByText(/Imported lifecycle schedules are historical assertions/)).toBeTruthy();expect(app.writes).toEqual([])
+ await act(()=>app.cache.setQueryData(['policies','policy-one','lifecycle'],{...initial,recovery:{snapshotId:'restored-one',restoredAt:at,currentnessUnknown:true,freshReviewRequired:false,sourceConsentRequired:false},releases:[{...initial.releases[0]!,activationAllowed:true}]}))
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Activate release'})).toHaveProperty('disabled',false))
+})
+
 it('keeps a legacy publication inactive until explicit reviewed activation',async()=>{
  const app=mount()
  expect(await screen.findByText('No activation recorded')).toBeTruthy()

@@ -272,8 +272,8 @@ cannot still finish. It never authorizes a new operation or repeats the old one.
 Limits are 500 UTF-8 bytes for titles, 128 KiB for narrative, 256 bytes for version
 text, 8 KiB for review comments, 256 policies, 512 entries per per-policy history
 kind, 4,096 retained operation receipts and a 16 MiB metadata ledger. No API removes
-immutable history or receipt identities. This slice has no policy deletion,
-archive endpoint. Local effective-date scheduling and release withdrawal are
+immutable history or receipt identities. This slice has no Policy deletion endpoint. A separate project recovery archive is described below.
+Local effective-date scheduling and release withdrawal are
 described below; they do not enforce execution admission.
 
 Policy metadata and referenced blobs belong to the project. A project move/backup
@@ -541,7 +541,48 @@ or publication. Draft or Published source material can instead be explicitly
 imported into a fresh, unreviewed Desk draft without carrying earlier approvals.
 Failures never activate fallback or reinterpret reviewed history. These records
 claim no provider approval, governing adoption or execution permission.
-Workspace ZIP backup/restore still excludes Policy data, tracked by
-[Desk #476](https://github.com/Judgment-Pack/judgment-pack-desk/issues/476);
-full project backups must retain both `.desk-private/policies` and
-`.desk-private/retained-artifacts` together.
+Chat ZIP backup/restore excludes Policy data. The separate recovery slice below
+addresses [Desk #476](https://github.com/Judgment-Pack/judgment-pack-desk/issues/476)
+without turning the chat ZIP into a complete project backup.
+
+### Project Policy recovery archive (#476)
+
+The manual **Policy recovery archive for this project** flow retains the exact
+current project's ledger and only its referenced immutable blob closure; see
+[the archive and restoration contract](policy-recovery-archive.md). Existing chat
+ZIP behavior stays unchanged. The Policy archive includes historical drafts,
+reviews/publications, lifecycle/source-status streams, retained originals and
+extractions, and operation outcomes. It excludes chats, Pack/Graph drafts, memory,
+executable project files/jobs, unrelated retained artifacts, credentials, source
+consent and browser journals. It is not portable governing adoption, execution
+admission or a complete project backup.
+
+Export stages and validates one complete reviewed ledger cut before downloading.
+Restore previews and freezes the exact selected archive and a new absent private
+destination, independently of current Policy ledger readability. Publication is
+one synced no-replace destination directory, with an empty host-created project
+configuration and a durable completion marker. The running project/stores and
+startup settings stay unchanged; opening/restarting into the recovered project is
+a separate explicit action. Uncertain publication preserves the destination and
+frozen command for current-session, project-scoped read-only receipt recovery;
+lookup never replays restore or treats absence as proof of noncommitment.
+
+Every restore creates a new ledger barrier. Imported records/receipt bytes keep
+their original identities, actors and text, but those actor assertions are not
+authenticated current approval. Currentness remains unknown for imported history;
+fresh local review and a new publication are needed for release activation.
+Historical withdrawal remains available under current authentication. Archived
+source grant/poll/bind/cleanup identities never dispatch, including on the same
+installation. Fresh reviewed source selection/consent is required for provider
+access; reviewing exact retained text locally does not establish that consent or
+current provider status. No fallback becomes authority because of restoration.
+
+The separate limits are 512 MiB expanded data plus 2 MiB ZIP overhead, 8192 entries,
+1 MiB manifest, 16 MiB ledger and 32 MiB per retained blob. Missing/corrupt/unknown
+references and unsupported or oversized archives fail completely. Checksums do
+not authenticate authors or prevent rollback of history predating a withdrawal.
+Older strict binaries reject the restoration extensions; no downgrade bypass or
+global live-store transaction is claimed. Focused checks cover exact closure,
+archive bounds, canonical restore holds, source non-dispatch, destination collision,
+lost-response receipt recovery, current-session/Origin checks and unchanged chat
+ZIP behavior, followed by isolated browser/restart evidence and repository CI.

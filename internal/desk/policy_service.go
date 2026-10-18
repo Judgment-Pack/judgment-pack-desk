@@ -66,7 +66,7 @@ func (s policyService) list(ctx context.Context) ([]policySummary, error) {
 		for _, record := range ledger.Policies {
 			head := policyHead(record)
 			stream := ledger.SourceAuthorities[record.ID]
-			row := policySummary{ID: record.ID, Title: head.Title, ArtifactVersion: head.ArtifactVersion, UpdatedAt: record.UpdatedAt, ReviewState: policyAuthorityReviewState(record, stream), PublicationCount: len(record.Publications), CandidateDigest: head.Digest}
+			row := policySummary{Recovery: policyRecoveryProjection(record, stream), ID: record.ID, Title: head.Title, ArtifactVersion: head.ArtifactVersion, UpdatedAt: record.UpdatedAt, ReviewState: policyAuthorityReviewState(record, stream), PublicationCount: len(record.Publications), CandidateDigest: head.Digest}
 			owner, _ := policyAuthorityOwnership(stream)
 			if stream != nil {
 				row.ManagementMode = owner.Mode
@@ -142,7 +142,7 @@ func (s policyService) reply(ctx context.Context, record policyStoredRecord, str
 		currentReviewID = review.ID
 	}
 	published := policyAuthorityCurrentCandidatePublished(record, stream)
-	return policyReply{CurrentCandidatePublished: &published, SourceAuthority: policyAuthoritySummary(stream), Revision: policyEffectiveRevision(record, stream), Document: policyDocument{SchemaVersion: 1, ID: record.ID, ManagementMode: owner.Mode, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Candidate: candidate, Workflow: head.Workflow, WorkflowDigest: head.WorkflowDigest, ReviewState: policyAuthorityReviewState(record, stream), CurrentReviewID: currentReviewID, Revisions: record.Revisions, Reviews: record.Reviews, Publications: record.Publications}}, nil
+	return policyReply{Recovery: policyRecoveryProjection(record, stream), CurrentCandidatePublished: &published, SourceAuthority: policyAuthoritySummary(stream), Revision: policyEffectiveRevision(record, stream), Document: policyDocument{SchemaVersion: 1, ID: record.ID, ManagementMode: owner.Mode, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Candidate: candidate, Workflow: head.Workflow, WorkflowDigest: head.WorkflowDigest, ReviewState: policyAuthorityReviewState(record, stream), CurrentReviewID: currentReviewID, Revisions: record.Revisions, Reviews: record.Reviews, Publications: record.Publications}}, nil
 }
 
 func (s policyService) revision(ctx context.Context, id, revisionID string) (any, error) {

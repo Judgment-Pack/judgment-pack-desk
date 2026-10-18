@@ -1,3 +1,5 @@
+import {PolicyRecoveryNotice} from './PolicyRecoveryNotice'
+import {readPolicySourceStatus,type PolicyRecoveryInfo} from './client'
 import {PolicySourceIdentity} from './PolicySourceIdentity'
 import {useRef,useState} from 'react'
 import {useNavigate} from 'react-router-dom'
@@ -16,16 +18,17 @@ import type {PolicyAuthoringSource,PolicySourceSelection} from './authoringSourc
 import styles from './PolicyPage.module.css'
 
 /** Both the Policy editor and accepted chat handoffs review the same preparation. */
-export function PolicyInterpretationAction({selection,disabled=false,proposal,chatId,artifactKind=proposal?.artifactKind??'pack'}:{selection:PolicySourceSelection;disabled?:boolean;proposal?:PolicyInterpretationProposal;chatId?:string;artifactKind?:'pack'|'graph'}){
+export function PolicyInterpretationAction({selection,disabled=false,proposal,chatId,recovery,artifactKind=proposal?.artifactKind??'pack'}:{selection:PolicySourceSelection;disabled?:boolean;proposal?:PolicyInterpretationProposal;chatId?:string;artifactKind?:'pack'|'graph';recovery?:PolicyRecoveryInfo}){
  useLocale()
  const {store}=useChats(),navigate=useNavigate(),editorBlocked=usePolicyEditorBlocked(selection.policyId)
+ const [currentRecovery,setCurrentRecovery]=useState<PolicyRecoveryInfo>()
  const [source,setSource]=useState<PolicyAuthoringSource>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),flight=useRef(false),opened=useRef(proposal?.openedChatId)
  const blocked=disabled||editorBlocked,blockedRef=useRef(blocked);blockedRef.current=blocked
  const clearActivity=useRegisteredChanges(false,'',{kind:'activity',busy})
  const review=async()=>{
   if(blockedRef.current||flight.current)return
   flight.current=true;setBusy(true);setError('')
-  try{const exact=await preparePolicyInterpretation(selection);if(!blockedRef.current)setSource(exact)}catch{setError(msg('The selected Policy source could not be read. Sign in or reload before continuing.'))}finally{flight.current=false;setBusy(false)}
+  try{const [exact,metadata]=await Promise.all([preparePolicyInterpretation(selection),readPolicySourceStatus(selection.policyId)]);if(!blockedRef.current){setCurrentRecovery(metadata.recovery);setSource(exact)}}catch{setError(msg('The selected Policy source could not be read. Sign in or reload before continuing.'))}finally{flight.current=false;setBusy(false)}
  }
  const open=async()=>{
   if(!store||!source||blockedRef.current||flight.current)return
@@ -45,6 +48,7 @@ export function PolicyInterpretationAction({selection,disabled=false,proposal,ch
  }
  return <><ChatAction icon={artifactKind==='graph'?<IconGraph/>:<IconPack/>} disabled={blocked||busy} onClick={()=>void review()}>{proposal?.openedChatId||opened.current?msg('Open authoring chat'):(artifactKind==='graph'?msg('Design graph'):msg('Design pack'))}</ChatAction>{error&&!source&&<Notice tone="warning">{error}</Notice>}
  <Dialog open={!!source} onOpenChange={open=>{if(!open&&!busy)setSource(undefined)}} title={(artifactKind==='graph'?msg('Design graph from Policy'):msg('Design pack from Policy'))} footer={<DialogActions><ChatAction disabled={busy} onClick={()=>setSource(undefined)}>{msg('Cancel')}</ChatAction><ChatAction icon={<IconAssistant/>} disabled={blocked||busy||!store} onClick={()=>void open()}>{msg('Open authoring chat')}</ChatAction></DialogActions>}>
+  <PolicyRecoveryNotice recovery={currentRecovery??recovery}/>
   {source&&<><PolicySourceIdentity source={source}/><Disclosure title={msg('Saved policy text')}><pre className={styles.snapshot}>{source.narrative}</pre></Disclosure></>}
   <p>{(artifactKind==='graph'?msg('Open an ordinary graph authoring chat with an unsent request. Review and send it when ready.'):msg('Open an ordinary pack authoring chat with an unsent request. Review and send it when ready.'))}</p>
   {error&&<Notice tone="warning">{error}</Notice>}

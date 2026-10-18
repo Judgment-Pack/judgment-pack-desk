@@ -25,3 +25,4 @@
 .sourceDetails { gap:var(--density-block); }
 .sourceGroups > p,.sourceDetails > p { margin:0; }
 .sourceGroups > button,.sourceDetails > button { justify-self:start; }
+.recoveryNotice { margin:var(--space-3) var(--density-gutter); flex-shrink:0; }

@@ -100,6 +100,7 @@ type policySourcePoll struct {
 	Generation int    `json:"generation"`
 }
 type policyConnectedSource struct {
+	Recovery          *policyRecoverySource     `json:"recovery,omitempty"`
 	Version           int                       `json:"version"`
 	Generation        int                       `json:"generation"`
 	State             string                    `json:"state"`
@@ -119,6 +120,7 @@ type policyConnectedSource struct {
 	Actions           []policySourceAction      `json:"actions"`
 }
 type policySourceSyncReply struct {
+	Recovery  *policyRecoveryView    `json:"recovery,omitempty"`
 	Revision  string                 `json:"revision"`
 	Supported bool                   `json:"supported"`
 	Pending   bool                   `json:"pending"`
@@ -152,11 +154,14 @@ func policySourcePending(record policyStoredRecord, source *policyConnectedSourc
 	if source == nil {
 		return false
 	}
+	if policyRecoverySourceHeld(source) && len(source.Observations) == 0 {
+		return false
+	}
 	if len(source.Observations) == 0 {
 		return source.State != "revoked" && source.State != "authorization-ended"
 	}
 	latest, head := source.Observations[len(source.Observations)-1], policyHead(record)
-	if (source.Binding == nil || latest.BindingID != source.Binding.BindingID || source.Binding.OperationID != source.Grant.OperationID) && source.State != "revoked" && source.State != "authorization-ended" {
+	if !policyRecoverySourceHeld(source) && (source.Binding == nil || latest.BindingID != source.Binding.BindingID || source.Binding.OperationID != source.Grant.OperationID) && source.State != "revoked" && source.State != "authorization-ended" {
 		return true
 	}
 	for i := len(source.Resolutions) - 1; i >= 0; i-- {
@@ -168,7 +173,13 @@ func policySourcePending(record policyStoredRecord, source *policyConnectedSourc
 	return true
 }
 func policySyncReply(record policyStoredRecord, source *policyConnectedSource, supported bool) policySourceSyncReply {
-	return policySourceSyncReply{Revision: policySourceRevision(source), Supported: supported, Pending: policySourcePending(record, source), State: source}
+	view := source
+	if policyRecoverySourceHeld(source) {
+		copy := *source
+		copy.State, copy.ErrorCode, copy.Gap, copy.Poll, copy.NextCheck = "authorization-ended", "restored-source-consent-required", true, nil, ""
+		view = &copy
+	}
+	return policySourceSyncReply{Recovery: policyRecoveryProjection(record, nil), Revision: policySourceRevision(source), Supported: supported, Pending: policySourcePending(record, source), State: view}
 }
 func policySourceFrequency(n int) bool { return n == 5 || n == 15 || n == 60 }
 func appendPolicySourceCleanup(ids []string, id string) []string {
@@ -263,6 +274,7 @@ func (s policyService) sourceSync(ctx context.Context, id string, supported bool
 			return policyRefusal(404, CodeNotFound, "Policy not found.")
 		}
 		result = policySyncReply(record, ledger.Sources[id], supported)
+		result.Recovery = policyRecoveryProjection(record, ledger.SourceAuthorities[id])
 		return nil
 	})
 	return result, err
@@ -302,6 +314,10 @@ func (s policyService) sourceCommand(ctx context.Context, id string, actor polic
 		if len(ledger.Operations) >= policyOperationLimit || source != nil && len(source.Actions) >= policyHistoryLimit {
 			return false, policyRefusal(409, "storage-capacity", "Policy source history has reached its supported capacity.")
 		}
+		held := policyRecoverySourceHeld(source)
+		if held && q.Action != "bind" && q.Action != "keep-current" {
+			return false, policyRefusal(409, "restored-source-consent-required", "Choose this source again with current administrator consent before provider actions. Retained observations remain historical.")
+		}
 		now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		if q.Action == "bind" {
 			if !supported {
@@ -310,19 +326,34 @@ func (s policyService) sourceCommand(ctx context.Context, id string, actor polic
 			if !retainedArtifactDigest.MatchString(authority) || q.Consent != "recurring-read-after-sign-out" || !retainedArtifactDigest.MatchString(q.SelectionContext) || q.ResourceID == "" || len(q.ResourceID) > 4096 || !policySourceFrequency(q.FrequencyMinutes) {
 				return false, policyRefusal(400, CodeBadRequest, "Review recurring source access and choose a supported check frequency.")
 			}
-			if source != nil && source.State != "revoked" && source.State != "authorization-ended" {
+			if source != nil && !held && source.State != "revoked" && source.State != "authorization-ended" {
 				return false, policyRefusal(409, "source-conflict", "Revoke the current source before connecting another.")
 			}
 			if source == nil {
 				source = &policyConnectedSource{Version: 1, Cleanup: []string{}, Observations: []policySourceObservation{}, Resolutions: []policySourceResolution{}, Actions: []policySourceAction{}}
 			}
-			if source.Grant.OperationID != "" {
+			if held {
+				source.CleanupOperations = nil
+				source.Cleanup = []string{}
+				source.Poll = nil
+			}
+			if !held && source.Grant.OperationID != "" {
 				source.CleanupOperations = appendPolicySourceCleanup(source.CleanupOperations, source.Grant.OperationID)
 			}
-			if source.Binding != nil {
+			if !held && source.Binding != nil {
 				source.Cleanup = appendPolicySourceCleanup(source.Cleanup, source.Binding.BindingID)
 			}
 			source.Grant = policySourceGrant{Authority: authority, Actor: actor, At: now, OperationID: digestOf([]byte(id + "\x00" + q.OperationID)), ResourceID: q.ResourceID, SelectionContext: q.SelectionContext}
+			if source.Recovery != nil {
+				// Every reviewed reconnect replaces the live grant. Only the first
+				// post-restore bind suppresses archived cleanup above, but all later
+				// grants must keep the recovery identity bound to current consent.
+				source.Recovery.ConsentOperationID = source.Grant.OperationID
+			}
+			if held {
+				record.Recovery.SourceConsentRequired = false
+				ledger.Policies[id] = record
+			}
 			source.State, source.FrequencyMinutes, source.Binding, source.LastSuccess = "binding", q.FrequencyMinutes, nil, ""
 		} else {
 			if source == nil {
@@ -353,7 +384,7 @@ func (s policyService) sourceCommand(ctx context.Context, id string, actor polic
 					return false, policyRefusal(409, "source-conflict", "Resume this source before checking it.")
 				}
 			case "keep-current":
-				if len(source.Observations) == 0 || ((source.Binding == nil || source.Observations[len(source.Observations)-1].BindingID != source.Binding.BindingID) && source.State != "revoked" && source.State != "authorization-ended") || source.Observations[len(source.Observations)-1].ID != q.ObservationID || len(source.Resolutions) >= policyHistoryLimit || len(q.Comment) > 8192 {
+				if len(source.Observations) == 0 || (!held && (source.Binding == nil || source.Observations[len(source.Observations)-1].BindingID != source.Binding.BindingID) && source.State != "revoked" && source.State != "authorization-ended") || source.Observations[len(source.Observations)-1].ID != q.ObservationID || len(source.Resolutions) >= policyHistoryLimit || len(q.Comment) > 8192 {
 					return false, policyRefusal(409, "source-conflict", "Review the latest retained source update before keeping the current candidate.")
 				}
 				head := policyHead(record)
@@ -377,6 +408,7 @@ func (s policyService) sourceCommand(ctx context.Context, id string, actor polic
 			return false, err
 		}
 		sync := policySyncReply(record, source, supported)
+		sync.Recovery = policyRecoveryProjection(record, ledger.SourceAuthorities[id])
 		result = policyMutationReply{Delivery: "committed", Policy: reply, SourceSync: &sync, Receipt: policyOperationReceipt{OperationID: q.OperationID, Kind: command.Kind, PolicyID: id, RequestDigest: command.RequestDigest, At: now, Actor: actor, Revision: reply.Revision, CandidateDigest: reply.Document.Candidate.Digest}}
 		raw, _ := json.Marshal(result)
 		ref, err := s.artifacts.Put(ctx, raw)

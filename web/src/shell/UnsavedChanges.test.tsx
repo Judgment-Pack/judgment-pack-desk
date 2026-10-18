@@ -1,6 +1,6 @@
 import {cleanup, render, screen} from '@testing-library/react'
 import {afterEach, expect, it} from 'vitest'
-import {UnsavedChangesProvider,useRegisteredChanges,useDeskChangeState,type UnsavedOptions} from './UnsavedChanges'
+import {UnsavedChangesProvider,useRegisteredChanges,useRegisteredChangesGuard,useDeskChangeState,type UnsavedOptions} from './UnsavedChanges'
 afterEach(()=>{cleanup();document.title='Desk'})
 function Change({changed,...options}:UnsavedOptions & {changed:boolean}) { useRegisteredChanges(changed,'Leave without saving?',options);return null }
 function Status(){const state=useDeskChangeState();return <output>{JSON.stringify(state)}</output>}
@@ -45,4 +45,22 @@ it('protects active writes and activity without presenting them as edits',()=>{
  expect(state().dirty).toBe(false);expect(protectedExit()).toBe(true)
  view.rerender(frame(<Change changed={false} kind="activity"/>))
  expect(protectedExit()).toBe(false)
+})
+it.each([
+ {kind:'edit' as const,changed:true,label:'Other editor'},
+ {kind:'autosave' as const,changed:true,saveFailed:true,label:'Failed autosave'},
+ {kind:'activity' as const,changed:true,label:'Other activity'},
+ {kind:'autosave' as const,changed:true,label:'Quiet autosave'},
+ {kind:'activity' as const,changed:false,busy:true,label:'Active write'},
+])('protects an open reviewed form from $label without self-blocking',other=>{
+ function Review(){const {otherPending}=useRegisteredChangesGuard(true,'Discard review?',{label:'Recovery setup'});return <button disabled={otherPending}>Confirm reviewed operation</button>}
+ const content=(held:boolean)=>frame(<><Review/>{held&&<Change {...other}/>}</>)
+ const view=render(content(false))
+ expect(screen.getByRole('button',{name:'Confirm reviewed operation'})).toHaveProperty('disabled',false)
+ expect(state()).toEqual({dirty:true,pending:true,labels:['Recovery setup']});expect(protectedExit()).toBe(true)
+ view.rerender(content(true))
+ expect(screen.getByRole('button',{name:'Confirm reviewed operation'})).toHaveProperty('disabled',true)
+ view.rerender(content(false))
+ expect(screen.getByRole('button',{name:'Confirm reviewed operation'})).toHaveProperty('disabled',false)
+ expect(state()).toEqual({dirty:true,pending:true,labels:['Recovery setup']});expect(protectedExit()).toBe(true)
 })
