@@ -50,6 +50,7 @@ export function GoverningPolicies({owner,content,disabled=false}:{owner:string;c
  const dirty=!!comment||!saved&&(!!pack||selected.length>0)
  const locked=disabled||busy||!!pending||!journal.ready
  const readsFailed=options.isError||list.isError||!!saved&&observed.isError
+ const detailUnavailable=observed.isError||!sameObserved
  const canPrepare=!locked&&!readsFailed&&!!pack&&matchesRaw(pack)&&publications.some(row=>samePublication(row,pack))&&selected.length>0&&selected.length<=16&&!choiceChanged
  const canReview=!locked&&!readsFailed&&!!saved&&!stale&&!differentPublication&&!candidateChoicesChanged&&current?.readiness.status==='ready'&&current.eligibility.status!=='ineligible'&&current.eligibility.status!=='unavailable'&&!saved.recovery?.freshReviewRequired
  const commentInvalid=new TextEncoder().encode(comment).length>8192
@@ -84,7 +85,7 @@ export function GoverningPolicies({owner,content,disabled=false}:{owner:string;c
  }
  async function prepare(){if(!canPrepare||!pack)return;await deliver({pack,command:{action:'prepare',operationId:crypto.randomUUID(),pack,coverages:selected.map(adoptionSelection)}})}
  async function review(decision:'approve'|'request-changes'){
-  if(!saved||locked||readsFailed||stale||differentPublication||commentInvalid||decision==='approve'&&!canReview)return
+  if(!saved||locked||stale||differentPublication||commentInvalid||(decision==='approve'?!canReview:detailUnavailable))return
   const candidate=saved.document.candidate
   await deliver({pack:candidate.pack,command:{action:'review',operationId:crypto.randomUUID(),adoptionId:saved.document.id,baseRevision:saved.revision,candidateDigest:candidate.digest,basisDigest:candidate.basisDigest,decision,...(comment?{comment}:{})}})
  }
@@ -122,7 +123,7 @@ export function GoverningPolicies({owner,content,disabled=false}:{owner:string;c
     {(current?.eligibility.status==='ineligible'||current?.eligibility.status==='unavailable')&&<p role="status" className={styles.note}>{msg('Current Policy release eligibility is unavailable or does not allow adoption. Retained review history does not grant execution permission.')}</p>}
     {current?.eligibility.status==='not-yet-effective'&&<p className={styles.note}>{msg('One or more reviewed Policy releases are not effective yet. Adoption does not make them effective or authorize runs.')}</p>}
     <Field label={msg('Adoption review comment')} error={commentInvalid?msg('Keep the review comment within 8192 UTF-8 bytes.'):undefined}>{wiring=><TextArea {...wiring} rows={2} maxLength={8192} disabled={locked} value={comment} onChange={event=>setComment(event.target.value)}/>}</Field>
-    <Toolbar label={msg('Review complete governing-policy adoption')}><ToolbarItem><Button variant="primary" disabled={!canReview||commentInvalid} onClick={()=>void review('approve')}>{msg('Adopt complete policy set')}</Button></ToolbarItem><ToolbarItem><Button disabled={locked||readsFailed||stale||differentPublication||commentInvalid} onClick={()=>void review('request-changes')}>{msg('Request adoption changes')}</Button></ToolbarItem></Toolbar>
+    <Toolbar label={msg('Review complete governing-policy adoption')}><ToolbarItem><Button variant="primary" disabled={!canReview||commentInvalid} onClick={()=>void review('approve')}>{msg('Adopt complete policy set')}</Button></ToolbarItem><ToolbarItem><Button disabled={locked||detailUnavailable||stale||differentPublication||commentInvalid} onClick={()=>void review('request-changes')}>{msg('Request adoption changes')}</Button></ToolbarItem></Toolbar>
     <p className={styles.note}>{msg('Adoption records this administrator’s explicit review of every retained dependency together. The server checks the complete basis again.')}</p>
     <Toolbar label={msg('Saved adoption actions')}>{stale&&<ToolbarItem><Button disabled={locked} onClick={()=>void open(saved.document.id,saved.document.candidate.pack)}>{msg('Load latest adoption')}</Button></ToolbarItem>}<ToolbarItem><Button disabled={locked} onClick={()=>void reset()}>{msg('Prepare another adoption')}</Button></ToolbarItem></Toolbar>
     {saved.document.reviews.length>0&&<Disclosure title={msg('Recorded adoption decisions')}>{[...saved.document.reviews].reverse().map(row=><p key={row.id}>{row.decision==='approve'?msg('Adoption reviewed'):msg('Changes requested')} · {row.actor.subject??row.actor.kind} · <time dateTime={row.at}>{new Date(row.at).toLocaleString(locale)}</time>{row.comment?' · '+row.comment:''}</p>)}</Disclosure>}

@@ -14,21 +14,21 @@ import {GoverningPolicies} from './GoverningPolicies'
 afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionStorage.clear()})
 async function mount({mutate,existing=false,initial,recovered,optionsWait,optionsFailure=false,disabled=false,content=adoptionRaw,navigation=false}:{mutate?:(command:AdoptionCommand,reply:AdoptionReply)=>Promise<AdoptionOutcome|Response>;existing?:boolean;initial?:AdoptionReply;recovered?:AdoptionOutcome;optionsWait?:Promise<void>;optionsFailure?:boolean;disabled?:boolean;content?:string;navigation?:boolean}={}){
  const fixture=await adoptionFixtures(),cache=testQueryClient(),writes:AdoptionCommand[]=[],requests:{path:string;method:string}[]=[]
- let current=initial??fixture.reply,receipt=recovered,options:AdoptionOptions=fixture.options,failed=false,hasRecord=existing
+ let current=initial??fixture.reply,receipt=recovered,options:AdoptionOptions=fixture.options,failed=false,inventoryFailed=false,detailFailed=false,hasRecord=existing
  vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
   const path=String(input),method=init?.method??'GET';requests.push({path,method})
-  if(path.startsWith('/api/policy-adoptions/options?')){await optionsWait;if(optionsFailure||failed)throw Error('options unavailable');return Response.json({...options,packPublications:options.packPublications.map(pack=>({...pack,alias:'Eligibility'}))})}
+  if(path.startsWith('/api/policy-adoptions/options?')){await optionsWait;if(inventoryFailed)return Response.json({code:'storage-unavailable'},{status:503});if(optionsFailure||failed)throw Error('options unavailable');return Response.json({...options,packPublications:options.packPublications.map(pack=>({...pack,alias:'Eligibility'}))})}
   if(path.startsWith('/api/policy-operations/'))return receipt?Response.json({...receipt,delivery:'recovered'}):Response.json({code:'not-found',outcome:'not-committed'},{status:404})
   if(path==='/api/policy-adoptions'){
    if(method==='POST'){const command=JSON.parse(String(init?.body)) as AdoptionCommand;writes.push(command);const result=mutate?await mutate(command,current):adoptionOutcome(command,current);if(result instanceof Response)return result;current=result.adoption;receipt=result;hasRecord=true;return Response.json(result)}
-   if(failed)throw Error('history unavailable');return Response.json({items:hasRecord?[adoptionSummary(current)]:[]})
+   if(inventoryFailed)return Response.json({code:'storage-unavailable'},{status:503});if(failed)throw Error('history unavailable');return Response.json({items:hasRecord?[adoptionSummary(current)]:[]})
   }
-  if(path==='/api/policy-adoptions/'+adoptionId){if(failed)throw Error('record unavailable');return Response.json(current)}
+  if(path==='/api/policy-adoptions/'+adoptionId){if(detailFailed)return Response.json({code:'storage-unavailable'},{status:503});if(failed)throw Error('record unavailable');return Response.json(current)}
   throw Error('Unexpected adoption fixture '+path)
  }))
  const tree=(nextContent:string=content,nextDisabled=disabled)=>{const child=<UnsavedChangesProvider><DeskNoticesProvider><GoverningPolicies owner="Eligibility" content={nextContent} disabled={nextDisabled}/>{navigation&&<Link to="?view=overview">Overview fixture</Link>}</DeskNoticesProvider></UnsavedChangesProvider>;return <QueryClientProvider client={cache}>{navigation?<RouterProvider router={createMemoryRouter([{path:'/packs/Eligibility',element:child}],{initialEntries:['/packs/Eligibility?view=review']})}/>:<MemoryRouter>{child}</MemoryRouter>}</QueryClientProvider>}
  const view=render(tree())
- return {...fixture,view,cache,writes,requests,rerender:(nextContent:string,nextDisabled=disabled)=>view.rerender(tree(nextContent,nextDisabled)),setCurrent:(reply:AdoptionReply)=>{current=reply},setOptions:(next:AdoptionOptions)=>{options=next},setFailed:(value:boolean)=>{failed=value},setRecovery:(result:AdoptionOutcome)=>{receipt=result;current=result.adoption;hasRecord=true}}
+ return {...fixture,view,cache,writes,requests,rerender:(nextContent:string,nextDisabled=disabled)=>view.rerender(tree(nextContent,nextDisabled)),setCurrent:(reply:AdoptionReply)=>{current=reply},setOptions:(next:AdoptionOptions)=>{options=next},setFailed:(value:boolean)=>{failed=value},setInventoryFailed:(value:boolean)=>{inventoryFailed=value},setDetailFailed:(value:boolean)=>{detailFailed=value},setRecovery:(result:AdoptionOutcome)=>{receipt=result;current=result.adoption;hasRecord=true}}
 }
 async function selectPack(){const select=await screen.findByRole('combobox',{name:'Governing Pack publication'});fireEvent.keyDown(select,{key:'Enter'});fireEvent.click(await screen.findByRole('option',{name:/1\.0\.0/}));await screen.findByRole('checkbox',{name:/Eligibility policy/})}
 async function selectPolicies(){await selectPack();fireEvent.click(screen.getByRole('checkbox',{name:/Eligibility policy/}));fireEvent.click(screen.getByRole('checkbox',{name:/Reporting policy/}));await waitFor(()=>expect(screen.getByRole('button',{name:'Prepare adoption candidate'})).toHaveProperty('disabled',false))}
@@ -60,6 +60,17 @@ it('disables approval when the complete live basis becomes stale without rewriti
  const app=await mount({existing:true});await openHistory();await act(()=>app.cache.setQueryData([...ADOPTIONS_KEY,adoptionId],{...app.reply,readiness:{status:'stale'}}))
  expect(await screen.findByText(/The complete saved adoption basis is stale or unavailable/)).toBeTruthy();expect(screen.getByRole('button',{name:'Adopt complete policy set'})).toHaveProperty('disabled',true);expect(screen.getByRole('button',{name:'Request adoption changes'})).toHaveProperty('disabled',false)
  fireEvent.click(screen.getByRole('button',{name:'Request adoption changes'}));await screen.findByText('Adoption changes requested.');expect(app.writes[0]).toMatchObject({decision:'request-changes'})
+})
+it('allows exact restrictive review when unrelated publication and coverage inventories return 503',async()=>{
+ const app=await mount({existing:true});await openHistory();app.setInventoryFailed(true);await act(()=>app.cache.invalidateQueries({queryKey:ADOPTIONS_KEY}))
+ expect(app.cache.getQueryState([...ADOPTIONS_KEY,'options','Eligibility'])?.status).toBe('error');expect(app.cache.getQueryState(ADOPTIONS_KEY)?.status).toBe('error');expect(app.cache.getQueryState([...ADOPTIONS_KEY,adoptionId])?.status).toBe('success')
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Adopt complete policy set'})).toHaveProperty('disabled',true));expect(screen.getByRole('button',{name:'Request adoption changes'})).toHaveProperty('disabled',false)
+ fireEvent.click(screen.getByRole('button',{name:'Request adoption changes'}));await screen.findByText('Adoption changes requested.');expect(app.writes).toHaveLength(1);expect(app.writes[0]).toMatchObject({action:'review',decision:'request-changes',adoptionId,baseRevision:app.reply.revision,candidateDigest:app.reply.document.candidate.digest,basisDigest:app.reply.document.candidate.basisDigest})
+})
+it.each(['unavailable','stale'] as const)('blocks restrictive review when exact adoption detail is %s despite retained inventory rows',async state=>{
+ const app=await mount({existing:true});await openHistory();app.setInventoryFailed(true)
+ if(state==='unavailable')app.setDetailFailed(true);else app.setCurrent({...app.reply,revision:'0'.repeat(64)})
+ await act(()=>app.cache.invalidateQueries({queryKey:ADOPTIONS_KEY}));await waitFor(()=>expect(screen.getByRole('button',{name:'Request adoption changes'})).toHaveProperty('disabled',true));expect(screen.getByRole('button',{name:'Adopt complete policy set'})).toHaveProperty('disabled',true);expect(app.writes).toHaveLength(0)
 })
 it('shows unsupported Runtime honestly and preserves readable saved history',async()=>{
  const app=await mount({existing:true,mutate:async()=>Response.json({code:'unsupported-contract',outcome:'not-committed'},{status:422})});await selectPolicies();fireEvent.click(screen.getByRole('button',{name:'Prepare adoption candidate'}))
