@@ -2,7 +2,7 @@
 
 Status: implementation design, 2026-10-18. Desk adoption review is merged in
 [#487](https://github.com/Judgment-Pack/judgment-pack-desk/pull/487).
-The anchor and Runner payload helpers are inactive foundations. There is no
+The optional anchored repository and Runner payload helpers are foundations. There is no
 governed execution capability, executor admission API, or withdrawal enforcement
 in this tranche. [Desk #455](https://github.com/Judgment-Pack/judgment-pack-desk/issues/455),
 [Runner #147](https://github.com/Judgment-Pack/judgment-pack-runner/issues/147)
@@ -37,17 +37,21 @@ the descriptor does not start a process or check eligibility.
 Desk's private authority anchor commits to the exact Policy ledger head outside
 the portable store. Enrollment is explicit; ordinary lookup never creates or
 resets an anchor. A mismatch, missing anchor or pending write intent prevents a
-current-authority claim. The primitive has no production call sites yet: it does
-not choose a machine root, enroll installations, change existing Policy writes
-or protect existing jobs. Its [storage contract](policy-authority-anchor.md)
+current-authority claim. All live Policy access now shares an optionally bound repository factory.
+A private trusted resolver supplies each pinned workspace binding once at
+startup; no default resolver or enrollment is supplied. Legacy installations
+remain unbound. The integration does not choose a machine root or protect jobs. Its [storage contract](policy-authority-anchor.md)
 describes durability and failure behavior.
 
 The fixed transaction order is Policy ledger lock, then anchor lock. Read the
 exact ledger while holding its lock; retain both locks across current-head
 verification, domain mutation, durable intent, durable ledger replacement and
 anchor finalization. Source-worker serialization, where needed, precedes both.
-No code holding the anchor may acquire the ledger lock afterward. A domain
-closure is never replayed to recover a failed write.
+No code holding the anchor may acquire the ledger lock afterward. Bound current
+reads also take the bounded-wait exclusive ledger lock before the anchor and
+retain both through the read callback; they do not write. Explicit history-only reads remain separate from current
+authority and expose no Update/current View interface. A domain closure is never
+replayed to recover a failed write.
 
 ## Required authority integration
 

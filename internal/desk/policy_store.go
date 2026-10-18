@@ -70,7 +70,10 @@ type policyRepository interface {
 	Update(context.Context, func(*policyLedger) (bool, error)) error
 }
 
-type filePolicyRepository struct{ open func(bool) (*os.Root, error) }
+type filePolicyRepository struct {
+	open   func(bool) (*os.Root, error)
+	anchor *policyAuthorityAnchor
+}
 
 func (s *Server) openPolicies(create bool) (*os.Root, error) {
 	root, made, err := openOwnFolder(s.root, strings.Split(policyDirectory, "/"), create, "policies")
@@ -93,6 +96,9 @@ func (f filePolicyRepository) Update(ctx context.Context, use func(*policyLedger
 	return f.transaction(ctx, true, use)
 }
 func (f filePolicyRepository) transaction(ctx context.Context, write bool, use func(*policyLedger) (bool, error)) error {
+	if f.anchor != nil {
+		return f.anchoredTransaction(ctx, write, use)
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}

@@ -48,23 +48,32 @@ func validatePolicyImport(source policyImport) error {
 // Only an authorized policy's retained binding can resolve an original source.
 // There is no path, arbitrary digest or source URL read API.
 func (s policyService) source(ctx context.Context, id string) (policySource, []byte, error) {
-	reply, err := s.get(ctx, id)
+	var source policySource
+	var raw []byte
+	err := s.readHistory(ctx, func(l policyLedger) error {
+		record := l.Policies[id]
+		if record.ID == "" {
+			return policyRefusal(404, CodeNotFound, "Policy not found.")
+		}
+		candidate, err := s.candidate(ctx, policyHead(record))
+		if err != nil {
+			return err
+		}
+		if candidate.Source == nil {
+			return policyRefusal(404, CodeNotFound, "This policy has no imported original source.")
+		}
+		source = *candidate.Source
+		raw, err = s.artifacts.Get(ctx, source.Content)
+		if err != nil {
+			return err
+		}
+		if err = validatePolicyImport(policyImport{Name: source.Name, MediaType: source.MediaType, Data: raw}); err != nil {
+			return errors.New("retained policy source is inconsistent")
+		}
+		return nil
+	})
 	if err != nil {
 		return policySource{}, nil, err
 	}
-	source := reply.Document.Candidate.Source
-	if source == nil {
-		return policySource{}, nil, policyRefusal(404, CodeNotFound, "This policy has no imported original source.")
-	}
-	raw, err := s.artifacts.Get(ctx, source.Content)
-	if err != nil {
-		return policySource{}, nil, err
-	}
-	if err = validatePolicyImport(policyImport{Name: source.Name, MediaType: source.MediaType, Data: raw}); err != nil {
-		return policySource{}, nil, errors.New("retained policy source is inconsistent")
-	}
-	if err = s.authorized(ctx); err != nil {
-		return policySource{}, nil, err
-	}
-	return *source, raw, nil
+	return source, raw, nil
 }

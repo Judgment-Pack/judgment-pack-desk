@@ -16,7 +16,7 @@ func lifecycleFixture(t *testing.T) (*Server, string, policyReply, policyService
 	s, token := policyTestServer(t)
 	approved := policyApprove(t, s, token, policyCreate(t, s, token))
 	published := policyMutation(t, policyCall(s, token, "POST", "/api/policies/"+approved.Document.ID+"/publish", policyPublishBody(t, approved))).Policy
-	service := policyService{repository: filePolicyRepository{open: s.openPolicies}, artifacts: s.artifactRepository(), authorize: func() bool { return true }, clock: func() time.Time { return time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC) }}
+	service := policyService{repository: filePolicyRepository{open: s.openPolicies}, history: s.policyHistoryReader(), artifacts: s.artifactRepository(), authorize: func() bool { return true }, clock: func() time.Time { return time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC) }}
 	return s, token, published, service
 }
 func lifecycleBody(t *testing.T, service policyService, policy policyReply, action string) policyLifecycleRequest {

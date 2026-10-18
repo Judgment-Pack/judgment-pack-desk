@@ -40,6 +40,7 @@ type policyService struct {
 	coveragePack    func(context.Context, policyCoveragePackSelector) (policyCoverageResolvedPack, error)
 	checkCoverage   func(context.Context, policyCoverageMaterial) policyCoverageCheckReply
 	repository      policyRepository
+	history         policyHistoryReader
 	artifacts       retainedArtifactRepository
 	authorize       func() bool
 	validateVersion func(context.Context, string, string) error
@@ -151,26 +152,19 @@ func (s policyService) reply(ctx context.Context, record policyStoredRecord, str
 
 func (s policyService) revision(ctx context.Context, id, revisionID string) (any, error) {
 	var revision policyRevision
-	err := s.repository.View(ctx, func(ledger policyLedger) error {
-		if err := s.authorized(ctx); err != nil {
-			return err
-		}
+	var candidate policyCandidate
+	err := s.readHistory(ctx, func(ledger policyLedger) error {
 		for _, item := range ledger.Policies[id].Revisions {
 			if item.ID == revisionID {
 				revision = item
-				return nil
+				var err error
+				candidate, err = s.candidate(ctx, revision)
+				return err
 			}
 		}
 		return policyRefusal(404, CodeNotFound, "Policy revision not found.")
 	})
 	if err != nil {
-		return nil, err
-	}
-	candidate, err := s.candidate(ctx, revision)
-	if err != nil {
-		return nil, err
-	}
-	if err = s.authorized(ctx); err != nil {
 		return nil, err
 	}
 	return struct {
@@ -209,33 +203,28 @@ func (s policyService) recovered(ctx context.Context, ledger policyLedger, comma
 // Receipt lookup is historical read-only recovery. Absence does not prove an
 // in-flight operation will never commit, and reading a receipt repeats no write.
 func (s policyService) operation(ctx context.Context, id string) (policyMutationReply, error) {
-	var operation policyStoredOperation
-	err := s.repository.View(ctx, func(ledger policyLedger) error {
-		if err := s.authorized(ctx); err != nil {
-			return err
-		}
-		var ok bool
-		operation, ok = ledger.Operations[id]
+	var result policyMutationReply
+	err := s.readHistory(ctx, func(ledger policyLedger) error {
+		operation, ok := ledger.Operations[id]
 		if !ok {
 			return policyRefusal(404, CodeNotFound, "No completed policy operation receipt is available. The original request may still be in progress.")
 		}
+		if err := validateArchivedPolicyOperation(ctx, ledger, s.artifacts, operation); err != nil {
+			return policyRefusal(409, "storage-integrity", "The retained Policy operation is incomplete or inconsistent.")
+		}
+		raw, err := s.artifacts.Get(ctx, operation.Result)
+		if err != nil {
+			return policyRefusal(503, "storage-unavailable", "The retained Policy operation is unavailable.")
+		}
+		if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != id || result.Receipt.Kind != operation.Kind || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.RequestDigest != operation.RequestDigest || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) || !validPolicySourceAuthorityResult(result) || !validPolicyCoverageResult(result) || !validPolicyAdoptionResult(result) {
+			return policyRefusal(409, "storage-integrity", "The retained Policy operation is inconsistent.")
+		}
+		result.Delivery = "recovered"
 		return nil
 	})
 	if err != nil {
 		return policyMutationReply{}, err
 	}
-	raw, err := s.artifacts.Get(ctx, operation.Result)
-	if err != nil {
-		return policyMutationReply{}, err
-	}
-	var result policyMutationReply
-	if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != id || result.Receipt.Kind != operation.Kind || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.RequestDigest != operation.RequestDigest || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) || !validPolicySourceAuthorityResult(result) || !validPolicyCoverageResult(result) || !validPolicyAdoptionResult(result) {
-		return policyMutationReply{}, errors.New("policy operation receipt is inconsistent")
-	}
-	if err = s.authorized(ctx); err != nil {
-		return policyMutationReply{}, err
-	}
-	result.Delivery = "recovered"
 	return result, nil
 }
 

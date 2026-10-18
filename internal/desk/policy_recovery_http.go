@@ -113,7 +113,7 @@ func policyRecoveryFileDigest(file *os.File) (string, int64, error) {
 }
 func (s *Server) policyRecoveryCut(ctx context.Context) (policyArchiveCut, error) {
 	var snapshot policyLedger
-	err := (filePolicyRepository{open: s.openPolicies}).View(ctx, func(l policyLedger) error { snapshot = l; return nil })
+	err := s.policyHistoryReader().ReadHistory(ctx, func(l policyLedger) error { snapshot = l; return nil })
 	if err != nil {
 		return policyArchiveCut{}, err
 	}

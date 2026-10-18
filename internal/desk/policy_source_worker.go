@@ -247,7 +247,7 @@ func (s *Server) startPolicySources() {
 }
 
 func (s *Server) pollPolicySources(ctx context.Context, owner string) {
-	repository := filePolicyRepository{open: s.openPolicies}
+	repository := s.policyRepository()
 	var ids []string
 	if repository.View(ctx, func(ledger policyLedger) error {
 		for id := range ledger.Sources {
@@ -268,7 +268,7 @@ func (s *Server) pollPolicySources(ctx context.Context, owner string) {
 func (s *Server) pollPolicySource(parent context.Context, owner, id string) {
 	ctx, cancel := context.WithTimeout(parent, 55*time.Second)
 	defer cancel()
-	repository := filePolicyRepository{open: s.openPolicies}
+	repository := s.policyRepository()
 	var admitted *policyConnectedSource
 	// Authentication-policy mutation takes the exclusive lock before touching
 	// signIn.mu. Never hold this read lock across provider I/O.
