@@ -2,7 +2,7 @@ import {PolicyRecoveryNotice} from './PolicyRecoveryNotice'
 import {PolicyInterpretationAction} from './PolicyInterpretation'
 import {useRef,useState} from 'react'
 import {useQuery,useQueryClient} from '@tanstack/react-query'
-import {useNavigate,useParams} from 'react-router-dom'
+import {useNavigate,useParams,useSearchParams} from 'react-router-dom'
 import {msg,systemMessage,useLocale} from '../i18n'
 import {Button} from '../ui/Button'
 import {Field,FieldGroup} from '../ui/Field'
@@ -13,6 +13,7 @@ import {SettingsSection,SettingsStack} from '../ui/SettingsSection'
 import {Tabs} from '../ui/Tabs'
 import {Dialog,DialogActions} from '../ui/Dialog'
 import {LoadingState} from '../ui/LoadingState'
+import {Disclosure} from '../ui/Disclosure'
 import {QueryStatusNotice} from '../shell/QueryStatusNotice'
 import {useConfirmDiscard,useRegisteredChanges} from '../shell/UnsavedChanges'
 import {PolicyAssistant} from './PolicyAssistant'
@@ -22,6 +23,11 @@ import {PolicySourceStatus} from './PolicySourceStatus'
 import {PolicyLifecycle} from './PolicyLifecycle'
 import {preparePolicyImport} from './sourceImport'
 import {PolicyHistory} from './PolicyHistory'
+import {useChats} from '../chat/ChatProvider'
+import {useInspectorControls} from '../shell/InspectorSlot'
+import {findPolicyChat,preparePolicyComparisonChat} from './comparisonChat'
+import {PolicyComparison} from './PolicyComparison'
+import type {PolicyComparisonRequest} from './comparison'
 import {POLICIES_KEY,PolicyRequestError,policyHref,policyQuery,policySourceSyncQuery,readPolicy,recoverPolicyOperation,writePolicy,type PolicyReply,type PolicyWrite,type PolicyMutationReply,type PolicyImport,type SourceAuthorityOutcome} from './client'
 import styles from './PolicyPage.module.css'
 
@@ -47,6 +53,9 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const [lifecycleBusy,setLifecycleBusy]=useState(false)
  const [sourceStatusBusy,setSourceStatusBusy]=useState(false),[sourceSyncBusy,setSourceSyncBusy]=useState(false)
  const [latest,setLatest]=useState<PolicyReply>(),[comment,setComment]=useState(''),[publishOpen,setPublishOpen]=useState(false),[tab,setTab]=useState('draft'),[notice,setNotice]=useState('')
+ const {store:chatStore,ready:chatsReady}=useChats(),inspector=useInspectorControls(),[params]=useSearchParams()
+ const [appendComparison,setAppendComparison]=useState<PolicyComparisonRequest>(),[comparisonError,setComparisonError]=useState(false)
+ const [savedComparison,setSavedComparison]=useState<{request:PolicyComparisonRequest;head:string}>()
  const active=useRef(false),cache=useQueryClient(),navigate=useNavigate(),confirm=useConfirmDiscard()
  const editor=useRef({value,comment,pending,saved});editor.current={value,comment,pending,saved}
  const sourceQuery=useQuery(policySourceSyncQuery(saved?.document.id))
@@ -54,6 +63,18 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const observedLatest=latest??(observed&&saved&&observed.revision!==saved.revision?observed:undefined)
  const authorityBusy=lifecycleBusy||sourceStatusBusy||sourceSyncBusy
  const held=!!pending,disabled=busy||held||importBusy||authorityBusy
+ const discuss=async(request:PolicyComparisonRequest,append=false)=>{
+  if(!saved||!chatStore||!chatsReady)return
+  const preferred=params.get('chat')??undefined,existing=findPolicyChat(chatStore,saved.document.id,preferred)
+  if(existing?.composer&&!append){setAppendComparison(structuredClone(request));return}
+  setAppendComparison(undefined);setComparisonError(false)
+  try{
+   const chat=preparePolicyComparisonChat(chatStore,saved.document.id,request,preferred)
+   const next=new URLSearchParams(params);next.set('chat',chat.id)
+   navigate({search:next.toString()},{replace:true});inspector.reveal()
+   await chatStore.checkpoint(new AbortController().signal)
+  }catch{setComparisonError(true)}
+ }
  const save=async()=>{
   if(active.current||held||authorityBusy)throw new PolicyRequestError('delivery-unknown')
   const operation:PolicyWrite={path:saved?'/'+encodeURIComponent(saved.document.id):'',method:saved?'PUT':'POST',body:{operationId:crypto.randomUUID(),...value,...(!saved&&imported?{import:imported}:{}),workflow:saved?.document.workflow??{independentReviewRequired:false},...(saved?{baseRevision:saved.revision}:{})}}
@@ -146,7 +167,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
      </FieldGroup>
     </SettingsSection>
     {observedLatest&&<SettingsSection level={2} variant="plain" title={msg('Saved policy changed')} description={msg('Your editor has kept its original text. Compare the latest saved draft and choose how to continue.')}>
-     <dl className={styles.facts}><dt>{msg('Title')}</dt><dd>{observedLatest.document.candidate.title}</dd><dt>{msg('Artifact version')}</dt><dd>{observedLatest.document.candidate.artifactVersion}</dd></dl><pre className={styles.snapshot}>{observedLatest.document.candidate.narrative}</pre>
+     <Disclosure title={msg('Latest saved Policy text')}><pre className={styles.snapshot}>{observedLatest.document.candidate.narrative}</pre></Disclosure><Button size="small" variant="quiet" onClick={()=>{if(saved)setSavedComparison({request:{before:{kind:'revision',revisionId:saved.document.candidate.revisionId},after:{kind:'revision',revisionId:observedLatest.document.candidate.revisionId}},head:observedLatest.document.candidate.revisionId})}}>{msg('Compare saved revisions')}</Button>{savedComparison&&saved&&<PolicyComparison policyId={saved.document.id} request={savedComparison.request} newerState={savedComparison.head!==observedLatest.document.candidate.revisionId} onDiscuss={chatsReady?request=>void discuss(request):undefined} onClose={()=>setSavedComparison(undefined)}/>}
      <div className={styles.actions}><Button disabled={disabled} onClick={rebase}>{msg('Keep my text on latest revision')}</Button><Button variant="quiet" disabled={disabled} onClick={()=>void reload()}>{msg('Load latest saved draft')}</Button></div>
     </SettingsSection>}
     <SettingsSection level={2} variant="plain" title={msg('Review')} description={document?.workflow.independentReviewRequired?msg('This workflow requires a different reviewer. Independent review is unavailable in this local installation.'):msg('In this local installation, the same authenticated administrator may author, review and publish. Reviews record that actor and the exact saved candidate.')}>
@@ -163,11 +184,13 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
      {document&&document.reviewState!=='approved'&&!reviewHint&&<p className={styles.note}>{msg('Approve the exact saved candidate before publishing.')}</p>}
     </SettingsSection>
    </SettingsStack></PageBody></div>},
-   {value:'source',label:msg('Source'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<><PolicySourceStatus policy={saved} active={tab==='source'} editing={dirty||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setSourceStatusBusy} sourceName={sourceQuery.data?.state?.observations.at(-1)?{bindingId:sourceQuery.data.state.observations.at(-1)!.bindingId,name:sourceQuery.data.state.observations.at(-1)!.name}:undefined} onCommitted={refreshAfterSourceDecision} onCompareLatest={()=>{setTab('draft');void loadLatest()}}/><PolicyConnectedSource policy={saved} query={sourceQuery} editing={dirty||!!observedLatest} disabled={disabled} onPendingChange={setSourceSyncBusy}/></>:<p>{msg('Save a draft before connecting a policy source.')}</p>}</PageBody></div>},
+   {value:'source',label:msg('Source'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<><PolicySourceStatus policy={saved} active={tab==='source'} editing={dirty||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setSourceStatusBusy} sourceName={sourceQuery.data?.state?.observations.at(-1)?{bindingId:sourceQuery.data.state.observations.at(-1)!.bindingId,name:sourceQuery.data.state.observations.at(-1)!.name}:undefined} onCommitted={refreshAfterSourceDecision} onCompareLatest={()=>{setTab('draft');void loadLatest()}}/><PolicyConnectedSource onDiscuss={chatsReady?request=>void discuss(request):undefined} policy={saved} query={sourceQuery} editing={dirty||!!observedLatest} disabled={disabled} onPendingChange={setSourceSyncBusy}/></>:<p>{msg('Save a draft before connecting a policy source.')}</p>}</PageBody></div>},
    {value:'lifecycle',label:msg('Lifecycle'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<PolicyLifecycle policy={saved} active={tab==='lifecycle'} editing={dirty||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setLifecycleBusy}/>:<p>{msg('Publish a version before configuring its lifecycle.')}</p>}</PageBody></div>},
-   {value:'history',label:msg('History'),panel:<div className={styles.panel}><PageBody width="wide">{document?<PolicyHistory document={document} designBlocked={disabled||dirty||!!observedLatest||!!comment} designAction={selection=><><PolicyInterpretationAction recovery={(observed??saved)?.recovery} selection={selection} disabled={disabled||dirty||!!observedLatest||!!comment}/><PolicyInterpretationAction recovery={(observed??saved)?.recovery} artifactKind="graph" selection={selection} disabled={disabled||dirty||!!observedLatest||!!comment}/></>}/>:<p>{msg('Save a draft to start its history.')}</p>}</PageBody></div>}
+   {value:'history',label:msg('History'),panel:<div className={styles.panel}><PageBody width="wide">{document?<PolicyHistory onDiscuss={chatsReady?request=>void discuss(request):undefined} document={document} designBlocked={disabled||dirty||!!observedLatest||!!comment} designAction={selection=><><PolicyInterpretationAction recovery={(observed??saved)?.recovery} selection={selection} disabled={disabled||dirty||!!observedLatest||!!comment}/><PolicyInterpretationAction recovery={(observed??saved)?.recovery} artifactKind="graph" selection={selection} disabled={disabled||dirty||!!observedLatest||!!comment}/></>}/>:<p>{msg('Save a draft to start its history.')}</p>}</PageBody></div>}
   ]}/>
   <footer className={styles.footer}><span role="status">{busy?<LoadingState inline>{msg('Working…')}</LoadingState>:held?msg('Operation recovery required'):dirty?msg('Unsaved changes'):saved?msg('Draft saved'):msg('New policy')}</span><div className={styles.feedback}>{error&&<p role="alert">{systemMessage(error.message)}</p>}{notice&&<p role="status">{notice}</p>}{held?<Button size="small" disabled={busy} onClick={()=>void execute(pending!,true).catch(()=>{})}>{pending?.result?msg('Reload current policy'):msg('Check operation result')}</Button>:error?.code==='revision-conflict'&&!observedLatest?<Button size="small" disabled={busy} onClick={()=>void loadLatest()}>{msg('Compare latest saved draft')}</Button>:null}</div></footer>
+  {comparisonError&&<p role="alert">{msg('The comparison request could not be saved to chat. Review the existing composer before continuing.')}</p>}
+  <Dialog open={!!appendComparison} onOpenChange={open=>{if(!open)setAppendComparison(undefined)}} title={msg('Append comparison request?')} description={msg('Your Assistant composer already contains text. Append an unsent request with these exact comparison references to your existing message.')} footer={<DialogActions><Button onClick={()=>setAppendComparison(undefined)}>{msg('Cancel')}</Button><Button onClick={()=>{if(appendComparison)void discuss(appendComparison,true)}}>{msg('Append request')}</Button></DialogActions>}><pre className={styles.snapshot}>{appendComparison?JSON.stringify(appendComparison,null,2):''}</pre></Dialog>
   <Dialog open={publishOpen} onOpenChange={setPublishOpen} title={msg('Publish policy version?')} description={msg('Confirm publication of this exact saved and approved candidate.')} footer={<DialogActions><Button onClick={()=>setPublishOpen(false)}>{msg('Cancel')}</Button><Button variant="primary" disabled={approveDisabled||document?.reviewState!=='approved'||sourceBlocked} onClick={()=>void action('publish').catch(()=>{})}>{msg('Publish version')}</Button></DialogActions>}>
    <dl className={styles.facts}><dt>{msg('Title')}</dt><dd>{document?.candidate.title}</dd><dt>{msg('Artifact version')}</dt><dd>{document?.candidate.artifactVersion}</dd><dt>{msg('Candidate digest')}</dt><dd className={styles.digest}>{document?.candidate.digest}</dd><dt>{msg('Review')}</dt><dd>{document?.currentReviewId}</dd></dl>
   </Dialog>
