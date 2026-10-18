@@ -251,7 +251,7 @@ func (s *Server) planDeskHome(destination string) (deskHomePlan, error) {
 			var revision strings.Builder
 			for _, item := range entries {
 				name := item.Name()
-				belongs := name == conversation || name == "draft-packs-"+suffix || name == "briefs-"+suffix || name == "pack-tests-"+suffix || name == "source-reviews-"+suffix || name == "ai-memory-"+suffix || strings.HasPrefix(name, attachmentProjectPrefix(conversation))
+				belongs := name == conversation || name == "draft-graphs-"+suffix || name == "draft-packs-"+suffix || name == "briefs-"+suffix || name == "pack-tests-"+suffix || name == "source-reviews-"+suffix || name == "ai-memory-"+suffix || strings.HasPrefix(name, attachmentProjectPrefix(conversation))
 				if !belongs {
 					continue
 				}

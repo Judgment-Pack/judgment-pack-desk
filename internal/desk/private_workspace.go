@@ -24,5 +24,5 @@ func (s *Server) guardPrivateWorkspace(w http.ResponseWriter, r *http.Request) b
 }
 
 func privateWorkspaceStorageFile(name string) bool {
-	return briefFileName.MatchString(name) || packTestsFileName.MatchString(name)
+	return graphDraftFileName.MatchString(name) || briefFileName.MatchString(name) || packTestsFileName.MatchString(name)
 }

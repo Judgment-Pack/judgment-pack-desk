@@ -95,5 +95,22 @@ it('matches the persisted handoff schema for timestamp grammar, UTF-8 limits, ex
  for(const createdAt of ['2026-10-18','October 18, 2026','2026-10-18 00:00:00Z','2026-10-18T0:00:00Z','2026-10-18T00:00:00.1234567890Z','2026-10-18T00:00:00,1Z','2026-02-29T00:00:00Z','2026-04-31T00:00:00Z','2026-10-18T24:00:00Z','2026-10-18T00:60:00Z','2026-10-18T00:00:60Z','2026-10-18T00:00:00+24:00','2026-10-18T00:00:00+00:60'])expect(validPolicyInterpretationProposal({...proposal,createdAt})).toBe(false)
  expect(validPolicyInterpretationProposal({...proposal,id:'x'.repeat(80),openedChatId:'X'.repeat(80),afterTurnId:'é'.repeat(128)})).toBe(true)
  expect(validPolicyInterpretationProposal({...proposal,afterTurnId:''})).toBe(true)
- for(const patch of [{id:'x'.repeat(81)},{id:'has_underscore'},{openedChatId:'x'.repeat(81)},{openedChatId:''},{openedChatId:'has_underscore'},{afterTurnId:'é'.repeat(129)},{afterTurnId:3},{publicationId:null},{afterTurnId:null},{openedChatId:null},{PublicationId:publicationId},{AfterTurnId:'turn'},{OpenedChatId:'chat'}])expect(validPolicyInterpretationProposal({...proposal,...patch})).toBe(false)
+ for(const patch of [{artifactKind:'job'},{artifactKind:null},{ArtifactKind:'graph'},{id:'x'.repeat(81)},{id:'has_underscore'},{openedChatId:'x'.repeat(81)},{openedChatId:''},{openedChatId:'has_underscore'},{afterTurnId:'é'.repeat(129)},{afterTurnId:3},{publicationId:null},{afterTurnId:null},{openedChatId:null},{PublicationId:publicationId},{AfterTurnId:'turn'},{OpenedChatId:'chat'}])expect(validPolicyInterpretationProposal({...proposal,...patch})).toBe(false)
+})
+
+it('keeps graph handoffs distinct from historical pack handoffs and never dispatches on acceptance',async()=>{
+ endpoint();const {store}=await setup(),proposals:PolicyInterpretationProposal[]=[]
+ const tools=policyChatTools({id:policyId,request:()=>undefined,afterTurnId:()=> 'user-turn',retain:async()=>{},retainInterpretation:async p=>{proposals.push(p)}})
+ const graph=tools.find(t=>t.name==='propose_policy_graph_interpretation')!
+ const plan=planningSession({context:{phase:'plan'},prompt:'Plan',tools:[],hostTools:tools,callTool:vi.fn()} as never)
+ expect((plan as {hostTools:{name:string}[]}).hostTools.map(t=>t.name)).toEqual(['read_policy'])
+ await graph.execute({publicationId},new AbortController().signal)
+ expect(proposals[0]).toMatchObject({artifactKind:'graph',publicationId,revisionId})
+ expect(store.getSnapshot().chats).toEqual([])
+ const chat=openPolicyInterpretation(store,source,undefined,'graph')
+ expect(chat.policyInterpretationKind).toBe('graph');expect(chat.composer).toContain('Design a graph interpretation')
+ expect(chat.checkpoint).toBeUndefined();expect(chat.pack).toBeUndefined();expect(chat.policy).toBeUndefined()
+ expect(()=>openPolicyInterpretation(store,source,chat.id,'pack')).toThrow()
+ expect(validPolicyInterpretationProposal({...proposals[0],artifactKind:'pack'})).toBe(true)
+ const historical={...proposals[0]};delete historical.artifactKind;expect(validPolicyInterpretationProposal(historical)).toBe(true)
 })

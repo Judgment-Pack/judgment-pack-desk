@@ -1,3 +1,4 @@
+import {graphDraftsQuery,retainedGraphDrafts} from '../../graphs/drafts'
 import {privateQuery} from '../../data/privateQuery'
 import { useDirtyGuard } from '../../shell/useDirtyGuard'
 import { useConfirmDiscard } from '../../shell/UnsavedChanges'
@@ -24,6 +25,7 @@ function useFolderState(storageKey?: string) {
  const client=useQueryClient(), navigate=useNavigate(), location=useLocation()
  const query=useQuery({...privateQuery,queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false,staleTime:0,refetchOnWindowFocus:true})
  const {packDrafts,deletedDrafts,chats,ready}=useChats()
+ const retainedGraphs=useQuery(graphDraftsQuery())
  const raw=query.data?.document ?? defaultFolders()
  const assignments={...raw.assignments}
  for(const draft of packDrafts) {
@@ -32,7 +34,7 @@ function useFolderState(storageKey?: string) {
   if(draft.finalized && !Object.hasOwn(assignments,draft.finalized.id))assignments[draft.finalized.id]=assignments[draft.id]!
  }
  for(const id of deletedDrafts)delete assignments[id]
- if(ready){const graphDrafts=new Set(chats.flatMap(chat=>(chat.graphDrafts??[]).map(draft=>'graph-draft:'+draft.draftId)));for(const id of Object.keys(assignments))if(id.startsWith('graph-draft:')&&!graphDrafts.has(id))delete assignments[id]}
+ if(ready&&retainedGraphs.data){const graphDrafts=new Set(retainedGraphDrafts(retainedGraphs.data.content,chats).map(draft=>'graph-draft:'+draft.draftId));for(const id of Object.keys(assignments))if(id.startsWith('graph-draft:')&&!graphDrafts.has(id))delete assignments[id]}
  const document={...raw,assignments}
  const [settings,setSettings]=useState(()=>({key:storageKey,value:read(storageKey)})), [message,setMessage]=useState('')
  if(settings.key!==storageKey)setSettings({key:storageKey,value:read(storageKey)})

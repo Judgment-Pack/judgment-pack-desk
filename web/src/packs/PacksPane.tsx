@@ -1,6 +1,6 @@
 import {PageLoading} from '../ui/PageLoading'
 import { QueryStatusNotice } from '../shell/QueryStatusNotice'
-import { graphDraftHref } from '../graphs/drafts'
+import { graphDraftHref,graphDraftsQuery,retainedGraphDrafts } from '../graphs/drafts'
 import {useQuery} from '@tanstack/react-query'
 import {policyListQuery} from '../policies/client'
 import {dialectListQuery} from '../dialects/queries'
@@ -59,6 +59,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const includePacks = kind === 'all' || kind === 'pack', includeGraphs = kind === 'all' || kind === 'graph', includeDialects = kind === 'all' || kind === 'dialect', includePolicies = kind === 'all' || kind === 'policy'
   const dialects = useQuery({...dialectListQuery(), enabled: active && includeDialects, refetchInterval: active && includeDialects ? 5000 : false})
   const dialectDrafts = useQuery({...dialectDraftListQuery(), enabled: active && includeDialects, refetchInterval: active && includeDialects ? 5000 : false})
+  const retainedGraphs=useQuery({...graphDraftsQuery(),enabled:active&&includeGraphs,refetchInterval:active&&includeGraphs?10000:false})
   const policies = useQuery({...policyListQuery(),enabled:active&&includePolicies,refetchInterval:active&&includePolicies?10000:false})
   const listedGraphs = graphInventorySupported ? graphs.data : undefined
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -66,8 +67,8 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const selectAll = useRef<HTMLInputElement>(null)
   const {chats,packDrafts}=useChats()
   const drafts = packDrafts.filter(item=>!item.finalized)
-  const graphDrafts = chats.flatMap(chat => (chat.graphDrafts ?? []).filter(draft => !draft.saved).map(draft => ({chatId: chat.id, ...draft})))
-  const inventoryReady = (!includePacks || isSuccess) && (!includeGraphs || graphInventorySupported && graphs.isSuccess) && (!includeDialects || dialects.isSuccess && dialectDrafts.isSuccess) && (!includePolicies || policies.isSuccess)
+  const graphDrafts=retainedGraphDrafts(retainedGraphs.data?.content,chats).filter(d=>!d.saved).map(d=>({...d,chatId:d.originChatId??''}))
+  const inventoryReady = (!includePacks || isSuccess) && (!includeGraphs || graphInventorySupported && graphs.isSuccess && retainedGraphs.isSuccess) && (!includeDialects || dialects.isSuccess && dialectDrafts.isSuccess) && (!includePolicies || policies.isSuccess)
   const review = useReview()
   const findings = useMemo(() => packFindings(review?.data), [review?.data])
   const folderScope = folders?.query.data && !folders.query.isError ? folders.selected : ALL_PACKS
@@ -172,7 +173,8 @@ export function PacksPane({ active = true }: { active?: boolean }) {
       canScope={Boolean(folders && folderScope !== ALL_PACKS)} everywhere={searchEverywhere} onScope={value=>{resetScroll();setSearchEverywhere(value)}}
       filtered={filtered} reset={clearFilter} selected={selected} clearSelection={()=>setSelectedIds([])} onDelete={requestDelete}/>
     {!searchEverywhere && <SubfolderRows query={filter}/>}
-    {includeGraphs && <QueryStatusNotice id="graphs" label={msg("Graphs unavailable")} error={graphs.error} retrying={graphs.isFetching} onRetry={()=>graphs.refetch()}>{msg("Graphs could not be refreshed. Previously loaded graphs may be out of date.")}</QueryStatusNotice>}
+    {includeGraphs && <><QueryStatusNotice id="graph-drafts" label={msg('Graph drafts unavailable')} error={retainedGraphs.error} onRetry={()=>retainedGraphs.refetch()}/>
+      <QueryStatusNotice id="graphs" label={msg("Graphs unavailable")} error={graphs.error} retrying={graphs.isFetching} onRetry={()=>graphs.refetch()}>{msg("Graphs could not be refreshed. Previously loaded graphs may be out of date.")}</QueryStatusNotice></>}
     {includeGraphs && graphsUnavailable && <div className={styles.message} role="status">{msg('This runtime cannot list saved graphs. Connect a newer runtime to browse all packs and graphs.')} <ButtonLink to="/graphs">{msg('Open graphs')}</ButtonLink></div>}
     {includePacks && <QueryStatusNotice id="packs" label={msg("Packs unavailable")} error={error} retrying={isFetching} onRetry={()=>refetch()}>{msg("Packs could not be refreshed. Previously loaded packs may be out of date.")}</QueryStatusNotice>}
     {includeDialects && <QueryStatusNotice id="library-dialects" label={msg('Dialects unavailable')} error={dialects.error} retrying={dialects.isFetching} onRetry={()=>dialects.refetch()}>{msg('Dialects could not be refreshed. Previously loaded dialects may be out of date.')}</QueryStatusNotice>}

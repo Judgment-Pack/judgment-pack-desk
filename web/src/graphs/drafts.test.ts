@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest'
 import { ChatStore, type ChatPersistence } from '../chat/store'
 import { memoryDraftPersistence } from '../testing/draftPersistence'
-import { validGraphDraft, type GraphDraft } from './drafts'
+import { validGraphDraft,validGraphSnapshot, type GraphDraft } from './drafts'
 const stores:ChatStore[]=[]
 afterEach(()=>stores.forEach(store=>store.dispose()))
 const draft:GraphDraft={draftId:'draft-1',id:'flow',path:'graphs/flow.graph.json',content:'{}',createdAt:'2026-10-09T12:00:00Z'}
@@ -31,4 +31,15 @@ it('keeps graph workspace chats separate from home and pack drafts and restores 
  const restored=new ChatStore('/project',io,memoryDraftPersistence('/project'));stores.push(restored);await restored.load()
  expect(restored.getSnapshot().chats[0]).toMatchObject({graph,composer:'Review this graph',graphDrafts:[draft]})
  expect(restored.getSnapshot().chats[0].pack).toBeUndefined();expect(restored.getSnapshot().packDrafts).toEqual([])
+})
+
+it('refuses nested private provenance in historical conversation snapshots',()=>{
+ expect(validGraphSnapshot(draft)).toBe(true)
+ for(const patch of [{policySources:[]},{PolicySources:[]},{originChatId:'other'},{OriginChatId:'other'}])expect(validGraphSnapshot({...draft,...patch})).toBe(false)
+})
+
+it('keeps nested private graph provenance out of restored chat data',async()=>{
+ const io:ChatPersistence={read:async()=>({project:'/project',sha256:'legacy',content:{version:1,chats:[{id:'chat-one',title:'Unsafe legacy',pinned:false,archived:false,updatedAt:'2026-10-18T12:00:00Z',composer:'',model:'',mode:'draft',view:'chat',graphDrafts:[{...draft,policySources:[]}]}]}}),write:async doc=>({project:'/project',sha256:'saved',content:doc})}
+ const store=new ChatStore('/project',io,memoryDraftPersistence('/project'));stores.push(store);await store.load()
+ expect(store.getSnapshot().chats).toEqual([]);expect(store.getSnapshot().error).toContain('Invalid saved graph drafts')
 })

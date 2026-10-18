@@ -13,6 +13,76 @@ an older Gateway override must still show unsupported state when those controls
 are unavailable. These local, single-administrator slices do not
 claim team governance, portable Policy conformance or execution admission.
 
+## Graph interpretations and independent graph custody (#468)
+
+The Policy page and history now offer **Design graph** beside the existing pack
+action. Policy chat can propose `propose_policy_graph_interpretation`. Both paths
+review the same exact saved revision or selected publication, recheck current
+access, and open an ordinary authoring chat with an **unsent** graph request.
+Opening the chat calls no model and writes no executable project file. Plan
+filters the proposal tool and blocks accepting its handoff. Ordinary chat keeps
+the shared execution, managed context, Ask me and allowance controls.
+
+Private handoff records may specify `artifactKind: "pack" | "graph"`; omitted
+kind remains the historical pack handoff. Unknown kinds and optional null values
+are refused. Exact Policy sources remain private reference data, never governing
+adoption, complete coverage, execution eligibility, or Graph Job authority.
+
+Graph drafts now have an independent owner-only workspace record behind
+`GET`/`PUT /api/draft-graphs`. The document has version 1, `drafts` and `deleted`
+arrays; each draft retains graph proposal bytes, creation time, original chat ID,
+and immutable exact Policy sources when present. Identity is the pair
+`(originChatId, draftId)`, so equal draft IDs in different chats remain distinct.
+Writes use the shared bounded storage lock, exact `If-Match`, current-session
+admission, and read-back checks. Reads are read-only and use `privateQuery`.
+Library/reopen and saved graph helper conversations use independent retained
+records. Current saved graph helpers resolve sources against the exact graph
+bytes as well as the declared ID/path; older source associations remain history.
+They preserve historical chats with incompatible source sets and refuse an
+ambiguous or over-capacity basis before changing a conversation. Finalization
+preserves private source history; source narrative is not
+automatically copied into graph JSON or another project companion.
+
+A reviewed save persists `writePending: true` on its exact private candidate
+before dispatching the public graph write. It records a save intent, not proof
+that dispatch or commit occurred. A missing acknowledgement prevents dispatch.
+Pending candidates and provenance cannot be edited or deleted. If the public
+write succeeds but private finalization fails, the UI states the known public
+result separately and offers **Finish saving history**. Reload retains an honest
+unresolved state. Reconciliation checks exact graph bytes and the current
+ID/path/description registration, then writes only private metadata; an already
+completed private result is accepted without replay. Current saved Sources may
+show an exactly matching pending association with its pending-history notice.
+A proven precommit refusal permits an explicit revised copy while preserving the
+attempted candidate. Mismatches and uncertain responses never imply nondispatch,
+and no recovery action automatically replays the public graph write.
+
+Legacy chat-only drafts remain visible. The next authenticated conversation write
+retains both previous and incoming graph drafts before committing chat changes,
+including deletion. The latest incoming edit wins for an identity being migrated
+for the first time; a deleted chat instead retains its previous snapshot.
+Conversation graph snapshots carry plain proposals only: nested Policy sources
+and origin metadata are rejected, and their owning chat's top-level source list
+is the sole provenance boundary. A retention failure leaves the conversation
+intact. A later
+conversation-write failure may leave an extra safely retained draft; these are
+two writes, not a claimed atomic transaction. Once retained, chat graph snapshots
+are related-work history and never overwrite or block independent graph edits.
+Old clients that edit only those snapshots must reopen the current graph editor
+to edit the independent draft. Explicit draft deletion retains scoped tombstones.
+
+Graph records participate in private backup, restore and project moves. Launch
+credentials and revoked sessions cannot read, write or transfer the store.
+Restore validates newly introduced Policy sources through the existing exact
+Policy ledger boundary. This private Desk schema is not portable interchange:
+older Desk builds may reject the new backup record or graph handoff metadata;
+downgrading is not a conversion or permission to discard retained history.
+
+Verification covers scoped identity, exact old publications, failed migration,
+chat deletion/reopen, stale CAS, immutable provenance, untrusted restore, Plan,
+unsent acceptance and shared API/subscription context. Release/review tracking is
+[Desk #468](https://github.com/Judgment-Pack/judgment-pack-desk/issues/468).
+
 ## Pack interpretations from retained Policy sources (#464)
 
 The Policy editor and a selected history revision/publication offer **Design

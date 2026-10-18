@@ -1,7 +1,7 @@
 import { DefinitionNavigation } from '../definitions/DefinitionNavigation'
 import { DefinitionBrief } from '../briefs/DefinitionBrief'
 import { DefinitionHistory } from '../definitions/DefinitionHistory'
-import { GraphSources } from '../graphs/GraphSources'
+import { SavedGraphSources } from '../graphs/SavedGraphSources'
 import { Disclosure } from '../ui/Disclosure'
 import { SearchInput } from '../ui/SearchInput'
 import { Menu, MenuChoice, OptionsMenu } from '../ui/Menu'
@@ -128,7 +128,7 @@ export function GraphView() {
       {graphId && overview && <GraphOverview document={served.data?.document} description={served.data?.meta.description} loading={status !== 'ready' || (graphDocumentSupported && served.isPending)} unavailable={!graphDocumentSupported && status === 'ready' ? msg('This runtime cannot read graph definitions.') : served.error ? msg('The graph could not be loaded. Try again when the runtime is connected.') : undefined} logicHref={withChat(`/graphs/${encodeURIComponent(graphId)}`)}/> }
       {graphId && !overview && !tests && !rehearsal && !review && !usage && !sources && !brief && !history && <FlowExplorer key={graphId} graphId={graphId} initialPlan={plan} />}
       {graphId && review && (served.error ? <ErrorBox title={msg('Could not read graph')} error={served.error}/> : !served.data ? <Loading what={msg('graph')}/> : <GraphReview owner={graphId} title={graphId} content={served.data.raw} tests={data ? msg('Last observed result: {{status}}', {status:data.status}) : undefined}/>)}
-      {graphId && sources && (served.error ? <ErrorBox title={msg('Could not read graph')} error={served.error}/> : served.isPending ? <Loading what={msg('graph')}/> : <GraphSources document={served.data?.document}/>)}
+      {graphId && sources && (served.error ? <ErrorBox title={msg('Could not read graph')} error={served.error}/> : served.isPending ? <Loading what={msg('graph')}/> : <SavedGraphSources id={graphId} path={served.data?.meta.path} content={served.data?.raw} document={served.data?.document}/>)}
       {graphId && brief && (served.error ? <ErrorBox title={msg('Could not read graph')} error={served.error}/> : served.isPending ? <Loading what={msg('graph')}/> : served.data && <DefinitionBrief kind="graph" owner={graphId} title={graphId} content={served.data.raw}/>)}
       {graphId && history && <DefinitionHistory kind="graph" owner={graphId} documentId={served.data?.document?.id} observation={data}/>}
       {graphId && usage && <DefinitionUsage kind="graph"/>}

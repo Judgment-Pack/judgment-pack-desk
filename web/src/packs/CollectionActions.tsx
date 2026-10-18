@@ -1,3 +1,5 @@
+import {deleteGraphDrafts,GRAPH_DRAFTS_KEY} from '../graphs/drafts'
+import {useQueryClient} from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { Menu as DropdownMenu } from '../ui/Menu'
 import { Link } from 'react-router-dom'
@@ -88,7 +90,7 @@ export function ItemOptions({item, onDelete}: {item: BrowserItem; onDelete: (ite
 
 /** Remove only draft artifacts. Project files and their references have another lifecycle. */
 export function DeleteDraftsDialog({items, opener:trigger, onClose, onDeleted}: {items: BrowserItem[]; opener?:HTMLElement; onClose: () => void; onDeleted?: () => void}) {
-  const {store} = useChats()
+  const {store} = useChats(),queries=useQueryClient()
   const [busy,setBusy] = useState(false), [error,setError] = useState(''), [applied,setApplied] = useState(false)
   const opener = useRef(trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null))
   const remove = async () => {
@@ -102,7 +104,10 @@ export function DeleteDraftsDialog({items, opener:trigger, onClose, onDeleted}: 
       })}
       await settle()
       if (!applied) {
-        const removed = store.removeDraftItems(items.map(item => item.kind === 'pack'
+        const graphs=items.filter(item=>item.kind==='graph')
+        if(graphs.length){await deleteGraphDrafts(graphs.map(item=>({originChatId:item.chatId!,draftId:item.draftId!})));await queries.invalidateQueries({queryKey:GRAPH_DRAFTS_KEY})}
+        const liveItems=items.filter(item=>item.kind==='pack'||store.getSnapshot().chats.some(chat=>chat.id===item.chatId&&chat.graphDrafts?.some(d=>d.draftId===item.draftId&&!d.saved)))
+        const removed = !liveItems.length||store.removeDraftItems(liveItems.map(item => item.kind === 'pack'
           ? {kind:'pack' as const,id:item.id}
           : {kind:'graph' as const,chatId:item.chatId!,id:item.draftId!}))
         if (!removed) throw new Error(msg('The drafts changed or a conversation is running. Close this dialog and review your selection.'))

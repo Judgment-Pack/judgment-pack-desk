@@ -4725,7 +4725,6 @@
   "This folder no longer exists. Choose another folder.": "이 폴더는 더 이상 존재하지 않습니다. 다른 폴더를 선택하세요.",
   "This folder was moved here": "이 폴더는 여기로 옮겨졌습니다",
   "This graph declares no pack nodes.": "이 그래프에는 팩 노드가 선언되지 않았습니다.",
-  "This graph draft is no longer available in the conversation.": "이 그래프 초안은 대화에서 더 이상 사용할 수 없습니다.",
   "This graph is not declared in the project.": "이 그래프는 프로젝트에 선언되지 않았습니다.",
   "This group holds no conditions. <0/> writes one.": "이 그룹에는 조건이 없습니다. <0/>로 조건을 추가하세요.",
   "This holds only as far as the agent’s client really withholds those tools: the server runs as your user, and Desk does not host it.": "이는 에이전트의 클라이언트가 그 도구들을 실제로 주지 않는 한에서만 성립합니다. 서버는 사용자 계정으로 실행되며, Desk가 호스팅하지 않습니다.",

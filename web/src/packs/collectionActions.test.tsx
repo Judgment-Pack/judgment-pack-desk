@@ -1,3 +1,4 @@
+import {deskFetch} from '../files/client'
 import { SelectionActions, type BrowserItem } from './CollectionActions'
 import { useState, useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -11,10 +12,13 @@ import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { McpContext } from '../mcp/McpProvider'
 import { PacksPane } from './PacksPane'
 
+vi.mock('../files/client',async original=>({...await original(),deskFetch:vi.fn()}))
 const fixture=vi.hoisted(()=>({store:null as ChatStore|null}))
 vi.mock('../chat/ChatProvider',()=>({useChats:()=>({...useSyncExternalStore(fixture.store!.subscribe,fixture.store!.getSnapshot),store:fixture.store})}))
 afterEach(()=>{cleanup();fixture.store?.dispose();fixture.store=null;sessionStorage.clear()})
 async function setup(){
+ let graphRecord={version:1 as const,drafts:[],deleted:[]} as import('../graphs/drafts').GraphDraftDocument
+ vi.mocked(deskFetch).mockImplementation(async(url,init)=>{if(String(url)==='/api/draft-graphs'){if(init?.body)graphRecord=JSON.parse(init.body as string);return Response.json({project:'/test',sha256:'graph',content:graphRecord})}return Response.json({items:[]})})
  const common={title:'Conversation',pinned:false,archived:false,updatedAt:'2026-10-10T12:00:00Z',composer:'',model:'',mode:'draft' as const,view:'draft' as const}
  let chats:Chat[]=[
   {...common,id:'pack-chat',checkpoint:{sources:[],state:{...INITIAL_STATE,candidates:[{document:{title:'Pending pack'},text:'{"title":"Pending pack"}',digest:'test',revision:1,producedBy:'conversation'}]}}},

@@ -1,3 +1,6 @@
+import policyStyles from '../policies/PolicyPage.module.css'
+import {PolicySourceIdentity} from '../policies/PolicySourceIdentity'
+import type {PolicyAuthoringSource} from '../policies/authoringSource'
 import {LoadingState} from '../ui/LoadingState'
 import { useState } from 'react'
 import type { GraphDocument } from '../mcp/types'
@@ -14,7 +17,7 @@ import styles from '../definitions/DefinitionWorkspace.module.css'
 const text = (value: unknown): string => typeof value === 'string' ? value : ''
 
 /** Sources belong to packs; this view never copies them into the graph. */
-export function GraphSources({document}: {document?: GraphDocument}) {
+export function GraphSources({document,policySources=[]}: {document?: GraphDocument;policySources?:PolicyAuthoringSource[]}) {
   const [search, setSearch] = useState('')
   const readable = isRecord(document?.nodes)
   const nodes = readable ? Object.entries(document.nodes ?? {}) : []
@@ -24,6 +27,7 @@ export function GraphSources({document}: {document?: GraphDocument}) {
   }
   const incomplete = nodes.some(([, node]) => !isRecord(node) || typeof node.pack !== 'string')
   return <section className={styles.reading} aria-label={msg('Graph sources')}>
+    {policySources.map(source=><Disclosure key={source.revisionId+':'+(source.publicationId??'')} title={source.title}><PolicySourceIdentity source={source}/><pre className={policyStyles.snapshot}>{source.narrative}</pre></Disclosure>)}
     <div className={styles.toolbar}><SearchInput type="search" aria-label={msg('Search graph sources')} placeholder={msg('Search sources…')} value={search} onChange={event => setSearch(event.target.value)}/></div>
     <p className={styles.muted}>{msg('References declared by the current saved packs. Edit them in their owning pack. Execution receipts belong to the run history.')}</p>
     {incomplete && <p role="status">{msg('Some graph steps could not be read. Their source references are unavailable.')}</p>}

@@ -645,6 +645,8 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/briefs", s.handlePackTests)
 	s.mux.HandleFunc("GET /api/pack-tests", s.handlePackTests)
 	s.mux.HandleFunc("PUT /api/pack-tests", s.handlePackTests)
+	s.mux.HandleFunc("GET /api/draft-graphs", s.handleGraphDrafts)
+	s.mux.HandleFunc("PUT /api/draft-graphs", s.handleGraphDrafts)
 	s.mux.HandleFunc("GET /api/draft-packs", s.handleDraftPacks)
 	s.mux.HandleFunc("PUT /api/draft-packs", s.handleDraftPacks)
 	s.mux.HandleFunc("GET /api/project-location", s.handleProjectLocation)

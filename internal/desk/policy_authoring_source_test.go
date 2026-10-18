@@ -120,13 +120,13 @@ func policyForgedBackup(t *testing.T, raw []byte) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if conversationFileName.MatchString(file.Name) || draftPackFileName.MatchString(file.Name) {
+		if conversationFileName.MatchString(file.Name) || draftPackFileName.MatchString(file.Name) || graphDraftFileName.MatchString(file.Name) {
 			var body map[string]any
 			if json.Unmarshal(data, &body) != nil {
 				t.Fatal("invalid fixture history")
 			}
 			key := "chats"
-			if draftPackFileName.MatchString(file.Name) {
+			if draftPackFileName.MatchString(file.Name) || graphDraftFileName.MatchString(file.Name) {
 				key = "drafts"
 			}
 			body[key].([]any)[0].(map[string]any)["policySources"].([]any)[0].(map[string]any)["narrative"] = "Forged retained Policy narrative."

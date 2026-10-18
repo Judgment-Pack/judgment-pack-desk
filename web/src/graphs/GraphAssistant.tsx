@@ -1,3 +1,4 @@
+import {samePolicySources,validPolicySources,type PolicyAuthoringSource} from '../policies/authoringSource'
 import {ChatPlaceholder} from '../chat/ChatPlaceholder'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { msg } from '../i18n'
@@ -13,8 +14,8 @@ import type { GraphProposal } from './author'
 import styles from './GraphWorkspace.module.css'
 
 /** Same project conversations and ChatPanel as packs; never bind a graph as a pack. */
-export function GraphAssistant({ proposal, workspace, chatId, onChat, onApply, busy, selection, openDraftId }: {
-  proposal: GraphProposal; workspace: string; openDraftId?: string; chatId?: string; onChat: (id: string) => void
+export function GraphAssistant({ proposal, workspace, chatId, onChat, onApply, busy, selection, openDraftId,policySources=[] }: {
+  proposal: GraphProposal; workspace: string;policySources?:PolicyAuthoringSource[]; openDraftId?: string; chatId?: string; onChat: (id: string) => void
   onApply?: (next: Partial<GraphProposal>) => void; busy: boolean; selection: string
 }) {
   const {store, ready, chats, drafts, bindings, error} = useChats()
@@ -23,24 +24,29 @@ export function GraphAssistant({ proposal, workspace, chatId, onChat, onApply, b
   // Model reference material, not UI copy or a source of expected results.
   const testContext = useMemo(() => tests ? JSON.stringify({observedRun: tests, note: 'Cached observations may be historical. Compare their graph and pack digests before using them. Observations do not establish expected results.'}) : undefined, [tests])
   const available = [...chats, ...drafts]
-  const chat = available.find(item => item.id === chatId && !item.pack && !item.draftId && (!item.graph || item.graph.workspace === workspace))
-    ?? available.filter(item => item.graph?.workspace === workspace && !item.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+  const basisValid=validPolicySources(policySources)
+  const compatible=(item:typeof available[number])=>!item.policySources?.length||samePolicySources(item.policySources,policySources)
+  const chat = available.find(item => compatible(item)&&item.id === chatId && !item.pack && !item.draftId && (!item.graph || (item.graph.workspace === workspace||workspace.endsWith(':'+item.graph.workspace))))
+    ?? available.filter(item => compatible(item)&&item.graph?.workspace === workspace && !item.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
   const creating = useRef(false)
   useEffect(() => {
-    if (!store || !ready) return
+    if (!store || !ready || !basisValid) return
     if (chat) {
       creating.current = false
       // A graph draft may originate in an unscoped home conversation. Bind it
       // before another turn so New chat and candidate persistence stay graph-scoped.
-      if (!chat.graph) store.update(chat.id, {graph: {id: proposal.id, path: proposal.path, workspace}})
+      if (!chat.graph||chat.graph.workspace!==workspace||!samePolicySources(policySources,chat.policySources??[])) store.update(chat.id, {graph: {id: proposal.id, path: proposal.path, workspace},...(policySources.length?{policySources}:{})})
       store.activate(chat.id); onChat(chat.id)
     }
     else if (slot.open && store.canCreate && !creating.current) {
       creating.current = true
-      const next = store.startChat(undefined, 'draft', false, undefined, {id: proposal.id, path: proposal.path, workspace})
+      // Preserve incompatible historical chats and their unsent composers.
+      const historical=available.some(item=>item.graph?.workspace===workspace&&!compatible(item))
+      const next = historical ? store.create(undefined,'draft') : store.startChat(undefined, 'draft', false, undefined, {id: proposal.id, path: proposal.path, workspace})
+      if(historical||policySources.length)store.update(next.id,{...(historical?{graph:{id:proposal.id,path:proposal.path,workspace}}:{}),...(policySources.length?{policySources}:{})})
       onChat(next.id)
     }
-  }, [store, ready, chat?.id, slot.open, proposal.id, proposal.path, workspace, onChat])
+  }, [store, ready, chat?.id, slot.open, proposal.id, proposal.path, workspace, onChat,policySources,basisValid])
   const [baseline, setBaseline] = useState<{chatId: string; proposal: string; content: string; drafts: string[]}>()
   const [accepted, setAccepted] = useState('')
   const state = chat ? bindings.get(chat.id)?.state : undefined
@@ -51,6 +57,7 @@ export function GraphAssistant({ proposal, workspace, chatId, onChat, onApply, b
     && (!proposal.baseSha256 || candidate.id === proposal.id && candidate.path === proposal.path)
   const document = useMemo(() => {try {return candidate ? JSON.parse(candidate.content) : undefined} catch {return undefined}}, [candidate?.content])
   const diff = useMemo(() => document === undefined ? null : diffProposal(baseline?.content, document), [baseline?.content, document])
+  if(!basisValid)return <p role="alert">{msg('Review the graph Policy sources before opening an assistant. The exact basis must contain at most eight distinct, nonconflicting sources.')}</p>
   if (!chat) return <ChatPlaceholder loading={!ready} error={!!error}>{msg('Open Assistant to discuss this graph.')}</ChatPlaceholder>
   const actions = onApply && candidate && state?.status !== 'running' ? <Disclosure title={msg('Review proposed changes')}>
     {diff && <ProposalDiffView diff={diff} onBaseline={unchanged}/>}
