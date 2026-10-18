@@ -499,3 +499,110 @@ func TestPolicyCoverageConcurrentSaveAndWithdrawnHistoricalReview(t *testing.T) 
 		})
 	}
 }
+
+func TestPolicyCoverageSharedMaterialArchiveAndRestore(t *testing.T) {
+	for _, realRuntime := range []bool{false, true} {
+		name := "controlled"
+		if realRuntime {
+			name = "real-runtime"
+		}
+		t.Run(name, func(t *testing.T) {
+			bin := os.Getenv("JPACK_POLICY_TEST_BIN")
+			if realRuntime && bin == "" {
+				t.Skip("set JPACK_POLICY_TEST_BIN to exercise shared material with experimental Policy prototype 0.0.2 tools")
+			}
+			for _, status := range []string{"manual", "implemented"} {
+				t.Run(status, func(t *testing.T) {
+					s, token := policyTestServer(t)
+					edit := policyEditRequest{OperationID: policyOp(t), Title: "Exact Pack bytes as published narrative", Narrative: reviewPack, ArtifactVersion: "1.0.0"}
+					if status == "implemented" {
+						edit.Import = &policyImport{Name: "original.txt", MediaType: "text/plain", Data: []byte(reviewPack)}
+					}
+					p := policyMutation(t, policyCall(s, token, "POST", "/api/policies", edit)).Policy
+					p = policyApprove(t, s, token, p)
+					p = policyMutation(t, policyCall(s, token, "POST", "/api/policies/"+p.Document.ID+"/publish", policyPublishBody(t, p))).Policy
+					pack := coveragePublishFixture(t, s, []byte(reviewPack))
+					if realRuntime {
+						s.cfg.JpackBin = bin
+					}
+					service, actor := coverageServiceFixture(s, token)
+					if !realRuntime {
+						service.checkCoverage = coverageAcceptedFixture
+					}
+					q := coverageSaveBody(t, p, pack)
+					if status == "manual" {
+						q.Statement = &policyCoverageStatement{Status: "manual", Handoff: "An administrator handles the exact whole published narrative."}
+					} else {
+						q.Statement.Basis = reviewPack
+					}
+					saved, err := service.coverageCommand(context.Background(), p.Document.ID, actor, q)
+					if err != nil {
+						t.Fatal(err)
+					}
+					approved, err := service.coverageCommand(context.Background(), p.Document.ID, actor, coverageReviewBody(t, *saved.Coverage))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if approved.Coverage.Document.ReviewState != "reviewed" {
+						t.Fatal("shared-material review was not committed")
+					}
+					checkRef := approved.Coverage.Document.Reviews[0].Check
+					raw, err := s.artifactRepository().Get(context.Background(), *checkRef)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var checked policyCoverageRetainedCheck
+					if decodeDataJSON(raw, &checked) != nil || len(checked.Materials) != 2 {
+						t.Fatalf("expected two unique materials for shared roles: %s", raw)
+					}
+					cut := archiveTestCut(t, s)
+					if cut.Counts.Coverages != 1 || cut.Counts.CoverageReviews != 1 {
+						t.Fatal(cut.Counts)
+					}
+					archive := recoveryArchiveBytes(t, s, token)
+					destination := filepath.Join(t.TempDir(), "restored-shared-material")
+					recoveryRestore(t, s, token, archive, recoveryBody(t, recoveryInspect(t, s, token, archive, destination)))
+					fresh, newToken := recoveryOpen(t, s, destination)
+					restored := coverageReplyOf(t, fresh, newToken, p.Document.ID, approved.Coverage.Document.ID)
+					if restored.Document.Candidate.Source.Narrative != reviewPack || restored.Document.Candidate.Pack.Document.Content != pack.Content || restored.Recovery == nil || !restored.Recovery.FreshReviewRequired || restored.Document.ReviewState != "unreviewed" || len(restored.Document.Reviews) != 1 || restored.Availability.PackPublication != "missing" {
+						t.Fatal("shared bytes or historical review boundary changed", restored)
+					}
+					retained, err := fresh.artifactRepository().Get(context.Background(), pack.Content)
+					if err != nil || !bytes.Equal(retained, []byte(reviewPack)) {
+						t.Fatal("shared retained Pack/narrative missing", err)
+					}
+					// A second complete capture verifies restored receipts and shared roles too.
+					_ = recoveryArchiveBytes(t, fresh, newToken)
+					// Removing the shared blob from the check manifest must still refuse even
+					// though the same bytes are retained elsewhere in the project.
+					bad := checked
+					bad.Materials = nil
+					for _, ref := range checked.Materials {
+						if ref != pack.Content {
+							bad.Materials = append(bad.Materials, ref)
+						}
+					}
+					encoded, _ := json.Marshal(bad)
+					badRef, err := s.artifactRepository().Put(context.Background(), encoded)
+					if err != nil {
+						t.Fatal(err)
+					}
+					review := approved.Coverage.Document.Reviews[0]
+					review.Check = &badRef
+					var material policyCoverageMaterial
+					err = service.repository.View(context.Background(), func(l policyLedger) error {
+						var err error
+						material, err = service.coverageMaterial(context.Background(), l.Policies[p.Document.ID], coverageHead(l.Coverages[approved.Coverage.Document.ID]))
+						return err
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := archivedCoverageCheck(context.Background(), s.artifactRepository(), review, material); err == nil {
+						t.Fatal("archive accepted a missing required shared material")
+					}
+				})
+			}
+		})
+	}
+}

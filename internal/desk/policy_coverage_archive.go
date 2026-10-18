@@ -17,7 +17,7 @@ func archivedCoverageCheck(ctx context.Context, artifacts retainedArtifactReposi
 		return nil, policyArchiveInvalid()
 	}
 	var retained policyCoverageRetainedCheck
-	if rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &retained) != nil || retained.SchemaVersion != 1 || !coverageCheckAccepted(retained.Check) || retained.Check.CandidateDigest != review.CandidateDigest || retained.Check.PolicyRevision != review.PolicyRevision || !retainedArtifactDigest.MatchString(retained.Check.CoverageRevision) || !retained.Document.valid() || len(retained.Materials) < 3 || len(retained.Materials) > 16 {
+	if rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &retained) != nil || retained.SchemaVersion != 1 || !coverageCheckAccepted(retained.Check) || retained.Check.CandidateDigest != review.CandidateDigest || retained.Check.PolicyRevision != review.PolicyRevision || !retainedArtifactDigest.MatchString(retained.Check.CoverageRevision) || !retained.Document.valid() || len(retained.Materials) > 16 {
 		return nil, policyArchiveInvalid()
 	}
 	var report policyCoverageRuntimeReport
@@ -32,7 +32,7 @@ func archivedCoverageCheck(ctx context.Context, artifacts retainedArtifactReposi
 	supplied := map[string][]byte{}
 	for _, ref := range retained.Materials {
 		data, err := artifacts.Get(ctx, ref)
-		if err != nil || supplied[ref.SHA256] != nil {
+		if _, duplicate := supplied[ref.SHA256]; err != nil || duplicate {
 			return nil, policyArchiveInvalid()
 		}
 		supplied[ref.SHA256] = data
@@ -46,7 +46,7 @@ func archivedCoverageCheck(ctx context.Context, artifacts retainedArtifactReposi
 		required = append(required, material.Original)
 	}
 	for _, data := range required {
-		if !bytes.Equal(supplied[digestOf(data)], data) {
+		if retained, present := supplied[digestOf(data)]; !present || !bytes.Equal(retained, data) {
 			return nil, policyArchiveInvalid()
 		}
 	}
@@ -80,15 +80,19 @@ func archivedCoverageCheck(ctx context.Context, artifacts retainedArtifactReposi
 	if !sameDialectJSON(expectedRow, governing.Coverage[0]) {
 		return nil, policyArchiveInvalid()
 	}
+	// Several required roles may share one retained digest. Check role presence
+	// and exact bytes rather than a minimum number of unique material blobs.
 	var policyRaw []byte
+	policyPresent := false
 	for key, data := range supplied {
 		if "sha256:"+key == governing.Policy.Content.BytesDigest {
 			policyRaw = data
+			policyPresent = true
 			break
 		}
 	}
 	expectedPolicy, _ := json.Marshal(coverageRuntimePolicy(material))
-	if len(policyRaw) != governing.Policy.Content.ByteLength || governing.Policy.Content.MediaType != "application/json" || !sameDialectJSON(expectedPolicy, policyRaw) {
+	if !policyPresent || len(policyRaw) != governing.Policy.Content.ByteLength || governing.Policy.Content.MediaType != "application/json" || !sameDialectJSON(expectedPolicy, policyRaw) {
 		return nil, policyArchiveInvalid()
 	}
 	return refs, nil
