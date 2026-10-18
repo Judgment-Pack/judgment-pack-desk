@@ -143,21 +143,27 @@ type policyPublishRequest struct {
 }
 
 type policyOperationReceipt struct {
-	OperationID     string      `json:"operationId"`
-	Kind            string      `json:"kind"`
-	PolicyID        string      `json:"policyId"`
-	RequestDigest   string      `json:"requestDigest"`
-	At              string      `json:"at"`
-	Actor           policyActor `json:"actor"`
-	Revision        string      `json:"revision"`
-	CandidateDigest string      `json:"candidateDigest"`
-	ReviewID        string      `json:"reviewId,omitempty"`
-	PublicationID   string      `json:"publicationId,omitempty"`
+	LifecycleRevision string      `json:"lifecycleRevision,omitempty"`
+	LifecycleEventID  string      `json:"lifecycleEventId,omitempty"`
+	OperationID       string      `json:"operationId"`
+	Kind              string      `json:"kind"`
+	PolicyID          string      `json:"policyId"`
+	RequestDigest     string      `json:"requestDigest"`
+	At                string      `json:"at"`
+	Actor             policyActor `json:"actor"`
+	Revision          string      `json:"revision"`
+	CandidateDigest   string      `json:"candidateDigest"`
+	ReviewID          string      `json:"reviewId,omitempty"`
+	PublicationID     string      `json:"publicationId,omitempty"`
 }
 
 type policyMutationReply struct {
-	SourceSync *policySourceSyncReply `json:"sourceSync,omitempty"`
-	Delivery   string                 `json:"delivery"`
-	Receipt    policyOperationReceipt `json:"receipt"`
-	Policy     policyReply            `json:"policy"`
+	OutcomeKind    string                 `json:"outcomeKind,omitempty"`
+	PolicyID       string                 `json:"policyId,omitempty"`
+	PolicyRevision string                 `json:"policyRevision,omitempty"`
+	Lifecycle      *policyLifecycleReply  `json:"lifecycle,omitempty"`
+	SourceSync     *policySourceSyncReply `json:"sourceSync,omitempty"`
+	Delivery       string                 `json:"delivery"`
+	Receipt        policyOperationReceipt `json:"receipt"`
+	Policy         policyReply            `json:"policy,omitzero"`
 }

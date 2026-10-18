@@ -189,7 +189,8 @@ Limits are 500 UTF-8 bytes for titles, 128 KiB for narrative, 256 bytes for vers
 text, 8 KiB for review comments, 256 policies, 512 entries per per-policy history
 kind, 4,096 retained operation receipts and a 16 MiB metadata ledger. No API removes
 immutable history or receipt identities. This slice has no policy deletion,
-archive, effective-date scheduling or withdrawal endpoint.
+archive endpoint. Local effective-date scheduling and release withdrawal are
+described below; they do not enforce execution admission.
 
 Policy metadata and referenced blobs belong to the project. A project move/backup
 must retain `.desk-private/policies` and `.desk-private/retained-artifacts` together.
@@ -263,6 +264,73 @@ selection. Browser/editor verification exercised the built SPA and real Runtime 
 These controls manage local policy content. They do not create a pack, change a job or authorize execution. The remaining accepted lifecycle is tracked in [Desk #455](https://github.com/Judgment-Pack/judgment-pack-desk/issues/455).
 
 ## Inter-repository dependencies and limits
+
+### Local publication lifecycle (#469)
+
+[Desk #469](https://github.com/Judgment-Pack/judgment-pack-desk/issues/469) adds
+`GET`/`POST /api/policies/{id}/lifecycle` for the existing authenticated local
+administrator. The **Lifecycle** tab explicitly activates a selected immutable
+publication now or at a future UTC whole-second time, optionally with a later
+expiry. A release-scoped withdrawal requires a rationale and is terminal in this
+slice. Optional supersession names one exact older publication of the same policy;
+it does not withdraw that release, change eligibility or upgrade a job.
+
+Publication remains separate from effectiveness. Old and new publications with no
+activation decision remain **Published**, with **No activation recorded**. No
+historical activation event is inferred from publication time. An explicit
+activation records the current administrator, server decision time, immutable
+publication/candidate identity, effective time, optional expiry and supersession.
+Future activation stays Published until its effective time. Effective, expired,
+superseded and withdrawn views are observations calculated at the server's
+reported `observedAt`, not invented background transition events. Withdrawing a
+successor before its scheduled activation cancels its prospective supersession;
+withdrawal after activation does not reactivate the older release.
+
+The optional `lifecycles` map extends the unreleased private v2 ledger with a
+separately versioned and ordered stream per policy. It leaves existing private
+candidate bytes, local IDs, revision/review/publication sequences, publication
+content and old operation-result blobs unchanged. Lifecycle CAS is separate from
+the draft's revision, so a lifecycle refresh cannot silently rebase an editor.
+Every action checks both the current saved policy revision and lifecycle revision
+and commits the event and retained body-bound receipt in the same repository
+transaction. Lifecycle commands have an explicit `outcomeKind: "lifecycle"`
+result with policy ID/revision, lifecycle snapshot and receipt, preserving old
+generic Policy outcomes unchanged. The receipt binds the targeted publication's
+candidate digest, even when another draft is current. Activation verifies that
+target's exact retained bytes. Withdrawal needs the validated release ledger and
+current authorization; unavailable or corrupt target/draft blobs do not block
+recording withdrawal and no candidate content is fabricated in its result.
+A recovered receipt returns its original observation; clients then read current
+lifecycle state. A separate draft refresh may fail without trapping a known
+lifecycle commit in recovery. Missing recovery is unresolved, not permission to
+replay. Failed receipt retention exposes no lifecycle event. The existing Policy
+page still needs readable draft content when first opened; the lifecycle API can
+record withdrawal independently of that page when content is unavailable.
+
+Both API routes require the current session and Origin guard. Actors and
+`admin-configured` provenance come from the service. No model tool or automatic
+publication path is added. UI controls share dirty/busy guards, exact confirmation
+bases, pending-operation protection and read-only recovery. Source and lifecycle
+pending journals share the frozen active Desk and current session boundary, using
+a session digest rather than a credential in the key. A different Desk or sign-in
+cannot inherit the pending operation of a copied policy. Unscoped development
+journals are not automatically imported; authoritative operation receipts remain
+retained. The stream is bounded
+to 512 events per policy, sharing existing receipt/ledger limits; capacity refuses
+new decisions without erasing historical identities. Older strict Desk builds may
+refuse the additive ledger field. Project moves must retain the complete private
+ledger and referenced blobs together; chat-only backups are not Policy backups.
+
+These records establish local lifecycle history only. They do not supply trusted
+release registration, dependency impact completeness, current Runner/action
+admission or protection against restoring a pre-withdrawal authority backup. Those
+remain prerequisites to an enforcement claim. External source lifecycle and
+admin-reviewed status mapping are also separate: missing provider capability may
+use an explicitly configured fallback, initially Draft; fetch/permission failures
+never activate it. Source-provided status and administrator-configured decisions
+must retain distinct provenance and cannot manufacture verified sign-off.
+
+### Remaining dependencies
 
 - Spec owns eventual portable Policy/adoption semantics, reference and canonical
   profiles. Private local draft records are not a standardized Policy export.

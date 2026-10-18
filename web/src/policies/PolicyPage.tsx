@@ -17,6 +17,7 @@ import {useConfirmDiscard,useRegisteredChanges} from '../shell/UnsavedChanges'
 import {PolicyAssistant} from './PolicyAssistant'
 import {PolicySource} from './PolicySource'
 import {PolicyConnectedSource} from './PolicyConnectedSource'
+import {PolicyLifecycle} from './PolicyLifecycle'
 import {preparePolicyImport} from './sourceImport'
 import {PolicyHistory} from './PolicyHistory'
 import {POLICIES_KEY,PolicyRequestError,policyHref,policyQuery,policySourceSyncQuery,readPolicy,recoverPolicyOperation,writePolicy,type PolicyReply,type PolicyWrite,type PolicyMutationReply,type PolicyImport} from './client'
@@ -41,18 +42,19 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const [imported,setImported]=useState<PolicyImport>(),[importError,setImportError]=useState(false),[importBusy,setImportBusy]=useState(false)
  const [saved,setSaved]=useState(initial),[value,setValue]=useState<Buffer>(()=>initial?fields(initial):blank)
  const [busy,setBusy]=useState(false),[error,setError]=useState<PolicyRequestError>(),[pending,setPending]=useState<{operation:PolicyWrite;submitted:Buffer;result?:PolicyMutationReply}>()
+ const [lifecycleBusy,setLifecycleBusy]=useState(false)
  const [latest,setLatest]=useState<PolicyReply>(),[comment,setComment]=useState(''),[publishOpen,setPublishOpen]=useState(false),[tab,setTab]=useState('draft'),[notice,setNotice]=useState('')
  const active=useRef(false),cache=useQueryClient(),navigate=useNavigate(),confirm=useConfirmDiscard()
  const sourceQuery=useQuery(policySourceSyncQuery(saved?.document.id))
  const dirty=!!imported&&!saved||!equal(value,saved?fields(saved):blank)
  const observedLatest=latest??(observed&&saved&&observed.revision!==saved.revision?observed:undefined)
- const held=!!pending,disabled=busy||held||importBusy
+ const held=!!pending,disabled=busy||held||importBusy||lifecycleBusy
  const save=async()=>{
-  if(active.current||held)throw new PolicyRequestError('delivery-unknown')
+  if(active.current||held||lifecycleBusy)throw new PolicyRequestError('delivery-unknown')
   const operation:PolicyWrite={path:saved?'/'+encodeURIComponent(saved.document.id):'',method:saved?'PUT':'POST',body:{operationId:crypto.randomUUID(),...value,...(!saved&&imported?{import:imported}:{}),workflow:saved?.document.workflow??{independentReviewRequired:false},...(saved?{baseRevision:saved.revision}:{})}}
   await execute({operation,submitted:{...value}})
  }
- const clear=useRegisteredChanges(dirty||held||!!comment,msg('Leaving will discard unsaved policy changes.'),{label:msg('Policy'),name:value.title,busy:busy||importBusy,saveFailed:!!error,saveDraft:!held&&!comment&&!observedLatest?save:undefined})
+ const clear=useRegisteredChanges(dirty||held||!!comment,msg('Leaving will discard unsaved policy changes.'),{label:msg('Policy'),name:value.title,busy:busy||importBusy||lifecycleBusy,saveFailed:!!error,saveDraft:!held&&!lifecycleBusy&&!comment&&!observedLatest?save:undefined})
  const updateCache=(reply:PolicyReply)=>{cache.setQueryData([...POLICIES_KEY,reply.document.id],reply);void cache.invalidateQueries({queryKey:POLICIES_KEY,exact:true})}
  async function execute(work:{operation:PolicyWrite;submitted:Buffer;result?:PolicyMutationReply},recover=false){
   if(active.current)return
@@ -141,6 +143,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
     </SettingsSection>
    </SettingsStack></PageBody></div>},
    {value:'source',label:msg('Source'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<PolicyConnectedSource policy={saved} query={sourceQuery} editing={dirty||!!observedLatest} disabled={disabled}/>:<p>{msg('Save a draft before connecting a policy source.')}</p>}</PageBody></div>},
+   {value:'lifecycle',label:msg('Lifecycle'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<PolicyLifecycle policy={saved} active={tab==='lifecycle'} editing={dirty||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setLifecycleBusy}/>:<p>{msg('Publish a version before configuring its lifecycle.')}</p>}</PageBody></div>},
    {value:'history',label:msg('History'),panel:<div className={styles.panel}><PageBody width="wide">{document?<PolicyHistory document={document} designBlocked={disabled||dirty||!!observedLatest||!!comment} designAction={selection=><PolicyInterpretationAction selection={selection} disabled={disabled||dirty||!!observedLatest||!!comment}/>}/>:<p>{msg('Save a draft to start its history.')}</p>}</PageBody></div>}
   ]}/>
   <footer className={styles.footer}><span role="status">{busy?<LoadingState inline>{msg('Working…')}</LoadingState>:held?msg('Operation recovery required'):dirty?msg('Unsaved changes'):saved?msg('Draft saved'):msg('New policy')}</span><div className={styles.feedback}>{error&&<p role="alert">{systemMessage(error.message)}</p>}{notice&&<p role="status">{notice}</p>}{held?<Button size="small" disabled={busy} onClick={()=>void execute(pending!,true).catch(()=>{})}>{pending?.result?msg('Reload current policy'):msg('Check operation result')}</Button>:error?.code==='revision-conflict'&&!observedLatest?<Button size="small" disabled={busy} onClick={()=>void loadLatest()}>{msg('Compare latest saved draft')}</Button>:null}</div></footer>

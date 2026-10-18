@@ -15,30 +15,30 @@ import {QueryStatusNotice} from '../shell/QueryStatusNotice'
 import {useRegisteredChanges} from '../shell/UnsavedChanges'
 import {POLICIES_KEY,PolicyRequestError,writePolicy,recoverPolicyOperation,readPolicyObservation,downloadPolicyObservation,type PolicyReply,type PolicySourceSync,type PolicySourceObservation,type PolicyWrite,type PolicyMutationReply} from './client'
 import styles from './PolicyPage.module.css'
+import {usePolicyPendingJournal} from './pendingOperation'
 
-const pendingKey=(id:string)=>'jpack.policy-source.pending.v1:'+window.location.host+':'+id
-function readPending(id:string):PolicyWrite|undefined{try{const held=JSON.parse(sessionStorage.getItem(pendingKey(id))??'null');return held?.method==='POST'&&held.path==='/'+encodeURIComponent(id)+'/source-sync'&&typeof held.body?.operationId==='string'?held:undefined}catch{return undefined}}
 function sourceResultMatches(result:PolicyMutationReply,operation:PolicyWrite,id:string){const receipt=result.receipt as {operationId?:unknown;kind?:unknown;policyId?:unknown}|null;return result.policy.document.id===id&&!!receipt&&receipt.operationId===operation.body.operationId&&receipt.kind==='source-'+operation.body.action&&receipt.policyId===id&&!!result.sourceSync}
 const stateLabel=(state:string)=>state==='active'?msg('Automatic checks active'):state==='binding'?msg('Connecting source…'):state==='paused'?msg('Source checks paused'):state==='revoked'?msg('Source access revoked'):msg('Source authorization ended')
 export function PolicyConnectedSource({policy,query,editing,disabled}:{policy:PolicyReply;query:UseQueryResult<PolicySourceSync,Error>;editing:boolean;disabled:boolean}){
  const locale=useLocale(),cache=useQueryClient(),connections=useConnectionsPane(),active=useRef(false)
- const [chosen,setChosen]=useState<{resourceId:string;selectionContext:string;title:string}>(),[frequency,setFrequency]=useState('15'),[busy,setBusy]=useState(false),[pending,setPending]=useState<PolicyWrite|undefined>(()=>readPending(policy.document.id)),[error,setError]=useState<PolicyRequestError>(),[selected,setSelected]=useState<string>(),[review,setReview]=useState<{sourceRevision:string;policyRevision:string;observation:PolicySourceObservation;candidate:PolicyReply['document']['candidate'];workflowDigest:string}>(),[comment,setComment]=useState('')
+ const journal=usePolicyPendingJournal('source-sync',policy.document.id),pending=journal.pending
+ const [chosen,setChosen]=useState<{resourceId:string;selectionContext:string;title:string}>(),[frequency,setFrequency]=useState('15'),[busy,setBusy]=useState(false),[error,setError]=useState<PolicyRequestError>(),[selected,setSelected]=useState<string>(),[review,setReview]=useState<{sourceRevision:string;policyRevision:string;observation:PolicySourceObservation;candidate:PolicyReply['document']['candidate'];workflowDigest:string}>(),[comment,setComment]=useState('')
  const data=query.data,state=data?.state,id=policy.document.id,latest=state?.observations.at(-1)
  const reviewStale=!!review&&(review.sourceRevision!==data?.revision||review.policyRevision!==policy.revision||review.candidate.digest!==policy.document.candidate.digest||review.workflowDigest!==policy.document.workflowDigest)
  const currentObservation=!!latest&&(latest.bindingId===state?.binding?.bindingId||state?.state==='revoked'||state?.state==='authorization-ended')
- const held=!!pending,locked=disabled||busy||held||query.isError
+ const held=!!pending,locked=disabled||busy||held||!journal.ready||query.isError
  useRegisteredChanges(held||!!comment,msg('Leaving will discard unsaved policy changes.'),{label:msg('Policy source'),busy,kind:'edit'})
  const refresh=async()=>{await cache.invalidateQueries({queryKey:[...POLICIES_KEY,id,'source-sync']});await cache.invalidateQueries({queryKey:POLICIES_KEY,exact:true})}
  async function act(action:string,extra:Record<string,unknown>={}){
-  if(active.current||!data)return
+  if(active.current||!data||!journal.ready)return
   active.current=true;setBusy(true);setError(undefined)
   const operationId=crypto.randomUUID(),operation:PolicyWrite={path:'/'+encodeURIComponent(id)+'/source-sync',method:'POST',body:{operationId,action,baseRevision:policy.revision,baseSourceRevision:data.revision,...extra}}
-  let dispatched=false
-  try{sessionStorage.setItem(pendingKey(id),JSON.stringify(operation));setPending(operation);dispatched=true;const result=await writePolicy(operation);if(!sourceResultMatches(result,operation,id))throw new PolicyRequestError('delivery-unknown',true);sessionStorage.removeItem(pendingKey(id));setPending(undefined);setChosen(undefined);setReview(undefined);setComment('');await refresh()}
-  catch(cause){const failure=cause instanceof PolicyRequestError?cause:new PolicyRequestError('unavailable');setError(failure);if(dispatched&&failure.uncertain)setPending(operation);else{sessionStorage.removeItem(pendingKey(id));setPending(undefined);await refresh()}}
+  let dispatched=false,committed=false
+  try{journal.store(operation);dispatched=true;const result=await writePolicy(operation);if(!sourceResultMatches(result,operation,id))throw new PolicyRequestError('delivery-unknown',true);committed=true;journal.clear();setChosen(undefined);setReview(undefined);setComment('');await refresh()}
+  catch(cause){const failure=cause instanceof PolicyRequestError?cause:new PolicyRequestError('unavailable');setError(failure);if(!(dispatched&&(failure.uncertain||committed))){journal.clear();await refresh()}}
   finally{active.current=false;setBusy(false)}
  }
- async function recover(){if(!pending||active.current)return;active.current=true;setBusy(true);setError(undefined);try{const result=await recoverPolicyOperation(String(pending.body.operationId));if(!sourceResultMatches(result,pending,id))throw new PolicyRequestError('delivery-unknown',true);sessionStorage.removeItem(pendingKey(id));setPending(undefined);setChosen(undefined);setReview(undefined);setComment('');await refresh()}catch(cause){setError(cause instanceof PolicyRequestError?cause:new PolicyRequestError('unavailable'))}finally{active.current=false;setBusy(false)}}
+ async function recover(){if(!pending||active.current)return;active.current=true;setBusy(true);setError(undefined);try{const result=await recoverPolicyOperation(String(pending.body.operationId));if(!sourceResultMatches(result,pending,id))throw new PolicyRequestError('delivery-unknown',true);journal.clear();setChosen(undefined);setReview(undefined);setComment('');await refresh()}catch(cause){setError(cause instanceof PolicyRequestError?cause:new PolicyRequestError('unavailable'))}finally{active.current=false;setBusy(false)}}
  function choose(opener:HTMLElement){connections.open({provider:'google-drive',purpose:'policy-source',opener,selection:{limit:1,onSelect:async(items,_signal,metadata)=>{if(items.length!==1||!metadata)throw new Error(msg('Choose one source again.'));setChosen({resourceId:items[0]!.resourceId,selectionContext:metadata.selectionContext,title:metadata.title})}}})}
  const date=(value?:string)=>value?new Date(value).toLocaleString(locale):msg('Never')
  return <SettingsStack>
