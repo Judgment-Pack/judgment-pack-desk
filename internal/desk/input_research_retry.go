@@ -141,6 +141,18 @@ func waitResearchRetry(ctx context.Context, at time.Time) error {
 	}
 }
 
+// researchAcquisitionRefused is returned, with the retained response, by a
+// source call whose acquisition completed and which the caller's own check then
+// refused. The attempt is finished "refused" under code, its response kept for
+// audit and never used as a source; it is not continued or retried.
+type researchAcquisitionRefused struct {
+	code  string
+	cause error
+}
+
+func (e *researchAcquisitionRefused) Error() string { return e.cause.Error() }
+func (e *researchAcquisitionRefused) Unwrap() error { return e.cause }
+
 func researchAttempt(ctx context.Context, root researchRunStore, kind string, args json.RawMessage, call func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error)) (json.RawMessage, error) {
 	return researchAttemptWithWait(ctx, root, kind, args, call, waitResearchRetry)
 }
@@ -210,6 +222,10 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 		if callErr != nil {
 			problem = callErr.Error()
 		}
+		var refused *researchAcquisitionRefused
+		if !errors.As(callErr, &refused) || kind == "model" || len(raw) == 0 {
+			refused = nil
+		}
 		_, e = root.change(func(r *inputResearchRun) error {
 			current, err := researchAttemptByID(r, attempt.ID)
 			if err != nil {
@@ -249,6 +265,9 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 				}
 				problem = callErr.Error()
 			}
+			if refused != nil {
+				return refuseResearchAttempt(r, attempt.ID, raw, refused.code, problem)
+			}
 			if err := finishResearchAttempt(r, attempt.ID, raw, problem); err != nil {
 				return err
 			}
@@ -270,6 +289,9 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 		}
 		if callErr == nil {
 			return raw, nil
+		}
+		if refused != nil {
+			return nil, callErr
 		}
 
 		var pending *inputResearchPendingRetry

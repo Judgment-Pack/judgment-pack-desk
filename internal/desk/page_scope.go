@@ -1,8 +1,12 @@
 package desk
 
-// Spec dialect §5.1 and §12: compare constrained page endpoints as submitted.
-// Do not use net/url here: decoding, cleaning a path or normalizing a port
-// would change the reviewed scope. Runner separately verifies final redirects.
+// Spec dialect §5.1 and §12 (RFC 0018 rounds 15 and 16): compare constrained
+// page endpoints as submitted. Do not use net/url here: decoding, cleaning a
+// path or normalizing a port would change the reviewed scope. One form and one
+// matcher hold every place a scoped page profile is used: registration of its
+// scope, admission of each requested URL before acquisition, and the check of
+// each acquired page's receipt endpoint (the final URL after redirects) before
+// the page can reach the model. Runner's check 3 remains the verifier.
 import (
 	"encoding/json"
 	"errors"
@@ -29,6 +33,13 @@ const pageScopeWildcard = "https://*"
 
 var pageHostLabel = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 var pageDotSegment = regexp.MustCompile(`^(?:\.|%2[eE]){1,2}$`)
+
+// Round 16: an escaped slash or backslash anywhere in the path, and the
+// delimiters before which a segment's part is held to the dot-segment test.
+// Every % in a path of the form begins an escape of two hexadecimal digits
+// (pagePercentForm), so a match here is always a whole escape.
+var pageEscapedSlash = regexp.MustCompile(`%(?:2[fF]|5[cC])`)
+var pageSegmentDelimiter = regexp.MustCompile(`;|%(?:3[bBfF]|23|00)`)
 
 func pageHex(c byte) bool {
 	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
@@ -74,15 +85,32 @@ func constrainedPageEndpoint(endpoint string) (host, path string, ok bool) {
 		}
 	}
 	last := labels[len(labels)-1][0]
-	if !(last >= 'a' && last <= 'z' || last >= 'A' && last <= 'Z') || strings.ContainsAny(path, "?#\\") || !pagePercentForm(path) {
+	if !(last >= 'a' && last <= 'z' || last >= 'A' && last <= 'Z') || !pagePathForm(path) {
 		return "", "", false
 	}
+	return strings.ToLower(host), path, true
+}
+
+// pagePathForm is §5.1's path, read without decoding: no ?, # or backslash;
+// each % followed by two hexadecimal digits; no escaped slash or backslash
+// (%2f, %2F, %5c, %5C) anywhere; and, split at each literal /, no segment
+// whose part before its first ;, %3b, %3B, %3f, %3F, %23 or %00, whichever
+// comes first, is a dot segment (one or two tokens, each ., %2e or %2E). A
+// segment without such a delimiter is its own part, so one test holds both.
+// Every other escape, %2e outside a dot segment included, stays literal.
+func pagePathForm(path string) bool {
+	if strings.ContainsAny(path, "?#\\") || !pagePercentForm(path) || pageEscapedSlash.MatchString(path) {
+		return false
+	}
 	for _, segment := range strings.Split(path, "/") {
+		if at := pageSegmentDelimiter.FindStringIndex(segment); at != nil {
+			segment = segment[:at[0]]
+		}
 		if pageDotSegment.MatchString(segment) {
-			return "", "", false
+			return false
 		}
 	}
-	return strings.ToLower(host), path, true
+	return true
 }
 
 func validatePageScope(scope EndpointScope) error {
@@ -160,8 +188,51 @@ func admitPortablePage(profile portableProfileDetails, raw json.RawMessage) erro
 	if err := validatePageScope(profile.EndpointScope); err != nil {
 		return fmt.Errorf("acquisition-invalid: %w", err)
 	}
-	if profile.Class != "generated" || profile.Shape != "http" || profile.Adapter.Name != "adapter-web" || profile.Endpoint != "" || len(profile.Research.Capabilities) != 1 || profile.Research.Capabilities[0] != "page" || !requestedPageInScope(requested, profile.EndpointScope) {
+	if !scopedPageProfile(profile) || !requestedPageInScope(requested, profile.EndpointScope) {
 		return refuse()
+	}
+	return nil
+}
+
+// scopedPageProfile is the one profile form the Desk reads a scoped page
+// through: class generated, shape http, adapter-web, no exact endpoint, and
+// the research capability page alone (§5.1).
+func scopedPageProfile(profile portableProfileDetails) bool {
+	return profile.Class == "generated" && profile.Shape == "http" && profile.Adapter.Name == "adapter-web" && profile.Endpoint == "" && len(profile.Research.Capabilities) == 1 && profile.Research.Capabilities[0] == "page"
+}
+
+// errScopedPageReceipt names a scoped page acquisition whose signed receipt
+// endpoint, the final URL after followed redirects with its query removed
+// (spec dialect §5.2, "Which URL is held"), is outside the reviewed scope or
+// the constrained form. It carries no URL or page text: it becomes a
+// validation finding the model reads.
+var errScopedPageReceipt = errors.New("acquisition-invalid: The page's final address after redirects is outside the reviewed page profile. Its receipt was kept for audit; the page was left out of the research and of the answer.")
+
+// errScopedPageRefusedAgain answers a request with the same arguments as one
+// whose acquisition this run refused at its receipt check: it is not acquired
+// again.
+var errScopedPageRefusedAgain = errors.New("acquisition-invalid: This page was already acquired and its final address after redirects is outside the reviewed page profile. It was not requested again.")
+
+// admitPortablePageReceipt checks a retained scoped page acquisition before it
+// can reach the model or an answer: the signed receipt's acquisition.endpoint
+// holds §5.1's form and matches the profile's scope (pageEndpointInScope). It
+// reads the receipt as the Gateway wrote it and verifies no signature; Runner's
+// check 3 remains the verifier of every retained receipt. A profile without a
+// scope keeps its exact endpoint, which Runner alone compares.
+func admitPortablePageReceipt(profile portableProfileDetails, retained json.RawMessage) error {
+	if profile.EndpointScope == nil {
+		return nil
+	}
+	var response struct {
+		Receipt json.RawMessage `json:"receipt"`
+	}
+	var receipt, acquisition map[string]json.RawMessage
+	var endpoint string
+	if json.Unmarshal(retained, &response) != nil || rejectDuplicateMembers(response.Receipt) != nil || json.Unmarshal(response.Receipt, &receipt) != nil || json.Unmarshal(receipt["acquisition"], &acquisition) != nil || json.Unmarshal(acquisition["endpoint"], &endpoint) != nil {
+		return errScopedPageReceipt
+	}
+	if !pageEndpointInScope(endpoint, profile.EndpointScope) {
+		return errScopedPageReceipt
 	}
 	return nil
 }

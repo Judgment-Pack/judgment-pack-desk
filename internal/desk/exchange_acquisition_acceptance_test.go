@@ -518,7 +518,8 @@ func TestExchangeSignedReleaseAcquisitionsOnTwoInstallations(t *testing.T) {
 }
 
 // These additional generic guard cases are separate from the six signed preset
-// success counts. The production worker and Runner own admission/refusal.
+// success counts. The production worker owns admission before acquisition and
+// the receipt check after it; Runner's check 3 remains the verifier.
 func TestExchangeAcquisitionScopeAndRedirectRefusals(t *testing.T) {
 	if os.Getenv("JPACK_EXCHANGE_ACQUISITION_ACCEPTANCE") != "1" {
 		t.Skip("set JPACK_EXCHANGE_ACQUISITION_ACCEPTANCE=1 for real acquisition refusal checks")
@@ -539,13 +540,16 @@ func TestExchangeAcquisitionScopeAndRedirectRefusals(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var calls atomic.Int32
+			var second []byte
 			s, ts, basis := pageBindingFixture(t, func(w http.ResponseWriter, r *http.Request) {
 				if calls.Add(1) == 1 {
 					portableTestReply(w, string(pageBindingJSON(t, map[string]any{"kind": "page", "arguments": map[string]string{"url": test.url}})))
 				} else {
-					// A generated interpretation cites this genuine model answer;
-					// it cannot erase an unsafe retained page acquisition.
-					portableTestReply(w, string(pageBindingJSON(t, map[string]any{"kind": "answer", "fields": map[string]any{"eligible": map[string]any{"status": "found", "value": false, "cites": []int{1 + test.pages}}}})))
+					second, _ = io.ReadAll(io.LimitReader(r.Body, 4<<20))
+					// A generated interpretation cites this genuine model answer,
+					// the only response retained besides the first model step:
+					// no page is ever a retained source here.
+					portableTestReply(w, string(pageBindingJSON(t, map[string]any{"kind": "answer", "fields": map[string]any{"eligible": map[string]any{"status": "found", "value": false, "cites": []int{1}}}})))
 				}
 			})
 			scope := EndpointScope{"https://example.com/fixtures"}
@@ -574,30 +578,61 @@ func TestExchangeAcquisitionScopeAndRedirectRefusals(t *testing.T) {
 				t.Fatalf("guard confirmation %d %s", code, raw)
 			}
 			s.scanInputResearch(t.Context())
+			// What the second model request carries: the refusal as a
+			// validation finding, and no text of the page the redirect reached
+			// (the fixture serves its company page there) nor, when only the
+			// redirect led there, its address.
+			if calls.Load() != 2 || len(second) == 0 {
+				t.Fatalf("expected two model requests, got %d", calls.Load())
+			}
+			page := []string{"Fixture City", "Example Fixture Company", "Synthetic company fixture", "10 to 20"}
+			if test.pages == 1 {
+				page = append(page, "outside/company")
+			}
+			for _, leaked := range page {
+				if bytes.Contains(second, []byte(leaked)) {
+					t.Fatalf("the second model request carries the out-of-scope page (%q)", leaked)
+				}
+			}
+			if !bytes.Contains(second, []byte("acquisition-invalid")) {
+				t.Fatal("the second model request lacks the refusal finding")
+			}
 			held := exchangeAcceptanceResearchRun(t, s, review.ID)
 			usage := researchBudgetUsage(held)
-			if calls.Load() != 2 || usage.ModelCalls != 2 || usage.Pages != test.pages || usage.Searches != 0 || len(held.Attempts) != 2+test.pages {
+			if usage.ModelCalls != 2 || usage.Pages != test.pages || usage.Searches != 0 || len(held.Attempts) != 2+test.pages {
 				t.Fatalf("refusal spent wrong allowance %+v state=%s problem=%s", usage, held.State, held.Problem)
 			}
-			if test.pages == 0 {
-				if held.State != "completed" || held.Attempts[0].ActionProblem == "" || held.Attempts[1].Kind != "model" {
-					t.Fatalf("out-of-scope request reached acquisition or lost refusal: %+v", held)
+			// Both refusals are the same acquisition-invalid validation finding
+			// on the first model step; the run then completes from the model's
+			// own generated answer, as one refused before acquisition does.
+			if held.State != "completed" || !strings.Contains(held.Attempts[0].ActionProblem, "acquisition-invalid") || held.Attempts[1+test.pages].Kind != "model" || len(held.Portable.Response) == 0 {
+				t.Fatalf("refusal lost or run not continued: state=%s problem=%s finding=%s", held.State, held.Problem, held.Attempts[0].ActionProblem)
+			}
+			var answer struct {
+				Result struct {
+					Responses []portableRetainedResponse
 				}
-			} else {
-				if held.State != "paused" || pendingResearchBudget(held) == nil || len(held.Portable.Response) != 0 || held.Attempts[2].ActionProblem == "" {
-					t.Fatalf("unsafe final endpoint was accepted: state=%s problem=%s finding=%s", held.State, held.Problem, held.Attempts[2].ActionProblem)
+			}
+			if json.Unmarshal(held.Portable.Response, &answer) != nil || len(answer.Result.Responses) != 2 || answer.Result.Responses[0].Profile.ID == profile.ID || answer.Result.Responses[1].Profile.ID == profile.ID {
+				t.Fatal("the retained answer is not the two model responses alone", string(held.Portable.Response))
+			}
+			for _, leaked := range page {
+				if bytes.Contains(held.Portable.Response, []byte(leaked)) {
+					t.Fatalf("the retained answer carries the out-of-scope page (%q)", leaked)
 				}
-				var page portableRetainedResponse
-				json.Unmarshal(held.Attempts[1].Result, &page)
+			}
+			if test.pages == 1 {
+				refused := held.Attempts[1]
+				var retained portableRetainedResponse
 				var receipt struct {
 					Acquisition struct{ Endpoint string }
 					Signature   string
 				}
-				if json.Unmarshal(page.Receipt, &receipt) != nil || receipt.Signature == "" || receipt.Acquisition.Endpoint != "https://example.com/outside/company" || !strings.Contains(held.Attempts[2].ActionProblem, "endpoint") {
-					t.Fatalf("Runner did not refuse the genuine redirected final endpoint: %s", held.Attempts[2].ActionProblem)
+				if refused.Kind != "page" || refused.State != "refused" || refused.ProblemCode != "acquisition-invalid" || json.Unmarshal(refused.Result, &retained) != nil || json.Unmarshal(retained.Receipt, &receipt) != nil || receipt.Signature == "" || receipt.Acquisition.Endpoint != "https://example.com/outside/company" {
+					t.Fatalf("the redirected page's receipt was not kept refused for audit: %+v", refused)
 				}
 				var request struct{ URL string }
-				if json.Unmarshal(page.Request, &request) != nil || request.URL != test.url {
+				if json.Unmarshal(retained.Request, &request) != nil || request.URL != test.url {
 					t.Fatal("redirect changed submitted page arguments")
 				}
 			}

@@ -1,7 +1,8 @@
 package desk
 
-// Normative endpoint form/matching probes mirrored from Runner #142 and
-// spec dialect §5.1. Keep case, percent spelling and all URL bytes intact.
+// Normative endpoint form/matching probes mirrored from Runner #142 and #152
+// and spec dialect §5.1 (RFC 0018 rounds 15 and 16). Keep case, percent
+// spelling and all URL bytes intact.
 import (
 	"bytes"
 	"encoding/json"
@@ -122,7 +123,6 @@ func TestDeskPageEndpointFormVectors(t *testing.T) {
 		"https://a.example:443":                           {"a.example", ""},
 		"https://a.example:":                              {"a.example", ""},
 		"https://a.example/docs/%7e/x":                    {"a.example", "/docs/%7e/x"},
-		"https://a.example/docs/%2Fx":                     {"a.example", "/docs/%2Fx"},
 		"https://a.example/@name":                         {"a.example", "/@name"},
 		"https://a.example/...":                           {"a.example", "/..."},
 		"https://a.example/.x/x.":                         {"a.example", "/.x/x."},
@@ -135,6 +135,15 @@ func TestDeskPageEndpointFormVectors(t *testing.T) {
 		host, path, ok := constrainedPageEndpoint(endpoint)
 		if !ok || host != want[0] || path != want[1] {
 			t.Errorf("%s reads as %v %q %q, not %q %q", endpoint, ok, host, path, want[0], want[1])
+		}
+	}
+	// Round 16's neighbours: what follows a segment's first ; or escaped
+	// delimiter is no part of its dot-segment test, and every other escape,
+	// %2e outside a dot segment and a double-encoded slash included, stays
+	// literal bytes.
+	for _, path := range []string{"/page;v=1", "/a;b", "/x;../y", "/...;x", "/a%2eb", "/x%3b../y", "/.x;", "/x.;/..x", "/%2e%2e%2e;x", "/%3b..", "/;/..x", "/a%252fb", "/%2e%25", "/x%3B%2e%2e"} {
+		if host, got, ok := constrainedPageEndpoint(deskScopePrefix + path); !ok || host != "a.example" || got != "/docs"+path {
+			t.Errorf("%s%s reads as %v %q %q", deskScopePrefix, path, ok, host, got)
 		}
 	}
 	for _, endpoint := range []string{
@@ -151,6 +160,7 @@ func TestDeskPageEndpointFormVectors(t *testing.T) {
 		deskScopePrefix + "/%2e/x", deskScopePrefix + "/%2E/x", deskScopePrefix + "/.%2E/x", deskScopePrefix + "/%2E%2e/x",
 		deskScopePrefix + "/%2e./x", deskScopePrefix + "/x/..", "https://a.example/./",
 		"https://a.example/" + strings.Repeat("x", 2031),
+		deskScopePrefix + "/%2Fx", deskScopePrefix + "%2Fx", "https://a.example/%5C", "https://a.example/.;", "https://a.example/..%00",
 	} {
 		if _, _, ok := constrainedPageEndpoint(endpoint); ok {
 			t.Errorf("%q is read in the constrained page form", endpoint)

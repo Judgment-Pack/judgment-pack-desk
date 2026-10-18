@@ -189,6 +189,33 @@ func finishResearchAttempt(run *inputResearchRun, id string, result json.RawMess
 	}
 	return errors.New("Research attempt not found.")
 }
+
+// refuseResearchAttempt finishes a started source attempt whose acquisition
+// completed and which its caller then refused (researchAcquisitionRefused):
+// the state is "refused", the code and problem name why, and the retained
+// response is kept for audit. Only "completed" attempts are sources, so a
+// refused one never reaches the model context or an answer.
+func refuseResearchAttempt(run *inputResearchRun, id string, result json.RawMessage, code, problem string) error {
+	for i := range run.Attempts {
+		a := &run.Attempts[i]
+		if a.ID != id {
+			continue
+		}
+		if a.State != "started" || a.Kind == "model" || len(result) == 0 || code == "" || problem == "" {
+			return errors.New("Research attempt cannot be refused.")
+		}
+		if len(result) > 2<<20 {
+			return errors.New("Research response exceeds its byte limit.")
+		}
+		a.ReservedBytes = 0
+		a.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		a.State = "refused"
+		a.Result = append(json.RawMessage(nil), result...)
+		a.Problem, a.ProblemCode = problem, code
+		return nil
+	}
+	return errors.New("Research attempt not found.")
+}
 func recoverInputResearch(run *inputResearchRun) {
 	if run.State != "running" {
 		return

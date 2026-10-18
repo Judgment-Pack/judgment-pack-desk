@@ -60,11 +60,18 @@ commitment verifier or change retained requests, receipts or preparation files.
 `TestExchangeAcquisitionScopeAndRedirectRefusals` adds two separate generic guard
 cases through the normal reviewed worker. An out-of-scope submitted URL is refused
 before page acquisition or page allowance consumption. A scoped submitted URL
-that redirects to `/outside/company` produces a genuine page receipt, then Runner
-refuses that final endpoint. The unsafe response cannot be erased by an answer;
-the worker pauses at its confirmed model limit and a scanner pass spends nothing
-further. These extra guard cases consume **4 model requests and 1 page read**,
-zero searches and zero decisions. They are not part of the six main case totals.
+that redirects to `/outside/company` produces a genuine page receipt whose signed
+final endpoint lies outside the scope. The worker's receipt check refuses it at
+once: the page attempt is kept `refused` (`acquisition-invalid`) with its genuine
+receipt for audit and its page allowance spent, and the page never reaches the
+model. The test reads the second model request itself: it carries the
+`acquisition-invalid` finding and no text or address of the redirected page.
+Both cases then complete from the model's own generated answer, whose retained
+responses are the two model responses alone, and a scanner pass spends nothing
+further. Runner's check 3 still holds every retained receipt at preparation; it
+is not exercised on the refused page, which is never retained as a source. These
+extra guard cases consume **4 model requests and 1 page read**, zero searches and
+zero decisions. They are not part of the six main case totals.
 
 The existing required Jobs companion job runs these shared guard tests, which
 retain their own generic fixtures and acquisition counts:
@@ -73,6 +80,8 @@ retain their own generic fixtures and acquisition counts:
 | --- | --- |
 | Changed model binding before dispatch | `TestPortableResearchStaleConnectionBindingRefusedBeforeAcquisition` in [portable_research_acceptance_test.go](../../internal/desk/portable_research_acceptance_test.go) |
 | Stale installed page adapter identity | `TestPortablePageBindingActualCompanionRejectsStaleAdapterBeforeAcquisition` in [portable_page_binding_test.go](../../internal/desk/portable_page_binding_test.go) |
+| A page refused at its receipt check is not requested again | `TestPortableScopedPageRefusedAtItsReceiptIsNotRequestedAgain` in [portable_page_binding_test.go](../../internal/desk/portable_page_binding_test.go) |
+| A refused page across a restart and a resume | `TestPortableScopedPageRefusalSurvivesRestartAndResume` in [portable_page_binding_test.go](../../internal/desk/portable_page_binding_test.go) |
 | Plan before web dispatch | `TestPortableResearchSwitchToPlanBeforeWebDispatch` in [portable_research_test.go](../../internal/desk/portable_research_test.go) |
 | Explicit model/page allowance pause and reviewed resume | `TestPortableResearchExplicitBudgetPauseAndResume` in [portable_research_test.go](../../internal/desk/portable_research_test.go) |
 | Interrupted/stopped provider call, retained completion and uncertain request recovery | `TestPortableResearchInterruptedCallKeepsCompletedAndNeverReplays` in [portable_research_acceptance_test.go](../../internal/desk/portable_research_acceptance_test.go) |

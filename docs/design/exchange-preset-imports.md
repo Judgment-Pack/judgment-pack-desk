@@ -125,18 +125,50 @@ Chat-associated registration validates the saved conversation and refuses Plan;
 manual forms require explicit profile review and registration.
 
 The shared admission boundary checks every scoped page URL before a page attempt,
-allowance charge or Gateway call. It implements Spec #207's constrained form and
-literal prefix matching. Only the first query delimiter and following query are
-removed for comparison; submitted arguments remain unchanged. Duplicate argument
-members, invalid URLs and URLs outside the scope are refused. Each profile is
-decoded independently, so absent optional members cannot inherit a prior
-profile's scope. A changed installed adapter requires a fresh binding review.
+allowance charge or Gateway call. It implements the constrained form and literal
+prefix matching of RFC 0018 rounds 15 and 16 (Spec #207, #215): the path holds no
+escaped slash or backslash (`%2f`, `%2F`, `%5c`, `%5C`), and no segment's part
+before its first `;`, `%3b`, `%3B`, `%3f`, `%3F`, `%23` or `%00` is a dot
+segment; nothing is decoded. The same form holds every scope entry at
+registration. Only the first query delimiter and following query are removed for
+comparison; submitted arguments remain unchanged. Duplicate argument members,
+invalid URLs and URLs outside the scope are refused. Each profile is decoded
+independently, so absent optional members cannot inherit a prior profile's scope.
+A changed installed adapter requires a fresh binding review.
+
+A request in scope can still be redirected outside it. After each scoped page
+acquisition, before the page can reach the model, the worker checks the signed
+receipt's `acquisition.endpoint` (the final URL after followed redirects, its
+query removed) with the same matcher. On a miss the attempt is `refused` with
+problem code `acquisition-invalid`: its retained response and receipt are kept for
+audit and count against the page allowance, but it is no retained source, so the
+page is left out of every later model request and of the retained answer. The
+model receives the refusal as a validation finding, exactly as for a page refused
+before acquisition, within the same correction bound; a request with the same
+arguments again is refused without another acquisition. Another spelling of the
+same page (an added query, host case, `:443`) is a different request: it is
+acquired and refused again, within the page allowance. A refused attempt stays
+`refused` across a restart and a resume. This check reads the receipt as the
+Gateway wrote it and verifies no signature. Runner's check 3 remains the verifier:
+it holds every retained receipt's final endpoint to the profile's scope when the
+answer is prepared.
+
+Refusal has a storage cost. Each refused result is kept in the run's journal, up
+to the per-result bound, outside the check that reserves room for the answer, which
+counts retained sources only. A source that redirects every request out of scope
+and serves large pages can therefore fill the journal record within the page
+allowance; the next journal write then fails and the run ends `interrupted`. A
+bound on refused bytes checked before the next page request is #475. Profiles with
+an exact `endpoint` instead of a scope are not receipt-checked yet (#474): their
+pages reach the model, and only Runner's check 3 refuses a final endpoint that
+differs.
 
 Scope-absent legacy profiles retain their existing request handling, including
 queries and redirects. Runner continues to verify the receipt's exact final
-endpoint, or its scope when declared. Request admission does not establish the
-scope of intermediate redirects, page accuracy or outreach permission. The
-portable definition, retained job release and historical profiles remain distinct.
+endpoint, or its scope when declared. Neither check establishes the scope of
+intermediate redirects, page accuracy or outreach permission; the scope holds the
+URL as written, not what a server serves for it. The portable definition,
+retained job release and historical profiles remain distinct.
 
 Same-vendor clean-room Codex review was requested by the user. Its findings on
 metadata, Git execution/integrity and size limits were corrected. This is not a
