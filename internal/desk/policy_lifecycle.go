@@ -224,6 +224,9 @@ func (s policyService) lifecycle(ctx context.Context, id string) (policyLifecycl
 	return result, err
 }
 func validPolicyMutationIdentity(result policyMutationReply) bool {
+	if strings.HasPrefix(result.Receipt.Kind, "coverage-") {
+		return result.OutcomeKind == "coverage" && result.PolicyID == result.Receipt.PolicyID && result.PolicyRevision == result.Receipt.Revision && result.Policy.Document.ID == "" && result.Policy.Revision == "" && validPolicyCoverageResult(result)
+	}
 	if strings.HasPrefix(result.Receipt.Kind, "lifecycle-") || strings.HasPrefix(result.Receipt.Kind, "authority-") {
 		return (result.OutcomeKind == "lifecycle" && strings.HasPrefix(result.Receipt.Kind, "lifecycle-") || result.OutcomeKind == "source-authority" && strings.HasPrefix(result.Receipt.Kind, "authority-")) && result.PolicyID == result.Receipt.PolicyID && result.PolicyRevision == result.Receipt.Revision && result.Policy.Document.ID == "" && result.Policy.Revision == ""
 	}

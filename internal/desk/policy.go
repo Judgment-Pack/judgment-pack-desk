@@ -149,26 +149,30 @@ type policyPublishRequest struct {
 }
 
 type policyOperationReceipt struct {
-	AuthorityRevision string      `json:"authorityRevision,omitempty"`
-	AuthorityEventID  string      `json:"authorityEventId,omitempty"`
-	ConfigurationID   string      `json:"configurationId,omitempty"`
-	ObservationID     string      `json:"observationId,omitempty"`
-	ExternalVersionID string      `json:"externalVersionId,omitempty"`
-	LifecycleRevision string      `json:"lifecycleRevision,omitempty"`
-	LifecycleEventID  string      `json:"lifecycleEventId,omitempty"`
-	OperationID       string      `json:"operationId"`
-	Kind              string      `json:"kind"`
-	PolicyID          string      `json:"policyId"`
-	RequestDigest     string      `json:"requestDigest"`
-	At                string      `json:"at"`
-	Actor             policyActor `json:"actor"`
-	Revision          string      `json:"revision"`
-	CandidateDigest   string      `json:"candidateDigest"`
-	ReviewID          string      `json:"reviewId,omitempty"`
-	PublicationID     string      `json:"publicationId,omitempty"`
+	CoverageID          string      `json:"coverageId,omitempty"`
+	CoverageRevision    string      `json:"coverageRevision,omitempty"`
+	CoverageCandidateID string      `json:"coverageCandidateId,omitempty"`
+	AuthorityRevision   string      `json:"authorityRevision,omitempty"`
+	AuthorityEventID    string      `json:"authorityEventId,omitempty"`
+	ConfigurationID     string      `json:"configurationId,omitempty"`
+	ObservationID       string      `json:"observationId,omitempty"`
+	ExternalVersionID   string      `json:"externalVersionId,omitempty"`
+	LifecycleRevision   string      `json:"lifecycleRevision,omitempty"`
+	LifecycleEventID    string      `json:"lifecycleEventId,omitempty"`
+	OperationID         string      `json:"operationId"`
+	Kind                string      `json:"kind"`
+	PolicyID            string      `json:"policyId"`
+	RequestDigest       string      `json:"requestDigest"`
+	At                  string      `json:"at"`
+	Actor               policyActor `json:"actor"`
+	Revision            string      `json:"revision"`
+	CandidateDigest     string      `json:"candidateDigest"`
+	ReviewID            string      `json:"reviewId,omitempty"`
+	PublicationID       string      `json:"publicationId,omitempty"`
 }
 
 type policyMutationReply struct {
+	Coverage       *policyCoverageReply     `json:"coverage,omitempty"`
 	SourceStatus   *policySourceStatusReply `json:"sourceStatus,omitempty"`
 	OutcomeKind    string                   `json:"outcomeKind,omitempty"`
 	PolicyID       string                   `json:"policyId,omitempty"`

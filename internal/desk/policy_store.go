@@ -50,6 +50,7 @@ type policyStoredOperation struct {
 }
 
 type policyLedger struct {
+	Coverages         map[string]policyCoverageRecord         `json:"coverages,omitempty"`
 	Recoveries        []policyRecoverySnapshot                `json:"recoveries,omitempty"`
 	SourceAuthorities map[string]*policySourceAuthorityStream `json:"sourceAuthorities,omitempty"`
 	Lifecycles        map[string]*policyLifecycleStream       `json:"lifecycles,omitempty"`
@@ -232,7 +233,7 @@ func validatePolicyLedger(ledger policyLedger) error {
 		}
 	}
 	for key, operation := range ledger.Operations {
-		if key != operation.OperationID || !policyOperationIDForm.MatchString(key) || !contains(append(append([]string{"create", "save-draft", "review", "publish"}, policySourceKinds()...), append(policyLifecycleKinds(), policySourceAuthorityKinds()...)...), operation.Kind) || ledger.Policies[operation.PolicyID].ID == "" || !retainedArtifactDigest.MatchString(operation.RequestDigest) || !operation.Result.valid() {
+		if key != operation.OperationID || !policyOperationIDForm.MatchString(key) || !contains(append(append([]string{"create", "save-draft", "review", "publish", "coverage-save", "coverage-review"}, policySourceKinds()...), append(policyLifecycleKinds(), policySourceAuthorityKinds()...)...), operation.Kind) || ledger.Policies[operation.PolicyID].ID == "" || !retainedArtifactDigest.MatchString(operation.RequestDigest) || !operation.Result.valid() {
 			return bad
 		}
 	}
@@ -243,6 +244,9 @@ func validatePolicyLedger(ledger policyLedger) error {
 		return err
 	}
 	if err := validatePolicySourceAuthorities(ledger); err != nil {
+		return err
+	}
+	if err := validatePolicyCoverages(ledger); err != nil {
 		return err
 	}
 	return validatePolicyRecovery(ledger)

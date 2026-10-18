@@ -6,9 +6,9 @@ import {sourceMessage} from '../i18n/source'
 import type {PolicyActor} from '../policies/client'
 
 export const POLICY_RECOVERY_KEY=['policy-recovery'] as const
-export const POLICY_RECOVERY_INCLUDED=['policy-history','policy-operation-receipts','retained-policy-originals','retained-policy-extractions'] as const
+export const POLICY_RECOVERY_INCLUDED=['policy-history','policy-operation-receipts','retained-policy-originals','retained-policy-extractions','policy-coverage-history','retained-coverage-pack-bytes'] as const
 export const POLICY_RECOVERY_EXCLUDED=['chat-history','pack-graph-drafts','memory','project-files','jobs','credentials','source-consent','browser-journals'] as const
-export interface PolicyRecoveryCounts {policies:number;revisions:number;reviews:number;publications:number;operations:number;sourceObservations:number;externalVersions:number;blobs:number;blobBytes:number}
+export interface PolicyRecoveryCounts {policies:number;revisions:number;reviews:number;publications:number;operations:number;sourceObservations:number;externalVersions:number;coverages:number;coverageCandidates:number;coverageReviews:number;blobs:number;blobBytes:number}
 interface RecoveryScope {scope:'project-policies';included:readonly string[];excluded:readonly string[]}
 export interface PolicyRecoveryStatus extends RecoveryScope {projectId:string;projectPath:string;revision?:string;available:boolean;canInspect:boolean;canRestore:boolean;reason?:string;counts?:PolicyRecoveryCounts;limits:{archiveBytes:number;expandedBytes:number;entries:number;manifestBytes:number}}
 interface RecoveryAuthority {currentnessUnknown:true;freshReviewRequired:true;sourceConsentRequired:true}
@@ -53,7 +53,7 @@ function validActor(value:PolicyActor){
  return value.kind==='local'?(value.issuer===undefined||value.issuer===''):value.kind==='oidc'&&string(value.issuer)&&new TextEncoder().encode(value.issuer).length<=4096
 }
 function validTime(value:unknown){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().replace('.000Z','Z')===value}
-function countsValid(value?:PolicyRecoveryCounts){return !!value&&['policies','revisions','reviews','publications','operations','sourceObservations','externalVersions','blobs','blobBytes'].every(key=>Number.isSafeInteger(value[key as keyof PolicyRecoveryCounts])&&value[key as keyof PolicyRecoveryCounts]>=0)}
+function countsValid(value?:PolicyRecoveryCounts){return !!value&&['policies','revisions','reviews','publications','operations','sourceObservations','externalVersions','coverages','coverageCandidates','coverageReviews','blobs','blobBytes'].every(key=>Number.isSafeInteger(value[key as keyof PolicyRecoveryCounts])&&value[key as keyof PolicyRecoveryCounts]>=0)}
 export async function readPolicyRecovery(signal?:AbortSignal){
  const value=await request<PolicyRecoveryStatus>('',{signal})
  if(!scopeMatches(value)||!string(value.projectId)||!string(value.projectPath)||typeof value.available!=='boolean'||typeof value.canInspect!=='boolean'||typeof value.canRestore!=='boolean'||value.available&&(!string(value.revision)||!countsValid(value.counts))||!value.limits||!Object.values(value.limits).every(n=>Number.isSafeInteger(n)&&n>0))throw new PolicyRecoveryError('unavailable')

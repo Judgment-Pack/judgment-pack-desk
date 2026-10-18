@@ -8,11 +8,11 @@ import {UnsavedChangesProvider,useRegisteredChanges} from '../shell/UnsavedChang
 import {giveThisPageASessionForTesting} from '../mcp/session'
 import {VerifiedSessionProvider} from '../auth/VerifiedSession'
 import {PolicyRecoverySettings} from './PolicyRecoverySettings'
-import {POLICY_RECOVERY_KEY,POLICY_RECOVERY_INCLUDED,POLICY_RECOVERY_EXCLUDED,policyRecoveryQuery,type PolicyRecoveryStatus,type PolicyRecoveryPreview,type PolicyRestoreRequest,type PolicyRestoreOutcome} from './policyRecovery'
+import {POLICY_RECOVERY_KEY,POLICY_RECOVERY_INCLUDED,POLICY_RECOVERY_EXCLUDED,policyRecoveryQuery,readPolicyRecovery,inspectPolicyRecovery,type PolicyRecoveryStatus,type PolicyRecoveryPreview,type PolicyRestoreRequest,type PolicyRestoreOutcome} from './policyRecovery'
 import {createPolicyRecoveryJournal} from './policyRecoveryJournal'
 
 const file=new File(['zip-fixture'],'policy-history.zip',{type:'application/zip'}),projectId='host-project-one',at='2026-10-19T12:00:00Z'
-const counts={policies:2,revisions:4,reviews:3,publications:1,operations:8,sourceObservations:2,externalVersions:1,blobs:9,blobBytes:4000}
+const counts={policies:2,revisions:4,reviews:3,publications:1,operations:8,sourceObservations:2,externalVersions:1,coverages:2,coverageCandidates:3,coverageReviews:1,blobs:9,blobBytes:4000}
 const status:PolicyRecoveryStatus={projectId,projectPath:'/project/current',revision:'ledger-one',available:true,canInspect:true,canRestore:true,counts,limits:{archiveBytes:536870912+2097152,expandedBytes:536870912,entries:8192,manifestBytes:1048576},scope:'project-policies',included:POLICY_RECOVERY_INCLUDED,excluded:POLICY_RECOVERY_EXCLUDED}
 const preview:PolicyRecoveryPreview={projectId,projectPath:status.projectPath,archiveDigest:'archive-one',archiveBytes:file.size,ledgerDigest:'ledger-archived',schemaVersion:2,archiveVersion:1,capturedAt:at,counts,scope:status.scope,included:status.included,excluded:status.excluded,destination:'/private/new-project',destinationRevision:'parent-one',authority:{currentnessUnknown:true,freshReviewRequired:true,sourceConsentRequired:true},restartRequired:true}
 const completed=(request:PolicyRestoreRequest):PolicyRestoreOutcome=>({delivery:'committed',outcomeKind:'policy-recovery',projectId,receipt:{...request,kind:'policy-recovery-restore',requestDigest:'d'.repeat(64),snapshotId:'e'.repeat(64),at,actor:{kind:'local',subject:'current administrator'}},restartRequired:true,authority:preview.authority})
@@ -37,6 +37,21 @@ afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();sessionStora
 it('never polls archive validation and disables hidden-panel verification',()=>{
  expect(policyRecoveryQuery().refetchInterval).toBe(false);expect(policyRecoveryQuery(false).enabled).toBe(false)
 })
+it('accepts the expanded coverage archive scope and verifies coverage counts on status and inspection',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>Response.json(String(input).endsWith('/inspect')?preview:status)))
+ expect((await readPolicyRecovery()).included).toEqual(['policy-history','policy-operation-receipts','retained-policy-originals','retained-policy-extractions','policy-coverage-history','retained-coverage-pack-bytes'])
+ expect((await inspectPolicyRecovery(file,preview.destination)).counts).toMatchObject({coverages:2,coverageCandidates:3,coverageReviews:1})
+})
+it.each(['missing-scope','unknown-scope','missing-count','negative-count','fractional-count'] as const)('rejects %s archive coverage metadata without inventing zero counts',async kind=>{
+ const value=structuredClone(status)
+ if(kind==='missing-scope')value.included=value.included.filter(item=>item!=='policy-coverage-history')
+ if(kind==='unknown-scope')value.included=[...value.included,'governing-authority']
+ if(kind==='missing-count')delete (value.counts as Partial<typeof counts>).coverageCandidates
+ if(kind==='negative-count')value.counts!.coverageReviews=-1
+ if(kind==='fractional-count')value.counts!.coverages=1.5
+ vi.stubGlobal('fetch',vi.fn(async()=>Response.json(value)))
+ await expect(readPolicyRecovery()).rejects.toMatchObject({code:'unavailable'})
+})
 async function openRestore(){const button=await screen.findByRole('button',{name:'Restore Policy archive…'});await waitFor(()=>expect(button).toHaveProperty('disabled',false));fireEvent.click(button);return screen.findByRole('dialog',{name:'Inspect Policy recovery archive'})}
 async function inspect(){const dialog=await openRestore();fireEvent.change(within(dialog).getByLabelText('Policy recovery archive'),{target:{files:[file]}});fireEvent.change(within(dialog).getByLabelText('New project destination'),{target:{value:'/private/new-project'}});fireEvent.click(within(dialog).getByRole('button',{name:'Inspect archive'}));return screen.findByRole('dialog',{name:'Review Policy recovery'})}
 function confirm(dialog:HTMLElement){fireEvent.change(within(dialog).getByLabelText('Type Yes to confirm.'),{target:{value:'Yes'}});fireEvent.click(within(dialog).getByRole('button',{name:'Restore into new project'}))}
@@ -44,6 +59,7 @@ function confirm(dialog:HTMLElement){fireEvent.change(within(dialog).getByLabelT
 it('keeps Policy-only scope separate and performs only reads until an explicit action',async()=>{
  const app=mount();await screen.findByText('/project/current')
  expect(screen.getByText(/Excludes chats, Pack and Graph drafts/)).toBeTruthy();expect(screen.getByText(/Archives are unencrypted/)).toBeTruthy()
+ expect(screen.getByText(/coverage declarations and reviews, operation receipts/)).toBeTruthy();expect(screen.getByText('Retained coverage Pack bytes support inspection and do not restore the original Pack publication.')).toBeTruthy()
  expect(app.requests.every(r=>!r.init?.method||r.init.method==='GET')).toBe(true)
 })
 it('allows independent recovery when the current Policy export and counts are unavailable',async()=>{
@@ -56,6 +72,7 @@ it('reviews download scope and freezes the export revision before its read-only 
  vi.stubGlobal('URL',class extends NativeURL{static createObjectURL=()=> 'blob:archive';static revokeObjectURL=vi.fn()})
  const app=mount();const opener=await screen.findByRole('button',{name:'Download Policy archive…'});await waitFor(()=>expect(opener).toHaveProperty('disabled',false));fireEvent.click(opener)
  const dialog=await screen.findByRole('dialog',{name:'Review Policy archive download'});expect(app.requests.filter(r=>r.url.endsWith('/archive'))).toHaveLength(0)
+ expect(within(dialog).getByText('Records: 2 · candidates: 3 · reviews: 1')).toBeTruthy()
  fireEvent.click(within(dialog).getByRole('button',{name:'Download Policy archive'}));await screen.findByText('Policy archive download started.')
  expect(click).toHaveBeenCalledOnce();expect(app.requests.find(r=>r.url.endsWith('/archive'))?.init?.headers).toMatchObject({'If-Match':'ledger-one',Authorization:expect.stringMatching(/^Bearer /)})
  expect(app.requests.every(r=>!r.init?.method||r.init.method==='GET')).toBe(true)

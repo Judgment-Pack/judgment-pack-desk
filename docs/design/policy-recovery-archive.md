@@ -33,6 +33,12 @@ uploaded original, operation outcome, source original/extraction, retained
 external-version/import provenance and supported evidence. Unrelated artifacts
 and orphan bytes in the shared retained store are excluded.
 
+Coverage reviews add their candidate/review history and exact retained Pack bytes
+to this closure. These bytes are historical review material, not a restored Pack
+workspace or publication ledger. Earlier coverage reviews remain historical after
+restore; a new approved review requires the original exact Pack publication to be
+present. See [coverage reviews](policy-coverage-review.md).
+
 The archive is unencrypted. Hashes/lengths detect corruption; they authenticate
 neither an author nor approval or current authority. Offline validation reuses
 the existing candidate, receipt and strict v1 source-observation invariants.

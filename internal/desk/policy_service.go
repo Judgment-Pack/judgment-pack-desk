@@ -12,6 +12,7 @@ import (
 type policyFailure struct {
 	Status                         int
 	Code, Message, CurrentRevision string
+	CurrentPolicyRevision          string
 	Uncertain                      bool
 }
 
@@ -35,6 +36,8 @@ func policyBeforeCommitFailure(err error) error {
 }
 
 type policyService struct {
+	coveragePack    func(context.Context, policyCoveragePackSelector) (policyCoverageResolvedPack, error)
+	checkCoverage   func(context.Context, policyCoverageMaterial) policyCoverageCheckReply
 	repository      policyRepository
 	artifacts       retainedArtifactRepository
 	authorize       func() bool
@@ -192,7 +195,7 @@ func (s policyService) recovered(ctx context.Context, ledger policyLedger, comma
 		return nil, policyUncertainStorage()
 	}
 	var result policyMutationReply
-	if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != command.OperationID || result.Receipt.Kind != command.Kind || result.Receipt.RequestDigest != command.RequestDigest || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.Actor != command.Actor || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) || !validPolicySourceAuthorityResult(result) {
+	if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != command.OperationID || result.Receipt.Kind != command.Kind || result.Receipt.RequestDigest != command.RequestDigest || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.Actor != command.Actor || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) || !validPolicySourceAuthorityResult(result) || !validPolicyCoverageResult(result) {
 		return nil, policyUncertainStorage()
 	}
 	if err = s.authorized(ctx); err != nil {
@@ -225,7 +228,7 @@ func (s policyService) operation(ctx context.Context, id string) (policyMutation
 		return policyMutationReply{}, err
 	}
 	var result policyMutationReply
-	if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != id || result.Receipt.Kind != operation.Kind || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.RequestDigest != operation.RequestDigest || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) || !validPolicySourceAuthorityResult(result) {
+	if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != id || result.Receipt.Kind != operation.Kind || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.RequestDigest != operation.RequestDigest || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) || !validPolicySourceAuthorityResult(result) || !validPolicyCoverageResult(result) {
 		return policyMutationReply{}, errors.New("policy operation receipt is inconsistent")
 	}
 	if err = s.authorized(ctx); err != nil {
