@@ -544,3 +544,81 @@ func TestPolicyRecoveryProtectsUnavailableConfiguredChatStore(t *testing.T) {
 	q := recoveryBody(t, recoveryInspect(t, s, token, archive, outside))
 	recoveryRestore(t, s, token, archive, q)
 }
+
+func TestPolicyRecoveryReconnectUpdatesCurrentConsentIdentity(t *testing.T) {
+	for _, ended := range []string{"revoke", "authorization-ended"} {
+		t.Run(ended, func(t *testing.T) {
+			f := authorityFixture(t)
+			archived := f.sync(t).State
+			archive := recoveryArchiveBytes(t, f.s, f.token)
+			destination := filepath.Join(t.TempDir(), "restored")
+			result := recoveryRestore(t, f.s, f.token, archive, recoveryBody(t, recoveryInspect(t, f.s, f.token, archive, destination)))
+			fresh, token := recoveryOpen(t, f.s, destination)
+			fresh.policySourceCanon = f.s.policySourceCanon
+			provider := f.s.policySourceCall
+			fresh.policySourceCall = func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+				if q, ok := params.(map[string]string); ok && (q["bindingId"] == archived.Binding.BindingID || q["operationId"] == archived.Grant.OperationID) {
+					t.Errorf("archived identity dispatched during %s", method)
+				}
+				return provider(ctx, method, params)
+			}
+			f.s, f.token = fresh, token
+			f.policy = policyRead(t, fresh, token, f.policy.Document.ID)
+			f.bind(t)
+			f.policy = policyRead(t, fresh, token, f.policy.Document.ID)
+			f.poll(t)
+			first := f.sync(t).State
+			if first.Recovery.ConsentOperationID != first.Grant.OperationID || first.Recovery.SnapshotID != result.Receipt.SnapshotID || len(first.Cleanup) != 0 || len(first.CleanupOperations) != 0 {
+				t.Fatal("first bind did not isolate archived consent", first.Recovery)
+			}
+			if ended == "revoke" {
+				f.action(t, "revoke", nil)
+			} else {
+				fresh.signIn.policySourceMu.Lock()
+				err := fresh.assistant.rotatePolicySourceAuthority()
+				fresh.signIn.policySourceMu.Unlock()
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.poll(t) // The ordinary worker observes the rotated epoch.
+			}
+			before := f.sync(t)
+			if ended == "authorization-ended" && before.State.State != ended {
+				t.Fatal("authorization epoch did not end the current grant", before.State.State)
+			}
+			q := policySourceSyncRequest{OperationID: policyOp(t), BaseRevision: f.policy.Revision, BaseSourceRevision: before.Revision, Action: "bind", ResourceID: "file-B", SelectionContext: strings.Repeat("a", 64), Consent: "recurring-read-after-sign-out", FrequencyMinutes: 5}
+			connected := policyMutation(t, policyCall(fresh, token, "POST", "/api/policies/"+f.policy.Document.ID+"/source-sync", q))
+			second := connected.SourceSync.State
+			authority, err := fresh.policySourceAuthorityBasis()
+			if err != nil || second.Recovery.SnapshotID != first.Recovery.SnapshotID || second.Recovery.ConsentOperationID != second.Grant.OperationID || second.Grant.OperationID == first.Grant.OperationID || second.Grant.Authority != authority || connected.Policy.Recovery.SourceConsentRequired {
+				t.Fatal("reconnect did not track current consent", second.Recovery, err)
+			}
+			if contains(second.Cleanup, archived.Binding.BindingID) || contains(second.CleanupOperations, archived.Grant.OperationID) || !contains(second.Cleanup, first.Binding.BindingID) || !contains(second.CleanupOperations, first.Grant.OperationID) {
+				t.Fatal("reconnect cleanup mixed archived and newly authorized identities", second.Cleanup, second.CleanupOperations)
+			}
+			f.policy = connected.Policy
+			f.poll(t)
+			if state := f.sync(t).State; state.State != "active" || state.Grant.ResourceID != "file-B" || len(state.Observations) != 3 {
+				t.Fatal("fresh reconnect did not retain normal observation history", state.State, len(state.Observations))
+			}
+			// Both generations of consent receipts remain valid exact historical
+			// bytes when exported and restored behind another fresh source fence.
+			cut := archiveTestCut(t, fresh)
+			archive = recoveryArchiveBytes(t, fresh, token)
+			next := filepath.Join(t.TempDir(), "restored-again")
+			recoveryRestore(t, fresh, token, archive, recoveryBody(t, recoveryInspect(t, fresh, token, archive, next)))
+			newest, newToken := recoveryOpen(t, fresh, next)
+			live := policyRead(t, newest, newToken, f.policy.Document.ID)
+			if !live.Recovery.SourceConsentRequired || live.Recovery.SnapshotID == second.Recovery.SnapshotID {
+				t.Fatal("re-exported reconnect consent became live after restoration")
+			}
+			for _, ref := range cut.Refs {
+				want, _ := fresh.artifactRepository().Get(context.Background(), ref)
+				got, err := newest.artifactRepository().Get(context.Background(), ref)
+				if err != nil || !bytes.Equal(want, got) {
+					t.Fatal("re-export changed historical receipt/original bytes", ref, err)
+				}
+			}
+		})
+	}
+}

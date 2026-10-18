@@ -344,8 +344,13 @@ func (s policyService) sourceCommand(ctx context.Context, id string, actor polic
 				source.Cleanup = appendPolicySourceCleanup(source.Cleanup, source.Binding.BindingID)
 			}
 			source.Grant = policySourceGrant{Authority: authority, Actor: actor, At: now, OperationID: digestOf([]byte(id + "\x00" + q.OperationID)), ResourceID: q.ResourceID, SelectionContext: q.SelectionContext}
-			if held {
+			if source.Recovery != nil {
+				// Every reviewed reconnect replaces the live grant. Only the first
+				// post-restore bind suppresses archived cleanup above, but all later
+				// grants must keep the recovery identity bound to current consent.
 				source.Recovery.ConsentOperationID = source.Grant.OperationID
+			}
+			if held {
 				record.Recovery.SourceConsentRequired = false
 				ledger.Policies[id] = record
 			}
