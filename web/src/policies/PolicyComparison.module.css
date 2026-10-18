@@ -1,0 +1,14 @@
+.root { display: grid; gap: var(--space-3); min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-3); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.toolbar h3, .selections p, .notices p, .metadata h4 { margin: 0; }
+.selections, .notices, .metadata { display: grid; gap: var(--space-2); min-width: 0; }
+.selections, .facts dd, .identities h4 { overflow-wrap: anywhere; }
+.notices { color: var(--ink-soft); font-size: var(--text-xs); }
+.identities { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-3); }
+.facts { display: grid; grid-template-columns: minmax(80px,auto) minmax(0,1fr); gap: var(--space-1) var(--space-2); font-size: var(--text-xs); }
+.facts dd { margin: 0; }
+.facts pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media(max-width:640px) { .identities { grid-template-columns: minmax(0,1fr); } .facts { grid-template-columns: minmax(0,1fr); } .root { padding: var(--space-2); } }
+
+.summary { margin: 0; font-size: var(--text-xs); overflow-wrap: anywhere; }
+.exact { font-size: var(--text-xs); overflow-wrap: anywhere; color: var(--ink-soft); }

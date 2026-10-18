@@ -1,5 +1,6 @@
 import { msg } from '../i18n'
 export const TOOL_LABELS: Record<string, string> = {
+ get read_policy_comparison(){return msg('Compare Policy changes')},
  get get_dialect_contract(){return msg("Read dialect contract")},
  get get_dialect_schema(){return msg("Read dialect schema")},
  get get_dialect_reference(){return msg("Read dialect reference")},

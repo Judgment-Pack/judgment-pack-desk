@@ -34,5 +34,5 @@ it('refuses model-supplied authority, another revision and cancelled proposals',
 })
 it('Plan admits fresh reads and filters draft proposals before any adapter dispatch',()=>{
  const f=fixture();const session=planningSession({context:{phase:'plan'},prompt:'Inspect Policy',tools:[],hostTools:f.tools,callTool:vi.fn()} as never)
- expect((session as {hostTools:{name:string}[]}).hostTools.map(t=>t.name)).toEqual(['read_policy'])
+ expect((session as {hostTools:{name:string}[]}).hostTools.map(t=>t.name)).toEqual(['read_policy','read_policy_comparison'])
 })

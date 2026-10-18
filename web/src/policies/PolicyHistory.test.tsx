@@ -1,8 +1,11 @@
-import {cleanup,render,screen,within,fireEvent} from '@testing-library/react'
+import {cleanup,render,screen,within,fireEvent,waitFor} from '@testing-library/react'
 import {QueryClientProvider} from '@tanstack/react-query'
 import {afterEach,expect,it,vi} from 'vitest'
 import {testQueryClient} from '../testing/harness'
-import {PolicyHistory} from './PolicyHistory'
+import {PolicyHistory,previousPolicyRevision} from './PolicyHistory'
+import {resolvePolicyComparison,type PolicyComparison as Comparison} from './comparison'
+vi.mock('./comparison',()=>({resolvePolicyComparison:vi.fn()}))
+vi.mock('../ui/CodeDiff',()=>({CodeDiff:()=> <div>Saved text comparison</div>}))
 import type {PolicyDocument} from './client'
 
 afterEach(cleanup)
@@ -41,4 +44,37 @@ it('passes the chosen old publication identity to Design pack even after a later
  fireEvent.click(screen.getByRole('button',{name:'Inspect Published'}))
  expect(designAction).toHaveBeenLastCalledWith({policyId:document.id,publicationId:'publication-one'})
  expect(screen.getByText('Exact design action')).toBeTruthy()
+})
+
+it('compares the prior retained candidate rather than a repeated review of the same revision, and freezes that pair',async()=>{
+ const document=fixture(),old=document.revisions[0]!
+ document.revisions.push({...old,id:'revision-two',sequence:4,digest:'digest-two'})
+ document.candidate={...document.candidate,revisionId:'revision-two'}
+ document.reviews.push({...document.reviews[0]!,id:'review-two',sequence:5,candidateRevisionId:'revision-two'},{...document.reviews[0]!,id:'review-three',sequence:6,candidateRevisionId:'revision-two'})
+ expect(previousPolicyRevision(document,'revision-two')?.id).toBe('revision-one')
+ const side={identity:{content:{sha256:'hash',bytes:1}},text:'Text',metadata:{kind:'narrative' as const,completeness:'complete' as const}}
+ vi.mocked(resolvePolicyComparison).mockImplementation(async(policyId,request)=>({policyId,before:{...side,selector:request.before},after:{...side,selector:request.after},differences:[],limitations:[]} as Comparison))
+ const client=testQueryClient(),view=render(<QueryClientProvider client={client}><PolicyHistory document={document}/></QueryClientProvider>)
+ fireEvent.click(screen.getAllByRole('button',{name:'Compare Approved with previous saved revision'})[0]!)
+ await screen.findByText('Saved text comparison')
+ expect(resolvePolicyComparison).toHaveBeenCalledWith(document.id,{before:{kind:'revision',revisionId:'revision-one'},after:{kind:'revision',revisionId:'revision-two'}},expect.any(AbortSignal))
+ const newer=structuredClone(document);newer.candidate.revisionId='revision-three';newer.revisions.push({...old,id:'revision-three',sequence:7})
+ view.rerender(<QueryClientProvider client={client}><PolicyHistory document={newer}/></QueryClientProvider>)
+ expect(screen.getByText(/keeps the exact selected pair/)).toBeTruthy()
+ view.rerender(<QueryClientProvider client={client}><PolicyHistory document={document} newerPolicyState/></QueryClientProvider>)
+ expect(screen.getByText(/keeps the exact selected pair/)).toBeTruthy()
+ await waitFor(()=>expect(resolvePolicyComparison).toHaveBeenCalledTimes(1))
+})
+
+it('distinguishes exact versions with repeated title and version labels',()=>{
+ const document=fixture(),old=document.revisions[0]!
+ document.revisions=[{...old,id:'revision_'+'1'.repeat(48)},{...old,id:'revision_'+'2'.repeat(48),sequence:4}]
+ document.publications=[]
+ render(<QueryClientProvider client={testQueryClient()}><PolicyHistory document={document}/></QueryClientProvider>)
+ fireEvent.click(screen.getByText('Compare exact saved versions'))
+ fireEvent.pointerDown(screen.getByRole('combobox',{name:'Before saved version'}),{button:0,ctrlKey:false,pointerType:'mouse'})
+ const labels=screen.getAllByRole('option').map(option=>option.textContent)
+ expect(labels).toHaveLength(2);expect(new Set(labels).size).toBe(2)
+ expect(labels.some(label=>label?.includes('#1')&&label.includes('11111111'))).toBe(true)
+ expect(labels.some(label=>label?.includes('#4')&&label.includes('22222222'))).toBe(true)
 })
