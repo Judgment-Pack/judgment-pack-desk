@@ -6050,8 +6050,10 @@
   "UTF-8 Markdown (.md) or plain text (.txt), up to 128 KiB. Select a file, edit its draft text, then Save draft to retain the original.": "UTF-8 Markdown（.md）或纯文本（.txt），最大128 KiB。选择文件、编辑草稿文本，然后选择“保存草稿”以保留原件。",
   "User-supplied starting material. The original is retained separately from your editable draft; importing does not approve or publish it.": "用户提供的初始资料。原件与可编辑草稿分开保留；导入不代表批准或发布。",
   "Back to policy": "返回政策",
-  "Set aside by Runner: {{reason}}": "已被 Runner 搁置：{{reason}}",
   "Set aside by Runner.": "已被 Runner 搁置。",
   "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source, or upgrade the job to a release that does not name it.": "输入配置 {{profile}} 已被 Runner 搁置，无法绑定。请为此来源选择其他配置，或将作业升级到不引用它的版本。",
-  "The input profile {{profile}} was set aside by Runner and cannot be bound: {{reason}}. Choose another profile for this source, or upgrade the job to a release that does not name it.": "输入配置 {{profile}} 已被 Runner 搁置，无法绑定：{{reason}}。请为此来源选择其他配置，或将作业升级到不引用它的版本。"
+  "Set aside by Runner. Runner’s reason: {{reason}}": "已被 Runner 搁置。Runner 给出的原因：{{reason}}",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source, or upgrade the job to a release that does not name it.": "输入配置 {{profile}} 已被 Runner 搁置，无法绑定。Runner 给出的原因：{{reason}}。请为此来源选择其他配置，或将作业升级到不引用它的版本。",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source.": "输入配置 {{profile}} 已被 Runner 搁置，无法绑定。Runner 给出的原因：{{reason}}。请为此来源选择其他配置。",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source.": "输入配置 {{profile}} 已被 Runner 搁置，无法绑定。请为此来源选择其他配置。"
 }

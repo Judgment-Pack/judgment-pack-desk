@@ -78,3 +78,12 @@ it('retains the unmodified calculation record in technical details',()=>{
  fireEvent.click(screen.getByText('Technical details'))
  expect(JSON.parse(document.querySelector('pre')!.textContent!)).toEqual(value)
 })
+it('shows Runner\'s reason beside a pin whose listed profile is set aside',()=>{
+ const bound={...mapping,sources:mapping.sources!.map(s=>s.name==='conversion'?{...s,profile:'fx',profileDigest:'sha256:'+'f'.repeat(64)}:s)} as ExecutableDialect
+ render(<DialectReview mapping={bound} entries={[{digest:'sha256:'+'f'.repeat(64),profile,state:'set-aside',reason:'the input profile fx: its form is refused (input-malformed)'}]}/>)
+ const row=within(screen.getByRole('row',{name:/conversion/}))
+ expect(row.getByText('Set aside by Runner. Runner’s reason: its form is refused')).toBeTruthy()
+ cleanup()
+ render(<DialectReview mapping={bound} entries={[{digest:'sha256:'+'f'.repeat(64),profile}]}/>)
+ expect(screen.queryByText(/Set aside by Runner/)).toBeNull()
+})

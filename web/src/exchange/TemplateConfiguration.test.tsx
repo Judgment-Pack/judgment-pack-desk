@@ -159,17 +159,35 @@ it('shows a set-aside page profile with Runner\'s reason and never takes it as t
  vi.mocked(jobsAPI).mockResolvedValue([ai,page('guides',['https://docs.example/guides']),{...page('old-pages',['https://a.example/api/v4/projects/group%2Fproject']),state:'set-aside',reason}])
  show(candidate([{...source,capabilities:['answer','page']}]))
  fireEvent.change(screen.getByLabelText('Pack'),{target:{value:'classification-pack'}})
- const aside=await screen.findByRole('option',{name:'old-pages · Set aside by Runner: '+reason}) as HTMLOptionElement
+ const aside=await screen.findByRole('option',{name:'old-pages · Set aside by Runner. Runner’s reason: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://*'}) as HTMLOptionElement
  fireEvent.change(screen.getByLabelText('classification · answer'),{target:{value:'local-ai'}})
  expect(aside.disabled).toBe(true)
  expect((screen.getByRole('option',{name:'guides'}) as HTMLOptionElement).disabled).toBe(false)
- // Even where a selection names it, it is no chosen profile: no scope of
- // its is shown as the binding's, and no draft can be made with it.
+ // Even where a selection names it, it is no chosen profile: the scope view
+ // gives Runner's reason beside its stored scope, and no draft can be made.
  fireEvent.change(screen.getByLabelText('classification · page'),{target:{value:'old-pages'}})
- expect(screen.queryByRole('list',{name:'Page scope'})).toBeNull()
+ expect(screen.getByRole('list',{name:'Page scope'}).closest('div')!.textContent).toContain('The input profile old-pages was set aside by Runner and cannot be bound. Runner’s reason: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://*. Choose another profile for this source.')
  const save=screen.getByRole('button',{name:'Create job draft'}) as HTMLButtonElement
  expect(save.disabled).toBe(true)
  fireEvent.change(screen.getByLabelText('classification · page'),{target:{value:'guides'}})
  await waitFor(()=>expect(save.disabled).toBe(false))
  expect(screen.getByRole('list',{name:'Page scope'}).textContent).toBe('https://docs.example/guides')
+})
+it('gives Runner\'s reason in the scope view for a selection whose profile is set aside after it was chosen',async()=>{
+ const ai={digest,profile:{id:'local-ai',class:'generated',research:{capabilities:['answer'],model:'model-a'}}}
+ const page={digest:'sha256:pages',profile:{id:'pages',class:'generated',source:'web',shape:'http',endpoint:null,endpointScope:['https://a.example/api/v4/projects/group%2Fproject'],research:{capabilities:['page']}}}
+ vi.mocked(jobsAPI).mockResolvedValue([ai,page])
+ show(candidate([{...source,capabilities:['answer','page']}]))
+ fireEvent.change(screen.getByLabelText('Pack'),{target:{value:'classification-pack'}})
+ await screen.findByRole('option',{name:'pages'})
+ fireEvent.change(screen.getByLabelText('classification · answer'),{target:{value:'local-ai'}})
+ fireEvent.change(screen.getByLabelText('classification · page'),{target:{value:'pages'}})
+ const save=screen.getByRole('button',{name:'Create job draft'}) as HTMLButtonElement
+ await waitFor(()=>expect(save.disabled).toBe(false))
+ // The listing is read again, and Runner now lists the chosen profile as set aside.
+ vi.mocked(jobsAPI).mockResolvedValue([ai,{...page,state:'set-aside',reason:'the input profile pages: its scope is refused (input-malformed)'}])
+ await act(async()=>{await cache.invalidateQueries({queryKey:['job-input-profiles']})})
+ await screen.findByText('The input profile pages was set aside by Runner and cannot be bound. Runner’s reason: its scope is refused. Choose another profile for this source.')
+ expect(screen.queryByText('The scope of this page profile cannot be shown: it is not among the installed profiles.')).toBeNull()
+ expect(save.disabled).toBe(true)
 })

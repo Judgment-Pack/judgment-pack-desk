@@ -357,6 +357,12 @@ func (s *Server) prepareReviewedInputsWithRelease(ctx context.Context, doc input
 		}
 		return json.Unmarshal(p.Profile, &profile) == nil && profile.Class == "generated"
 	})
+	// The reviewed input feeds a job's release.
+	var aside setAsideProfileError
+	if errors.As(err, &aside) {
+		aside.Job = true
+		return aside
+	}
 	if err != nil {
 		return err
 	}

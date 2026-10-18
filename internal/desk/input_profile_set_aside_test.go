@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -120,9 +121,45 @@ func TestRunnerSetAsideProfileIsNeverACandidate(t *testing.T) {
 	if entry, err := listing.installedProfile("current-pages", digestIs(setAsideOldDigest)); err != nil || entry != nil {
 		t.Fatal("an installed profile resolved by another digest", entry, err)
 	}
-	want := "The input profile old-pages was set aside by Runner and cannot be bound: " + setAsideReason + ". Choose another profile for this source, or upgrade the job to a release that does not name it."
-	if got := (setAsideProfileError{ID: "old-pages", Reason: setAsideReason}).Error(); got != want {
-		t.Fatal("the refusal reads", got)
+	// The message names the profile once, labels what remains of Runner's
+	// reason as Runner's, without its code, and words the next step for a
+	// job only where the binding is a job's.
+	shown := "The input profile old-pages was set aside by Runner and cannot be bound. Runner's reason: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://*."
+	for _, tc := range []struct {
+		refusal setAsideProfileError
+		want    string
+	}{
+		{setAsideProfileError{ID: "old-pages", Reason: setAsideReason}, shown + " Choose another profile for this source."},
+		{setAsideProfileError{ID: "old-pages", Reason: setAsideReason, Job: true}, shown + " Choose another profile for this source, or upgrade the job to a release that does not name it."},
+		// A reason that names another profile keeps its words.
+		{setAsideProfileError{ID: "old-pages", Reason: "the input profile other: refused (input-malformed)"}, "The input profile old-pages was set aside by Runner and cannot be bound. Runner's reason: the input profile other: refused. Choose another profile for this source."},
+		{setAsideProfileError{ID: "old-pages"}, "The input profile old-pages was set aside by Runner and cannot be bound. Choose another profile for this source."},
+		{setAsideProfileError{Job: true}, "An input profile this binding names was set aside by Runner and cannot be bound. Choose another profile for this source, or upgrade the job to a release that does not name it."},
+	} {
+		if got := tc.refusal.Error(); got != tc.want {
+			t.Errorf("the refusal reads\n%s\nnot\n%s", got, tc.want)
+		}
+	}
+}
+
+// Installed means the state member is absent: an entry whose state is empty
+// or null is no candidate either, and a pin naming it is refused.
+func TestRunnerListingEntryWithAnyStateMemberIsNeverACandidate(t *testing.T) {
+	for _, state := range []string{`""`, `null`, `"retired"`} {
+		raw := `[{"profile":{"id":"pages"},"digest":"sha256:d","state":` + state + `,"reason":"refused"}]`
+		listing, err := readInputProfileListing(json.RawMessage(raw))
+		if err != nil || len(listing) != 1 || listing[0].installed() {
+			t.Fatalf("state %s: listed as %+v, %v", state, listing, err)
+		}
+		entry, err := listing.installedProfile("pages", digestIs("sha256:d"))
+		var aside setAsideProfileError
+		if entry != nil || !errors.As(err, &aside) || aside.ID != "pages" {
+			t.Fatalf("state %s: a pin naming it resolved to %v, %v", state, entry, err)
+		}
+	}
+	listing, err := readInputProfileListing(json.RawMessage(`[{"profile":{"id":"pages"},"digest":"sha256:d"}]`))
+	if entry, e := listing.installedProfile("pages", digestIs("sha256:d")); err != nil || e != nil || entry == nil {
+		t.Fatal("an entry with no state member is not installed", entry, e, err)
 	}
 }
 
@@ -142,7 +179,7 @@ func TestJobsProxyServesSetAsideProfilesAndMapsTheirRefusal(t *testing.T) {
 	if w := call("GET", "input-profiles", ""); w.Code != 200 || w.Body.String() != setAsideListing {
 		t.Fatalf("the listing reached the page as %d %s", w.Code, w.Body)
 	}
-	desk := setAsideProfileError{ID: "old-pages", Reason: setAsideReason}.Error()
+	desk := setAsideProfileError{ID: "old-pages", Reason: setAsideReason, Job: true}.Error()
 	standIn.refuse(t, codeProfileSetAside, runnerSetAsideMessage("old-pages", setAsideReason))
 	for _, tail := range []string{"inputs/next", "jobs"} {
 		w := call("POST", tail, `{}`)
@@ -316,8 +353,8 @@ db.close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := setAsideProfileError{ID: "pages", Reason: reason}
-	if entry, err := listing.installedProfile("pages", digestIs(digest)); entry != nil || err == nil || err.Error() != want.Error() {
+	want := setAsideProfileError{ID: "pages", Reason: reason, Job: true}
+	if entry, err := listing.installedProfile("pages", digestIs(digest)); entry != nil || err == nil || err.Error() != (setAsideProfileError{ID: "pages", Reason: reason}).Error() {
 		t.Fatal("a pin naming the set-aside profile resolved to", entry, err)
 	}
 	// A binding to it: Runner refuses it, and the page and Desk are told so
@@ -337,7 +374,22 @@ db.close()
 	}
 	_, err = s.inputRunner(t.Context(), "inputs/next", json.RawMessage(binding), "")
 	var refused *inputRunnerError
-	if !errors.As(err, &refused) || refused.Code != codeProfileSetAside || refused.Message != want.Error() {
+	if !errors.As(err, &refused) || refused.Code != codeProfileSetAside || refused.Message != (setAsideProfileError{ID: "pages", Reason: reason}).Error() {
 		t.Fatal("the binding's refusal reached Desk as", err)
+	}
+	// The real Runner's reason names the profile and ends with its code. The
+	// message names the profile once, labels the reason as Runner's, and
+	// shows no bare code; the next step is a job's only on the Jobs routes.
+	code := regexp.MustCompile(`\([a-z][a-z0-9_-]*\)$`).FindString(reason)
+	if !strings.HasPrefix(reason, "the input profile pages: ") || code == "" {
+		t.Fatal("Runner's reason is no longer the form this test reads:", reason)
+	}
+	for _, shown := range []string{answer.Error.Message, refused.Message} {
+		if n := len(regexp.MustCompile(`\bpages\b`).FindAllString(shown, -1)); n != 1 || strings.Contains(shown, code) || !strings.Contains(shown, " Runner's reason: an endpointScope entry ") {
+			t.Fatalf("the message names the profile %d times or shows Runner's code: %s", n, shown)
+		}
+	}
+	if !strings.HasSuffix(answer.Error.Message, "or upgrade the job to a release that does not name it.") || strings.Contains(refused.Message, "upgrade the job") {
+		t.Fatal("the next step is worded for the wrong surface:", answer.Error.Message, refused.Message)
 	}
 }

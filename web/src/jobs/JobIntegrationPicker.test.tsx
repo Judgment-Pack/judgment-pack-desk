@@ -70,7 +70,7 @@ it('shows a set-aside profile with Runner\'s reason as its status and does not l
  fireEvent.click(screen.getByRole('button',{name:'Add source'}))
  const option=screen.getByRole('button',{name:'old-registry'}) as HTMLButtonElement
  expect(option.disabled).toBe(true)
- expect(document.getElementById(option.getAttribute('aria-describedby')!)?.textContent).toBe('Set aside by Runner: its form is refused')
+ expect(document.getElementById(option.getAttribute('aria-describedby')!)?.textContent).toBe('Set aside by Runner. Runner’s reason: its form is refused')
  fireEvent.click(option)
  expect(onPick).not.toHaveBeenCalled()
  await screen.findByText('Background access configured')

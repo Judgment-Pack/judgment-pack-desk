@@ -6050,8 +6050,10 @@
   "UTF-8 Markdown (.md) or plain text (.txt), up to 128 KiB. Select a file, edit its draft text, then Save draft to retain the original.": "UTF-8形式のMarkdown（.md）またはプレーンテキスト（.txt）、最大128 KiB。ファイルを選択し、下書きのテキストを編集してから「下書きを保存」を選ぶと、原本が保持されます。",
   "User-supplied starting material. The original is retained separately from your editable draft; importing does not approve or publish it.": "ユーザーが提供した元資料です。原本は編集可能な下書きとは別に保持されます。インポートによって承認や公開は行われません。",
   "Back to policy": "ポリシーに戻る",
-  "Set aside by Runner: {{reason}}": "Runner により保留: {{reason}}",
   "Set aside by Runner.": "Runner により保留されました。",
   "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source, or upgrade the job to a release that does not name it.": "入力プロファイル {{profile}} は Runner により保留されたため、割り当てられません。このソースに別のプロファイルを選択するか、このプロファイルを指定しないリリースにジョブをアップグレードしてください。",
-  "The input profile {{profile}} was set aside by Runner and cannot be bound: {{reason}}. Choose another profile for this source, or upgrade the job to a release that does not name it.": "入力プロファイル {{profile}} は Runner により保留されたため、割り当てられません: {{reason}}。このソースに別のプロファイルを選択するか、このプロファイルを指定しないリリースにジョブをアップグレードしてください。"
+  "Set aside by Runner. Runner’s reason: {{reason}}": "Runner により保留。Runner の理由: {{reason}}",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source, or upgrade the job to a release that does not name it.": "入力プロファイル {{profile}} は Runner により保留されたため、割り当てられません。Runner の理由: {{reason}}。このソースに別のプロファイルを選択するか、このプロファイルを指定しないリリースにジョブをアップグレードしてください。",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source.": "入力プロファイル {{profile}} は Runner により保留されたため、割り当てられません。Runner の理由: {{reason}}。このソースに別のプロファイルを選択してください。",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source.": "入力プロファイル {{profile}} は Runner により保留されたため、割り当てられません。このソースに別のプロファイルを選択してください。"
 }

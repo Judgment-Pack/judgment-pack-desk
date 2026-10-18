@@ -88,7 +88,7 @@ export async function prepareMappedInputs(options: {
   if (!pin) continue
   const listed = profiles.find(p => p.profile.id === pin.profile && p.digest === pin.profileDigest)
   // Runner never binds a profile it set aside, retained research included.
-  if (listed && !installedEntry(listed)) throw Error(setAsideRefusal(listed.profile.id, listed.reason))
+  if (listed && !installedEntry(listed)) throw Error(setAsideRefusal(listed.profile.id, listed.reason, true))
   const trusted = listed?.profile
   // Offline retained research is verified by Runner under its pinned profiles.
   if (Object.hasOwn(source.sources,s.name)||s.kind==='research'&&options.retainedResearch?.[s.name])continue

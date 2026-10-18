@@ -131,7 +131,7 @@ export async function jobsAPI<T>(path: string, body?: unknown, key?: string, sig
     // A binding to a profile Runner set aside: Desk's message, in the page's
     // language, naming the profile and Runner's reason as Desk forwards them.
     const refused = result.error
-    if (refused?.code === 'input_profile_set_aside' && typeof refused.profile === 'string') throw new JobsRequestError(setAsideRefusal(refused.profile, typeof refused.reason === 'string' ? refused.reason : undefined), response.status, refused.code)
+    if (refused?.code === 'input_profile_set_aside' && typeof refused.profile === 'string') throw new JobsRequestError(setAsideRefusal(refused.profile, typeof refused.reason === 'string' ? refused.reason : undefined, true), response.status, refused.code)
     throw new JobsRequestError(result.error?.message ?? result.message ?? 'The local runner could not complete this request.', response.status, typeof result.error?.code === 'string' ? result.error.code : undefined)
   }
   return result as T

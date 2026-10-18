@@ -2,15 +2,16 @@ import {msg} from '../i18n'
 import type {BindingDocument,InputProfile,ProfileBinding} from '../dialect/types'
 import {Notice} from '../ui/Notice'
 import type {ProfileEntry} from './dialectTypes'
-import {installedEntry,setAsideRefusal} from './setAsideProfiles'
+import {installedEntry,setAsideEntry,setAsideRefusal} from './setAsideProfiles'
 import styles from './JobsView.module.css'
 
 const wildcard='https://*'
 
-/** The listed profile a page assignment pins, matched by id and digest: an
- * installed one, or one Runner set aside, which is shown with its reason. */
+/** The listed profile a page assignment pins: the installed one with its id
+ * and digest, or else one Runner set aside under its id, whatever digest the
+ * pin names, as Runner refuses it; that one is shown with its reason. */
 export function pinnedEntry(profiles:ProfileEntry[],pin?:ProfileBinding):ProfileEntry|undefined {
- return pin?profiles.find(entry=>entry.profile.id===pin.profile&&entry.digest===pin.profileDigest):undefined
+ return pin?profiles.find(entry=>installedEntry(entry)&&entry.profile.id===pin.profile&&entry.digest===pin.profileDigest)??setAsideEntry(profiles,pin.profile):undefined
 }
 
 /** The page assignment a reviewed run froze, read as the Desk reads it: the
@@ -31,7 +32,7 @@ export function frozenPagePin(inputText:string,sourceName:string):ProfileBinding
  * Runner set aside shows its stored scope with Runner's reason beside it. */
 export function PageProfileScope({entry,label}:{entry?:ProfileEntry;label?:string}) {
  const profile:InputProfile|undefined=entry?.profile,scope=profile?.endpointScope
- const setAside=entry&&!installedEntry(entry)?<Notice tone="warning">{setAsideRefusal(entry.profile.id,entry.reason)}</Notice>:null
+ const setAside=entry&&!installedEntry(entry)?<Notice tone="warning">{setAsideRefusal(entry.profile.id,entry.reason,false)}</Notice>:null
  if(!profile||(scope?!scope.length:!profile.endpoint))return setAside??<Notice tone="warning">{msg('The scope of this page profile cannot be shown: it is not among the installed profiles.')}</Notice>
  if(!scope)return <>{setAside}<p className={styles.note}>{msg('No page scope. Runner accepts a page only at this exact endpoint: {{endpoint}}',{endpoint:profile.endpoint??''})}</p></>
  const title=label??msg('Page scope')

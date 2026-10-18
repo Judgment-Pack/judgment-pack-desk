@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strings"
 )
 
 // Runner's listing of the installation's profiles (GET /v1/input-profiles)
@@ -23,19 +24,20 @@ import (
 const codeProfileSetAside = "input_profile_set_aside"
 
 // listedInputProfile is one entry of Runner's listing. Profile is a set-aside
-// entry's stored bytes, which Runner's current form refuses.
+// entry's stored bytes, which Runner's current form refuses. State is the
+// state member as written, kept raw so that its presence is what counts.
 type listedInputProfile struct {
 	Profile json.RawMessage `json:"profile"`
 	Digest  string          `json:"digest"`
-	State   string          `json:"state,omitempty"`
+	State   json.RawMessage `json:"state,omitempty"`
 	Reason  string          `json:"reason,omitempty"`
 	id      string
 }
 
-// installed reports an installed profile, an entry with no state. An entry
-// with any state, of which set-aside is the one Runner lists, is never a
-// candidate.
-func (p listedInputProfile) installed() bool { return p.State == "" }
+// installed reports an installed profile: an entry with no state member. An
+// entry with one, whatever its value (set-aside, the one Runner lists, but
+// also an empty string or null), is never a candidate.
+func (p listedInputProfile) installed() bool { return p.State == nil }
 
 type inputProfileListing []listedInputProfile
 
@@ -82,19 +84,44 @@ func digestIs(digest string) func(listedInputProfile) bool {
 }
 
 // setAsideProfileError is Desk's refusal of a binding to a profile Runner set
-// aside. It names the profile, gives Runner's reason, and says what the user
-// can do; nothing else of Runner's refusal reaches the user.
-type setAsideProfileError struct{ ID, Reason string }
+// aside. It names the profile, gives Runner's reason, labelled as Runner's,
+// and says what the user can do: choose another profile for the source, and,
+// where the binding is a job's (Job), upgrade the job. Nothing else of
+// Runner's refusal reaches the user.
+type setAsideProfileError struct {
+	ID, Reason string
+	Job        bool
+}
 
 func (e setAsideProfileError) Error() string {
-	const next = " Choose another profile for this source, or upgrade the job to a release that does not name it."
-	switch {
-	case e.ID == "":
-		return "An input profile this binding names was set aside by Runner and cannot be bound." + next
-	case e.Reason == "":
-		return "The input profile " + e.ID + " was set aside by Runner and cannot be bound." + next
+	next := " Choose another profile for this source."
+	if e.Job {
+		next = " Choose another profile for this source, or upgrade the job to a release that does not name it."
 	}
-	return "The input profile " + e.ID + " was set aside by Runner and cannot be bound: " + e.Reason + "." + next
+	message := "The input profile " + e.ID + " was set aside by Runner and cannot be bound."
+	if e.ID == "" {
+		message = "An input profile this binding names was set aside by Runner and cannot be bound."
+	}
+	if reason := runnerReason(e.ID, e.Reason); reason != "" {
+		message += " Runner's reason: " + reason + "."
+	}
+	return message + next
+}
+
+// runnerCode is the code Runner ends a profile refusal with, such as
+// " (input-malformed)".
+var runnerCode = regexp.MustCompile(`\s*\([a-z][a-z0-9_-]*\)$`)
+
+// runnerReason is Runner's reason as Desk shows it: without the leading "the
+// input profile <id>: " where it names the same profile, which the message
+// names already, without Runner's code at its end, and without a final stop.
+func runnerReason(id, reason string) string {
+	reason = strings.TrimSpace(reason)
+	if id != "" {
+		reason = strings.TrimPrefix(reason, "the input profile "+id+": ")
+	}
+	reason = runnerCode.ReplaceAllString(reason, "")
+	return strings.TrimSuffix(strings.TrimSpace(reason), ".")
 }
 
 // setAsideNamed reads the profile a refusal names from Runner's message, in
@@ -106,12 +133,12 @@ var setAsideNamed = regexp.MustCompile(`^The input profile ([a-zA-Z][a-zA-Z0-9_-
 // input_profile_set_aside with message: the profile the message names, and
 // the reason Runner lists it with. A message in another wording names no
 // profile, and a profile the listing does not give as set aside, no reason.
-func (s *Server) setAsideRefusal(ctx context.Context, message string) setAsideProfileError {
+func (s *Server) setAsideRefusal(ctx context.Context, message string, job bool) setAsideProfileError {
 	named := setAsideNamed.FindStringSubmatch(message)
 	if named == nil {
-		return setAsideProfileError{}
+		return setAsideProfileError{Job: job}
 	}
-	refusal := setAsideProfileError{ID: named[1]}
+	refusal := setAsideProfileError{ID: named[1], Job: job}
 	raw, err := s.inputRunner(ctx, "input-profiles", nil, "")
 	if err != nil {
 		return refusal
@@ -145,7 +172,7 @@ func (s *Server) setAsideAnswer(ctx context.Context, status int, body []byte) (a
 	if json.Unmarshal(body, &failure) != nil || failure.Error.Code != codeProfileSetAside {
 		return nil, false
 	}
-	refusal := s.setAsideRefusal(ctx, failure.Error.Message)
+	refusal := s.setAsideRefusal(ctx, failure.Error.Message, true)
 	refused := map[string]any{"code": codeProfileSetAside, "message": refusal.Error(), "retryable": false}
 	if refusal.ID != "" {
 		refused["profile"] = refusal.ID

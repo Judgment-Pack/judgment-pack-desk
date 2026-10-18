@@ -82,6 +82,6 @@ it('does not bind a registration Runner lists as set aside, and says why',async(
  await screen.findByRole('button',{name:'Use page profile'})
  vi.mocked(portableResearchAPI).mockResolvedValue({...review,entry:{profile:{id:'old-pages'},digest:'profile-digest',state:'set-aside',reason:'its scope is refused'}})
  fireEvent.click(screen.getByRole('button',{name:'Use page profile'}))
- await screen.findByText('The input profile old-pages was set aside by Runner and cannot be bound: its scope is refused. Choose another profile for this source, or upgrade the job to a release that does not name it.')
+ await screen.findByText('The input profile old-pages was set aside by Runner and cannot be bound. Runner’s reason: its scope is refused. Choose another profile for this source.')
  expect(onBind).not.toHaveBeenCalled()
 })

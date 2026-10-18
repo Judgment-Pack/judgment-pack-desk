@@ -6090,8 +6090,10 @@
   "UTF-8 Markdown (.md) or plain text (.txt), up to 128 KiB. Select a file, edit its draft text, then Save draft to retain the original.": "Markdown (.md) o texto sin formato (.txt) en UTF-8, hasta 128 KiB. Selecciona un archivo, edita el texto del borrador y pulsa Guardar borrador para conservar el original.",
   "User-supplied starting material. The original is retained separately from your editable draft; importing does not approve or publish it.": "Material inicial proporcionado por el usuario. El original se conserva por separado del borrador editable; importarlo no lo aprueba ni lo publica.",
   "Back to policy": "Volver a la política",
-  "Set aside by Runner: {{reason}}": "Apartado por Runner: {{reason}}",
   "Set aside by Runner.": "Apartado por Runner.",
   "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source, or upgrade the job to a release that does not name it.": "Runner apartó el perfil de entrada {{profile}} y no se puede vincular. Elija otro perfil para esta fuente o actualice el trabajo a una versión que no lo nombre.",
-  "The input profile {{profile}} was set aside by Runner and cannot be bound: {{reason}}. Choose another profile for this source, or upgrade the job to a release that does not name it.": "Runner apartó el perfil de entrada {{profile}} y no se puede vincular: {{reason}}. Elija otro perfil para esta fuente o actualice el trabajo a una versión que no lo nombre."
+  "Set aside by Runner. Runner’s reason: {{reason}}": "Apartado por Runner. Motivo de Runner: {{reason}}",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source, or upgrade the job to a release that does not name it.": "Runner apartó el perfil de entrada {{profile}} y no se puede vincular. Motivo de Runner: {{reason}}. Elija otro perfil para esta fuente o actualice el trabajo a una versión que no lo nombre.",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source.": "Runner apartó el perfil de entrada {{profile}} y no se puede vincular. Motivo de Runner: {{reason}}. Elija otro perfil para esta fuente.",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source.": "Runner apartó el perfil de entrada {{profile}} y no se puede vincular. Elija otro perfil para esta fuente."
 }
