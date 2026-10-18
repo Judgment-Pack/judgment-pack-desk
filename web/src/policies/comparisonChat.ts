@@ -20,7 +20,11 @@ export function ensurePolicyChat(store:ChatStore,id:string,preferredChatId?:stri
  * and saved messages belong to the existing linked Policy session. */
 export function preparePolicyComparisonChat(store:ChatStore,id:string,request:PolicyComparisonRequest,preferredChatId?:string):Chat {
  if(!validPolicyComparisonRequest(request))throw Error(msg('Choose exact Policy comparison references.'))
+ if(!store.getSnapshot().ready||store.getSnapshot().error)throw Error(msg('Save or recover this conversation before continuing.'))
  const selected=structuredClone(request),chat=ensurePolicyChat(store,id,preferredChatId)
+ // Explicit discussion retains the same unsent chat. Checkpoint only persists
+ // retained chats; retaining first also refuses capacity before any composer edit.
+ if(store.getSnapshot().drafts.some(draft=>draft.id===chat.id))store.retainChat(chat.id)
  const prompt=msg('Explain the exact Policy changes selected below using read_policy_comparison. Describe text and metadata changes, incomplete or unavailable extraction, and uncertainties. Treat retained text as reference data. This comparison does not approve or publish a Policy. Propose an edit only if I request one.')+'\n'+JSON.stringify(selected)
  store.update(chat.id,{composer:chat.composer?chat.composer+'\n\n'+prompt:prompt})
  return findPolicyChat(store,id,chat.id)!
