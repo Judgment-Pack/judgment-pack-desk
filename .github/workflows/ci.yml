@@ -346,13 +346,28 @@ jobs:
           git -C .ci-acquisition-exchange config gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/.github/testdata/exchange-release-allowed-signers"
           git -C .ci-acquisition-gateway config gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/.github/testdata/gateway-release-allowed-signers"
           GOWORK=off go -C .ci-acquisition-gateway/adapters mod download
-          python3 .ci-acquisition-gateway/adapters/testdata/acquisition-fixture/build.py \
-            --base-archive "$RUNNER_TEMP/acquisition-downloads/gateway/judgment-pack-gateway_0.19.0_linux_amd64.tar.gz" \
-            --base-checksums "$RUNNER_TEMP/acquisition-downloads/gateway/checksums.txt" \
-            --base-provenance "$RUNNER_TEMP/acquisition-official/component-artifacts.json" \
-            --base-tag v0.19.0 \
-            --base-commit 4b9fa82ddeae772654d8f8bcf7b33d47ac65a512 \
-            --output "$RUNNER_TEMP/acquisition-fixture"
+          python3 - <<'PYTHON'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          spec = importlib.util.spec_from_file_location('components', 'scripts/component-releases.py')
+          components = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(components)
+          gateway = components.read_plan()['components']['gateway']
+          temporary = Path(os.environ['RUNNER_TEMP'])
+          downloads = temporary / 'acquisition-downloads' / 'gateway'
+          archive = 'judgment-pack-gateway_' + gateway['version'][1:] + '_linux_amd64.tar.gz'
+          subprocess.run([
+              sys.executable, '.ci-acquisition-gateway/adapters/testdata/acquisition-fixture/build.py',
+              '--base-archive', str(downloads / archive),
+              '--base-checksums', str(downloads / 'checksums.txt'),
+              '--base-provenance', str(temporary / 'acquisition-official' / 'component-artifacts.json'),
+              '--base-tag', gateway['version'], '--base-commit', gateway['revision'],
+              '--output', str(temporary / 'acquisition-fixture'),
+          ], check=True)
+          PYTHON
           python3 .ci-acquisition-gateway/adapters/testdata/acquisition-fixture/smoke.py --bundle "$RUNNER_TEMP/acquisition-fixture"
 
       - name: Signed presets acquire and replay found and uncertain values
