@@ -3,7 +3,7 @@ import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
-/** Primary navigation stays about destinations. Packs and graphs share Library; tests live
+/** Primary navigation stays about destinations. Packs, graphs and Dialects share Library; tests live
  * inside each pack or graph; project file editing is available from the project menu.
  * The shell never runs tests or fetches graph inventory to draw navigation. */
 import { Dialog, VisuallyHidden } from 'radix-ui'
@@ -18,8 +18,7 @@ import {
   IconGear,
   IconHelp,
   IconLibrary,
-  IconHistory,
-  IconMatrix
+  IconHistory
 } from './icons'
 import type { LeftRailMode } from './paneState'
 import { SettingsNavigationTarget } from './SettingsNavigation'
@@ -117,11 +116,6 @@ function RailBody({
   return (
     <>
       <PacksGroup icons={icons} onNavigate={onNavigate} />
-      <Labelled icons={icons} label={msg("Dialects")}>
-        <NavLink className="desk-nav-item" to="/dialects" aria-label={msg("Dialects")} onClick={onNavigate}>
-          <IconMatrix />{!icons && <span className="desk-nav-label">{msg("Dialects")}</span>}
-        </NavLink>
-      </Labelled>
       <Labelled icons={icons} label={msg("Jobs")}>
         <NavLink className="desk-nav-item" to="/jobs" aria-label={msg("Jobs")} onClick={onNavigate}>
           <IconHistory />{!icons && <span className="desk-nav-label">{msg("Jobs")}</span>}
@@ -195,7 +189,7 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
   useLocale()
   const { error } = usePacks()
   const { pathname } = useLocation()
-  const active = /^\/(library|packs|graphs|decisions)(?:\/|$)/.test(pathname)
+  const active = /^\/(library|packs|graphs|dialects|decisions)(?:\/|$)/.test(pathname)
 
   return (
     <>

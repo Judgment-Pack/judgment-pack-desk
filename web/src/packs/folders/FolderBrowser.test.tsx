@@ -12,6 +12,10 @@ import {FOLDERS_KEY,loadFolders,saveFolderAction,assignCreatedPack} from './clie
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),loadFolders:vi.fn(),saveFolderAction:vi.fn(),assignCreatedPack:vi.fn()}))
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.clearAllMocks();vi.unstubAllGlobals();localStorage.clear()})
 function setup({width=1100,path='/library',corrupt=false,rootPending=false,graphs=false,state=undefined as unknown}={}){
+ vi.stubGlobal('fetch',async(input:RequestInfo|URL)=>{
+  if(['/api/input-preparations','/api/dialect-drafts'].includes(String(input)))return Response.json({items:[]})
+  throw new Error('No file fixture for this test.')
+ })
  const observers:{callback:(entries:ResizeObserverEntry[])=>void}[]=[]
  vi.stubGlobal('ResizeObserver',class {constructor(callback:(entries:ResizeObserverEntry[])=>void){observers.push({callback})} observe(){} disconnect(){} unobserve(){}})
  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(()=>({x:0,y:0,top:0,left:0,bottom:700,right:width,width,height:700,toJSON(){}}))
@@ -31,9 +35,9 @@ it('defaults existing packs to home, scopes nested search, and carries destinati
  const {router}=setup()
  await screen.findByRole('link',{name:/home-pack/})
  expect(screen.queryByRole('link',{name:/department-pack/})).toBeNull()
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'department'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search library'}),{target:{value:'department'}})
  await screen.findByRole('link',{name:/department-pack/})
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:''}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search library'}),{target:{value:''}})
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'Operations'}))
  fireEvent.keyDown(screen.getByRole('button',{name:'Create'}),{key:'Enter'})
  expect((await screen.findByRole('menuitem',{name:'Create pack'})).getAttribute('href')).toBe('/packs/new?folder=dept')
@@ -106,11 +110,11 @@ it('restores a direct pack link to its folder and expanded ancestors',async()=>{
 it('keeps the original Library search scope when returning from a pack',async()=>{
  const {router}=setup();await screen.findByRole('link',{name:/home-pack/})
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Library'}))
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'pack'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search library'}),{target:{value:'pack'}})
  fireEvent.click(await screen.findByRole('link',{name:/department-pack/}))
  await screen.findByText('Pack content')
  await act(async()=>router.navigate(-1))
- expect(screen.getByRole('searchbox',{name:'Search packs and graphs'}).getAttribute('value')).toBe('pack')
+ expect(screen.getByRole('searchbox',{name:'Search library'}).getAttribute('value')).toBe('pack')
  expect(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Library'}).getAttribute('aria-current')).toBe('location')
  expect(screen.getByRole('link',{name:/home-pack/})).toBeTruthy()
 })

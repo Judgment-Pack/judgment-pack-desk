@@ -7,16 +7,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import { useFileListing } from '../../files/queries'
 import { msg, systemMessage } from '../../i18n'
+import {libraryKind, type LibraryKind} from '../../library/items'
 import { FOLDERS_KEY, loadFolders, saveFolderAction, type FolderSnapshot } from './client'
 import { ALL_PACKS, defaultFolders, HOME_FOLDER, WORKSPACE_ROOT, packFolder, folderTrail, type FolderAction } from './model'
-interface Preferences { selected: string; expanded: string[]; width: number; collapsed: boolean; visibilityChosen: boolean }
-const defaults: Preferences = { selected: HOME_FOLDER, expanded: [HOME_FOLDER], width: 220, collapsed: false, visibilityChosen: false }
+interface Preferences { selected: string; expanded: string[]; width: number; collapsed: boolean; visibilityChosen: boolean; kind: LibraryKind }
+const defaults: Preferences = { selected: HOME_FOLDER, expanded: [HOME_FOLDER], width: 220, collapsed: false, visibilityChosen: false, kind: 'all' }
 function read(key: string | undefined): Preferences {
  try {
   const raw = key && localStorage.getItem(key)
   if (!raw || raw.length>100000) return defaults
   const value=JSON.parse(raw)
-  return { selected: typeof value.selected==='string' ? value.selected : HOME_FOLDER, expanded: Array.isArray(value.expanded) ? value.expanded.filter((id:unknown)=>typeof id==='string').slice(0,1000) : [HOME_FOLDER], width: Number.isFinite(value.width) ? Math.max(180,Math.min(320,value.width)) : 220, collapsed: value.collapsed === true, visibilityChosen: typeof value.visibilityChosen==='boolean'?value.visibilityChosen:typeof value.collapsed==='boolean' }
+  return { selected: typeof value.selected==='string' ? value.selected : HOME_FOLDER, expanded: Array.isArray(value.expanded) ? value.expanded.filter((id:unknown)=>typeof id==='string').slice(0,1000) : [HOME_FOLDER], width: Number.isFinite(value.width) ? Math.max(180,Math.min(320,value.width)) : 220, collapsed: value.collapsed === true, visibilityChosen: typeof value.visibilityChosen==='boolean'?value.visibilityChosen:typeof value.collapsed==='boolean', kind: libraryKind(value.kind) }
  } catch { return defaults }
 }
 function useFolderState(storageKey?: string) {
@@ -61,7 +62,15 @@ function useFolderState(storageKey?: string) {
   const id=new URLSearchParams(location.search).get('folder')
   if(id && id===ALL_PACKS)preferences({selected:id});else if(id && document.folders.some(f=>f.id===id))preferences({selected:id,expanded:[...new Set([...prefs.expanded,...folderTrail(document,id).map(f=>f.id)])]})
  },[location.pathname,location.search,query.data])
- const select=(id:string)=>{preferences({selected:id});setOverlay(false);if(location.pathname!=='/library'||new URLSearchParams(location.search).has('folder'))navigate(`/library?folder=${encodeURIComponent(id)}`)}
+ const select=(id:string)=>{
+  preferences({selected:id});setOverlay(false)
+  if(location.pathname!=='/library'||new URLSearchParams(location.search).has('folder')){
+   const params=new URLSearchParams(location.pathname==='/library'?location.search:'')
+   params.set('folder',id)
+   if(!params.has('type')&&prefs.kind!=='all')params.set('type',prefs.kind)
+   navigate('/library?'+params)
+  }
+ }
  const edit=(request:NonNullable<typeof editing>,element?:HTMLElement)=>{
   opener.current=(overlay?drawerOpener.current:null)??element??documentElement();setOverlay(false);editorBase.current=query.data?{...query.data,document}:undefined;setMessage('')
   const folder=document.folders.find(folder=>folder.id===request.id)

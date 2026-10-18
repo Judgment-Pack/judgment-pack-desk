@@ -74,7 +74,7 @@ it('selects only visible rows and removes filtered-out items from selection',asy
  expect(screen.queryByRole('group',{name:'Selected item actions'})).toBeNull()
  expect(all.checked).toBe(false)
  fireEvent.click(all)
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'pending'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search library'}),{target:{value:'pending'}})
  await waitFor(()=>expect(screen.getByText('2 selected')).toBeTruthy())
  expect(screen.getAllByRole('checkbox')).toHaveLength(3)
  fireEvent.click(screen.getByRole('button',{name:'Clear selection'}))
@@ -118,7 +118,7 @@ it('cancels row deletion and restores focus to the row options control',async()=
 
 it('returns focus to select-all when clearing from the compact selection menu', async()=>{
  function CompactSelection() {
-  const [items,setItems]=useState<BrowserItem[]>([{id:'pack',title:'Pack',kind:'pack',status:'finalized',href:'/packs/pack'}])
+  const [items,setItems]=useState<BrowserItem[]>([{key:'pack:pack',id:'pack',title:'Pack',kind:'pack',status:'finalized',href:'/packs/pack'}])
   return <><input type="checkbox" data-select-all aria-label="Select all"/><SelectionActions items={items} clear={()=>setItems([])} onDelete={()=>{}} compact/></>
  }
  render(<MemoryRouter><CompactSelection/></MemoryRouter>)

@@ -39,7 +39,7 @@ export function DraftActions({draft,recheck,sourceText}:{draft:PackDraft;sourceT
   <Menu.Item icon={<IconDetails/>} disabled={text === undefined} onSelect={()=>{handoff.current=true;setShowJson(true)}}>{msg('View JSON')}</Menu.Item>
   {recheck && <><Menu.Separator/><Menu.Item icon={<IconCheck/>} disabled={recheck.disabled} onSelect={recheck.run}>{msg('Run checks')}</Menu.Item></>}
   <Menu.Separator/>
-  <Menu.Item icon={<IconTrash/>} destructive disabled={!store || !request} onSelect={()=>{handoff.current=true;request?.({kind:'delete',opener:trigger.current??undefined,item:{id:draft.id,title:draft.title,kind:'pack',status:'draft',href:''}})}}>{msg('Delete draft…')}</Menu.Item>
+  <Menu.Item icon={<IconTrash/>} destructive disabled={!store || !request} onSelect={()=>{handoff.current=true;request?.({kind:'delete',opener:trigger.current??undefined,item:{key:'pack-draft:'+draft.id,id:draft.id,title:draft.title,kind:'pack',status:'draft',href:''}})}}>{msg('Delete draft…')}</Menu.Item>
  </OptionsMenu><DefinitionJsonDialog open={showJson} onOpenChange={setShowJson} text={text ?? ''} title={msg('Pack JSON')} openerRef={trigger}/></>
 }
 

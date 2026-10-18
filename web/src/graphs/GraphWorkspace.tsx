@@ -164,7 +164,7 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
         <Menu.Item icon={<IconDetails/>} disabled={busy || !store} onSelect={() => void act(retainAndOpen)}>{msg('Keep draft')}</Menu.Item>
         {draft && !draft.saved && draftChatId && <><Menu.Separator/><Menu.Item destructive icon={<IconTrash/>} disabled={busy || !request || !store} onSelect={()=>{
           menuHandoff.current=true
-          request?.({kind:'delete',opener:menuTrigger.current??undefined,onDeleted:clearGuard,item:{id:'graph-draft:'+draft.draftId,title:proposal.id,kind:'graph',status:'draft',href:'',chatId:draftChatId,draftId:draft.draftId}})
+          request?.({kind:'delete',opener:menuTrigger.current??undefined,onDeleted:clearGuard,item:{key:'graph-draft:'+draftChatId+':'+draft.draftId,id:'graph-draft:'+draft.draftId,title:proposal.id,kind:'graph',status:'draft',href:'',chatId:draftChatId,draftId:draft.draftId}})
         }}>{msg('Delete draft…')}</Menu.Item></>}
       </OptionsMenu>
         <Button variant="primary" disabled={busy || saved} onClick={review}>{busy ? msg('Working…') : msg('Review & save')}</Button></>}/>
