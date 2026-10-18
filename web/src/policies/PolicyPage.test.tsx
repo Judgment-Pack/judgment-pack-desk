@@ -9,6 +9,8 @@ import {PolicyPage} from './PolicyPage'
 import {policyLibraryItems,folderAssignmentKey,deletableLibraryDraft} from '../library/items'
 import {type PolicyReply,type PolicyMutationReply,type PolicyWrite,writePolicy} from './client'
 
+vi.mock('./PolicyAssistant',()=>({PolicyAssistant:()=>null}))
+
 const at='2026-10-17T12:00:00Z',actor={kind:'local',subject:'local-admin'}
 function policy(revision='head-one',narrative='Expense policy',reviewState:PolicyReply['document']['reviewState']='unreviewed'):PolicyReply{
  const candidate={title:'Expenses',narrative,artifactVersion:'1.0.0',digest:'digest-'+revision,revisionId:'candidate-'+revision,content:{sha256:'content-'+revision,bytes:100}}
@@ -26,6 +28,7 @@ function mount({path='/policies/policy-one',read=policy(),mutate=async()=>result
    if(readFailure)throw new Error('fixture read failed')
    return Response.json(current)
   }
+  if(url==='/api/policies/policy-one/source')return new Response(new TextEncoder().encode('# Original\r\nCafé 中文\r\n'))
   if(url.startsWith('/api/policies/policy-one/revisions/'))return Response.json({candidate:{...policy().document.candidate,narrative:'Immutable original text'},workflow:current.document.workflow,workflowDigest:'workflow-one',at,actor})
   if(url==='/api/policies'){
    if(!init?.method||init.method==='GET')return Response.json({items:[]})
@@ -193,4 +196,48 @@ it('preserves an unsent review comment when publishing an already approved candi
  expect((comment as HTMLTextAreaElement).value).toBe('Unsent note for another review.')
  expect(app.writes).toHaveLength(1)
  expect(app.writes[0].body).not.toHaveProperty('comment')
+})
+it('imports editable text while retaining original bytes across save and refresh',async()=>{
+ const raw='# Original\r\nCafé 中文\r\n',saved=policy('imported','Edited interpretation')
+ saved.document.candidate.source={name:'Original.md',mediaType:'text/markdown',origin:'user-upload',content:{sha256:'source-digest',bytes:new TextEncoder().encode(raw).length}}
+ const app=mount({path:'/policies/new',mutate:async()=>result(saved)})
+ expect(screen.getByText(/UTF-8 Markdown/)).toBeTruthy()
+ fireEvent.change(screen.getByLabelText('Import file',{selector:'input'}),{target:{files:[new File([raw],'Original.md',{type:'text/markdown'})]}})
+ await screen.findByText(/Selected original:/)
+ expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe(raw.replace(/\r\n/g,'\n'))
+ expect(app.writes).toHaveLength(0)
+ edit('Edited interpretation');clickSave()
+ await waitFor(()=>expect(app.router.state.location.pathname).toBe('/policies/policy-one'))
+ expect(app.writes[0].body.narrative).toBe('Edited interpretation')
+ const original=app.writes[0].body.import as {name:string;mediaType:string;data:string}
+ expect(original).toMatchObject({name:'Original.md',mediaType:'text/markdown'})
+ expect(Array.from(atob(original.data),character=>character.charCodeAt(0))).toEqual(Array.from(new TextEncoder().encode(raw)))
+ await act(()=>app.router.navigate('/library'));await act(()=>app.router.navigate('/policies/policy-one'))
+ expect(await screen.findByText('source-digest')).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:'Read original'}))
+ await waitFor(()=>expect(screen.getByText(/Café 中文/,{selector:'pre'})).toBeTruthy())
+ expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('Edited interpretation')
+ edit('Later edit');clickSave();await waitFor(()=>expect(app.writes).toHaveLength(2))
+ expect(app.writes[1].body).not.toHaveProperty('import')
+})
+it('retains selected original and draft after failed save and protects navigation',async()=>{
+ const app=mount({path:'/policies/new',mutate:async()=>{throw new Error('lost acknowledgement')}})
+ fireEvent.change(screen.getByLabelText('Import file',{selector:'input'}),{target:{files:[new File(['Original text'],'policy.txt',{type:'text/plain'})]}})
+ await screen.findByText(/Selected original:/)
+ edit('Local interpretation');clickSave()
+ await screen.findByRole('button',{name:'Check operation result'})
+ expect(screen.getByText(/Selected original:/).textContent).toContain('policy.txt')
+ expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('Local interpretation')
+ await act(()=>app.router.navigate('/library'))
+ await screen.findByRole('dialog',{name:'Unsaved changes'})
+ fireEvent.click(screen.getByRole('button',{name:'Keep editing'}))
+ expect(screen.getByText(/Selected original:/).textContent).toContain('policy.txt')
+ expect(app.writes).toHaveLength(1)
+})
+it('rejects invalid local uploads without sending or changing the draft',async()=>{
+ const app=mount({path:'/policies/new'})
+ fireEvent.change(screen.getByLabelText('Import file',{selector:'input'}),{target:{files:[new File([new Uint8Array([0xff])],'bad.md',{type:'text/markdown'})]}})
+ expect(await screen.findByRole('alert')).toHaveProperty('textContent','Import a UTF-8 .txt or .md file up to 128 KiB with a simple filename.')
+ expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('')
+ expect(app.writes).toHaveLength(0)
 })

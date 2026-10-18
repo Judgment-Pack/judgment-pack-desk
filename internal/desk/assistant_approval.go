@@ -28,10 +28,14 @@ type assistantActionGrant struct {
 	ExpiresAt     time.Time `json:"expiresAt"`
 }
 type assistantApprovalChat struct {
-	InputActions []assistantPublicationAction `json:"inputActions"`
-	ID           string                       `json:"id"`
-	Interaction  string                       `json:"interaction"`
-	Pack         *struct {
+	Policy *struct {
+		ID string `json:"id"`
+	} `json:"policy"`
+	PolicyProposals []assistantPolicyProposal    `json:"policyProposals"`
+	InputActions    []assistantPublicationAction `json:"inputActions"`
+	ID              string                       `json:"id"`
+	Interaction     string                       `json:"interaction"`
+	Pack            *struct {
 		ID   string `json:"id"`
 		Path string `json:"path"`
 	} `json:"pack"`
@@ -53,6 +57,7 @@ type assistantActionAdapter struct {
 // Adapters own resource admission; the dispatcher owns session/phase scope,
 // explicit permission, expiry and single use. Unknown actions stay manual.
 var assistantActionAdapters = map[string]assistantActionAdapter{
+	"policy-update":     {resolve: resolvePolicyApproval, manual: true},
 	"pack-update":       {resolve: resolvePackApproval},
 	"portable-research": {resolve: resolvePortableResearchApproval, manual: true},
 	"dialect-publish":   {resolve: resolveDialectPublicationApproval, manual: true},
@@ -123,6 +128,7 @@ func (s *Server) handleAssistantApproval(w http.ResponseWriter, r *http.Request)
 
 // Release storage/file locks before writing a potentially slow HTTP response.
 func (s *Server) assistantApprovalTransaction(r *http.Request, chatID string, req assistantApprovalRequest) (int, any) {
+	ctx := context.WithValue(r.Context(), assistantPolicyRequestKey{}, r)
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	lock, e := s.privateDataLockContext(r.Context(), true)
@@ -158,7 +164,7 @@ func (s *Server) assistantApprovalTransaction(r *http.Request, chatID string, re
 			adapter, supported := assistantActionAdapters[grant.Action]
 			stale := err != nil || !supported || chat.Interaction == "plan"
 			if !stale {
-				resource, err := adapter.resolve(r.Context(), s, chat, tests, grant.Target)
+				resource, err := adapter.resolve(ctx, s, chat, tests, grant.Target)
 				stale = err != nil || resource.Path != grant.Path || resource.Name != grant.Name || resource.Revision != grant.Revision || resource.Checks != grant.SuiteRevision
 				if resource.Close != nil {
 					resource.Close()
@@ -191,7 +197,7 @@ func (s *Server) assistantApprovalTransaction(r *http.Request, chatID string, re
 	if chat.Interaction == "plan" {
 		return fail(errors.New("Switch to Work before allowing or saving an automatic action."))
 	}
-	resource, e := adapter.resolve(r.Context(), s, chat, tests, req.Target)
+	resource, e := adapter.resolve(ctx, s, chat, tests, req.Target)
 	if e != nil {
 		return fail(e)
 	}

@@ -5,9 +5,11 @@ import {privateQuery} from '../data/privateQuery'
 import {sourceMessage} from '../i18n/source'
 
 export interface PolicyActor {kind:string;subject?:string;issuer?:string;name?:string}
-export interface PolicyCandidate {title:string;narrative:string;artifactVersion:string;digest:string;revisionId:string;content:{sha256:string;bytes:number}}
+export interface PolicySource {name:string;mediaType:string;origin:'user-upload';content:{sha256:string;bytes:number}}
+export interface PolicyImport {name:string;mediaType:string;data:string}
+export interface PolicyCandidate {source?:PolicySource;title:string;narrative:string;artifactVersion:string;digest:string;revisionId:string;content:{sha256:string;bytes:number}}
 export interface PolicyWorkflow {independentReviewRequired:boolean}
-export interface PolicyRevision {id:string;sequence:number;at:string;actor:PolicyActor;digest:string;title:string;artifactVersion:string;content:{sha256:string;bytes:number};workflow:PolicyWorkflow;workflowDigest:string}
+export interface PolicyRevision {source?:PolicySource;id:string;sequence:number;at:string;actor:PolicyActor;digest:string;title:string;artifactVersion:string;content:{sha256:string;bytes:number};workflow:PolicyWorkflow;workflowDigest:string}
 export interface PolicyRevisionReply {sequence:number;candidate:PolicyCandidate;workflow:PolicyWorkflow;workflowDigest:string;at:string;actor:PolicyActor}
 export interface PolicyReview {id:string;sequence:number;candidateRevisionId:string;at:string;actor:PolicyActor;candidateDigest:string;workflowDigest:string;decision:'approve'|'request-changes';comment?:string}
 export interface PolicyPublication {id:string;sequence:number;candidateRevisionId:string;at:string;actor:PolicyActor;artifactVersion:string;candidateDigest:string;workflowDigest:string;reviewId:string;content:{sha256:string;bytes:number}}
@@ -21,6 +23,7 @@ export class PolicyRequestError extends Error {
 }
 function policyFailureMessage(code:string){
  switch(code){
+ case 'invalid-policy-source':return sourceMessage('Import a UTF-8 .txt or .md file up to 128 KiB with a simple filename.')
  case 'revision-conflict':return sourceMessage('The saved policy changed. Your edits are still here. Compare the latest saved draft before saving again.')
  case 'access-denied':case 'session-required':case 'unauthorized':case 'forbidden':return sourceMessage('Your session cannot access this policy. Sign in again to continue.')
  case 'review-incomplete':return sourceMessage('Approve the exact saved candidate before publishing.')
@@ -56,3 +59,10 @@ export const writePolicy=(operation:PolicyWrite)=>request<PolicyMutationReply>(o
 
 export const recoverPolicyOperation=(operationId:string)=>request<PolicyMutationReply>('/'+encodeURIComponent(operationId),{},'/api/policy-operations')
 export const readPolicyRevision=(id:string,revisionId:string,signal?:AbortSignal)=>request<PolicyRevisionReply>('/'+encodeURIComponent(id)+'/revisions/'+encodeURIComponent(revisionId),{signal})
+
+export async function readPolicySource(id:string):Promise<Uint8Array>{
+ let response:Response
+ try{response=await deskFetch('/api/policies/'+encodeURIComponent(id)+'/source')}catch(cause){throw new PolicyRequestError(cause instanceof NoSession?'unauthorized':'unavailable')}
+ if(!response.ok)throw new PolicyRequestError(response.status===401||response.status===403?'access-denied':'unavailable')
+ return new Uint8Array(await response.arrayBuffer())
+}

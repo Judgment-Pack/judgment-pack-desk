@@ -1,8 +1,9 @@
 # Local policy governance delivery boundary
 
-Status: local implementation, 2026-10-17. Library consolidation is committed in
-`5800146`. The following slice implements the private, single-administrator
-Policy service and full-page editor. It does not claim team governance, portable Policy conformance,
+Status: local implementation, 2026-10-18. Library consolidation and the local
+Policy service are merged into `integration/v0.13` through Desk #453 and #458.
+Desk #459 adds retained source import and shared Policy chat to the private,
+single-administrator service and full-page editor. It does not claim team governance, portable Policy conformance,
 automatic source synchronization or execution admission.
 
 ## Library foundation
@@ -73,7 +74,7 @@ The service retains:
 
 Draft saves check the original service revision. Review/publication check the
 exact retained candidate, candidate revision and workflow. The candidate digest
-covers title, narrative and artifact version. Changed content or workflow clears
+covers title, narrative, artifact version and optional original-source reference. Changed content or workflow clears
 the current review while retaining all previous decisions/publications as history.
 An identical no-op save preserves its review. Returning to old bytes later does
 not transfer an old approval to the new candidate revision.
@@ -102,6 +103,7 @@ administrator's authorship, review and publication are recorded honestly.
 | `POST /api/policies` | Create a policy and retained initial candidate |
 | `GET /api/policies/{id}` | Current candidate and retained history metadata |
 | `PUT /api/policies/{id}` | CAS save of title, narrative, version and optional workflow |
+| `GET /api/policies/{id}/source` | Download exact retained original bytes with current authorization |
 | `GET /api/policies/{id}/revisions/{revisionId}` | Read exact retained historical narrative |
 | `POST /api/policies/{id}/review` | Approve or request changes on an exact current basis |
 | `POST /api/policies/{id}/publish` | Publish the exact currently approved candidate |
@@ -139,10 +141,42 @@ Editor integration uses existing fields, contextual pane and `UnsavedChanges`.
 Lists use `privateQuery`; background refresh must not replace an editor's frozen
 revision. Save conflict recovery preserves the local buffer and shows the saved
 revision for explicit resolution. Chat deletion must never delete policy work.
-Manual local authoring can land before AI authoring; later AI proposals inherit
-`runAssistantSession`, Plan admission, shared approvals, correction and recovery.
-A model cannot manufacture a reviewer identity or treat a successful document
-check as publication.
+AI proposals inherit `runAssistantSession`, Plan admission, shared approvals,
+correction and recovery. A model cannot manufacture a reviewer identity or treat
+a successful document check as publication.
+
+## Retained originals and Policy chat
+
+[Desk #459](https://github.com/Judgment-Pack/judgment-pack-desk/issues/459)
+adds an optional, create-only `import` containing a simple filename, media type
+and base64 bytes. The supported starting material is UTF-8 `.txt` or `.md`, at
+most 128 KiB. Import validates the original bytes and retains them independently
+of the editable narrative. BOM, line endings and non-ASCII text remain intact.
+Selecting a file fills the editor but does not save a policy. Ordinary and AI
+draft saves inherit the retained original; neither can replace its identity.
+Existing policies without an original retain their previous candidate identity.
+Original reads/downloads require current sign-in and use private, no-store
+responses. This is manual local import into a Desk-managed draft, not connected
+source synchronization or evidence of external approval/publication.
+
+The policy pane uses the existing chat, composer, history and main chat route.
+Its saved messages and proposals are linked by policy identity; deleting chat
+does not delete the policy or original. Current session authorization is checked
+for linked history/backup and before model, child-task and retained-context
+access. An unavailable policy file does not make unrelated chat history fail.
+
+Proposal tools prepare draft title, narrative and version changes against the
+admitted turn's saved revision. They use shared artifact checks for shape and
+freshness; those checks do not verify policy meaning or portable conformance.
+Ask me requires explicit review of the diff. Auto grants one exact proposal and
+revision through the shared action registry, with a bounded lifetime and a
+server-side session, chat, phase and candidate check. Plan cannot propose or
+save changes. Unsaved editor changes, stale revisions and invalid sessions block
+writes. Pending operations are journaled before dispatch; recovery reads the
+immutable receipt without replaying an uncertain write. Policy approval and
+publication remain separate manual actions. Pack/graph creation currently uses
+its existing artifact conversation rather than adopting a new artifact into the
+Policy conversation.
 
 Backend acceptance covers create/save/reload and chat deletion; stale editor
 refusal; title/narrative/version/workflow review invalidation; exact-review
@@ -160,11 +194,12 @@ selection. Browser/editor verification exercised the built SPA and real Runtime 
 
 ## Try the local workflow
 
-1. Open **Library → Create → New policy**. Enter a title, narrative and artifact version, then **Save draft**. Incomplete drafts can be saved before approval.
+1. Open **Library → Create → New policy**. Enter text or choose **Import file**, then review the title, narrative and artifact version and **Save draft**. Incomplete drafts can be saved before approval.
 2. Reload or reopen the policy from Library. Its saved text and history are independent of chat sessions.
-3. Review the saved text. Optionally add a review comment, then **Approve candidate** or **Request changes**. Saving a changed candidate requires a new review.
-4. Choose **Publish version** and confirm the reviewed candidate. Publication retains immutable content; later publications require a greater version, checked by Runtime.
-5. Inspect **History** to see retained drafts, actor-attributed decisions and publications. Existing publications remain available after later edits.
+3. Edit directly or ask the linked chat for a draft change. Review and save its proposal; this does not approve the policy. Imported originals remain available through **Read original** and **Download original**.
+4. Review the saved text. Optionally add a review comment, then **Approve candidate** or **Request changes**. Saving a changed candidate requires a new review.
+5. Choose **Publish version** and confirm the reviewed candidate. Publication retains immutable content; later publications require a greater version, checked by Runtime.
+6. Inspect **History** to see retained drafts, actor-attributed decisions and publications. Existing publications remain available after later edits.
 
 These controls manage local policy content. They do not create a pack, change a job or authorize execution. The remaining accepted lifecycle is tracked in [Desk #455](https://github.com/Judgment-Pack/judgment-pack-desk/issues/455).
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime"
 	"net/http"
 	"strings"
 )
@@ -103,6 +104,19 @@ func (s *Server) handlePolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
+		if id != "" && strings.HasSuffix(r.URL.Path, "/source") {
+			source, raw, err := service.source(r.Context(), id)
+			if err != nil {
+				policyHTTPFailure(w, err)
+				return
+			}
+			w.Header().Set("Content-Type", source.MediaType+"; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": source.Name}))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(raw)
+			return
+		}
 		var result any
 		var err error
 		switch {

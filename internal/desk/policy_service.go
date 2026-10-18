@@ -113,10 +113,15 @@ func (s policyService) candidate(ctx context.Context, revision policyRevision) (
 		return policyCandidate{}, err
 	}
 	var content policyCandidateContent
-	if decodeDataJSON(raw, &content) != nil || content.SchemaVersion != 1 || content.Title != revision.Title || content.ArtifactVersion != revision.ArtifactVersion || revision.Digest != digestOf(raw) || len(content.Narrative) > policyNarrativeLimit {
+	if decodeDataJSON(raw, &content) != nil || content.SchemaVersion != 1 || !samePolicySource(content.Source, revision.Source) || !validPolicySource(content.Source) || content.Title != revision.Title || content.ArtifactVersion != revision.ArtifactVersion || revision.Digest != digestOf(raw) || len(content.Narrative) > policyNarrativeLimit {
 		return policyCandidate{}, errors.New("retained policy candidate is inconsistent")
 	}
-	return policyCandidate{Title: content.Title, Narrative: content.Narrative, ArtifactVersion: content.ArtifactVersion, Digest: revision.Digest, RevisionID: revision.ID, Content: revision.Content}, nil
+	if content.Source != nil {
+		if _, err = s.artifacts.Get(ctx, content.Source.Content); err != nil {
+			return policyCandidate{}, err
+		}
+	}
+	return policyCandidate{Source: content.Source, Title: content.Title, Narrative: content.Narrative, ArtifactVersion: content.ArtifactVersion, Digest: revision.Digest, RevisionID: revision.ID, Content: revision.Content}, nil
 }
 func (s policyService) reply(ctx context.Context, record policyStoredRecord) (policyReply, error) {
 	head := policyHead(record)
@@ -250,6 +255,14 @@ func policyCommandRecord(ledger policyLedger, command policyCommand) (policyStor
 
 func policyValidateCommand(command policyCommand, record policyStoredRecord) error {
 	if command.Edit != nil {
+		if command.Edit.Import != nil {
+			if command.Kind != "create" {
+				return policyRefusal(400, CodeBadRequest, "Original source import is supported only when creating a policy draft.")
+			}
+			if err := validatePolicyImport(*command.Edit.Import); err != nil {
+				return err
+			}
+		}
 		if len(command.Edit.Title) > 500 || len(command.Edit.Narrative) > policyNarrativeLimit || len(command.Edit.ArtifactVersion) > policyArtifactVersionLimit {
 			return policyRefusal(400, CodeBadRequest, "The policy title, narrative or version exceeds its supported size.")
 		}
@@ -392,7 +405,16 @@ func (s policyService) execute(ctx context.Context, command policyCommand) (poli
 			if command.Edit.Workflow != nil {
 				workflow = *command.Edit.Workflow
 			}
-			raw, _ := json.Marshal(policyCandidateContent{SchemaVersion: 1, Title: command.Edit.Title, Narrative: command.Edit.Narrative, ArtifactVersion: command.Edit.ArtifactVersion})
+			source := policyHead(record).Source
+			if command.Edit.Import != nil {
+				imported := command.Edit.Import
+				retained, err := s.artifacts.Put(ctx, imported.Data)
+				if err != nil {
+					return false, err
+				}
+				source = &policySource{Name: imported.Name, MediaType: imported.MediaType, Origin: "user-upload", Content: retained}
+			}
+			raw, _ := json.Marshal(policyCandidateContent{Source: source, SchemaVersion: 1, Title: command.Edit.Title, Narrative: command.Edit.Narrative, ArtifactVersion: command.Edit.ArtifactVersion})
 			content, err := s.artifacts.Put(ctx, raw)
 			if err != nil {
 				return false, err
@@ -406,7 +428,7 @@ func (s policyService) execute(ctx context.Context, command policyCommand) (poli
 				if err != nil {
 					return false, err
 				}
-				revision := policyRevision{ID: id, Sequence: sequence, Digest: content.SHA256, Title: command.Edit.Title, ArtifactVersion: command.Edit.ArtifactVersion, Content: content, Workflow: workflow, WorkflowDigest: policyWorkflowDigest(workflow), At: now, Actor: command.Actor}
+				revision := policyRevision{Source: source, ID: id, Sequence: sequence, Digest: content.SHA256, Title: command.Edit.Title, ArtifactVersion: command.Edit.ArtifactVersion, Content: content, Workflow: workflow, WorkflowDigest: policyWorkflowDigest(workflow), At: now, Actor: command.Actor}
 				record.Revisions = append(record.Revisions, revision)
 				record.HeadRevisionID, record.CurrentReviewID, record.UpdatedAt = id, "", now
 			}
