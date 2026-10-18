@@ -1,0 +1,148 @@
+name: Policy source producer contract
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  producer-consumer:
+    name: Exact Gateway observation and Desk acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+      GATEWAY_FIXTURE_REVISION: 27df7367b6be5f380c6ae5989bde625bf9dde68a
+    steps:
+      - name: Check out Desk under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: desk
+          persist-credentials: false
+
+      # This exact source is a synthetic contract fixture, not an official
+      # component release or a change to Desk's production component lock.
+      - name: Check out exact Gateway test fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Judgment-Pack/judgment-pack-gateway
+          ref: 27df7367b6be5f380c6ae5989bde625bf9dde68a
+          path: gateway-fixture
+          persist-credentials: false
+
+      - name: Set up the recorded Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+          cache-dependency-path: |
+            desk/go.sum
+            gateway-fixture/adapters/go.sum
+
+      - name: Build real canon and focused test programs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C gateway-fixture rev-parse HEAD)" = "$GATEWAY_FIXTURE_REVISION"
+          test -z "$(git -C gateway-fixture status --porcelain=v1)"
+          mkdir -p "$RUNNER_TEMP/policy-source-contract"
+          go -C gateway-fixture/go build -trimpath -buildvcs=true -o "$RUNNER_TEMP/policy-source-contract/gateway-canon" .
+          go -C gateway-fixture/adapters test -c -trimpath -buildvcs=true -o "$RUNNER_TEMP/policy-source-contract/gateway-connections.test" ./connections
+          go -C desk test -c -trimpath -buildvcs=true -o "$RUNNER_TEMP/policy-source-contract/desk.test" ./internal/desk
+
+      - name: Record actual source and build provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          workspace = Path(os.environ['GITHUB_WORKSPACE'])
+          evidence = Path(os.environ['RUNNER_TEMP']) / 'policy-source-contract'
+          def output(*args):
+              return subprocess.check_output(args, text=True).strip()
+          def source(directory):
+              status = output('git', '-C', str(directory), 'status', '--porcelain=v1')
+              return {'revision': output('git', '-C', str(directory), 'rev-parse', 'HEAD'),
+                      'dirty': bool(status), 'status': status.splitlines()}
+          def program(name):
+              path = evidence / name
+              data = path.read_bytes()
+              return {'sha256': hashlib.sha256(data).hexdigest(), 'byteLength': len(data),
+                      'buildInfo': output('go', 'version', '-m', str(path))}
+          record = {
+              'kind': 'policy-source-producer-contract-fixture',
+              'synthetic': True,
+              'officialRelease': False,
+              'componentLockRole': 'not used for fixture source selection or modified by this job',
+              'gatewayFixture': {
+                  'repository': 'Judgment-Pack/judgment-pack-gateway',
+                  'requiredRevision': os.environ['GATEWAY_FIXTURE_REVISION'],
+                  **source(workspace / 'gateway-fixture')},
+              'deskUnderTest': source(workspace / 'desk'),
+              'goVersion': output('go', 'version'),
+              'buildFlags': ['-trimpath', '-buildvcs=true'],
+              'programs': {name: program(name) for name in
+                           ['gateway-canon', 'gateway-connections.test', 'desk.test']},
+          }
+          (evidence / 'provenance.json').write_text(json.dumps(record, indent=2) + '\n')
+          PYTHON
+
+      - name: Generate the unmodified real producer observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd gateway-fixture/adapters/connections
+          JPACK_TEST_SOURCE_OBSERVATION="$RUNNER_TEMP/policy-source-contract/observation.json" \
+            "$RUNNER_TEMP/policy-source-contract/gateway-connections.test" \
+              -test.run '^TestSourceObservationRetainsRealOriginalExtractionAndOpaqueRevisionAfterRestart$' \
+              -test.count=1 -test.v | tee "$RUNNER_TEMP/policy-source-contract/producer.log"
+          test -s "$RUNNER_TEMP/policy-source-contract/observation.json"
+          grep -Fq -- '--- PASS: TestSourceObservationRetainsRealOriginalExtractionAndOpaqueRevisionAfterRestart ' "$RUNNER_TEMP/policy-source-contract/producer.log"
+          sha256sum "$RUNNER_TEMP/policy-source-contract/observation.json" > "$RUNNER_TEMP/policy-source-contract/observation.sha256"
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          evidence = Path(os.environ['RUNNER_TEMP']) / 'policy-source-contract'
+          provenance = json.loads((evidence / 'provenance.json').read_text())
+          observation = json.loads((evidence / 'observation.json').read_bytes())
+          expected = 'sha256:' + provenance['programs']['gateway-connections.test']['sha256']
+          if observation['document']['provenance']['adapter']['digest'] != expected:
+              raise SystemExit('Observation does not name the recorded producer test binary')
+          PYTHON
+
+      - name: Accept exact producer bytes with real Gateway canon
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "$RUNNER_TEMP/policy-source-contract/gateway-canon"
+          test -s "$RUNNER_TEMP/policy-source-contract/observation.json"
+          cd desk/internal/desk
+          JPACK_POLICY_SOURCE_GATEWAY_CANON="$RUNNER_TEMP/policy-source-contract/gateway-canon" \
+          JPACK_POLICY_SOURCE_GATEWAY_OBSERVATION="$RUNNER_TEMP/policy-source-contract/observation.json" \
+            "$RUNNER_TEMP/policy-source-contract/desk.test" \
+              -test.run '^TestPolicySourceSyncRealGatewayCanonicalObservation$' \
+              -test.count=1 -test.v | tee "$RUNNER_TEMP/policy-source-contract/consumer.log"
+          grep -Fq -- '--- PASS: TestPolicySourceSyncRealGatewayCanonicalObservation ' "$RUNNER_TEMP/policy-source-contract/consumer.log"
+          sha256sum --check "$RUNNER_TEMP/policy-source-contract/observation.sha256"
+
+      - name: Upload synthetic contract evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: policy-source-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/policy-source-contract/*.json
+            ${{ runner.temp }}/policy-source-contract/*.log
+            ${{ runner.temp }}/policy-source-contract/observation.sha256
+          if-no-files-found: ignore
+          retention-days: 14

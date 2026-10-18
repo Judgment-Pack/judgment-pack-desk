@@ -134,6 +134,8 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 	signInReply(w, 200, map[string]string{"id": id})
 }
 func (s *Server) handlePasswordSave(w http.ResponseWriter, r *http.Request) {
+	s.signIn.policySourceMu.Lock()
+	defer s.signIn.policySourceMu.Unlock()
 	if _, ok := s.signInBrowser(w, r); !ok {
 		return
 	}

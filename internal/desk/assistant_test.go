@@ -284,18 +284,18 @@ func TestAssistantKeyReplacedAtomically(t *testing.T) {
 		t.Errorf("stored %q, want %q", got.Key, second)
 	}
 
-	// And nothing staged is left behind: the directory holds the key and
-	// nothing else.
+	// And nothing staged is left behind: the directory holds only the key
+	// and the durable policy source authority created during server startup.
 	entries, err := os.ReadDir(s.secretsDir())
 	if err != nil {
 		t.Fatalf("readdir: %v", err)
 	}
-	if len(entries) != 1 || entries[0].Name() != assistantKeyName {
+	if len(entries) != 2 || entries[0].Name() != assistantKeyName || entries[1].Name() != policySourceAuthorityFile {
 		names := make([]string, 0, len(entries))
 		for _, entry := range entries {
 			names = append(names, entry.Name())
 		}
-		t.Errorf("secrets directory holds %v, want only %q", names, assistantKeyName)
+		t.Errorf("secrets directory holds %v, want only %q and %q", names, assistantKeyName, policySourceAuthorityFile)
 	}
 }
 

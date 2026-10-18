@@ -132,7 +132,7 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 	}
 	seen := map[string]bool{}
 	for _, provider := range catalog.Providers {
-		if provider.QueryRequired == nil || seen[provider.ID] || !catalogIdentifier.MatchString(provider.ID) || !catalogIdentifier.MatchString(provider.Auth) || !catalogIdentifier.MatchString(provider.Registration) || !catalogIdentifier.MatchString(provider.Selection) || len(provider.Operations) == 0 || len(provider.Operations) > 16 {
+		if provider.QueryRequired == nil || seen[provider.ID] || !catalogIdentifier.MatchString(provider.ID) || !catalogIdentifier.MatchString(provider.Auth) || !catalogIdentifier.MatchString(provider.Registration) || !catalogIdentifier.MatchString(provider.Selection) || len(provider.Operations) == 0 || len(provider.Operations) > 32 {
 			return nil, errConnectionCatalog
 		}
 		if catalog.Version >= 3 && !validConnectionPresentation(provider) {

@@ -5,8 +5,8 @@ import type { ConnectionProvider, SourceSelection } from './client'
 
 /** Metadata only. The shell owns the temporary surface, not a chat's portal. */
 export interface ConnectionPaneRequest {
- selection?: { limit: 1; onSelect: (items: SourceSelection[], signal: AbortSignal) => Promise<void> }
- purpose?: 'job-source'
+ selection?: { limit: 1; onSelect: (items: SourceSelection[], signal: AbortSignal, metadata?: {selectionContext:string;title:string}) => Promise<void> }
+ purpose?: 'job-source'|'policy-source'
  onConnected?: (provider: ConnectionProvider) => void
  destination?: AttachmentDestination
  source?: 'web'

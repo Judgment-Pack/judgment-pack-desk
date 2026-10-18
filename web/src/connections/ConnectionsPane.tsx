@@ -41,7 +41,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
  const provider = request.provider, entry = catalog.entries.find(item => item.descriptor.id === provider)
  const status = entry?.status, descriptor = entry?.descriptor
  const generic = descriptor?.source?.record === 'resource-v1', prefix = descriptor?.queryMode === 'prefix'
- const fileLimit = Math.min(request.selection ? 200_000 : RESOURCE_MAX_BYTES, status?.data?.maxFileBytes ?? RESOURCE_MAX_BYTES, effective.config.research.documents?.maxFileBytes ?? RESOURCE_MAX_BYTES)
+ const fileLimit = Math.min(request.selection && request.purpose!=='policy-source' ? 200_000 : RESOURCE_MAX_BYTES, status?.data?.maxFileBytes ?? RESOURCE_MAX_BYTES, effective.config.research.documents?.maxFileBytes ?? RESOURCE_MAX_BYTES)
  const state = !available || catalog.isError || (!catalog.loading && !entry && Boolean(provider)) || status?.isError ? 'unavailable' : status?.data?.state
  // Also promote a service first connected from this pane, after setup succeeds.
  useEffect(() => { if (provider && hasDestination && state === 'connected') rememberConnection(provider) }, [provider, request.chatId, state])
@@ -159,7 +159,8 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
    if (!current(task)) return
    if (provider === 'google-drive' && (sources.length !== selected.length || new Set(sources.map(item=>item.resourceId)).size !== sources.length || sources.some(item=>!selected.some(row=>row.id===item.resourceId) || !/^[a-f0-9]{64}$/.test(item.grant)))) throw new Error(msg('The connection returned an invalid response. Try again.'))
    if (request.selection) {
-    await request.selection.onSelect(sources, task.signal)
+    if(request.purpose==='policy-source')await request.selection.onSelect(sources, task.signal,{selectionContext:contexts[0]!,title:selected[0]!.title})
+    else await request.selection.onSelect(sources, task.signal)
     if (current(task)) onAttached()
     return
    }
