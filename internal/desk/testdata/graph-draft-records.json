@@ -1,0 +1,667 @@
+[
+  {
+    "name": "exact retained source",
+    "valid": true,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "unknown field",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ],
+          "authority": true
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "source alias",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ],
+          "PolicySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "null origin",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": null,
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "bad timestamp",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-02-31T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "null saved",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ],
+          "saved": null
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "oversized description",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ],
+          "description": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "empty path",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "invalid identity",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "has_underscore",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "different owners share draft id",
+    "valid": true,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        },
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-two",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "same owner duplicated",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        },
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "active deleted identity",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": [
+        "chat-one:draft-one"
+      ]
+    }
+  },
+  {
+    "name": "empty base digest",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ],
+          "baseSha256": ""
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "boolean origin",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": true,
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "numeric origin",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": 123,
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ]
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "pending reviewed intent",
+    "valid": true,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ],
+          "writePending": true
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "null pending intent",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ],
+          "writePending": null
+        }
+      ],
+      "deleted": []
+    }
+  },
+  {
+    "name": "saved pending conflict",
+    "valid": false,
+    "document": {
+      "version": 1,
+      "drafts": [
+        {
+          "draftId": "draft-one",
+          "originChatId": "chat-one",
+          "id": "flow",
+          "path": "flow.graph.json",
+          "content": "{}",
+          "createdAt": "2026-10-18T12:00:00Z",
+          "policySources": [
+            {
+              "version": 1,
+              "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+              "content": {
+                "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+                "bytes": 121
+              },
+              "title": "Data access",
+              "artifactVersion": "1.0.0",
+              "narrative": "Only approved staff may access records."
+            }
+          ],
+          "saved": true,
+          "writePending": true
+        }
+      ],
+      "deleted": []
+    }
+  }
+]

@@ -1,6 +1,6 @@
-import {cleanup,render,screen,within} from '@testing-library/react'
+import {cleanup,render,screen,within,fireEvent} from '@testing-library/react'
 import {QueryClientProvider} from '@tanstack/react-query'
-import {afterEach,expect,it} from 'vitest'
+import {afterEach,expect,it,vi} from 'vitest'
 import {testQueryClient} from '../testing/harness'
 import {PolicyHistory} from './PolicyHistory'
 import type {PolicyDocument} from './client'
@@ -29,4 +29,16 @@ it('keeps commit order when the wall clock moves backwards',()=>{
  document.reviews[0].at='2026-10-17T11:59:59Z'
  render(<QueryClientProvider client={testQueryClient()}><PolicyHistory document={document}/></QueryClientProvider>)
  expect(order()).toEqual(['Published','Approved','Draft saved'])
+})
+
+it('passes the chosen old publication identity to Design pack even after a later saved revision',()=>{
+ const document=fixture(),cache=testQueryClient(),old=document.revisions[0]!
+ document.revisions.push({...old,id:'revision-new',sequence:4,artifactVersion:'2.0.0'})
+ document.candidate={...document.candidate,revisionId:'revision-new',artifactVersion:'2.0.0'}
+ cache.setQueryData(['policies',document.id,'revision',old.id],{candidate:{...document.candidate,revisionId:old.id,artifactVersion:'1.0.0'},workflow,workflowDigest:'workflow-one',at,actor})
+ const designAction=vi.fn(()=> <span>Exact design action</span>)
+ render(<QueryClientProvider client={cache}><PolicyHistory document={document} designAction={designAction}/></QueryClientProvider>)
+ fireEvent.click(screen.getByRole('button',{name:'Inspect Published'}))
+ expect(designAction).toHaveBeenLastCalledWith({policyId:document.id,publicationId:'publication-one'})
+ expect(screen.getByText('Exact design action')).toBeTruthy()
 })

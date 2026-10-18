@@ -313,7 +313,9 @@ func (s *Server) writeGraph(r *http.Request, request graphWriteOffer) (int, any)
 	s.graphOffer = nil
 	s.writes.Unlock()
 	stale := func() (int, any) {
-		return http.StatusConflict, errorBody(withCode(CodeStale, errors.New("The graph confirmation is spent or changed. Review the proposal again; nothing was written.")))
+		body := errorBody(withCode(CodeStale, errors.New("The graph confirmation is spent or changed. Review the proposal again; nothing was written.")))
+		body["outcome"] = "not-committed"
+		return http.StatusConflict, body
 	}
 	if offer == nil || !hmac.Equal([]byte(request.Token), []byte(offer.Token)) || !hmac.Equal([]byte(s.graphWriteToken(request)), []byte(offer.Token)) {
 		return stale()

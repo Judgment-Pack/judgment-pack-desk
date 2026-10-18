@@ -1,3 +1,5 @@
+import type {ReactNode} from 'react'
+import type {PolicySourceSelection} from './authoringSource'
 import {Fragment,useState} from 'react'
 import {useQuery} from '@tanstack/react-query'
 import {msg,useLocale} from '../i18n'
@@ -11,7 +13,7 @@ import {readPolicyRevision,type PolicyActor,type PolicyDocument} from './client'
 import styles from './PolicyPage.module.css'
 
 const actorName=(actor:PolicyActor)=>actor.subject||actor.kind
-export function PolicyHistory({document}:{document:PolicyDocument}){
+export function PolicyHistory({document,designAction,designBlocked=false}:{document:PolicyDocument;designAction?:(selection:PolicySourceSelection)=>ReactNode;designBlocked?:boolean}){
  const locale=useLocale(),[search,setSearch]=useState(''),[kind,setKind]=useState('all'),[selected,setSelected]=useState<string>()
  const events=[
   ...document.revisions.map(revision=>({id:revision.id,sequence:revision.sequence,kind:'draft',label:msg('Draft saved'),at:revision.at,actor:revision.actor,version:revision.artifactVersion,digest:revision.digest,revisionId:revision.id,comment:undefined as string|undefined})),
@@ -22,7 +24,7 @@ export function PolicyHistory({document}:{document:PolicyDocument}){
   <CollectionToolbar label={msg('Policy history controls')} searchLabel={msg('Search policy history')} search={search} onSearch={setSearch} filters={[{label:msg('Event type'),value:kind,onValueChange:setKind,options:[{value:'all',label:msg('All events')},{value:'draft',label:msg('Drafts')},{value:'review',label:msg('Reviews')},{value:'publication',label:msg('Publications')}]}]} filtered={!!search||kind!=='all'} onReset={()=>{setSearch('');setKind('all')}}/>
   <div className={styles.tableScroll}><CollectionTable className={styles.table} aria-label={msg('Policy history')}><thead><tr><th scope="col">{msg('Event')}</th><th scope="col">{msg('Version')}</th><th scope="col">{msg('Actor')}</th><th scope="col">{msg('Time')}</th><th scope="col">{msg('Details')}</th></tr></thead><tbody>{events.map(event=><Fragment key={event.id}>
    <tr><th scope="row">{event.label}</th><td>{event.version}</td><td className={styles.actor}>{actorName(event.actor)}</td><td><time dateTime={event.at}>{new Date(event.at).toLocaleString(locale)}</time></td><td><Button size="small" variant="quiet" aria-expanded={selected===event.id} aria-label={msg('Inspect {{event}}',{event:event.label})} onClick={()=>setSelected(selected===event.id?undefined:event.id)}>{msg('Inspect')}</Button></td></tr>
-   {selected===event.id&&<tr><td colSpan={5}><div className={styles.historyDetail}><dl className={styles.facts}><dt>{msg('Candidate digest')}</dt><dd className={styles.digest}>{event.digest}</dd><dt>{msg('Actor')}</dt><dd>{event.actor.kind} · {event.actor.subject}{event.actor.issuer?' · '+event.actor.issuer:''}</dd>{event.comment&&<><dt>{msg('Review comment')}</dt><dd>{event.comment}</dd></>}</dl><RevisionSnapshot policyId={document.id} revisionId={event.revisionId}/></div></td></tr>}
+   {selected===event.id&&<tr><td colSpan={5}><div className={styles.historyDetail}><dl className={styles.facts}><dt>{msg('Candidate digest')}</dt><dd className={styles.digest}>{event.digest}</dd><dt>{msg('Actor')}</dt><dd>{event.actor.kind} · {event.actor.subject}{event.actor.issuer?' · '+event.actor.issuer:''}</dd>{event.comment&&<><dt>{msg('Review comment')}</dt><dd>{event.comment}</dd></>}</dl><RevisionSnapshot policyId={document.id} revisionId={event.revisionId}/>{!designBlocked&&event.kind!=='review'&&designAction?.(event.kind==='publication'?{policyId:document.id,publicationId:event.id}:{policyId:document.id,revisionId:event.revisionId})}</div></td></tr>}
   </Fragment>)}</tbody></CollectionTable></div>
   {!events.length&&<p className={styles.note}>{msg('No matching history events.')}</p>}
  </div>

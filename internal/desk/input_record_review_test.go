@@ -31,7 +31,7 @@ func TestInputRecordReviewRetainsSnapshotAndDoesNotEvaluate(t *testing.T) {
 	path := "/api/input-preparations/" + doc.ID
 	call := func(method, suffix, body, revision string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path+suffix, strings.NewReader(body))
-		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set("Authorization", "Bearer "+policyTestSession(t, s))
 		r.Header.Set("If-Match", revision)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, r)
@@ -239,7 +239,7 @@ func TestInputRecordBulkReviewIsAtomicAndPreservesOrigins(t *testing.T) {
 		t.Fatal("repeat members duplicated history", e)
 	}
 	r := httptest.NewRequest("GET", "/api/input-preparations/"+doc.ID+"/evaluations", nil)
-	r.Header.Set("Authorization", "Bearer "+testToken)
+	r.Header.Set("Authorization", "Bearer "+policyTestSession(t, s))
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"items":[]`) {

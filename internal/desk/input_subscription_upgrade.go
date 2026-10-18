@@ -203,6 +203,9 @@ func (s *Server) handleSubscriptionUpgrade(w http.ResponseWriter, r *http.Reques
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
 		return
 	}
+	if !s.guardPrivateWorkspace(w, r) {
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	fail := func(err error) { writeJSONCoded(w, 409, CodeStale, err.Error()) }
 	var request struct {
@@ -505,6 +508,9 @@ func (s *Server) handleSubscriptionUpgrade(w http.ResponseWriter, r *http.Reques
 // Retained review reads do not depend on a still-readable mutable preparation.
 func (s *Server) handleSubscriptionUpgradeReview(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
+		return
+	}
+	if !s.guardPrivateWorkspace(w, r) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

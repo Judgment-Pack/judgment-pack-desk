@@ -66,7 +66,7 @@ export function openNewChat(navigate: NavigateFunction, chat: Chat, location?: {
 }
 
 export function hasChatContent(chat: Chat): boolean {
-  return Boolean(chat.composer.trim() || chat.attachments?.length || chat.inputDrafts?.length || chat.inputActions?.length || chat.policyProposals?.length || chat.checkpoint?.state.turns.length || chat.checkpoint?.state.candidates.length || chat.pinned || chat.title !== 'New chat')
+  return Boolean(chat.composer.trim() || chat.attachments?.length || chat.inputDrafts?.length || chat.inputActions?.length || chat.policyProposals?.length || chat.policyInterpretations?.length || chat.policySources?.length || chat.checkpoint?.state.turns.length || chat.checkpoint?.state.candidates.length || chat.pinned || chat.title !== 'New chat')
 }
 
 export function chatTitle(chat: Chat): string {

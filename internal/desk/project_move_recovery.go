@@ -46,7 +46,7 @@ func (s *Server) serveProject(w http.ResponseWriter, r *http.Request) {
 }
 func historyRequestPath(path string) bool {
 	switch path {
-	case "/api/conversations", "/api/draft-packs", "/api/briefs", "/api/pack-tests", "/api/source-reviews":
+	case "/api/conversations", "/api/draft-graphs", "/api/draft-packs", "/api/briefs", "/api/pack-tests", "/api/source-reviews":
 		return true
 	}
 	return strings.HasPrefix(path, "/api/attachments/")

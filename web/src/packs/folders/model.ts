@@ -9,7 +9,7 @@ export const WORKSPACE_ROOT = '__workspace__'
 export const MAX_FOLDERS = 1000
 export const MAX_DEPTH = 16
 export interface PackFolder { id: string; name: string; parentId: string | null; ownerId?: 'local' }
-export interface FolderDocument { version: 1 | 2; folders: PackFolder[]; assignments: Record<string, string> }
+export interface FolderDocument { version: 1 | 2 | 3; folders: PackFolder[]; assignments: Record<string, string> }
 export type FolderAction =
  | { type: 'create-and-move'; id: string; name: string; parentId: string | null; target: { kind: 'folder'; id: string } | { kind: 'items'; ids: string[] } }
  | { type: 'create'; id: string; name: string; parentId: string | null }
@@ -46,7 +46,7 @@ export function inFolder(document: FolderDocument, id: string, parent: string, r
 export function packFolder(document: FolderDocument, id: string) { return Object.hasOwn(document.assignments,id) ? document.assignments[id]! : HOME_FOLDER }
 export function decodeFolders(value: unknown): FolderDocument {
  const invalid = () => { throw new Error(sourceMessage('Folder organization could not be read. The saved file has not been changed.')) }
- if (!object(value) || !only(value,['version','folders','assignments']) || (value.version !== 1 && value.version !== 2) || !Array.isArray(value.folders) || !value.folders.length || value.folders.length > MAX_FOLDERS || !object(value.assignments) || Object.keys(value.assignments).length > 10000) return invalid()
+ if (!object(value) || !only(value,['version','folders','assignments']) || ![1,2,3].includes(value.version as number) || !Array.isArray(value.folders) || !value.folders.length || value.folders.length > MAX_FOLDERS || !object(value.assignments) || Object.keys(value.assignments).length > 10000) return invalid()
  const ids = new Set<string>(), names = new Set<string>()
  for (const folder of value.folders) {
   if (!object(folder) || !only(folder,['id','name','parentId','ownerId']) || !identifier(folder.id) || folder.id === ALL_PACKS || ids.has(folder.id) || typeof folder.name !== 'string' || folderName(folder.name) !== folder.name || folder.parentId !== null && !identifier(folder.parentId)) return invalid()
@@ -58,7 +58,7 @@ export function decodeFolders(value: unknown): FolderDocument {
  if (!ids.has(HOME_FOLDER)) return invalid()
  const doc = value as unknown as FolderDocument
  for (const folder of doc.folders) folderTrail(doc,folder.id)
- for (const [pack,folder] of Object.entries(doc.assignments)) if (!(value.version === 2 && /^(graph|graph-draft):[a-zA-Z0-9-]+$/.test(pack)) && !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(pack) || pack.length > 1024 || typeof folder !== 'string' || !ids.has(folder)) return invalid()
+ for (const [pack,folder] of Object.entries(doc.assignments)) if (!(doc.version >= 2 && /^(graph|graph-draft):[a-zA-Z0-9-]+$/.test(pack)) && !(doc.version === 3 && /^graph-draft:[a-zA-Z0-9-]{1,80}:[a-zA-Z0-9-]{1,80}$/.test(pack)) && !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(pack) || pack.length > 1024 || typeof folder !== 'string' || !ids.has(folder)) return invalid()
  return doc
 }
 export function applyFolderAction(document: FolderDocument, action: FolderAction): FolderDocument {
@@ -69,7 +69,7 @@ export function applyFolderAction(document: FolderDocument, action: FolderAction
    ? {type:'move',id:action.target.id,parentId:action.id}
    : {type:'assign-many',packIds:action.target.ids,folderId:action.id})
  }
- const next: FolderDocument = { version: document.version === 2 || action.type === 'assign' && /^(graph|graph-draft):/.test(action.packId) || action.type === 'assign-many' && action.packIds.some(id=>/^(graph|graph-draft):/.test(id)) ? 2 : 1, folders: document.folders.map(folder => ({...folder})), assignments: {...document.assignments} }
+ const next: FolderDocument = { version: document.version, folders: document.folders.map(folder => ({...folder})), assignments: {...document.assignments} }
  if (action.type === 'assign' || action.type === 'assign-many') {
   if (!next.folders.some(folder => folder.id === action.folderId)) throw new Error(sourceMessage('This folder no longer exists. Choose another folder.'))
   const ids=action.type==='assign'?[action.packId]:action.packIds
@@ -86,5 +86,11 @@ export function applyFolderAction(document: FolderDocument, action: FolderAction
    next.folders = next.folders.filter(item => item.id !== folder.id)
   }
  }
- return decodeFolders(next)
+ return decodeFolders(folderDocumentVersion(next))
+}
+/** Keep the persisted contract explicit when a scoped graph placement is added. */
+export function folderDocumentVersion(document: FolderDocument): FolderDocument {
+ const keys=Object.keys(document.assignments)
+ const version:FolderDocument['version']=document.version===3||keys.some(key=>/^graph-draft:[^:]+:[^:]+$/.test(key))?3:document.version===2||keys.some(key=>/^(graph|graph-draft):/.test(key))?2:1
+ return {...document,version}
 }

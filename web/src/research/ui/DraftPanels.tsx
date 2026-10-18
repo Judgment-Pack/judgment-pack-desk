@@ -321,7 +321,7 @@ function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: 
     viewport={viewport} onViewport={setViewport} nodePositions={nodePositions} onNodePositionsChange={setNodePositions} listScroll={scroll} /></div>
 }
 
-export function DraftTabs({ requestedTab, brief, historyPanel, usagePanel, testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, onEstablishCases, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { brief?: ReactNode; historyPanel?: ReactNode; usagePanel?: ReactNode; testsPanel?: ReactNode; requestedTab?: {tab: string; id: string}; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; onEstablishCases?: () => void; basis?: string }) {
+export function DraftTabs({ requestedTab, brief, historyPanel, usagePanel, testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, onEstablishCases, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], policySources = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { brief?: ReactNode; historyPanel?: ReactNode; usagePanel?: ReactNode; testsPanel?: ReactNode; requestedTab?: {tab: string; id: string}; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; onEstablishCases?: () => void; basis?: string }) {
   useLocale()
   const [tab, setTabState] = useState('draft')
   useEffect(() => { if (requestedTab) { setTabState(requestedTab.tab); onTabChange?.(requestedTab.tab) } }, [requestedTab?.tab, requestedTab?.id])
@@ -342,7 +342,7 @@ export function DraftTabs({ requestedTab, brief, historyPanel, usagePanel, tests
   // Independent expectations stay in Tests, beside the saved test workspace.
   const independentCases = testsPanel !== undefined && (state.cases.length > 0 || state.expectationIssues.length > 0 || state.droppedCases.length > 0)
   const document = state.candidates.at(-1)?.document
-  const sourceCount = sources.length + documents.length + files.length + declaredSources(document).length
+  const sourceCount = policySources.length + sources.length + documents.length + files.length + declaredSources(document).length
   return (
     <section className={styles.pane} aria-label={msg("Draft review")} data-pane="draft" data-document={hideHeader || undefined}>
       {!hideHeader && <header className={styles.paneHeader}>
@@ -362,7 +362,7 @@ export function DraftTabs({ requestedTab, brief, historyPanel, usagePanel, tests
         tabs={[
           { value: 'draft', label: msg("Overview"), panel: <DraftPanel state={state} onViewLogic={() => setTab('logic')} /> },
           { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelectInMain ?? onSelect} onInspect={onSelect} active={tab === 'logic'} /> },
-          { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <DraftSources document={document} documents={documents} files={files} sources={sources} citations={state.citations} onRead={onRead} /> },
+          { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <DraftSources document={document} policySources={policySources} documents={documents} files={files} sources={sources} citations={state.citations} onRead={onRead} /> },
           { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: testsPanel ? <div className={styles.testStack}>
             {independentCases && <Disclosure title={msg('Independent expectations')} open={pending>0}><TestsPanel mode={mode} state={state} onSelect={onSelect} withChecks={false} {...actions} onReadPage={readPage}/></Disclosure>}
             <div className={styles.testWorkspace}>{testsPanel}</div>

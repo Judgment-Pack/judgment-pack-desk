@@ -306,6 +306,9 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
 		return
 	}
+	if !s.guardPrivateWorkspace(w, r) {
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	id := r.PathValue("preparation")
 	batchID := r.PathValue("evaluation")

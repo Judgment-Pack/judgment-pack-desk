@@ -9,6 +9,7 @@ import {PolicyPage} from './PolicyPage'
 import {policyLibraryItems,folderAssignmentKey,deletableLibraryDraft} from '../library/items'
 import {type PolicyReply,type PolicyMutationReply,type PolicyWrite,type PolicySourceSync,type PolicySourceObservation,writePolicy} from './client'
 import sourceWire from '../../../internal/desk/testdata/policy-source-observation.json'
+import {createPolicyPendingJournal} from './pendingOperation'
 
 vi.mock('./PolicyAssistant',()=>({PolicyAssistant:()=>null}))
 
@@ -89,9 +90,9 @@ it('journals uncertain source commands before dispatch and recovers after remoun
  const sync:PolicySourceSync={revision:'source-active',supported:true,pending:true,state:{version:1,generation:1,state:'active',frequencyMinutes:15,gap:false,grant:{actor,at,resourceId:'file-A'},binding:{bindingId:'binding-A',source:{provider:'google-drive',accountId:'account-A',resourceId:'file-A'}},observations:[],resolutions:[]}}
  const first=mount({sync,mutate:async()=>{throw new Error('lost reply')}});await screen.findByRole('textbox',{name:'Policy text'});sourceTab();fireEvent.click(await screen.findByRole('button',{name:'Pause checks'}));await screen.findByRole('button',{name:'Check operation result'})
  expect(first.writes).toHaveLength(1)
- const journal=sessionStorage.getItem('jpack.policy-source.pending.v1:'+window.location.host+':policy-one');expect(JSON.parse(journal!).body.action).toBe('pause')
+ const journal=await createPolicyPendingJournal('source-sync','policy-one');expect(journal.read()!.body.action).toBe('pause')
  cleanup()
- const second=mount({sync});second.setRecovery({...result(policy()),receipt:{operationId:first.writes[0]!.body.operationId,kind:'source-pause',policyId:'policy-one'},sourceSync:sync});await screen.findByRole('textbox',{name:'Policy text'});sourceTab();fireEvent.click(await screen.findByRole('button',{name:'Check operation result'}));await waitFor(()=>expect(sessionStorage.getItem('jpack.policy-source.pending.v1:'+window.location.host+':policy-one')).toBeNull())
+ const second=mount({sync});second.setRecovery({...result(policy()),receipt:{operationId:first.writes[0]!.body.operationId,kind:'source-pause',policyId:'policy-one'},sourceSync:sync});await screen.findByRole('textbox',{name:'Policy text'});sourceTab();fireEvent.click(await screen.findByRole('button',{name:'Check operation result'}));await waitFor(()=>expect(journal.read()).toBeUndefined())
  expect(second.writes).toHaveLength(0);expect(second.requests.some(path=>path.startsWith('/api/policy-operations/'))).toBe(true)
 })
 it('freezes the reviewed source and candidate when a newer source arrives while confirmation is open',async()=>{
@@ -295,4 +296,17 @@ it('rejects invalid local uploads without sending or changing the draft',async()
  expect(await screen.findByRole('alert')).toHaveProperty('textContent','Import a UTF-8 .txt or .md file up to 128 KiB with a simple filename.')
  expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('')
  expect(app.writes).toHaveLength(0)
+})
+it('blocks Design pack while the editor is dirty or its frozen saved revision conflicts with a refresh',async()=>{
+ const app=mount();await screen.findByRole('textbox',{name:'Policy text'})
+ expect((screen.getByRole('button',{name:'Design pack'}) as HTMLButtonElement).disabled).toBe(false)
+ edit('Unsaved interpretation source')
+ expect((screen.getByRole('button',{name:'Design pack'}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:'Design pack'}));expect(app.requests.some(url=>url.includes('/authoring-source'))).toBe(false)
+ edit('Expense policy')
+ expect((screen.getByRole('button',{name:'Design pack'}) as HTMLButtonElement).disabled).toBe(false)
+ await act(()=>app.cache.setQueryData(['policies','policy-one'],policy('remote-head','New saved text')))
+ await screen.findByText('Saved policy changed')
+ expect((screen.getByRole('button',{name:'Design pack'}) as HTMLButtonElement).disabled).toBe(true)
+ expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('Expense policy')
 })

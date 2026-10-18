@@ -118,6 +118,18 @@ external policy's effective date; it governs adoption and the resulting local
 implementation restrictions. For imports adopted as Desk-managed drafts, source
 changes are proposals to update the draft, not authority to publish it.
 
+External status handling is capability-driven for each supported source. When a
+source genuinely exposes lifecycle, an administrator reviews the mapping from
+its evidence to status. When that capability is absent, use an administrator's
+configured fallback status, initially **Draft**. Retain whether a status is
+source-provided or administrator-configured. Missing capability is distinct from
+a fetch failure, lost permission, unavailable source or withdrawal. Those errors
+never activate fallback, fabricate approval or replace the last known lifecycle.
+Imported status does not stand in for verified sign-off. The local lifecycle
+foundation under [Desk #469](https://github.com/Judgment-Pack/judgment-pack-desk/issues/469)
+records administrator decisions only; provider lifecycle adapters and reviewed
+external mappings remain separate work.
+
 Impact review identifies affected clauses, structured requirements when present,
 packs, graphs, tests and jobs, including pending reviews. AI may propose updates
 through the existing framework, but synchronization does not grant permission to

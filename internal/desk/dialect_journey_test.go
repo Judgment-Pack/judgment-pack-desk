@@ -89,7 +89,7 @@ func testDialectResearchTestedJobJourney(t *testing.T, backend string, generic b
 		raw, _ := json.Marshal(body)
 		for tries := 0; ; tries++ {
 			req := httptest.NewRequest(method, path, strings.NewReader(string(raw)))
-			req.Header.Set("Authorization", "Bearer "+testToken)
+			req.Header.Set("Authorization", "Bearer "+policyTestSession(t, s))
 			req.Header.Set("If-Match", revision)
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, req)

@@ -1,9 +1,11 @@
+import {validPolicySources,type PolicyAuthoringSource} from '../policies/authoringSource'
+import {validPolicyInterpretationProposal,type PolicyInterpretationProposal} from '../policies/interpretation'
 import {validPolicyId,validPolicyRequest,validPolicyProposal,type PolicyRequest,type PolicyProposal} from '../policies/chat'
 import {validPlans,type ChatPlan} from '../assistant/planning/model'
 import type { Turn } from '../research/run'
 import {validDialectChatAction,validDialectId,type DialectChatAction} from '../dialects/chatActions'
 import {validDialectRecipeProposal,type DialectRecipeProposal} from '../dialects/proposals'
-import { validGraphDraft, type GraphDraft } from '../graphs/drafts'
+import { validGraphSnapshot, type GraphDraft } from '../graphs/drafts'
 import { ASSISTANT_THINKING, type ThinkingTier } from '../config/deskConfig'
 import { validAIConnectionId } from '../assistant/aiConnections'
 import { validChatReasoning, type ChatReasoning } from './reasoning'
@@ -42,6 +44,9 @@ export function retainSentDocuments(previous: ChatAttachment[], sent: ChatAttach
   return [...documents.values()]
 }
 export interface Chat {
+ policySources?:PolicyAuthoringSource[]
+ policyInterpretationKind?:'pack'|'graph'
+ policyInterpretations?:PolicyInterpretationProposal[]
  policy?:{id:string}
  policyRequest?:PolicyRequest
  policyProposals?:PolicyProposal[]
@@ -106,12 +111,16 @@ function decode(value: unknown): Chat[] {
     if (chat.draftId !== undefined && (typeof chat.draftId !== 'string' || !/^draft-[a-z0-9-]{1,160}$/.test(chat.draftId))) throw new Error(sourceMessage('Invalid saved pack context'))
     if(chat.draftGeneration!==undefined && (!Number.isSafeInteger(chat.draftGeneration)||chat.draftGeneration<1)) throw new Error(sourceMessage('Invalid saved pack context'))
     if(chat.policy!==undefined&&(!chat.policy||Object.keys(chat.policy).length!==1||!validPolicyId(chat.policy.id)||chat.pack||chat.graph||chat.draftId||chat.input))throw Error(sourceMessage('Invalid saved Policy chat scope'))
+    if(chat.policyInterpretationKind!==undefined&&!['pack','graph'].includes(chat.policyInterpretationKind))throw Error(sourceMessage('Invalid Policy interpretation kind'))
+    if(chat.policySources!==undefined&&!validPolicySources(chat.policySources))throw Error(sourceMessage('Invalid saved Policy authoring sources'))
+    if(chat.policyInterpretations!==undefined&&(!chat.policy||!Array.isArray(chat.policyInterpretations)||chat.policyInterpretations.length>16||!chat.policyInterpretations.every(p=>validPolicyInterpretationProposal(p)&&p.policyId===chat.policy!.id)||new Set(chat.policyInterpretations.map(p=>p.id)).size!==chat.policyInterpretations.length))throw Error(sourceMessage('Invalid saved Policy interpretation proposals'))
     if(chat.policyRequest!==undefined&&(!chat.policy||!validPolicyRequest(chat.policyRequest)))throw Error(sourceMessage('Invalid saved Policy request'))
     if(chat.policyProposals!==undefined&&(!chat.policy||!Array.isArray(chat.policyProposals)||chat.policyProposals.length>16||!chat.policyProposals.every(p=>validPolicyProposal(p)&&p.policyId===chat.policy!.id)||new Set(chat.policyProposals.map(p=>p.id)).size!==chat.policyProposals.length))throw Error(sourceMessage('Invalid saved Policy proposals'))
     if(chat.input!==undefined && (!chat.input||typeof chat.input!=='object'||Array.isArray(chat.input)||chat.pack||chat.graph||chat.draftId||Object.keys(chat.input).length!==1||!('id' in chat.input)||chat.input.id!=='list'&&!validDialectId(chat.input.id)))throw new Error(sourceMessage('Invalid saved dialect chat scope'))
     if(chat.inputActions!==undefined&&(!Array.isArray(chat.inputActions)||chat.inputActions.length>32||!chat.inputActions.every(validDialectChatAction)||new Set(chat.inputActions.map(a=>a.id)).size!==chat.inputActions.length))throw new Error(sourceMessage('Invalid saved dialect actions'))
     if(chat.inputDrafts!==undefined&&(!Array.isArray(chat.inputDrafts)||chat.inputDrafts.length>16||!chat.inputDrafts.every(validDialectRecipeProposal)||new Set(chat.inputDrafts.map(d=>d.draftId)).size!==chat.inputDrafts.length))throw new Error(sourceMessage('Invalid saved dialect recipe drafts'))
-    if (chat.graphDrafts !== undefined && (!Array.isArray(chat.graphDrafts) || chat.graphDrafts.length > 16 || !chat.graphDrafts.every(validGraphDraft) || new Set(chat.graphDrafts.map(d => d.draftId)).size !== chat.graphDrafts.length)) throw new Error(sourceMessage('Invalid saved graph drafts'))
+    if(Object.keys(chat).some(key=>key.toLowerCase()==='graphdrafts'&&key!=='graphDrafts'))throw Error(sourceMessage('Invalid saved graph drafts'))
+    if (chat.graphDrafts !== undefined && (!Array.isArray(chat.graphDrafts) || chat.graphDrafts.length > 16 || !chat.graphDrafts.every(validGraphSnapshot) || new Set(chat.graphDrafts.map(d => d.draftId)).size !== chat.graphDrafts.length)) throw new Error(sourceMessage('Invalid saved graph drafts'))
     if (chat.graph && (chat.pack || chat.draftId || typeof chat.graph.id !== 'string' || typeof chat.graph.path !== 'string' || typeof chat.graph.workspace !== 'string' || chat.graph.id.length > 128 || chat.graph.path.length > 1024 || !/^[a-zA-Z0-9-]{1,160}$/.test(chat.graph.workspace))) throw new Error(sourceMessage('Invalid saved graph context'))
     if(chat.interaction!==undefined&&!['plan','work'].includes(chat.interaction)||chat.plans!==undefined&&!validPlans(chat.plans))throw Error(sourceMessage('Invalid saved plan'))
     ids.add(chat.id)
@@ -130,7 +139,7 @@ function decode(value: unknown): Chat[] {
     if(chat.searches!==undefined && (!Array.isArray(chat.searches)||chat.searches.length>64||!chat.searches.every(validSearchReference)||new Set(chat.searches.map(s=>s.id)).size!==chat.searches.length))throw new Error(sourceMessage('Invalid saved attachments'))
     if(chat.researchMode!==undefined&&!['auto','provided'].includes(chat.researchMode)||chat.searchConnection!==undefined&&(typeof chat.searchConnection!=='string'||!/^([a-z][a-z0-9-]{0,47})$/.test(chat.searchConnection)))throw new Error(sourceMessage('Invalid saved chat'))
     if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error(sourceMessage("Invalid saved pack context"))
-    return { id: chat.id, title: chat.title, policy:chat.policy,policyRequest:chat.policyRequest,policyProposals:chat.policyProposals, interaction:chat.interaction, plans:chat.plans, ...(chat.input?{input:chat.input}:{}), ...(chat.inputActions?{inputActions:chat.inputActions}:{}), ...(chat.inputDrafts?{inputDrafts:chat.inputDrafts}:{}), ...(chat.graph ? {graph: chat.graph} : {}), ...(chat.graphDrafts ? {graphDrafts: chat.graphDrafts} : {}), composer: chat.composer, model: chat.model, ...(chat.apiThinking?{apiThinking:chat.apiThinking}:{}), ...(chat.aiConnection?{aiConnection:chat.aiConnection,aiConnectionName:chat.aiConnectionName}:{}), ...(chat.reasoning ? {reasoning:{model:chat.reasoning.model,effort:chat.reasoning.effort}} : {}), pinned: chat.pinned, archived: chat.archived,
+    return { id: chat.id, title: chat.title, policySources:chat.policySources,policyInterpretationKind:chat.policyInterpretationKind,policyInterpretations:chat.policyInterpretations,policy:chat.policy,policyRequest:chat.policyRequest,policyProposals:chat.policyProposals, interaction:chat.interaction, plans:chat.plans, ...(chat.input?{input:chat.input}:{}), ...(chat.inputActions?{inputActions:chat.inputActions}:{}), ...(chat.inputDrafts?{inputDrafts:chat.inputDrafts}:{}), ...(chat.graph ? {graph: chat.graph} : {}), ...(chat.graphDrafts ? {graphDrafts: chat.graphDrafts} : {}), composer: chat.composer, model: chat.model, ...(chat.apiThinking?{apiThinking:chat.apiThinking}:{}), ...(chat.aiConnection?{aiConnection:chat.aiConnection,aiConnectionName:chat.aiConnectionName}:{}), ...(chat.reasoning ? {reasoning:{model:chat.reasoning.model,effort:chat.reasoning.effort}} : {}), pinned: chat.pinned, archived: chat.archived,
       updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode === 'research' && !chat.checkpoint && !chat.draftId ? 'web-research' : chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], websites:chat.websites ?? [], searches:chat.searches??[], researchMode:chat.researchMode, searchConnection:chat.searchConnection, adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.draftId ? { draftId: chat.draftId, draftGeneration:chat.draftGeneration } : {}),
       ...(chat.targetFolderId !== undefined ? { targetFolderId: chat.targetFolderId } : {}),
@@ -273,7 +282,7 @@ export class ChatStore {
     const chat: Chat = cached ?? { id: crypto.randomUUID(), title: 'New chat', pinned: false, archived: false,
       updatedAt: new Date().toISOString(), composer: '', model: '', mode: mode ?? 'draft', view: 'chat', ...(pack ? { pack } : {}), ...(draftId ? {draftId} : {}), ...(graph ? {graph} : {}), ...(input?{input}:{}), ...(policy?{policy}:{}) }
     const artifact = this.state.packDrafts.find(item => item.id === draftId)
-    if (artifact) { chat.draftGeneration=artifact.generation; chat.checkpoint = artifactCheckpoint(artifact.checkpoint); chat.documents = artifact.documents; chat.mode = artifact.mode }
+    if (artifact) { chat.draftGeneration=artifact.generation; chat.checkpoint = artifactCheckpoint(artifact.checkpoint); chat.documents = artifact.documents; chat.policySources = artifact.policySources; chat.mode = artifact.mode }
     this.set({ drafts: [chat, ...this.state.drafts] })
     if (!pack && !draftId && !graph && !input && !policy) this.saveHomeDraft(chat)
     this.activate(chat.id)
@@ -350,7 +359,7 @@ export class ChatStore {
           // Never replace a newer artifact with an older conversation branch.
           const accepted = current.checkpoint.state.candidates
           if (accepted.every((candidate,index) => saved.state.candidates[index]?.text === candidate.text)) {
-            const next = {...current, title: current.titleEdited ? current.title : draftTitle(saved), checkpoint: artifactCheckpoint(saved), sourceFiles:[...new Map([...(current.sourceFiles??[]),...retainedSourceFiles(saved)].map(file=>[file.name+"\0"+file.text,file])).values()], documents: retainSentDocuments(current.documents, owner.documents ?? [])}
+            const next = {...current, title: current.titleEdited ? current.title : draftTitle(saved), checkpoint: artifactCheckpoint(saved), sourceFiles:[...new Map([...(current.sourceFiles??[]),...retainedSourceFiles(saved)].map(file=>[file.name+"\0"+file.text,file])).values()], policySources:owner.policySources??current.policySources, documents: retainSentDocuments(current.documents, owner.documents ?? [])}
             // Conversation-only work and source ownership must not advance the artifact generation.
             if (JSON.stringify(next) !== JSON.stringify(current)) {
               this.saveDraft({...next, generation:current.generation+1, updatedAt: new Date().toISOString()})

@@ -211,7 +211,7 @@ export function useResearchRun(options?: {
           {
             prompt: [request.prompt,(executionContext?.phase==='plan'||conversationMode(settings.current.mode))?settings.current.researchPolicy?.([...built?.getSnapshot().turns ?? []].reverse().find(turn=>turn.role==='user')):undefined].filter(Boolean).join('\n\n'),
             ...(request.conversation ? { allowConversation: true } : {}),
-            context:{...request.context,...executionContext,authorize:settings.current.authorizeContext,checkpoint:request.conversation?async checkpoint=>{deliver({type:'execution_checkpoint',checkpoint});await settings.current.checkpointDelegation?.(signal)}:undefined,configuration:settings.current.contextConfiguration},
+            context:{...request.context,...executionContext,...(executionContext?.documents?{documents:[...(request.context?.documents??[]),...executionContext.documents]}:{}),authorize:settings.current.authorizeContext,checkpoint:request.conversation?async checkpoint=>{deliver({type:'execution_checkpoint',checkpoint});await settings.current.checkpointDelegation?.(signal)}:undefined,configuration:settings.current.contextConfiguration},
             interactive: true,
             adversarialReview: !request.reviewer && settings.current.adversarialReview === true,
             testPrompt: request.reviewer ? '' : testPrompt,

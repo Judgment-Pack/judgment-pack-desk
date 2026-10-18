@@ -137,38 +137,8 @@ func resolvePolicyApproval(ctx context.Context, s *Server, chat assistantApprova
 // Policy-linked transcripts contain policy excerpts. Require current Policy
 // access before returning private history, including after session changes.
 func (s *Server) authorizePolicyConversations(r *http.Request, raw json.RawMessage) error {
-	var doc struct {
-		Chats []struct {
-			Policy *struct {
-				ID string `json:"id"`
-			} `json:"policy"`
-		} `json:"chats"`
-	}
-	if json.Unmarshal(raw, &doc) != nil {
-		return withCode(CodeBadRequest, errors.New("Invalid conversation history."))
-	}
-	hasPolicy := false
-	for _, chat := range doc.Chats {
-		if chat.Policy == nil {
-			continue
-		}
-		if !policyIDForm.MatchString(chat.Policy.ID) {
-			return withCode(CodeForbidden, errors.New("Invalid Policy conversation scope."))
-		}
-		hasPolicy = true
-	}
-	if !hasPolicy {
-		return nil
-	}
-	held, ok := s.sessionOf(r)
-	if !ok || !validPolicyActor(policyActorOf(held)) {
-		return withCode(CodeUnauthorized, errors.New("Sign in before reading Policy conversations."))
-	}
 	// This deployment has one authenticated administrator. Content availability
 	// is independent of access: a missing current source must not erase history.
 	// Future resource ACLs extend this shared service authorization boundary.
-	if err := s.localPolicyService(r, policyActorOf(held)).authorized(r.Context()); err != nil {
-		return withCode(CodeUnauthorized, errors.New("Sign in before reading Policy conversations."))
-	}
-	return nil
+	return s.authorizePolicyWorkspace(r, raw, false)
 }

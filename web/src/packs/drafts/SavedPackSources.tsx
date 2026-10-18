@@ -1,3 +1,4 @@
+import {policySourceKey} from '../../policies/authoringSource'
 import {LoadingState} from '../../ui/LoadingState'
 import { useMemo } from 'react'
 import type { ChatAttachment } from '../../chat/store'
@@ -33,11 +34,12 @@ export function SavedPackSources({owner, path, matrixPath, document}: {owner:str
         for (const source of restoreSourceHandoff(saved.retrievals)) sources.set(JSON.stringify([source.session,source.id,source.request]),source)
       } catch (problem) { error = problem }
     }
-    return {documents:[...documents.values()], files:[...files.values()], sources:[...sources.values()], error}
+    const policySources=[...new Map(drafts.flatMap(draft=>draft.policySources??[]).map(source=>[policySourceKey(source),source])).values()]
+    return {policySources,documents:[...documents.values()], files:[...files.values()], sources:[...sources.values()], error}
   }, [file.data, chats.packDrafts, owner, path])
   const loading = Boolean(chats.store && !chats.ready) || listing.isPending || Boolean(listing.data?.files.some(entry=>entry.path===researchPath) && file.isPending)
   return <>
     <QueryStatusNotice id={'pack-sources:'+owner} label={msg('Pack sources unavailable')} error={retained.error || file.error || listing.error} onRetry={()=>{void listing.refetch();if(file.data||file.error)void file.refetch()}}/>
-    {loading && !retained.documents.length && !retained.files.length && !retained.sources.length ? <LoadingState>{msg('Loading sources…')}</LoadingState> : <DraftSources document={document} {...retained}/>}
+    {loading && !retained.documents.length && !retained.files.length && !retained.sources.length && !retained.policySources.length ? <LoadingState>{msg('Loading sources…')}</LoadingState> : <DraftSources document={document} {...retained}/>}
   </>
 }

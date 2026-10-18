@@ -1,3 +1,4 @@
+import {validPolicyAuthoringSource,type PolicyAuthoringSource,type PolicySourceSelection} from './authoringSource'
 import {queryOptions} from '@tanstack/react-query'
 import {deskFetch} from '../files/client'
 import {NoSession} from '../mcp/session'
@@ -16,13 +17,15 @@ export interface PolicyPublication {id:string;sequence:number;candidateRevisionI
 export interface PolicyDocument {id:string;managementMode:'desk-managed';createdAt:string;updatedAt:string;candidate:PolicyCandidate;workflow:PolicyWorkflow;workflowDigest:string;reviewState:'unreviewed'|'approved'|'changes-requested';currentReviewId?:string;revisions:PolicyRevision[];reviews:PolicyReview[];publications:PolicyPublication[]}
 export interface PolicyReply {revision:string;document:PolicyDocument}
 export interface PolicySummary {id:string;candidateDigest:string;currentCandidatePublished:boolean;title:string;artifactVersion:string;updatedAt:string;reviewState:PolicyDocument['reviewState'];publicationCount:number;latestPublication?:PolicyPublication}
-export interface PolicyMutationReply {delivery:'committed'|'recovered';receipt:unknown;policy:PolicyReply;sourceSync?:PolicySourceSync}
+export interface PolicyMutationReply {delivery:'committed'|'recovered';receipt:unknown;policy:PolicyReply;sourceSync?:PolicySourceSync;lifecycle?:PolicyLifecycle}
 export interface PolicyWrite {path:string;method:'POST'|'PUT';body:Record<string,unknown>}
 export class PolicyRequestError extends Error {
  constructor(readonly code:string,readonly uncertain=false){super(policyFailureMessage(code));this.name='PolicyRequestError'}
 }
 function policyFailureMessage(code:string){
  switch(code){
+ case 'lifecycle-conflict':return sourceMessage('The policy or lifecycle changed. Review its current state before continuing.')
+ case 'invalid-lifecycle-time':return sourceMessage('Use UTC whole-second dates with expiry after effectiveness; activation cannot be backdated.')
  case 'invalid-policy-source':return sourceMessage('Import a UTF-8 .txt or .md file up to 128 KiB with a simple filename.')
  case 'source-update-unresolved':return sourceMessage('Review the latest connected source update before publishing this candidate.')
  case 'source-conflict':return sourceMessage('The policy or source changed. Review the latest source state before continuing.')
@@ -62,6 +65,14 @@ export const policyQuery=(id:string)=>queryOptions({...privateQuery,queryKey:[..
 export const writePolicy=(operation:PolicyWrite)=>request<PolicyMutationReply>(operation.path,{method:operation.method,headers:{'Content-Type':'application/json'},body:JSON.stringify(operation.body)})
 
 export const recoverPolicyOperation=(operationId:string)=>request<PolicyMutationReply>('/'+encodeURIComponent(operationId),{},'/api/policy-operations')
+export interface PolicyLifecycleEvent {id:string;sequence:number;action:'activate'|'withdraw';publicationId:string;candidateDigest:string;at:string;actor:PolicyActor;provenance:'admin-configured';effectiveAt?:string;expiresAt?:string;supersedesPublicationId?:string;rationale?:string}
+export interface PolicyReleaseLifecycle {publicationId:string;status:'published'|'effective'|'superseded'|'expired'|'withdrawn';effectiveAt?:string;expiresAt?:string;supersededBy?:string;activationId?:string;withdrawalId?:string}
+export interface PolicyLifecycle {revision:string;policyRevision:string;observedAt:string;releases:PolicyReleaseLifecycle[];events:PolicyLifecycleEvent[]}
+export interface PolicyLifecycleOutcome {outcomeKind:'lifecycle';delivery:'committed'|'recovered';policyId:string;policyRevision:string;receipt:unknown;lifecycle:PolicyLifecycle}
+export const writePolicyLifecycle=(operation:PolicyWrite)=>request<PolicyLifecycleOutcome>(operation.path,{method:operation.method,headers:{'Content-Type':'application/json'},body:JSON.stringify(operation.body)})
+export const recoverPolicyLifecycleOperation=(operationId:string)=>request<PolicyLifecycleOutcome>('/'+encodeURIComponent(operationId),{},'/api/policy-operations')
+export const readPolicyLifecycle=(id:string,signal?:AbortSignal)=>request<PolicyLifecycle>('/'+encodeURIComponent(id)+'/lifecycle',{signal})
+export const policyLifecycleQuery=(id:string,enabled=true)=>queryOptions({...privateQuery,enabled,queryKey:[...POLICIES_KEY,id,'lifecycle'],queryFn:({signal})=>readPolicyLifecycle(id,signal)})
 export const readPolicyRevision=(id:string,revisionId:string,signal?:AbortSignal)=>request<PolicyRevisionReply>('/'+encodeURIComponent(id)+'/revisions/'+encodeURIComponent(revisionId),{signal})
 
 export async function readPolicySource(id:string):Promise<Uint8Array>{
@@ -81,4 +92,11 @@ export async function downloadPolicyObservation(id:string,observation:PolicySour
  const response=await deskFetch('/api/policies/'+encodeURIComponent(id)+'/source-sync/observations/'+encodeURIComponent(observation.id)+'/original')
  if(!response.ok)throw new PolicyRequestError('unavailable')
  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=observation.name;link.click();URL.revokeObjectURL(url)
+}
+
+export async function readPolicyAuthoringSource(selection:PolicySourceSelection,signal?:AbortSignal):Promise<PolicyAuthoringSource>{
+ const query=new URLSearchParams(selection.publicationId?{publicationId:selection.publicationId}:{revisionId:selection.revisionId!})
+ const source=await request<unknown>('/'+encodeURIComponent(selection.policyId)+'/authoring-source?'+query,{signal})
+ if(!validPolicyAuthoringSource(source)||source.policyId!==selection.policyId||(selection.publicationId?source.publicationId!==selection.publicationId:source.revisionId!==selection.revisionId||source.publicationId!==undefined))throw new PolicyRequestError('invalid-policy')
+ return source
 }
