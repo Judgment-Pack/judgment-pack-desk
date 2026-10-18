@@ -82,3 +82,49 @@ it('discards late page registration when the current page pin changes before the
  await act(async()=>finish({...preview,entry:{profile:{id:'late-pages'},digest:'late-digest'}}))
  expect(onBind).not.toHaveBeenCalled()
 })
+
+const scoped=(id:string,endpointScope:string[])=>({digest:'sha256:'+id,profile:{id,class:'generated',source:'web',shape:'http',endpoint:null,endpointScope,research:{capabilities:['page']}}}) as any
+const pagePin=(id:string)=>({profile:id,profileDigest:'sha256:'+id}) as any
+function pageView(pin:any,profiles:any[],context=reference.context){const cache=new QueryClient({defaultOptions:{queries:{retry:false}}});return render(<QueryClientProvider client={cache}><PortableResearchControls source={{...source,capabilities:['answer','page'],webProfiles:pin?{page:pin}:{}}} reference={reference} currentContext={context} profiles={profiles} disabled={false} onBind={vi.fn()} onReview={vi.fn()}/></QueryClientProvider>)}
+const scopeList=()=>screen.getAllByRole('list',{name:'Page scope'})
+it('shows the chosen page profile\'s exact scope where it is selected, and warns for https://*',async()=>{
+ vi.mocked(portableResearchAPI).mockResolvedValue(run('completed'))
+ const view=pageView(pagePin('narrow'),[scoped('narrow',['https://Docs.EXAMPLE:/guides/%7e','https://second.example/notes']),scoped('wide',['https://*'])])
+ await screen.findByText('Result retained. Read sources and preview to verify mapped values.')
+ expect(scopeList()).toHaveLength(1)
+ expect(scopeList()[0].textContent).toBe('https://Docs.EXAMPLE:/guides/%7ehttps://second.example/notes')
+ expect(screen.queryByText('This scope includes https://*: any HTTPS page may be read.')).toBeNull()
+ view.unmount()
+ pageView(pagePin('wide'),[scoped('narrow',['https://docs.example/guides']),scoped('wide',['https://*'])])
+ await screen.findByText('Result retained. Read sources and preview to verify mapped values.')
+ expect(scopeList()[0].textContent).toBe('https://*')
+ expect(screen.getByText('This scope includes https://*: any HTTPS page may be read.')).toBeTruthy()
+})
+it('matches the chosen page profile by digest, and names an exact endpoint where there is no scope',async()=>{
+ vi.mocked(portableResearchAPI).mockResolvedValue(run('completed'))
+ const view=pageView({profile:'narrow',profileDigest:'sha256:other'},[scoped('narrow',['https://docs.example/guides'])])
+ await screen.findByText('The scope of this page profile cannot be shown: it is not among the installed profiles.')
+ expect(screen.queryByRole('list',{name:'Page scope'})).toBeNull()
+ view.unmount()
+ pageView(pagePin('legacy'),[{digest:'sha256:legacy',profile:{id:'legacy',class:'generated',shape:'http',endpoint:'https://legacy.example/final',research:{capabilities:['page']}}}])
+ await screen.findByText('No page scope. Runner accepts a page only at this exact endpoint: https://legacy.example/final')
+})
+it('shows the scope frozen into the reviewed run before it is confirmed',async()=>{
+ const frozen=(inputText:string)=>{const held=run('review');held.plan.arguments.capabilities=['answer','page'];held.limits.pages=3;held.inputText=inputText;return held}
+ const profiles=[scoped('reviewed',['https://*']),scoped('current',['https://docs.example/guides'])]
+ // The reviewed run froze a wildcard profile; the draft now names another.
+ vi.mocked(portableResearchAPI).mockResolvedValue(frozen(JSON.stringify({source:{mapping:{sources:[{name:source.name,webProfiles:{page:pagePin('reviewed')}}]}}})))
+ const view=pageView(pagePin('current'),profiles,reference.context)
+ await screen.findByRole('button',{name:'Run research'})
+ const lists=scopeList()
+ expect(lists.map(list=>list.textContent)).toEqual(['https://docs.example/guides','https://*'])
+ expect(screen.getByText('This scope includes https://*: any HTTPS page may be read.')).toBeTruthy()
+ view.unmount()
+ // An imported definition's binding is read as the Desk reads it.
+ vi.mocked(portableResearchAPI).mockResolvedValue(frozen(JSON.stringify({source:{import:{binding:{sources:{[source.name]:{webProfiles:{page:pagePin('current')}}}}},mapping:{sources:[{name:source.name,webProfiles:{page:pagePin('reviewed')}}]}}})))
+ pageView(pagePin('current'),profiles,reference.context)
+ await screen.findByRole('button',{name:'Run research'})
+ expect(scopeList().map(list=>list.textContent)).toEqual(['https://docs.example/guides','https://docs.example/guides'])
+ expect(screen.queryByText('This scope includes https://*: any HTTPS page may be read.')).toBeNull()
+ expect(vi.mocked(portableResearchAPI).mock.calls.every(call=>call[1]===undefined)).toBe(true)
+})

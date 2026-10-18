@@ -135,3 +135,20 @@ it('keeps a newer page-picker choice when an earlier registration completes late
  const imported=JSON.parse(vi.mocked(saveJobDraft).mock.calls[0][1].mapped!.importText!)
  expect(imported.binding.sources.classification.webProfiles.page).toEqual({profile:'narrow-pages',profileDigest:'narrow-digest'})
 })
+
+it('shows the exact scope of the page profile chosen for a research source, and warns for https://*',async()=>{
+ const ai={digest,profile:{id:'local-ai',class:'generated',research:{capabilities:['answer'],model:'model-a'}}}
+ const page=(id:string,endpointScope:string[])=>({digest:'sha256:'+id,profile:{id,class:'generated',source:'web',shape:'http',endpoint:null,endpointScope,research:{capabilities:['page']}}})
+ vi.mocked(jobsAPI).mockResolvedValue([ai,page('guides',['https://docs.example/guides','https://second.example/notes']),page('anything',['https://*'])])
+ show(candidate([{...source,capabilities:['answer','page']}]))
+ fireEvent.change(screen.getByLabelText('Pack'),{target:{value:'classification-pack'}})
+ await screen.findByRole('option',{name:'guides'})
+ expect(screen.queryByRole('list',{name:'Page scope'})).toBeNull()
+ fireEvent.change(screen.getByLabelText('classification · page'),{target:{value:'guides'}})
+ expect(screen.getByRole('list',{name:'Page scope'}).textContent).toBe('https://docs.example/guideshttps://second.example/notes')
+ expect(screen.queryByText('This scope includes https://*: any HTTPS page may be read.')).toBeNull()
+ fireEvent.change(screen.getByLabelText('classification · page'),{target:{value:'anything'}})
+ expect(screen.getByRole('list',{name:'Page scope'}).textContent).toBe('https://*')
+ expect(screen.getByText('This scope includes https://*: any HTTPS page may be read.')).toBeTruthy()
+ expect(portableResearchAPI).not.toHaveBeenCalled()
+})
