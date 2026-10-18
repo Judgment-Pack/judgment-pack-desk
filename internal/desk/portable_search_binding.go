@@ -33,6 +33,81 @@ type searchBindingDescriptor struct {
 	FixedArguments map[string]string `json:"fixedArguments"`
 	RequestSchema  json.RawMessage   `json:"requestSchema"`
 	ResultRecord   string            `json:"resultRecord"`
+	// Version 2 (Gateway ADR-0019) adds these three. Version 1 has none of them,
+	// and a version-1 descriptor marshals without them, byte for byte.
+	RequestSchemaVersion string          `json:"requestSchemaVersion,omitempty"`
+	ResultSchema         json.RawMessage `json:"resultSchema,omitempty"`
+	ResultSchemaVersion  string          `json:"resultSchemaVersion,omitempty"`
+}
+
+var (
+	searchRequestSchemaVersion = regexp.MustCompile(`^[a-z][a-z0-9-]{0,40}-request-[1-9][0-9]{0,5}$`)
+	searchResultSchemaVersion  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,40}-result-[1-9][0-9]{0,5}$`)
+)
+
+// The members each version holds, exactly, case included.
+var searchBindingMembers = map[int][]string{
+	1: {"version", "shape", "adapter", "endpoint", "research", "fixedArguments", "requestSchema", "resultRecord"},
+	2: {"version", "shape", "adapter", "endpoint", "research", "fixedArguments", "requestSchema", "resultRecord", "requestSchemaVersion", "resultSchema", "resultSchemaVersion"},
+}
+
+// The one place a description read from the program is held to its form: the
+// members by name, the decode, the version's members and the reviewed choice.
+// describeSearchBinding admits nothing it does not admit.
+func admitSearchBindingDescription(raw []byte, choice inputResearchSearch) (searchBindingDescriptor, bool) {
+	var d searchBindingDescriptor
+	members, _, err := topLevelMembers(raw)
+	if err != nil {
+		return d, false
+	}
+	version := 0
+	names := map[string]bool{}
+	for _, m := range members {
+		names[m.name] = true
+		if m.name == "version" && json.Unmarshal(m.raw, &version) != nil {
+			return d, false
+		}
+	}
+	want := searchBindingMembers[version]
+	if want == nil || len(names) != len(want) || len(members) != len(want) {
+		return d, false
+	}
+	for _, name := range want {
+		if !names[name] {
+			return d, false
+		}
+	}
+	if decodeDataJSON(raw, &d) != nil {
+		return d, false
+	}
+	if !d.versionMembersValid() || d.Shape != "http" || d.Adapter.Name != "adapter-sources" || d.Adapter.Version == "" || d.Endpoint == "" || d.ResultRecord != "web-search-v1" || !contains(d.Research.Capabilities, "search") || len(d.FixedArguments) != 2 || d.FixedArguments["connection"] != choice.Connection || d.FixedArguments["revision"] != choice.Revision || !json.Valid(d.RequestSchema) {
+		return d, false
+	}
+	return d, true
+}
+
+// The model is shown what it needs to write a request; the result schema stays
+// in the frozen journal.
+func promptSearchBindings(bindings map[string]searchBindingDescriptor) map[string]searchBindingDescriptor {
+	shown := make(map[string]searchBindingDescriptor, len(bindings))
+	for id, binding := range bindings {
+		binding.ResultSchema = nil
+		shown[id] = binding
+	}
+	return shown
+}
+
+// The description is closed at the two versions this Desk reads. Version 1 holds
+// none of the three version-2 members; version 2 holds all of them, in form.
+func (d searchBindingDescriptor) versionMembersValid() bool {
+	switch d.Version {
+	case 1:
+		return d.RequestSchemaVersion == "" && len(d.ResultSchema) == 0 && d.ResultSchemaVersion == ""
+	case 2:
+		trimmed := bytes.TrimSpace(d.ResultSchema)
+		return searchRequestSchemaVersion.MatchString(d.RequestSchemaVersion) && searchResultSchemaVersion.MatchString(d.ResultSchemaVersion) && len(trimmed) > 0 && trimmed[0] == '{' && json.Valid(trimmed)
+	}
+	return false
 }
 
 var managedSearchProfileID = regexp.MustCompile(`^desk-search-[a-f0-9]{32}$`)
@@ -91,10 +166,11 @@ func (s *Server) describeSearchBinding(ctx context.Context, choice inputResearch
 		_ = cmd.Wait()
 		return d, pin, errSearchBindingUnavailable
 	}
-	if cmd.Wait() != nil || ctx.Err() != nil || decodeDataJSON(raw, &d) != nil {
+	if cmd.Wait() != nil || ctx.Err() != nil {
 		return d, pin, errSearchBindingUnavailable
 	}
-	if d.Version != 1 || d.Shape != "http" || d.Adapter.Name != "adapter-sources" || d.Adapter.Version == "" || d.Endpoint == "" || d.ResultRecord != "web-search-v1" || !contains(d.Research.Capabilities, "search") || len(d.FixedArguments) != 2 || d.FixedArguments["connection"] != choice.Connection || d.FixedArguments["revision"] != choice.Revision || !json.Valid(d.RequestSchema) {
+	d, admitted := admitSearchBindingDescription(raw, choice)
+	if !admitted {
 		return d, pin, errSearchBindingUnavailable
 	}
 	f, err := os.Open(executable)
