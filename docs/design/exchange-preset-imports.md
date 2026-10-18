@@ -136,6 +136,33 @@ invalid URLs and URLs outside the scope are refused. Each profile is decoded
 independently, so absent optional members cannot inherit a prior profile's scope.
 A changed installed adapter requires a fresh binding review.
 
+#### Profiles Runner set aside
+
+Since Runner v0.23.0 a registered profile that Runner's current form refuses no
+longer stops Runner opening its store. Runner keeps it, sets it aside and never
+binds it: a scoped page profile registered under round 15 whose `endpointScope`
+entry round 16 refuses (an escaped slash, as in `group%2Fproject`) is one.
+`GET /v1/input-profiles` lists it after the installed profiles with
+`"state": "set-aside"` and Runner's `reason`, and a binding, job or run that
+names it is refused as `422 input_profile_set_aside`.
+
+Desk forwards the listing with the state and reason unchanged and never takes a
+set-aside profile as a candidate. Every picker that lists profiles (the page and
+search profile pickers, the imported-template assignments and the Jobs
+integration chooser) shows it, disabled, with "Set aside by Runner: *reason*" as
+its text, so the user sees why it can no longer be chosen; a registration answer
+that carries a state is never bound. Where a saved or reviewed pin names one,
+the page scope shown where the profile is chosen and before research is
+confirmed shows Runner's reason beside the stored scope, and the review and its
+confirmation check refuse the pin by its name before any other check. Runner's
+refusal of a binding reaches the user as Desk's message: "The input profile
+*id* was set aside by Runner and cannot be bound: *reason*. Choose another
+profile for this source, or upgrade the job to a release that does not name
+it." Desk reads the profile id from Runner's refusal and the reason from
+Runner's listing; nothing else of Runner's text is shown. A trigger's caller
+gets Runner's answer unchanged. The set-aside id stays taken; a page profile
+registered for a corrected scope has a new id.
+
 A request in scope can still be redirected outside it. After each scoped page
 acquisition, before the page can reach the model, the worker checks the signed
 receipt's `acquisition.endpoint` (the final URL after followed redirects, its

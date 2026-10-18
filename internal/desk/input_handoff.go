@@ -345,25 +345,25 @@ func (s *Server) prepareReviewedInputsWithRelease(ctx context.Context, doc input
 	if err != nil {
 		return err
 	}
-	var profiles []struct {
-		Profile struct {
-			ID    string `json:"id"`
-			Class string `json:"class"`
-		} `json:"profile"`
-		Digest string `json:"digest"`
-	}
-	if json.Unmarshal(raw, &profiles) != nil {
+	profiles, err := readInputProfileListing(raw)
+	if err != nil {
 		return errors.New("The research trust profile is unavailable.")
 	}
-	digest := ""
-	for _, p := range profiles {
-		if p.Profile.ID == reviewedInputProfile && p.Profile.Class == "generated" {
-			digest = p.Digest
+	// Desk's own trust profile, installed: one Runner set aside is refused by
+	// its name with Runner's reason.
+	trust, err := profiles.installedProfile(reviewedInputProfile, func(p listedInputProfile) bool {
+		var profile struct {
+			Class string `json:"class"`
 		}
+		return json.Unmarshal(p.Profile, &profile) == nil && profile.Class == "generated"
+	})
+	if err != nil {
+		return err
 	}
-	if digest == "" {
+	if trust == nil || trust.Digest == "" {
 		return errors.New("Restart Desk to load its research trust profile.")
 	}
+	digest := trust.Digest
 	// Rebuild the mapping on the server: never copy generated values from case.
 	q := doc.Recipe.Qualification
 	facts := []inputDialectFact{}

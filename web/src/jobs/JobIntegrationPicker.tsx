@@ -19,6 +19,7 @@ import { jobsAPI } from './client'
 import type { DialectSource, ProfileEntry } from './dialectTypes'
 import { calculatorLabel } from './calculatedValues'
 import { matchesJobGateway, supportsJobProfile } from './jobIntegrations'
+import { installedEntry, setAsideNote } from './setAsideProfiles'
 import styles from './JobsView.module.css'
 
 export function JobIntegrationPicker({profiles,disabled,onPick,current,triggerTarget}: {
@@ -38,10 +39,11 @@ export function JobIntegrationPicker({profiles,disabled,onPick,current,triggerTa
  const permitted=catalog.entries.filter(e=>!['blocked','unavailable'].includes(connectionState(e)??'')&&!e.status.isError)
 
  const descriptorFor=(p:ProfileEntry)=>catalog.entries.find(e=>e.descriptor.source?.id===p.profile.source && e.descriptor.source.shape===p.profile.shape || !e.descriptor.source && (e.descriptor.id==='google-drive'?'drive':e.descriptor.id)===p.profile.source)
- const canAdd=available&&!catalog.loading&&!catalog.isError&&permitted.some(e=>profiles.some(p=>supportsJobProfile(p)&&matchesJobGateway(p,config)&&descriptorFor(p)?.descriptor.id===e.descriptor.id)&&['connected','not-connected','setup-required'].includes(connectionState(e)??''))
+ const canAdd=available&&!catalog.loading&&!catalog.isError&&permitted.some(e=>profiles.some(p=>installedEntry(p)&&supportsJobProfile(p)&&matchesJobGateway(p,config)&&descriptorFor(p)?.descriptor.id===e.descriptor.id)&&['connected','not-connected','setup-required'].includes(connectionState(e)??''))
  const title=(p:ProfileEntry)=>{const entry=descriptorFor(p),label=entry?`${providerName(entry.descriptor.id,entry.descriptor)} · ${p.profile.id}`:p.profile.id;return p.profile.calculator?`${label} · ${calculatorLabel(p.profile.calculator)}`:label}
  const matches=(value:string)=>value.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
  function reason(p:ProfileEntry) {
+  if(!installedEntry(p))return setAsideNote(p)
   if(!supportsJobProfile(p))return msg('Jobs support is not available for this integration.')
   if(!matchesJobGateway(p,config))return msg('The source profile does not match this Desk gateway.')
   if(available&&(catalog.loading||catalog.isError))return catalog.loading?<LoadingState inline/>:msg('Connections could not be loaded.')

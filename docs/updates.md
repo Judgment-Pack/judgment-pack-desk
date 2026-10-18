@@ -10,7 +10,7 @@ Runtime and pack. Upgrading Desk does not reinterpret those jobs.
 repository identities, exact commits and channels. Go embeds it; the Gateway
 builder, Jobs compatibility CI and release packager read it. Development pins
 are held rather than replaced with an older published release. A stable Desk
-release refuses development pins. A store holding a Desk-registered scoped profile from before #466 whose entry RFC 0018 round 16 refuses is set aside by Runner v0.23.0 at upgrade; the Desk shows it as an ordinary profile until #480 lands, and a binding to it is refused as `input_profile_set_aside`; a run queued against it ends `failed` with reason `profile-set-aside`, it still counts toward the bound of 16, and a Gateway connection configured for it refuses to start. Runner is pinned to `v0.23.0`; since `v0.8.0` it includes calculator profiles, bindings,
+release refuses development pins. A store holding a Desk-registered scoped profile from before #466 whose entry RFC 0018 round 16 refuses is set aside by Runner v0.23.0 at upgrade; the Desk shows it as set aside with Runner's reason and never offers it (#480), and a binding to it is refused as `input_profile_set_aside`, shown as the Desk's message naming the profile and that reason; a run queued against it ends `failed` with reason `profile-set-aside`, it still counts toward the bound of 16, and a Gateway connection configured for it refuses to start. Runner is pinned to `v0.23.0`; since `v0.8.0` it includes calculator profiles, bindings,
 calculated input lineage, verification export versions 3 to 5, the installation's chain
 of runs, and a journal of each job's activity. It also exports a run whose job has no
 mapping v2, as version 3 or later with `"inputs":"not-mapped"`, where earlier Runners

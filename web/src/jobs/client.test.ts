@@ -88,3 +88,15 @@ it('canonicalizes named mappings without re-encoding signed source payloads',asy
  expect(inner).toContain('"version":"1.0.0"')
  expect(inner).not.toContain('"provider":""')
 })
+it('shows a refused binding to a set-aside profile as Desk\'s message, naming the profile and Runner\'s reason only', async () => {
+  const reason = 'the input profile old-pages: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://* (input-malformed)'
+  mocks.fetch.mockResolvedValue(answer(422, { error: { code: 'input_profile_set_aside', message: 'Forwarded wording.', retryable: false, profile: 'old-pages', reason } }))
+  const refusal = await jobsAPI('inputs/next', { source: {} }).catch(e => e)
+  expect(refusal).toBeInstanceOf(JobsRequestError)
+  expect(refusal).toMatchObject({ status: 422, code: 'input_profile_set_aside', message: `The input profile old-pages was set aside by Runner and cannot be bound: ${reason}. Choose another profile for this source, or upgrade the job to a release that does not name it.` })
+  mocks.fetch.mockResolvedValue(answer(422, { error: { code: 'input_profile_set_aside', message: 'Forwarded wording.', retryable: false, profile: 'old-pages' } }))
+  expect(await jobsAPI('jobs', {}).catch(e => e)).toMatchObject({ message: 'The input profile old-pages was set aside by Runner and cannot be bound. Choose another profile for this source, or upgrade the job to a release that does not name it.' })
+  // Where Desk could name no profile, its own message is shown as it sent it.
+  mocks.fetch.mockResolvedValue(answer(422, { error: { code: 'input_profile_set_aside', message: 'An input profile this binding names was set aside by Runner and cannot be bound.', retryable: false } }))
+  expect(await jobsAPI('jobs', {}).catch(e => e)).toMatchObject({ message: 'An input profile this binding names was set aside by Runner and cannot be bound.' })
+})

@@ -75,3 +75,13 @@ it('does not bind a completed registration after its draft is changed or locked'
  expect(onBind).not.toHaveBeenCalled()
  expect((screen.getByRole('button',{name:'Review'}) as HTMLButtonElement).disabled).toBe(true)
 })
+it('does not bind a registration Runner lists as set aside, and says why',async()=>{
+ const {onBind}=view()
+ fireEvent.change(screen.getByLabelText('Allowed page prefixes'),{target:{value:prefixes[0]}})
+ fireEvent.click(screen.getByRole('button',{name:'Review'}))
+ await screen.findByRole('button',{name:'Use page profile'})
+ vi.mocked(portableResearchAPI).mockResolvedValue({...review,entry:{profile:{id:'old-pages'},digest:'profile-digest',state:'set-aside',reason:'its scope is refused'}})
+ fireEvent.click(screen.getByRole('button',{name:'Use page profile'}))
+ await screen.findByText('The input profile old-pages was set aside by Runner and cannot be bound: its scope is refused. Choose another profile for this source, or upgrade the job to a release that does not name it.')
+ expect(onBind).not.toHaveBeenCalled()
+})

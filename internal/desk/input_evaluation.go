@@ -140,6 +140,11 @@ func (s *Server) inputRunner(ctx context.Context, path string, body any, key str
 			} `json:"error"`
 		}
 		json.Unmarshal(data, &failure)
+		// A binding to a profile Runner set aside is refused with Desk's
+		// own message, never Runner's text.
+		if resp.StatusCode == http.StatusUnprocessableEntity && failure.Error.Code == codeProfileSetAside && path != "input-profiles" {
+			return nil, &inputRunnerError{Status: resp.StatusCode, Message: s.setAsideRefusal(ctx, failure.Error.Message).Error(), Code: codeProfileSetAside}
+		}
 		if failure.Error.Message == "" {
 			failure.Error.Message = "The runner refused this request."
 		}
