@@ -4,7 +4,7 @@ import {digestBytes} from '../dialect/canon'
 import {sessionBearer,whenSessionEnds} from '../mcp/session'
 import type {PolicyWrite} from './client'
 
-type Family='source-sync'|'lifecycle'|'source-status'
+type Family='source-sync'|'lifecycle'|'source-status'|'coverage'
 export async function createPolicyPendingJournal(family:Family,id:string){
  // Use the same frozen workspace and current session as deskFetch. A token is
  // never stored in the journal key; a new sign-in cannot inherit an old grant.

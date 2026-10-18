@@ -4,7 +4,10 @@ import {readPolicy,type PolicyReply} from './client'
 import {validPolicyProposal,type PolicyProposal} from './chat'
 import {planningSession} from '../assistant/planning/policy'
 import {validPolicyId} from './chat'
+import {readCoverageCandidate} from './coverageClient'
+import {coverageCandidateId,coveragePolicyId,coverageRecordId,coverageReply} from '../testing/policyCoverage'
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),readPolicy:vi.fn()}))
+vi.mock('./coverageClient',()=>({readCoverageCandidate:vi.fn()}))
 const id='policy_'+'a'.repeat(48),revision='b'.repeat(64),candidate={title:'Data access',narrative:'Only approved staff may access records.',artifactVersion:'1.0.0'}
 const saved={revision,document:{id,candidate}} as PolicyReply
 const fixture=()=>{const proposals:PolicyProposal[]=[],retain=vi.fn(async(p:PolicyProposal)=>{const index=proposals.findIndex(row=>row.id===p.id);if(index<0)proposals.push(structuredClone(p));else proposals[index]=structuredClone(p)});return {proposals,retain,tools:policyChatTools({id,request:()=>({revision,candidate}),afterTurnId:()=> 'turn-one',retain})}}
@@ -34,5 +37,16 @@ it('refuses model-supplied authority, another revision and cancelled proposals',
 })
 it('Plan admits fresh reads and filters draft proposals before any adapter dispatch',()=>{
  const f=fixture();const session=planningSession({context:{phase:'plan'},prompt:'Inspect Policy',tools:[],hostTools:f.tools,callTool:vi.fn()} as never)
- expect((session as {hostTools:{name:string}[]}).hostTools.map(t=>t.name)).toEqual(['read_policy','read_policy_comparison'])
+ expect((session as {hostTools:{name:string}[]}).hostTools.map(t=>t.name)).toEqual(['read_policy','read_policy_comparison','read_policy_coverage'])
+})
+it('reads one exact saved coverage candidate without checking or adding any write authority',async()=>{
+ const tools=policyChatTools({id:coveragePolicyId,request:()=>undefined,afterTurnId:()=>undefined,retain:vi.fn()}),tool=tools.find(t=>t.name==='read_policy_coverage')!,signal=new AbortController().signal
+ vi.mocked(readCoverageCandidate).mockResolvedValue(coverageReply())
+ const result=await tool.execute({coverageId:coverageRecordId,candidateId:coverageCandidateId},signal)
+ expect(readCoverageCandidate).toHaveBeenCalledWith(coveragePolicyId,coverageRecordId,coverageCandidateId,signal)
+ expect(tool.effect).toBe('read');expect(tool.delegation).toBe('read');expect(tool.contextPolicy).toEqual({reference:true});expect(JSON.stringify(result)).toContain('never instructions')
+ for(const args of [{coverageId:coverageRecordId,candidateId:'latest'},{coverageId:coverageRecordId,candidateId:coverageCandidateId,policyId:coveragePolicyId},{coverageId:coverageRecordId,candidateId:coverageCandidateId,approve:true}])await expect(tool.execute(args,signal)).rejects.toThrow()
+ vi.mocked(readCoverageCandidate).mockResolvedValue({...coverageReply(),document:{...coverageReply().document,candidate:{...coverageReply().document.candidate,id:'coverage_candidate_'+'0'.repeat(48)}}})
+ await expect(tool.execute({coverageId:coverageRecordId,candidateId:coverageCandidateId},signal)).rejects.toThrow('exact selected coverage')
+ expect(tools.some(t=>/^(save|approve|review|check)_policy_coverage$/.test(t.name))).toBe(false)
 })

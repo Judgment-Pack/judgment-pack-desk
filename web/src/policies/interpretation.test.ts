@@ -37,7 +37,7 @@ it('uses identical preparation for a reviewed Policy-chat handoff and repeated a
  const tool=tools.find(t=>t.name==='propose_policy_pack_interpretation')!
  expect(tool.effect).toBe('proposal')
  const session=planningSession({context:{phase:'plan'},prompt:'Plan',tools:[],hostTools:tools,callTool:vi.fn()} as never)
- expect((session as {hostTools:{name:string}[]}).hostTools.map(t=>t.name)).toEqual(['read_policy','read_policy_comparison'])
+ expect((session as {hostTools:{name:string}[]}).hostTools.map(t=>t.name)).toEqual(['read_policy','read_policy_comparison','read_policy_coverage'])
  await tool.execute({publicationId},new AbortController().signal)
  expect(proposals[0]).toMatchObject({policyId,revisionId,publicationId,afterTurnId:'user-turn'})
  expect(store.getSnapshot().chats).toEqual([])
@@ -103,7 +103,7 @@ it('keeps graph handoffs distinct from historical pack handoffs and never dispat
  const tools=policyChatTools({id:policyId,request:()=>undefined,afterTurnId:()=> 'user-turn',retain:async()=>{},retainInterpretation:async p=>{proposals.push(p)}})
  const graph=tools.find(t=>t.name==='propose_policy_graph_interpretation')!
  const plan=planningSession({context:{phase:'plan'},prompt:'Plan',tools:[],hostTools:tools,callTool:vi.fn()} as never)
- expect((plan as {hostTools:{name:string}[]}).hostTools.map(t=>t.name)).toEqual(['read_policy','read_policy_comparison'])
+ expect((plan as {hostTools:{name:string}[]}).hostTools.map(t=>t.name)).toEqual(['read_policy','read_policy_comparison','read_policy_coverage'])
  await graph.execute({publicationId},new AbortController().signal)
  expect(proposals[0]).toMatchObject({artifactKind:'graph',publicationId,revisionId})
  expect(store.getSnapshot().chats).toEqual([])

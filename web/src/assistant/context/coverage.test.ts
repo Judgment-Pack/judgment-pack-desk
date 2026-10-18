@@ -65,7 +65,7 @@ it('keeps working-context retention independent of chat topics and feature tool 
  expect(projection).not.toContain("p.toolName==='get_authoring_instructions'")
  expect(controller).toContain('policy.immutable===true&&readOnly')
  expect(controller).not.toContain("['get_authoring_instructions','get_schema','read_context']")
- for(const file of ['research/run.ts','dialects/chatTools.ts','graphs/chatTools.ts'])expect(readFileSync(resolve(root,file),'utf8')).toContain('contextPolicy:')
+ for(const file of ['research/run.ts','dialects/chatTools.ts','graphs/chatTools.ts','policies/chatTools.ts'])expect(readFileSync(resolve(root,file),'utf8')).toContain('contextPolicy:')
 })
 
 it('routes artifact correction and scoped automatic saving through shared host boundaries',()=>{

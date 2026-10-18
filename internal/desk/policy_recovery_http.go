@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var policyRecoveryIncluded = []string{"policy-history", "policy-operation-receipts", "retained-policy-originals", "retained-policy-extractions"}
+var policyRecoveryIncluded = []string{"policy-history", "policy-operation-receipts", "retained-policy-originals", "retained-policy-extractions", "policy-coverage-history", "retained-coverage-pack-bytes"}
 var policyRecoveryExcluded = []string{"chat-history", "pack-graph-drafts", "memory", "project-files", "jobs", "credentials", "source-consent", "browser-journals"}
 
 type policyRecoveryLimits struct {

@@ -25,6 +25,14 @@ export class PolicyRequestError extends Error {
 }
 function policyFailureMessage(code:string){
  switch(code){
+ case 'coverage-invalid-response':return sourceMessage('The exact coverage candidate could not be verified. Your saved selection is preserved; reload before continuing.')
+ case 'coverage-chat-unavailable':return sourceMessage('The coverage request could not be saved to chat. Review or recover the existing composer before continuing.')
+ case 'coverage-save-incomplete':return sourceMessage('The coverage draft could not be saved completely. Your changes are still here; finish recovery before leaving.')
+ case 'publication-unavailable':return sourceMessage('The original exact Pack publication is unavailable. Retained coverage stays readable; restore that publication before recording a new approved review.')
+ case 'runtime-unavailable':return sourceMessage('The installed Runtime cannot check this experimental Policy profile. Coverage drafts and history remain available.')
+ case 'unsupported-contract':return sourceMessage('The Runtime does not support this exact Policy profile or retained material. Review its capability before checking again.')
+ case 'coverage-check-failed':return sourceMessage('The coverage declaration did not pass its structural check. Review the exact findings before recording a review.')
+ case 'unsupported-pack':return sourceMessage('The retained Pack does not expose a supported element inventory. Review the exact publication before continuing.')
  case 'restored-source-consent-required':return sourceMessage('Archived source authorization is inactive. Choose the source again and review new consent before provider access.')
  case 'restored-review-required':return sourceMessage('This restored Policy needs fresh review and a new publication before release activation.')
  case 'authority-conflict':return sourceMessage('The Policy, source or configuration changed. Review the latest state before continuing.')

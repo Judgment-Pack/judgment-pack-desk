@@ -20,6 +20,9 @@ const policyArchiveEntryLimit = 8192
 const policyArchiveFormat = "jpack-desk-policy-recovery"
 
 type policyArchiveCounts struct {
+	Coverages          int   `json:"coverages"`
+	CoverageCandidates int   `json:"coverageCandidates"`
+	CoverageReviews    int   `json:"coverageReviews"`
 	Policies           int   `json:"policies"`
 	Revisions          int   `json:"revisions"`
 	Reviews            int   `json:"reviews"`
@@ -107,6 +110,11 @@ func policyArchiveClosure(ctx context.Context, ledger policyLedger, artifacts re
 			}
 		}
 	}
+	var coverageErr error
+	cut.Counts.Coverages, cut.Counts.CoverageCandidates, cut.Counts.CoverageReviews, coverageErr = coverageArchiveClosure(ctx, ledger, artifacts, add)
+	if coverageErr != nil {
+		return cut, coverageErr
+	}
 	for _, source := range ledger.Sources {
 		cut.Counts.SourceObservations += len(source.Observations)
 		for _, observation := range source.Observations {
@@ -170,8 +178,11 @@ func validateArchivedPolicyOperation(ctx context.Context, ledger policyLedger, a
 		return policyArchiveInvalid()
 	}
 	var r policyMutationReply
-	if rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &r) != nil || r.Delivery != "committed" || r.Receipt.OperationID != operation.OperationID || r.Receipt.Kind != operation.Kind || r.Receipt.PolicyID != operation.PolicyID || r.Receipt.RequestDigest != operation.RequestDigest || !validPolicyActor(r.Receipt.Actor) || !validPolicyTime(r.Receipt.At) || !retainedArtifactDigest.MatchString(r.Receipt.Revision) || !validPolicyMutationIdentity(r) || !validPolicyLifecycleResult(r) || !validPolicySourceAuthorityResult(r) {
+	if rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &r) != nil || r.Delivery != "committed" || r.Receipt.OperationID != operation.OperationID || r.Receipt.Kind != operation.Kind || r.Receipt.PolicyID != operation.PolicyID || r.Receipt.RequestDigest != operation.RequestDigest || !validPolicyActor(r.Receipt.Actor) || !validPolicyTime(r.Receipt.At) || !retainedArtifactDigest.MatchString(r.Receipt.Revision) || !validPolicyMutationIdentity(r) || !validPolicyLifecycleResult(r) || !validPolicySourceAuthorityResult(r) || !validPolicyCoverageResult(r) {
 		return policyArchiveInvalid()
+	}
+	if err := validateArchivedCoverageOperation(ctx, ledger, artifacts, r); err != nil {
+		return err
 	}
 	record := ledger.Policies[operation.PolicyID]
 	validRecovery := func(view *policyRecoveryView) bool {

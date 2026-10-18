@@ -21,6 +21,7 @@ import {PolicySource} from './PolicySource'
 import {PolicyConnectedSource} from './PolicyConnectedSource'
 import {PolicySourceStatus} from './PolicySourceStatus'
 import {PolicyLifecycle} from './PolicyLifecycle'
+import {PolicyCoverage} from './PolicyCoverage'
 import {preparePolicyImport} from './sourceImport'
 import {PolicyHistory} from './PolicyHistory'
 import {useChats} from '../chat/ChatProvider'
@@ -51,6 +52,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const [saved,setSaved]=useState(initial),[value,setValue]=useState<Buffer>(()=>initial?fields(initial):blank)
  const [busy,setBusy]=useState(false),[error,setError]=useState<PolicyRequestError>(),[pending,setPending]=useState<{operation:PolicyWrite;submitted:Buffer;result?:PolicyMutationReply}>()
  const [lifecycleBusy,setLifecycleBusy]=useState(false)
+ const [coverageBusy,setCoverageBusy]=useState(false),[coverageEditing,setCoverageEditing]=useState(false)
  const [sourceStatusBusy,setSourceStatusBusy]=useState(false),[sourceSyncBusy,setSourceSyncBusy]=useState(false)
  const [latest,setLatest]=useState<PolicyReply>(),[comment,setComment]=useState(''),[publishOpen,setPublishOpen]=useState(false),[tab,setTab]=useState('draft'),[notice,setNotice]=useState('')
  const {store:chatStore,ready:chatsReady}=useChats(),inspector=useInspectorControls(),[params]=useSearchParams()
@@ -61,7 +63,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const sourceQuery=useQuery(policySourceSyncQuery(saved?.document.id))
  const dirty=!!imported&&!saved||!equal(value,saved?fields(saved):blank)
  const observedLatest=latest??(observed&&saved&&observed.revision!==saved.revision?observed:undefined)
- const authorityBusy=lifecycleBusy||sourceStatusBusy||sourceSyncBusy
+ const authorityBusy=lifecycleBusy||sourceStatusBusy||sourceSyncBusy||coverageBusy
  const held=!!pending,disabled=busy||held||importBusy||authorityBusy
  const discuss=async(request:PolicyComparisonRequest,append=false)=>{
   if(!saved||!chatStore||!chatsReady)return
@@ -76,7 +78,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
   }catch{setComparisonError(true)}
  }
  const save=async()=>{
-  if(active.current||held||authorityBusy)throw new PolicyRequestError('delivery-unknown')
+  if(active.current||held||authorityBusy||coverageEditing)throw new PolicyRequestError('delivery-unknown')
   const operation:PolicyWrite={path:saved?'/'+encodeURIComponent(saved.document.id):'',method:saved?'PUT':'POST',body:{operationId:crypto.randomUUID(),...value,...(!saved&&imported?{import:imported}:{}),workflow:saved?.document.workflow??{independentReviewRequired:false},...(saved?{baseRevision:saved.revision}:{})}}
   await execute({operation,submitted:{...value}})
  }
@@ -130,7 +132,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
   try{const result=await preparePolicyImport(file);setImported(result.source);setValue({...value,title:value.title||file.name.replace(/\.(md|txt)$/i,''),narrative:result.text})}catch{setImportError(true)}finally{setImportBusy(false)}
  }
  const action=async(decision:'approve'|'request-changes'|'publish')=>{
-  if(!saved||dirty||disabled||active.current||observedLatest)return
+  if(!saved||dirty||coverageEditing||disabled||active.current||observedLatest)return
   const document=saved.document
   const operation:PolicyWrite={path:'/'+encodeURIComponent(document.id)+(decision==='publish'?'/publish':'/review'),method:'POST',body:{operationId:crypto.randomUUID(),baseRevision:saved.revision,candidateDigest:document.candidate.digest,workflowDigest:document.workflowDigest,...(decision==='publish'?{reviewId:document.currentReviewId}:{decision,comment})}}
   setPublishOpen(false)
@@ -146,12 +148,12 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const document=saved?.document,currentPublished=saved?.currentCandidatePublished??(saved?.recovery||saved?.sourceAuthority?.ownership.inherited===false?undefined:!!document?.publications.some(publication=>publication.candidateRevisionId===document.candidate.revisionId&&publication.workflowDigest===document.workflowDigest)),versionPublished=document?.publications.some(publication=>publication.artifactVersion===document.candidate.artifactVersion)
  const sourceBlocked=!!saved&&(sourceQuery.isPending||sourceQuery.isError||sourceQuery.data?.pending===true)
  const externallyManaged=(observed??saved)?.document.managementMode==='externally-managed'
- const reviewDisabled=disabled||dirty||!!observedLatest||!saved||externallyManaged
+ const reviewDisabled=disabled||dirty||coverageEditing||!!observedLatest||!saved||externallyManaged
  const approveDisabled=reviewDisabled||!!document?.workflow.independentReviewRequired||!document?.candidate.title.trim()||!document?.candidate.narrative.trim()||!document?.candidate.artifactVersion.trim()
  const reviewHint=held?msg('Recover the pending operation before continuing.'):externallyManaged?msg('External ownership does not permit local approval or publication. Existing local reviews and publications remain history.'):observedLatest?msg('Review the latest saved revision before continuing.'):dirty?msg('Save draft before reviewing or publishing.'):!saved?msg('Save this draft to begin review.'):document?.workflow.independentReviewRequired?msg('This workflow requires a different reviewer. Independent review is unavailable in this local installation.'):undefined
  return <>
-  {saved&&<PolicyAssistant id={saved.document.id} editing={dirty||!!observedLatest||!!comment} busy={disabled}/>}
-  <PageHeader variant="title" title={msg('Library')} titleHref="/library?type=policy" context={value.title||msg('New policy')} meta={msg('Policy')} actions={<>{saved&&<><PolicyInterpretationAction recovery={(observed??saved).recovery} selection={{policyId:saved.document.id,revisionId:saved.document.candidate.revisionId}} disabled={disabled||dirty||!!observedLatest||!!comment}/><PolicyInterpretationAction artifactKind="graph" recovery={(observed??saved).recovery} selection={{policyId:saved.document.id,revisionId:saved.document.candidate.revisionId}} disabled={disabled||dirty||!!observedLatest||!!comment}/></>}<Button variant="primary" disabled={disabled||!dirty&&!!saved||!!observedLatest} onClick={()=>void save().catch(()=>{})}>{busy?msg('Working…'):msg('Save draft')}</Button></>}/>
+  {saved&&<PolicyAssistant id={saved.document.id} editing={dirty||coverageEditing||!!observedLatest||!!comment} busy={disabled}/>}
+  <PageHeader variant="title" title={msg('Library')} titleHref="/library?type=policy" context={value.title||msg('New policy')} meta={msg('Policy')} actions={<>{saved&&<><PolicyInterpretationAction recovery={(observed??saved).recovery} selection={{policyId:saved.document.id,revisionId:saved.document.candidate.revisionId}} disabled={disabled||dirty||coverageEditing||!!observedLatest||!!comment}/><PolicyInterpretationAction artifactKind="graph" recovery={(observed??saved).recovery} selection={{policyId:saved.document.id,revisionId:saved.document.candidate.revisionId}} disabled={disabled||dirty||coverageEditing||!!observedLatest||!!comment}/></>}<Button variant="primary" disabled={disabled||coverageEditing||!dirty&&!!saved||!!observedLatest} onClick={()=>void save().catch(()=>{})}>{busy?msg('Working…'):msg('Save draft')}</Button></>}/>
   <PolicyRecoveryNotice recovery={(observed??saved)?.recovery}/>
   <Tabs scrollable keepMounted variant="page" label={msg('Policy')} value={tab} onValueChange={setTab} fillPanel={tab} tabs={[
    {value:'draft',label:msg('Draft'),panel:<div className={styles.panel}><PageBody width="wide"><SettingsStack>
@@ -184,9 +186,10 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
      {document&&document.reviewState!=='approved'&&!reviewHint&&<p className={styles.note}>{msg('Approve the exact saved candidate before publishing.')}</p>}
     </SettingsSection>
    </SettingsStack></PageBody></div>},
-   {value:'source',label:msg('Source'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<><PolicySourceStatus policy={saved} active={tab==='source'} editing={dirty||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setSourceStatusBusy} sourceName={sourceQuery.data?.state?.observations.at(-1)?{bindingId:sourceQuery.data.state.observations.at(-1)!.bindingId,name:sourceQuery.data.state.observations.at(-1)!.name}:undefined} onCommitted={refreshAfterSourceDecision} onCompareLatest={()=>{setTab('draft');void loadLatest()}}/><PolicyConnectedSource newerPolicyState={!!observedLatest} onDiscuss={chatsReady?request=>void discuss(request):undefined} policy={saved} query={sourceQuery} editing={dirty||!!observedLatest} disabled={disabled} onPendingChange={setSourceSyncBusy}/></>:<p>{msg('Save a draft before connecting a policy source.')}</p>}</PageBody></div>},
-   {value:'lifecycle',label:msg('Lifecycle'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<PolicyLifecycle policy={saved} active={tab==='lifecycle'} editing={dirty||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setLifecycleBusy}/>:<p>{msg('Publish a version before configuring its lifecycle.')}</p>}</PageBody></div>},
-   {value:'history',label:msg('History'),panel:<div className={styles.panel}><PageBody width="wide">{document?<PolicyHistory newerPolicyState={!!observedLatest} onDiscuss={chatsReady?request=>void discuss(request):undefined} document={document} designBlocked={disabled||dirty||!!observedLatest||!!comment} designAction={selection=><><PolicyInterpretationAction recovery={(observed??saved)?.recovery} selection={selection} disabled={disabled||dirty||!!observedLatest||!!comment}/><PolicyInterpretationAction recovery={(observed??saved)?.recovery} artifactKind="graph" selection={selection} disabled={disabled||dirty||!!observedLatest||!!comment}/></>}/>:<p>{msg('Save a draft to start its history.')}</p>}</PageBody></div>}
+   {value:'source',label:msg('Source'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<><PolicySourceStatus policy={saved} active={tab==='source'} editing={dirty||coverageEditing||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setSourceStatusBusy} sourceName={sourceQuery.data?.state?.observations.at(-1)?{bindingId:sourceQuery.data.state.observations.at(-1)!.bindingId,name:sourceQuery.data.state.observations.at(-1)!.name}:undefined} onCommitted={refreshAfterSourceDecision} onCompareLatest={()=>{setTab('draft');void loadLatest()}}/><PolicyConnectedSource newerPolicyState={!!observedLatest} onDiscuss={chatsReady?request=>void discuss(request):undefined} policy={saved} query={sourceQuery} editing={dirty||coverageEditing||!!observedLatest} disabled={disabled} onPendingChange={setSourceSyncBusy}/></>:<p>{msg('Save a draft before connecting a policy source.')}</p>}</PageBody></div>},
+   {value:'lifecycle',label:msg('Lifecycle'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<PolicyLifecycle policy={saved} active={tab==='lifecycle'} editing={dirty||coverageEditing||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setLifecycleBusy}/>:<p>{msg('Publish a version before configuring its lifecycle.')}</p>}</PageBody></div>},
+   {value:'coverage',label:msg('Coverage'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<PolicyCoverage policy={saved} active={tab==='coverage'} editing={dirty||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setCoverageBusy} onEditingChange={setCoverageEditing}/>:<p>{msg('Publish a Policy version to review coverage.')}</p>}</PageBody></div>},
+   {value:'history',label:msg('History'),panel:<div className={styles.panel}><PageBody width="wide">{document?<PolicyHistory newerPolicyState={!!observedLatest} onDiscuss={chatsReady?request=>void discuss(request):undefined} document={document} designBlocked={disabled||dirty||coverageEditing||!!observedLatest||!!comment} designAction={selection=><><PolicyInterpretationAction recovery={(observed??saved)?.recovery} selection={selection} disabled={disabled||dirty||coverageEditing||!!observedLatest||!!comment}/><PolicyInterpretationAction recovery={(observed??saved)?.recovery} artifactKind="graph" selection={selection} disabled={disabled||dirty||coverageEditing||!!observedLatest||!!comment}/></>}/>:<p>{msg('Save a draft to start its history.')}</p>}</PageBody></div>}
   ]}/>
   <footer className={styles.footer}><span role="status">{busy?<LoadingState inline>{msg('Working…')}</LoadingState>:held?msg('Operation recovery required'):dirty?msg('Unsaved changes'):saved?msg('Draft saved'):msg('New policy')}</span><div className={styles.feedback}>{error&&<p role="alert">{systemMessage(error.message)}</p>}{notice&&<p role="status">{notice}</p>}{held?<Button size="small" disabled={busy} onClick={()=>void execute(pending!,true).catch(()=>{})}>{pending?.result?msg('Reload current policy'):msg('Check operation result')}</Button>:error?.code==='revision-conflict'&&!observedLatest?<Button size="small" disabled={busy} onClick={()=>void loadLatest()}>{msg('Compare latest saved draft')}</Button>:null}</div></footer>
   {comparisonError&&<p role="alert">{msg('The comparison request could not be saved to chat. Review the existing composer before continuing.')}</p>}
