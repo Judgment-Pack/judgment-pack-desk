@@ -149,6 +149,9 @@ type policyPublishRequest struct {
 }
 
 type policyOperationReceipt struct {
+	AdoptionID          string      `json:"adoptionId,omitempty"`
+	AdoptionRevision    string      `json:"adoptionRevision,omitempty"`
+	AdoptionCandidateID string      `json:"adoptionCandidateId,omitempty"`
 	CoverageID          string      `json:"coverageId,omitempty"`
 	CoverageRevision    string      `json:"coverageRevision,omitempty"`
 	CoverageCandidateID string      `json:"coverageCandidateId,omitempty"`
@@ -172,6 +175,7 @@ type policyOperationReceipt struct {
 }
 
 type policyMutationReply struct {
+	Adoption       *policyAdoptionReply     `json:"adoption,omitempty"`
 	Coverage       *policyCoverageReply     `json:"coverage,omitempty"`
 	SourceStatus   *policySourceStatusReply `json:"sourceStatus,omitempty"`
 	OutcomeKind    string                   `json:"outcomeKind,omitempty"`
