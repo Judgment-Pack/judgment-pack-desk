@@ -180,13 +180,9 @@ func versionTwo(d map[string]any) {
 	d["resultSchemaVersion"] = "tavily-result-1"
 }
 
-// The decode and the form check describeSearchBinding applies, without a program.
+// The check describeSearchBinding applies to what the program printed.
 func readSearchBindingDescription(raw []byte) (searchBindingDescriptor, bool) {
-	var d searchBindingDescriptor
-	if decodeDataJSON(raw, &d) != nil {
-		return d, false
-	}
-	return d, d.versionMembersValid() && json.Valid(d.RequestSchema)
+	return admitSearchBindingDescription(raw, inputResearchSearch{Connection: "reviewed", Revision: strings.Repeat("b", 64)})
 }
 
 func TestSearchBindingDescriptionVersionsAreClosed(t *testing.T) {
@@ -213,19 +209,29 @@ func TestSearchBindingDescriptionVersionsAreClosed(t *testing.T) {
 		t.Fatal("google-grounding version 2 refused")
 	}
 	for name, edit := range map[string]func(map[string]any){
-		"unknown member":              func(d map[string]any) { versionTwo(d); d["extra"] = "x" },
-		"version 3":                   func(d map[string]any) { versionTwo(d); d["version"] = 3 },
-		"version 0":                   func(d map[string]any) { versionTwo(d); d["version"] = 0 },
-		"version 2 without members":   func(d map[string]any) { d["version"] = 2 },
-		"version 2 request version":   func(d map[string]any) { versionTwo(d); delete(d, "requestSchemaVersion") },
-		"version 2 result version":    func(d map[string]any) { versionTwo(d); d["resultSchemaVersion"] = "" },
-		"version 2 result schema":     func(d map[string]any) { versionTwo(d); delete(d, "resultSchema") },
-		"malformed request version":   func(d map[string]any) { versionTwo(d); d["requestSchemaVersion"] = "Tavily Request 1" },
-		"malformed result version":    func(d map[string]any) { versionTwo(d); d["resultSchemaVersion"] = "tavily-result-0" },
-		"swapped versions":            func(d map[string]any) { versionTwo(d); d["requestSchemaVersion"] = "tavily-result-1" },
-		"version not a string":        func(d map[string]any) { versionTwo(d); d["resultSchemaVersion"] = 1 },
-		"result schema not an object": func(d map[string]any) { versionTwo(d); d["resultSchema"] = []int{1} },
-		"result schema null":          func(d map[string]any) { versionTwo(d); d["resultSchema"] = nil },
+		"unknown member":                         func(d map[string]any) { versionTwo(d); d["extra"] = "x" },
+		"version 3":                              func(d map[string]any) { versionTwo(d); d["version"] = 3 },
+		"version 0":                              func(d map[string]any) { versionTwo(d); d["version"] = 0 },
+		"version 2 without members":              func(d map[string]any) { d["version"] = 2 },
+		"version 2 request version":              func(d map[string]any) { versionTwo(d); delete(d, "requestSchemaVersion") },
+		"version 2 result version":               func(d map[string]any) { versionTwo(d); d["resultSchemaVersion"] = "" },
+		"version 2 result schema":                func(d map[string]any) { versionTwo(d); delete(d, "resultSchema") },
+		"malformed request version":              func(d map[string]any) { versionTwo(d); d["requestSchemaVersion"] = "Tavily Request 1" },
+		"malformed result version":               func(d map[string]any) { versionTwo(d); d["resultSchemaVersion"] = "tavily-result-0" },
+		"swapped versions":                       func(d map[string]any) { versionTwo(d); d["requestSchemaVersion"] = "tavily-result-1" },
+		"version not a string":                   func(d map[string]any) { versionTwo(d); d["resultSchemaVersion"] = 1 },
+		"result schema not an object":            func(d map[string]any) { versionTwo(d); d["resultSchema"] = []int{1} },
+		"result schema null":                     func(d map[string]any) { versionTwo(d); d["resultSchema"] = nil },
+		"version 1 with empty version 2 members": func(d map[string]any) { d["requestSchemaVersion"], d["resultSchemaVersion"] = "", "" },
+		"member name in another case": func(d map[string]any) {
+			versionTwo(d)
+			d["ResultSchemaVersion"] = d["resultSchemaVersion"]
+			delete(d, "resultSchemaVersion")
+		},
+		"another choice": func(d map[string]any) {
+			versionTwo(d)
+			d["fixedArguments"] = map[string]string{"connection": "other", "revision": strings.Repeat("b", 64)}
+		},
 		"version 1 with a version 2 member": func(d map[string]any) {
 			d["requestSchemaVersion"] = "tavily-request-1"
 		},
@@ -236,16 +242,61 @@ func TestSearchBindingDescriptionVersionsAreClosed(t *testing.T) {
 	}
 }
 
-func TestSearchBindingJournalReadsBothVersions(t *testing.T) {
-	for _, edit := range []func(map[string]any){nil, versionTwo} {
-		d, ok := readSearchBindingDescription(searchBindingDescription(t, edit))
-		if !ok {
-			t.Fatal("description refused")
+func TestSearchBindingAdmitsAnotherProvidersSchemaNames(t *testing.T) {
+	if _, ok := readSearchBindingDescription(searchBindingDescription(t, func(d map[string]any) { versionTwo(d); d["resultSchemaVersion"] = "google-grounding-result-1" })); !ok {
+		t.Fatal("by design the form is checked, not the provider")
+	}
+}
+
+func TestValidatePortableResearchJournalHoldsFrozenSearchBindingVersions(t *testing.T) {
+	_, _, run := portableResearchFixture(t, func(http.ResponseWriter, *http.Request) { t.Error("unexpected acquisition") })
+	var profile struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(run.Portable.Frozen.Profiles[0].Profile, &profile)
+	for name, tc := range map[string]struct {
+		edit func(map[string]any)
+		ok   bool
+	}{"version 1": {nil, true}, "version 2": {versionTwo, true}, "version 2 without members": {func(d map[string]any) { d["version"] = 2 }, false}, "version 3": {func(d map[string]any) { versionTwo(d); d["version"] = 3 }, false}} {
+		d, _ := readSearchBindingDescription(searchBindingDescription(t, nil))
+		if tc.edit != nil {
+			var raw map[string]any
+			json.Unmarshal(searchBindingDescription(t, tc.edit), &raw)
+			// The journal holds the typed form, so build it without the reader.
+			encoded, _ := json.Marshal(raw)
+			d = searchBindingDescriptor{}
+			if err := json.Unmarshal(encoded, &d); err != nil {
+				t.Fatal(err)
+			}
 		}
-		raw, _ := json.Marshal(portableResearchFrozen{SearchBindings: map[string]searchBindingDescriptor{"desk-search-" + strings.Repeat("a", 32): d}})
-		var back portableResearchFrozen
-		if decodeDataJSON(raw, &back) != nil || !back.SearchBindings["desk-search-"+strings.Repeat("a", 32)].versionMembersValid() {
-			t.Fatal("frozen binding lost its version members", string(raw))
+		held := run
+		portable := *run.Portable
+		held.Portable = &portable
+		held.Portable.Frozen.SearchBindings = map[string]searchBindingDescriptor{profile.ID: d}
+		held.Revision = portableResearchRevision(held.Portable.Frozen)
+		if err := validatePortableResearchJournal(held, held.ID); (err == nil) != tc.ok {
+			t.Fatalf("%s: journal check returned %v", name, err)
 		}
+	}
+}
+
+func TestPortableResearchPromptCarriesNoResultSchemaButTheJournalKeepsIt(t *testing.T) {
+	d, ok := readSearchBindingDescription(searchBindingDescription(t, versionTwo))
+	if !ok {
+		t.Fatal("version 2 refused")
+	}
+	id := "desk-search-" + strings.Repeat("a", 32)
+	bindings := map[string]searchBindingDescriptor{id: d}
+	shown, _ := json.Marshal(promptSearchBindings(bindings))
+	if bytes.Contains(shown, []byte("resultSchema\"")) || !bytes.Contains(shown, []byte("requestSchemaVersion")) || !bytes.Contains(shown, []byte("requestSchema\"")) {
+		t.Fatal("prompt body wrong", string(shown))
+	}
+	if len(bindings[id].ResultSchema) == 0 {
+		t.Fatal("the frozen binding lost its result schema")
+	}
+	kept, _ := json.Marshal(portableResearchFrozen{SearchBindings: bindings})
+	var back portableResearchFrozen
+	if decodeDataJSON(kept, &back) != nil || len(back.SearchBindings[id].ResultSchema) == 0 {
+		t.Fatal("the journal dropped the result schema")
 	}
 }

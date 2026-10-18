@@ -72,7 +72,7 @@ func (s *Server) portableResearchPrompt(run inputResearchRun) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	body := map[string]any{"request": run.Portable.Frozen.Plan.Arguments, "limits": researchApprovedLimits(run), "used": researchBudgetUsage(run), "profiles": run.Portable.Frozen.Profiles, "searchBindings": run.Portable.Frozen.SearchBindings, "retainedSourceIndex": researchContextIndex(projection), "retainedResponses": index, "retainedSources": projection.Sources, "nextResponseIndex": len(index)}
+	body := map[string]any{"request": run.Portable.Frozen.Plan.Arguments, "limits": researchApprovedLimits(run), "used": researchBudgetUsage(run), "profiles": run.Portable.Frozen.Profiles, "searchBindings": promptSearchBindings(run.Portable.Frozen.SearchBindings), "retainedSourceIndex": researchContextIndex(projection), "retainedResponses": index, "retainedSources": projection.Sources, "nextResponseIndex": len(index)}
 	for i := len(run.Attempts) - 1; i >= 0; i-- {
 		attempt := run.Attempts[i]
 		if attempt.Kind != "model" || attempt.State != "completed" {
