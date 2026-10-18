@@ -115,10 +115,12 @@ type policyWorkspaceEntry struct {
 	Policy *struct {
 		ID string `json:"id"`
 	} `json:"policy"`
-	PolicySources []policyAuthoringSource `json:"policySources"`
+	PolicySources            []policyAuthoringSource `json:"policySources"`
+	PolicyInterpretationKind string                  `json:"policyInterpretationKind,omitempty"`
 }
 
 type policyInterpretationProposal struct {
+	ArtifactKind  string `json:"artifactKind,omitempty"`
 	Version       int    `json:"version"`
 	ID            string `json:"id"`
 	PolicyID      string `json:"policyId"`
@@ -175,7 +177,7 @@ func policyWorkspaceEntries(raw []byte, drafts bool) ([]policyWorkspaceEntry, er
 		// access is case-sensitive, so accepting both could hide a private source
 		// from authorization while leaving its canonical field visible to the UI.
 		for key := range fields {
-			for _, reserved := range []string{"id", "policy", "policySources", "policyInterpretations"} {
+			for _, reserved := range []string{"id", "policy", "policySources", "policyInterpretations", "policyInterpretationKind"} {
 				if key != reserved && strings.EqualFold(key, reserved) {
 					return nil, errors.New("Use exact workspace Policy field names.")
 				}
@@ -184,6 +186,11 @@ func policyWorkspaceEntries(raw []byte, drafts bool) ([]policyWorkspaceEntry, er
 		var entry policyWorkspaceEntry
 		if json.Unmarshal(item, &entry) != nil {
 			return nil, errors.New("Invalid Policy workspace entry.")
+		}
+		if kind, present := fields["policyInterpretationKind"]; present {
+			if drafts || string(kind) == "null" || entry.PolicyInterpretationKind != "pack" && entry.PolicyInterpretationKind != "graph" {
+				return nil, errors.New("Choose an ordinary pack or graph interpretation conversation.")
+			}
 		}
 		if sources, present := fields["policySources"]; present {
 			var list []json.RawMessage
@@ -229,7 +236,7 @@ func policyWorkspaceEntries(raw []byte, drafts bool) ([]policyWorkspaceEntry, er
 			seen := map[string]bool{}
 			for _, encoded := range list {
 				var proposal policyInterpretationProposal
-				if decodeDataJSON(encoded, &proposal) != nil || proposal.Version != 1 || !policyInterpretationIDForm.MatchString(proposal.ID) || seen[proposal.ID] || proposal.PolicyID != entry.Policy.ID || !policyEventIDForm.MatchString(proposal.RevisionID) || !strings.HasPrefix(proposal.RevisionID, "revision_") || proposal.PublicationID != "" && (!policyEventIDForm.MatchString(proposal.PublicationID) || !strings.HasPrefix(proposal.PublicationID, "publication_")) || len(proposal.AfterTurnID) > 256 || proposal.OpenedChatID != "" && !policyInterpretationIDForm.MatchString(proposal.OpenedChatID) {
+				if decodeDataJSON(encoded, &proposal) != nil || proposal.Version != 1 || proposal.ArtifactKind != "" && proposal.ArtifactKind != "pack" && proposal.ArtifactKind != "graph" || !policyInterpretationIDForm.MatchString(proposal.ID) || seen[proposal.ID] || proposal.PolicyID != entry.Policy.ID || !policyEventIDForm.MatchString(proposal.RevisionID) || !strings.HasPrefix(proposal.RevisionID, "revision_") || proposal.PublicationID != "" && (!policyEventIDForm.MatchString(proposal.PublicationID) || !strings.HasPrefix(proposal.PublicationID, "publication_")) || len(proposal.AfterTurnID) > 256 || proposal.OpenedChatID != "" && !policyInterpretationIDForm.MatchString(proposal.OpenedChatID) {
 					return nil, errors.New("Invalid Policy interpretation proposal.")
 				}
 				var fields map[string]json.RawMessage
@@ -237,14 +244,17 @@ func policyWorkspaceEntries(raw []byte, drafts bool) ([]policyWorkspaceEntry, er
 					return nil, errors.New("Invalid Policy interpretation proposal.")
 				}
 				for key := range fields {
-					if !contains([]string{"version", "id", "policyId", "revisionId", "publicationId", "createdAt", "afterTurnId", "openedChatId"}, key) {
+					if !contains([]string{"version", "artifactKind", "id", "policyId", "revisionId", "publicationId", "createdAt", "afterTurnId", "openedChatId"}, key) {
 						return nil, errors.New("Use exact Policy interpretation proposal field names.")
 					}
 				}
-				for _, key := range []string{"publicationId", "afterTurnId", "openedChatId"} {
+				for _, key := range []string{"artifactKind", "publicationId", "afterTurnId", "openedChatId"} {
 					if value, present := fields[key]; present && string(value) == "null" {
 						return nil, errors.New("Optional Policy interpretation fields must have supported values when present.")
 					}
+				}
+				if _, present := fields["artifactKind"]; present && proposal.ArtifactKind == "" {
+					return nil, errors.New("Choose pack or graph interpretation explicitly.")
 				}
 				if _, present := fields["publicationId"]; present && proposal.PublicationID == "" {
 					return nil, errors.New("Choose an exact Policy publication identity.")

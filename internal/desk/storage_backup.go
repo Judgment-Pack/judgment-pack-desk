@@ -33,11 +33,14 @@ type backupManifest struct {
 // Only recognized chat records enter a backup. Credentials, server preferences,
 // temporary files and project artifacts cannot be selected by the caller.
 func chatStorageFile(name string) bool {
-	return memoryFileName.MatchString(name) || briefFileName.MatchString(name) || sourceReviewsFileName.MatchString(name) || packTestsFileName.MatchString(name) || draftPackFileName.MatchString(name) || conversationFileName.MatchString(name) || attachmentFileName.MatchString(name) || name == projectBindingsName
+	return graphDraftFileName.MatchString(name) || memoryFileName.MatchString(name) || briefFileName.MatchString(name) || sourceReviewsFileName.MatchString(name) || packTestsFileName.MatchString(name) || draftPackFileName.MatchString(name) || conversationFileName.MatchString(name) || attachmentFileName.MatchString(name) || name == projectBindingsName
 }
 func validateStorageFile(name string, data []byte) error {
 	if !chatStorageFile(name) {
 		return fmt.Errorf("unsupported chat data file %q", name)
+	}
+	if graphDraftFileName.MatchString(name) {
+		return validateGraphDrafts(data)
 	}
 	if memoryFileName.MatchString(name) {
 		return validateMemoryStorage(data)
@@ -357,7 +360,13 @@ func (s *Server) handleStorageRestore(w http.ResponseWriter, r *http.Request) {
 	s.changeChatStorage(w, r, request, func(ctx context.Context, source, target *chatDataStore, copied *[]string) error {
 		return copyChatBackup(ctx, file, target, copied, func(name string, data []byte) error {
 			if privateWorkspaceStorageFile(name) {
-				return s.authorizePrivateWorkspace(r)
+				if err := s.authorizePrivateWorkspace(r); err != nil {
+					return err
+				}
+				if graphDraftFileName.MatchString(name) {
+					return s.admitGraphDraftUpdate(r, []byte(`{"version":1,"drafts":[],"deleted":[]}`), data)
+				}
+				return nil
 			}
 			drafts := draftPackFileName.MatchString(name)
 			if !drafts && !conversationFileName.MatchString(name) {

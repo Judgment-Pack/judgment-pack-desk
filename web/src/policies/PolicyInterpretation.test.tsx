@@ -33,16 +33,29 @@ it('reviews the exact selected publication then opens an unsent ordinary compose
  expect(router.state.location.pathname).toBe('/chats/'+chat.id);expect(chat.composer).toContain('Old publication');expect(chat.policySources).toEqual([source]);expect(chat.checkpoint).toBeUndefined()
  expect(fetch).toHaveBeenCalledTimes(2);expect(fetch.mock.calls.every(([url])=>String(url).includes('publicationId='+publicationId))).toBe(true)
 })
-it('Plan blocks accepted handoffs and Work opens the retained proposal through the same source review',async()=>{
- const chat:Chat={id:'policy-chat',title:'Policy',pinned:false,archived:false,updatedAt:'2026-10-18T00:00:00Z',composer:'',model:'',mode:'draft',view:'chat',policy:{id:policyId},interaction:'plan',policyInterpretations:[{version:1,id:'proposal',policyId,revisionId,publicationId,createdAt:'2026-10-18T00:00:00Z'}],checkpoint:{sources:[],state:{...INITIAL_STATE,status:'complete',phase:'idle'}}}
+it.each(['pack','graph'] as const)('Plan blocks %s handoffs and Work opens the retained proposal through the same source review',async artifactKind=>{
+ const chat:Chat={id:'policy-chat',title:'Policy',pinned:false,archived:false,updatedAt:'2026-10-18T00:00:00Z',composer:'',model:'',mode:'draft',view:'chat',policy:{id:policyId},interaction:'plan',policyInterpretations:[{version:1,artifactKind,id:'proposal',policyId,revisionId,publicationId,createdAt:'2026-10-18T00:00:00Z'}],checkpoint:{sources:[],state:{...INITIAL_STATE,status:'complete',phase:'idle'}}}
  const {fetch}=await setup([chat],<PolicyInterpretationProposals chatId={chat.id}/>)
- expect((screen.getByRole('button',{name:'Design pack'}) as HTMLButtonElement).disabled).toBe(true)
- fireEvent.click(screen.getByRole('button',{name:'Design pack'}));expect(fetch).not.toHaveBeenCalled()
+ expect((screen.getByRole('button',{name:artifactKind==='graph'?'Design graph':'Design pack'}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:artifactKind==='graph'?'Design graph':'Design pack'}));expect(fetch).not.toHaveBeenCalled()
  act(()=>store.update(chat.id,{interaction:'work'}))
- fireEvent.click(screen.getByRole('button',{name:'Design pack'}))
- const dialog=await screen.findByRole('dialog',{name:'Design pack from Policy'})
+ fireEvent.click(screen.getByRole('button',{name:artifactKind==='graph'?'Design graph':'Design pack'}))
+ const dialog=await screen.findByRole('dialog',{name:artifactKind==='graph'?'Design graph from Policy':'Design pack from Policy'})
  fireEvent.click(within(dialog).getByRole('button',{name:'Open authoring chat'}))
  await waitFor(()=>expect(store.getSnapshot().chats).toHaveLength(2))
  const parent=store.getSnapshot().chats.find(c=>c.id===chat.id)!,opened=store.getSnapshot().chats.find(c=>c.id!==chat.id)!
  expect(parent.policyInterpretations?.[0]?.openedChatId).toBe(opened.id);expect(opened.policySources).toEqual([source]);expect(opened.checkpoint).toBeUndefined()
+})
+
+it('reviews a selected publication for graph authoring and keeps the composer unsent',async()=>{
+ const {fetch,router}=await setup([],<PolicyInterpretationAction artifactKind="graph" selection={{policyId,publicationId}}/>)
+ fireEvent.click(screen.getByRole('button',{name:'Design graph'}))
+ const dialog=await screen.findByRole('dialog',{name:'Design graph from Policy'})
+ expect(within(dialog).getByText(publicationId)).toBeTruthy()
+ fireEvent.click(within(dialog).getByRole('button',{name:'Open authoring chat'}))
+ await screen.findByText('Ordinary authoring destination')
+ const chat=store.getSnapshot().chats[0]!
+ expect(router.state.location.pathname).toBe('/chats/'+chat.id);expect(chat.policySources).toEqual([source]);expect(chat.policyInterpretationKind).toBe('graph')
+ expect(chat.composer).toContain('Design a graph interpretation');expect(chat.checkpoint).toBeUndefined()
+ expect(fetch).toHaveBeenCalledTimes(2)
 })
