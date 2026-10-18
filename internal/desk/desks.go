@@ -356,6 +356,10 @@ const registryReadLimit = 4096
 //   - the id needs no reservation: it is 128 random bits, and `Mkdir` refuses
 //     one that exists.
 func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.PolicyAuthority != nil {
+		policyHTTPFailure(w, policyMachineRefusal())
+		return
+	}
 	var request struct {
 		Name string `json:"name"`
 	}

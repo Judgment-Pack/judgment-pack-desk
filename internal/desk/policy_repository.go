@@ -15,15 +15,30 @@ type policyHistoryReader interface {
 type filePolicyHistoryReader struct {
 	open            func(bool) (*os.Root, error)
 	requireExisting bool
+	admit           func() (func(), error)
 }
 
 // These are the only production constructors. Binding is captured during New,
 // before workers and request handling; requests cannot replace or drop it.
 func (s *Server) policyRepository() policyRepository {
-	return filePolicyRepository{open: s.openPolicies, anchor: s.policyAuthorityAnchor}
+	return filePolicyRepository{open: s.openPolicies, anchor: s.policyAuthorityAnchor, admit: s.policyMachineAdmission(), currentGuard: func() error {
+		if s.policyAuthorityMachine != nil {
+			anchor, err := s.policyAuthorityMachine.resolve(s.project)
+			if err != nil || anchor != nil {
+				return policyMachineRefusal()
+			}
+		}
+		return policyMachineNoDemand(s.root)
+	}}
 }
 func (s *Server) policyHistoryReader() policyHistoryReader {
-	return filePolicyHistoryReader{open: s.openPolicies, requireExisting: s.policyAuthorityAnchor != nil}
+	return filePolicyHistoryReader{open: s.openPolicies, requireExisting: s.policyAuthorityAnchor != nil, admit: s.policyMachineAdmission()}
+}
+func (s *Server) policyMachineAdmission() func() (func(), error) {
+	if s.policyAuthorityMachine == nil {
+		return nil
+	}
+	return s.policyAuthorityMachine.admit
 }
 func policyAuthorityStoreFailure(err error) error {
 	// An unverifiable head cannot establish whether this logical operation
@@ -127,6 +142,13 @@ func (f filePolicyRepository) anchoredTransaction(ctx context.Context, write boo
 	return policyAuthorityStoreFailure(err)
 }
 func (f filePolicyHistoryReader) ReadHistory(ctx context.Context, use func(policyLedger) error) error {
+	if f.admit != nil {
+		release, err := f.admit()
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	if ctx.Err() != nil {
 		return policyRefusal(503, "storage-unavailable", "Retained Policy history could not be read.")
 	}

@@ -120,6 +120,9 @@ func (s *Server) policyRecoveryCut(ctx context.Context) (policyArchiveCut, error
 	return policyArchiveClosure(ctx, snapshot, s.artifactRepository())
 }
 func (s *Server) policyRecoveryDestination(destination string) (*ProjectRoot, string, error) {
+	if err := s.policyMachineTarget(destination); err != nil {
+		return nil, "", err
+	}
 	if !policyRecoveryCanPublish {
 		return nil, "", policyRefusal(409, "archive-unsupported", "This platform cannot safely publish a restored project without replacing existing data.")
 	}

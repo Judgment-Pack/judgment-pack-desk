@@ -71,8 +71,10 @@ type policyRepository interface {
 }
 
 type filePolicyRepository struct {
-	open   func(bool) (*os.Root, error)
-	anchor *policyAuthorityAnchor
+	open         func(bool) (*os.Root, error)
+	anchor       *policyAuthorityAnchor
+	currentGuard func() error
+	admit        func() (func(), error)
 }
 
 func (s *Server) openPolicies(create bool) (*os.Root, error) {
@@ -96,8 +98,20 @@ func (f filePolicyRepository) Update(ctx context.Context, use func(*policyLedger
 	return f.transaction(ctx, true, use)
 }
 func (f filePolicyRepository) transaction(ctx context.Context, write bool, use func(*policyLedger) (bool, error)) error {
+	if f.admit != nil {
+		release, err := f.admit()
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	if f.anchor != nil {
 		return f.anchoredTransaction(ctx, write, use)
+	}
+	if f.currentGuard != nil {
+		if err := f.currentGuard(); err != nil {
+			return err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -120,6 +134,13 @@ func (f filePolicyRepository) transaction(ctx context.Context, write bool, use f
 	if err = waitPrivateDataLock(ctx, lock, write); err != nil {
 		return policyRefusal(503, "storage-busy", "Policy storage is busy. Retry the same operation shortly.")
 	}
+	// Enrollment writes its demand marker while holding this exact ledger lock.
+	// A previously running unbound Server cannot keep using its captured nil.
+	if f.currentGuard != nil {
+		if err := f.currentGuard(); err != nil {
+			return err
+		}
+	}
 	ledger := emptyPolicyLedger()
 	raw, err := readPrivateData(root, "ledger.json", policyLedgerLimit)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -134,6 +155,11 @@ func (f filePolicyRepository) transaction(ctx context.Context, write bool, use f
 		return err
 	}
 	changed, err := use(&ledger)
+	if f.currentGuard != nil {
+		if guardErr := f.currentGuard(); guardErr != nil {
+			return guardErr
+		}
+	}
 	if err != nil && write {
 		return policyBeforeCommitFailure(err)
 	}
@@ -153,7 +179,13 @@ func (f filePolicyRepository) transaction(ctx context.Context, write bool, use f
 	if err = ctx.Err(); err != nil {
 		return policyBeforeCommitFailure(err)
 	}
-	return writePrivateData(root, "ledger.json", raw)
+	err = writePrivateData(root, "ledger.json", raw)
+	if f.currentGuard != nil {
+		if guardErr := f.currentGuard(); guardErr != nil {
+			return guardErr
+		}
+	}
+	return err
 }
 
 func policyRecordRevision(record policyStoredRecord) string {

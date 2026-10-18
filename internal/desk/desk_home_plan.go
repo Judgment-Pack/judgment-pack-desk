@@ -81,6 +81,9 @@ func uniqueHomeFolder(name, id string, used map[string]bool) string {
 }
 func (s *Server) planDeskHome(destination string) (deskHomePlan, error) {
 	plan := deskHomePlan{Destination: destination, Moves: []deskHomeMove{}, Blockers: []string{}, Config: s.configDir}
+	if s.cfg.PolicyAuthority != nil {
+		return plan, policyMachineRefusal()
+	}
 	if !validProjectHistoryPath(destination) || isFilesystemRoot(destination) || len(destination) > 2048 {
 		return plan, errors.New("Choose an absolute Desk home folder.")
 	}

@@ -89,6 +89,9 @@ func (s *Server) handleProjectLocation(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) moveSnapshot(destination string) (projectMovePreview, error) {
 	preview := projectMovePreview{Project: s.projectDir, Destination: destination}
+	if s.cfg.PolicyAuthority != nil {
+		return preview, policyMachineRefusal()
+	}
 	if s.home != nil {
 		return preview, errors.New("This project belongs to Desk home. Use Admin > General > Desk home to move its files and history together.")
 	}

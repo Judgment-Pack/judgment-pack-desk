@@ -43,6 +43,8 @@ var devOrigins = []string{
 
 // Config is the chassis' whole configuration.
 type Config struct {
+	// Trusted host configuration, never portable Desk/project settings.
+	PolicyAuthority *PolicyAuthorityOptions
 	// Trusted mapping of each pinned workspace, resolved once before workers.
 	// Nil resolver retains legacy mode; a configured nil result must classify a
 	// known never-enrolled workspace. Requests cannot choose this mapping.
@@ -142,7 +144,8 @@ type Config struct {
 
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
-	policyAuthorityAnchor *policyAuthorityAnchor // immutable workspace binding from New
+	policyAuthorityAnchor  *policyAuthorityAnchor // immutable workspace binding from New
+	policyAuthorityMachine *policyAuthorityMachine
 	// Bound once before serving; nil selects the existing workspace file store.
 	inputPreparations  inputPreparationRepository
 	retainedArtifacts  retainedArtifactRepository
@@ -328,10 +331,12 @@ func New(cfg Config) (*Server, error) {
 	// descriptor it was handed, so a refusal below has to close it rather than
 	// leave it open in a process that is about to exit or retry.
 	pinned := cfg.Root
+	var machine *policyAuthorityMachine
 	adopted := false
 	defer func() {
 		if !adopted {
 			pinned.Close()
+			machine.close()
 		}
 	}()
 	if pinned == nil && cfg.ProjectDir == "" {
@@ -361,15 +366,6 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 
-	var policyAnchor *policyAuthorityAnchor
-	if cfg.policyAuthorityForProject != nil {
-		var err error
-		policyAnchor, err = cfg.policyAuthorityForProject(pinned)
-		if err != nil {
-			return nil, policyRefusal(503, "authority-unavailable", "The trusted Policy authority binding is unavailable for this workspace.")
-		}
-	}
-
 	if cfg.deskID == "" {
 		data, err := readPrivateData(pinned.own.root, deskManifest, 4096)
 		if err == nil {
@@ -393,6 +389,31 @@ func New(cfg Config) (*Server, error) {
 	if home != nil && home.entry(pinned.dir) == nil {
 		return nil, errors.New("This project is outside the registered Desk home. Import it before opening it with this installation.")
 	}
+	var policyAnchor *policyAuthorityAnchor
+	if cfg.PolicyAuthority != nil {
+		options := *cfg.PolicyAuthority
+		cfg.PolicyAuthority = &options
+		if cfg.policyAuthorityForProject != nil || policyMachineProtectedPaths(options.Root, configPath, pinned) != nil || policyMachineProjectIdle(configPath, pinned) != nil {
+			return nil, policyMachineRefusal()
+		}
+		machine, configErr = openPolicyMachine(options, false)
+		if configErr != nil {
+			return nil, configErr
+		}
+		policyAnchor, configErr = machine.resolve(pinned)
+		if configErr != nil {
+			return nil, configErr
+		}
+	} else if cfg.policyAuthorityForProject != nil {
+		policyAnchor, configErr = cfg.policyAuthorityForProject(pinned)
+		if configErr != nil {
+			return nil, policyMachineRefusal()
+		}
+	}
+	marker, markerErr := readPolicyMachineMarker(pinned.own.root)
+	if markerErr != nil || marker != nil && (policyAnchor == nil || marker.InstallationID != policyAnchor.identity.InstallationID || marker.WorkspaceID != policyAnchor.identity.WorkspaceID) {
+		return nil, policyMachineRefusal()
+	}
 	sessions, serr := newSessionStore()
 	if serr != nil {
 		return nil, fmt.Errorf("desk: session store: %w", serr)
@@ -406,23 +427,24 @@ func New(cfg Config) (*Server, error) {
 		writes = cfg.parent.writes
 	}
 	s := &Server{
-		policyAuthorityAnchor: policyAnchor,
-		writes:                writes,
-		builds:                componentBuilds(cfg.JpackBin, cfg.RunnerBin),
-		cfg:                   cfg,
-		mux:                   http.NewServeMux(),
-		log:                   cfg.Logger,
-		conns:                 make(map[*conn]struct{}),
-		root:                  pinned.own.root,
-		project:               pinned,
-		projectDir:            pinned.dir,
-		configDir:             configPath,
-		home:                  home,
-		relaySlots:            make(chan struct{}, maxRelayInFlight),
-		researchSlots:         make(chan struct{}, maxResearchInFlight),
-		sessions:              sessions,
-		launches:              launches,
-		launchCookie:          launchCookieName(cfg.Port),
+		policyAuthorityAnchor:  policyAnchor,
+		policyAuthorityMachine: machine,
+		writes:                 writes,
+		builds:                 componentBuilds(cfg.JpackBin, cfg.RunnerBin),
+		cfg:                    cfg,
+		mux:                    http.NewServeMux(),
+		log:                    cfg.Logger,
+		conns:                  make(map[*conn]struct{}),
+		root:                   pinned.own.root,
+		project:                pinned,
+		projectDir:             pinned.dir,
+		configDir:              configPath,
+		home:                   home,
+		relaySlots:             make(chan struct{}, maxRelayInFlight),
+		researchSlots:          make(chan struct{}, maxResearchInFlight),
+		sessions:               sessions,
+		launches:               launches,
+		launchCookie:           launchCookieName(cfg.Port),
 	}
 	adopted = true
 	// **One owner from here on.** The wrapper the caller still holds stops
@@ -787,6 +809,7 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) closeAll() error {
+	s.policyAuthorityMachine.stopAdmission()
 	s.closeDesks()
 	if s.policySourceCancel != nil {
 		s.policySourceCancel()
@@ -850,6 +873,9 @@ func (s *Server) closeAll() error {
 	if s.watcher != nil {
 		err = s.watcher.Close()
 	}
+	if s.policyAuthorityMachine != nil {
+		s.policyAuthorityMachine.work.Wait()
+	}
 	if s.project != nil {
 		// **Through the shared cell, which closes at most once**, and without
 		// touching the adopted flag: a wrapper that was handed over stays
@@ -867,6 +893,7 @@ func (s *Server) closeAll() error {
 			err = aerr
 		}
 	}
+	s.policyAuthorityMachine.close()
 	return err
 }
 

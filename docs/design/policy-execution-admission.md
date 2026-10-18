@@ -39,8 +39,10 @@ the portable store. Enrollment is explicit; ordinary lookup never creates or
 resets an anchor. A mismatch, missing anchor or pending write intent prevents a
 current-authority claim. All live Policy access now shares an optionally bound repository factory.
 A private trusted resolver supplies each pinned workspace binding once at
-startup; no default resolver or enrollment is supplied. Legacy installations
-remain unbound. The integration does not choose a machine root or protect jobs. Its [storage contract](policy-authority-anchor.md)
+startup. The optional trusted local CLI profile explicitly initializes a separate
+machine root, classifies legacy workspaces and enrolls exact existing ledgers.
+There is no default root or automatic enrollment. Legacy installations remain
+unbound. The integration does not protect jobs. Its [storage contract](policy-authority-anchor.md)
 describes durability and failure behavior.
 
 The fixed transaction order is Policy ledger lock, then anchor lock. Read the
@@ -58,10 +60,14 @@ replayed to recover a failed write.
 A machine-local root must be resolved independently of movable Desk home,
 project folders and Runner state. Existing `s.configDir`, assistant custody and
 the home registry can move with the home, so they cannot serve as this root.
-Before enabling enrollment, validate containment and exclusion from archive and
-home migration; retain an installation identity and trusted stable workspace
+The local enrollment profile validates containment and exclusion from archive and
+home migration, and retains an installation identity and trusted stable workspace
 mapping there. Paths supplied by a request or a restored project cannot create
-that mapping. Missing state for an enrolled workspace must hold execution.
+that mapping. Missing state for an enrolled workspace holds current authority;
+this is not an execution gate. The operator must preserve root and expected ID
+in trusted launcher configuration. Pre-marker snapshots and full trust-plane
+loss cannot establish that this configuration once existed without an external
+witness. The shared lifetime lease excludes cooperating configured Servers only.
 
 All live Policy writes must pass through one repository factory, including
 browser/chat services, source polling, disconnect handling and lifecycle changes.
