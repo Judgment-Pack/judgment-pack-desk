@@ -253,7 +253,7 @@ func (s *Server) restorePolicyArchive(ctx context.Context, projectID string, act
 }
 func writePolicyRecoveryProject(ctx context.Context, root *os.Root, cut policyArchiveCut, reader policyArchiveReader, result policyRecoveryResult) error {
 	initial := &Server{root: root}
-	artifacts := fileRetainedArtifactRepository{open: initial.openRetainedArtifacts}
+	artifacts := initial.artifactRepository()
 	for _, ref := range cut.Refs {
 		raw, err := reader.Get(ctx, ref)
 		if err != nil {
