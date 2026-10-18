@@ -144,7 +144,7 @@ describe('the left rail', () => {
     expect(link.getAttribute('aria-label')).toBe('Library')
   })
 
-  it.each(['/library', '/packs/vendor', '/packs/vendor/matrix', '/graphs', '/graphs/flow'])('marks Library active at %s', async path => {
+  it.each(['/library', '/packs/vendor', '/packs/vendor/matrix', '/graphs', '/graphs/flow', '/dialects', '/dialects/prep_one', '/dialects/drafts/draft_one', '/dialects/templates'])('marks Library active at %s', async path => {
     renderRail(packs([]), {}, path)
     await waitFor(() =>
       expect(
@@ -158,7 +158,7 @@ describe('the left rail', () => {
     renderRail(stub, {}, '/graphs/onboarding', false, mode)
     await waitFor(() => expect(stub.calls).toHaveLength(1))
     const links = screen.getAllByRole('link')
-    expect(links.slice(0, 3).map(link => link.getAttribute('href'))).toEqual(['/library', '/dialects', '/jobs'])
+    expect(links.slice(0, 3).map(link => link.getAttribute('href'))).toEqual(['/library', '/jobs', '/admin'])
     expect(screen.queryByRole('link', { name: 'Graphs' })).toBeNull()
     expect(screen.getByRole('link', { name: /^Library/ }).getAttribute('aria-current')).toBe('page')
     expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])

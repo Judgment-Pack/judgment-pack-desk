@@ -21,9 +21,9 @@ interface Props {
 export function CollectionToolbar(props:Props){
  const {filter,onFilter,kind,onKind,status,onStatus,sort,onSort,canScope,everywhere,onScope,filtered,reset,selected,clearSelection,onDelete}=props
  const scope=everywhere?msg('All folders'):msg('This folder')
- return <CollectionControls padded label={msg('Pack and graph list controls')} searchLabel={msg('Search packs and graphs')} search={filter} onSearch={onFilter}
-  filters={[{label:msg('Item type'),value:kind,onValueChange:onKind,options:[{value:'all',label:msg('All types')},{value:'pack',label:msg('Packs')},{value:'graph',label:msg('Graphs')}]},{label:msg('Status'),value:status,onValueChange:onStatus,options:[{value:'all',label:msg('All statuses')},{value:'draft',label:msg('Draft')},{value:'finalized',label:msg('Saved')}]}]}
-  sort={{label:msg('Sort packs and graphs'),value:sort,onValueChange:onSort,options:[{value:'id-asc',label:msg('Name: A–Z')},{value:'id-desc',label:msg('Name: Z–A')}]}}
+ return <CollectionControls padded label={msg('Library list controls')} searchLabel={msg('Search library')} search={filter} onSearch={onFilter}
+  filters={[{label:msg('Item type'),value:kind,onValueChange:onKind,options:[{value:'all',label:msg('All types')},{value:'pack',label:msg('Packs')},{value:'graph',label:msg('Graphs')},{value:'dialect',label:msg('Dialects')}]},{label:msg('Status'),value:status,onValueChange:onStatus,options:[{value:'all',label:msg('All statuses')},{value:'draft',label:msg('Draft')},{value:'saved',label:msg('Saved')}]}]}
+  sort={{label:msg('Sort library'),value:sort,onValueChange:onSort,options:[{value:'id-asc',label:msg('Name: A–Z')},{value:'id-desc',label:msg('Name: Z–A')}]}}
   filtered={filtered} onReset={reset}
   searchSuffix={({tight})=>canScope&&<DropdownMenu.Root>
    <Tooltip content={msg('Search scope: {{scope}}',{scope})}><DropdownMenu.Trigger asChild><Button variant="quiet" className={styles.scope} aria-label={msg('Search scope: {{scope}}',{scope})}><span hidden={tight}>{scope}</span><IconChevronDown/></Button></DropdownMenu.Trigger></Tooltip>

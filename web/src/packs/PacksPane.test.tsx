@@ -9,7 +9,7 @@ import {DeskNotices, DeskNoticesProvider} from '../shell/DeskNotices'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpContext } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { PacksPane } from './PacksPane'
@@ -17,11 +17,16 @@ import { PacksPane } from './PacksPane'
 function PaneWithNotices() {return <DeskNoticesProvider><PacksPane/><footer><DeskNotices/></footer></DeskNoticesProvider>}
 
 const packLinks = () => screen.queryAllByRole('link').filter(link => link.getAttribute('href')?.startsWith('/packs/') && link.getAttribute('href') !== '/packs/new')
+beforeEach(()=>vi.stubGlobal('fetch',async(input:RequestInfo|URL)=>{
+  if(['/api/input-preparations','/api/dialect-drafts'].includes(String(input)))return Response.json({items:[]})
+  throw new Error('No file fixture for this test.')
+}))
 
 afterEach(() => {
   cleanup()
   unmeasure?.()
   unmeasure = undefined
+  vi.unstubAllGlobals()
 })
 
 /**
@@ -101,13 +106,13 @@ describe('the packs pane', () => {
   it('narrows by a substring of the id', async () => {
     draw(packs(['intake-triage', 'vendor-onboarding', 'access-review']))
     await screen.findByRole('link', { name: /intake-triage/ })
-    fireEvent.change(screen.getByLabelText('Search packs and graphs'), { target: { value: 'ven' } })
+    fireEvent.change(screen.getByLabelText('Search library'), { target: { value: 'ven' } })
     await waitFor(() => expect(packLinks()).toHaveLength(1))
     expect(screen.getByRole('link', { name: /vendor-onboarding/ })).toBeTruthy()
 
     // A filter that matches nothing is not an empty project.
-    fireEvent.change(screen.getByLabelText('Search packs and graphs'), { target: { value: 'zzz' } })
-    await screen.findByText('No matching packs or graphs')
+    fireEvent.change(screen.getByLabelText('Search library'), { target: { value: 'zzz' } })
+    await screen.findByText('No matching library items')
   })
 
   it('reorders on the sort control, and offers only orders it has data for', async () => {
@@ -116,7 +121,7 @@ describe('the packs pane', () => {
     const names = () => packLinks().map((link) => link.textContent)
     expect(names()[0]).toContain('a-pack')
 
-    fireEvent.keyDown(screen.getByLabelText('Sort packs and graphs'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByLabelText('Sort library'), { key: 'Enter' })
     const options = await screen.findAllByRole('menuitemradio')
     // ID ascending and descending, and nothing else: `list_packs` reports no
     // date and no size, so any other order would be the desk inventing one.
@@ -195,12 +200,12 @@ describe('the packs pane', () => {
     draw(stub)
     fireEvent.click(await screen.findByRole('button', {name:'Packs unavailable'}))
     await screen.findByText(/the runtime refused the listing/)
-    expect(screen.queryByText('No packs or graphs yet')).toBeNull()
+    expect(screen.queryByText('No library items yet')).toBeNull()
   })
 
   it('shows no matches when an empty listing is restricted by type', async () => {
     draw(packs([]), '/library?type=pack')
-    await screen.findByText('No matching packs or graphs')
+    await screen.findByText('No matching library items')
   })
 
   it('claims no version for a pack whose document the listing could not read', async () => {
@@ -368,7 +373,7 @@ it('does not claim that an unsupported graph inventory is empty', async () => {
   const stub = packs([])
   draw(stub, '/library?type=graph')
   await screen.findByText('This runtime cannot list saved graphs. Connect a newer runtime to browse all packs and graphs.')
-  expect(screen.queryByText('No packs or graphs yet')).toBeNull()
+  expect(screen.queryByText('No library items yet')).toBeNull()
   expect(stub.calls.map(call => call.name)).not.toContain('experimental_list_graphs')
 })
 
@@ -401,7 +406,7 @@ it('retains saved graph rows with a refresh warning instead of claiming an empty
   await screen.findByText(/graph inventory unavailable/)
   expect(screen.getByText('Graphs could not be refreshed. Previously loaded graphs may be out of date.')).toBeTruthy()
   expect(document.querySelector('a[href="/graphs/flow"]')).toBeTruthy()
-  expect(screen.queryByText('No packs or graphs yet')).toBeNull()
+  expect(screen.queryByText('No library items yet')).toBeNull()
 })
 
 
@@ -445,7 +450,7 @@ it('pages the sorted matches, keeps selection across pages, and resets on filter
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } })
   expect(screen.getByText('Page 1 of 3')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
-  fireEvent.keyDown(screen.getByLabelText('Sort packs and graphs'), { key: 'Enter' })
+  fireEvent.keyDown(screen.getByLabelText('Sort library'), { key: 'Enter' })
   fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Name: Z–A' }))
   expect(screen.getByText('Page 1 of 3')).toBeTruthy()
   expect(packLinks()[0]?.textContent).toContain('pack-112')
