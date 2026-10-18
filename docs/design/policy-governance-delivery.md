@@ -2,11 +2,16 @@
 
 Status: local implementation, 2026-10-18. Library consolidation and the local
 Policy service are merged into `integration/v0.13` through Desk #453 and #458.
-Desk #459 / PR #460 adds retained source import and shared Policy chat to the
-private, single-administrator service and full-page editor. That PR remains
-pending independent review. Desk #461 adds the connected-source path described
-below, stacked on #460. Neither slice claims team governance, portable Policy
-conformance or execution admission.
+Desk #459 / [PR #460](https://github.com/Judgment-Pack/judgment-pack-desk/pull/460)
+merged retained source import and shared Policy chat at `05795d2`.
+Desk #461 / [PR #462](https://github.com/Judgment-Pack/judgment-pack-desk/pull/462)
+merged the connected-source path described below at `521f378`.
+[Gateway PR #297](https://github.com/Judgment-Pack/judgment-pack-gateway/pull/297)
+merged the required host controls at `5b2136c`. Desk's component lock now adopts
+published Gateway `v0.20.0`, which includes those controls. An installation using
+an older Gateway override must still show unsupported state when those controls
+are unavailable. These local, single-administrator slices do not
+claim team governance, portable Policy conformance or execution admission.
 
 ## Library foundation
 
@@ -213,8 +218,9 @@ These controls manage local policy content. They do not create a pack, change a 
   The editor must not advertise interoperable validation until that exists.
 - Gateway supplies actual connected source observations. The first Desk path
   under #461 is Google Drive snapshot polling, using the separate recurring host
-  controls proposed under Gateway #295. It requires a Gateway build advertising
-  those controls; the currently pinned release must show unsupported state.
+  controls merged through Gateway #295 / PR #297. It requires a released Gateway
+  build advertising those controls, included in the pinned `v0.20.0` release.
+  Older Gateway overrides without those capabilities must show unsupported state.
   Drive does not supply policy lifecycle authority. External approval/publication
   mapping remains a separate dependency.
 - Runner and actual action executors need retained release/adoption closure and
