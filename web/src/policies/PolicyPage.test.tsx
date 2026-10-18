@@ -63,11 +63,26 @@ it('shows unsupported automatic checks honestly for an older installed Gateway',
  expect((screen.getByRole('button',{name:'Choose Google Drive source'}) as HTMLButtonElement).disabled).toBe(true)
 })
 it('preserves the frozen editor while source freshness changes and blocks publication on unresolved updates',async()=>{
- const app=mount({read:policy('head-one','Saved candidate','approved')});await screen.findByRole('textbox',{name:'Policy text'});edit('My unsaved local candidate')
- await act(()=>app.cache.setQueryData(['policies','policy-one','source-sync'],{revision:'observed-two',supported:true,pending:true}))
+ const app=mount({read:policy('head-one','Saved candidate','approved')}),sourceKey=['policies','policy-one','source-sync']
+ await screen.findByRole('textbox',{name:'Policy text'})
+ // Settle the initial read before injecting a refresh; its response must not
+ // overwrite the simulated update while query observers are still scheduling.
+ await waitFor(()=>{
+  expect(app.cache.getQueryState(sourceKey)?.fetchStatus).toBe('idle')
+  expect((screen.getByRole('button',{name:'Publish version'}) as HTMLButtonElement).disabled).toBe(false)
+ })
+ edit('My unsaved local candidate')
+ await act(()=>app.cache.setQueryData(sourceKey,{revision:'observed-two',supported:true,pending:true}))
+ expect(await screen.findByText('Resolve the latest source update before publication.')).toBeTruthy()
  expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('My unsaved local candidate')
  expect((screen.getByRole('button',{name:'Publish version'}) as HTMLButtonElement).disabled).toBe(true)
- expect(screen.getByText('Resolve the latest source update before publication.')).toBeTruthy()
+ // Remove the independent dirty-editor gate: the unresolved source alone
+ // still blocks publication, and resolving that source re-enables it.
+ edit('Saved candidate')
+ expect((screen.getByRole('button',{name:'Save draft'}) as HTMLButtonElement).disabled).toBe(true)
+ expect((screen.getByRole('button',{name:'Publish version'}) as HTMLButtonElement).disabled).toBe(true)
+ await act(()=>app.cache.setQueryData(sourceKey,{revision:'observed-three',supported:true,pending:false}))
+ await waitFor(()=>expect((screen.getByRole('button',{name:'Publish version'}) as HTMLButtonElement).disabled).toBe(false))
  expect(app.writes).toHaveLength(0)
 })
 it('journals uncertain source commands before dispatch and recovers after remount without replay',async()=>{
