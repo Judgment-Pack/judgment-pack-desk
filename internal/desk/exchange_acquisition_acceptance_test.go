@@ -18,7 +18,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan"
 )
 
-const exchangeAcquisitionFixtureRevision = "09618fe82318b36e68b7a689de84140c0d2a5849"
+const exchangeAcquisitionFixtureRevision = "4b9fa82ddeae772654d8f8bcf7b33d47ac65a512"
 
 type exchangeAcquisitionPrompt struct {
 	Request json.RawMessage `json:"request"`

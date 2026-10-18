@@ -10,8 +10,8 @@ forms remain unchanged. All installation choices live in reviewed bindings.
 Runtime v0.34.0 and Runner v0.21.0 executables and the released Gateway v0.19.0
 signer/control programs. Only the two adapter role slots use Gateway's separately
 pinned, explicitly tagged fixture executable from
-`09618fe82318b36e68b7a689de84140c0d2a5849`. Its real executable digest and
-`fixture.09618fe82318` version appear in reviewed profiles and genuine receipts.
+`4b9fa82ddeae772654d8f8bcf7b33d47ac65a512`. Its real executable digest and
+`fixture.4b9fa82ddeae` version appear in reviewed profiles and genuine receipts.
 The official component release lock is unchanged.
 
 Each case reviews/registers local model, search and scoped page profiles through
