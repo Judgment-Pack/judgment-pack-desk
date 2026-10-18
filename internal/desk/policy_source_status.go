@@ -220,9 +220,6 @@ func policyAuthorityAdmission(record policyStoredRecord, stream *policySourceAut
 	if contains([]string{"review", "publish", "activate"}, kind) && owner.Mode != "desk-managed" {
 		return policyRefusal(409, "external-ownership", "Import a reviewed Desk draft before reviewing, publishing or activating a local release.")
 	}
-	if kind == "publish" && policyAuthorityCurrentReview(record, stream) == nil {
-		return policyRefusal(409, "review-incomplete", "Review this candidate under its current Desk ownership before publication.")
-	}
 	return nil
 }
 

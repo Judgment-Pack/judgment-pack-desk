@@ -263,7 +263,7 @@ func policyCommandRecord(ledger policyLedger, command policyCommand) (policyStor
 	return record, nil
 }
 
-func policyValidateCommand(command policyCommand, record policyStoredRecord) error {
+func policyValidateCommand(command policyCommand, record policyStoredRecord, authority *policySourceAuthorityStream) error {
 	if command.Edit != nil {
 		if command.Edit.Import != nil {
 			if command.Kind != "create" {
@@ -300,7 +300,7 @@ func policyValidateCommand(command policyCommand, record policyStoredRecord) err
 		}
 	}
 	if command.Kind == "publish" {
-		review := policyCurrentReview(record)
+		review := policyAuthorityCurrentReview(record, authority)
 		if review == nil || review.Decision != "approve" || review.ID != command.Publish.ReviewID {
 			return policyRefusal(409, "review-incomplete", "Approve this exact current policy candidate before publishing it.")
 		}
@@ -343,7 +343,7 @@ func (s policyService) execute(ctx context.Context, command policyCommand) (poli
 		if err := policyAuthorityAdmission(inspected, ledger.SourceAuthorities[inspected.ID], command.Kind); err != nil {
 			return err
 		}
-		return policyValidateCommand(command, inspected)
+		return policyValidateCommand(command, inspected, ledger.SourceAuthorities[inspected.ID])
 	})
 	if err != nil {
 		return policyMutationReply{}, err
@@ -396,7 +396,7 @@ func (s policyService) execute(ctx context.Context, command policyCommand) (poli
 		if err = policyAuthorityAdmission(record, ledger.SourceAuthorities[record.ID], command.Kind); err != nil {
 			return false, err
 		}
-		if err = policyValidateCommand(command, record); err != nil {
+		if err = policyValidateCommand(command, record, ledger.SourceAuthorities[record.ID]); err != nil {
 			return false, err
 		}
 		if command.Kind == "publish" && policySourcePending(record, ledger.Sources[record.ID]) {

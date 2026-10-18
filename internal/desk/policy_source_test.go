@@ -165,7 +165,7 @@ func TestPolicyImportSupportedMaximumFitsExistingRequestBoundary(t *testing.T) {
 	if err = inputRequest(r, &parsed); err != nil {
 		t.Fatal("supported maximum exceeds shared request bound", len(raw), err)
 	}
-	if err = policyValidateCommand(policyCommand{Kind: "create", Edit: &parsed}, policyStoredRecord{}); err != nil {
+	if err = policyValidateCommand(policyCommand{Kind: "create", Edit: &parsed}, policyStoredRecord{}, nil); err != nil {
 		t.Fatal("supported maximum refused", err)
 	}
 }

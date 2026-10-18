@@ -528,3 +528,20 @@ The dedicated `policy-source-contract.yml` workflow builds a pinned synthetic
 Gateway producer and real canonicalizer, generates an observation, and checks
 those unchanged bytes with Desk. Its evidence records actual source revisions,
 build identities and fixture hashes separately from official releases.
+
+### Reviewed source ownership and status (#473)
+
+[Desk #473](https://github.com/Judgment-Pack/judgment-pack-desk/issues/473)
+adds explicit audited Desk/external ownership and separate reviewed source-status
+configuration/application; see [the private API contract](policy-source-status.md).
+Current Drive exposes no lifecycle, so only an administrator-configured fallback
+is supported, initially Draft. Explicit Published fallback retains an external
+version with its exact source/configuration basis; it creates no local approval
+or publication. Draft or Published source material can instead be explicitly
+imported into a fresh, unreviewed Desk draft without carrying earlier approvals.
+Failures never activate fallback or reinterpret reviewed history. These records
+claim no provider approval, governing adoption or execution permission.
+Workspace ZIP backup/restore still excludes Policy data, tracked by
+[Desk #476](https://github.com/Judgment-Pack/judgment-pack-desk/issues/476);
+full project backups must retain both `.desk-private/policies` and
+`.desk-private/retained-artifacts` together.

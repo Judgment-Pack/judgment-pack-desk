@@ -585,3 +585,27 @@ func TestPolicySourceStatusLivePublicationProjectionAgreesAcrossOwnershipEpochs(
 	policyMutation(t, policyCall(f.s, f.token, "POST", "/api/policies/"+current.Document.ID+"/publish", policyPublishBody(t, current)))
 	check(true)
 }
+
+func TestPolicySourceStatusUnsupportedWorkflowKeepsCanonicalPriority(t *testing.T) {
+	f := newPolicySourceFixture(t)
+	edit := policyEditBody(t, f.policy)
+	edit.Workflow = &policyWorkflow{IndependentReviewRequired: true}
+	current := policyMutation(t, policyCall(f.s, f.token, "PUT", "/api/policies/"+f.policy.Document.ID, edit)).Policy
+	publish := func(code string, status int) {
+		t.Helper()
+		current = policyRead(t, f.s, f.token, f.policy.Document.ID)
+		policyError(t, policyCall(f.s, f.token, "POST", "/api/policies/"+current.Document.ID+"/publish", policyPublishBody(t, current)), status, code)
+	}
+	publish("unsupported-workflow", 422)
+	f.ownStatus(t, "desk-managed")
+	publish("unsupported-workflow", 422)
+	f.ownStatus(t, "externally-managed")
+	publish("external-ownership", 409)
+	f.ownStatus(t, "desk-managed")
+	publish("unsupported-workflow", 422)
+	current = policyRead(t, f.s, f.token, f.policy.Document.ID)
+	policyMutation(t, policyCall(f.s, f.token, "POST", "/api/policies/"+current.Document.ID+"/review", policyReviewBody(t, current, "request-changes")))
+	f.ownStatus(t, "externally-managed")
+	f.ownStatus(t, "desk-managed")
+	publish("unsupported-workflow", 422)
+}

@@ -75,7 +75,7 @@ func resolvePolicyApproval(ctx context.Context, s *Server, chat assistantApprova
 	}
 	request := policyEditRequest{OperationID: p.OperationID, BaseRevision: p.Revision, Title: p.Candidate.Title, Narrative: p.Candidate.Narrative, ArtifactVersion: p.Candidate.ArtifactVersion}
 	command := policyCommand{Kind: "save-draft", PolicyID: p.PolicyID, OperationID: p.OperationID, Actor: actor, Edit: &request}
-	if err = policyValidateCommand(command, policyStoredRecord{}); err != nil {
+	if err = policyValidateCommand(command, policyStoredRecord{}, nil); err != nil {
 		return assistantActionResource{}, err
 	}
 	raw, _ := json.Marshal(struct {
