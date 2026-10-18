@@ -157,8 +157,8 @@ func validatePolicyLifecycles(ledger policyLedger) error {
 	}
 	return nil
 }
-func policyLifecycleView(record policyStoredRecord, stream *policyLifecycleStream, now string) policyLifecycleReply {
-	result := policyLifecycleReply{Revision: policyLifecycleRevision(stream), PolicyRevision: policyRecordRevision(record), ObservedAt: now, Releases: []policyReleaseLifecycle{}, Events: []policyLifecycleEvent{}}
+func policyLifecycleView(record policyStoredRecord, stream *policyLifecycleStream, now string, authority *policySourceAuthorityStream) policyLifecycleReply {
+	result := policyLifecycleReply{Revision: policyLifecycleRevision(stream), PolicyRevision: policyEffectiveRevision(record, authority), ObservedAt: now, Releases: []policyReleaseLifecycle{}, Events: []policyLifecycleEvent{}}
 	activations, withdrawals := map[string]policyLifecycleEvent{}, map[string]policyLifecycleEvent{}
 	if stream != nil {
 		result.Events = append(result.Events, stream.Events...)
@@ -210,14 +210,14 @@ func (s policyService) lifecycle(ctx context.Context, id string) (policyLifecycl
 		if !ok {
 			return policyRefusal(404, CodeNotFound, "Policy not found.")
 		}
-		result = policyLifecycleView(record, ledger.Lifecycles[id], s.lifecycleNow())
+		result = policyLifecycleView(record, ledger.Lifecycles[id], s.lifecycleNow(), ledger.SourceAuthorities[id])
 		return s.authorized(ctx)
 	})
 	return result, err
 }
 func validPolicyMutationIdentity(result policyMutationReply) bool {
-	if strings.HasPrefix(result.Receipt.Kind, "lifecycle-") {
-		return result.OutcomeKind == "lifecycle" && result.PolicyID == result.Receipt.PolicyID && result.PolicyRevision == result.Receipt.Revision && result.Policy.Document.ID == "" && result.Policy.Revision == ""
+	if strings.HasPrefix(result.Receipt.Kind, "lifecycle-") || strings.HasPrefix(result.Receipt.Kind, "authority-") {
+		return (result.OutcomeKind == "lifecycle" && strings.HasPrefix(result.Receipt.Kind, "lifecycle-") || result.OutcomeKind == "source-authority" && strings.HasPrefix(result.Receipt.Kind, "authority-")) && result.PolicyID == result.Receipt.PolicyID && result.PolicyRevision == result.Receipt.Revision && result.Policy.Document.ID == "" && result.Policy.Revision == ""
 	}
 	return result.OutcomeKind == "" && result.PolicyID == "" && result.PolicyRevision == "" && result.Policy.Document.ID == result.Receipt.PolicyID && result.Policy.Revision == result.Receipt.Revision
 }
@@ -259,7 +259,7 @@ func (s policyService) lifecycleCommand(ctx context.Context, id string, actor po
 			return false, policyRefusal(404, CodeNotFound, "Policy not found.")
 		}
 		stream := ledger.Lifecycles[id]
-		if q.BaseRevision != policyRecordRevision(record) || q.BaseLifecycleRevision != policyLifecycleRevision(stream) {
+		if q.BaseRevision != policyEffectiveRevision(record, ledger.SourceAuthorities[id]) || q.BaseLifecycleRevision != policyLifecycleRevision(stream) {
 			return false, policyRefusal(409, "lifecycle-conflict", "The policy or lifecycle changed. Review its current state before continuing.")
 		}
 		if len(ledger.Operations) >= policyOperationLimit || stream != nil && len(stream.Events) >= policyHistoryLimit {
@@ -283,6 +283,13 @@ func (s policyService) lifecycleCommand(ctx context.Context, id string, actor po
 			return false, policyRefusal(400, CodeBadRequest, "Invalid policy lifecycle details.")
 		}
 		if q.Action == "activate" {
+			if err := policyAuthorityAdmission(record, ledger.SourceAuthorities[id], "activate"); err != nil {
+				return false, err
+			}
+			_, boundary := policyAuthorityOwnership(ledger.SourceAuthorities[id])
+			if publication.Sequence <= boundary {
+				return false, policyRefusal(409, "ownership-review-required", "Publish under current Desk ownership before newly activating this release.")
+			}
 			event.EffectiveAt = q.EffectiveAt
 			if event.EffectiveAt == "" {
 				event.EffectiveAt = now
@@ -326,7 +333,7 @@ func (s policyService) lifecycleCommand(ctx context.Context, id string, actor po
 			ledger.Lifecycles = map[string]*policyLifecycleStream{}
 		}
 		ledger.Lifecycles[id] = stream
-		lifecycle := policyLifecycleView(record, stream, now)
+		lifecycle := policyLifecycleView(record, stream, now, ledger.SourceAuthorities[id])
 		result = policyMutationReply{Delivery: "committed", OutcomeKind: "lifecycle", PolicyID: id, PolicyRevision: lifecycle.PolicyRevision, Lifecycle: &lifecycle, Receipt: policyOperationReceipt{OperationID: q.OperationID, Kind: command.Kind, PolicyID: id, RequestDigest: command.RequestDigest, At: now, Actor: actor, Revision: lifecycle.PolicyRevision, CandidateDigest: event.CandidateDigest, PublicationID: publication.ID, LifecycleEventID: event.ID, LifecycleRevision: lifecycle.Revision}}
 		raw, _ := json.Marshal(result)
 		ref, err := s.artifacts.Put(ctx, raw)

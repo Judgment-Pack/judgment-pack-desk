@@ -65,9 +65,15 @@ func (s policyService) list(ctx context.Context) ([]policySummary, error) {
 		}
 		for _, record := range ledger.Policies {
 			head := policyHead(record)
-			row := policySummary{ID: record.ID, Title: head.Title, ArtifactVersion: head.ArtifactVersion, UpdatedAt: record.UpdatedAt, ReviewState: policyReviewState(record), PublicationCount: len(record.Publications), CandidateDigest: head.Digest}
+			stream := ledger.SourceAuthorities[record.ID]
+			row := policySummary{ID: record.ID, Title: head.Title, ArtifactVersion: head.ArtifactVersion, UpdatedAt: record.UpdatedAt, ReviewState: policyAuthorityReviewState(record, stream), PublicationCount: len(record.Publications), CandidateDigest: head.Digest}
+			owner, boundary := policyAuthorityOwnership(stream)
+			if stream != nil {
+				row.ManagementMode = owner.Mode
+				row.SourceAuthority = policyAuthoritySummary(stream)
+			}
 			for _, publication := range record.Publications {
-				if publication.CandidateRevisionID == head.ID && publication.CandidateDigest == head.Digest && publication.WorkflowDigest == head.WorkflowDigest {
+				if owner.Mode == "desk-managed" && publication.Sequence > boundary && publication.CandidateRevisionID == head.ID && publication.CandidateDigest == head.Digest && publication.WorkflowDigest == head.WorkflowDigest {
 					row.CurrentCandidatePublished = true
 				}
 			}
@@ -90,12 +96,14 @@ func (s policyService) list(ctx context.Context) ([]policySummary, error) {
 
 func (s policyService) get(ctx context.Context, id string) (policyReply, error) {
 	var record policyStoredRecord
+	var stream *policySourceAuthorityStream
 	err := s.repository.View(ctx, func(ledger policyLedger) error {
 		if err := s.authorized(ctx); err != nil {
 			return err
 		}
 		var ok bool
 		record, ok = ledger.Policies[id]
+		stream = ledger.SourceAuthorities[id]
 		if !ok {
 			return policyRefusal(404, CodeNotFound, "Policy not found.")
 		}
@@ -104,7 +112,7 @@ func (s policyService) get(ctx context.Context, id string) (policyReply, error) 
 	if err != nil {
 		return policyReply{}, err
 	}
-	return s.reply(ctx, record)
+	return s.reply(ctx, record, stream)
 }
 
 func (s policyService) candidate(ctx context.Context, revision policyRevision) (policyCandidate, error) {
@@ -123,7 +131,7 @@ func (s policyService) candidate(ctx context.Context, revision policyRevision) (
 	}
 	return policyCandidate{Source: content.Source, Title: content.Title, Narrative: content.Narrative, ArtifactVersion: content.ArtifactVersion, Digest: revision.Digest, RevisionID: revision.ID, Content: revision.Content}, nil
 }
-func (s policyService) reply(ctx context.Context, record policyStoredRecord) (policyReply, error) {
+func (s policyService) reply(ctx context.Context, record policyStoredRecord, stream *policySourceAuthorityStream) (policyReply, error) {
 	head := policyHead(record)
 	candidate, err := s.candidate(ctx, head)
 	if err != nil {
@@ -132,7 +140,12 @@ func (s policyService) reply(ctx context.Context, record policyStoredRecord) (po
 	if err = s.authorized(ctx); err != nil {
 		return policyReply{}, err
 	}
-	return policyReply{Revision: policyRecordRevision(record), Document: policyDocument{SchemaVersion: 1, ID: record.ID, ManagementMode: "desk-managed", CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Candidate: candidate, Workflow: head.Workflow, WorkflowDigest: head.WorkflowDigest, ReviewState: policyReviewState(record), CurrentReviewID: record.CurrentReviewID, Revisions: record.Revisions, Reviews: record.Reviews, Publications: record.Publications}}, nil
+	owner, _ := policyAuthorityOwnership(stream)
+	currentReviewID := ""
+	if review := policyAuthorityCurrentReview(record, stream); review != nil {
+		currentReviewID = review.ID
+	}
+	return policyReply{SourceAuthority: policyAuthoritySummary(stream), Revision: policyEffectiveRevision(record, stream), Document: policyDocument{SchemaVersion: 1, ID: record.ID, ManagementMode: owner.Mode, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Candidate: candidate, Workflow: head.Workflow, WorkflowDigest: head.WorkflowDigest, ReviewState: policyAuthorityReviewState(record, stream), CurrentReviewID: currentReviewID, Revisions: record.Revisions, Reviews: record.Reviews, Publications: record.Publications}}, nil
 }
 
 func (s policyService) revision(ctx context.Context, id, revisionID string) (any, error) {
@@ -182,7 +195,7 @@ func (s policyService) recovered(ctx context.Context, ledger policyLedger, comma
 		return nil, policyUncertainStorage()
 	}
 	var result policyMutationReply
-	if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != command.OperationID || result.Receipt.Kind != command.Kind || result.Receipt.RequestDigest != command.RequestDigest || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.Actor != command.Actor || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) {
+	if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != command.OperationID || result.Receipt.Kind != command.Kind || result.Receipt.RequestDigest != command.RequestDigest || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.Actor != command.Actor || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) || !validPolicySourceAuthorityResult(result) {
 		return nil, policyUncertainStorage()
 	}
 	if err = s.authorized(ctx); err != nil {
@@ -215,7 +228,7 @@ func (s policyService) operation(ctx context.Context, id string) (policyMutation
 		return policyMutationReply{}, err
 	}
 	var result policyMutationReply
-	if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != id || result.Receipt.Kind != operation.Kind || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.RequestDigest != operation.RequestDigest || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) {
+	if decodeDataJSON(raw, &result) != nil || result.Delivery != "committed" || result.Receipt.OperationID != id || result.Receipt.Kind != operation.Kind || result.Receipt.PolicyID != operation.PolicyID || result.Receipt.RequestDigest != operation.RequestDigest || !validPolicyMutationIdentity(result) || !validPolicyLifecycleResult(result) || !validPolicySourceAuthorityResult(result) {
 		return policyMutationReply{}, errors.New("policy operation receipt is inconsistent")
 	}
 	if err = s.authorized(ctx); err != nil {
@@ -245,9 +258,9 @@ func policyCommandRecord(ledger policyLedger, command policyCommand) (policyStor
 	case "publish":
 		base = command.Publish.BaseRevision
 	}
-	if base != policyRecordRevision(record) {
+	if base != policyEffectiveRevision(record, ledger.SourceAuthorities[record.ID]) {
 		failure := policyRefusal(409, "revision-conflict", "This policy changed. Keep your edits and reload the saved revision before continuing.")
-		failure.CurrentRevision = policyRecordRevision(record)
+		failure.CurrentRevision = policyEffectiveRevision(record, ledger.SourceAuthorities[record.ID])
 		return record, failure
 	}
 	return record, nil
@@ -330,6 +343,9 @@ func (s policyService) execute(ctx context.Context, command policyCommand) (poli
 		if err != nil {
 			return err
 		}
+		if err := policyAuthorityAdmission(inspected, ledger.SourceAuthorities[inspected.ID], command.Kind); err != nil {
+			return err
+		}
 		return policyValidateCommand(command, inspected)
 	})
 	if err != nil {
@@ -378,6 +394,9 @@ func (s policyService) execute(ctx context.Context, command policyCommand) (poli
 		}
 		record, err := policyCommandRecord(*ledger, command)
 		if err != nil {
+			return false, err
+		}
+		if err = policyAuthorityAdmission(record, ledger.SourceAuthorities[record.ID], command.Kind); err != nil {
 			return false, err
 		}
 		if err = policyValidateCommand(command, record); err != nil {
@@ -459,7 +478,7 @@ func (s policyService) execute(ctx context.Context, command policyCommand) (poli
 			record.UpdatedAt, receipt.PublicationID = now, id
 		}
 		ledger.Policies[record.ID] = record
-		reply, err := s.reply(ctx, record)
+		reply, err := s.reply(ctx, record, ledger.SourceAuthorities[record.ID])
 		if err != nil {
 			return false, err
 		}
