@@ -19,8 +19,10 @@ func portableResearchBudgetProposal(run inputResearchRun) *inputResearchBudgetRe
 			return nil
 		}
 	}
+	// A page refused at its receipt check finished with a known outcome, as a
+	// page refused before acquisition did; neither withholds this offer.
 	for _, attempt := range run.Attempts {
-		if attempt.State != "completed" && attempt.State != "not-started" {
+		if attempt.State != "completed" && attempt.State != "not-started" && attempt.State != "refused" {
 			return nil
 		}
 	}

@@ -353,16 +353,26 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 				// A completed operation is evidence to reuse, not a reason to
 				// keep asking the model for the same acquisition until its cap.
 				// Feed the shared bounded correction path before dispatch.
-				reused := false
+				reused, refused := false, false
 				key := digestOf(append([]byte(action.Kind+"\n"), identity...))
 				for _, previous := range run.Attempts {
 					if previous.Kind == action.Kind && previous.Digest == key && previous.State == "completed" {
 						reused = true
 						break
 					}
+					// A page refused at its receipt check is not acquired again;
+					// the request is refused as before acquisition.
+					if previous.Kind == action.Kind && previous.Digest == key && previous.State == "refused" {
+						refused = true
+						break
+					}
 				}
 				if reused {
 					problem = errors.New("This source request already completed. Use its retained response or read_context; do not request it again.")
+					break
+				}
+				if refused {
+					problem = errScopedPageRefusedAgain
 					break
 				}
 				if err := s.portableResearchChatWork(run.Portable.Frozen.ChatID); err != nil {
@@ -385,8 +395,30 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 					if err != nil {
 						return nil, err
 					}
-					return retainPortableAcquisition(current, action.Kind, action.Arguments, raw)
+					retained, err := retainPortableAcquisition(current, action.Kind, action.Arguments, raw)
+					if err != nil {
+						return nil, err
+					}
+					// The scoped page's signed receipt names its final URL after
+					// redirects. Outside the reviewed scope, the attempt is
+					// refused with its receipt kept, and the page never enters
+					// the model context or the answer. Runner's check 3 remains
+					// the verifier of every retained receipt.
+					if action.Kind == "page" {
+						if err := admitPortablePageReceipt(profile, retained); err != nil {
+							return retained, &researchAcquisitionRefused{code: "acquisition-invalid", cause: err}
+						}
+					}
+					return retained, nil
 				})
+				// Refused at its receipt check, the page is an acquisition-invalid
+				// request like one refused before acquisition: a validation
+				// finding on this model step, within the same correction bound.
+				var refusal *researchAcquisitionRefused
+				if errors.As(err, &refusal) {
+					problem = refusal.cause
+					break
+				}
 				if err != nil {
 					if errors.Is(err, errResearchRequestLimit) {
 						finish("partial", err)

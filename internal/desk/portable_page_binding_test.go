@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type pageBindingReply struct {
@@ -303,6 +304,73 @@ func TestPortableScopedPageRefusedBeforeAnyAcquisition(t *testing.T) {
 	}
 }
 
+// A page this run acquired and then refused at its receipt check (its final
+// address after redirects outside the scope) is not acquired again: a request
+// for it is the same acquisition-invalid validation finding, within the same
+// correction bound, and spends no further page allowance.
+func TestPortableScopedPageRefusedAtItsReceiptIsNotRequestedAgain(t *testing.T) {
+	const requested = "https://docs.example/guides/moved"
+	var calls atomic.Int32
+	s, ts, basis := pageBindingFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		action, _ := json.Marshal(map[string]any{"kind": "page", "arguments": map[string]string{"url": requested}})
+		portableTestReply(w, string(action))
+	})
+	scope := EndpointScope{"https://docs.example/guides"}
+	code, preview, raw := pageProfileRequest(t, ts, scope, "", "")
+	if code != 200 {
+		t.Fatalf("preview %d %s", code, raw)
+	}
+	code, registered, raw := pageProfileRequest(t, ts, scope, preview.Revision, "")
+	if code != 200 {
+		t.Fatalf("register %d %s", code, raw)
+	}
+	var details portableProfileDetails
+	json.Unmarshal(registered.Entry.Profile, &details)
+	var input map[string]any
+	json.Unmarshal(basis.Portable.Frozen.Input, &input)
+	source := input["source"].(map[string]any)["mapping"].(map[string]any)["sources"].([]any)[0].(map[string]any)
+	source["capabilities"] = []string{"answer", "page"}
+	source["webProfiles"] = map[string]any{"page": map[string]string{"profile": details.ID, "profileDigest": registered.Entry.Digest}}
+	encoded, _ := json.Marshal(input)
+	run, err := s.reviewPortableResearch(t.Context(), encoded, basis.Portable.Frozen.Choice, inputResearchLimits{Records: 1, ModelCalls: 3, Pages: 3}, "", "fixture-scope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := s.researchVerifier()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := researchCanon(t.Context(), verifier, pageBindingJSON(t, map[string]string{"url": requested}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := digestOf(append([]byte("page\n"), identity...))
+	kept := pageBindingJSON(t, map[string]any{"profile": map[string]string{"id": details.ID, "digest": registered.Entry.Digest}, "request": map[string]string{"url": requested}, "result": map[string]any{}, "receipt": map[string]any{"acquisition": map[string]any{"endpoint": "https://elsewhere.example/landing"}, "signature": "kept"}, "salts": map[string]any{}})
+	store := portableResearchStoreFixture(t, run, false)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err = store.change(func(r *inputResearchRun) error {
+		r.State = "running"
+		r.Attempts = append(r.Attempts, inputResearchAttempt{ID: "attempt_" + key, Kind: "page", Digest: key, State: "refused", Number: 1, StartedAt: now, FinishedAt: now, URL: requested, Result: kept, Problem: errScopedPageReceipt.Error(), ProblemCode: "acquisition-invalid"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.executePortableResearch(t.Context(), store, run)
+	held, err := store.read()
+	if err != nil || held.State != "partial" || !strings.Contains(held.Problem, errScopedPageRefusedAgain.Error()) || calls.Load() != 3 || len(held.Attempts) != 4 {
+		t.Fatalf("refused page requested again: state=%s problem=%s models=%d attempts=%d err=%v", held.State, held.Problem, calls.Load(), len(held.Attempts), err)
+	}
+	for _, attempt := range held.Attempts[1:] {
+		if attempt.Kind != "model" || attempt.ActionProblem != errScopedPageRefusedAgain.Error() {
+			t.Fatalf("a refused page was dispatched again or its finding changed: %+v", attempt)
+		}
+	}
+	if researchBudgetUsage(held).Pages != 1 || !bytes.Equal(held.Attempts[0].Result, kept) || held.Attempts[0].State != "refused" {
+		t.Fatal("the refused page spent more allowance or lost its kept receipt")
+	}
+}
+
 func TestPortablePageBindingRouteGuards(t *testing.T) {
 	s, ts := startDesk(t, Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken})
 	t.Cleanup(func() { ts.Close(); s.Close() })
@@ -319,7 +387,9 @@ func TestPortablePageBindingRouteGuards(t *testing.T) {
 	if response.StatusCode != 401 {
 		t.Fatal("unauthenticated profile route admitted", response.StatusCode)
 	}
-	for _, scope := range []any{nil, []string{}, []string{"http://docs.example"}, []string{"https://docs.example", "https://docs.example"}} {
+	// Round 16's path form holds at registration: an escaped slash or a dot
+	// segment before a path parameter is refused before any adapter is run.
+	for _, scope := range []any{nil, []string{}, []string{"http://docs.example"}, []string{"https://docs.example", "https://docs.example"}, []string{"https://docs.example/guides%2f..%2fadmin"}, []string{"https://docs.example/guides/..;/admin"}} {
 		code, _ := aiTestRequest(t, ts, "POST", "/api/portable-research/page-binding", map[string]any{"endpointScope": scope}, nil)
 		if code != 400 {
 			t.Fatal("malformed scope admitted", scope, code)

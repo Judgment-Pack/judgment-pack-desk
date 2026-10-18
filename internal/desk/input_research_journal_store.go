@@ -145,7 +145,7 @@ func changeResearchJournal(raw []byte, id string, change func(*inputResearchRun)
 	}
 	for i, old := range before.Attempts {
 		a := next.Attempts[i]
-		if a.ID != old.ID || a.Kind != old.Kind || a.Digest != old.Digest || a.StartedAt != old.StartedAt || a.Number != old.Number || a.RetryOf != old.RetryOf || (old.State == "completed" && (a.State != old.State || !bytes.Equal(a.Result, old.Result))) {
+		if a.ID != old.ID || a.Kind != old.Kind || a.Digest != old.Digest || a.StartedAt != old.StartedAt || a.Number != old.Number || a.RetryOf != old.RetryOf || ((old.State == "completed" || old.State == "refused") && (a.State != old.State || !bytes.Equal(a.Result, old.Result))) {
 			return nil, errors.New("Retained research operations cannot be replaced or replayed.")
 		}
 	}
