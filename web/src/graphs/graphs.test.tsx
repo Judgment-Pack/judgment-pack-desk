@@ -54,7 +54,9 @@ let planAnswer: () => Response
 beforeEach(() => {
   validateAnswer = () => json(200, { answer: findings(SERVED) })
   planAnswer = () => json(200, { id: 'onboarding', answer: plan })
-  vi.mocked(deskFetch).mockImplementation(async url => String(url).startsWith('/api/graphs/plan') ? planAnswer() : validateAnswer())
+  vi.mocked(deskFetch).mockImplementation(async url => String(url)==='/api/draft-graphs'
+    ? json(200,{project:HOME,sha256:'draft-revision',content:{version:1,drafts:[],deleted:[]}})
+    : String(url).startsWith('/api/graphs/plan') ? planAnswer() : validateAnswer())
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
@@ -162,7 +164,9 @@ describe('a graph’s Plan view', () => {
   it('asks the plan only when the owner opens it, by id', async () => {
     open('/graphs/onboarding')
     await screen.findByRole('radio', {name:'Diagram'})
-    expect(asked()).toEqual([])
+    // Opening may read private provenance, but must not ask the runtime for a
+    // plan/check, dispatch a model, or write anything before the owner's action.
+    expect(vi.mocked(deskFetch).mock.calls.map(([url,init])=>({url:String(url),method:init?.method??'GET'}))).toEqual([{url:'/api/draft-graphs',method:'GET'}])
     fireEvent.click(await screen.findByRole('button', { name: 'View runtime plan' }))
     await within(await screen.findByRole('dialog',{name:'Runtime plan'})).findByRole('heading', { name: /screening/, level: 3 })
     expect(asked()).toContain('/api/graphs/plan?id=onboarding')
