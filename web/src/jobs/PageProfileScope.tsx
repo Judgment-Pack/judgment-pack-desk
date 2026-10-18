@@ -22,14 +22,18 @@ export function frozenPagePin(inputText:string,sourceName:string):ProfileBinding
 }
 
 /** The bound page profile's reviewed scope, shown where the profile is chosen
- * and before research is confirmed. Entries are shown exactly as registered. */
-export function PageProfileScope({profile}:{profile?:InputProfile}) {
- if(!profile)return <Notice tone="warning">{msg('The scope of this page profile cannot be shown: it is not among the installed profiles.')}</Notice>
- const scope=profile.endpointScope
+ * and before research is confirmed. Entries are shown exactly as registered.
+ * The label names whose scope this is where two can show at once. An empty
+ * scope, or a profile with neither a scope nor an endpoint, shows nothing it
+ * could be mistaken for: Runner refuses both at registration. */
+export function PageProfileScope({profile,label}:{profile?:InputProfile;label?:string}) {
+ const scope=profile?.endpointScope
+ if(!profile||(scope?!scope.length:!profile.endpoint))return <Notice tone="warning">{msg('The scope of this page profile cannot be shown: it is not among the installed profiles.')}</Notice>
  if(!scope)return <p className={styles.note}>{msg('No page scope. Runner accepts a page only at this exact endpoint: {{endpoint}}',{endpoint:profile.endpoint??''})}</p>
+ const title=label??msg('Page scope')
  return <div className={styles.pageScope}>
-  <span className={styles.note}>{msg('Page scope')}</span>
-  <ul aria-label={msg('Page scope')}>{scope.map(entry=><li key={entry}><code>{entry}</code></li>)}</ul>
+  <span className={styles.note}>{title}</span>
+  <ul aria-label={title}>{scope.map(entry=><li key={entry}><code>{entry}</code></li>)}</ul>
   {scope.includes(wildcard)&&<Notice tone="warning">{msg('This scope includes https://*: any HTTPS page may be read.')}</Notice>}
   <p className={styles.note}>{msg('Requests outside these prefixes are refused.')}</p>
  </div>

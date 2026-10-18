@@ -2754,6 +2754,7 @@
   "Page declares modified": "ページが示す更新日",
   "Page reads": "ページの読み取り",
   "Page scope": "ページの範囲",
+  "Page scope of this reviewed run": "確認済みのこの実行のページ範囲",
   "Page {{number}}": "{{number}}ページ",
   "Page {{page}} of {{pages}}": "{{page}} / {{pages}} ページ",
   "Pages and workspace knowledge": "ワークスペースのページとナレッジ",

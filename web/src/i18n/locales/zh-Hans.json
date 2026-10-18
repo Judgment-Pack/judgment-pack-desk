@@ -2754,6 +2754,7 @@
   "Page declares modified": "页面声明的修改日期",
   "Page reads": "页面读取",
   "Page scope": "页面范围",
+  "Page scope of this reviewed run": "此已审核运行的页面范围",
   "Page {{number}}": "第 {{number}} 页",
   "Page {{page}} of {{pages}}": "第 {{page}} 页，共 {{pages}} 页",
   "Pages and workspace knowledge": "工作区页面和知识",

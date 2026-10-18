@@ -75,7 +75,7 @@ export function PortableResearchControls({source,reference,currentContext,profil
    <p className={styles.note}>{run.plan.arguments.question}</p>
    <p className={styles.note}>{msg('Reviewed connection: {{connection}} · {{model}}',{connection:resolveAIConnection(effective,run.choice.connection).connection?.name??run.choice.connection,model:run.choice.model})}</p>
    {run.state==='review'&&<p className={styles.note}>{msg('Up to {{models}} model requests, {{searches}} searches and {{pages}} page reads.',{models:run.limits.modelCalls,searches:run.limits.searches,pages:run.limits.pages})}</p>}
-   {run.plan.arguments.capabilities?.includes('page')&&<PageProfileScope profile={pinnedProfile(profiles,frozenPagePin(run.inputText,source.name))}/>}
+   {run.plan.arguments.capabilities?.includes('page')&&<PageProfileScope label={msg('Page scope of this reviewed run')} profile={pinnedProfile(profiles,frozenPagePin(run.inputText,source.name))}/>}
    {run.activity.problem&&<Notice tone="warning">{run.activity.problem}</Notice>}
    {run.activity.steps.length>0&&<Disclosure title={msg('Work · {{count}} steps',{count:run.activity.steps.length})}><ol className={researchStyles.researchSteps} aria-label={msg('Research steps')}><ResearchTaskSteps steps={run.activity.steps} tasks={[]} live={!!live}/></ol></Disclosure>}
    <ResearchBudgetHistory requests={run.activity.budgetRequests?.filter(r=>r.state!=='pending')}/>

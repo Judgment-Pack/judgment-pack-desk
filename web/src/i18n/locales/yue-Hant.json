@@ -2754,6 +2754,7 @@
   "Page declares modified": "頁面聲明嘅修改日期",
   "Page reads": "頁面讀取",
   "Page scope": "頁面範圍",
+  "Page scope of this reviewed run": "呢次已審閱執行嘅頁面範圍",
   "Page {{number}}": "第 {{number}} 頁",
   "Page {{page}} of {{pages}}": "第 {{page}} 頁，共 {{pages}} 頁",
   "Pages and workspace knowledge": "工作區頁面同知識",

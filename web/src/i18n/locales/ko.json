@@ -2754,6 +2754,7 @@
   "Page declares modified": "페이지에 명시된 수정일",
   "Page reads": "페이지 읽기",
   "Page scope": "페이지 범위",
+  "Page scope of this reviewed run": "검토한 이 실행의 페이지 범위",
   "Page {{number}}": "{{number}}페이지",
   "Page {{page}} of {{pages}}": "{{page}} / {{pages}}페이지",
   "Pages and workspace knowledge": "워크스페이스의 페이지와 지식",

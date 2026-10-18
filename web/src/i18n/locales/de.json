@@ -2754,6 +2754,7 @@
   "Page declares modified": "Von der Seite angegebenes Änderungsdatum",
   "Page reads": "Seitenabrufe",
   "Page scope": "Geltungsbereich der Seiten",
+  "Page scope of this reviewed run": "Geltungsbereich der Seiten für diesen geprüften Lauf",
   "Page {{number}}": "Seite {{number}}",
   "Page {{page}} of {{pages}}": "Seite {{page}} von {{pages}}",
   "Pages and workspace knowledge": "Seiten und Wissen aus dem Arbeitsbereich",
