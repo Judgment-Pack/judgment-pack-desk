@@ -1,4 +1,4 @@
-import {useRef,useState} from 'react'
+import {useEffect,useRef,useState} from 'react'
 import {useQuery,useQueryClient,type UseQueryResult} from '@tanstack/react-query'
 import {msg,systemMessage,useLocale} from '../i18n'
 import {useConnectionsPane} from '../connections/ConnectionPaneContext'
@@ -19,7 +19,7 @@ import {usePolicyPendingJournal} from './pendingOperation'
 
 function sourceResultMatches(result:PolicyMutationReply,operation:PolicyWrite,id:string){const receipt=result.receipt as {operationId?:unknown;kind?:unknown;policyId?:unknown}|null;return result.policy.document.id===id&&!!receipt&&receipt.operationId===operation.body.operationId&&receipt.kind==='source-'+operation.body.action&&receipt.policyId===id&&!!result.sourceSync}
 const stateLabel=(state:string)=>state==='active'?msg('Automatic checks active'):state==='binding'?msg('Connecting source…'):state==='paused'?msg('Source checks paused'):state==='revoked'?msg('Source access revoked'):msg('Source authorization ended')
-export function PolicyConnectedSource({policy,query,editing,disabled}:{policy:PolicyReply;query:UseQueryResult<PolicySourceSync,Error>;editing:boolean;disabled:boolean}){
+export function PolicyConnectedSource({policy,query,editing,disabled,onPendingChange}:{policy:PolicyReply;query:UseQueryResult<PolicySourceSync,Error>;editing:boolean;disabled:boolean;onPendingChange?:(held:boolean)=>void}){
  const locale=useLocale(),cache=useQueryClient(),connections=useConnectionsPane(),active=useRef(false)
  const journal=usePolicyPendingJournal('source-sync',policy.document.id),pending=journal.pending
  const [chosen,setChosen]=useState<{resourceId:string;selectionContext:string;title:string}>(),[frequency,setFrequency]=useState('15'),[busy,setBusy]=useState(false),[error,setError]=useState<PolicyRequestError>(),[selected,setSelected]=useState<string>(),[review,setReview]=useState<{sourceRevision:string;policyRevision:string;observation:PolicySourceObservation;candidate:PolicyReply['document']['candidate'];workflowDigest:string}>(),[comment,setComment]=useState('')
@@ -27,6 +27,7 @@ export function PolicyConnectedSource({policy,query,editing,disabled}:{policy:Po
  const reviewStale=!!review&&(review.sourceRevision!==data?.revision||review.policyRevision!==policy.revision||review.candidate.digest!==policy.document.candidate.digest||review.workflowDigest!==policy.document.workflowDigest)
  const currentObservation=!!latest&&(latest.bindingId===state?.binding?.bindingId||state?.state==='revoked'||state?.state==='authorization-ended')
  const held=!!pending,locked=disabled||busy||held||!journal.ready||query.isError
+ useEffect(()=>{onPendingChange?.(busy||held);return()=>onPendingChange?.(false)},[busy,held,onPendingChange])
  useRegisteredChanges(held||!!comment,msg('Leaving will discard unsaved policy changes.'),{label:msg('Policy source'),busy,kind:'edit'})
  const refresh=async()=>{await cache.invalidateQueries({queryKey:[...POLICIES_KEY,id,'source-sync']});await cache.invalidateQueries({queryKey:POLICIES_KEY,exact:true})}
  async function act(action:string,extra:Record<string,unknown>={}){
