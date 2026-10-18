@@ -35,7 +35,7 @@ func TestReviewedInputJobUpgradeRecovery(t *testing.T) {
 				t.Helper()
 				raw, _ := json.Marshal(body)
 				r := httptest.NewRequest("POST", path, strings.NewReader(string(raw)))
-				r.Header.Set("Authorization", "Bearer "+testToken)
+				r.Header.Set("Authorization", "Bearer "+policyTestSession(t, s))
 				r.Header.Set("If-Match", revision)
 				w := httptest.NewRecorder()
 				s.ServeHTTP(w, r)

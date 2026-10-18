@@ -147,7 +147,7 @@ func TestEvaluationJournalHTTPUnreadableSubscriptionsRemainUnavailable(t *testin
 			}
 			request := func(path string) *httptest.ResponseRecorder {
 				req := httptest.NewRequest("GET", path, nil)
-				req.Header.Set("Authorization", "Bearer "+testToken)
+				req.Header.Set("Authorization", "Bearer "+policyTestSession(t, s))
 				w := httptest.NewRecorder()
 				s.ServeHTTP(w, req)
 				return w
@@ -212,7 +212,7 @@ func TestEvaluationJournalUncertainReviewKeepsStagingHidden(t *testing.T) {
 		t.Fatal("staged review replaced", err, calls)
 	}
 	req := httptest.NewRequest("GET", "/api/input-preparations/"+b.PreparationID+"/evaluations", nil)
-	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Authorization", "Bearer "+policyTestSession(t, s))
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 	if w.Code != 200 || strings.Contains(w.Body.String(), b.ID) {

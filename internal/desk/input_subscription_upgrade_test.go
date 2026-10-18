@@ -51,7 +51,7 @@ func (h *subscriptionUpgradeHarness) call(path string, body any, revision string
 	h.t.Helper()
 	raw, _ := json.Marshal(body)
 	r := httptest.NewRequest("POST", path, strings.NewReader(string(raw)))
-	r.Header.Set("Authorization", "Bearer "+testToken)
+	r.Header.Set("Authorization", "Bearer "+policyTestSession(h.t, h.s))
 	r.Header.Set("If-Match", revision)
 	w := httptest.NewRecorder()
 	h.s.ServeHTTP(w, r)

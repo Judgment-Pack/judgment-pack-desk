@@ -96,7 +96,7 @@ func testInputSubscriptionRealRunnerOutbox(t *testing.T, backend, phase string, 
 		raw, _ := json.Marshal(body)
 		for attempt := 0; ; attempt++ {
 			r := httptest.NewRequest("POST", path, strings.NewReader(string(raw)))
-			r.Header.Set("Authorization", "Bearer "+testToken)
+			r.Header.Set("Authorization", "Bearer "+policyTestSession(t, s))
 			r.Header.Set("If-Match", revision)
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, r)

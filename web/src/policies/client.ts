@@ -1,3 +1,4 @@
+import {validPolicyAuthoringSource,type PolicyAuthoringSource,type PolicySourceSelection} from './authoringSource'
 import {queryOptions} from '@tanstack/react-query'
 import {deskFetch} from '../files/client'
 import {NoSession} from '../mcp/session'
@@ -81,4 +82,11 @@ export async function downloadPolicyObservation(id:string,observation:PolicySour
  const response=await deskFetch('/api/policies/'+encodeURIComponent(id)+'/source-sync/observations/'+encodeURIComponent(observation.id)+'/original')
  if(!response.ok)throw new PolicyRequestError('unavailable')
  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=observation.name;link.click();URL.revokeObjectURL(url)
+}
+
+export async function readPolicyAuthoringSource(selection:PolicySourceSelection,signal?:AbortSignal):Promise<PolicyAuthoringSource>{
+ const query=new URLSearchParams(selection.publicationId?{publicationId:selection.publicationId}:{revisionId:selection.revisionId!})
+ const source=await request<unknown>('/'+encodeURIComponent(selection.policyId)+'/authoring-source?'+query,{signal})
+ if(!validPolicyAuthoringSource(source)||source.policyId!==selection.policyId||(selection.publicationId?source.publicationId!==selection.publicationId:source.revisionId!==selection.revisionId||source.publicationId!==undefined))throw new PolicyRequestError('invalid-policy')
+ return source
 }

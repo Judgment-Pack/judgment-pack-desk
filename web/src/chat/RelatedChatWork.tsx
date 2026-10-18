@@ -1,3 +1,4 @@
+import {PolicyInterpretationProposals} from '../policies/PolicyInterpretation'
 import {PolicyChatProposals} from '../policies/PolicyChatProposals'
 import {dialectQuery} from '../dialects/queries'
 import {PlanCard} from '../assistant/planning/PlanCard'
@@ -132,7 +133,7 @@ export function RelatedChatWork({ chatId, current, openGraphDraftId, disabled }:
       <ContextDetails context={ownPack}/>
     </RelatedWorkEntry>}
     {chat.policy&&<RelatedWorkEntry title={current?.kind==='policy'?current.title:msg('Policy')} icon={<IconPack/>} description={msg('Saved policy draft')} action={msg('Open policy')} href={'/policies/'+chat.policy.id+'?chat='+chatId} open={current?.kind==='policy'&&current.open}><ContextDetails context={current?.kind==='policy'?current:undefined}/></RelatedWorkEntry>}
-    <PolicyChatProposals chatId={chatId} disabled={disabled} history/>
+    <PolicyChatProposals chatId={chatId} disabled={disabled} history/><PolicyInterpretationProposals chatId={chatId} disabled={disabled} history/>
     <ChatTestProposals chatId={chatId} history/>
     {graphs.map(group => <GraphWork key={group.key} chatId={chatId} group={group} current={current} openGraphDraftId={openGraphDraftId}/>)}
     {!!historicalInputs.length && <Disclosure title={msg('Earlier proposals')}><div className={styles.history}>

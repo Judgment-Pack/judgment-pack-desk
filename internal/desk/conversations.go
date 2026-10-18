@@ -43,7 +43,8 @@ func validateConversations(data []byte) error {
 			return err
 		}
 	}
-	return nil
+	_, err := policyWorkspaceEntries(data, false)
+	return err
 }
 
 var draftPackFileName = regexp.MustCompile(`^draft-packs-[a-f0-9]{64}\.json$`)
@@ -84,7 +85,8 @@ func validateDraftPacks(data []byte) error {
 	if err := json.Unmarshal(data, &doc); err != nil || doc.Version != 1 || doc.Drafts == nil || len(doc.Drafts) > 256 || len(doc.Deleted) > 4096 {
 		return errors.New("draft packs must have version 1 and at most 256 drafts")
 	}
-	return nil
+	_, err := policyWorkspaceEntries(data, true)
+	return err
 }
 func (s *Server) readConversationFile(root *os.Root, name string) (conversationReply, error) {
 	return s.readWorkspaceRecord(root, name, false)
@@ -162,6 +164,10 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
 		return
 	}
+	private := r.URL.Path == "/api/briefs" || r.URL.Path == "/api/pack-tests"
+	if private && !s.guardPrivateWorkspace(w, r) {
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -197,8 +203,11 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	}
 	read := func() (conversationReply, error) {
 		reply, err := s.readWorkspaceRecord(root, recordName, drafts)
-		if err == nil && !briefs && !reviews && !tests && !drafts {
-			err = s.authorizePolicyConversations(r, reply.Content)
+		if err == nil && private {
+			err = s.authorizePrivateWorkspace(r)
+		}
+		if err == nil && !briefs && !reviews && !tests {
+			err = s.authorizePolicyWorkspace(r, reply.Content, drafts)
 		}
 		if err == nil && briefs && r.URL.Query().Get("subject") != "" {
 			reply.Snapshot, err = s.definitionBriefSnapshot(root, recordName, r.URL.Query().Get("subject"))
@@ -220,6 +229,11 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		validate = validateDraftPacks
 	}
 	fail := func(err error) {
+		var failure *policyFailure
+		if errors.As(err, &failure) {
+			policyHTTPFailure(w, err)
+			return
+		}
 		code := codeOf(err)
 		writeJSONCoded(w, statusForRefusal(err), code, "Workspace data could not be saved or read: "+err.Error())
 	}
@@ -269,8 +283,8 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
-	if !briefs && !reviews && !tests && !drafts {
-		if err = s.authorizePolicyConversations(r, data); err != nil {
+	if !briefs && !reviews && !tests {
+		if err = s.authorizePolicyWorkspace(r, data, drafts); err != nil {
 			fail(err)
 			return
 		}
@@ -288,6 +302,16 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	if err = matches(); err != nil {
 		fail(err)
 		return
+	}
+	if !briefs && !reviews && !tests {
+		previous, e := read()
+		if e == nil {
+			e = s.admitPolicyWorkspaceUpdate(r, previous.Content, data, drafts)
+		}
+		if e != nil {
+			fail(e)
+			return
+		}
 	}
 	if !briefs && !reviews && !tests && !drafts {
 		previous, e := read()

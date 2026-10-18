@@ -13,6 +13,58 @@ an older Gateway override must still show unsupported state when those controls
 are unavailable. These local, single-administrator slices do not
 claim team governance, portable Policy conformance or execution admission.
 
+## Pack interpretations from retained Policy sources (#464)
+
+The Policy editor and a selected history revision/publication offer **Design
+pack**. A Policy conversation can propose the same handoff. Both entry points
+resolve one exact saved source, show its identity and retained text for review,
+then open an ordinary pack-authoring chat with an **unsent** request. Opening the
+chat does not call a model, save a pack, approve the interpretation or adopt a
+governing Policy. The normal authoring conversation, Plan/Work controls, checks
+and Ask me/Auto write permissions continue to own those later actions.
+
+`GET /api/policies/{id}/authoring-source` requires exactly one `revisionId` or
+`publicationId` selector and a current signed-in session. The server resolves the
+immutable ledger entry and verifies its retained candidate bytes. A publication
+must match that exact revision, digest, content reference and artifact version;
+the latest candidate is never a fallback. The content digest and byte count
+describe the whole serialized candidate, not just its narrative. The browser
+rechecks access to the same selection before opening the chat. Dirty or conflicted
+Policy editors must be resolved first.
+
+Private `policySources` records retain the selected identity and narrative on the
+chat and independent pack draft. They survive chat reload, deletion and draft
+reopening, and remain on the finalized private draft. Managed context exposes
+them through the shared retained-document tools alongside existing conversation
+documents. These sources are reference data, not instructions or permission.
+They are shown separately from traced Gateway citations and are not automatically
+exported as narrative attachments or project `.research.json` source files.
+This is informational authoring provenance, not portable Policy conformance,
+clause coverage, governing adoption or execution eligibility.
+
+New or restored source associations must resolve to the existing Policy ledger
+and match its exact retained source. A chat-only backup therefore cannot restore
+these associations into an installation without that Policy history: restore
+refuses before replacing workspace data. Existing authorized history and exports
+remain available when the original source is temporarily unavailable. Existing
+associations cannot be removed or replaced on the same retained entry to bypass
+its access checks; deleting the entire entry remains supported.
+
+Briefs and test suites can retain private draft content after the originating
+chat or draft is deleted. Their entire private stores therefore require the
+existing signed-in session on reads, writes and containing backup/restore/move
+operations, including indirect HTTP paths that use those snapshots. This does
+not depend on a caller-supplied Policy tag or subject query. Existing browser
+clients already send that session; scripts using only the launch secret must
+use the existing session exchange. Ordinary briefs and suites do not require a
+Policy ledger. Previously admitted background work retains its own admission
+rules.
+
+Policy-chat handoff proposals are bounded retained metadata, not pack envelopes.
+Plan excludes the proposal tool. Accepting a proposal preserves its opened chat
+identity; opening it again does not overwrite that chat's composer. Deleting the
+opened chat requires a new handoff instead of silently creating a replacement.
+
 ## Library foundation
 
 [Desk #451](https://github.com/Judgment-Pack/judgment-pack-desk/issues/451)

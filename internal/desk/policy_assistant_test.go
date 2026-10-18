@@ -155,7 +155,11 @@ func TestPolicyAssistantManualRequiresExplicitReviewAndCurrentSession(t *testing
 				route = "grant"
 			}
 			w := policyCall(f.s, token, "POST", "/api/assistant-approvals/chat-one/"+route, body)
-			if w.Code != 409 {
+			want := 409
+			if kind == "launch token" {
+				want = 401
+			}
+			if w.Code != want {
 				t.Fatal(w.Code, w.Body.String())
 			}
 		})

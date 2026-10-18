@@ -98,8 +98,14 @@ func (s *Server) handleStorageBackup(w http.ResponseWriter, r *http.Request) {
 		}
 		defer store.root.Close()
 		return buildChatBackup(r.Context(), store, file, func(name string, data []byte) error {
+			if privateWorkspaceStorageFile(name) {
+				return s.authorizePrivateWorkspace(r)
+			}
 			if conversationFileName.MatchString(name) {
 				return s.authorizePolicyConversations(r, data)
+			}
+			if draftPackFileName.MatchString(name) {
+				return s.authorizePolicyWorkspace(r, data, true)
 			}
 			return nil
 		})
@@ -257,7 +263,7 @@ func readBackupFile(file *zip.File, limit int) ([]byte, error) {
 	return data, nil
 }
 
-func copyChatBackup(ctx context.Context, file *os.File, target *chatDataStore, copied *[]string) error {
+func copyChatBackup(ctx context.Context, file *os.File, target *chatDataStore, copied *[]string, admit ...func(string, []byte) error) error {
 	archive, manifest, err := validateChatBackup(file)
 	if err != nil {
 		return err
@@ -279,6 +285,11 @@ func copyChatBackup(ctx context.Context, file *os.File, target *chatDataStore, c
 		}
 		if err = validateStorageFile(entry.Name, data); err != nil {
 			return err
+		}
+		for _, authorize := range admit {
+			if err = authorize(entry.Name, data); err != nil {
+				return err
+			}
 		}
 		*copied = append(*copied, entry.Name)
 		if err = writePrivateData(target.root, entry.Name, data); err != nil {
@@ -344,7 +355,23 @@ func (s *Server) handleStorageRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.changeChatStorage(w, r, request, func(ctx context.Context, source, target *chatDataStore, copied *[]string) error {
-		return copyChatBackup(ctx, file, target, copied)
+		return copyChatBackup(ctx, file, target, copied, func(name string, data []byte) error {
+			if privateWorkspaceStorageFile(name) {
+				return s.authorizePrivateWorkspace(r)
+			}
+			drafts := draftPackFileName.MatchString(name)
+			if !drafts && !conversationFileName.MatchString(name) {
+				return nil
+			}
+			if err := s.authorizePolicyWorkspace(r, data, drafts); err != nil {
+				return err
+			}
+			empty := []byte(`{"version":1,"chats":[]}`)
+			if drafts {
+				empty = []byte(`{"version":1,"drafts":[]}`)
+			}
+			return s.admitPolicyWorkspaceUpdate(r, empty, data, drafts)
+		})
 	})
 }
 
