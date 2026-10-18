@@ -117,7 +117,7 @@ func (s *Server) endPolicySourceConnection(ctx context.Context) {
 	}
 	owner.desksMu.Unlock()
 	for _, server := range servers {
-		_ = (filePolicyRepository{open: server.openPolicies}).Update(ctx, func(ledger *policyLedger) (bool, error) {
+		_ = server.policyRepository().Update(ctx, func(ledger *policyLedger) (bool, error) {
 			changed := false
 			for _, source := range ledger.Sources {
 				if source.State != "revoked" && source.State != "authorization-ended" {

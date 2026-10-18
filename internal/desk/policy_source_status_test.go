@@ -66,7 +66,7 @@ func (f *policySourceFixture) ownStatus(t *testing.T, mode string) policyMutatio
 	return f.statusDo(t, q)
 }
 func statusService(f *policySourceFixture) policyService {
-	return policyService{repository: filePolicyRepository{open: f.s.openPolicies}, artifacts: f.s.artifactRepository(), authorize: func() bool { return true }, validateVersion: func(context.Context, string, string) error { return nil }}
+	return policyService{repository: filePolicyRepository{open: f.s.openPolicies}, history: f.s.policyHistoryReader(), artifacts: f.s.artifactRepository(), authorize: func() bool { return true }, validateVersion: func(context.Context, string, string) error { return nil }}
 }
 
 func TestPolicySourceStatusDraftRequiresExplicitImportPreservesWorkingDraft(t *testing.T) {

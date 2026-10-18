@@ -19,7 +19,7 @@ func policyActorOf(held session) policyActor {
 
 func (s *Server) localPolicyService(r *http.Request, actor policyActor) policyService {
 	return policyService{
-		repository: filePolicyRepository{open: s.openPolicies}, artifacts: s.artifactRepository(),
+		repository: s.policyRepository(), history: s.policyHistoryReader(), artifacts: s.artifactRepository(),
 		coveragePack: s.resolveCoveragePack, checkCoverage: s.checkPolicyCoverage, checkAdoption: s.checkPolicyAdoption,
 		authorize: func() bool {
 			held, ok := s.sessionOf(r)

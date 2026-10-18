@@ -43,6 +43,10 @@ var devOrigins = []string{
 
 // Config is the chassis' whole configuration.
 type Config struct {
+	// Trusted mapping of each pinned workspace, resolved once before workers.
+	// Nil resolver retains legacy mode; a configured nil result must classify a
+	// known never-enrolled workspace. Requests cannot choose this mapping.
+	policyAuthorityForProject func(*ProjectRoot) (*policyAuthorityAnchor, error)
 	// HomeMoveShutdown drains the local server before its confirmed migration.
 	HomeMoveShutdown func()
 	// Managed desks share installation credentials and authentication, never data roots.
@@ -138,6 +142,7 @@ type Config struct {
 
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
+	policyAuthorityAnchor *policyAuthorityAnchor // immutable workspace binding from New
 	// Bound once before serving; nil selects the existing workspace file store.
 	inputPreparations  inputPreparationRepository
 	retainedArtifacts  retainedArtifactRepository
@@ -338,6 +343,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Port <= 0 {
 		return nil, errors.New("desk: Port is required: the launch handoff's cookie name carries it")
 	}
+
 	if cfg.JpackBin == "" {
 		cfg.JpackBin = "jpack"
 	}
@@ -352,6 +358,15 @@ func New(cfg Config) (*Server, error) {
 		var err error
 		if pinned, err = OpenProjectRoot(cfg.ProjectDir); err != nil {
 			return nil, fmt.Errorf("desk: project directory: %w", err)
+		}
+	}
+
+	var policyAnchor *policyAuthorityAnchor
+	if cfg.policyAuthorityForProject != nil {
+		var err error
+		policyAnchor, err = cfg.policyAuthorityForProject(pinned)
+		if err != nil {
+			return nil, policyRefusal(503, "authority-unavailable", "The trusted Policy authority binding is unavailable for this workspace.")
 		}
 	}
 
@@ -391,22 +406,23 @@ func New(cfg Config) (*Server, error) {
 		writes = cfg.parent.writes
 	}
 	s := &Server{
-		writes:        writes,
-		builds:        componentBuilds(cfg.JpackBin, cfg.RunnerBin),
-		cfg:           cfg,
-		mux:           http.NewServeMux(),
-		log:           cfg.Logger,
-		conns:         make(map[*conn]struct{}),
-		root:          pinned.own.root,
-		project:       pinned,
-		projectDir:    pinned.dir,
-		configDir:     configPath,
-		home:          home,
-		relaySlots:    make(chan struct{}, maxRelayInFlight),
-		researchSlots: make(chan struct{}, maxResearchInFlight),
-		sessions:      sessions,
-		launches:      launches,
-		launchCookie:  launchCookieName(cfg.Port),
+		policyAuthorityAnchor: policyAnchor,
+		writes:                writes,
+		builds:                componentBuilds(cfg.JpackBin, cfg.RunnerBin),
+		cfg:                   cfg,
+		mux:                   http.NewServeMux(),
+		log:                   cfg.Logger,
+		conns:                 make(map[*conn]struct{}),
+		root:                  pinned.own.root,
+		project:               pinned,
+		projectDir:            pinned.dir,
+		configDir:             configPath,
+		home:                  home,
+		relaySlots:            make(chan struct{}, maxRelayInFlight),
+		researchSlots:         make(chan struct{}, maxResearchInFlight),
+		sessions:              sessions,
+		launches:              launches,
+		launchCookie:          launchCookieName(cfg.Port),
 	}
 	adopted = true
 	// **One owner from here on.** The wrapper the caller still holds stops
