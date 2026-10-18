@@ -61,6 +61,8 @@ it('compares the prior retained candidate rather than a repeated review of the s
  const newer=structuredClone(document);newer.candidate.revisionId='revision-three';newer.revisions.push({...old,id:'revision-three',sequence:7})
  view.rerender(<QueryClientProvider client={client}><PolicyHistory document={newer}/></QueryClientProvider>)
  expect(screen.getByText(/keeps the exact selected pair/)).toBeTruthy()
+ view.rerender(<QueryClientProvider client={client}><PolicyHistory document={document} newerPolicyState/></QueryClientProvider>)
+ expect(screen.getByText(/keeps the exact selected pair/)).toBeTruthy()
  await waitFor(()=>expect(resolvePolicyComparison).toHaveBeenCalledTimes(1))
 })
 
