@@ -189,3 +189,15 @@ it('offers a revised private copy after a proven precommit refusal without repla
  const final=state.setData.mock.lastCall![1].content.drafts
  expect(final).toHaveLength(2);expect(final.some((d:any)=>d.writePending)).toBe(true);expect(final.some((d:any)=>!d.writePending&&!d.saved)).toBe(true)
 })
+
+it('persists the recreated helper and its exact Policy source before dispatch and final navigation',async()=>{
+ let release!:()=>void;const acknowledged=new Promise<void>(resolve=>{release=resolve})
+ write.mockImplementation(async document=>{await acknowledged;return {project:'project',sha256:'acknowledged',content:document}})
+ render(<MemoryRouter><GraphEditor initial={initial} packs={['a']} policySources={[source as import('../policies/authoringSource').PolicyAuthoringSource]}/></MemoryRouter>)
+ fireEvent.click(screen.getByRole('button',{name:'Review & save'}));fireEvent.click(await screen.findByRole('button',{name:'Confirm graph write'}))
+ await waitFor(()=>expect(write).toHaveBeenCalled())
+ expect(write.mock.calls[0]![0].chats[0].policySources).toEqual([source])
+ expect(vi.mocked(deskFetch).mock.calls.some(([url])=>String(url).endsWith('/graphs/write'))).toBe(false)
+ release();await waitFor(()=>expect(state.navigate).toHaveBeenCalled())
+ expect(write.mock.lastCall![0].chats[0]).toMatchObject({graph:{id:'flow',workspace:'flow'},policySources:[source]})
+})

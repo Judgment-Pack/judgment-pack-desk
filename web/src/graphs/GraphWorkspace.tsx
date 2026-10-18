@@ -182,14 +182,17 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
     const finalized={...candidate,saved:true};delete finalized.writePending
     const completed=await retainGraphDraft(finalized,retainedRevision.current,signal)
     retainedRevision.current=completed.content.drafts.find(d=>graphDraftKey(d)===graphDraftKey(finalized));queries.setQueryData(GRAPH_DRAFTS_KEY,completed)
-    setPending(false);setIntentUnconfirmed(false);setSaved(true)
     if(draftChatId&&draft&&store){const owner=[...store.getSnapshot().chats,...store.getSnapshot().drafts].find(c=>c.id===draftChatId);if(owner)store.update(draftChatId,{graphDrafts:owner.graphDrafts?.map(d=>d.draftId===draft.draftId?{...d,...proposal,saved:true}:d)})}
     for(const chat of [...(store?.getSnapshot().chats??[]),...(store?.getSnapshot().drafts??[])])if(chat.graph?.workspace===(initial.baseSha256?initial.id:graphDraftKey(candidate))||chat.graph?.workspace===retainedIdentity.current.draftId)store?.update(chat.id,{graph:{id:candidate.id,path:candidate.path,workspace:candidate.id}})
+    if(store){if(reconcile&&store.getSnapshot().error)store.retrySave();await store.checkpoint(signal)}
+    setPending(false);setIntentUnconfirmed(false);setSaved(true)
     clearGuard();navigate(`/graphs/${encodeURIComponent(candidate.id)}${assistantChat?'?chat='+encodeURIComponent(assistantChat):''}`)
   }
   const confirmWrite=async(signal:AbortSignal)=>{
     if(!offer||pending||intentUnconfirmed)return
-    const accepted=offer,kept=await retain(signal),registration=(JSON.parse(accepted.configContent) as Config).graphs?.[accepted.id]
+    const accepted=offer,kept=await retain(signal)
+    await store!.checkpoint(signal);setBaseline(JSON.stringify(proposal))
+    const registration=(JSON.parse(accepted.configContent) as Config).graphs?.[accepted.id]
     if(registration?.path!==accepted.path)throw Error(msg('The reviewed graph registration changed. Review the graph again before saving.'))
     const candidate={...kept.retained,description:registration.description,writePending:true}
     if(!validGraphDraft(candidate))throw Error(msg('Check the graph id, path and draft size before keeping this draft.'))
