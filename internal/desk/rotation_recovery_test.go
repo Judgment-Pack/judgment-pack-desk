@@ -377,10 +377,7 @@ func TestARecoveryWaitsOnceForTheSigningLock(t *testing.T) {
 			release := holdSigningLock(t, r.signing)
 			if released {
 				shortLockWait(t, 10*time.Second)
-				go func() {
-					time.Sleep(300 * time.Millisecond)
-					release()
-				}()
+				releaseAfter(t, release, 300*time.Millisecond)
 			} else {
 				shortLockWait(t, 300*time.Millisecond)
 			}
@@ -529,13 +526,13 @@ func TestARotationBegunBeforeAnySignatureNamesItsTrail(t *testing.T) {
 		r := begin(t)
 		token := r.token(t)
 		signedMeanwhile(t, r, "rotation: line written")
-		request, _ := http.NewRequest("POST", r.ts.URL+"/api/audit/key/rotate", strings.NewReader(`{"token":"`+token+`"}`))
-		request.Header.Set("Authorization", "Bearer "+testToken)
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("X-Jpack-Desk", r.id)
-		if response, err := http.DefaultClient.Do(request); err == nil {
-			response.Body.Close()
-		}
+		sendAbandoned(t, r.s, func(url string) *http.Request {
+			request, _ := http.NewRequest("POST", url+"/api/audit/key/rotate", strings.NewReader(`{"token":"`+token+`"}`))
+			request.Header.Set("Authorization", "Bearer "+testToken)
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("X-Jpack-Desk", r.id)
+			return request
+		})
 		testHookKeyBetween = nil
 		left := r.describe(t)
 		r.moveTrailAside(t, 0, "")

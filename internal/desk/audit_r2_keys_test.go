@@ -557,7 +557,7 @@ func stoppedCreation(t *testing.T, calls string, s *Server, ts *httptest.Server,
 		}
 	}
 	t.Cleanup(func() { testHookKeyBetween = nil })
-	postAbandoned(t, s, ts.URL)
+	postAbandoned(t, s)
 	testHookKeyBetween = nil
 	ts.Close()
 	if names := namesIn(t, signingFolderOf(s)); !slices.Equal(names, []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}) {

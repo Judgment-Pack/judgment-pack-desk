@@ -47,7 +47,8 @@ func TestDeskHomeConfirmWithNamedDesksAndRealRunner(t *testing.T) {
 func TestDeskHomeExpiredConfirmationDoesNotQueue(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: homeRuntime(t), HomeMoveShutdown: func() {}}
-	s, _ := startDesk(t, cfg)
+	s, ts := startDesk(t, cfg)
+	t.Cleanup(func() { ts.Close(); s.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := s.queueHomeMove(ctx, projectMoveRequest{Destination: filepath.Join(t.TempDir(), "jpack-desk")}); err == nil {
@@ -81,6 +82,7 @@ func TestDeskHomePreviewReportsActiveTriggerAndConfirmationRechecks(t *testing.T
 	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: homeRuntime(t), HomeMoveShutdown: func() {}}
 	privateFixture(t, filepath.Join(cfg.ProjectDir, projectConfigName), `{"deskConfigVersion":1}`)
 	s, ts := startDesk(t, cfg)
+	t.Cleanup(func() { ts.Close(); s.Close() })
 	selected := createTestDesk(t, ts, "Research")
 	named := createTestDesk(t, ts, "Sales demo")
 	const jobID = "job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
