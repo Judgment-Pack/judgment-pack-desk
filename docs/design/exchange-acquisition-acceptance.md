@@ -81,6 +81,7 @@ retain their own generic fixtures and acquisition counts:
 | Changed model binding before dispatch | `TestPortableResearchStaleConnectionBindingRefusedBeforeAcquisition` in [portable_research_acceptance_test.go](../../internal/desk/portable_research_acceptance_test.go) |
 | Stale installed page adapter identity | `TestPortablePageBindingActualCompanionRejectsStaleAdapterBeforeAcquisition` in [portable_page_binding_test.go](../../internal/desk/portable_page_binding_test.go) |
 | A page refused at its receipt check is not requested again | `TestPortableScopedPageRefusedAtItsReceiptIsNotRequestedAgain` in [portable_page_binding_test.go](../../internal/desk/portable_page_binding_test.go) |
+| A refused page across a restart and a resume | `TestPortableScopedPageRefusalSurvivesRestartAndResume` in [portable_page_binding_test.go](../../internal/desk/portable_page_binding_test.go) |
 | Plan before web dispatch | `TestPortableResearchSwitchToPlanBeforeWebDispatch` in [portable_research_test.go](../../internal/desk/portable_research_test.go) |
 | Explicit model/page allowance pause and reviewed resume | `TestPortableResearchExplicitBudgetPauseAndResume` in [portable_research_test.go](../../internal/desk/portable_research_test.go) |
 | Interrupted/stopped provider call, retained completion and uncertain request recovery | `TestPortableResearchInterruptedCallKeepsCompletedAndNeverReplays` in [portable_research_acceptance_test.go](../../internal/desk/portable_research_acceptance_test.go) |

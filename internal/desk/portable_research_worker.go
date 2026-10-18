@@ -360,8 +360,9 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 						reused = true
 						break
 					}
-					// A page refused at its receipt check is not acquired again;
-					// the request is refused as before acquisition.
+					// A request with the same arguments as a page refused at its
+					// receipt check is not acquired again; it is refused as before
+					// acquisition. Another spelling is another request.
 					if previous.Kind == action.Kind && previous.Digest == key && previous.State == "refused" {
 						refused = true
 						break

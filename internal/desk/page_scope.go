@@ -208,8 +208,9 @@ func scopedPageProfile(profile portableProfileDetails) bool {
 // validation finding the model reads.
 var errScopedPageReceipt = errors.New("acquisition-invalid: The page's final address after redirects is outside the reviewed page profile. Its receipt was kept for audit; the page was left out of the research and of the answer.")
 
-// errScopedPageRefusedAgain answers a request for a page whose earlier
-// acquisition this run refused at its receipt check: it is not acquired again.
+// errScopedPageRefusedAgain answers a request with the same arguments as one
+// whose acquisition this run refused at its receipt check: it is not acquired
+// again.
 var errScopedPageRefusedAgain = errors.New("acquisition-invalid: This page was already acquired and its final address after redirects is outside the reviewed page profile. It was not requested again.")
 
 // admitPortablePageReceipt checks a retained scoped page acquisition before it

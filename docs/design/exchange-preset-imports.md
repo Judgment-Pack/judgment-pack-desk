@@ -144,11 +144,24 @@ problem code `acquisition-invalid`: its retained response and receipt are kept f
 audit and count against the page allowance, but it is no retained source, so the
 page is left out of every later model request and of the retained answer. The
 model receives the refusal as a validation finding, exactly as for a page refused
-before acquisition, within the same correction bound; a request for the same page
-again is refused without another acquisition. This check reads the receipt as the
+before acquisition, within the same correction bound; a request with the same
+arguments again is refused without another acquisition. Another spelling of the
+same page (an added query, host case, `:443`) is a different request: it is
+acquired and refused again, within the page allowance. A refused attempt stays
+`refused` across a restart and a resume. This check reads the receipt as the
 Gateway wrote it and verifies no signature. Runner's check 3 remains the verifier:
 it holds every retained receipt's final endpoint to the profile's scope when the
 answer is prepared.
+
+Refusal has a storage cost. Each refused result is kept in the run's journal, up
+to the per-result bound, outside the check that reserves room for the answer, which
+counts retained sources only. A source that redirects every request out of scope
+and serves large pages can therefore fill the journal record within the page
+allowance; the next journal write then fails and the run ends `interrupted`. A
+bound on refused bytes checked before the next page request is #475. Profiles with
+an exact `endpoint` instead of a scope are not receipt-checked yet (#474): their
+pages reach the model, and only Runner's check 3 refuses a final endpoint that
+differs.
 
 Scope-absent legacy profiles retain their existing request handling, including
 queries and redirects. Runner continues to verify the receipt's exact final

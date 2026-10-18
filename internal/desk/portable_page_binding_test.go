@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -337,21 +339,12 @@ func TestPortableScopedPageRefusedAtItsReceiptIsNotRequestedAgain(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifier, err := s.researchVerifier()
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity, err := researchCanon(t.Context(), verifier, pageBindingJSON(t, map[string]string{"url": requested}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	key := digestOf(append([]byte("page\n"), identity...))
-	kept := pageBindingJSON(t, map[string]any{"profile": map[string]string{"id": details.ID, "digest": registered.Entry.Digest}, "request": map[string]string{"url": requested}, "result": map[string]any{}, "receipt": map[string]any{"acquisition": map[string]any{"endpoint": "https://elsewhere.example/landing"}, "signature": "kept"}, "salts": map[string]any{}})
+	refused := refusedPageAttempt(t, s, details, registered.Entry.Digest, requested, map[string]any{})
+	kept := refused.Result
 	store := portableResearchStoreFixture(t, run, false)
-	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err = store.change(func(r *inputResearchRun) error {
 		r.State = "running"
-		r.Attempts = append(r.Attempts, inputResearchAttempt{ID: "attempt_" + key, Kind: "page", Digest: key, State: "refused", Number: 1, StartedAt: now, FinishedAt: now, URL: requested, Result: kept, Problem: errScopedPageReceipt.Error(), ProblemCode: "acquisition-invalid"})
+		r.Attempts = append(r.Attempts, refused)
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -368,6 +361,136 @@ func TestPortableScopedPageRefusedAtItsReceiptIsNotRequestedAgain(t *testing.T) 
 	}
 	if researchBudgetUsage(held).Pages != 1 || !bytes.Equal(held.Attempts[0].Result, kept) || held.Attempts[0].State != "refused" {
 		t.Fatal("the refused page spent more allowance or lost its kept receipt")
+	}
+}
+
+// refusedPageAttempt is the attempt a portable run journals for a scoped page
+// whose receipt check refused it: keyed by the request's canonical arguments,
+// as the worker keys it, with its retained response (result, and a receipt
+// whose final endpoint left the scope) kept for audit.
+func refusedPageAttempt(t *testing.T, s *Server, profile portableProfileDetails, digest, requested string, result any) inputResearchAttempt {
+	t.Helper()
+	verifier, err := s.researchVerifier()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := researchCanon(t.Context(), verifier, pageBindingJSON(t, map[string]string{"url": requested}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := digestOf(append([]byte("page\n"), identity...))
+	kept := pageBindingJSON(t, map[string]any{"profile": map[string]string{"id": profile.ID, "digest": digest}, "request": map[string]string{"url": requested}, "result": result, "receipt": map[string]any{"acquisition": map[string]any{"endpoint": "https://elsewhere.example/landing"}, "signature": "kept"}, "salts": map[string]any{}})
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	return inputResearchAttempt{ID: "attempt_" + key, Kind: "page", Digest: key, State: "refused", Number: 1, StartedAt: now, FinishedAt: now, URL: requested, Result: kept, Problem: errScopedPageReceipt.Error(), ProblemCode: "acquisition-invalid"}
+}
+
+// changeStoredResearchRun changes a run in the Desk's own research store, the
+// one its scan reads.
+func changeStoredResearchRun(t *testing.T, s *Server, id string, change func(*inputResearchRun) error) error {
+	t.Helper()
+	root, err := s.inputResearchRoot(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	record, err := openInputResearch(root, id, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer record.Close()
+	_, err = s.researchJournal(record, id).Update(t.Context(), change)
+	return err
+}
+
+// A run holding a page refused at its receipt check survives a restart and a
+// resume through the Desk's own scan. The scan's recovery interrupts the run
+// and leaves the attempt refused with its kept bytes. The resumed worker
+// refuses a request with the same arguments without another acquisition, and
+// completes from the model's own answer. Neither model request nor the answer
+// carries the kept page or the host its redirect reached.
+func TestPortableScopedPageRefusalSurvivesRestartAndResume(t *testing.T) {
+	const requested = "https://docs.example/guides/moved"
+	const marker = "kept-refused-page-marker"
+	var calls atomic.Int32
+	var mu sync.Mutex
+	var bodies [][]byte
+	s, ts, basis := pageBindingFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		mu.Lock()
+		bodies = append(bodies, body)
+		mu.Unlock()
+		if calls.Add(1) == 1 {
+			portableTestReply(w, string(pageBindingJSON(t, map[string]any{"kind": "page", "arguments": map[string]string{"url": requested}})))
+			return
+		}
+		portableTestReply(w, string(pageBindingJSON(t, map[string]any{"kind": "answer", "fields": map[string]any{"eligible": map[string]any{"status": "found", "value": false, "cites": []int{1}}}})))
+	})
+	scope := EndpointScope{"https://docs.example/guides"}
+	code, preview, raw := pageProfileRequest(t, ts, scope, "", "")
+	if code != 200 {
+		t.Fatalf("preview %d %s", code, raw)
+	}
+	code, registered, raw := pageProfileRequest(t, ts, scope, preview.Revision, "")
+	if code != 200 {
+		t.Fatalf("register %d %s", code, raw)
+	}
+	var details portableProfileDetails
+	json.Unmarshal(registered.Entry.Profile, &details)
+	var input map[string]any
+	json.Unmarshal(basis.Portable.Frozen.Input, &input)
+	source := input["source"].(map[string]any)["mapping"].(map[string]any)["sources"].([]any)[0].(map[string]any)
+	source["capabilities"] = []string{"answer", "page"}
+	source["webProfiles"] = map[string]any{"page": map[string]string{"profile": details.ID, "profileDigest": registered.Entry.Digest}}
+	code, raw = aiTestRequest(t, ts, "POST", "/api/portable-research", map[string]any{"input": input, "choice": basis.Portable.Frozen.Choice, "limits": inputResearchLimits{Records: 1, ModelCalls: 4, Pages: 3}}, nil)
+	var review struct{ ID string }
+	if code != 201 || json.Unmarshal(raw, &review) != nil {
+		t.Fatalf("review %d %s", code, raw)
+	}
+	refused := refusedPageAttempt(t, s, details, registered.Entry.Digest, requested, map[string]any{"text": marker + " page body", "title": marker})
+	// The process stopped while this run was running, after its page was refused.
+	if err := changeStoredResearchRun(t, s, review.ID, func(r *inputResearchRun) error {
+		r.State = "running"
+		r.Attempts = append(r.Attempts, refused)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.scanInputResearch(t.Context())
+	held := exchangeAcceptanceResearchRun(t, s, review.ID)
+	if held.State != "interrupted" || len(held.Attempts) != 1 || held.Attempts[0].State != "refused" || !bytes.Equal(held.Attempts[0].Result, refused.Result) || calls.Load() != 0 {
+		t.Fatalf("the scan's recovery did not keep the refused attempt: state=%s attempts=%d models=%d", held.State, len(held.Attempts), calls.Load())
+	}
+	// A reviewed resume of the same run.
+	if err := changeStoredResearchRun(t, s, review.ID, func(r *inputResearchRun) error {
+		r.State, r.Problem = "queued", ""
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.scanInputResearch(t.Context())
+	held = exchangeAcceptanceResearchRun(t, s, review.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 2 || calls.Load() != 2 {
+		t.Fatalf("expected two model requests, got %d", calls.Load())
+	}
+	for i, body := range bodies {
+		if bytes.Contains(body, []byte(marker)) || bytes.Contains(body, []byte("elsewhere.example")) {
+			t.Fatalf("model request %d carries the refused page", i+1)
+		}
+	}
+	if !bytes.Contains(bodies[1], []byte("It was not requested again.")) {
+		t.Fatal("the second model request lacks the refusal of the repeated request")
+	}
+	if bytes.Contains(held.Portable.Response, []byte(marker)) || bytes.Contains(held.Portable.Response, []byte("elsewhere.example")) {
+		t.Fatal("the answer carries the refused page")
+	}
+	if held.State != "completed" || researchBudgetUsage(held).Pages != 1 || len(held.Attempts) != 3 || held.Attempts[0].State != "refused" || !bytes.Equal(held.Attempts[0].Result, refused.Result) || held.Attempts[1].ActionProblem != errScopedPageRefusedAgain.Error() {
+		t.Fatalf("resume: state=%s problem=%s attempts=%d pages=%d", held.State, held.Problem, len(held.Attempts), researchBudgetUsage(held).Pages)
+	}
+	s.scanInputResearch(t.Context())
+	if calls.Load() != 2 {
+		t.Fatal("a completed scan replayed a request")
 	}
 }
 
