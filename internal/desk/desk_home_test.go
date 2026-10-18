@@ -73,6 +73,7 @@ func TestDeskHomeRetainsHistoryAndRunnerIdentityAfterMove(t *testing.T) {
 	cfg.ProjectDir = filepath.Join(newHome, "unveil")
 	cfg.DeskConfigDir = filepath.Join(newHome, deskHomePlatform)
 	again, ats := startDesk(t, cfg)
+	t.Cleanup(func() { ats.Close(); again.Close() })
 	if again.installationOwner() != registry.Owner || again.conversationIdentity() != registry.Desks[0].HistoryIdentity {
 		t.Fatal("move changed retained identity")
 	}
@@ -101,7 +102,8 @@ func TestDeskHomeCreatesFriendlyIsolatedFolders(t *testing.T) {
 	}
 	ts.Close()
 	s.Close()
-	again, _ := startDesk(t, cfg)
+	again, ats := startDesk(t, cfg)
+	t.Cleanup(func() { ats.Close(); again.Close() })
 	if len(again.desks) != 2 {
 		t.Fatal("registry did not resume", len(again.desks))
 	}
@@ -151,7 +153,8 @@ func TestDeskHomeOpeningNamedDeskKeepsOriginalProjectAvailable(t *testing.T) {
 	ts.Close()
 	s.Close()
 	cfg.ProjectDir = named.Folder
-	again, _ := startDesk(t, cfg)
+	again, ats := startDesk(t, cfg)
+	t.Cleanup(func() { ats.Close(); again.Close() })
 	original := again.desks[registry.Desks[0].ID]
 	if original == nil {
 		t.Fatal("original project disappeared when a named Desk became startup")

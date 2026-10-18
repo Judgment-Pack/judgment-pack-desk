@@ -78,6 +78,7 @@ func TestDeskHomeMigrationPreservesHistoryCredentialsAndNamedDesk(t *testing.T) 
 		t.Fatal("saved startup cannot open", chosen, err)
 	}
 	again, ats := startDesk(t, cfg)
+	t.Cleanup(func() { ats.Close(); again.Close() })
 	if code, reply := chatRequest(t, ats, "GET", "", "", true, ""); code != 200 || string(reply.Content) != storageChat {
 		t.Fatal("history lost", code, reply)
 	}
@@ -271,7 +272,8 @@ func TestDeskHomeWholeMoveKeepsNewDesksAndRecoversAfterPointer(t *testing.T) {
 	}
 	cfg.ProjectDir = filepath.Join(destination, "unveil")
 	cfg.DeskConfigDir = filepath.Join(destination, deskHomePlatform)
-	again, _ := startDesk(t, cfg)
+	again, ats := startDesk(t, cfg)
+	t.Cleanup(func() { ats.Close(); again.Close() })
 	if again.desks[named.ID] == nil {
 		t.Fatal("new Desk lost after move")
 	}

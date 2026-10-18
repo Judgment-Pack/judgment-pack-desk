@@ -101,12 +101,12 @@ func (u *signingUpgrade) confirm(t *testing.T, token string, sign bool) (int, []
 func (u *signingUpgrade) abandon(t *testing.T, path string, body map[string]any) {
 	t.Helper()
 	data, _ := json.Marshal(body)
-	request, _ := http.NewRequest("POST", u.ts.URL+path, bytes.NewReader(data))
-	request.Header.Set("Authorization", "Bearer "+testToken)
-	request.Header.Set("Content-Type", "application/json")
-	if response, err := u.ts.Client().Do(request); err == nil {
-		response.Body.Close()
-	}
+	sendAbandoned(t, u.s, func(url string) *http.Request {
+		request, _ := http.NewRequest("POST", url+path, bytes.NewReader(data))
+		request.Header.Set("Authorization", "Bearer "+testToken)
+		request.Header.Set("Content-Type", "application/json")
+		return request
+	})
 }
 
 // signed is upgradeAfter at "6", with the audit member naming the seed.
@@ -1340,12 +1340,12 @@ func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 	}
 	t.Cleanup(func() { testHookKeyBetween = nil })
 	body, _ := json.Marshal(map[string]any{"token": offer.Token, "requireComparableFacts": true, "signingKey": true})
-	request, _ := http.NewRequest("POST", ts.URL+"/api/upgrade", bytes.NewReader(body))
-	request.Header.Set("Authorization", "Bearer "+testToken)
-	request.Header.Set("Content-Type", "application/json")
-	if response, err := ts.Client().Do(request); err == nil {
-		response.Body.Close()
-	}
+	sendAbandoned(t, s, func(url string) *http.Request {
+		request, _ := http.NewRequest("POST", url+"/api/upgrade", bytes.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+testToken)
+		request.Header.Set("Content-Type", "application/json")
+		return request
+	})
 	testHookKeyBetween = nil
 	signing := filepath.Join(config, "secrets", "signing")
 	if names := namesIn(t, signing); !slices.Equal(names, []string{want + ".creating", want + ".keys.jsonl", want + ".seed"}) {

@@ -865,7 +865,8 @@ func TestTheDecisionRecordIsUnavailableWhereTheReviewIs(t *testing.T) {
 	t.Setenv("JPACK_CONFIG", "")
 	gone := t.TempDir()
 	missing := filepath.Join(gone, "jpack")
-	_, ts3 := startDesk(t, Config{ProjectDir: project, JpackBin: missing, Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	s3, ts3 := startDesk(t, Config{ProjectDir: project, JpackBin: missing, Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	t.Cleanup(func() { ts3.Close(); s3.Close() })
 	status, data = reviewCall(t, ts3, "GET", "/api/audit/verify", "", nil, bearer)
 	if status != http.StatusInternalServerError || !strings.HasPrefix(refusalOf(data), "The decision record could not be checked: ") || bytes.Contains(data, []byte(gone)) || bytes.Contains(data, []byte(project)) {
 		t.Errorf("with its runtime gone the panel answered %d %s", status, data)

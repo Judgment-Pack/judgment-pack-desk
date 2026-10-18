@@ -63,10 +63,7 @@ func TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses(t *testing.T) {
 			}
 
 			shortProjectWait(t, 10*time.Second)
-			go func() {
-				time.Sleep(200 * time.Millisecond)
-				release()
-			}()
+			releaseAfter(t, release, 200*time.Millisecond)
 			started = time.Now()
 			status, data = u.confirm(t, answer.Token, sign)
 			if waited := time.Since(started); waited < 200*time.Millisecond {
