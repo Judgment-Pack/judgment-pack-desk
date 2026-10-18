@@ -3163,7 +3163,7 @@
   "Record signature": "Record signature",
   "Record unavailable": "Record unavailable",
   "Record verification": "Record verification",
-  "Record withdrawal of this exact published release. This slice does not block dependent jobs or external actions. Withdrawal cannot be undone here.": "Record withdrawal of this exact published release. This slice does not block dependent jobs or external actions. Withdrawal cannot be undone here.",
+  "Record withdrawal of this exact published release. This records the release’s status; it does not block dependent jobs or external actions. Withdrawal cannot be undone here.": "Record withdrawal of this exact published release. This records the release’s status; it does not block dependent jobs or external actions. Withdrawal cannot be undone here.",
   "Recorded": "Recorded",
   "Recorded condition: <0/>": "Recorded condition: <0/>",
   "Recorded condition: {{observed}}": "Recorded condition: {{observed}}",
