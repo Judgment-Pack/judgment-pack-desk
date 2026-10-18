@@ -172,6 +172,13 @@ external publication/withdrawal sources.
 
 ## 2. Policy adoption and governing dependencies
 
+Implementation note (2026-10-18): Desk's first private adoption slice uses the
+explicitly discovered proposed-draft candidate `formatVersion: "1.0.0"` pinned
+to Spec `0852c5fa7726e51b36e574a5b110e7f5e012e03d`. See
+[the implemented API and limits](policy-adoption-review.md). The proposal
+examples below remain future interface sketches; this slice does not implement
+Runner/Gateway dispatch admission from section 3.
+
 ### `GoverningAdoption` — proposed portable document
 
 | Field | Required meaning |

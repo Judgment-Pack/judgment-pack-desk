@@ -54,9 +54,18 @@ type policyCoverageRuntimeDiagnostic struct {
 	InstancePath  string `json:"instancePath"`
 	Message       string `json:"message"`
 }
+type policyRuntimeCandidateResult struct {
+	Status        string `json:"status"`
+	FormatVersion string `json:"formatVersion,omitempty"`
+	Maturity      string `json:"maturity,omitempty"`
+	Code          string `json:"code,omitempty"`
+}
 type policyCoverageRuntimeReport struct {
-	OutputVersion string `json:"outputVersion"`
-	Tool          struct {
+	CandidateResult       *policyRuntimeCandidateResult `json:"candidateResult,omitempty"`
+	FormatVersion         string                        `json:"formatVersion,omitempty"`
+	CandidateCapabilities json.RawMessage               `json:"candidateCapabilities,omitempty"`
+	OutputVersion         string                        `json:"outputVersion"`
+	Tool                  struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
 	} `json:"tool"`
@@ -84,9 +93,50 @@ type policyCoverageRuntimeReport struct {
 	DiagnosticsTruncated bool                              `json:"diagnosticsTruncated,omitempty"`
 }
 
+type policyRuntimeContract struct {
+	Profile, Version, SpecRevision, Specification, Maturity, ValidationScope, CheckScope string
+	Candidate                                                                            bool
+}
+
+var coverageRuntimeContract = policyRuntimeContract{policyCoverageProfile, policyCoverageProfileVersion, policyCoverageSpecRevision, "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + policyCoverageSpecRevision + "/rfcs/0023-policy-companion.md", "non-normative", "closed-prototype-document-and-local-references", policyCoverageCheckScope, false}
+
 func validCoverageRuntimeReport(r policyCoverageRuntimeReport, operation string) bool {
+	return validPolicyRuntimeReport(r, operation, coverageRuntimeContract)
+}
+func validPolicyRuntimeReport(r policyCoverageRuntimeReport, operation string, contract policyRuntimeContract) bool {
+	if contract.Candidate {
+		if r.FormatVersion != contract.Version || !validAdoptionRuntimeCapabilities(r.CandidateCapabilities) {
+			return false
+		}
+	} else if r.FormatVersion != "" || len(r.CandidateCapabilities) != 0 || r.CandidateResult != nil {
+		return false
+	}
+	if contract.Candidate {
+		if operation == "check" {
+			v := r.CandidateResult
+			if v == nil {
+				return false
+			}
+			if r.Status == "references-valid" {
+				if v.Status != "valid" || v.FormatVersion != contract.Version || v.Maturity != contract.Maturity || v.Code != "" {
+					return false
+				}
+			} else if r.Status == "refused" {
+				if v.Status != "refused" || v.FormatVersion != "" || v.Maturity != "" || !contains([]string{"input-over-bound", "invalid-json", "invalid-selector", "unsupported-format", "invalid-document", "missing-material", "reference-mismatch", "invalid-anchor", "invalid-coverage", "invalid-consumer", "unsupported-canonical-identity", "invalid-carrier"}, v.Code) {
+					return false
+				}
+			} else {
+				return false
+			}
+		} else if r.CandidateResult != nil {
+			return false
+		}
+	}
 	c := r.Capabilities
-	if r.OutputVersion != "2" || r.ContractVersion != "1" || r.Command != "experimental policy "+operation || r.Tool.Name != "jpack" || r.Tool.Version == "" || r.Profile != policyCoverageProfile || r.ProfileVersion != policyCoverageProfileVersion || r.SpecRevision != policyCoverageSpecRevision || r.Specification != "https://github.com/Judgment-Pack/judgment-pack-spec/blob/"+policyCoverageSpecRevision+"/rfcs/0023-policy-companion.md" || !r.Experimental || r.Maturity != "non-normative" || !c.Experimental || c.Maturity != "non-normative" || c.FullDocumentConformance || c.ApprovalVerification || c.ExecutionAuthority || c.LiveAuthority || c.NetworkAcquisition || r.StarterTemplate || c.CheckScope != policyCoverageCheckScope || c.ValidationScope != "closed-prototype-document-and-local-references" || !slices.Contains(c.ProfileVersions, policyCoverageProfileVersion) || !slices.Contains(c.CanonicalProfiles, "jps-canon") || !slices.Contains(c.ConsumerKinds, "pack") || c.MaxDocumentBytes < 1 || c.MaxDocumentBytes > 1<<20 || c.MaxMaterialBytes < 1 || c.MaxMaterialBytes > 4<<20 || c.MaxOriginalBytes < 1 || c.MaxOriginalBytes > 4<<20 || c.MaxTotalMaterialBytes < 1 || c.MaxTotalMaterialBytes > 16<<20 || c.MaxMaterials < 4 || c.MaxMaterials > 16 || c.MaxMaterialsWireBytes < 1 || c.MaxMaterialsWireBytes > 24<<20 || r.Diagnostics == nil {
+	if contract.Candidate && (c.MaxDocumentBytes != 262144 || c.MaxMaterialBytes != 1048576 || c.MaxOriginalBytes != 4194304 || c.MaxTotalMaterialBytes != 16777216 || c.MaxMaterials != 16 || c.MaxMaterialsWireBytes != 24<<20 || c.MaxDepth != 32 || c.MaxCoreNumberBytes != 128 || c.MaxCoreExponentMagnitude != 308 || c.MaxArtifactVersionBytes != 256) {
+		return false
+	}
+	if r.OutputVersion != "2" || r.ContractVersion != "1" || r.Command != "experimental policy "+operation || r.Tool.Name != "jpack" || r.Tool.Version == "" || r.Profile != contract.Profile || r.ProfileVersion != contract.Version || r.SpecRevision != contract.SpecRevision || r.Specification != contract.Specification || !r.Experimental || r.Maturity != contract.Maturity || !c.Experimental || c.Maturity != contract.Maturity || c.FullDocumentConformance || c.ApprovalVerification || c.ExecutionAuthority || c.LiveAuthority || c.NetworkAcquisition || r.StarterTemplate || c.CheckScope != contract.CheckScope || c.ValidationScope != contract.ValidationScope || !slices.Contains(c.ProfileVersions, contract.Version) || !slices.Contains(c.CanonicalProfiles, "jps-canon") || !slices.Contains(c.ConsumerKinds, "pack") || c.MaxDocumentBytes < 1 || c.MaxDocumentBytes > 1<<20 || c.MaxMaterialBytes < 1 || c.MaxMaterialBytes > 4<<20 || c.MaxOriginalBytes < 1 || c.MaxOriginalBytes > 4<<20 || c.MaxTotalMaterialBytes < 1 || c.MaxTotalMaterialBytes > 16<<20 || c.MaxMaterials < 4 || c.MaxMaterials > 16 || c.MaxMaterialsWireBytes < 1 || c.MaxMaterialsWireBytes > 24<<20 || r.Diagnostics == nil {
 		return false
 	}
 	for _, op := range []string{"contract", "canonicalize", "check"} {
@@ -107,14 +157,20 @@ func validCoverageRuntimeReport(r policyCoverageRuntimeReport, operation string)
 	return true
 }
 func (s *Server) runCoverageRuntime(ctx context.Context, dir heldDir, input []byte, operation string, args ...string) (json.RawMessage, policyCoverageRuntimeReport, error) {
+	return s.runPolicyRuntime(ctx, dir, input, operation, coverageRuntimeContract, args...)
+}
+func (s *Server) runPolicyRuntime(ctx context.Context, dir heldDir, input []byte, operation string, contract policyRuntimeContract, args ...string) (json.RawMessage, policyCoverageRuntimeReport, error) {
 	argv := append([]string{"experimental", "policy", operation}, args...)
+	if contract.Candidate {
+		argv = append(argv, "--format-version", contract.Version)
+	}
 	argv = append(argv, "--format", "json")
 	out, runErr := runRuntimeInputLimit(ctx, s.cfg.JpackBin, dir, input, policyCoverageCheckByteLimit, argv...)
 	var report policyCoverageRuntimeReport
 	if ctx.Err() != nil {
 		return nil, report, ctx.Err()
 	}
-	if rejectDuplicateMembers(out) != nil || decodeDataJSON(out, &report) != nil || !validCoverageRuntimeReport(report, operation) {
+	if rejectDuplicateMembers(out) != nil || decodeDataJSON(out, &report) != nil || !validPolicyRuntimeReport(report, operation, contract) {
 		return nil, report, errors.New("Runtime Policy check response is unavailable or inconsistent.")
 	}
 	if report.Status == "refused" {
@@ -300,6 +356,13 @@ func (v *policyCoverageRuntimeReport) UnmarshalJSON(raw []byte) error {
 	}
 	var top map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &top)
+	if p.Profile == policyCoverageProfile {
+		for _, field := range []string{"formatVersion", "candidateCapabilities", "candidateResult"} {
+			if _, present := top[field]; present {
+				return errors.New("prototype responses must not include candidate fields")
+			}
+		}
+	}
 	var caps map[string]json.RawMessage
 	_ = json.Unmarshal(top["capabilities"], &caps)
 	for _, field := range []string{"fullDocumentConformance", "approvalVerification", "executionAuthority", "liveAuthority", "networkAcquisition"} {
