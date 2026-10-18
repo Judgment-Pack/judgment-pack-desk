@@ -13,7 +13,7 @@ vi.mock('./client',async original=>({...await original<typeof import('./client')
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.clearAllMocks();vi.unstubAllGlobals();localStorage.clear()})
 function setup({width=1100,path='/library',corrupt=false,rootPending=false,graphs=false,state=undefined as unknown}={}){
  vi.stubGlobal('fetch',async(input:RequestInfo|URL)=>{
-  if(['/api/input-preparations','/api/dialect-drafts'].includes(String(input)))return Response.json({items:[]})
+  if(['/api/input-preparations','/api/dialect-drafts','/api/policies'].includes(String(input)))return Response.json({items:[]})
   throw new Error('No file fixture for this test.')
  })
  const observers:{callback:(entries:ResizeObserverEntry[])=>void}[]=[]

@@ -24,7 +24,7 @@ const equal=(a:Buffer,b:Buffer)=>a.title===b.title&&a.narrative===b.narrative&&a
 export function reviewStateLabel(state:string){return state==='approved'?msg('Approved'):state==='changes-requested'?msg('Changes requested'):msg('Unreviewed')}
 export function PolicyPage(){
  const {policyId}=useParams()
- return <article className="detail" data-layout="page" data-measure="full">{policyId?<ExistingPolicy key={policyId} id={policyId}/>:<PolicyEditor key="new"/>}</article>
+ return policyId?<ExistingPolicy key={policyId} id={policyId}/>:<PolicyEditor key="new"/>
 }
 function ExistingPolicy({id}:{id:string}){
  const query=useQuery(policyQuery(id))
