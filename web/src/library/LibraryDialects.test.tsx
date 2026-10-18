@@ -19,6 +19,7 @@ function mount({path='/library',folders=false,draftItems=[draft],read=async()=>(
   if(init?.method&&init.method!=='GET')throw new Error('The index cannot write fixture storage.')
   const url=String(input)
   if(url==='/api/input-preparations')return Response.json(await read())
+  if(url==='/api/policies')return Response.json({items:[]})
   if(url==='/api/dialect-drafts')return Response.json({items:draftItems})
   if(url==='/api/files')return Response.json({root:'/fixture',files:[]})
   if(url.startsWith('/api/file?'))return Response.json({path:'jpack-folders.json',content:JSON.stringify(document),sha256:'folders',bytes:100})

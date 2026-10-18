@@ -1,0 +1,803 @@
+{
+  "proposalVersion": "0.0.1",
+  "synthetic": true,
+  "scenario": "data-access",
+  "description": "Interface examples only. All service identities, assignments, authority decisions and receipts are fictional. No service or pack execution occurred.",
+  "material": {
+    "source": {
+      "encoding": "utf8",
+      "text": "Data access\n\nOnly de-identified datasets may be released through this automated path. Identifiable datasets are refused; missing classification goes to a data steward.\n",
+      "content": {
+        "bytesDigest": "sha256:289d944ffa646b0b64a967b124a034f7e2058604030675666cc282518a592ef4",
+        "byteLength": 168,
+        "mediaType": "text/plain"
+      }
+    },
+    "policy-candidate": {
+      "encoding": "canonical-json",
+      "document": {
+        "proposalVersion": "0.0.1",
+        "kind": "policy",
+        "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+        "version": "1.0.0",
+        "title": "Data access",
+        "managementMode": "desk-managed",
+        "sections": [
+          {
+            "id": "eligibility",
+            "title": "Eligibility",
+            "content": {
+              "bytesDigest": "sha256:289d944ffa646b0b64a967b124a034f7e2058604030675666cc282518a592ef4",
+              "byteLength": 168,
+              "mediaType": "text/plain"
+            }
+          }
+        ],
+        "sourceProvenance": [
+          {
+            "source": {
+              "provider": "synthetic-fixture",
+              "accountId": "example-organization",
+              "resourceId": "data-access-document"
+            },
+            "observationId": "data-access-observation-1",
+            "content": {
+              "bytesDigest": "sha256:289d944ffa646b0b64a967b124a034f7e2058604030675666cc282518a592ef4",
+              "byteLength": 168,
+              "mediaType": "text/plain"
+            }
+          }
+        ]
+      },
+      "content": {
+        "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+        "byteLength": 711,
+        "mediaType": "application/json"
+      }
+    },
+    "consumer-pack": {
+      "encoding": "canonical-json",
+      "document": {
+        "specVersion": "0.2.0-draft",
+        "id": "https://example.invalid/policy-interface-examples/data-access/pack",
+        "version": "1.0.0",
+        "title": "Data access — synthetic interpretation",
+        "description": "Synthetic interface example; no operational authorization or external action is represented.",
+        "decision": {
+          "intent": "Apply the single retained eligibility clause.",
+          "question": "Is this request eligible for the automated path?"
+        },
+        "sources": [
+          {
+            "id": "policy-source",
+            "title": "Data access",
+            "locator": {
+              "kind": "uri",
+              "value": "https://example.invalid/policy-interface-examples/data-access/policy"
+            },
+            "citation": {
+              "location": "Eligibility",
+              "excerpt": "Only de-identified datasets may be released through this automated path. Identifiable datasets are refused; missing classification goes to a data steward."
+            }
+          }
+        ],
+        "outcomes": [
+          {
+            "id": "eligible",
+            "label": "Release dataset"
+          },
+          {
+            "id": "ineligible",
+            "label": "Refuse release"
+          },
+          {
+            "id": "review",
+            "label": "Needs review"
+          }
+        ],
+        "rules": [
+          {
+            "id": "eligible",
+            "when": {
+              "op": "fact",
+              "path": "/dataset/deidentified",
+              "operator": "equals",
+              "value": true
+            },
+            "outcome": "eligible",
+            "onUnknown": "escalate",
+            "sourceRefs": [
+              "policy-source"
+            ]
+          },
+          {
+            "id": "ineligible",
+            "when": {
+              "op": "fact",
+              "path": "/dataset/deidentified",
+              "operator": "equals",
+              "value": false
+            },
+            "outcome": "ineligible",
+            "onUnknown": "escalate",
+            "sourceRefs": [
+              "policy-source"
+            ]
+          }
+        ],
+        "fallbackOutcome": "review",
+        "escalation": {
+          "triggers": [
+            "unknown",
+            "no-match"
+          ],
+          "target": {
+            "kind": "human-role",
+            "name": "Data steward"
+          }
+        }
+      },
+      "content": {
+        "bytesDigest": "sha256:3a485d934d89ce2ef8507caec4d26eefb0012bc78391e3a0f336cc2b4d486d7e",
+        "byteLength": 1420,
+        "mediaType": "application/json"
+      }
+    },
+    "review-workflow": {
+      "encoding": "canonical-json",
+      "document": {
+        "proposalVersion": "0.0.1",
+        "id": "https://example.invalid/policy-interface-examples/data-access/workflow",
+        "revision": "workflow-r1",
+        "stages": [
+          {
+            "id": "section-review",
+            "quorum": 1,
+            "assignments": [
+              {
+                "id": "section-signoff",
+                "subjectId": "urn:example:subject:reviewer",
+                "required": true,
+                "scope": {
+                  "kind": "sections",
+                  "sectionIds": [
+                    "eligibility"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "id": "final-review",
+            "quorum": 1,
+            "assignments": [
+              {
+                "id": "final-signoff",
+                "subjectId": "urn:example:subject:approver",
+                "required": true,
+                "scope": {
+                  "kind": "whole-policy"
+                }
+              }
+            ]
+          }
+        ],
+        "publication": {
+          "mode": "explicit"
+        }
+      },
+      "content": {
+        "bytesDigest": "sha256:ddd5abbbe830a955606a4794860846e431147c3ccd50aa65dc32bfd3fb2e5204",
+        "byteLength": 530,
+        "mediaType": "application/json"
+      }
+    },
+    "interpretation-review-basis": {
+      "encoding": "canonical-json",
+      "document": {
+        "proposalVersion": "0.0.1",
+        "kind": "interpretation-review-basis",
+        "policy": {
+          "kind": "policy",
+          "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+          "version": "1.0.0",
+          "content": {
+            "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+            "byteLength": 711,
+            "mediaType": "application/json"
+          }
+        },
+        "consumer": {
+          "kind": "pack",
+          "id": "https://example.invalid/policy-interface-examples/data-access/pack",
+          "version": "1.0.0",
+          "content": {
+            "bytesDigest": "sha256:3a485d934d89ce2ef8507caec4d26eefb0012bc78391e3a0f336cc2b4d486d7e",
+            "byteLength": 1420,
+            "mediaType": "application/json"
+          }
+        },
+        "sectionIds": [
+          "eligibility"
+        ],
+        "consumerElementIds": [
+          "eligible",
+          "ineligible"
+        ],
+        "rationale": "The two rules distinguish documented true and false; missing facts request a human handoff. This fictional review does not certify a real policy.",
+        "inputAssumption": {
+          "path": "/dataset/deidentified",
+          "type": "boolean",
+          "unknownHandling": "omit",
+          "preparedBy": "separately reviewed Dialect mapping"
+        }
+      },
+      "content": {
+        "bytesDigest": "sha256:b7b890de93d2cf1d8cb1c79d7ae99008142ab5b3ba55a07d0af27f72ec163dae",
+        "byteLength": 981,
+        "mediaType": "application/json"
+      }
+    },
+    "adoption": {
+      "encoding": "canonical-json",
+      "document": {
+        "proposalVersion": "0.0.1",
+        "kind": "governing-adoption",
+        "id": "https://example.invalid/policy-interface-examples/data-access/adoption",
+        "version": "1.0.0",
+        "consumer": {
+          "kind": "pack",
+          "id": "https://example.invalid/policy-interface-examples/data-access/pack",
+          "version": "1.0.0",
+          "content": {
+            "bytesDigest": "sha256:3a485d934d89ce2ef8507caec4d26eefb0012bc78391e3a0f336cc2b4d486d7e",
+            "byteLength": 1420,
+            "mediaType": "application/json"
+          }
+        },
+        "governingPolicies": [
+          {
+            "policy": {
+              "kind": "policy",
+              "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+              "version": "1.0.0",
+              "content": {
+                "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+                "byteLength": 711,
+                "mediaType": "application/json"
+              }
+            },
+            "scope": {
+              "kind": "whole-policy"
+            },
+            "coverage": [
+              {
+                "sectionId": "eligibility",
+                "status": "implemented",
+                "consumerElementIds": [
+                  "eligible",
+                  "ineligible"
+                ],
+                "reviewBasis": {
+                  "bytesDigest": "sha256:b7b890de93d2cf1d8cb1c79d7ae99008142ab5b3ba55a07d0af27f72ec163dae",
+                  "byteLength": 981,
+                  "mediaType": "application/json"
+                }
+              }
+            ]
+          }
+        ],
+        "informationalSources": []
+      },
+      "content": {
+        "bytesDigest": "sha256:a8cb904faa2c93868a41399bfd056d06e2d4001d7837a1e92dc42d0249e0ad1e",
+        "byteLength": 1033,
+        "mediaType": "application/json"
+      }
+    },
+    "release-binding": {
+      "encoding": "canonical-json",
+      "document": {
+        "proposalVersion": "0.0.1",
+        "kind": "governed-release-binding",
+        "id": "https://example.invalid/policy-interface-examples/data-access/execution-release",
+        "consumer": {
+          "kind": "pack",
+          "id": "https://example.invalid/policy-interface-examples/data-access/pack",
+          "version": "1.0.0",
+          "content": {
+            "bytesDigest": "sha256:3a485d934d89ce2ef8507caec4d26eefb0012bc78391e3a0f336cc2b4d486d7e",
+            "byteLength": 1420,
+            "mediaType": "application/json"
+          }
+        },
+        "adoption": {
+          "bytesDigest": "sha256:a8cb904faa2c93868a41399bfd056d06e2d4001d7837a1e92dc42d0249e0ad1e",
+          "byteLength": 1033,
+          "mediaType": "application/json"
+        },
+        "dependencies": [
+          {
+            "kind": "policy",
+            "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+            "version": "1.0.0",
+            "content": {
+              "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+              "byteLength": 711,
+              "mediaType": "application/json"
+            }
+          }
+        ]
+      },
+      "content": {
+        "bytesDigest": "sha256:98f5d03d9adba0537aeee983d74c3cbf1babd121fcb9165cdf4dd62d8bf094e9",
+        "byteLength": 843,
+        "mediaType": "application/json"
+      }
+    },
+    "run-payload": {
+      "encoding": "canonical-json",
+      "document": {
+        "facts": {
+          "dataset": {
+            "deidentified": true
+          }
+        }
+      },
+      "content": {
+        "bytesDigest": "sha256:9be9e9fa6ddb2c6d9e1cbf68e1734708f7ddc100249211794917a08cd4807c87",
+        "byteLength": 43,
+        "mediaType": "application/json"
+      }
+    },
+    "action-payload": {
+      "encoding": "canonical-json",
+      "document": {
+        "operation": "fixture-only",
+        "target": "data-access-request",
+        "note": "No actual provider action is requested."
+      },
+      "content": {
+        "bytesDigest": "sha256:374313dc678ef6c5c3c32ce39f78a204d0c37ac5209fa05b26f43c4e607785b7",
+        "byteLength": 108,
+        "mediaType": "application/json"
+      }
+    }
+  },
+  "sourceObservation": {
+    "proposalVersion": "0.0.1",
+    "observationId": "data-access-observation-1",
+    "source": {
+      "provider": "synthetic-fixture",
+      "accountId": "example-organization",
+      "resourceId": "data-access-document"
+    },
+    "sourceRevision": "opaque-source-revision-a",
+    "observedAt": "2026-10-17T12:00:00Z",
+    "availability": "present",
+    "content": {
+      "bytesDigest": "sha256:289d944ffa646b0b64a967b124a034f7e2058604030675666cc282518a592ef4",
+      "byteLength": 168,
+      "mediaType": "text/plain"
+    },
+    "lifecycle": {
+      "kind": "not-exposed"
+    },
+    "coverage": "snapshot-only"
+  },
+  "reviewRequest": {
+    "reviewId": "data-access-review-1",
+    "revision": "review-r1",
+    "candidate": {
+      "kind": "policy",
+      "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+      "version": "1.0.0",
+      "content": {
+        "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+        "byteLength": 711,
+        "mediaType": "application/json"
+      }
+    },
+    "draftRevision": "draft-r1",
+    "workflow": {
+      "id": "https://example.invalid/policy-interface-examples/data-access/workflow",
+      "revision": "workflow-r1",
+      "content": {
+        "bytesDigest": "sha256:ddd5abbbe830a955606a4794860846e431147c3ccd50aa65dc32bfd3fb2e5204",
+        "byteLength": 530,
+        "mediaType": "application/json"
+      }
+    },
+    "sourceBasis": [
+      {
+        "source": {
+          "provider": "synthetic-fixture",
+          "accountId": "example-organization",
+          "resourceId": "data-access-document"
+        },
+        "observationId": "data-access-observation-1",
+        "content": {
+          "bytesDigest": "sha256:289d944ffa646b0b64a967b124a034f7e2058604030675666cc282518a592ef4",
+          "byteLength": 168,
+          "mediaType": "text/plain"
+        },
+        "trackingRevision": "source-state-r1"
+      }
+    ],
+    "expectedBasePublication": null
+  },
+  "servicePrerequisites": {
+    "tenantId": "urn:example:tenant:demo",
+    "workspaceId": "urn:example:workspace:demo",
+    "adoptionRecord": {
+      "id": "data-access-adoption-record",
+      "revision": "adoption-r1",
+      "manifest": {
+        "bytesDigest": "sha256:a8cb904faa2c93868a41399bfd056d06e2d4001d7837a1e92dc42d0249e0ad1e",
+        "byteLength": 1033,
+        "mediaType": "application/json"
+      },
+      "state": "approved",
+      "approvalReceiptRef": "data-access-fictional-adoption-approval"
+    },
+    "note": "These fixtures model pre-established authenticated membership, reviewed adoption, release registration, input preparation and action approval. They do not issue those authorities."
+  },
+  "commands": {
+    "requestReview": {
+      "operationId": "data-access-request-review",
+      "candidate": {
+        "kind": "policy",
+        "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+        "version": "1.0.0",
+        "content": {
+          "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+          "byteLength": 711,
+          "mediaType": "application/json"
+        }
+      },
+      "draftRevision": "draft-r1",
+      "workflow": {
+        "id": "https://example.invalid/policy-interface-examples/data-access/workflow",
+        "revision": "workflow-r1",
+        "content": {
+          "bytesDigest": "sha256:ddd5abbbe830a955606a4794860846e431147c3ccd50aa65dc32bfd3fb2e5204",
+          "byteLength": 530,
+          "mediaType": "application/json"
+        }
+      },
+      "sourceBasis": [
+        {
+          "source": {
+            "provider": "synthetic-fixture",
+            "accountId": "example-organization",
+            "resourceId": "data-access-document"
+          },
+          "observationId": "data-access-observation-1",
+          "content": {
+            "bytesDigest": "sha256:289d944ffa646b0b64a967b124a034f7e2058604030675666cc282518a592ef4",
+            "byteLength": 168,
+            "mediaType": "text/plain"
+          },
+          "trackingRevision": "source-state-r1"
+        }
+      ],
+      "expectedBasePublication": null
+    },
+    "submitSignoffs": [
+      {
+        "operationId": "data-access-section-signoff",
+        "reviewId": "data-access-review-1",
+        "expectedReviewRevision": "review-r1",
+        "assignmentId": "section-signoff",
+        "candidateDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+        "decision": "approve"
+      },
+      {
+        "operationId": "data-access-final-signoff",
+        "reviewId": "data-access-review-1",
+        "expectedReviewRevision": "review-r2",
+        "assignmentId": "final-signoff",
+        "candidateDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+        "decision": "approve"
+      }
+    ],
+    "publishPolicy": {
+      "operationId": "data-access-publish",
+      "candidate": {
+        "kind": "policy",
+        "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+        "version": "1.0.0",
+        "content": {
+          "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+          "byteLength": 711,
+          "mediaType": "application/json"
+        }
+      },
+      "expectedDraftRevision": "draft-r1",
+      "reviewId": "data-access-review-1",
+      "expectedReviewRevision": "review-r3",
+      "workflow": {
+        "id": "https://example.invalid/policy-interface-examples/data-access/workflow",
+        "revision": "workflow-r1",
+        "content": {
+          "bytesDigest": "sha256:ddd5abbbe830a955606a4794860846e431147c3ccd50aa65dc32bfd3fb2e5204",
+          "byteLength": 530,
+          "mediaType": "application/json"
+        }
+      },
+      "sourceBasis": [
+        {
+          "source": {
+            "provider": "synthetic-fixture",
+            "accountId": "example-organization",
+            "resourceId": "data-access-document"
+          },
+          "observationId": "data-access-observation-1",
+          "content": {
+            "bytesDigest": "sha256:289d944ffa646b0b64a967b124a034f7e2058604030675666cc282518a592ef4",
+            "byteLength": 168,
+            "mediaType": "text/plain"
+          },
+          "trackingRevision": "source-state-r1"
+        }
+      ],
+      "expectedBasePublication": null,
+      "effectiveAt": "2026-10-17T12:05:00Z"
+    },
+    "commitRunStart": {
+      "operationId": "data-access-run",
+      "attemptId": "data-access-run-attempt-1",
+      "operationKind": "run",
+      "resourceId": "data-access-registered-job",
+      "releaseEnvelopeDigest": "sha256:98f5d03d9adba0537aeee983d74c3cbf1babd121fcb9165cdf4dd62d8bf094e9",
+      "payloadDigest": "sha256:9be9e9fa6ddb2c6d9e1cbf68e1734708f7ddc100249211794917a08cd4807c87",
+      "executorId": "urn:example:executor:runner",
+      "executionEpoch": "runner-epoch-4",
+      "expectedResourceRevision": "job-r1"
+    },
+    "withdrawPolicy": {
+      "operationId": "data-access-withdraw",
+      "expectedLifecycleRevision": "lifecycle-r1",
+      "target": {
+        "kind": "release",
+        "policy": {
+          "kind": "policy",
+          "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+          "version": "1.0.0",
+          "content": {
+            "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+            "byteLength": 711,
+            "mediaType": "application/json"
+          }
+        }
+      },
+      "rationale": "Synthetic withdrawal after a run starts and before a later action."
+    },
+    "commitActionStart": {
+      "operationId": "data-access-action",
+      "attemptId": "data-access-action-attempt-1",
+      "operationKind": "external-action",
+      "resourceId": "data-access-registered-action",
+      "releaseEnvelopeDigest": "sha256:98f5d03d9adba0537aeee983d74c3cbf1babd121fcb9165cdf4dd62d8bf094e9",
+      "payloadDigest": "sha256:374313dc678ef6c5c3c32ce39f78a204d0c37ac5209fa05b26f43c4e607785b7",
+      "executorId": "urn:example:executor:gateway",
+      "executionEpoch": "gateway-epoch-2",
+      "expectedResourceRevision": "action-r1",
+      "parentRunId": "data-access-run"
+    }
+  },
+  "modeledResponses": {
+    "signoffs": [
+      {
+        "receiptId": "data-access-signoff-receipt-1",
+        "operationId": "data-access-section-signoff",
+        "requestDigest": "sha256:e3078f659cee715438564c614fdb050100e5149b2b609258caf025e80047ad83",
+        "reviewId": "data-access-review-1",
+        "candidateDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+        "workflowDigest": "sha256:ddd5abbbe830a955606a4794860846e431147c3ccd50aa65dc32bfd3fb2e5204",
+        "actorId": "urn:example:subject:reviewer",
+        "scope": {
+          "kind": "sections",
+          "sectionIds": [
+            "eligibility"
+          ]
+        },
+        "decision": "approve",
+        "authorityDecisionRef": "data-access-signing-authority-1",
+        "at": "2026-10-17T12:02:00Z",
+        "resultingReviewRevision": "review-r2"
+      },
+      {
+        "receiptId": "data-access-signoff-receipt-2",
+        "operationId": "data-access-final-signoff",
+        "requestDigest": "sha256:eb74cf2b39268f0835ccfd1c7e0c5cd9db933374ffad47e800b4d4440ec9f73f",
+        "reviewId": "data-access-review-1",
+        "candidateDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+        "workflowDigest": "sha256:ddd5abbbe830a955606a4794860846e431147c3ccd50aa65dc32bfd3fb2e5204",
+        "actorId": "urn:example:subject:approver",
+        "scope": {
+          "kind": "whole-policy"
+        },
+        "decision": "approve",
+        "authorityDecisionRef": "data-access-signing-authority-2",
+        "at": "2026-10-17T12:03:00Z",
+        "resultingReviewRevision": "review-r3"
+      }
+    ],
+    "publication": {
+      "delivery": "committed",
+      "receipt": {
+        "receiptId": "data-access-publication-receipt",
+        "operationId": "data-access-publish",
+        "requestDigest": "sha256:9cb235301a9c82b05b419b4cc84fcb9dec86ac538ea704de7c81efd7a477f8c5",
+        "publicationId": "https://example.invalid/policy-interface-examples/data-access/publication-1",
+        "policy": {
+          "kind": "policy",
+          "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+          "version": "1.0.0",
+          "content": {
+            "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+            "byteLength": 711,
+            "mediaType": "application/json"
+          }
+        },
+        "actorId": "urn:example:subject:publisher",
+        "reviewId": "data-access-review-1",
+        "signoffReceiptIds": [
+          "data-access-signoff-receipt-1",
+          "data-access-signoff-receipt-2"
+        ],
+        "state": "published",
+        "publishedAt": "2026-10-17T12:04:00Z",
+        "effectiveAt": "2026-10-17T12:05:00Z",
+        "lifecycleRevision": "lifecycle-r1"
+      }
+    },
+    "publicationRecovery": {
+      "delivery": "recovered",
+      "receipt": {
+        "receiptId": "data-access-publication-receipt",
+        "operationId": "data-access-publish",
+        "requestDigest": "sha256:9cb235301a9c82b05b419b4cc84fcb9dec86ac538ea704de7c81efd7a477f8c5",
+        "publicationId": "https://example.invalid/policy-interface-examples/data-access/publication-1",
+        "policy": {
+          "kind": "policy",
+          "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+          "version": "1.0.0",
+          "content": {
+            "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+            "byteLength": 711,
+            "mediaType": "application/json"
+          }
+        },
+        "actorId": "urn:example:subject:publisher",
+        "reviewId": "data-access-review-1",
+        "signoffReceiptIds": [
+          "data-access-signoff-receipt-1",
+          "data-access-signoff-receipt-2"
+        ],
+        "state": "published",
+        "publishedAt": "2026-10-17T12:04:00Z",
+        "effectiveAt": "2026-10-17T12:05:00Z",
+        "lifecycleRevision": "lifecycle-r1"
+      }
+    },
+    "runAdmission": {
+      "delivery": "committed",
+      "receipt": {
+        "receiptId": "data-access-run-attempt-1-receipt",
+        "operationId": "data-access-run",
+        "attemptId": "data-access-run-attempt-1",
+        "requestDigest": "sha256:fcbb99be8e8d60b07f777cc41572bc3f6d2db53fad355178e778d38b3777d33a",
+        "executorId": "urn:example:executor:runner",
+        "executionEpoch": "runner-epoch-4",
+        "releaseEnvelopeDigest": "sha256:98f5d03d9adba0537aeee983d74c3cbf1babd121fcb9165cdf4dd62d8bf094e9",
+        "payloadDigest": "sha256:9be9e9fa6ddb2c6d9e1cbf68e1734708f7ddc100249211794917a08cd4807c87",
+        "decision": "start-committed",
+        "authorityRevision": "authority-r8",
+        "checkedDependencies": [
+          {
+            "policy": {
+              "kind": "policy",
+              "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+              "version": "1.0.0",
+              "content": {
+                "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+                "byteLength": 711,
+                "mediaType": "application/json"
+              }
+            },
+            "state": "effective",
+            "lifecycleRevision": "lifecycle-r1"
+          }
+        ],
+        "at": "2026-10-17T12:06:00Z",
+        "reasonCodes": []
+      }
+    },
+    "runAdmissionRecovery": {
+      "delivery": "recovered",
+      "receipt": {
+        "receiptId": "data-access-run-attempt-1-receipt",
+        "operationId": "data-access-run",
+        "attemptId": "data-access-run-attempt-1",
+        "requestDigest": "sha256:fcbb99be8e8d60b07f777cc41572bc3f6d2db53fad355178e778d38b3777d33a",
+        "executorId": "urn:example:executor:runner",
+        "executionEpoch": "runner-epoch-4",
+        "releaseEnvelopeDigest": "sha256:98f5d03d9adba0537aeee983d74c3cbf1babd121fcb9165cdf4dd62d8bf094e9",
+        "payloadDigest": "sha256:9be9e9fa6ddb2c6d9e1cbf68e1734708f7ddc100249211794917a08cd4807c87",
+        "decision": "start-committed",
+        "authorityRevision": "authority-r8",
+        "checkedDependencies": [
+          {
+            "policy": {
+              "kind": "policy",
+              "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+              "version": "1.0.0",
+              "content": {
+                "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+                "byteLength": 711,
+                "mediaType": "application/json"
+              }
+            },
+            "state": "effective",
+            "lifecycleRevision": "lifecycle-r1"
+          }
+        ],
+        "at": "2026-10-17T12:06:00Z",
+        "reasonCodes": []
+      }
+    },
+    "withdrawal": {
+      "delivery": "committed",
+      "receipt": {
+        "operationId": "data-access-withdraw",
+        "requestDigest": "sha256:336c228cc4f545b8b34ea9e9774e3dc0170bb8aca6f833e98a792f0cca6798c3",
+        "state": "withdrawn",
+        "lifecycleRevision": "lifecycle-r2",
+        "authorityRevision": "authority-r9",
+        "at": "2026-10-17T12:07:00Z"
+      }
+    },
+    "actionAdmission": {
+      "delivery": "committed",
+      "receipt": {
+        "receiptId": "data-access-action-attempt-1-receipt",
+        "operationId": "data-access-action",
+        "attemptId": "data-access-action-attempt-1",
+        "requestDigest": "sha256:8698d25fec676bd039b055d17673732b5c853decf706a7b6b4087748658bea6e",
+        "executorId": "urn:example:executor:gateway",
+        "executionEpoch": "gateway-epoch-2",
+        "releaseEnvelopeDigest": "sha256:98f5d03d9adba0537aeee983d74c3cbf1babd121fcb9165cdf4dd62d8bf094e9",
+        "payloadDigest": "sha256:374313dc678ef6c5c3c32ce39f78a204d0c37ac5209fa05b26f43c4e607785b7",
+        "decision": "blocked",
+        "authorityRevision": "authority-r9",
+        "checkedDependencies": [
+          {
+            "policy": {
+              "kind": "policy",
+              "id": "https://example.invalid/policy-interface-examples/data-access/policy",
+              "version": "1.0.0",
+              "content": {
+                "bytesDigest": "sha256:05b90da08509330e3b970ad187ab9e592c10689f5b8ac51f0f81705e2e01f3f8",
+                "byteLength": 711,
+                "mediaType": "application/json"
+              }
+            },
+            "state": "withdrawn",
+            "lifecycleRevision": "lifecycle-r2"
+          }
+        ],
+        "at": "2026-10-17T12:08:00Z",
+        "reasonCodes": [
+          "dependency-ineligible"
+        ]
+      }
+    }
+  },
+  "expectedRecoveryBehavior": {
+    "publicationRecovery": "Display the existing publication; do not publish again.",
+    "runAdmissionRecovery": "Reconcile the original attempt; never dispatch from the recovered receipt.",
+    "actionAdmission": "Do not dispatch. The parent run does not authorize this later action."
+  }
+}

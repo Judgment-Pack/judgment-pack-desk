@@ -1,3 +1,4 @@
+import { PolicyView } from './routes/PolicyView'
 import {TemplatesPage} from './routes/TemplatesPage'
 import { DialectsView } from './routes/DialectsView'
 import { JobsView } from './routes/JobsView'
@@ -35,6 +36,8 @@ export function App() {
           <Route path="/dialects/drafts/:draftId" element={<DialectsView />} />
           <Route path="/dialects" element={<DialectsView />} />
           <Route path="/dialects/:preparationId" element={<DialectsView />} />
+          <Route path="/policies/new" element={<PolicyView />} />
+          <Route path="/policies/:policyId" element={<PolicyView />} />
           <Route path="/jobs" element={<JobsView />} />
           <Route path="/jobs/runs" element={<JobsView />} />
           <Route path="/jobs/new" element={<JobsView />} />
