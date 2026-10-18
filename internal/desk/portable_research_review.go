@@ -65,13 +65,26 @@ func (s *Server) reviewPortableResearch(ctx context.Context, input json.RawMessa
 	if err != nil {
 		return run, err
 	}
-	var profiles []portableResearchProfile
-	if json.Unmarshal(profilesRaw, &profiles) != nil {
-		return run, errors.New("The installation profiles are unavailable.")
+	profiles, err := readInputProfileListing(profilesRaw)
+	if err != nil {
+		return run, err
 	}
 	assignments, err := portableResearchAssignments(input, plan.Next.Name)
 	if err != nil {
 		return run, err
+	}
+	// Every requested capability's pin is resolved against the installed
+	// profiles before anything else is checked: a pin that names a profile
+	// Runner set aside is refused by its name with Runner's reason.
+	resolved := map[string]*listedInputProfile{}
+	for _, capability := range request.Capabilities {
+		assignment, ok := assignments[capability]
+		if !ok {
+			return run, errors.New("Bind every requested research capability before running it.")
+		}
+		if resolved[capability], err = profiles.installedProfile(assignment.Profile, digestIs(assignment.Digest)); err != nil {
+			return run, err
+		}
 	}
 	gateway, err := s.configuredResearch()
 	if err != nil {
@@ -81,19 +94,10 @@ func (s *Server) reviewPortableResearch(ctx context.Context, input json.RawMessa
 	bindings := map[string]searchBindingDescriptor{}
 	seen := map[string]bool{}
 	for _, capability := range request.Capabilities {
-		assignment, ok := assignments[capability]
-		if !ok {
-			return run, errors.New("Bind every requested research capability before running it.")
-		}
 		var selectedProfile *portableResearchProfile
 		var details portableProfileDetails
-		for i := range profiles {
-			var candidate portableProfileDetails
-			if json.Unmarshal(profiles[i].Profile, &candidate) == nil && candidate.ID == assignment.Profile && profiles[i].Digest == assignment.Digest {
-				selectedProfile = &profiles[i]
-				details = candidate
-				break
-			}
+		if entry := resolved[capability]; entry != nil && json.Unmarshal(entry.Profile, &details) == nil {
+			selectedProfile = &portableResearchProfile{Profile: entry.Profile, Digest: entry.Digest}
 		}
 		if selectedProfile == nil || details.Class != "generated" || details.Authority != gateway.authority || details.PublicKey != gateway.signerPublic || !contains(details.Research.Capabilities, capability) {
 			return run, errors.New("The reviewed source profile does not match this Desk Gateway and capability.")

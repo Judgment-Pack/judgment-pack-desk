@@ -600,6 +600,13 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 			s.log.Printf("desk: release verification references could not be retained")
 		}
 	}
+	// The page's refusal of a binding to a set-aside profile is Desk's, never
+	// Runner's text. A trigger's caller gets Runner's answer unchanged.
+	if eventToken == "" {
+		if mapped, ok := s.setAsideAnswer(r.Context(), response.StatusCode, body); ok {
+			body = mapped
+		}
+	}
 	if tail == runChainRoute {
 		// Runner's own type, application/jsonl for the chain and JSON for a
 		// refusal; none where it sent none, which Desk does not guess at.

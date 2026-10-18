@@ -2,19 +2,24 @@ import {sourcePin} from '../dialect/bindings'
 import type {BindingDocument} from '../dialect/types'
 import { formatDate, msg, useLocale } from '../i18n'
 import { Disclosure } from '../ui/Disclosure'
-import type { ExecutableDialect, InputProfile, Preparation, CalculationLineage } from './dialectTypes'
+import type { ExecutableDialect, InputProfile, Preparation, CalculationLineage, ProfileEntry } from './dialectTypes'
+import { setAsideEntry, setAsideNote } from './setAsideProfiles'
 import { calculationAge, calculationStatus, calculatorLabel } from './calculatedValues'
 import styles from './JobsView.module.css'
 
-export function DialectReview({mapping, binding, profiles = [], warnings = [], details = true}: {mapping: ExecutableDialect;binding?:BindingDocument; profiles?: InputProfile[]; warnings?: string[]; details?: boolean}) {
+/** entries, where given, are Runner's listing: a pin that names a profile
+ * Runner set aside is shown with its reason. */
+export function DialectReview({mapping, binding, profiles = [], entries, warnings = [], details = true}: {mapping: ExecutableDialect;binding?:BindingDocument; profiles?: InputProfile[]; entries?: ProfileEntry[]; warnings?: string[]; details?: boolean}) {
  useLocale()
+ const known = entries ? entries.map(entry => entry.profile) : profiles
+ const aside = (id: string) => { const entry = setAsideEntry(entries, id); return entry ? <> · <span>{setAsideNote(entry)}</span></> : null }
  return <div className={styles.fields}>
   <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{msg('Source')}</th><th>{msg('Type')}</th><th>{msg('Input class')}</th></tr></thead><tbody>
    {mapping.case && <tr><td>{msg('Case inputs')}</td><td>{msg('Manual / API')}</td><td><code>asserted</code></td></tr>}
    {(mapping.sources ?? []).map(s => {
-    const pin=sourcePin(s,binding),profileId=pin?.profile??s.profile,profile = profiles.find(p => p.id === profileId)
+    const pin=sourcePin(s,binding),profileId=pin?.profile??s.profile,profile = known.find(p => p.id === profileId)
     return <tr key={s.name}><td>{s.name}</td><td>{s.kind === 'research' ? msg('Research') : s.kind === 'selected-file' ? s.provider === 'local-file' ? msg('Local JSON file') : msg('Google Drive') : profileId??s.kind}
-     {pin&&<div className={styles.note}>{pin.profile} · <code>{pin.profileDigest}</code>{Object.entries(binding?.sources[s.name]?.webProfiles??{}).map(([role,web])=><div key={role}>{role} · {web.profile}</div>)}</div>}
+     {pin&&<div className={styles.note}>{pin.profile} · <code>{pin.profileDigest}</code>{aside(pin.profile)}{Object.entries(binding?.sources[s.name]?.webProfiles??{}).map(([role,web])=><div key={role}>{role} · {web.profile}{aside(web.profile)}</div>)}</div>}
      {profile?.calculator && <div className={styles.note}>
       <div>{calculatorLabel(profile.calculator)}</div>
       {Object.entries(s.calculation?.inputs ?? {}).map(([input, parameter]) => <div key={input}>{input} ← {parameter}</div>)}

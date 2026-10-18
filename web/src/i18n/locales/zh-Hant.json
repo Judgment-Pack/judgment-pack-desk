@@ -6049,5 +6049,11 @@
   "This saves only the shown draft update to this exact Policy revision. Reviews, sign-offs and publication remain separate manual actions.": "這只會將所示草稿更新儲存至此確切政策修訂。審查、簽核和發布仍為獨立的手動操作。",
   "UTF-8 Markdown (.md) or plain text (.txt), up to 128 KiB. Select a file, edit its draft text, then Save draft to retain the original.": "UTF-8 Markdown（.md）或純文字（.txt），最大128 KiB。選擇檔案、編輯草稿文字，然後選擇「儲存草稿」以保留原件。",
   "User-supplied starting material. The original is retained separately from your editable draft; importing does not approve or publish it.": "使用者提供的初始資料。原件與可編輯草稿分開保留；匯入不代表核准或發布。",
-  "Back to policy": "返回政策"
+  "Back to policy": "返回政策",
+  "Set aside by Runner.": "已被 Runner 擱置。",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source, or upgrade the job to a release that does not name it.": "輸入設定檔 {{profile}} 已被 Runner 擱置，無法繫結。請為此來源選擇其他設定檔，或將作業升級至未引用它的版本。",
+  "Set aside by Runner. Runner’s reason: {{reason}}": "已被 Runner 擱置。Runner 提供的原因：{{reason}}",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source, or upgrade the job to a release that does not name it.": "輸入設定檔 {{profile}} 已被 Runner 擱置，無法繫結。Runner 提供的原因：{{reason}}。請為此來源選擇其他設定檔，或將作業升級至未引用它的版本。",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source.": "輸入設定檔 {{profile}} 已被 Runner 擱置，無法繫結。Runner 提供的原因：{{reason}}。請為此來源選擇其他設定檔。",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source.": "輸入設定檔 {{profile}} 已被 Runner 擱置，無法繫結。請為此來源選擇其他設定檔。"
 }

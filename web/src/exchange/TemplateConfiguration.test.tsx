@@ -15,7 +15,7 @@ vi.mock('./client',()=>({exchangeAPI:vi.fn()}))
 vi.mock('../jobs/drafts',()=>({saveJobDraft:vi.fn()}))
 vi.mock('../jobs/portableResearch',()=>({portableResearchAPI:vi.fn()}))
 vi.mock('../shell/UnsavedChanges',()=>({useRegisteredChanges:()=>mocks.clear}))
-vi.mock('../ui/Select',()=>({Select:({options,onValueChange,...props}:any)=><select {...props} onChange={e=>onValueChange(e.target.value)}><option value=""/>{options.map((o:any)=><option key={o.value} value={o.value}>{o.label}</option>)}</select>}))
+vi.mock('../ui/Select',()=>({Select:({options,onValueChange,...props}:any)=><select {...props} onChange={e=>onValueChange(e.target.value)}><option value=""/>{options.map((o:any)=><option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}</select>}))
 const digest='sha256:'+'a'.repeat(64)
 const origin={id:'b'.repeat(64)} as ImportRecord
 const source={name:'classification',kind:'research',maxAge:300,model:'model-a',question:'Classify a dataset',constraints:{},evidence:[],fields:[{name:'classification',type:'text',required:true,description:'Dataset classification'}],capabilities:['answer'],read:{copy:{facts:[],evidence:[]}}}
@@ -151,4 +151,43 @@ it('shows the exact scope of the page profile chosen for a research source, and 
  expect(screen.getByRole('list',{name:'Page scope'}).textContent).toBe('https://*')
  expect(screen.getByText('This scope includes https://*: any HTTPS page may be read.')).toBeTruthy()
  expect(portableResearchAPI).not.toHaveBeenCalled()
+})
+it('shows a set-aside page profile with Runner\'s reason and never takes it as the chosen profile',async()=>{
+ const ai={digest,profile:{id:'local-ai',class:'generated',research:{capabilities:['answer'],model:'model-a'}}}
+ const reason='the input profile old-pages: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://* (input-malformed)'
+ const page=(id:string,endpointScope:string[])=>({digest:'sha256:'+id,profile:{id,class:'generated',source:'web',shape:'http',endpoint:null,endpointScope,research:{capabilities:['page']}}})
+ vi.mocked(jobsAPI).mockResolvedValue([ai,page('guides',['https://docs.example/guides']),{...page('old-pages',['https://a.example/api/v4/projects/group%2Fproject']),state:'set-aside',reason}])
+ show(candidate([{...source,capabilities:['answer','page']}]))
+ fireEvent.change(screen.getByLabelText('Pack'),{target:{value:'classification-pack'}})
+ const aside=await screen.findByRole('option',{name:'old-pages · Set aside by Runner. Runner’s reason: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://*'}) as HTMLOptionElement
+ fireEvent.change(screen.getByLabelText('classification · answer'),{target:{value:'local-ai'}})
+ expect(aside.disabled).toBe(true)
+ expect((screen.getByRole('option',{name:'guides'}) as HTMLOptionElement).disabled).toBe(false)
+ // Even where a selection names it, it is no chosen profile: the scope view
+ // gives Runner's reason beside its stored scope, and no draft can be made.
+ fireEvent.change(screen.getByLabelText('classification · page'),{target:{value:'old-pages'}})
+ expect(screen.getByRole('list',{name:'Page scope'}).closest('div')!.textContent).toContain('The input profile old-pages was set aside by Runner and cannot be bound. Runner’s reason: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://*. Choose another profile for this source.')
+ const save=screen.getByRole('button',{name:'Create job draft'}) as HTMLButtonElement
+ expect(save.disabled).toBe(true)
+ fireEvent.change(screen.getByLabelText('classification · page'),{target:{value:'guides'}})
+ await waitFor(()=>expect(save.disabled).toBe(false))
+ expect(screen.getByRole('list',{name:'Page scope'}).textContent).toBe('https://docs.example/guides')
+})
+it('gives Runner\'s reason in the scope view for a selection whose profile is set aside after it was chosen',async()=>{
+ const ai={digest,profile:{id:'local-ai',class:'generated',research:{capabilities:['answer'],model:'model-a'}}}
+ const page={digest:'sha256:pages',profile:{id:'pages',class:'generated',source:'web',shape:'http',endpoint:null,endpointScope:['https://a.example/api/v4/projects/group%2Fproject'],research:{capabilities:['page']}}}
+ vi.mocked(jobsAPI).mockResolvedValue([ai,page])
+ show(candidate([{...source,capabilities:['answer','page']}]))
+ fireEvent.change(screen.getByLabelText('Pack'),{target:{value:'classification-pack'}})
+ await screen.findByRole('option',{name:'pages'})
+ fireEvent.change(screen.getByLabelText('classification · answer'),{target:{value:'local-ai'}})
+ fireEvent.change(screen.getByLabelText('classification · page'),{target:{value:'pages'}})
+ const save=screen.getByRole('button',{name:'Create job draft'}) as HTMLButtonElement
+ await waitFor(()=>expect(save.disabled).toBe(false))
+ // The listing is read again, and Runner now lists the chosen profile as set aside.
+ vi.mocked(jobsAPI).mockResolvedValue([ai,{...page,state:'set-aside',reason:'the input profile pages: its scope is refused (input-malformed)'}])
+ await act(async()=>{await cache.invalidateQueries({queryKey:['job-input-profiles']})})
+ await screen.findByText('The input profile pages was set aside by Runner and cannot be bound. Runner’s reason: its scope is refused. Choose another profile for this source.')
+ expect(screen.queryByText('The scope of this page profile cannot be shown: it is not among the installed profiles.')).toBeNull()
+ expect(save.disabled).toBe(true)
 })

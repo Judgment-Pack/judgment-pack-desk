@@ -10,6 +10,7 @@ import {LoadingState} from '../ui/LoadingState'
 import {Notice} from '../ui/Notice'
 import {portableResearchAPI} from './portableResearch'
 import type {ProfileEntry} from './dialectTypes'
+import {boundEntry} from './setAsideProfiles'
 import styles from './JobsView.module.css'
 
 interface PageBindingReview {
@@ -39,8 +40,8 @@ export function PageBindingControls({disabled,context,chatId,onBind}:{disabled:b
    const now=latest.current
    if(epoch.current!==token||now.disabled||now.context!==scope||now.chatId!==chat||now.scopeText!==text)return
    if(save) {
-    if(!result.entry)throw Error(msg('The request could not be completed.'))
-    onBind({profile:result.entry.profile.id,profileDigest:result.entry.digest});setReview(undefined)
+    const entry=boundEntry(result.entry)
+    onBind({profile:entry.profile.id,profileDigest:entry.digest});setReview(undefined)
    } else setReview(result)
   } catch(e) {if(epoch.current===token)setError(e instanceof Error?e.message:msg('The request could not be completed.'))}
   finally {flight.current=false;setBusy(false)}

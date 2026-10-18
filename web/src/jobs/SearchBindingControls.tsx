@@ -9,6 +9,7 @@ import {Notice} from '../ui/Notice'
 import {LoadingState} from '../ui/LoadingState'
 import type {ProfileBinding} from '../dialect/types'
 import type {ProfileEntry} from './dialectTypes'
+import {boundEntry} from './setAsideProfiles'
 import {portableResearchAPI} from './portableResearch'
 import styles from './JobsView.module.css'
 
@@ -36,7 +37,7 @@ export function SearchBindingControls({disabled,context,onBind}:{disabled:boolea
    if(save)await cache.invalidateQueries({queryKey:['job-input-profiles']})
    const now=latest.current
    if(epoch.current!==token||now.disabled||now.context!==scope||now.connection!==choice.connection||now.revision!==choice.revision)return
-   if(save){if(!result.entry)throw new Error(msg('The request could not be completed.'));onBind({profile:result.entry.profile.id,profileDigest:result.entry.digest});setReview(undefined)}else setReview(result)
+   if(save){const entry=boundEntry(result.entry);onBind({profile:entry.profile.id,profileDigest:entry.digest});setReview(undefined)}else setReview(result)
   }catch(e){if(epoch.current===token)setError(e instanceof Error?e.message:msg('The request could not be completed.'))}
   finally{inflight.current=false;setBusy(false)}
  }

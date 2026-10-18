@@ -156,3 +156,63 @@ it('shows the cannot-be-shown notice, not a blank endpoint, for a profile with n
  expect(screen.queryByText(/exact endpoint/)).toBeNull()
  expect(screen.queryByRole('list',{name:'Page scope'})).toBeNull()
 })
+
+const setAsideReason='the input profile old-pages: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://* (input-malformed)'
+const setAside=(id:string,endpointScope:string[])=>({...scoped(id,endpointScope),state:'set-aside',reason:setAsideReason})
+const setAsideRefusal='The input profile old-pages was set aside by Runner and cannot be bound. Runner’s reason: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://*. Choose another profile for this source.'
+it('shows a set-aside page profile in the picker with Runner\'s reason, and does not let it be chosen',async()=>{
+ vi.mocked(portableResearchAPI).mockResolvedValue(run('completed'))
+ const onBind=vi.fn(),cache=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ render(<QueryClientProvider client={cache}><PortableResearchControls source={{...source,capabilities:['answer','page']}} reference={reference} currentContext={reference.context} profiles={[scoped('current-pages',['https://docs.example/guides']),setAside('old-pages',['https://a.example/api/v4/projects/group%2Fproject'])]} disabled={false} onBind={onBind} onReview={vi.fn()}/></QueryClientProvider>)
+ await screen.findByText('Result retained. Read sources and preview to verify mapped values.')
+ fireEvent.click(screen.getByRole('combobox',{name:'Page profile'}))
+ const aside=await screen.findByRole('option',{name:'old-pages · Set aside by Runner. Runner’s reason: an endpointScope entry is not an endpoint prefix in the constrained page form, nor the wildcard https://*'})
+ expect(aside.getAttribute('aria-disabled')).toBe('true')
+ fireEvent.click(aside)
+ expect(onBind).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('option',{name:'current-pages'}))
+ await waitFor(()=>expect(onBind).toHaveBeenCalledWith({profile:'current-pages',profileDigest:'sha256:current-pages'},'page'))
+ expect(onBind).toHaveBeenCalledTimes(1)
+})
+it('shows Runner\'s reason beside the scope where the bound or the frozen page pin names a set-aside profile',async()=>{
+ const held=run('review');held.plan.arguments.capabilities=['answer','page'];held.limits.pages=3
+ held.inputText=JSON.stringify({source:{mapping:{sources:[{name:source.name,webProfiles:{page:pagePin('old-pages')}}]}}})
+ vi.mocked(portableResearchAPI).mockResolvedValue(held)
+ const view=pageView(pagePin('current-pages'),[scoped('current-pages',['https://docs.example/guides']),setAside('old-pages',['https://a.example/api/v4/projects/group%2Fproject'])])
+ await screen.findByRole('button',{name:'Run research'})
+ // The reviewed run's frozen scope, with the reason it is set aside beside it.
+ const frozen=reviewedList().closest('div')!
+ expect(reviewedList().textContent).toBe('https://a.example/api/v4/projects/group%2Fproject')
+ expect(frozen.textContent).toContain(setAsideRefusal)
+ // The draft's installed pin shows its scope with no such reason.
+ expect(screen.getByRole('list',{name:'Page scope'}).closest('div')!.textContent).not.toContain('set aside')
+ expect(screen.getAllByText(setAsideRefusal)).toHaveLength(1)
+ view.unmount()
+ // The draft's own pin naming it shows the same reason where it is chosen.
+ vi.mocked(portableResearchAPI).mockResolvedValue(run('completed'))
+ pageView(pagePin('old-pages'),[setAside('old-pages',['https://a.example/api/v4/projects/group%2Fproject'])])
+ await screen.findByText('Result retained. Read sources and preview to verify mapped values.')
+ expect(screen.getByRole('list',{name:'Page scope'}).closest('div')!.textContent).toContain(setAsideRefusal)
+})
+it('gives Runner\'s reason for a pin naming a set-aside id under another digest',async()=>{
+ const held=run('review');held.plan.arguments.capabilities=['answer','page'];held.limits.pages=3
+ held.inputText=JSON.stringify({source:{mapping:{sources:[{name:source.name,webProfiles:{page:{profile:'old-pages',profileDigest:'sha256:another'}}}]}}})
+ vi.mocked(portableResearchAPI).mockResolvedValue(held)
+ pageView({profile:'old-pages',profileDigest:'sha256:another'},[setAside('old-pages',['https://a.example/api/v4/projects/group%2Fproject'])])
+ await screen.findByRole('button',{name:'Run research'})
+ expect(screen.getAllByText(setAsideRefusal)).toHaveLength(2)
+ expect(screen.queryByText('The scope of this page profile cannot be shown: it is not among the installed profiles.')).toBeNull()
+})
+it('never offers an entry whose state is present but empty or null',async()=>{
+ vi.mocked(portableResearchAPI).mockResolvedValue(run('completed'))
+ const onBind=vi.fn(),cache=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ render(<QueryClientProvider client={cache}><PortableResearchControls source={{...source,capabilities:['answer','page']}} reference={reference} currentContext={reference.context} profiles={[{...scoped('empty-state',['https://docs.example/a']),state:''},{...scoped('null-state',['https://docs.example/b']),state:null}]} disabled={false} onBind={onBind} onReview={vi.fn()}/></QueryClientProvider>)
+ await screen.findByText('Result retained. Read sources and preview to verify mapped values.')
+ fireEvent.click(screen.getByRole('combobox',{name:'Page profile'}))
+ for(const name of ['empty-state · Set aside by Runner.','null-state · Set aside by Runner.']){
+  const option=await screen.findByRole('option',{name})
+  expect(option.getAttribute('aria-disabled')).toBe('true')
+  fireEvent.click(option)
+ }
+ expect(onBind).not.toHaveBeenCalled()
+})

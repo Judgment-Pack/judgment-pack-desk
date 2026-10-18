@@ -41,3 +41,12 @@ it('does not apply a completed registration to a different draft or a locked rev
  expect(onBind).not.toHaveBeenCalled()
  expect((screen.getByRole('button',{name:'Review'}) as HTMLButtonElement).disabled).toBe(true)
 })
+it('does not bind a registration Runner lists as set aside, and says why',async()=>{
+ const {onBind}=view()
+ fireEvent.change(screen.getByRole('combobox'),{target:{value:'local-search'}});fireEvent.click(screen.getByRole('button',{name:'Review'}))
+ await screen.findByRole('button',{name:'Use connection'})
+ vi.mocked(portableResearchAPI).mockResolvedValue({...review,entry:{profile:{id:'old-search'},digest:'profile-digest',state:'set-aside',reason:'its form is refused'}})
+ fireEvent.click(screen.getByRole('button',{name:'Use connection'}))
+ await screen.findByText('The input profile old-search was set aside by Runner and cannot be bound. Runner’s reason: its form is refused. Choose another profile for this source.')
+ expect(onBind).not.toHaveBeenCalled()
+})

@@ -181,3 +181,8 @@ it('resumes from a retained frozen prefix without rereading earlier sources and 
  await expect(prepareMappedInputs({...options(),mapping:declaration,caseValue:{...caseValue,no:true},retainedPrefix:{input,name:'research',response}})).rejects.toThrow('different inputs')
  expect(jobsAPI).not.toHaveBeenCalled()
 })
+it('binds nothing to a profile Runner set aside: it is refused by its name and reason before any request',async()=>{
+ const aside:ProfileEntry={...profile,state:'set-aside',reason:'its form is refused'}
+ await expect(prepareMappedInputs({...options(),profiles:[aside]})).rejects.toThrow('The input profile records was set aside by Runner and cannot be bound. Runner’s reason: its form is refused. Choose another profile for this source, or upgrade the job to a release that does not name it.')
+ expect(jobsAPI).not.toHaveBeenCalled();expect(acquire).not.toHaveBeenCalled()
+})

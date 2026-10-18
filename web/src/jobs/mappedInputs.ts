@@ -12,6 +12,7 @@ import type { InputPlan, ExecutableDialect, ProfileEntry, SourceV2 } from './dia
 import { RetainedJSON } from './wire'
 import {importBindings,sourcePin} from '../dialect/bindings'
 import { sourcePaths } from './sourceInputs'
+import { installedEntry, setAsideRefusal } from './setAsideProfiles'
 
 export function parseMappedObject(text: string): Record<string, unknown> {
  const value = parseJSON(text)
@@ -85,7 +86,10 @@ export async function prepareMappedInputs(options: {
  for (const s of mapping.sources ?? []) {
   const pin=sourcePin(s,binding)
   if (!pin) continue
-  const trusted = profiles.find(p => p.profile.id === pin.profile && p.digest === pin.profileDigest)?.profile
+  const listed = profiles.find(p => p.profile.id === pin.profile && p.digest === pin.profileDigest)
+  // Runner never binds a profile it set aside, retained research included.
+  if (listed && !installedEntry(listed)) throw Error(setAsideRefusal(listed.profile.id, listed.reason, true))
+  const trusted = listed?.profile
   // Offline retained research is verified by Runner under its pinned profiles.
   if (Object.hasOwn(source.sources,s.name)||s.kind==='research'&&options.retainedResearch?.[s.name])continue
   if (!trusted || !config.gateway || trusted.authority !== config.gateway.authority || trusted.publicKey !== config.gateway.signer.public) throw Error(msg('The source profile does not match this Desk gateway.'))
@@ -116,7 +120,7 @@ export async function prepareMappedInputs(options: {
     if (!snapshot) throw Error(msg('Choose JSON file'))
     sourcePaths(snapshot); source.sources[next.name] = {snapshot}; continue
    }
-   const profile = profiles.find(p => p.profile.id === next.profile)?.profile
+   const profile = profiles.find(p => p.profile.id === next.profile && installedEntry(p))?.profile
    if (!profile || next.source !== profile.source || !next.arguments) throw Error(msg('The inputs could not be mapped.'))
    if (declared.provider === 'google-drive' && (next.arguments.fileId !== options.selections[next.name]?.fileId || next.arguments.grant !== options.selections[next.name]?.grant)) throw Error(msg('The inputs could not be mapped.'))
    const session=newResearchSession();sessions.push(session)

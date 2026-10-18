@@ -7,6 +7,7 @@ import type { ExecutableDialect, SourceV2, Preparation, InputProfile } from './d
 import type { DocumentObject } from '../documents/client'
 import type { PackTest } from '../mcp/types'
 import { deskFetch } from '../files/client'
+import { setAsideRefusal } from './setAsideProfiles'
 
 export interface LegacyDialect { version: 1; provider: 'local-file' | 'google-drive'; facts: { target: string; source: string }[]; evidence: { requirement: string; source: string }[] }
 export interface SourceInput { mapping: LegacyDialect; snapshot: DocumentObject & { selectedAt?: string }; mappingDigest?: string }
@@ -126,7 +127,13 @@ export async function jobsAPI<T>(path: string, body?: unknown, key?: string, sig
       if(release!==undefined)retainedResponses.set(result.release,release)
     }
   }
-  if (!response.ok) throw new JobsRequestError(result.error?.message ?? result.message ?? 'The local runner could not complete this request.', response.status, typeof result.error?.code === 'string' ? result.error.code : undefined)
+  if (!response.ok) {
+    // A binding to a profile Runner set aside: Desk's message, in the page's
+    // language, naming the profile and Runner's reason as Desk forwards them.
+    const refused = result.error
+    if (refused?.code === 'input_profile_set_aside' && typeof refused.profile === 'string') throw new JobsRequestError(setAsideRefusal(refused.profile, typeof refused.reason === 'string' ? refused.reason : undefined, true), response.status, refused.code)
+    throw new JobsRequestError(result.error?.message ?? result.message ?? 'The local runner could not complete this request.', response.status, typeof result.error?.code === 'string' ? result.error.code : undefined)
+  }
   return result as T
 }
 

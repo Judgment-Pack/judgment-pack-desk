@@ -6089,5 +6089,11 @@
   "This saves only the shown draft update to this exact Policy revision. Reviews, sign-offs and publication remain separate manual actions.": "Isso salva apenas a atualização do rascunho exibida nesta revisão exata da política. Revisões, aprovações e publicação continuam sendo ações manuais separadas.",
   "UTF-8 Markdown (.md) or plain text (.txt), up to 128 KiB. Select a file, edit its draft text, then Save draft to retain the original.": "Markdown (.md) ou texto simples (.txt) em UTF-8, até 128 KiB. Selecione um arquivo, edite o texto do rascunho e escolha Salvar rascunho para manter o original.",
   "User-supplied starting material. The original is retained separately from your editable draft; importing does not approve or publish it.": "Material inicial fornecido pelo usuário. O original é mantido separadamente do rascunho editável; a importação não o aprova nem o publica.",
-  "Back to policy": "Voltar à política"
+  "Back to policy": "Voltar à política",
+  "Set aside by Runner.": "Deixado de lado pelo Runner.",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source, or upgrade the job to a release that does not name it.": "O perfil de entrada {{profile}} foi deixado de lado pelo Runner e não pode ser vinculado. Escolha outro perfil para esta fonte ou atualize o trabalho para uma versão que não o mencione.",
+  "Set aside by Runner. Runner’s reason: {{reason}}": "Deixado de lado pelo Runner. Motivo do Runner: {{reason}}",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source, or upgrade the job to a release that does not name it.": "O perfil de entrada {{profile}} foi deixado de lado pelo Runner e não pode ser vinculado. Motivo do Runner: {{reason}}. Escolha outro perfil para esta fonte ou atualize o trabalho para uma versão que não o mencione.",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Runner’s reason: {{reason}}. Choose another profile for this source.": "O perfil de entrada {{profile}} foi deixado de lado pelo Runner e não pode ser vinculado. Motivo do Runner: {{reason}}. Escolha outro perfil para esta fonte.",
+  "The input profile {{profile}} was set aside by Runner and cannot be bound. Choose another profile for this source.": "O perfil de entrada {{profile}} foi deixado de lado pelo Runner e não pode ser vinculado. Escolha outro perfil para esta fonte."
 }
