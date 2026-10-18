@@ -84,7 +84,7 @@ it.runIf(Boolean(process.env.JPS_CHAT_CONTEXT_STORE&&process.env.JPS_CHAT_CONTEX
  console.log(JSON.stringify({savedRequests:execution.used,remaining:execution.limit-execution.used,recoveryRequests:calls,completedWorkReplayed:false,liveProviderCalls:0,savedDataUnchanged:true}))
 })
 
-const topics=['dialect mapping','job scheduling','document analysis','ordinary conversation'] as const
+const topics=['dialect mapping','job scheduling','document analysis','ordinary conversation','policy authoring'] as const
 const families=['openai-compatible','anthropic','gemini'] as const
 it.each(families.flatMap(family=>topics.map(topic=>({family,topic}))))('$family uses the shared recovery projection for $topic',async({family,topic})=>{
  const session=base();session.model.family=family;session.thinking=normalize('off',family)

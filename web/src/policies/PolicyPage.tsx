@@ -13,8 +13,11 @@ import {Dialog,DialogActions} from '../ui/Dialog'
 import {LoadingState} from '../ui/LoadingState'
 import {QueryStatusNotice} from '../shell/QueryStatusNotice'
 import {useConfirmDiscard,useRegisteredChanges} from '../shell/UnsavedChanges'
+import {PolicyAssistant} from './PolicyAssistant'
+import {PolicySource} from './PolicySource'
+import {preparePolicyImport} from './sourceImport'
 import {PolicyHistory} from './PolicyHistory'
-import {POLICIES_KEY,PolicyRequestError,policyHref,policyQuery,readPolicy,recoverPolicyOperation,writePolicy,type PolicyReply,type PolicyWrite,type PolicyMutationReply} from './client'
+import {POLICIES_KEY,PolicyRequestError,policyHref,policyQuery,readPolicy,recoverPolicyOperation,writePolicy,type PolicyReply,type PolicyWrite,type PolicyMutationReply,type PolicyImport} from './client'
 import styles from './PolicyPage.module.css'
 
 type Buffer={title:string;narrative:string;artifactVersion:string}
@@ -33,19 +36,20 @@ function ExistingPolicy({id}:{id:string}){
 /** Freeze the editor base; privateQuery refreshes never replace a local buffer. */
 export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:PolicyReply}){
  useLocale()
+ const [imported,setImported]=useState<PolicyImport>(),[importError,setImportError]=useState(false),[importBusy,setImportBusy]=useState(false)
  const [saved,setSaved]=useState(initial),[value,setValue]=useState<Buffer>(()=>initial?fields(initial):blank)
  const [busy,setBusy]=useState(false),[error,setError]=useState<PolicyRequestError>(),[pending,setPending]=useState<{operation:PolicyWrite;submitted:Buffer;result?:PolicyMutationReply}>()
  const [latest,setLatest]=useState<PolicyReply>(),[comment,setComment]=useState(''),[publishOpen,setPublishOpen]=useState(false),[tab,setTab]=useState('draft'),[notice,setNotice]=useState('')
  const active=useRef(false),cache=useQueryClient(),navigate=useNavigate(),confirm=useConfirmDiscard()
- const dirty=!equal(value,saved?fields(saved):blank)
+ const dirty=!!imported&&!saved||!equal(value,saved?fields(saved):blank)
  const observedLatest=latest??(observed&&saved&&observed.revision!==saved.revision?observed:undefined)
- const held=!!pending,disabled=busy||held
+ const held=!!pending,disabled=busy||held||importBusy
  const save=async()=>{
   if(active.current||held)throw new PolicyRequestError('delivery-unknown')
-  const operation:PolicyWrite={path:saved?'/'+encodeURIComponent(saved.document.id):'',method:saved?'PUT':'POST',body:{operationId:crypto.randomUUID(),...value,workflow:saved?.document.workflow??{independentReviewRequired:false},...(saved?{baseRevision:saved.revision}:{})}}
+  const operation:PolicyWrite={path:saved?'/'+encodeURIComponent(saved.document.id):'',method:saved?'PUT':'POST',body:{operationId:crypto.randomUUID(),...value,...(!saved&&imported?{import:imported}:{}),workflow:saved?.document.workflow??{independentReviewRequired:false},...(saved?{baseRevision:saved.revision}:{})}}
   await execute({operation,submitted:{...value}})
  }
- const clear=useRegisteredChanges(dirty||held||!!comment,msg('Leaving will discard unsaved policy changes.'),{label:msg('Policy'),name:value.title,busy,saveFailed:!!error,saveDraft:!held&&!comment&&!observedLatest?save:undefined})
+ const clear=useRegisteredChanges(dirty||held||!!comment,msg('Leaving will discard unsaved policy changes.'),{label:msg('Policy'),name:value.title,busy:busy||importBusy,saveFailed:!!error,saveDraft:!held&&!comment&&!observedLatest?save:undefined})
  const updateCache=(reply:PolicyReply)=>{cache.setQueryData([...POLICIES_KEY,reply.document.id],reply);void cache.invalidateQueries({queryKey:POLICIES_KEY,exact:true})}
  async function execute(work:{operation:PolicyWrite;submitted:Buffer;result?:PolicyMutationReply},recover=false){
   if(active.current)return
@@ -74,6 +78,12 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
    throw failure
   }finally{active.current=false;setBusy(false)}
  }
+ async function importFile(file?:File){
+  if(!file||disabled||active.current)return
+  if(dirty&&!await confirm(msg('Replace the draft text with this file?'),{name:value.title}))return
+  setImportBusy(true);setImportError(false)
+  try{const result=await preparePolicyImport(file);setImported(result.source);setValue({...value,title:value.title||file.name.replace(/\.(md|txt)$/i,''),narrative:result.text})}catch{setImportError(true)}finally{setImportBusy(false)}
+ }
  const action=async(decision:'approve'|'request-changes'|'publish')=>{
   if(!saved||dirty||disabled||active.current||observedLatest)return
   const document=saved.document
@@ -93,9 +103,15 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const approveDisabled=reviewDisabled||!!document?.workflow.independentReviewRequired||!document?.candidate.title.trim()||!document?.candidate.narrative.trim()||!document?.candidate.artifactVersion.trim()
  const reviewHint=held?msg('Recover the pending operation before continuing.'):observedLatest?msg('Review the latest saved revision before continuing.'):dirty?msg('Save draft before reviewing or publishing.'):!saved?msg('Save this draft to begin review.'):document?.workflow.independentReviewRequired?msg('This workflow requires a different reviewer. Independent review is unavailable in this local installation.'):undefined
  return <>
+  {saved&&<PolicyAssistant id={saved.document.id} editing={dirty} busy={disabled}/>}
   <PageHeader variant="title" title={msg('Library')} titleHref="/library?type=policy" context={value.title||msg('New policy')} meta={msg('Policy')} actions={<Button variant="primary" disabled={disabled||!dirty&&!!saved||!!observedLatest} onClick={()=>void save().catch(()=>{})}>{busy?msg('Working…'):msg('Save draft')}</Button>}/>
   <Tabs scrollable variant="page" label={msg('Policy')} value={tab} onValueChange={setTab} fillPanel={tab} tabs={[
    {value:'draft',label:msg('Draft'),panel:<div className={styles.panel}><PageBody width="wide"><SettingsStack>
+    {!saved&&<SettingsSection level={2} variant="plain" title={msg('Import file')} description={msg('UTF-8 Markdown (.md) or plain text (.txt), up to 128 KiB. Select a file, edit its draft text, then Save draft to retain the original.')}>
+     <Field label={msg('Import file')}>{wiring=><Input {...wiring} type="file" accept=".md,.txt,text/plain,text/markdown" disabled={disabled} onChange={event=>{const file=event.target.files?.[0];event.target.value='';void importFile(file)}}/>}</Field>
+     {importBusy&&<LoadingState inline>{msg('Reading file…')}</LoadingState>}{imported&&<p className={styles.note}>{msg('Selected original:')} {imported.name}</p>}{importError&&<p role="alert">{msg('Import a UTF-8 .txt or .md file up to 128 KiB with a simple filename.')}</p>}
+    </SettingsSection>}
+    {saved?.document.candidate.source&&<PolicySource id={saved.document.id} source={saved.document.candidate.source}/>}
     <SettingsSection level={2} variant="plain" title={msg('Policy draft')} description={msg('Write or paste policy text in Markdown. Saved policies stay in Library independently of chats.')}>
      <FieldGroup><Field label={msg('Title')}>{wiring=><Input {...wiring} maxLength={500} value={value.title} disabled={disabled} onChange={event=>setValue({...value,title:event.target.value})}/>}</Field>
       <Field label={msg('Artifact version')} hint={<>{msg('Use a version such as 1.0.0. Published versions cannot be overwritten.')} {msg('Publish with a version greater than the latest publication.')}</>}>{wiring=><Input {...wiring} maxLength={256} value={value.artifactVersion} disabled={disabled} onChange={event=>setValue({...value,artifactVersion:event.target.value})}/>}</Field>

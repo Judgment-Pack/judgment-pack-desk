@@ -97,7 +97,12 @@ func (s *Server) handleStorageBackup(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		defer store.root.Close()
-		return buildChatBackup(r.Context(), store, file)
+		return buildChatBackup(r.Context(), store, file, func(name string, data []byte) error {
+			if conversationFileName.MatchString(name) {
+				return s.authorizePolicyConversations(r, data)
+			}
+			return nil
+		})
 	}()
 	if err != nil {
 		storageFailure(w, err)
@@ -108,7 +113,7 @@ func (s *Server) handleStorageBackup(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "jpack-chat-backup.zip", time.Time{}, file)
 }
 
-func buildChatBackup(ctx context.Context, store *chatDataStore, out *os.File) error {
+func buildChatBackup(ctx context.Context, store *chatDataStore, out *os.File, admit ...func(string, []byte) error) error {
 	if err := validateStoredBindings(store.root); err != nil {
 		return err
 	}
@@ -136,6 +141,11 @@ func buildChatBackup(ctx context.Context, store *chatDataStore, out *os.File) er
 		}
 		if err = validateStorageFile(name, data); err != nil {
 			return err
+		}
+		for _, authorize := range admit {
+			if err = authorize(name, data); err != nil {
+				return err
+			}
 		}
 		total += int64(len(data))
 		if total > maxBackupData {

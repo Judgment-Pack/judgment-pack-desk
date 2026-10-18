@@ -197,6 +197,9 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	}
 	read := func() (conversationReply, error) {
 		reply, err := s.readWorkspaceRecord(root, recordName, drafts)
+		if err == nil && !briefs && !reviews && !tests && !drafts {
+			err = s.authorizePolicyConversations(r, reply.Content)
+		}
 		if err == nil && briefs && r.URL.Query().Get("subject") != "" {
 			reply.Snapshot, err = s.definitionBriefSnapshot(root, recordName, r.URL.Query().Get("subject"))
 			if err != nil {
@@ -265,6 +268,12 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	if err = validate(data); err != nil {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
+	}
+	if !briefs && !reviews && !tests && !drafts {
+		if err = s.authorizePolicyConversations(r, data); err != nil {
+			fail(err)
+			return
+		}
 	}
 	matches := func() error {
 		current, err := read()

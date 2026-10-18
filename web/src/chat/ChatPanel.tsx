@@ -1,3 +1,5 @@
+import {usePolicyChatContext} from '../policies/chatContext'
+import {PolicyChatProposals} from '../policies/PolicyChatProposals'
 import {pendingPublication} from '../dialects/publicationProposal'
 import {LinkedPackProposal} from './PackProposalCard'
 import {ExecutionProgress} from '../assistant/execution/ExecutionProgress'
@@ -78,13 +80,14 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   historyLoading?: boolean
   active?: boolean; draftActionsInHeader?: boolean
   chat: Chat; landing?: boolean; onOpenDraft?: () => void; draftVisible?: boolean
-  context?: { text: string; title?: string; detail?: string; tests?: string; kind?: 'pack' | 'graph' | 'input'; beforeSend?: () => void }
+  context?: { text: string; title?: string; detail?: string; tests?: string; kind?: 'pack' | 'graph' | 'input' | 'policy'; prepare?:()=>Promise<{text:string;beforeSend?:()=>void}>; beforeSend?: () => void }
   proposalActions?: ReactNode; locked?: boolean; inputActionsLocked?: boolean
 }) {
   useLocale()
   const inputContext = useDialectChatContext(suppliedContext ? undefined : chat.input?.id)
-  const context: typeof suppliedContext = suppliedContext ?? inputContext
-  const locked = suppliedLocked || Boolean(inputContext?.busy)
+  const policyContext=usePolicyChatContext(chat.policy?.id,chat.id)
+  const context: typeof suppliedContext = suppliedContext ?? policyContext ?? inputContext
+  const locked = suppliedLocked || Boolean(inputContext?.busy)||Boolean(policyContext?.busy)
   const isInput = context?.kind === 'input' || Boolean(chat.input)
   const { store, bindings, packDrafts } = useChats()
   const binding = bindings.get(chat.id)
@@ -184,9 +187,15 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     if (material === undefined) return
     const latest = [...store.getSnapshot().chats, ...store.getSnapshot().drafts].find(item => item.id === chat.id)
     if (currentReference.current !== reference || !latest || latest.composer !== chat.composer || JSON.stringify(latest.attachments ?? []) !== JSON.stringify(attachments)) return
-    const { prompt, display, statement } = composeMessageInput(text, material, reference, context?.text, context?.kind, context?.tests)
+    let currentContext=context?.text
+    let prepared: {text:string;beforeSend?:()=>void}|undefined
+    try{if(context?.prepare){prepared=await context.prepare();currentContext=prepared.text}}catch{store.problem(msg('The saved Policy could not be read. Sign in or reload before sending.'));return}
+    const admitted=[...store.getSnapshot().chats,...store.getSnapshot().drafts].find(item=>item.id===chat.id)
+    if(!admitted||admitted.composer!==chat.composer||JSON.stringify(admitted.attachments??[])!==JSON.stringify(attachments)||currentReference.current!==reference)return
+    const { prompt, display, statement } = composeMessageInput(text, material, reference, currentContext, context?.kind, context?.tests)
     const packContext = chat.pack && context?.text !== undefined && (!context.kind || context.kind === 'pack') ? {packId:chat.pack.id,path:chat.pack.path,text:context.text} : undefined
     const started = store.perform(chat.id, active => {
+      prepared?.beforeSend?.()
       context?.beforeSend?.()
       if (active.state.phase === 'idle') active.run?.start(prompt, [], display, attachments, statement, chosen, packContext)
       else active.run?.send(prompt, display, false, attachments, statement, chosen, packContext)
@@ -261,12 +270,12 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const unassignedSearches=(chat.searches??[]).filter(s=>!responses.some(r=>r.searches?.some(ref=>ref.id===s.id)))
   const hasChatSources = unassignedSearches.length + unassigned.documents.length + unassigned.websites.length + unassignedResearch.length > 0
   const workContext: WorkContext | undefined = context ? {
-    kind: isInput ? 'input' : graphContext ? 'graph' : 'pack',
-    id: isInput ? (scope?.kind === 'input' ? scope.id : chat.input?.id) ?? 'list' : graphContext ? chat.graph?.id ?? '' : chat.pack?.id ?? chat.draftId ?? '',
+    kind: chat.policy?'policy':isInput ? 'input' : graphContext ? 'graph' : 'pack',
+    id: chat.policy?.id??(isInput ? (scope?.kind === 'input' ? scope.id : chat.input?.id) ?? 'list' : graphContext ? chat.graph?.id ?? '' : chat.pack?.id ?? chat.draftId ?? ''),
     title: context.title ?? '', detail: context.detail, text: context.text, tests: context.tests, open: placement === 'pane',
   } : undefined
   const testProposals = useChatTestProposals(chat.id)
-  const hasRelatedWork = !!(testProposals.length || context || chat.input || chat.pack || chat.draftId || chat.graph || chat.inputDrafts?.length || chat.inputActions?.length || chat.graphDrafts?.length)
+  const hasRelatedWork = !!(testProposals.length || context || chat.policy || chat.input || chat.pack || chat.draftId || chat.graph || chat.inputDrafts?.length || chat.inputActions?.length || chat.graphDrafts?.length)
   const openRelatedWork = (opener: HTMLElement | null) => read(<RelatedChatWork chatId={chat.id} current={workContext} openGraphDraftId={openGraphDraftId} disabled={locked||inputActionsLocked}/>, opener)
   const inputContextHeader = isInput && context && placement === 'pane'
   const toolbar = <ChatToolbar loading={historyLoading} scope={scope}
@@ -274,8 +283,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     onSources={hasChatSources ? opener => read(<ReadingDetails title={msg('Chat sources')}><SourceList chatId={chat.id} documents={unassigned.documents} websites={unassigned.websites} searches={unassignedSearches} sourceIds={unassignedResearch} binding={binding} onRead={read}/></ReadingDetails>, opener) : undefined}
     work={hasRelatedWork && !inputContextHeader ? <ChatAction variant="quiet" onClick={event=>openRelatedWork(event.currentTarget)}><IconLink/>{msg('Related work')}</ChatAction> : undefined}
     chat={chat} history={history} historyRef={historyButton} onHistory={() => {setMessagesOpen(false);setHistory(true)}} onBack={backToChat}
-    onNew={() => { if (!store?.canCreate) return; const next = scope?.kind === 'input' ? store.startChat(undefined, chat.mode, true, undefined, undefined, {id:scope.id}) : store.startChat(chat.pack, chat.mode, true, chat.draftId, chat.graph, chat.input); setHistory(false); openNewChat(navigate, next, location) }} />
-  const welcome = idleEmpty && (!historyLoading || landing) ? <div className={styles.welcome}><h1>{isInput || chat.pack || draftVisible || graphContext ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{isInput ? msg("Ask about this dialect, update the recipe, or prepare records.") : graphContext ? msg("Ask about this graph, connect packs, or propose a change.") : chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: context?.title || chat.pack.id }) : draftVisible ? msg("Ask about this pack, test an idea, or propose a change.") : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div> : null
+    onNew={() => { if (!store?.canCreate) return; const next = scope?.kind === 'input' ? store.startChat(undefined, chat.mode, true, undefined, undefined, {id:scope.id}) : store.startChat(chat.pack, chat.mode, true, chat.draftId, chat.graph, chat.input,chat.policy); setHistory(false); openNewChat(navigate, next, location) }} />
+  const welcome = idleEmpty && (!historyLoading || landing) ? <div className={styles.welcome}><h1>{chat.policy || isInput || chat.pack || draftVisible || graphContext ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{chat.policy?msg('Ask about this policy, explain its wording, or propose a draft change.'):isInput ? msg("Ask about this dialect, update the recipe, or prepare records.") : graphContext ? msg("Ask about this graph, connect packs, or propose a change.") : chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: context?.title || chat.pack.id }) : draftVisible ? msg("Ask about this pack, test an idea, or propose a change.") : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div> : null
   return <section className={styles.chat} data-chat-id={chat.id} data-placement={placement} data-history-loading={historyLoading || undefined} data-landing={landing && idleEmpty || undefined} aria-label={msg("Assistant chat")}>
     {active && toolbarTarget ? createPortal(toolbar, toolbarTarget) : active && placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
     {inputContextHeader && <ComposerContext title={context.title||msg('Dialects')} kind="input" detail={context.detail} openLabel={msg('Related work')} onOpen={event=>openRelatedWork(event.currentTarget)}/>}
@@ -316,6 +325,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
       <DialectRecipeNotice chatId={chat.id} drafts={(chat.inputDrafts??[]).filter(draft=>scope?.kind!=='input'||scope.id==='list'||draft.savedInputId===scope.id||!draft.savedInputId)} disabled={locked||inputActionsLocked}/>
       <DialectActionNotice chatId={chat.id} actions={(chat.inputActions??[]).filter(action=>scope?.kind!=='input'||scope.id==='list'||action.inputId===scope.id)} disabled={locked}/>
       {isInput&&<DialectChatProgress inputId={scope?.kind==='input'?scope.id:chat.input?.id} emptyFallback={welcome} presentation={openInputId&&!pane.mainCovered?'hidden':'compact'}/>}
+      <PolicyChatProposals chatId={chat.id} disabled={locked||running}/>
       <ChatTestProposals chatId={chat.id}/>
       <PlanCard chat={chat} store={store} disabled={actionDisabled} onRevise={()=>messageInput.current?.focus()} onStart={()=>{
         if(!store)return false
@@ -367,7 +377,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
             connections={connectionCatalog.entries.filter(item => !item.status.isError && item.status.data?.state === 'connected').map(item => ({ descriptor: item.descriptor, provider: item.descriptor.id, selection: item.descriptor.selection, onSelect: () => openConnection(item.descriptor.id) }))} />
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select size="small" quiet id={`${id}-mode`} value={chat.interaction==='plan'?'plan':chat.mode} disabled={running || locked} onValueChange={mode => store?.update(chat.id, mode==='plan'?{interaction:'plan'}:{interaction:'work',mode:mode as Chat['mode']})} options={[{value:'plan',label:msg('Plan')},{ value: 'draft', label: msg("Chat") }, { value: chat.mode === 'research' ? 'research' : 'web-research', label: msg("Research") }]} /></div>
           {chat.interaction==='plan'&&<Select size="small" quiet id={`${id}-plan-sources`} aria-label={msg('Plan sources')} value={chat.mode} disabled={running||locked} onValueChange={mode=>store?.update(chat.id,{mode:mode as Chat['mode']})} options={[{value:'draft',label:msg('Chat sources')},{value:chat.mode==='research'?'research':'web-research',label:msg('Research sources')}]}/>}
-          {chat.interaction==='plan'?<span className={styles.caption}>{msg('Approvals apply when work starts')}</span>:<AssistantApprovalControl publication={scope?.kind==='pack'?undefined:pendingPublication(chat.inputActions,scope?.kind==='input'&&scope.id!=='list'?scope.id:chat.input?.id!=='list'?chat.input?.id:undefined)} chatId={chat.id} pack={!scope||scope.kind==='pack'?chat.pack:undefined} checkpoint={()=>store?.checkpoint(new AbortController().signal)??Promise.resolve()} inputId={scope?.kind==='input'&&scope.id!=='list'?scope.id:chat.input?.id!=='list'?chat.input?.id:undefined} disabled={running||locked||inputActionsLocked}/> }
+          {chat.interaction==='plan'?<span className={styles.caption}>{msg('Approvals apply when work starts')}</span>:chat.policy?<span className={styles.caption}>{msg('Draft updates require a reviewed proposal')}</span>:<AssistantApprovalControl publication={scope?.kind==='pack'?undefined:pendingPublication(chat.inputActions,scope?.kind==='input'&&scope.id!=='list'?scope.id:chat.input?.id!=='list'?chat.input?.id:undefined)} chatId={chat.id} pack={!scope||scope.kind==='pack'?chat.pack:undefined} checkpoint={()=>store?.checkpoint(new AbortController().signal)??Promise.resolve()} inputId={scope?.kind==='input'&&scope.id!=='list'?scope.id:chat.input?.id!=='list'?chat.input?.id:undefined} disabled={running||locked||inputActionsLocked}/> }
           {((selected?.models.length ?? 0)>0||effective.aiConnections?.data?.connections.some(c=>c.enabled))&&<ModelControl requiredSelection={needsConnection} id={`${id}-model`} model={binding?.model||selected?.model||''} models={selected?.models??[]} thinking={slot.thinking} thinkingOverride={chat.apiThinking} onThinkingChange={apiThinking=>store?.update(chat.id,{apiThinking})} connectionId={chat.aiConnection??slot.connectionId} onConnectionChange={(aiConnection,aiConnectionName,model)=>store?.update(chat.id,{aiConnection,aiConnectionName,model,apiThinking:undefined,reasoning:{model,effort:null}})} agent={slot.agent} value={chat.reasoning} codex={slot.engine==='codex'} enabled={assistantReady(slot)} disabled={running||locked} onModelChange={model=>store?.update(chat.id,{model,...(slot.engine==='codex'?{reasoning:{model,effort:null}}:{})})} onReasoningChange={reasoning=>store?.update(chat.id,{reasoning})}/>}
           <AssistantOptions reasoning={chatReasoningAgent(slot.agent, binding?.model || selected?.model || '', chat.reasoning)?.effort} researchMode={chat.researchMode} searchConnection={chat.searchConnection} searchOptions={chat.mode !== 'research' && <ChatSearchOptions onConfigure={element => { searchSetupButton.current = element; setConfigureSearch(true) }} chat={chat} disabled={running||locked} onChange={patch=>store?.update(chat.id,patch)}/>} thinking={slot.thinking} tools={selected?.tools ?? []} mode={chat.mode} websiteExploration={websiteReadable(research,{local:localDrive,catalogWeb:connectionCatalog.web,catalogDiscovery:connectionCatalog.discovery})} linkReading={linkReadable(research, { local: localDrive, catalogWeb: connectionCatalog.web })} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
         </>}

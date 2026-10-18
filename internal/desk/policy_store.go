@@ -22,7 +22,7 @@ const policyArtifactVersionLimit = 256
 
 // encoding/json may escape each accepted character to six bytes. The retained
 // private envelope must allow every narrative accepted by the request boundary.
-const policyCandidateByteLimit = 6*(policyNarrativeLimit+500+policyArtifactVersionLimit) + 1024
+const policyCandidateByteLimit = 6*(policyNarrativeLimit+500+policyArtifactVersionLimit) + 4096
 
 var policyIDForm = regexp.MustCompile(`^policy_[a-f0-9]{48}$`)
 var policyEventIDForm = regexp.MustCompile(`^(revision|review|publication)_[a-f0-9]{48}$`)
@@ -194,7 +194,7 @@ func validatePolicyLedger(ledger policyLedger) error {
 		}
 		revisions := map[string]policyRevision{}
 		for _, revision := range record.Revisions {
-			if !policyEventIDForm.MatchString(revision.ID) || !strings.HasPrefix(revision.ID, "revision_") || revisions[revision.ID].ID != "" || !revision.Content.valid() || revision.Content.Bytes > policyCandidateByteLimit || revision.Digest != revision.Content.SHA256 || len(revision.Title) > 500 || len(revision.ArtifactVersion) > policyArtifactVersionLimit || revision.WorkflowDigest != policyWorkflowDigest(revision.Workflow) || !validPolicyTime(revision.At) || !validPolicyActor(revision.Actor) {
+			if !policyEventIDForm.MatchString(revision.ID) || !strings.HasPrefix(revision.ID, "revision_") || revisions[revision.ID].ID != "" || !validPolicySource(revision.Source) || !revision.Content.valid() || revision.Content.Bytes > policyCandidateByteLimit || revision.Digest != revision.Content.SHA256 || len(revision.Title) > 500 || len(revision.ArtifactVersion) > policyArtifactVersionLimit || revision.WorkflowDigest != policyWorkflowDigest(revision.Workflow) || !validPolicyTime(revision.At) || !validPolicyActor(revision.Actor) {
 				return bad
 			}
 			revisions[revision.ID] = revision

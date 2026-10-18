@@ -1,3 +1,4 @@
+import {PolicyChatProposals} from '../policies/PolicyChatProposals'
 import {dialectQuery} from '../dialects/queries'
 import {PlanCard} from '../assistant/planning/PlanCard'
 import { ChatTestProposals, useChatTestProposals } from '../packs/test-workspace/ChatTestProposals'
@@ -21,7 +22,7 @@ import { dialectChatHref } from './navigation'
 import { RelatedWork, RelatedWorkEntry, RelatedWorkAction, RelatedWorkLink } from './RelatedWork'
 import styles from './RelatedWork.module.css'
 
-export interface WorkContext { kind: 'pack' | 'graph' | 'input'; id: string; title: string; detail?: string; text?: string; tests?: string; open?: boolean }
+export interface WorkContext { kind: 'pack' | 'graph' | 'input' | 'policy'; id: string; title: string; detail?: string; text?: string; tests?: string; open?: boolean }
 interface DialectGroup { key: string; id?: string; name: string; drafts: DialectRecipeProposal[]; actions: DialectChatAction[]; historical?: boolean }
 
 /** Group by persisted identity, never the display name or number of operations. */
@@ -120,7 +121,7 @@ export function RelatedChatWork({ chatId, current, openGraphDraftId, disabled }:
   const graphs = relatedGraphs(chat)
   const historicalInputs = inputs.filter(group => group.historical)
   const ownPack = current?.kind === 'pack' && (current.id === pack?.id || current.id === packDraft?.id) ? current : undefined
-  const hasWork = chat.plans?.length || testProposals.length || inputs.length || pack || packDraft || graphs.length
+  const hasWork = chat.plans?.length || testProposals.length || inputs.length || chat.policy || pack || packDraft || graphs.length
   return <RelatedWork>
     <PlanCard chat={chat} history/>
     {!hasWork && <p className={styles.empty}>{msg('Work you create or review in this chat will appear here.')}</p>}
@@ -130,6 +131,8 @@ export function RelatedChatWork({ chatId, current, openGraphDraftId, disabled }:
       href={pack ? '/packs/' + encodeURIComponent(pack.id) + '?chat=' + encodeURIComponent(chatId) : draftHref(packDraft!.id)} open={!!ownPack?.open && ownPack.id === (pack?.id ?? packDraft?.id) || location.pathname === (pack ? '/packs/' + encodeURIComponent(pack.id) : draftHref(packDraft!.id))}>
       <ContextDetails context={ownPack}/>
     </RelatedWorkEntry>}
+    {chat.policy&&<RelatedWorkEntry title={current?.kind==='policy'?current.title:msg('Policy')} icon={<IconPack/>} description={msg('Saved policy draft')} action={msg('Open policy')} href={'/policies/'+chat.policy.id+'?chat='+chatId} open={current?.kind==='policy'&&current.open}><ContextDetails context={current?.kind==='policy'?current:undefined}/></RelatedWorkEntry>}
+    <PolicyChatProposals chatId={chatId} disabled={disabled} history/>
     <ChatTestProposals chatId={chatId} history/>
     {graphs.map(group => <GraphWork key={group.key} chatId={chatId} group={group} current={current} openGraphDraftId={openGraphDraftId}/>)}
     {!!historicalInputs.length && <Disclosure title={msg('Earlier proposals')}><div className={styles.history}>

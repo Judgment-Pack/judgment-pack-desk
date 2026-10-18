@@ -12,14 +12,29 @@ type policyWorkflow struct {
 	IndependentReviewRequired bool `json:"independentReviewRequired"`
 }
 
+// Uploaded material is user-supplied starting material, never verified provenance.
+type policySource struct {
+	Name      string              `json:"name"`
+	MediaType string              `json:"mediaType"`
+	Origin    string              `json:"origin"`
+	Content   retainedArtifactRef `json:"content"`
+}
+type policyImport struct {
+	Name      string `json:"name"`
+	MediaType string `json:"mediaType"`
+	Data      []byte `json:"data"`
+}
+
 type policyCandidateContent struct {
-	SchemaVersion   int    `json:"schemaVersion"`
-	Title           string `json:"title"`
-	Narrative       string `json:"narrative"`
-	ArtifactVersion string `json:"artifactVersion"`
+	Source          *policySource `json:"source,omitempty"`
+	SchemaVersion   int           `json:"schemaVersion"`
+	Title           string        `json:"title"`
+	Narrative       string        `json:"narrative"`
+	ArtifactVersion string        `json:"artifactVersion"`
 }
 
 type policyCandidate struct {
+	Source          *policySource       `json:"source,omitempty"`
 	Title           string              `json:"title"`
 	Narrative       string              `json:"narrative"`
 	ArtifactVersion string              `json:"artifactVersion"`
@@ -29,6 +44,7 @@ type policyCandidate struct {
 }
 
 type policyRevision struct {
+	Source          *policySource       `json:"source,omitempty"`
 	ID              string              `json:"id"`
 	Sequence        int                 `json:"sequence"`
 	Digest          string              `json:"digest"`
@@ -100,6 +116,7 @@ type policySummary struct {
 }
 
 type policyEditRequest struct {
+	Import          *policyImport   `json:"import,omitempty"`
 	OperationID     string          `json:"operationId"`
 	BaseRevision    string          `json:"baseRevision,omitempty"`
 	Title           string          `json:"title"`

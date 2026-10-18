@@ -13,6 +13,22 @@ function setup(io?: Partial<ChatPersistence>) {
   return { store, read, write }
 }
 describe('project conversation history', () => {
+  it('persists a production Policy identity, request and checked proposal independently of pack drafts',async()=>{
+    const {store,write}=setup();await store.load()
+    const policyId='policy_'+'a'.repeat(48),revision='b'.repeat(64),candidate={title:'Policy',narrative:'Saved exact source',artifactVersion:'1.0.0'}
+    const chat=store.startChat(undefined,undefined,false,undefined,undefined,undefined,{id:policyId})
+    expect(store.startChat(undefined,undefined,false,undefined,undefined,undefined,{id:policyId}).id).toBe(chat.id)
+    expect(store.startChat().id).not.toBe(chat.id)
+    store.update(chat.id,{policyRequest:{revision,candidate},policyProposals:[{version:1,id:'proposal',policyId,revision,before:candidate,candidate:{...candidate,title:'Updated title'},operationId:crypto.randomUUID(),createdAt:'2026-10-18T00:00:00Z',check:{scope:'draft-shape-and-revision',status:'passed'},save:{state:'uncertain'}}]})
+    store.retainChat(chat.id);await store.flush()
+    const document=write.mock.calls.at(-1)![0] as {version:1;chats:import('./store').Chat[]}
+    const loaded=setup({read:async()=>({project:'/project',sha256:'saved',content:document})});await loaded.store.load()
+    expect(loaded.store.getSnapshot().chats[0]).toMatchObject({id:chat.id,policy:{id:policyId},policyRequest:{revision,candidate},policyProposals:[{save:{state:'uncertain'}}]})
+    expect(loaded.store.getSnapshot().packDrafts).toEqual([])
+    loaded.store.remove(chat.id);await loaded.store.flush()
+    expect(loaded.store.getSnapshot().chats).toEqual([])
+  })
+
   it('keeps home visits, typing and New chat out of history until the first accepted Send', async () => {
     const { store, write } = setup(); await store.load()
     const draft = store.startChat()

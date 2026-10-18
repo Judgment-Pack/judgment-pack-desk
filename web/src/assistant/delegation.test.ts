@@ -18,13 +18,14 @@ const writeTool:HostTool={name:'save_recipe',description:'Save',inputSchema:{typ
 afterEach(()=>vi.restoreAllMocks())
 
 it('isolates child context and capabilities, then resumes the parent with findings',async()=>{
+ const authorize=vi.fn(async()=>{})
  const sessions:EngineSession[]=[]
  const engine:Engine={id:'vercel',async *start(s){sessions.push(s)
   if(sessions.length===1){expect(s.hostTools.some(t=>t.name==='delegate_tasks')).toBe(true);yield {type:'delegation_requested',request};yield {type:'end'};return}
-  if(sessions.length===2){expect(s.prompt).not.toContain('PARENT PRIVATE HISTORY');expect(s.hostTools.map(t=>t.name)).toEqual(['read_context']);expect(s.tools).toEqual([]);expect(s.adversarialReview).toBe(false);await s.hostTools[0]!.execute({},s.signal);yield {type:'message',text:'One unsupported claim.'};yield {type:'end'};return}
+  if(sessions.length===2){expect(s.context?.authorize).toBe(authorize);expect(s.context?.artifactProposals).toBe(false);expect(s.prompt).not.toContain('PARENT PRIVATE HISTORY');expect(s.hostTools.map(t=>t.name)).toEqual(['read_context']);expect(s.tools).toEqual([]);expect(s.adversarialReview).toBe(false);await s.hostTools[0]!.execute({},s.signal);yield {type:'message',text:'One unsupported claim.'};yield {type:'end'};return}
   expect(s.prompt).toContain('One unsupported claim.');expect(s.prompt).toContain('PARENT PRIVATE HISTORY');expect(s.hostTools.some(t=>t.name==='delegate_tasks')).toBe(false);yield {type:'message',text:'Review complete.'};yield {type:'end'}
  }}
- const events=await collect(withDelegation(engine),apiSession({hostTools:[readTool,writeTool]}))
+ const events=await collect(withDelegation(engine),apiSession({context:{authorize,artifactProposals:false},hostTools:[readTool,writeTool]}))
  expect(events.filter(e=>e.type==='end')).toHaveLength(1)
  expect(events.filter(e=>e.type==='message')).toEqual([{type:'message',text:'Review complete.'}])
  expect(results(events)[0]).toMatchObject({state:'complete',result:'One unsupported claim.',toolCalls:1,steps:[{name:'read_context',state:'complete'}]})

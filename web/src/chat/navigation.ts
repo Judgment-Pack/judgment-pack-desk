@@ -8,9 +8,9 @@ export function homeChatId(state: unknown): string | undefined {
   return typeof state.homeChatId === 'string' ? state.homeChatId : undefined
 }
 
-export type ChatScope = { kind: 'pack' | 'draft' | 'graph'; id: string } | { kind: 'input'; id: string; originChatId?: string }
+export type ChatScope = { kind: 'pack' | 'draft' | 'graph' | 'policy'; id: string } | { kind: 'input'; id: string; originChatId?: string }
 export function chatScope(chat: Chat): ChatScope | undefined {
-  return chat.input ? {kind:'input',id:chat.input.id} : chat.graph ? {kind: 'graph', id: chat.graph.workspace} : chat.pack ? {kind: 'pack', id: chat.pack.id} : chat.draftId ? {kind: 'draft', id: chat.draftId} : undefined
+  return chat.policy ? {kind:'policy',id:chat.policy.id} : chat.input ? {kind:'input',id:chat.input.id} : chat.graph ? {kind: 'graph', id: chat.graph.workspace} : chat.pack ? {kind: 'pack', id: chat.pack.id} : chat.draftId ? {kind: 'draft', id: chat.draftId} : undefined
 }
 export function inChatScope(chat: Chat, scope: ChatScope): boolean {
   if (scope.kind === 'input') {
@@ -32,6 +32,7 @@ export function dialectChatHref(inputId: string, chatId: string, location?: { pa
 }
 export function assistantChatHref(chat: Chat, location?: { pathname: string; search: string }, scope?: ChatScope): string {
   if (scope?.kind === 'input') return dialectChatHref(scope.id, chat.id, location)
+  if(chat.policy){const path='/policies/'+encodeURIComponent(chat.policy.id),params=new URLSearchParams(location?.pathname===path?location.search:'');params.set('chat',chat.id);return path+'?'+params}
   if (chat.input) return dialectChatHref(chat.input.id, chat.id, location)
   if (chat.graph) {
     const params = new URLSearchParams(location?.pathname.startsWith('/graphs') ? location.search : 'view=compose')
@@ -57,14 +58,15 @@ export function assistantChatHref(chat: Chat, location?: { pathname: string; sea
 
 /** The history entry keeps the home conversation without putting its id in the URL. */
 export function openNewChat(navigate: NavigateFunction, chat: Chat, location?: { pathname: string; search: string }) {
-  if(chat.input&&location?.pathname.startsWith('/dialects'))navigate(assistantChatHref(chat,location))
+  if(chat.policy&&location?.pathname.startsWith('/policies'))navigate(assistantChatHref(chat,location))
+  else if(chat.input&&location?.pathname.startsWith('/dialects'))navigate(assistantChatHref(chat,location))
   else if (chat.graph && location?.pathname.startsWith('/graphs')) navigate(assistantChatHref(chat, location))
   else if ((chat.pack || chat.draftId) && location?.pathname.startsWith('/packs/')) navigate(assistantChatHref(chat, location))
   else navigate('/', { state: { homeChatId: chat.id } })
 }
 
 export function hasChatContent(chat: Chat): boolean {
-  return Boolean(chat.composer.trim() || chat.attachments?.length || chat.inputDrafts?.length || chat.inputActions?.length || chat.checkpoint?.state.turns.length || chat.checkpoint?.state.candidates.length || chat.pinned || chat.title !== 'New chat')
+  return Boolean(chat.composer.trim() || chat.attachments?.length || chat.inputDrafts?.length || chat.inputActions?.length || chat.policyProposals?.length || chat.checkpoint?.state.turns.length || chat.checkpoint?.state.candidates.length || chat.pinned || chat.title !== 'New chat')
 }
 
 export function chatTitle(chat: Chat): string {
