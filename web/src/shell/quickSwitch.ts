@@ -10,7 +10,7 @@ export function searchItems(items: SwitchItem[], query: string, recent: string[]
 }
 export function switchHref(path: string, search: string): string | undefined {
   if (path === '/library') { const source = new URLSearchParams(search), params = new URLSearchParams(); for (const name of ['folder','type']) {const value=source.get(name);if(value)params.set(name,value)}; return params.size ? '/library?' + params : undefined }
-  return /^\/(packs\/(drafts\/)?[^/]+|graphs\/[^/]+|dialects\/(drafts\/)?[^/]+|chats\/[^/]+)(\/evaluate|\/matrix)?$/.test(path) && !['/packs/new','/dialects/new','/dialects/templates'].includes(path)
+  return /^\/(packs\/(drafts\/)?[^/]+|graphs\/[^/]+|dialects\/(drafts\/)?[^/]+|policies\/[^/]+|chats\/[^/]+)(\/evaluate|\/matrix)?$/.test(path) && !['/packs/new','/dialects/new','/dialects/templates','/policies/new'].includes(path)
     ? path.replace(/\/(evaluate|matrix)$/, '') : undefined
 }
 export function readRecent(key: string): string[] {

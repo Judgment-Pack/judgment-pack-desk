@@ -1,8 +1,9 @@
 # Local policy governance delivery boundary
 
-Status: implementation planning, 2026-10-17. This document describes the local
-Library change and the next proposed slice. It does not claim that Policy
-storage, review, publication, synchronization or execution admission exists.
+Status: local implementation, 2026-10-17. Library consolidation is committed in
+`5800146`. The following slice implements the private, single-administrator
+Policy service and full-page editor. It does not claim team governance, portable Policy conformance,
+automatic source synchronization or execution admission.
 
 ## Library foundation
 
@@ -21,9 +22,15 @@ The selected type is an optional workspace-scoped layout preference. The
 `jpack-folders.json` v1/v2 assignment contract is unchanged. Dialects have no
 folder assignment and are discoverable in Home/all views; they are excluded
 from folder moves and chat-backed draft deletion. Their existing editors own
-their actions. No Policies filter or governance control is advertised.
+their actions. Policy navigation/editor integration uses the new private API;
+it is distinct from this completed Library foundation.
 
-## Next bounded local slice
+## Local policy lifecycle
+
+[Desk #454](https://github.com/Judgment-Pack/judgment-pack-desk/issues/454)
+tracks this slice. The implementation is `internal/desk/policy*.go`, with route
+registration in `server.go`. These are application-private records, not the
+proposed Spec companion.
 
 The local installation has one authenticated administrator. Policy authoring,
 review and publication may be performed by that same administrator when the
@@ -31,42 +38,104 @@ configured workflow allows it. A requirement for an independent reviewer must
 be explicit and configurable. Multi-user authorization is a later dependency
 for team/guest workflows, not a prerequisite for useful local policy management.
 
-Implement a private Policy application service with a storage interface and its
-file-backed adapter. Reuse the existing private-data containment, bounded locks,
-atomic file writes and retained-artifact repository. The current
-`dialectDraftRepository` is Dialect-specific; policies must not masquerade as
-Dialect recipes. Keep the new service separable from its file adapter so future
-workspace storage and authenticated resource authorization can replace the
-local boundary without rewriting the editor or portable content.
+The private Policy service has a transactional storage interface and a file
+adapter at `.desk-private/policies/ledger.json`. It uses existing private-data
+containment, bounded locks, atomic writes and the retained-artifact repository.
+The unreleased private ledger/record schema is version 2. Each revision, review
+and publication persists a per-policy `sequence` allocated from the actual event
+count inside that same transaction. History sorts by sequence; whole-second
+timestamps remain audit/display data. Validation requires unique contiguous
+sequence coverage, ordered event arrays and references consistent with the
+committed event order. Older development fixtures without sequences are refused;
+this does not infer or migrate historical order from timestamps or event kinds.
+Policies do not masquerade as Dialect recipes. Candidate bytes and command-result
+snapshots are retained before one atomic metadata write publishes the new head,
+history and operation receipt together. Failed preparation can leave unreferenced
+immutable blobs; it cannot expose an incomplete policy revision. Metadata errors
+never trigger an automatic replay.
 
-Proposed private service records:
+The service retains:
 
 - A stable local policy identity independent of title, folder and chat.
 - A mutable draft head with an opaque CAS revision and exact retained content
   reference. Each saved candidate retains immutable content and revision history.
-- An explicit local workflow configuration whose revision forms part of the
-  review basis. The initial supported workflow can allow the same local owner
-  to author, review and publish. Unsupported independent/team workflows must
-  remain unavailable rather than silently self-approving.
+- An explicit local workflow configuration and digest forming part of the review
+  basis. The default allows the same local owner to author, review and publish.
+  `independentReviewRequired: true` can be saved, but local approval/publication
+  refuses it with `unsupported-workflow`; another authorized reviewer is required.
 - Review decisions pinned to the exact candidate and workflow revision, with
   the actor derived from the authenticated server session. An edit retains old
   decisions as history and requires review of the new candidate.
 - A separate immutable publication and receipt binding exact reviewed bytes,
-  policy identity and selected version. Duplicate versions refuse overwrite.
+  policy identity and selected version. Duplicate versions refuse overwrite;
+  subsequent publications must be greater than the latest published version.
   Draft saved, reviewed and published remain distinct states.
 
-Proposed commands are `createPolicy`, `savePolicyDraft`, `reviewPolicyCandidate`
-and `publishPolicyCandidate`, plus authorized list/read/history operations.
-All UI and later chat adapters must call these same commands. Draft saves check
-the original revision; review/publication check the exact retained candidate and
-workflow basis. Command identity, exact request digest and persisted outcome
-must support recovery without repeating a write. Use the shared durable
-operation boundary and failure registry; do not create a second permission,
-retry or approval system. Publication needs one transaction covering the current
-review basis, version uniqueness and resulting head/receipt. Existing file locks
-provide local coordination only; they are not a distributed team transaction.
+Draft saves check the original service revision. Review/publication check the
+exact retained candidate, candidate revision and workflow. The candidate digest
+covers title, narrative and artifact version. Changed content or workflow clears
+the current review while retaining all previous decisions/publications as history.
+An identical no-op save preserves its review. Returning to old bytes later does
+not transfer an old approval to the new candidate revision.
 
-Use the existing editor fields, contextual pane and `UnsavedChanges` registry.
+Approve and publish use the existing Runtime `artifact version` command. Drafts
+may retain unfinished version text; request-changes remains available for them.
+Runtime owns grammar and arithmetic, including its 256-byte version limit. A
+publication compares against the latest publication and requires a greater
+version. These checks concern version arithmetic, not Policy conformance or
+semantic correctness. Runtime runs before the private write lock; the metadata
+transaction then rechecks the exact revision/basis. A concurrent edit refuses the
+stale review/publication. Existing file locks provide local coordination only.
+
+Every read and mutation requires a live Desk sign-in session and the existing
+Origin guard. A launch secret alone is insufficient. Actors come from the real
+local or verified OIDC session; client-supplied actors/roles are refused. The same
+administrator's authorship, review and publication are recorded honestly.
+
+## Private HTTP contract and recovery
+
+`internal/desk/policy.go` defines the JSON request/response types.
+
+| Route | Operation |
+| --- | --- |
+| `GET /api/policies` | Current summaries, separate review/publication state |
+| `POST /api/policies` | Create a policy and retained initial candidate |
+| `GET /api/policies/{id}` | Current candidate and retained history metadata |
+| `PUT /api/policies/{id}` | CAS save of title, narrative, version and optional workflow |
+| `GET /api/policies/{id}/revisions/{revisionId}` | Read exact retained historical narrative |
+| `POST /api/policies/{id}/review` | Approve or request changes on an exact current basis |
+| `POST /api/policies/{id}/publish` | Publish the exact currently approved candidate |
+| `GET /api/policy-operations/{operationId}` | Read a completed operation receipt, without replay |
+
+Mutation bodies include a caller-generated operation ID. A request digest binds
+operation kind, policy identity, authenticated actor and complete typed body,
+including the CAS base. Reusing an ID with a changed body, route/action or policy
+refuses `idempotency-conflict`. Exact completed requests recover the original
+snapshot before fresh validation or stale-argument checks, after current access
+checks. Clients refetch current policy state before a subsequent edit/action.
+Receipts are retained rather than evicted; reaching capacity refuses new work.
+
+Mutations return `{delivery, receipt, policy}`, with `delivery` distinguishing
+`committed` from historical `recovered`. Failures use the shared coded JSON and
+refusal-header boundary. `outcome: not-committed` denotes a proven refusal before
+this request's metadata commit, including failed candidate/result retention.
+`outcome: unknown` denotes an uncertain commit/read-back or unavailable completed
+receipt. Unmarked transport failures remain uncertain. Read-only recovery returning
+404 means no completed receipt was observed, not proof that the original request
+cannot still finish. It never authorizes a new operation or repeats the old one.
+
+Limits are 500 UTF-8 bytes for titles, 128 KiB for narrative, 256 bytes for version
+text, 8 KiB for review comments, 256 policies, 512 entries per per-policy history
+kind, 4,096 retained operation receipts and a 16 MiB metadata ledger. No API removes
+immutable history or receipt identities. This slice has no policy deletion,
+archive, effective-date scheduling or withdrawal endpoint.
+
+Policy metadata and referenced blobs belong to the project. A project move/backup
+must retain `.desk-private/policies` and `.desk-private/retained-artifacts` together.
+The existing chat-only backup deliberately excludes project artifacts and is not
+a Policy backup/export. There is no standardized portable Policy export here.
+
+Editor integration uses existing fields, contextual pane and `UnsavedChanges`.
 Lists use `privateQuery`; background refresh must not replace an editor's frozen
 revision. Save conflict recovery preserves the local buffer and shows the saved
 revision for explicit resolution. Chat deletion must never delete policy work.
@@ -75,12 +144,29 @@ Manual local authoring can land before AI authoring; later AI proposals inherit
 A model cannot manufacture a reviewer identity or treat a successful document
 check as publication.
 
-Minimum acceptance evidence: create/save/reload; retained history after chat
-deletion; two editors refusing a stale save without losing either candidate;
-changed content invalidating current review; publication requiring exact current
-review; one configured local owner completing the workflow; independent review
-refusing self-approval when configured; immutable version conflicts; lost-write
-response recovery; revoked-session refusal; failed persistence protecting exits.
+Backend acceptance covers create/save/reload and chat deletion; stale editor
+refusal; title/narrative/version/workflow review invalidation; exact-review
+publication; same-admin lifecycle and independent-workflow refusal; version reuse;
+lost-write acknowledgement recovery; operation body/action/resource conflicts;
+unauthenticated, revoked-session and actor-spoof refusal; concurrent publication;
+an edit during Runtime validation; precommit retention failure; uncertain ledger
+read-back; retained content corruption and ledger symlink refusal; tied-time
+event sequence persistence/recovery and rejection of inconsistent event order.
+Focused history rendering checks tied timestamps and a backwards wall clock.
+Real Runtime
+acceptance covers lower/equal/greater versions, unfinished versions and a supported
+256-byte version. That test is included in the existing Jobs companion CI
+selection. Browser/editor verification exercised the built SPA and real Runtime v0.34.0 on an isolated project: Library → New policy → save → reload → approve → publish → retained history → Library refresh. Approval returned no publication; publication was a separate command. The narrow 420px view had no horizontal overflow. Temporary listeners were stopped after verification. Forced refresh can discard unsaved editor buffers; ordinary navigation and unload use the shared dirty-state guard.
+
+## Try the local workflow
+
+1. Open **Library → Create → New policy**. Enter a title, narrative and artifact version, then **Save draft**. Incomplete drafts can be saved before approval.
+2. Reload or reopen the policy from Library. Its saved text and history are independent of chat sessions.
+3. Review the saved text. Optionally add a review comment, then **Approve candidate** or **Request changes**. Saving a changed candidate requires a new review.
+4. Choose **Publish version** and confirm the reviewed candidate. Publication retains immutable content; later publications require a greater version, checked by Runtime.
+5. Inspect **History** to see retained drafts, actor-attributed decisions and publications. Existing publications remain available after later edits.
+
+These controls manage local policy content. They do not create a pack, change a job or authorize execution. The remaining accepted lifecycle is tracked in [Desk #455](https://github.com/Judgment-Pack/judgment-pack-desk/issues/455).
 
 ## Inter-repository dependencies and limits
 

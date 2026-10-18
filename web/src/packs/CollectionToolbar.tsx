@@ -22,7 +22,7 @@ export function CollectionToolbar(props:Props){
  const {filter,onFilter,kind,onKind,status,onStatus,sort,onSort,canScope,everywhere,onScope,filtered,reset,selected,clearSelection,onDelete}=props
  const scope=everywhere?msg('All folders'):msg('This folder')
  return <CollectionControls padded label={msg('Library list controls')} searchLabel={msg('Search library')} search={filter} onSearch={onFilter}
-  filters={[{label:msg('Item type'),value:kind,onValueChange:onKind,options:[{value:'all',label:msg('All types')},{value:'pack',label:msg('Packs')},{value:'graph',label:msg('Graphs')},{value:'dialect',label:msg('Dialects')}]},{label:msg('Status'),value:status,onValueChange:onStatus,options:[{value:'all',label:msg('All statuses')},{value:'draft',label:msg('Draft')},{value:'saved',label:msg('Saved')}]}]}
+  filters={[{label:msg('Item type'),value:kind,onValueChange:onKind,options:[{value:'all',label:msg('All types')},{value:'pack',label:msg('Packs')},{value:'graph',label:msg('Graphs')},{value:'dialect',label:msg('Dialects')},{value:'policy',label:msg('Policies')}]},{label:msg('Status'),value:status,onValueChange:onStatus,options:[{value:'all',label:msg('All statuses')},{value:'draft',label:msg('Draft')},{value:'saved',label:msg('Saved')}]}]}
   sort={{label:msg('Sort library'),value:sort,onValueChange:onSort,options:[{value:'id-asc',label:msg('Name: A–Z')},{value:'id-desc',label:msg('Name: Z–A')}]}}
   filtered={filtered} onReset={reset}
   searchSuffix={({tight})=>canScope&&<DropdownMenu.Root>

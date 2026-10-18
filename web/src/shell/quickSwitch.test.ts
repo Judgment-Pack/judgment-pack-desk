@@ -13,6 +13,8 @@ it('keeps test-tab visits with their pack and excludes sensitive or unrelated UR
  expect(switchHref('/packs/new','')).toBeUndefined()
  expect(switchHref('/dialects/prep-one','?chat=private&tab=recipe')).toBe('/dialects/prep-one')
  expect(switchHref('/dialects/drafts/draft-one','?chat=private')).toBe('/dialects/drafts/draft-one')
+ expect(switchHref('/policies/policy-one','?chat=private')).toBe('/policies/policy-one')
+ expect(switchHref('/policies/new','')).toBeUndefined()
  expect(switchHref('/dialects/new','')).toBeUndefined()
  expect(switchHref('/dialects/templates','')).toBeUndefined()
  expect(switchHref('/library','?folder=finance&type=dialect&chat=private')).toBe('/library?folder=finance&type=dialect')

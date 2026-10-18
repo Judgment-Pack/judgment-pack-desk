@@ -2,9 +2,10 @@ import {PageLoading} from '../ui/PageLoading'
 import { QueryStatusNotice } from '../shell/QueryStatusNotice'
 import { graphDraftHref } from '../graphs/drafts'
 import {useQuery} from '@tanstack/react-query'
+import {policyListQuery} from '../policies/client'
 import {dialectListQuery} from '../dialects/queries'
 import {dialectDraftListQuery} from '../dialects/drafts'
-import {dialectLibraryItems, folderAssignmentKey, libraryKind, libraryKindLabel} from '../library/items'
+import {policyLibraryItems, policyLibraryStatus, dialectLibraryItems, folderAssignmentKey, libraryKind, libraryKindLabel} from '../library/items'
 import { useSearchParams } from 'react-router-dom'
 import { useChats } from '../chat/ChatProvider'
 import { draftHref } from './drafts/model'
@@ -19,7 +20,7 @@ import { useAppearance } from '../shell/appearanceState'
 import { useInspectorPortal, useInspectorControls } from '../shell/InspectorSlot'
 import { useShellState } from '../shell/paneState'
 import { Button, ButtonLink } from '../ui/Button'
-import { IconPreview, IconPack, IconGraph, IconMatrix } from '../shell/icons'
+import { IconPreview, IconPack, IconGraph, IconMatrix, IconDetails } from '../shell/icons'
 import { useInspectorPresentation } from '../shell/InspectorPresentation'
 import { PageHeader } from '../ui/PageLayout'
 import { Pagination } from '../ui/Pagination'
@@ -55,9 +56,10 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const retainedKind = useRef(routeKind)
   useEffect(() => { if (active) {retainedKind.current = routeKind;if(folders&&folders.prefs.kind!==routeKind)folders.preferences({kind:routeKind})} }, [active, routeKind, folders?.prefs.kind])
   const kind = active ? routeKind : retainedKind.current
-  const includePacks = kind === 'all' || kind === 'pack', includeGraphs = kind === 'all' || kind === 'graph', includeDialects = kind === 'all' || kind === 'dialect'
+  const includePacks = kind === 'all' || kind === 'pack', includeGraphs = kind === 'all' || kind === 'graph', includeDialects = kind === 'all' || kind === 'dialect', includePolicies = kind === 'all' || kind === 'policy'
   const dialects = useQuery({...dialectListQuery(), enabled: active && includeDialects, refetchInterval: active && includeDialects ? 5000 : false})
   const dialectDrafts = useQuery({...dialectDraftListQuery(), enabled: active && includeDialects, refetchInterval: active && includeDialects ? 5000 : false})
+  const policies = useQuery({...policyListQuery(),enabled:active&&includePolicies,refetchInterval:active&&includePolicies?10000:false})
   const listedGraphs = graphInventorySupported ? graphs.data : undefined
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [deleting,setDeleting] = useState<{items:BrowserItem[];opener?:HTMLElement}>()
@@ -65,7 +67,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const {chats,packDrafts}=useChats()
   const drafts = packDrafts.filter(item=>!item.finalized)
   const graphDrafts = chats.flatMap(chat => (chat.graphDrafts ?? []).filter(draft => !draft.saved).map(draft => ({chatId: chat.id, ...draft})))
-  const inventoryReady = (!includePacks || isSuccess) && (!includeGraphs || graphInventorySupported && graphs.isSuccess) && (!includeDialects || dialects.isSuccess && dialectDrafts.isSuccess)
+  const inventoryReady = (!includePacks || isSuccess) && (!includeGraphs || graphInventorySupported && graphs.isSuccess) && (!includeDialects || dialects.isSuccess && dialectDrafts.isSuccess) && (!includePolicies || policies.isSuccess)
   const review = useReview()
   const findings = useMemo(() => packFindings(review?.data), [review?.data])
   const folderScope = folders?.query.data && !folders.query.isError ? folders.selected : ALL_PACKS
@@ -101,12 +103,12 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   useInspectorPresentation(presentation)
   const packs = useMemo(() => {
     const needle = filter.trim().toLowerCase()
-    const rows: BrowserItem[] = [...(data?.packs ?? []).map(pack=>({...pack,key:'pack:'+pack.id,kind:'pack' as const,title:pack.id,status:'finalized' as const,href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({key:'pack-draft:'+draft.id,kind:'pack' as const,id:draft.id,title:draft.title,status:'draft' as const,href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document)})), ...(listedGraphs?.graphs ?? []).map(graph => ({key:'graph:'+graph.id,kind:'graph' as const, id:'graph:'+graph.id, title:graph.id, status:'finalized' as const, href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({key:'graph-draft:'+draft.chatId+':'+draft.draftId,kind:'graph' as const, id:'graph-draft:'+draft.draftId, title:draft.id, status:'draft' as const, chatId:draft.chatId, draftId:draft.draftId, href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description})), ...dialectLibraryItems(dialects.data?.items??[],dialectDrafts.data?.items??[])]
+    const rows: BrowserItem[] = [...(data?.packs ?? []).map(pack=>({...pack,key:'pack:'+pack.id,kind:'pack' as const,title:pack.id,status:'finalized' as const,href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({key:'pack-draft:'+draft.id,kind:'pack' as const,id:draft.id,title:draft.title,status:'draft' as const,href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document)})), ...(listedGraphs?.graphs ?? []).map(graph => ({key:'graph:'+graph.id,kind:'graph' as const, id:'graph:'+graph.id, title:graph.id, status:'finalized' as const, href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({key:'graph-draft:'+draft.chatId+':'+draft.draftId,kind:'graph' as const, id:'graph-draft:'+draft.draftId, title:draft.id, status:'draft' as const, chatId:draft.chatId, draftId:draft.draftId, href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description})), ...dialectLibraryItems(dialects.data?.items??[],dialectDrafts.data?.items??[]),...policyLibraryItems(policies.data?.items??[])]
     const matching = rows.filter(pack => (kind==='all'||pack.kind===kind) && (status==='all'||(status==='saved'?pack.status!=='draft':pack.status===status)) && (!folders || listScope === ALL_PACKS || inFolder(folders.document, folderAssignmentKey(pack)===undefined?HOME_FOLDER:packFolder(folders.document,pack.id), listScope, !!needle)) && (!needle ||
       `${pack.id} ${pack.title}`.toLowerCase().includes(needle) || pack.description?.toLowerCase().includes(needle)))
     return matching.sort((left, right) => sort === 'id-desc'
       ? right.title.localeCompare(left.title) : left.title.localeCompare(right.title))
-  }, [data, error, packDrafts, chats, listedGraphs, dialects.data, dialectDrafts.data, kind, filter, status, sort, folders?.document, listScope, locale])
+  }, [data, error, packDrafts, chats, listedGraphs, dialects.data, dialectDrafts.data, policies.data, kind, filter, status, sort, folders?.document, listScope, locale])
   const pagination = usePagination(packs.length, JSON.stringify([shell.storageKey, listScope, filter, kind, status, sort]))
   const pageItems = packs.slice(pagination.start, pagination.end)
   const selected = packs.filter(item => selectedIds.includes(item.key))
@@ -121,7 +123,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const window = useWindowedRows(pageItems.length, rowHeight)
   const preview = packs.find(pack => pack.key === previewId)
   const portal = useInspectorPortal(active
-    ? preview ? preview.status==='draft' || preview.kind!=='pack' ? <section className={styles.empty}><h2>{preview.title}</h2><p>{libraryKindLabel(preview)} · {preview.status==='draft'?msg('Draft'):msg('Saved')}</p><p>{preview.description}</p>{preview.kind==='dialect'&&<p>{msg('Dialect folder placement is not available. Find dialects in Home or across all folders.')}</p>}<ButtonLink to={preview.href}>{preview.status==='draft'?msg('Open draft'):preview.kind==='dialect'?msg('Open dialect'):msg('Open graph')}</ButtonLink></section> : <PackPreview pack={data!.packs!.find(item=>item.id===preview.id)!} /> : <PackPreviewHint />
+    ? preview ? preview.status==='draft' || preview.kind!=='pack' ? <section className={styles.empty}><h2>{preview.title}</h2><p>{libraryKindLabel(preview)} · {preview.kind==='policy'?policyLibraryStatus(preview):preview.status==='draft'?msg('Draft'):msg('Saved')}</p><p>{preview.description}</p>{preview.kind==='dialect'&&<p>{msg('Dialect folder placement is not available. Find dialects in Home or across all folders.')}</p>}<ButtonLink to={preview.href}>{preview.kind==='policy'?msg('Open policy'):preview.status==='draft'?msg('Open draft'):preview.kind==='dialect'?msg('Open dialect'):msg('Open graph')}</ButtonLink></section> : <PackPreview pack={data!.packs!.find(item=>item.id===preview.id)!} /> : <PackPreviewHint />
     : null)
   useEffect(() => {
     if (previewId && !preview && !isPending) { setPreviewOpen(false); setPreviewId(null) }
@@ -158,8 +160,8 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const clearFilter = () => { resetScroll(); setFilter(''); setStatus('all'); changeKind('all') }
   useEffect(() => { resetScroll(); setSearchEverywhere(false); setPreviewId(null); setPreviewOpen(false) }, [folderScope])
 
-  const loading = !packs.length && (includePacks && isPending || includeGraphs && !graphsUnavailable && graphs.isPending || includeDialects && (dialects.isPending || dialectDrafts.isPending))
-  const unavailable = includePacks && error || includeGraphs && (graphsUnavailable || graphs.error) || includeDialects && (dialects.error || dialectDrafts.error)
+  const loading = !packs.length && (includePacks && isPending || includeGraphs && !graphsUnavailable && graphs.isPending || includeDialects && (dialects.isPending || dialectDrafts.isPending) || includePolicies && policies.isPending)
+  const unavailable = includePacks && error || includeGraphs && (graphsUnavailable || graphs.error) || includeDialects && (dialects.error || dialectDrafts.error) || includePolicies && policies.error
   return <article className={styles.pane} data-layout={active ? 'page' : undefined} aria-label={msg("Library collection")}>
     <PageHeader title={msg("Library")} variant="collection"
       navigation={<LibraryLocation/>}
@@ -175,11 +177,12 @@ export function PacksPane({ active = true }: { active?: boolean }) {
     {includePacks && <QueryStatusNotice id="packs" label={msg("Packs unavailable")} error={error} retrying={isFetching} onRetry={()=>refetch()}>{msg("Packs could not be refreshed. Previously loaded packs may be out of date.")}</QueryStatusNotice>}
     {includeDialects && <QueryStatusNotice id="library-dialects" label={msg('Dialects unavailable')} error={dialects.error} retrying={dialects.isFetching} onRetry={()=>dialects.refetch()}>{msg('Dialects could not be refreshed. Previously loaded dialects may be out of date.')}</QueryStatusNotice>}
     {includeDialects && <QueryStatusNotice id="library-dialect-drafts" label={msg('Dialect drafts unavailable')} error={dialectDrafts.error} retrying={dialectDrafts.isFetching} onRetry={()=>dialectDrafts.refetch()}/>}
+    {includePolicies && <QueryStatusNotice id="library-policies" label={msg('Policies unavailable')} error={policies.error} retrying={policies.isFetching} onRetry={()=>policies.refetch()}>{msg('Policies could not be refreshed. Previously loaded policies may be out of date.')}</QueryStatusNotice>}
     {loading ? <PageLoading>{msg('Loading library…')}</PageLoading>
     : packs.length === 0 && unavailable ? null
     : packs.length === 0 ? <section className={styles.empty} role="status">
       <h2>{filtered ? msg("No matching library items") : msg("No library items yet")}</h2>
-      <p>{filtered ? msg("Try another search or status.") : msg("Create a pack, graph or dialect to get started.")}</p>
+      <p>{filtered ? msg("Try another search or status.") : msg("Create a pack, graph, dialect or policy to get started.")}</p>
       {filtered ? <Button onClick={clearFilter}>{msg("Reset filters")}</Button> : null}
     </section> : <nav className={styles.collection} data-selecting={selected.length > 0 || undefined} aria-label={msg("Library")} onKeyDown={event => {
       if(event.key==='Escape'&&selected.length){event.stopPropagation();event.preventDefault();setSelectedIds([])}
@@ -223,15 +226,15 @@ export function PacksPane({ active = true }: { active?: boolean }) {
             <OverflowTooltip selector="[data-overflow-text]" fallback={msg("Preview this item to read the full description.")}><Link className={styles.link} aria-keyshortcuts="Space" data-row={window.start + offset} to={pack.href}
               onClick={() => { if (list.current) scrollPosition.current = list.current.scrollTop }}>
               <span className={styles.name}>
-                <Tooltip content={libraryKindLabel(pack)}><span className={styles.kindIcon} role="img" aria-label={libraryKindLabel(pack)}>{pack.kind==='graph'?<IconGraph/>:pack.kind==='dialect'?<IconMatrix/>:<IconPack/>}</span></Tooltip>
+                <Tooltip content={libraryKindLabel(pack)}><span className={styles.kindIcon} role="img" aria-label={libraryKindLabel(pack)}>{pack.kind==='graph'?<IconGraph/>:pack.kind==='dialect'?<IconMatrix/>:pack.kind==='policy'?<IconDetails/>:<IconPack/>}</span></Tooltip>
                 <span className={styles.nameText} data-overflow-text>{pack.title}</span>
                 {isSpelled(pack.detail) && <span className={styles.issue} role="img" aria-label={pack.detail}>!</span>}
               </span>
               <span className={isSpelled(pack.detail) ? styles.rowDetail : styles.description} data-overflow-text>
                 {pack.kind==='pack' && pack.status!=='draft' && findings.get(pack.id)?.map(finding => <small key={finding.name} className={styles.reviewBadge} data-finding={finding.name}>{findingWords(finding.name)}</small>)}
-                {folders && (listScope === ALL_PACKS || filter) && <>{folderPath(folders.document,pack.kind==='dialect'?HOME_FOLDER:packFolder(folders.document,pack.id))} · </>}{isSpelled(pack.detail) ? pack.detail : isSpelled(pack.description) ? pack.description : ''}
+                {folders && (listScope === ALL_PACKS || filter) && <>{folderPath(folders.document,folderAssignmentKey(pack)===undefined?HOME_FOLDER:packFolder(folders.document,pack.id))} · </>}{isSpelled(pack.detail) ? pack.detail : isSpelled(pack.description) ? pack.description : ''}
               </span>
-              <span className={styles.version} data-overflow-text>{pack.status==='draft'?<small className={styles.draftBadge}>{msg('Draft')}</small>:pack.kind==='dialect'?pack.records?msg('Ready to review'):msg('No records'):isSpelled(pack.packVersion) ? pack.packVersion : '—'}</span>
+              <span className={styles.version} data-overflow-text>{pack.kind==='policy'?policyLibraryStatus(pack):pack.status==='draft'?<small className={styles.draftBadge}>{msg('Draft')}</small>:pack.kind==='dialect'?pack.records?msg('Ready to review'):msg('No records'):isSpelled(pack.packVersion) ? pack.packVersion : '—'}</span>
             </Link></OverflowTooltip>
             <ItemOptions item={pack} onDelete={requestDelete}/>
             <Tooltip content={msg("Preview item")} shortcut={msg("Spacebar")}><Button variant="quiet" size="icon" className={styles.preview} data-preview data-row={window.start + offset}

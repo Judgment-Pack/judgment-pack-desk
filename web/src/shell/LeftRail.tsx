@@ -189,7 +189,7 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
   useLocale()
   const { error } = usePacks()
   const { pathname } = useLocation()
-  const active = /^\/(library|packs|graphs|dialects|decisions)(?:\/|$)/.test(pathname)
+  const active = /^\/(library|packs|graphs|dialects|policies|decisions)(?:\/|$)/.test(pathname)
 
   return (
     <>

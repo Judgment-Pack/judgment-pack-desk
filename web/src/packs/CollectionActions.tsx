@@ -8,7 +8,7 @@ import { Dialog, DialogActions } from '../ui/Dialog'
 import { Tooltip } from '../ui/Tooltip'
 import { SelectionCountButton } from '../ui/SelectionTable'
 import { Alert } from '../ui/Alert'
-import { IconChevronDown, IconMore, IconPack, IconGraph, IconMatrix, IconFolder, IconTrash, IconClose } from '../shell/icons'
+import { IconChevronDown, IconMore, IconDetails, IconPack, IconGraph, IconMatrix, IconFolder, IconTrash, IconClose } from '../shell/icons'
 import {deletableLibraryDraft, folderAssignmentKey, type LibraryItem} from '../library/items'
 import { usePackFolders } from './folders/FolderContext'
 import { ALL_PACKS } from './folders/model'
@@ -33,6 +33,7 @@ export function CollectionHeaderActions({ createHref }: {createHref: string}) {
         <DropdownMenu.Item icon={<IconPack/>} asChild><Link to={createHref}>{msg('Create pack')}</Link></DropdownMenu.Item>
         <DropdownMenu.Item icon={<IconGraph/>} asChild><Link to="/graphs?view=compose">{msg('Create graph')}</Link></DropdownMenu.Item>
         <DropdownMenu.Item icon={<IconMatrix/>} asChild><Link to="/dialects/new">{msg('New dialect')}</Link></DropdownMenu.Item>
+        <DropdownMenu.Item icon={<IconDetails/>} asChild><Link to="/policies/new">{msg('New policy')}</Link></DropdownMenu.Item>
       </DropdownMenu.Content></DropdownMenu.Portal>
     </DropdownMenu.Root>
   </>
@@ -60,7 +61,7 @@ export function SelectionActions({items, clear, onDelete, compact = false, tight
           : <Tooltip content={msg('Select saved packs to compose a graph. Save drafts first; graphs cannot be nested.')}><DropdownMenu.Item icon={<IconGraph/>} aria-disabled onSelect={event => event.preventDefault()}>{msg('Compose graph')}</DropdownMenu.Item></Tooltip>}
         <DropdownMenu.Separator/>
         {drafts ? <DropdownMenu.Item icon={<IconTrash/>} onSelect={() => {handoff.current = true; onDelete(items,trigger.current ?? undefined)}}>{msg('Delete drafts')}</DropdownMenu.Item>
-          : !items.some(item=>item.kind==='dialect') && <Tooltip content={msg('Select only drafts to delete them. Saved files may be referenced by graphs or jobs.')}><DropdownMenu.Item icon={<IconTrash/>} aria-disabled onSelect={event => event.preventDefault()}>{msg('Delete drafts')}</DropdownMenu.Item></Tooltip>}
+          : !items.some(item=>item.kind==='dialect'||item.kind==='policy') && <Tooltip content={msg('Select only drafts to delete them. Saved files may be referenced by graphs or jobs.')}><DropdownMenu.Item icon={<IconTrash/>} aria-disabled onSelect={event => event.preventDefault()}>{msg('Delete drafts')}</DropdownMenu.Item></Tooltip>}
         {compact && <><DropdownMenu.Separator/><DropdownMenu.Item icon={<IconClose/>} onSelect={() => {handoff.current = true; clearAndFocus()}}>{msg('Clear selection')}</DropdownMenu.Item></>}
       </DropdownMenu.Content></DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -72,7 +73,7 @@ export function ItemOptions({item, onDelete}: {item: BrowserItem; onDelete: (ite
   const folders = usePackFolders(), opener = useRef<HTMLButtonElement>(null)
   // Dialect draft deletion and placement belong to their existing editor. The
   // Library must not route private drafts through chat or folder mutations.
-  if (item.kind === 'dialect') return null
+  if (item.kind === 'dialect' || item.kind === 'policy') return null
   if (!folders && item.status !== 'draft') return null
   return <DropdownMenu.Root>
     <Tooltip content={msg('Item options')}><DropdownMenu.Trigger asChild><Button ref={opener} variant="quiet" size="icon" className={styles.rowOptions} aria-label={msg('Options for {{name}}', {name:item.title})}><IconMore/></Button></DropdownMenu.Trigger></Tooltip>
