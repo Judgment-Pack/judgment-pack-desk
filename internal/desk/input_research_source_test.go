@@ -83,7 +83,7 @@ func TestResearchSourceRefusalExplainsPolicyWithoutEchoingSourceText(t *testing.
 }
 
 func TestResearchSearchRefusalsKeepSupportedCause(t *testing.T) {
-	for _, code := range []string{"search-temporary", "search-invalid-request", "search-invalid-response", "search-timeout", "search-not-grounded", "provider-unavailable", "credentials-required", "search-budget-exhausted", "rate-limited", "source-changed", "connect-required", "setup-required", "blocked-by-policy", "invalid-request"} {
+	for _, code := range []string{"search-temporary", "search-invalid-request", "search-invalid-response", "search-timeout", "search-not-grounded", "provider-unavailable", "credentials-required", "search-budget-exhausted", "rate-limited", "source-changed", "connect-required", "setup-required", "blocked-by-policy", "invalid-request", "search-argument-unsupported", "search-argument-invalid"} {
 		t.Run(code, func(t *testing.T) {
 			for _, prefix := range []string{"", "source failed: "} {
 				raw, _ := json.Marshal(map[string]string{"error": prefix + code})
@@ -100,6 +100,26 @@ func TestResearchSearchRefusalsKeepSupportedCause(t *testing.T) {
 		var refusal *researchSourceError
 		if errors.As(err, &refusal) || strings.Contains(err.Error(), "secret-token") || strings.Contains(err.Error(), "private.example") {
 			t.Fatal("unsupported source text accepted", err)
+		}
+	}
+}
+
+func TestResearchSearchArgumentRefusalsKeepTheirTokenNotTheirDetail(t *testing.T) {
+	for _, code := range []string{"search-argument-unsupported", "search-argument-invalid"} {
+		for _, prefix := range []string{"", "source failed: "} {
+			raw, _ := json.Marshal(map[string]string{"error": prefix + code + `: "topic" is not an argument of web-search; nothing was sent`})
+			err := researchSourceFailure(400, raw)
+			var refusal *researchSourceError
+			if !errors.As(err, &refusal) || refusal.code != code || !strings.Contains(refusal.message, "The search request was rejected as invalid.") || strings.Contains(err.Error(), "topic") {
+				t.Fatalf("argument refusal lost or echoed: %v", err)
+			}
+		}
+	}
+	for _, raw := range []string{`{"error":"source failed: search-argument-other: \"x\""}`, `{"error":"source failed: search-argument-invalid secret-token"}`, `{"error":"source failed: search-argument-invalid: a\nsecret-token"}`} {
+		err := researchSourceFailure(400, []byte(raw))
+		var refusal *researchSourceError
+		if errors.As(err, &refusal) || strings.Contains(err.Error(), "secret-token") {
+			t.Fatal("unsupported argument refusal accepted", err)
 		}
 	}
 }

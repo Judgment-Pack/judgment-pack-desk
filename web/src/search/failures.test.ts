@@ -14,10 +14,22 @@ describe('safe search failure diagnostics', () => {
   ['search-budget-exhausted', /daily search limit/],
   ['rate-limited', /limiting requests/],
   ['source-changed', /connection changed/],
+  ['invalid-request', /rejected the search request as invalid/],
+  ['search-argument-unsupported', /rejected the search request as invalid/],
+  ['search-argument-invalid', /rejected the search request as invalid/],
  ] as const)('identifies %s without blaming unrelated settings', (code, expected) => {
   const error = searchFailure(new GatewayError(400, `source failed: ${code}`))
   expect(error.code).toBe(code)
   expect(error.message).toMatch(expected)
+ })
+ it('names a search argument refusal from its token and never echoes its detail', () => {
+  for (const code of ['search-argument-unsupported','search-argument-invalid'] as const) {
+   const error = searchFailure(new GatewayError(400, `source failed: ${code}: "topic" is not an argument of web-search; nothing was sent`))
+   expect(error.code).toBe(code)
+   expect(error.message).not.toMatch(/topic|nothing was sent/)
+  }
+  for (const text of ['source failed: search-argument-other: "x"','source failed: search-argument-invalid: a\nsecret-token','source failed: search-argument-invalid secret-token','source failed: search-timeout: "x"'])
+   expect(searchFailure(new GatewayError(400, text)).code).toBe('gateway-refused')
  })
  it('does not leak arbitrary upstream messages or infer authentication from HTTP 400', () => {
   for (const cause of [new GatewayError(400,'private query and secret-token'),new GatewayError(400,'source failed: credentials-required secret-token'),new Error('secret-token')]) {

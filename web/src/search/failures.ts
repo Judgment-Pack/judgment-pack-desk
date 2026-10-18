@@ -19,6 +19,8 @@ const FAILURES = {
  'setup-required': 'The selected search connection needs configuration. Check Web search settings.',
  'blocked-by-policy': 'Web search is disabled by the connection policy.',
  'invalid-request': 'Gateway rejected the search request as invalid.',
+ 'search-argument-unsupported': 'Gateway rejected the search request as invalid.',
+ 'search-argument-invalid': 'Gateway rejected the search request as invalid.',
  'gateway-unavailable': 'Desk could not reach the search Gateway. Check local processing in Admin > Document processing.',
  'gateway-refused': 'Gateway refused this search request. The refusal did not identify a supported cause; check the connection test and Gateway diagnostics.',
  'search-over-limit': 'The search response exceeded Desk’s size limit. Try a narrower query.',
@@ -42,8 +44,10 @@ export function searchFailure(cause: unknown): SearchFailure {
  if (cause instanceof FileRequestError) return new SearchFailure('search-storage-failed')
  if (cause instanceof GatewayError) {
   // The adapter's protocol token is carried by Gateway as bounded stderr.
-  const token = /^(?:source failed: )?([a-z-]+)$/.exec(cause.message)?.[1]
-  if (token && ['search-timeout','search-not-grounded','search-temporary','search-invalid-request','search-invalid-response','provider-unavailable','credentials-required','search-budget-exhausted','rate-limited','source-changed','connect-required','setup-required','blocked-by-policy','invalid-request'].includes(token)) return new SearchFailure(token as SearchFailureCode)
+  // A named argument refusal carries one detail after the token; the detail is
+  // never read, only the token.
+  const token = /^(?:source failed: )?([a-z-]+)$/.exec(cause.message)?.[1] ?? /^(?:source failed: )?(search-argument-(?:unsupported|invalid))(?:: [^\n]*)?$/.exec(cause.message)?.[1]
+  if (token && ['search-timeout','search-not-grounded','search-temporary','search-invalid-request','search-invalid-response','provider-unavailable','credentials-required','search-budget-exhausted','rate-limited','source-changed','connect-required','setup-required','blocked-by-policy','invalid-request','search-argument-unsupported','search-argument-invalid'].includes(token)) return new SearchFailure(token as SearchFailureCode)
   if (cause.status >= 502 && cause.status <= 504) return new SearchFailure('gateway-unavailable')
   return new SearchFailure('gateway-refused')
  }
