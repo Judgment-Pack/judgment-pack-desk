@@ -67,16 +67,12 @@ func (s policyService) list(ctx context.Context) ([]policySummary, error) {
 			head := policyHead(record)
 			stream := ledger.SourceAuthorities[record.ID]
 			row := policySummary{ID: record.ID, Title: head.Title, ArtifactVersion: head.ArtifactVersion, UpdatedAt: record.UpdatedAt, ReviewState: policyAuthorityReviewState(record, stream), PublicationCount: len(record.Publications), CandidateDigest: head.Digest}
-			owner, boundary := policyAuthorityOwnership(stream)
+			owner, _ := policyAuthorityOwnership(stream)
 			if stream != nil {
 				row.ManagementMode = owner.Mode
 				row.SourceAuthority = policyAuthoritySummary(stream)
 			}
-			for _, publication := range record.Publications {
-				if owner.Mode == "desk-managed" && publication.Sequence > boundary && publication.CandidateRevisionID == head.ID && publication.CandidateDigest == head.Digest && publication.WorkflowDigest == head.WorkflowDigest {
-					row.CurrentCandidatePublished = true
-				}
-			}
+			row.CurrentCandidatePublished = policyAuthorityCurrentCandidatePublished(record, stream)
 			if len(record.Publications) > 0 {
 				publication := record.Publications[len(record.Publications)-1]
 				row.LatestPublication = &publication
@@ -145,7 +141,8 @@ func (s policyService) reply(ctx context.Context, record policyStoredRecord, str
 	if review := policyAuthorityCurrentReview(record, stream); review != nil {
 		currentReviewID = review.ID
 	}
-	return policyReply{SourceAuthority: policyAuthoritySummary(stream), Revision: policyEffectiveRevision(record, stream), Document: policyDocument{SchemaVersion: 1, ID: record.ID, ManagementMode: owner.Mode, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Candidate: candidate, Workflow: head.Workflow, WorkflowDigest: head.WorkflowDigest, ReviewState: policyAuthorityReviewState(record, stream), CurrentReviewID: currentReviewID, Revisions: record.Revisions, Reviews: record.Reviews, Publications: record.Publications}}, nil
+	published := policyAuthorityCurrentCandidatePublished(record, stream)
+	return policyReply{CurrentCandidatePublished: &published, SourceAuthority: policyAuthoritySummary(stream), Revision: policyEffectiveRevision(record, stream), Document: policyDocument{SchemaVersion: 1, ID: record.ID, ManagementMode: owner.Mode, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, Candidate: candidate, Workflow: head.Workflow, WorkflowDigest: head.WorkflowDigest, ReviewState: policyAuthorityReviewState(record, stream), CurrentReviewID: currentReviewID, Revisions: record.Revisions, Reviews: record.Reviews, Publications: record.Publications}}, nil
 }
 
 func (s policyService) revision(ctx context.Context, id, revisionID string) (any, error) {

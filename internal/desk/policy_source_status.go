@@ -185,6 +185,19 @@ func policyAuthoritySummary(stream *policySourceAuthorityStream) *policySourceAu
 	}
 	return result
 }
+func policyAuthorityCurrentCandidatePublished(record policyStoredRecord, stream *policySourceAuthorityStream) bool {
+	owner, boundary := policyAuthorityOwnership(stream)
+	if owner.Mode != "desk-managed" {
+		return false
+	}
+	head := policyHead(record)
+	for _, publication := range record.Publications {
+		if publication.Sequence > boundary && publication.CandidateRevisionID == head.ID && publication.CandidateDigest == head.Digest && publication.WorkflowDigest == head.WorkflowDigest {
+			return true
+		}
+	}
+	return false
+}
 func policyAuthorityCurrentReview(record policyStoredRecord, stream *policySourceAuthorityStream) *policyReview {
 	owner, boundary := policyAuthorityOwnership(stream)
 	review := policyCurrentReview(record)

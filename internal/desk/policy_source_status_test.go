@@ -557,3 +557,31 @@ func TestPolicySourceStatusHTTPGuardsAndAssistantOwnershipScope(t *testing.T) {
 	f.s.sessions.revoke(f.token)
 	policyError(t, policyCall(f.s, f.token, "POST", path, q), 401, CodeUnauthorized)
 }
+
+func TestPolicySourceStatusLivePublicationProjectionAgreesAcrossOwnershipEpochs(t *testing.T) {
+	f := newPolicySourceFixture(t)
+	f.policy = policyApprove(t, f.s, f.token, f.policy)
+	f.policy = policyMutation(t, policyCall(f.s, f.token, "POST", "/api/policies/"+f.policy.Document.ID+"/publish", policyPublishBody(t, f.policy))).Policy
+	check := func(want bool) {
+		t.Helper()
+		current := policyRead(t, f.s, f.token, f.policy.Document.ID)
+		rows, err := statusService(f).list(context.Background())
+		if err != nil || len(rows) != 1 || current.CurrentCandidatePublished == nil || *current.CurrentCandidatePublished != want || rows[0].CurrentCandidatePublished != want {
+			t.Fatal("live/summary publication projection disagreed", current, rows, err)
+		}
+	}
+	check(true)
+	f.ownStatus(t, "desk-managed")
+	check(true) // Explicit legacy selection preserves the existing authority epoch.
+	f.ownStatus(t, "externally-managed")
+	check(false)
+	f.ownStatus(t, "desk-managed")
+	check(false) // Historical local publication cannot regain current authority.
+	current := policyRead(t, f.s, f.token, f.policy.Document.ID)
+	edit := policyEditBody(t, current)
+	edit.ArtifactVersion = "1.1.0"
+	current = policyMutation(t, policyCall(f.s, f.token, "PUT", "/api/policies/"+current.Document.ID, edit)).Policy
+	current = policyApprove(t, f.s, f.token, current)
+	policyMutation(t, policyCall(f.s, f.token, "POST", "/api/policies/"+current.Document.ID+"/publish", policyPublishBody(t, current)))
+	check(true)
+}

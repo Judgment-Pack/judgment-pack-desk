@@ -99,9 +99,10 @@ type policyDocument struct {
 }
 
 type policyReply struct {
-	SourceAuthority *policySourceAuthoritySummary `json:"sourceAuthority,omitempty"`
-	Revision        string                        `json:"revision"`
-	Document        policyDocument                `json:"document"`
+	CurrentCandidatePublished *bool                         `json:"currentCandidatePublished,omitempty"`
+	SourceAuthority           *policySourceAuthoritySummary `json:"sourceAuthority,omitempty"`
+	Revision                  string                        `json:"revision"`
+	Document                  policyDocument                `json:"document"`
 }
 
 type policySummary struct {
