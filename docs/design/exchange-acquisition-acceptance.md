@@ -7,7 +7,7 @@ files are imported on two disposable installations. Their complete definitions,
 forms remain unchanged. All installation choices live in reviewed bindings.
 
 `TestExchangeSignedReleaseAcquisitionsOnTwoInstallations` uses actual attested
-Runtime v0.34.0 and Runner v0.21.0 executables and the released Gateway v0.18.0
+Runtime v0.34.0 and Runner v0.21.0 executables and the released Gateway v0.19.0
 signer/control programs. Only the two adapter role slots use Gateway's separately
 pinned, explicitly tagged fixture executable from
 `09618fe82318b36e68b7a689de84140c0d2a5849`. Its real executable digest and

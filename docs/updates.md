@@ -73,7 +73,7 @@ the runtimes of desks Desk made, as `JPACK_SIGNING_KEY` is: set where Desk was s
 it holds every desk's key to the key it names, so a desk whose key is another writes its
 records unsigned, and its decision record says so in the runtime's words.
 
-Gateway is pinned to `v0.18.0`; since `v0.11.0` it includes `adapter-render`, required by its
+Gateway is pinned to `v0.19.0`; since `v0.11.0` it includes `adapter-render`, required by its
 local source plan, and the two OCR workers `ocr-tesseract` and `ocr-cloud`, which
 the document processors run beside the companion
 ([document processing](document-processing.md)). Desk now asks for the plan with

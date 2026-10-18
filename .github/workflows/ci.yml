@@ -347,11 +347,11 @@ jobs:
           git -C .ci-acquisition-gateway config gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/.github/testdata/gateway-release-allowed-signers"
           GOWORK=off go -C .ci-acquisition-gateway/adapters mod download
           python3 .ci-acquisition-gateway/adapters/testdata/acquisition-fixture/build.py \
-            --base-archive "$RUNNER_TEMP/acquisition-downloads/gateway/judgment-pack-gateway_0.18.0_linux_amd64.tar.gz" \
+            --base-archive "$RUNNER_TEMP/acquisition-downloads/gateway/judgment-pack-gateway_0.19.0_linux_amd64.tar.gz" \
             --base-checksums "$RUNNER_TEMP/acquisition-downloads/gateway/checksums.txt" \
             --base-provenance "$RUNNER_TEMP/acquisition-official/component-artifacts.json" \
-            --base-tag v0.18.0 \
-            --base-commit 552141b5e0b06cc2523387e575799fea1ab2eca6 \
+            --base-tag v0.19.0 \
+            --base-commit 4b9fa82ddeae772654d8f8bcf7b33d47ac65a512 \
             --output "$RUNNER_TEMP/acquisition-fixture"
           python3 .ci-acquisition-gateway/adapters/testdata/acquisition-fixture/smoke.py --bundle "$RUNNER_TEMP/acquisition-fixture"
 
