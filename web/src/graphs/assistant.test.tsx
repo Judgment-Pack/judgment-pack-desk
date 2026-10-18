@@ -61,3 +61,13 @@ it('refuses an oversized exact Policy basis before mutating any helper chat',()=
  render(<GraphAssistant proposal={initial} workspace="flow" chatId="chat" onChat={fixture.onChat} busy={false} selection="" policySources={sources}/>)
  expect(screen.getByText(/at most eight distinct/)).toBeTruthy();expect(fixture.update).not.toHaveBeenCalled();expect(fixture.create).not.toHaveBeenCalled()
 })
+it('does not route a bare helper workspace across duplicate draft origins',()=>{
+ fixture.chat={...fixture.chat,graph:{id:'flow',path:initial.path,workspace:'same-draft'}}
+ render(<GraphAssistant proposal={initial} workspace="origin-one:same-draft" chatId="chat" onChat={fixture.onChat} busy={false} selection="" draftIdentities={[{originChatId:'origin-one',draftId:'same-draft'},{originChatId:'origin-two',draftId:'same-draft'}]}/>)
+ expect(screen.queryByLabelText('Message')).toBeNull();expect(fixture.update).not.toHaveBeenCalled();expect(fixture.onChat).not.toHaveBeenCalled()
+})
+it('keeps a saved graph helper whose graph id equals an unrelated bare draft id',()=>{
+ fixture.chat={...fixture.chat,graph:{id:'same-draft',path:'other.graph.json',workspace:'same-draft'}}
+ render(<GraphAssistant proposal={initial} workspace="origin-one:same-draft" chatId="chat" onChat={fixture.onChat} busy={false} selection="" draftIdentities={[{originChatId:'origin-one',draftId:'same-draft'}]}/>)
+ expect(screen.queryByLabelText('Message')).toBeNull();expect(fixture.update).not.toHaveBeenCalled()
+})

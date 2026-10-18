@@ -1,4 +1,5 @@
-import {graphDraftsQuery,retainedGraphDrafts} from '../../graphs/drafts'
+import {graphDraftsQuery,retainedGraphDrafts,graphDraftFolderId} from '../../graphs/drafts'
+import {projectGraphPlacements} from './graphPlacement'
 import {privateQuery} from '../../data/privateQuery'
 import { useDirtyGuard } from '../../shell/useDirtyGuard'
 import { useConfirmDiscard } from '../../shell/UnsavedChanges'
@@ -24,7 +25,7 @@ function read(key: string | undefined): Preferences {
 function useFolderState(storageKey?: string) {
  const client=useQueryClient(), navigate=useNavigate(), location=useLocation()
  const query=useQuery({...privateQuery,queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false,staleTime:0,refetchOnWindowFocus:true})
- const {packDrafts,deletedDrafts,chats,ready}=useChats()
+ const {packDrafts,deletedDrafts,chats,drafts,ready}=useChats()
  const retainedGraphs=useQuery(graphDraftsQuery())
  const raw=query.data?.document ?? defaultFolders()
  const assignments={...raw.assignments}
@@ -34,8 +35,8 @@ function useFolderState(storageKey?: string) {
   if(draft.finalized && !Object.hasOwn(assignments,draft.finalized.id))assignments[draft.finalized.id]=assignments[draft.id]!
  }
  for(const id of deletedDrafts)delete assignments[id]
- if(ready&&retainedGraphs.data){const graphDrafts=new Set(retainedGraphDrafts(retainedGraphs.data.content,chats).map(draft=>'graph-draft:'+draft.draftId));for(const id of Object.keys(assignments))if(id.startsWith('graph-draft:')&&!graphDrafts.has(id))delete assignments[id]}
- const document={...raw,assignments}
+ const graphPlacement=ready&&retainedGraphs.data?projectGraphPlacements({...raw,assignments},retainedGraphDrafts(retainedGraphs.data.content,[...chats,...drafts]),retainedGraphs.data.content.deleted):{document:{...raw,assignments},ambiguous:[]}
+ const {document}=graphPlacement
  const [settings,setSettings]=useState(()=>({key:storageKey,value:read(storageKey)})), [message,setMessage]=useState('')
  if(settings.key!==storageKey)setSettings({key:storageKey,value:read(storageKey)})
  const prefs={...settings.value,collapsed:!settings.value.visibilityChosen&&location.pathname!=='/library'?true:settings.value.collapsed}
@@ -83,11 +84,11 @@ function useFolderState(storageKey?: string) {
  const reload=async()=>{const result=await query.refetch();if(result.data&&!result.isError)editorBase.current=result.data}
  const saveEdit=(action:FolderAction)=>mutation.mutateAsync({action,before:editorBase.current})
  const {packId:finalId,draftId,graphId}=useParams()
- const graphDraft=new URLSearchParams(location.search).get('draft')
- const packId=finalId??draftId??(graphId?'graph:'+graphId:location.pathname==='/graphs'&&graphDraft?'graph-draft:'+graphDraft:undefined)
+ const search=new URLSearchParams(location.search),graphDraft=search.get('draft'),graphOwner=search.get('draftChat')??search.get('chat')
+ const packId=finalId??draftId??(graphId?'graph:'+graphId:location.pathname==='/graphs'&&graphDraft&&graphOwner?graphDraftFolderId({draftId:graphDraft,originChatId:graphOwner}):undefined)
  const activeFolder=packId&&query.data?packFolder(document,packId):selected
  useEffect(()=>{if(packId&&query.data)preferences({expanded:[...new Set([...prefs.expanded,...folderTrail(document,activeFolder).map(folder=>folder.id)])]})},[packId,activeFolder,settings.key])
- return {clearGuard,closeEditor,query,document,prefs,selected,activeFolder,editorFields,setEditorFields,drawerOpener,reload,saveEdit,preferences,select,editing,setEditing,edit,mutation,message,setMessage,overlay,setOverlay,opener}
+ return {clearGuard,closeEditor,query,document,ambiguousGraphAssignments:graphPlacement.ambiguous,prefs,selected,activeFolder,editorFields,setEditorFields,drawerOpener,reload,saveEdit,preferences,select,editing,setEditing,edit,mutation,message,setMessage,overlay,setOverlay,opener}
 }
 function documentElement() { return window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null }
 export type FolderState=ReturnType<typeof useFolderState>

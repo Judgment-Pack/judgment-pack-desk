@@ -1,6 +1,6 @@
 import {PageLoading} from '../ui/PageLoading'
 import { QueryStatusNotice } from '../shell/QueryStatusNotice'
-import { graphDraftHref,graphDraftsQuery,retainedGraphDrafts } from '../graphs/drafts'
+import { graphDraftHref,graphDraftsQuery,retainedGraphDrafts,graphDraftFolderId } from '../graphs/drafts'
 import {useQuery} from '@tanstack/react-query'
 import {policyListQuery} from '../policies/client'
 import {dialectListQuery} from '../dialects/queries'
@@ -104,12 +104,12 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   useInspectorPresentation(presentation)
   const packs = useMemo(() => {
     const needle = filter.trim().toLowerCase()
-    const rows: BrowserItem[] = [...(data?.packs ?? []).map(pack=>({...pack,key:'pack:'+pack.id,kind:'pack' as const,title:pack.id,status:'finalized' as const,href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({key:'pack-draft:'+draft.id,kind:'pack' as const,id:draft.id,title:draft.title,status:'draft' as const,href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document)})), ...(listedGraphs?.graphs ?? []).map(graph => ({key:'graph:'+graph.id,kind:'graph' as const, id:'graph:'+graph.id, title:graph.id, status:'finalized' as const, href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({key:'graph-draft:'+draft.chatId+':'+draft.draftId,kind:'graph' as const, id:'graph-draft:'+draft.draftId, title:draft.id, status:'draft' as const, chatId:draft.chatId, draftId:draft.draftId, href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description})), ...dialectLibraryItems(dialects.data?.items??[],dialectDrafts.data?.items??[]),...policyLibraryItems(policies.data?.items??[])]
+    const rows: BrowserItem[] = [...(data?.packs ?? []).map(pack=>({...pack,key:'pack:'+pack.id,kind:'pack' as const,title:pack.id,status:'finalized' as const,href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({key:'pack-draft:'+draft.id,kind:'pack' as const,id:draft.id,title:draft.title,status:'draft' as const,href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document)})), ...(listedGraphs?.graphs ?? []).map(graph => ({key:'graph:'+graph.id,kind:'graph' as const, id:'graph:'+graph.id, title:graph.id, status:'finalized' as const, href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({key:graphDraftFolderId(draft),kind:'graph' as const, id:graphDraftFolderId(draft), title:draft.id, status:'draft' as const, chatId:draft.chatId, draftId:draft.draftId, href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description})), ...dialectLibraryItems(dialects.data?.items??[],dialectDrafts.data?.items??[]),...policyLibraryItems(policies.data?.items??[])]
     const matching = rows.filter(pack => (kind==='all'||pack.kind===kind) && (status==='all'||(status==='saved'?pack.status!=='draft':pack.status===status)) && (!folders || listScope === ALL_PACKS || inFolder(folders.document, folderAssignmentKey(pack)===undefined?HOME_FOLDER:packFolder(folders.document,pack.id), listScope, !!needle)) && (!needle ||
       `${pack.id} ${pack.title}`.toLowerCase().includes(needle) || pack.description?.toLowerCase().includes(needle)))
     return matching.sort((left, right) => sort === 'id-desc'
       ? right.title.localeCompare(left.title) : left.title.localeCompare(right.title))
-  }, [data, error, packDrafts, chats, listedGraphs, dialects.data, dialectDrafts.data, policies.data, kind, filter, status, sort, folders?.document, listScope, locale])
+  }, [data, error, packDrafts, chats, retainedGraphs.data, listedGraphs, dialects.data, dialectDrafts.data, policies.data, kind, filter, status, sort, folders?.document, listScope, locale])
   const pagination = usePagination(packs.length, JSON.stringify([shell.storageKey, listScope, filter, kind, status, sort]))
   const pageItems = packs.slice(pagination.start, pagination.end)
   const selected = packs.filter(item => selectedIds.includes(item.key))

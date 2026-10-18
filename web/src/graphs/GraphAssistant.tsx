@@ -11,12 +11,13 @@ import { Disclosure } from '../ui/Disclosure'
 import { diffProposal } from '../assistant/proposalDiff'
 import { ProposalDiffView } from '../assistant/ProposalDiffView'
 import type { GraphProposal } from './author'
+import {graphDraftWorkspaceMatches,type GraphDraftIdentity} from './identity'
 import styles from './GraphWorkspace.module.css'
 
 /** Same project conversations and ChatPanel as packs; never bind a graph as a pack. */
-export function GraphAssistant({ proposal, workspace, chatId, onChat, onApply, busy, selection, openDraftId,policySources=[] }: {
+export function GraphAssistant({ proposal, workspace, chatId, onChat, onApply, busy, selection, openDraftId,policySources=[],draftIdentities=[] }: {
   proposal: GraphProposal; workspace: string;policySources?:PolicyAuthoringSource[]; openDraftId?: string; chatId?: string; onChat: (id: string) => void
-  onApply?: (next: Partial<GraphProposal>) => void; busy: boolean; selection: string
+  onApply?: (next: Partial<GraphProposal>) => void; busy: boolean; selection: string;draftIdentities?:GraphDraftIdentity[]
 }) {
   const {store, ready, chats, drafts, bindings, error} = useChats()
   const slot = useInspectorControls()
@@ -26,7 +27,10 @@ export function GraphAssistant({ proposal, workspace, chatId, onChat, onApply, b
   const available = [...chats, ...drafts]
   const basisValid=validPolicySources(policySources)
   const compatible=(item:typeof available[number])=>!item.policySources?.length||samePolicySources(item.policySources,policySources)
-  const chat = available.find(item => compatible(item)&&item.id === chatId && !item.pack && !item.draftId && (!item.graph || (item.graph.workspace === workspace||workspace.endsWith(':'+item.graph.workspace))))
+  const [originChatId,draftId]=workspace.split(':')
+  const known=[...draftIdentities,...available.flatMap(item=>(item.graphDrafts??[]).map(d=>({originChatId:item.id,draftId:d.draftId})))]
+  const matches=(item:typeof available[number])=>item.graph?.workspace===workspace||!!draftId&&graphDraftWorkspaceMatches({originChatId,draftId,id:proposal.id,path:proposal.path},item,known)
+  const chat = available.find(item => compatible(item)&&item.id === chatId && !item.pack && !item.draftId && (!item.graph || matches(item)))
     ?? available.filter(item => compatible(item)&&item.graph?.workspace === workspace && !item.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
   const creating = useRef(false)
   useEffect(() => {

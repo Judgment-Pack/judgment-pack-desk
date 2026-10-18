@@ -71,6 +71,19 @@ are related-work history and never overwrite or block independent graph edits.
 Old clients that edit only those snapshots must reopen the current graph editor
 to edit the independent draft. Explicit draft deletion retains scoped tombstones.
 
+Folder placements, Library actions and helper routing use the same scoped graph
+draft identity. `jpack-folders.json` version 3 adds
+`graph-draft:<originChatId>:<draftId>` assignment keys; versions 1 and 2 remain
+readable. A bare legacy assignment is projected only when its origin is unique.
+Ambiguous assignments remain recoverable metadata with a review notice until
+each surviving draft has an explicit placement. Saved graphs inherit an
+unambiguous draft placement only when no explicit saved graph placement exists.
+Projection is read-only; the next explicit folder action persists the result
+through the existing authenticated project-file CAS. Folder metadata remains a
+project file, outside private workspace backup/restore. Older builds reject v3
+folder metadata and cannot safely organize these scoped drafts; downgrading does
+not convert or erase either folder metadata or private graph history.
+
 Graph records participate in private backup, restore and project moves. Launch
 credentials and revoked sessions cannot read, write or transfer the store.
 Restore validates newly introduced Policy sources through the existing exact
@@ -149,7 +162,8 @@ destination covers existing Dialect URLs. Existing detail URLs, artifact bytes,
 chat scopes, reviews and execution pins retain their current behavior.
 
 The selected type is an optional workspace-scoped layout preference. The
-`jpack-folders.json` v1/v2 assignment contract is unchanged. Dialects have no
+Library foundation kept the `jpack-folders.json` v1/v2 assignment contract;
+the later graph custody slice above adds v3 scoped draft keys. Dialects have no
 folder assignment and are discoverable in Home/all views; they are excluded
 from folder moves and chat-backed draft deletion. Their existing editors own
 their actions. Policy navigation/editor integration uses the new private API;

@@ -1,3 +1,4 @@
+import {graphDraftFolderId} from '../graphs/identity'
 import {privateQuery} from '../data/privateQuery'
 import {LoadingState} from '../ui/LoadingState'
 import { QueryStatusNotice } from '../shell/QueryStatusNotice'
@@ -65,7 +66,7 @@ export function DefinitionHistory({kind, owner, documentId, draft=false, candida
     entries.push({id:'decision:'+record.digest,kind:'decisions',title:msg('Decision recorded'),detail:[decisionText(value.disposition),text(value.graph?.node)].filter(Boolean).join(' · '),at:recordedTime(value.at),raw:record.raw,digest:record.digest})
   }
   for(const page of versions.data?.pages??[])for(const entry of page.items) entries.push({id:'publication:'+entry.publication.id+':'+entry.document.version+':'+entry.document.content.sha256,kind:'changes',title:msg('Reviewed version {{version}}',{version:entry.document.version}),detail:entry.publication.imported?msg('Retained from the previous reviewed lock'):msg('Reviewed project lock'),at:entry.publication.at,raw:entry.raw,digest:entry.document.content.sha256,note:msg('This exact version and its reviewed dependency set are retained. To restore older content, edit a draft and choose a new version.'),sections:[{title:msg('Review identity'),text:entry.publication.id}]})
-  if(graphDraft)entries.push({id:'graph-draft:'+graphDraft.draftId,kind:'changes',title:msg('Saved graph draft'),detail:graphDraft.id,raw:graphDraft.content,note:msg('The latest saved copy of this graph draft. Earlier edits may not have been recorded.')})
+  if(graphDraft)entries.push({id:graphDraftFolderId(graphDraft),kind:'changes',title:msg('Saved graph draft'),detail:graphDraft.id,raw:graphDraft.content,note:msg('The latest saved copy of this graph draft. Earlier edits may not have been recorded.')})
   if(observation)entries.push({id:'observation',kind:'checks',title:msg('Graph tests observed'),detail:msg('Current session'),raw:json(observation),note:msg('This test observation is held in this session. It is not a durable decision record.')})
   const historyId=useId()
   const [search,setSearch]=useState(''),[filter,setFilter]=useState('all'),[selected,setSelected]=useState<string>()

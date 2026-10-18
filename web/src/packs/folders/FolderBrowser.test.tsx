@@ -11,8 +11,9 @@ import {applyFolderAction,defaultFolders,FOLDERS_FILE,HOME_FOLDER} from './model
 import {FOLDERS_KEY,loadFolders,saveFolderAction,assignCreatedPack} from './client'
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),loadFolders:vi.fn(),saveFolderAction:vi.fn(),assignCreatedPack:vi.fn()}))
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.clearAllMocks();vi.unstubAllGlobals();localStorage.clear()})
-function setup({width=1100,path='/library',corrupt=false,rootPending=false,graphs=false,state=undefined as unknown}={}){
+function setup({width=1100,path='/library',corrupt=false,rootPending=false,graphs=false,records=[] as import('../../graphs/drafts').GraphDraft[],placements={} as Record<string,string>,state=undefined as unknown}={}){
  vi.stubGlobal('fetch',async(input:RequestInfo|URL)=>{
+  if(String(input)==='/api/draft-graphs')return Response.json({project:'/project',sha256:'graphs',content:{version:1,drafts:records,deleted:[]}})
   if(['/api/input-preparations','/api/dialect-drafts','/api/policies'].includes(String(input)))return Response.json({items:[]})
   throw new Error('No file fixture for this test.')
  })
@@ -21,6 +22,7 @@ function setup({width=1100,path='/library',corrupt=false,rootPending=false,graph
  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(()=>({x:0,y:0,top:0,left:0,bottom:700,right:width,width,height:700,toJSON(){}}))
  let document=applyFolderAction(applyFolderAction(defaultFolders(),{type:'create',id:'dept',name:'Operations',parentId:HOME_FOLDER}),{type:'create',id:'child',name:'Intake',parentId:'dept'})
  document=applyFolderAction(document,{type:'assign',packId:'department-pack',folderId:'child'})
+ for(const [packId,folderId] of Object.entries(placements))document=applyFolderAction(document,{type:'assign',packId,folderId})
  vi.mocked(loadFolders).mockImplementation(async()=>{if(corrupt)throw new Error('Unreadable');return {document,digest:'read'}})
  vi.mocked(saveFolderAction).mockImplementation(async(before,action)=>{document=applyFolderAction(before.document,action);return {document,digest:'saved'}})
  const client=testQueryClient();if(!rootPending)client.setQueryData(['desk-files'],{root:'/project',files:[{path:FOLDERS_FILE,bytes:1,sha256:'read'}]})
@@ -288,4 +290,14 @@ it('creates a destination inside the move dialog, retains it across resizing, an
  expect(doc.assignments['home-pack']).toBe(folder.id)
  expect(doc.assignments['department-pack']).toBe('child')
  expect(saveFolderAction).toHaveBeenLastCalledWith(expect.objectContaining({digest:'read'}),expect.objectContaining({type:'create-and-move',name:'Client briefs'}))
+})
+
+it('filters duplicate graph draft IDs by their independent folder placements',async()=>{
+ const initial={draftId:'same-draft',path:'flow.graph.json',content:'{}',createdAt:'2026-10-18T12:00:00Z'}
+ const {router}=setup({graphs:true,records:[{...initial,id:'first-flow',originChatId:'origin-one'},{...initial,id:'second-flow',originChatId:'origin-two'}],placements:{'graph-draft:origin-one:same-draft':'child','graph-draft:origin-two:same-draft':HOME_FOLDER}})
+ await screen.findByRole('link',{name:/second-flow/});expect(screen.queryByRole('link',{name:/first-flow/})).toBeNull()
+ await act(()=>router.navigate('/library?folder=child&type=graph'))
+ const first=await screen.findByRole('link',{name:/first-flow/})
+ expect(first.getAttribute('href')).toBe('/graphs?chat=origin-one&draft=same-draft')
+ expect(screen.queryByRole('link',{name:/second-flow/})).toBeNull()
 })

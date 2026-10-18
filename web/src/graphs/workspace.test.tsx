@@ -104,14 +104,14 @@ it('keeps draft conversations attached when their graph is saved', async () => {
   const first = state.store!.create(), second = state.store!.create(), unrelated = state.store!.create()
   for (const chat of [first, second]) state.store!.update(chat.id, {graph: {id: 'flow', path: initial.path, workspace: retained.draftId}})
   state.store!.update(first.id, {graphDrafts: [retained]})
-  state.store!.update(unrelated.id, {graph: {id: 'other', path: 'other.json', workspace: 'other'}})
+  state.store!.update(unrelated.id, {graph: {id: retained.draftId, path: 'other.json', workspace: retained.draftId}})
   render(<MemoryRouter><GraphEditor initial={retained} draft={retained} chatId={second.id} draftChatId={first.id} packs={['a']}/></MemoryRouter>)
   fireEvent.click(screen.getByRole('button', {name: 'Review & save'}))
   fireEvent.click(await screen.findByRole('button', {name: 'Confirm graph write'}))
   await waitFor(() => expect(state.navigate).toHaveBeenCalledWith('/graphs/flow?chat=' + second.id))
   const chats = state.store!.getSnapshot().chats
   for (const id of [first.id, second.id]) expect(chats.find(c => c.id === id)?.graph).toEqual({id: 'flow', path: initial.path, workspace: 'flow'})
-  expect(chats.find(c => c.id === unrelated.id)?.graph?.workspace).toBe('other')
+  expect(chats.find(c => c.id === unrelated.id)?.graph).toEqual({id:retained.draftId,path:'other.json',workspace:retained.draftId})
 })
 
 it('keeps settings edits in the draft after closing and retains one shared tab structure', async()=>{
@@ -123,6 +123,20 @@ it('keeps settings edits in the draft after closing and retains one shared tab s
  expect(deskFetch).not.toHaveBeenCalled()
  fireEvent.keyDown(opener,{key:'Enter'});fireEvent.click(await screen.findByRole('menuitem',{name:'Graph settings…'}))
  expect(screen.getByLabelText('Description')).toHaveProperty('value','Changed description')
+})
+it('finalizes only the scoped owner and leaves ambiguous bare helper workspaces untouched',async()=>{
+ const retained={...initial,draftId:'shared-id',createdAt:'2026-10-18T12:00:00Z'}
+ const owner=state.store!.create(),other=state.store!.create(),ambiguous=state.store!.create(),scoped=state.store!.create()
+ for(const chat of [owner,other])state.store!.update(chat.id,{graphDrafts:[retained],graph:{id:'flow',path:initial.path,workspace:'shared-id'}})
+ state.store!.update(ambiguous.id,{graph:{id:'flow',path:initial.path,workspace:'shared-id'}})
+ state.store!.update(scoped.id,{graph:{id:'flow',path:initial.path,workspace:owner.id+':shared-id'}})
+ render(<MemoryRouter><GraphEditor initial={retained} draft={retained} draftChatId={owner.id} chatId={owner.id} packs={['a']}/></MemoryRouter>)
+ fireEvent.click(screen.getByRole('button',{name:'Review & save'}));fireEvent.click(await screen.findByRole('button',{name:'Confirm graph write'}))
+ await waitFor(()=>expect(state.navigate).toHaveBeenCalled())
+ const chats=state.store!.getSnapshot().chats
+ for(const id of [owner.id,scoped.id])expect(chats.find(c=>c.id===id)?.graph?.workspace).toBe('flow')
+ for(const id of [other.id,ambiguous.id])expect(chats.find(c=>c.id===id)?.graph?.workspace).toBe('shared-id')
+ expect(chats.find(c=>c.id===other.id)?.graphDrafts?.[0]?.saved).toBeUndefined()
 })
 
 it('switches duplicate draft ids by original conversation and protects dirty owner changes',async()=>{

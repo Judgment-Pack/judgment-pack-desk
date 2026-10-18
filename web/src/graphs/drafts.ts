@@ -5,6 +5,8 @@ import {queryOptions} from '@tanstack/react-query'
 import {answer,deskFetch} from '../files/client'
 import {privateQuery} from '../data/privateQuery'
 import {sourceMessage} from '../i18n/source'
+import {graphDraftKey} from './identity'
+export {graphDraftKey,graphDraftFolderId} from './identity'
 
 /** Independent private artifact. Chat copies are related-work history. */
 export interface GraphDraft extends GraphProposal {
@@ -37,7 +39,6 @@ export const validGraphSnapshot=(value:unknown):value is GraphDraft=>validGraphD
 export const GRAPH_DRAFTS_KEY=['graph-drafts'] as const
 export interface GraphDraftDocument {version:1;drafts:GraphDraft[];deleted:string[]}
 export interface GraphDraftReply {project:string;sha256:string;content:GraphDraftDocument}
-export const graphDraftKey=(draft:Pick<GraphDraft,'originChatId'|'draftId'>)=>(draft.originChatId??'')+':'+draft.draftId
 export function decodeGraphDrafts(value:unknown):GraphDraftDocument {
   const doc=value as GraphDraftDocument|null,invalid=()=>{throw Error(sourceMessage('Saved graph drafts could not be read. The saved file has not been changed.'))}
   if(!doc||Object.keys(doc).some(k=>!['version','drafts','deleted'].includes(k))||doc.version!==1||!Array.isArray(doc.drafts)||doc.drafts.length>256||!Array.isArray(doc.deleted)||doc.deleted.length>4096||doc.deleted.some(id=>typeof id!=='string'||!/^[a-zA-Z0-9-]{0,80}:[a-zA-Z0-9-]{1,80}$/.test(id)))return invalid()

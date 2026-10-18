@@ -36,7 +36,8 @@ import { ErrorBox, Pill } from '../components/primitives'
 import { GraphComposition } from './GraphComposition'
 import { GraphConfirmation } from './GraphAuthor'
 import { GraphRequestError,graphPost, type GraphOffer, type GraphProposal } from './author'
-import { graphDraftHref, validGraphDraft,retainGraphDraft,readGraphDrafts,sameGraphDraft,graphDraftsQuery,GRAPH_DRAFTS_KEY,retainedGraphDrafts,graphDraftKey,type GraphDraft } from './drafts'
+import { graphDraftHref, validGraphDraft,retainGraphDraft,readGraphDrafts,sameGraphDraft,graphDraftsQuery,GRAPH_DRAFTS_KEY,retainedGraphDrafts,graphDraftKey,graphDraftFolderId,type GraphDraft } from './drafts'
+import {graphDraftWorkspaceMatches,type GraphDraftIdentity} from './identity'
 import styles from './GraphWorkspace.module.css'
 import {uniquePolicySources,validPolicySources,type PolicyAuthoringSource} from '../policies/authoringSource'
 import shared from '../definitions/DefinitionWorkspace.module.css'
@@ -68,9 +69,10 @@ export function GraphWorkspace({graphId, tests}: {graphId?: string; tests?: Reac
   const packs = Object.keys(declared.packs ?? {})
   const chosen = search.getAll('pack').filter(id => packs.includes(id))
   const initial: GraphProposal = draft ?? (file.data && graphId ? {id: graphId, path: file.data.path, content: file.data.content, description: declared.graphs?.[graphId]?.description, baseSha256: file.data.sha256} : {id: '', path: '', content: JSON.stringify({formatVersion: '1', id: 'new-graph', version: '0.1.0', nodes: Object.fromEntries(chosen.map(id => [id, {pack: id}])), edges: [], result: chosen[chosen.length - 1] ?? ''}, null, 2) + '\n'})
-  return <GraphEditor key={draft?graphDraftKey(draft):graphId??'new'} initial={initial} tests={tests} packs={packs} chatId={chatId ?? undefined} draftChatId={draftOwner ?? undefined} draft={draft} persistedDraft={persisted} policySources={policySources}/>
+  const identities=[...entries,...(retained.data?.content.deleted??[]).map(key=>{const [originChatId,draftId]=key.split(':');return {originChatId,draftId:draftId!}})]
+  return <GraphEditor key={draft?graphDraftKey(draft):graphId??'new'} initial={initial} tests={tests} packs={packs} chatId={chatId ?? undefined} draftChatId={draftOwner ?? undefined} draft={draft} persistedDraft={persisted} policySources={policySources} draftIdentities={identities}/>
 }
-export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft, tests,persistedDraft,policySources:incomingPolicySources=[]}: {initial: GraphProposal; packs: string[]; chatId?: string; draftChatId?: string; draft?: GraphDraft; tests?: ReactNode;persistedDraft?:GraphDraft;policySources?:PolicyAuthoringSource[]}) {
+export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft, tests,persistedDraft,policySources:incomingPolicySources=[],draftIdentities=[]}: {initial: GraphProposal; packs: string[]; chatId?: string; draftChatId?: string; draft?: GraphDraft; tests?: ReactNode;persistedDraft?:GraphDraft;policySources?:PolicyAuthoringSource[];draftIdentities?:GraphDraftIdentity[]}) {
   const {store} = useChats(), navigate = useNavigate(), queries = useQueryClient()
   const retainedRevision=useRef(persistedDraft)
   const [policySources]=useState(incomingPolicySources)
@@ -98,7 +100,7 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
   const [pending,setPending]=useState(!!draft?.writePending),[publicWritten,setPublicWritten]=useState(false),[intentUnconfirmed,setIntentUnconfirmed]=useState(false),[notCommitted,setNotCommitted]=useState(false)
   const pendingCandidate=useRef<GraphDraft|undefined>(draft?.writePending?draft:undefined)
   const active = useRef<AbortController | null>(null)
-  const retainedIdentity = useRef({chatId:draftChatId??chatId, draftId: draft?.draftId ?? crypto.randomUUID(), createdAt: draft?.createdAt ?? new Date().toISOString()})
+  const retainedIdentity = useRef({chatId:draft?.originChatId??draftChatId??chatId, draftId: draft?.draftId ?? crypto.randomUUID(), createdAt: draft?.createdAt ?? new Date().toISOString()})
   useEffect(() => () => active.current?.abort(), [])
   const dirty = !saved && JSON.stringify(proposal) !== baseline
   const clearGuard = useDirtyGuard(dirty, msg('Leave this graph and discard unsaved changes?'), {busy, shouldBlock: ({currentLocation, nextLocation}) => {const current=new URLSearchParams(currentLocation.search),next=new URLSearchParams(nextLocation.search),owner=(params:URLSearchParams)=>params.has('draft')?(params.get('draftChat')??params.get('chat')):undefined;return currentLocation.pathname!==nextLocation.pathname||['draft','view'].some(key=>current.get(key)!==next.get(key))||owner(current)!==owner(next)}})
@@ -165,7 +167,7 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
     change({id, content, ...(!proposal.path || proposal.path === `${proposal.id}.graph.json` ? {path: `${id}.graph.json`} : {})})
   }
   const assistant = useInspectorPortal(<GraphAssistant proposal={proposal} workspace={initial.baseSha256 ? initial.id : retainedIdentity.current.chatId?retainedIdentity.current.chatId+':'+retainedIdentity.current.draftId:retainedIdentity.current.draftId}
-    openDraftId={retainedIdentity.current.draftId} chatId={chatId ?? assistantChat} onChat={setAssistantChat} onApply={change} busy={busy||pending||intentUnconfirmed} selection={selection} policySources={policySources}/>)
+    openDraftId={retainedIdentity.current.draftId} chatId={chatId ?? assistantChat} onChat={setAssistantChat} onApply={change} busy={busy||pending||intentUnconfirmed} selection={selection} policySources={policySources} draftIdentities={draftIdentities}/>)
   const parsed = readGraphDocument(proposal.content)
   const check = () => void act(async signal => {const result = await graphPost<{answer: unknown}>('validate', {content: proposal.content}, signal); if (!signal.aborted) setFindings(JSON.stringify(result.answer, null, 2))})
   const review = () => {
@@ -183,7 +185,9 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
     const completed=await retainGraphDraft(finalized,retainedRevision.current,signal)
     retainedRevision.current=completed.content.drafts.find(d=>graphDraftKey(d)===graphDraftKey(finalized));queries.setQueryData(GRAPH_DRAFTS_KEY,completed)
     if(draftChatId&&draft&&store){const owner=[...store.getSnapshot().chats,...store.getSnapshot().drafts].find(c=>c.id===draftChatId);if(owner)store.update(draftChatId,{graphDrafts:owner.graphDrafts?.map(d=>d.draftId===draft.draftId?{...d,...proposal,saved:true}:d)})}
-    for(const chat of [...(store?.getSnapshot().chats??[]),...(store?.getSnapshot().drafts??[])])if(chat.graph?.workspace===(initial.baseSha256?initial.id:graphDraftKey(candidate))||chat.graph?.workspace===retainedIdentity.current.draftId)store?.update(chat.id,{graph:{id:candidate.id,path:candidate.path,workspace:candidate.id}})
+    const related=[...(store?.getSnapshot().chats??[]),...(store?.getSnapshot().drafts??[])]
+    const identities=[...completed.content.drafts,...completed.content.deleted.map(key=>{const [originChatId,draftId]=key.split(':');return {originChatId,draftId:draftId!}}),...related.flatMap(chat=>(chat.graphDrafts??[]).map(d=>({originChatId:chat.id,draftId:d.draftId})))]
+    for(const chat of related)if(initial.baseSha256?chat.graph?.workspace===initial.id:graphDraftWorkspaceMatches(candidate,chat,identities))store?.update(chat.id,{graph:{id:candidate.id,path:candidate.path,workspace:candidate.id}})
     if(store){if(reconcile&&store.getSnapshot().error)store.retrySave();await store.checkpoint(signal)}
     setPending(false);setIntentUnconfirmed(false);setSaved(true)
     clearGuard();navigate(`/graphs/${encodeURIComponent(candidate.id)}${assistantChat?'?chat='+encodeURIComponent(assistantChat):''}`)
@@ -235,14 +239,15 @@ export function GraphEditor({initial, packs, chatId, draftChatId = chatId, draft
     {assistant}
     <PageHeader variant="title" leading={<ShowFolders/>} title={proposal.id || msg('New graph')} meta={<><Pill tone="quiet">{pending||intentUnconfirmed?msg('Save needs reconciliation'):dirty ? msg('Unsaved changes') : proposal.baseSha256 ? msg('Saved') : msg('Draft')}</Pill> <Pill tone="quiet">{msg('Experimental')}</Pill></>}
       actions={<><OptionsMenu label={msg('Graph options')} triggerRef={menuTrigger} onOpenChange={open=>{if(open)menuHandoff.current=false}} onCloseAutoFocus={event=>{if(menuHandoff.current)event.preventDefault()}}>
-        {(draft || proposal.baseSha256) && <MoveToFolderItem id={draft && !draft.saved ? 'graph-draft:'+draft.draftId : 'graph:'+proposal.id} opener={menuTrigger} onSelect={()=>{menuHandoff.current=true}}/>}
+        {(draft || proposal.baseSha256) && <MoveToFolderItem id={draft && !draft.saved ? graphDraftFolderId({...draft,originChatId:draft.originChatId??draftChatId}) : 'graph:'+proposal.id} opener={menuTrigger} onSelect={()=>{menuHandoff.current=true}}/>}
         <Menu.Item icon={<IconDetails/>} onSelect={()=>{menuHandoff.current=true;setShowJson(true)}}>{msg('View JSON')}</Menu.Item>
         <Menu.Item icon={<IconDetails/>} disabled={busy} onSelect={()=>{menuHandoff.current=true;setSettingsOpen(true)}}>{msg('Graph settings…')}</Menu.Item>
         <Menu.Item icon={<IconDetails/>} disabled={busy} onSelect={()=>{menuHandoff.current=true;setSourceOpen(true)}}>{msg('Edit JSON…')}</Menu.Item>
         <Menu.Item icon={<IconDetails/>} disabled={busy || !store || pending || intentUnconfirmed} onSelect={() => void act(retainAndOpen)}>{msg('Keep draft')}</Menu.Item>
         {draft && !draft.saved && !draft.writePending && !pending && draftChatId && <><Menu.Separator/><Menu.Item destructive icon={<IconTrash/>} disabled={busy || !request || !store} onSelect={()=>{
           menuHandoff.current=true
-          request?.({kind:'delete',opener:menuTrigger.current??undefined,onDeleted:clearGuard,item:{key:'graph-draft:'+draftChatId+':'+draft.draftId,id:'graph-draft:'+draft.draftId,title:proposal.id,kind:'graph',status:'draft',href:'',chatId:draftChatId,draftId:draft.draftId}})
+          const id=graphDraftFolderId({originChatId:draftChatId,draftId:draft.draftId})
+          request?.({kind:'delete',opener:menuTrigger.current??undefined,onDeleted:clearGuard,item:{key:id,id,title:proposal.id,kind:'graph',status:'draft',href:'',chatId:draftChatId,draftId:draft.draftId}})
         }}>{msg('Delete draft…')}</Menu.Item></>}
       </OptionsMenu>
         <Button variant="primary" disabled={busy || saved || pending || intentUnconfirmed || !validPolicySources(policySources)} onClick={review}>{busy ? msg('Working…') : msg('Review & save')}</Button></>}/>
