@@ -104,6 +104,7 @@ func postAbandoned(t *testing.T, s *Server) {
 // does next. Closing the server waits for it.
 func sendAbandoned(t *testing.T, s *Server, request func(url string) *http.Request) {
 	t.Helper()
+	// A second server over s: its Close waits for the handler to end before the test checks the files.
 	server := httptest.NewServer(s)
 	defer server.Close()
 	if response, err := http.DefaultClient.Do(request(server.URL)); err == nil {

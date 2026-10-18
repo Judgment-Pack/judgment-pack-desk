@@ -423,19 +423,29 @@ func TestLockSigningIsExclusiveAndSaysWhy(t *testing.T) {
 // now, asked through a descriptor of the test's own.
 func lockTaken(t *testing.T, folder string) bool {
 	t.Helper()
-	file, err := os.Open(folder)
+	taken, err := lockTakenNow(folder)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return taken
+}
+
+// lockTakenNow is lockTaken without the test, for a caller that may run off
+// the test's goroutine: it answers why it could not ask, and fails nothing.
+func lockTakenNow(folder string) (bool, error) {
+	file, err := os.Open(folder)
+	if err != nil {
+		return false, err
 	}
 	defer file.Close()
 	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if err == nil {
-		return false
+		return false, nil
 	}
 	if !errors.Is(err, syscall.EWOULDBLOCK) {
-		t.Fatal(err)
+		return false, err
 	}
-	return true
+	return true, nil
 }
 
 // **The lock is held from the first look to the last change.** At every

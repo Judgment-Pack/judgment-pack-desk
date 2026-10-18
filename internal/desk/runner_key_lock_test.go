@@ -89,10 +89,15 @@ func holdKeyCustodyLock(t *testing.T, folder string) func() {
 		t.Fatal("the helper process said it held the lock, and this process could take it")
 	}
 	// What the test saw while the lock was held counts only if the helper
-	// still held it at the end (#472).
+	// still held it at the end (#472). It reports with t.Error, never
+	// t.Fatal, so that it may be called off the test's goroutine.
 	return func() {
-		if !released && !lockTaken(t, folder) {
-			t.Error("the helper process no longer held the lock when it was released")
+		if !released {
+			if taken, err := lockTakenNow(folder); err != nil {
+				t.Errorf("the helper process's lock could not be checked at its release: %v", err)
+			} else if !taken {
+				t.Error("the helper process no longer held the lock when it was released")
+			}
 		}
 		end()
 	}
