@@ -117,6 +117,17 @@ provider response rather than document text. If a provider cannot supply stable
 event ordering, Desk must reconcile current metadata before promoting a
 lifecycle change; it cannot sort by time or digest.
 
+Source status is capability-driven per supported binding. If the source exposes
+genuine lifecycle evidence, an administrator reviews its mapping to status. If
+that capability is absent, the administrator may explicitly configure fallback
+status, initially **Draft**. Retain `source-provided` versus `admin-configured`
+provenance and the mapping/configuration revision. An administrator's explicit
+fallback assertion of Published is an administrator decision; it is not evidence
+of source approval or an authenticated external sign-off. A changed document,
+fetch failure, permission loss, unavailable resource or withdrawal is not a
+missing capability and never activates fallback or fabricates approval. These
+status dimensions remain separate from Desk candidate review and local adoption.
+
 Desk stores a separate `SourceState` containing `trackingRevision`, last accepted
 observation, last successful reconciliation, coverage/gaps and update candidates.
 If external lifecycle is authoritative, it also records the authority-mapping
@@ -354,8 +365,12 @@ runs. Supersession does not silently upgrade a job or, by itself, declare an old
 pin forbidden; eligibility follows the configured lifecycle rules.
 
 For externally managed policies, `publishPolicy` cannot fabricate external
-approval. An authenticated sync observation plus the reviewed authority mapping
-records the external lifecycle in Desk. Importing as Desk-managed draft explicitly
+approval. A supported authenticated lifecycle observation plus its reviewed
+authority mapping records source-provided lifecycle. A configured fallback, when
+the source lacks that capability, records only the explicit administrator's
+assertion with admin-configured provenance; it cannot be exported or presented as
+source approval. Neither a fetch failure nor revoked access switches that
+authority basis. Importing as Desk-managed draft explicitly
 starts a separate review path while retaining provenance. Switching ownership of
 publication is an authorized, audited transition, not a flag edit that carries
 approvals across authorities.
