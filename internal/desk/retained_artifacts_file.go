@@ -12,8 +12,16 @@ const retainedArtifactDirectory = ".desk-private/retained-artifacts"
 
 type fileRetainedArtifactRepository struct{ open func(bool) (*os.Root, error) }
 
+// The caller retains the pinned project's lifetime. Features receive the same
+// repository boundary without reconstructing artifact storage paths themselves.
+func retainedArtifactsForProject(project *os.Root) retainedArtifactRepository {
+	return fileRetainedArtifactRepository{open: func(create bool) (*os.Root, error) { return openRetainedArtifactsWithin(project, create) }}
+}
 func (s *Server) openRetainedArtifacts(create bool) (*os.Root, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(retainedArtifactDirectory, "/"), create, "retained artifacts")
+	return openRetainedArtifactsWithin(s.root, create)
+}
+func openRetainedArtifactsWithin(project *os.Root, create bool) (*os.Root, error) {
+	root, made, err := openOwnFolder(project, strings.Split(retainedArtifactDirectory, "/"), create, "retained artifacts")
 	if err == nil && made {
 		err = writePrivateData(root, ".gitignore", []byte("*\n"))
 		if err != nil {

@@ -90,20 +90,52 @@ func policyMachineOptionsValid(o PolicyAuthorityOptions) bool {
 	return filepath.IsAbs(o.Root) && filepath.Clean(o.Root) == o.Root && o.Root != string(filepath.Separator) && len(o.Root) <= 2048 && !strings.ContainsAny(o.Root, "\x00\r\n") && retainedArtifactDigest.MatchString(o.InstallationID)
 }
 func readPolicyMachineMarker(project *os.Root) (*policyMachineMarker, error) {
-	private, _, err := openOwnFolder(project, []string{startupIdentityDir}, false, "Policy authority demand")
+	return inspectPolicyMachineMarker(project, nil)
+}
+
+// Absent demands do not turn a permissive legacy audit folder into a fatal
+// startup error. Pin that ordinary folder without changing it; only a present
+// marker requires private custody. An ambiguous or replaced parent is no absence.
+func inspectPolicyMachineMarker(project *os.Root, afterPin func()) (*policyMachineMarker, error) {
+	info, err := project.Lstat(startupIdentityDir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, policyMachineRefusal()
+	}
+	private, err := project.OpenRoot(startupIdentityDir)
 	if err != nil {
 		return nil, policyMachineRefusal()
 	}
 	defer private.Close()
-	raw, err := readPrivateData(private, policyMachineMarkerName, 1024)
-	if errors.Is(err, os.ErrNotExist) {
+	unchanged := func(requirePrivate bool) bool {
+		entry, e := project.Lstat(startupIdentityDir)
+		if e != nil || !entry.IsDir() || entry.Mode()&os.ModeSymlink != 0 || !os.SameFile(info, entry) {
+			return false
+		}
+		held, e := private.Stat(".")
+		if e != nil || !os.SameFile(info, held) {
+			return false
+		}
+		return !requirePrivate || entry.Mode().Perm()&0077 == 0 && held.Mode().Perm()&0077 == 0 && ownedByUs("Policy authority demand", entry) == nil && ownedByUs("Policy authority demand", held) == nil
+	}
+	if !unchanged(false) {
+		return nil, policyMachineRefusal()
+	}
+	if afterPin != nil {
+		afterPin()
+	}
+	_, err = private.Lstat(policyMachineMarkerName)
+	if errors.Is(err, os.ErrNotExist) && unchanged(false) {
 		return nil, nil
 	}
+	if err != nil || !unchanged(true) {
+		return nil, policyMachineRefusal()
+	}
+	raw, err := readPrivateData(private, policyMachineMarkerName, 1024)
 	var marker policyMachineMarker
-	if err != nil || rejectDuplicateMembers(raw) != nil || policyAuthorityAnchorObject(raw, []string{"version", "installationId", "workspaceId"}, "") != nil || decodeDataJSON(raw, &marker) != nil || marker.Version != 1 || !retainedArtifactDigest.MatchString(marker.InstallationID) || !retainedArtifactDigest.MatchString(marker.WorkspaceID) {
+	if err != nil || !unchanged(true) || rejectDuplicateMembers(raw) != nil || policyAuthorityAnchorObject(raw, []string{"version", "installationId", "workspaceId"}, "") != nil || decodeDataJSON(raw, &marker) != nil || marker.Version != 1 || !retainedArtifactDigest.MatchString(marker.InstallationID) || !retainedArtifactDigest.MatchString(marker.WorkspaceID) {
 		return nil, policyMachineRefusal()
 	}
 	return &marker, nil
@@ -539,10 +571,7 @@ func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 	if err != nil {
 		return PolicyAuthorityStatus{}, policyMachineRefusal()
 	}
-	if _, err = policyArchiveClosure(ctx, ledger, fileRetainedArtifactRepository{open: func(create bool) (*os.Root, error) {
-		root, _, e := openOwnFolder(project.own.root, strings.Split(retainedArtifactDirectory, "/"), create, "retained artifacts")
-		return root, e
-	}}); err != nil {
+	if _, err = policyArchiveClosure(ctx, ledger, retainedArtifactsForProject(project.own.root)); err != nil {
 		return PolicyAuthorityStatus{}, policyMachineRefusal()
 	}
 	registryLock, err := m.root.Open(".")

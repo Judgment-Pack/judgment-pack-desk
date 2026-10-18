@@ -542,3 +542,103 @@ func TestPolicyMachineProtectedRootsAndEarlyMutationGuards(t *testing.T) {
 		}
 	}
 }
+
+func TestPolicyMachineMarkerAbsenceAndPrivatePresence(t *testing.T) {
+	valid, _ := json.Marshal(policyMachineMarker{Version: 1, InstallationID: strings.Repeat("a", 64), WorkspaceID: strings.Repeat("b", 64)})
+	for _, kind := range []string{"permissive-absent", "private-absent", "permissive-present", "private-present", "malformed", "marker-symlink", "parent-symlink-absent", "parent-symlink-present", "parent-replaced", "read-failure"} {
+		t.Run(kind, func(t *testing.T) {
+			project := t.TempDir()
+			root, err := os.OpenRoot(project)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			private := filepath.Join(project, startupIdentityDir)
+			mode := os.FileMode(0700)
+			if strings.HasPrefix(kind, "permissive") {
+				mode = 0755
+			}
+			if err = os.Mkdir(private, mode); err != nil {
+				t.Fatal(err)
+			}
+			if err = os.Chmod(private, mode); err != nil {
+				t.Fatal(err)
+			}
+			markerPath := filepath.Join(private, policyMachineMarkerName)
+			present := !strings.HasSuffix(kind, "absent") && kind != "parent-replaced"
+			if present {
+				raw := valid
+				if kind == "malformed" {
+					raw = []byte(`{}`)
+				}
+				if err = os.WriteFile(markerPath, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if strings.HasPrefix(kind, "parent-symlink") {
+				target := filepath.Join(project, "target")
+				if err = os.Rename(private, target); err != nil {
+					t.Fatal(err)
+				}
+				if err = os.Symlink("target", private); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind == "marker-symlink" {
+				if err = os.Rename(markerPath, filepath.Join(private, "marker-target")); err != nil {
+					t.Fatal(err)
+				}
+				if err = os.Symlink("marker-target", markerPath); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind == "read-failure" {
+				previous := testHookPrivateRead
+				testHookPrivateRead = func(name string) error {
+					if name == policyMachineMarkerName {
+						return errors.New("unreadable marker")
+					}
+					return nil
+				}
+				t.Cleanup(func() { testHookPrivateRead = previous })
+			}
+			var afterPin func()
+			if kind == "parent-replaced" {
+				afterPin = func() {
+					if err := os.Rename(private, private+"-old"); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Mkdir(private, 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(private, policyMachineMarkerName), valid, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			marker, err := inspectPolicyMachineMarker(root, afterPin)
+			switch kind {
+			case "permissive-absent", "private-absent":
+				if err != nil || marker != nil {
+					t.Fatal("absence became fatal or authority", marker, err)
+				}
+				info, e := os.Lstat(private)
+				if e != nil || info.Mode().Perm() != mode {
+					t.Fatal("absence probe changed custody", e)
+				}
+				entries, e := os.ReadDir(private)
+				if e != nil || len(entries) != 0 {
+					t.Fatal("absence probe wrote data", e)
+				}
+			case "private-present":
+				if err != nil || marker == nil || marker.InstallationID != strings.Repeat("a", 64) {
+					t.Fatal("private demand lost", marker, err)
+				}
+			default:
+				if err == nil || marker != nil {
+					t.Fatal("ambiguous or unsafe demand accepted", marker, err)
+				}
+			}
+		})
+	}
+}
