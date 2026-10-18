@@ -99,20 +99,24 @@ type policyDocument struct {
 }
 
 type policyReply struct {
-	Revision string         `json:"revision"`
-	Document policyDocument `json:"document"`
+	CurrentCandidatePublished *bool                         `json:"currentCandidatePublished,omitempty"`
+	SourceAuthority           *policySourceAuthoritySummary `json:"sourceAuthority,omitempty"`
+	Revision                  string                        `json:"revision"`
+	Document                  policyDocument                `json:"document"`
 }
 
 type policySummary struct {
-	ID                        string             `json:"id"`
-	Title                     string             `json:"title"`
-	ArtifactVersion           string             `json:"artifactVersion"`
-	UpdatedAt                 string             `json:"updatedAt"`
-	ReviewState               string             `json:"reviewState"`
-	CandidateDigest           string             `json:"candidateDigest"`
-	CurrentCandidatePublished bool               `json:"currentCandidatePublished"`
-	PublicationCount          int                `json:"publicationCount"`
-	LatestPublication         *policyPublication `json:"latestPublication,omitempty"`
+	ManagementMode            string                        `json:"managementMode,omitempty"`
+	SourceAuthority           *policySourceAuthoritySummary `json:"sourceAuthority,omitempty"`
+	ID                        string                        `json:"id"`
+	Title                     string                        `json:"title"`
+	ArtifactVersion           string                        `json:"artifactVersion"`
+	UpdatedAt                 string                        `json:"updatedAt"`
+	ReviewState               string                        `json:"reviewState"`
+	CandidateDigest           string                        `json:"candidateDigest"`
+	CurrentCandidatePublished bool                          `json:"currentCandidatePublished"`
+	PublicationCount          int                           `json:"publicationCount"`
+	LatestPublication         *policyPublication            `json:"latestPublication,omitempty"`
 }
 
 type policyEditRequest struct {
@@ -143,6 +147,11 @@ type policyPublishRequest struct {
 }
 
 type policyOperationReceipt struct {
+	AuthorityRevision string      `json:"authorityRevision,omitempty"`
+	AuthorityEventID  string      `json:"authorityEventId,omitempty"`
+	ConfigurationID   string      `json:"configurationId,omitempty"`
+	ObservationID     string      `json:"observationId,omitempty"`
+	ExternalVersionID string      `json:"externalVersionId,omitempty"`
 	LifecycleRevision string      `json:"lifecycleRevision,omitempty"`
 	LifecycleEventID  string      `json:"lifecycleEventId,omitempty"`
 	OperationID       string      `json:"operationId"`
@@ -158,12 +167,13 @@ type policyOperationReceipt struct {
 }
 
 type policyMutationReply struct {
-	OutcomeKind    string                 `json:"outcomeKind,omitempty"`
-	PolicyID       string                 `json:"policyId,omitempty"`
-	PolicyRevision string                 `json:"policyRevision,omitempty"`
-	Lifecycle      *policyLifecycleReply  `json:"lifecycle,omitempty"`
-	SourceSync     *policySourceSyncReply `json:"sourceSync,omitempty"`
-	Delivery       string                 `json:"delivery"`
-	Receipt        policyOperationReceipt `json:"receipt"`
-	Policy         policyReply            `json:"policy,omitzero"`
+	SourceStatus   *policySourceStatusReply `json:"sourceStatus,omitempty"`
+	OutcomeKind    string                   `json:"outcomeKind,omitempty"`
+	PolicyID       string                   `json:"policyId,omitempty"`
+	PolicyRevision string                   `json:"policyRevision,omitempty"`
+	Lifecycle      *policyLifecycleReply    `json:"lifecycle,omitempty"`
+	SourceSync     *policySourceSyncReply   `json:"sourceSync,omitempty"`
+	Delivery       string                   `json:"delivery"`
+	Receipt        policyOperationReceipt   `json:"receipt"`
+	Policy         policyReply              `json:"policy,omitzero"`
 }

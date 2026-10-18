@@ -13,6 +13,7 @@ it('isolates same-policy journals by current Desk, session and operation family'
  expect((await createPolicyPendingJournal('lifecycle','same-policy')).read()).toBeUndefined()
  scope.desk='a'.repeat(32)
  expect((await createPolicyPendingJournal('source-sync','same-policy')).read()).toBeUndefined()
+ expect((await createPolicyPendingJournal('source-status','same-policy')).read()).toBeUndefined()
  giveThisPageASessionForTesting('a-new-administrator-session')
  const otherIdentity=await createPolicyPendingJournal('lifecycle','same-policy')
  expect(otherIdentity.read()).toBeUndefined()

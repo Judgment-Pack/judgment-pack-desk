@@ -20,7 +20,7 @@ function outcome(operation:PolicyWrite,state:Lifecycle=initial):PolicyLifecycleO
  return {outcomeKind:'lifecycle',delivery:'committed',policyId:policy.document.id,policyRevision:policy.revision,lifecycle,receipt:{operationId:operation.body.operationId,kind:'lifecycle-'+operation.body.action,policyId:policy.document.id,publicationId:publication.id,lifecycleRevision:lifecycle.revision,lifecycleEventId:event.id}}
 }
 function DraftProbe(){const query=useQuery(policyQuery(policy.document.id));return query.error?<p>Draft unavailable</p>:null}
-function mount({editing=false,mutate,existing=initial,draftUnavailable=false}:{editing?:boolean;mutate?:(operation:PolicyWrite)=>Promise<PolicyLifecycleOutcome>;existing?:Lifecycle;draftUnavailable?:boolean}={}){
+function mount({editing=false,mutate,existing=initial,draftUnavailable=false,external=false}:{editing?:boolean;mutate?:(operation:PolicyWrite)=>Promise<PolicyLifecycleOutcome>;existing?:Lifecycle;draftUnavailable?:boolean;external?:boolean}={}){
  let current=existing,recovery:PolicyLifecycleOutcome|undefined
  const writes:PolicyWrite[]=[],requests:string[]=[],cache=testQueryClient(),onPendingChange=vi.fn()
  vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
@@ -37,7 +37,7 @@ function mount({editing=false,mutate,existing=initial,draftUnavailable=false}:{e
   if(url==='/api/policies')return Response.json({items:[]})
   throw new Error('unexpected fixture request')
  }))
- const view=render(<QueryClientProvider client={cache}><MemoryRouter><UnsavedChangesProvider><DeskNoticesProvider>{draftUnavailable&&<DraftProbe/>}<PolicyLifecycle policy={policy} active editing={editing} disabled={false} onPendingChange={onPendingChange}/></DeskNoticesProvider></UnsavedChangesProvider></MemoryRouter></QueryClientProvider>)
+ const view=render(<QueryClientProvider client={cache}><MemoryRouter><UnsavedChangesProvider><DeskNoticesProvider>{draftUnavailable&&<DraftProbe/>}<PolicyLifecycle policy={external?{...policy,document:{...policy.document,managementMode:'externally-managed'}}:policy} active editing={editing} disabled={false} onPendingChange={onPendingChange}/></DeskNoticesProvider></UnsavedChangesProvider></MemoryRouter></QueryClientProvider>)
  return {writes,requests,cache,view,onPendingChange,setRecovery:(value:PolicyLifecycleOutcome)=>{recovery=value;current=value.lifecycle}}
 }
 afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionStorage.clear()})
@@ -97,6 +97,12 @@ it('uses the shared dirty-editor guard for lifecycle decisions',async()=>{
  expect((activate as HTMLButtonElement).disabled).toBe(true)
  expect((screen.getByRole('button',{name:'Withdraw release'}) as HTMLButtonElement).disabled).toBe(true)
  expect(app.writes).toHaveLength(0)
+})
+it('blocks local activation under external ownership while preserving restrictive historical withdrawal',async()=>{
+ const app=mount({external:true});const activate=await screen.findByRole('button',{name:'Activate release'})
+ expect((activate as HTMLButtonElement).disabled).toBe(true)
+ expect((screen.getByRole('button',{name:'Withdraw release'}) as HTMLButtonElement).disabled).toBe(false)
+ fireEvent.click(activate);expect(app.writes).toEqual([])
 })
 it('keeps a missing recovery unresolved and never dispatches a replacement operation',async()=>{
  mount({mutate:async()=>{throw new Error('lost reply')}})

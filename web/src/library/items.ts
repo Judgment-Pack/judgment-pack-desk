@@ -19,7 +19,7 @@ interface LibraryItemFields {
 
 export type LibraryItem = LibraryItemFields & (
   | {kind: 'pack' | 'graph'; status: 'draft' | 'finalized'}
-  | {kind: 'policy'; status: 'draft' | 'published'; updatedAt: string; reviewState: string; publications: number}
+  | {kind: 'policy'; status: 'draft' | 'published' | 'external'; updatedAt: string; reviewState: string; publications: number; sourceAuthority?:PolicySummary['sourceAuthority']}
   | {kind: 'dialect'; status: 'draft' | 'saved'; records?: number; updatedAt: string}
 )
 export type LibraryKind = LibraryItem['kind'] | 'all'
@@ -47,9 +47,13 @@ export function dialectLibraryItems(
 }
 
 export function policyLibraryItems(policies:PolicySummary[]):LibraryItem[]{
- return policies.map(row=>({key:'policy:'+row.id,id:row.id,title:row.title||msg('Untitled policy'),kind:'policy',status:row.currentCandidatePublished?'published':'draft',href:'/policies/'+encodeURIComponent(row.id),updatedAt:row.updatedAt,packVersion:row.artifactVersion,description:row.publicationCount?msg('Publications')+': '+row.publicationCount:undefined,reviewState:row.reviewState,publications:row.publicationCount}))
+ return policies.map(row=>{const external=(row.sourceAuthority?.ownership.mode??row.managementMode)==='externally-managed';return {key:'policy:'+row.id,id:row.id,title:row.title||msg('Untitled policy'),kind:'policy',status:external?'external':row.currentCandidatePublished?'published':'draft',href:'/policies/'+encodeURIComponent(row.id),updatedAt:row.updatedAt,packVersion:row.artifactVersion,description:external?[msg('Local publications')+': '+row.publicationCount,msg('External versions')+': '+(row.sourceAuthority?.externalVersionCount??0)].join(' · '):row.publicationCount?msg('Publications')+': '+row.publicationCount:undefined,reviewState:row.reviewState,publications:row.publicationCount,sourceAuthority:row.sourceAuthority}})
 }
 export function policyLibraryStatus(item:Extract<LibraryItem,{kind:'policy'}>){
+ if(item.status==='external'){
+  const applied=item.sourceAuthority?.lastApplied
+  return applied?[msg('Externally managed'),applied.status==='published'?msg('Retained Published'):msg('Retained source status'),applied.provenance==='source-provided'?msg('Source provided'):msg('Administrator configured')].join(' · '):msg('Externally managed · No retained external version')
+ }
  const review=item.reviewState==='approved'?msg('Approved'):item.reviewState==='changes-requested'?msg('Changes requested'):msg('Unreviewed')
  return (item.status==='published'?msg('Published'):msg('Draft'))+' · '+review
 }

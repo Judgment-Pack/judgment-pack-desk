@@ -7,6 +7,7 @@ import {McpContext} from '../mcp/McpProvider'
 import {connected,stubClient,testQueryClient} from '../testing/harness'
 import {DeskNotices,DeskNoticesProvider} from '../shell/DeskNotices'
 import {type PolicySummary} from '../policies/client'
+import {policyLibraryItems,policyLibraryStatus} from './items'
 
 const row:PolicySummary={id:'shared',title:'Travel policy',artifactVersion:'1.0.0',updatedAt:'2026-10-17T12:00:00Z',candidateDigest:'current-candidate',currentCandidatePublished:false,reviewState:'approved',publicationCount:1}
 afterEach(()=>{cleanup();vi.unstubAllGlobals();localStorage.clear()})
@@ -14,6 +15,7 @@ function mount({path='/library',read=async()=>({items:[row]})}:{path?:string;rea
  const fetch=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
   if(init?.method&&init.method!=='GET')throw new Error('Library must not mutate policy storage.')
   if(String(input)==='/api/policies')return Response.json(await read())
+  if(String(input)==='/api/draft-graphs')return Response.json({project:'/project',sha256:'graph-none',content:{version:1,drafts:[],deleted:[]}})
   if(String(input)==='/api/input-preparations'||String(input)==='/api/dialect-drafts')return Response.json({items:[]})
   throw new Error('Unexpected request: '+input)
  });vi.stubGlobal('fetch',fetch)
@@ -57,4 +59,18 @@ it('shows Policy loading until its private index resolves, including exact curre
  await act(async()=>resolve({items:[{...row,currentCandidatePublished:true}]}))
  const link=await screen.findByRole('link',{name:/Travel policy/})
  expect(within(link).getByText('Published · Approved')).toBeTruthy()
+})
+it('labels external retention and provenance separately from historical local publications',()=>{
+ const external={...row,managementMode:'externally-managed',sourceAuthority:{revision:'authority-one',ownership:{mode:'externally-managed',inherited:false},externalVersionCount:2,lastApplied:{status:'published',provenance:'admin-configured'}}} as PolicySummary
+ const item=policyLibraryItems([external])[0]!
+ expect(item.status).toBe('external');expect(item.description).toBe('Local publications: 1 · External versions: 2')
+ if(item.kind!=='policy')throw Error('Expected Policy')
+ expect(policyLibraryStatus(item)).toBe('Externally managed · Retained Published · Administrator configured')
+ expect(policyLibraryStatus(item)).not.toContain('Approved')
+ const sourceProvided=policyLibraryItems([{...external,sourceAuthority:{...external.sourceAuthority!,lastApplied:{...external.sourceAuthority!.lastApplied!,provenance:'source-provided'}}}])[0]!
+ if(sourceProvided.kind!=='policy')throw Error('Expected Policy')
+ expect(policyLibraryStatus(sourceProvided)).toContain('Source provided')
+ const noVersion=policyLibraryItems([{...external,sourceAuthority:{...external.sourceAuthority!,externalVersionCount:0,lastApplied:undefined}}])[0]!
+ if(noVersion.kind!=='policy')throw Error('Expected Policy')
+ expect(policyLibraryStatus(noVersion)).toBe('Externally managed · No retained external version')
 })

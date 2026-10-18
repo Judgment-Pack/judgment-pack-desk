@@ -50,3 +50,19 @@ it('commits only the admitted Send snapshot when overlapping reads resolve diffe
  expect(JSON.parse(result.content![0]!.text!)).toMatchObject({revision:b.revision,requestRevision:a.revision})
  client.clear()
 })
+it('prepares current external ownership and reviewed status without treating it as local approval or adding a mutation tool',async()=>{
+ const id='policy_'+'a'.repeat(48),candidate={title:'External policy',narrative:'Working draft text',artifactVersion:'1.0.0'}
+ const old={revision:'a'.repeat(64),document:{id,candidate,managementMode:'desk-managed',reviewState:'approved'}} as PolicyReply
+ const current={revision:'b'.repeat(64),document:{...old.document,managementMode:'externally-managed',reviewState:'unreviewed'},sourceAuthority:{revision:'authority-current',ownership:{mode:'externally-managed',inherited:false},externalVersionCount:1,lastApplied:{id:'external-one',status:'published',provenance:'admin-configured',configurationId:'configuration-one',observation:{id:'observation-one',sourceRevision:'provider-7'}}}} as PolicyReply
+ fixture.initial=old;const store=new ChatStore('/project',{read:async()=>({project:'/project',sha256:'absent',content:{version:1,chats:[]}}),write:async content=>({project:'/project',sha256:'saved',content})},memoryDraftPersistence('/project'));fixture.store=store;await store.load()
+ const chat=store.startChat(undefined,undefined,false,undefined,undefined,undefined,{id}),client=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ const hook=renderHook(()=>usePolicyChatContext(id,chat.id),{wrapper:({children})=><QueryClientProvider client={client}>{children}</QueryClientProvider>})
+ await waitFor(()=>expect(hook.result.current?.busy).toBe(false));vi.mocked(readPolicy).mockResolvedValueOnce(current)
+ const prepared=await hook.result.current!.prepare(),context=JSON.parse(prepared.text)
+ expect(context).toMatchObject({revision:current.revision,managementMode:'externally-managed',authorityRevision:'authority-current',reviewState:'unreviewed',sourceAuthority:{externalVersionCount:1,lastReviewed:{status:'published',provenance:'admin-configured',observationId:'observation-one',configurationId:'configuration-one'}}})
+ expect(context.sourceStatusInstructions).toContain('manual reviewed actions');expect(context.sourceStatusInstructions).toContain('not external verified approval')
+ expect(store.getSnapshot().drafts[0]?.policyRequest).toBeUndefined();prepared.beforeSend()
+ expect([...store.getSnapshot().chats,...store.getSnapshot().drafts].find(row=>row.id===chat.id)?.policyRequest).toEqual({revision:current.revision,candidate})
+ expect(policyChatTools({id,request:()=>undefined,afterTurnId:()=>undefined,retain:vi.fn()}).map(tool=>tool.name)).not.toContain('configure_policy_source_status')
+ client.clear()
+})

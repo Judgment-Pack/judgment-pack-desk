@@ -296,7 +296,7 @@ func (s policyService) sourceCommand(ctx context.Context, id string, actor polic
 			return false, policyRefusal(404, CodeNotFound, "Policy not found.")
 		}
 		source := ledger.Sources[id]
-		if policyRecordRevision(record) != q.BaseRevision || policySourceRevision(source) != q.BaseSourceRevision {
+		if policyEffectiveRevision(record, ledger.SourceAuthorities[id]) != q.BaseRevision || policySourceRevision(source) != q.BaseSourceRevision {
 			return false, policyRefusal(409, "source-conflict", "The policy or source changed. Review the latest source state before continuing.")
 		}
 		if len(ledger.Operations) >= policyOperationLimit || source != nil && len(source.Actions) >= policyHistoryLimit {
@@ -372,7 +372,7 @@ func (s policyService) sourceCommand(ctx context.Context, id string, actor polic
 			ledger.Sources = map[string]*policyConnectedSource{}
 		}
 		ledger.Sources[id] = source
-		reply, err := s.reply(ctx, record)
+		reply, err := s.reply(ctx, record, ledger.SourceAuthorities[id])
 		if err != nil {
 			return false, err
 		}
