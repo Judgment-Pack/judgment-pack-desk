@@ -29,15 +29,16 @@ var policyEventIDForm = regexp.MustCompile(`^(revision|review|publication)_[a-f0
 var policyOperationIDForm = regexp.MustCompile(`^[a-zA-Z0-9_-]{16,128}$`)
 
 type policyStoredRecord struct {
-	SchemaVersion   int                 `json:"schemaVersion"`
-	ID              string              `json:"id"`
-	CreatedAt       string              `json:"createdAt"`
-	UpdatedAt       string              `json:"updatedAt"`
-	HeadRevisionID  string              `json:"headRevisionId"`
-	CurrentReviewID string              `json:"currentReviewId,omitempty"`
-	Revisions       []policyRevision    `json:"revisions"`
-	Reviews         []policyReview      `json:"reviews"`
-	Publications    []policyPublication `json:"publications"`
+	Recovery        *policyRecoveryBoundary `json:"recovery,omitempty"`
+	SchemaVersion   int                     `json:"schemaVersion"`
+	ID              string                  `json:"id"`
+	CreatedAt       string                  `json:"createdAt"`
+	UpdatedAt       string                  `json:"updatedAt"`
+	HeadRevisionID  string                  `json:"headRevisionId"`
+	CurrentReviewID string                  `json:"currentReviewId,omitempty"`
+	Revisions       []policyRevision        `json:"revisions"`
+	Reviews         []policyReview          `json:"reviews"`
+	Publications    []policyPublication     `json:"publications"`
 }
 
 type policyStoredOperation struct {
@@ -49,7 +50,9 @@ type policyStoredOperation struct {
 }
 
 type policyLedger struct {
-	Lifecycles map[string]*policyLifecycleStream `json:"lifecycles,omitempty"`
+	Recoveries        []policyRecoverySnapshot                `json:"recoveries,omitempty"`
+	SourceAuthorities map[string]*policySourceAuthorityStream `json:"sourceAuthorities,omitempty"`
+	Lifecycles        map[string]*policyLifecycleStream       `json:"lifecycles,omitempty"`
 	// Optional v1 source tracking extends private v2 ledgers without changing candidate identity.
 	Sources       map[string]*policyConnectedSource `json:"sources,omitempty"`
 	SchemaVersion int                               `json:"schemaVersion"`
@@ -229,14 +232,20 @@ func validatePolicyLedger(ledger policyLedger) error {
 		}
 	}
 	for key, operation := range ledger.Operations {
-		if key != operation.OperationID || !policyOperationIDForm.MatchString(key) || !contains(append(append([]string{"create", "save-draft", "review", "publish"}, policySourceKinds()...), policyLifecycleKinds()...), operation.Kind) || ledger.Policies[operation.PolicyID].ID == "" || !retainedArtifactDigest.MatchString(operation.RequestDigest) || !operation.Result.valid() {
+		if key != operation.OperationID || !policyOperationIDForm.MatchString(key) || !contains(append(append([]string{"create", "save-draft", "review", "publish"}, policySourceKinds()...), append(policyLifecycleKinds(), policySourceAuthorityKinds()...)...), operation.Kind) || ledger.Policies[operation.PolicyID].ID == "" || !retainedArtifactDigest.MatchString(operation.RequestDigest) || !operation.Result.valid() {
 			return bad
 		}
 	}
 	if err := validatePolicyLifecycles(ledger); err != nil {
 		return err
 	}
-	return validatePolicySources(ledger)
+	if err := validatePolicySources(ledger); err != nil {
+		return err
+	}
+	if err := validatePolicySourceAuthorities(ledger); err != nil {
+		return err
+	}
+	return validatePolicyRecovery(ledger)
 }
 
 // Event sequence is committed under the same metadata lock as the history and

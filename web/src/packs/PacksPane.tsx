@@ -1,6 +1,6 @@
 import {PageLoading} from '../ui/PageLoading'
 import { QueryStatusNotice } from '../shell/QueryStatusNotice'
-import { graphDraftHref } from '../graphs/drafts'
+import { graphDraftHref,graphDraftsQuery,retainedGraphDrafts,graphDraftFolderId } from '../graphs/drafts'
 import {useQuery} from '@tanstack/react-query'
 import {policyListQuery} from '../policies/client'
 import {dialectListQuery} from '../dialects/queries'
@@ -59,6 +59,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const includePacks = kind === 'all' || kind === 'pack', includeGraphs = kind === 'all' || kind === 'graph', includeDialects = kind === 'all' || kind === 'dialect', includePolicies = kind === 'all' || kind === 'policy'
   const dialects = useQuery({...dialectListQuery(), enabled: active && includeDialects, refetchInterval: active && includeDialects ? 5000 : false})
   const dialectDrafts = useQuery({...dialectDraftListQuery(), enabled: active && includeDialects, refetchInterval: active && includeDialects ? 5000 : false})
+  const retainedGraphs=useQuery({...graphDraftsQuery(),enabled:active&&includeGraphs,refetchInterval:active&&includeGraphs?10000:false})
   const policies = useQuery({...policyListQuery(),enabled:active&&includePolicies,refetchInterval:active&&includePolicies?10000:false})
   const listedGraphs = graphInventorySupported ? graphs.data : undefined
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -66,8 +67,8 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const selectAll = useRef<HTMLInputElement>(null)
   const {chats,packDrafts}=useChats()
   const drafts = packDrafts.filter(item=>!item.finalized)
-  const graphDrafts = chats.flatMap(chat => (chat.graphDrafts ?? []).filter(draft => !draft.saved).map(draft => ({chatId: chat.id, ...draft})))
-  const inventoryReady = (!includePacks || isSuccess) && (!includeGraphs || graphInventorySupported && graphs.isSuccess) && (!includeDialects || dialects.isSuccess && dialectDrafts.isSuccess) && (!includePolicies || policies.isSuccess)
+  const graphDrafts=retainedGraphDrafts(retainedGraphs.data?.content,chats).filter(d=>!d.saved).map(d=>({...d,chatId:d.originChatId??''}))
+  const inventoryReady = (!includePacks || isSuccess) && (!includeGraphs || graphInventorySupported && graphs.isSuccess && retainedGraphs.isSuccess) && (!includeDialects || dialects.isSuccess && dialectDrafts.isSuccess) && (!includePolicies || policies.isSuccess)
   const review = useReview()
   const findings = useMemo(() => packFindings(review?.data), [review?.data])
   const folderScope = folders?.query.data && !folders.query.isError ? folders.selected : ALL_PACKS
@@ -103,12 +104,12 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   useInspectorPresentation(presentation)
   const packs = useMemo(() => {
     const needle = filter.trim().toLowerCase()
-    const rows: BrowserItem[] = [...(data?.packs ?? []).map(pack=>({...pack,key:'pack:'+pack.id,kind:'pack' as const,title:pack.id,status:'finalized' as const,href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({key:'pack-draft:'+draft.id,kind:'pack' as const,id:draft.id,title:draft.title,status:'draft' as const,href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document)})), ...(listedGraphs?.graphs ?? []).map(graph => ({key:'graph:'+graph.id,kind:'graph' as const, id:'graph:'+graph.id, title:graph.id, status:'finalized' as const, href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({key:'graph-draft:'+draft.chatId+':'+draft.draftId,kind:'graph' as const, id:'graph-draft:'+draft.draftId, title:draft.id, status:'draft' as const, chatId:draft.chatId, draftId:draft.draftId, href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description})), ...dialectLibraryItems(dialects.data?.items??[],dialectDrafts.data?.items??[]),...policyLibraryItems(policies.data?.items??[])]
+    const rows: BrowserItem[] = [...(data?.packs ?? []).map(pack=>({...pack,key:'pack:'+pack.id,kind:'pack' as const,title:pack.id,status:'finalized' as const,href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({key:'pack-draft:'+draft.id,kind:'pack' as const,id:draft.id,title:draft.title,status:'draft' as const,href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document)})), ...(listedGraphs?.graphs ?? []).map(graph => ({key:'graph:'+graph.id,kind:'graph' as const, id:'graph:'+graph.id, title:graph.id, status:'finalized' as const, href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({key:graphDraftFolderId(draft),kind:'graph' as const, id:graphDraftFolderId(draft), title:draft.id, status:'draft' as const, chatId:draft.chatId, draftId:draft.draftId, href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description})), ...dialectLibraryItems(dialects.data?.items??[],dialectDrafts.data?.items??[]),...policyLibraryItems(policies.data?.items??[])]
     const matching = rows.filter(pack => (kind==='all'||pack.kind===kind) && (status==='all'||(status==='saved'?pack.status!=='draft':pack.status===status)) && (!folders || listScope === ALL_PACKS || inFolder(folders.document, folderAssignmentKey(pack)===undefined?HOME_FOLDER:packFolder(folders.document,pack.id), listScope, !!needle)) && (!needle ||
       `${pack.id} ${pack.title}`.toLowerCase().includes(needle) || pack.description?.toLowerCase().includes(needle)))
     return matching.sort((left, right) => sort === 'id-desc'
       ? right.title.localeCompare(left.title) : left.title.localeCompare(right.title))
-  }, [data, error, packDrafts, chats, listedGraphs, dialects.data, dialectDrafts.data, policies.data, kind, filter, status, sort, folders?.document, listScope, locale])
+  }, [data, error, packDrafts, chats, retainedGraphs.data, listedGraphs, dialects.data, dialectDrafts.data, policies.data, kind, filter, status, sort, folders?.document, listScope, locale])
   const pagination = usePagination(packs.length, JSON.stringify([shell.storageKey, listScope, filter, kind, status, sort]))
   const pageItems = packs.slice(pagination.start, pagination.end)
   const selected = packs.filter(item => selectedIds.includes(item.key))
@@ -172,7 +173,8 @@ export function PacksPane({ active = true }: { active?: boolean }) {
       canScope={Boolean(folders && folderScope !== ALL_PACKS)} everywhere={searchEverywhere} onScope={value=>{resetScroll();setSearchEverywhere(value)}}
       filtered={filtered} reset={clearFilter} selected={selected} clearSelection={()=>setSelectedIds([])} onDelete={requestDelete}/>
     {!searchEverywhere && <SubfolderRows query={filter}/>}
-    {includeGraphs && <QueryStatusNotice id="graphs" label={msg("Graphs unavailable")} error={graphs.error} retrying={graphs.isFetching} onRetry={()=>graphs.refetch()}>{msg("Graphs could not be refreshed. Previously loaded graphs may be out of date.")}</QueryStatusNotice>}
+    {includeGraphs && <><QueryStatusNotice id="graph-drafts" label={msg('Graph drafts unavailable')} error={retainedGraphs.error} onRetry={()=>retainedGraphs.refetch()}/>
+      <QueryStatusNotice id="graphs" label={msg("Graphs unavailable")} error={graphs.error} retrying={graphs.isFetching} onRetry={()=>graphs.refetch()}>{msg("Graphs could not be refreshed. Previously loaded graphs may be out of date.")}</QueryStatusNotice></>}
     {includeGraphs && graphsUnavailable && <div className={styles.message} role="status">{msg('This runtime cannot list saved graphs. Connect a newer runtime to browse all packs and graphs.')} <ButtonLink to="/graphs">{msg('Open graphs')}</ButtonLink></div>}
     {includePacks && <QueryStatusNotice id="packs" label={msg("Packs unavailable")} error={error} retrying={isFetching} onRetry={()=>refetch()}>{msg("Packs could not be refreshed. Previously loaded packs may be out of date.")}</QueryStatusNotice>}
     {includeDialects && <QueryStatusNotice id="library-dialects" label={msg('Dialects unavailable')} error={dialects.error} retrying={dialects.isFetching} onRetry={()=>dialects.refetch()}>{msg('Dialects could not be refreshed. Previously loaded dialects may be out of date.')}</QueryStatusNotice>}

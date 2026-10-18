@@ -4,9 +4,9 @@ import {readPolicyAuthoringSource} from './client'
 import {policyEditorBlocked} from './chatEditing'
 import {validPolicyId} from './chat'
 import {validPolicyRevisionId,validPolicyPublicationId,type PolicyAuthoringSource,type PolicySourceSelection} from './authoringSource'
-export interface PolicyInterpretationProposal {version:1;id:string;policyId:string;revisionId:string;publicationId?:string;createdAt:string;afterTurnId?:string;openedChatId?:string}
+export interface PolicyInterpretationProposal {version:1;artifactKind?:'pack'|'graph';id:string;policyId:string;revisionId:string;publicationId?:string;createdAt:string;afterTurnId?:string;openedChatId?:string}
 /** Persisted handoffs use the server's RFC3339Nano wire shape, including real calendar dates. */
-function validInterpretationTime(value:unknown):value is string {
+export function validInterpretationTime(value:unknown):value is string {
  if(typeof value!=='string')return false
  const parts=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(value)
  if(!parts)return false
@@ -17,21 +17,22 @@ function validInterpretationTime(value:unknown):value is string {
 export function validPolicyInterpretationProposal(value:unknown):value is PolicyInterpretationProposal {
  if(!value||typeof value!=='object'||Array.isArray(value))return false
  const p=value as PolicyInterpretationProposal
- return Object.keys(p).every(key=>['version','id','policyId','revisionId','publicationId','createdAt','afterTurnId','openedChatId'].includes(key))&&p.version===1&&typeof p.id==='string'&&/^[A-Za-z0-9-]{1,80}$/.test(p.id)&&validPolicyId(p.policyId)&&validPolicyRevisionId(p.revisionId)&&(p.publicationId===undefined||validPolicyPublicationId(p.publicationId))&&validInterpretationTime(p.createdAt)&&(p.afterTurnId===undefined||typeof p.afterTurnId==='string'&&new TextEncoder().encode(p.afterTurnId).length<=256)&&(p.openedChatId===undefined||typeof p.openedChatId==='string'&&/^[A-Za-z0-9-]{1,80}$/.test(p.openedChatId))
+ return Object.keys(p).every(key=>['version','artifactKind','id','policyId','revisionId','publicationId','createdAt','afterTurnId','openedChatId'].includes(key))&&p.version===1&&(p.artifactKind===undefined||p.artifactKind==='pack'||p.artifactKind==='graph')&&typeof p.id==='string'&&/^[A-Za-z0-9-]{1,80}$/.test(p.id)&&validPolicyId(p.policyId)&&validPolicyRevisionId(p.revisionId)&&(p.publicationId===undefined||validPolicyPublicationId(p.publicationId))&&validInterpretationTime(p.createdAt)&&(p.afterTurnId===undefined||typeof p.afterTurnId==='string'&&new TextEncoder().encode(p.afterTurnId).length<=256)&&(p.openedChatId===undefined||typeof p.openedChatId==='string'&&/^[A-Za-z0-9-]{1,80}$/.test(p.openedChatId))
 }
 export async function preparePolicyInterpretation(selection:PolicySourceSelection,signal?:AbortSignal):Promise<PolicyAuthoringSource>{
- if(policyEditorBlocked(selection.policyId))throw Error(msg('Save or discard your Policy changes before designing a pack.'))
+ if(policyEditorBlocked(selection.policyId))throw Error(msg('Save or discard your Policy changes before designing an interpretation.'))
  const source=await readPolicyAuthoringSource(selection,signal)
  signal?.throwIfAborted()
- if(policyEditorBlocked(selection.policyId))throw Error(msg('Save or discard your Policy changes before designing a pack.'))
+ if(policyEditorBlocked(selection.policyId))throw Error(msg('Save or discard your Policy changes before designing an interpretation.'))
  return source
 }
 /** Opening a composer is model-free. A retained ordinary chat also survives reload. */
-export function openPolicyInterpretation(store:ChatStore,source:PolicyAuthoringSource,openedChatId?:string):Chat{
- if(policyEditorBlocked(source.policyId))throw Error(msg('Save or discard your Policy changes before designing a pack.'))
+export function openPolicyInterpretation(store:ChatStore,source:PolicyAuthoringSource,openedChatId?:string,artifactKind:'pack'|'graph'='pack'):Chat{
+ if(policyEditorBlocked(source.policyId))throw Error(msg('Save or discard your Policy changes before designing an interpretation.'))
  if(!store.getSnapshot().ready||store.getSnapshot().error)throw Error(msg('Save or recover this conversation before continuing.'))
- if(openedChatId){const existing=[...store.getSnapshot().chats,...store.getSnapshot().drafts].find(c=>c.id===openedChatId);if(existing&&existing.policySources?.some(held=>JSON.stringify(held)===JSON.stringify(source)))return existing;throw Error(msg('The opened conversation was deleted. Design a pack again from the Policy history.'))}
- const chat=store.create(undefined,'draft')
- store.update(chat.id,{policySources:[source],title:msg('Interpret {{title}}',{title:source.title||msg('Policy')}),composer:msg('Design a pack interpretation of {{title}}, version {{version}}, using the exact selected Policy source. Identify ambiguities and missing facts for review.',{title:source.title||msg('Policy'),version:source.artifactVersion})})
+ if(openedChatId){const existing=[...store.getSnapshot().chats,...store.getSnapshot().drafts].find(c=>c.id===openedChatId);if(existing&&existing.policySources?.some(held=>JSON.stringify(held)===JSON.stringify(source))&&(existing.policyInterpretationKind??'pack')===artifactKind)return existing;throw Error(msg('The opened conversation was deleted. Open another interpretation from the Policy history.'))}
+ const chat=store.create(undefined,'draft'),values={title:source.title||msg('Policy'),version:source.artifactVersion}
+ const composer=artifactKind==='graph'?msg('Design a graph interpretation of {{title}}, version {{version}}, using the exact selected Policy source and declared packs. Identify ambiguities and missing facts for review.',values):msg('Design a pack interpretation of {{title}}, version {{version}}, using the exact selected Policy source. Identify ambiguities and missing facts for review.',values)
+ store.update(chat.id,{policySources:[source],policyInterpretationKind:artifactKind,title:msg('Interpret {{title}}',{title:source.title||msg('Policy')}),composer})
  return [...store.getSnapshot().chats,...store.getSnapshot().drafts].find(c=>c.id===chat.id)!
 }

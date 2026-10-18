@@ -139,9 +139,13 @@ func TestDefinitionDraftBriefsAreSeparateAndUseSavedBytes(t *testing.T) {
 		t.Fatal(string(pack.Snapshot), pack.SnapshotIssue)
 	}
 	beginDefinition(t, ts, "pack-draft:draft-one", pack.Snapshot)
-	chats := `{"version":1,"chats":[{"id":"chat","graphDrafts":[{"draftId":"draft-one","id":"graph-one","content":"{\"nodes\":{},\"edges\":[]}"}],"checkpoint":{"private":"do not include"}}]}`
-	if code, _ := chatRequest(t, ts, "PUT", "absent", chats, true, ""); code != 200 {
-		t.Fatal(code)
+	chats := `{"version":1,"chats":[{"id":"chat","graphDrafts":[{"draftId":"draft-one","id":"graph-one","path":"flow.graph.json","createdAt":"2026-10-18T12:00:00Z","content":"{\"nodes\":{},\"edges\":[]}"}],"checkpoint":{"private":"do not include"}}]}`
+	var conversation map[string]any
+	if err := json.Unmarshal([]byte(chats), &conversation); err != nil {
+		t.Fatal(err)
+	}
+	if w := policyWorkspaceCall(s, privateWorkspaceTestSession(t, ts), "PUT", "/api/conversations", "absent", conversation); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
 	}
 	graph := definitionReply(t, ts, "graph-draft:draft-one")
 	if graph.SnapshotIssue != "" || strings.Contains(string(graph.Snapshot), "do not include") {

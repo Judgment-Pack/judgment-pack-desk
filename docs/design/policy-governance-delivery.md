@@ -13,6 +13,89 @@ an older Gateway override must still show unsupported state when those controls
 are unavailable. These local, single-administrator slices do not
 claim team governance, portable Policy conformance or execution admission.
 
+## Graph interpretations and independent graph custody (#468)
+
+The Policy page and history now offer **Design graph** beside the existing pack
+action. Policy chat can propose `propose_policy_graph_interpretation`. Both paths
+review the same exact saved revision or selected publication, recheck current
+access, and open an ordinary authoring chat with an **unsent** graph request.
+Opening the chat calls no model and writes no executable project file. Plan
+filters the proposal tool and blocks accepting its handoff. Ordinary chat keeps
+the shared execution, managed context, Ask me and allowance controls.
+
+Private handoff records may specify `artifactKind: "pack" | "graph"`; omitted
+kind remains the historical pack handoff. Unknown kinds and optional null values
+are refused. Exact Policy sources remain private reference data, never governing
+adoption, complete coverage, execution eligibility, or Graph Job authority.
+
+Graph drafts now have an independent owner-only workspace record behind
+`GET`/`PUT /api/draft-graphs`. The document has version 1, `drafts` and `deleted`
+arrays; each draft retains graph proposal bytes, creation time, original chat ID,
+and immutable exact Policy sources when present. Identity is the pair
+`(originChatId, draftId)`, so equal draft IDs in different chats remain distinct.
+Writes use the shared bounded storage lock, exact `If-Match`, current-session
+admission, and read-back checks. Reads are read-only and use `privateQuery`.
+Library/reopen and saved graph helper conversations use independent retained
+records. Current saved graph helpers resolve sources against the exact graph
+bytes as well as the declared ID/path; older source associations remain history.
+They preserve historical chats with incompatible source sets and refuse an
+ambiguous or over-capacity basis before changing a conversation. Finalization
+preserves private source history; source narrative is not
+automatically copied into graph JSON or another project companion.
+
+A reviewed save persists `writePending: true` on its exact private candidate
+before dispatching the public graph write. It records a save intent, not proof
+that dispatch or commit occurred. A missing acknowledgement prevents dispatch.
+Pending candidates and provenance cannot be edited or deleted. If the public
+write succeeds but private finalization fails, the UI states the known public
+result separately and offers **Finish saving history**. Reload retains an honest
+unresolved state. Reconciliation checks exact graph bytes and the current
+ID/path/description registration, then writes only private metadata; an already
+completed private result is accepted without replay. Current saved Sources may
+show an exactly matching pending association with its pending-history notice.
+A proven precommit refusal permits an explicit revised copy while preserving the
+attempted candidate. Mismatches and uncertain responses never imply nondispatch,
+and no recovery action automatically replays the public graph write.
+
+Legacy chat-only drafts remain visible. The next authenticated conversation write
+retains both previous and incoming graph drafts before committing chat changes,
+including deletion. The latest incoming edit wins for an identity being migrated
+for the first time; a deleted chat instead retains its previous snapshot.
+Conversation graph snapshots carry plain proposals only: nested Policy sources
+and origin metadata are rejected, and their owning chat's top-level source list
+is the sole provenance boundary. A retention failure leaves the conversation
+intact. A later
+conversation-write failure may leave an extra safely retained draft; these are
+two writes, not a claimed atomic transaction. Once retained, chat graph snapshots
+are related-work history and never overwrite or block independent graph edits.
+Old clients that edit only those snapshots must reopen the current graph editor
+to edit the independent draft. Explicit draft deletion retains scoped tombstones.
+
+Folder placements, Library actions and helper routing use the same scoped graph
+draft identity. `jpack-folders.json` version 3 adds
+`graph-draft:<originChatId>:<draftId>` assignment keys; versions 1 and 2 remain
+readable. A bare legacy assignment is projected only when its origin is unique.
+Ambiguous assignments remain recoverable metadata with a review notice until
+each surviving draft has an explicit placement. Saved graphs inherit an
+unambiguous draft placement only when no explicit saved graph placement exists.
+Projection is read-only; the next explicit folder action persists the result
+through the existing authenticated project-file CAS. Folder metadata remains a
+project file, outside private workspace backup/restore. Older builds reject v3
+folder metadata and cannot safely organize these scoped drafts; downgrading does
+not convert or erase either folder metadata or private graph history.
+
+Graph records participate in private backup, restore and project moves. Launch
+credentials and revoked sessions cannot read, write or transfer the store.
+Restore validates newly introduced Policy sources through the existing exact
+Policy ledger boundary. This private Desk schema is not portable interchange:
+older Desk builds may reject the new backup record or graph handoff metadata;
+downgrading is not a conversion or permission to discard retained history.
+
+Verification covers scoped identity, exact old publications, failed migration,
+chat deletion/reopen, stale CAS, immutable provenance, untrusted restore, Plan,
+unsent acceptance and shared API/subscription context. Release/review tracking is
+[Desk #468](https://github.com/Judgment-Pack/judgment-pack-desk/issues/468).
+
 ## Pack interpretations from retained Policy sources (#464)
 
 The Policy editor and a selected history revision/publication offer **Design
@@ -79,7 +162,8 @@ destination covers existing Dialect URLs. Existing detail URLs, artifact bytes,
 chat scopes, reviews and execution pins retain their current behavior.
 
 The selected type is an optional workspace-scoped layout preference. The
-`jpack-folders.json` v1/v2 assignment contract is unchanged. Dialects have no
+Library foundation kept the `jpack-folders.json` v1/v2 assignment contract;
+the later graph custody slice above adds v3 scoped draft keys. Dialects have no
 folder assignment and are discoverable in Home/all views; they are excluded
 from folder moves and chat-backed draft deletion. Their existing editors own
 their actions. Policy navigation/editor integration uses the new private API;
@@ -188,8 +272,8 @@ cannot still finish. It never authorizes a new operation or repeats the old one.
 Limits are 500 UTF-8 bytes for titles, 128 KiB for narrative, 256 bytes for version
 text, 8 KiB for review comments, 256 policies, 512 entries per per-policy history
 kind, 4,096 retained operation receipts and a 16 MiB metadata ledger. No API removes
-immutable history or receipt identities. This slice has no policy deletion,
-archive endpoint. Local effective-date scheduling and release withdrawal are
+immutable history or receipt identities. This slice has no Policy deletion endpoint. A separate project recovery archive is described below.
+Local effective-date scheduling and release withdrawal are
 described below; they do not enforce execution admission.
 
 Policy metadata and referenced blobs belong to the project. A project move/backup
@@ -444,3 +528,61 @@ The dedicated `policy-source-contract.yml` workflow builds a pinned synthetic
 Gateway producer and real canonicalizer, generates an observation, and checks
 those unchanged bytes with Desk. Its evidence records actual source revisions,
 build identities and fixture hashes separately from official releases.
+
+### Reviewed source ownership and status (#473)
+
+[Desk #473](https://github.com/Judgment-Pack/judgment-pack-desk/issues/473)
+adds explicit audited Desk/external ownership and separate reviewed source-status
+configuration/application; see [the private API contract](policy-source-status.md).
+Current Drive exposes no lifecycle, so only an administrator-configured fallback
+is supported, initially Draft. Explicit Published fallback retains an external
+version with its exact source/configuration basis; it creates no local approval
+or publication. Draft or Published source material can instead be explicitly
+imported into a fresh, unreviewed Desk draft without carrying earlier approvals.
+Failures never activate fallback or reinterpret reviewed history. These records
+claim no provider approval, governing adoption or execution permission.
+Chat ZIP backup/restore excludes Policy data. The separate recovery slice below
+addresses [Desk #476](https://github.com/Judgment-Pack/judgment-pack-desk/issues/476)
+without turning the chat ZIP into a complete project backup.
+
+### Project Policy recovery archive (#476)
+
+The manual **Policy recovery archive for this project** flow retains the exact
+current project's ledger and only its referenced immutable blob closure; see
+[the archive and restoration contract](policy-recovery-archive.md). Existing chat
+ZIP behavior stays unchanged. The Policy archive includes historical drafts,
+reviews/publications, lifecycle/source-status streams, retained originals and
+extractions, and operation outcomes. It excludes chats, Pack/Graph drafts, memory,
+executable project files/jobs, unrelated retained artifacts, credentials, source
+consent and browser journals. It is not portable governing adoption, execution
+admission or a complete project backup.
+
+Export stages and validates one complete reviewed ledger cut before downloading.
+Restore previews and freezes the exact selected archive and a new absent private
+destination, independently of current Policy ledger readability. Publication is
+one synced no-replace destination directory, with an empty host-created project
+configuration and a durable completion marker. The running project/stores and
+startup settings stay unchanged; opening/restarting into the recovered project is
+a separate explicit action. Uncertain publication preserves the destination and
+frozen command for current-session, project-scoped read-only receipt recovery;
+lookup never replays restore or treats absence as proof of noncommitment.
+
+Every restore creates a new ledger barrier. Imported records/receipt bytes keep
+their original identities, actors and text, but those actor assertions are not
+authenticated current approval. Currentness remains unknown for imported history;
+fresh local review and a new publication are needed for release activation.
+Historical withdrawal remains available under current authentication. Archived
+source grant/poll/bind/cleanup identities never dispatch, including on the same
+installation. Fresh reviewed source selection/consent is required for provider
+access; reviewing exact retained text locally does not establish that consent or
+current provider status. No fallback becomes authority because of restoration.
+
+The separate limits are 512 MiB expanded data plus 2 MiB ZIP overhead, 8192 entries,
+1 MiB manifest, 16 MiB ledger and 32 MiB per retained blob. Missing/corrupt/unknown
+references and unsupported or oversized archives fail completely. Checksums do
+not authenticate authors or prevent rollback of history predating a withdrawal.
+Older strict binaries reject the restoration extensions; no downgrade bypass or
+global live-store transaction is claimed. Focused checks cover exact closure,
+archive bounds, canonical restore holds, source non-dispatch, destination collision,
+lost-response receipt recovery, current-session/Origin checks and unchanged chat
+ZIP behavior, followed by isolated browser/restart evidence and repository CI.

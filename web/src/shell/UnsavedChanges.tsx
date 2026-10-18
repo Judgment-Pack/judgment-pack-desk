@@ -37,6 +37,7 @@ const Context = createContext<{
   publish: (id: string, entry?: Entry) => void
   confirm: (entry: Entry) => Promise<boolean>
   state: DeskChangeState
+  hasOtherPending: (id: string) => boolean
   setTitle: (title: string) => void
   leave: () => Promise<boolean>
 } | null>(null)
@@ -60,6 +61,7 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     else entries.current.delete(id)
     setRevision(n => n + 1)
   }, [])
+  const hasOtherPending = useCallback((id: string) => [...entries.current.keys()].some(key => key !== id), [])
   const confirm = useCallback((entry: Entry) => {
     // Refuse a competing exit; never overwrite another pending decision.
     if (pending.current || entry.busy) return Promise.resolve(false)
@@ -104,7 +106,7 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     catch (e) { setError(e instanceof Error ? e.message : msg('The draft could not be saved. Your changes are still here.')) }
     finally { setSaving(false) }
   }
-  return <Context.Provider value={{ publish, confirm, state, setTitle, leave }}>
+  return <Context.Provider value={{ publish, confirm, state, hasOtherPending, setTitle, leave }}>
     {router && <NavigationGuard entries={entries.current} revision={revision} confirm={confirm} />}
     {children}
     <Dialog open={!!request} onOpenChange={open => { if (!open && !saving) finish(false) }} title={msg('Unsaved changes')} description={request?.question}
@@ -148,6 +150,14 @@ export function useHasUnsavedChanges() { return useDeskChangeState().dirty }
 /** Destructive exits must also protect quiet autosaves and in-flight writes. */
 export function useHasPendingChanges() { return useDeskChangeState().pending }
 export function useRegisteredChanges(dirty: boolean, question: string, options: UnsavedOptions = {}) {
+  return useChangesRegistration(dirty, question, options).clearGuard
+}
+/** Protect a reviewed operation from other editors/activity without counting its own setup. */
+export function useRegisteredChangesGuard(dirty: boolean, question: string, options: UnsavedOptions = {}) {
+  const {clearGuard,context,id}=useChangesRegistration(dirty, question, options)
+  return {clearGuard,otherPending:context?.hasOtherPending(id)??false}
+}
+function useChangesRegistration(dirty: boolean, question: string, options: UnsavedOptions) {
   const context = useContext(Context), id = useId()
   const latest = useRef(options); latest.current = options
   const publish = context?.publish
@@ -158,7 +168,8 @@ export function useRegisteredChanges(dirty: boolean, question: string, options: 
       ...(options.shouldBlock ? { shouldBlock: args => latest.current.shouldBlock!(args) } : {}) } : undefined)
   }, [publish, id, dirty, question, options.kind, options.label, options.saveFailed, options.name, options.busy, !!options.saveDraft, !!options.shouldBlock])
   // A successful write clears the live registration before synchronous navigation.
-  return useCallback(() => publish?.(id), [publish, id])
+  const clearGuard=useCallback(() => publish?.(id), [publish, id])
+  return {clearGuard,context,id}
 }
 
 export function useConfirmDeskExit() { const context = useContext(Context); return context?.leave ?? (() => Promise.resolve(false)) }

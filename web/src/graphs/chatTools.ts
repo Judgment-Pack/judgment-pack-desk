@@ -18,7 +18,7 @@ function declaration(entries: Configuration['packs'], id: unknown): Declaration 
 }
 
 /** No write/proposal-confirmation endpoint is exposed to the model. */
-export function graphChatTools(options: { client: () => Client | null; chatId: string; addDraft: (draft: GraphDraft) => void }): HostTool[] {
+export function graphChatTools(options: { client: () => Client | null; chatId: string; addDraft: (draft: GraphDraft,signal:AbortSignal) => void|Promise<void> }): HostTool[] {
   const readGraphs = new Map<string, {path: string; sha256: string}>()
   return [
     {name: 'list_decisions',delegation:'read', description: 'List the project’s declared packs and graphs before composing or running them. Reads declarations; evaluates nothing.', inputSchema: schema({}), execute: async (_args, signal) => {
@@ -64,7 +64,7 @@ export function graphChatTools(options: { client: () => Client | null; chatId: s
       if (existing && (await readFile(existing.path, signal)).sha256 !== base!.sha256) throw toolInputFailure('The graph changed since it was read. Read it again and revise the proposal.')
       const draft: GraphDraft = {draftId: crypto.randomUUID(), createdAt: new Date().toISOString(), id: args.id, path: existing?.path ?? `${args.id}.graph.json`, content: args.content, ...(typeof args.description === 'string' ? {description: args.description.slice(0, 4096)} : {}), ...(base ? {baseSha256: base.sha256} : {})}
       signal.throwIfAborted()
-      options.addDraft(draft)
+      await options.addDraft(draft,signal)
       return text({artifactType: 'graph', status: 'draft', draftId: draft.draftId, reviewUrl: graphDraftHref(options.chatId, draft.draftId), message: 'Draft retained for review. No project file was written. Open the draft to validate, review and save.'})
     }},
     {name: 'graph_rehearse', description: 'Rehearse an existing declared graph with the user’s supplied inputs keyed by node id. All nodes run. Does not write an audit decision or execute actions. Ask for missing facts; never invent them. Input and tool result are retained in chat history.', inputSchema: schema({id: idSchema, inputs: {type: 'string', description: 'JSON object keyed by node id; each entry has facts and/or evidence.'}}, ['id', 'inputs']), execute: async (args, signal) => {

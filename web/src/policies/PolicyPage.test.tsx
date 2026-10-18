@@ -7,7 +7,7 @@ import {UnsavedChangesProvider} from '../shell/UnsavedChanges'
 import {DeskNoticesProvider} from '../shell/DeskNotices'
 import {PolicyPage} from './PolicyPage'
 import {policyLibraryItems,folderAssignmentKey,deletableLibraryDraft} from '../library/items'
-import {type PolicyReply,type PolicyMutationReply,type PolicyWrite,type PolicySourceSync,type PolicySourceObservation,writePolicy} from './client'
+import {type PolicyReply,type PolicyMutationReply,type PolicyWrite,type PolicySourceSync,type PolicySourceObservation,type SourceStatusReply,type SourceAuthorityOutcome,writePolicy} from './client'
 import sourceWire from '../../../internal/desk/testdata/policy-source-observation.json'
 import {createPolicyPendingJournal} from './pendingOperation'
 
@@ -20,8 +20,9 @@ function policy(revision='head-one',narrative='Expense policy',reviewState:Polic
  return {revision,document:{id:'policy-one',managementMode:'desk-managed',createdAt:at,updatedAt:at,candidate,workflow,workflowDigest:'workflow-one',reviewState,revisions:[{id:candidate.revisionId,sequence:1,digest:candidate.digest,title:candidate.title,artifactVersion:candidate.artifactVersion,content:candidate.content,workflow,workflowDigest:'workflow-one',at,actor}],reviews:[],publications:[]}}
 }
 const result=(reply:PolicyReply,delivery:'committed'|'recovered'='committed'):PolicyMutationReply=>({delivery,receipt:{operationId:'fixture'},policy:reply})
-function mount({path='/policies/policy-one',read=policy(),sync={revision:'source-none',supported:false,pending:false},mutate=async()=>result(policy('head-two'))}:{path?:string;read?:PolicyReply;sync?:PolicySourceSync;mutate?:(request:PolicyWrite)=>Promise<PolicyMutationReply>}={}){
+function mount({path='/policies/policy-one',read=policy(),sync={revision:'source-none',supported:false,pending:false},mutate=async()=>result(policy('head-two')),authorityMutate}:{path?:string;read?:PolicyReply;sync?:PolicySourceSync;mutate?:(request:PolicyWrite)=>Promise<PolicyMutationReply>;authorityMutate?:(request:PolicyWrite)=>Promise<SourceAuthorityOutcome>}={}){
  let current=read,recovery:PolicyMutationReply|undefined,recoveryMissing=false,readFailure=false
+ let authority:SourceStatusReply|undefined
  const writes:PolicyWrite[]=[],requests:string[]=[]
  const fetch=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
   const url=String(input);requests.push(url)
@@ -31,6 +32,10 @@ function mount({path='/policies/policy-one',read=policy(),sync={revision:'source
    return Response.json(current)
   }
   if(url==='/api/policies/policy-one/source-sync'&&(!init?.method||init.method==='GET'))return Response.json(sync)
+  if(url==='/api/policies/policy-one/source-status'){
+   if(init?.method==='POST'&&authorityMutate){const operation:PolicyWrite={path:'/policy-one/source-status',method:'POST',body:JSON.parse(String(init.body))};writes.push(operation);const outcome=await authorityMutate(operation);authority=outcome.sourceStatus;return Response.json(outcome)}
+   if(!init?.method||init.method==='GET')return Response.json(authority??{revision:'authority-none',policyRevision:current.revision,sourceRevision:sync.revision,candidateDigest:current.document.candidate.digest,candidateRevisionId:current.document.candidate.revisionId,ownership:{mode:current.document.managementMode,inherited:true},capability:{kind:'unavailable',mappingSupported:false},availability:{state:'unbound',usable:false,gap:false},currentPreview:{eligible:false,reason:'source-unbound'},configurations:[],externalVersions:[],events:[],actions:{configure:{allowed:false},setOwnership:{allowed:true},applyExternal:{allowed:false},importDraft:{allowed:false}}})
+  }
   if(url.startsWith('/api/policies/policy-one/source-sync/observations/'))return Response.json({document:sourceWire.document})
   if(url==='/api/policies/policy-one/source')return new Response(new TextEncoder().encode('# Original\r\nCafé 中文\r\n'))
   if(url.startsWith('/api/policies/policy-one/revisions/'))return Response.json({candidate:{...policy().document.candidate,narrative:'Immutable original text'},workflow:current.document.workflow,workflowDigest:'workflow-one',at,actor})
@@ -57,6 +62,23 @@ afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionStorage.clear()})
 const edit=(text:string)=>fireEvent.change(screen.getByRole('textbox',{name:'Policy text'}),{target:{value:text}})
 const clickSave=()=>fireEvent.click(screen.getByRole('button',{name:'Save draft'}))
 const sourceTab=()=>fireEvent.mouseDown(screen.getByRole('tab',{name:'Source'}),{button:0,ctrlKey:false})
+
+it('marks restored approval history as imported assertions and permits a fresh candidate review',async()=>{
+ const saved=policy('restored-head','Retained text','unreviewed');saved.currentCandidatePublished=false;saved.recovery={snapshotId:'restore-one',restoredAt:at,currentnessUnknown:true,freshReviewRequired:true,sourceConsentRequired:false}
+ mount({read:saved});await screen.findByRole('textbox',{name:'Policy text'})
+ expect(screen.getByText('Restored Policy history · Currentness unknown')).toBeTruthy();expect(screen.getByText(/historical records, not authenticated current approval/)).toBeTruthy()
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Approve candidate'})).toHaveProperty('disabled',false));expect(screen.getByRole('button',{name:'Publish version'})).toHaveProperty('disabled',true)
+ expect(screen.getByText('Current candidate unpublished')).toBeTruthy()
+})
+it('offers fresh consent while held source provider controls stay unavailable and retained text can be reviewed locally',async()=>{
+ const recovery={snapshotId:'restore-one',restoredAt:at,currentnessUnknown:true as const,freshReviewRequired:true,sourceConsentRequired:true}
+ const observation={...sourceWire,id:'old-observation',name:'imported.txt',retainedAt:at,semanticDigest:'semantic'} as unknown as PolicySourceObservation
+ const sync:PolicySourceSync={revision:'restored-source',supported:true,pending:true,recovery,state:{version:1,generation:1,state:'authorization-ended',frequencyMinutes:15,gap:true,errorCode:'restored-source-consent-required',grant:{actor,at,resourceId:sourceWire.source.resourceId},binding:{bindingId:sourceWire.bindingId,source:sourceWire.source},observations:[observation],resolutions:[]}}
+ const app=mount({read:{...policy(),recovery},sync});await screen.findByRole('textbox',{name:'Policy text'});sourceTab()
+ expect(await screen.findByText('Historical source authorization · Fresh consent required')).toBeTruthy();await waitFor(()=>expect(screen.getByRole('button',{name:'Choose Google Drive source'})).toHaveProperty('disabled',false))
+ for(const name of ['Check now','Pause checks','Resume checks','Revoke source access'])expect(screen.queryByRole('button',{name})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'Review keeping current candidate'}));expect(await screen.findByText(/This reviews an imported historical source snapshot locally/)).toBeTruthy();expect(app.writes).toEqual([])
+})
 
 it('shows unsupported automatic checks honestly for an older installed Gateway',async()=>{
  mount();await screen.findByRole('textbox',{name:'Policy text'});sourceTab()
@@ -309,4 +331,63 @@ it('blocks Design pack while the editor is dirty or its frozen saved revision co
  await screen.findByText('Saved policy changed')
  expect((screen.getByRole('button',{name:'Design pack'}) as HTMLButtonElement).disabled).toBe(true)
  expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('Expense policy')
+})
+
+function ownershipOutcome(operation:PolicyWrite,head:PolicyReply):SourceAuthorityOutcome{
+ const event={id:'ownership-event',sequence:1,kind:'set-ownership' as const,at,actor,rationale:String(operation.body.rationale),policySequence:1,managementMode:'externally-managed' as const}
+ const sourceStatus:SourceStatusReply={revision:'authority-reviewed',policyRevision:head.revision,sourceRevision:'source-none',candidateDigest:head.document.candidate.digest,candidateRevisionId:head.document.candidate.revisionId,ownership:{mode:'externally-managed',inherited:false,eventId:event.id,at,actor},capability:{kind:'unavailable',mappingSupported:false},availability:{state:'unbound',usable:false,gap:false},currentPreview:{eligible:false,reason:'source-unbound'},configurations:[],externalVersions:[],events:[event],actions:{configure:{allowed:false},setOwnership:{allowed:true},applyExternal:{allowed:false},importDraft:{allowed:false}}}
+ return {outcomeKind:'source-authority',delivery:'committed',policyId:'policy-one',policyRevision:head.revision,sourceStatus,receipt:{operationId:String(operation.body.operationId),kind:'authority-set-ownership',policyId:'policy-one',authorityRevision:sourceStatus.revision,authorityEventId:event.id}}
+}
+async function setExternalOwnership(){
+ sourceTab();fireEvent.click(await screen.findByRole('button',{name:'Review ownership'}));const dialog=await screen.findByRole('dialog',{name:'Review ownership'})
+ fireEvent.keyDown(within(dialog).getByRole('combobox',{name:'Ownership'}),{key:'Enter'});fireEvent.click(await screen.findByRole('option',{name:/^Externally managed$/}))
+ fireEvent.change(within(dialog).getByRole('textbox',{name:'Decision rationale'}),{target:{value:'External system owns source publication'}});fireEvent.click(within(dialog).getByRole('button',{name:'Confirm source decision'}))
+}
+it('opens only the exact completed ownership head after explicit review, preserving the clean working text',async()=>{
+ const external=policy('ownership-head','Expense policy');external.document.managementMode='externally-managed'
+ const app=mount({authorityMutate:async operation=>{app.setCurrent(external);return ownershipOutcome(operation,external)}})
+ await screen.findByRole('textbox',{name:'Policy text'});await setExternalOwnership();await screen.findByText('Source decision recorded.')
+ await waitFor(()=>expect((screen.getByRole('button',{name:'Review ownership'}) as HTMLButtonElement).disabled).toBe(false))
+ expect(screen.queryByRole('button',{name:'Compare latest saved draft'})).toBeNull()
+ fireEvent.mouseDown(screen.getByRole('tab',{name:'Draft'}),{button:0,ctrlKey:false})
+ expect(screen.getByRole('textbox',{name:'Policy text'})).toHaveProperty('value','Expense policy')
+ expect((screen.getByRole('button',{name:'Approve candidate'}) as HTMLButtonElement).disabled).toBe(true)
+ expect((screen.getByRole('button',{name:'Publish version'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(app.writes).toHaveLength(1)
+})
+it('acknowledges ownership independently of a failed optional draft refresh and offers direct comparison',async()=>{
+ const external=policy('ownership-head');external.document.managementMode='externally-managed'
+ const app=mount({authorityMutate:async operation=>{app.setCurrent(external);app.setReadFailure(true);return ownershipOutcome(operation,external)}})
+ await screen.findByRole('textbox',{name:'Policy text'});await setExternalOwnership()
+ const compare=await screen.findByRole('button',{name:'Compare latest saved draft'})
+ expect((await createPolicyPendingJournal('source-status','policy-one')).read()).toBeUndefined()
+ expect(screen.queryByRole('button',{name:'Check operation result'})).toBeNull();expect(app.writes).toHaveLength(1)
+ app.setReadFailure(false);fireEvent.click(compare)
+ await screen.findByRole('button',{name:'Load latest saved draft'})
+ expect(screen.getByRole('textbox',{name:'Policy text'})).toHaveProperty('value','Expense policy')
+})
+it('preserves the editor if a later saved head differs from the source action receipt',async()=>{
+ const receiptHead=policy('ownership-head');receiptHead.document.managementMode='externally-managed'
+ const later=policy('later-head','Later editor text');later.document.managementMode='externally-managed'
+ const app=mount({authorityMutate:async operation=>{app.setCurrent(later);return ownershipOutcome(operation,receiptHead)}})
+ await screen.findByRole('textbox',{name:'Policy text'});await setExternalOwnership();await screen.findByRole('button',{name:'Compare latest saved draft'})
+ fireEvent.mouseDown(screen.getByRole('tab',{name:'Draft'}),{button:0,ctrlKey:false})
+ expect(screen.getByRole('textbox',{name:'Policy text'})).toHaveProperty('value','Expense policy')
+ expect(await screen.findByText('Later editor text')).toBeTruthy();expect(app.writes).toHaveLength(1)
+})
+
+it('uses canonical current publication eligibility instead of matching a historical pre-ownership publication',async()=>{
+ const saved=policy('after-roundtrip','Expense policy');saved.currentCandidatePublished=false
+ saved.sourceAuthority={revision:'authority-return',ownership:{mode:'desk-managed',inherited:false},externalVersionCount:0}
+ saved.document.publications=[{id:'old-publication',sequence:3,candidateRevisionId:saved.document.candidate.revisionId,artifactVersion:'1.0.0',candidateDigest:saved.document.candidate.digest,workflowDigest:saved.document.workflowDigest,reviewId:'old-review',content:saved.document.candidate.content,at,actor}]
+ mount({read:saved});await screen.findByRole('textbox',{name:'Policy text'})
+ expect(screen.getByText('Current candidate unpublished')).toBeTruthy();expect(screen.queryByText('Current candidate published')).toBeNull()
+ expect(screen.getByText('This policy version is already published. Save a new artifact version before publishing again.')).toBeTruthy()
+})
+it('labels earlier local publication and review as history under external ownership',async()=>{
+ const saved=policy('external','Expense policy','approved');saved.document.managementMode='externally-managed';saved.currentCandidatePublished=false
+ saved.document.publications=[{id:'old-publication',sequence:3,candidateRevisionId:saved.document.candidate.revisionId,artifactVersion:'1.0.0',candidateDigest:saved.document.candidate.digest,workflowDigest:saved.document.workflowDigest,reviewId:'old-review',content:saved.document.candidate.content,at,actor}]
+ mount({read:saved});await screen.findByRole('textbox',{name:'Policy text'})
+ expect(screen.getByText('Historical local publications are retained.')).toBeTruthy();expect(screen.getByText('Local reviews remain history under external ownership.')).toBeTruthy()
+ expect(screen.queryByText('Current candidate published')).toBeNull();expect((screen.getByRole('button',{name:'Approve candidate'}) as HTMLButtonElement).disabled).toBe(true)
 })

@@ -18,6 +18,7 @@ function PaneWithNotices() {return <DeskNoticesProvider><PacksPane/><footer><Des
 
 const packLinks = () => screen.queryAllByRole('link').filter(link => link.getAttribute('href')?.startsWith('/packs/') && link.getAttribute('href') !== '/packs/new')
 beforeEach(()=>vi.stubGlobal('fetch',async(input:RequestInfo|URL)=>{
+  if(String(input)==='/api/draft-graphs')return Response.json({project:'/project',sha256:'draft-revision',content:{version:1,drafts:[],deleted:[]}})
   if(['/api/input-preparations','/api/dialect-drafts','/api/policies'].includes(String(input)))return Response.json({items:[]})
   throw new Error('No file fixture for this test.')
 }))

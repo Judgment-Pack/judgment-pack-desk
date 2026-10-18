@@ -1092,11 +1092,12 @@ describe('one section at a time', () => {
     expect(screen.getByDisplayValue('https://acme.example/d/')).toBeTruthy()
   })
 
-  it('keeps pack storage and chat data apart from research and document processing', () => {
+  it('keeps pack storage, chat data and Policy recovery apart from research and document processing', () => {
     renderAdmin(effectiveConfig(undefined), '/admin#storage')
     expect(screen.getByRole('textbox', { name: 'Pack folder' })).toBeTruthy()
     expect(screen.getByRole('textbox', { name: 'Pack ID prefix' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Chat data' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Policy recovery archive for this project' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Research' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Manage PDF processing' })).toBeNull()
   })

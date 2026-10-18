@@ -50,3 +50,14 @@ it('does not create a destination when the accompanying folder move is invalid',
  expect(writeFile).not.toHaveBeenCalled()
  expect(before.document).toEqual(defaultFolders())
 })
+it('writes and reopens scoped graph folder v3 against the exact project-file revision',async()=>{
+ const original=defaultFolders(),before={document:original,digest:'observed'}
+ vi.mocked(writeFile).mockImplementation(async input=>({path:input.path,bytes:input.content.length,sha256:'v3',content:input.content}))
+ const saved=await saveFolderAction(before,{type:'assign-many',packIds:['graph-draft:origin-one:same-draft','graph-draft:origin-two:same-draft'],folderId:HOME_FOLDER})
+ expect(saved.document.version).toBe(3)
+ const input=vi.mocked(writeFile).mock.calls[0]![0]
+ expect(input).toMatchObject({path:FOLDERS_FILE,baseSha256:'observed'})
+ vi.mocked(readOptionalFile).mockResolvedValue({path:FOLDERS_FILE,bytes:input.content.length,sha256:'v3',content:input.content})
+ expect(await loadFolders()).toEqual(saved);expect(writeFile).toHaveBeenCalledOnce()
+ expect(original).toEqual(defaultFolders())
+})

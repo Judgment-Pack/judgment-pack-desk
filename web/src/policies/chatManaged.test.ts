@@ -8,7 +8,10 @@ import type {AssistantEvent,AssistantSession,AgentAssistantSession} from '../ass
 import {policyChatTools} from './chatTools'
 import {readPolicy,type PolicyReply} from './client'
 import type {PolicyProposal} from './chat'
+import {resolvePolicyComparison,type PolicyComparison,type PolicyComparisonRequest} from './comparison'
+import {planningSession} from '../assistant/planning/policy'
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),readPolicy:vi.fn()}))
+vi.mock('./comparison',async original=>({...await original<typeof import('./comparison')>(),resolvePolicyComparison:vi.fn()}))
 const id='policy_'+'a'.repeat(48),revision='b'.repeat(64)
 const candidate={title:'Retention policy',narrative:('Exact policy clause.\n'.repeat(6000)+'CLAUSE_END').padEnd(131072,' '),artifactVersion:'1.0.0'}
 const saved={revision,document:{id,candidate}} as PolicyReply
@@ -79,4 +82,66 @@ it('refuses pack or graph proposal envelopes in a Policy-only conversation witho
  const events:AssistantEvent[]=[];for await(const event of vercel.start(session))events.push(event)
  expect(events.some(event=>event.type==='proposal')).toBe(false)
  expect(events).toContainEqual(expect.objectContaining({type:'guardrail',tool:'proposal',action:'refused'}))
+})
+
+const comparisonRequest:PolicyComparisonRequest={before:{kind:'publication',publicationId:'publication_'+'1'.repeat(48)},after:{kind:'revision',revisionId:'revision_'+'2'.repeat(48)}}
+function comparisonResult():PolicyComparison {
+ const side=(selector:PolicyComparisonRequest['before'])=>({selector,identity:{revisionId:'revision_'+'2'.repeat(48),candidateDigest:'3'.repeat(64),content:{sha256:'3'.repeat(64),bytes:131200}},text:candidate.narrative,metadata:{kind:'narrative' as const,title:'Retention policy',completeness:'complete' as const}})
+ return {policyId:id,before:side(comparisonRequest.before),after:side(comparisonRequest.after),differences:[],limitations:['informational-only']}
+}
+const contextReference=(text:string)=>text.match(/[a-f0-9-]{36}:result-read_policy_comparison-[a-f0-9]+:[a-f0-9]+/)?.[0]
+it.each(['openai-compatible','anthropic','gemini'] as const)('%s projects large exact comparisons through shared Plan context and read_context',async family=>{
+ vi.mocked(resolvePolicyComparison).mockResolvedValue(comparisonResult())
+ const input=base();input.prompt='Explain the selected exact comparison.';input.context={...input.context,currentRequest:{message:input.prompt,input:''},phase:'plan'};input.model.family=family;input.thinking=normalize('off',family);input.hostTools=retainTools([])
+ const session=planningSession(input);let calls=0,callbackError:unknown
+ session.model.call=async(_path,request)=>{try{
+  calls++;const wire=JSON.stringify(JSON.parse(request.body));expect(calls).toBeLessThanOrEqual(3)
+  expect(wire).not.toContain('propose_policy_update');expect(wire).toContain('read_policy_comparison')
+  if(calls===2){expect(wire.length).toBeLessThan(candidate.narrative.length);expect(contextReference(wire)).toBeDefined()}
+  if(calls===3)expect(wire).toContain('Exact policy clause.')
+  const name=calls===1?'read_policy_comparison':'read_context',args=calls===1?comparisonRequest:{id:contextReference(wire),path:'/structuredContent/before/text',limit:1024},text='The selected retained comparison is informational only.'
+  let answer:unknown
+  if(family==='gemini')answer={candidates:[{content:{role:'model',parts:calls===3?[{text}]:[{functionCall:{name,args}}]},finishReason:'STOP'}]}
+  else if(family==='anthropic')answer={id:'message_'+calls,type:'message',role:'assistant',model:'fixture',content:calls===3?[{type:'text',text}]:[{type:'tool_use',id:'tool_'+calls,name,input:args}],stop_reason:calls===3?'end_turn':'tool_use',usage:{input_tokens:1,output_tokens:1}}
+  else answer={id:'completion_'+calls,object:'chat.completion',created:0,model:'fixture',choices:[{index:0,message:{role:'assistant',content:calls===3?text:null,...(calls===3?{}:{tool_calls:[{id:'tool_'+calls,type:'function',function:{name,arguments:JSON.stringify(args)}}]})},finish_reason:calls===3?'stop':'tool_calls'}],usage:{prompt_tokens:1,completion_tokens:1,total_tokens:2}}
+  return new Response(JSON.stringify(answer),{headers:{'Content-Type':'application/json'}})
+ }catch(error){callbackError=error;throw error}}
+ const events:AssistantEvent[]=[];for await(const event of vercel.start(session))events.push(event)
+ if(callbackError)throw callbackError
+ expect(events.filter(e=>e.type==='error'||e.type==='budget_paused')).toEqual([]);expect(events.filter(e=>e.type==='tool_result').every(e=>!e.isError)).toBe(true);expect(calls).toBe(3)
+ expect(resolvePolicyComparison).toHaveBeenLastCalledWith(id,comparisonRequest,expect.any(AbortSignal))
+})
+it('subscription Plan compares and retrieves the same bounded retained context without proposal capabilities',async()=>{
+ vi.mocked(resolvePolicyComparison).mockResolvedValue(comparisonResult())
+ const api=base(),{model:_model,thinking:_thinking,...common}=api
+ const session:AgentAssistantSession={...common,prompt:'Explain these retained changes',context:{...common.context,currentRequest:{message:'Explain changes',input:''},phase:'plan'},hostTools:retainTools([]),agent:{model:'fixture',run:async(request,callbacks)=>{
+  expect(request.tools.some(tool=>tool.description.startsWith('propose_policy_update:'))).toBe(false)
+  const compare=request.tools.find(tool=>tool.description.startsWith('read_policy_comparison:'))!,read=request.tools.find(tool=>tool.description.startsWith('read_context:'))!
+  const answer=await callbacks.tool({id:'compare',name:compare.name,arguments:comparisonRequest},callbacks.signal)
+  expect(answer.isError).toBe(false);expect(answer.text.length).toBeLessThan(candidate.narrative.length)
+  const reference=contextReference(answer.text);expect(reference).toBeDefined()
+  const excerpt=await callbacks.tool({id:'excerpt',name:read.name,arguments:{id:reference,path:'/structuredContent/before/text',limit:1024}},callbacks.signal)
+  expect(excerpt.isError).toBe(false);expect(excerpt.text).toContain('Exact policy clause.');expect(excerpt.text.length).toBeLessThan(4096)
+  await callbacks.event({type:'message',id:'answer',text:'Retained changes explained with limitations.',phase:'final'})
+ }}}
+ const events:AssistantEvent[]=[];for await(const event of runCodex(planningSession(session)))events.push(event)
+ expect(events.filter(e=>e.type==='error')).toEqual([])
+})
+it('comparison tool refuses malformed/cross-Policy inputs and declares fresh read-only reference behavior',async()=>{
+ vi.mocked(resolvePolicyComparison).mockClear();const tools=retainTools([]),tool=tools.find(t=>t.name==='read_policy_comparison')!
+ expect(tool).toMatchObject({effect:'read',delegation:'read',contextPolicy:{reference:true}});expect(tool.contextPolicy?.immutable).toBeUndefined()
+ for(const args of [{...comparisonRequest,policyId:'policy_'+'0'.repeat(48)},{...comparisonRequest,url:'/api/policies/other'}, {...comparisonRequest,before:{kind:'revision',revisionId:'latest'}}])await expect(tool.execute(args,new AbortController().signal)).rejects.toThrow()
+ expect(resolvePolicyComparison).not.toHaveBeenCalled();expect(policyChatTools({request:()=>undefined,afterTurnId:()=>undefined,retain:async()=>{}})).toEqual([])
+})
+
+it('checks current access before retained comparison retrieval and later provider dispatch',async()=>{
+ vi.mocked(resolvePolicyComparison).mockClear().mockResolvedValue(comparisonResult())
+ let allowed=true,calls=0
+ const session=base();session.prompt='Explain changes';session.hostTools=retainTools([]);session.context!.authorize=async()=>{if(!allowed)throw failureError('permission','desk','not-started')};session.model.call=async()=>{calls++;return new Response()}
+ const managed=await contextualSession(session),answer=await managed.session.hostTools.find(t=>t.name==='read_policy_comparison')!.execute(comparisonRequest,session.signal)
+ const projected=await managed.context.result('read_policy_comparison',answer as import('../assistant/engine').McpToolResult),contextId=(projected.structuredContent as {contextId:string}).contextId
+ expect(contextId).toBeDefined();allowed=false
+ await expect(managed.session.hostTools.find(t=>t.name==='read_context')!.execute({id:contextId,path:'/structuredContent/before/text',limit:1024},session.signal)).rejects.toThrow()
+ await expect(managed.session.model.call('/v1/chat/completions',{method:'POST',headers:{},body:'{}'})).rejects.toThrow()
+ expect(calls).toBe(0);expect(resolvePolicyComparison).toHaveBeenCalledTimes(1)
 })

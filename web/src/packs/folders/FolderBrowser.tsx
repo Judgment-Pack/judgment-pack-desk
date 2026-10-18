@@ -122,7 +122,7 @@ export function FolderLocation({folderId,header=false}:{folderId?:string;header?
 export function FolderFeedback() {
  const state=usePackFolders()
  if(!state)return null
- return state.query.isError?<DeskStatusNotice id="folders" tone="warning" label={msg('Folders unavailable')} actions={<Button onClick={()=>void state.reload()}>{msg('Reload folders')}</Button>}>{msg('Folder organization is unavailable. Packs are shown without folder filtering.')}</DeskStatusNotice>:state.message&&!state.editing?<DeskStatusNotice id="folder-operation" tone="warning" label={msg('Folder changes need attention')} actions={<Button onClick={()=>{state.setMessage('');void state.reload()}}>{msg('Reload folders')}</Button>}>{state.message}</DeskStatusNotice>:null
+ return state.query.isError?<DeskStatusNotice id="folders" tone="warning" label={msg('Folders unavailable')} actions={<Button onClick={()=>void state.reload()}>{msg('Reload folders')}</Button>}>{msg('Folder organization is unavailable. Packs are shown without folder filtering.')}</DeskStatusNotice>:state.message&&!state.editing?<DeskStatusNotice id="folder-operation" tone="warning" label={msg('Folder changes need attention')} actions={<Button onClick={()=>{state.setMessage('');void state.reload()}}>{msg('Reload folders')}</Button>}>{state.message}</DeskStatusNotice>:state.ambiguousGraphAssignments?.length?<DeskStatusNotice id="graph-folder-identity" tone="warning" label={msg('Graph folder placements need review')}>{msg('An older folder placement matches graph drafts from more than one conversation. Its saved metadata is retained. Move each draft explicitly to choose its folder.')}</DeskStatusNotice>:null
 }
 export function SubfolderRows({query}:{query:string}) {
  const state=usePackFolders()

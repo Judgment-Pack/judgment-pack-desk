@@ -467,6 +467,14 @@ func TestPolicySourceSyncRealGatewayCanonicalObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal("real canonical producer/consumer contract refused", err)
 	}
+	for _, data := range [][]byte{prepared.Original, prepared.Document} {
+		if _, err = f.s.artifactRepository().Put(context.Background(), data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = validateArchivedPolicyObservation(context.Background(), f.s.artifactRepository(), prepared.Metadata); err != nil {
+		t.Fatal("offline archive verifier refused exact Gateway producer observation", err)
+	}
 	if prepared.Metadata.Content.BytesDigest != "sha256:"+digestOf(prepared.Original) || prepared.Metadata.Extraction.Content.BytesDigest != "sha256:"+digestOf(prepared.Document) {
 		t.Fatal("cross-repository identities do not bind exact retained bytes")
 	}
