@@ -30,6 +30,9 @@ func aiTestRequest(t *testing.T, ts *httptest.Server, method, path string, body 
 		t.Fatal(err)
 	}
 	bearer(r)
+	if strings.HasPrefix(path, "/api/assistant-approvals/") {
+		pageBearer(privateWorkspaceTestSession(t, ts))(r)
+	}
 	r.Header.Set("Content-Type", "application/json")
 	for k, v := range headers {
 		r.Header.Set(k, v)
