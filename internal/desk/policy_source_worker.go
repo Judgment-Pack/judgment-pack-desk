@@ -276,7 +276,7 @@ func (s *Server) pollPolicySource(parent context.Context, owner, id string) {
 	authority, authErr := s.policySourceAuthorityBasis()
 	err := repository.Update(ctx, func(ledger *policyLedger) (bool, error) {
 		source := ledger.Sources[id]
-		if source == nil {
+		if source == nil || policyRecoverySourceHeld(source) {
 			return false, nil
 		}
 		if (authErr != nil || source.Grant.Authority != authority) && source.State != "authorization-ended" && source.State != "revoked" {
@@ -391,7 +391,7 @@ func (s *Server) pollPolicySource(parent context.Context, owner, id string) {
 	currentAuthority, currentErr := s.policySourceAuthorityBasis()
 	_ = repository.Update(ctx, func(ledger *policyLedger) (bool, error) {
 		source := ledger.Sources[id]
-		if source == nil || source.Generation != admitted.Generation || source.Poll == nil || *source.Poll != *admitted.Poll || ((currentErr != nil || currentAuthority != admitted.Grant.Authority) && admitted.State != "authorization-ended" && admitted.State != "revoked") {
+		if source == nil || policyRecoverySourceHeld(source) || source.Generation != admitted.Generation || source.Poll == nil || *source.Poll != *admitted.Poll || ((currentErr != nil || currentAuthority != admitted.Grant.Authority) && admitted.State != "authorization-ended" && admitted.State != "revoked") {
 			return false, nil
 		}
 		source.Poll = nil

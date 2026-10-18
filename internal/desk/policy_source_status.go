@@ -97,6 +97,7 @@ type policySourceStatusAction struct {
 	Reason  string `json:"reason,omitempty"`
 }
 type policySourceStatusReply struct {
+	Recovery            *policyRecoveryView                 `json:"recovery,omitempty"`
 	Revision            string                              `json:"revision"`
 	PolicyRevision      string                              `json:"policyRevision"`
 	SourceRevision      string                              `json:"sourceRevision"`
@@ -187,6 +188,7 @@ func policyAuthoritySummary(stream *policySourceAuthorityStream) *policySourceAu
 }
 func policyAuthorityCurrentCandidatePublished(record policyStoredRecord, stream *policySourceAuthorityStream) bool {
 	owner, boundary := policyAuthorityOwnership(stream)
+	boundary = policyRecoveryReviewBoundary(record, boundary)
 	if owner.Mode != "desk-managed" {
 		return false
 	}
@@ -200,6 +202,7 @@ func policyAuthorityCurrentCandidatePublished(record policyStoredRecord, stream 
 }
 func policyAuthorityCurrentReview(record policyStoredRecord, stream *policySourceAuthorityStream) *policyReview {
 	owner, boundary := policyAuthorityOwnership(stream)
+	boundary = policyRecoveryReviewBoundary(record, boundary)
 	review := policyCurrentReview(record)
 	if owner.Mode != "desk-managed" || review != nil && review.Sequence <= boundary {
 		return nil
@@ -252,6 +255,9 @@ func evaluatePolicySourceStatus(e policyStatusEvidence, fallback string, mapping
 }
 func policyStatusAvailability(source *policyConnectedSource, authority string) policySourceStatusAvailability {
 	a := policySourceStatusAvailability{State: "unbound"}
+	if policyRecoverySourceHeld(source) {
+		return policySourceStatusAvailability{State: "restored-source-consent-required", Gap: true, ErrorCode: "restored-source-consent-required"}
+	}
 	if source == nil {
 		return a
 	}
@@ -292,6 +298,7 @@ func policySourceStatusView(record policyStoredRecord, source *policyConnectedSo
 	owner, _ := policyAuthorityOwnership(stream)
 	head := policyHead(record)
 	r := policySourceStatusReply{Revision: policyAuthorityRevision(stream), PolicyRevision: policyEffectiveRevision(record, stream), SourceRevision: policySourceRevision(source), CandidateDigest: head.Digest, CandidateRevisionID: head.ID, Ownership: owner, Capability: policySourceStatusCapability{Kind: "unavailable"}, Availability: policyStatusAvailability(source, authority), Configurations: []policySourceStatusConfiguration{}, ExternalVersions: []policyExternalVersion{}, Events: []policySourceAuthorityEvent{}, Actions: map[string]policySourceStatusAction{}}
+	r.Recovery = policyRecoveryProjection(record, stream)
 	if source != nil && source.Binding != nil {
 		r.Binding = source.Binding
 		r.Capability.Kind = source.Binding.Lifecycle.Kind

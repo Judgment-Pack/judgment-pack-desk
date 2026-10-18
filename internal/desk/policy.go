@@ -99,6 +99,7 @@ type policyDocument struct {
 }
 
 type policyReply struct {
+	Recovery                  *policyRecoveryView           `json:"recovery,omitempty"`
 	CurrentCandidatePublished *bool                         `json:"currentCandidatePublished,omitempty"`
 	SourceAuthority           *policySourceAuthoritySummary `json:"sourceAuthority,omitempty"`
 	Revision                  string                        `json:"revision"`
@@ -106,6 +107,7 @@ type policyReply struct {
 }
 
 type policySummary struct {
+	Recovery                  *policyRecoveryView           `json:"recovery,omitempty"`
 	ManagementMode            string                        `json:"managementMode,omitempty"`
 	SourceAuthority           *policySourceAuthoritySummary `json:"sourceAuthority,omitempty"`
 	ID                        string                        `json:"id"`
