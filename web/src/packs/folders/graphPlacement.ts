@@ -19,7 +19,7 @@ export function projectGraphPlacements(document:FolderDocument,drafts:readonly (
    // Keep the original placement recoverable until every surviving draft has
    // an explicit placement. Never project the same alias onto two origins.
    const surviving=[...origins].map(origin=>'graph-draft:'+origin+':'+parts[1]).filter(id=>active.has(id))
-   if(surviving.length&&surviving.every(id=>Object.hasOwn(assignments,id)))delete assignments[key]
+   if(!surviving.length||surviving.every(id=>Object.hasOwn(assignments,id)))delete assignments[key]
    else ambiguous.push(key)
   }else{
    const scoped='graph-draft:'+([...origins][0]??'')+':'+parts[1]

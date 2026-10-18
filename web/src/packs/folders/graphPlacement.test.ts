@@ -25,6 +25,9 @@ it('projects an old placement only for an unambiguous origin and retains ambiguo
  for(const draft of [first,second])expect(packFolder(ambiguous.document,'graph-draft:'+draft.originChatId+':'+draft.draftId)).toBe(HOME_FOLDER)
  // Deleting one origin must not silently assign its old placement to the other.
  expect(projectGraphPlacements(legacy,[second],['origin-one:same-draft']).ambiguous).toEqual(['graph-draft:same-draft'])
+ const orphan=projectGraphPlacements(legacy,[],['origin-one:same-draft','origin-two:same-draft'])
+ expect(orphan.ambiguous).toEqual([]);expect(orphan.document.assignments).toEqual({})
+ expect(()=>apply(orphan.document,{type:'delete',id:'one'})).not.toThrow()
  const resolved=apply(apply(ambiguous.document,{type:'assign',packId:'graph-draft:origin-one:same-draft',folderId:'one'}),{type:'assign',packId:'graph-draft:origin-two:same-draft',folderId:'two'})
  expect(projectGraphPlacements(resolved,[first,second]).document.assignments).toEqual({'graph-draft:origin-one:same-draft':'one','graph-draft:origin-two:same-draft':'two'})
  expect(legacy.assignments).toEqual({'graph-draft:same-draft':'one'})
