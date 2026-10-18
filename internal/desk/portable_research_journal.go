@@ -97,7 +97,7 @@ func validatePortableResearchJournal(run inputResearchRun, id string) error {
 		return bad
 	}
 	for id, binding := range frozen.SearchBindings {
-		if !seen[id] || binding.Version != 1 || binding.Shape != "http" || binding.Adapter.Name != "adapter-sources" || len(binding.FixedArguments) != 2 || !researchSourceName.MatchString(binding.FixedArguments["connection"]) || !researchConnectionRevision.MatchString(binding.FixedArguments["revision"]) || !json.Valid(binding.RequestSchema) {
+		if !seen[id] || !binding.versionMembersValid() || binding.Shape != "http" || binding.Adapter.Name != "adapter-sources" || len(binding.FixedArguments) != 2 || !researchSourceName.MatchString(binding.FixedArguments["connection"]) || !researchConnectionRevision.MatchString(binding.FixedArguments["revision"]) || !json.Valid(binding.RequestSchema) {
 			return bad
 		}
 	}

@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -391,6 +392,8 @@ type researchSourceError struct {
 
 func (e *researchSourceError) Error() string { return e.message }
 
+var searchArgumentRefusal = regexp.MustCompile(`^(search-argument-(?:unsupported|invalid))(?:: [^\n]*)?$`)
+
 func researchSourceFailure(status int, raw []byte) error {
 	var envelope struct {
 		Error string `json:"error"`
@@ -414,6 +417,12 @@ func researchSourceFailure(status int, raw []byte) error {
 			"setup-required":          "The selected search connection needs configuration. Check Web search settings.",
 			"blocked-by-policy":       "Web search is disabled by the connection policy.",
 			"invalid-request":         "The search request was rejected as invalid.",
+		}
+		// A named argument refusal is its token, a colon and one detail naming the
+		// argument. Only the token is read; the detail is never kept.
+		if m := searchArgumentRefusal.FindStringSubmatch(value); m != nil {
+			value = m[1]
+			searchMessages[value] = searchMessages["invalid-request"]
 		}
 		if message, ok := searchMessages[value]; ok {
 			return &researchSourceError{code: value, message: message + " No automatic retry was made."}
