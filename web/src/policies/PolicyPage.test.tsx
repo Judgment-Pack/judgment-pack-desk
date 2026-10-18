@@ -63,6 +63,23 @@ const edit=(text:string)=>fireEvent.change(screen.getByRole('textbox',{name:'Pol
 const clickSave=()=>fireEvent.click(screen.getByRole('button',{name:'Save draft'}))
 const sourceTab=()=>fireEvent.mouseDown(screen.getByRole('tab',{name:'Source'}),{button:0,ctrlKey:false})
 
+it('marks restored approval history as imported assertions and permits a fresh candidate review',async()=>{
+ const saved=policy('restored-head','Retained text','unreviewed');saved.currentCandidatePublished=false;saved.recovery={snapshotId:'restore-one',restoredAt:at,currentnessUnknown:true,freshReviewRequired:true,sourceConsentRequired:false}
+ mount({read:saved});await screen.findByRole('textbox',{name:'Policy text'})
+ expect(screen.getByText('Restored Policy history · Currentness unknown')).toBeTruthy();expect(screen.getByText(/historical records, not authenticated current approval/)).toBeTruthy()
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Approve candidate'})).toHaveProperty('disabled',false));expect(screen.getByRole('button',{name:'Publish version'})).toHaveProperty('disabled',true)
+ expect(screen.getByText('Current candidate unpublished')).toBeTruthy()
+})
+it('offers fresh consent while held source provider controls stay unavailable and retained text can be reviewed locally',async()=>{
+ const recovery={snapshotId:'restore-one',restoredAt:at,currentnessUnknown:true as const,freshReviewRequired:true,sourceConsentRequired:true}
+ const observation={...sourceWire,id:'old-observation',name:'imported.txt',retainedAt:at,semanticDigest:'semantic'} as unknown as PolicySourceObservation
+ const sync:PolicySourceSync={revision:'restored-source',supported:true,pending:true,recovery,state:{version:1,generation:1,state:'authorization-ended',frequencyMinutes:15,gap:true,errorCode:'restored-source-consent-required',grant:{actor,at,resourceId:sourceWire.source.resourceId},binding:{bindingId:sourceWire.bindingId,source:sourceWire.source},observations:[observation],resolutions:[]}}
+ const app=mount({read:{...policy(),recovery},sync});await screen.findByRole('textbox',{name:'Policy text'});sourceTab()
+ expect(await screen.findByText('Historical source authorization · Fresh consent required')).toBeTruthy();await waitFor(()=>expect(screen.getByRole('button',{name:'Choose Google Drive source'})).toHaveProperty('disabled',false))
+ for(const name of ['Check now','Pause checks','Resume checks','Revoke source access'])expect(screen.queryByRole('button',{name})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'Review keeping current candidate'}));expect(await screen.findByText(/This reviews an imported historical source snapshot locally/)).toBeTruthy();expect(app.writes).toEqual([])
+})
+
 it('shows unsupported automatic checks honestly for an older installed Gateway',async()=>{
  mount();await screen.findByRole('textbox',{name:'Policy text'});sourceTab()
  expect(await screen.findByText('The installed Gateway does not support automatic policy source checks.')).toBeTruthy()

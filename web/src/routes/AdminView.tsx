@@ -55,6 +55,7 @@ import { desksAPI } from '../desks/DeskSwitcher'
 import { ConnectionSettings } from '../admin/ConnectionSettings'
 import { DocumentProcessingSettings } from '../admin/DocumentProcessingSettings'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
+import { PolicyRecoverySettings } from '../admin/PolicyRecoverySettings'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { SharedAssistantSettings } from '../assistant/AssistantSettings'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
@@ -193,7 +194,7 @@ export function AdminView() {
               </RetainedPanel>
               <RetainedPanel active={id === 'research'}><WebSearchSettings /></RetainedPanel>
               <RetainedPanel active={id === 'storage'}>
-                <SettingsSection title={msg('Storage & backups')} level={2} variant="standalone" description={msg('Manage pack files, saved conversations and chat backups.')}>
+                <SettingsSection title={msg('Storage & backups')} level={2} variant="standalone" description={msg('Manage pack files, saved conversations, chat backups and project Policy recovery.')}>
                   <SettingsStack>
                     <SourceCard id={sectionId('pack-storage')} title={msg('Pack files')} level={3} presentation="settings"
                       location={sectionLocation(effective, 'storage')} status={sectionStatus(effective, 'storage')}
@@ -201,6 +202,7 @@ export function AdminView() {
                       fields={<StorageKind />}
                       save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocationState(effective.config.storage.packs.dir, listing)]} />} />
                     <ChatDataSettings />
+                    <PolicyRecoverySettings active={id==='storage'} />
                   </SettingsStack>
                 </SettingsSection>
               </RetainedPanel>

@@ -10,6 +10,11 @@ import {type PolicySummary} from '../policies/client'
 import {policyLibraryItems,policyLibraryStatus} from './items'
 
 const row:PolicySummary={id:'shared',title:'Travel policy',artifactVersion:'1.0.0',updatedAt:'2026-10-17T12:00:00Z',candidateDigest:'current-candidate',currentCandidatePublished:false,reviewState:'approved',publicationCount:1}
+it('labels imported approval history without projecting it as current approval',()=>{
+ const item=policyLibraryItems([{...row,recovery:{snapshotId:'restored-one',restoredAt:row.updatedAt,currentnessUnknown:true,freshReviewRequired:true,sourceConsentRequired:true}}])[0]!
+ if(item.kind!=='policy')throw Error('Expected Policy')
+ expect(policyLibraryStatus(item)).toBe('Restored snapshot · Fresh review required · Currentness unknown');expect(policyLibraryStatus(item)).not.toContain('Approved');expect(item.description).toContain('Imported history · Currentness unknown')
+})
 afterEach(()=>{cleanup();vi.unstubAllGlobals();localStorage.clear()})
 function mount({path='/library',read=async()=>({items:[row]})}:{path?:string;read?:()=>Promise<{items:PolicySummary[]}>}={}){
  const fetch=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{

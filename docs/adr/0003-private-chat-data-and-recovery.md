@@ -4,7 +4,8 @@ Status: implemented for personal local Desk; 2026-09-17.
 
 ## Decision
 
-Admin → Storage & data contains Project files, Chat data, and Backups & exports.
+Admin → Workspace → Storage & backups contains Pack files, Chat data, chat
+Backups & exports, and a separate project Policy recovery archive.
 Project pack settings remain in the project configuration. Personal chat paths
 are never read from a project file. API keys stay in the protected configuration
 store; relocating chats does not move model or gateway credentials.
@@ -78,9 +79,11 @@ versioned, bounded to 128 KiB, and included in moves and backups.
 
 An authenticated `GET /api/storage/backup` creates a complete ZIP before serving
 it. The version-1 manifest lists exact allowed filenames, byte counts, SHA-256
-checksums, and creation time. It contains saved chat envelopes and project
-bindings only. Current retained source text and candidate checkpoints travel
-inside those envelopes. Credential-store files, configuration preferences, project files,
+checksums, and creation time. The current allowlist contains saved chat envelopes,
+independent Pack/Graph drafts, project memory, briefs, source reviews, saved Pack
+tests, retained chat attachments and project bindings. Candidate checkpoints and
+source text also travel inside their owning records. Credential-store files,
+configuration preferences, project files and the private Policy ledger/blobs,
 transient files, and unsent browser drafts are excluded. These checksums detect
 corruption; they do not authenticate the author or confer trust on chat content.
 Restored candidates and research still pass the existing runtime/receipt checks.
@@ -98,6 +101,47 @@ the active store, never silently merges. Current files remain as a recovery copy
 The initiating browser reloads after success; other windows still have normal
 If-Match conflict protection. Backups are manual; no browser timer pretends to be
 a scheduled backup service.
+
+## Separate project Policy recovery
+
+[Policy recovery archive](../design/policy-recovery-archive.md) is a distinct
+project-scoped format and manual UI flow. It does not change the v1 chat ZIP,
+its all-project/personal scope or its active-chat-store cutover. The Policy
+archive contains the exact ledger and its closed retained-blob references,
+including historical candidate originals, source observations, external versions
+and operation results. Shared retained artifacts unrelated to that ledger are
+excluded. Chats, Pack/Graph drafts, memory, executable project files, jobs,
+credentials, consent and browser journals are not recovered by this archive.
+
+Export validates and stages a complete archive at the reviewed ledger revision.
+Inspection validates the uploaded archive and a new absent destination with an
+existing private parent. Restore freezes project/session identity, archive
+digest/length, ledger digest and destination/parent identity; the live Policy
+ledger can be unavailable without blocking this independent recovery. It stages
+and syncs one complete private destination, then publishes it with a no-replace
+rename. The source/current project is unchanged. An empty host-created project
+configuration allows explicit opening afterward; restore neither selects that
+folder nor restarts Desk. This is one new-directory publication, not atomic
+replacement of shared chat, project files and Policy stores.
+
+Each restoration creates a fresh project-local barrier before the restored
+ledger can be used. Imported actors, approvals, schedules and source assertions
+remain exact historical records with unknown currentness, not authenticated
+current authority. Fresh review/new publication is required for local activation;
+historical withdrawal remains a current authenticated action. Archived source
+grants, binds, poll leases and cleanup never dispatch, even on the same
+installation. A new explicit source selection and reviewed recurring consent is
+required; local review of exact retained text does not grant provider access.
+
+The restore command has a durable operation identity and destination completion
+marker. A lost or uncertain reply leaves the exact archive/destination frozen;
+authenticated read-only receipt lookup reconciles publication without replay or
+speculative deletion. A missing receipt remains unresolved. Limits are 512 MiB
+expanded data, 2 MiB ZIP overhead, 8192 entries and a 1 MiB manifest; incomplete,
+corrupt, unknown or oversized archives fail rather than becoming partial backups.
+Checksums provide integrity, not author authenticity or anti-rollback protection.
+Older strict readers reject the new restoration fields; do not open restored
+stores with an older build or remove the barrier to bypass that refusal.
 
 ## HTTP surface
 

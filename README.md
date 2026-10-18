@@ -193,7 +193,7 @@ chats, drafts and their sources, keeps the original
 folder for recovery, and leaves API keys in protected settings. New installations
 use a platform data directory; existing histories move only when requested.
 
-Download workspace backup exports saved conversations, independent drafts, candidate checkpoints and
+**Download chat backup** exports saved conversations, independent drafts, candidate checkpoints and
 retained source text. Restore backup validates a ZIP into an empty private folder,
 then switches the active store and reloads Desk. It does not merge histories or
 include credential-store files or project files. Recover project history explicitly links chats and their draft repository
@@ -204,6 +204,27 @@ filesystem, updates its saved startup location, and requires a restart. Historie
 are never merged. Named desks and startup projects with Runner jobs are not moved
 by this first flow. See [project location and local testing](docs/design/project-location.md).
 Unsent browser drafts remain outside backups.
+
+**Policy recovery archive for this project** is a separate download and restore
+flow. It contains the project's exact saved Policy history, operation receipts
+and referenced retained originals/extractions. It excludes chats, Pack/Graph
+drafts, memory, executable project files, jobs, credentials, source consent and
+browser journals. Restore inspects the selected archive and creates a new private,
+inactive project folder; it does not merge, replace the current project, change
+startup settings, open the folder or restart Desk. Explicitly open that folder to
+use the recovered Policies. It contains an empty host-created project configuration,
+not the original project's packs, graphs or jobs.
+
+Restored approvals, schedules and source status are imported historical assertions
+with unknown currentness. Integrity checks detect corruption, not a trusted author
+or current approval. Fresh review and a new publication are required before local
+release activation; provider access requires new reviewed consent. No archived
+source reads, cleanup or pending operations run automatically. A lost restore
+response is recovered by **Check restore result**, which reads the exact receipt
+without repeating restore. Archives are unencrypted; the separate Policy archive
+limit is 512 MiB expanded data plus 2 MiB ZIP overhead. Unsupported or incomplete
+archives are refused in full. See [Policy recovery](docs/design/policy-recovery-archive.md)
+for custody, authority holds, downgrade limits and recovery behavior.
 
 See [private data and recovery](docs/adr/0003-private-chat-data-and-recovery.md) for
 limits, concurrency and recovery behavior, and the proposed
