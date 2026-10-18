@@ -383,6 +383,9 @@ func (s policyService) execute(ctx context.Context, command policyCommand) (poli
 		if err = policyValidateCommand(command, record); err != nil {
 			return false, err
 		}
+		if command.Kind == "publish" && policySourcePending(record, ledger.Sources[record.ID]) {
+			return false, policyRefusal(409, "source-update-unresolved", "Review the latest connected source update before publishing this candidate.")
+		}
 		instant := time.Now()
 		if s.clock != nil {
 			instant = s.clock()

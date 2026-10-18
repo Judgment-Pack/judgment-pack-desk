@@ -49,9 +49,11 @@ type policyStoredOperation struct {
 }
 
 type policyLedger struct {
-	SchemaVersion int                              `json:"schemaVersion"`
-	Policies      map[string]policyStoredRecord    `json:"policies"`
-	Operations    map[string]policyStoredOperation `json:"operations"`
+	// Optional v1 source tracking extends private v2 ledgers without changing candidate identity.
+	Sources       map[string]*policyConnectedSource `json:"sources,omitempty"`
+	SchemaVersion int                               `json:"schemaVersion"`
+	Policies      map[string]policyStoredRecord     `json:"policies"`
+	Operations    map[string]policyStoredOperation  `json:"operations"`
 }
 
 // A domain transaction owns metadata and operation receipts together. Immutable
@@ -226,11 +228,11 @@ func validatePolicyLedger(ledger policyLedger) error {
 		}
 	}
 	for key, operation := range ledger.Operations {
-		if key != operation.OperationID || !policyOperationIDForm.MatchString(key) || !contains([]string{"create", "save-draft", "review", "publish"}, operation.Kind) || ledger.Policies[operation.PolicyID].ID == "" || !retainedArtifactDigest.MatchString(operation.RequestDigest) || !operation.Result.valid() {
+		if key != operation.OperationID || !policyOperationIDForm.MatchString(key) || !contains(append([]string{"create", "save-draft", "review", "publish"}, policySourceKinds()...), operation.Kind) || ledger.Policies[operation.PolicyID].ID == "" || !retainedArtifactDigest.MatchString(operation.RequestDigest) || !operation.Result.valid() {
 			return bad
 		}
 	}
-	return nil
+	return validatePolicySources(ledger)
 }
 
 // Event sequence is committed under the same metadata lock as the history and

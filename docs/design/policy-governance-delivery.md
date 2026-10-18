@@ -2,9 +2,11 @@
 
 Status: local implementation, 2026-10-18. Library consolidation and the local
 Policy service are merged into `integration/v0.13` through Desk #453 and #458.
-Desk #459 adds retained source import and shared Policy chat to the private,
-single-administrator service and full-page editor. It does not claim team governance, portable Policy conformance,
-automatic source synchronization or execution admission.
+Desk #459 / PR #460 adds retained source import and shared Policy chat to the
+private, single-administrator service and full-page editor. That PR remains
+pending independent review. Desk #461 adds the connected-source path described
+below, stacked on #460. Neither slice claims team governance, portable Policy
+conformance or execution admission.
 
 ## Library foundation
 
@@ -209,9 +211,12 @@ These controls manage local policy content. They do not create a pack, change a 
   profiles. Private local draft records are not a standardized Policy export.
 - Runtime supplies deterministic checks only for a supported, pinned contract.
   The editor must not advertise interoperable validation until that exists.
-- Gateway supplies actual connected source observations. Automatic sync requires
-  one real supported provider, lifecycle authority mapping, reconciliation and
-  gap/freshness handling; a file reader alone is not this capability.
+- Gateway supplies actual connected source observations. The first Desk path
+  under #461 is Google Drive snapshot polling, using the separate recurring host
+  controls proposed under Gateway #295. It requires a Gateway build advertising
+  those controls; the currently pinned release must show unsupported state.
+  Drive does not supply policy lifecycle authority. External approval/publication
+  mapping remains a separate dependency.
 - Runner and actual action executors need retained release/adoption closure and
   authoritative start admission before withdrawal protection can be claimed.
   Policy publication does not upgrade or authorize existing jobs.
@@ -224,3 +229,92 @@ These controls manage local policy content. They do not create a pack, change a 
 Packs/graphs remain executable authority; structured requirements are optional.
 No policy-specific evaluator, AI loop, generic workflow builder, remote service
 deployment or current-run withdrawal enforcement is part of this Library slice.
+
+## Connected policy sources (#461)
+
+This slice connects a Desk-managed policy to one explicitly selected Google Drive
+file. It is a recurring read grant, separate from the one-use file picker grant,
+AI permissions and the browser session. Consent explains that checks continue
+after ordinary sign-out while Desk runs and resume on restart. The administrator
+can pause checks or revoke access. Changing the sign-in authority or disconnecting
+Drive ends the old consent; restoring identical sign-in settings does not revive
+it. Browser tokens are never retained as background credentials.
+
+The Source page uses the shared connection picker, page controls, table, private
+query refresh and loading/error components. It shows check frequency, last attempt,
+last success, freshness gaps and retained snapshots. Frequencies are 5, 15 or 60
+minutes. This is snapshot polling, not a complete provider event stream: changes
+between successful checks may be missed. Missing or inaccessible files and failed
+extraction never imply that a policy was withdrawn.
+
+Each admitted observation verifies the original byte identity and the canonical
+attachment record using the existing Gateway canonicalization boundary. Original
+content and extraction records are retained separately. A semantic projection
+ignores acquisition timestamps and duration when deciding whether another source
+update is needed. A provider revision, content, processing configuration or other
+meaningful metadata change creates a new update. Unchanged checks update freshness
+without consuming another source-history entry or retaining duplicate artifacts.
+These private host observations are not signed Gateway receipts.
+
+The first snapshot and later meaningful changes require an explicit source-review
+decision. **Keep current candidate** binds the decision to the latest source
+observation, saved candidate revision/digest and workflow digest. It neither
+approves nor publishes the policy. Users may instead edit and save the candidate,
+then review the saved text against the source. No check automatically replaces the
+editable narrative, original imported file, approvals, publications or job pins.
+An open review retains its original comparison and refuses confirmation after a
+new source or candidate arrives. Connecting a replacement source requires its own
+first snapshot and review. If that replacement is canceled before producing any
+snapshot, a prior resolution remains usable only for the exact retained source
+and candidate it already covered; unresolved retained updates remain unresolved.
+
+Source metadata and policy metadata share the same repository transaction.
+Publication checks the latest unresolved source update inside its commit, closing
+the race between a background observation and publication. Source refresh has a
+separate CAS revision and does not replace or rebase a dirty editor. Every source
+action also checks the exact saved policy basis. Changing a candidate, workflow or
+source invalidates the corresponding source-review resolution.
+
+The private source state includes a durable pending bind, Gateway operation ID,
+binding generation, scheduling state, observation history and reviewed resolutions.
+Gateway binding requests are body-bound and recoverable after a lost response;
+revoked identities cannot be recreated by retrying an old operation. Pause,
+revocation and authorization changes fence late results. Cleanup reconciles
+uncertain grants separately from authority to read the source. No model calls are
+involved in checking or retaining a snapshot.
+Drive disconnect durably invalidates local source authority before provider
+dispatch. A lost disconnect reply or failed per-project status update therefore
+cannot permit a previously admitted response to be retained afterward.
+
+The optional `sources` member extends the unreleased private v2 Policy ledger.
+Older ledgers without it remain readable. Older Desk builds with strict decoding
+may refuse a ledger containing it; this is not a portable interchange upgrade.
+Project backups must retain policy metadata and referenced artifacts together.
+Background authorization also depends on the installation's private sign-in
+authority epoch, so moving project data alone does not transfer recurring consent.
+
+The new private routes are `GET` and `POST /api/policies/{id}/source-sync`, plus
+policy-scoped reads/downloads of retained observations. Source mutations use the
+existing operation receipt and read-only recovery boundary. Gateway exposes four
+Drive host controls: `source-bind`, `source-bindings`, `source-revoke`, and
+`source-observe`. They are not available as model-facing tools. The initial Gateway
+bounds are 4 MiB original files, 16 MiB observation payloads, 32 active bindings
+and 48 lifetime binding-operation records. Capacity refuses new work rather than
+evicting recovery identities. Default host extraction has no automatic configured
+OCR opt-in; partial extraction remains visible for review.
+
+The implementation and its synthetic-provider acceptance evidence must be reviewed
+before release. No production component lock is advanced to an unpublished build.
+External lifecycle mapping, source event feeds, governing adoption and withdrawal
+admission remain tracked by #455 and the corresponding Spec/Runtime/Runner issues.
+
+Verification includes source admission and restart, unchanged-poll artifact counts,
+processor/configuration changes, independent acquisition/processing timestamps,
+backwards clocks, retained capacity, canceled replacement sources, lost bind
+responses, publication races, and disconnect despite a lost response or failed
+project annotation. UI tests cover unavailable capabilities, unchanged dirty
+editors, durable operation recovery and a source update during an open review.
+The dedicated `policy-source-contract.yml` workflow builds a pinned synthetic
+Gateway producer and real canonicalizer, generates an observation, and checks
+those unchanged bytes with Desk. Its evidence records actual source revisions,
+build identities and fixture hashes separately from official releases.

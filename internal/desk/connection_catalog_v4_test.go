@@ -2,6 +2,7 @@ package desk
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
@@ -56,5 +57,35 @@ func TestConnectionCatalogV4ActualGateway(t *testing.T) {
 	got, err := runConnectionCatalog(ctx, cmd)
 	if err != nil || string(got) != string(raw) {
 		t.Fatalf("Gateway catalog not admitted unchanged: %v", err)
+	}
+}
+
+func TestConnectionCatalogRecurringSourceOperationBound(t *testing.T) {
+	raw, err := os.ReadFile("../../web/src/testing/gatewayCatalogV4.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog map[string]any
+	_ = json.Unmarshal(raw, &catalog)
+	for _, row := range catalog["providers"].([]any) {
+		provider := row.(map[string]any)
+		if provider["id"] == "google-drive" {
+			ops := provider["operations"].([]any)
+			for _, op := range []string{"source-bind", "source-bindings", "source-revoke", "source-observe"} {
+				ops = append(ops, op)
+			}
+			provider["operations"] = ops
+			if len(ops) != 18 {
+				t.Fatalf("real Drive control fixture changed: %d", len(ops))
+			}
+		}
+	}
+	raw, _ = json.Marshal(catalog)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDeskCatalogHelper$")
+	cmd.Env = append(os.Environ(), "DESK_CATALOG_HELPER="+string(raw))
+	if _, err = runConnectionCatalog(ctx, cmd); err != nil {
+		t.Fatal("bounded new Drive operations made catalog unavailable", err)
 	}
 }

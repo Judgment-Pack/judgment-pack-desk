@@ -167,6 +167,10 @@ type Server struct {
 	inputEvaluationDone   chan struct{}
 	inputResearchCancel   context.CancelFunc
 	inputResearchDone     chan struct{}
+	policySourceCancel    context.CancelFunc
+	policySourceDone      chan struct{}
+	policySourceCall      func(context.Context, string, any) (json.RawMessage, error)
+	policySourceCanon     func(context.Context, []byte) ([]byte, error)
 	// startup is the identity of the project Desk was started on, which
 	// names what Desk keeps for it (startup_identity.go); unused on a desk
 	// Desk made.
@@ -466,6 +470,7 @@ func New(cfg Config) (*Server, error) {
 	} else {
 		s.openSignIn()
 	}
+	s.initPolicySourceAuthority()
 	s.registerSignIn()
 	if cfg.LocalGatewayBundle != "" {
 		executable, _ := os.Executable()
@@ -553,6 +558,10 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/policies/{policy}/review", s.handlePolicies)
 	s.mux.HandleFunc("POST /api/policies/{policy}/publish", s.handlePolicies)
 	s.mux.HandleFunc("GET /api/policy-operations/{operation}", s.handlePolicies)
+	s.mux.HandleFunc("GET /api/policies/{policy}/source-sync", s.handlePolicySourceSync)
+	s.mux.HandleFunc("POST /api/policies/{policy}/source-sync", s.handlePolicySourceSync)
+	s.mux.HandleFunc("GET /api/policies/{policy}/source-sync/observations/{observation}", s.handlePolicySourceSync)
+	s.mux.HandleFunc("GET /api/policies/{policy}/source-sync/observations/{observation}/original", s.handlePolicySourceSync)
 	s.mux.HandleFunc("GET /api/input-preparations", s.handleInputPreparations)
 	s.mux.HandleFunc("POST /api/input-preparations", s.handleInputPreparations)
 	s.mux.HandleFunc("GET /api/input-preparations/{preparation}", s.handleInputPreparations)
@@ -702,6 +711,7 @@ func New(cfg Config) (*Server, error) {
 	s.startInputEvaluations()
 	s.initModelProviders()
 	s.startInputResearch()
+	s.startPolicySources()
 	// This desk's stamping, off the decision path: a loop that stamps where
 	// the owner set an authority, until Close (stamping.go).
 	s.startStamping()
@@ -737,6 +747,10 @@ func (s *Server) Close() error {
 
 func (s *Server) closeAll() error {
 	s.closeDesks()
+	if s.policySourceCancel != nil {
+		s.policySourceCancel()
+		<-s.policySourceDone
+	}
 	// Stop admission before waiting: upgraded sockets are not tracked by
 	// http.Server.Shutdown, and a relay may still be starting its subprocess.
 	s.mu.Lock()

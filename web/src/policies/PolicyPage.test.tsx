@@ -7,7 +7,8 @@ import {UnsavedChangesProvider} from '../shell/UnsavedChanges'
 import {DeskNoticesProvider} from '../shell/DeskNotices'
 import {PolicyPage} from './PolicyPage'
 import {policyLibraryItems,folderAssignmentKey,deletableLibraryDraft} from '../library/items'
-import {type PolicyReply,type PolicyMutationReply,type PolicyWrite,writePolicy} from './client'
+import {type PolicyReply,type PolicyMutationReply,type PolicyWrite,type PolicySourceSync,type PolicySourceObservation,writePolicy} from './client'
+import sourceWire from '../../../internal/desk/testdata/policy-source-observation.json'
 
 vi.mock('./PolicyAssistant',()=>({PolicyAssistant:()=>null}))
 
@@ -18,7 +19,7 @@ function policy(revision='head-one',narrative='Expense policy',reviewState:Polic
  return {revision,document:{id:'policy-one',managementMode:'desk-managed',createdAt:at,updatedAt:at,candidate,workflow,workflowDigest:'workflow-one',reviewState,revisions:[{id:candidate.revisionId,sequence:1,digest:candidate.digest,title:candidate.title,artifactVersion:candidate.artifactVersion,content:candidate.content,workflow,workflowDigest:'workflow-one',at,actor}],reviews:[],publications:[]}}
 }
 const result=(reply:PolicyReply,delivery:'committed'|'recovered'='committed'):PolicyMutationReply=>({delivery,receipt:{operationId:'fixture'},policy:reply})
-function mount({path='/policies/policy-one',read=policy(),mutate=async()=>result(policy('head-two'))}:{path?:string;read?:PolicyReply;mutate?:(request:PolicyWrite)=>Promise<PolicyMutationReply>}={}){
+function mount({path='/policies/policy-one',read=policy(),sync={revision:'source-none',supported:false,pending:false},mutate=async()=>result(policy('head-two'))}:{path?:string;read?:PolicyReply;sync?:PolicySourceSync;mutate?:(request:PolicyWrite)=>Promise<PolicyMutationReply>}={}){
  let current=read,recovery:PolicyMutationReply|undefined,recoveryMissing=false,readFailure=false
  const writes:PolicyWrite[]=[],requests:string[]=[]
  const fetch=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
@@ -28,6 +29,8 @@ function mount({path='/policies/policy-one',read=policy(),mutate=async()=>result
    if(readFailure)throw new Error('fixture read failed')
    return Response.json(current)
   }
+  if(url==='/api/policies/policy-one/source-sync'&&(!init?.method||init.method==='GET'))return Response.json(sync)
+  if(url.startsWith('/api/policies/policy-one/source-sync/observations/'))return Response.json({document:sourceWire.document})
   if(url==='/api/policies/policy-one/source')return new Response(new TextEncoder().encode('# Original\r\nCafé 中文\r\n'))
   if(url.startsWith('/api/policies/policy-one/revisions/'))return Response.json({candidate:{...policy().document.candidate,narrative:'Immutable original text'},workflow:current.document.workflow,workflowDigest:'workflow-one',at,actor})
   if(url==='/api/policies'){
@@ -49,9 +52,46 @@ function mount({path='/policies/policy-one',read=policy(),mutate=async()=>result
 }
 import {Outlet} from 'react-router-dom'
 function PolicyRoutes(){return <Outlet/>}
-afterEach(()=>{cleanup();vi.unstubAllGlobals()})
+afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionStorage.clear()})
 const edit=(text:string)=>fireEvent.change(screen.getByRole('textbox',{name:'Policy text'}),{target:{value:text}})
 const clickSave=()=>fireEvent.click(screen.getByRole('button',{name:'Save draft'}))
+const sourceTab=()=>fireEvent.mouseDown(screen.getByRole('tab',{name:'Source'}),{button:0,ctrlKey:false})
+
+it('shows unsupported automatic checks honestly for an older installed Gateway',async()=>{
+ mount();await screen.findByRole('textbox',{name:'Policy text'});sourceTab()
+ expect(await screen.findByText('The installed Gateway does not support automatic policy source checks.')).toBeTruthy()
+ expect((screen.getByRole('button',{name:'Choose Google Drive source'}) as HTMLButtonElement).disabled).toBe(true)
+})
+it('preserves the frozen editor while source freshness changes and blocks publication on unresolved updates',async()=>{
+ const app=mount({read:policy('head-one','Saved candidate','approved')});await screen.findByRole('textbox',{name:'Policy text'});edit('My unsaved local candidate')
+ await act(()=>app.cache.setQueryData(['policies','policy-one','source-sync'],{revision:'observed-two',supported:true,pending:true}))
+ expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('My unsaved local candidate')
+ expect((screen.getByRole('button',{name:'Publish version'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(screen.getByText('Resolve the latest source update before publication.')).toBeTruthy()
+ expect(app.writes).toHaveLength(0)
+})
+it('journals uncertain source commands before dispatch and recovers after remount without replay',async()=>{
+ const sync:PolicySourceSync={revision:'source-active',supported:true,pending:true,state:{version:1,generation:1,state:'active',frequencyMinutes:15,gap:false,grant:{actor,at,resourceId:'file-A'},binding:{bindingId:'binding-A',source:{provider:'google-drive',accountId:'account-A',resourceId:'file-A'}},observations:[],resolutions:[]}}
+ const first=mount({sync,mutate:async()=>{throw new Error('lost reply')}});await screen.findByRole('textbox',{name:'Policy text'});sourceTab();fireEvent.click(await screen.findByRole('button',{name:'Pause checks'}));await screen.findByRole('button',{name:'Check operation result'})
+ expect(first.writes).toHaveLength(1)
+ const journal=sessionStorage.getItem('jpack.policy-source.pending.v1:'+window.location.host+':policy-one');expect(JSON.parse(journal!).body.action).toBe('pause')
+ cleanup()
+ const second=mount({sync});second.setRecovery({...result(policy()),receipt:{operationId:first.writes[0]!.body.operationId,kind:'source-pause',policyId:'policy-one'},sourceSync:sync});await screen.findByRole('textbox',{name:'Policy text'});sourceTab();fireEvent.click(await screen.findByRole('button',{name:'Check operation result'}));await waitFor(()=>expect(sessionStorage.getItem('jpack.policy-source.pending.v1:'+window.location.host+':policy-one')).toBeNull())
+ expect(second.writes).toHaveLength(0);expect(second.requests.some(path=>path.startsWith('/api/policy-operations/'))).toBe(true)
+})
+it('freezes the reviewed source and candidate when a newer source arrives while confirmation is open',async()=>{
+ const observation={...sourceWire,id:sourceWire.observationId,retainedAt:at,semanticDigest:'semantic-a',name:'policy.txt',original:{sha256:sourceWire.content.bytesDigest.slice(7),bytes:sourceWire.content.byteLength},document:{sha256:sourceWire.extraction.content.bytesDigest.slice(7),bytes:sourceWire.extraction.content.byteLength}} as PolicySourceObservation
+ const sync:PolicySourceSync={revision:'source-a',supported:true,pending:true,state:{version:1,generation:1,state:'active',frequencyMinutes:15,gap:false,grant:{actor,at,resourceId:sourceWire.source.resourceId},binding:{bindingId:sourceWire.bindingId,source:sourceWire.source},observations:[observation],resolutions:[]}}
+ const app=mount({sync});await screen.findByRole('textbox',{name:'Policy text'});sourceTab();fireEvent.click(await screen.findByRole('button',{name:'Review keeping current candidate'}))
+ const dialog=screen.getByRole('dialog',{name:'Keep the current candidate?'})
+ expect(within(dialog).getByText('7')).toBeTruthy()
+ const newer={...observation,id:'observation-b',sourceRevision:'8'}
+ await act(()=>app.cache.setQueryData(['policies','policy-one','source-sync'],{...sync,revision:'source-b',state:{...sync.state!,observations:[observation,newer]}}))
+ expect(within(dialog).getByText('7')).toBeTruthy();expect(within(dialog).queryByText('8')).toBeNull()
+ await waitFor(()=>expect(within(dialog).getByRole('alert').textContent).toContain('The policy or source changed.'))
+ expect((within(dialog).getByRole('button',{name:'Keep current candidate'}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.click(within(dialog).getByRole('button',{name:'Keep current candidate'}));expect(app.writes).toHaveLength(0)
+})
 it('creates an independent policy, opens its stable page, and reloads the exact saved text',async()=>{
  const saved=policy('created','Pasted policy text'),app=mount({path:'/policies/new',mutate:async()=>result(saved)})
  expect((screen.getByRole('textbox',{name:'Review comment'}) as HTMLTextAreaElement).disabled).toBe(true)

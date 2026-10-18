@@ -156,7 +156,8 @@ type policyOperationReceipt struct {
 }
 
 type policyMutationReply struct {
-	Delivery string                 `json:"delivery"`
-	Receipt  policyOperationReceipt `json:"receipt"`
-	Policy   policyReply            `json:"policy"`
+	SourceSync *policySourceSyncReply `json:"sourceSync,omitempty"`
+	Delivery   string                 `json:"delivery"`
+	Receipt    policyOperationReceipt `json:"receipt"`
+	Policy     policyReply            `json:"policy"`
 }

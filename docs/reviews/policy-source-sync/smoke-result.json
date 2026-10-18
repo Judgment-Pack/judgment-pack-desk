@@ -1,0 +1,142 @@
+{
+  "passed": true,
+  "scope": "Real isolated local sign-in and policy creation; source presentation and A-to-B review use explicitly mocked source API responses. Not live Google end-to-end.",
+  "policyId": "policy_6ea597e92e27073cb6e95dcb26720bf405993587ecfb5633",
+  "actualLocalSignIn": {
+    "sessionActive": true,
+    "localAccess": true
+  },
+  "actualUnsupportedGateway": {
+    "revision": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "supported": false,
+    "pending": false
+  },
+  "syntheticSourceAPI": true,
+  "sourceUpdatesTable": true,
+  "extractionVisible": true,
+  "frozenAReviewAfterB": true,
+  "staleSaveDisabled": true,
+  "noSourceWriteDispatched": true,
+  "savedCandidateUnchanged": true,
+  "policyMutations": [
+    {
+      "path": "/api/policies",
+      "status": 200,
+      "delivery": "committed",
+      "policyId": "policy_6ea597e92e27073cb6e95dcb26720bf405993587ecfb5633",
+      "actor": {
+        "kind": "local",
+        "subject": "local user"
+      }
+    }
+  ],
+  "sourceReads": [
+    "A",
+    "B"
+  ],
+  "sourceWrites": [],
+  "modelRequests": [],
+  "externalRequests": [],
+  "pageErrors": [],
+  "geometries": [
+    {
+      "label": "real unsupported Gateway, desktop",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "surface": "page",
+      "excludedModalBackgroundContainers": 0,
+      "scrollContainers": [
+        {
+          "role": "tabpanel",
+          "client": 766,
+          "scroll": 766
+        },
+        {
+          "role": null,
+          "client": 751,
+          "scroll": 751
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "label": "synthetic source table, desktop",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "surface": "page",
+      "excludedModalBackgroundContainers": 0,
+      "scrollContainers": [
+        {
+          "role": "tabpanel",
+          "client": 766,
+          "scroll": 766
+        },
+        {
+          "role": null,
+          "client": 751,
+          "scroll": 751
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "label": "frozen A review after B, desktop",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "surface": "modal",
+      "excludedModalBackgroundContainers": 0,
+      "scrollContainers": [],
+      "dialogs": [
+        {
+          "left": 480,
+          "right": 960,
+          "client": 478,
+          "scroll": 478
+        }
+      ]
+    },
+    {
+      "label": "frozen A review after B, 420px",
+      "viewport": 420,
+      "documentWidth": 420,
+      "surface": "modal",
+      "excludedModalBackgroundContainers": 0,
+      "scrollContainers": [],
+      "dialogs": [
+        {
+          "left": 16,
+          "right": 404,
+          "client": 386,
+          "scroll": 386
+        }
+      ]
+    },
+    {
+      "label": "synthetic source table, 420px",
+      "viewport": 420,
+      "documentWidth": 420,
+      "surface": "page",
+      "excludedModalBackgroundContainers": 0,
+      "scrollContainers": [
+        {
+          "role": "tabpanel",
+          "client": 354,
+          "scroll": 354
+        },
+        {
+          "role": null,
+          "client": 339,
+          "scroll": 339
+        }
+      ],
+      "dialogs": []
+    }
+  ],
+  "screenshots": [
+    "unsupported-gateway-desktop.png",
+    "synthetic-source-table-desktop.png",
+    "synthetic-frozen-review-desktop.png",
+    "synthetic-frozen-review-420.png",
+    "synthetic-source-table-420.png"
+  ]
+}

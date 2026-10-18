@@ -34,18 +34,20 @@ type signInAttempt struct {
 	problem                                string
 }
 type signInState struct {
-	mu            sync.Mutex
-	active        *signInRecord
-	problem       bool
-	generation    uint64
-	attempts      map[string]*signInAttempt
-	lastTest      map[string]string
-	limitStart    time.Time
-	limitCount    int
-	passwordSlots chan struct{}
-	slots         chan struct{}
-	epoch         context.Context
-	cancelEpoch   context.CancelFunc
+	// Serializes durable source commits with authentication-policy changes.
+	policySourceMu sync.RWMutex
+	mu             sync.Mutex
+	active         *signInRecord
+	problem        bool
+	generation     uint64
+	attempts       map[string]*signInAttempt
+	lastTest       map[string]string
+	limitStart     time.Time
+	limitCount     int
+	passwordSlots  chan struct{}
+	slots          chan struct{}
+	epoch          context.Context
+	cancelEpoch    context.CancelFunc
 }
 
 func (s *Server) openSignIn() {
@@ -141,6 +143,9 @@ func (s *assistantStore) readSignIn() (*signInRecord, error) {
 	return &record, nil
 }
 func (s *assistantStore) writeSignIn(record signInRecord) error {
+	if err := s.rotatePolicySourceAuthority(); err != nil {
+		return err
+	}
 	if !s.usable() {
 		return s.problem
 	}
@@ -181,6 +186,13 @@ func ResetSignIn() error {
 	defer store.Close()
 	if !store.usable() {
 		return store.problem
+	}
+	return resetSignInStore(store)
+}
+
+func resetSignInStore(store *assistantStore) error {
+	if err := store.rotatePolicySourceAuthority(); err != nil {
+		return err
 	}
 	err := store.secrets.Remove(signInFileName)
 	if errors.Is(err, fs.ErrNotExist) {

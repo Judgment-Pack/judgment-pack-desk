@@ -66,7 +66,7 @@ export function parseConnectionCatalog(raw: unknown) {
  if (!value || (value.version !== 2 && value.version !== 3 && value.version !== 4) || !Array.isArray(value.sources) || !Array.isArray(value.providers) || value.providers.length > 32) throw new Error('Invalid connection catalog')
  const seen = new Set<string>(), providers: ConnectionDescriptor[] = [], unsupported: ConnectionDescriptor[] = []
  for (const item of value.providers) {
-  if (!item || typeof item.id !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(item.id) || seen.has(item.id) || typeof item.queryRequired !== 'boolean' || !Array.isArray(item.operations) || item.operations.length > 16 || !item.operations.every((op: unknown) => typeof op === 'string' && /^[a-z][a-z0-9-]{0,47}$/.test(op)) || new Set(item.operations).size !== item.operations.length) throw new Error('Invalid connection catalog')
+  if (!item || typeof item.id !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(item.id) || seen.has(item.id) || typeof item.queryRequired !== 'boolean' || !Array.isArray(item.operations) || item.operations.length > 32 || !item.operations.every((op: unknown) => typeof op === 'string' && /^[a-z][a-z0-9-]{0,47}$/.test(op)) || new Set(item.operations).size !== item.operations.length) throw new Error('Invalid connection catalog')
   seen.add(item.id)
   if (value.version === 3 || value.version === 4) {
    if (!validPresentation(item) || value.version === 4 && !validResearchSource(item.source,true)) throw new Error('Invalid connection catalog')

@@ -15,9 +15,10 @@ import {QueryStatusNotice} from '../shell/QueryStatusNotice'
 import {useConfirmDiscard,useRegisteredChanges} from '../shell/UnsavedChanges'
 import {PolicyAssistant} from './PolicyAssistant'
 import {PolicySource} from './PolicySource'
+import {PolicyConnectedSource} from './PolicyConnectedSource'
 import {preparePolicyImport} from './sourceImport'
 import {PolicyHistory} from './PolicyHistory'
-import {POLICIES_KEY,PolicyRequestError,policyHref,policyQuery,readPolicy,recoverPolicyOperation,writePolicy,type PolicyReply,type PolicyWrite,type PolicyMutationReply,type PolicyImport} from './client'
+import {POLICIES_KEY,PolicyRequestError,policyHref,policyQuery,policySourceSyncQuery,readPolicy,recoverPolicyOperation,writePolicy,type PolicyReply,type PolicyWrite,type PolicyMutationReply,type PolicyImport} from './client'
 import styles from './PolicyPage.module.css'
 
 type Buffer={title:string;narrative:string;artifactVersion:string}
@@ -41,6 +42,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const [busy,setBusy]=useState(false),[error,setError]=useState<PolicyRequestError>(),[pending,setPending]=useState<{operation:PolicyWrite;submitted:Buffer;result?:PolicyMutationReply}>()
  const [latest,setLatest]=useState<PolicyReply>(),[comment,setComment]=useState(''),[publishOpen,setPublishOpen]=useState(false),[tab,setTab]=useState('draft'),[notice,setNotice]=useState('')
  const active=useRef(false),cache=useQueryClient(),navigate=useNavigate(),confirm=useConfirmDiscard()
+ const sourceQuery=useQuery(policySourceSyncQuery(saved?.document.id))
  const dirty=!!imported&&!saved||!equal(value,saved?fields(saved):blank)
  const observedLatest=latest??(observed&&saved&&observed.revision!==saved.revision?observed:undefined)
  const held=!!pending,disabled=busy||held||importBusy
@@ -99,13 +101,14 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const rebase=()=>{if(!observedLatest)return;setSaved(observedLatest);setLatest(undefined);setNotice(msg('Your text is preserved against the latest saved revision. Save draft to create a new candidate.'))}
  const reload=async()=>{if(!observedLatest||disabled||dirty&&!await confirm(msg('Load the latest saved policy and discard your unsaved changes?'),{name:value.title}))return;setSaved(observedLatest);setValue(fields(observedLatest));setLatest(undefined);setError(undefined);setNotice('')}
  const document=saved?.document,currentPublished=document?.publications.some(publication=>publication.candidateRevisionId===document.candidate.revisionId&&publication.workflowDigest===document.workflowDigest),versionPublished=document?.publications.some(publication=>publication.artifactVersion===document.candidate.artifactVersion)
+ const sourceBlocked=!!saved&&(sourceQuery.isPending||sourceQuery.isError||sourceQuery.data?.pending===true)
  const reviewDisabled=disabled||dirty||!!observedLatest||!saved
  const approveDisabled=reviewDisabled||!!document?.workflow.independentReviewRequired||!document?.candidate.title.trim()||!document?.candidate.narrative.trim()||!document?.candidate.artifactVersion.trim()
  const reviewHint=held?msg('Recover the pending operation before continuing.'):observedLatest?msg('Review the latest saved revision before continuing.'):dirty?msg('Save draft before reviewing or publishing.'):!saved?msg('Save this draft to begin review.'):document?.workflow.independentReviewRequired?msg('This workflow requires a different reviewer. Independent review is unavailable in this local installation.'):undefined
  return <>
   {saved&&<PolicyAssistant id={saved.document.id} editing={dirty} busy={disabled}/>}
   <PageHeader variant="title" title={msg('Library')} titleHref="/library?type=policy" context={value.title||msg('New policy')} meta={msg('Policy')} actions={<Button variant="primary" disabled={disabled||!dirty&&!!saved||!!observedLatest} onClick={()=>void save().catch(()=>{})}>{busy?msg('Working…'):msg('Save draft')}</Button>}/>
-  <Tabs scrollable variant="page" label={msg('Policy')} value={tab} onValueChange={setTab} fillPanel={tab} tabs={[
+  <Tabs scrollable keepMounted variant="page" label={msg('Policy')} value={tab} onValueChange={setTab} fillPanel={tab} tabs={[
    {value:'draft',label:msg('Draft'),panel:<div className={styles.panel}><PageBody width="wide"><SettingsStack>
     {!saved&&<SettingsSection level={2} variant="plain" title={msg('Import file')} description={msg('UTF-8 Markdown (.md) or plain text (.txt), up to 128 KiB. Select a file, edit its draft text, then Save draft to retain the original.')}>
      <Field label={msg('Import file')}>{wiring=><Input {...wiring} type="file" accept=".md,.txt,text/plain,text/markdown" disabled={disabled} onChange={event=>{const file=event.target.files?.[0];event.target.value='';void importFile(file)}}/>}</Field>
@@ -130,15 +133,17 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
     </SettingsSection>
     <SettingsSection level={2} variant="plain" title={msg('Publication')} description={msg('Publication retains the exact approved candidate as an immutable local version.')}>
      <p className={styles.note}>{currentPublished?msg('Current candidate published'):msg('Current candidate unpublished')}</p>
-     <div className={styles.actions}><Button disabled={approveDisabled||document?.reviewState!=='approved'||versionPublished} onClick={()=>setPublishOpen(true)}>{msg('Publish version')}</Button></div>
+     <div className={styles.actions}><Button disabled={approveDisabled||document?.reviewState!=='approved'||versionPublished||sourceBlocked} onClick={()=>setPublishOpen(true)}>{msg('Publish version')}</Button></div>
+     {sourceQuery.data?.pending&&<p className={styles.note}>{msg('Resolve the latest source update before publication.')}</p>}
      {versionPublished&&!currentPublished&&<p className={styles.note}>{msg('This policy version is already published. Save a new artifact version before publishing again.')}</p>}
      {document&&document.reviewState!=='approved'&&!reviewHint&&<p className={styles.note}>{msg('Approve the exact saved candidate before publishing.')}</p>}
     </SettingsSection>
    </SettingsStack></PageBody></div>},
+   {value:'source',label:msg('Source'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<PolicyConnectedSource policy={saved} query={sourceQuery} editing={dirty||!!observedLatest} disabled={disabled}/>:<p>{msg('Save a draft before connecting a policy source.')}</p>}</PageBody></div>},
    {value:'history',label:msg('History'),panel:<div className={styles.panel}><PageBody width="wide">{document?<PolicyHistory document={document}/>:<p>{msg('Save a draft to start its history.')}</p>}</PageBody></div>}
   ]}/>
   <footer className={styles.footer}><span role="status">{busy?<LoadingState inline>{msg('Working…')}</LoadingState>:held?msg('Operation recovery required'):dirty?msg('Unsaved changes'):saved?msg('Draft saved'):msg('New policy')}</span><div className={styles.feedback}>{error&&<p role="alert">{systemMessage(error.message)}</p>}{notice&&<p role="status">{notice}</p>}{held?<Button size="small" disabled={busy} onClick={()=>void execute(pending!,true).catch(()=>{})}>{pending?.result?msg('Reload current policy'):msg('Check operation result')}</Button>:error?.code==='revision-conflict'&&!observedLatest?<Button size="small" disabled={busy} onClick={()=>void loadLatest()}>{msg('Compare latest saved draft')}</Button>:null}</div></footer>
-  <Dialog open={publishOpen} onOpenChange={setPublishOpen} title={msg('Publish policy version?')} description={msg('Confirm publication of this exact saved and approved candidate.')} footer={<DialogActions><Button onClick={()=>setPublishOpen(false)}>{msg('Cancel')}</Button><Button variant="primary" disabled={approveDisabled||document?.reviewState!=='approved'} onClick={()=>void action('publish').catch(()=>{})}>{msg('Publish version')}</Button></DialogActions>}>
+  <Dialog open={publishOpen} onOpenChange={setPublishOpen} title={msg('Publish policy version?')} description={msg('Confirm publication of this exact saved and approved candidate.')} footer={<DialogActions><Button onClick={()=>setPublishOpen(false)}>{msg('Cancel')}</Button><Button variant="primary" disabled={approveDisabled||document?.reviewState!=='approved'||sourceBlocked} onClick={()=>void action('publish').catch(()=>{})}>{msg('Publish version')}</Button></DialogActions>}>
    <dl className={styles.facts}><dt>{msg('Title')}</dt><dd>{document?.candidate.title}</dd><dt>{msg('Artifact version')}</dt><dd>{document?.candidate.artifactVersion}</dd><dt>{msg('Candidate digest')}</dt><dd className={styles.digest}>{document?.candidate.digest}</dd><dt>{msg('Review')}</dt><dd>{document?.currentReviewId}</dd></dl>
   </Dialog>
  </>

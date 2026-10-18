@@ -16,7 +16,7 @@ export interface PolicyPublication {id:string;sequence:number;candidateRevisionI
 export interface PolicyDocument {id:string;managementMode:'desk-managed';createdAt:string;updatedAt:string;candidate:PolicyCandidate;workflow:PolicyWorkflow;workflowDigest:string;reviewState:'unreviewed'|'approved'|'changes-requested';currentReviewId?:string;revisions:PolicyRevision[];reviews:PolicyReview[];publications:PolicyPublication[]}
 export interface PolicyReply {revision:string;document:PolicyDocument}
 export interface PolicySummary {id:string;candidateDigest:string;currentCandidatePublished:boolean;title:string;artifactVersion:string;updatedAt:string;reviewState:PolicyDocument['reviewState'];publicationCount:number;latestPublication?:PolicyPublication}
-export interface PolicyMutationReply {delivery:'committed'|'recovered';receipt:unknown;policy:PolicyReply}
+export interface PolicyMutationReply {delivery:'committed'|'recovered';receipt:unknown;policy:PolicyReply;sourceSync?:PolicySourceSync}
 export interface PolicyWrite {path:string;method:'POST'|'PUT';body:Record<string,unknown>}
 export class PolicyRequestError extends Error {
  constructor(readonly code:string,readonly uncertain=false){super(policyFailureMessage(code));this.name='PolicyRequestError'}
@@ -24,6 +24,10 @@ export class PolicyRequestError extends Error {
 function policyFailureMessage(code:string){
  switch(code){
  case 'invalid-policy-source':return sourceMessage('Import a UTF-8 .txt or .md file up to 128 KiB with a simple filename.')
+ case 'source-update-unresolved':return sourceMessage('Review the latest connected source update before publishing this candidate.')
+ case 'source-conflict':return sourceMessage('The policy or source changed. Review the latest source state before continuing.')
+ case 'source-unsupported':return sourceMessage('The installed Gateway does not support automatic policy source checks.')
+ case 'source-authorization-ended':return sourceMessage('Reconnect this source with current administrator consent.')
  case 'revision-conflict':return sourceMessage('The saved policy changed. Your edits are still here. Compare the latest saved draft before saving again.')
  case 'access-denied':case 'session-required':case 'unauthorized':case 'forbidden':return sourceMessage('Your session cannot access this policy. Sign in again to continue.')
  case 'review-incomplete':return sourceMessage('Approve the exact saved candidate before publishing.')
@@ -65,4 +69,16 @@ export async function readPolicySource(id:string):Promise<Uint8Array>{
  try{response=await deskFetch('/api/policies/'+encodeURIComponent(id)+'/source')}catch(cause){throw new PolicyRequestError(cause instanceof NoSession?'unauthorized':'unavailable')}
  if(!response.ok)throw new PolicyRequestError(response.status===401||response.status===403?'access-denied':'unavailable')
  return new Uint8Array(await response.arrayBuffer())
+}
+
+export interface PolicySourceObservation {id:string;bindingId:string;source:{provider:string;accountId:string;resourceId:string};sourceRevision:string;observedAt:string;retainedAt:string;name:string;availability:'present';coverage:'snapshot-only';lifecycle:{kind:'not-exposed'};content:{bytesDigest:string;byteLength:number;mediaType:string};extraction:{content:{bytesDigest:string;byteLength:number;mediaType:string};profile:string;processor:string;processorVersion:string;configurationDigest:string};original:{sha256:string;bytes:number};document:{sha256:string;bytes:number};semanticDigest:string}
+export interface PolicySourceResolution {observationId:string;candidateRevisionId:string;candidateDigest:string;workflowDigest:string;at:string;actor:PolicyActor;comment:string}
+export interface PolicySourceSync {revision:string;supported:boolean;pending:boolean;state?:{version:1;generation:number;state:'binding'|'active'|'paused'|'revoked'|'authorization-ended';frequencyMinutes:number;lastAttempt?:string;lastSuccess?:string;nextCheck?:string;errorCode?:string;gap:boolean;grant:{actor:PolicyActor;at:string;resourceId:string};binding?:{bindingId:string;source:{provider:string;accountId:string;resourceId:string}};observations:PolicySourceObservation[];resolutions:PolicySourceResolution[]}}
+export const readPolicySourceSync=(id:string,signal?:AbortSignal)=>request<PolicySourceSync>('/'+encodeURIComponent(id)+'/source-sync',{signal})
+export const policySourceSyncQuery=(id?:string)=>queryOptions({...privateQuery,enabled:!!id,queryKey:[...POLICIES_KEY,id,'source-sync'],queryFn:({signal})=>readPolicySourceSync(id!,signal)})
+export const readPolicyObservation=(id:string,observationId:string,signal?:AbortSignal)=>request<{observation:PolicySourceObservation;document:unknown}>('/'+encodeURIComponent(id)+'/source-sync/observations/'+encodeURIComponent(observationId),{signal})
+export async function downloadPolicyObservation(id:string,observation:PolicySourceObservation){
+ const response=await deskFetch('/api/policies/'+encodeURIComponent(id)+'/source-sync/observations/'+encodeURIComponent(observation.id)+'/original')
+ if(!response.ok)throw new PolicyRequestError('unavailable')
+ const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=observation.name;link.click();URL.revokeObjectURL(url)
 }
