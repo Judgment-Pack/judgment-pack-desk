@@ -32,6 +32,7 @@ type assistantApprovalChat struct {
 		ID string `json:"id"`
 	} `json:"policy"`
 	PolicyProposals []assistantPolicyProposal    `json:"policyProposals"`
+	PolicySources   []policyAuthoringSource      `json:"policySources,omitempty"`
 	InputActions    []assistantPublicationAction `json:"inputActions"`
 	ID              string                       `json:"id"`
 	Interaction     string                       `json:"interaction"`
@@ -111,6 +112,9 @@ func (s *Server) handleAssistantApproval(w http.ResponseWriter, r *http.Request)
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
 		return
 	}
+	if !s.guardPrivateWorkspace(w, r) {
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	chatID := r.PathValue("chat")
 	if !researchChatID.MatchString(chatID) || r.URL.RawQuery != "" {
@@ -161,6 +165,10 @@ func (s *Server) assistantApprovalTransaction(r *http.Request, chatID string, re
 		// A displayed Auto state reflects its current resource, suite and phase.
 		if exists && grant.State == "ready" {
 			chat, tests, err := s.approvalChat(chatID)
+			if err == nil {
+				raw, _ := json.Marshal(map[string]any{"chats": []assistantApprovalChat{chat}})
+				err = s.authorizePolicyConversations(r, raw)
+			}
 			adapter, supported := assistantActionAdapters[grant.Action]
 			stale := err != nil || !supported || chat.Interaction == "plan"
 			if !stale {
@@ -192,6 +200,10 @@ func (s *Server) assistantApprovalTransaction(r *http.Request, chatID string, re
 	}
 	chat, tests, e := s.approvalChat(chatID)
 	if e != nil {
+		return fail(e)
+	}
+	raw, _ := json.Marshal(map[string]any{"chats": []assistantApprovalChat{chat}})
+	if e = s.authorizePolicyConversations(r, raw); e != nil {
 		return fail(e)
 	}
 	if chat.Interaction == "plan" {

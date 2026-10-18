@@ -93,6 +93,9 @@ func sendJSON(
 		t.Fatalf("request: %v", err)
 	}
 	bearer(req)
+	if strings.HasPrefix(path, "/api/assistant-approvals/") {
+		pageBearer(privateWorkspaceTestSession(t, ts))(req)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

@@ -13,7 +13,7 @@ import (
 func definitionReply(t *testing.T, ts *httptest.Server, subject string) conversationReply {
 	t.Helper()
 	req, _ := http.NewRequest("GET", ts.URL+"/api/briefs?subject="+url.QueryEscape(subject), nil)
-	bearer(req)
+	pageBearer(privateWorkspaceTestSession(t, ts))(req)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)

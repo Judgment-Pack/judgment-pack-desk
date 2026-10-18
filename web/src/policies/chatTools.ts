@@ -1,3 +1,6 @@
+import {readPolicyAuthoringSource} from './client'
+import {validPolicyRevisionId,validPolicyPublicationId} from './authoringSource'
+import type {PolicyInterpretationProposal} from './interpretation'
 import {checkArtifact} from '../assistant/execution/checkArtifact'
 import type {HostTool} from '../assistant/engine'
 import {toolInputFailure} from '../assistant/failures'
@@ -5,14 +8,14 @@ import {readPolicy} from './client'
 import {policyFields,validPolicyFields,validPolicyRevision,type PolicyRequest,type PolicyProposal} from './chat'
 const result=(value:unknown)=>({content:[{type:'text',text:JSON.stringify(value)}]})
 /** These tools run inside the existing managed chat; they never mutate Policy. */
-export function policyChatTools(options:{id?:string;request:()=>PolicyRequest|undefined;afterTurnId:()=>string|undefined;retain:(proposal:PolicyProposal,signal:AbortSignal)=>Promise<void>}):HostTool[]{
+export function policyChatTools(options:{id?:string;request:()=>PolicyRequest|undefined;afterTurnId:()=>string|undefined;retain:(proposal:PolicyProposal,signal:AbortSignal)=>Promise<void>;retainInterpretation?:(proposal:PolicyInterpretationProposal,signal:AbortSignal)=>Promise<void>}):HostTool[]{
  if(!options.id)return []
  const id=options.id
  return [
   {name:'read_policy',effect:'read',delegation:'read',contextPolicy:{reference:true},description:'Read the current saved Policy draft with authenticated access. This is a fresh read, not approval or publication.',inputSchema:{type:'object',properties:{},additionalProperties:false},execute:async(args,signal)=>{
    if(Object.keys(args).length)throw toolInputFailure('Read the Policy linked to this conversation without arguments.')
    const saved=await readPolicy(id,signal);signal.throwIfAborted()
-   return result({id,revision:saved.revision,candidate:saved.document.candidate,workflow:saved.document.workflow,reviewState:saved.document.reviewState,requestRevision:options.request()?.revision,guidance:'Saved draft only. Review/publication remain manual. Use the request-time revision for proposals; a changed saved revision requires a fresh request.'})
+   return result({id,revision:saved.revision,candidate:saved.document.candidate,revisions:saved.document.revisions,publications:saved.document.publications,workflow:saved.document.workflow,reviewState:saved.document.reviewState,requestRevision:options.request()?.revision,guidance:'Saved draft only. Review/publication remain manual. Use the request-time revision for proposals; a changed saved revision requires a fresh request.'})
   }},
   {name:'propose_policy_update',effect:'proposal',contextPolicy:{reference:true},description:'Propose a requested update to the linked saved Policy title, narrative and artifactVersion. Supply all three fields and the exact request-time revision. Retains a diff card only; does not save, approve or publish.',inputSchema:{type:'object',properties:{revision:{type:'string'},title:{type:'string'},narrative:{type:'string'},artifactVersion:{type:'string'}},required:['revision','title','narrative','artifactVersion'],additionalProperties:false},execute:async(args,signal)=>{
    const {revision,...candidate}=args,request=options.request()
@@ -21,6 +24,16 @@ export function policyChatTools(options:{id?:string;request:()=>PolicyRequest|un
    const check=await checkArtifact({candidate:proposal,fingerprint:p=>JSON.stringify(p.candidate),retain:async(p,check?:PolicyProposal['check'])=>{if(check)p.check=check;await options.retain(p,signal)},check:async(_p,signal)=>{const saved=await readPolicy(id,signal);return {scope:'draft-shape-and-revision' as const,status:saved.revision===revision?'passed' as const:'stale' as const}},passed:check=>check.status==='passed'},signal)
    if(check.status==='stale')throw toolInputFailure('The saved Policy changed during this request. The proposal is retained but cannot be saved. Send a fresh request against the latest saved draft.')
    return result({artifactType:'policy-update',proposalId:proposal.id,policyId:id,revision,status:'proposed',checks:{scope:'draft-shape',status:'passed'},guidance:'Review the exact diff and save through the chat action. Shape checks do not establish policy correctness or authorize review/publication. No Policy was changed.'})
-  }}
+  }},
+  ...(options.retainInterpretation?[{name:'propose_policy_pack_interpretation',effect:'proposal' as const,contextPolicy:{reference:true},description:'Propose opening an ordinary pack authoring chat from an exact saved Policy revision or publication. Review and explicit acceptance are required. Does not send a message, spend model allowance or create a pack.',inputSchema:{type:'object',properties:{revisionId:{type:'string'},publicationId:{type:'string'}},additionalProperties:false},execute:async(args:Record<string,unknown>,signal:AbortSignal)=>{
+   signal.throwIfAborted()
+   const {revisionId,publicationId}=args
+   if(Object.keys(args).length!==1||!(validPolicyRevisionId(revisionId)&&publicationId===undefined||validPolicyPublicationId(publicationId)&&revisionId===undefined))throw toolInputFailure('Select exactly one saved Policy revisionId or publicationId. Use read_policy to inspect their identities.')
+   const source=await readPolicyAuthoringSource(publicationId?{policyId:id,publicationId:publicationId as string}:{policyId:id,revisionId:revisionId as string},signal)
+   signal.throwIfAborted()
+   const proposal:PolicyInterpretationProposal={version:1,id:crypto.randomUUID(),policyId:id,revisionId:source.revisionId,...(source.publicationId?{publicationId:source.publicationId}:{}),createdAt:new Date().toISOString(),afterTurnId:options.afterTurnId()}
+   await options.retainInterpretation!(proposal,signal)
+   return result({status:'proposed',proposalId:proposal.id,policyId:id,revisionId:source.revisionId,publicationId:source.publicationId,title:source.title,artifactVersion:source.artifactVersion,guidance:'Wait for explicit user review and acceptance. No chat message was sent and no pack was generated or saved.'})
+  }}]:[])
  ]
 }

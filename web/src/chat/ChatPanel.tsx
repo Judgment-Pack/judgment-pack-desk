@@ -1,3 +1,4 @@
+import {PolicyInterpretationProposals} from '../policies/PolicyInterpretation'
 import {usePolicyChatContext} from '../policies/chatContext'
 import {PolicyChatProposals} from '../policies/PolicyChatProposals'
 import {pendingPublication} from '../dialects/publicationProposal'
@@ -325,7 +326,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
       <DialectRecipeNotice chatId={chat.id} drafts={(chat.inputDrafts??[]).filter(draft=>scope?.kind!=='input'||scope.id==='list'||draft.savedInputId===scope.id||!draft.savedInputId)} disabled={locked||inputActionsLocked}/>
       <DialectActionNotice chatId={chat.id} actions={(chat.inputActions??[]).filter(action=>scope?.kind!=='input'||scope.id==='list'||action.inputId===scope.id)} disabled={locked}/>
       {isInput&&<DialectChatProgress inputId={scope?.kind==='input'?scope.id:chat.input?.id} emptyFallback={welcome} presentation={openInputId&&!pane.mainCovered?'hidden':'compact'}/>}
-      <PolicyChatProposals chatId={chat.id} disabled={locked||running}/>
+      <PolicyChatProposals chatId={chat.id} disabled={locked||running}/><PolicyInterpretationProposals chatId={chat.id} disabled={locked||running}/>
       <ChatTestProposals chatId={chat.id}/>
       <PlanCard chat={chat} store={store} disabled={actionDisabled} onRevise={()=>messageInput.current?.focus()} onStart={()=>{
         if(!store)return false

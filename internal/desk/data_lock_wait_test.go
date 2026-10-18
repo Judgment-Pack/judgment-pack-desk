@@ -128,6 +128,7 @@ func TestDialectRefreshWaitsForStorageTransaction(t *testing.T) {
 
 func TestPrivateWorkspaceReadsWaitForStorageTransaction(t *testing.T) {
 	s, _, _ := assistantServer(t)
+	token := policyTestSession(t, s)
 	held, err := s.privateDataLock(true)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +139,7 @@ func TestPrivateWorkspaceReadsWaitForStorageTransaction(t *testing.T) {
 	for _, path := range paths {
 		go func() {
 			r := httptest.NewRequest("GET", path, nil)
-			r.Header.Set("Authorization", "Bearer "+testToken)
+			r.Header.Set("Authorization", "Bearer "+token)
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, r)
 			results <- w

@@ -23,3 +23,13 @@ it('reads authoring sources from the saved companion without the original draft'
  expect(screen.getByText('Attached')).toBeTruthy()
  expect(screen.queryByText('Receipt verified')).toBeNull()
 })
+it('shows exact private Policy origin from finalized provenance without presenting it as a retrieved citation',()=>{
+ const source={version:1,policyId:'policy_'+'a'.repeat(48),revisionId:'revision_'+'b'.repeat(48),publicationId:'publication_'+'c'.repeat(48),candidateDigest:'d'.repeat(64),content:{sha256:'d'.repeat(64),bytes:121},title:'Selected Policy',artifactVersion:'1.0.0',narrative:'PRIVATE POLICY NARRATIVE'}
+ fixture.drafts=[{id:'draft',documents:[],policySources:[source],checkpoint:{state:INITIAL_STATE,sources:[]},finalized:{id:'example',path:'packs/example.pack.json'}}]
+ render(<SavedPackSources owner="example" path="packs/example.pack.json" document={{}}/>)
+ expect(screen.getByText('Selected publication')).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:'Selected Policy'}))
+ expect(screen.getByText(source.revisionId)).toBeTruthy();expect(screen.getByText(source.publicationId)).toBeTruthy()
+ expect(screen.queryByText('Receipt verified')).toBeNull();expect(screen.queryByText('Citation traced')).toBeNull()
+ expect(screen.queryByText(source.narrative)).toBeNull()
+})

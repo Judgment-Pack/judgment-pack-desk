@@ -273,7 +273,7 @@ func reviewedInputRealGatewayRunner(t *testing.T, published bool) {
 	call := func(suffix string, body any, revision string) (int, []byte) {
 		raw, _ := json.Marshal(body)
 		r := httptest.NewRequest("POST", "/api/input-preparations/"+saved.Document.ID+suffix, bytes.NewReader(raw))
-		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set("Authorization", "Bearer "+policyTestSession(t, s))
 		r.Header.Set("If-Match", revision)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, r)

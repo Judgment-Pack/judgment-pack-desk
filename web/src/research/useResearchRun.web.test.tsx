@@ -201,3 +201,24 @@ it('blocks a chat-selected API model removed from this desk allowlist',async()=>
  act(()=>result.current.run!.start('Test',[]));await waitFor(()=>expect(result.current.state.status).not.toBe('running'))
  expect(fake.session).not.toHaveBeenCalled();expect(fake.bind).not.toHaveBeenCalled()
 })
+
+it('merges private source context with original conversation documents once on each resumed turn',async()=>{
+ const {policySourceDocuments}=await import('../policies/authoringSource')
+ const source={version:1 as const,policyId:'policy_'+'a'.repeat(48),revisionId:'revision_'+'b'.repeat(48),candidateDigest:'c'.repeat(64),content:{sha256:'c'.repeat(64),bytes:4},title:'Policy',artifactVersion:'1.0.0',narrative:'Text'}
+ const authorize=vi.fn(async()=>{})
+ fake.tools.mockReturnValue([])
+ fake.session.mockImplementation(async(_engine,request,deliver)=>{
+  expect(request.context.documents.map((doc:{id:string})=>doc.id)).toEqual(['conversation','policy-source-0'])
+  expect(request.context.documents[0].value.turns.at(-1).text).toContain('Interpret')
+  expect(request.context.documents[1].value).toEqual(source)
+  expect(request.context.authorize).toBe(authorize)
+  deliver({type:'message',text:'Review the ambiguous requirement.'})
+ })
+ const {result}=renderHook(()=>useResearchRun({mode:'draft',draftTools:fake.tools,authorizeContext:authorize,executionContext:()=>({documents:policySourceDocuments([source])})}))
+ expect(fake.session).not.toHaveBeenCalled()
+ act(()=>result.current.run!.start('Interpret selected Policy',[]))
+ await waitFor(()=>expect(result.current.state.status).toBe('complete'))
+ act(()=>result.current.run!.send('Interpret the remaining clause'))
+ await waitFor(()=>expect(fake.session).toHaveBeenCalledTimes(2))
+ await waitFor(()=>expect(result.current.state.status).toBe('complete'))
+})

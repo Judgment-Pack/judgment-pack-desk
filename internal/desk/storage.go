@@ -291,6 +291,11 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 }
 
 func storageFailure(w http.ResponseWriter, err error) {
+	var failure *policyFailure
+	if errors.As(err, &failure) {
+		policyHTTPFailure(w, err)
+		return
+	}
 	writeJSONCoded(w, statusForRefusal(err), codeOf(err), "Chat storage: "+err.Error())
 }
 
@@ -372,6 +377,10 @@ func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, reque
 	}
 	if status.Bytes > maxMoveBytes {
 		storageFailure(w, withCode(CodeTooLarge, errors.New("this move exceeds the 1 GiB limit; export older chats before moving")))
+		return
+	}
+	if err = s.authorizeStoredPolicyWorkspace(r, store.root); err != nil {
+		storageFailure(w, err)
 		return
 	}
 	target, err := s.openChatDataAt(dataLocation{Version: 1, Path: request.Path, Previous: store.location.Path}, "", true)

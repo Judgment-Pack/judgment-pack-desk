@@ -1,3 +1,6 @@
+import type {PolicyAuthoringSource} from '../../policies/authoringSource'
+import {policySourceKey} from '../../policies/authoringSource'
+import {PolicySourceIdentity} from '../../policies/PolicySourceIdentity'
 import { useCollectionSelection } from '../../ui/useCollectionSelection'
 import { SelectionTable, SelectionHeader, SelectionCell, SelectionActions } from '../../ui/SelectionTable'
 import { exportSelectedRows } from '../../ui/selectionExport'
@@ -23,8 +26,9 @@ export const declaredSources = (document: unknown): unknown[] => object(document
 const text = (value: unknown): string => typeof value === 'string' ? value : ''
 
 /** Shared saved/draft source browser. A declared reference never implies retrieval. */
-export function DraftSources({ document, documents = [], files = [], sources = [], citations = [] }: {
+export function DraftSources({ document, documents = [], files = [], policySources = [], sources = [], citations = [] }: {
   document: unknown; documents?: readonly ChatAttachment[]; files?: readonly { name: string; text: string }[]
+  policySources?:readonly PolicyAuthoringSource[]
   sources?: readonly SourceRecord[]; citations?: readonly Citation[]
   onRead?: (node: ReactNode, opener: HTMLElement) => void
 }) {
@@ -43,6 +47,7 @@ export function DraftSources({ document, documents = [], files = [], sources = [
   })
   const uses = (id: string) => !id || !object(document) ? [] : ['rules','exceptions'].flatMap(group=>Array.isArray(document[group]) ? document[group].flatMap((entry:unknown)=>object(entry) && Array.isArray(entry.sourceRefs) && entry.sourceRefs.includes(id) ? [text(entry.id) || msg('Unnamed rule')] : []) : [])
   const rows: {id:string;title:string;kind:string;kindLabel:string;status:string;used:string[];detail:ReactNode}[] = [
+    ...policySources.map(source=>({id:'policy:'+policySourceKey(source),title:source.title||msg('Policy'),kind:'policy',kindLabel:msg('Policy'),status:source.publicationId?msg('Selected publication'):msg('Saved revision · no publication selected'),used:[],detail:<PolicySourceIdentity source={source}/>})),
     ...declared.map((source,index)=>{
       const record=object(source)?source:{}, id=text(record.id), title=text(record.title)||id||msg('Source {{value0}}',{value0:index+1})
       const locator=object(record.locator)?text(record.locator.value):'', citation=object(record.citation)?record.citation:{}
@@ -73,7 +78,7 @@ export function DraftSources({ document, documents = [], files = [], sources = [
   return <div className={styles.browser}><BuilderSplit preference="pack" title={detail?.title??msg('Source details')} editor={detailContent} open={!!detail} onClose={()=>{setSelected('');setPageCitation(undefined)}}>
     <CollectionLayout label={msg('Pack sources')} scrollKey={JSON.stringify([pagination.page,pagination.size,query,kind])} footer={<Pagination pagination={pagination} complete/>} toolbar={<>
       <CollectionToolbar label={msg('Source controls')} searchLabel={msg('Search sources')} search={query} onSearch={setQuery}
-        filters={[{label:msg('Source kind'), value:kind, onValueChange:setKind, options:[{value:'all',label:msg('All kinds')},{value:'reference',label:msg('References')},{value:'document',label:msg('Documents')},{value:'retrieval',label:msg('Retrievals')}]}]}
+        filters={[{label:msg('Source kind'), value:kind, onValueChange:setKind, options:[{value:'all',label:msg('All kinds')},{value:'policy',label:msg('Policies')},{value:'reference',label:msg('References')},{value:'document',label:msg('Documents')},{value:'retrieval',label:msg('Retrievals')}]}]}
         actions={()=><SelectionActions selection={selection} onExport={()=>exportSelectedRows('sources',selection.selectedRows.map(({detail,...row})=>row))}/>}/>
 
       {object(document) && document.sources!==undefined && !Array.isArray(document.sources) && <p role="status">{msg('Source references could not be read. Inspect View JSON for the exact definition.')}</p>}

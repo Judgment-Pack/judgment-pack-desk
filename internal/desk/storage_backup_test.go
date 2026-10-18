@@ -18,7 +18,7 @@ import (
 func backupBytes(t *testing.T, ts *httptest.Server) []byte {
 	t.Helper()
 	req, _ := http.NewRequest("GET", ts.URL+"/api/storage/backup", nil)
-	bearer(req)
+	pageBearer(privateWorkspaceTestSession(t, ts))(req)
 	response, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func restoreBackup(t *testing.T, ts *httptest.Server, request moveChatData, back
 	form.Close()
 	req, _ := http.NewRequest("POST", ts.URL+"/api/storage/restore", &body)
 	req.Header.Set("Content-Type", form.FormDataContentType())
-	bearer(req)
+	pageBearer(privateWorkspaceTestSession(t, ts))(req)
 	response, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
