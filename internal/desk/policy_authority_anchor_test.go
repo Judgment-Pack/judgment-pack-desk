@@ -25,7 +25,12 @@ func newPolicyAnchorFixture(t *testing.T, enroll bool) *policyAnchorFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ledger, err := openPrivateDataRoot(t.TempDir(), false)
+	ledgerDirectory := t.TempDir()
+	// Only this fixture's synthetic store is narrowed; production custody stays strict.
+	if err := os.Chmod(ledgerDirectory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := openPrivateDataRoot(ledgerDirectory, false)
 	if err != nil {
 		t.Fatal("fixture custody", err)
 	}
