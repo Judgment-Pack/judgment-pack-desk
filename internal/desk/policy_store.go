@@ -49,6 +49,7 @@ type policyStoredOperation struct {
 }
 
 type policyLedger struct {
+	Lifecycles map[string]*policyLifecycleStream `json:"lifecycles,omitempty"`
 	// Optional v1 source tracking extends private v2 ledgers without changing candidate identity.
 	Sources       map[string]*policyConnectedSource `json:"sources,omitempty"`
 	SchemaVersion int                               `json:"schemaVersion"`
@@ -228,9 +229,12 @@ func validatePolicyLedger(ledger policyLedger) error {
 		}
 	}
 	for key, operation := range ledger.Operations {
-		if key != operation.OperationID || !policyOperationIDForm.MatchString(key) || !contains(append([]string{"create", "save-draft", "review", "publish"}, policySourceKinds()...), operation.Kind) || ledger.Policies[operation.PolicyID].ID == "" || !retainedArtifactDigest.MatchString(operation.RequestDigest) || !operation.Result.valid() {
+		if key != operation.OperationID || !policyOperationIDForm.MatchString(key) || !contains(append(append([]string{"create", "save-draft", "review", "publish"}, policySourceKinds()...), policyLifecycleKinds()...), operation.Kind) || ledger.Policies[operation.PolicyID].ID == "" || !retainedArtifactDigest.MatchString(operation.RequestDigest) || !operation.Result.valid() {
 			return bad
 		}
+	}
+	if err := validatePolicyLifecycles(ledger); err != nil {
+		return err
 	}
 	return validatePolicySources(ledger)
 }

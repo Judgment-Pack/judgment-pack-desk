@@ -558,6 +558,8 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/policies/{policy}/revisions/{revision}", s.handlePolicies)
 	s.mux.HandleFunc("POST /api/policies/{policy}/review", s.handlePolicies)
 	s.mux.HandleFunc("POST /api/policies/{policy}/publish", s.handlePolicies)
+	s.mux.HandleFunc("GET /api/policies/{policy}/lifecycle", s.handlePolicyLifecycle)
+	s.mux.HandleFunc("POST /api/policies/{policy}/lifecycle", s.handlePolicyLifecycle)
 	s.mux.HandleFunc("GET /api/policy-operations/{operation}", s.handlePolicies)
 	s.mux.HandleFunc("GET /api/policies/{policy}/source-sync", s.handlePolicySourceSync)
 	s.mux.HandleFunc("POST /api/policies/{policy}/source-sync", s.handlePolicySourceSync)
