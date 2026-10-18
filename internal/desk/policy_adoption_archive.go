@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
 )
 
 // Validate historical candidate bindings offline. Imported historical review
@@ -27,6 +28,19 @@ func archivedAdoptionContent(ctx context.Context, l policyLedger, a retainedArti
 	if err = archivedAdoptionReport(ctx, a, c.Check, c, doc); err != nil {
 		return err
 	}
+	var adoption struct {
+		GoverningPolicies []struct {
+			Policy struct {
+				Kind    string              `json:"kind"`
+				ID      string              `json:"id"`
+				Version string              `json:"version"`
+				Content policySourceContent `json:"content"`
+			} `json:"policy"`
+		} `json:"governingPolicies"`
+	}
+	if rejectDuplicateMembers(doc) != nil || json.Unmarshal(doc, &adoption) != nil || len(adoption.GoverningPolicies) != len(c.Basis.Dependencies) {
+		return policyArchiveInvalid()
+	}
 	refs := []retainedArtifactRef{r.Content, c.Document, c.Check, c.Basis.Pack.Content}
 	supplied := map[string][]byte{}
 	for _, ref := range c.Materials {
@@ -48,7 +62,7 @@ func archivedAdoptionContent(ctx context.Context, l policyLedger, a retainedArti
 	}
 	governing := []any{}
 	service := policyService{artifacts: a}
-	for _, d := range c.Basis.Dependencies {
+	for i, d := range c.Basis.Dependencies {
 		coverage := l.Coverages[d.Selection.CoverageID]
 		if coverage.PolicyID != d.Selection.PolicyID {
 			return policyArchiveInvalid()
@@ -117,21 +131,14 @@ func archivedAdoptionContent(ctx context.Context, l policyLedger, a retainedArti
 		}
 		policy := adoptionRuntimePolicy(material)
 		policyRaw, _ := json.Marshal(policy)
-		// Resolve the actual retained canonical policy by identity and unchanged
-		// JSON meaning, then use its exact byte digest in the complete adoption.
-		var canonical []byte
-		for digest, data := range supplied {
-			if sameDialectJSON(policyRaw, data) {
-				if canonical != nil {
-					return policyArchiveInvalid()
-				}
-				canonical = data
-				expected[digest] = true
-			}
-		}
-		if canonical == nil {
+		// The adoption document selects the exact application/json Policy role.
+		// Other required roles may contain different bytes with the same JSON meaning.
+		reference := adoption.GoverningPolicies[i].Policy
+		canonical, present := supplied[strings.TrimPrefix(reference.Content.BytesDigest, "sha256:")]
+		if !present || reference.Kind != "policy" || reference.ID != policy["id"] || reference.Version != d.Source.ArtifactVersion || reference.Content.MediaType != "application/json" || reference.Content.ByteLength != len(canonical) || reference.Content.BytesDigest != "sha256:"+digestOf(canonical) || !sameDialectJSON(policyRaw, canonical) || !require(canonical) {
 			return policyArchiveInvalid()
 		}
+
 		governing = append(governing, map[string]any{"policy": map[string]any{"kind": "policy", "id": policy["id"], "version": d.Source.ArtifactVersion, "content": coverageRuntimeContent(canonical, "application/json")}, "scope": map[string]any{"kind": "whole-policy"}, "coverage": []any{coverageRuntimeStatement(d.Statement)}})
 		refs = append(refs, d.CoverageContent, *d.CoverageReview.Check)
 	}

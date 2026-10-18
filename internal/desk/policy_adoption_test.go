@@ -604,3 +604,75 @@ func TestPolicyAdoptionOptionsUseExactSavedBytesAndClosedHTTP(t *testing.T) {
 	policyError(t, policyCall(s, token, "GET", "/api/policy-adoptions", nil), 401, CodeUnauthorized)
 	policyError(t, policyCall(s, token, "GET", "/api/policy-adoptions/"+prepared.Adoption.Document.ID+"/history", nil), 401, CodeUnauthorized)
 }
+
+func TestPolicyAdoptionRealRuntimeArchiveResolvesExactPolicyRole(t *testing.T) {
+	bin := os.Getenv("JPACK_POLICY_TEST_BIN")
+	if bin == "" {
+		t.Skip("set JPACK_POLICY_TEST_BIN to candidate-capable Runtime")
+	}
+	s, token, p, pack := coverageFixture(t)
+	s.cfg.JpackBin = bin
+	service, actor, saved, material := coverageMaterialFixture(t, s, token, p, pack)
+	// This basis is valid text/plain evidence. Its JSON meaning matches the
+	// generated Policy, whose document does not depend on the statement basis.
+	basis, err := json.MarshalIndent(adoptionRuntimePolicy(material), "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := coverageSaveBody(t, p, pack)
+	edit.CoverageID = saved.Document.ID
+	edit.BaseRevision = saved.Revision
+	edit.Statement.Basis = string(basis)
+	changed, err := service.coverageCommand(context.Background(), p.Document.ID, actor, edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverage, err := service.coverageCommand(context.Background(), p.Document.ID, actor, coverageReviewBody(t, *changed.Coverage))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := coverage.Coverage
+	q := policyAdoptionRequest{Action: "prepare", OperationID: policyOp(t), Pack: &pack, Coverages: []policyAdoptionSelection{{PolicyID: p.Document.ID, CoverageID: c.Document.ID, Revision: c.Revision, CandidateID: c.Document.Candidate.ID, ReviewID: c.Document.CurrentReviewID}}}
+	prepared, err := service.adoptionCommand(context.Background(), actor, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := service.adoptionCommand(context.Background(), actor, adoptionReviewRequest(t, prepared))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := service.artifacts.Get(context.Background(), approved.Adoption.Document.Candidate.Document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var adoption struct {
+		GoverningPolicies []struct {
+			Policy struct {
+				Content policySourceContent `json:"content"`
+			} `json:"policy"`
+		} `json:"governingPolicies"`
+	}
+	if json.Unmarshal(doc, &adoption) != nil || len(adoption.GoverningPolicies) != 1 {
+		t.Fatal("invalid retained adoption document")
+	}
+	policyRef := adoption.GoverningPolicies[0].Policy.Content
+	canonical, err := service.artifacts.Get(context.Background(), retainedArtifactRef{SHA256: strings.TrimPrefix(policyRef.BytesDigest, "sha256:"), Bytes: policyRef.ByteLength})
+	if err != nil || bytes.Equal(canonical, basis) || !sameDialectJSON(canonical, basis) || policyRef.MediaType != "application/json" {
+		t.Fatal("fixture lacks byte-distinct semantically equal Policy and basis roles", err)
+	}
+	cut := archiveTestCut(t, s)
+	if cut.Counts.Adoptions != 1 || cut.Counts.AdoptionReviews != 1 {
+		t.Fatal(cut.Counts)
+	}
+	for _, data := range [][]byte{basis, canonical} {
+		found := false
+		for _, ref := range cut.Refs {
+			if ref.SHA256 == digestOf(data) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("archive lost an exact required material role")
+		}
+	}
+}
