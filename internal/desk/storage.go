@@ -172,6 +172,13 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 }
 
 func (s *Server) openChatDataAt(location dataLocation, revision string, create bool) (*chatDataStore, error) {
+	for _, path := range []string{location.Path, location.Previous} {
+		if path != "" {
+			if err := s.policyMachineTarget(path); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if s.containedDeskData() && !pathContains(filepath.Join(s.projectDir, ".desk-private"), location.Path) {
 		return nil, errors.New("desk data must stay inside its folder")
 	}
@@ -328,6 +335,10 @@ func validMoveRequest(request moveChatData) bool {
 
 // Moves and restores share the same locked copy/verify/cutover protocol.
 func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, request moveChatData, copyData func(context.Context, *chatDataStore, *chatDataStore, *[]string) error) {
+	if err := s.policyMachineTarget(request.Path); err != nil {
+		storageFailure(w, err)
+		return
+	}
 	settings, err := s.storageSettingsRoot()
 	if err != nil {
 		storageFailure(w, err)

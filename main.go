@@ -42,6 +42,9 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) > 1 && os.Args[1] == "policy-authority" {
+		return runPolicyAuthorityCommand(context.Background(), os.Args[2:], os.Stdout, desk.PolicyAuthorityLocal)
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--desk-home-layout-version" {
 		fmt.Println("1")
 		return nil
@@ -55,23 +58,39 @@ func run() error {
 	if len(os.Args) == 2 && os.Args[1] == "--local-gateway-worker" {
 		return desk.RunLocalGatewayWorker(os.Stdin, os.Stdout)
 	}
+	flags := flag.NewFlagSet("jpack-desk", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
 	var (
-		port              = flag.Int("port", 8791, "loopback TCP port to listen on; 0 lets the kernel choose one, and the printed URL names it")
-		codexBin          = flag.String("codex", "", "advanced Codex override: absolute executable path, or off to disable; default manages the compatible runtime automatically")
-		runnerConnections = flag.String("runner-connections", "", "absolute installation-owned Jobs background connections JSON file")
-		runnerProfiles    = flag.String("runner-input-profiles", "", "absolute path to installation-owned Jobs input trust profiles (JSON)")
-		jobsPolicy        = desk.RegisterJobsPolicyFlags(flag.CommandLine)
-		runnerBin         = flag.String("runner", desk.InstalledRunnerBinary(), "path to the optional local Jobs runner companion")
-		jpackBin          = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
-		devToken          = flag.String("dev-token", "", "fixed owner setup code for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")
-		resetSignIn       = flag.Bool("reset-sign-in", false, "reset this computer’s sign-in policy; stop Desk first, then restart and configure a new owner")
-		open              = flag.Bool("print-url", true, "print the Desk URL and initial owner setup code at startup")
+		port               = flags.Int("port", 8791, "loopback TCP port to listen on; 0 lets the kernel choose one, and the printed URL names it")
+		codexBin           = flags.String("codex", "", "advanced Codex override: absolute executable path, or off to disable; default manages the compatible runtime automatically")
+		runnerConnections  = flags.String("runner-connections", "", "absolute installation-owned Jobs background connections JSON file")
+		runnerProfiles     = flags.String("runner-input-profiles", "", "absolute path to installation-owned Jobs input trust profiles (JSON)")
+		policyRoot         = flags.String("policy-authority-root", "", "absolute operator-chosen machine Policy authority root; requires --policy-authority-installation")
+		policyInstallation = flags.String("policy-authority-installation", "", "expected machine Policy authority installation identity; requires --policy-authority-root")
+		jobsPolicy         = desk.RegisterJobsPolicyFlags(flags)
+		runnerBin          = flags.String("runner", desk.InstalledRunnerBinary(), "path to the optional local Jobs runner companion")
+		jpackBin           = flags.String("jpack", "jpack", "path to the judgment-pack runtime binary")
+		devToken           = flags.String("dev-token", "", "fixed owner setup code for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")
+		resetSignIn        = flags.Bool("reset-sign-in", false, "reset this computer’s sign-in policy; stop Desk first, then restart and configure a new owner")
+		open               = flags.Bool("print-url", true, "print the Desk URL and initial owner setup code at startup")
 	)
-	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: jpack-desk [flags] [projectDir]\n\nWithout projectDir, the desk opens the project named by project.file in this machine's\ndesk configuration file, and the current directory where that names none.\n\nflags:\n")
-		flag.PrintDefaults()
+	flags.Usage = func() {
+		fmt.Fprintf(flags.Output(), "usage: jpack-desk [flags] [projectDir]\n\nWithout projectDir, the desk opens the project named by project.file in this machine's\ndesk configuration file, and the current directory where that names none.\n\nflags:\n")
+		flags.PrintDefaults()
 	}
-	flag.Parse()
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if err := validateDeskPositionals(flags.Args()); err != nil {
+		return err
+	}
+	policyAuthority, err := servePolicyAuthorityOptions(flags, *policyRoot, *policyInstallation)
+	if err != nil {
+		return err
+	}
 	if *resetSignIn {
 		if err := desk.ResetSignIn(); err != nil {
 			return err
@@ -96,7 +115,7 @@ func run() error {
 	// directory checked is not the directory served. See `desk.OpenProject`.
 	// A missing standard config base is normal on a fresh installation. Any
 	// unsafe/unavailable location is still reported by the custody layer.
-	if err := desk.RecoverDeskHomeMigration(); err != nil {
+	if err := prepareDeskHomeForPolicyAuthority(policyAuthority, desk.CheckPolicyAuthorityStartup, desk.RecoverDeskHomeMigration); err != nil {
 		return err
 	}
 	configDir, err := desk.ResolveDeskConfigDir()
@@ -104,7 +123,7 @@ func run() error {
 		return err
 	}
 	_ = desk.PrepareDeskConfigBase(configDir)
-	project, err := desk.OpenProject(flag.Arg(0), configDir)
+	project, err := desk.OpenProject(flags.Arg(0), configDir)
 	if err != nil {
 		return err
 	}
@@ -165,6 +184,7 @@ func run() error {
 	// The Jobs policy flags write themselves into the Config: see Apply.
 	homeMoveShutdown := make(chan struct{}, 1)
 	srv, err := desk.New(jobsPolicy.Apply(desk.Config{
+		PolicyAuthority:     policyAuthority,
 		RunnerBin:           runnerExecutable,
 		RunnerInputProfiles: profiles,
 		RunnerConnections:   connections,

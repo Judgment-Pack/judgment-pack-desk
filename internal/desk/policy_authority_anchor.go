@@ -68,6 +68,9 @@ type policyAuthorityAnchor struct {
 	poisoned  atomic.Bool
 	// A local test dependency only; production always uses writePrivateData.
 	persistForTest func(policyAuthorityAnchorWritePhase, *os.Root, []byte) error
+	// A trusted machine binding opens through its pinned independent root.
+	openRoot     func(bool) (*os.Root, error)
+	checkCustody func() error
 }
 
 // The trusted host must select a machine-local directory outside all portable
@@ -167,7 +170,11 @@ func (a *policyAuthorityAnchor) open(ctx context.Context, enroll bool) (*os.Root
 	if a.poisoned.Load() {
 		return nil, nil, policyAuthorityAnchorRefusal("uncertain")
 	}
-	root, err := openPrivateDataRoot(a.directory, enroll)
+	open := a.openRoot
+	if open == nil {
+		open = func(create bool) (*os.Root, error) { return openPrivateDataRoot(a.directory, create) }
+	}
+	root, err := open(enroll)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil, policyAuthorityAnchorRefusal("missing")
@@ -306,7 +313,7 @@ func (a *policyAuthorityAnchor) WithCurrent(ctx context.Context, currentLedger [
 		}
 		return failure
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || a.checkCustody != nil && a.checkCustody() != nil {
 		return policyAuthorityAnchorRefusal("unavailable")
 	}
 	held := &policyAuthorityAnchorHeld{anchor: a, root: root, state: state, active: true}
@@ -324,6 +331,10 @@ func (a *policyAuthorityAnchor) WithCurrent(ctx context.Context, currentLedger [
 	held.mu.Lock()
 	defer held.mu.Unlock()
 	held.active = false
+	if a.checkCustody != nil && a.checkCustody() != nil {
+		a.poisoned.Store(true)
+		return policyAuthorityAnchorRefusal("uncertain")
+	}
 	if held.failure != nil {
 		return held.failure
 	}
@@ -396,7 +407,7 @@ func (h *policyAuthorityAnchorHeld) advanceLocked(ctx context.Context, nextLedge
 	if err != nil {
 		return err
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || h.anchor.checkCustody != nil && h.anchor.checkCustody() != nil {
 		return policyAuthorityAnchorRefusal("unavailable")
 	}
 	nextDigest := digestOf(next)
@@ -420,14 +431,14 @@ func (h *policyAuthorityAnchorHeld) advanceLocked(ctx context.Context, nextLedge
 	}
 	h.state = pending
 	fail := func() error { h.anchor.poisoned.Store(true); return policyAuthorityAnchorRefusal("uncertain") }
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || h.anchor.checkCustody != nil && h.anchor.checkCustody() != nil {
 		return fail()
 	}
 	delivered := bytes.Clone(next)
 	if err = durableWrite(delivered); err != nil || !bytes.Equal(delivered, next) {
 		return fail()
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || h.anchor.checkCustody != nil && h.anchor.checkCustody() != nil {
 		return fail()
 	}
 	committed := pending
@@ -439,7 +450,7 @@ func (h *policyAuthorityAnchorHeld) advanceLocked(ctx context.Context, nextLedge
 	}
 	h.state = committed
 	h.advanced = true
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || h.anchor.checkCustody != nil && h.anchor.checkCustody() != nil {
 		return fail()
 	}
 	return nil

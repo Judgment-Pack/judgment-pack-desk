@@ -1,7 +1,7 @@
 # Private Policy authority high water
 
-Status: optional repository integration, 2026-10-18. This module has no default
-machine-root resolver, enrollment action, executor or execution integration. It cannot authorize execution,
+Status: optional trusted local machine profile, 2026-10-18. This module has no default
+machine root, executor or execution integration. It cannot authorize execution,
 prove an operation's outcome, or establish a replay-safe start. See the
 [admission integration design](policy-execution-admission.md) for those separate
 requirements.
@@ -85,7 +85,8 @@ not their parent's anchor. The resolver owns the independent trusted workspace
 mapping, installation identity and duplicate-workspace checks. A nil resolver
 preserves legacy mode. A configured resolver may return nil only for a known
 never-enrolled legacy workspace; any error aborts startup without fallback.
-There is no default mapping, enrollment path, CLI flag or HTTP action.
+The optional machine profile below supplies the trusted resolver. There is no
+request-selected root or HTTP enrollment action.
 
 Every production live Policy repository constructor uses `s.policyRepository()`:
 request services, both source-poll entry points and source disconnection across
@@ -119,3 +120,69 @@ returns `delivery: recovered`; it proves retained history, never current approva
 or permission to start/replay. Absence from an older historical ledger cannot
 prove that an operation never committed. Archives remain historical and restore
 inactive; staged restore never enrolls an anchor.
+
+## Explicit local machine profile
+
+The [operator CLI](../policy-authority.md) initializes an unused absolute root,
+classifies a pinned workspace as known legacy, then explicitly enrolls its exact
+existing validated ledger and immutable blob closure. Serving requires both the
+root and its expected random installation ID in trusted launcher configuration.
+`Config.PolicyAuthority` is host input, never portable Desk settings. It cannot
+be combined with a custom resolver. No default path, missing-root creation,
+automatic legacy classification or empty-ledger initialization exists.
+
+Initialization uses non-replacing directory creation and refuses any existing
+leaf, including empty or partially initialized state. The owner-only root keeps
+a closed, bounded registry (1 MiB, at most 256 workspaces), random installation
+and workspace IDs, registry generation and exact root/project device-and-inode
+identities. Project path and directory identity must both match. Portable home,
+signing, project and Desk IDs do not create mappings. Copies, replacement folders,
+unknown mappings, wrong installation IDs and corrupt or missing registries refuse.
+An unexpected anchor directory, or an anchor under a legacy entry, also refuses;
+rolling back only the registry cannot downgrade enrollment. Missing enrolled
+anchors retain the binding and historical access while current access refuses.
+
+Configured Servers each own a shared machine-use lease until all their children,
+workers and private stores close. Closing stops admission and drains admitted
+Policy metadata transactions before project descriptors or the lease are released.
+Mutating CLI commands require a nonblocking
+exclusive lease first. This prevents enrollment racing a running configured
+legacy Server whose nil binding was captured at startup. Enrollment then locks
+the existing ledger, registry and anchor in that order. It retains a registry
+intent with exact ledger digest and opaque nonce, claims a demand-only portable
+marker, enrolls the anchor, then finalizes the registry. Each new relative anchor
+directory is synced through its pinned parent before anchor contents are written.
+There is no reset, replay, repair or automatic completion command. Pending
+enrollment holds that workspace; other explicitly known stable workspaces may
+start. Registry corruption, orphan anchors or root custody failure hold the profile.
+
+After an enrollment persistence error the caller receives an unknown outcome,
+never an enrollment success. Confirmed intent remains pending until finalization.
+A final persistence error may leave a stable enrolled record: read-only status
+can observe it, but repeating enrollment still refuses and history never permits
+replay. No fallible rollback or best-effort failure-marker write is attempted.
+
+The portable marker contains only installation/workspace IDs and a demand for
+binding. It cannot choose a machine root or grant authority. Startup checks it,
+and unbound current transactions recheck it under the ledger lock before domain
+access and after completion; a previously running unconfigured Server therefore
+refuses after the demand appears. Machine anchors open relative to the pinned
+root and recheck root and lease-file identity during current access, including
+completion. Configured legacy transactions perform the same custody checks.
+
+The machine root must be separate from configuration, the entire Desk home,
+every pinned project, application data, current/previous external chat roots and
+Runner state (currently beneath configuration/project storage). Storage openers
+and proposed storage/restore destinations apply the same exclusion. Configured
+project/home moves and browser Desk creation refuse before writing in this slice;
+trusted relocation/provisioning requires a future design. Pending home/project
+move journals refuse enrollment/startup; configured launches skip automatic home
+migration recovery before classification. Policy restores keep their existing
+inactive review and source-consent barriers, and cannot enroll themselves.
+
+This profile requires a configured launcher and stopping all older/unconfigured
+Desk processes before enrollment. Its lease cannot stop an older binary. A
+pre-marker snapshot cannot demand a missing trust plane, and intentional omission
+of all machine configuration plus pre-marker data, whole-host rollback, or a
+hostile same-owner process requires an external witness for stronger detection.
+No current user data is enrolled or application process restarted by installation.
