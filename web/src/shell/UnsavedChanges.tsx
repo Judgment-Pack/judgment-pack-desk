@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { UNSAFE_DataRouterContext, useBlocker, type BlockerFunction } from 'react-router-dom'
 import { msg } from '../i18n'
 import { Dialog, DialogActions } from '../ui/Dialog'
@@ -161,8 +161,10 @@ function useChangesRegistration(dirty: boolean, question: string, options: Unsav
   const context = useContext(Context), id = useId()
   const latest = useRef(options); latest.current = options
   const publish = context?.publish
-  useEffect(() => () => publish?.(id), [publish,id])
-  useEffect(() => {
+  useLayoutEffect(() => () => publish?.(id), [publish,id])
+  // A committed recovery UI must not leave the registry holding the previous
+  // busy state until passive effects run: navigation would silently reset.
+  useLayoutEffect(() => {
     publish?.(id, dirty || options.busy ? { question, changed:dirty, kind:options.kind, label:options.label, saveFailed:options.saveFailed, name: options.name, busy: options.busy,
       ...(options.saveDraft ? { saveDraft: () => latest.current.saveDraft!() } : {}),
       ...(options.shouldBlock ? { shouldBlock: args => latest.current.shouldBlock!(args) } : {}) } : undefined)

@@ -4,14 +4,14 @@
   "components": {
     "runtime": {
       "repository": "Judgment-Pack/judgment-pack-runtime",
-      "version": "v0.34.0",
-      "revision": "785ea58927255b775a774e29952c560591429cd3",
+      "version": "v0.36.0",
+      "revision": "20d6bf86b23f1794340fdc648201dda2e80a4095",
       "channel": "stable"
     },
     "runner": {
       "repository": "Judgment-Pack/judgment-pack-runner",
-      "version": "v0.23.0",
-      "revision": "b3d497bb93c9d595299796fb117ddba7d8230d81",
+      "version": "v0.24.0",
+      "revision": "393b5df0f60204fe76b9dcb4bf1ba85d0e5865ff",
       "channel": "stable"
     },
     "gateway": {
