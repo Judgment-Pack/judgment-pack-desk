@@ -598,10 +598,18 @@ go	hand-over: the record moves to another record	TestAConfirmationRecordsExactly
 go	hand-over: what a stopped confirmation wrote is appended again	TestTheHoldersFileIsOnlyAppendedTo
 go	harness swap: anthropic cache read dropped	TestBackgroundCompletionAdmitsCacheFigures
 go	harness swap: cache figures leave the completion JSON	TestBackgroundCompletionAdmitsCacheFigures
+go	harness swap: codex recall reads past the state header	TestAgentRecallQueryStopsAtTheStateHeader
+go	harness swap: codex recall reads the execution state	TestAgentRecallQueryStopsAtTheStateHeader
 go	harness swap: openai-compatible cache read dropped	TestBackgroundCompletionAdmitsCacheFigures
-go	harness swap: recall reads the execution state message	TestMemoryRecallQueryDropsTheExecutionStateOnEachWire
-go	harness swap: recall reads the execution state part	TestMemoryRecallQueryDropsTheExecutionStateOnEachWire
+go	harness swap: recall reads a later user turn	TestMemoryRecallQueryHoldsOnEachShape
+go	harness swap: recall reads a part that is not text	TestMemoryRecallQueryHoldsOnEachShape
+go	harness swap: recall reads the execution state in a content list	TestMemoryRecallQueryHoldsOnEachShape
+go	harness swap: recall reads the execution state message	TestMemoryRecallQueryHoldsOnEachShape
+go	harness swap: recall reads the execution state part	TestMemoryRecallQueryHoldsOnEachShape
+go	harness swap: recall skips no thought part	TestMemoryRecallQueryHoldsOnEachShape
 go	http is accepted off loopback	TestARefusedFileSendsNothing,TestConfiguredEndpointRefusals,TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse,TestRelayRefusesARefusedConfiguration,TestSharedFixturesDecodeAsTheVerdictSays
+go	http is accepted on the LAN without the opt-in	TestARefusedFileSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays,TestTransportRuleAdmitsAPrivateNetworkAddressOnlyWithTheOptIn
+go	http is accepted past the LAN with the opt-in	TestARefusedFileSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays,TestTransportRuleAdmitsAPrivateNetworkAddressOnlyWithTheOptIn
 go	jobs hand-over: a chain shorter than what was handed over is read	TestJobsHandOverKeepsACursorApartFromTheDeskTrails
 go	jobs hand-over: a confirmation names the chain in another way	TestJobsHandOverIsAskedForInOneWay
 go	jobs hand-over: a confirmation of other bytes of the chain is recorded	TestJobsHandOverKeepsACursorApartFromTheDeskTrails
@@ -776,6 +784,11 @@ go	publication: a read that failed counts as too large	TestAManifestNotReadNowIs
 go	publication: existence is taken for publication	TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication
 go	publication: the manifest is written in place	TestAStoppedCreationLeavesNoKeyPastTheNextStart
 go	publication: the marker is removed before publication	TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication,TestAStoppedCreationLeavesNoKeyPastTheNextStart
+go	queue: a request passes those waiting	TestRelayAdmitsNoRequestPastOnesAlreadyWaiting
+go	queue: the bound holds more than it says	TestRelayAnswers429WithRetryAfterOnlyWhenTheQueueIsFull
+go	queue: the refusal tells the page when to come back	TestRelayAnswers429WithRetryAfterOnlyWhenTheQueueIsFull
+go	queue: the wait has no bound	TestRelayAnswersBusyAfterTheWaitBoundAndGivesEverythingBack
+go	queue: the wait is not reported to the page	TestRelayQueuesPastTheSlotsAndCompletesEveryRequest
 go	read does not require a regular file	TestReadRefusesWhatIsNotARegularFile
 go	review: a JPACK_CONFIG in another directory passes	TestTheReviewOnTheStartupDeskAndANamedDesk
 go	review: a JPACK_CONFIG of another name passes	TestTheReviewOnTheStartupDeskAndANamedDesk
@@ -1051,6 +1064,7 @@ go	stamping: an interval past a day is kept	TestAStampingProposalIsHeldToItsBoun
 go	stamping: an interval under five minutes is kept	TestAStampingProposalIsHeldToItsBounds
 go	stamping: files no settings name are kept	TestRemovingTheAuthorityKeepsTheStamps
 go	stamping: five lists are kept	TestAStampingProposalIsHeldToItsBounds
+go	stamping: legacy-project settings leak into the project	TestAStampingTokenIsBoundToWhatWasShown,TestEachDeskKeepsItsOwnStampingSettings,TestRemovingTheAuthorityKeepsTheStamps,TestRootsWhosePathNamesAnotherFileAreNotPassed,TestStampingSettingsAreKeptByDeskOutsideTheProject,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved,TestTheStampsAndThePendingRecordsAreTheRuntimes
 go	stamping: nine policies are kept	TestAStampingProposalIsHeldToItsBounds
 go	stamping: no interval is not an hour	TestAStampingProposalIsHeldToItsBounds,TestEachStampFailureIsShownInTheRuntimesWordsAndTriedAtTheNextInterval,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	stamping: no time stamped through is read	TestTheStampsAndThePendingRecordsAreTheRuntimes
@@ -1077,7 +1091,6 @@ go	stamping: the scheduler stamps before the interval	TestEachStampFailureIsShow
 go	stamping: the scheduler stamps whatever the head	TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	stamping: the scheduler stamps without an authority	TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	stamping: the server does not stop its scheduler	TestTheSchedulerStopsWithTheServer
-go	stamping: legacy-project settings leak into the project	TestAStampingTokenIsBoundToWhatWasShown,TestEachDeskKeepsItsOwnStampingSettings,TestRemovingTheAuthorityKeepsTheStamps,TestRootsWhosePathNamesAnotherFileAreNotPassed,TestStampingSettingsAreKeptByDeskOutsideTheProject,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved,TestTheStampsAndThePendingRecordsAreTheRuntimes
 go	stamping: the settings are not read again before the stamp	TestAChangeOrRemovalWhileARunChecksIsHonoured
 go	stamping: the startup desk keeps its settings under another name	TestAStampingTokenIsBoundToWhatWasShown,TestEachDeskKeepsItsOwnStampingSettings,TestRemovingTheAuthorityKeepsTheStamps,TestRootsWhosePathNamesAnotherFileAreNotPassed,TestStampingSettingsAreKeptByDeskOutsideTheProject,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved,TestTheStampsAndThePendingRecordsAreTheRuntimes
 go	stamping: the timeout is not the runtime's own	TestStampNowIsTheOwnersRequest,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
@@ -1641,6 +1654,7 @@ web	archive page: an unresolved entry with a token is taken	src/audit/archivedKe
 web	archive page: custody no start settles is not said	src/audit/archivedKeys.test.tsx
 web	archive page: not beside a refusal	src/audit/archivedKeys.test.tsx
 web	archive page: not beside the report	src/audit/archivedKeys.test.tsx
+web	assistant setup: stored key is assumed bound	src/assistant/endpointForm.test.tsx
 web	audit fix: a count after another record is this row's	src/audit/handover.test.tsx
 web	audit fix: a count of another trail is this row's	src/audit/handover.test.tsx
 web	audit fix: a count of records and of lines both is read	src/audit/handover.test.tsx
@@ -1682,6 +1696,9 @@ web	component versions: unconfigured Runner shown as Unknown	src/updates/Updates
 web	create leaves its request behind when the editor is already open	src/routes/AuthorView.test.tsx
 web	create writes the pack and never registers it	src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/createFromRail.test.tsx
 web	createParents is not sent	src/shell/CreatePackDialog.test.tsx
+web	critic: the Codex engine is asked for the critic	src/assistant/useAssistantRun.test.tsx
+web	critic: the critic is asked for with thinking off	src/assistant/useAssistantRun.test.tsx
+web	critic: the pack pane does not ask for the critic	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/shell/DescribeIt.test.tsx
 web	declared paths are compared as raw strings again	src/shell/CreatePackDialog.test.tsx
 web	diacritics are dropped rather than folded	src/packs/newPack.test.ts
 web	dirty is a parse comparison rather than a byte one	src/packs/edit/useDocumentBuffer.test.ts
@@ -1832,6 +1849,7 @@ web	harness swap: attachment text inlined in the message	src/chat/attachmentCont
 web	harness swap: attachments not in the run's ledger	src/research/run.test.ts
 web	harness swap: chat offers no propose_pack	src/research/useResearchRun.web.test.tsx
 web	harness swap: endpointCapabilities left unwired	src/assistant/harnessHost.test.ts
+web	harness swap: modelsFor left unwired	src/assistant/connectionModels.test.tsx
 web	harness swap: propose_pack offered in a Policy chat	src/research/useResearchRun.web.test.tsx
 web	harness swap: propose_pack offered to the reviewer	src/research/useResearchRun.web.test.tsx
 web	harness swap: read_link ignores the turn's policy	src/chat/linkTools.test.ts
@@ -2001,6 +2019,7 @@ web	new desk notice: its paragraphs are not each translated	src/desks/DeskSwitch
 web	new desk notice: not shown	src/desks/DeskSwitcher.test.tsx
 web	new desk notice: the desk opens before it is read	src/desks/DeskSwitcher.test.tsx
 web	no block is reachable by keyboard	src/packs/document/PackDocumentView.test.tsx
+web	no endpoint is reported as no key	src/assistant/slotAfterSave.test.tsx
 web	no jpack.json is claimed for any failed read	src/shell/CreatePackDialog.test.tsx
 web	nothing is selected while the templates are still being asked	src/shell/CreatePackDialog.test.tsx
 web	one rule's pointer is read as a prefix of another's	src/packs/checks.test.ts
@@ -2013,6 +2032,7 @@ web	pane state is not persisted	src/config/liveConfig.test.tsx,src/shell/AppShel
 web	paths are folded by lowercasing rather than by orbit	src/packs/packPath.test.ts
 web	position dropped from .desk, so the frame clips nothing	src/ui/containingBlock.test.ts
 web	position dropped from .desk-main, so the pane contains nothing	src/ui/containingBlock.test.ts
+web	probe: the probe overrides what the owner set	src/assistant/endpointCapabilities.test.ts,src/assistant/target.test.ts
 web	provenance is inferred from the status again	src/admin/SourceCard.test.tsx,src/routes/AdminView.test.tsx
 web	rail calls the whole-project graph walk	src/config/liveConfig.test.tsx,src/packs/collectionPreview.test.tsx,src/routes/AdminView.test.tsx,src/shell/AppShell.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/LeftRail.test.tsx,src/shell/createFromRail.test.tsx,src/shell/inspectorSlot.test.tsx,src/shell/narrowShell.test.tsx
 web	re-seeding overrides a layout the viewer chose	src/shell/inspectorWidth.test.tsx
