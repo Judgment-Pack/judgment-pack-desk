@@ -39,8 +39,11 @@ func policyMachineWorkspaceShape(raw []byte, version int) error {
 	if json.Unmarshal(raw, &object) != nil {
 		return policyMachineRefusal()
 	}
-	if version == 2 && object["executor"] != nil {
+	if version >= 2 && object["executor"] != nil {
 		fields = append(fields, "executor")
+	}
+	if version == 3 && object["execution"] != nil {
+		fields = append(fields, "execution")
 	}
 	return policyAuthorityAnchorObject(raw, fields, "intent")
 }
@@ -96,9 +99,9 @@ func policyMachineExecutorShape(raw []byte, w policyMachineWorkspace) error {
 func (m *policyAuthorityMachine) executorRegistryCustody(r policyMachineRegistry) error {
 	executors, _, err := openOwnFolder(m.root, []string{"executors"}, false, "executor leases")
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return m.executionRegistryCustody(r)
 	}
-	if err != nil || r.Version != 2 {
+	if err != nil || r.Version < 2 {
 		if executors != nil {
 			executors.Close()
 		}
@@ -110,11 +113,17 @@ func (m *policyAuthorityMachine) executorRegistryCustody(r policyMachineRegistry
 		return policyMachineRefusal()
 	}
 	defer entries.Close()
-	names, err := entries.ReadDir(policyMachineWorkspaceLimit + 1)
-	if err != nil && !errors.Is(err, io.EOF) || len(names) > policyMachineWorkspaceLimit {
+	names, err := entries.ReadDir(policyMachineWorkspaceLimit + 2)
+	if err != nil && !errors.Is(err, io.EOF) || len(names) > policyMachineWorkspaceLimit+1 {
 		return policyMachineRefusal()
 	}
 	for _, entry := range names {
+		if entry.Name() == policyExecutionDemandDirectory {
+			if r.Version != 3 || !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+				return policyMachineRefusal()
+			}
+			continue
+		}
 		known := false
 		for _, w := range r.Workspaces {
 			if entry.Name() == w.WorkspaceID && w.Executor != nil && entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
@@ -126,7 +135,7 @@ func (m *policyAuthorityMachine) executorRegistryCustody(r policyMachineRegistry
 			return policyMachineRefusal()
 		}
 	}
-	return nil
+	return m.executionRegistryCustody(r)
 }
 
 func (m *policyAuthorityMachine) executorOwnership(w policyMachineWorkspace, runnerWorkspace string) (*runnerExecutorOwnership, error) {
@@ -257,7 +266,9 @@ func (m *policyAuthorityMachine) enrollExecutor(ctx context.Context, project *Pr
 		if index < 0 {
 			return policyMachineRefusal()
 		}
-		r.Version = 2
+		if r.Version < 2 {
+			r.Version = 2
+		}
 		r.Workspaces[index].Executor = &policyMachineExecutor{State: "enrolling", Intent: &policyMachineIntent{Nonce: nonce, LedgerDigest: digestOf(raw)}}
 		r.Generation++
 		if m.persist("executor-intent", policyMachineRegistryName, m.root, r) != nil {

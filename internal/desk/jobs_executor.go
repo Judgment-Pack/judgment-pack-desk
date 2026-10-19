@@ -279,10 +279,19 @@ type runnerBootRequirements struct {
 func runnerRequiredOwnershipCapabilities() runnerBootRequirements {
 	return runnerBootRequirements{Version: 1, Capabilities: []string{"jobs/1", "required-boot-capabilities/1", "executor-ownership/1"}}
 }
+func runnerRequiredAdmissionCapabilities() runnerBootRequirements {
+	v := runnerRequiredOwnershipCapabilities()
+	v.Capabilities = append(v.Capabilities, "policy-manual-pack-run/1")
+	return v
+}
 
 // EOF-only input, bounded output and time, no token, boot line or environment
 // secret. Waiting for process exit precedes validation of the closed object.
 func probeRunnerOwnership(bin string) error {
+	return probeRunnerCapabilities(bin, false)
+}
+func probeRunnerAdmission(bin string) error { return probeRunnerCapabilities(bin, true) }
+func probeRunnerCapabilities(bin string, admission bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "capabilities", "--format", "json")
@@ -298,11 +307,25 @@ func probeRunnerOwnership(bin string) error {
 		Version             int      `json:"version"`
 		Capabilities        []string `json:"capabilities"`
 		GovernanceAdmission bool     `json:"governanceAdmission"`
+		GovernanceProfiles  []string `json:"governanceProfiles,omitempty"`
 	}
-	if rejectDuplicateMembers(raw) != nil || policyAuthorityAnchorObject(raw, []string{"version", "capabilities", "governanceAdmission"}, "") != nil || decodeDataJSON(raw, &report) != nil || report.Version != 2 || report.GovernanceAdmission {
+	if rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &report) != nil {
 		return runnerOwnershipUnavailable()
 	}
+	fields := []string{"version", "capabilities", "governanceAdmission"}
 	want := runnerRequiredOwnershipCapabilities().Capabilities
+	if report.Version == 3 {
+		fields = append(fields, "governanceProfiles")
+		want = runnerRequiredAdmissionCapabilities().Capabilities
+		if !report.GovernanceAdmission || len(report.GovernanceProfiles) != 1 || report.GovernanceProfiles[0] != policyExecutionProfile {
+			return runnerOwnershipUnavailable()
+		}
+	} else if report.Version != 2 || admission || report.GovernanceAdmission {
+		return runnerOwnershipUnavailable()
+	}
+	if policyAuthorityAnchorObject(raw, fields, "") != nil {
+		return runnerOwnershipUnavailable()
+	}
 	if len(report.Capabilities) != len(want) {
 		return runnerOwnershipUnavailable()
 	}

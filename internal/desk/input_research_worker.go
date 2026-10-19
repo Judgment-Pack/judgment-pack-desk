@@ -30,6 +30,9 @@ func (s *Server) startInputResearch() {
 	}()
 }
 func (s *Server) scanInputResearch(ctx context.Context) {
+	if enabled, err := s.manualExecutionDemand(); err != nil || enabled {
+		return
+	}
 	if !s.location.use.TryRLock() {
 		return
 	}

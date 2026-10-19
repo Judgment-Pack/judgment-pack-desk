@@ -6,8 +6,12 @@ The optional anchored repository, explicit executor enrollment and Runner
 ownership integration are foundations. Ownership binds every Jobs start in an
 executor-enrolled workspace to an independently retained external lease and
 requires capability negotiation on the same pinned executable snapshot before
-boot. There is no governed execution capability, current-run admission API, or
-withdrawal enforcement in this tranche.
+boot. The optional experimental `local-admin-manual-pack/1` profile adds
+[manual admission](policy-manual-admission-core.md): schema 3 registration,
+logical-operation barriers and start decisions inside the same anchored
+transaction. Its reviewed [host integration](policy-manual-admission-host.md) is
+enabled in the coordinated actual acceptance candidate; release requires the
+real gate to pass. Ownership enrollment alone grants no run admission.
 [Desk #455](https://github.com/Judgment-Pack/judgment-pack-desk/issues/455),
 [Runner #147](https://github.com/Judgment-Pack/judgment-pack-runner/issues/147)
 and [Gateway #295](https://github.com/Judgment-Pack/judgment-pack-gateway/issues/295)
@@ -22,8 +26,9 @@ operational evaluation. Gateway needs a separate check immediately before an
 external action; admission for an earlier run cannot authorize a later action.
 An exact digest is an identity, not permission.
 
-Keep existing jobs explicitly ungoverned until an administrator reviews their
-registration. Never infer governance from citations, a passing test, a Pack's
+Before an execution profile is enabled, existing jobs retain their ungoverned
+behavior. The experimental manual profile requires registration for every
+operational job once enabled. Never infer governance from citations, a passing test, a Pack's
 title, a chat message or membership in a Library collection. Once registered as
 governed, a resource cannot become ungoverned by omitting a field, restoring an
 old job record, choosing an old companion or falling back after an error.

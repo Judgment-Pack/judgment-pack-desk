@@ -18,6 +18,7 @@ import (
 type PolicyAuthorityOptions struct {
 	Root           string
 	InstallationID string
+	RunnerBin      string // explicit offline enable helper; never resolved from portable state
 }
 
 type PolicyAuthorityStatus struct {
@@ -28,6 +29,8 @@ type PolicyAuthorityStatus struct {
 	LedgerDigest     string `json:"ledgerDigest,omitempty"`
 	AnchorGeneration uint64 `json:"anchorGeneration,omitempty"`
 	ExecutorState    string `json:"executorState,omitempty"`
+	ExecutionState   string `json:"executionState,omitempty"`
+	ExecutionProfile string `json:"executionProfile,omitempty"`
 }
 
 const policyMachineRegistryName = "registry.json"
@@ -41,12 +44,13 @@ type policyMachineIntent struct {
 	LedgerDigest string `json:"ledgerDigest"`
 }
 type policyMachineWorkspace struct {
-	WorkspaceID     string                 `json:"workspaceId"`
-	ProjectPath     string                 `json:"projectPath"`
-	ProjectIdentity string                 `json:"projectIdentity"`
-	State           string                 `json:"state"`
-	Intent          *policyMachineIntent   `json:"intent,omitempty"`
-	Executor        *policyMachineExecutor `json:"executor,omitempty"`
+	WorkspaceID     string                  `json:"workspaceId"`
+	ProjectPath     string                  `json:"projectPath"`
+	ProjectIdentity string                  `json:"projectIdentity"`
+	State           string                  `json:"state"`
+	Intent          *policyMachineIntent    `json:"intent,omitempty"`
+	Executor        *policyMachineExecutor  `json:"executor,omitempty"`
+	Execution       *policyMachineExecution `json:"execution,omitempty"`
 }
 type policyMachineRegistry struct {
 	Version        int                      `json:"version"`
@@ -151,7 +155,7 @@ func policyMachineNoDemand(project *os.Root) error {
 }
 func decodePolicyMachineRegistry(raw []byte) (policyMachineRegistry, error) {
 	var r policyMachineRegistry
-	if len(raw) > policyMachineRegistryLimit || rejectDuplicateMembers(raw) != nil || policyAuthorityAnchorObject(raw, []string{"version", "installationId", "rootIdentity", "generation", "workspaces"}, "") != nil || decodeDataJSON(raw, &r) != nil || (r.Version != 1 && r.Version != 2) || !retainedArtifactDigest.MatchString(r.InstallationID) || !fileIdentityForm.MatchString(r.RootIdentity) || r.Generation == 0 || r.Generation > policyAuthorityAnchorMaxGeneration || r.Workspaces == nil || len(r.Workspaces) > policyMachineWorkspaceLimit {
+	if len(raw) > policyMachineRegistryLimit || rejectDuplicateMembers(raw) != nil || policyAuthorityAnchorObject(raw, []string{"version", "installationId", "rootIdentity", "generation", "workspaces"}, "") != nil || decodeDataJSON(raw, &r) != nil || (r.Version != 1 && r.Version != 2 && r.Version != 3) || !retainedArtifactDigest.MatchString(r.InstallationID) || !fileIdentityForm.MatchString(r.RootIdentity) || r.Generation == 0 || r.Generation > policyAuthorityAnchorMaxGeneration || r.Workspaces == nil || len(r.Workspaces) > policyMachineWorkspaceLimit {
 		return r, policyMachineRefusal()
 	}
 	var wire struct {
@@ -166,6 +170,9 @@ func decodePolicyMachineRegistry(raw []byte) (policyMachineRegistry, error) {
 			return r, policyMachineRefusal()
 		}
 		if policyMachineExecutorShape(wire.Workspaces[i], w) != nil {
+			return r, policyMachineRefusal()
+		}
+		if policyMachineExecutionShape(wire.Workspaces[i], w) != nil {
 			return r, policyMachineRefusal()
 		}
 		if w.Intent != nil {
@@ -333,7 +340,7 @@ func (m *policyAuthorityMachine) persist(phase, name string, root *os.Root, valu
 	}
 	if m.persistForTest != nil {
 		err = m.persistForTest(phase, root, name, raw)
-	} else if phase == "marker" || phase == "executor-file" {
+	} else if phase == "marker" || phase == "executor-file" || phase == "execution-demand" {
 		err = claimPrivateData(root, name, raw)
 		if err == nil {
 			var retained []byte
@@ -378,7 +385,7 @@ func (m *policyAuthorityMachine) resolve(p *ProjectRoot) (*policyAuthorityAnchor
 		return nil, err
 	}
 	w, found, err := policyMachineWorkspaceFor(r, p)
-	if err != nil || !found || w.State == "enrolling" || w.Executor != nil && w.Executor.State != "enrolled" {
+	if err != nil || !found || w.State == "enrolling" || w.Executor != nil && w.Executor.State != "enrolled" || w.Execution != nil && w.Execution.State != "enabled" {
 		return nil, policyMachineRefusal()
 	}
 	marker, err := readPolicyMachineMarker(p.own.root)
@@ -428,8 +435,11 @@ func PolicyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 }
 func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityOptions, projectDir string, hook func(string, *os.Root, string, []byte) error) (PolicyAuthorityStatus, error) {
 	var status PolicyAuthorityStatus
-	if ctx.Err() != nil || !contains([]string{"init", "status", "classify-legacy", "enroll", "enroll-executor"}, action) {
+	if ctx.Err() != nil || !contains([]string{"init", "status", "classify-legacy", "enroll", "enroll-executor", "enable-execution"}, action) {
 		return status, policyMachineRefusal()
+	}
+	if action == "enable-execution" && !policyManualAdmissionAvailable {
+		return status, policyRefusal(409, "unsupported-profile", "Manual execution admission is not available in this build.")
 	}
 	config, err := ResolveDeskConfigDir()
 	if err != nil {
@@ -452,7 +462,7 @@ func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 		}
 		defer project.Close()
 	}
-	if (action == "enroll" || action == "enroll-executor" || action == "classify-legacy") && project == nil {
+	if (action == "enroll" || action == "enroll-executor" || action == "classify-legacy" || action == "enable-execution") && project == nil {
 		return status, policyMachineRefusal()
 	}
 	if err = policyMachineProtectedPaths(o.Root, config, project); err != nil {
@@ -485,6 +495,14 @@ func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 			return status, nil
 		}
 		status.WorkspaceID, status.State = w.WorkspaceID, w.State
+		status.ExecutionState = "disabled"
+		if w.Execution != nil {
+			status.ExecutionState = w.Execution.State
+			status.ExecutionProfile = w.Execution.Profile
+			if w.Execution.State != "enabled" {
+				return status, nil
+			}
+		}
 		status.ExecutorState = "unenrolled"
 		if w.Executor != nil {
 			status.ExecutorState = w.Executor.State
@@ -512,12 +530,15 @@ func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 		if waitPrivateDataLock(ctx, lock, false) != nil {
 			return PolicyAuthorityStatus{}, policyMachineRefusal()
 		}
-		raw, _, e := readExistingPolicyLedger(policies)
+		raw, ledger, e := readExistingPolicyLedger(policies)
 		if e != nil {
 			status.State = "ledger-unavailable"
 			return status, nil
 		}
 		status.LedgerDigest = digestOf(raw)
+		if w.Execution == nil && ledger.Execution != nil || w.Execution != nil && (ledger.Execution == nil || ledger.Execution.Identity != executionWorkspaceDemand(r.InstallationID, w).identity()) {
+			return PolicyAuthorityStatus{}, policyMachineRefusal()
+		}
 		a, e := m.resolve(project)
 		if e != nil {
 			return PolicyAuthorityStatus{}, e
@@ -543,6 +564,12 @@ func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 	}
 	if err = policyMachineProjectIdle(config, project); err != nil {
 		return PolicyAuthorityStatus{}, err
+	}
+	if action == "enable-execution" {
+		if !found {
+			return PolicyAuthorityStatus{}, policyMachineRefusal()
+		}
+		return m.enableExecution(ctx, project, config, w)
 	}
 	if action == "enroll-executor" {
 		if !found || w.State != "enrolled" || w.Executor != nil {

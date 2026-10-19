@@ -60,6 +60,9 @@ func policyArchiveCapacity() error {
 
 func policyArchiveClosure(ctx context.Context, ledger policyLedger, artifacts retainedArtifactRepository) (policyArchiveCut, error) {
 	cut := policyArchiveCut{Ledger: ledger, Refs: []retainedArtifactRef{}}
+	if ledger.SchemaVersion == policyExecutionLedgerSchemaVersion || ledger.Execution != nil {
+		return cut, policyExecutionArchiveUnsupported()
+	}
 	if validatePolicyLedger(ledger) != nil {
 		return cut, policyArchiveInvalid()
 	}
@@ -307,6 +310,13 @@ func validateArchivedPolicyObservation(ctx context.Context, artifacts retainedAr
 }
 
 func writePolicyArchive(ctx context.Context, out *os.File, cut policyArchiveCut, artifacts retainedArtifactRepository) error {
+	decoded, err := decodePolicyLedger(cut.Raw)
+	if err != nil {
+		return policyArchiveInvalid()
+	}
+	if decoded.SchemaVersion == policyExecutionLedgerSchemaVersion || cut.Ledger.Execution != nil {
+		return policyExecutionArchiveUnsupported()
+	}
 	manifest := policyArchiveManifest{Format: policyArchiveFormat, Version: 1, PolicySchemaVersion: 2, CapturedAt: time.Now().UTC().Format("2006-01-02T15:04:05Z"), Scope: "project-policies", Ledger: artifactReference(cut.Raw), Blobs: cut.Refs}
 	raw, _ := json.Marshal(manifest)
 	if len(raw) > maxBackupManifest {
@@ -426,7 +436,11 @@ func readPolicyArchive(ctx context.Context, file *os.File) (policyArchiveCut, po
 		return fail(policyArchiveCapacity())
 	}
 	raw, err = readBackupFile(reader.files["policy-ledger.json"], policyLedgerLimit)
-	if err != nil || verifyRetainedArtifact(manifest.Ledger, raw) != nil || rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &cut.Ledger) != nil {
+	if err != nil || verifyRetainedArtifact(manifest.Ledger, raw) != nil {
+		return fail(policyArchiveInvalid())
+	}
+	cut.Ledger, err = decodePolicyLedger(raw)
+	if err != nil {
 		return fail(policyArchiveInvalid())
 	}
 	cut, err = policyArchiveClosure(ctx, cut.Ledger, reader)

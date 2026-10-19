@@ -310,6 +310,13 @@ func TestPolicyMachineRegistryRollbackCopyAndMissing(t *testing.T) {
 	for _, kind := range []string{"legacy-registry", "legacy-without-marker", "missing-registry", "corrupt-registry", "missing-anchor", "copy-project", "replaced-project"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newPolicyMachineFixture(t)
+			var activation policyLifecycleRequest
+			if kind == "missing-anchor" {
+				f.policy = policyApprove(t, f.s, f.token, f.policy)
+				f.policy = policyMutation(t, policyCall(f.s, f.token, "POST", "/api/policies/"+f.policy.Document.ID+"/publish", policyPublishBody(t, f.policy))).Policy
+				service, _ := coverageServiceFixture(f.s, f.token)
+				activation = lifecycleBody(t, service, f.policy, "activate")
+			}
 			legacy := machineRaw(t, f.options.Root, policyMachineRegistryName)
 			enrolled := f.command(t, "enroll")
 			switch kind {
@@ -363,6 +370,17 @@ func TestPolicyMachineRegistryRollbackCopyAndMissing(t *testing.T) {
 			if err = s.policyRepository().View(context.Background(), func(policyLedger) error { t.Fatal("missing anchor current"); return nil }); err == nil {
 				t.Fatal("missing anchor allowed")
 			}
+			if err = s.policyRepository().Update(context.Background(), func(*policyLedger) (bool, error) { t.Fatal("missing anchor admitted write"); return true, nil }); err == nil {
+				t.Fatal("missing anchor allowed mutation")
+			}
+			service, actor := coverageServiceFixture(s, policyTestSession(t, s))
+			if _, err = service.lifecycleCommand(context.Background(), f.policy.Document.ID, actor, activation); err == nil {
+				t.Fatal("history access granted lifecycle activation")
+			}
+			var unavailable *policyFailure
+			if !errors.As(err, &unavailable) || unavailable.Code != "authority-unavailable" || !unavailable.Uncertain {
+				t.Fatal("valid lifecycle activation was refused outside the current-authority boundary", err)
+			}
 			if err = s.policyHistoryReader().ReadHistory(context.Background(), func(l policyLedger) error {
 				if len(l.Policies) != 1 {
 					t.Fatal("history missing")
@@ -371,7 +389,42 @@ func TestPolicyMachineRegistryRollbackCopyAndMissing(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			if digestOf(machineRaw(t, filepath.Join(f.s.projectDir, policyDirectory), "ledger.json")) != enrolled.LedgerDigest {
+				t.Fatal("missing anchor history rewrote the ledger")
+			}
+			if _, err = os.Lstat(filepath.Join(f.options.Root, "anchors", enrolled.WorkspaceID)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("history lookup recreated the missing anchor", err)
+			}
 		})
+	}
+}
+
+func TestPolicyMachineExecutionMissingAnchorStillRefusesStartup(t *testing.T) {
+	f, _ := admissionPrepareFixture(t, "committed")
+	if _, err := enableAdmissionFixture(t, f, nil); err != nil {
+		t.Fatal(err)
+	}
+	w := executorRegistry(t, f).Workspaces[0]
+	ledger := machineRaw(t, filepath.Join(f.s.projectDir, policyDirectory), "ledger.json")
+	demandRoot := filepath.Join(f.options.Root, "executors", policyExecutionDemandDirectory)
+	demand := machineRaw(t, demandRoot, w.WorkspaceID)
+	anchor := filepath.Join(f.options.Root, "anchors", w.WorkspaceID)
+	if err := os.RemoveAll(anchor); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := f.configured(t); err == nil {
+		s.Close()
+		t.Fatal("execution-enabled startup accepted a missing authority anchor")
+	}
+	status, err := PolicyAuthorityLocal(context.Background(), "status", f.options, f.s.projectDir)
+	if err != nil || status.State != "anchor-unavailable" {
+		t.Fatal("missing execution anchor lost diagnostic status", status, err)
+	}
+	if !bytes.Equal(ledger, machineRaw(t, filepath.Join(f.s.projectDir, policyDirectory), "ledger.json")) || !bytes.Equal(demand, machineRaw(t, demandRoot, w.WorkspaceID)) {
+		t.Fatal("missing execution anchor repaired authority or removed its demand")
+	}
+	if _, err := os.Lstat(anchor); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("missing execution anchor was recreated", err)
 	}
 }
 func copyPolicyMachineTree(t *testing.T, from, to string) {

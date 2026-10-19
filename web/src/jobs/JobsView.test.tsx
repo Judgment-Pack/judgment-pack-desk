@@ -1,15 +1,15 @@
 import { loadJobDraft,saveJobDraft } from './drafts'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
 import { MemoryRouter, useLocation, useNavigate, Routes, Route } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { CreateJobContent } from './JobsView'
+import { CreateJobContent, JobsContent } from './JobsView'
 import { jobsAPI, JobsRequestError } from './client'
 import { readReleaseTests } from './releaseTests'
 import { refreshRunnerKey } from './runnerKey'
 import { DeskConfigProvider } from '../config/DeskConfigProvider'
-import { createHash } from 'node:crypto'
+import { createHash, webcrypto } from 'node:crypto'
 import { readReview, type Review } from '../packs/review/client'
 vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn(),saveJobDraft:vi.fn()}))
 const mappedEditor=vi.hoisted(()=>({props:undefined as import('react').ComponentProps<typeof import('./MappedInputFields').MappedInputFields>|undefined}))
@@ -160,6 +160,7 @@ it('creates the immutable reviewed release after checking freshness again', asyn
 })
 
 it('starts an operational run with fresh facts and omitted evidence',async()=>{
+ vi.stubGlobal('fetch',async()=>new Response('Not found',{status:404}))
  const {JobsContent}=await import('./JobsView')
  const {Routes,Route}=await import('react-router-dom')
  vi.mocked(jobsAPI).mockImplementation(async(path:string)=>{
@@ -345,4 +346,81 @@ it.each(['cancel','leave'] as const)('does not navigate after a delayed research
  await act(async()=>{const [id,values]=vi.mocked(saveJobDraft).mock.calls[0]!;finish({file:{path:'draft',content:'',bytes:0,sha256:'saved'},draft:{version:1,id,updatedAt:new Date().toISOString(),status:'draft',values}});await pending})
  expect(screen.getByTestId('location').textContent).toBe(action==='leave'?'/elsewhere':'/jobs/new?pack=pack')
  if(action==='cancel')expect((screen.getByLabelText('Job name') as HTMLInputElement).disabled).toBe(false)
+})
+
+function authorityRunPage(client=new QueryClient({defaultOptions:{queries:{retry:false}}})){
+ return render(<QueryClientProvider client={client}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/job-one?run=new']}><Routes><Route path="/jobs/:jobId" element={<JobsContent/>}/><Route path="/jobs/:jobId/runs/:runId" element={<span/>}/></Routes></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
+}
+function authorityRunData(onSubmit?: (key?:string)=>unknown){
+ vi.mocked(jobsAPI).mockImplementation(async(path,body,key)=>{
+  if(path==='jobs/job-one')return {job:{id:'job-one',name:'Intake'},release:{...release,title:'Policy'}} as never
+  if(path.startsWith('jobs/job-one/runs?'))return {items:[]} as never
+  if(path==='jobs/job-one/runs'&&body!==undefined){onSubmit?.(key);return {id:'run-new',jobId:'job-one'} as never}
+  return {} as never
+ })
+}
+const authoritySubmit=()=>screen.getByRole('button',{name:'Submit run'}) as HTMLButtonElement
+it.each([false,true])('holds submission while authority status is delayed or failed (cached disabled: %s)',async cached=>{
+ let rejectStatus!:(error:Error)=>void
+ vi.stubGlobal('fetch',()=>new Promise<Response>((_,reject)=>{rejectStatus=reject}))
+ authorityRunData()
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ if(cached)client.setQueryData(['policy-execution'],{enabled:false})
+ authorityRunPage(client)
+ await screen.findByRole('button',{name:'Submit run'})
+ expect(authoritySubmit().disabled).toBe(true)
+ fireEvent.click(authoritySubmit())
+ expect(vi.mocked(jobsAPI).mock.calls.some(([path,body])=>path==='jobs/job-one/runs'&&body!==undefined)).toBe(false)
+ await act(async()=>rejectStatus(Error('authority unavailable')))
+ await waitFor(()=>expect(client.getQueryState(['policy-execution'])?.status).toBe('error'))
+ expect(authoritySubmit().disabled).toBe(true)
+ fireEvent.click(authoritySubmit())
+ expect(vi.mocked(jobsAPI).mock.calls.some(([path,body])=>path==='jobs/job-one/runs'&&body!==undefined)).toBe(false)
+})
+it.each([200,404])('allows legacy submit only after verified disabled authority status (%s)',async status=>{
+ vi.stubGlobal('fetch',async()=>new Response(status===200?JSON.stringify({version:1,enabled:false}):'Not found',{status}))
+ authorityRunData()
+ authorityRunPage()
+ await waitFor(()=>expect(authoritySubmit().disabled).toBe(false))
+ fireEvent.click(authoritySubmit())
+ await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith('jobs/job-one/runs',{facts:{}},expect.any(String)))
+})
+it('retains the enabled authority submission key before send and holds it across refresh after a lost reply',async()=>{
+ vi.stubGlobal('crypto',webcrypto)
+ for(const key of Object.keys(sessionStorage))if(key.startsWith('jpack.manual-intent.v1:'))sessionStorage.removeItem(key)
+ vi.stubGlobal('fetch',async(url:unknown)=>new Response(JSON.stringify(String(url).includes('/policy-registration')?{version:1,state:'registered',eligible:true,reason:'eligible',resource:{jobId:'job-one',jobRevision:'1',releaseId:'release'}}:{version:1,enabled:true,profile:'local-admin-manual-pack/1'}),{status:200}))
+ let originalKey:string|undefined,sends=0
+ authorityRunData(key=>{
+  originalKey=key;sends++
+  expect(Object.keys(sessionStorage).filter(k=>k.startsWith('jpack.manual-intent.v1:')).some(k=>JSON.parse(sessionStorage.getItem(k)!).key===key)).toBe(true)
+  throw Error('The actual submission reply was lost.')
+ })
+ authorityRunPage()
+ await waitFor(()=>expect(authoritySubmit().disabled).toBe(false))
+ fireEvent.click(authoritySubmit())
+ await screen.findByText('The actual submission reply was lost.')
+ expect(sends).toBe(1);expect(originalKey).toBeTruthy();expect(authoritySubmit().disabled).toBe(true)
+ cleanup();authorityRunPage()
+ await screen.findByText(originalKey!)
+ expect(authoritySubmit().disabled).toBe(true)
+ fireEvent.click(authoritySubmit());expect(sends).toBe(1)
+ expect(screen.getByRole('button',{name:'Choose a new intent'})).toBeTruthy()
+ for(const key of Object.keys(sessionStorage))if(key.startsWith('jpack.manual-intent.v1:'))sessionStorage.removeItem(key)
+})
+
+it('holds submission during paused authority refresh with cached disabled status',async()=>{
+ vi.stubGlobal('fetch',async()=>new Response(JSON.stringify({version:1,enabled:false}),{status:200}))
+ authorityRunData()
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ client.setQueryData(['policy-execution'],{enabled:false})
+ client.setQueryData(['job','job-one'],{job:{id:'job-one',name:'Intake'},release:{...release,title:'Policy'}})
+ onlineManager.setOnline(false)
+ try{
+  authorityRunPage(client)
+  await screen.findByRole('button',{name:'Submit run'})
+  await waitFor(()=>expect(client.getQueryState(['policy-execution'])?.fetchStatus).toBe('paused'))
+  expect(authoritySubmit().disabled).toBe(true)
+  fireEvent.click(authoritySubmit())
+  expect(vi.mocked(jobsAPI).mock.calls.some(([path,body])=>path==='jobs/job-one/runs'&&body!==undefined)).toBe(false)
+ }finally{cleanup();onlineManager.setOnline(true)}
 })

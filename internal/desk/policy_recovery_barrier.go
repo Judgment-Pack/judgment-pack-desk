@@ -80,6 +80,9 @@ func validatePolicyRecovery(ledger policyLedger) error {
 	return nil
 }
 func restorePolicyRecoveryBarrier(ledger *policyLedger, snapshot policyRecoverySnapshot) error {
+	if ledger.SchemaVersion == policyExecutionLedgerSchemaVersion || ledger.Execution != nil {
+		return policyExecutionArchiveUnsupported()
+	}
 	if len(ledger.Recoveries) >= 64 {
 		return policyArchiveCapacity()
 	}

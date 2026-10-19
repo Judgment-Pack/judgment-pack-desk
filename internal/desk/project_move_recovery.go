@@ -42,6 +42,21 @@ func (s *Server) serveProject(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 409, CodeStale, problem)
 		return
 	}
+	if strings.HasPrefix(path, "/api/input-preparations") && r.Method != "GET" {
+		enabled, err := s.manualExecutionDemand()
+		if err != nil {
+			if s.guard(w, r) {
+				policyHTTPFailure(w, err)
+			}
+			return
+		}
+		if enabled {
+			if s.guard(w, r) {
+				policyHTTPFailure(w, executionFailure("unsupported-profile"))
+			}
+			return
+		}
+	}
 	s.mux.ServeHTTP(w, r)
 }
 func historyRequestPath(path string) bool {
