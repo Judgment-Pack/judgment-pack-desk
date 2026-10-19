@@ -44,6 +44,7 @@ import { PROBE_DIAGNOSTICS } from './client'
 import { PREFILLED_URL } from './endpointDraft'
 import { LISTING_SUFFIX } from './modelListing'
 import { suffixProblem } from '@judgment-pack/harness/session'
+import { ASSISTANT_TOOLS as HARNESS_CEILING } from '@judgment-pack/harness/host'
 import type { AssistantSlot } from './useAssistantSlot'
 
 const SRC = join(import.meta.dirname, '..')
@@ -501,6 +502,21 @@ describe('(3) the tool list is closed, and is one list across both sides', () =>
     expect(go).toEqual([...ASSISTANT_TOOLS])
   })
 
+  it('is the harness ceiling less the one tool the Desk does not grant', () => {
+    // `@judgment-pack/harness` v0.1.0 puts a sixth name on its ceiling (agent#7):
+    // `experimental_test_cases`, under an argument allow-list and a per-turn
+    // cap. The gate offers the intersection of the ceiling and the allow-list,
+    // and the allow-list comes from this list, which still holds five: the
+    // Desk grants the sixth only by widening this list, both decoders and the
+    // chassis' AssistantTools together, which this swap does not do.
+    expect([...HARNESS_CEILING].filter((tool) => !(ASSISTANT_TOOLS as readonly string[]).includes(tool))).toEqual([
+      'experimental_test_cases'
+    ])
+    expect([...ASSISTANT_TOOLS].every((tool) => (HARNESS_CEILING as readonly string[]).includes(tool))).toBe(true)
+    const sixth = decodeDesk({ endpoint: { ...GOOD_ENDPOINT, tools: ['experimental_test_cases'] } })
+    expect(sixth.values).toBeUndefined()
+  })
+
   it('requires the list rather than defaulting it', () => {
     // A defaulted tool list is a capability granted by a file that never
     // mentioned it.
@@ -769,7 +785,13 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     expect(source).toContain(
       'export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Response>'
     )
-    expect(source).toMatch(/model: \{\s*family: EndpointKind;\s*model: string;\s*call: ModelCall;?\s*\}/)
+    // Since v0.1.0 the model carries one more member, `capabilities`: what the
+    // endpoint can do (its window, tool calls, vision, reasoning), the
+    // capability record's members, read closed by the harness. It is not an
+    // address and not a credential, so the rule above holds with it.
+    expect(source).toMatch(
+      /model: \{\s*family: EndpointKind;\s*model: string;\s*call: ModelCall;\s*capabilities\?: Partial<import\('\.\/capabilities'\)\.ModelCapabilities>;?\s*\}/
+    )
   })
 
   it('admits two methods and no more, because the relay forwards the method', () => {
@@ -817,9 +839,16 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
       // tool. Weak, and enumerated — what actually holds the rule is that a
       // served schema is the only thing any engine passes on, and that a tool
       // arriving without one is refused rather than given one.
-      expect(source.text, `${source.path} writes a schema of its own`).not.toMatch(
-        /properties\s*:\s*\{/
-      )
+      //
+      // One schema is written, and it is not a runtime tool's: the contract's
+      // input schema of `propose_pack` (`tool-offer.json#/$defs/proposePack`),
+      // the host tool a proposal may arrive through, which the engine reads
+      // itself (v0.1.0, agent#6). It is declared once, in `engines/contract`,
+      // and is the one object the sweep may find there.
+      const written = source.text.match(/properties\s*:\s*\{/g) ?? []
+      const proposePack = /^@judgment-pack\/harness\/dist\/engines\/contract\.(js|d\.ts)$/.test(source.path)
+      expect(written.length, `${source.path} writes a schema of its own`).toBe(proposePack ? 1 : 0)
+      if (proposePack) expect(source.text).toContain('PROPOSE_PACK_SCHEMA')
     }
   })
 })
@@ -833,6 +862,13 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
    * readings of one proposal are two documents: the diff can describe the first
    * and the writer write the second.
    */
+  /**
+   * The harness modules that freeze constant tables, never a proposal: the
+   * budget's defaults (`context/policy`), the families' default capability
+   * records (`capabilities`, v0.1.0) and the refusals a request is retried
+   * after (`failures`, v0.1.0).
+   */
+  const FROZEN_TABLES = ['context/policy.', 'capabilities.', 'failures.'].map(module => `@judgment-pack/harness/dist/${module}`)
   const others = () =>
     [...sourcesUnder('assistant'), ...harnessSourcesUnder()].filter(
       (source) =>
@@ -853,7 +889,7 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
         'JSON.parse(JSON.stringify'
       )
       expect(source.text, `${source.path} calls plain()`).not.toMatch(/[^A-Za-z]plain\(/)
-      if(!source.path.startsWith('@judgment-pack/harness/dist/context/policy.'))expect(source.text, `${source.path} freezes again`).not.toContain('Object.freeze(')
+      if(!FROZEN_TABLES.some(table=>source.path.startsWith(table)))expect(source.text, `${source.path} freezes again`).not.toContain('Object.freeze(')
     }
   })
 

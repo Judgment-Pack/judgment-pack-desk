@@ -108,7 +108,16 @@ function dateLine(document: ReadDocument): string {
   return parts.join('; ')
 }
 
-/** The three tools, bound to one run's ledger, budget and gateway session. */
+/**
+ * The three tools, bound to one run's ledger, budget and gateway session.
+ *
+ * The search and the read are declared reads (`effect: 'read'`): what they
+ * answer is text fetched from a source, so the harness shows it to the model
+ * as one block of retrieved data closed by the run's marker, as it shows the
+ * runtime's answers (agent#12). Neither is offered to a delegated task, which
+ * `delegation` alone decides, and `cite_excerpt`, which records a citation, is
+ * not a read.
+ */
 export function researchTools(deps: ResearchDeps): HostTool[] {
   const call = deps.acquire ?? acquireDefault
   const { config, ledger } = deps
@@ -118,6 +127,7 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
   const searchDialect = searchSource ? SEARCH_DIALECTS[searchSource.dialect] : undefined
   tools.push({
     name: 'search_sources',
+    effect: 'read',
     description:
       'Search the web for policy sources through the configured gateway. Returns ranked hits with ' +
       'a title, URL and the provider’s snippet; a snippet is not the page. Read a hit with ' +
@@ -188,6 +198,7 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
   const readDialect = readSource ? READ_DIALECTS[readSource.dialect] : undefined
   tools.push({
     name: 'read_source',
+    effect: 'read',
     description:
       'Read a web page or PDF through the configured gateway and return its text, rendered by the ' +
       `reader service, ${READ_WINDOW} characters at a time. Give a url to read it, or a source_id ` +

@@ -59,6 +59,7 @@ import { ProposalUnknowns, RefutationReport, RuntimeChecks } from './ProposalRep
 import { acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
+import { proposePackTool } from './proposePack'
 import { stateFromEvents, thinkingLine } from '@judgment-pack/harness/thinking'
 import { useAssistantRun } from './useAssistantRun'
 import { CHECKING_KEY, UNREAD_KEY, useAssistantSlot } from './useAssistantSlot'
@@ -109,6 +110,8 @@ const noBusy = () => ''
 
 /** One list, allocated once, so an unconfigured desk re-renders to one value. */
 const EMPTY_MODELS: readonly string[] = []
+/** The pane proposes a pack: it offers `propose_pack` beside the fence (`assistant/proposePack.ts`). */
+const PANE_HOST_TOOLS = [proposePackTool()]
 
 /** Why Fix is not offered, where it is not. */
 function fixWhy(diagnostics: number, advertised: boolean, listed: boolean): string | undefined {
@@ -299,7 +302,8 @@ export function AssistantPane({
     model: picked.model,
     engine: slot.engine,
     thinking: slot.thinking,
-    testPrompt: testPrompt.data?.text ?? ''
+    testPrompt: testPrompt.data?.text ?? '',
+    hostTools: PANE_HOST_TOOLS
   })
 
   // The run starts when the prompt this submission asked for has arrived, and

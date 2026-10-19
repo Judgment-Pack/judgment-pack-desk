@@ -24,8 +24,10 @@ describe('shared execution continuity',()=>{
   const resumed=await contextualSession({...input,context:{...input.context,execution:extendExecution(saved)}})
   expect(resumed.context.execution.state).toMatchObject({used:20,limit:30,plan:saved.plan})
   expect(resumed.context.ledger.read({id:ref.id,path:'/flag'})).toMatchObject({value:false})
-  expect(resumed.session.prompt).toContain('Verify proposed change')
-  expect(resumed.session.prompt).toContain('retainedOperations')
+  // Since v0.1.0 the execution snapshot travels in the request's state, not in the prompt (agent#9).
+  expect(resumed.context.execution.requestState()).toContain('Verify proposed change')
+  expect(resumed.context.execution.requestState()).toContain('retainedOperations')
+  expect(resumed.session.prompt).not.toContain('retainedOperations')
   expect(input.callTool).not.toHaveBeenCalled()
  })
 })

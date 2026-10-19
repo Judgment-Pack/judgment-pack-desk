@@ -57,7 +57,8 @@ it('uses the same Policy tools and context projection through the subscription a
   expect(request.prompt.length).toBeLessThan(api.prompt.length)
   const read=request.tools.find(tool=>tool.description.startsWith('read_policy:'))!,propose=request.tools.find(tool=>tool.description.startsWith('propose_policy_update:'))!
   const answer=await callbacks.tool({id:'read',name:read.name,arguments:{}},callbacks.signal)
-  expect(answer.isError).toBe(false);expect(answer.text).toContain('read_context')
+  // The reference to the retained answer names the ledger's reader, read_window, since v0.1.0 (agent#1).
+  expect(answer.isError).toBe(false);expect(answer.text).toContain('read_window')
   const proposal=await callbacks.tool({id:'propose',name:propose.name,arguments:{revision,...candidate,title:'Requested title'}},callbacks.signal)
   expect(proposal.isError).toBe(false)
   await callbacks.event({type:'message',id:'answer',text:'The Policy draft update is proposed for review.',phase:'final'})

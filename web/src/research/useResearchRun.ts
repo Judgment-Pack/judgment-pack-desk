@@ -41,6 +41,7 @@ import { Ledger, type SourceRecord } from './ledger'
 import { AuthoringRun, INITIAL_STATE, documentBasis, type RunState, type Turn, type TurnRequest } from './run'
 import { runtimeCheckIdentity } from './retainedCheck'
 import { researchTools } from './tools'
+import { withProposePack } from '../assistant/proposePack'
 
 export const MAX_REVISIONS = 4
 
@@ -217,7 +218,9 @@ export function useResearchRun(options?: {
             testPrompt: request.reviewer ? '' : testPrompt,
             tools: ready.tools,
             callTool: ready.callTool,
-            hostTools: request.hostTools,
+            // A turn that may propose a pack offers propose_pack beside the fence;
+            // an independent reviewer, and a conversation without artifact proposals, do not.
+            hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),
             ...bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking),
             signal
           },

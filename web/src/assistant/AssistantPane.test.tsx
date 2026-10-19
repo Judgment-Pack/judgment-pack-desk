@@ -34,6 +34,8 @@ vi.mock('@judgment-pack/harness/engines/index', async (importOriginal) => {
 import { scriptedModel } from '@judgment-pack/harness/certification/scriptedModel'
 import { scriptedWebSocket } from '@judgment-pack/harness/certification/scriptedServer'
 import { scenario } from '@judgment-pack/harness/certification'
+import { STATE_HEADER } from '@judgment-pack/harness/engines/vercel/loop'
+import { PROPOSE_PACK_SCHEMA, PROPOSE_PACK_TOOL } from '@judgment-pack/harness/engines/contract'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
@@ -863,14 +865,23 @@ describe('accepting the proposal into the draft', () => {
   })
 })
 
+/**
+ * The person's own text in the first user message of the first request the
+ * pane made: its first part. Since v0.1.0 the second part is the harness's
+ * execution state, headed `STATE_HEADER` (agent#9), and the pane's text is
+ * never inside it.
+ */
+const firstUserMessage = (relayed: { body: string }[]) => {
+  const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string | { type: string; text: string }[] }[] }
+  const content = body.messages.find((message) => message.role === 'user')!.content
+  if (typeof content === 'string') return content
+  expect(content).toHaveLength(2)
+  expect(content[1]!.text.startsWith(STATE_HEADER)).toBe(true)
+  return content[0]!.text
+}
+
 describe('the draft the session is given', () => {
   const DRAFT = `${JSON.stringify(scenario.documents.DRAFT_V1, null, 4)}\n`
-
-  /** The first user message of the first request the pane made. */
-  const firstUserMessage = (relayed: { body: string }[]) => {
-    const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string }[] }
-    return body.messages.find((message) => message.role === 'user')!.content
-  }
 
   async function runOver(options: { buffer?: { text: string }; draft?: string } = {}) {
     const drawn = await draw({ ...options, editing: true })
@@ -894,6 +905,13 @@ describe('the draft the session is given', () => {
     expect(sent).toContain(DRAFT_SENTENCE)
     expect(sent).toContain(`\`\`\`json\n${DRAFT}\n\`\`\``)
     expect(sent.indexOf(DRAFT_SENTENCE)).toBeGreaterThan(0)
+  })
+
+  it('offers propose_pack beside the runtime tools, with the schema the package exports', async () => {
+    const { relayed } = await runOver()
+    const body = JSON.parse(relayed[0]!.body) as { tools?: { type?: string; function?: { name: string; parameters: unknown }; name?: string; input_schema?: unknown }[] }
+    const offered = (body.tools ?? []).map((tool) => tool.function ? { name: tool.function.name, schema: tool.function.parameters } : { name: tool.name, schema: tool.input_schema })
+    expect(offered.find((tool) => tool.name === PROPOSE_PACK_TOOL)?.schema).toMatchObject(PROPOSE_PACK_SCHEMA)
   })
 
   it('calls the proposal an update where a draft was sent', async () => {
@@ -1033,8 +1051,7 @@ describe('fixing what the check refused', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Fix' }))
     await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
-    const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string }[] }
-    const sent = body.messages.find((message) => message.role === 'user')!.content
+    const sent = firstUserMessage(relayed)
     expect(sent).toContain('The runtime’s repair prompt, with the diagnostics in it.')
     expect(sent).toContain(DRAFT)
   })

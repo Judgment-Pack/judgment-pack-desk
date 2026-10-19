@@ -8,10 +8,11 @@ import * as connections from './aiConnections'
 import * as provider from '../mcp/McpProvider'
 import * as transport from '../mcp/transport'
 import * as dialects from '../dialects/client'
+import * as capabilities from './endpointCapabilities'
 
 /**
  * The Desk as the harness's host: every injection point of
- * `@judgment-pack/harness` (its `host.ts`) supplied once, from the Desk module
+ * `@judgment-pack/harness` v0.1.0 (its `host.ts`) supplied once, from the Desk module
  * the harness read it from before it moved into the package, under the same
  * name. Importing this module is what wires the host: the page's entry
  * (`main.tsx`) imports it before anything starts a run, and the test ground
@@ -27,6 +28,11 @@ import * as dialects from '../dialects/client'
  * Nothing here changes what the Desk keeps: the session and its bearer, the
  * relay, the tool gate's allow-list and approvals stay the Desk's, and the
  * harness reaches them only through these values.
+ *
+ * Two points are new with v0.1.0 and are answered from
+ * `assistant/endpointCapabilities.ts`: `endpointCapabilities`, which answers
+ * nothing beyond each endpoint's family, and `renderImageToText`, which the
+ * Desk refuses for want of a render adapter.
  */
 configureHarness({
   assistantLanguageInstructions: (locale) =>
@@ -51,5 +57,7 @@ configureHarness({
   answer: <T,>(response: Response) => files.answer<T>(response),
   readFile: (path, signal) => files.readFile(path, signal),
   dialectAPI: <T,>(path?: string, method?: string, body?: unknown, revision?: string, signal?: AbortSignal) =>
-    dialects.dialectAPI<T>(path, method, body, revision, signal)
+    dialects.dialectAPI<T>(path, method, body, revision, signal),
+  endpointCapabilities: (endpoint) => capabilities.endpointCapabilities(endpoint),
+  renderImageToText: () => capabilities.renderImageToText()
 })

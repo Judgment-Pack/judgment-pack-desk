@@ -7,6 +7,7 @@ import { GatewayError, OverBudget } from './gatewayClient'
 import { Ledger } from './ledger'
 import { READ_WINDOW, researchTools, type ResearchDeps } from './tools'
 import { parseJsonText } from './verify/canon'
+import { readingTool } from '@judgment-pack/harness/framing'
 
 const answers = JSON.parse(readFileSync(join(import.meta.dirname, '__fixtures__', 'provider-answers.json'), 'utf8')) as Record<
   string,
@@ -156,6 +157,16 @@ describe('read_source', () => {
     const answer = await tool('read_source').execute({ url: 'https://a.example/big.pdf' }, signal)
     expect(answer.isError).toBe(true)
     expect(ledger.byId('src-1')!.failure).toContain('output bound')
+  })
+})
+
+describe('what the harness frames as retrieved data', () => {
+  it('declares the search and the read as reads, and the citation not, and offers none of them to a delegated task', () => {
+    const { tool } = harness()
+    expect(readingTool(tool('search_sources'))).toBe(true)
+    expect(readingTool(tool('read_source'))).toBe(true)
+    expect(readingTool(tool('cite_excerpt'))).toBe(false)
+    for (const name of ['search_sources', 'read_source', 'cite_excerpt']) expect(tool(name).delegation).toBeUndefined()
   })
 })
 

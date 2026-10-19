@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { HostTool } from '@judgment-pack/harness/engine'
+import { PROPOSE_PACK_SCHEMA } from '@judgment-pack/harness/engines/contract'
 import { useResearchRun } from './useResearchRun'
 import type { AuthoringMode } from './mode'
 
@@ -26,7 +27,7 @@ it('offers current web tools and policy on the first Research message and its fo
   const read: HostTool = { ...search, name: 'read_link' }
   fake.tools.mockReturnValue([search, read])
   fake.session.mockImplementation(async (_engine, request, deliver) => {
-    expect(request.hostTools.map((tool: HostTool) => tool.name)).toEqual(['get_authoring_instructions', 'search_sources', 'read_link'])
+    expect(request.hostTools.map((tool: HostTool) => tool.name)).toEqual(['get_authoring_instructions', 'search_sources', 'read_link', 'propose_pack'])
     expect(request.prompt).toContain('WEB POLICY FOR THIS MESSAGE')
     await request.hostTools.find((tool: HostTool) => tool.name === 'search_sources').execute({ query: 'public policy' }, request.signal)
     deliver({ type: 'message', text: 'Here is the research summary.' })
@@ -46,7 +47,7 @@ it('offers current web tools and policy on the first Research message and its fo
 it('keeps supplied-link reading usable without a search provider', async () => {
   fake.tools.mockReturnValue([{ name: 'read_link', execute: vi.fn() }])
   fake.session.mockImplementation(async (_engine, request, deliver) => {
-    expect(request.hostTools.map((tool: HostTool) => tool.name)).toEqual(['get_authoring_instructions', 'read_link'])
+    expect(request.hostTools.map((tool: HostTool) => tool.name)).toEqual(['get_authoring_instructions', 'read_link', 'propose_pack'])
     deliver({ type: 'message', text: 'Please supply a URL, or configure a search connection.' })
   })
   const { result } = renderHook(() => useResearchRun({ mode: 'web-research', draftTools: fake.tools, researchPolicy: fake.policy }))
@@ -222,4 +223,21 @@ it('merges private source context with original conversation documents once on e
  act(()=>result.current.run!.send('Interpret the remaining clause'))
  await waitFor(()=>expect(fake.session).toHaveBeenCalledTimes(2))
  await waitFor(()=>expect(result.current.state.status).toBe('complete'))
+})
+
+it('offers propose_pack with the package\'s schema where a turn may propose a pack, and not in a conversation without artifact proposals',async()=>{
+ fake.tools.mockReturnValue([])
+ const offered:string[][]=[]
+ fake.session.mockImplementation(async(_engine,request,deliver)=>{
+  offered.push(request.hostTools.map((tool:HostTool)=>tool.name))
+  const propose=request.hostTools.find((tool:HostTool)=>tool.name==='propose_pack')
+  if(propose){expect(propose.inputSchema).toEqual(PROPOSE_PACK_SCHEMA);expect(propose.effect).toBe('proposal');expect(propose.delegation).toBeUndefined();await expect(propose.execute({document:{}},request.signal)).rejects.toThrow('read by the engine')}
+  deliver({type:'message',text:'Answered.'})
+ })
+ const pack=renderHook(()=>useResearchRun({mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work'})}))
+ act(()=>pack.result.current.run!.start('Draft a pack',[]));await waitFor(()=>expect(pack.result.current.state.status).toBe('complete'))
+ pack.unmount()
+ const policy=renderHook(()=>useResearchRun({mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work',artifactProposals:false})}))
+ act(()=>policy.result.current.run!.start('Review the Policy',[]));await waitFor(()=>expect(policy.result.current.state.status).toBe('complete'))
+ expect(offered).toEqual([['get_authoring_instructions','propose_pack'],['get_authoring_instructions']])
 })
