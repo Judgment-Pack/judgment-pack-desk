@@ -17,11 +17,11 @@ import { Dialog, DialogActions } from '../ui/Dialog'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Tooltip } from '../ui/Tooltip'
-import { BrandMark } from '../ui/BrandMark'
+import { DeskIdentity } from './DeskIdentity'
 import { activeDeskId, openDesk } from './scope'
 
-type Desk = { id: string; name: string; folder: string; managed: boolean }
-type Directory = { current: Desk; desks: Desk[]; location: string }
+type Desk = { id: string; name: string; folder: string; managed: boolean; mark?: string | null }
+type Directory = { current: Desk; desks: Desk[]; location: string; startup?: string }
 /** A creation's answer: the desk, and what it says where the desk was made with less than a new desk has. */
 type Created = Desk & { notice?: string }
 
@@ -41,7 +41,7 @@ export async function desksAPI<T>(name?: string): Promise<T> {
   if (!response.ok) throw Error(msg('Desks could not be loaded or saved. Please try again.'))
   const value: unknown = await response.json()
   const object = (item: unknown): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item)
-  const record = (item: unknown): boolean => object(item) && typeof item.id === 'string' && (item.id === '' || /^[a-f0-9]{32}$/.test(item.id)) && typeof item.name === 'string' && !!item.name.trim() && typeof item.folder === 'string' && typeof item.managed === 'boolean'
+  const record = (item: unknown): boolean => object(item) && typeof item.id === 'string' && (item.id === '' || /^[a-f0-9]{32}$/.test(item.id)) && typeof item.name === 'string' && !!item.name.trim() && typeof item.folder === 'string' && typeof item.managed === 'boolean' && (item.mark === undefined || item.mark === null || typeof item.mark === 'string')
   if (name === undefined ? !object(value) || !record(value.current) || !Array.isArray(value.desks) || !value.desks.every(record) || typeof value.location !== 'string' : !record(value) || !object(value) || value.notice !== undefined && typeof value.notice !== 'string') throw Error(msg('Desks could not be loaded or saved. Please try again.'))
   return value as T
 }
@@ -56,25 +56,12 @@ export function DeskSwitcher() {
   const dirty = changes.dirty
   const opener = useRef<HTMLButtonElement>(null)
   const management = useDeskManagement(opener)
-  const [menuOpen, setMenuOpen] = useState(false)
   return <>
-    <div className="desk-identity">
-      <Tooltip content={msg('Desk home')} side="bottom" disabled={menuOpen}>
-        <Link className="desk-home" to="/" aria-label={msg('Desk home')}>
-          <BrandMark mark={config.organization.mark} className="desk-orgmark" />
-        </Link>
-      </Tooltip>
-      <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
-        <Tooltip content={[label,msg('Switch desk'),...(dirty?[msg('Unsaved changes'),...changes.labels]:[])].join(' · ')} side="bottom" disabled={menuOpen}>
-          <DropdownMenu.Trigger ref={opener} className="desk-chip" aria-label={`${label} · ${msg('Switch desk')}`}>
-            <span className="desk-chip-name">{label}</span>{dirty&&<span className="desk-dirty" aria-label={msg('unsaved changes')} role="img"/>}
-          </DropdownMenu.Trigger>
-        </Tooltip>
-        <DropdownMenu.Portal><DropdownMenu.Content className="desk-switcher-menu" align="start" alignOffset={-32} sideOffset={6} collisionPadding={12}>
-          {management.items}
-        </DropdownMenu.Content></DropdownMenu.Portal>
-      </DropdownMenu.Root>
-    </div>
+    <DeskIdentity name={label} mark={directory.data ? directory.data.current.mark : config.organization.mark} value={activeDeskId}
+      desks={directory.data?.desks ?? []} startup={directory.data?.startup} onSelect={id=>void management.switchTo(id)}
+      dirty={dirty} dirtyLabels={changes.labels} opener={opener} home={mark=><Tooltip content={msg('Desk home')} side="bottom"><Link className="desk-home" to="/" aria-label={msg('Desk home')}>{mark}</Link></Tooltip>}>
+      {management.items}
+    </DeskIdentity>
     {management.dialogs}
   </>
 }
@@ -116,15 +103,7 @@ function useDeskManagement(opener: RefObject<HTMLButtonElement | null>) {
     if (name.trim() && !(await discard(msg('Discard this desk name?'),{name:name.trim()}))) return
     setCreating(false);setName('');setError('')
   }
-  const desks = [...(directory.data?.desks ?? [])].sort((a, b) =>
-    Number(b.id === activeDeskId) - Number(a.id === activeDeskId) || a.name.localeCompare(b.name))
   const items = <>
-        <DropdownMenu.Label>{msg('Switch desk')}</DropdownMenu.Label>
-        <DropdownMenu.RadioGroup value={activeDeskId} onValueChange={id=>void switchTo(id)} className="desk-switcher-list">
-          {desks.map(desk => <DropdownMenu.RadioItem key={desk.id} value={desk.id}>
-            {desk.name}
-          </DropdownMenu.RadioItem>)}
-        </DropdownMenu.RadioGroup>
         {!directory.data&&activeDeskId&&<DropdownMenu.Item onSelect={()=>void switchTo('')}>{msg('Open startup desk')}</DropdownMenu.Item>}
         <DropdownMenu.Separator/>
         <DropdownMenu.Item asChild icon={<IconFolder/>}><Link to="/author">{msg('Project files')}</Link></DropdownMenu.Item>
@@ -144,5 +123,5 @@ function useDeskManagement(opener: RefObject<HTMLButtonElement | null>) {
     </Dialog>
     <Dialog open={!creating&&!!error} onOpenChange={open=>{if(!open)setError('')}} openerRef={opener} title={msg('Could not switch desk')} description={error} footer={<DialogActions><Button onClick={()=>setError('')}>{msg('Close')}</Button></DialogActions>}><span/></Dialog>
   </>
-  return { items, dialogs }
+  return { items, dialogs, switchTo }
 }

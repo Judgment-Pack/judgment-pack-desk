@@ -2658,7 +2658,6 @@
   "Open tests": "Abrir pruebas",
   "Open this project at startup": "Abrir este proyecto al iniciar",
   "Open working chat": "Abrir chat en curso",
-  "Open your local Desk": "Abrir Desk en este equipo",
   "OpenAI / ChatGPT": "OpenAI / ChatGPT",
   "OpenAI-compatible": "Compatible con OpenAI",
   "OpenAI-compatible API": "API compatible con OpenAI",
@@ -3907,7 +3906,6 @@
   "Showing the newest {{shown}} of {{read}} journal entries read.": "Se muestran las {{shown}} más recientes de {{read}} entradas del diario leídas.",
   "Side by side": "En paralelo",
   "Sign in": "Iniciar sesión",
-  "Sign in to Unveil": "Iniciar sesión en Unveil",
   "Sign in to open your local workspace. Signing in does not upload your packs or chats.": "Inicia sesión para abrir tu espacio local. Al iniciar sesión no se suben tus packs ni chats.",
   "Sign this project’s decisions": "Firmar las decisiones de este proyecto",
   "Sign-in & access": "Inicio de sesión y acceso",
@@ -6830,5 +6828,13 @@
   "which of the two is the trail’s; who that submitter was": "cuál de los dos pertenece al historial; quién era ese remitente",
   "why; whether the trail’s operator went on under another trail, as it does after a retirement, registered anew": "por qué; si el operador continuó con otro historial registrado de nuevo, como ocurre tras una retirada",
   "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "Quedaron sin enviar {{count}} líneas anteriores desde el cursor: la declaración de la cabecera las cubre mediante la propia cadena del historial.",
-  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "Actualiza el Runtime conectado para que admita el borrador oficial de Policy policy-v1.0.0-draft.1 (formato 1.0.0). Tu selección y el historial guardado de políticas rectoras siguen disponibles."
+  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "Actualiza el Runtime conectado para que admita el borrador oficial de Policy policy-v1.0.0-draft.1 (formato 1.0.0). Tu selección y el historial guardado de políticas rectoras siguen disponibles.",
+  "Choose a desk": "Elige un Desk",
+  "Desk unavailable": "Desk no disponible",
+  "No desks found.": "No se encontraron Desks.",
+  "Open {{desk}}": "Abrir {{desk}}",
+  "Search desks": "Buscar Desks",
+  "Sign in to {{desk}}": "Iniciar sesión en {{desk}}",
+  "The selected desk is unavailable. Choose another desk.": "El Desk seleccionado no está disponible. Elige otro Desk.",
+  "This browser could not save the selected desk. Allow site storage and try again.": "Este navegador no pudo guardar el Desk seleccionado. Permite el almacenamiento de datos del sitio e inténtalo de nuevo."
 }

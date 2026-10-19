@@ -3,6 +3,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SessionGate } from './SessionGate'
+
+// These boundary tests retain real authentication transitions while isolating
+// the independently tested public identity directory.
+vi.mock('./flow', async importActual => {
+ const actual = await importActual<typeof import('./flow')>()
+ return {...actual, authCall: (path: string, body?: unknown, bearer?: string, signal?: AbortSignal) => path === 'desks'
+  ? Promise.resolve({startup:'',desks:[{id:'',name:'Unveil',mark:null}]})
+  : actual.authCall(path, body, bearer, signal)}
+})
 import { REFUSAL_HEADER, bootstrap, forgetSession, resetSessionForTesting, sessionEnded, sessionStorageKey, signOut } from '../mcp/session'
 
 function legacyFetch(handler: (...args:any[])=>any, status={enabled:false,unavailable:false,sessionActive:false,localAccess:false}) {
@@ -113,7 +122,7 @@ it('offers local reopening after sign-out without asking for owner setup', async
  mount()
  await screen.findByText('Private workspace')
  act(() => forgetSession())
- await screen.findByRole('heading', {name:'Open your local Desk'})
+ await screen.findByRole('heading', {name:'Open Unveil'})
  expect(screen.getByRole('button', {name:'Continue'})).toBeTruthy()
  expect(screen.queryByRole('button', {name:'Set up sign-in'})).toBeNull()
  expect(screen.queryByLabelText('Owner setup code')).toBeNull()

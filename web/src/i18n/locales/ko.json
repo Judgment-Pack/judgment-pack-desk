@@ -2650,7 +2650,6 @@
   "Open tests": "테스트 열기",
   "Open this project at startup": "시작할 때 이 프로젝트 열기",
   "Open working chat": "진행 중인 채팅 열기",
-  "Open your local Desk": "이 컴퓨터에서 Desk 열기",
   "OpenAI / ChatGPT": "OpenAI / ChatGPT",
   "OpenAI-compatible": "OpenAI 호환",
   "OpenAI-compatible API": "OpenAI 호환 API",
@@ -3894,7 +3893,6 @@
   "Showing the newest {{shown}} of {{read}} journal entries read.": "읽은 저널 항목 {{read}}개 중 최신 {{shown}}개를 표시합니다.",
   "Side by side": "나란히 보기",
   "Sign in": "로그인",
-  "Sign in to Unveil": "Unveil 로그인",
   "Sign in to open your local workspace. Signing in does not upload your packs or chats.": "로그인하여 로컬 작업 공간을 여세요. 로그인해도 팩이나 채팅은 업로드되지 않습니다.",
   "Sign this project’s decisions": "이 프로젝트의 판단에 서명",
   "Sign-in & access": "로그인 및 접근",
@@ -6790,5 +6788,13 @@
   "which of the two is the trail’s; who that submitter was": "둘 중 어느 기록이 추적에 속하는지, 제출자가 누구였는지",
   "why; whether the trail’s operator went on under another trail, as it does after a retirement, registered anew": "그 이유, 운영자가 폐기 후처럼 새로 등록한 다른 추적에서 계속했는지 여부",
   "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "커서 이후의 앞선 {{count}}행은 전송되지 않았습니다. 헤드 진술이 추적 자체의 체인을 통해 해당 행을 포함합니다.",
-  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "공식 Policy 초안 policy-v1.0.0-draft.1(형식 1.0.0)을 지원하도록 연결된 Runtime을 업데이트하세요. 선택 항목과 저장된 지배 정책 기록은 계속 사용할 수 있습니다."
+  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "공식 Policy 초안 policy-v1.0.0-draft.1(형식 1.0.0)을 지원하도록 연결된 Runtime을 업데이트하세요. 선택 항목과 저장된 지배 정책 기록은 계속 사용할 수 있습니다.",
+  "Choose a desk": "Desk 선택",
+  "Desk unavailable": "Desk를 사용할 수 없음",
+  "No desks found.": "Desk를 찾을 수 없습니다.",
+  "Open {{desk}}": "{{desk}} 열기",
+  "Search desks": "Desk 검색",
+  "Sign in to {{desk}}": "{{desk}}에 로그인",
+  "The selected desk is unavailable. Choose another desk.": "선택한 Desk를 사용할 수 없습니다. 다른 Desk를 선택하세요.",
+  "This browser could not save the selected desk. Allow site storage and try again.": "이 브라우저에서 선택한 Desk를 저장하지 못했습니다. 사이트 데이터 저장을 허용한 후 다시 시도하세요."
 }

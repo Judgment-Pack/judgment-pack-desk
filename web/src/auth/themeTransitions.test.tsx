@@ -8,6 +8,15 @@ import { useAppliedTheme } from '../config/theme'
 import { forgetSession, resetSessionForTesting, sessionStorageKey } from '../mcp/session'
 import { AppearanceProvider } from '../shell/appearanceState'
 import { SessionGate } from './SessionGate'
+
+// These boundary tests retain real authentication transitions while isolating
+// the independently tested public identity directory.
+vi.mock('./flow', async importActual => {
+ const actual = await importActual<typeof import('./flow')>()
+ return {...actual, authCall: (path: string, body?: unknown, bearer?: string, signal?: AbortSignal) => path === 'desks'
+  ? Promise.resolve({startup:'',desks:[{id:'',name:'Unveil',mark:null}]})
+  : actual.authCall(path, body, bearer, signal)}
+})
 import { SessionPage } from './SessionPage'
 
 beforeEach(() => resetSessionForTesting())

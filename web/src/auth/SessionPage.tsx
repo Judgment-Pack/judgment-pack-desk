@@ -8,12 +8,11 @@ import { Select } from '../ui/Select'
 import { TooltipProvider } from '../ui/Tooltip'
 import { useAppliedTheme } from '../config/theme'
 import { chooseEntryTheme, pendingEntryTheme, readEntryTheme } from '../config/entryTheme'
+import { DeskIdentity } from '../desks/DeskIdentity'
+import { BrandMark } from '../ui/BrandMark'
+import { useEntryDesks } from './entryDesks'
 import type { ThemeChoice } from '../config/deskConfig'
 import styles from './SessionPage.module.css'
-
-// Public product branding is available before project configuration is authorized.
-const PRODUCT_NAME = 'Unveil'
-const PRODUCT_MARK = 'U'
 
 export type AccessState = 'checking' | 'ready' | 'recovery' | 'unavailable'
 /** Local-only entry; provider sign-in is shown only once a real backend exists. */
@@ -34,6 +33,8 @@ function SessionLoading() {
 function SessionPageContent({ state }: { state: Exclude<AccessState, 'checking'>; detail?: string }) {
   useLocale()
   const [theme, setTheme] = useState<ThemeChoice>(readEntryTheme)
+  const desks = useEntryDesks(state === 'recovery')
+  const [signingIn, setSigningIn] = useState(false)
   const [languageSaved, setLanguageSaved] = useState(true)
   const [loadingLanguage, setLoadingLanguage] = useState(false)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -41,7 +42,8 @@ function SessionPageContent({ state }: { state: Exclude<AccessState, 'checking'>
   useEffect(() => { heading.current?.focus() }, [state])
   return <TooltipProvider><div className={styles.page}>
     <header className={styles.header}>
-      <div className={styles.brand}><span className={styles.mark} aria-hidden="true">{PRODUCT_MARK}</span><span>{PRODUCT_NAME}</span></div>
+      <DeskIdentity name={desks.selected?.name ?? (desks.directory ? msg('Desk unavailable') : msg('Desk'))} mark={desks.selected?.mark}
+        value={desks.selection ?? ''} desks={desks.directory?.desks ?? []} startup={desks.directory?.startup} disabled={signingIn || !desks.directory} onSelect={desks.choose} />
       <div className={styles.preferences}>
         <Select id="entry-language" aria-label={msg('Language')} value={languagePreference()} quiet options={[{ value: 'system', label: msg('Use system language') }, ...LANGUAGES.map(item => ({ value: item.id, label: item.label }))]} onValueChange={async value => {
           setLoadingLanguage(true); setLanguageSaved(setLanguage(value as LanguagePreference)); await languageReady(); setLoadingLanguage(false)
@@ -53,8 +55,16 @@ function SessionPageContent({ state }: { state: Exclude<AccessState, 'checking'>
     </header>
     <main className={styles.main}>
       <div className={styles.content}>
-        <span className={styles.largeMark} aria-hidden="true">{PRODUCT_MARK}</span>
-        {state === 'recovery' ? <SignInEntry /> : <>
+        {desks.selected && <BrandMark mark={desks.selected.mark} className={styles.largeMark} />}
+        {state === 'recovery' ? <>
+          {desks.selected && !desks.problem ? <SignInEntry key={desks.selected.id} name={desks.selected.name} onBusyChange={setSigningIn} /> : <>
+            {desks.problem || desks.directory ? <>
+              <h1 ref={heading} tabIndex={-1}>{msg('Choose a desk')}</h1>
+              <p role="alert" className={styles.notice}>{desks.problem === 'storage' ? msg('This browser could not save the selected desk. Allow site storage and try again.') : desks.problem === 'unavailable' ? msg('Desks could not be loaded or saved. Please try again.') : msg('The selected desk is unavailable. Choose another desk.')}</p>
+              <Button onClick={desks.retry}>{msg('Try again')}</Button>
+            </> : <LoadingState>{msg('Loading…')}</LoadingState>}
+          </>}
+        </> : <>
           <h1 ref={heading} tabIndex={-1}>{msg('Desk is not responding')}</h1>
           <p className={styles.lead}>{msg('Make sure Desk is running on this computer, then try again.')}</p>
           {state === 'unavailable' && <Button variant="primary" className={styles.action} onClick={() => window.location.reload()}>{msg('Try again')}</Button>}
