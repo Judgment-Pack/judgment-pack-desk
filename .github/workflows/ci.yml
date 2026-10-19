@@ -245,6 +245,12 @@ jobs:
         run: |
           JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" \
             go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1
+      - name: Real Jobs run signer and retained export verification
+        run: |
+          set -o pipefail
+          JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" \
+            go test -race ./internal/desk -run '^TestJobsRealCompanionHoldsEachRunsSignerToTheList$' -count=1 -v | tee "$RUNNER_TEMP/jobs-signer.log"
+          grep -Eq -- '^--- PASS: TestJobsRealCompanionHoldsEachRunsSignerToTheList \(' "$RUNNER_TEMP/jobs-signer.log" || { echo 'Jobs run signer integration did not run and pass'; exit 1; }
       # Ownership and manual admission use the exact attested locked companions,
       # with no candidate source rebuild. Their required capabilities must be
       # supplied by the reviewed published component pins.
@@ -284,8 +290,10 @@ jobs:
       # a witness, with the pinned runtime reading its chain.
       - name: A witness from the pinned gateway, read by the pinned runtime
         run: |
+          set -o pipefail
           JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" JPACK_GATEWAY_TEST_BIN="$RUNNER_TEMP/jobs-official/gateway" \
-            go test ./internal/desk -run '^TestWitnessWithThePublishedRuntimeAndGateway$' -count=1 -v
+            go test ./internal/desk -run '^TestWitnessWithThePublishedRuntimeAndGateway$' -count=1 -v | tee "$RUNNER_TEMP/witness-companions.log"
+          grep -Eq -- '^--- PASS: TestWitnessWithThePublishedRuntimeAndGateway \(' "$RUNNER_TEMP/witness-companions.log" || { echo 'Witness companion integration did not run and pass'; exit 1; }
       # The Go job has no runtime, so these skip there. Here they create a desk
       # with the pinned runtime, check its lock, and drive its relay: a deciding
       # run of a draft refused, a locked pack recorded, rehearsals unaffected.

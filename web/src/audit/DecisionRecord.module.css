@@ -4,8 +4,13 @@
 .quiet { color: var(--ink-faint); font-size: var(--text-sm); }
 .heading { margin: 0 0 var(--space-1); font-size: var(--text-body); font-weight: 600; }
 .list { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: var(--space-1); overflow-wrap: anywhere; }
-.facts { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--density-gap); }
+.facts { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1) var(--density-gap); min-inline-size: 0; }
 .facts > div { display: contents; }
-.facts dt { color: var(--ink-faint); }
-.facts dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
+.facts dt, .facts dd, .proseFacts dt, .proseFacts dd { min-inline-size: 0; overflow-wrap: anywhere; }
+.facts dt, .proseFacts dt { color: var(--ink-faint); }
+.facts dd { margin: 0; text-align: end; }
+.proseFacts { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--density-gap); min-inline-size: 0; text-align: start; }
+.proseFacts > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); min-inline-size: 0; }
+.proseFacts dt { font-weight: 600; }
+.proseFacts dd { margin: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--density-gap); }
