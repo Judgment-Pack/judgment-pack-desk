@@ -241,13 +241,14 @@ jobs:
         run: |
           JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
             go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1
-      # Test-only merged source pin from Runner PR #160. Published companion
-      # tests and component release pins above remain independent of this pin.
-      - name: Check out executor ownership Runner source (test-only)
+      # Test-only merged source from Runner PR #161. Reuse this build for
+      # ownership and manual admission; published companion tests and release
+      # pins stay independent.
+      - name: Check out ownership and manual admission Runner source (test-only)
         uses: actions/checkout@v7
         with:
           repository: Judgment-Pack/judgment-pack-runner
-          ref: 1cc6b29885b344716a970cd21fefeaca0a4edaeb
+          ref: d903728fb38368a5f0574990e01bc27acb2a2803
           path: .ci-executor-runner
           persist-credentials: false
       - name: Real enrolled Desk executor ownership
@@ -257,6 +258,42 @@ jobs:
           JPACK_EXECUTOR_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-executor-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
             go test -race ./internal/desk -run '^TestJobsExecutorRealEnrolledDeskRunnerRuntime$' -count=1 -v | tee "$RUNNER_TEMP/executor-ownership.log"
           grep -Fq -- '--- PASS: TestJobsExecutorRealEnrolledDeskRunnerRuntime (' "$RUNNER_TEMP/executor-ownership.log" || { echo 'Executor ownership integration did not run and pass'; exit 1; }
+      # Experimental retained prototype 0.0.2 support: test-only source identity,
+      # not a published Runtime or adopted Policy-conformance claim.
+      - name: Check out compatible manual Policy Runtime (test-only)
+        uses: actions/checkout@v7
+        with:
+          repository: Judgment-Pack/judgment-pack-runtime
+          ref: 55a23b884f0ce67fe6a9141b04e081a518fd5d61
+          path: .ci-policy-runtime
+          persist-credentials: false
+      - name: Check out ownership-era Desk for rollback refusal (test-only)
+        uses: actions/checkout@v7
+        with:
+          repository: Judgment-Pack/judgment-pack-desk
+          ref: ef1110a8ad618506012cca3b367f2b49a9ae3766
+          path: .ci-policy-old-desk
+          persist-credentials: false
+      - name: Build isolated manual admission fixture tools
+        run: |
+          go -C .ci-policy-runtime build -trimpath -ldflags "-X github.com/Judgment-Pack/judgment-pack-runtime/internal/result.CLIVersion=0.35.0-policy-contract-dev" -o "$RUNNER_TEMP/jpack-policy-runtime" ./cmd/jpack
+          # Only the historical CLI is exercised. This inert embed is not a
+          # reconstructed UI, application bundle, installed binary or release.
+          mkdir -p .ci-policy-old-desk/web/dist
+          printf '<!doctype html><title>CLI fixture only</title>\n' > .ci-policy-old-desk/web/dist/index.html
+          go -C .ci-policy-old-desk build -trimpath -o "$RUNNER_TEMP/jpack-policy-old-desk" .
+      - name: Real manual Policy admission, MCP guard and old Desk rollback
+        run: |
+          set -o pipefail
+          # The SAME Runtime checks authoring/adoption material and executes
+          # the real run. Old Runner/helper evidence belongs to Runner's CI.
+          JPACK_MANUAL_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-executor-runner" \
+          JPACK_MANUAL_OLD_DESK_TEST_BIN="$RUNNER_TEMP/jpack-policy-old-desk" \
+          JPACK_BIN="$RUNNER_TEMP/jpack-policy-runtime" \
+            go test -race ./internal/desk -run '^TestPolicyManual(RealDeskRunnerRuntime|RealMCPRefusesOperationWithJobsUnavailable|ActualOldDeskRegistryRollbackFence)$' -count=1 -v | tee "$RUNNER_TEMP/policy-manual-admission.log"
+          for name in TestPolicyManualRealDeskRunnerRuntime TestPolicyManualRealDeskRunnerRuntime/registered-exact-input-and-withdrawal-first TestPolicyManualRealDeskRunnerRuntime/commit-before-withdrawal TestPolicyManualRealDeskRunnerRuntime/lost-start-reply TestPolicyManualRealDeskRunnerRuntime/lost-reserve-reply TestPolicyManualRealMCPRefusesOperationWithJobsUnavailable TestPolicyManualActualOldDeskRegistryRollbackFence; do
+            grep -Eq -- "^[[:space:]]*--- PASS: $name \(" "$RUNNER_TEMP/policy-manual-admission.log" || { echo "$name did not run and pass"; exit 1; }
+          done
       # The Go job has no runtime, so these skip there. Here they create a desk
       # with the pinned runtime, check its lock, and drive its relay: a deciding
       # run of a draft refused, a locked pack recorded, rehearsals unaffected.

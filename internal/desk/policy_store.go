@@ -15,6 +15,11 @@ const policyLedgerLimit = 16 << 20
 const policyCountLimit = 256
 const policyHistoryLimit = 512
 const policyStorageSchemaVersion = 2
+
+// Historical records retain their own schema when the authority ledger opts in
+// to execution. Ordinary Policy writes never migrate the ledger.
+const policyRecordSchemaVersion = 2
+const policyExecutionLedgerSchemaVersion = 3
 const policyEventLimit = 3 * policyHistoryLimit
 const policyOperationLimit = 4096
 const policyNarrativeLimit = 128 << 10
@@ -50,6 +55,8 @@ type policyStoredOperation struct {
 }
 
 type policyLedger struct {
+	Execution         *policyExecutionState                   `json:"execution,omitempty"`
+	authorityRevision string                                  // exact verified precommit bytes; never serialized
 	Adoptions         map[string]policyAdoptionRecord         `json:"adoptions,omitempty"`
 	Coverages         map[string]policyCoverageRecord         `json:"coverages,omitempty"`
 	Recoveries        []policyRecoverySnapshot                `json:"recoveries,omitempty"`
@@ -147,7 +154,8 @@ func (f filePolicyRepository) transaction(ctx context.Context, write bool, use f
 		return err
 	}
 	if err == nil {
-		if rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &ledger) != nil || validatePolicyLedger(ledger) != nil {
+		ledger, err = decodePolicyLedger(raw)
+		if err != nil {
 			return errors.New("policy storage integrity failed")
 		}
 	}
@@ -231,11 +239,11 @@ func validPolicyActor(actor policyActor) bool {
 }
 func validatePolicyLedger(ledger policyLedger) error {
 	bad := errors.New("policy storage integrity failed")
-	if ledger.SchemaVersion != policyStorageSchemaVersion || ledger.Policies == nil || ledger.Operations == nil || len(ledger.Policies) > policyCountLimit || len(ledger.Operations) > policyOperationLimit {
+	if (ledger.SchemaVersion != policyStorageSchemaVersion && ledger.SchemaVersion != policyExecutionLedgerSchemaVersion) || ledger.Policies == nil || ledger.Operations == nil || len(ledger.Policies) > policyCountLimit || len(ledger.Operations) > policyOperationLimit || validatePolicyExecution(ledger) != nil {
 		return bad
 	}
 	for id, record := range ledger.Policies {
-		if record.SchemaVersion != policyStorageSchemaVersion || record.ID != id || !policyIDForm.MatchString(id) || !validPolicyTime(record.CreatedAt) || !validPolicyTime(record.UpdatedAt) || len(record.Revisions) == 0 || len(record.Revisions) > policyHistoryLimit || len(record.Reviews) > policyHistoryLimit || len(record.Publications) > policyHistoryLimit || record.Reviews == nil || record.Publications == nil {
+		if record.SchemaVersion != policyRecordSchemaVersion || record.ID != id || !policyIDForm.MatchString(id) || !validPolicyTime(record.CreatedAt) || !validPolicyTime(record.UpdatedAt) || len(record.Revisions) == 0 || len(record.Revisions) > policyHistoryLimit || len(record.Reviews) > policyHistoryLimit || len(record.Publications) > policyHistoryLimit || record.Reviews == nil || record.Publications == nil {
 			return bad
 		}
 		revisions := map[string]policyRevision{}

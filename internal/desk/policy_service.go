@@ -409,7 +409,7 @@ func (s policyService) execute(ctx context.Context, command policyCommand) (poli
 			if err != nil {
 				return false, err
 			}
-			record = policyStoredRecord{SchemaVersion: policyStorageSchemaVersion, ID: id, CreatedAt: now, UpdatedAt: now, Revisions: []policyRevision{}, Reviews: []policyReview{}, Publications: []policyPublication{}}
+			record = policyStoredRecord{SchemaVersion: policyRecordSchemaVersion, ID: id, CreatedAt: now, UpdatedAt: now, Revisions: []policyRevision{}, Reviews: []policyReview{}, Publications: []policyPublication{}}
 		}
 		sequence := policyEventCount(record) + 1
 		if command.Edit != nil {

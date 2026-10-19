@@ -103,8 +103,8 @@ func (s *Server) broadcastFileChange(relPath string) {
 // relay wires one WebSocket to one `jpack mcp` subprocess for the life of the
 // socket. JSON-RPC bytes cross untouched: one message per text frame on the
 // browser side, newline-delimited JSON on the stdio side. The chassis parses
-// nothing and rewrites nothing, which is what keeps it generic — a tool added
-// to the runtime tomorrow reaches the page with no change here.
+// only the execution-demand boundary in an enabled workspace. Unconfigured
+// workspaces retain the generic Runtime relay contract.
 func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	// Origin was already checked against the served origin (and, in dev mode,
 	// the Vite origin) in handleWS; the library's own check would reject the
@@ -253,6 +253,9 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 			// so it is refused rather than forwarded.
 			if bytes.ContainsAny(data, "\r\n") {
 				s.log.Printf("desk: refusing a frame containing a newline (%d bytes)", len(data))
+				continue
+			}
+			if !s.admitRuntimeFrame(c, data) {
 				continue
 			}
 			if !s.beginProjectRequest(c, data) {

@@ -401,6 +401,9 @@ func New(cfg Config) (*Server, error) {
 			return nil, configErr
 		}
 		policyAnchor, configErr = machine.resolve(pinned)
+		if configErr == nil {
+			configErr = machine.verifyExecutionStartup(pinned, policyAnchor)
+		}
 		if configErr != nil {
 			return nil, configErr
 		}
@@ -537,6 +540,11 @@ func New(cfg Config) (*Server, error) {
 	// identity provider fills in. There is no `DELETE`: see `handleSession`.
 	s.mux.HandleFunc("/api/session", s.handleSession)
 	s.mux.HandleFunc("/api/operations/{rest...}", s.handleJobs)
+	if policyManualAdmissionAvailable {
+		s.mux.HandleFunc("GET /api/operations/policy-execution", s.handleExecutionStatus)
+		s.mux.HandleFunc("GET /api/operations/jobs/{job}/policy-registration", s.handleExecutionRegistration)
+		s.mux.HandleFunc("POST /api/operations/jobs/{job}/policy-registration", s.handleExecutionRegistration)
+	}
 	s.mux.HandleFunc("/api/job-events/{trigger}", s.handleJobEvent)
 	s.mux.HandleFunc("/api/job-events/{trigger}/occurrences/{occurrence}", s.handleJobEventResult)
 	s.mux.HandleFunc("/api/agent/run", s.handleAgentRun)

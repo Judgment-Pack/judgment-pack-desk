@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -90,6 +91,11 @@ type jobsCompanion struct {
 	ownershipCheck func() error
 	held           error
 	runnerSource   *runnerExecutableSource
+	admission      *policyExecutionService
+	authority      *jobsAuthorityChannel
+	// Isolated fixtures proxy this inherited socket to delay/drop a reply after
+	// its durable transaction; the actual Runner and Runtime remain unchanged.
+	authoritySocketForTest func() (net.Conn, *os.File, error)
 }
 
 func (s *Server) initJobs() {
@@ -113,15 +119,12 @@ func (s *Server) initJobs() {
 		s.log.Printf("desk: Jobs input profiles are invalid: %v", err)
 		return
 	}
-	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: profiles, bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + s.installationOwner(), stop: make(chan struct{})}
-	if s.cfg.deskID != "" {
-		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
-		s.jobs.workspace = s.cfg.deskID
+	location, err := resolveJobsLocation(s.configDir, s.projectDir, s.cfg.deskID, s.home)
+	if err != nil {
+		s.log.Printf("desk: Jobs retained namespace is unavailable")
+		return
 	}
-	if entry := s.homeEntry(); entry != nil {
-		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
-		s.jobs.workspace = entry.RunnerWorkspace
-	}
+	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: profiles, bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: location.Dir, workspace: location.Workspace, owner: location.Owner, stop: make(chan struct{})}
 	if s.policyAuthorityMachine != nil {
 		ownership, e := s.policyAuthorityMachine.executorForProject(s.project, s.jobs.workspace)
 		s.jobs.ownership, s.jobs.held = ownership, e
@@ -138,6 +141,12 @@ func (s *Server) initJobs() {
 				s.jobs.held = e
 			}
 		}
+	}
+	core, enabled, e := s.executionCore()
+	if e != nil {
+		s.jobs.held = e
+	} else if enabled {
+		s.jobs.admission = &core
 	}
 	// Runner's own key is kept under the name of its workspace: the desk's
 	// id, or the startup desk's state directory's name (ADR-0010, section 5).
@@ -171,6 +180,9 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	if j.held != nil {
 		j.key.notRunning(j.held)
 		return "", "", j.held
+	}
+	if j.authority != nil && j.authority.failure() != nil {
+		return "", "", j.holdOwned(j.authority.failure())
 	}
 	if j.done != nil {
 		select {
@@ -248,7 +260,12 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 		if err != nil {
 			return nil, err
 		}
-		if err = probeRunnerOwnership(bin); err != nil {
+		if j.admission != nil {
+			err = probeRunnerAdmission(bin)
+		} else {
+			err = probeRunnerOwnership(bin)
+		}
+		if err != nil {
 			cleanup()
 			return nil, err
 		}
@@ -275,6 +292,26 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 	cmd := exec.Command(bin)
 	cmd.Env = []string{"LANG=C", "LC_ALL=C"}
 	cmd.Dir = j.dir
+	var authority *jobsAuthorityChannel
+	var admissionBoot runnerExecutorAdmission
+	var authorityChild *os.File
+	if j.admission != nil {
+		socket := jobsAuthoritySocket
+		if j.authoritySocketForTest != nil {
+			socket = j.authoritySocketForTest
+		}
+		authority, authorityChild, admissionBoot, err = newJobsAuthorityChannelWithSocket(*j.admission, func() error { return verifyRunnerLeaseHeld(j.ownership) }, socket)
+		if err != nil {
+			return nil, err
+		}
+		defer authorityChild.Close()
+		defer func() {
+			if !started {
+				authority.close()
+			}
+		}()
+		cmd.ExtraFiles = []*os.File{authorityChild}
+	}
 	// Kept, to a bound, only to read a refusal of the key from it.
 	said := &cappedBuffer{limit: runnerSaidLimit}
 	cmd.Stderr = said
@@ -291,15 +328,28 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 		input.Close()
 		return nil, err
 	}
+	if authorityChild != nil {
+		authorityChild.Close()
+	}
 	started = true
 	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); cleanup(); close(done) }()
+	go func() {
+		_ = cmd.Wait()
+		if authority != nil {
+			authority.fault(errors.New("manual authority Runner exited; Jobs is held"))
+		}
+		cleanup()
+		close(done)
+	}()
 	// failed stops this Runner and answers err, with Runner's refusal of the
 	// key where it wrote one: once it has exited, all it wrote has been read.
 	failed := func(err error) (*string, error) {
 		input.Close()
 		cmd.Process.Kill()
 		<-done
+		if authority != nil {
+			authority.close()
+		}
 		if reason, refused := runnerKeyRefusal(said.Bytes()); refused {
 			return &reason, err
 		}
@@ -309,6 +359,10 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 	if j.ownership != nil {
 		boot["executorOwnership"] = j.ownership
 		boot["requiredCapabilities"] = runnerRequiredOwnershipCapabilities()
+	}
+	if j.admission != nil {
+		boot["executorAdmission"] = admissionBoot
+		boot["requiredCapabilities"] = runnerRequiredAdmissionCapabilities()
 	}
 	if len(j.connections) > 0 {
 		var connections struct {
@@ -358,7 +412,10 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 	if err != nil || parseErr != nil || hello.Protocol != "jobs/1" || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		return failed(errors.New("runner unavailable"))
 	}
-	j.cmd, j.input, j.done, j.url = cmd, input, done, hello.URL
+	if authority != nil && authority.failure() != nil {
+		return failed(authority.failure())
+	}
+	j.cmd, j.input, j.done, j.url, j.authority = cmd, input, done, hello.URL, authority
 	return nil, nil
 }
 func (j *jobsCompanion) close() {
@@ -371,6 +428,9 @@ func (j *jobsCompanion) close() {
 	close(j.stop)
 	if j.runnerSource != nil {
 		defer j.runnerSource.close()
+	}
+	if j.authority != nil {
+		j.authority.close()
 	}
 	if j.input != nil {
 		j.input.Close()
@@ -625,6 +685,21 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 		writeJSONCoded(w, 503, CodeBadRequest, "Jobs requires the local runner companion. Install jpack-runner beside Desk or start Desk with --runner.")
 		return
 	}
+	manual := s.jobs.admission != nil
+	if manual && !manualJobsRouteAllowed(r.Method, tail) {
+		policyHTTPFailure(w, executionFailure("unsupported-profile"))
+		return
+	}
+	if manual && manualJobsRunPath.MatchString(tail) && r.Method == http.MethodPost {
+		if _, err := s.localExecutionCore(r); err != nil {
+			policyHTTPFailure(w, err)
+			return
+		}
+		if len(authorityHeaderValues(r, manualIntentHeader)) != 0 {
+			policyHTTPFailure(w, executionFailure("invalid-request"))
+			return
+		}
+	}
 	endpoint, token, err := s.jobs.endpoint()
 	if err != nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "The local runner is unavailable. Check its installation and private state directory.")
@@ -634,6 +709,14 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	if err != nil {
 		writeJSONCoded(w, 413, CodeTooLarge, "Jobs requests are limited to 2 MiB.")
 		return
+	}
+	intentID := ""
+	if manual && r.Method == http.MethodPost && manualJobsRunPath.MatchString(tail) {
+		intentID, err = s.prepareManualJobsRequest(r, tail, data)
+		if err != nil {
+			policyHTTPFailure(w, err)
+			return
+		}
 	}
 	if tail == "previews" && r.Method == http.MethodPost {
 		data, err = s.checkExchangePreview(r.Context(), data)
@@ -653,7 +736,16 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	if eventToken != "" {
 		request.Header.Set("X-Trigger-Token", eventToken)
 	}
-	request.Header.Set("Idempotency-Key", r.Header.Get("Idempotency-Key"))
+	key := r.Header.Get("Idempotency-Key")
+	if intentID != "" {
+		// prepareManualJobsRequest accepted exactly one original value, including
+		// requests constructed by a trusted Go caller with noncanonical key case.
+		key = authorityHeaderValues(r, "Idempotency-Key")[0]
+	}
+	request.Header.Set("Idempotency-Key", key)
+	if intentID != "" {
+		request.Header.Set(manualIntentHeader, intentID)
+	}
 	// Release checks perform four bounded Runtime invocations in sequence.
 	timeout := 40 * time.Second
 	if tail == "previews" {
@@ -663,7 +755,11 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	defer client.CloseIdleConnections()
 	response, err := client.Do(request)
 	if err != nil {
-		writeJSONCoded(w, 503, CodeBadRequest, "The runner did not respond. Retry a run submission with the same idempotency key.")
+		if manual {
+			writeJSONCoded(w, 503, "operation-held", "The Runner response is unresolved. Preserve the original operation key and inspect Jobs history before another submission.")
+		} else {
+			writeJSONCoded(w, 503, CodeBadRequest, "The runner did not respond. Retry a run submission with the same idempotency key.")
+		}
 		return
 	}
 	defer response.Body.Close()
