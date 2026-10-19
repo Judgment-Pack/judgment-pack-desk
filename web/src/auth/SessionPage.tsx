@@ -7,7 +7,7 @@ import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { TooltipProvider } from '../ui/Tooltip'
 import { useAppliedTheme } from '../config/theme'
-import { chooseEntryTheme, readEntryTheme } from '../config/entryTheme'
+import { chooseEntryTheme, pendingEntryTheme, readEntryTheme } from '../config/entryTheme'
 import type { ThemeChoice } from '../config/deskConfig'
 import styles from './SessionPage.module.css'
 
@@ -17,9 +17,17 @@ const PRODUCT_MARK = 'U'
 
 export type AccessState = 'checking' | 'ready' | 'recovery' | 'unavailable'
 /** Local-only entry; provider sign-in is shown only once a real backend exists. */
-export function SessionPage({ state }: { state: AccessState; detail?: string }) {
+export function SessionPage(props: { state: AccessState; detail?: string }) {
+  // Checking may lead straight to a workspace. Its saved public preference is
+  // not that project's preference. Initialize it only once entry is confirmed,
+  // including when this same boundary transitions from checking to recovery.
+  return <SessionPageContent key={props.state === 'checking' ? 'checking' : 'entry'} {...props} />
+}
+
+function SessionPageContent({ state }: { state: AccessState; detail?: string }) {
   useLocale()
-  const [theme, setTheme] = useState<ThemeChoice>(readEntryTheme)
+  const [theme, setTheme] = useState<ThemeChoice | undefined>(() =>
+    state === 'checking' ? pendingEntryTheme()?.theme : readEntryTheme())
   const [languageSaved, setLanguageSaved] = useState(true)
   const [loadingLanguage, setLoadingLanguage] = useState(false)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -32,7 +40,7 @@ export function SessionPage({ state }: { state: AccessState; detail?: string }) 
         <Select id="entry-language" aria-label={msg('Language')} value={languagePreference()} quiet options={[{ value: 'system', label: msg('Use system language') }, ...LANGUAGES.map(item => ({ value: item.id, label: item.label }))]} onValueChange={async value => {
           setLoadingLanguage(true); setLanguageSaved(setLanguage(value as LanguagePreference)); await languageReady(); setLoadingLanguage(false)
         }} disabled={loadingLanguage} />
-        <Select id="entry-appearance" aria-label={msg('Appearance')} value={theme} quiet options={[{ value: 'system', label: msg('System') }, { value: 'light', label: msg('Light') }, { value: 'dark', label: msg('Dark') }]} onValueChange={value => {
+        <Select id="entry-appearance" aria-label={msg('Appearance')} value={theme ?? 'system'} quiet options={[{ value: 'system', label: msg('System') }, { value: 'light', label: msg('Light') }, { value: 'dark', label: msg('Dark') }]} onValueChange={value => {
           setTheme(value as ThemeChoice)
         }} onValueCommit={value => chooseEntryTheme(value as ThemeChoice)} />
       </div>

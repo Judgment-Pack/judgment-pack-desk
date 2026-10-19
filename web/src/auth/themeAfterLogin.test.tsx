@@ -45,7 +45,7 @@ function boundary(authenticated: boolean, options: Partial<ProjectAnswers> = {})
   const answers = { projectIdentity: PROJECT, projectDefault: LIGHT_COMPACT, projectDefaultKnown: true, ...options }
   return <StrictMode>{authenticated ? <AppearanceProvider
     {...answers}
-  ><Workspace /></AppearanceProvider> : <SessionPage state="checking" />}</StrictMode>
+  ><Workspace /></AppearanceProvider> : <SessionPage state="unavailable" />}</StrictMode>
 }
 
 function choose(theme: ThemeChoice) {

@@ -1898,13 +1898,20 @@ are deliberately not in that set and the test says so where the pairs are
 listed: they separate regions rather than identify controls, and holding them
 to 3:1 would be a dark palette re-authoring the light desk on its way past.
 
-**One case still flashes, and it cannot be fixed with a script.** Under
-`system` nothing does: the media block paints dark on the first paint, before
-any JavaScript runs. A viewer who has explicitly chosen `dark` while their
-computer is set to light gets one light frame, because the record that holds
-that choice is keyed on the chassis' project root and the page does not know it
-until the file listing answers — a pre-paint script would have to guess the
-key, and a wrong guess applies one project's preference to another's desk.
+**Entry and workspace preferences have separate lifetimes.** While checking a
+session, Desk leaves the palette to the operating system rather than applying
+an old saved entry preference. The public entry preference applies once sign-in
+or recovery is confirmed. A fresh explicit entry choice can cross into exactly
+one workspace, including across sign-in's document reload. Workspace choices
+remain scoped to their own project. Known themes apply before the next paint,
+and cleanup from a previous owner cannot reset a newer owner's theme.
+
+**Cold loads still need the project's identity.** CSS follows the operating
+system before JavaScript runs. A saved project `dark` choice on a light system
+(or `light` on a dark system) can therefore show the system palette until the
+authorized project root/configuration answers. That delay depends on loading;
+it is not guaranteed to be one frame. Guessing a project key or using a global
+last-workspace choice would apply one project's preference to another's desk.
 
 **What compact does.** `appearance.density` writes `data-density` on the same
 element — `compact` sets it, `comfortable` removes it, because comfortable is
