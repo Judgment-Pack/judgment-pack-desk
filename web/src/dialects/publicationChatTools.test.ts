@@ -1,6 +1,6 @@
 import {beforeEach,expect,it,vi} from 'vitest'
 import {publicationChatTools} from './publicationChatTools'
-import {planningTool} from '../assistant/planning/policy'
+import {planningTool} from '@judgment-pack/harness/planning/policy'
 import {validDialectChatAction} from './chatActions'
 import {publicationAction,publicationId as id,publicationRevision as revision} from '../testing/publication'
 import {dialectAPI} from './client'

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { GraphAuthor, GraphConfirmation } from './GraphAuthor'
 import { graphHostTools, type GraphOffer } from './author'
 import { deskFetch, readFile } from '../files/client'
-import { GRAPH_SYSTEM } from '../assistant/engines/contract'
+import { GRAPH_SYSTEM } from '@judgment-pack/harness/engines/contract'
 
 const state = vi.hoisted(() => ({
   names: ['author_graph'], ready: true,

@@ -1,5 +1,5 @@
 import {FailureDetails} from '../assistant/FailureDetails'
-import type { DelegatedTask } from '../assistant/delegationContract'
+import type { DelegatedTask } from '@judgment-pack/harness/delegationContract'
 import { msg, useLocale } from '../i18n'
 import { ReadingDetails } from './ReadingDetails'
 import { MessageRenderer } from './MessageRenderer'

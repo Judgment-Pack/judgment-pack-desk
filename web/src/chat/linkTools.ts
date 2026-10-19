@@ -2,7 +2,7 @@ import { configurableRedirect, linkFailure } from './linkFailure'
 import { discoverWebsite, loadWebsite, type WebsiteReference, type VerifiedWebsite } from '../documents/website'
 /** Bounded reading and discovery. New URLs must come from the user or a verified search/discovery receipt. */
 import { searchAccess, type SearchDeps } from '../search/tools'
-import type { HostTool, McpToolResult } from '../assistant/engine'
+import type { HostTool, McpToolResult } from '@judgment-pack/harness/engine'
 import type { ResearchConfig } from '../config/deskConfig'
 import { ingestSiteLink, ingestLink as ingestDefault, loadDocument as loadDefault, type DocumentReference, type VerifiedDocument } from '../documents/client'
 import { anchorWords, describeLinkFailure, extractLinks, normalizeLink, type NormalizedLink } from '../documents/link'

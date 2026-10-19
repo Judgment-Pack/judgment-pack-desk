@@ -2,10 +2,10 @@ import type { AITarget } from './aiConnections'
 import { allowedAgentModels } from '../config/deskConfig'
 import { sourceMessage } from '../i18n/source'
 import type { AssistantAgentConfig, AssistantConfig, AssistantEndpointConfig, ThinkingTier } from '../config/deskConfig'
-import type { AssistantSession, AgentAssistantSession } from './engine'
-import { bindAgentRun } from './agentTransport'
-import { bindModelCall } from './session'
-import { normalize } from './thinking'
+import type { AssistantSession, AgentAssistantSession } from '@judgment-pack/harness/engine'
+import { bindAgentRun } from '@judgment-pack/harness/agentTransport'
+import { bindModelCall } from '@judgment-pack/harness/session'
+import { normalize } from '@judgment-pack/harness/thinking'
 
 /** UI selection has no endpoint impersonation: an agent target stays an agent. */
 export function selectedAssistant(slot: { engine?: string; endpoint: AssistantEndpointConfig | null; agent?: AssistantAgentConfig }) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { AssistantRun } from './useAssistantRun'
 import type { ProposalReply } from './proposalWorkflow'
-import { withAbort } from './engines/contract'
+import { withAbort } from '@judgment-pack/harness/engines/contract'
 
 /** Adapt the existing engine event stream without giving a workflow another SDK. */
 export function useProposalGenerator(run: AssistantRun) {

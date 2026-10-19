@@ -1,4 +1,6 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+// The test ground has already loaded this module once, to wire the assistant harness (testing/setup.ts); each case reads it afresh.
+beforeEach(()=>vi.resetModules())
 afterEach(()=>{sessionStorage.clear();vi.resetModules()})
 it('freezes the desk for HTTP, sockets, and events until reload',async()=>{
  const id='a'.repeat(32);sessionStorage.setItem('jpack.active-desk',id)

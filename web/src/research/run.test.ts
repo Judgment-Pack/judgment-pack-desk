@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { AssistantEvent, CallTool, McpToolResult } from '../assistant/engine'
+import type { AssistantEvent, CallTool, McpToolResult } from '@judgment-pack/harness/engine'
 import { Ledger } from './ledger'
 import { AuthoringRun, admitCases, canCreateDraft, canCreateResearchDraft, canEstablishCases, documentBasis, factPaths, statementsOf, matrixDocument, readinessKey, researchRecord, traceCitations, type Candidate, type RunPorts, type RunState, type TurnRequest } from './run'
 import { digestOf, type AuthoringCase, type CandidateCheck } from './checkCandidate'
@@ -2719,7 +2719,7 @@ it.runIf(Boolean(process.env.JPS_CHAT_CONTEXT_STORE&&process.env.JPS_CHAT_CONTEX
  const history=JSON.stringify(state.turns)
  let projectedBytes=0
  const h=harness([async(request,_s,emit)=>{
-  const {SessionContext}=await import('../assistant/context/session')
+  const {SessionContext}=await import('@judgment-pack/harness/context/session')
   const context=new SessionContext({prompt:request.prompt,context:request.context,testPrompt:'',hostTools:[],tools:[],callTool:async()=>({}),signal:_s,agent:{model:'fixture',run:async()=>{throw Error('No provider')}}})
   await context.initialize(request.context?.documents)
   const projected=await context.prompt(request.prompt,'Host instructions',context.ledger.tools().map(({name,description,inputSchema})=>({name,description,inputSchema})),request.context?.currentRequest)
@@ -2731,11 +2731,11 @@ it.runIf(Boolean(process.env.JPS_CHAT_CONTEXT_STORE&&process.env.JPS_CHAT_CONTEX
    const focus=context.ledger.list().items.find(i=>i.label.startsWith('Latest user'))
    if(focus){expect(context.ledger.read({id:focus.contextId,path:'/input'})).toMatchObject({text:expect.any(String)})}
   }
-  const {vercel}=await import('../assistant/engines/vercel')
-  const {normalize}=await import('../assistant/thinking')
-  const {MAX_TURNS}=await import('../assistant/engines/contract')
+  const {vercel}=await import('@judgment-pack/harness/vercel')
+  const {normalize}=await import('@judgment-pack/harness/thinking')
+  const {MAX_TURNS}=await import('@judgment-pack/harness/engines/contract')
   let calls=0
-  const call:import('../assistant/engine').ModelCall=async(_path,wire)=>{
+  const call:import('@judgment-pack/harness/engine').ModelCall=async(_path,wire)=>{
    const body=JSON.parse(wire.body),json=JSON.stringify(body);calls++
    const final=calls===MAX_TURNS
    const id=json.match(/[0-9a-f-]{36}:current-request:[0-9a-f]{16}/)?.[0]
@@ -2799,8 +2799,8 @@ it('does not turn an interrupted artifact check into a retried conversation afte
 })
 
 it('restores a budget pause and resumes only after an explicit persisted allowance without duplicating the user request',async()=>{
- const {contextualSession}=await import('../assistant/context/session')
- const {normalize}=await import('../assistant/thinking')
+ const {contextualSession}=await import('@judgment-pack/harness/context/session')
+ const {normalize}=await import('@judgment-pack/harness/thinking')
  const {checkpoint,decodeCheckpoint}=await import('../chat/checkpoint')
  const ready=await contextualSession({prompt:'Fix it',testPrompt:'',hostTools:[],tools:[],callTool:async()=>({}),model:{family:'gemini',model:'fixture',call:async()=>new Response('{}')},thinking:normalize('off','gemini'),signal:new AbortController().signal})
  ready.context.execution.state.used=20

@@ -1,4 +1,4 @@
-import {failureEvent,authoredFailure} from './failures'
+import {failureEvent,authoredFailure} from '@judgment-pack/harness/failures'
 import type { AITarget } from './aiConnections'
 import { bindExecution } from './target'
 import { sourceMessage } from '../i18n/source'
@@ -42,12 +42,12 @@ import { sourceMessage } from '../i18n/source'
  * and nothing to write.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadEngine } from './engines'
+import { loadEngine } from '@judgment-pack/harness/engines/index'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { openAssistantConnection, runAssistantSession } from './session'
+import { openAssistantConnection, runAssistantSession } from '@judgment-pack/harness/session'
 import { sessionBearer, whenSessionEnds } from '../mcp/session'
-import type { HostTool, AssistantEvent } from './engine'
-import type { AssistantConnection } from './session'
+import type { HostTool, AssistantEvent } from '@judgment-pack/harness/engine'
+import type { AssistantConnection } from '@judgment-pack/harness/session'
 import {
   NO_MODEL_CHOSEN,
   type AssistantEndpointConfig,

@@ -9,7 +9,7 @@
  * other, and a member whose value is `null`.
  */
 import { describe, expect, it } from 'vitest'
-import scenario from './conformance/scenario.json'
+import { scenario } from '@judgment-pack/harness/certification'
 import {
   diffProposal,
   matchElements,

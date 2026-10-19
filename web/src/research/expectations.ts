@@ -1,5 +1,5 @@
-import type { CallTool } from '../assistant/engine'
-import { withAbort } from '../assistant/engines/contract'
+import type { CallTool } from '@judgment-pack/harness/engine'
+import { withAbort } from '@judgment-pack/harness/engines/contract'
 
 export const EXPECTATION_TOOL = 'experimental_validate_expectations'
 

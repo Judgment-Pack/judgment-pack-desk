@@ -3,7 +3,7 @@ import { checkCandidate } from './checkCandidate'
 import { EVALUATOR_SPEC, EXPECTATION_TOOL, findingSummary, validateExpectations, type InvalidFinding } from './expectations'
 import { fixtureExpectations } from './__fixtures__/expectationRuntime'
 import recordedFindings from './__fixtures__/expectations.json'
-import type { McpToolResult } from '../assistant/engine'
+import type { McpToolResult } from '@judgment-pack/harness/engine'
 
 const signal = new AbortController().signal
 const unknown = { kind: 'unresolved', reasons: ['unknown'], handoff: { state: 'none' } }

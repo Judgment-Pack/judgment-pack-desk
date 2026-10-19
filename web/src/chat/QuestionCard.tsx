@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
-import type { QuestionDraft, SavedQuestion } from '../assistant/questions'
+import type { QuestionDraft, SavedQuestion } from '@judgment-pack/harness/questions'
 import { msg, systemMessage, useLocale } from '../i18n'
 import {ChatAction} from './ChatActions'
 import { Disclosure } from '../ui/Disclosure'

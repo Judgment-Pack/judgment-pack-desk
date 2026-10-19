@@ -1,6 +1,6 @@
-import {toolInputFailure} from '../assistant/failures'
+import {toolInputFailure} from '@judgment-pack/harness/failures'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import type { HostTool } from '../assistant/engine'
+import type { HostTool } from '@judgment-pack/harness/engine'
 import { readFile } from '../files/client'
 import { graphHostTools } from './author'
 import { rehearseGraph } from './GraphRehearsal'

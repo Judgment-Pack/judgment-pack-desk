@@ -1,9 +1,9 @@
-import {correctArtifact} from '../assistant/execution/correctArtifact'
+import {correctArtifact} from '@judgment-pack/harness/execution/correctArtifact'
 import {proposalProblems, legacyPackBasis, type PackProposalBasis, type PackReview, type SavedPackReview} from '../chat/packProposal'
-import {AIFailureError,readFailure,retryReady,type AIFailure} from '../assistant/failures'
-import {ExecutionPaused,extendExecution,canExtendInterruptedExecution,type ExecutionCheckpoint} from '../assistant/execution/state'
+import {AIFailureError,readFailure,retryReady,type AIFailure} from '@judgment-pack/harness/failures'
+import {ExecutionPaused,extendExecution,canExtendInterruptedExecution,type ExecutionCheckpoint} from '@judgment-pack/harness/execution/state'
 import { modelTranscript } from './transcript'
-import { readUserQuestion, validQuestionDraft, type QuestionDraft, type SavedQuestion } from '../assistant/questions'
+import { readUserQuestion, validQuestionDraft, type QuestionDraft, type SavedQuestion } from '@judgment-pack/harness/questions'
 import { whileChecking, runSnapshotCheck, verifyRetainedCheck, reusableRuntime } from './retainedCheck'
 import { conversationMode, type AuthoringMode } from './mode'
 import type { SearchReference } from '../search/results'
@@ -35,8 +35,8 @@ import { sourceMessage } from '../i18n/source'
  * conversation are this run's.
  */
 import { canonicalProposal } from '../assistant/useAssistantRun'
-import type { AssistantEvent, CallTool, HostTool } from '../assistant/engine'
-import { isCancelled, recoverableProposal } from '../assistant/engines/contract'
+import type { AssistantEvent, CallTool, HostTool } from '@judgment-pack/harness/engine'
+import { isCancelled, recoverableProposal } from '@judgment-pack/harness/engines/contract'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import { findingSummary, validateExpectations } from './expectations'
 import type { Ledger, SourceRecord } from './ledger'
@@ -166,7 +166,7 @@ export interface RunState {
 export interface TurnRequest {
   onTarget?:(target:AssistantProvenance|undefined)=>void
   prompt: string
-  context?: import('../assistant/context/session').ContextInput
+  context?: import('@judgment-pack/harness/context/session').ContextInput
   hostTools: HostTool[]
   /** A reviewer turn runs with thinking off: fresh, and no critic. */
   reviewer?: boolean

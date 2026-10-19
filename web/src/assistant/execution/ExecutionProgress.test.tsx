@@ -1,7 +1,7 @@
 import {render,screen,fireEvent} from '@testing-library/react'
 import {it,expect,vi} from 'vitest'
 import {ExecutionProgress} from './ExecutionProgress'
-import type {ExecutionCheckpoint} from './state'
+import type {ExecutionCheckpoint} from '@judgment-pack/harness/execution/state'
 it('shows one compact pause with explicit continuation and preserves completed progress',()=>{
  const onContinue=vi.fn(),onStop=vi.fn()
  const execution={status:'paused',used:20,limit:20,plan:[{step:'Inspect rules',status:'completed'},{step:'Verify fix',status:'pending'}],explanation:''} as ExecutionCheckpoint

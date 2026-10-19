@@ -14,7 +14,7 @@ import { AssistantPane, DRAFT_SENTENCE, withDraft } from './AssistantPane'
 import { EditingContext, type EditingSession } from '../packs/edit/editingContext'
 import { useDocumentBuffer, type DocumentBuffer } from '../packs/edit/useDocumentBuffer'
 import { buffered, bytesAt } from '../packs/edit/writes'
-import type { AssistantEvent, Engine } from './engine'
+import type { AssistantEvent, Engine } from '@judgment-pack/harness/engine'
 
 /**
  * An engine this suite puts in the registry's place, where a case needs one.
@@ -24,16 +24,16 @@ import type { AssistantEvent, Engine } from './engine'
  */
 let injected: Engine | null = null
 
-vi.mock('./engines', async (importOriginal) => {
-  const original = await importOriginal<typeof import('./engines')>()
+vi.mock('@judgment-pack/harness/engines/index', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@judgment-pack/harness/engines/index')>()
   return {
     ...original,
     loadEngine: async (id: 'vercel' | 'vercel') => injected ?? original.loadEngine(id)
   }
 })
-import { scriptedModel } from './conformance/scriptedModel'
-import { scriptedWebSocket } from './conformance/scriptedServer'
-import scenario from './conformance/scenario.json'
+import { scriptedModel } from '@judgment-pack/harness/certification/scriptedModel'
+import { scriptedWebSocket } from '@judgment-pack/harness/certification/scriptedServer'
+import { scenario } from '@judgment-pack/harness/certification'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'

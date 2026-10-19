@@ -14,7 +14,7 @@
  * the same binding of a check to exact candidate bytes and the same rule that
  * a transport failure stops the run rather than becoming a policy disagreement.
  */
-import type { CallTool, McpToolResult } from '../assistant/engine'
+import type { CallTool, McpToolResult } from '@judgment-pack/harness/engine'
 
 export interface AuthoringCase {
   id: string

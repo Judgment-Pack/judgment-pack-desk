@@ -1,4 +1,4 @@
-import { withDelegation } from '../assistant/delegation'
+import { withDelegation } from '@judgment-pack/harness/delegation'
 import { chatReasoningAgent, type ChatReasoning } from '../chat/reasoning'
 import { conversationMode, type AuthoringMode } from './mode'
 import { bindExecution } from '../assistant/target'
@@ -23,10 +23,10 @@ import { systemMessage, useLocale } from '../i18n'
  */
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { describeEvent } from '../assistant/EventList'
-import { loadEngine } from '../assistant/engines'
-import type { AssistantEvent, CallTool, HostTool, McpToolResult } from '../assistant/engine'
+import { loadEngine } from '@judgment-pack/harness/engines/index'
+import type { AssistantEvent, CallTool, HostTool, McpToolResult } from '@judgment-pack/harness/engine'
 import { usePickedModel } from '../assistant/pickedModel'
-import { openAssistantConnection, runAssistantSession } from '../assistant/session'
+import { openAssistantConnection, runAssistantSession } from '@judgment-pack/harness/session'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useFileListing } from '../files/queries'
@@ -132,7 +132,7 @@ export function useResearchRun(options?: {
   mode?: AuthoringMode
   adversarialReview?: boolean
   authorizeContext?:(signal:AbortSignal)=>Promise<void>
-  executionContext?:()=>import('../assistant/context/session').ContextInput
+  executionContext?:()=>import('@judgment-pack/harness/context/session').ContextInput
   checkpointDelegation?: (signal:AbortSignal)=>Promise<void>
   /** Per-message policy for Chat and web Research; legacy research keeps its source-led contract. */
   researchPolicy?:(turn?: import('./run').Turn)=>string

@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { HostTool } from '../assistant/engine'
+import type { HostTool } from '@judgment-pack/harness/engine'
 import { useResearchRun } from './useResearchRun'
 import type { AuthoringMode } from './mode'
 
@@ -10,10 +10,11 @@ vi.mock('../assistant/providers',()=>({useProviderModels:()=>fake.models}))
 vi.mock('../assistant/target', () => ({ bindExecution: fake.bind, selectedAssistant: () => ({ models: fake.allowed, model: 'test-model', tools: [] }) }))
 vi.mock('../assistant/useAssistantSlot', () => ({ assistantReady: () => true, useAssistantSlot: () => ({ state: 'ready', endpoint: 'https://example.invalid', keyStatus: 'stored', keyPresent: true, engine: fake.engine, thinking: 'off', agent:{model:'test-model',provider:'openai',authMethod:'subscription',tools:[],effort:'medium'} }) }))
 vi.mock('../assistant/pickedModel', () => ({ usePickedModel: () => ({ model: 'test-model', models: ['test-model'] }) }))
-vi.mock('../assistant/engines', () => ({ loadEngine: async () => ({}) }))
-vi.mock('../assistant/session', () => ({ runAssistantSession: fake.session }))
+vi.mock('@judgment-pack/harness/engines/index', () => ({ loadEngine: async () => ({}) }))
+vi.mock('@judgment-pack/harness/session', () => ({ runAssistantSession: fake.session }))
 vi.mock('../files/queries', () => ({ useFileListing: () => ({ data: { root: '/test' } }) }))
-vi.mock('../mcp/session', () => ({ sessionBearer: async () => 'test-session' }))
+// The rest of the module stays the Desk's own: the harness's host wiring reads its error and sentence.
+vi.mock('../mcp/session', async original => ({ ...await original<typeof import('../mcp/session')>(), sessionBearer: async () => 'test-session' }))
 vi.mock('../mcp/McpProvider', () => ({ useMcp: () => ({ status: 'disconnected', client: null }) }))
 vi.mock('../mcp/prompts', () => ({ AUTHOR_PACK_PROMPT: 'author_pack', TEST_PACK_PROMPT: 'test_pack', usePromptNames: () => ({ data: [] }), usePromptText: () => ({}) }))
 vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => ({ config: { research: { gateway: fake.gateway, sources: { search: null, read: null }, limits: { seconds: 30 } } } }) }))

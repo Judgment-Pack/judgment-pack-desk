@@ -1,5 +1,5 @@
 import { CODEX_EFFORTS, ASSISTANT_THINKING, type AssistantConfig, type AssistantAgentConfig, type ThinkingTier } from './deskConfig'
-import { contextConfiguration, type ContextConfiguration } from '../assistant/context/policy'
+import { contextConfiguration, type ContextConfiguration } from '@judgment-pack/harness/context/policy'
 import { sourceMessage } from '../i18n/source'
 
 export const ASSISTANT_PROFILE_PATH = 'jpack-assistant.json'

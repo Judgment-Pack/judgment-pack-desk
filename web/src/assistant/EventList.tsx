@@ -25,7 +25,7 @@ import { useLocale } from '../i18n'
  * is condensed and no count replaces a line: an event either has a line or is
  * not in this list.
  */
-import type { AssistantEvent } from './engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 import styles from './AssistantPane.module.css'
 
 /** The bytes of one tool answer, said the way the desk says byte counts. */

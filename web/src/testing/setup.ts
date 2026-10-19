@@ -116,3 +116,20 @@ if (!('__jpackDeskDefaultFetch' in globalThis)) {
 beforeEach(() => {
   giveThisPageASessionForTesting('a-session-this-test-was-given')
 })
+
+/**
+ * **The assistant harness wired to the Desk, as the page wires it.**
+ *
+ * `@judgment-pack/harness` reads what only a host can do (the session, the
+ * relay's address, the socket, the language, files and preparations) from the
+ * values `assistant/harnessHost.ts` supplies, the same module `main.tsx`
+ * imports. It is imported here before every test rather than at the top of
+ * this file, so the modules it wires from are loaded by the test file first:
+ * a file that mocks one of them, or reads one afresh after `vi.resetModules`,
+ * gets the module it asked for, and the harness reads that one too, as it did
+ * when it lived in this tree. The import is cached, so it wires once a file
+ * unless the file resets its modules.
+ */
+beforeEach(async () => {
+  await import('../assistant/harnessHost')
+})

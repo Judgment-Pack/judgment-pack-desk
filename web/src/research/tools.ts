@@ -7,7 +7,7 @@ import { sourceMessage } from '../i18n/source'
  * refusal says what it is: no source configured, a budget spent, a page the
  * provider could not render.
  */
-import type { HostTool, McpToolResult } from '../assistant/engine'
+import type { HostTool, McpToolResult } from '@judgment-pack/harness/engine'
 import type { ResearchConfig } from '../config/deskConfig'
 import { GatewayError, OverBudget, acquire as acquireDefault, type Acquired } from './gatewayClient'
 import type { Ledger } from './ledger'

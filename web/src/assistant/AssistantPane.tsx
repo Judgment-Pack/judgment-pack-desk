@@ -59,11 +59,11 @@ import { ProposalUnknowns, RefutationReport, RuntimeChecks } from './ProposalRep
 import { acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
-import { stateFromEvents, thinkingLine } from './thinking'
+import { stateFromEvents, thinkingLine } from '@judgment-pack/harness/thinking'
 import { useAssistantRun } from './useAssistantRun'
 import { CHECKING_KEY, UNREAD_KEY, useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
-import type { AssistantEvent } from './engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 
 /**
  * The one sentence the draft travels under, fixed.

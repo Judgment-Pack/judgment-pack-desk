@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { outcomeOf } from './runOutcome'
-import type { AssistantEvent } from './engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 
 const proposal: AssistantEvent = { type: 'proposal', document: { a: 1 }, unknowns: [] }
 const end: AssistantEvent = { type: 'end' }

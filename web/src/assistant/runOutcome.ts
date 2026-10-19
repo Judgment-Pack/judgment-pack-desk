@@ -27,7 +27,7 @@
  * write, and the tab keeps the session on screen with Accept refused and the
  * reason on the control. What may be acted on, and why not, is decided here.
  */
-import type { AssistantEvent } from './engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 
 export type ProposalEvent = Extract<AssistantEvent, { type: 'proposal' }>
 

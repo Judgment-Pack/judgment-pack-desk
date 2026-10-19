@@ -1,7 +1,7 @@
 import {msg} from '../i18n'
 import {Disclosure} from '../ui/Disclosure'
 import {CodeBlock} from '../ui/CodeBlock'
-import {readFailure,type AIFailure} from './failures'
+import {readFailure,type AIFailure} from '@judgment-pack/harness/failures'
 /** Bounded, allowlisted diagnostics shared by chat and operation activity. */
 export function FailureDetails({failure,size}:{failure?:AIFailure;size?:'default'|'small'}){
  const safe=readFailure(failure)

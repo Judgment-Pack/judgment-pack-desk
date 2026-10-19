@@ -3,15 +3,15 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { AuthoringRun, INITIAL_STATE, canCreateDraft, type RunPorts, type RunState } from './run'
 import { Ledger } from './ledger'
-import {failure, failureMessage} from '../assistant/failures'
-import type {ExecutionCheckpoint} from '../assistant/execution/state'
+import {failure, failureMessage} from '@judgment-pack/harness/failures'
+import type {ExecutionCheckpoint} from '@judgment-pack/harness/execution/state'
 import { checkpoint, decodeCheckpoint } from '../chat/checkpoint'
 import { artifactCheckpoint, type PackDraft } from '../packs/drafts/model'
 import { recoverDraft, emptySuite } from '../packs/test-workspace/model'
 import { digestOf } from './checkCandidate'
 import { runtimeCheckIdentity, runSnapshotCheck, verifyRetainedCheck } from './retainedCheck'
 import { draftCheckStatus } from './DraftCheckStatus'
-import type { CallTool, McpToolResult } from '../assistant/engine'
+import type { CallTool, McpToolResult } from '@judgment-pack/harness/engine'
 
 const tool = {name:'jpack',version:'0.29.0'}
 const outcome = {kind:'outcome',outcomeId:'accept',reasons:[],handoff:{state:'none'}}

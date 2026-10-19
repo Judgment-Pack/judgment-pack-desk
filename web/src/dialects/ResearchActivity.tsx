@@ -1,4 +1,4 @@
-import {readFailure} from '../assistant/failures'
+import {readFailure} from '@judgment-pack/harness/failures'
 import {LoadingState} from '../ui/LoadingState'
 import {ResearchExecutionDetails} from './ResearchExecution'
 import {ResearchBudgetHistory} from './ResearchBudget'

@@ -1,4 +1,4 @@
-import {questionFailureMessage} from '../assistant/questionFailure'
+import {questionFailureMessage} from '@judgment-pack/harness/questionFailure'
 import { DelegatedTaskDetails } from './DelegatedTaskDetails'
 import {dialectRecipeFailureMessage} from '../dialects/proposalFailure'
 import { GraphStepDetails } from '../graphs/GraphStepDetails'

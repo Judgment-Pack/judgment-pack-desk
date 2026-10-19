@@ -1,4 +1,4 @@
-import type { HostTool } from '../assistant/engine'
+import type { HostTool } from '@judgment-pack/harness/engine'
 import type { Turn } from '../research/run'
 import type { AuthoringMode } from '../research/mode'
 

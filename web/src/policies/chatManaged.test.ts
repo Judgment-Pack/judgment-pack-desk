@@ -1,15 +1,15 @@
 import {expect,it,vi} from 'vitest'
-import {vercel} from '../assistant/engines/vercel'
-import {runCodex} from '../assistant/engines/codex'
-import {normalize} from '../assistant/thinking'
-import {contextualSession,SessionContext} from '../assistant/context/session'
-import {failureError} from '../assistant/failures'
-import type {AssistantEvent,AssistantSession,AgentAssistantSession} from '../assistant/engine'
+import {vercel} from '@judgment-pack/harness/vercel'
+import {runCodex} from '@judgment-pack/harness/codex'
+import {normalize} from '@judgment-pack/harness/thinking'
+import {contextualSession,SessionContext} from '@judgment-pack/harness/context/session'
+import {failureError} from '@judgment-pack/harness/failures'
+import type {AssistantEvent,AssistantSession,AgentAssistantSession} from '@judgment-pack/harness/engine'
 import {policyChatTools} from './chatTools'
 import {readPolicy,type PolicyReply} from './client'
 import type {PolicyProposal} from './chat'
 import {resolvePolicyComparison,type PolicyComparison,type PolicyComparisonRequest} from './comparison'
-import {planningSession} from '../assistant/planning/policy'
+import {planningSession} from '@judgment-pack/harness/planning/policy'
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),readPolicy:vi.fn()}))
 vi.mock('./comparison',async original=>({...await original<typeof import('./comparison')>(),resolvePolicyComparison:vi.fn()}))
 const id='policy_'+'a'.repeat(48),revision='b'.repeat(64)
@@ -139,7 +139,7 @@ it('checks current access before retained comparison retrieval and later provide
  let allowed=true,calls=0
  const session=base();session.prompt='Explain changes';session.hostTools=retainTools([]);session.context!.authorize=async()=>{if(!allowed)throw failureError('permission','desk','not-started')};session.model.call=async()=>{calls++;return new Response()}
  const managed=await contextualSession(session),answer=await managed.session.hostTools.find(t=>t.name==='read_policy_comparison')!.execute(comparisonRequest,session.signal)
- const projected=await managed.context.result('read_policy_comparison',answer as import('../assistant/engine').McpToolResult),contextId=(projected.structuredContent as {contextId:string}).contextId
+ const projected=await managed.context.result('read_policy_comparison',answer as import('@judgment-pack/harness/engine').McpToolResult),contextId=(projected.structuredContent as {contextId:string}).contextId
  expect(contextId).toBeDefined();allowed=false
  await expect(managed.session.hostTools.find(t=>t.name==='read_context')!.execute({id:contextId,path:'/structuredContent/before/text',limit:1024},session.signal)).rejects.toThrow()
  await expect(managed.session.model.call('/v1/chat/completions',{method:'POST',headers:{},body:'{}'})).rejects.toThrow()

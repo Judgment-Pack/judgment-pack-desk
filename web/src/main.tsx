@@ -9,6 +9,8 @@ import { SessionGate } from './auth/SessionGate'
 import { DeskConfigProvider } from './config/DeskConfigProvider'
 import { IdentityProvider } from './identity/IdentityProvider'
 import { McpProvider } from './mcp/McpProvider'
+// The Desk is the assistant harness's host: wire its injection points before any run.
+import './assistant/harnessHost'
 // Establish element defaults before the shell's component styles.
 import '@fontsource-variable/noto-sans-kr/wght.css'
 import './styles.css'

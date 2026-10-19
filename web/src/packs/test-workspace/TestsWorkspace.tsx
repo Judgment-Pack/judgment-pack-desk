@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { msg, useLocale } from '../../i18n'
 import { useMcp } from '../../mcp/McpProvider'
 import type { PackTest, PackDocument } from '../../mcp/types'
-import type { McpToolResult } from '../../assistant/engine'
+import type { McpToolResult } from '@judgment-pack/harness/engine'
 import { useChats } from '../../chat/ChatProvider'
 import type { ChatAttachment } from '../../chat/store'
 import {

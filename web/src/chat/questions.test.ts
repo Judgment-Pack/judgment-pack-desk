@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { waitFor } from '@testing-library/react'
-import { readUserQuestion, readSavedQuestions, validQuestionDraft } from '../assistant/questions'
+import { readUserQuestion, readSavedQuestions, validQuestionDraft } from '@judgment-pack/harness/questions'
 import { interviewQuestion } from '../testing/question'
 import { AuthoringRun, type RunPorts } from '../research/run'
 import { Ledger } from '../research/ledger'
@@ -125,7 +125,7 @@ it('does not hide a failed help request behind another question', async () => {
 })
 
 it('normalizes only absent optional model fields and keeps saved history strict',async()=>{
- const {readModelQuestion}=await import('../assistant/questions')
+ const {readModelQuestion}=await import('@judgment-pack/harness/questions')
  const loose={...interviewQuestion,recommendedOptionId:'',recommendation:'',options:interviewQuestion.options.map(({id,label})=>({id,label}))}
  const normalized=readModelQuestion(loose)
  expect(normalized.options.map(o=>o.label)).toEqual(interviewQuestion.options.map(o=>o.label))

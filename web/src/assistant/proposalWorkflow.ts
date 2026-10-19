@@ -1,5 +1,5 @@
-import {correctArtifact} from './execution/correctArtifact'
-import {ExecutionPaused} from './execution/state'
+import {correctArtifact} from '@judgment-pack/harness/execution/correctArtifact'
+import {ExecutionPaused} from '@judgment-pack/harness/execution/state'
 import {jsonIdentity} from '../research/checkCandidate'
 /** Bounded proposal correction, independent of React and the model SDK. */
 export interface ProposalFinding {

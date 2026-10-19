@@ -3,7 +3,7 @@ import {msg,systemMessage} from '../../i18n'
 import {Button} from '../../ui/Button'
 import {Disclosure} from '../../ui/Disclosure'
 import type {Chat,ChatStore} from '../../chat/store'
-import {acceptPlan,currentChat} from './tools'
+import {acceptPlan,currentChat} from '@judgment-pack/harness/planning/tools'
 import styles from './PlanCard.module.css'
 export function PlanCard({chat,store,disabled,onStart,onRevise,history=false}:{chat:Chat;store?:ChatStore|null;disabled?:boolean;onStart?:()=>boolean;onRevise?:()=>void;history?:boolean}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('')
@@ -21,7 +21,7 @@ export function PlanCard({chat,store,disabled,onStart,onRevise,history=false}:{c
   }
   catch(e){setError((e as Error).message)}finally{setBusy(false)}
  }
- const revise=()=>{if(!store)return;const current=currentChat(store,chat.id);if(!current)return;store.update(chat.id,{interaction:'plan',composer:current.composer.trim()?current.composer:msg('Revise plan {{revision}}:',{revision:plan.revision})+' '});onRevise?.()}
+ const revise=()=>{if(!store)return;const current=currentChat(store,chat.id) as Chat|undefined;if(!current)return;store.update(chat.id,{interaction:'plan',composer:current.composer.trim()?current.composer:msg('Revise plan {{revision}}:',{revision:plan.revision})+' '});onRevise?.()}
  return <section className={styles.plan} aria-label={msg('Plan')}>
   <div className={styles.header}><strong>{msg('Plan {{revision}}',{revision:plan.revision})}</strong><span>{plan.status==='started'?msg('Work started'):plan.status==='accepted'?msg('Approved'):msg('Review required')}</span></div>
   <p>{plan.objective}</p>

@@ -51,6 +51,17 @@ function scan(dir) {
   }
 }
 scan(sourceRoot)
+// The assistant harness authors its messages in the package the page bundles
+// (@judgment-pack/harness) and the Desk shows them translated, so they are read
+// from its emitted modules as the Desk's own are read from src/.
+function scanHarness(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name)
+    if (entry.isDirectory()) { if (entry.name !== 'certification') scanHarness(file) }
+    else if (entry.name.endsWith('.js')) inspect(file)
+  }
+}
+scanHarness(fileURLToPath(new URL('../node_modules/@judgment-pack/harness/dist/', import.meta.url)))
 // Shared Go/browser failure messages have one canonical catalogue.
 for (const entry of Object.values(JSON.parse(fs.readFileSync(new URL('../../internal/aifailure/catalog.json', import.meta.url), 'utf8')).failures)) messages.set(entry.message, ['internal/aifailure/catalog.json'])
 // These messages are selected from durable state rather than passed as literals.

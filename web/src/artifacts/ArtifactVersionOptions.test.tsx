@@ -2,7 +2,7 @@ import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {ArtifactVersionOptions,readVersionOptions} from './ArtifactVersionOptions'
-import {runtimeToolContextPolicy} from '../assistant/context/toolPolicy'
+import {runtimeToolContextPolicy} from '@judgment-pack/harness/context/toolPolicy'
 import {readCapabilities} from '../mcp/capabilities'
 const {connection}=vi.hoisted(()=>({connection:{client:{callTool:vi.fn()},status:'ready',known:true,artifactVersionOptionsSupported:true,connectionEpoch:1}}))
 vi.mock('../mcp/McpProvider',()=>({useMcp:()=>connection}))
