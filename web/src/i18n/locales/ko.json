@@ -6144,5 +6144,16 @@
   "queued": "대기 중",
   "reused": "재사용",
   "running": "실행 중",
-  "{{seconds}} s": "{{seconds}}초"
+  "{{seconds}} s": "{{seconds}}초",
+  " · first byte {{seconds}} s on average": " · 첫 바이트까지 평균 {{seconds}}초",
+  " · requests that did not complete: {{failed}}": " · 완료되지 않은 요청: {{failed}}",
+  " · tool calls: {{calls}} ({{seconds}} s)": " · 도구 호출: {{calls}}회 ({{seconds}}초)",
+  "Earlier steps left out of this list: {{omitted}}": "이 목록에서 제외된 이전 단계: {{omitted}}",
+  "First byte (s)": "첫 바이트 (초)",
+  "Request (KB)": "요청 (KB)",
+  "Requests took {{seconds}} s in all": "요청은 모두 합쳐 {{seconds}}초 걸렸습니다",
+  "Step": "단계",
+  "Steps": "단계",
+  "The assistant is writing": "어시스턴트가 작성하는 중입니다",
+  "Tools": "도구"
 }

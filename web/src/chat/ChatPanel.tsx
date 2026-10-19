@@ -335,7 +335,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
         return store.perform(chat.id,active=>{const prompt=msg('Start work on reviewed plan {{revision}}.',{revision:plan.revision});if(active.state.phase==='idle')active.run?.start(prompt,[]);else active.run?.send(prompt)})
       }}/>
 
-      <ExecutionProgress execution={state.execution} disabled={actionDisabled} onStop={()=>store?.perform(chat.id,active=>active.run?.keepExecution(),false)} onContinue={continueExecution}/>
+      <ExecutionProgress execution={state.execution} report={state.responses?.at(-1)?.work.report} disabled={actionDisabled} onStop={()=>store?.perform(chat.id,active=>active.run?.keepExecution(),false)} onContinue={continueExecution}/>
       <ChatMemoryReview chatId={chat.id}/>
       {proposalActions === undefined && chat.pack ? <LinkedPackProposal chat={chat} state={state} busy={running || Boolean(otherRun)} onCheck={()=>store?.perform(chat.id, active=>active.run?.recheck(),false)}/> : proposalActions}
       {state.status==='failed' && <ResponseRecovery failure={state.failure} detail={state.detail} disabled={actionDisabled} onRetry={binding?.run?.canExtendResponse?continueExecution:binding?.run?.canRetryResponse?retryResponse:undefined} additionalRequests={binding?.run?.canExtendResponse?Math.min(REQUEST_INCREMENT,MAX_REQUEST_ALLOWANCE-state.execution!.limit):undefined}/>}

@@ -6144,5 +6144,16 @@
   "queued": "待機中",
   "reused": "再利用",
   "running": "実行中",
-  "{{seconds}} s": "{{seconds}} 秒"
+  "{{seconds}} s": "{{seconds}} 秒",
+  " · first byte {{seconds}} s on average": " · 最初のバイトまで平均 {{seconds}} 秒",
+  " · requests that did not complete: {{failed}}": " · 完了しなかったリクエスト: {{failed}}",
+  " · tool calls: {{calls}} ({{seconds}} s)": " · ツール呼び出し: {{calls}} 件（{{seconds}} 秒）",
+  "Earlier steps left out of this list: {{omitted}}": "この一覧に含まれない以前のステップ: {{omitted}}",
+  "First byte (s)": "最初のバイト (秒)",
+  "Request (KB)": "リクエスト (KB)",
+  "Requests took {{seconds}} s in all": "リクエストは合計 {{seconds}} 秒かかりました",
+  "Step": "ステップ",
+  "Steps": "ステップ",
+  "The assistant is writing": "アシスタントが入力中です",
+  "Tools": "ツール"
 }

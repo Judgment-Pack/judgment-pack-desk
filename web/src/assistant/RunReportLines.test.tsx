@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 import { RunReportLines } from './RunReportLines'
 import { DELEGATION } from './reportFixtures'
@@ -34,4 +34,20 @@ it('says how many requests the response made, how many were retried and why, and
 it('counts a subscription\'s runs as agent runs, which report no tokens', () => {
   render(<RunReportLines report={{ requests: 3, unit: 'provider-managed' }} />)
   expect(screen.getByText('Agent runs: 3')).toBeTruthy()
+})
+
+it('says how long the requests and the tools took and which requests did not complete, and lists each step', () => {
+  render(<RunReportLines report={{ requests: 3, unit: 'model-requests', timing: { omitted: 2, steps: [
+    { model: 'a-model', requestBytes: 4096, firstByteMs: 500, durationMs: 3000, status: 200, outcome: 'complete', tools: [{ name: 'validate', ms: 700 }, { name: 'get_schema', ms: 300, failed: true }] },
+    { model: 'a-model', requestBytes: 8192, durationMs: 100, status: 503, outcome: 'failed' },
+    { model: 'a-model', requestBytes: 512, firstByteMs: 300, durationMs: 900, outcome: 'aborted' }
+  ] } }} />)
+  expect(screen.getByText('Requests took 4.0 s in all · first byte 0.4 s on average · tool calls: 2 (1.0 s) · requests that did not complete: 2')).toBeTruthy()
+  fireEvent.click(screen.getByText('Steps'))
+  expect(rowsOf()).toEqual([
+    ['3', 'a-model', '4.0', '0.5', '3.0', 'Done · 200', 'validate 0.7 s, get_schema 0.3 s ✗'],
+    ['4', 'a-model', '8.0', '—', '0.1', 'Failed · 503', '—'],
+    ['5', 'a-model', '0.5', '0.3', '0.9', 'Stopped', '—']
+  ])
+  expect(screen.getByText('Earlier steps left out of this list: 2')).toBeTruthy()
 })

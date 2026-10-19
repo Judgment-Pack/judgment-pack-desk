@@ -6144,5 +6144,16 @@
   "queued": "wartet",
   "reused": "wiederverwendet",
   "running": "läuft",
-  "{{seconds}} s": "{{seconds}} s"
+  "{{seconds}} s": "{{seconds}} s",
+  " · first byte {{seconds}} s on average": " · erstes Byte durchschnittlich nach {{seconds}} s",
+  " · requests that did not complete: {{failed}}": " · nicht abgeschlossene Anfragen: {{failed}}",
+  " · tool calls: {{calls}} ({{seconds}} s)": " · Werkzeugaufrufe: {{calls}} ({{seconds}} s)",
+  "Earlier steps left out of this list: {{omitted}}": "Frühere Schritte, die in dieser Liste fehlen: {{omitted}}",
+  "First byte (s)": "Erstes Byte (s)",
+  "Request (KB)": "Anfrage (KB)",
+  "Requests took {{seconds}} s in all": "Die Anfragen dauerten insgesamt {{seconds}} s",
+  "Step": "Schritt",
+  "Steps": "Schritte",
+  "The assistant is writing": "Der Assistent schreibt",
+  "Tools": "Werkzeuge"
 }

@@ -347,3 +347,24 @@ it('binds every run, an independent reviewer\'s too, to the connection its slot 
  expect(contexts[2]).not.toHaveProperty('connection')
  hook.unmount()
 })
+
+it('measures each turn on its connection, and tells the run what it measured when the turn ends, however it ends',async()=>{
+ const { RunMeter } = await import('../assistant/runMeter')
+ fake.tools.mockReturnValue([])
+ const hook=renderHook(()=>useResearchRun({mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work'})}))
+ const turn=(hook.result.current.run as unknown as {ports:{turn:(request:import('./run').TurnRequest,signal:AbortSignal,deliver:(event:unknown)=>void)=>Promise<void>}}).ports.turn
+ const timings:unknown[]=[]
+ fake.session.mockImplementation(async(_engine,_request,deliver)=>{
+  // The turn's tools, as the page receives their events.
+  deliver({type:'tool_call',callId:'c1',name:'validate',args:{}});deliver({type:'tool_result',callId:'c1',name:'validate',isError:false,text:''})
+  deliver({type:'end'})
+ })
+ await act(()=>turn({prompt:'Write the cases.',hostTools:[],reviewer:false,conversation:true,onTiming:timing=>timings.push(timing)},new AbortController().signal,()=>{}))
+ expect((fake.bind.mock.calls.at(-1) as unknown[])[3]).toBeInstanceOf(RunMeter)
+ expect(timings).toHaveLength(1)
+ // A turn that fails still reports.
+ fake.session.mockImplementation(async()=>{throw new Error('The connection dropped.')})
+ await expect(act(()=>turn({prompt:'Write the cases.',hostTools:[],reviewer:false,conversation:true,onTiming:timing=>timings.push(timing)},new AbortController().signal,()=>{}))).rejects.toThrow('dropped')
+ expect(timings).toHaveLength(2)
+ hook.unmount()
+})

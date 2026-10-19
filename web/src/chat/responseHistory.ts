@@ -11,6 +11,7 @@ import type { AssistantEvent } from '@judgment-pack/harness/engine'
 import { criticRecord, validCriticRecord, type CriticRecord } from '../assistant/critic'
 import { reportFromExecution, validRunReport, type RunReport } from '../assistant/report'
 import type { ExecutionCheckpoint } from '@judgment-pack/harness/execution/state'
+import type { RunTiming } from '../assistant/runMeter'
 import type { ChatAttachment } from './store'
 import { validWebURL } from '../documents/record'
 import { validWebsiteReference, type WebsiteReference } from '../documents/website'
@@ -89,10 +90,10 @@ export interface ResponseHistory {
   work: WorkRecord
 }
 /** What a summary is made of beyond the events: the model the run used, running tasks' streamed prose, and the execution checkpoint. */
-export interface WorkContext { runModel?: string; progress?: Readonly<Record<string, string>>; execution?: ExecutionCheckpoint }
+export interface WorkContext { runModel?: string; progress?: Readonly<Record<string, string>>; execution?: ExecutionCheckpoint; timing?: RunTiming }
 export function summarizeWork(events: readonly AssistantEvent[], running: boolean, context: WorkContext = {}): WorkRecord {
-  const { runModel, progress, execution } = context
-  const report = reportFromExecution(execution)
+  const { runModel, progress, execution, timing } = context
+  const report = reportFromExecution(execution, timing)
   const critique = [...events].reverse().find((event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique')
   const critic = critique && criticRecord(critique, runModel)
   return { items: workItems(events, running, progress), notices: [...new Set(events.flatMap(event =>

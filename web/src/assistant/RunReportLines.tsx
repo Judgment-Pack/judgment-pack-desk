@@ -1,6 +1,8 @@
 import type { ChildFigures, FiguresTotal, TokenFigures } from '@judgment-pack/harness/execution/state'
 import { msg, useLocale } from '../i18n'
+import { Disclosure } from '../ui/Disclosure'
 import { profileLabel } from '../chat/DelegatedTaskDetails'
+import { timingTotals, type StepRecord } from './runMeter'
 import type { RunReport } from './report'
 import styles from './RunReportLines.module.css'
 
@@ -20,6 +22,8 @@ const tokensOf = (tokens: TokenFigures | undefined) =>
 export function RunReportLines({ report, titles = {}, className }: { report: RunReport; titles?: Readonly<Record<string, string>>; className?: string }) {
   useLocale()
   const delegation = report.delegation
+  const timing = report.timing
+  const totals = timing === undefined ? undefined : timingTotals(timing)
   return (
     <section className={className ?? styles.report} aria-label={msg('Run report')}>
       <p>
@@ -27,6 +31,30 @@ export function RunReportLines({ report, titles = {}, className }: { report: Run
         {report.retries && msg(' · retried: {{retried}} ({{reasons}})', { retried: report.retries.count, reasons: report.retries.reasons.join(', ') })}
         {report.tokens && msg(' · tokens reported by the provider: {{tokens}}', { tokens: tokensOf(report.tokens) })}
       </p>
+      {totals && (
+        <p>
+          {msg('Requests took {{seconds}} s in all', { seconds: seconds(totals.modelMs) })}
+          {totals.firstByteMs !== undefined && msg(' · first byte {{seconds}} s on average', { seconds: seconds(totals.firstByteMs) })}
+          {totals.toolCalls > 0 && msg(' · tool calls: {{calls}} ({{seconds}} s)', { calls: totals.toolCalls, seconds: seconds(totals.toolMs) })}
+          {totals.failed > 0 && msg(' · requests that did not complete: {{failed}}', { failed: totals.failed })}
+        </p>
+      )}
+      {timing && timing.steps.length > 0 && (
+        <Disclosure title={msg('Steps')}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th scope="col">{msg('Step')}</th><th scope="col">{msg('Model')}</th><th scope="col">{msg('Request (KB)')}</th><th scope="col">{msg('First byte (s)')}</th>
+                <th scope="col">{msg('Time (s)')}</th><th scope="col">{msg('Result')}</th><th scope="col">{msg('Tools')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {timing.steps.map((step, at) => <StepRow key={at} number={timing.omitted + at + 1} step={step} />)}
+            </tbody>
+          </table>
+          {timing.omitted > 0 && <p className={styles.mark}>{msg('Earlier steps left out of this list: {{omitted}}', { omitted: timing.omitted })}</p>}
+        </Disclosure>
+      )}
       {delegation && (
         <table className={styles.table}>
           <thead>
@@ -65,6 +93,22 @@ function ChildRow({ child, titles }: { child: ChildFigures; titles: Readonly<Rec
       <td>{tokensOf(child.tokens)}</td>
       <td>{seconds(child.firstByteMs)}</td>
       <td>{seconds(child.durationMs)}</td>
+    </tr>
+  )
+}
+
+function StepRow({ number, step }: { number: number; step: StepRecord }) {
+  useLocale()
+  const result = step.outcome === 'complete' ? msg('Done') : step.outcome === 'failed' ? msg('Failed') : msg('Stopped')
+  return (
+    <tr>
+      <th scope="row">{number}</th>
+      <td>{step.model}</td>
+      <td>{(step.requestBytes / 1024).toFixed(1)}</td>
+      <td>{seconds(step.firstByteMs)}</td>
+      <td>{seconds(step.durationMs)}</td>
+      <td>{step.status === undefined ? result : `${result} · ${step.status}`}</td>
+      <td>{step.tools?.map((tool) => `${tool.name} ${seconds(tool.ms)} s${tool.failed ? ' ✗' : ''}`).join(', ') ?? '—'}</td>
     </tr>
   )
 }

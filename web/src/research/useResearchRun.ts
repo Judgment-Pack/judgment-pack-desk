@@ -46,6 +46,7 @@ import { withProposePack } from '../assistant/proposePack'
 import { criticCases, declaredCases } from '../assistant/criticCases'
 import type { CriticCase } from '@judgment-pack/harness/refutation'
 import { memoryInUse, runtimeIdentityOf } from '../assistant/runContext'
+import { RunMeter } from '../assistant/runMeter'
 
 export const MAX_REVISIONS = 4
 
@@ -202,7 +203,10 @@ export function useResearchRun(options?: {
       // What the engine actually did, as it did it, on the Console: every
       // call and answer, every guardrail, every refusal -- the same line the
       // Assistant tab would show -- and never the model's prose or a page.
+      // What the Desk measures on this turn's connection: each request's size, first byte and end, each tool's time.
+      const meter = new RunMeter()
       const onEvent = async (event: AssistantEvent) => {
+        meter.event(event)
         if (event.type === 'tool_call' || event.type === 'tool_result' || event.type === 'guardrail' || event.type === 'thinking_unavailable' || event.type === 'error') {
           recordActivity(describeEvent(event, sourceMessage), 'assistant')
         }
@@ -242,12 +246,13 @@ export function useResearchRun(options?: {
             // A turn that may propose a pack offers propose_pack beside the fence;
             // an independent reviewer, and a conversation without artifact proposals, do not.
             hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),
-            ...bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking),
+            ...bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking, meter),
             signal
           },
           onEvent
         )
       } finally {
+        request.onTiming?.(meter.snapshot())
         await opened?.close()
       }
     }

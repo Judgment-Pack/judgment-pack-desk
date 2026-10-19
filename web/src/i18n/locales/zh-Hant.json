@@ -6144,5 +6144,16 @@
   "queued": "排隊中",
   "reused": "重用",
   "running": "執行中",
-  "{{seconds}} s": "{{seconds}} 秒"
+  "{{seconds}} s": "{{seconds}} 秒",
+  " · first byte {{seconds}} s on average": " · 首位元組平均 {{seconds}} 秒",
+  " · requests that did not complete: {{failed}}": " · 未完成的請求：{{failed}}",
+  " · tool calls: {{calls}} ({{seconds}} s)": " · 工具呼叫：{{calls}} 次（{{seconds}} 秒）",
+  "Earlier steps left out of this list: {{omitted}}": "此清單未列出的較早步驟：{{omitted}}",
+  "First byte (s)": "首位元組（秒）",
+  "Request (KB)": "請求（KB）",
+  "Requests took {{seconds}} s in all": "請求總共耗時 {{seconds}} 秒",
+  "Step": "步驟",
+  "Steps": "步驟",
+  "The assistant is writing": "助手正在書寫",
+  "Tools": "工具"
 }

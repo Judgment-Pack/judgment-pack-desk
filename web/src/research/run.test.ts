@@ -1719,6 +1719,22 @@ describe('conversation-first task lifecycle', () => {
     expect(done.execution).toMatchObject({ used: 4 })
   })
 
+  it('keeps what the Desk measured on the connection with the response, joined across its turns', async () => {
+    const step = (durationMs: number) => ({ model: 'a-model', requestBytes: 2048, firstByteMs: 100, durationMs, outcome: 'complete' as const, status: 200, tools: [{ name: 'validate', ms: 40 }] })
+    const h = harness([async (request, _signal, emit) => {
+      request.onTiming?.({ steps: [step(900), step(1100)], omitted: 0 })
+      emit({ type: 'message', text: 'Done.' })
+    }], { mode: 'draft' })
+    h.run.start('Check it', [])
+    const done = await settled(h.run)
+    expect(done.responses?.at(-1)?.work.report).toMatchObject({ requests: 2, unit: 'model-requests', timing: { omitted: 0, steps: [{ durationMs: 900 }, { durationMs: 1100 }] } })
+    // The next response starts with none of the last one's.
+    h.run.send('And again?')
+    const second = await settled(h.run)
+    expect(second.responses?.at(-1)?.work.report).toMatchObject({ timing: { steps: [{ durationMs: 900 }, { durationMs: 1100 }] } })
+    expect(second.responses?.at(-2)?.work.report?.timing?.steps).toHaveLength(2)
+  })
+
   it('routes a delegated task\'s streamed prose under its task, and never into the response\'s own', async () => {
     const taskId = crypto.randomUUID()
     const task = { id: taskId, parentRunId: crypto.randomUUID(), title: 'Review', objective: 'Review it', profile: 'review', state: 'running' as const, createdAt: new Date().toISOString(), modelRequests: 1, toolCalls: 0, attempts: 1, steps: [] }

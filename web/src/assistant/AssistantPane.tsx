@@ -52,6 +52,8 @@ import { useFileListing } from '../files/queries'
 import { useEditing } from '../packs/edit/editingContext'
 import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { EventList } from './EventList'
+import { StreamingText } from './StreamingText'
+import { RunReportLines } from './RunReportLines'
 import { ModelPicker } from './ModelPicker'
 import { usePickedModel } from './pickedModel'
 import { ProposalDiffView } from './ProposalDiffView'
@@ -558,6 +560,8 @@ export function AssistantPane({
       )}
 
       <EventList events={run.events} failure={run.failure} />
+      <StreamingText text={run.streaming} />
+      {run.report !== undefined && <RunReportLines report={run.report} />}
 
       {proposal !== undefined && disposition === 'rejected' && (
         <p className={styles.honesty}>{msg("The proposal was rejected. Nothing was written, and what the assistant did is still above.")}</p>

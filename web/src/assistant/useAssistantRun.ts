@@ -42,7 +42,9 @@ import { sourceMessage } from '../i18n/source'
  * — becomes an `error` on the stream and no proposal: there is nothing to show
  * and nothing to write.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RunMeter, type RunTiming } from './runMeter'
+import { reportFromExecution, type RunReport } from './report'
 import { loadEngine } from '@judgment-pack/harness/engines/index'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { openAssistantConnection, runAssistantSession } from '@judgment-pack/harness/session'
@@ -100,6 +102,19 @@ export interface AssistantRun {
    * gets here, so Stop followed by an unmount is one.
    */
   terminals: { count: number }
+  /**
+   * The prose the assistant has written so far, while it writes it: the latest `message_progress` of the
+   * run, and empty once the answer is whole (the `message` event) or the run has ended. Only the default
+   * purpose streams; the others show their answer whole, as before.
+   */
+  streaming: string
+  /**
+   * What the run reports about itself once it has ended or paused: the requests it made, the provider's
+   * own token counts where returned, the requests sent again and why, how long the model and the tools
+   * took, and each delegated child's figures. Read from the harness's execution checkpoint and what the
+   * Desk measured on the connection; nothing in it is an estimate.
+   */
+  report: RunReport | undefined
   /** Start one run with the prompt text the desk already fetched. */
   start: (prompt: string) => void
   stop: () => void
@@ -111,6 +126,8 @@ interface Active {
   connection: AssistantConnection | null
   /** True once this run's one `end` has been written. */
   ended: boolean
+  /** What the Desk measures on this run's connection. */
+  meter: RunMeter
 }
 
 /**
@@ -260,6 +277,7 @@ export function useAssistantRun(options: {
   const [runningEngine, setRunningEngine] = useState(options.engine)
   const [events, setEvents] = useState<AssistantEvent[]>([])
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  const [timing, setTiming] = useState<RunTiming | undefined>(undefined)
   const active = useRef<Active | null>(null)
   // One object for the life of the hook. See `AssistantRun.terminals`.
   const terminals = useRef({ count: 0 })
@@ -283,7 +301,14 @@ export function useAssistantRun(options: {
       run.ended = true
       terminals.current.count += 1
     }
-    setEvents((previous) => [...previous, held])
+    run.meter.event(held)
+    // **Progress is the prose so far, whole each time**, so only the latest one is kept: a long answer
+    // streamed in hundreds of events would otherwise hold each of its prefixes.
+    setEvents((previous) =>
+      held.type === 'message_progress' && previous.at(-1)?.type === 'message_progress' && (previous.at(-1) as { taskId?: string }).taskId === held.taskId
+        ? [...previous.slice(0, -1), held]
+        : [...previous, held]
+    )
   }, [])
 
   /** The run's one terminal event, where nothing else has written it. */
@@ -354,9 +379,10 @@ export function useAssistantRun(options: {
     (prompt: string) => {
       if (active.current !== null && !active.current.ended) return
       const { endpoint, agent, model, engine, thinking, testPrompt, hostTools, purpose, connectionTarget, criticCases } = settings.current
-      const run: Active = { controller: new AbortController(), connection: null, ended: false }
+      const run: Active = { controller: new AbortController(), connection: null, ended: false, meter: new RunMeter() }
       active.current = run
       setEvents([])
+      setTiming(undefined)
       setFailure(undefined)
       setStatus('running')
       setRunningEngine(engine)
@@ -399,6 +425,9 @@ export function useAssistantRun(options: {
               // tier by itself: both read the session's `adversarialReview`, otherwise
               // off. The default purpose, which the pack pane and Describe it start,
               // ran it for the API engine at any tier but `off` and never for Codex.
+              // The default purpose streams its prose as it is written, as the chat does, behind the same
+              // contract events (`message_progress`); the others show their answer whole.
+              ...(purpose === undefined ? { interactive: true } : {}),
               adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off',
               ...(purpose === undefined && criticCases?.length ? { criticCases } : {}),
               ...(purpose === 'graph' ? { adversarialReview: false } : {}),
@@ -410,7 +439,7 @@ export function useAssistantRun(options: {
               // chosen is a saved endpoint whose assistant is not ready; a run
               // that substituted the empty string would put a request on the
               // wire naming no model and read whatever came back as an answer.
-              ...bindExecution({ ...connectionTarget, endpoint, agent, engine }, modelOf(model), thinking),
+              ...bindExecution({ ...connectionTarget, endpoint, agent, engine }, modelOf(model), thinking, run.meter),
               signal: run.controller.signal
             },
             (event) => push(run, event)
@@ -432,6 +461,7 @@ export function useAssistantRun(options: {
           }
         } finally {
           if (active.current === run) {
+            setTiming(run.meter.snapshot())
             finish(run)
             release(run)
             setStatus('finished')
@@ -442,10 +472,18 @@ export function useAssistantRun(options: {
     [finish, push, release]
   )
 
+  const lastCheckpoint = [...events].reverse().find((event) => event.type === 'execution_checkpoint' || event.type === 'budget_paused')
+  const execution = lastCheckpoint === undefined ? undefined : (lastCheckpoint as { checkpoint: import('@judgment-pack/harness/execution/state').ExecutionCheckpoint }).checkpoint
+  const report = useMemo(() => (status === 'running' ? undefined : reportFromExecution(execution, timing)), [status, execution, timing])
+  const progress = events.at(-1)
+  const streaming = status === 'running' && progress?.type === 'message_progress' && progress.taskId === undefined ? progress.text : ''
+
   return {
     status,
     events,
     failure,
+    streaming,
+    report,
     terminals: terminals.current,
     engineId: status === 'idle' ? options.engine : runningEngine,
     start,

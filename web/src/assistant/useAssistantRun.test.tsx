@@ -19,6 +19,7 @@ import { scriptedWebSocket } from '@judgment-pack/harness/certification/scripted
 import { scenario } from '@judgment-pack/harness/certification'
 import { canonicalProposal, frozen, plain, useAssistantRun } from './useAssistantRun'
 import type { AssistantEvent, AssistantSession, Engine } from '@judgment-pack/harness/engine'
+import { checkpoint } from './reportFixtures'
 
 /** What the engine was handed, for the case that is about the model. */
 let handed: AssistantSession | null = null
@@ -443,5 +444,90 @@ describe('what a run is told of the critic and of project memory', () => {
     handed = null; cleanup()
     // A setting that cannot be read is left unsaid, and the harness keeps the reserve.
     expect((await run({})).context).not.toHaveProperty('memory')
+  })
+})
+
+describe('the pack pane streams its text and reports what its run did', () => {
+  /** An engine that writes in pieces, then waits for the test before it finishes. */
+  function streaming(release: Promise<void>): Engine {
+    return {
+      id: 'vercel',
+      async *start(session: AssistantSession): AsyncGenerator<AssistantEvent> {
+        handed = session
+        yield { type: 'message_progress', text: 'I am' }
+        yield { type: 'message_progress', text: 'I am reading the pack' }
+        await release
+        yield { type: 'message_progress', text: '' }
+        yield { type: 'message', text: 'I read the pack.' }
+        yield { type: 'execution_checkpoint', durable: false, checkpoint: checkpoint({ used: 3, completions: [{ request: 1, phase: 'work', result: { finishReason: 'stop', inputTokens: 700, outputTokens: 40 } }] }) } as never
+        yield { type: 'end' }
+      }
+    }
+  }
+
+  it('asks the engine for the prose as it is written, on the default purpose alone', async () => {
+    engine = records
+    runtime = scriptedWebSocket({})
+    vi.stubGlobal('WebSocket', runtime.WebSocket)
+    vi.stubGlobal('fetch', async () => new Response('{}'))
+    const { result } = renderHook(() => useAssistantRun({ endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'off' }))
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(handed).not.toBeNull())
+    expect(handed!.interactive).toBe(true)
+    handed = null; cleanup()
+    // The graph purpose shows its answer whole, as before.
+    const { graphHostTools } = await import('../graphs/author')
+    const graph = renderHook(() => useAssistantRun({ purpose: 'graph', endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'off', hostTools: graphHostTools() }))
+    act(() => graph.result.current.start('The runtime author_graph prompt.'))
+    await waitFor(() => expect(handed).not.toBeNull())
+    expect(handed!.interactive).toBeUndefined()
+  })
+
+  it('shows the latest prose while the run writes, keeps one progress event, and hands the whole answer on', async () => {
+    let release!: () => void
+    engine = streaming(new Promise<void>((resolve) => { release = resolve }))
+    runtime = scriptedWebSocket({})
+    vi.stubGlobal('WebSocket', runtime.WebSocket)
+    vi.stubGlobal('fetch', async () => new Response('{}'))
+    const { result } = renderHook(() => useAssistantRun({ endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'off' }))
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(result.current.streaming).toBe('I am reading the pack'))
+    expect(result.current.events.filter((event) => event.type === 'message_progress')).toHaveLength(1)
+    expect(result.current.report).toBeUndefined()
+    act(() => release())
+    await waitFor(() => expect(result.current.status).toBe('finished'))
+    expect(result.current.streaming).toBe('')
+    expect(result.current.events.some((event) => event.type === 'message' && event.text === 'I read the pack.')).toBe(true)
+  })
+
+  it('reports the requests, the provider\'s tokens and what the connection measured, once the run has ended', async () => {
+    engine = streaming(Promise.resolve())
+    runtime = scriptedWebSocket({})
+    vi.stubGlobal('WebSocket', runtime.WebSocket)
+    vi.stubGlobal('fetch', async () => new Response('{}'))
+    const { result } = renderHook(() => useAssistantRun({ endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'off' }))
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(result.current.status).toBe('finished'))
+    expect(result.current.report).toMatchObject({ requests: 3, unit: 'model-requests', tokens: { inputTokens: 700, outputTokens: 40 } })
+    // The engine here made no model request of its own, so nothing was measured on the connection.
+    expect(result.current.report).not.toHaveProperty('timing')
+  })
+
+  it('measures each request the engine sends through the model call it was bound', async () => {
+    engine = {
+      id: 'vercel',
+      async *start(session: AssistantSession): AsyncGenerator<AssistantEvent> {
+        await (session.model as { call: (suffix: string, request: { method: string; body: string }) => Promise<Response> }).call('chat/completions', { method: 'POST', body: '{"messages":[]}' }).then((response) => response.text())
+        yield { type: 'end' }
+      }
+    }
+    runtime = scriptedWebSocket({})
+    vi.stubGlobal('WebSocket', runtime.WebSocket)
+    vi.stubGlobal('fetch', async () => new Response('{"choices":[]}'))
+    const { result } = renderHook(() => useAssistantRun({ endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'off' }))
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(result.current.status).toBe('finished'))
+    expect(result.current.report?.timing?.steps).toMatchObject([{ model: ENDPOINT.model, requestBytes: 15, status: 200, outcome: 'complete' }])
+    expect(result.current.report?.requests).toBe(1)
   })
 })

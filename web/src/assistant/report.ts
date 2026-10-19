@@ -1,3 +1,4 @@
+import { MAX_STEPS, MAX_TOOLS_PER_STEP, timingTotals, type RunTiming } from './runMeter'
 import { validDelegationFigures, type DelegationFigures, type ExecutionCheckpoint, type TokenFigures } from '@judgment-pack/harness/execution/state'
 
 /**
@@ -20,6 +21,12 @@ export interface RunReport {
   tokens?: TokenFigures
   /** Each delegated child's figures, each batch's total and the parent's own, as the checkpoint carries them. */
   delegation?: DelegationFigures
+  /**
+   * What the Desk measured on the connection (`RunMeter`): per request, its model, bytes, time to first byte,
+   * time to its end and status, and the tools the model called after it with each one's time. The requests of
+   * delegated children and of the critic go through the same connection and are among them.
+   */
+  timing?: RunTiming
 }
 
 const TOKEN_MEMBERS = ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const
@@ -34,20 +41,25 @@ export function sumTokens(rows: readonly Partial<Record<(typeof TOKEN_MEMBERS)[n
   return Object.keys(sum).length === 0 ? undefined : sum
 }
 
-/** The report an execution checkpoint gives, or nothing where it holds no request. */
-export function reportFromExecution(execution: ExecutionCheckpoint | undefined): RunReport | undefined {
-  if (execution === undefined || (execution.used === 0 && execution.delegation === undefined)) return undefined
-  const rows = execution.completions ?? []
+/**
+ * The report a response's figures give: the harness's execution checkpoint, and what the Desk measured on the
+ * connection. Nothing where neither holds a request.
+ */
+export function reportFromExecution(execution: ExecutionCheckpoint | undefined, timing?: RunTiming): RunReport | undefined {
+  const measured = timing !== undefined && timingTotals(timing).requests > 0
+  if ((execution === undefined || (execution.used === 0 && execution.delegation === undefined)) && !measured) return undefined
+  const rows = execution?.completions ?? []
   // The parent's own tokens: the checkpoint's rows are the parent's requests (a child's are in its figures).
   const tokens = sumTokens(rows.filter((row) => row.phase !== 'review').map((row) => row.result))
   const refused = rows.filter((row) => row.failure !== undefined)
   const reasons = [...new Set(refused.map((row) => row.failure!.code))]
   return {
-    requests: execution.used,
-    unit: execution.unit,
+    requests: execution?.used ?? timingTotals(timing!).requests,
+    unit: execution?.unit ?? 'model-requests',
     ...(refused.length === 0 ? {} : { retries: { count: refused.length, reasons } }),
     ...(tokens === undefined ? {} : { tokens }),
-    ...(execution.delegation === undefined ? {} : { delegation: structuredClone(execution.delegation) })
+    ...(execution?.delegation === undefined ? {} : { delegation: structuredClone(execution.delegation) }),
+    ...(measured ? { timing: structuredClone(timing!) } : {})
   }
 }
 
@@ -55,11 +67,27 @@ const object = (value: unknown): value is Record<string, unknown> => value !== n
 const count = (value: unknown, max = Number.MAX_SAFE_INTEGER): value is number => Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= max
 const validTokens = (value: unknown): value is TokenFigures => object(value) && Object.keys(value).every((key) => (TOKEN_MEMBERS as readonly string[]).includes(key)) && TOKEN_MEMBERS.every((key) => value[key] === undefined || count(value[key]))
 
-/** A saved report, read closed: only the members above, each as the checkpoint states it. */
+const DAY = 86_400_000
+
+/** A saved timing, read closed. */
+export function validTiming(value: unknown): value is RunTiming {
+  const step = (item: unknown) =>
+    object(item) && Object.keys(item).every((key) => ['model', 'requestBytes', 'firstByteMs', 'durationMs', 'status', 'outcome', 'tools'].includes(key)) &&
+    typeof item.model === 'string' && item.model.length > 0 && item.model.length <= 200 && count(item.requestBytes, 1 << 30) &&
+    (item.firstByteMs === undefined || count(item.firstByteMs, DAY)) && (item.durationMs === undefined || count(item.durationMs, DAY)) &&
+    (item.status === undefined || (Number.isInteger(item.status) && Number(item.status) >= 100 && Number(item.status) <= 599)) &&
+    ['complete', 'failed', 'aborted'].includes(String(item.outcome)) &&
+    (item.tools === undefined || (Array.isArray(item.tools) && item.tools.length <= MAX_TOOLS_PER_STEP && item.tools.every((tool) =>
+      object(tool) && Object.keys(tool).every((key) => ['name', 'ms', 'failed'].includes(key)) && typeof tool.name === 'string' && tool.name.length > 0 && tool.name.length <= 150 && count(tool.ms, DAY) && (tool.failed === undefined || tool.failed === true))))
+  return object(value) && Object.keys(value).every((key) => key === 'steps' || key === 'omitted') && Array.isArray(value.steps) && value.steps.length <= MAX_STEPS && value.steps.every(step) && count(value.omitted, 1_000_000)
+}
+
+/** A saved report, read closed: only the members above, each as the checkpoint or the meter states it. */
 export function validRunReport(value: unknown): value is RunReport {
-  if (!object(value) || !Object.keys(value).every((key) => ['requests', 'unit', 'retries', 'tokens', 'delegation'].includes(key))) return false
-  if (!count(value.requests, 1000) || (value.unit !== 'model-requests' && value.unit !== 'provider-managed')) return false
+  if (!object(value) || !Object.keys(value).every((key) => ['requests', 'unit', 'retries', 'tokens', 'delegation', 'timing'].includes(key))) return false
+  if (!count(value.requests, 1_000_000) || (value.unit !== 'model-requests' && value.unit !== 'provider-managed')) return false
   if (value.retries !== undefined && !(object(value.retries) && Object.keys(value.retries).every((key) => key === 'count' || key === 'reasons') && count(value.retries.count, 1000) && Array.isArray(value.retries.reasons) && value.retries.reasons.length <= 32 && value.retries.reasons.every((reason) => typeof reason === 'string' && reason.length <= 64))) return false
   if (value.tokens !== undefined && !validTokens(value.tokens)) return false
+  if (value.timing !== undefined && !validTiming(value.timing)) return false
   return value.delegation === undefined || validDelegationFigures(value.delegation)
 }
