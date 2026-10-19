@@ -143,8 +143,12 @@ describe('read_source', () => {
     // A page far longer than one window, with text whose JSON encoding is longer
     // than the text: quotes, backslashes, newlines and non-ASCII letters.
     const body = 'Clause "7" \\ applies — résumé. '.repeat(4_000)
-    const answer = structuredClone(answers.jinaReader) as { body: { data: { content: string } } }
+    const answer = structuredClone(answers.jinaReader) as { body: { data: { content: string; title: string; url: string } } }
     answer.body.data.content = body
+    // A short title and address keep the reader's own lines inside the 1,024-byte envelope,
+    // so the window is the policy's read window itself.
+    answer.body.data.title = 'Clauses'
+    answer.body.data.url = 'https://a.example/'
     for (const toolResultBytes of [CONTEXT_DEFAULTS.toolResultBytes, 6_000]) {
       const { tool } = harness({ acquire: async () => acquired('jinaReader', 0, answer), policy: () => ({ toolResultBytes }) })
       expect(tool('read_source').description).toContain(`one window of at most ${readWindowBytes({ toolResultBytes })} bytes at a time`)
@@ -164,8 +168,9 @@ describe('read_source', () => {
         const { more } = read.structuredContent as { more: boolean }
         if (!more) break
         expect(said).toContain(`(more: call read_source with source_id src-1 and offset ${end})`)
-        // Most of the window is the page: the reader's own lines stay near the envelope.
-        expect(utf8Bytes(JSON.stringify(window))).toBeGreaterThan(readWindowBytes({ toolResultBytes }) - 2_048)
+        // The window is the policy's read window, to within one character's escape.
+        expect(utf8Bytes(JSON.stringify(window))).toBeLessThanOrEqual(readWindowBytes({ toolResultBytes }))
+        expect(utf8Bytes(JSON.stringify(window))).toBeGreaterThan(readWindowBytes({ toolResultBytes }) - 8)
         offset = end
       }
       expect(assembled).toBe(body)

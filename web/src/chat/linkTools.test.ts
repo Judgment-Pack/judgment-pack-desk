@@ -120,6 +120,7 @@ describe('read_link', () => {
     // The window is readWindowBytes of the policy, less what the reader's own lines take
     // beyond the envelope; the whole answer is one tool result.
     expect(utf8Bytes(JSON.stringify(first))).toBeLessThanOrEqual(CONTEXT_DEFAULTS.toolResultBytes)
+    expect(utf8Bytes(JSON.stringify(shown))).toBeLessThanOrEqual(readWindowBytes(CONTEXT_DEFAULTS))
     expect(shown.length).toBeGreaterThan(readWindowBytes(CONTEXT_DEFAULTS) - 2_048)
     expect(text.startsWith(shown)).toBe(true)
     const end = shown.length
