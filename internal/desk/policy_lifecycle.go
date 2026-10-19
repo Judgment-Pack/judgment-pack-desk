@@ -256,7 +256,7 @@ func (s policyService) lifecycleCommand(ctx context.Context, id string, actor po
 	}{id, actor, q})
 	command := policyCommand{Kind: "lifecycle-" + q.Action, PolicyID: id, OperationID: q.OperationID, RequestDigest: digestOf(raw), Actor: actor}
 	var result policyMutationReply
-	err := s.repository.Update(ctx, func(ledger *policyLedger) (bool, error) {
+	err := s.lifecycleAuthorityUpdate(ctx, id, actor, q, func(ledger *policyLedger, now string) (bool, error) {
 		if err := s.authorized(ctx); err != nil {
 			return false, err
 		}
@@ -291,7 +291,9 @@ func (s policyService) lifecycleCommand(ctx context.Context, id string, actor po
 				}
 			}
 		}
-		now := s.lifecycleNow()
+		if now == "" {
+			now = s.lifecycleNow()
+		}
 		event := policyLifecycleEvent{Action: q.Action, PublicationID: publication.ID, CandidateDigest: publication.CandidateDigest, At: now, Actor: actor, Provenance: "admin-configured", Rationale: q.Rationale}
 		if len(q.Rationale) > 8192 || !validPolicyLifecycleTime(now) {
 			return false, policyRefusal(400, CodeBadRequest, "Invalid policy lifecycle details.")

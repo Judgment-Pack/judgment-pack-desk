@@ -93,6 +93,11 @@ func openInputEvaluation(root *os.Root, id string, create bool) (*os.Root, error
 	return r, e
 }
 func (s *Server) inputRunner(ctx context.Context, path string, body any, key string) (json.RawMessage, error) {
+	if enabled, err := s.manualExecutionDemand(); err != nil {
+		return nil, err
+	} else if enabled && body != nil {
+		return nil, executionFailure("unsupported-profile")
+	}
 	if s.jobs == nil {
 		return nil, &inputRunnerError{Status: 0, Message: "The local runner is unavailable."}
 	}
@@ -781,6 +786,9 @@ func (s *Server) startInputEvaluations() {
 	}()
 }
 func (s *Server) resumeInputEvaluations(ctx context.Context) {
+	if enabled, err := s.manualExecutionDemand(); err != nil || enabled {
+		return
+	}
 	if !s.location.use.TryRLock() {
 		return
 	}

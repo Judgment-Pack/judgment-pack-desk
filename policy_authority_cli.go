@@ -19,7 +19,7 @@ type policyAuthorityLocalCall func(context.Context, string, desk.PolicyAuthority
 // injected call lets argument rejection and help be checked without any storage,
 // Runtime resolution, adapters or listeners.
 func runPolicyAuthorityCommand(ctx context.Context, args []string, output io.Writer, local policyAuthorityLocalCall) error {
-	usage := "usage: jpack-desk policy-authority <init|status|classify-legacy|enroll|enroll-executor> --root <absolute> [--installation <id>] [projectDir]\n"
+	usage := "usage: jpack-desk policy-authority <init|status|classify-legacy|enroll|enroll-executor|enable-execution> --root <absolute> [--installation <id>] [--runner <absolute>] [projectDir]\n"
 	if len(args) == 0 {
 		return errors.New(strings.TrimSpace(usage))
 	}
@@ -32,7 +32,7 @@ func runPolicyAuthorityCommand(ctx context.Context, args []string, output io.Wri
 	}
 	action := args[0]
 	switch action {
-	case "init", "status", "classify-legacy", "enroll", "enroll-executor":
+	case "init", "status", "classify-legacy", "enroll", "enroll-executor", "enable-execution":
 	default:
 		return fmt.Errorf("unknown policy-authority action %q", action)
 	}
@@ -40,6 +40,7 @@ func runPolicyAuthorityCommand(ctx context.Context, args []string, output io.Wri
 	flags.SetOutput(output)
 	root := flags.String("root", "", "absolute operator-chosen machine Policy authority root")
 	installation := flags.String("installation", "", "expected installation identity (required except for init)")
+	runner := flags.String("runner", "", "explicit absolute Runner helper binary (enable-execution only)")
 	flags.Usage = func() {
 		fmt.Fprint(output, usage)
 		flags.PrintDefaults()
@@ -56,6 +57,13 @@ func runPolicyAuthorityCommand(ctx context.Context, args []string, output io.Wri
 	if !filepath.IsAbs(*root) || filepath.Clean(*root) != *root {
 		return errors.New("policy-authority --root must be an explicit, clean absolute path")
 	}
+	if action == "enable-execution" {
+		if !filepath.IsAbs(*runner) || filepath.Clean(*runner) != *runner {
+			return errors.New("enable-execution requires --runner with a clean absolute Runner binary path")
+		}
+	} else if flagWasSet(flags, "runner") {
+		return errors.New("--runner is supported only for enable-execution")
+	}
 	project := flags.Arg(0)
 	if flags.NArg() == 1 && project == "" {
 		return errors.New("policy-authority projectDir must not be empty")
@@ -67,10 +75,10 @@ func runPolicyAuthorityCommand(ctx context.Context, args []string, output io.Wri
 	} else if strings.TrimSpace(*installation) == "" {
 		return errors.New("policy-authority requires --installation with the expected installation identity")
 	}
-	if (action == "enroll" || action == "enroll-executor" || action == "classify-legacy") && flags.NArg() != 1 {
+	if (action == "enroll" || action == "enroll-executor" || action == "classify-legacy" || action == "enable-execution") && flags.NArg() != 1 {
 		return fmt.Errorf("policy-authority %s requires an explicit projectDir", action)
 	}
-	status, err := local(ctx, action, desk.PolicyAuthorityOptions{Root: *root, InstallationID: *installation}, project)
+	status, err := local(ctx, action, desk.PolicyAuthorityOptions{Root: *root, InstallationID: *installation, RunnerBin: *runner}, project)
 	if err != nil {
 		return err
 	}

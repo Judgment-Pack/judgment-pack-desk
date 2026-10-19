@@ -65,7 +65,8 @@ func readExistingPolicyLedger(root *os.Root) ([]byte, policyLedger, error) {
 	if err != nil {
 		return nil, ledger, err
 	}
-	if rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &ledger) != nil || validatePolicyLedger(ledger) != nil {
+	ledger, err = decodePolicyLedger(raw)
+	if err != nil {
 		return nil, ledger, policyRefusal(409, "storage-integrity", "Retained Policy storage is inconsistent.")
 	}
 	return raw, ledger, nil

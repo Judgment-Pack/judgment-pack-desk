@@ -34,6 +34,10 @@ func TestPolicyAuthorityCommandValidatesBeforeLocalCall(t *testing.T) {
 		{"status", "--root", root, "--installation", "expected", ""},
 		{"enroll", "--root", root, "--installation", "expected"},
 		{"enroll-executor", "--root", root, "--installation", "expected"},
+		{"enable-execution", "--root", root, "--installation", "expected", "project"},
+		{"enable-execution", "--root", root, "--installation", "expected", "--runner", "relative", "project"},
+		{"enable-execution", "--root", root, "--installation", "expected", "--runner", root},
+		{"status", "--root", root, "--installation", "expected", "--runner", root},
 		{"classify-legacy", "--root", root, "--installation", "expected"},
 		{"--help", "extra"},
 	} {
@@ -56,7 +60,7 @@ func TestPolicyAuthorityCommandDispatchAndBoundedOutput(t *testing.T) {
 		action, project string
 	}{
 		{"init", ""}, {"status", ""}, {"status", "project"},
-		{"classify-legacy", "project"}, {"enroll", "project"}, {"enroll-executor", "project"},
+		{"classify-legacy", "project"}, {"enroll", "project"}, {"enroll-executor", "project"}, {"enable-execution", "project"},
 	} {
 		t.Run(row.action+"/"+row.project, func(t *testing.T) {
 			args := []string{row.action, "--root", root}
@@ -66,6 +70,9 @@ func TestPolicyAuthorityCommandDispatchAndBoundedOutput(t *testing.T) {
 				args = append(args, "--installation", installation)
 			}
 			if row.project != "" {
+				if row.action == "enable-execution" {
+					args = append(args, "--runner", root)
+				}
 				args = append(args, row.project)
 			}
 			ctx := context.Background()
@@ -76,6 +83,9 @@ func TestPolicyAuthorityCommandDispatchAndBoundedOutput(t *testing.T) {
 				calls++
 				if gotCtx != ctx || action != row.action || options.Root != root || options.InstallationID != installation || project != row.project {
 					t.Fatalf("unexpected call: action=%q options=%+v project=%q", action, options, project)
+				}
+				if (options.RunnerBin == root) != (row.action == "enable-execution") {
+					t.Fatal("explicit helper selector changed", options.RunnerBin)
 				}
 				return want, nil
 			})
