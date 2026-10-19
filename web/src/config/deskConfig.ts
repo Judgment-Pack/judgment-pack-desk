@@ -286,6 +286,48 @@ export interface AssistantEndpointConfig {
    * child at a time whatever it says, so it has no such member.
    */
   capacity?: number
+  /**
+   * Where the key is presented to an OpenAI-compatible endpoint: `api-key`, the
+   * header Azure's OpenAI service takes it in, instead of the bearer the
+   * protocol's own reference documents. Absent is the protocol's own form, and
+   * the other protocols have only that.
+   */
+  auth?: 'api-key'
+  /**
+   * The owner accepts a plain `http:` address on this network (a private
+   * address, a one-label name or a `.local` name), where a key sent to it
+   * travels in clear text on that network. Absent is the transport rule as it
+   * always was: `https:`, or `http:` on this computer.
+   */
+  lan?: true
+  /** What this connection states about its endpoint's behaviour: its probe's finding and its owner's overrides. */
+  capabilities?: EndpointCapabilityRecord
+}
+
+/**
+ * The members of the harness's capability record (`@judgment-pack/harness`,
+ * `capabilities.ts`) a connection can state about an endpoint. Every member is
+ * optional and absent means the family's default. Held to `capabilityFacts`
+ * in `endpoint_capabilities.go` by the shared fixtures.
+ */
+export interface CapabilityFacts {
+  contextWindow?: number
+  outputReserve?: number
+  nativeToolCalls?: boolean
+  parallelToolCalls?: boolean
+  vision?: boolean
+  reasoningKind?: 'openai-effort' | 'anthropic-thinking' | 'gemini-thinking' | 'none'
+  reasoningIgnored?: boolean
+  reasoningField?: 'reasoning' | 'reasoning_content'
+  wholeJsonAnswer?: boolean
+  toolSchemas?: 'json-schema' | 'gemini-subset'
+  statePlacement?: 'trailing-user' | 'system-tail'
+  strictAlternation?: boolean
+}
+/** What a connection holds: the probe's finding (and when), and the owner's overrides over it. */
+export interface EndpointCapabilityRecord {
+  probe?: CapabilityFacts & { at: string }
+  override?: CapabilityFacts
 }
 
 /**
@@ -1743,10 +1785,18 @@ function endpointValue(
   const endpoint = section(
     value,
     'assistant.endpoint',
-    ['url', 'kind', 'model', 'models', 'tools', 'criticModel', 'childModel', 'capacity'],
+    ['url', 'kind', 'model', 'models', 'tools', 'criticModel', 'childModel', 'capacity', 'auth', 'lan', 'capabilities'],
     problems
   )
   if (!endpoint) return null
+
+  // **The one opt-in that widens the transport rule**, read before the URL it applies to.
+  let lan = false
+  if (endpoint.lan !== undefined && endpoint.lan !== null) {
+    if (typeof endpoint.lan !== 'boolean') {
+      problems.push({ key: 'assistant.endpoint.lan', reason: sourceMessage("must be true or false; found {{value0}}", { value0: describe(endpoint.lan) }) })
+    } else lan = endpoint.lan
+  }
 
   const url = typeof endpoint.url === 'string' ? endpoint.url.trim() : undefined
   if (url === undefined || url === '') {
@@ -1755,7 +1805,7 @@ function endpointValue(
       reason: sourceMessage("must be a non-empty string; found {{value0}}", { value0: describe(endpoint.url) })
     })
   } else {
-    const reason = endpointUrlProblem(url)
+    const reason = endpointUrlProblem(url, lan)
     if (reason !== undefined) problems.push({ key: 'assistant.endpoint.url', reason })
   }
 
@@ -1848,16 +1898,125 @@ function endpointValue(
     } else capacity = endpoint.capacity
   }
 
+  let auth: 'api-key' | undefined
+  if (endpoint.auth !== undefined && endpoint.auth !== null) {
+    if (typeof endpoint.auth !== 'string' || !['bearer', 'api-key'].includes(endpoint.auth)) {
+      problems.push({ key: 'assistant.endpoint.auth', reason: sourceMessage("must be one of {{value0}}; found {{value1}}", { value0: '"bearer", "api-key"', value1: describe(endpoint.auth) }) })
+    } else if (endpoint.auth === 'api-key' && kind !== 'openai-compatible') {
+      problems.push({ key: 'assistant.endpoint.auth', reason: sourceMessage("the api-key header is the form of an OpenAI-compatible endpoint; the other protocols have one form of their own") })
+    } else if (endpoint.auth === 'api-key') auth = 'api-key'
+  }
+  const capabilities = endpoint.capabilities === undefined || endpoint.capabilities === null ? undefined : capabilityRecord(endpoint.capabilities, kind ?? 'openai-compatible', problems)
+
   return {
     url: url ?? '',
     kind: kind ?? 'openai-compatible',
     model,
     models,
     tools,
+    ...(auth === undefined ? {} : { auth }),
+    ...(lan ? { lan: true as const } : {}),
+    ...(capabilities === undefined ? {} : { capabilities }),
     ...(criticModel === undefined ? {} : { criticModel }),
     ...(childModel === undefined ? {} : { childModel }),
     ...(capacity === undefined ? {} : { capacity })
   }
+}
+
+/** The reasoning dialects each wire speaks (`WIRE_REASONING` in the harness): a record naming another is refused for that wire. */
+const REASONING_KINDS_ON: Record<string, readonly string[]> = {
+  'openai-compatible': ['openai-effort', 'none'],
+  anthropic: ['anthropic-thinking', 'none'],
+  gemini: ['gemini-thinking', 'none']
+}
+const CAPABILITY_MEMBERS = ['contextWindow', 'outputReserve', 'nativeToolCalls', 'parallelToolCalls', 'vision', 'reasoningKind', 'reasoningIgnored', 'reasoningField', 'wholeJsonAnswer', 'toolSchemas', 'statePlacement', 'strictAlternation'] as const
+
+/**
+ * One record of facts, read closed: every member named is checked and a member
+ * it does not have is refused. The bounds are the harness's own: a window of
+ * 4,096 to 2,000,000 tokens, an output reserve of 1,024 to half of it.
+ */
+function capabilityFacts(value: unknown, scope: string, kind: string, extra: readonly string[], problems: ConfigProblem[]): Record<string, unknown> | undefined {
+  const record = section(value, scope, [...CAPABILITY_MEMBERS, ...extra], problems)
+  if (!record) return undefined
+  const kept: Record<string, unknown> = {}
+  const bad = (member: string, reason: string) => problems.push({ key: `${scope}.${member}`, reason })
+  const flag = (member: string) => {
+    const given = record[member]
+    if (given === undefined || given === null) return
+    if (typeof given !== 'boolean') bad(member, sourceMessage("must be true or false; found {{value0}}", { value0: describe(given) }))
+    else kept[member] = given
+  }
+  const number = (member: string, low: number, high: number) => {
+    const given = record[member]
+    if (given === undefined || given === null) return
+    if (typeof given !== 'number' || !Number.isInteger(given) || given < low || given > high) {
+      bad(member, sourceMessage("must be an integer from {{value0}} to {{value1}}; found {{value2}}", { value0: low, value1: high, value2: describe(given) }))
+    } else kept[member] = given
+  }
+  const choice = (member: string, allowed: readonly string[]) => {
+    const given = record[member]
+    if (given === undefined || given === null) return
+    if (typeof given !== 'string' || !allowed.includes(given)) {
+      bad(member, sourceMessage("must be one of {{value0}}; found {{value1}}", { value0: allowed.map((entry) => JSON.stringify(entry)).join(', '), value1: describe(given) }))
+    } else kept[member] = given
+  }
+  number('contextWindow', 4096, 2_000_000)
+  number('outputReserve', 1024, 1_000_000)
+  if (typeof kept.contextWindow === 'number' && typeof kept.outputReserve === 'number' && kept.outputReserve > Math.floor(kept.contextWindow / 2)) {
+    bad('outputReserve', sourceMessage("must be at most half the context window"))
+  }
+  flag('nativeToolCalls'); flag('parallelToolCalls'); flag('vision')
+  choice('reasoningKind', REASONING_KINDS_ON[kind] ?? ['none'])
+  flag('reasoningIgnored')
+  choice('reasoningField', ['reasoning', 'reasoning_content'])
+  flag('wholeJsonAnswer')
+  choice('toolSchemas', ['json-schema', 'gemini-subset'])
+  choice('statePlacement', ['trailing-user', 'system-tail'])
+  flag('strictAlternation')
+  for (const name of extra) if (record[name] !== undefined) kept[name] = record[name]
+  return kept
+}
+
+/** `assistant.endpoint.capabilities`: the probe's finding and the owner's overrides. */
+function capabilityRecord(value: unknown, kind: string, problems: ConfigProblem[]): EndpointCapabilityRecord | undefined {
+  const record = section(value, 'assistant.endpoint.capabilities', ['probe', 'override'], problems)
+  if (!record) return undefined
+  const held: EndpointCapabilityRecord = {}
+  const before = problems.length
+  if (record.probe !== undefined && record.probe !== null) {
+    const facts = capabilityFacts(record.probe, 'assistant.endpoint.capabilities.probe', kind, ['at'], problems)
+    if (facts) {
+      const at = facts.at
+      if (typeof at !== 'string' || at.length > 64 || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)$/.test(at) || Number.isNaN(Date.parse(at))) {
+        problems.push({ key: 'assistant.endpoint.capabilities.probe.at', reason: sourceMessage("must be the time the probe ran, as an RFC 3339 timestamp; found {{value0}}", { value0: describe(at) }) })
+      } else held.probe = facts as unknown as CapabilityFacts & { at: string }
+    }
+  }
+  if (record.override !== undefined && record.override !== null) {
+    const facts = capabilityFacts(record.override, 'assistant.endpoint.capabilities.override', kind, [], problems)
+    if (facts) held.override = facts as CapabilityFacts
+  }
+  if (problems.length > before) return undefined
+  return held.probe === undefined && held.override === undefined ? undefined : held
+}
+
+/**
+ * Whether a host is a private-network address: a literal in RFC 1918, a name
+ * of one label, or one under `.local`, `.lan`, `.internal` or `.home.arpa`.
+ * Read as written; nothing resolves it. Held to `lanHost` in `deskfile.go`.
+ */
+export function lanHost(host: string): boolean {
+  const name = host.toLowerCase().replace(/\.$/, '')
+  if (name === '') return false
+  const octets = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(name)
+  if (octets) {
+    const [a, b, c, d] = octets.slice(1).map(Number) as [number, number, number, number]
+    if ([a, b, c, d].some((octet) => octet > 255)) return false
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  }
+  if (!name.includes('.')) return !/[:[\]]/.test(name)
+  return ['.local', '.lan', '.internal', '.home.arpa'].some((suffix) => name.endsWith(suffix))
 }
 
 /** The bounds of `assistant.endpoint.capacity`: the harness's own limit on how many children run at once. Held to `minEndpointCapacity` in `deskfile.go`. */
@@ -2036,7 +2195,7 @@ export function modelIdProblem(value: unknown): string | undefined {
  * Held identical to `endpointURLProblem` in `internal/desk/deskfile.go` by the
  * shared fixtures both decoders read.
  */
-export function endpointUrlProblem(raw: string): string | undefined {
+export function endpointUrlProblem(raw: string, lan = false): string | undefined {
   let url: URL
   try {
     url = new URL(raw)
@@ -2059,6 +2218,7 @@ export function endpointUrlProblem(raw: string): string | undefined {
   if (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) {
     return undefined
   }
+  if (url.protocol === 'http:' && lan && lanHost(url.hostname)) return undefined
   return (
     sourceMessage("must be an https: URL, or an http: URL on localhost or 127.0.0.1 — a key sent in clear text over a network is a key given away")
   )

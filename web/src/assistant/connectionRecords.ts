@@ -40,3 +40,13 @@ export function connectionConfig(target: AITarget | undefined): AssistantConfig 
 export function forgetConnections(): void {
   held.clear()
 }
+
+/**
+ * The settings of every remembered connection that serves one model on one
+ * wire: those whose endpoint speaks that protocol and enables that model.
+ */
+export function connectionsServing(family: string, model: string): AssistantConfig[] {
+  return [...held.values()]
+    .map((record) => record.assistant)
+    .filter((config) => config.endpoint !== null && config.endpoint.kind === family && config.endpoint.models.includes(model))
+}

@@ -27,7 +27,7 @@ import type { AssistantKeyState } from './client'
  * it to, so the row asks for one to be saved rather than offering a field the
  * chassis would refuse.
  */
-export type KeyBinding = 'unread' | 'no-endpoint' | 'none' | 'bound' | 'rebind'
+export type KeyBinding = 'unread' | 'no-endpoint' | 'none' | 'bound' | 'rebind' | 'keyless'
 
 /**
  * Read the row's state off the key answer, and off **nothing else**.
@@ -55,6 +55,7 @@ export function keyBinding(key: AssistantKeyState | undefined): KeyBinding {
   // and a key that is stored is still reported on the line above, because
   // removing an endpoint never removed a key.
   if (key.configuredOrigin === '') return 'no-endpoint'
-  if (!key.present) return 'none'
+  // **No key and none needed** is the desk's own verdict (`keyless`), for an endpoint on this computer.
+  if (!key.present) return key.keyless === true ? 'keyless' : 'none'
   return key.bound ? 'bound' : 'rebind'
 }

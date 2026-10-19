@@ -42,7 +42,6 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   ASSISTANT_TOOLS,
-  endpointUrlProblem,
   type AssistantTool,
   type EndpointKind
 } from '../config/deskConfig'
@@ -62,6 +61,8 @@ import {
   assistantWithoutEndpoint,
   assistantWrite,
   draftFrom,
+  draftUrlProblem,
+  overrideProblem,
   seedOf,
   withKind,
   capacityProblem,
@@ -71,6 +72,7 @@ import {
 } from './endpointDraft'
 import { checkLine, identityOf, useEndpointCheck, type CheckAnswer } from './endpointCheck'
 import { KeyField } from './KeyField'
+import { EndpointCapabilitiesSection } from './EndpointCapabilitiesSection'
 import { keyBinding, type KeyBinding } from './keyBinding'
 import { Disclosure } from '../ui/Disclosure'
 import { SettingsSection } from '../ui/SettingsSection'
@@ -218,7 +220,7 @@ export function EndpointForm({
   // endpoint with no model chosen is a configuration the schema has, and the
   // whole order this form is in — provider, key, save, test, the list, a pick —
   // depends on the first save going through without one.
-  const urlProblem = draft.url.trim() === '' ? undefined : endpointUrlProblem(draft.url.trim())
+  const urlProblem = draftUrlProblem(draft)
 
   const refused = write.error instanceof FileRequestError ? write.error : undefined
   const stale =
@@ -294,9 +296,9 @@ export function EndpointForm({
 
   const busy = write.isPending || store.isPending || remove.isPending
   const checking = check.answer?.asking ?? false
-  const blocked = digest === undefined || draft.url.trim() === '' || urlProblem !== undefined || capacityProblem(draft.capacity) !== undefined
+  const blocked = digest === undefined || draft.url.trim() === '' || urlProblem !== undefined || capacityProblem(draft.capacity) !== undefined || Object.keys(overrideProblem(draft.override)).length > 0
   const configured = config.assistant.endpoint
-  const connected = configured !== null && binding === 'bound' && key.isSuccess
+  const connected = configured !== null && (binding === 'bound' || binding === 'keyless') && key.isSuccess
   const here = configured !== null && identityOf(draft) === identityOf(configured)
   const editingKey = typed || replacingKey
   const mayTest = connected && here && !editingKey && !busy && !checking && !unavailable
@@ -455,6 +457,28 @@ export function EndpointForm({
             </Field>
 
             <Button variant="quiet" onClick={() => edit({ ...draft, url: PREFILLED_URL[draft.kind] })}>{msg("Reset to default")}</Button>
+
+            {draft.kind === 'openai-compatible' && (
+              <Field label={msg("Key header")} hint={msg("Azure OpenAI endpoints take the key in an api-key header.")} error={problemFor('assistant.endpoint.auth')}>
+                {(wiring) => (
+                  <Select
+                    {...wiring}
+                    value={draft.auth}
+                    onValueChange={(value) => edit({ ...draft, auth: value as EndpointDraft['auth'] })}
+                    options={[{ value: 'bearer', label: msg('Authorization: Bearer (default)') }, { value: 'api-key', label: msg('api-key (Azure)') }]}
+                  />
+                )}
+              </Field>
+            )}
+            <label className="checkbox">
+              <input type="checkbox" checked={draft.lan} onChange={(event) => edit({ ...draft, lan: event.target.checked })} />{' '}
+              {msg("Allow a plain http address on my local network")}
+            </label>
+            {draft.lan && (
+              <p className={styles.warning} role="alert">
+                {msg("A key sent to a plain http address travels in clear text on your network. Use it only on a network you trust.")}
+              </p>
+            )}
           </Disclosure>
         </SettingsSection>
 
@@ -474,6 +498,10 @@ export function EndpointForm({
 
         <SettingsSection variant="plain" title={msg("Reviews and delegated tasks")} description={msg("Name a cheaper model this endpoint serves for reviews and for helper tasks.")}>
           <SubordinateChoice draft={draft} onChange={edit} problems={{ criticModel: problemFor('assistant.endpoint.criticModel'), childModel: problemFor('assistant.endpoint.childModel'), capacity: problemFor('assistant.endpoint.capacity') }} />
+        </SettingsSection>
+
+        <SettingsSection variant="plain" title={msg("What this endpoint can do")} description={msg("Probe it, or say what it takes, for models that differ from the provider's defaults.")}>
+          <EndpointCapabilitiesSection draft={draft} onChange={edit} canProbe={mayTest} whyNot={whyNotTest} problems={{ contextWindow: problemFor('assistant.endpoint.capabilities.override.contextWindow'), outputReserve: problemFor('assistant.endpoint.capabilities.override.outputReserve') }} />
         </SettingsSection>
 
         <SettingsSection variant="plain" title={msg("Behavior")} description={msg("Choose the tools and reasoning available to the assistant.")}>
@@ -500,7 +528,7 @@ export function EndpointForm({
         <SettingsActions feedback={<SettingsFeedback tone={saved !== undefined && !busy ? 'success' : 'neutral'}>
           {busy ? msg('Saving…') : editingKey ? msg('Save or cancel the API key changes first.') : saved !== undefined ? systemMessage(saved) : dirty ? msg('Unsaved settings') : null}
         </SettingsFeedback>}>
-          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={!settingsChanged || blocked || busy || checking || editingKey}>{msg("Save settings")}</Button>
+          <Button variant={(binding === 'bound' || binding === 'keyless') && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={!settingsChanged || blocked || busy || checking || editingKey}>{msg("Save settings")}</Button>
         </SettingsActions>
 
         {configured !== null && !connectionScope && (
@@ -586,6 +614,10 @@ const PLACED = [
   'assistant.endpoint.criticModel',
   'assistant.endpoint.childModel',
   'assistant.endpoint.capacity',
+  'assistant.endpoint.auth',
+  'assistant.endpoint.lan',
+  'assistant.endpoint.capabilities.override.contextWindow',
+  'assistant.endpoint.capabilities.override.outputReserve',
   'assistant.thinking'
 ] as const
 

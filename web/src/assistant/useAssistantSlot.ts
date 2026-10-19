@@ -115,9 +115,10 @@ export function useAssistantSlot(connectionId?:string): AssistantSlot {
     // Use the server's binding verdict and point to the setting that repairs it.
     unusable: assistantProfile?.problem ?? (unbound ? UNBOUND_KEY : undefined) ?? (endpoint !== null && endpoint.model === null ? sourceMessage("An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.") : undefined),
     recovery: unread || endpoint === null || endpoint.model === null ? 'configure'
-      : key.isPending ? undefined : key.isError ? 'retry' : !key.data.present || unbound ? 'configure' : undefined,
+      : key.isPending ? undefined : key.isError ? 'retry' : (!key.data.present && key.data.keyless !== true) || unbound ? 'configure' : undefined,
     retrying: key.isFetching,
-    keyPresent: key.isSuccess && key.data.present,
+    // **A key that is not needed is as good as one that is there**: the desk says so (`keyless`) for an endpoint on this computer.
+    keyPresent: key.isSuccess && (key.data.present || key.data.keyless === true),
     keyStatus: key.status,
     retryKey: () => { void key.refetch() },
     engine: config.assistant.engine,

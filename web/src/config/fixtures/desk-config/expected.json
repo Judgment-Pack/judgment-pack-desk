@@ -1965,5 +1965,212 @@
     "keys": [
       "assistant.endpoint.capacity"
     ]
+  },
+  "accepted-endpoint-lan-http": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model",
+    "lan": true
+  },
+  "accepted-endpoint-lan-http-single-label-host": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model",
+    "lan": true
+  },
+  "accepted-endpoint-lan-http-local-name": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model",
+    "lan": true
+  },
+  "accepted-endpoint-lan-with-https": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model",
+    "lan": true
+  },
+  "accepted-endpoint-lan-false": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
+  },
+  "refused-endpoint-lan-http-without-the-opt-in": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-lan-http-on-a-public-address": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-lan-http-on-a-public-name": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.url"
+    ]
+  },
+  "refused-endpoint-lan-not-a-boolean": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.lan"
+    ]
+  },
+  "accepted-endpoint-auth-api-key": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model",
+    "auth": "api-key"
+  },
+  "accepted-endpoint-auth-bearer": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model"
+  },
+  "refused-endpoint-auth-unknown": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.auth"
+    ]
+  },
+  "refused-endpoint-auth-api-key-on-anthropic": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.auth"
+    ]
+  },
+  "accepted-endpoint-capabilities-probe-and-override": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model",
+    "capabilities": {
+      "probe": {
+        "at": "2026-10-19T12:00:00Z",
+        "contextWindow": 32768,
+        "outputReserve": 4096,
+        "nativeToolCalls": false,
+        "parallelToolCalls": false,
+        "reasoningField": "reasoning_content"
+      },
+      "override": {
+        "vision": true,
+        "nativeToolCalls": true,
+        "contextWindow": 65536,
+        "outputReserve": 8192
+      }
+    }
+  },
+  "accepted-endpoint-capabilities-override-only": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model",
+    "capabilities": {
+      "override": {
+        "strictAlternation": true,
+        "statePlacement": "system-tail"
+      }
+    }
+  },
+  "refused-endpoint-capabilities-unknown-member": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capabilities.override.speed"
+    ]
+  },
+  "refused-endpoint-capabilities-unknown-section": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capabilities.guess"
+    ]
+  },
+  "refused-endpoint-capabilities-output-past-half-the-window": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capabilities.override.outputReserve"
+    ]
+  },
+  "refused-endpoint-capabilities-window-below-the-floor": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capabilities.override.contextWindow"
+    ]
+  },
+  "refused-endpoint-capabilities-reasoning-kind-of-another-wire": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capabilities.override.reasoningKind"
+    ]
+  },
+  "refused-endpoint-capabilities-flag-not-a-boolean": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capabilities.override.vision"
+    ]
+  },
+  "refused-endpoint-capabilities-probe-without-a-time": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capabilities.probe.at"
+    ]
+  },
+  "refused-endpoint-capabilities-probe-with-a-bad-time": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capabilities.probe.at"
+    ]
+  },
+  "refused-endpoint-capabilities-not-an-object": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capabilities"
+    ]
   }
 }

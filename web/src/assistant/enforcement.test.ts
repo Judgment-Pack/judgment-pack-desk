@@ -160,7 +160,7 @@ type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
 const ASSISTANT_KEYS = ['agent', 'endpoint', 'engine', 'thinking'] as const
 
 /** The endpoint object's members, exactly as the schema declares them. */
-const ENDPOINT_KEYS = ['url', 'kind', 'model', 'models', 'tools', 'criticModel', 'childModel', 'capacity'] as const
+const ENDPOINT_KEYS = ['url', 'kind', 'model', 'models', 'tools', 'criticModel', 'childModel', 'capacity', 'auth', 'lan', 'capabilities'] as const
 
 /**
  * What the assistant pane reads.

@@ -7,6 +7,7 @@ import { bindAgentRun } from '@judgment-pack/harness/agentTransport'
 import { bindModelCall } from '@judgment-pack/harness/session'
 import { normalize } from '@judgment-pack/harness/thinking'
 import type { RunMeter } from './runMeter'
+import { capabilitiesOf } from './endpointCapabilities'
 
 /** UI selection has no endpoint impersonation: an agent target stays an agent. */
 export function selectedAssistant(slot: { engine?: string; endpoint: AssistantEndpointConfig | null; agent?: AssistantAgentConfig }) {
@@ -21,5 +22,8 @@ export function bindExecution(config: Pick<AssistantConfig,'engine'|'endpoint'|'
   }
   if (!config.endpoint) throw new Error(sourceMessage('Choose an enabled Assistant model.'))
   const call = config.connectionId?bindModelCall(config.endpoint.kind,config):bindModelCall(config.endpoint.kind)
-  return { model:{ family:config.endpoint.kind,model,call:meter?meter.call(call,model):call }, thinking:normalize(thinking,config.endpoint.kind) }
+  // What this connection states about its endpoint (its probe's finding and its owner's overrides) rides on the session,
+  // which is exact where two connections serve one model; the harness completes the rest from the family's default.
+  const capabilities = capabilitiesOf(config.endpoint)
+  return { model:{ family:config.endpoint.kind,model,call:meter?meter.call(call,model):call,...(Object.keys(capabilities).length?{capabilities}:{}) }, thinking:normalize(thinking,config.endpoint.kind) }
 }

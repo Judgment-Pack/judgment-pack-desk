@@ -400,9 +400,15 @@ var reflectedCredentialHeaders = []string{
 // line this route writes — and the configuration decoder already refuses a URL
 // carrying userinfo for the same reason. The header is the only place a key
 // goes.
-func credentialHeader(kind, key string) (name, value string, ok bool) {
+func credentialHeader(kind, auth, key string) (name, value string, ok bool) {
 	switch kind {
 	case "openai-compatible":
+		// Azure's OpenAI service takes the key in an `api-key` header and not as
+		// a bearer; an endpoint whose owner has said so (`auth: "api-key"`) is
+		// sent it there and nowhere else, and any other is sent the bearer.
+		if auth == "api-key" {
+			return "api-key", key, true
+		}
 		return "Authorization", "Bearer " + key, true
 	case "anthropic":
 		return "x-api-key", key, true
@@ -759,7 +765,12 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		s.refuseKeyRead(w, err)
 		return
 	}
-	if !stored.present {
+	// **An endpoint on this computer needs no key**, and where none is stored
+	// the request goes out with no credential. Nothing else changes: a key that
+	// is stored is bound and presented to such an endpoint like any other, and
+	// every other endpoint is refused with no key as it always was.
+	keyless := !stored.present && endpoint.keyless()
+	if !stored.present && !keyless {
 		// The same state the probe names, and the same repair: store a key on
 		// Admin. A second code for one state would be two answers to one
 		// question.
@@ -774,12 +785,14 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	// refused here, before a socket is opened, and the repair is a person
 	// entering the key again — which page code cannot do, because it has never
 	// held it.
-	if reason := bindingProblem(stored, endpoint); reason != "" {
-		writeJSONCoded(w, http.StatusConflict, CodeAssistantKeyUnbound, reason)
-		return
+	if !keyless {
+		if reason := bindingProblem(stored, endpoint); reason != "" {
+			writeJSONCoded(w, http.StatusConflict, CodeAssistantKeyUnbound, reason)
+			return
+		}
 	}
 	key := stored.key
-	name, value, ok := credentialHeader(endpoint.kind, key)
+	name, value, ok := credentialHeader(endpoint.kind, endpoint.auth, key)
 	if !ok {
 		// Unreachable: `decodeDeskFile` refuses every other kind by name.
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured,
@@ -906,8 +919,11 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 				}
 				carried[header] = values
 			}
-			// The one thing this relay adds.
-			carried.Set(name, value)
+			// The one thing this relay adds, and nothing where the endpoint is
+			// one on this computer and no key is kept for it.
+			if !keyless {
+				carried.Set(name, value)
+			}
 			// **A listing is asked for uncompressed**, because a scan of
 			// compressed bytes is not a scan. Deleting the page's own
 			// `Accept-Encoding` lets Go's transport add and transparently undo

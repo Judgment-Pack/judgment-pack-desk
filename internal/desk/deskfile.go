@@ -690,7 +690,7 @@ func decodeResearch(value any) (*researchConfig, []deskProblem) {
 			if !ok || trimmed == "" {
 				problems = append(problems, deskProblem{Key: "research.gateway.url",
 					Reason: fmt.Sprintf("must be a non-empty string; found %s", describe(inner["url"]))})
-			} else if reason := endpointURLProblem(trimmed); reason != "" {
+			} else if reason := endpointURLProblem(trimmed, false); reason != "" {
 				problems = append(problems, deskProblem{Key: "research.gateway.url", Reason: reason})
 			} else if strings.Contains(trimmed, "?") {
 				problems = append(problems, deskProblem{Key: "research.gateway.url",
@@ -1015,10 +1015,24 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 		return slot, problems
 	}
 	inner, innerProblems := object(endpoint, "assistant.endpoint",
-		[]string{"url", "kind", "model", "models", "tools", "criticModel", "childModel", "capacity"})
+		[]string{"url", "kind", "model", "models", "tools", "criticModel", "childModel", "capacity", "auth", "lan", "capabilities"})
 	problems = append(problems, innerProblems...)
 	if inner == nil {
 		return slot, problems
+	}
+
+	// **The one opt-in that widens the transport rule**, read before the URL it
+	// applies to: a plain `http:` address on this network is accepted where the
+	// owner has said so, and a key sent to it travels in clear text on that
+	// network, which the form says beside the field.
+	lan := false
+	if given, present := inner["lan"]; present && given != nil {
+		set, ok := given.(bool)
+		if !ok {
+			problems = append(problems, deskProblem{Key: "assistant.endpoint.lan",
+				Reason: fmt.Sprintf("must be true or false; found %s", describe(given))})
+		}
+		lan = ok && set
 	}
 
 	raw, ok := inner["url"].(string)
@@ -1026,7 +1040,7 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 	if !ok || trimmedURL == "" {
 		problems = append(problems, deskProblem{Key: "assistant.endpoint.url",
 			Reason: fmt.Sprintf("must be a non-empty string; found %s", describe(inner["url"]))})
-	} else if reason := endpointURLProblem(trimmedURL); reason != "" {
+	} else if reason := endpointURLProblem(trimmedURL, lan); reason != "" {
 		problems = append(problems, deskProblem{Key: "assistant.endpoint.url", Reason: reason})
 	}
 
@@ -1132,20 +1146,47 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 		}
 	}
 
+	// How the key is presented to an OpenAI-compatible endpoint: as the bearer
+	// the protocol's own reference documents (the default), or in the `api-key`
+	// header Azure's OpenAI service takes. The other protocols have one form.
+	auth := ""
+	if given, present := inner["auth"]; present && given != nil {
+		named, ok := given.(string)
+		switch {
+		case !ok || !contains([]string{"bearer", "api-key"}, named):
+			problems = append(problems, deskProblem{Key: "assistant.endpoint.auth",
+				Reason: fmt.Sprintf("must be one of %s; found %s", quotedList([]string{"bearer", "api-key"}), describe(given))})
+		case named == "api-key" && kind != "openai-compatible":
+			problems = append(problems, deskProblem{Key: "assistant.endpoint.auth",
+				Reason: "the api-key header is the form of an OpenAI-compatible endpoint; the other protocols have one form of their own"})
+		case named == "api-key":
+			auth = named
+		}
+	}
+	var capabilities *endpointCapabilityRecord
+	if given, present := inner["capabilities"]; present && given != nil {
+		var found []deskProblem
+		capabilities, found = decodeEndpointCapabilities(given, kind)
+		problems = append(problems, found...)
+	}
+
 	// Same rule one level down: the object is handed back whenever it decoded
 	// into something, and whether it may be *used* is `refused()`'s answer.
 	if len(problems) > 0 {
 		return slot, problems
 	}
 	slot.endpoint = &assistantEndpoint{
-		url:         normalizedEndpointURL(trimmedURL),
-		kind:        kind,
-		model:       trimmedModel,
-		models:      enabled,
-		tools:       tools,
-		criticModel: criticModel,
-		childModel:  childModel,
-		capacity:    capacity,
+		url:          normalizedEndpointURL(trimmedURL),
+		kind:         kind,
+		model:        trimmedModel,
+		models:       enabled,
+		tools:        tools,
+		criticModel:  criticModel,
+		childModel:   childModel,
+		capacity:     capacity,
+		auth:         auth,
+		lan:          lan,
+		capabilities: capabilities,
 	}
 	return slot, problems
 }
@@ -1285,7 +1326,7 @@ func modelDefaultProblem(model string, models []string) string {
 // lets page code write it, and round 1 found the configured query the one part
 // of a relayed request the page could then fill with anything. It is checked
 // here, at decode, so a hand-edited file meets exactly the same rule.
-func endpointURLProblem(raw string) string {
+func endpointURLProblem(raw string, lan bool) string {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Host == "" {
 		return fmt.Sprintf("must be an absolute URL; found %q", raw)
@@ -1304,8 +1345,10 @@ func endpointURLProblem(raw string) string {
 	if parsed.Scheme == "https" {
 		return ""
 	}
-	if parsed.Scheme == "http" &&
-		(strings.EqualFold(parsed.Hostname(), "localhost") || parsed.Hostname() == "127.0.0.1") {
+	if parsed.Scheme == "http" && loopbackHost(parsed.Hostname()) {
+		return ""
+	}
+	if parsed.Scheme == "http" && lan && lanHost(parsed.Hostname()) {
 		return ""
 	}
 	return fmt.Sprintf(

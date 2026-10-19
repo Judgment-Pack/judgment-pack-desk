@@ -78,6 +78,11 @@ type fixtureVerdict struct {
 	ChildModel  string `json:"childModel"`
 	// Capacity is the connection's stated capacity, zero where it states none.
 	Capacity int `json:"capacity"`
+	// Auth, Lan and Capabilities are the header form, the plain-address
+	// opt-in and the capability record, as the file decodes to them.
+	Auth         string                    `json:"auth"`
+	Lan          bool                      `json:"lan"`
+	Capabilities *endpointCapabilityRecord `json:"capabilities"`
 	// ResearchGateway is `research.gateway.url` as the file decodes to it,
 	// empty where it names none. Required both ways like ProjectFile: an
 	// accepted fixture that decodes to a gateway must say which, so the corpus
@@ -260,6 +265,15 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 				}
 				if capacity != verdict.Capacity {
 					t.Errorf("capacity %d, want %d", capacity, verdict.Capacity)
+				}
+				var auth string
+				var lan bool
+				var capabilities *endpointCapabilityRecord
+				if decoded.Endpoint != nil {
+					auth, lan, capabilities = decoded.Endpoint.auth, decoded.Endpoint.lan, decoded.Endpoint.capabilities
+				}
+				if auth != verdict.Auth || lan != verdict.Lan || !reflect.DeepEqual(capabilities, verdict.Capabilities) {
+					t.Errorf("auth/lan/capabilities %q/%t/%+v, want %q/%t/%+v", auth, lan, capabilities, verdict.Auth, verdict.Lan, verdict.Capabilities)
 				}
 				if criticModel != verdict.CriticModel || childModel != verdict.ChildModel {
 					t.Errorf("critic/child models %q/%q, want %q/%q", criticModel, childModel, verdict.CriticModel, verdict.ChildModel)

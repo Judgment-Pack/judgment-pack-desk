@@ -70,6 +70,10 @@ interface Verdict {
   childModel?: string
   /** The connection's stated capacity, absent where it states none. */
   capacity?: number
+  /** The header form, whether a plain address on this network is accepted, and the capability record, absent where the file states none. */
+  auth?: string
+  lan?: boolean
+  capabilities?: unknown
   /**
    * `research.gateway.url` as the file decodes to it, absent where it names
    * none, on `projectFile`'s terms: where the chassis would forward research
@@ -158,6 +162,9 @@ describe('the shared desk-configuration fixtures', () => {
         expect(endpoint?.criticModel ?? '', `${name}: criticModel`).toBe(verdict.criticModel ?? '')
         expect(endpoint?.childModel ?? '', `${name}: childModel`).toBe(verdict.childModel ?? '')
         expect(endpoint?.capacity ?? 0, `${name}: capacity`).toBe(verdict.capacity ?? 0)
+        expect(endpoint?.auth ?? '', `${name}: auth`).toBe(verdict.auth ?? '')
+        expect(endpoint?.lan ?? false, `${name}: lan`).toBe(verdict.lan ?? false)
+        expect(endpoint?.capabilities, `${name}: capabilities`).toEqual(verdict.capabilities)
         return
       }
       expect(decoded.values, `${name} was accepted`).toBeUndefined()

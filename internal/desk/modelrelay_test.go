@@ -349,7 +349,7 @@ func TestRelayCarriesNoCredentialHeaderToTheEndpoint(t *testing.T) {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
 	seen := u.only(t)
-	injected, _, _ := credentialHeader("anthropic", testKey)
+	injected, _, _ := credentialHeader("anthropic", "", testKey)
 	for _, header := range credentialHeaderCorpus {
 		if http.CanonicalHeaderKey(header) == http.CanonicalHeaderKey(injected) {
 			// Replaced by the desk's own credential rather than merely
@@ -403,7 +403,7 @@ func TestRelayCarriesOnlyTheHeadersOnItsList(t *testing.T) {
 	}
 	// Whatever did arrive is on the list, plus the credential this desk adds
 	// and the two the transport owns.
-	own, _, _ := credentialHeader("openai-compatible", testKey)
+	own, _, _ := credentialHeader("openai-compatible", "", testKey)
 	for header := range seen.header {
 		switch http.CanonicalHeaderKey(header) {
 		case http.CanonicalHeaderKey(own), "Host", "Content-Length":
@@ -1551,11 +1551,11 @@ func TestRelayRefusesARefusedConfiguration(t *testing.T) {
 
 func TestRelayRefusesWithNoKeyStored(t *testing.T) {
 	counter := countingRelays(t)
-	u := newUpstream(t, nil)
 	s, ts, _ := assistantServer(t)
-	writeDeskConfig(t, s, fmt.Sprintf(
-		`{"deskConfigVersion":1,"assistant":{"endpoint":`+
-			`{"url":%q,"kind":"openai-compatible","model":"m","tools":[]}}}`, u.server.URL))
+	// An endpoint off this computer: one on it needs no key (see
+	// `TestRelaySendsNoCredentialToAnEndpointOnThisComputerWithNoKey`).
+	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+		`{"url":"https://api.example.invalid/v1","kind":"openai-compatible","model":"m","tools":[]}}}`)
 	resp, body := relayGet(t, ts, "chat/completions")
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)
@@ -2558,7 +2558,7 @@ func TestTheProbeAndTheRelayPresentTheSameCredential(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)
 		}
-		name, value, ok := credentialHeader(kind, testKey)
+		name, value, ok := credentialHeader(kind, "", testKey)
 		if !ok {
 			t.Fatalf("%s has no credential header", kind)
 		}
@@ -2566,7 +2566,7 @@ func TestTheProbeAndTheRelayPresentTheSameCredential(t *testing.T) {
 			t.Errorf("%s: the probe sends %s=%q, the relay would send %q", kind, name, got, value)
 		}
 	}
-	if _, _, ok := credentialHeader("something-else", testKey); ok {
+	if _, _, ok := credentialHeader("something-else", "", testKey); ok {
 		t.Error("a kind nothing defines was given a credential header")
 	}
 }

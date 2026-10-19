@@ -24,6 +24,9 @@ import {
   assistantWithoutEndpoint,
   assistantWrite,
   draftFrom,
+  draftUrlProblem,
+  overrideProblem,
+  probeOf,
   seedOf,
   withKind,
   withModel,
@@ -41,7 +44,12 @@ const DRAFT: EndpointDraft = {
   thinking: 'ultra',
   criticModel: '',
   childModel: '',
-  capacity: ''
+  capacity: '',
+  auth: 'bearer',
+  lan: false,
+  probe: null,
+  override: { contextWindow: '', outputReserve: '', nativeToolCalls: '', parallelToolCalls: '', vision: '', strictAlternation: '' },
+  overrideHeld: {}
 }
 
 describe('the object a save sends', () => {
@@ -160,7 +168,12 @@ describe('the draft a configuration opens on', () => {
       thinking: 'on',
       criticModel: '',
       childModel: '',
-      capacity: ''
+      capacity: '',
+      auth: 'bearer',
+      lan: false,
+      probe: null,
+      override: { contextWindow: '', outputReserve: '', nativeToolCalls: '', parallelToolCalls: '', vision: '', strictAlternation: '' },
+      overrideHeld: {}
     })
   })
 
@@ -276,5 +289,75 @@ describe('the models a connection names for its review and its helper tasks', ()
   it('opens on what the file names', () => {
     const config: AssistantConfig = { engine: 'vercel', thinking: 'off', endpoint: { url: 'https://api.example.invalid/v1', kind: 'openai-compatible', model: 'a-model', models: ['a-model', 'a-cheaper-model'], tools: [], criticModel: 'a-cheaper-model' } }
     expect(draftFrom(config)).toMatchObject({ criticModel: 'a-cheaper-model', childModel: '' })
+  })
+})
+
+describe('the header form, the plain-address opt-in and the capability record', () => {
+  const OPEN: EndpointDraft = { ...DRAFT, kind: 'openai-compatible', url: 'https://resource.example/openai/v1' }
+  const write = (draft: EndpointDraft) => (assistantWrite(draft) as { endpoint: Record<string, unknown> }).endpoint
+  const decodes = (draft: EndpointDraft) => decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, assistant: assistantWrite(draft) }), 'desk').problems
+
+  it('writes the api-key header form for an OpenAI-compatible endpoint, and says nothing for the protocol\'s own', () => {
+    expect(write(OPEN)).not.toHaveProperty('auth')
+    expect(write({ ...OPEN, auth: 'api-key' })).toMatchObject({ auth: 'api-key' })
+    // The other protocols have one form, so a draft that carried the choice across a change of provider writes none.
+    expect(write({ ...OPEN, kind: 'anthropic', auth: 'api-key' })).not.toHaveProperty('auth')
+    expect(decodes({ ...OPEN, auth: 'api-key' })).toEqual([])
+  })
+
+  it('writes the opt-in only where it is taken, and the address rule follows it', () => {
+    const plain: EndpointDraft = { ...OPEN, url: 'http://192.168.1.20:8000/v1' }
+    expect(draftUrlProblem(plain)).toContain('must be an https: URL')
+    expect(draftUrlProblem({ ...plain, lan: true })).toBeUndefined()
+    expect(write(plain)).not.toHaveProperty('lan')
+    expect(write({ ...plain, lan: true })).toMatchObject({ lan: true })
+    expect(decodes({ ...plain, lan: true })).toEqual([])
+    expect(decodes(plain).map((problem) => problem.key)).toEqual(['assistant.endpoint.url'])
+    // Taking it never admits an address that is not on this network.
+    expect(draftUrlProblem({ ...OPEN, url: 'http://llm.example.com/v1', lan: true })).toContain('must be an https: URL')
+  })
+
+  it('writes the owner\'s overrides by name, whole numbers as numbers and yes and no as booleans', () => {
+    const override = { contextWindow: ' 32768 ', outputReserve: '4096', nativeToolCalls: 'no' as const, parallelToolCalls: '' as const, vision: 'yes' as const, strictAlternation: 'yes' as const }
+    expect(write({ ...OPEN, override }).capabilities).toEqual({ override: { contextWindow: 32768, outputReserve: 4096, nativeToolCalls: false, vision: true, strictAlternation: true } })
+    expect(decodes({ ...OPEN, override })).toEqual([])
+    expect(write(OPEN)).not.toHaveProperty('capabilities')
+  })
+
+  it('keeps an override the form has no field for through a save', () => {
+    const config: AssistantConfig = { engine: 'vercel', thinking: 'off', endpoint: { url: OPEN.url, kind: 'openai-compatible', model: 'a-model', models: ['a-model'], tools: [], capabilities: { override: { statePlacement: 'system-tail', reasoningKind: 'none', vision: true } } } }
+    const draft = draftFrom(config)
+    expect(draft.override.vision).toBe('yes')
+    expect(write(draft).capabilities).toEqual({ override: { statePlacement: 'system-tail', reasoningKind: 'none', vision: true } })
+  })
+
+  it('keeps a probe\'s finding only while the endpoint and model are the ones it was of', () => {
+    const probed: EndpointDraft = { ...OPEN, model: 'a-model', probe: { at: '2026-10-19T12:00:00.000Z', facts: { nativeToolCalls: false, contextWindow: 32768 }, of: probeOf({ ...OPEN, model: 'a-model' }) } }
+    expect(write(probed).capabilities).toEqual({ probe: { at: '2026-10-19T12:00:00.000Z', nativeToolCalls: false, contextWindow: 32768 } })
+    expect(decodes(probed)).toEqual([])
+    expect(write({ ...probed, url: 'https://another.example/v1' })).not.toHaveProperty('capabilities')
+    expect(write({ ...probed, model: 'b-model', models: ['a-model', 'b-model'] })).not.toHaveProperty('capabilities')
+    // The finding and the overrides are kept apart: an override never rewrites what the probe found.
+    const both = write({ ...probed, override: { ...probed.override, nativeToolCalls: 'yes' } }).capabilities as { probe: { nativeToolCalls: boolean }; override: { nativeToolCalls: boolean } }
+    expect([both.probe.nativeToolCalls, both.override.nativeToolCalls]).toEqual([false, true])
+  })
+
+  it('refuses a window or a reserve the decoder and the harness would refuse, before a save is tried', () => {
+    const fields = (contextWindow: string, outputReserve: string) => ({ ...DRAFT.override, contextWindow, outputReserve })
+    expect(overrideProblem(fields('', ''))).toEqual({})
+    expect(overrideProblem(fields('32768', '4096'))).toEqual({})
+    expect(overrideProblem(fields('1000', ''))).toHaveProperty('contextWindow')
+    expect(overrideProblem(fields('3000000', ''))).toHaveProperty('contextWindow')
+    expect(overrideProblem(fields('lots', ''))).toHaveProperty('contextWindow')
+    expect(overrideProblem(fields('', '500'))).toHaveProperty('outputReserve')
+    expect(overrideProblem(fields('8192', '6000')).outputReserve).toContain('half the context window')
+  })
+
+  it('opens on what the file states', () => {
+    const config: AssistantConfig = { engine: 'vercel', thinking: 'off', endpoint: { url: 'http://gpu-box:8000/v1', kind: 'openai-compatible', model: 'a-model', models: ['a-model'], tools: [], auth: 'api-key', lan: true, capabilities: { probe: { at: '2026-10-19T12:00:00Z', parallelToolCalls: false }, override: { contextWindow: 65536 } } } }
+    const draft = draftFrom(config)
+    expect(draft).toMatchObject({ auth: 'api-key', lan: true, override: { contextWindow: '65536' }, probe: { at: '2026-10-19T12:00:00Z', facts: { parallelToolCalls: false } } })
+    // What the file states is written back as it was.
+    expect(write(draft)).toMatchObject({ auth: 'api-key', lan: true, capabilities: { probe: { at: '2026-10-19T12:00:00Z', parallelToolCalls: false }, override: { contextWindow: 65536 } } })
   })
 })
