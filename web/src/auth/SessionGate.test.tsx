@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -17,6 +17,19 @@ function mount(child = <div>Private workspace</div>) {
  render(<StrictMode><QueryClientProvider client={client}><SessionGate>{child}</SessionGate></QueryClientProvider></StrictMode>)
  return client
 }
+function expectBootstrapLoading() {
+ const [status] = screen.getAllByRole('status')
+ expect(screen.getAllByRole('status')).toHaveLength(1)
+ expect(status.textContent).toBe('Opening Desk…')
+ expect(status.getAttribute('data-running')).toBe('true')
+ expect(screen.getByRole('main').contains(status)).toBe(true)
+ expect(screen.queryByText('Unveil')).toBeNull()
+ expect(screen.queryByRole('banner')).toBeNull()
+ expect(screen.queryByRole('contentinfo')).toBeNull()
+ expect(screen.queryByRole('combobox')).toBeNull()
+ expect(document.querySelector('form')).toBeNull()
+ expect(screen.queryByRole('heading', {name:'Sign in to Unveil'})).toBeNull()
+}
 it('keeps the workspace unmounted and offers provider sign-in without a launch link', async () => {
  const mounted=vi.fn()
  function Private(){useEffect(mounted,[]);return <div>Private workspace</div>}
@@ -34,6 +47,7 @@ it('verifies the session with the backend before mounting and removes private ca
  legacyFetch(vi.fn((_url,init)=>init?.method==='POST'?Promise.resolve(Response.json({id:token})):read))
  const client=mount()
  client.setQueryData(['private'],{text:'sensitive'})
+ expectBootstrapLoading()
  expect(screen.queryByText('Private workspace')).toBeNull()
  await act(async()=>{resolveRead(Response.json({subject:'local user',issuer:null}))})
  await screen.findByText('Private workspace')
@@ -47,6 +61,7 @@ it('does not flash the workspace for a stale stored session',async()=>{
  sessionStorage.setItem(sessionStorageKey(),token)
  legacyFetch(vi.fn((_url,init)=>Promise.resolve(init?.method==='POST'?noHandoff():new Response(null,{status:401}))))
  mount()
+ expectBootstrapLoading()
  await screen.findByRole('heading',{name:'Sign in to Unveil'})
  expect(screen.queryByText('Private workspace')).toBeNull()
  expect(sessionStorage.getItem(sessionStorageKey())).toBeNull()
@@ -118,4 +133,51 @@ it('does not send a failed exchange or private read for a stale password session
  expect(screen.queryByText('Private workspace')).toBeNull()
  expect(sessionStorage.getItem(sessionStorageKey())).toBeNull()
  expect(calls.length).toBeGreaterThan(0)
+})
+
+it('keeps the selected desk across refresh and waits for verified access before fetching its workspace', async () => {
+ const selected = 'b'.repeat(32)
+ sessionStorage.setItem('jpack.active-desk', selected)
+ sessionStorage.setItem(sessionStorageKey(), token)
+ for (let documentNumber = 0; documentNumber < 2; documentNumber += 1) {
+  // A reload re-evaluates the document's frozen desk scope while retaining
+  // this tab's selection and session, just as switching desks does.
+  vi.resetModules()
+  const {SessionGate: ReloadedGate} = await import('./SessionGate')
+  const {deskFetch} = await import('../files/client')
+  const scope = await import('../desks/scope')
+  let finish!: (response: Response) => void
+  const session = new Promise<Response>(resolve => {finish = resolve})
+  const privateRequests: Headers[] = []
+  vi.stubGlobal('fetch', (url: unknown, init?: RequestInit) => {
+   if (String(url) === '/api/auth/status') return Promise.resolve(Response.json({enabled:true, unavailable:false, sessionActive:true, mode:'password'}))
+   if (String(url) === '/api/session') return session
+   expect(String(url)).toBe('/api/files')
+   privateRequests.push(new Headers(init?.headers))
+   return Promise.resolve(Response.json({root:'/selected-workspace', files:[]}))
+  })
+  function SelectedWorkspace() {
+   const [root, setRoot] = useState('')
+   useEffect(() => {
+    let active = true
+    void deskFetch('/api/files').then(response => response.json()).then(listing => {if (active) setRoot(listing.root)})
+    return () => {active = false}
+   }, [])
+   return <p>{root}</p>
+  }
+  const client = new QueryClient({defaultOptions:{queries:{retry:false}}})
+  const view = render(<StrictMode><QueryClientProvider client={client}><ReloadedGate><SelectedWorkspace /></ReloadedGate></QueryClientProvider></StrictMode>)
+  expectBootstrapLoading()
+  expect(privateRequests).toHaveLength(0)
+  expect(sessionStorage.getItem('jpack.active-desk')).toBe(selected)
+  await act(async () => finish(Response.json({subject:'local user', issuer:null})))
+  await screen.findByText('/selected-workspace')
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(privateRequests.length).toBeGreaterThan(0)
+  expect(privateRequests.every(headers => headers.get('X-Jpack-Desk') === selected && headers.get('Authorization') === `Bearer ${token}`)).toBe(true)
+  expect(scope.activeDeskId).toBe(selected)
+  expect(scope.deskSocketURL('ws://localhost/ws')).toBe(`ws://localhost/ws?desk=${selected}`)
+  view.unmount()
+  client.clear()
+ }
 })

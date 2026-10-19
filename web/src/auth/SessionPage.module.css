@@ -1,3 +1,4 @@
+.loading { min-height: 100dvh; display: grid; place-items: center; padding: var(--space-5); background: var(--bg); }
 .page { min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); }
 .header, .footer { display: flex; align-items: center; padding: var(--space-5) var(--space-6); }
 .header { justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }

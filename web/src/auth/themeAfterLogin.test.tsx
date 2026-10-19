@@ -7,6 +7,10 @@ import { AppearanceProvider, appearanceKey, useAppearance } from '../shell/appea
 import { projectKey } from '../shell/paneState'
 import { SessionPage } from './SessionPage'
 
+// These tests drive confirmed entry's appearance controls; SessionGate tests
+// exercise the sign-in form and its authentication requests independently.
+vi.mock('./SignInEntry', () => ({ SignInEntry: () => null }))
+
 const PROJECT = '/home/someone/project-a'
 const KEY = appearanceKey(projectKey(PROJECT))
 const OTHER_PROJECT = '/home/someone/project-b'
@@ -45,7 +49,7 @@ function boundary(authenticated: boolean, options: Partial<ProjectAnswers> = {})
   const answers = { projectIdentity: PROJECT, projectDefault: LIGHT_COMPACT, projectDefaultKnown: true, ...options }
   return <StrictMode>{authenticated ? <AppearanceProvider
     {...answers}
-  ><Workspace /></AppearanceProvider> : <SessionPage state="unavailable" />}</StrictMode>
+  ><Workspace /></AppearanceProvider> : <SessionPage state="recovery" />}</StrictMode>
 }
 
 function choose(theme: ThemeChoice) {

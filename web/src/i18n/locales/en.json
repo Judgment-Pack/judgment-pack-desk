@@ -762,7 +762,6 @@
   "Checking the proposed document…": "Checking the proposed document…",
   "Checking the saved API key…": "Checking the saved API key…",
   "Checking your Assistant configuration…": "Checking your Assistant configuration…",
-  "Checking your local session…": "Checking your local session…",
   "Checking…": "Checking…",
   "Checks": "Checks",
   "Checks failed": "Checks failed",
@@ -5801,6 +5800,7 @@
   "Update information is unavailable.": "Update information is unavailable.",
   "Update only the selected records using their saved evidence. No new searches or website reads.": "Update only the selected records using their saved evidence. No new searches or website reads.",
   "Update task progress": "Update task progress",
+  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.",
   "Update the connection credentials to continue.": "Update the connection credentials to continue.",
   "Update the local gateway to configure web access.": "Update the local gateway to configure web access.",
   "Update the runtime to jpack 0.22.0 or later, which serves experimental_validate_expectations; research cannot start on an older build.": "Update the runtime to jpack 0.22.0 or later, which serves experimental_validate_expectations; research cannot start on an older build.",
@@ -6790,6 +6790,5 @@
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.",
   "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.": "“In the reviewed set” means that the project’s jpack.lock.json pins these exact bytes for this decision id. It does not say the pack is right, or who reviewed it. It is shown, not enforced: the job is created the same way either way.",
-  "… (truncated for display)": "… (truncated for display)",
-  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available."
+  "… (truncated for display)": "… (truncated for display)"
 }
