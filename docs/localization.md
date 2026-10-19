@@ -1,6 +1,6 @@
 # Desk localization
 
-All 5,696 current English messages are covered in the 11 non-English catalogues, including required CLDR plural forms. The v0.13 translation pass preserves every existing translation and completes the current development backlog; new messages introduced by the pending combined integration still need extraction and translation. Translations were authored and reviewed directly, without sending UI text or project data to an external translation API. English remains the fallback for missing messages, an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects invalid placeholders, keys that `en.json` lacks, and untranslated UI literals, and warns about a message missing from a translated catalogue (English is shown); `--strict` makes that a failure, for the release's translation pull request.
+All 6,611 English messages in the frozen v0.13 integration source are covered in the 11 non-English catalogues, including required CLDR plural forms. The 2026-10-19 pass adds 5,830 translations and preserves every existing translation value. This completes catalogue coverage for that source checkpoint; independent release review and final release acceptance remain separate gates. Translations were authored and reviewed for terminology during implementation, without sending UI text or project data to an external translation API. English remains the fallback for missing messages, an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects invalid placeholders, keys that `en.json` lacks, and untranslated UI literals, and warns about a message missing from a translated catalogue (English is shown); `--strict` makes that a failure, for the release's translation pull request.
 
 ## Language choice
 
@@ -125,3 +125,40 @@ corrections, including German’s narrow layouts.
 This completes translation of the current checkpoint, not the pending combined
 release. Extract again after integration and translate any new messages before
 running the final release gates.
+
+
+## Integrated v0.13 translation checkpoint — 2026-10-19
+
+The frozen integration source is
+`c4e6ef5c6170e7d134c8c3960adc7a9c909bc2bb`. Its English catalogue contains
+**6,611 source message keys**. This pass adds **530 missing source entries in
+each of all 11 translated catalogues**, for **5,830 new entries**. Every
+previously translated value and the existing key order are preserved, including
+40 additional CLDR forms already present in each of Spanish, French, Italian,
+Brazilian Portuguese and European Portuguese. No additional plural forms were
+needed for this missing-key set. English messages and extraction code are
+unchanged.
+
+The additions cover Policy comparison, coverage declarations and review,
+governing-policy adoption, source ownership and consent, historical and imported
+records, publication lifecycle, archive recovery, graph-save reconciliation and
+manual execution admission. Translation review during implementation preserves
+negation and the distinctions between proposed, saved and published material;
+review, approval and execution authority; historical assertions and current
+status; and unresolved operations and missing records. Commands, identifiers,
+exact references and interpolation placeholders remain unchanged. The
+Portuguese variants use regional wording; Cantonese uses Hong Kong written
+Cantonese alongside conventional shared labels. Simplified Chinese was derived
+from the authored Traditional Chinese draft and explicitly reviewed for Mainland
+terminology. These are not claims of independent native-speaker validation.
+
+Node 22 strict catalogue/source validation passes for all 11 languages at
+6,611/6,611 source messages with zero placeholder errors. A separate comparison
+against the frozen source verifies exactly 530 additions per locale, preservation
+of every old value and its order, no duplicate or blank entries, no unexpected
+new keys, and unchanged English source bytes. `git diff --check` passes. No full
+frontend suite, build, browser or layout sweep was repeated for this translation
+pass; the earlier results above remain historical evidence for their respective
+checkpoints. The combined independent translation review is still a separate
+release gate. This checkpoint does not claim completion of release acceptance,
+provider pilots or publication approval.

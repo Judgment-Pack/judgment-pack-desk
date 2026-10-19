@@ -54,7 +54,8 @@ not establish native execution on another platform.
 
 ## Match the Runtime used by a job record
 
-For the currently locked Linux/amd64 Runtime, download and authenticate it:
+For a record naming Linux/amd64 Runtime `v0.30.0`, download and authenticate
+that release:
 
 ```sh
 gh release download v0.30.0 --repo Judgment-Pack/judgment-pack-runtime \
