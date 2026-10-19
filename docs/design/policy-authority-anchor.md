@@ -1,7 +1,8 @@
 # Private Policy authority high water
 
 Status: optional trusted local machine profile, 2026-10-18. This module has no default
-machine root, executor or execution integration. It cannot authorize execution,
+machine root. Explicit executor enrollment integrates local Runner ownership as
+described in [the operator guide](../policy-authority.md). It cannot authorize execution,
 prove an operation's outcome, or establish a replay-safe start. See the
 [admission integration design](policy-execution-admission.md) for those separate
 requirements.

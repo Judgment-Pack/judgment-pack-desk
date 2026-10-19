@@ -2,9 +2,13 @@
 
 Status: implementation design, 2026-10-18. Desk adoption review is merged in
 [#487](https://github.com/Judgment-Pack/judgment-pack-desk/pull/487).
-The optional anchored repository and Runner payload helpers are foundations. There is no
-governed execution capability, executor admission API, or withdrawal enforcement
-in this tranche. [Desk #455](https://github.com/Judgment-Pack/judgment-pack-desk/issues/455),
+The optional anchored repository, explicit executor enrollment and Runner
+ownership integration are foundations. Ownership binds every Jobs start in an
+executor-enrolled workspace to an independently retained external lease and
+requires capability negotiation on the same pinned executable snapshot before
+boot. There is no governed execution capability, current-run admission API, or
+withdrawal enforcement in this tranche.
+[Desk #455](https://github.com/Judgment-Pack/judgment-pack-desk/issues/455),
 [Runner #147](https://github.com/Judgment-Pack/judgment-pack-runner/issues/147)
 and [Gateway #295](https://github.com/Judgment-Pack/judgment-pack-gateway/issues/295)
 remain open. Candidate RFC 0023 remains in Review.
