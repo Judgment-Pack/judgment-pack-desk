@@ -38,3 +38,11 @@ it('classifies lost write response as uncertain and uses a read-only recovery re
  await expect(writeAdoption(command)).rejects.toMatchObject({code:'delivery-unknown',uncertain:true});await expect(recoverAdoptionOperation(command.operationId)).rejects.toMatchObject({code:'unavailable',uncertain:false})
  expect(fetch).toHaveBeenCalledTimes(2);expect(fetch.mock.calls[0]?.[1]).toMatchObject({method:'POST'});expect(fetch.mock.calls[1]?.[0]).toBe('/api/policy-operations/'+command.operationId);expect(fetch.mock.calls[1]?.[1]).not.toHaveProperty('method','POST')
 })
+
+it('preserves selection and recovery state while an outdated Runtime requires the official draft contract',async()=>{
+ const {pack,choices}=await adoptionFixtures(),command:AdoptionCommand={action:'prepare',operationId:crypto.randomUUID(),pack,coverages:choices.map(adoptionSelection)},journal=await createAdoptionPendingJournal('Official draft'),pending={pack,command}
+ journal.store(pending)
+ const fetch=vi.fn(async()=>Response.json({code:'runtime-unavailable',outcome:'not-committed'},{status:503,headers:{'X-Jpack-Desk-Refusal':'runtime-unavailable'}}));vi.stubGlobal('fetch',fetch)
+ await expect(writeAdoption(command)).rejects.toMatchObject({code:'runtime-unavailable',uncertain:false,message:'Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.'})
+ expect(journal.read()).toEqual(pending);expect(fetch).toHaveBeenCalledTimes(1)
+})

@@ -10,13 +10,109 @@ import (
 )
 
 const policyAdoptionFormat = "1.0.0"
-const policyAdoptionSpecRevision = "0852c5fa7726e51b36e574a5b110e7f5e012e03d"
-const policyAdoptionCheckScope = "candidate-supplied-exact-bytes-anchors-and-scoped-core-references"
+const policyAdoptionSpecRevision = "0799b37b74e35c4a86bfbf70f7bee80bdb7bbe94"
+const legacyAdoptionSpecRevision = "0852c5fa7726e51b36e574a5b110e7f5e012e03d"
+const policyAdoptionCheckScope = "draft-supplied-exact-bytes-anchors-and-scoped-core-references"
+const legacyAdoptionCheckScope = "candidate-supplied-exact-bytes-anchors-and-scoped-core-references"
 
-var adoptionRuntimeContract = policyRuntimeContract{"jps-policy-companion", policyAdoptionFormat, policyAdoptionSpecRevision, "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + policyAdoptionSpecRevision + "/rfcs/policy-companion-contract/README.md", "proposed-draft", "closed-candidate-document-and-local-references", policyAdoptionCheckScope, true}
+var adoptionRuntimeContract = policyRuntimeContract{
+	Profile: "jps-policy-companion", Version: policyAdoptionFormat,
+	SpecRevision:  policyAdoptionSpecRevision,
+	Specification: "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + policyAdoptionSpecRevision + "/spec/policy.md",
+	Maturity:      "draft", ValidationScope: "closed-draft-document-and-local-references",
+	CheckScope: policyAdoptionCheckScope, Candidate: true, CandidateCapabilities: adoptionRuntimeCapabilities,
+}
+
+// Legacy metadata is accepted only when verifying retained historical evidence.
+// It never selects a Runtime contract for fresh preparation or review.
+var legacyAdoptionRuntimeContract = policyRuntimeContract{
+	Profile: "jps-policy-companion", Version: policyAdoptionFormat,
+	SpecRevision:  legacyAdoptionSpecRevision,
+	Specification: "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + legacyAdoptionSpecRevision + "/rfcs/policy-companion-contract/README.md",
+	Maturity:      "proposed-draft", ValidationScope: "closed-candidate-document-and-local-references",
+	CheckScope: legacyAdoptionCheckScope, Candidate: true,
+	CandidateCapabilities: legacyAdoptionRuntimeCapabilities,
+}
 
 // Pinned capability metadata is transport verification, never a second compiler.
 const adoptionRuntimeCapabilities = `{
+  "capability": "jps-policy-companion-offline",
+  "maturity": "draft",
+  "formatVersions": [
+    "1.0.0"
+  ],
+  "consumerSpecVersions": [
+    "0.2.0-draft"
+  ],
+  "kinds": [
+    "policy",
+    "governing-adoption"
+  ],
+  "features": [
+    "exact-byte-sha256",
+    "utf8-section-anchors",
+    "scoped-total-coverage",
+    "typed-core-pack-references",
+    "optional-jps-canon-identity",
+    "multiple-media-types"
+  ],
+  "limits": {
+    "documentBytes": 262144,
+    "documentDepth": 32,
+    "numberLiteralCharacters": 128,
+    "exponentMagnitude": 308,
+    "materialBytes": 1048576,
+    "originalBytes": 4194304,
+    "distinctRetainedBytes": 16777216,
+    "materialRegistrations": 16,
+    "versionCharacters": 256,
+    "sections": 64,
+    "sources": 16,
+    "governingPolicies": 16,
+    "consumerElementsPerSection": 64,
+    "textCharacters": 4096,
+    "uriCharacters": 2048,
+    "localIdCharacters": 128,
+    "mediaTypeCharacters": 128,
+    "sourceRefsPerSection": 16,
+    "scopeSectionIds": 64,
+    "coverageRecordsPerPolicy": 64,
+    "informationalSources": 16,
+    "canonicalIntegerMagnitude": 9007199254740991
+  },
+  "excludes": [
+    "stable-format",
+    "graph-consumers",
+    "evaluation",
+    "full-core-semantics",
+    "signatures",
+    "review-assertion-trust",
+    "live-authority",
+    "permissions",
+    "currency",
+    "source-fetch",
+    "automatic-migration",
+    "independent-interoperability-evidence"
+  ],
+  "refusalCodes": [
+    "input-over-bound",
+    "invalid-json",
+    "invalid-selector",
+    "unsupported-format",
+    "invalid-document",
+    "missing-material",
+    "reference-mismatch",
+    "invalid-anchor",
+    "invalid-coverage",
+    "invalid-consumer",
+    "unsupported-canonical-identity",
+    "invalid-carrier"
+  ]
+}
+`
+
+// Frozen pre-publication candidate metadata; never used for new Runtime calls.
+const legacyAdoptionRuntimeCapabilities = `{
   "capability": "jps-policy-companion-offline",
   "maturity": "proposed-draft",
   "formatVersions": [
@@ -92,8 +188,8 @@ const adoptionRuntimeCapabilities = `{
 }
 `
 
-func validAdoptionRuntimeCapabilities(raw []byte) bool {
-	return rejectDuplicateMembers(raw) == nil && sameDialectJSON(raw, []byte(adoptionRuntimeCapabilities))
+func validAdoptionRuntimeCapabilities(raw []byte, contract policyRuntimeContract) bool {
+	return contract.CandidateCapabilities != "" && rejectDuplicateMembers(raw) == nil && sameDialectJSON(raw, []byte(contract.CandidateCapabilities))
 }
 func adoptionRuntimePolicy(m policyCoverageMaterial) map[string]any {
 	p := coverageRuntimePolicy(m)
@@ -106,7 +202,7 @@ func adoptionRuntimePolicy(m policyCoverageMaterial) map[string]any {
 }
 func (s *Server) checkPolicyAdoption(ctx context.Context, m policyAdoptionMaterial) policyAdoptionCheck {
 	unavailable := func() policyAdoptionCheck {
-		return policyAdoptionCheck{Availability: "unavailable", Reason: "Runtime does not provide compatible proposed-draft Policy format 1.0.0 checks. Retained history remains available."}
+		return policyAdoptionCheck{Availability: "unavailable", Reason: "Use a Runtime supporting official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Saved drafts and retained history remain available."}
 	}
 	unsupported := func() policyAdoptionCheck {
 		return policyAdoptionCheck{Availability: "unsupported", Reason: "The complete chosen set exceeds the discovered Runtime candidate material or document bounds."}

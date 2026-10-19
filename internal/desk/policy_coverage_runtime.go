@@ -96,16 +96,17 @@ type policyCoverageRuntimeReport struct {
 type policyRuntimeContract struct {
 	Profile, Version, SpecRevision, Specification, Maturity, ValidationScope, CheckScope string
 	Candidate                                                                            bool
+	CandidateCapabilities                                                                string
 }
 
-var coverageRuntimeContract = policyRuntimeContract{policyCoverageProfile, policyCoverageProfileVersion, policyCoverageSpecRevision, "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + policyCoverageSpecRevision + "/rfcs/0023-policy-companion.md", "non-normative", "closed-prototype-document-and-local-references", policyCoverageCheckScope, false}
+var coverageRuntimeContract = policyRuntimeContract{policyCoverageProfile, policyCoverageProfileVersion, policyCoverageSpecRevision, "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + policyCoverageSpecRevision + "/rfcs/0023-policy-companion.md", "non-normative", "closed-prototype-document-and-local-references", policyCoverageCheckScope, false, ""}
 
 func validCoverageRuntimeReport(r policyCoverageRuntimeReport, operation string) bool {
 	return validPolicyRuntimeReport(r, operation, coverageRuntimeContract)
 }
 func validPolicyRuntimeReport(r policyCoverageRuntimeReport, operation string, contract policyRuntimeContract) bool {
 	if contract.Candidate {
-		if r.FormatVersion != contract.Version || !validAdoptionRuntimeCapabilities(r.CandidateCapabilities) {
+		if r.FormatVersion != contract.Version || !validAdoptionRuntimeCapabilities(r.CandidateCapabilities, contract) {
 			return false
 		}
 	} else if r.FormatVersion != "" || len(r.CandidateCapabilities) != 0 || r.CandidateResult != nil {

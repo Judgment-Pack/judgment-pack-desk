@@ -6830,5 +6830,6 @@
   "to the witness, an issuer and a subject; it opens the witness and nothing else": "perante a testemunha, um emissor e um sujeito; abre a testemunha e nada mais",
   "which of the two is the trail’s; who that submitter was": "qual dos dois pertence à trilha; quem era esse remetente",
   "why; whether the trail’s operator went on under another trail, as it does after a retirement, registered anew": "por quê; se o operador continuou em outra trilha registrada de novo, como faz após uma desativação",
-  "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "{{count}} linhas anteriores desde o cursor não foram enviadas: a declaração da cabeça as cobre pela própria cadeia da trilha."
+  "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "{{count}} linhas anteriores desde o cursor não foram enviadas: a declaração da cabeça as cobre pela própria cadeia da trilha.",
+  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "Atualize o Runtime conectado para oferecer suporte ao rascunho oficial de Policy policy-v1.0.0-draft.1 (formato 1.0.0). Sua seleção e o histórico salvo de políticas regentes permanecem disponíveis."
 }

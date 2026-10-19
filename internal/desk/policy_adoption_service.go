@@ -247,7 +247,7 @@ func (s policyService) adoptionList(ctx context.Context) (any, error) {
 }
 func (s policyService) adoptionRunCheck(ctx context.Context, m policyAdoptionMaterial) policyAdoptionCheck {
 	if s.checkAdoption == nil {
-		return policyAdoptionCheck{Availability: "unavailable", Reason: "Runtime proposed-draft Policy candidate checks are unavailable."}
+		return policyAdoptionCheck{Availability: "unavailable", Reason: "Use a Runtime supporting official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Saved drafts and retained history remain available."}
 	}
 	return s.checkAdoption(ctx, m)
 }

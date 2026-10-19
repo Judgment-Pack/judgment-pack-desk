@@ -20,7 +20,7 @@ verify`: made by the agent repository's release workflow at the locked tag and
 commit, for an asset of that name and sha256. The binary bundle does not carry
 it, since Vite builds it into the page. Development pins
 are held rather than replaced with an older published release. A stable Desk
-release refuses development pins. A store holding a Desk-registered scoped profile from before #466 whose entry RFC 0018 round 16 refuses is set aside by Runner v0.23.0 at upgrade; the Desk shows it as set aside with Runner's reason and never offers it (#480), and a binding to it is refused as `input_profile_set_aside`, shown as the Desk's message naming the profile and that reason; a run queued against it ends `failed` with reason `profile-set-aside`, it still counts toward the bound of 16, and a Gateway connection configured for it refuses to start. Runner is pinned to `v0.23.0`; since `v0.8.0` it includes calculator profiles, bindings,
+release refuses development pins. A store holding a Desk-registered scoped profile from before #466 whose entry RFC 0018 round 16 refuses is set aside by Runner v0.23.0 at upgrade; the Desk shows it as set aside with Runner's reason and never offers it (#480), and a binding to it is refused as `input_profile_set_aside`, shown as the Desk's message naming the profile and that reason; a run queued against it ends `failed` with reason `profile-set-aside`, it still counts toward the bound of 16, and a Gateway connection configured for it refuses to start. The current Runner pin is recorded in [the component lock](../internal/releaseplan/components.json) and [release notes](releases/v0.13.1.md); since `v0.8.0` Runner includes calculator profiles, bindings,
 calculated input lineage, verification export versions 3 to 5, the installation's chain
 of runs, and a journal of each job's activity. It also exports a run whose job has no
 mapping v2, as version 3 or later with `"inputs":"not-mapped"`, where earlier Runners
@@ -54,7 +54,7 @@ backups](https://github.com/Judgment-Pack/judgment-pack-runner/blob/v0.6.0/READM
 Desk's release stays at state epoch 1 even so: the change is Runner's store, not Desk's
 own state, and this paragraph is the explicit step it would otherwise lack.
 
-Runtime is pinned to `v0.34.0`; since `v0.30.0` it chains a project's audit trail over its exact bytes
+The current Runtime pin is recorded in [the component lock](../internal/releaseplan/components.json) and [release notes](releases/v0.13.1.md); since `v0.30.0` Runtime chains a project's audit trail over its exact bytes
 by default, and signs it where a key is set (runtime ADR-0047). Its `audit verify` report
 also says, among what it does not establish, that the trail records decisions and not
 refused or failed attempts (runtime ADR-0048); the decision-record panel shows that

@@ -274,6 +274,14 @@ jobs:
           mkdir -p .ci-policy-old-desk/web/dist
           printf '<!doctype html><title>CLI fixture only</title>\n' > .ci-policy-old-desk/web/dist/index.html
           go -C .ci-policy-old-desk build -trimpath -o "$RUNNER_TEMP/jpack-policy-old-desk" .
+      - name: Official Policy draft and legacy coverage with the published Runtime
+        run: |
+          set -o pipefail
+          JPACK_POLICY_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack" \
+            go test -race ./internal/desk -run '^TestPolicy(AdoptionRealRuntime(RawNumbersAndMaterialCaps|ArchiveResolvesExactPolicyRole)|CoverageRealRuntimeExactMaterialAndRefusal)$' -count=1 -v | tee "$RUNNER_TEMP/policy-official-draft.log"
+          for name in TestPolicyAdoptionRealRuntimeRawNumbersAndMaterialCaps TestPolicyAdoptionRealRuntimeArchiveResolvesExactPolicyRole TestPolicyCoverageRealRuntimeExactMaterialAndRefusal; do
+            grep -Eq -- "^--- PASS: $name \(" "$RUNNER_TEMP/policy-official-draft.log" || { echo "$name did not run and pass"; exit 1; }
+          done
       - name: Real manual Policy admission, MCP guard and old Desk rollback
         run: |
           set -o pipefail

@@ -14,7 +14,8 @@ export class AdoptionRequestError extends PolicyRequestError {
 }
 function adoptionFailure(code:string){
  switch(code){
- case 'runtime-unavailable':case 'unsupported-contract':return sourceMessage('The connected Runtime cannot prepare or review this candidate adoption format. Saved governing-policy history remains available.')
+ case 'runtime-unavailable':return sourceMessage('Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.')
+ case 'unsupported-contract':return sourceMessage('The connected Runtime cannot prepare or review this candidate adoption format. Saved governing-policy history remains available.')
  case 'revision-conflict':case 'adoption-basis-changed':case 'coverage-stale':case 'adoption-stale':return sourceMessage('The adoption or its complete coverage basis changed. Your selection is preserved; reload and review the latest basis before continuing.')
  case 'adoption-invalid-response':return sourceMessage('The exact adoption result could not be verified. Keep the saved selection and recover or reload before continuing.')
  case 'delivery-unknown':return sourceMessage('The adoption response was interrupted. Check its exact operation result before another write.')
