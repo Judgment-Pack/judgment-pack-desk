@@ -4,9 +4,6 @@
 /node_modules/
 web/*.tsbuildinfo
 web/node_modules/
-# The assistant harness package (@judgment-pack/harness), placed here as a tarball
-# and installed by web/ from this path; it is a build input, never committed.
-/.harness/
 web/dist/*
 !web/dist/.gitkeep
 

@@ -5,8 +5,17 @@ Development pins are deliberately held: a stable tag must not replace newer,
 unreleased local work. Promotion requires a reviewed lock edit. `status` only
 reports; it exits non-zero while a newer stable release is unadopted or a
 lookup fails.
+
+The lock's `web-packages` are the web page's own pinned packages, each one
+release asset of its repository installed by web/package.json from that
+asset's URL. `check` holds web/package.json and web/package-lock.json to the
+lock's entry; `verify` downloads the asset and holds its digests to the lock
+and the npm lockfile, and its tag to the locked commit. `status`, `propose`
+and `ci` read the binary components only.
 """
 import argparse
+import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,13 +26,27 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / 'internal/releaseplan/components.json'
+WEB = ROOT / 'web'
 REPOS = {name: 'Judgment-Pack/judgment-pack-' + name for name in ('runtime', 'runner', 'gateway')}
+# The web page's pinned packages: the lock's name for each, its npm name and its repository.
+WEB_PACKAGES = {'harness': ('@judgment-pack/harness', 'Judgment-Pack/judgment-pack-agent')}
+TRUSTED = set(REPOS.values()) | {repository for _, repository in WEB_PACKAGES.values()}
 VERSION = r'v\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.+-]+)?'
+ASSET = r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.tgz'
+ASSET_BYTES = 16 * 1024 * 1024
 
 def read_plan():
     plan = json.loads(LOCK.read_text())
     if plan.get('schemaVersion') != 1 or plan.get('stateEpoch') != 1 or set(plan.get('components', {})) != set(REPOS):
         raise ValueError('Unsupported component lock')
+    if set(plan) - {'schemaVersion', 'stateEpoch', 'components', 'web-packages'} or set(plan.get('web-packages', {})) != set(WEB_PACKAGES):
+        raise ValueError('Unsupported component lock')
+    for name, package in plan['web-packages'].items():
+        npm, repository = WEB_PACKAGES[name]
+        if set(package) != {'package', 'repository', 'version', 'revision', 'asset', 'sha256', 'channel'} or package['package'] != npm or package['repository'] != repository:
+            raise ValueError('Invalid web package pin: ' + name)
+        if stable_version(package['version']) is None or package['channel'] != 'stable' or not re.fullmatch('[0-9a-f]{40}', package['revision']) or not re.fullmatch('[0-9a-f]{64}', package['sha256']) or not re.fullmatch(ASSET, package['asset']):
+            raise ValueError('Invalid web package pin: ' + name)
     for name, component in plan['components'].items():
         if component.get('repository') != REPOS[name] or not re.fullmatch('[0-9a-f]{40}', component.get('revision', '')):
             raise ValueError('Invalid component pin: ' + name)
@@ -45,7 +68,7 @@ def should_update(current, latest):
     return prior is not None and (candidate > prior or candidate == prior and current['channel'] == 'preview')
 
 def get_release(repo, tag=None):
-    if repo not in REPOS.values() or tag is not None and not re.fullmatch(VERSION, tag):
+    if repo not in TRUSTED or tag is not None and not re.fullmatch(VERSION, tag):
         raise ValueError('Invalid release reference')
     endpoint = '/releases/tags/' + tag if tag else '/releases/latest'
     req = urllib.request.Request('https://api.github.com/repos/' + repo + endpoint, headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'Desk-release-maintenance', **({'Authorization': 'Bearer ' + os.environ['GH_TOKEN']} if os.environ.get('GH_TOKEN') else {})})
@@ -60,13 +83,57 @@ def get_release(repo, tag=None):
 
 def tag_commit(repo, tag):
     # No ref taken from release prose or target_commitish (which can be a branch).
-    if repo not in REPOS.values() or not re.fullmatch(VERSION, tag): raise ValueError('Invalid component tag')
+    if repo not in TRUSTED or not re.fullmatch(VERSION, tag): raise ValueError('Invalid component tag')
     ref = 'refs/tags/' + tag
     result = subprocess.check_output(['git', 'ls-remote', 'https://github.com/' + repo + '.git', ref, ref + '^{}'], text=True, timeout=30)
     refs = dict(line.split()[::-1] for line in result.splitlines())
     commit = refs.get(ref + '^{}', refs.get(ref, ''))
     if not re.fullmatch('[0-9a-f]{40}', commit): raise ValueError('Tag did not resolve to a commit')
     return commit
+
+def asset_url(package):
+    return 'https://github.com/' + package['repository'] + '/releases/download/' + package['version'] + '/' + package['asset']
+
+def npm_integrity(data):
+    return 'sha512-' + base64.b64encode(hashlib.sha512(data).digest()).decode()
+
+def check_web_packages(plan, web=WEB):
+    """Offline: web/package.json installs each pinned package from its release asset, and the npm lockfile resolved that one."""
+    manifest = json.loads((web / 'package.json').read_text())
+    locked = json.loads((web / 'package-lock.json').read_text())
+    for name, package in plan.get('web-packages', {}).items():
+        url = asset_url(package)
+        if manifest.get('dependencies', {}).get(package['package']) != url:
+            raise ValueError('web/package.json does not install the locked release asset: ' + name)
+        if locked.get('packages', {}).get('', {}).get('dependencies', {}).get(package['package']) != url:
+            raise ValueError('web/package-lock.json does not record the locked release asset: ' + name)
+        entry = locked.get('packages', {}).get('node_modules/' + package['package'], {})
+        if entry.get('resolved') != url or entry.get('version') != package['version'][1:] or not str(entry.get('integrity', '')).startswith('sha512-'):
+            raise ValueError('web/package-lock.json resolved another asset: ' + name)
+
+def download_asset(url):
+    req = urllib.request.Request(url, headers={'User-Agent': 'Desk-release-maintenance'})
+    with urllib.request.urlopen(req, timeout=60) as reply:
+        data = reply.read(ASSET_BYTES + 1)
+    if len(data) > ASSET_BYTES: raise ValueError('Oversized release asset')
+    return data
+
+def verify_web_packages(plan, web=WEB):
+    """Online: the published release, its tag's commit, and the asset's digests, against the lock and the npm lockfile."""
+    check_web_packages(plan, web)
+    locked = json.loads((web / 'package-lock.json').read_text())
+    for name, package in plan.get('web-packages', {}).items():
+        release = get_release(package['repository'], package['version'])
+        if not release or release.get('draft') or release.get('tag_name') != package['version'] or release.get('prerelease') is not False:
+            raise ValueError('Missing or mismatched published release: ' + name)
+        if tag_commit(package['repository'], package['version']) != package['revision']:
+            raise ValueError('Web package tag disagrees with locked commit: ' + name)
+        data = download_asset(asset_url(package))
+        if hashlib.sha256(data).hexdigest() != package['sha256']:
+            raise ValueError('Web package asset disagrees with the locked sha256: ' + name)
+        if locked['packages']['node_modules/' + package['package']]['integrity'] != npm_integrity(data):
+            raise ValueError('web/package-lock.json integrity disagrees with the release asset: ' + name)
+        print(name + ': published asset, digest and commit verified')
 
 def verify_plan(plan):
     for name, component in plan['components'].items():
@@ -130,6 +197,7 @@ def main():
         raise SystemExit(report_freshness(plan))
     if args.action == 'verify':
         verify_plan(plan)
+        verify_web_packages(plan)
     elif args.action == 'ci':
         for name, component in plan['components'].items(): print(name + '=' + component['revision'])
     elif args.action == 'propose':
@@ -144,5 +212,7 @@ def main():
             changes.append(name)
         if changes: LOCK.write_text(json.dumps(plan, indent=2) + '\n')
         print('Updated: ' + (', '.join(changes) or 'none'))
-    else: print('Component lock valid')
+    else:
+        check_web_packages(plan)
+        print('Component lock valid')
 if __name__ == '__main__': main()
