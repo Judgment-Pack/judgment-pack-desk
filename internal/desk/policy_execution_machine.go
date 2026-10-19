@@ -175,8 +175,9 @@ func (m *policyAuthorityMachine) createExecutionDemand(w policyMachineWorkspace)
 	return nil
 }
 
-// Startup-only current proof; status retains its separate read-only diagnostic
-// path and never recursively acquires a ledger lock already held by its caller.
+// Startup proves an execution demand against current authority. Storage-only
+// workspaces retain checked history access without granting current authority.
+// Status has its separate diagnostic path and never recursively locks a ledger.
 func (m *policyAuthorityMachine) verifyExecutionStartup(p *ProjectRoot, a *policyAuthorityAnchor) error {
 	r, err := m.registry()
 	if err != nil {
@@ -211,13 +212,16 @@ func (m *policyAuthorityMachine) verifyExecutionStartup(p *ProjectRoot, a *polic
 	if err != nil {
 		return policyMachineRefusal()
 	}
-	if a.WithCurrent(ctx, raw, func(*policyAuthorityAnchorHeld) error {
-		if w.Execution == nil {
-			if ledger.SchemaVersion != 2 || ledger.Execution != nil {
-				return policyMachineRefusal()
-			}
-			return nil
+	if w.Execution == nil {
+		// A missing/unavailable anchor must not prevent schema 2 history reads.
+		// Current repository View/Update still prove that captured anchor on
+		// every operation; a schema 3 ledger cannot hide its execution demand.
+		if ledger.SchemaVersion != 2 || ledger.Execution != nil {
+			return policyMachineRefusal()
 		}
+		return nil
+	}
+	if a.WithCurrent(ctx, raw, func(*policyAuthorityAnchorHeld) error {
 		if ledger.Execution == nil || ledger.Execution.Identity != executionWorkspaceDemand(r.InstallationID, w).identity() {
 			return policyMachineRefusal()
 		}
