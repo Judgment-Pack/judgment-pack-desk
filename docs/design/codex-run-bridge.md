@@ -93,7 +93,7 @@ critic that performs no runtime checks cannot attach a verified critique.
 | Concurrent runs per private profile | 1 |
 | Native run deadline / socket lifetime | 10 minutes / 12 minutes |
 | Initial browser start / socket write | 10 seconds / 5 seconds |
-| Outstanding host callbacks / callback deadline | 1 / 60 seconds |
+| Outstanding host callbacks / callback deadline | 1 / host-owned timeout, bounded by the 10-minute run deadline |
 | Author / critic tool calls | 20 / 4 |
 | Author / critic reasoning-item starts | 20 / 4 |
 | Native notifications and requests / native item IDs | 10,000 / 256 |
@@ -158,3 +158,46 @@ No real subscription account was connected and no paid inference was performed.
 Existing Desk backend processes were preserved. The source remains uncommitted.
 No UI controls or engine registry entries were added in the initial run-bridge
 stage; the subsequent setup record describes their implementation.
+
+## Interrupted responses and native recovery (October 2026)
+
+The pinned 0.157.1 ErrorNotification includes `threadId`, `turnId`, `willRetry`
+and a private error body. Desk validates the identities and permits at most two
+`willRetry: true` notifications per run. Codex owns the delay and resumes its
+existing turn; Desk neither creates a new thread nor replays a host-tool call.
+Only the retry number reaches the browser. A third notice, or a terminal error
+after recovery, ends with `retries-exhausted`. Stop and session expiry still
+cancel the same process. Browser socket loss does not initiate replay because
+the outcome of an already dispatched action may be uncertain.
+
+A queued terminal error takes precedence over callback cancellation caused by
+closing that socket. This preserves the real bounded reason instead of replacing
+it with a generic connection error. Host searches retain their configured timeout;
+the bridge no longer imposes a conflicting 60-second callback cutoff.
+
+Failed responses render a Desk-authored recovery notice in the assistant lane,
+with the saved failure and explicit Retry response action. It survives reload
+through the saved failed state; it is not fabricated model prose. Manual retry
+uses the conversation and retained sources, identifies interrupted steps and asks
+the model to continue unfinished work without repeating completed actions.
+
+References: [pinned protocol's upstream definition](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/notification.rs)
+and [OpenAI recovery guidance](https://developers.openai.com/api/docs/guides/agents-api/errors).
+The installed binary's generated schema was checked locally; the second source
+informs recovery principles, not Desk's wire protocol.
+
+### Research admission
+
+A host-only `WaitForAvailability` request flag allows an Inputs research model
+step to wait for the shared account manager before admission. This handles brief
+status/model-discovery locks and an existing active operation. The bridge emits
+`waiting` and `admitted` to the research journal; neither event is a native model
+retry. It waits only before acquiring the run slot, within the existing model
+step deadline, and observes Stop, session/policy cancellation and manager closure.
+After admission it never loops around the native run or replays its tools.
+
+Activity shows Waiting for AI connection while queued. Waiting does not consume
+model requests or source retries. The journal commits Started before native
+account/thread work. A stopped, expired or process-interrupted wait becomes Not
+started; a submitted request whose response was lost stays Outcome uncertain.
+Process recovery does not restart either kind of operation automatically.

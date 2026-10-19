@@ -16,7 +16,7 @@ it('keeps a verified citation open when more response text arrives', async () =>
   const config = effectiveConfig(undefined)
   config.config = { ...config.config, research: { ...config.config.research, gateway: pin } }
   const documents = [{ id: reference.id, name: 'notes.txt', text: '', document: reference }]
-  const text = `The source says [line one](attachment:${reference.id}/${reference.digest}/page/1).`
+  const text = `The source says [“line one”](attachment:${reference.id}/${reference.digest}/page/1).`
   const view = (response: string) => <DeskConfigFixture value={config}><MessageRenderer text={response} documents={documents} /></DeskConfigFixture>
   const rendered = render(view(text))
   const citation = screen.getByRole('button', { name: 'View source 1: notes.txt, page 1' })
@@ -42,7 +42,7 @@ it('preserves a reader’s code wrapping preference while the answer grows', () 
 
 
 it('renders growing code, headings, lists, quotes and tables before the reply finishes', async () => {
-  const {streamingProse}=await import('../assistant/engines/contract')
+  const {streamingProse}=await import('@judgment-pack/harness/engines/contract')
   const code='```typescript\nconst count = 1;'
   const rendered=render(<MessageRenderer text={streamingProse(code)}/>)
   const pre=screen.getByLabelText('typescript',{selector:'pre'})
@@ -86,7 +86,7 @@ it('keeps an expanded code block open as the message grows and copies the comple
     const dialog = await screen.findByRole('dialog', {name: 'json'})
     rendered.rerender(<MessageRenderer text={'```json\n{"path":"/a/b/c","value":true}\n```\n\nMore text'} />)
     expect(screen.getByRole('dialog', {name: 'json'})).toBe(dialog)
-    expect(within(dialog).getByLabelText('json', {selector:'pre'}).textContent).toBe('{"path":"/a/b/c","value":true}')
+    expect(within(dialog).getByLabelText('json', {selector:'pre'}).textContent).toBe(JSON.stringify({path:'/a/b/c',value:true},null,2))
     fireEvent.click(within(dialog).getByRole('button', {name:'Copy json'}))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('{"path":"/a/b/c","value":true}'))
     fireEvent.click(within(dialog).getByRole('button', {name:'Close'}))

@@ -1,3 +1,4 @@
+import {deskFetch} from '../files/client'
 import { SelectionActions, type BrowserItem } from './CollectionActions'
 import { useState, useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -11,10 +12,13 @@ import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { McpContext } from '../mcp/McpProvider'
 import { PacksPane } from './PacksPane'
 
+vi.mock('../files/client',async original=>({...await original(),deskFetch:vi.fn()}))
 const fixture=vi.hoisted(()=>({store:null as ChatStore|null}))
 vi.mock('../chat/ChatProvider',()=>({useChats:()=>({...useSyncExternalStore(fixture.store!.subscribe,fixture.store!.getSnapshot),store:fixture.store})}))
 afterEach(()=>{cleanup();fixture.store?.dispose();fixture.store=null;sessionStorage.clear()})
 async function setup(){
+ let graphRecord={version:1 as const,drafts:[],deleted:[]} as import('../graphs/drafts').GraphDraftDocument
+ vi.mocked(deskFetch).mockImplementation(async(url,init)=>{if(String(url)==='/api/draft-graphs'){if(init?.body)graphRecord=JSON.parse(init.body as string);return Response.json({project:'/test',sha256:'graph',content:graphRecord})}return Response.json({items:[]})})
  const common={title:'Conversation',pinned:false,archived:false,updatedAt:'2026-10-10T12:00:00Z',composer:'',model:'',mode:'draft' as const,view:'draft' as const}
  let chats:Chat[]=[
   {...common,id:'pack-chat',checkpoint:{sources:[],state:{...INITIAL_STATE,candidates:[{document:{title:'Pending pack'},text:'{"title":"Pending pack"}',digest:'test',revision:1,producedBy:'conversation'}]}}},
@@ -24,7 +28,7 @@ async function setup(){
  const io:ChatPersistence={read:async()=>({project:'/test',content:{version:1,chats},sha256:'saved'}),write}
  const store=new ChatStore('/test',io,memoryDraftPersistence('/test'));fixture.store=store;await store.load();await store.flush();write.mockClear()
  const stub=stubClient({list_packs:()=>({text:JSON.stringify({status:'valid',packs:[{id:'alpha',packVersion:'1.0.0'}]})}),experimental_list_graphs:()=>({text:JSON.stringify({status:'valid',graphs:[{id:'flow',graphVersion:'2.0.0'}]})})})
- const router=createMemoryRouter([{path:'*',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:true})}><PacksPane/></McpContext.Provider>}],{initialEntries:['/packs']})
+ const router=createMemoryRouter([{path:'*',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:true})}><PacksPane/></McpContext.Provider>}],{initialEntries:['/library']})
  render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router}/></QueryClientProvider>)
  await screen.findByRole('checkbox',{name:'Select alpha'});await screen.findByRole('checkbox',{name:'Select flow'})
  return {router,store,write}
@@ -48,11 +52,11 @@ it('selects every object type from the leading column and places draft state wit
  expect(within(row).getByRole('img',{name:'Pack'})).toBeTruthy()
  expect(within(screen.getByRole('checkbox',{name:'Select pending-graph'}).closest('li')!).getByRole('img',{name:'Graph'})).toBeTruthy()
  fireEvent.click(checkbox)
- expect(router.state.location.pathname).toBe('/packs')
+ expect(router.state.location.pathname).toBe('/library')
  await selectionMenu()
  expect(screen.getByRole('menuitem',{name:'Compose graph'}).getAttribute('aria-disabled')).toBe('true')
  fireEvent.click(screen.getByRole('menuitem',{name:'Compose graph'}))
- expect(router.state.location.pathname).toBe('/packs')
+ expect(router.state.location.pathname).toBe('/library')
  await closeMenu()
  fireEvent.click(screen.getByRole('checkbox',{name:'Select alpha'}))
  await selectionMenu()
@@ -74,7 +78,7 @@ it('selects only visible rows and removes filtered-out items from selection',asy
  expect(screen.queryByRole('group',{name:'Selected item actions'})).toBeNull()
  expect(all.checked).toBe(false)
  fireEvent.click(all)
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'pending'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search library'}),{target:{value:'pending'}})
  await waitFor(()=>expect(screen.getByText('2 selected')).toBeTruthy())
  expect(screen.getAllByRole('checkbox')).toHaveLength(3)
  fireEvent.click(screen.getByRole('button',{name:'Clear selection'}))
@@ -118,7 +122,7 @@ it('cancels row deletion and restores focus to the row options control',async()=
 
 it('returns focus to select-all when clearing from the compact selection menu', async()=>{
  function CompactSelection() {
-  const [items,setItems]=useState<BrowserItem[]>([{id:'pack',title:'Pack',kind:'pack',status:'finalized',href:'/packs/pack'}])
+  const [items,setItems]=useState<BrowserItem[]>([{key:'pack:pack',id:'pack',title:'Pack',kind:'pack',status:'finalized',href:'/packs/pack'}])
   return <><input type="checkbox" data-select-all aria-label="Select all"/><SelectionActions items={items} clear={()=>setItems([])} onDelete={()=>{}} compact/></>
  }
  render(<MemoryRouter><CompactSelection/></MemoryRouter>)

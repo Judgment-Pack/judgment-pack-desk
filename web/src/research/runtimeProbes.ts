@@ -1,5 +1,5 @@
 import { readRetainedCheck } from './retainedCheck'
-import type { AssistantEvent } from '../assistant/engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 import { digestOf, type CandidateCheck } from './checkCandidate'
 
 /** Observed rehearsals are history, never independently established expectations. */

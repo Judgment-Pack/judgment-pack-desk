@@ -1,3 +1,4 @@
+import { SettingsFeedback } from '../ui/SettingsFeedback'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
@@ -100,12 +101,11 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
         ) : (
           <code>{configured}</code>
         )}{' '}
-        {write.isPending && <span className="quiet">{msg("Saving…")}</span>}
-        {said !== undefined && !write.isPending && <span className="quiet">{msg(said)}</span>}
       </CardField>
     ),
     save: (
       <>
+        <SettingsFeedback tone={said !== undefined && !write.isPending ? 'success' : 'neutral'}>{write.isPending ? msg('Saving…') : said !== undefined ? msg(said) : null}</SettingsFeedback>
         {digest === undefined && <p className="quiet">{msg(NO_DIGEST)}</p>}
         {digest !== undefined && chassis === undefined && <p className="quiet">{msg(NOT_SAID)}</p>}
         {problem !== undefined && (

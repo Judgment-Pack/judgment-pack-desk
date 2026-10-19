@@ -1,30 +1,43 @@
 import { msg } from '../i18n'
 import type { ResearchConfig } from '../config/deskConfig'
 import { acquire, newResearchSession, seal } from '../research/gatewayClient'
-import { parseJSON } from '../dialect/canon'
+import {parseJsonText,type JsonNode} from '../research/verify/canon'
+import {jobsRequest} from './wire'
+import { canonicalize,parseJSON } from '../dialect/canon'
 import { readDocumentRecord } from '../documents/record'
 import { connectionFailure, type DriveSelection } from '../connections/client'
 import type { SourceInput, InputPreview } from './client'
 import { jobsAPI } from './client'
-import type { InputPlan, MappingV2, ProfileEntry, SourceV2 } from './mappingTypes'
+import type { InputPlan, ExecutableDialect, ProfileEntry, SourceV2 } from './dialectTypes'
 import { RetainedJSON } from './wire'
+import {importBindings,sourcePin} from '../dialect/bindings'
 import { sourcePaths } from './sourceInputs'
+import { installedEntry, setAsideRefusal } from './setAsideProfiles'
 
 export function parseMappedObject(text: string): Record<string, unknown> {
  const value = parseJSON(text)
  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw Error(msg('Choose one JSON object describing a single input record.'))
  return value
 }
-export function parseMapping(text: string): MappingV2 {
+/** Case values are general retained JSON, not the dialect's canon domain. */
+export function parseMappedCase(text:string):Record<string,unknown> {
+ const root=parseJsonText(text)
+ if(root.kind!=='object')throw Error(msg('Choose one JSON object describing a single input record.'))
+ const value=(node:JsonNode):unknown=>node.kind==='number'?(JSON.stringify(Number(node.literal))===node.literal?Number(node.literal):new RetainedJSON(node.literal)):node.kind==='array'?node.items.map(value):node.kind==='object'?Object.fromEntries(node.members.map(m=>[m.name,value(m.value)])):node.kind==='null'?null:node.value
+ return value(root) as Record<string,unknown>
+}
+export function parseMapping(text: string): ExecutableDialect {
  const value = parseMappedObject(text)
- if (value.sources === undefined) value.sources = []
+ const sources=value.sources===undefined?[]:value.sources
+ const named=value.formatVersion==='2.0.0'||value.formatVersion==='3.0.0'
+ if (!named && value.version === 2 && value.sources === undefined) value.sources = []
  const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
  const copy = (v: unknown) => object(v) && Array.isArray(v.facts) && Array.isArray(v.evidence) && v.facts.every(f => object(f) && typeof f.target === 'string' && typeof f.source === 'string') && v.evidence.every(e => object(e) && typeof e.requirement === 'string' && typeof e.source === 'string')
- if (value.version !== 2 || (value.case !== undefined && !copy(value.case)) || !Array.isArray(value.sources) || value.sources.length > 16 || value.sources.some(s => !object(s) || typeof s.name !== 'string' || !/^[a-z][a-zA-Z0-9_-]{0,63}$/.test(s.name) || !['operation','selected-file'].includes(String(s.kind)) || !object(s.read) || (s.read.copy !== undefined && !copy(s.read.copy)))) throw Error(msg('The inputs could not be mapped.'))
- return value as unknown as MappingV2 // Runner performs authoritative schema validation before acquisition.
+ if ((!named && value.version !== 2 && value.version !== 3) || (named && (typeof value.id!=='string'||typeof value.version!=='string')) || (value.case !== undefined && !copy(value.case)) || !Array.isArray(sources) || sources.length > 16 || sources.some(s => !object(s) || typeof s.name !== 'string' || !/^[a-z][a-zA-Z0-9_-]{0,63}$/.test(s.name) || !['operation','selected-file','research','http','sql','web'].includes(String(s.kind)) || !object(s.read) || (s.read.copy !== undefined && !copy(s.read.copy)))) throw Error(msg('The inputs could not be mapped.'))
+ return value as unknown as ExecutableDialect // Runner performs authoritative schema validation before acquisition.
 }
-export function mappedCase(mapping: MappingV2, value: Record<string, unknown>, selections: Record<string, DriveSelection>): Record<string, unknown> {
- const result = JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+export function mappedCase(mapping: ExecutableDialect, value: Record<string, unknown>, selections: Record<string, DriveSelection>): Record<string, unknown> {
+ const result = parseMappedCase(jobsRequest(value))
  for (const source of (mapping.sources ?? []).filter(s => s.provider === 'google-drive')) {
   const selection = selections[source.name]
   if (!selection) throw Error(msg('Choose from Google Drive'))
@@ -46,21 +59,43 @@ export function mappedCase(mapping: MappingV2, value: Record<string, unknown>, s
  }
  return result
 }
+export class PortableResearchRequired extends Error {
+ constructor(readonly name:string,readonly input:RetainedJSON){super(msg('Review research for {{source}} before continuing.',{source:name}))}
+}
+export interface RetainedResearchPrefix {input:RetainedJSON;name:string;response:RetainedJSON}
+// Compare general JSON without passing its numbers through floating point.
+function sameJSON(a:unknown,b:unknown):boolean {
+ if(a===undefined||b===undefined)return a===b
+ const order=(n:JsonNode):unknown=>n.kind==='object'?{kind:n.kind,members:[...n.members].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0).map(m=>[m.name,order(m.value)])}:n.kind==='array'?{kind:n.kind,items:n.items.map(order)}:n
+ return JSON.stringify(order(parseJsonText(jobsRequest(a))))===JSON.stringify(order(parseJsonText(jobsRequest(b))))
+}
 export async function prepareMappedInputs(options: {
- mapping: MappingV2; caseValue: Record<string, unknown>; files: Record<string, SourceInput['snapshot']>; selections: Record<string, DriveSelection>;
- config: ResearchConfig; profiles: ProfileEntry[]; signal: AbortSignal; progress: (name: string) => void;
+ imported?:{dialect:ExecutableDialect;binding:unknown}; mapping: ExecutableDialect; caseValue: Record<string, unknown>; files: Record<string, SourceInput['snapshot']>; selections: Record<string, DriveSelection>;
+ reviewResearch?:boolean;retainedPrefix?:RetainedResearchPrefix;retainedResearch?:Record<string,RetainedJSON>; config: ResearchConfig; profiles: ProfileEntry[]; signal: AbortSignal; progress: (name: string) => void;
 }): Promise<InputPreview> {
  const {mapping, config, profiles, signal} = options
- const source: SourceV2 = {mapping, case: mappedCase(mapping, options.caseValue, options.selections), sources: {}}
+ const prefix=options.retainedPrefix
+ const retained=prefix?parseMappedCase(prefix.input.text).source as SourceV2:undefined
+ const priorSelections=Object.fromEntries(Object.entries(retained?.sources??{}).flatMap(([name,value])=>value.snapshot?.proof?.drive?[[name,value.snapshot.proof.drive]]:[]))
+ const expected:{import?:SourceV2['import'];mapping?:ExecutableDialect;case:Record<string,unknown>}={...(options.imported?{import:options.imported}:{mapping}),case:mappedCase(mapping,options.caseValue,{...priorSelections,...options.selections})}
+ if(retained&&(!sameJSON(retained.import,expected.import)||!sameJSON(retained.mapping,expected.mapping)||!sameJSON(retained.case,expected.case)||Object.hasOwn(retained.sources,prefix!.name)))throw Error(msg('Research was reviewed for different inputs. Review research again.'))
+ const source: Omit<SourceV2,'mapping'>&{mapping?:ExecutableDialect} = {...expected,sources:retained?{...retained.sources,[prefix!.name]:{response:prefix!.response}}:{}}
+ if(options.imported&&canonicalize(mapping as never)!==canonicalize(options.imported.dialect as never))throw Error(msg('The imported definition changed. Review a new local dialect before preparing inputs.'))
+ const binding=options.imported?importBindings(options.imported.binding):undefined
  // Check all browser relay pins before any call, not only the first source.
  for (const s of mapping.sources ?? []) {
-  if (!s.profile) continue
-  const trusted = profiles.find(p => p.profile.id === s.profile && p.digest === s.profileDigest)?.profile
+  const pin=sourcePin(s,binding)
+  if (!pin) continue
+  const listed = profiles.find(p => p.profile.id === pin.profile && p.digest === pin.profileDigest)
+  // Runner never binds a profile it set aside, retained research included.
+  if (listed && !installedEntry(listed)) throw Error(setAsideRefusal(listed.profile.id, listed.reason, true))
+  const trusted = listed?.profile
+  // Offline retained research is verified by Runner under its pinned profiles.
+  if (Object.hasOwn(source.sources,s.name)||s.kind==='research'&&options.retainedResearch?.[s.name])continue
   if (!trusted || !config.gateway || trusted.authority !== config.gateway.authority || trusted.publicKey !== config.gateway.signer.public) throw Error(msg('The source profile does not match this Desk gateway.'))
   if (s.provider === 'google-drive' && (!config.documents?.enabled || config.managedLocal !== true)) throw Error(msg('Enable document processing in Admin → Document processing before attaching Drive files.'))
  }
- const session = newResearchSession()
- let calledGateway = false
+ const sessions:string[]=[]
  try {
   for (let count=0; count<=(mapping.sources ?? []).length; count++) {
    signal.throwIfAborted()
@@ -68,20 +103,27 @@ export async function prepareMappedInputs(options: {
    signal.throwIfAborted()
    if (plan.input) {
     // Keep the exact acquired bytes; response.json() would round signed numbers.
-    return {input:{...plan.input, source:{...source, mappingDigest:plan.input.source?.mappingDigest}}, factsText:plan.factsText ?? '{}', evidenceText:plan.evidenceText ?? ''}
+    const prepared=plan.input.source
+    if (options.imported && !prepared?.mapping)throw Error(msg('The inputs could not be mapped.'))
+    return {input:{...plan.input, source:{...source,mapping:options.imported?prepared!.mapping:mapping, mappingDigest:prepared?.mappingDigest} as SourceV2}, factsText:plan.factsText ?? '{}', evidenceText:plan.evidenceText ?? ''}
    }
    const next = plan.next, declared = (mapping.sources ?? []).find(s => s.name === next?.name)
-   if (!next || !declared || Object.hasOwn(source.sources,next.name) || next.kind !== declared.kind || next.profile !== declared.profile || next.provider !== declared.provider) throw Error(msg('The inputs could not be mapped.'))
+   if (!next || !declared || Object.hasOwn(source.sources,next.name) || next.kind !== declared.kind || next.profile !== sourcePin(declared,binding)?.profile || next.provider !== declared.provider) throw Error(msg('The inputs could not be mapped.'))
    options.progress(next.name)
+   if(declared.kind==='research') {
+    const retained=options.retainedResearch?.[next.name]
+    if(!retained){if(options.reviewResearch)throw new PortableResearchRequired(next.name,new RetainedJSON(jobsRequest({source})));throw Error(msg('Supply retained research responses for this source before preparing inputs.'))}
+    source.sources[next.name]={response:retained};continue
+   }
    if (declared.provider === 'local-file') {
     const snapshot = options.files[next.name]
     if (!snapshot) throw Error(msg('Choose JSON file'))
     sourcePaths(snapshot); source.sources[next.name] = {snapshot}; continue
    }
-   const profile = profiles.find(p => p.profile.id === next.profile)?.profile
+   const profile = profiles.find(p => p.profile.id === next.profile && installedEntry(p))?.profile
    if (!profile || next.source !== profile.source || !next.arguments) throw Error(msg('The inputs could not be mapped.'))
    if (declared.provider === 'google-drive' && (next.arguments.fileId !== options.selections[next.name]?.fileId || next.arguments.grant !== options.selections[next.name]?.grant)) throw Error(msg('The inputs could not be mapped.'))
-   calledGateway = true
+   const session=newResearchSession();sessions.push(session)
    const response = await acquire(session, profile.source, next.arguments, 1 << 20, signal, declared.provider === 'google-drive' ? 'local-documents' : undefined).catch(cause => {
     if (declared.provider === 'google-drive') {
      const failure = connectionFailure(cause, 'google-drive')
@@ -90,7 +132,7 @@ export async function prepareMappedInputs(options: {
     throw cause
    })
    signal.throwIfAborted()
-   if (declared.kind === 'operation') source.sources[next.name] = {response:new RetainedJSON(response.text)}
+   if (declared.kind !== 'selected-file') source.sources[next.name] = {response:new RetainedJSON(response.text)}
    else {
     const record = readDocumentRecord(JSON.parse(response.text).result)
     if (!record.original.bytes || record.provenance.source.kind !== 'google-drive') throw Error(msg('The file could not be read.'))
@@ -102,6 +144,6 @@ export async function prepareMappedInputs(options: {
  } finally {
   // Close the gateway session for housekeeping; Runner verifies receipts, not
   // the seal. A cleanup failure must not replace the actual preparation error.
-  if (calledGateway) { const cleanup = AbortSignal.timeout(3000); await seal(session, cleanup, config.managedLocal ? 'local-documents' : undefined).catch(() => {}) }
+  await Promise.all(sessions.map(session=>seal(session,AbortSignal.timeout(3000),config.managedLocal?'local-documents':undefined).catch(()=>{})))
  }
 }

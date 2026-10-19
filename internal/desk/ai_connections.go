@@ -460,7 +460,7 @@ func (s *Server) accountForConnection(r *http.Request) (providerAccountManager, 
 	if m := root.aiAccounts.values[c.ID]; m != nil {
 		return m, nil
 	}
-	m := codexbridge.NewLazyManager(codexbridge.Options{Binary: root.cfg.CodexBin, ProfileDir: filepath.Join(root.configDir, "codex-"+c.ID), ProjectDir: root.projectDir})
+	m := codexbridge.NewLazyManager(codexbridge.Options{Binary: root.cfg.CodexBin, ProfileDir: platformPath(root.configDir, "codex-"+c.ID), ProjectDir: root.projectDir})
 	root.aiAccounts.values[c.ID] = m
 	return m, nil
 }

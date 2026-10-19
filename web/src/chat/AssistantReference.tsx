@@ -1,3 +1,4 @@
+import {ChatAction} from './ChatActions'
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { msg, useLocale } from '../i18n'
@@ -63,7 +64,7 @@ export function DetailsWithAssistant({ reference, children }: { reference: Assis
 export function ReferenceChip({ reference, onRemove }: { reference: AssistantReference; onRemove: () => void }) {
   useLocale()
   return <div className={styles.chip}>
-    <Tooltip content={msg('Open details: {{name}}', { name: reference.label })}><button className={styles.open} type="button" onClick={reference.onOpen} aria-label={msg('Open details: {{name}}', { name: reference.label })}><IconDetails /><span>{reference.label}</span><IconChevronRight /></button></Tooltip>
-    <Tooltip content={msg('Remove reference')}><button className={styles.remove} type="button" aria-label={msg('Remove reference')} onClick={onRemove}><IconClose /></button></Tooltip>
+    <Tooltip content={msg('Open details: {{name}}', { name: reference.label })}><ChatAction variant="quiet" className={styles.open} type="button" onClick={reference.onOpen} aria-label={msg('Open details: {{name}}', { name: reference.label })}><IconDetails /><span>{reference.label}</span><IconChevronRight /></ChatAction></Tooltip>
+    <Tooltip content={msg('Remove reference')}><ChatAction variant="quiet" size="icon" className={styles.remove} type="button" aria-label={msg('Remove reference')} onClick={onRemove}><IconClose /></ChatAction></Tooltip>
   </div>
 }

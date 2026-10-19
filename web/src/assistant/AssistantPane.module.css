@@ -36,7 +36,7 @@
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--space-2);
 }
 
 .stream {
@@ -88,7 +88,7 @@
 .proposal {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-2);
   padding: 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -119,7 +119,7 @@
 .diff {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-2);
 }
 
 .entry {
@@ -164,3 +164,6 @@
   font-size: var(--text-xs);
   letter-spacing: 0.06em;
 }
+
+/* Read-only comparisons honor their content-sized rows, including scalar changes. */
+.diff .diffValue { min-height: 0; resize: none; }

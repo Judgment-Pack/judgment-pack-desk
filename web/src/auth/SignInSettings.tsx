@@ -1,3 +1,7 @@
+import {LoadingState} from '../ui/LoadingState'
+import { PasswordSettings } from './PasswordSettings'
+import { SettingRow } from '../ui/SettingRow'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { msg, useLocale } from '../i18n'
@@ -61,7 +65,6 @@ export function SignInSettings() {
   const field = (key: keyof SignInProvider, value: string) => setProvider(current => ({ ...current, [key]: value }))
   const pane = useInspectorPortal(open ? <div className={styles.form}>
     <p>{msg('Connect an identity provider, test your account, then enable sign-in for this computer.')}</p>
-    {!!error && <p role="alert">{signInMessage(error)}</p>}
     <form onSubmit={event => { event.preventDefault(); void test() }}><FieldGroup>
       <Field label={msg('Provider name')}>{wiring=><Input {...wiring} value={provider.label} maxLength={80} required disabled={busy} onChange={event => field('label', event.target.value)} />}</Field>
       <Field label={msg('Issuer URL')}>{wiring=><Input {...wiring} type="url" value={provider.issuer} maxLength={2048} required disabled={busy} onChange={event => field('issuer', event.target.value.trim())} />}</Field>
@@ -82,7 +85,7 @@ export function SignInSettings() {
         </ol>
         <p><a href="https://developers.google.com/identity/protocols/oauth2/native-app" target="_blank" rel="noreferrer">{msg('Google documentation')}</a>{' · '}<a href="https://learn.microsoft.com/en-us/entra/identity-platform/scenario-desktop-app-registration" target="_blank" rel="noreferrer">{msg('Microsoft documentation')}</a></p>
       </Disclosure>
-      <div className={styles.actions}><Button type="submit" disabled={busy || !settings?.storageAvailable} variant={unchanged ? 'secondary' : 'primary'}>{busy ? msg('Working…') : msg('Test sign-in')}</Button></div>
+      <SettingsActions feedback={<SettingsFeedback tone={error ? 'error' : 'neutral'}>{error ? signInMessage(error) : busy ? msg('Working…') : null}</SettingsFeedback>}><Button type="submit" disabled={busy || !settings?.storageAvailable} variant={unchanged ? 'secondary' : 'primary'}>{busy ? msg('Working…') : msg('Test sign-in')}</Button></SettingsActions>
     </FieldGroup></form>
     {unchanged && settings?.testedOwner && <section className={styles.verified}>
       <h3>{msg('Account verified')}</h3>
@@ -96,13 +99,13 @@ export function SignInSettings() {
   </div> : null)
   return <SettingsSection title={msg('Sign-in & access')} level={2} variant="standalone" description={msg('Shared on this computer · Control who can open Desk.')}>
     {pane}
-    {!settings && !error && <p role="status">{msg('Loading…')}</p>}
-    {!open && !!error && <p role="alert">{signInMessage(error)}</p>}
+    {!settings && !error && <LoadingState>{msg('Loading…')}</LoadingState>}
+    {!open && !!error && <SettingsFeedback tone="error">{signInMessage(error)}</SettingsFeedback>}
     {settings && <div className={styles.overview}>
-      <p>{settings.enabled ? settings.owner?.name || settings.owner?.email || settings.owner?.subject : msg('Sign-in is not configured.')}</p>
       <p className={styles.hint}>{msg('One owner can access all desks on this computer. AI and source accounts are managed in Connections.')}</p>
-      {!settings.storageAvailable && <p role="alert">{signInMessage('storage')}</p>}
-      <Button ref={opener} onClick={() => setOpen(true)}>{settings.enabled ? msg('Manage sign-in') : msg('Set up sign-in')}</Button>
+      {!settings.storageAvailable && <SettingsFeedback tone="error">{signInMessage('storage')}</SettingsFeedback>}
+      <PasswordSettings mode={settings.mode ?? (settings.enabled ? 'provider' : 'setup')} storageAvailable={settings.storageAvailable} />
+      {settings.mode !== 'password' && <SettingRow title={msg('Identity provider')} description={settings.enabled ? settings.owner?.name || settings.owner?.email || settings.owner?.subject : msg('Use your identity provider to sign in to Desk.')} action={<Button ref={opener} onClick={() => setOpen(true)}>{settings.enabled ? msg('Manage sign-in') : msg('Set up sign-in')}</Button>} />}
     </div>}
   </SettingsSection>
 }

@@ -22,15 +22,17 @@
  */
 import { useRef, useState } from 'react'
 import { msg, systemMessage, useLocale } from '../i18n'
+import { Notice } from '../ui/Notice'
 import { Button } from '../ui/Button'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { repairTrail, RepairRefused, type AuditDiagnostic, type AuditRepair } from './client'
 import styles from './DecisionRecord.module.css'
 
 /** What the last repair asked here answered: that it was made, or why not, with the runtime's words where it gave any. */
-export type RepairOutcome = { kind: 'repaired' } | { kind: 'failed'; message: string; diagnostics: AuditDiagnostic[] }
+export type RepairOutcome = { kind: 'repaired' } | { kind: 'failed'; stale?: boolean; message: string; diagnostics: AuditDiagnostic[] }
 
-export function RepairTrail({ repair, outcome, onOutcome }: {
+export function RepairTrail({ repair, outcome, onOutcome, onRefresh }: {
+  onRefresh?: () => void
   repair?: AuditRepair
   outcome?: RepairOutcome
   onOutcome: (outcome: RepairOutcome) => void
@@ -47,7 +49,7 @@ export function RepairTrail({ repair, outcome, onOutcome }: {
       await repairTrail(repair.token)
       onOutcome({ kind: 'repaired' })
     } catch (error) {
-      onOutcome({ kind: 'failed', message: error instanceof Error ? error.message : String(error), diagnostics: error instanceof RepairRefused ? error.diagnostics : [] })
+      onOutcome({ kind: 'failed', stale: error instanceof RepairRefused && error.stale, message: error instanceof Error ? error.message : String(error), diagnostics: error instanceof RepairRefused ? error.diagnostics : [] })
     } finally {
       setBusy(false)
       setOpen(false)
@@ -57,12 +59,10 @@ export function RepairTrail({ repair, outcome, onOutcome }: {
     <h4 className={styles.heading}>{msg('Repairing the trail')}</h4>
     <div className={styles.card}>
       {outcome?.kind === 'repaired' && <p role="status">{msg('The trail now has a new segment after the damaged line; the lost line is not restored.')}</p>}
-      {outcome?.kind === 'failed' && <>
-        <p role="alert">{systemMessage(outcome.message)}</p>
-        {outcome.diagnostics.length > 0 && <ul className={styles.list} aria-label={msg('What the runtime said of the repair')}>{outcome.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>}
-      </>}
+      {outcome?.kind === 'failed' && <Notice tone="warning" role="alert" actions={outcome.stale && onRefresh ? <Button variant="inline" onClick={onRefresh}>{msg('Refresh history')}</Button> : undefined}
+        detail={outcome.diagnostics.length ? <ul className={styles.list} aria-label={msg('What the runtime said of the repair')}>{outcome.diagnostics.map((item,index)=><li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul> : undefined}>{systemMessage(outcome.message)}</Notice>}
       {repair?.state === 'unavailable' && <p className={styles.quiet}>{msg('The runtime’s report names line {{line}}, the trail’s last, as incomplete.', { line: repair.line })} {systemMessage(repair.reason)}</p>}
-      {repair?.state === 'available' && <>
+      {repair?.state === 'available' && !(outcome?.kind==='failed' && outcome.stale) && <>
         <p className={styles.quiet}>{msg('The runtime’s report names line {{line}}, the trail’s last, as incomplete. Desk repairs the trail only when you ask, never on its own.', { line: repair.line })}</p>
         <div className={styles.actions}><Button ref={opener} onClick={() => setOpen(true)}>{msg('Repair the trail')}</Button></div>
       </>}

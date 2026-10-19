@@ -1001,15 +1001,15 @@ describe('one section at a time', () => {
     const reload = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(reload)
     expect(reload.defaultPrevented).toBe(true)
-    await act(() => router.navigate('/packs'))
+    await act(() => router.navigate('/library'))
     expect(confirm).toHaveBeenCalledOnce()
     expect(router.state.location.pathname).toBe('/admin')
     await act(() => router.navigate('/admin#general'))
     expect((screen.getByLabelText('Organization name') as HTMLInputElement).value).toBe('Unsaved organization')
     expect(confirm).toHaveBeenCalledOnce()
     confirm.mockReturnValue(true)
-    await act(() => router.navigate('/packs'))
-    expect(router.state.location.pathname).toBe('/packs')
+    await act(() => router.navigate('/library'))
+    expect(router.state.location.pathname).toBe('/library')
     confirm.mockRestore()
   })
 
@@ -1092,11 +1092,12 @@ describe('one section at a time', () => {
     expect(screen.getByDisplayValue('https://acme.example/d/')).toBeTruthy()
   })
 
-  it('keeps pack storage and chat data apart from research and document processing', () => {
+  it('keeps pack storage, chat data and Policy recovery apart from research and document processing', () => {
     renderAdmin(effectiveConfig(undefined), '/admin#storage')
     expect(screen.getByRole('textbox', { name: 'Pack folder' })).toBeTruthy()
     expect(screen.getByRole('textbox', { name: 'Pack ID prefix' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Chat data' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Policy recovery archive for this project' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Research' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Manage PDF processing' })).toBeNull()
   })
@@ -1199,14 +1200,14 @@ describe('one section at a time', () => {
         .map((element) => element.textContent?.trim())
         .filter((label) => label !== '')
     for (const [fragment, expected] of [
-      ['general', ['Upload file', 'Reset to default', 'Upload file', 'Use logo', 'Save', 'Open this project at startup']],
+      ['general', ['Upload file', 'Reset to default', 'Upload file', 'Use logo', 'Save', 'Open this project at startup', 'Move…', 'Open folder']],
       ['storage', ['Save']],
       [
         // **This desk's model preferences**, and nothing that writes the
         // shared connection: the endpoint, its key and its models are under
         // Connections › AI (docs/ai-connections.md).
         'assistant',
-        ['Save preferences', 'Reload from disk']
+        ['Save preferences', 'Reload from disk', 'Project memory']
       ],
       ['identity-provider', []]
     ] as const) {

@@ -1,19 +1,23 @@
-import { cleanup, render, waitFor } from '@testing-library/react'
+import source from '../../../internal/desk/testdata/policy-authoring-source.json'
+import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
+import { cleanup, render as baseRender, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { INITIAL_STATE } from '../research/run'
 import { readFile, deskFetch } from '../files/client'
-import type { HostTool } from '../assistant/engine'
+import type { HostTool } from '@judgment-pack/harness/engine'
 import { ChatProvider } from './ChatProvider'
+
+const render=(node:React.ReactNode)=>{const client=new QueryClient({defaultOptions:{queries:{retry:false}}});return baseRender(node,{wrapper:({children})=><QueryClientProvider client={client}>{children}</QueryClientProvider>})}
 
 const m=vi.hoisted(()=>({preference:{} as any,connections:{} as any,catalog:{} as any,report:vi.fn(),update:vi.fn(),snapshot:{} as any,binding:{} as any,options:{} as any}))
 vi.mock('../files/client', async original=>({...await original(), readFile:vi.fn(), deskFetch:vi.fn()}))
-vi.mock('../files/queries',()=>({useFileListing:()=>({data:{root:'/fixture'}})}))
+vi.mock('../files/queries',()=>({useFileListing:()=>({data:{root:'/fixture'}}),useFileContent:()=>({data:undefined})}))
 vi.mock('../config/DeskConfigProvider',()=>({useEffectiveConfig:()=>({config:{research:{gateway:{authority:'test'},documents:{enabled:true},sources:{}}},desk:{localGateway:{status:'ready'}}})}))
 vi.mock('../connections/catalog',()=>({useConnections:()=>m.catalog}))
 vi.mock('../search/connections',()=>({useSearchPreference:()=>m.preference,useSearchConnections:()=>m.connections}))
 vi.mock('../research/useResearchRun',()=>({useResearchRun:(options:unknown)=>{m.options=options;return m.binding}}))
 vi.mock('./store',()=>({ChatStore:class {
- load=async()=>{};retain=()=>()=>{};subscribe=()=>()=>{};getSnapshot=()=>m.snapshot;report=m.report;update=m.update
+ load=async()=>{};checkpoint=async()=>{};retain=()=>()=>{};subscribe=()=>()=>{};getSnapshot=()=>m.snapshot;report=m.report;update=m.update
 }}))
 beforeEach(()=>{
  m.report.mockClear();m.update.mockClear();vi.mocked(deskFetch).mockClear()
@@ -56,7 +60,52 @@ it('offers graph proposals and saved rehearsals through the main conversation wo
  expect(tools.map(tool=>tool.name)).toEqual(expect.arrayContaining(['list_decisions','read_decision','get_graph_authoring_instructions','graph_validate','graph_explain','propose_graph','graph_rehearse']))
  expect(tools.map(tool=>tool.name)).not.toContain('graph_write')
  const content='{"formatVersion":"1","id":"flow","version":"1.0.0","nodes":{"a":{"pack":"alpha"}},"edges":[],"result":"a"}'
+ vi.mocked(deskFetch).mockImplementation(async(_url,init)=>Response.json({project:'/fixture',sha256:'graph',content:init?.body?JSON.parse(init.body as string):{version:1,drafts:[],deleted:[]}}))
  await tools.find(tool=>tool.name==='propose_graph')!.execute({id:'flow',content},new AbortController().signal)
  expect(m.update).toHaveBeenCalledWith('chat',{graphDrafts:[expect.objectContaining({id:'flow',content,path:'flow.graph.json'})]})
+ expect(vi.mocked(deskFetch).mock.calls.every(([url])=>String(url)==='/api/draft-graphs')).toBe(true)
+})
+
+it('offers contextual search setup independently of supplied-link reading',async()=>{
+ m.preference={isPending:false,isError:false,data:{value:{mode:'auto',connection:null}}}
+ m.connections={available:true,loading:false,isError:false,data:{connections:[]}}
+ m.catalog.web=false
+ render(<ChatProvider><span>Desk</span></ChatProvider>)
+ await waitFor(()=>expect(m.report.mock.lastCall?.[1].blocked).toBe(''))
+ const tools:HostTool[]=m.options.draftTools({turns:()=>[]})
+ expect(tools.map(tool=>tool.name)).toContain('search_sources')
+ expect(tools.map(tool=>tool.name)).not.toContain('read_link')
+ expect(m.options.researchPolicy()).toContain('call search_sources once')
+})
+
+it('offers recipe proposals through the same conversation worker without running research',async()=>{
+ vi.mocked(deskFetch).mockResolvedValue(new Response(JSON.stringify({sha256:'draft-revision',document:{id:'draft_one'}}),{status:200}))
+ m.snapshot.chats[0].mode='draft';m.snapshot.chats[0].researchMode='provided';m.catalog.web=false
+ render(<ChatProvider><span>Desk</span></ChatProvider>)
+ await waitFor(()=>expect(m.options.draftTools).toBeTypeOf('function'))
+ const tools:HostTool[]=m.options.draftTools({turns:()=>[{id:'turn',role:'user'}]})
+ expect(tools.map(tool=>tool.name)).toEqual(expect.arrayContaining(['get_dialect_recipe_instructions','list_dialects','read_dialect_recipe','propose_dialect_recipe','read_dialect_records','read_dialect_activity','propose_dialect_action']))
+ await tools.find(tool=>tool.name==='propose_dialect_recipe')!.execute({name:'Decision owners',intent:'Find owners.',fields:[{name:'role',description:'Current role',type:'string'}],criteria:[],limits:{records:25,searches:10,pages:30,modelCalls:30}},new AbortController().signal)
+ expect(m.update).toHaveBeenCalledWith('chat',{inputDrafts:[expect.objectContaining({name:'Decision owners',target:'records',afterTurnId:'turn'})]})
+ expect(deskFetch).toHaveBeenCalledTimes(1)
+ expect(deskFetch).toHaveBeenCalledWith('/api/dialect-drafts',expect.objectContaining({method:'POST',body:expect.stringContaining('Decision owners')}))
+})
+
+it('offers test design tools in the existing session worker', async () => {
+ m.snapshot.chats[0].mode='draft';m.snapshot.chats[0].researchMode='provided'
+ render(<ChatProvider><span>Desk</span></ChatProvider>)
+ await waitFor(()=>expect(m.options.draftTools).toBeTypeOf('function'))
+ const tools:HostTool[]=m.options.draftTools({turns:()=>[]})
+ expect(tools.map(tool=>tool.name)).toEqual(expect.arrayContaining(['read_pack_tests','propose_test_cases','ask_user']))
  expect(deskFetch).not.toHaveBeenCalled()
+})
+
+it('passes graph Policy interpretation sources through the shared authorized context without embedding narrative in prompts',async()=>{
+ m.snapshot.chats[0].mode='draft';m.snapshot.chats[0].researchMode='provided';m.snapshot.chats[0].policyInterpretationKind='graph';m.snapshot.chats[0].policySources=[source]
+ render(<ChatProvider><span>Desk</span></ChatProvider>)
+ await waitFor(()=>expect(m.options.executionContext).toBeTypeOf('function'))
+ expect(m.options.authorizeContext).toBeTypeOf('function')
+ expect(m.options.executionContext().documents).toMatchObject([{kind:'artifact',revision:source.revisionId,value:source}])
+ expect(m.options.researchPolicy()).toContain('GRAPH INTERPRETATION')
+ expect(m.options.researchPolicy()).not.toContain(source.narrative)
 })

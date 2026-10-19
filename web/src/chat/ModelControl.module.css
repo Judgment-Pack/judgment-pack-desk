@@ -1,8 +1,4 @@
-.trigger { display: inline-flex; align-items: center; gap: var(--space-2); max-width: min(24rem, 100%); min-width: 0; height: var(--density-control); padding: 0 var(--space-2); border-width: 1px; border-style: solid; border-color: transparent; border-radius: var(--radius-sm); background: transparent; color: var(--ink); font: inherit; font-size: var(--text-control); cursor: pointer; }
-.trigger:hover, .trigger[data-state='open'] { background: var(--accent-soft); }
-.trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.trigger:disabled { color: var(--ink-faint); cursor: not-allowed; }
-.trigger > svg { flex: none; color: var(--ink-faint); }
+.trigger { max-width: min(24rem, 100%); min-width: 0; }
 .model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .depth { flex: none; white-space: nowrap; color: var(--ink-soft); }
 .settings { padding: var(--space-3); border-top: 1px solid var(--border); display: grid; gap: var(--space-1); min-width: 0; }

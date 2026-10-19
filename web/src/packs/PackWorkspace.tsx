@@ -45,7 +45,7 @@ export function PackNavigation({ packId, current }: { packId: string; current: P
 
 /** Compound header: one title, one question, one primary task, one divider. */
 export function PackHeader({ packId, document: doc, current, actions, hasMatrix = false, details, sourceText, checkStatus }: {
-  packId: string; document?: PackDocument; current: PackSection; actions?: ReactNode; hasMatrix?: boolean; details?: ReactNode; sourceText?: string; checkStatus?: string
+  packId: string; document?: PackDocument; current: PackSection; actions?: ReactNode; hasMatrix?: boolean; details?: ReactNode; sourceText?: string; checkStatus?: ReactNode
 }) {
   useLocale()
   const [showJson,setShowJson] = useState(false)

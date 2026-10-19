@@ -59,9 +59,12 @@ lacks what a later one carries, with HTTP 200 either way:
 The page says which version it saved and what that version carries. For a
 version-4 or version-5 file it names the run's chain entry by the sequence the
 entry's own line gives ("chain entry 42, not checked"); for a version-2 or
-version-3 file it says the export has no chain entry. Desk checks nothing in the
-file: not the entry against the record, its checkpoint or the chain, and not the
-signatures. `verify-run` reports the record bytes' SHA-256 as `recordDigest`.
+version-3 file it says the export has no chain entry. Downloading does not
+verify the file. The separate **Verify saved record** action checks the record
+signature against Desk’s retained public-key history, then checks the export
+against independently saved release and input references where available.
+It does not re-run the decision or establish completeness of the Jobs chain.
+See [local v0.13 validation](v013-local-validation.md) for the trust boundaries. `verify-run` reports the record bytes' SHA-256 as `recordDigest`.
 Comparing it with a gateway receipt's `decision.recordDigest` is the reader's
 step: `verify-run` does not make it. Desk forwards `version` on this route only,
 as exactly one `2`, `3`, `4` or `5`, and refuses any other value itself. It

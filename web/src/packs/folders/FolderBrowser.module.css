@@ -38,17 +38,16 @@
 .editor { display: grid; gap: var(--space-3); min-width: 0; font-size: var(--text-sm); }
 .editor p { color: var(--ink-soft); font-size: var(--text-xs); margin: 0; overflow-wrap: anywhere; }
 .headActions { display: flex; align-items: center; gap: var(--space-1); }
-.drawer { left: var(--workspace-edge); }
+/* The drawer is anchored to FolderFrame so the toggle retains its position. */
+.drawer { left:var(--workspace-edge); }
 .content[data-folder-docked] [data-show-folders] { display: none; }
 
-.heading { padding-inline: var(--space-3); gap: var(--space-2); }
+.heading { padding-inline: var(--space-3); gap: var(--space-1); }
 .heading > :last-child { margin-inline-start: auto; }
 
-/* Match the folder control inset when its pane is collapsed. Other tabs keep
-   their normal gutters; only the leading folder control needs this space. */
-.content:not([data-folder-docked]) [data-page-header]:has(> nav > [data-show-folders]), .content:not([data-folder-docked]) [data-page-header]:has(> [data-collection-location] > [data-show-folders]) { padding-inline-start: var(--space-3); }
-.content:not([data-folder-docked]) nav > [data-show-folders] { margin-inline-end: calc(var(--space-2) - var(--space-5)); }
-.headerBreadcrumb { padding: 0; min-height: var(--density-control); flex: 1; }
-.headerBreadcrumb .pathRoot { padding-inline-start: 0; }
+.location { display: flex; align-items: center; flex: 1; min-width: 0; gap: var(--space-1); font-size: var(--text-control); font-weight: 500; }
+.headerBreadcrumb { font-size:var(--text-control); font-weight:500; padding: 0; min-height: var(--density-control); flex: 1; }
+/* Match the tree icon column in both the docked and collapsed headers. */
+.location > [data-show-folders] { margin-inline-start: calc(var(--space-3) - var(--density-gutter)); }
 
 .newDestination { margin-inline-end: auto; }

@@ -19,3 +19,11 @@
 .summary:hover { background: var(--false-soft); }
 .summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .content { padding-top: var(--space-2); }
+
+.indicator { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 16px; height: 16px; }
+
+.small > .summary { min-height: var(--density-control-small); padding-block: 0; font-size: var(--text-xs); gap: var(--space-1); }
+.small > .content { padding-top: var(--space-1); padding-bottom: var(--space-2); }
+@media (pointer: coarse) {
+  .small > .summary { min-height: var(--density-control); }
+}

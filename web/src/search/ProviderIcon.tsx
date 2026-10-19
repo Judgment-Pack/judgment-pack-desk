@@ -1,3 +1,4 @@
+import {msg} from '../i18n'
 import { IconSearch } from '../shell/icons'
 import google from './assets/google-g.png'
 import tavilyLight from './assets/tavily-mark-black.svg'
@@ -5,7 +6,7 @@ import tavilyDark from './assets/tavily-mark-offwhite.svg'
 import styles from './SearchSources.module.css'
 
 export function providerName(provider?:string){
- return provider==='google-grounding'?'Google Search':provider==='tavily'?'Tavily':provider
+ return provider==='google-grounding'?msg('Google Search · Gemini grounding'):provider==='tavily'?'Tavily':provider
 }
 /** Only bundled, known assets. An unknown provider can never supply an image URL. */
 export function ProviderIcon({provider}:{provider?:string}){

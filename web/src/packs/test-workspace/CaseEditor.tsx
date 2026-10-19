@@ -8,7 +8,7 @@ import { Button } from '../../ui/Button'
 import { Tooltip } from '../../ui/Tooltip'
 import { Disclosure } from '../../ui/Disclosure'
 import { CodeBlock } from '../../ui/CodeBlock'
-import { IconClose } from '../../shell/icons'
+import { IconClose, IconChevronLeft, IconCheck, IconPlay, IconAssistant, IconPlus } from '../../shell/icons'
 import { SourceReader } from '../../documents/SourceReader'
 import { useDetailsSlot } from '../../shell/DetailsSlot'
 import { useReadingDetails } from '../../chat/ReadingDetails'
@@ -324,9 +324,9 @@ export function CaseEditor({
           </FieldGroup>
           <section className={styles.editorSection}>
             <div className={styles.sectionTitle}>
-              <h3>{msg('Inputs')}</h3>
+              <h3>{msg('Dialects')}</h3>
               <Button variant="quiet" onClick={onAI} disabled={busy}>
-                {msg('Fill with AI')}
+                <IconAssistant/>{msg('Fill with AI')}
               </Button>
             </div>
             {!fields.length && (
@@ -408,9 +408,9 @@ export function CaseEditor({
           )}
           <section className={styles.editorSection}>
             <div className={styles.sectionTitle}>
-              <h3>{msg('Sources')}</h3>
+              <h3>{msg('Sources')}</h3>{value.inputSnapshot&&<Disclosure title={msg('Frozen Dialects snapshot')}><p>{msg('Recipe version {{version}}',{version:value.inputSnapshot.recipeVersion})}</p><CodeBlock text={JSON.stringify(value.inputSnapshot,null,2)} lang="json"/></Disclosure>}
               <Button variant="quiet" disabled={busy} onClick={(e) => onAddSource(e.currentTarget)}>
-                {msg('Add source')}
+                <IconPlus/>{msg('Add source')}
               </Button>
             </div>
             {value.sources.length > 0 && (
@@ -470,7 +470,7 @@ export function CaseEditor({
                 ))}
               </div>
             )}
-            {!value.sources.length && (
+            {!value.sources.length && !value.inputSnapshot && (
               <p className={styles.muted}>{msg('Attach files or choose a connected source.')}</p>
             )}
           </section>
@@ -703,15 +703,15 @@ export function CaseEditor({
       </div>
       <footer className={styles.editorFooter}>
         <Button variant="quiet" onClick={onDiscard} disabled={busy}>
-          {proposal ? msg('Back to proposed cases') : msg('Discard')}
+          <IconChevronLeft/>{proposal ? msg('Back to proposed cases') : dirty ? msg('Discard changes') : msg('Back to cases')}
         </Button>
         {!proposal && (
           <Button onClick={onRun} disabled={busy || dirty || !valid}>
-            {msg('Run case')}
+            <IconPlay/>{msg('Run case')}
           </Button>
         )}
         <Button type="submit" variant="primary" disabled={busy || !value.name.trim() || !valid}>
-          {proposal ? msg('Apply to proposal') : msg('Save case')}
+          <IconCheck/>{proposal ? msg('Apply to proposal') : msg('Save case')}
         </Button>
       </footer>
     </form>

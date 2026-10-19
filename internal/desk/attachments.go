@@ -94,6 +94,9 @@ func validateAttachmentObject(data []byte) error {
 }
 
 func storageFileLimit(name string) int {
+	if memoryFileName.MatchString(name) {
+		return memoryLimit
+	}
 	if attachmentFileName.MatchString(name) {
 		return maxAttachmentObjectBytes
 	}
@@ -167,7 +170,7 @@ func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
-	lock, err := s.privateDataLock(true)
+	lock, err := s.privateDataLockContext(r.Context(), true)
 	if err != nil {
 		storageFailure(w, err)
 		return

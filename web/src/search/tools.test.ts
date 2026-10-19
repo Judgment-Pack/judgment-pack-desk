@@ -57,11 +57,16 @@ describe('automatic chat research tools',()=>{
   expect((await old.find(t=>t.name===EXPLORE_WEBSITE)!.execute({url},signal)).isError).toBe(true)
   expect(h.acquire).not.toHaveBeenCalled();expect(h.discover).not.toHaveBeenCalled()
  })
- it('limits parallel attempts and never advertises an unconfigured search',async()=>{
+ it('limits parallel attempts and returns a structured setup action when search is needed',async()=>{
   const h=harness(),search=h.next().find(t=>t.name==='search_sources')!
   const results=await Promise.all(Array.from({length:5},()=>search.execute({query:'policy'},signal)))
   expect(h.acquire).toHaveBeenCalledTimes(3);expect(results.filter(r=>r.isError)).toHaveLength(2)
-  h.setConnection(undefined);expect(h.next().some(t=>t.name==='search_sources')).toBe(false)
+  h.setConnection(undefined)
+  const setup = await h.next().find(t=>t.name==='search_sources')!.execute({query:'find public sources'},signal)
+  expect(setup.isError).toBe(true)
+  expect(setup.structuredContent).toEqual({searchFailure:'setup-required',searchStep:{query:'find public sources'}})
+  expect(h.acquire).toHaveBeenCalledTimes(3)
+  expect(h.refs).toHaveLength(3)
  })
 })
 it('keeps a message budget across automatic repair turns and resets it for a new user message',async()=>{

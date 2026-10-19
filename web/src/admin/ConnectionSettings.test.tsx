@@ -1,3 +1,4 @@
+import { DeskNotices, DeskNoticesProvider } from '../shell/DeskNotices'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -25,6 +26,7 @@ beforeEach(() => {
   states = { drive: 'setup-required', gmail: 'setup-required', notion: 'not-connected', obsidian: 'not-connected', 'fixture-files': 'setup-required' }
   catalog = structuredClone(connectionCatalogFixture)
   fetch.mockImplementation(async (url: string) => {
+    if (url === '/api/web-access') return Response.json({ supported: true, enabled: false, local: true, managed: false, revision: 'test' })
     if (url.endsWith('/catalog')) return Response.json(catalog)
     const provider = url.split('/')[3] === 'status' || url.split('/')[3] === 'configure' ? 'drive' : url.split('/')[3]
     if (url.endsWith('/configure')) { states[provider] = 'not-connected'; return Response.json({}) }
@@ -50,7 +52,7 @@ function setup(available = true, returnTo = '/', pane: { drawer: boolean } = { d
   config.desk = { present: false, path: '/synthetic/desk.json', problems: [], localGateway: { status: available ? 'ready' : 'unavailable' } }
   const view = (ready = available) => <MemoryRouter initialEntries={[{ pathname: '/admin', hash: '#connections', state: { returnTo } }]}>
     <QueryClientProvider client={client}><DeskConfigFixture value={{ ...config, desk: { ...config.desk!, localGateway: { status: ready ? 'ready' : 'unavailable' } } }}>
-      <ConnectionPaneContext.Provider value={{ open: openConnection, close: closeConnection }}><SetupShell drawer={pane.drawer}><ConnectionSettings /></SetupShell></ConnectionPaneContext.Provider>
+      <ConnectionPaneContext.Provider value={{ open: openConnection, close: closeConnection }}><DeskNoticesProvider><SetupShell drawer={pane.drawer}><ConnectionSettings /></SetupShell><footer><DeskNotices/></footer></DeskNoticesProvider></ConnectionPaneContext.Provider>
     </DeskConfigFixture></QueryClientProvider>
   </MemoryRouter>
   const client = testQueryClient()
@@ -68,12 +70,12 @@ it.each(['Google Drive', 'Gmail'])('configures %s in Admin without starting cons
   await waitFor(() => expect(open.hasAttribute('disabled')).toBe(false))
   fireEvent.click(open)
   fireEvent.change(document.querySelector('input[type=file]')!, { target: { files: [registration()] } })
-  await screen.findByText('Registration saved. Connect your account from the chat attachment menu.')
+  await screen.findByText('Changes saved')
   const calls = fetch.mock.calls.filter(([url]) => url.endsWith('/configure'))
   expect(calls).toHaveLength(1)
   expect(calls[0]![0]).toBe(title === 'Gmail' ? '/api/connections/gmail/configure' : '/api/connections/configure')
   expect(JSON.parse(calls[0]![1].body)).toEqual({ clientId: 'synthetic.apps.googleusercontent.com', clientSecret: 'local-only' })
-  expect(fetch.mock.calls.every(([url]) => /\/(catalog|status|configure)$/.test(url))).toBe(true)
+  expect(fetch.mock.calls.every(([url]) => /\/(catalog|status|configure|web-access)$/.test(url))).toBe(true)
   expect(ui.container.textContent).not.toMatch(/synthetic\.apps|local-only/)
   expect(document.body.textContent).not.toContain('local-only')
   fireEvent.click(screen.getByRole('button', { name: 'Done' }))
@@ -90,7 +92,7 @@ it.each(['close', 'navigate', 'unavailable'])('ignores a late registration file 
   const file = new File(['{}'], 'desktop.json')
   Object.defineProperty(file, 'text', { value: () => new Promise(resolve => { finish = resolve }) })
   fireEvent.change(document.querySelector('input[type=file]')!, { target: { files: [file] } })
-  if (action === 'close') fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  if (action === 'close') fireEvent.click(within(screen.getByRole('complementary', { name: /Gmail registration$/ })).getByRole('button', { name: 'Cancel' }))
   else if (action === 'navigate') ui.unmount()
   else ui.rerender(ui.view(false))
   await act(async () => { finish('{"installed":{"client_id":"synthetic.apps.googleusercontent.com"}}') })
@@ -121,10 +123,11 @@ it('refuses a web client without exposing its contents or contacting configure',
 it('does not offer unavailable setup or a foreign return destination', async () => {
   setup(false, '//external.invalid')
   expect(screen.queryByRole('button', { name: /Gmail registration$/ })).toBeNull()
+  fireEvent.click(screen.getByRole('button', {name:'Local processing unavailable'}))
   expect(screen.getByText('Local processing is unavailable. Check the details in Admin → Document processing.')).toBeTruthy()
   expect(screen.getByRole('link', { name: 'Manage gateway' }).getAttribute('href')).toBe('/admin#gateway')
   expect(screen.queryByRole('link', { name: 'Return to chat' })).toBeNull()
-  expect(fetch).not.toHaveBeenCalled()
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/web-access'])
 })
 
 it.each([
@@ -147,12 +150,12 @@ it.each([
   const official = within(pane).getByRole('link', { name: 'Official Google documentation' })
   expect(official.getAttribute('href')).toBe(title === 'Gmail' ? 'https://developers.google.com/workspace/guides/create-credentials#desktop-app' : 'https://developers.google.com/workspace/drive/api/guides/api-specific-auth')
   expect(official.getAttribute('target')).toBe('_blank')
-  expect(fetch.mock.calls.every(([url]) => /\/(catalog|status)$/.test(url))).toBe(true)
+  expect(fetch.mock.calls.every(([url]) => /\/(catalog|status|web-access)$/.test(url))).toBe(true)
   fireEvent.click(instructions.querySelector('summary')!)
   await waitFor(() => expect(instructions.open).toBe(false))
   expect(within(pane).getByRole('button', { name: 'Choose credentials file' })).toBeTruthy()
   fireEvent.change(pane.querySelector('input[type=file]')!, { target: { files: [registration()] } })
-  await within(pane).findByText('Registration saved. Connect your account from the chat attachment menu.')
+  await within(pane).findByText('Changes saved')
   expect(instructions.open).toBe(false)
   expect(fetch.mock.calls.filter(([url]) => url.endsWith('/configure'))).toHaveLength(1)
   fireEvent.click(within(pane).getByRole('button', { name: 'Done' }))
@@ -191,9 +194,9 @@ it('abandons an unfinished file read when switching providers', async () => {
   await act(async () => { finish('{"installed":{"client_id":"synthetic.apps.googleusercontent.com"}}') })
   expect(fetch.mock.calls.some(([url]) => url.endsWith('/configure'))).toBe(false)
   const pane = await screen.findByRole('complementary', { name: /Google Drive registration$/ })
-  expect(within(pane).queryByRole('status')).toBeNull()
+  expect(within(pane).getByRole('status').textContent).toBe('')
   fireEvent.change(pane.querySelector('input[type=file]')!, { target: { files: [registration()] } })
-  await within(pane).findByText('Registration saved. Connect your account from the chat attachment menu.')
+  await within(pane).findByText('Changes saved')
   expect(fetch.mock.calls.filter(([url]) => url.endsWith('/configure')).map(([url]) => url)).toEqual(['/api/connections/configure'])
 })
 
@@ -209,11 +212,11 @@ it('aborts an in-flight upload and ignores its late response after closing', asy
   fireEvent.change(document.querySelector('input[type=file]')!, { target: { files: [registration()] } })
   await waitFor(() => expect(fetch.mock.calls.some(([url]) => url.endsWith('/configure'))).toBe(true))
   const signal = fetch.mock.calls.find(([url]) => url.endsWith('/configure'))![1].signal as AbortSignal
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  fireEvent.click(within(screen.getByRole('complementary', { name: /Gmail registration$/ })).getByRole('button', { name: 'Cancel' }))
   expect(signal.aborted).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: /Google Drive registration$/ }))
   await act(async () => { finish(Response.json({})) })
-  expect(screen.queryByText('Registration saved. Connect your account from the chat attachment menu.')).toBeNull()
+  expect(screen.queryByText('Changes saved')).toBeNull()
   expect(screen.getByRole('complementary', { name: /Google Drive registration$/ })).toBeTruthy()
 })
 
@@ -226,7 +229,7 @@ it('lists every advertised legacy provider and opens the shared connection pane'
   fireEvent.click(opener)
   expect(opener.getAttribute('aria-label')).toBe('Connect: Notion')
   expect(openConnection).toHaveBeenCalledWith({ provider: 'notion', descriptor: expect.objectContaining({ id: 'notion' }), opener })
-  expect(fetch.mock.calls.every(([url]) => /\/(catalog|status)$/.test(url))).toBe(true)
+  expect(fetch.mock.calls.every(([url]) => /\/(catalog|status|web-access)$/.test(url))).toBe(true)
 })
 
 it('discovers a new gateway provider without a Desk-specific row and shows its current state', async () => {
@@ -239,7 +242,7 @@ it('discovers a new gateway provider without a Desk-specific row and shows its c
   expect(screen.queryByText('Google Drive')).toBeNull()
   fireEvent.click(opener)
   expect(openConnection).toHaveBeenCalledWith({ provider: 'fixture-files', descriptor: genericConnection, opener })
-  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/connections/catalog', '/api/connections/fixture-files/status'])
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/connections/catalog', '/api/web-access', '/api/connections/fixture-files/status'])
 })
 
 it('shows an update hint for an advertised unsupported protocol without requesting its status', async () => {
@@ -248,14 +251,14 @@ it('shows an update hint for an advertised unsupported protocol without requesti
   await screen.findByRole('heading', { name: /Fixture files$/ })
   expect(screen.getByText('Update Desk to use this connection.')).toBeTruthy()
   expect(screen.queryByRole('button', { name: /Fixture files$/ })).toBeNull()
-  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/connections/catalog'])
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/connections/catalog', '/api/web-access'])
 })
 
 it('offers retry on catalog failure and no guessed providers', async () => {
   const normal = fetch.getMockImplementation()!
   fetch.mockImplementation(async (url: string, options: RequestInit) => url.endsWith('/catalog') ? Response.json({}, { status: 503 }) : normal(url, options))
   setup()
-  await screen.findByRole('alert')
+  fireEvent.click(await screen.findByRole('button',{name:'Connections unavailable'}))
   expect(screen.getByText('Connections could not be loaded.')).toBeTruthy()
   expect(screen.queryByRole('heading', { name: 'Google Drive' })).toBeNull()
   fetch.mockImplementation(normal)
@@ -275,7 +278,7 @@ it('removes stale rows and cancels a pending registration when a catalog refresh
   const normal = fetch.getMockImplementation()!
   fetch.mockImplementation(async (url: string, options: RequestInit) => url.endsWith('/catalog') ? Response.json({}, { status: 503 }) : normal(url, options))
   await act(async () => { await ui.client.invalidateQueries({ queryKey: [...CONNECTIONS_KEY, 'catalog'] }) })
-  await screen.findByRole('alert')
+  await screen.findByRole('button',{name:'Connections unavailable'})
   expect(screen.queryByRole('heading', { name: 'Gmail' })).toBeNull()
   expect(screen.queryByRole('complementary')).toBeNull()
   await act(async () => { finish('{"installed":{"client_id":"synthetic.apps.googleusercontent.com"}}') })
@@ -298,7 +301,7 @@ it('shows an honest empty catalog instead of fixed Google rows', async () => {
   setup()
   await screen.findByText('No connections found.')
   expect(screen.queryByRole('heading', { name: 'Google Drive' })).toBeNull()
-  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/connections/catalog'])
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/connections/catalog', '/api/web-access'])
 })
 
 it('closes registration before opening another provider', async () => {

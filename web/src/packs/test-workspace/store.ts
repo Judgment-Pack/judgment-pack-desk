@@ -1,3 +1,4 @@
+import {privateQuery} from '../../data/privateQuery'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useFileListing } from '../../files/queries'
 import { answer, deskFetch } from '../../files/client'
@@ -8,8 +9,8 @@ interface Reply {
   sha256: string
   content: TestStore
 }
-export async function readTests(): Promise<Reply> {
-  const r = await answer<Reply>(await deskFetch('/api/pack-tests'))
+export async function readTests(signal?: AbortSignal): Promise<Reply> {
+  const r = await answer<Reply>(await deskFetch('/api/pack-tests', {signal}))
   return { ...r, content: decodeStore(r.content) }
 }
 export async function updateTests(
@@ -42,9 +43,10 @@ export function useTestStorage(owner: string) {
   const key = [...TESTS_KEY, project ?? null]
   const query = useQuery({
     queryKey: key,
-    queryFn: readTests,
+    queryFn: ({signal}) => readTests(signal),
+    ...privateQuery,
     enabled: !!project,
-    refetchOnWindowFocus: false,
+
   })
   const update = async (
     change: (suite: TestSuite, document: TestStore) => TestSuite | Promise<TestSuite>,

@@ -10,7 +10,8 @@ p=importlib.util.module_from_spec(spec);spec.loader.exec_module(p)
 class ReleaseTest(unittest.TestCase):
     def setUp(self):
         self.plan=copy.deepcopy(p.components.read_plan())
-        self.plan['components']['gateway'].update(channel='stable',version='v0.4.0')
+        for component in self.plan['components'].values():
+            component.update(channel='stable',version='v0.4.0')
     def test_refuses_unpublished_components_before_any_build(self):
         self.plan['components']['gateway']['channel']='development'
         with patch.object(p.subprocess,'check_output') as git:
@@ -32,4 +33,11 @@ class ReleaseTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'tag disagrees'):p.source(component,Path('/unused-test-path'))
         with patch.object(p,'run'),patch.object(p.subprocess,'check_output',side_effect=[sha,sha]):
             p.source(component,Path('/unused-test-path'))
+    def test_development_checkout_checks_commit_without_inventing_a_tag(self):
+        component=dict(self.plan['components']['runtime'],channel='development',version='v0.33.0-dev.example')
+        with patch.object(p,'run') as run,patch.object(p.subprocess,'check_output',return_value=component['revision']):
+            p.source(component,Path('/unused-test-path'))
+            self.assertFalse(any('refs/tags/' in str(call) for call in run.call_args_list))
+        with patch.object(p,'run'),patch.object(p.subprocess,'check_output',return_value='0'*40):
+            with self.assertRaisesRegex(ValueError,'checkout disagrees'):p.source(component,Path('/unused-test-path'))
 if __name__=='__main__':unittest.main()

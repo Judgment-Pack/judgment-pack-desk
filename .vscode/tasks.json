@@ -4,6 +4,32 @@
     {
       "label": "desk: start",
       "type": "process",
+      "command": "${env:HOME}/.local/bin/jpack-desk",
+      "args": [
+        "--port",
+        "5173"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "Start the installed Desk at http://localhost:5173/ using its saved startup Desk. Use Tasks: Terminate Task or Tasks: Restart Running Task to stop or restart.",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always",
+        "clear": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "desk: dev start",
+      "type": "process",
       "command": "python3",
       "args": [
         "${workspaceFolder}/scripts/desk-dev.py",
@@ -12,19 +38,18 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "detail": "Build companions from the component lock if needed, then build and start Desk + Vite; keep the saved project. Safe to run again.",
+      "detail": "Manage the development checkout with its pinned companions. The installed Desk uses desk: start.",
       "problemMatcher": [],
       "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
+        "panel": "dedicated",
+        "reveal": "always"
       },
       "runOptions": {
         "instanceLimit": 1
       }
     },
     {
-      "label": "desk: stop",
+      "label": "desk: dev stop",
       "type": "process",
       "command": "python3",
       "args": [
@@ -34,41 +59,18 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "detail": "Stop only the development servers started by these tasks; preserve workspace files.",
+      "detail": "Manage the development checkout with its pinned companions. The installed Desk uses desk: start.",
       "problemMatcher": [],
       "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
+        "panel": "dedicated",
+        "reveal": "always"
       },
       "runOptions": {
         "instanceLimit": 1
       }
     },
     {
-      "label": "desk: prune",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/desk-dev.py",
-        "prune"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "detail": "With Desk stopped, remove old launch directories under bin/dev-launches, keeping the one the last start used. Refuses while servers these tasks started run; trusts bin/dev-launches as written only by this launcher.",
-      "problemMatcher": [],
-      "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
-      },
-      "runOptions": {
-        "instanceLimit": 1
-      }
-    },
-    {
-      "label": "desk: restart",
+      "label": "desk: dev restart",
       "type": "process",
       "command": "python3",
       "args": [
@@ -78,69 +80,35 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "detail": "Rebuild Desk (and companions if the lock changed), then restart both servers. A build failure leaves the current session running.",
+      "detail": "Manage the development checkout with its pinned companions. The installed Desk uses desk: start.",
       "problemMatcher": [],
       "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
+        "panel": "dedicated",
+        "reveal": "always"
       },
       "runOptions": {
         "instanceLimit": 1
       }
     },
     {
-      "label": "desk: status",
+      "label": "desk: dev prune",
       "type": "process",
       "command": "python3",
       "args": [
         "${workspaceFolder}/scripts/desk-dev.py",
-        "status"
+        "prune"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "detail": "Show development server status and the log directory.",
+      "detail": "Manage the development checkout with its pinned companions. The installed Desk uses desk: start.",
       "problemMatcher": [],
       "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
+        "panel": "dedicated",
+        "reveal": "always"
       },
       "runOptions": {
         "instanceLimit": 1
-      }
-    },
-    {
-      "label": "desk: dev",
-      "detail": "Start Desk + Vite (alias for desk: start).",
-      "dependsOn": [
-        "desk: start"
-      ],
-      "problemMatcher": [],
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
-    },
-    {
-      "label": "desk: open (hot reload)",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/desk-dev.py",
-        "start",
-        "--open"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "detail": "Start Desk if needed, wait until ready, and open the browser.",
-      "problemMatcher": [],
-      "presentation": {
-        "panel": "shared",
-        "reveal": "always",
-        "clear": true
       }
     }
   ]

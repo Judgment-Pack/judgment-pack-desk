@@ -1,3 +1,7 @@
+import {readPackBasis,readPackReview} from './packProposal'
+import {readFailure} from '@judgment-pack/harness/failures'
+import {readExecution} from '@judgment-pack/harness/execution/state'
+import { readSavedQuestions } from '@judgment-pack/harness/questions'
 import { validAIConnectionId } from '../assistant/aiConnections'
 import { readAttachments, readMessageId, readResponseHistory } from './responseHistory'
 import { readPreviousCheck, readProbes } from '../research/runtimeProbes'
@@ -46,16 +50,21 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
     new Set(state.inheritedStatements.map(row => row[0])).size !== state.inheritedStatements.length)) return invalid()
   const turns: Turn[] = state.turns.map((turn, index) => {
     if (!object(turn) || (turn.role !== 'user' && turn.role !== 'assistant') || typeof turn.text !== 'string'
-      || (turn.statement !== undefined && typeof turn.statement !== 'string') || (turn.input !== undefined && typeof turn.input !== 'string') || (turn.interrupted !== undefined && typeof turn.interrupted !== 'boolean') || typeof turn.at !== 'string' || !['brief', 'message', 'unknowns', 'note'].includes(String(turn.kind))) return invalid()
+      || (turn.statement !== undefined && typeof turn.statement !== 'string') || (turn.input !== undefined && typeof turn.input !== 'string') || (turn.interrupted !== undefined && typeof turn.interrupted !== 'boolean') || typeof turn.at !== 'string' || !['brief', 'message', 'unknowns', 'note', 'question'].includes(String(turn.kind))) return invalid()
+    if(turn.researchChoice!==undefined && (turn.role!=='user' || !['ask','research','provided'].includes(String(turn.researchChoice))))return invalid()
+    if (turn.testDesign !== undefined && (!object(turn.testDesign) || typeof turn.testDesign.owner !== 'string' || !turn.testDesign.owner || turn.testDesign.owner.length > 256 || (turn.testDesign.proposalId !== undefined && typeof turn.testDesign.proposalId !== 'string'))) return invalid()
     if(turn.target!==undefined&&(!object(turn.target)||!validAIConnectionId(turn.target.connectionId)||typeof turn.target.connectionName!=='string'||turn.target.connectionName.length>128||typeof turn.target.model!=='string'||!turn.target.model||turn.target.model.length>128))return invalid()
-    return { ...(turn.target?{target:turn.target as unknown as NonNullable<Turn['target']>}:{}), id: readMessageId(turn.id) ?? `legacy-turn-${index}`, ...(turn.attachments !== undefined ? {attachments: readAttachments(turn.attachments, 4)} : {}), role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'], ...(typeof turn.statement === 'string' ? { statement: turn.statement } : {}), ...(typeof turn.input === 'string' ? { input: turn.input } : {}), ...(turn.interrupted === true ? { interrupted: true } : {}) }
+    return { ...(readPackBasis(turn.packContext) ? {packContext:readPackBasis(turn.packContext)} : {}), ...(turn.testDesign ? {testDesign: turn.testDesign as Turn['testDesign']} : {}), ...(turn.researchChoice ? {researchChoice:turn.researchChoice as Turn['researchChoice']} : {}), ...(turn.target?{target:turn.target as unknown as NonNullable<Turn['target']>}:{}), id: readMessageId(turn.id) ?? `legacy-turn-${index}`, ...(turn.attachments !== undefined ? {attachments: readAttachments(turn.attachments, 4)} : {}), role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'], ...(typeof turn.statement === 'string' ? { statement: turn.statement } : {}), ...(typeof turn.input === 'string' ? { input: turn.input } : {}), ...(turn.interrupted === true ? { interrupted: true } : {}) }
   })
   if (new Set(turns.map(turn => turn.id)).size !== turns.length) return invalid()
+  const questions = readSavedQuestions(state.questions)
+  if (questions.some(q => !turns.some(t => t.id === q.id && t.role === 'assistant' && t.kind === 'question') || q.resolution && !turns.some(t => t.id === q.resolution!.turnId && t.role === 'user'))
+    || turns.some(t => t.kind === 'question' && !questions.some(q => q.id === t.id))) return invalid()
   const candidates = state.candidates.map((candidate, index) => {
     if (!object(candidate) || typeof candidate.text !== 'string') return invalid()
     // This parser also bounds nesting and rejects duplicate JSON members.
     parseJsonText(candidate.text)
-    return { responseId: readMessageId(candidate.responseId), text: candidate.text, document: JSON.parse(candidate.text) as unknown, digest: '', revision: index + 1, producedBy: 'conversation' as const, previousCheck: readPreviousCheck(candidate.previousCheck) }
+    return { packReview:readPackReview(candidate.packReview), responseId: readMessageId(candidate.responseId), text: candidate.text, document: JSON.parse(candidate.text) as unknown, digest: '', revision: index + 1, producedBy: 'conversation' as const, previousCheck: readPreviousCheck(candidate.previousCheck) }
   })
   const readCase = (row: unknown): RunState['cases'][number] => {
     if (!object(row) || typeof row.id !== 'string' || !object(row.facts) || typeof row.expectationSource !== 'string' || typeof row.rationale !== 'string') return invalid()
@@ -85,7 +94,9 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
       request: { source: source.request.source, dialect: source.request.dialect,
         ...(source.request.url ? { url: source.request.url as string } : {}), ...(source.request.query ? { query: source.request.query as string } : {}) } }
   })
-  return { state: { ...INITIAL_STATE, status: ['idle', 'running', 'complete', 'ready', 'needs-input', 'budget', 'stalled', 'stopped', 'failed'].includes(String(state.status)) ? state.status as RunState['status'] : 'idle', brief: state.brief, seedUrls: state.seedUrls, turns, candidates, responses: readResponseHistory(state.responses),
+  // Retain only the interrupted-conversation recovery hint. Artifact/check
+  // phases are reconstructed by restore, never resumed from a checkpoint.
+  return { state: { ...INITIAL_STATE, phase: state.phase==='conversation' && ['failed','running','stopped','budget'].includes(String(state.status)) ? 'conversation' : INITIAL_STATE.phase, detail: typeof state.detail === 'string' && state.detail.length <= 4096 ? state.detail : '', status: ['idle', 'running', 'complete', 'ready', 'needs-input', 'budget', 'stalled', 'stopped', 'failed'].includes(String(state.status)) ? state.status as RunState['status'] : 'idle', execution:readExecution(state.execution), failure:readFailure(state.failure), brief: state.brief, seedUrls: state.seedUrls, turns, questions, candidates, responses: readResponseHistory(state.responses),
     inheritedStatements: state.inheritedStatements as RunState['inheritedStatements'],
     checkRun: ['running','complete','failed','stopped'].includes(String(state.checkRun)) ? state.checkRun as RunState['checkRun'] : undefined,
     probes: readProbes(state.probes), cases: state.cases.map(readCase), expectationIssues: issues, unknowns: state.unknowns,

@@ -2,8 +2,10 @@ package desk
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -924,11 +926,11 @@ func TestJobsForwardsAJobsJournalWithItsCursorAlone(t *testing.T) {
 		// Every other key is left out, each of the shared list's included.
 		{"after=40&q=needle&state=running&review=true&preparations=1&job=job_11111111111111111111111111111111&limit=1&untrusted=ignored", "/v1/jobs/" + job + "/events?after=40"},
 		{"q=needle&state=running&review=true&preparations=1", "/v1/jobs/" + job + "/events"},
-		// Runner v0.8.0's backward paging (capability journal-backward) is
-		// not asked for: the tab reads forward, and Runner answers a request
-		// with neither tail nor before exactly as before.
-		{"tail=true", "/v1/jobs/" + job + "/events"},
-		{"after=40&tail=true&before=41", "/v1/jobs/" + job + "/events?after=40"},
+		{"tail=true", "/v1/jobs/" + job + "/events?tail=true"},
+		{"before=41", "/v1/jobs/" + job + "/events?before=41"},
+		{"before=0", "/v1/jobs/" + job + "/events?before=0"},
+		{"tail=false&after=40", "/v1/jobs/" + job + "/events?after=40&tail=false"},
+		{"before=000000000000000041&ignored=yes", "/v1/jobs/" + job + "/events?before=000000000000000041"},
 	} {
 		forwarded = nil
 		if w := call("GET", events+"?"+tc.query, ""); w.Code != 200 || w.Body.String() != page || !slices.Equal(forwarded, []string{"GET " + tc.runner}) {
@@ -950,6 +952,9 @@ func TestJobsForwardsAJobsJournalWithItsCursorAlone(t *testing.T) {
 		"after=1234567890123456789",
 		"after=40;bad=x",
 		"after=40&bad=%zz",
+		"tail=true&after=40", "tail=true&before=41", "after=40&before=41",
+		"tail=1", "tail=", "tail=true&tail=true", "before=", "before=-1",
+		"before=4e1", "before=1234567890123456789", "before=40&before=41",
 	} {
 		forwarded = nil
 		if w := call("GET", events+"?"+query, ""); w.Code != 400 || len(forwarded) != 0 {
@@ -1294,6 +1299,27 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 				t.Fatalf("run: %d %s", status, data)
 			}
 		}
+		// The actual pinned Runner advertises and serves backward activity
+		// through Desk, not just through the browser stand-in.
+		status, activity := call(ts, desk, "GET", "operations/status", "")
+		if status != 200 || !bytes.Contains(activity, []byte(`"journal-backward"`)) {
+			t.Fatalf("backward capability: %d %s", status, activity)
+		}
+		status, activity = call(ts, desk, "GET", "operations/jobs/"+job.ID+"/events?tail=true", "")
+		var page struct {
+			Items []struct {
+				Sequence int64 `json:"sequence"`
+			} `json:"items"`
+			Before int64 `json:"before"`
+			Next   int64 `json:"next"`
+		}
+		if status != 200 || json.Unmarshal(activity, &page) != nil || len(page.Items) == 0 || page.Before != page.Items[0].Sequence || page.Next != page.Items[len(page.Items)-1].Sequence {
+			t.Fatalf("backward page: %d %s", status, activity)
+		}
+		status, activity = call(ts, desk, "GET", "operations/jobs/"+job.ID+"/events?before="+fmt.Sprint(page.Before), "")
+		if status != 200 {
+			t.Fatalf("older page: %d %s", status, activity)
+		}
 		status, data = call(ts, desk, "GET", "operations/runs/"+run.ID+"/verification?version=5", "")
 		var bundle map[string]json.RawMessage
 		var digest string
@@ -1340,6 +1366,100 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 		if out, err := verify(file, digest, key.PublicKey); err != nil || !strings.Contains(out, `"status":"signed"`) {
 			t.Fatalf("desk %q: verify-run --require-signed: %v %s", desk, err, out)
 		}
+		var exportedRun struct {
+			ID         string `json:"id"`
+			AuditBytes []byte `json:"auditBytes"`
+		}
+		if json.Unmarshal(bundle["run"], &exportedRun) != nil {
+			t.Fatal("export run unreadable")
+		}
+		status, checked := call(ts, desk, "POST", "audit/runs/"+exportedRun.ID+"/signature", "")
+		var signature runSignatureAnswer
+		if status != 200 || json.Unmarshal(checked, &signature) != nil || signature.Status != "verified" || signature.PublicKey != key.PublicKey || signature.References != "verified" {
+			t.Fatalf("explicit signature check %d %s", status, checked)
+		}
+		// The release digest was kept before job creation, not copied from
+		// this export. Mutating only the release keeps the audit signature
+		// valid but must fail the separate Runner check.
+		scope := s
+		if desk != "" {
+			s.desksMu.Lock()
+			scope = s.desks[desk]
+			s.desksMu.Unlock()
+		}
+		var released struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(bundle["release"], &released) != nil {
+			t.Fatal("release unreadable")
+		}
+		references, err := scope.readRunReferences(released.ID)
+		if err != nil || references.ReleaseDigest != digest {
+			t.Fatalf("independent references: %+v %v", references, err)
+		}
+		exportBytes, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		changedExport := bytes.Replace(exportBytes, []byte(`"title":"A scored pack"`), []byte(`"title":"A changed pack"`), 1)
+		if bytes.Equal(changedExport, exportBytes) {
+			t.Fatal("release fixture was not changed")
+		}
+		if got := verifyRunReferences(context.Background(), bin, changedExport, references, signature); got != "invalid" {
+			t.Fatalf("modified release: %s", got)
+		}
+		badProfiles := references
+		badProfiles.Profiles = json.RawMessage(`["not a trusted profile"]`)
+		if got := verifyRunReferences(context.Background(), bin, exportBytes, badProfiles, signature); got != "invalid" {
+			t.Fatalf("invalid independent profiles: %s", got)
+		}
+		// Missing old references cannot be backfilled from an export, even
+		// when the signature itself verifies. Nor can another desk use them.
+		if got := scope.checkRunReferences(context.Background(), exportBytes, signature); got != "verified" {
+			t.Fatalf("retained references: %s", got)
+		}
+		referencePath := filepath.Join(scope.projectDir, runReferencesDir, released.ID+".json")
+		if err := os.Rename(referencePath, referencePath+".held"); err != nil {
+			t.Fatal(err)
+		}
+		status, oldCheck := call(ts, desk, "POST", "audit/runs/"+exportedRun.ID+"/signature", "")
+		var old runSignatureAnswer
+		if status != 200 || json.Unmarshal(oldCheck, &old) != nil || old.Status != "verified" || old.References != "unavailable" {
+			t.Fatalf("historical result: %d %s", status, oldCheck)
+		}
+		if _, err := os.Stat(referencePath); !os.IsNotExist(err) {
+			t.Fatal("verification recreated missing references")
+		}
+		if err := os.Rename(referencePath+".held", referencePath); err != nil {
+			t.Fatal(err)
+		}
+		// A different retained key, a modified record and a modified sidecar
+		// must each fail. A prior key still verifies when kept in the list.
+		own := deskPublicKey{PublicKey: key.PublicKey, KeyID: key.KeyID}
+		other := deskPublicKey{PublicKey: strings.TrimSpace(ownerPublic), KeyID: ""}
+		var generated struct {
+			KeyID string `json:"keyId"`
+		}
+		if out, err := run(runtime, "audit", "key", "public", inherited, "--format", "json"); err == nil {
+			json.Unmarshal([]byte(out), &generated)
+			other.KeyID = generated.KeyID
+		}
+		base := runSignatureAnswer{Status: "unavailable"}
+		for name, pair := range map[string][2][]byte{"record": {bytes.Replace(exportedRun.AuditBytes, []byte("proceed"), []byte("changed"), 1), signed.AuditSignatures}, "sidecar": {exportedRun.AuditBytes, bytes.Replace(signed.AuditSignatures, []byte("signature"), []byte("tampered"), 1)}} {
+			if bytes.Equal(pair[0], exportedRun.AuditBytes) && bytes.Equal(pair[1], signed.AuditSignatures) {
+				t.Fatalf("%s fixture was not tampered", name)
+			}
+			if got := verifySavedSignature(context.Background(), runtime, pair[0], pair[1], []deskPublicKey{own}, base); got.Status == "verified" {
+				t.Fatalf("%s tampering verified", name)
+			}
+		}
+		if got := verifySavedSignature(context.Background(), runtime, exportedRun.AuditBytes, signed.AuditSignatures, []deskPublicKey{other}, base); got.Status == "verified" {
+			t.Fatal("wrong key verified")
+		}
+		if got := verifySavedSignature(context.Background(), runtime, exportedRun.AuditBytes, signed.AuditSignatures, []deskPublicKey{other, own}, base); got.Status != "verified" {
+			t.Fatalf("retained historical key failed: %+v", got)
+		}
+
 		if out, err := verify(file, digest, strings.TrimSpace(ownerPublic)); err == nil {
 			t.Fatalf("desk %q's run verifies under the inherited key: %s", desk, out)
 		}
@@ -1380,5 +1500,34 @@ func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
 	}
 	if mode := permOf(t, folder); mode != 0o770 {
 		t.Errorf("the refused folder was changed to %v", mode)
+	}
+}
+
+func TestJobsInstallationConfigurationIsReadOnlyAtBrowserBoundary(t *testing.T) {
+	var forwarded []string
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = append(forwarded, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[]`))
+	}))
+	defer companion.Close()
+	s, _ := newTestServer(t, false)
+	s.jobs = &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{}), stop: make(chan struct{})}
+	t.Cleanup(func() { s.jobs.closed = true })
+	for _, path := range []string{"input-profiles", "background-connections", "status"} {
+		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+			forwarded = nil
+			request := httptest.NewRequest(method, "/api/operations/"+path, strings.NewReader(`{"id":"browser-profile"}`))
+			request.Header.Set("Authorization", "Bearer "+testToken)
+			response := httptest.NewRecorder()
+			s.ServeHTTP(response, request)
+			if method == "GET" {
+				if response.Code != 200 || !slices.Equal(forwarded, []string{"GET /v1/" + path}) {
+					t.Fatalf("read %s: %d %v", path, response.Code, forwarded)
+				}
+			} else if response.Code != 404 || len(forwarded) != 0 {
+				t.Fatalf("browser write reached installation authority: %s %s %d %v", method, path, response.Code, forwarded)
+			}
+		}
 	}
 }

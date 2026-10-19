@@ -1,3 +1,4 @@
+import { DeskNotices, DeskNoticesProvider } from '../shell/DeskNotices'
 /**
  * The route, as the page runs it: two answers about one file, one check, and
  * the address space joining the document to the Inspector.
@@ -188,7 +189,7 @@ function draw(
   )
   const tree = (
     <QueryClientProvider client={testQueryClient()}>
-      <RouterProvider router={router} />
+      <DeskNoticesProvider><RouterProvider router={router} /><DeskNotices/></DeskNoticesProvider>
     </QueryClientProvider>
   )
   // **StrictMode on request**, because production runs in it: `main.tsx`
@@ -196,6 +197,12 @@ function draw(
   // visible there. A test that never renders in StrictMode cannot see it.
   const view = render(pane.strict === true ? <StrictMode>{tree}</StrictMode> : tree)
   return { ...view, router, calls: stub.calls, revealed }
+}
+
+// Page identity stays mounted while the document loads; it is not a readiness signal.
+async function waitForPack() {
+  await screen.findByRole('heading', {level: 1})
+  await waitFor(() => expect(screen.queryByText('Loading pack…')).toBeNull())
 }
 
 const SERVED: Record<string, ToolHandler> = {
@@ -211,7 +218,7 @@ describe('the document and the check strip', () => {
 
   it('renders the document and the runtime’s own layer sentence', async () => {
     draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() =>
       expect(
         screen.getByText(
@@ -232,7 +239,7 @@ describe('the document and the check strip', () => {
 
   it('says the tool was never offered rather than that the document is fine', async () => {
     draw(SERVED, { validateSupported: false })
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     expect(
       screen.getByText('This runtime does not offer validate, so this document is unchecked.')
     ).toBeTruthy()
@@ -241,7 +248,7 @@ describe('the document and the check strip', () => {
 
   it('says the listing is what is missing where nothing has answered', async () => {
     draw(SERVED, { known: false, validateSupported: false })
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     expect(
       screen.getByText('The runtime has not said what it can do, so this document is unchecked.')
     ).toBeTruthy()
@@ -252,7 +259,7 @@ describe('the two answers about one file', () => {
   it('says plainly when the digests disagree', async () => {
     chassis(PACK_TEXT, 'f'.repeat(64))
     draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() =>
       expect(screen.getByText(/do not describe one revision/)).toBeTruthy()
     )
@@ -261,7 +268,7 @@ describe('the two answers about one file', () => {
   it('says nothing where they agree', async () => {
     chassis(PACK_TEXT, DIGEST)
     draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText(/checked against the bytes/)).toBeTruthy())
     expect(screen.queryByText(/do not describe one revision/)).toBeNull()
   })
@@ -269,7 +276,7 @@ describe('the two answers about one file', () => {
   it('checks the served document, and labels it, where the file did not load', async () => {
     chassis(undefined, DIGEST)
     const { calls } = draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() =>
       expect(screen.getByText('checked against the document the runtime served')).toBeTruthy()
     )
@@ -283,7 +290,7 @@ describe('the two answers about one file', () => {
     )
     chassis(duplicated, DIGEST)
     draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() =>
       expect(screen.getByText(/will not edit around this file/)).toBeTruthy()
     )
@@ -299,7 +306,7 @@ describe('the deep link', () => {
       scrolled.push(this.getAttribute('data-pointer') ?? '')
     }
     const { router } = draw(SERVED, {}, '/packs/vendor-onboarding#/rules/0')
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(router.state.location.search).toBe('?at=%2Frules%2F0'))
     expect(scrolled).toContain('/rules/0')
     expect(document.activeElement?.getAttribute('data-pointer')).toBe('/rules/0')
@@ -309,14 +316,14 @@ describe('the deep link', () => {
 
   it('changes nothing for a pointer the document does not render', async () => {
     const { router } = draw(SERVED, {}, '/packs/vendor-onboarding#/rules/99')
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText(/checked against/)).toBeTruthy())
     expect(router.state.location.search).toBe('')
   })
 
   it('ignores a fragment that is not a pointer at all', async () => {
     const { router } = draw(SERVED, {}, '/packs/vendor-onboarding#shortcuts')
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText(/checked against/)).toBeTruthy())
     expect(router.state.location.search).toBe('')
   })
@@ -389,7 +396,7 @@ describe('a diagnostic about a member the document omits', () => {
         })
       })
     })
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText(/JPS-STRUCTURE-REQUIRED-MEMBER/)).toBeTruthy())
     expect(screen.getByText('Required member is missing.')).toBeTruthy()
     // Named at its own pointer, verbatim, because that is the member it is
@@ -431,7 +438,7 @@ describe('a diagnostic about a member the document omits', () => {
         })
       })
     })
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText(/JPS-STRUCTURE-UNKNOWN-MEMBER/)).toBeTruthy())
     expect(screen.getByText('This member is not in the schema.')).toBeTruthy()
     // Named at its own pointer, verbatim, because no block on the page carries
@@ -464,7 +471,7 @@ describe('the outline', () => {
     // the selection verbatim marked no entry at all and threw the scroll-spy's
     // answer away for the rest of the visit.
     draw(SERVED, {}, '/packs/vendor-onboarding?at=%2Frules%2F0')
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
     await waitFor(() =>
@@ -474,7 +481,7 @@ describe('the outline', () => {
 
   it('selects without pushing, and keeps the rest of the address', async () => {
     const { router } = draw(SERVED, {}, '/packs/vendor-onboarding?view=document&token=abc123')
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const outline = screen.getByRole('navigation', { name: 'Members' })
     fireEvent.click(outline.querySelectorAll('a')[1]!)
@@ -491,7 +498,7 @@ describe('which bytes the page says it checked', () => {
   it('says nothing at all where the runtime does not offer validate', async () => {
     chassis(PACK_TEXT, DIGEST)
     draw(SERVED, { validateSupported: false })
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     expect(screen.getByText(/does not offer validate/)).toBeTruthy()
     // "checked against the bytes of packs/x.pack.json" under "this document is
     // unchecked" is one of the two lying, and the reader cannot tell which.
@@ -502,7 +509,7 @@ describe('which bytes the page says it checked', () => {
   it('says nothing where the runtime has not said what it can do', async () => {
     chassis(PACK_TEXT, DIGEST)
     draw(SERVED, { known: false })
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     expect(screen.getByText(/has not said what it can do/)).toBeTruthy()
     expect(screen.queryByText(PAST)).toBeNull()
   })
@@ -510,7 +517,7 @@ describe('which bytes the page says it checked', () => {
   it('says nothing where there are no bytes to check', async () => {
     chassis('', DIGEST)
     draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText(/no bytes to check yet/)).toBeTruthy())
     expect(screen.queryByText(PAST)).toBeNull()
   })
@@ -518,7 +525,7 @@ describe('which bytes the page says it checked', () => {
   it('is in the present tense while the check is in flight', async () => {
     chassis(PACK_TEXT, DIGEST)
     draw({ ...SERVED, validate: () => new Promise<never>(() => {}) })
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText('Checking…')).toBeTruthy())
     expect(screen.getByText(PRESENT)).toBeTruthy()
     expect(screen.queryByText(PAST)).toBeNull()
@@ -527,7 +534,7 @@ describe('which bytes the page says it checked', () => {
   it('is in the past tense once a report has arrived', async () => {
     chassis(PACK_TEXT, DIGEST)
     draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText(PAST)).toBeTruthy())
     expect(screen.getByText(PAST).textContent).toContain(PATH)
   })
@@ -541,7 +548,7 @@ describe('the outline entry an identity member marks', () => {
     // so four of the five equalled no entry and marked nothing at all.
     chassis(PACK_TEXT, DIGEST)
     draw(SERVED, {}, `/packs/vendor-onboarding?at=${encodeURIComponent(pointer)}`)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const entry = screen.getByRole('link', { name: /Identity/ })
     await waitFor(() => expect(entry.getAttribute('aria-current')).toBe('true'))
@@ -555,7 +562,7 @@ describe('the outline entry an identity member marks', () => {
     chassis(PACK_TEXT, DIGEST)
     const viewport = observable()
     draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     viewport.show(pointer)
     fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
     const entry = screen.getByRole('link', { name: /Identity/ })
@@ -615,7 +622,7 @@ describe('a check that ran over other bytes', () => {
       '/packs/vendor-onboarding?at=/rules/0',
       { inspector: true, tab: 'checks' }
     )
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText('This rule can never fire.')).toBeTruthy())
     expect(screen.getByText(/different digest from the file on disk/)).toBeTruthy()
     // The document on the page is the file's, so the rule the check named is
@@ -658,7 +665,7 @@ describe('a check that ran over other bytes', () => {
       '/packs/vendor-onboarding?at=/rules/0',
       { inspector: true, tab: 'checks' }
     )
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText('This rule can never fire.')).toBeTruthy())
     expect(screen.queryByText(/ran over different bytes/)).toBeNull()
   })
@@ -671,10 +678,10 @@ describe('a document with no bytes in it', () => {
     // check that was never going to start, for the whole of the visit.
     chassis('', DIGEST)
     draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
-    await waitFor(() =>
-      expect(screen.getByText(/no bytes to check yet/)).toBeTruthy()
-    )
+    await waitForPack()
+    fireEvent.pointerDown(await screen.findByRole('button', {name: 'Pack options'}), {button:0,ctrlKey:false,pointerType:'mouse'})
+    fireEvent.click(await screen.findByRole('menuitem', {name: 'Pack details…'}))
+    expect(await within(screen.getByRole('dialog', {name:'Pack details'})).findByText(/no bytes to check yet/)).toBeTruthy()
     expect(screen.queryByText('Checking…')).toBeNull()
   })
 })
@@ -686,7 +693,7 @@ describe('choosing a member with the pane closed', () => {
     // Otherwise the panel is filled behind a closed pane and the only thing
     // that changes on screen is the block's own border.
     const { revealed, container } = draw(SERVED)
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     expect(revealed).toEqual([])
     fireEvent.click(container.querySelector('[data-pointer="/rules/0"]')!)
     expect(revealed).toEqual(['reveal'])
@@ -694,14 +701,14 @@ describe('choosing a member with the pane closed', () => {
 
   it('opens it for a deep link too, which is a selection someone was sent', async () => {
     const { revealed } = draw(SERVED, {}, '/packs/vendor-onboarding#/rules/0')
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(revealed).toEqual(['reveal']))
   })
 
   it('opens it on arrival at an address that already carries one', async () => {
     // `?at` is what the desk writes, so it is what a copied link carries.
     const { revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?at=%2Frules%2F0')
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     expect(revealed).toEqual(['reveal'])
   })
 })
@@ -719,7 +726,7 @@ describe('the Checks panel while the check is in flight', () => {
       '/packs/vendor-onboarding?at=%2Frules%2F0',
       { inspector: true, tab: 'checks' }
     )
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(screen.getByText('Checking…')).toBeTruthy())
     // Diagnostics now occupy the Details slot, independently of Assistant.
     const panel = slotTarget!
@@ -741,7 +748,7 @@ describe('the Checks panel while the check is in flight', () => {
       '/packs/vendor-onboarding',
       { inspector: true }
     )
-    await screen.findByText(/the runtime refused the pack/)
+    await screen.findByRole('button',{name:'Pack unavailable'})
     expect(slotTarget!.textContent).toBe('')
   })
 })
@@ -755,7 +762,7 @@ describe('arriving at an address that names a member', () => {
     const { revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?at=/rules/0', {
       strict: true
     })
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(revealed.length).toBeGreaterThan(0))
     // Whatever the count, the pane is asked to *open* and never to flip: a
     // second call is idempotent, which is the property that matters.
@@ -767,7 +774,7 @@ describe('arriving at an address that names a member', () => {
     // -only effect made *zero* calls: a References link, or any deep link
     // followed from inside the pack, opened nothing at all.
     const { revealed, router } = draw(SERVED, {}, '/packs/vendor-onboarding')
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     expect(revealed).toEqual([])
 
     await act(async () => {
@@ -790,12 +797,12 @@ describe('arriving at an address that names a member', () => {
       {},
       '/packs/vendor-onboarding?at=/rules/0'
     )
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(revealed).toEqual(['reveal']))
     await act(async () => {
       rerender(
         <QueryClientProvider client={testQueryClient()}>
-          <RouterProvider router={router} />
+          <DeskNoticesProvider><RouterProvider router={router} /><DeskNotices/></DeskNoticesProvider>
         </QueryClientProvider>
       )
     })
@@ -809,7 +816,7 @@ describe('arriving at an address that names a member', () => {
     // down, so K still looked like the last entry this had handled and Back —
     // an arrival at an address naming a member — opened nothing.
     const { revealed, router } = draw(SERVED, {}, '/packs/vendor-onboarding?at=/rules/0')
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(revealed).toEqual(['reveal']))
 
     await act(async () => {
@@ -832,7 +839,7 @@ describe('arriving at an address that names a member', () => {
     const { revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?at=/rules/0', {
       inspector: true
     })
-    await screen.findByRole('heading', { level: 1 })
+    await waitForPack()
     await waitFor(() => expect(revealed).toEqual(['reveal']))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'close the inspector' }))
@@ -897,7 +904,7 @@ describe('the guided reading workspace', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Pack options' }), {key:'Enter'})
     fireEvent.click(await screen.findByRole('menuitem', { name: 'View JSON' }))
     const dialog = await screen.findByRole('dialog', { name: 'Pack JSON' })
-    expect(within(dialog).getByRole('region', { name: 'Pack JSON' }).textContent).toBe(PACK_TEXT)
+    expect(JSON.parse(within(dialog).getByRole('region', { name: 'Pack JSON' }).textContent!)).toEqual(JSON.parse(PACK_TEXT))
     expect(dialog.getAttribute('data-size')).toBe('wide')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Pack options' })))
@@ -908,6 +915,7 @@ describe('the guided reading workspace', () => {
 it('separates saved pack commands from metadata and restores focus after inspecting details',async()=>{
  chassis(PACK_TEXT,DIGEST)
  draw(SERVED,{},'/packs/vendor-onboarding')
+ await waitForPack()
  const trigger=await screen.findByRole('button',{name:'Pack options'})
  fireEvent.keyDown(trigger,{key:'Enter'})
  const menu=await screen.findByRole('menu')

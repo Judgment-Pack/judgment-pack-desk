@@ -5,7 +5,7 @@ import { parseJsonText, type JsonNode } from '../research/verify/canon'
 import { sha256Hex } from '../research/verify/receipt'
 import { factFields } from '../packs/test-workspace/model'
 import type { PackDocument } from '../mcp/types'
-import type { InputMapping, SourceInput } from './client'
+import type { LegacyDialect, SourceInput } from './client'
 
 export const pointerEscape = (s: string) => s.replace(/~/g, '~0').replace(/\//g, '~1')
 export function sourceText(snapshot: SourceInput['snapshot']): string {
@@ -35,7 +35,7 @@ export async function localSnapshot(file: File): Promise<SourceInput['snapshot']
   sourcePaths(snapshot)
   return snapshot
 }
-export function initialMapping(doc: PackDocument, provider: InputMapping['provider'], paths: string[]): InputMapping {
+export function initialMapping(doc: PackDocument, provider: LegacyDialect['provider'], paths: string[]): LegacyDialect {
   const choose = (...candidates: string[]) => candidates.find(path => paths.includes(path))
   return {
     version: 1, provider,

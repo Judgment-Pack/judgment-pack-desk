@@ -33,12 +33,14 @@ const (
 // out so subprocess output and file-watcher broadcasts cannot interleave frames.
 // Silent agent sockets own their writer and do not receive those broadcasts.
 type conn struct {
-	ws     *websocket.Conn
-	silent bool // Agent sockets do not receive MCP file-watcher notifications.
-	out    chan []byte
-	once   sync.Once
-	done   chan struct{}
-	cancel context.CancelFunc
+	requestsMu sync.Mutex
+	requests   map[string]bool
+	ws         *websocket.Conn
+	silent     bool // Agent sockets do not receive MCP file-watcher notifications.
+	out        chan []byte
+	once       sync.Once
+	done       chan struct{}
+	cancel     context.CancelFunc
 }
 
 func (c *conn) send(msg []byte) {
@@ -57,7 +59,7 @@ func (c *conn) stop() { c.once.Do(func() { close(c.done) }) }
 func (s *Server) register(c *conn) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closing {
+	if s.closing || s.location.moving.Load() || s.projectHasMoved() {
 		return false
 	}
 	s.relayWork.Add(1)
@@ -101,8 +103,8 @@ func (s *Server) broadcastFileChange(relPath string) {
 // relay wires one WebSocket to one `jpack mcp` subprocess for the life of the
 // socket. JSON-RPC bytes cross untouched: one message per text frame on the
 // browser side, newline-delimited JSON on the stdio side. The chassis parses
-// nothing and rewrites nothing, which is what keeps it generic — a tool added
-// to the runtime tomorrow reaches the page with no change here.
+// only the execution-demand boundary in an enabled workspace. Unconfigured
+// workspaces retain the generic Runtime relay contract.
 func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	// Origin was already checked against the served origin (and, in dev mode,
 	// the Vite origin) in handleWS; the library's own check would reject the
@@ -221,6 +223,7 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 		for {
 			line, err := br.ReadBytes('\n')
 			if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+				c.finishProjectRequest(trimmed)
 				c.send(trimmed)
 			}
 			if err != nil {
@@ -251,6 +254,12 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 			if bytes.ContainsAny(data, "\r\n") {
 				s.log.Printf("desk: refusing a frame containing a newline (%d bytes)", len(data))
 				continue
+			}
+			if !s.admitRuntimeFrame(c, data) {
+				continue
+			}
+			if !s.beginProjectRequest(c, data) {
+				return
 			}
 			if _, err := stdin.Write(append(data, '\n')); err != nil {
 				return

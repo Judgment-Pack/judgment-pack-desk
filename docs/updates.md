@@ -8,9 +8,19 @@ Runtime and pack. Upgrading Desk does not reinterpret those jobs.
 
 `internal/releaseplan/components.json` is the source of component versions,
 repository identities, exact commits and channels. Go embeds it; the Gateway
-builder, Jobs compatibility CI and release packager read it. Development pins
+builder, Jobs compatibility CI and release packager read it. Its `web-packages`
+member pins the web page's own packages: the assistant harness,
+`@judgment-pack/harness`, is one attested release asset of
+Judgment-Pack/judgment-pack-agent (version, tag commit, asset name and sha256),
+which `web/package.json` installs by that asset's URL and `web/package-lock.json`
+holds by its sha512. `scripts/component-releases.py check` holds the two npm
+files to the entry, and `verify` downloads the asset and holds both digests and
+the tag's commit to it, and verifies the asset's attestation with `gh attestation
+verify`: made by the agent repository's release workflow at the locked tag and
+commit, for an asset of that name and sha256. The binary bundle does not carry
+it, since Vite builds it into the page. Development pins
 are held rather than replaced with an older published release. A stable Desk
-release refuses development pins. Runner is pinned to `v0.8.0`, including calculator profiles, bindings,
+release refuses development pins. A store holding a Desk-registered scoped profile from before #466 whose entry RFC 0018 round 16 refuses is set aside by Runner v0.23.0 at upgrade; the Desk shows it as set aside with Runner's reason and never offers it (#480), and a binding to it is refused as `input_profile_set_aside`, shown as the Desk's message naming the profile and that reason; a run queued against it ends `failed` with reason `profile-set-aside`, it still counts toward the bound of 16, and a Gateway connection configured for it refuses to start. Runner is pinned to `v0.23.0`; since `v0.8.0` it includes calculator profiles, bindings,
 calculated input lineage, verification export versions 3 to 5, the installation's chain
 of runs, and a journal of each job's activity. It also exports a run whose job has no
 mapping v2, as version 3 or later with `"inputs":"not-mapped"`, where earlier Runners
@@ -44,7 +54,7 @@ backups](https://github.com/Judgment-Pack/judgment-pack-runner/blob/v0.6.0/READM
 Desk's release stays at state epoch 1 even so: the change is Runner's store, not Desk's
 own state, and this paragraph is the explicit step it would otherwise lack.
 
-Runtime is pinned to `v0.30.0`, which chains a project's audit trail over its exact bytes
+Runtime is pinned to `v0.34.0`; since `v0.30.0` it chains a project's audit trail over its exact bytes
 by default, and signs it where a key is set (runtime ADR-0047). Its `audit verify` report
 also says, among what it does not establish, that the trail records decisions and not
 refused or failed attempts (runtime ADR-0048); the decision-record panel shows that
@@ -73,7 +83,7 @@ runtimes of desks Desk made, with `JPACK_SIGNING_KEY` (#377): set where Desk was
 it holds only the project Desk was started on to the key it names, and a desk Desk made
 signs with its own key.
 
-Gateway is pinned to `v0.11.0` and includes `adapter-render`, required by its
+Gateway is pinned to `v0.21.0`; since `v0.11.0` it includes `adapter-render`, required by its
 local source plan, and the two OCR workers `ocr-tesseract` and `ocr-cloud`, which
 the document processors run beside the companion
 ([document processing](document-processing.md)). Desk now asks for the plan with
@@ -275,14 +285,15 @@ unpublished local change from GitHub.
 
 ## Development start and restart
 
-The VS Code `desk: start` and `desk: restart` tasks (`scripts/desk-dev.py`)
+The VS Code `desk: dev start` and `desk: dev restart` tasks (`scripts/desk-dev.py`)
 synchronize Runtime, Runner, its source worker, Gateway and adapters from the
 same lock before building Desk (`scripts/dev-components.py`). They no longer use
-`jpack` from `PATH` or companions left in `bin`.
+`jpack` from `PATH` or companions left in `bin`. The separate `desk: start` task
+launches the installed Desk.
 
 On a cache miss, each locked commit is fetched into a temporary checkout and
-checked against its version tag. Sibling repositories are never pulled, reset or
-built. Runtime, Runner and the source worker must carry the locked commit, with no
+verified exactly. Non-development pins are additionally checked against their
+version tags. Sibling repositories are never pulled, reset or built. Runtime, Runner and the source worker must carry the locked commit, with no
 local modification, in their Go build stamp; Gateway and adapters are built from
 the locked commit's archive. These builds ignore `go.work` and any `GOFLAGS`
 saved with `go env -w`. Each completed set records its lock, build-recipe
@@ -303,7 +314,7 @@ executes. The default Runtime and Runner paths are passed explicitly.
 Starts never delete anything, so each leaves its launch directory, more than
 100 MB, behind, and a failed build leaves its marked `.building-*` staging
 directory. Remove old ones explicitly with Desk stopped:
-`python3 scripts/desk-dev.py prune`, or the **desk: prune** task. It refuses
+`python3 scripts/desk-dev.py prune`, or the **desk: dev prune** task. It refuses
 while servers this launcher started are running, keeps the launch the last start
 used, removes only directories the launcher marked as launches in this
 checkout's `bin/dev-launches`, and never follows a link: `bin`,

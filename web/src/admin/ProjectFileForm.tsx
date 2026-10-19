@@ -1,3 +1,4 @@
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
 /**
@@ -208,18 +209,7 @@ export function ProjectFileForm<D>({
     >
       <fieldset disabled={save.pending || !save.ready}>
         <FieldGroup>{children}</FieldGroup>
-        <p className={styles.actions}>
-          {save.pending && <span className="quiet">{msg("writing…")}</span>}
-          {save.reloading && <span className="quiet">{msg("reading…")}</span>}
-          {save.said !== undefined && !save.pending && (
-            <span className="quiet">{systemMessage(save.said)}</span>
-          )}
-          <Button
-            variant="primary"
-            type="submit"
-            disabled={!changed || save.pending || save.reloading}
-          >{msg("Save")}</Button>
-        </p>
+
       </fieldset>
 
       {save.blocked !== undefined && <p className="quiet">{systemMessage(save.blocked)}</p>}
@@ -258,6 +248,15 @@ export function ProjectFileForm<D>({
       )}
 
       {save.refusal !== undefined && <Alert reason={save.refusal}>{msg("Nothing was written.")}</Alert>}
+      <SettingsActions feedback={<SettingsFeedback pending={save.pending || save.reloading} tone={save.said !== undefined && !save.pending && !save.reloading ? 'success' : 'neutral'}>
+        {save.pending ? msg('Saving…') : save.reloading ? msg('Loading…') : save.said !== undefined ? systemMessage(save.said) : changed ? msg('Unsaved changes') : null}
+      </SettingsFeedback>}>
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={!changed || save.pending || save.reloading || !save.ready}
+          >{msg("Save")}</Button>
+      </SettingsActions>
     </form>
   )
 }

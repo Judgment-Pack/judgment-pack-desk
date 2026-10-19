@@ -1,0 +1,5 @@
+.hint { margin: 0; color: var(--ink-soft); font-size: var(--text-sm); }
+.recovery { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); color: var(--ink-soft); font-size: var(--text-sm); padding-block: var(--space-2); }
+
+.dialogBody { display: grid; gap: var(--space-3); min-width: 0; }
+.problem { color: var(--unknown); }

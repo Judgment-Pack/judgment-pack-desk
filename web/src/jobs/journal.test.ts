@@ -8,8 +8,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { beforeTheJournal, catchUp, creations, emptyJournal, entryOf, JOURNAL_KINDS, JOURNAL_LIMITS, JOURNAL_REFRESH_MS, JOURNAL_SOURCE, kindText, readCount, WORDED_KINDS, yieldToBrowser, type Journal, type JournalPage } from './journal'
-import runnerKinds from './__fixtures__/runner-v0.8.0-journal-kinds.json'
-import everyKind from './__fixtures__/runner-v0.8.0-journal-entries.json'
+import runnerKinds from './__fixtures__/runner-v0.24.0-journal-kinds.json'
+import everyKind from './__fixtures__/runner-v0.15.0-dev-journal-entries.json'
 
 const missingFrom = (list: readonly string[], from: readonly string[]) => list.filter(item => !from.includes(item))
 
@@ -23,6 +23,7 @@ describe('the kinds the tab words', () => {
     // from that Runner's openapi.json and every kind it adds is worded.
     const lock = JSON.parse(readFileSync(join(import.meta.dirname, '../../../internal/releaseplan/components.json'), 'utf8'))
     expect(lock.components.runner.version).toBe(runnerKinds.tag)
+    expect(lock.components.runner.revision).toBe(runnerKinds.revision)
   })
 
   it('cover the fixture of every kind that Runner’s own contract test reads', () => {

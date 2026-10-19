@@ -51,7 +51,7 @@ describe('project folder organization',()=>{
   expect(packFolder(doc,'constructor')).toBe(HOME_FOLDER)
   const saved=decodeFolders(JSON.parse(JSON.stringify(apply(doc,{type:'assign',packId:'constructor',folderId:'a'}))))
   expect(packFolder(saved,'constructor')).toBe('a')
-  for(const value of [{...doc,version:3},{...doc,extra:true},{...doc,assignments:{'my-pack':'missing'}},{...doc,folders:[]},{...doc,folders:[...doc.folders,doc.folders[1]]}])expect(()=>decodeFolders(value)).toThrow()
+  for(const value of [{...doc,version:4},{...doc,extra:true},{...doc,assignments:{'my-pack':'missing'}},{...doc,folders:[]},{...doc,folders:[...doc.folders,doc.folders[1]]}])expect(()=>decodeFolders(value)).toThrow()
  })
  it('searches descendants only when asked and keeps All packs independent of membership',()=>{
   const doc=apply(apply(defaultFolders(),create('a')),create('b','a'))

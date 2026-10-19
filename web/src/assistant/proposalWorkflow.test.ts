@@ -35,16 +35,16 @@ it('persists invalid input and exact findings before requesting a correction', a
   expect(result.message).toContain('No changes have been saved')
   expect(snapshots.find((s) => s.state === 'checking')?.attempts[0]?.document).toEqual(bad)
 })
-it('bounds correction requests and retains all rejected proposals', async () => {
+it('stops repeated proposals and retains both attempts', async () => {
   const generate = vi.fn().mockResolvedValue(reply(bad))
   const result = await runProposalWorkflow(
     'design',
     { generate, validate: async () => [finding], checkpoint: async () => {} },
     new AbortController().signal,
   )
-  expect(generate).toHaveBeenCalledTimes(3)
+  expect(generate).toHaveBeenCalledTimes(2)
   expect(result.state).toBe('blocked')
-  expect(result.attempts).toHaveLength(3)
+  expect(result.attempts).toHaveLength(2)
 })
 it('stops before another model request when canceled during validation', async () => {
   const controller = new AbortController()

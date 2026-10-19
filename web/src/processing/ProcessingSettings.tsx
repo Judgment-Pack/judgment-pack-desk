@@ -1,3 +1,8 @@
+import {LoadingState} from '../ui/LoadingState'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
+import { DeskStatusNotice } from '../shell/DeskNotices'
+import { PopoverClose } from '../ui/Popover'
+import { ButtonLink } from '../ui/Button'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { msg, systemMessage, useLocale } from '../i18n'
@@ -25,37 +30,41 @@ type Settings = ProcessingAnswer<ProcessingSettings>
 export function OCRSettings() {
   useLocale()
   const query = useProcessing(), client = useQueryClient()
-  const [notice, setNotice] = useState('')
   const read = query.data
   const failed = async (error: Error) => {
     if (error instanceof ProcessingError && error.word === 'processing-restart-changed') {
       await query.refetch()
-      setNotice(error.message)
     }
   }
   // A save answers the settings and the running gateway; both replace what was read.
   const saved = (next: Settings) => {
     client.setQueryData(PROCESSING_KEY, next)
     if (next.localGateway.restarted) {
-      setNotice(next.localGateway.status === 'ready' ? sourceMessage('Desk restarted its local gateway with these settings.') : sourceMessage('Desk stopped its local gateway, and it could not start again.'))
       void client.invalidateQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
-    } else setNotice('')
+    }
   }
   if (!read) return <div className={styles.stack}>
-    <p className={styles.note} role={query.error ? 'alert' : 'status'}>{query.error ? msg('The document processing settings could not be read.') : msg('Loading OCR settings…')}</p>
-    {!!query.error && <Button onClick={() => void query.refetch()}>{msg('Retry')}</Button>}
+    {query.error ? <SettingsFeedback tone="error" actions={<Button onClick={() => void query.refetch()}>{msg('Retry')}</Button>}>{msg('The document processing settings could not be read.')}</SettingsFeedback> : <LoadingState>{msg('Loading OCR settings…')}</LoadingState>}
   </div>
   return <div className={styles.stack}>
     <RunningState settings={read.result} gateway={read.localGateway} />
-    {notice && <p role="status" className={styles.note}>{notice}</p>}
     <OCRPreferences read={read} onSaved={saved} onError={failed} />
     <OCRProcessors read={read} onSaved={saved} onError={failed} />
   </div>
 }
 
+function ProcessingFeedback({ result, error, pending = false, dirty = false }: { result?: Settings; error?: Error | null; pending?: boolean; dirty?: boolean }) {
+  const restartFailed = result?.localGateway.restarted && result.localGateway.status !== 'ready'
+  return <SettingsFeedback tone={error || restartFailed ? 'error' : result && !dirty && !pending ? 'success' : 'neutral'}>
+    {error ? systemMessage(error.message) : pending ? msg('Saving…') : dirty ? msg('Unsaved changes') : result?.localGateway.restarted
+      ? restartFailed ? msg('Desk stopped its local gateway, and it could not start again.') : msg('Desk restarted its local gateway with these settings.')
+      : result ? msg('Changes saved') : null}
+  </SettingsFeedback>
+}
+
 /** Which plan the running local gateway has, and whether it is these settings'. */
 function RunningState({ settings, gateway }: { settings: ProcessingSettings; gateway: RunningGateway }) {
-  if (gateway.status !== 'ready') return <div><Alert>{gateway.appliesWhenStarted ? msg('The local gateway is not running. Settings saved now apply when it starts.') : msg('The local gateway is not running.')}</Alert>{gateway.problem && <p className={styles.note}>{systemMessage(gateway.problem)}</p>}</div>
+  if (gateway.status !== 'ready') return <DeskStatusNotice id="local-processing" tone="warning" label={msg('Local processing unavailable')} detail={gateway.problem && systemMessage(gateway.problem)} actions={<PopoverClose><ButtonLink to="/admin#documents">{msg('Review settings')}</ButtonLink></PopoverClose>}>{gateway.appliesWhenStarted ? msg('The local gateway is not running. Settings saved now apply when it starts.') : msg('The local gateway is not running.')}</DeskStatusNotice>
   const on = gateway.documentProcessing === true
   return <div className={styles.stack}>
     <p className={styles.note}>{on ? msg('The running local gateway reads scanned pages with OCR.') : msg('The running local gateway reads no scanned pages: it was started without OCR.')}</p>
@@ -114,11 +123,12 @@ function OCRPreferences({ read, onSaved, onError }: { read: Settings; onSaved: (
     {unready && <Alert>{msg('{{name}} is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.', { name: selected.name })}</Alert>}
     {unready && draft && <label className={styles.label}><input type="checkbox" checked={draft.acknowledged} disabled={save.isPending} onChange={event => { const acknowledged = event.target.checked; setDraft(d => d && { ...d, acknowledged }) }} />{msg('Turn OCR on anyway')}</label>}
     {restart && <RestartWarning mode={current.mode} />}
-    {draft && <div className={styles.actions}>
+    <SettingsActions feedback={<ProcessingFeedback result={save.data} error={save.error} pending={save.isPending} dirty={!!draft} />}>
+    {draft && <>
       <Button variant="quiet" disabled={save.isPending} onClick={() => { setDraft(null); save.reset() }}>{msg('Cancel')}</Button>
       <Button variant="primary" disabled={save.isPending || !timeoutValid || current.mode === 'auto' && !selected?.enabled || unready && !draft.acknowledged} onClick={() => save.mutate()}>{restart ? msg('Save and restart') : msg('Save changes')}</Button>
-    </div>}
-    {save.error && <Alert>{save.error.message}</Alert>}
+    </>}
+    </SettingsActions>
     {!draft && selected?.enabled && <TestPDF settings={settings} connection={selected} />}
   </div>
 }
@@ -157,9 +167,10 @@ function OCRProcessors({ read, onSaved, onError }: { read: Settings; onSaved: (n
     {settings.connections.map(c => <SettingRow key={c.id} title={c.name} description={processorName(c.kind)}
       status={!c.enabled ? msg('Disabled') : !c.ready ? msg('Not available on this computer') : cloudOCR(c.kind) ? msg('Credential held · Test a PDF to check it') : msg('Available on this computer')}
       action={<Button variant="quiet" aria-label={msg('Manage {{name}}', { name: c.name })} onClick={event => { opener.current = event.currentTarget; save.reset(); setEditor({ base: read, value: c }) }}>{msg('Manage')}</Button>} />)}
+    {!editor && <ProcessingFeedback result={save.data} error={save.error} />}
     <Dialog open={!!editor && !discard} onOpenChange={open => { if (!open) close() }} title={msg('OCR processor')} openerRef={opener}
-      footer={editor && <DialogActions><Button variant="quiet" disabled={save.isPending} onClick={close}>{msg('Cancel')}</Button>
-        <Button variant="primary" disabled={save.isPending || !dirty || !!problem} onClick={() => save.mutate()}>{restart ? msg('Save and restart') : msg('Save')}</Button></DialogActions>}>
+      footer={editor && <SettingsActions feedback={<ProcessingFeedback error={save.error} pending={save.isPending} dirty={dirty} />}><Button variant="quiet" disabled={save.isPending} onClick={close}>{msg('Cancel')}</Button>
+        <Button variant="primary" disabled={save.isPending || !dirty || !!problem} onClick={() => save.mutate()}>{restart ? msg('Save and restart') : msg('Save')}</Button></SettingsActions>}>
       {editor && <div className={styles.stack}>
         <FieldGroup>
           <Field label={msg('Name')}>{w => <Input {...w} value={editor.value.name} maxLength={80} disabled={save.isPending} onChange={event => edit({ name: event.target.value })} />}</Field>
@@ -175,7 +186,6 @@ function OCRProcessors({ read, onSaved, onError }: { read: Settings; onSaved: (n
         {settings.connection === editor.value.id && settings.mode === 'auto' && <p className={styles.note}>{msg('Choose another processor, or turn OCR off, before disabling this one.')}</p>}
         {problem && <p className={styles.note}>{problem}</p>}
         {restart && <RestartWarning mode={editor.base.result.mode} />}
-        {save.error && <Alert>{save.error.message}</Alert>}
         {!dirty && original?.enabled && <TestPDF settings={editor.base.result} connection={original} />}
       </div>}
     </Dialog>
@@ -252,12 +262,10 @@ function TestPDF({ settings, connection }: { settings: ProcessingSettings; conne
   return <div className={styles.stack}>
     <p className={styles.note}>{cloudOCR(connection.kind) ? msg('A test sends the scanned pages to {{provider}} with {{connection}}. The provider may charge for them.', { provider: processorName(connection.kind), connection: connection.name })
       : connection.kind === 'tesseract' ? msg('A test reads the scanned pages on this computer.') : msg('A test gives the PDF to the OCR program on this computer.')}</p>
-    <div className={styles.actions}>
+    <SettingsActions hint={msg('At most 4 MiB. The text is not saved to a chat or sent to the assistant.')} feedback={<SettingsFeedback pending={test.isPending} tone={test.error ? 'error' : 'neutral'}>{test.error ? systemMessage(test.error.message) : test.isPending ? msg('Reading the PDF…') : null}</SettingsFeedback>}>
       <input ref={input} type="file" accept="application/pdf,.pdf" hidden aria-label={msg('Test PDF file')} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) test.mutate(file) }} />
-      <Button disabled={test.isPending} onClick={() => input.current?.click()}>{test.isPending ? msg('Reading the PDF…') : msg('Test a PDF')}</Button>
-      <span className={styles.note}>{msg('At most 4 MiB. The text is not saved to a chat or sent to the assistant.')}</span>
-    </div>
-    {test.error && <Alert>{test.error.message}</Alert>}
+      <Button disabled={test.isPending} onClick={() => input.current?.click()}>{msg('Test a PDF')}</Button>
+    </SettingsActions>
     {test.data && <div className={styles.stack} role="status">
       <p className={styles.note}>{msg('Result: {{status}} · {{count}} pages', { status: test.data.processing.status, count: test.data.pageCount })}</p>
       {test.data.extraction === 'text-layer' && <p className={styles.note}>{msg('This PDF has readable text, so OCR did not run and the processor was not tested.')}</p>}

@@ -11,9 +11,11 @@ import styles from './Button.module.css'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'inline' | 'danger'
 
+export type ButtonSize = 'default' | 'icon' | 'small' | 'small-icon'
+
 export interface ButtonProps extends ComponentPropsWithRef<'button'> {
   variant?: ButtonVariant
-  size?: 'default' | 'icon'
+  size?: ButtonSize
 }
 
 export function Button({ variant = 'secondary', size = 'default', className, type, ...rest }: ButtonProps) {
@@ -21,7 +23,7 @@ export function Button({ variant = 'secondary', size = 'default', className, typ
     <button
       {...rest}
       type={type ?? 'button'}
-      className={[styles.button, styles[variant], size === 'icon' && styles.icon, className]
+      className={[styles.button, styles[variant], (size === 'small' || size === 'small-icon') && styles.small, (size === 'icon' || size === 'small-icon') && styles.icon, className]
         .filter(Boolean)
         .join(' ')}
     />
@@ -34,11 +36,11 @@ export function ButtonLink({
   size = 'default',
   className,
   ...props
-}: LinkProps & { variant?: ButtonVariant; size?: 'default' | 'icon' }) {
+}: LinkProps & { variant?: ButtonVariant; size?: ButtonSize }) {
   return (
     <Link
       {...props}
-      className={[styles.button, styles[variant], size === 'icon' && styles.icon, className]
+      className={[styles.button, styles[variant], (size === 'small' || size === 'small-icon') && styles.small, (size === 'icon' || size === 'small-icon') && styles.icon, className]
         .filter(Boolean)
         .join(' ')}
     />

@@ -45,7 +45,7 @@ import {
   usePromptNames,
   usePromptText
 } from '../mcp/prompts'
-import { Button } from '../ui/Button'
+import {ChatAction,ChatActions} from '../chat/ChatActions'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
 import { useFileListing } from '../files/queries'
@@ -59,11 +59,12 @@ import { ProposalUnknowns, RefutationReport, RuntimeChecks } from './ProposalRep
 import { acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
-import { stateFromEvents, thinkingLine } from './thinking'
+import { proposePackTool } from './proposePack'
+import { stateFromEvents, thinkingLine } from '@judgment-pack/harness/thinking'
 import { useAssistantRun } from './useAssistantRun'
 import { CHECKING_KEY, UNREAD_KEY, useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
-import type { AssistantEvent } from './engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 
 /**
  * The one sentence the draft travels under, fixed.
@@ -109,6 +110,8 @@ const noBusy = () => ''
 
 /** One list, allocated once, so an unconfigured desk re-renders to one value. */
 const EMPTY_MODELS: readonly string[] = []
+/** The pane proposes a pack: it offers `propose_pack` beside the fence (`assistant/proposePack.ts`). */
+const PANE_HOST_TOOLS = [proposePackTool()]
 
 /** Why Fix is not offered, where it is not. */
 function fixWhy(diagnostics: number, advertised: boolean, listed: boolean): string | undefined {
@@ -299,7 +302,8 @@ export function AssistantPane({
     model: picked.model,
     engine: slot.engine,
     thinking: slot.thinking,
-    testPrompt: testPrompt.data?.text ?? ''
+    testPrompt: testPrompt.data?.text ?? '',
+    hostTools: PANE_HOST_TOOLS
   })
 
   // The run starts when the prompt this submission asked for has arrived, and
@@ -440,7 +444,7 @@ export function AssistantPane({
                   ? msg("An endpoint is configured and no key is stored on this machine. Add one in Admin › Connections › AI.")
                   : msg("An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.")}
         {slot.engine !== 'codex' && slot.state === 'configured' && slot.keyStatus === 'error' && (
-          <p><Button variant="quiet" onClick={slot.retryKey}>{msg("Retry key status")}</Button></p>
+          <p><ChatAction variant="quiet" onClick={slot.retryKey}>{msg("Retry key status")}</ChatAction></p>
         )}
       </div>
     )
@@ -494,7 +498,7 @@ export function AssistantPane({
         onChange={(event) => setTyped(event.currentTarget.value)}
       />
       <div className={styles.actions}>
-        <Button
+        <ChatAction
           variant="primary"
           disabled={running || typed.trim() === '' || !advertised}
           onClick={() =>
@@ -504,14 +508,14 @@ export function AssistantPane({
               args: { policy: typed }
             })
           }
-        >{msg("Run")}</Button>
+        >{msg("Run")}</ChatAction>
         {/*
           **Fix is the same session with the runtime's other prompt.** Same
           engine, same gate, same proposal path — what changes is which of the
           runtime's own words the model is given, and that it is handed the
           diagnostics the check on this page already produced.
         */}
-        <Button
+        <ChatAction
           disabled={running || diagnostics === undefined || !canFix}
           aria-describedby={fixWhy(diagnosticCount, canFix, prompts.isSuccess) ? `${helpId}-fix` : undefined}
           onClick={() => {
@@ -523,8 +527,8 @@ export function AssistantPane({
               args: { diagnostics: diagnostics.bytes }
             })
           }}
-        >{msg("Fix")}</Button>
-        <Button disabled={!running} onClick={stop}>{msg("Stop")}</Button>
+        >{msg("Fix")}</ChatAction>
+        <ChatAction disabled={!running} onClick={stop}>{msg("Stop")}</ChatAction>
       </div>
       {fixWhy(diagnosticCount, canFix, prompts.isSuccess) && <p id={`${helpId}-fix`} className={styles.honesty}>
         {fixWhy(diagnosticCount, canFix, prompts.isSuccess)}
@@ -567,24 +571,24 @@ export function AssistantPane({
           <ProposalUnknowns unknowns={proposal.unknowns} />
           <RuntimeChecks events={run.events} />
           <RefutationReport events={run.events} />
-          <div className={styles.actions}>
+          <ChatActions>
             {/*
               **The reading route has no draft to accept into**, so it says
               where one is rather than drawing a control that would refuse.
               The rest of the tab runs there exactly as it does on `?edit`.
             */}
             {editing ? (
-              <Button
+              <ChatAction
                 variant="primary"
                 disabled={!accept.enabled}
                 aria-describedby={accept.why ? `${helpId}-accept` : undefined}
                 onClick={acceptIntoDraft}
-              >{msg("Accept into draft")}</Button>
+              >{msg("Accept into draft")}</ChatAction>
             ) : (
               <p className={styles.honesty}>{msg("Open Edit to accept.")}</p>
             )}
-            <Button disabled={disposition !== 'open' || running} onClick={() => setRejected(true)}>{msg("Reject")}</Button>
-          </div>
+            <ChatAction disabled={disposition !== 'open' || running} onClick={() => setRejected(true)}>{msg("Reject")}</ChatAction>
+          </ChatActions>
           {editing && accept.why && <p id={`${helpId}-accept`} className={styles.honesty}>{systemMessage(accept.why)}</p>}
           {disposition === 'accepted' && (
             <p className={styles.honesty}><Message text={"Accepted into the draft. <0/> The check runs again over the new bytes, Undo takes the whole accept back in one step, and Save is yours to press."} slots={[<strong>{msg("Nothing has been saved.")}</strong>]} /></p>

@@ -1,0 +1,43 @@
+{
+  "matrixVersion": "3",
+  "cases": [
+    {
+      "id": "clear",
+      "facts": {
+        "screening": {
+          "matches": 0
+        }
+      },
+      "evidenceAvailability": {
+        "screening-record": "present"
+      },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "clear",
+        "reasons": [],
+        "handoff": {
+          "state": "none"
+        }
+      }
+    },
+    {
+      "id": "hit",
+      "facts": {
+        "screening": {
+          "matches": 2
+        }
+      },
+      "evidenceAvailability": {
+        "screening-record": "present"
+      },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "hit",
+        "reasons": [],
+        "handoff": {
+          "state": "none"
+        }
+      }
+    }
+  ]
+}

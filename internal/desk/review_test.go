@@ -25,7 +25,7 @@ const reviewPack = `{"specVersion":"0.2.0-draft","id":"https://example.com/judgm
 
 var otherPack = strings.Replace(reviewPack, "minimal-literal", "other", 1)
 
-const reviewGraph = `{"graph":"stand-in"}` + "\n"
+const reviewGraph = `{"id":"https://example.com/graphs/review","version":"0.1.0","graph":"stand-in"}` + "\n"
 
 // reviewRig is a stand-in runtime for the review step, and the files that
 // steer it.
@@ -64,7 +64,8 @@ func newReviewRigReading(t *testing.T, versions, verifyFirst, lockFirst string) 
 		t.Fatal(err)
 	}
 	verify := "'packs verify')\n" + verifyFirst + "\n" + copyOut(rig.verify) + "\n  IFS= read -r code < '" + rig.verify + ".exit'\n  exit \"$code\"\n  ;;\n"
-	script = bytes.Replace(script, []byte("'packs lock')\n"), []byte(verify+"'packs lock')\n"), 1)
+	version := "'artifact version')\n  printf '{\"outputVersion\":\"2\",\"command\":\"artifact version\",\"status\":\"available\",\"base\":\"%s\",\"candidate\":\"%s\",\"comparison\":\"equal\"}\\n' \"$4\" \"$6\"\n  ;;\n"
+	script = bytes.Replace(script, []byte("'packs lock')\n"), []byte(version+verify+"'packs lock')\n"), 1)
 	if err := os.WriteFile(rig.bin, script, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +203,51 @@ func readReview(t *testing.T, ts *httptest.Server, desk string) reviewAnswer {
 
 func confirm(t *testing.T, ts *httptest.Server, desk, token string) (int, []byte) {
 	t.Helper()
-	return reviewCall(t, ts, "POST", "/api/review/lock", desk, map[string]any{"token": token}, bearer)
+	body := map[string]any{"token": token}
+	status, raw := reviewCall(t, ts, "GET", "/api/review", desk, nil, bearer)
+	var review reviewAnswer
+	if status == 200 && json.Unmarshal(raw, &review) == nil && review.Token == token {
+		impacts := map[string]artifactImpact{}
+		for _, row := range review.ArtifactReviews {
+			if !row.Required {
+				continue
+			}
+			kind := "initial"
+			if row.BaseVersion != "" {
+				a, b := strings.Split(row.BaseVersion, "."), strings.Split(row.Version, ".")
+				kind = "patch"
+				if len(a) == 3 && len(b) == 3 {
+					if a[0] != b[0] {
+						kind = "major"
+					} else if a[1] != b[1] {
+						kind = "minor"
+					}
+				}
+			}
+			impacts[row.Key] = artifactImpact{kind, "Reviewed fixture compatibility"}
+		}
+		if len(impacts) == 0 {
+			return reviewCall(t, ts, "POST", "/api/review/lock", desk, body, bearer)
+		}
+		status, raw = reviewCall(t, ts, "POST", "/api/review/artifacts", desk, map[string]any{"token": token, "impacts": impacts}, bearer)
+		if status != 200 {
+			return status, raw
+		}
+		var checked struct {
+			Items []projectArtifactReview `json:"items"`
+		}
+		if json.Unmarshal(raw, &checked) != nil {
+			t.Fatal(string(raw))
+		}
+		refs := map[string]retainedArtifactRef{}
+		for _, row := range checked.Items {
+			if row.Required && row.Review != nil {
+				refs[row.Key] = row.Review.Reference
+			}
+		}
+		body["reviews"] = refs
+	}
+	return reviewCall(t, ts, "POST", "/api/review/lock", desk, body, bearer)
 }
 
 func countCalls(t *testing.T, calls, prefix string) int {
@@ -319,8 +364,10 @@ func TestTheReviewShowsEveryFileAndTheRuntimesFindings(t *testing.T) {
 	if delta := fileOf(t, answer, "packs/d.json"); delta.Lock != "removed" || delta.Now.State != "absent" || shown(answer, *delta.Earlier) != removed {
 		t.Errorf("what only the lock names is shown as %+v", delta)
 	}
-	if len(answer.Token) != 64 || answer.Blocked != "" {
-		t.Errorf("a review of files that can all be shown gave token %q, blocked %q", answer.Token, answer.Blocked)
+	// Inspection remains available, but missing/corrupt base bytes cannot
+	// authorize publishing a changed identity without its prior version.
+	if len(answer.Token) != 64 || answer.Blocked != errRetainedArtifactChanged.Error() {
+		t.Errorf("the missing base did not block publication: token %q, blocked %q", answer.Token, answer.Blocked)
 	}
 	if got := readFile(t, rig.calls); got != "packs verify --config jpack.json --format json [JPACK_CONFIG=unset]\n" {
 		t.Errorf("the review ran %q, want only packs verify", got)
@@ -646,10 +693,11 @@ func TestAConfirmationIsBoundToItsDesk(t *testing.T) {
 	lockBefore := readFile(t, filepath.Join(row.Folder, "jpack.lock.json"))
 	rig.locks(t, []byte(lockBefore))
 	locks := countCalls(t, rig.calls, "packs lock")
+	copiesBefore := len(copiesIn(t, row.Folder))
 	if status, data := confirm(t, ts, row.ID, startup.Token); status != http.StatusConflict {
 		t.Errorf("another desk's confirmation answered %d %s", status, data)
 	}
-	if countCalls(t, rig.calls, "packs lock") != locks || readFile(t, filepath.Join(row.Folder, "jpack.lock.json")) != lockBefore || len(copiesIn(t, row.Folder)) != 0 {
+	if countCalls(t, rig.calls, "packs lock") != locks || readFile(t, filepath.Join(row.Folder, "jpack.lock.json")) != lockBefore || len(copiesIn(t, row.Folder)) != copiesBefore {
 		t.Error("another desk's confirmation locked or wrote something")
 	}
 }
@@ -657,8 +705,9 @@ func TestAConfirmationIsBoundToItsDesk(t *testing.T) {
 // A confirmation of the reading as it is locks it, and keeps a copy of each
 // file it locked, named by its digest.
 func TestAConfirmedSetIsLockedAndCopied(t *testing.T) {
-	_, ts, rig, project := reviewProject(t, "", "")
-	writeProject(t, project, map[string]string{"packs/a.json": strings.Replace(reviewPack, "Minimal", "Edited", 1)})
+	s, ts, rig, project := reviewProject(t, "", "")
+	keepCopy(t, s, reviewPack)
+	writeProject(t, project, map[string]string{"packs/a.json": strings.Replace(strings.Replace(reviewPack, "Minimal", "Edited", 1), "minimal-literal", "edited-literal", 1)})
 	rig.answers(t, "invalid", map[string]string{"name": "document-drift", "kind": "pack", "id": "alpha", "path": "packs/a.json"})
 	token := readReview(t, ts, "").Token
 	want := lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"})
@@ -757,9 +806,7 @@ func TestALockOfAnythingElseIsPutBack(t *testing.T) {
 			if got := readFile(t, filepath.Join(project, "jpack.lock.json")); got != string(previous) {
 				t.Errorf("the previous lock was not put back exactly: %s", got)
 			}
-			if len(copiesIn(t, project)) != 0 {
-				t.Error("copies were written for a lock that was put back")
-			}
+			assertNoNewPublication(t, project)
 		})
 	}
 }
@@ -790,9 +837,7 @@ func TestAFileChangedDuringTheLockPutsThePreviousLockBack(t *testing.T) {
 		if !hadLock && !os.IsNotExist(err) {
 			t.Errorf("a lock was left where there was none: %s %v", after, err)
 		}
-		if len(copiesIn(t, project)) != 0 {
-			t.Error("copies were written for a lock that was put back")
-		}
+		assertNoNewPublication(t, project)
 	}
 }
 
@@ -849,7 +894,8 @@ func TestTheReviewReadsByTheFileAPIsRules(t *testing.T) {
 }
 
 // The copies are kept only in a real `.desk-private/reviewed`: a link there
-// is not followed, and the lock still stands.
+// is not followed. Publication now requires private immutable history, so a
+// confirmation is refused before replacing the lock.
 func TestReviewedCopiesAreNotKeptThroughALink(t *testing.T) {
 	_, ts, rig, project := reviewProject(t, "", "")
 	if err := os.Symlink("packs", filepath.Join(project, ".desk-private")); err != nil {
@@ -859,8 +905,8 @@ func TestReviewedCopiesAreNotKeptThroughALink(t *testing.T) {
 	token := readReview(t, ts, "").Token
 	rig.locks(t, lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}))
 	status, data := confirm(t, ts, "", token)
-	if status != 200 || !bytes.Contains(data, []byte(`"copies":"not-stored"`)) {
-		t.Errorf("the confirmation answered %d %s", status, data)
+	if status != 409 {
+		t.Errorf("the unsafe publication confirmation answered %d %s", status, data)
 	}
 	entries, _ := os.ReadDir(filepath.Join(project, "packs"))
 	if len(entries) != 2 {
@@ -891,7 +937,7 @@ func TestAnUnsafeCopiesFolderIsNotTrusted(t *testing.T) {
 	}
 	rig.locks(t, lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}))
 	status, data := confirm(t, ts, "", answer.Token)
-	if status != 200 || !bytes.Contains(data, []byte(`"copies":"not-stored"`)) || !bytes.Contains(data, []byte("open to other users")) {
+	if status != http.StatusConflict || !bytes.Contains(data, []byte("open to other users")) {
 		t.Errorf("the confirmation answered %d %s", status, data)
 	}
 	info, _ := os.Stat(folder)
@@ -969,7 +1015,7 @@ func TestTheReviewOnTheStartupDeskAndANamedDesk(t *testing.T) {
 	if status, data := confirm(t, ts, row.ID, answer.Token); status != 200 {
 		t.Fatalf("the named desk's confirmation answered %d %s", status, data)
 	}
-	if len(copiesIn(t, row.Folder)) != 3 {
+	if len(copiesIn(t, row.Folder)) != 4 {
 		t.Errorf("the named desk keeps %v", copiesIn(t, row.Folder))
 	}
 	for _, line := range strings.Split(strings.TrimSpace(readFile(t, rig.calls)), "\n") {
@@ -1145,7 +1191,7 @@ func TestReviewAndLockWithTheRuntime(t *testing.T) {
 		t.Errorf("after the lock the review answered %+v", again)
 	}
 
-	edited := strings.Replace(reviewPack, "Minimal literal decision", "Edited decision", 1)
+	edited := strings.Replace(strings.Replace(reviewPack, "Minimal literal decision", "Edited decision", 1), `"version":"0.1.0"`, `"version":"0.1.1"`, 1)
 	writeProject(t, row.Folder, map[string]string{"packs/a.json": edited})
 	second := readReview(t, ts, row.ID)
 	alpha := fileOf(t, second, "packs/a.json")

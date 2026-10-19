@@ -1,0 +1,89 @@
+import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
+import {cleanup, fireEvent, render, screen, within} from '@testing-library/react'
+import {afterEach, expect, it} from 'vitest'
+import {languageReady, setLanguage} from '../i18n'
+import {DialectReview, InputLineage} from './DialectReview'
+import type {InputProfile, ExecutableDialect, Preparation} from './dialectTypes'
+
+const profile: InputProfile = {id:'fx',publicKey:'key',class:'record',source:'finance',authority:'gateway',shape:'mcp',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,calculator:{name:'fx-convert',version:'2.1.0'}}
+const mapping: ExecutableDialect =mappingFixture('calculator-review')
+const line: Preparation['lineage'][number] = {target:'/converted',kind:'fact',source:'conversion',class:'record',generatedInfluence:false,present:true,status:'resolved',reason:'',basis:[],readDigest:'digest',calculation:{calculator:{name:'fx-convert',version:'2.1.0'},status:'computed',inputs:[{name:'amount',parameter:'invoiceAmount',source:'case',pointer:'/invoice/amount'},{name:'currency',parameter:'invoiceCurrency',source:'invoice-record',pointer:'/currency'}],asOf:{'ecb-rates':'2026-10-01T14:00:00Z','spot-rates':'2026-10-01T13:00:00Z'}}}
+const preparation = (...lineage: Preparation['lineage']): Preparation => ({version:2,verifiedAt:'2026-10-01T14:01:00Z',mappingDigest:'digest',verification:'verified acquisitions; session sealing and input truth are not established',lineage,cites:[],outcomes:[]})
+afterEach(async()=>{cleanup();setLanguage('en');await languageReady()})
+
+it('names the pinned calculator and every binding and exact table limit in the mapping review',()=>{
+ render(<DialectReview mapping={mapping} profiles={[profile]}/>)
+ const row=within(screen.getByRole('row',{name:/conversion/}))
+ expect(row.getByText('Calculator: fx-convert · 2.1.0')).toBeTruthy()
+ expect(row.getByText('amount ← invoiceAmount')).toBeTruthy()
+ expect(row.getByText('currency ← invoiceCurrency')).toBeTruthy()
+ expect(row.getByText('ecb-rates · maximum age: 1 day')).toBeTruthy()
+ expect(row.getByText('spot-rates · maximum age: 1 hour, 1 second')).toBeTruthy()
+ expect(row.getByText('record')).toBeTruthy()
+})
+it('leaves ordinary source rows unchanged and never infers a calculator from caller bindings',()=>{
+ const {calculator:_,...ordinary}=profile
+ render(<DialectReview mapping={{...mapping,sources:[...mapping.sources!,{name:'local',kind:'selected-file',provider:'local-file',read:{copy:{facts:[],evidence:[]}}},{name:'drive',kind:'selected-file',provider:'google-drive',read:{copy:{facts:[],evidence:[]}}}]}} profiles={[ordinary]}/>)
+ expect(within(screen.getByRole('row',{name:'conversion fx record'})).getAllByRole('cell').map(c=>c.textContent)).toEqual(['conversion','fx','record'])
+ expect(screen.getByRole('row',{name:'local Local JSON file asserted'})).toBeTruthy()
+ expect(screen.getByRole('row',{name:'drive Google Drive —'})).toBeTruthy()
+ expect(screen.getByRole('row',{name:'Case inputs Manual / API asserted'})).toBeTruthy()
+ expect(within(screen.getByRole('table')).queryByText(/Calculator:|maximum age:/)).toBeNull()
+})
+it('reads mappings without calculation bindings or installed profiles',()=>{
+ const {calculation:_,...source}=mapping.sources![0]!
+ const ui=render(<DialectReview mapping={{version:2,case:{facts:[],evidence:[]},sources:[source]}} profiles={[profile]}/>)
+ expect(screen.getByText('Calculator: fx-convert · 2.1.0')).toBeTruthy()
+ ui.rerender(<DialectReview mapping={mapping}/>)
+ expect(screen.getByRole('row',{name:'conversion fx —'})).toBeTruthy()
+})
+it.each([
+ ['computed','Calculated',''],
+ ['input-missing','Not calculated: an input was missing','calculation-input-missing'],
+ ['cannot-compute','Not calculated: the calculator could not compute it','calculation-cannot-compute'],
+] as const)('shows %s in words instead of the raw calculation reason', (status,label,reason)=>{
+ render(<InputLineage preparation={preparation({...line,present:status==='computed',status:status==='computed'?'resolved':'unknown',reason,calculation:{...line.calculation!,status}})}/>)
+ const table=within(screen.getByRole('table'))
+ expect(table.getByText(label)).toBeTruthy()
+ expect(table.getByText(status==='computed'?'Supplied':'Not supplied')).toBeTruthy()
+ if(reason)expect(table.queryByText(reason)).toBeNull()
+})
+it('shows the calculator and each echoed input with its parameter, case or earlier fact origin',()=>{
+ render(<InputLineage preparation={preparation(line)}/>)
+ const table=within(screen.getByRole('table'))
+ expect(table.getByText('Calculator: fx-convert · 2.1.0')).toBeTruthy()
+ expect(table.getByText(/amount ← invoiceAmount · Case inputs ·/).textContent).toContain('/invoice/amount')
+ expect(table.getByText(/currency ← invoiceCurrency · Source invoice-record ·/).textContent).toContain('/currency')
+})
+it('localizes table as-of dates and duration words without translating calculator identifiers',async()=>{
+ setLanguage('de');await languageReady()
+ render(<><DialectReview mapping={mapping} profiles={[profile]}/><InputLineage preparation={preparation(line)}/></>)
+ expect(screen.getByText('ecb-rates · Höchstalter: 1 Tag')).toBeTruthy()
+ for(const [table,time] of Object.entries(line.calculation!.asOf)){
+  const date=new Intl.DateTimeFormat('de',{dateStyle:'medium',timeStyle:'medium'}).format(new Date(time))
+  expect(screen.getByText(`${table} · Stand: ${date}`)).toBeTruthy()
+ }
+ expect(screen.getAllByText('Rechner: fx-convert · 2.1.0')).toHaveLength(2)
+})
+it.each(['ordinary','dependency-unavailable'] as const)('leaves %s lineage without calculation details',reason=>{
+ const {calculation:_,...ordinary}=line
+ render(<InputLineage preparation={preparation({...ordinary,present:false,reason})}/>)
+ const row=screen.getByRole('row',{name:new RegExp(reason)})
+ expect(within(row).getAllByRole('cell').map(c=>c.textContent)).toEqual(['/converted','conversionrecord',`Not supplied${reason}`])
+ expect(within(row).queryByText(/Calculator:|Calculated|as of/)).toBeNull()
+})
+it('retains the unmodified calculation record in technical details',()=>{
+ const value=preparation(line)
+ render(<InputLineage preparation={value}/>)
+ fireEvent.click(screen.getByText('Technical details'))
+ expect(JSON.parse(document.querySelector('pre')!.textContent!)).toEqual(value)
+})
+it('shows Runner\'s reason beside a pin whose listed profile is set aside',()=>{
+ const bound={...mapping,sources:mapping.sources!.map(s=>s.name==='conversion'?{...s,profile:'fx',profileDigest:'sha256:'+'f'.repeat(64)}:s)} as ExecutableDialect
+ render(<DialectReview mapping={bound} entries={[{digest:'sha256:'+'f'.repeat(64),profile,state:'set-aside',reason:'the input profile fx: its form is refused (input-malformed)'}]}/>)
+ const row=within(screen.getByRole('row',{name:/conversion/}))
+ expect(row.getByText('Set aside by Runner. Runner’s reason: its form is refused')).toBeTruthy()
+ cleanup()
+ render(<DialectReview mapping={bound} entries={[{digest:'sha256:'+'f'.repeat(64),profile}]}/>)
+ expect(screen.queryByText(/Set aside by Runner/)).toBeNull()
+})

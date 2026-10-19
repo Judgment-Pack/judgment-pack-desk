@@ -59,7 +59,7 @@ it('loads one page at a time and never downloads matching contents while searchi
  mocks.call.mockImplementation(async()=>({context:'scope-1',items:[],nextPageToken:'cursor',truncated:false}))
  open();await screen.findByText('No files on this page.')
  expect(mocks.call).toHaveBeenCalledTimes(1)
- fireEvent.change(screen.getByRole('textbox',{name:'Search files'}),{target:{value:'policy'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search files'}),{target:{value:'policy'}})
  fireEvent.click(screen.getByRole('button',{name:'Search'}))
  await waitFor(()=>expect(mocks.call).toHaveBeenCalledTimes(2))
  fireEvent.click(screen.getByRole('button',{name:'Next page'}))

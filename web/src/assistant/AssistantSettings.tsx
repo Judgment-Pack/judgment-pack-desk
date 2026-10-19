@@ -1,3 +1,5 @@
+import {LoadingState} from '../ui/LoadingState'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useAIConnectionScope } from './aiConnections'
 import { AIConnectionsSettings } from './AIConnectionsSettings'
 import { DeskAISettings } from './DeskAISettings'
@@ -129,12 +131,12 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
   const edit=()=>{setDirty(true);setSaved(false);test.stop()}
   return <section aria-label={msg('ChatGPT subscription')} className={styles.subscription}>
     <div><h3>{msg('OpenAI / ChatGPT')}</h3><p className="quiet">{msg('Use your ChatGPT account through Codex. No API key is required.')}</p></div>
-    {catalog.isPending && <p role="status">{msg('Checking the ChatGPT connection…')}</p>}
-    {catalog.error && <p role="alert">{msg('Assistant connections could not be loaded.')} <Button variant="inline" onClick={()=>void catalog.refetch()}>{msg('Retry')}</Button></p>}
+    {catalog.isPending && <LoadingState>{msg('Checking the ChatGPT connection…')}</LoadingState>}
+    {catalog.error && <SettingsFeedback tone="error" actions={<Button variant="inline" onClick={()=>void catalog.refetch()}>{msg('Retry')}</Button>}>{msg('Assistant connections could not be loaded.')}</SettingsFeedback>}
     {provider && !provider.enabled && <p className="quiet">{provider.availability==='unsupported'?msg('ChatGPT subscriptions are not yet supported on this computer.'):provider.availability==='disabled'?msg('ChatGPT subscriptions are disabled by this installation’s administrator.'):msg('The ChatGPT connection is unavailable. Check Desk’s installation.')}</p>}
     {provider?.enabled && <>
       <div className={styles.connection}>
-        <RunStatus running={connecting}>{connecting?needsRuntime?msg('Preparing ChatGPT…'):msg('Connecting to ChatGPT…'):connected?msg('Connected to ChatGPT'):pending?msg('Waiting for sign-in…'):status.isPending||(statusUnknown&&status.isFetching)?msg('Checking the ChatGPT connection…'):statusUnknown?msg('Connection unavailable'):msg('Not connected')}</RunStatus>
+        <RunStatus running={connecting || status.isPending || statusUnknown && status.isFetching}>{connecting?needsRuntime?msg('Preparing ChatGPT…'):msg('Connecting to ChatGPT…'):connected?msg('Connected to ChatGPT'):pending?msg('Waiting for sign-in…'):status.isPending||(statusUnknown&&status.isFetching)?msg('Checking the ChatGPT connection…'):statusUnknown?msg('Connection unavailable'):msg('Not connected')}</RunStatus>
         {connecting?<Button onClick={cancelConnection}>{msg('Cancel')}</Button>:connected?<Button ref={disconnectButton} disabled={busy} onClick={()=>setDisconnect(true)}>{msg('Disconnect')}</Button>:pending?(challenge?.id||status.data?.login?.id)?<Button disabled={busy} onClick={()=>void action('cancel')}>{msg('Cancel sign-in')}</Button>:<Button disabled={busy} onClick={()=>void status.refetch()}>{msg('Refresh')}</Button>:statusUnknown?<Button disabled={status.isFetching} onClick={()=>void status.refetch()}>{msg('Check again')}</Button>:<Button disabled={busy||unavailable||!provider.engineReady||!canConnect} onClick={()=>void action('login')}>{msg('Connect ChatGPT')}</Button>}
       </div>
       {needsRuntime&&!connecting&&!pending&&<p className="quiet">{msg('Desk prepares the connection automatically the first time you connect.')}</p>}
@@ -148,26 +150,25 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
       {connected&&<FieldGroup>
         <SubscriptionModels label={scope?msg('Default models'):undefined} models={models} allowed={allowed} model={model} disabled={busy||testRunning||unavailable||listing.isPending||listing.isError}
           onChange={(next,nextModel)=>{edit();setAllowed(next);if(model!==nextModel)setEffort('');setModel(nextModel)}}/>
-        {listing.isPending&&<p className="quiet" role="status">{msg('Loading models…')}</p>}
-        {allowed.some(id=>!models.some(row=>row.id===id))&&!listing.isPending&&<p role="alert">{msg('This model is no longer available. Choose another model.')}</p>}
-        {listing.error&&<p role="alert">{msg(listing.error.message)} <Button variant="inline" onClick={()=>void listing.refetch()}>{msg('Retry')}</Button></p>}
+        {listing.isPending&&<LoadingState>{msg('Loading models…')}</LoadingState>}
+        {allowed.some(id=>!models.some(row=>row.id===id))&&!listing.isPending&&<SettingsFeedback tone="error">{msg('This model is no longer available. Choose another model.')}</SettingsFeedback>}
+        {listing.error&&<SettingsFeedback tone="error" actions={<Button variant="inline" onClick={()=>void listing.refetch()}>{msg('Retry')}</Button>}>{msg(listing.error.message)}</SettingsFeedback>}
         {chosen&&<Field label={msg('Reasoning effort')} hint={msg('Controls how much the model reasons before answering. Chat and Research control which sources it can use.')}>
           {wiring=><Select {...wiring} value={effort||'__default__'} disabled={busy||testRunning||unavailable||write.isPending} onValueChange={value=>{edit();setEffort(value==='__default__'?'':value)}} options={[{value:'__default__',label:msg('Model default')},...chosen.efforts.map(value=>({value,label:value}))]}/>}
         </Field>}
         <Disclosure title={msg('Allowed pack tools')}><div className={styles.tools}>{ASSISTANT_TOOLS.map(tool=><label key={tool}><input type="checkbox" checked={tools.includes(tool)} disabled={busy||testRunning||unavailable||write.isPending} onChange={event=>{edit();setTools(event.target.checked?[...tools,tool]:tools.filter(value=>value!==tool))}}/><code>{tool}</code></label>)}</div><p className="quiet">{msg('Tool access follows the saved Desk configuration.')}</p></Disclosure>
-        <div className={styles.actions}>
+        <SettingsActions feedback={<SettingsFeedback tone={problem||test.status==='finished'&&stored&&!dirty&&!tested?'error':saved||test.status==='finished'&&stored&&!dirty&&tested?'success':'neutral'}>
+          {problem?msg(problem):write.isPending?msg('Saving…'):testRunning?msg('Testing connection…'):test.status==='finished'&&stored&&!dirty?(tested?msg('Connected. Codex read the pack schema through Desk.'):msg('The connection check did not complete. Check the connection and try again.')):saved?msg('Assistant settings saved.'):dirty?msg('Unsaved changes'):null}
+        </SettingsFeedback>}>
           <Button disabled={unavailable||!!assistantProfile?.problem||!executionAgent?.model||!canReadSchema||!stored||!model||dirty||!valid||busy||testRunning} onClick={()=>test.start('Connection check only. Call get_schema once to read the Judgment Pack schema, then reply with one short confirmation. Do not propose changes or test cases.')}>{msg('Test connection')}</Button>
           {dirty&&<Button variant="quiet" disabled={busy||testRunning||write.isPending} onClick={()=>{setDirty(false);setProblem('');setSaved(false);write.reset()}}>{msg('Cancel')}</Button>}
           {testRunning&&<Button variant="quiet" onClick={test.stop}>{msg('Stop')}</Button>}
           <Button variant="primary" disabled={stored||!valid||!provider.engineReady||unavailable||write.isPending||busy||testRunning} onClick={save}>{write.isPending?msg('Saving…'):msg('Save shared settings')}</Button>
-        </div>
+        </SettingsActions>
         {!canReadSchema&&<p className="quiet">{msg('Enable and save get_schema in Allowed pack tools to test the connection.')}</p>}
-        {testRunning&&<p role="status">{msg('Testing connection…')}</p>}
-        {test.status==='finished'&&stored&&!dirty&&<p role="status">{tested?msg('Connected. Codex read the pack schema through Desk.'):msg('The connection check did not complete. Check the connection and try again.')}</p>}
       </FieldGroup>}
     </>}
-    {problem&&<p role="alert">{msg(problem)}</p>}
-    {saved&&<p role="status">{msg('Assistant settings saved.')}</p>}
+    {problem&&!connected&&<SettingsFeedback tone="error">{msg(problem)}</SettingsFeedback>}
     <Dialog open={disconnect} onOpenChange={setDisconnect} openerRef={disconnectButton} title={msg('Disconnect ChatGPT?')} description={msg('This stops active Codex work and signs out the account stored by this Desk.')}>
       <DialogActions><Button disabled={busy} onClick={()=>setDisconnect(false)}>{msg('Cancel')}</Button><Button variant="danger" disabled={busy} onClick={()=>void action('logout')}>{msg('Disconnect')}</Button></DialogActions>
     </Dialog>

@@ -1,3 +1,6 @@
+import {ChatAction} from './ChatActions'
+import { ExternalLink, externalHref } from '../ui/ExternalLink'
+import { remarkWebsiteLinks } from './websiteLinks'
 import { CitationPreview } from '../documents/SourceReader'
 import { useReadingDetails } from './ReadingDetails'
 import type { ChatAttachment } from './store'
@@ -45,7 +48,7 @@ export const MessageRenderer = memo(function MessageRenderer({ text, documents =
           const file = match && documents.find(file => file.document?.id === match[1] && file.document.digest === match[2])
           return file?.document ? <CitationPreview name={file.name} reference={file.document} link={file.link} citation={{ page: Number(match![3]), quote: textOf(children) }} number={Number(node?.properties['data-source-number']) || 1} onRead={read} /> : <span>{children} <Tooltip content={msg('Source unavailable')}><span tabIndex={0} className={styles.caption} aria-label={msg('Source unavailable')}>[{String(node?.properties['data-source-number'] || '?')}]</span></Tooltip></span>
         }
-        return href ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>
+        return <ExternalLink href={href}>{children}</ExternalLink>
       },
       img: ({ alt }) => <span>{alt ? msg("[Image: {{value0}}]", { value0: alt }) : msg("[Image]")}</span>,
       pre: ({ children }) => {
@@ -56,12 +59,12 @@ export const MessageRenderer = memo(function MessageRenderer({ text, documents =
       th: ({ children, ...props }) => <th style={props.style} scope="col">{children}</th>,
       table: ({ children }) => <ResponseTable>{children}</ResponseTable>
     }), [documents, locale, read])
-  return <div className={styles.markdown}><Markdown remarkPlugins={[remarkGfm, numberSources]} skipHtml
-    urlTransform={url => /^https?:\/\//i.test(url) || /^attachment:[a-f0-9-]{36}\/sha256:[a-f0-9]{64}\/page\/[1-9][0-9]*$/.test(url) ? url : ''}
+  return <div className={styles.markdown}><Markdown remarkPlugins={[remarkGfm, remarkWebsiteLinks, numberSources]} skipHtml
+    urlTransform={url => /^attachment:[a-f0-9-]{36}\/sha256:[a-f0-9]{64}\/page\/[1-9][0-9]*$/.test(url) ? url : externalHref(url) ?? ''}
     components={components}>{text}</Markdown></div>
 })
 
-export function CopyMessage({ text }: { text: string }) {
+export function CopyMessage({ text, label, children }: { text: string; label?: string; children?: ReactNode }) {
   useLocale()
   const [feedback, setFeedback] = useState('')
   const copied = feedback === 'Copied'
@@ -70,13 +73,14 @@ export function CopyMessage({ text }: { text: string }) {
     const timer = setTimeout(() => setFeedback(''), 2000)
     return () => clearTimeout(timer)
   }, [copied])
-  return <div className={styles.messageActions}>
-    <Tooltip content={copied ? msg("Copied") : msg("Copy response")}>
-      <button type="button" className="desk-icon-button" aria-label={msg("Copy response")} onClick={async () => {
+  return <div className={styles.messageActions} role="group" aria-label={msg('Message actions')}>
+    <Tooltip content={copied ? msg("Copied") : label ?? msg("Copy response")}>
+      <ChatAction variant="quiet" size="icon" type="button" aria-label={label ?? msg("Copy response")} onClick={async () => {
         try { await navigator.clipboard.writeText(text); setFeedback('Copied') }
         catch { setFeedback('Select the response text to copy it.') }
-      }}>{copied ? <IconCheck /> : <IconCopy />}</button>
+      }}>{copied ? <IconCheck /> : <IconCopy />}</ChatAction>
     </Tooltip>
+    {children}
     <VisuallyHidden.Root role="status">{msg(feedback)}</VisuallyHidden.Root>
     {feedback && !copied && <span aria-hidden="true">{msg(feedback)}</span>}
   </div>

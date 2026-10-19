@@ -1,3 +1,5 @@
+import {LoadingState} from '../ui/LoadingState'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useCallback, useId, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { msg, useLocale } from '../i18n'
@@ -25,18 +27,19 @@ export function WebSearchSettings(){
  useDirtyGuard(false, msg('Leaving will discard unsaved changes in the open editors.'), {busy:preferences.saving})
  const pref=preferences.data?.value
  return <SettingsSection title={msg('Research')} level={2} variant="standalone" description={msg('This desk · Choose when to search the web and which connection to use.')}><div className={styles.settings}>
-  {preferences.isPending&&<p role="status">{msg('Loading…')}</p>}
+  {preferences.isPending&&<LoadingState>{msg('Loading…')}</LoadingState>}
   {pref&&<div className={styles.defaults}>
    <div className={styles.field}><label htmlFor={`${id}-mode`}>{msg('Web research')}</label><Select id={`${id}-mode`} value={pref.mode} disabled={preferences.saving||preferences.isError} options={[{value:'auto',label:msg('Search when needed')},{value:'provided',label:msg('Provided sources only')}]} onValueChange={mode=>void preferences.save({...pref,mode:mode as 'auto'|'provided'}).catch(()=>{})}/></div>
    <div className={styles.field}><label htmlFor={`${id}-connection`}>{msg('Default search connection')}</label><Select id={`${id}-connection`} value={pref.connection??'none'} disabled={!connections.available||connections.loading||connections.isError||preferences.saving||preferences.isError} options={[{value:'none',label:msg('No search connection')},...(connections.data?.connections??[]).map(c=>({value:c.id,label:c.name})),...(pref.connection&&!connections.data?.connections.some(c=>c.id===pref.connection)?[{value:pref.connection,label:msg('Connection unavailable')}]:[])]} onValueChange={connection=>void preferences.save({...pref,connection:connection==='none'?null:connection}).catch(()=>{})}/></div>
   </div>}
   {pref?.mode==='auto'&&!pref.connection&&<p className={styles.caption}>{msg('Select a search connection to enable automatic web research.')}</p>}
   <p className={styles.caption}>{msg('Search finds sources. Research reads and cites them. Reasoning effort is configured separately in Assistant.')}</p>
-  <div className={styles.toolbar}><ButtonLink variant="quiet" to="/admin#connections-search">{msg('Manage search connections')}</ButtonLink><span className={styles.caption} role="status">{preferences.saving?msg('Saving…'):preferences.saveError?'':preferences.saved?msg('Saved'):msg('Changes save automatically.')}</span></div>
+  <SettingsActions feedback={<SettingsFeedback tone={preferences.isError||preferences.saveError?'error':preferences.saved&&!preferences.saving?'success':'neutral'} actions={(preferences.isError||preferences.saveError)&&<Button onClick={()=>void preferences.refetch()}>{msg('Reload')}</Button>}>
+   {preferences.isError?msg('Search settings could not be read. Reload before making changes.'):preferences.saveError?msg('Search settings could not be saved. Reload before trying again.'):preferences.saving?msg('Saving…'):preferences.saved?msg('Saved'):msg('Changes save automatically.')}
+  </SettingsFeedback>}><ButtonLink variant="quiet" to="/admin#connections-search">{msg('Manage search connections')}</ButtonLink></SettingsActions>
   {!connections.available&&!connections.loading&&<p>{msg('Web search requires an updated local gateway.')} <ButtonLink variant="inline" to="/admin#gateway">{msg('Manage gateway')}</ButtonLink></p>}
-  {connections.loading&&<p role="status">{msg('Loading connections…')}</p>}
-  {connections.isError&&<p role="alert">{msg('Search connections could not be loaded.')} <Button onClick={()=>void connections.refetch()}>{msg('Retry')}</Button></p>}
-  {(preferences.isError||preferences.saveError)&&<p role="alert">{preferences.isError?msg('Search settings could not be read. Reload before making changes.'):msg('Search settings could not be saved. Reload before trying again.')} <Button onClick={()=>void preferences.refetch()}>{msg('Reload')}</Button></p>}
+  {connections.loading&&<LoadingState>{msg('Loading connections…')}</LoadingState>}
+  {connections.isError&&<SettingsFeedback tone="error" actions={<Button onClick={()=>void connections.refetch()}>{msg('Retry')}</Button>}>{msg('Search connections could not be loaded.')}</SettingsFeedback>}
  </div></SettingsSection>
 }
 
@@ -52,8 +55,8 @@ export function SearchConnectionsSettings(){
  return <SettingsSection title={msg('Web search')} variant="plain" description={msg('Shared on this computer · Credentials, request limits and timeouts.')}><div className={styles.settings}>
   <div className={styles.toolbar}><ButtonLink variant="quiet" to="/admin#research">{msg('Choose a default for this desk')}</ButtonLink><Button disabled={!connections.available||!connections.data||selected!==undefined} onClick={e=>{opener.current=e.currentTarget;setSelected(null)}}>{msg('Add connection')}</Button></div>
   {!connections.available&&!connections.loading&&<p>{msg('Web search requires an updated local gateway.')} <ButtonLink variant="inline" to="/admin#gateway">{msg('Manage gateway')}</ButtonLink></p>}
-  {connections.loading&&<p role="status">{msg('Loading connections…')}</p>}
-  {connections.isError&&<p role="alert">{msg('Search connections could not be loaded.')} <Button onClick={()=>void connections.refetch()}>{msg('Retry')}</Button></p>}
+  {connections.loading&&<LoadingState>{msg('Loading connections…')}</LoadingState>}
+  {connections.isError&&<SettingsFeedback tone="error" actions={<Button onClick={()=>void connections.refetch()}>{msg('Retry')}</Button>}>{msg('Search connections could not be loaded.')}</SettingsFeedback>}
   <div className={styles.connections}>{connections.data?.connections.map(c=><div className={styles.connectionRow} key={c.id}>
    <ProviderIcon provider={c.provider}/><div><strong>{c.name}</strong><p>{connections.data.providers.find(p=>p.id===c.provider)?.name}</p><p>{msg('Configured')} · {msg('{{used}} of {{limit}} requests today',{used:c.requests??0,limit:c.dailyLimit})}</p></div>
    <Button variant="quiet" aria-label={msg('Manage {{name}}',{name:c.name})} disabled={selected!==undefined} onClick={e=>{opener.current=e.currentTarget;setSelected(c)}}>{msg('Manage')}</Button>
@@ -62,7 +65,7 @@ export function SearchConnectionsSettings(){
   {pane}
  </div></SettingsSection>
 }
-function SearchEditor({original,providers,timeout,onClose,registerClose}:{original:SearchConnection|null;providers:SearchProvider[];timeout?:SearchTimeout;onClose:()=>void;registerClose:(close:()=>void)=>void}){
+export function SearchEditor({original,providers,timeout,onClose,onSaved,onTested,registerClose}:{original:SearchConnection|null;providers:SearchProvider[];timeout?:SearchTimeout;onClose:()=>void;onSaved?:(id:string)=>void;onTested?:(id:string)=>void;registerClose:(close:()=>void)=>void}){
  const client=useQueryClient(),confirm=useConfirmDiscard(),id=useId()
  const initial={id:original?.id??`search-${crypto.randomUUID().slice(0,8)}`,revision:original?.revision??'',name:original?.name??'',provider:original?.provider??providers[0]?.id??'',project:original?.project??'',location:original?.location??'global',model:original?.model??'gemini-2.5-flash',dailyLimit:original?.dailyLimit??100,...(timeout?{timeoutSeconds:original?.timeoutSeconds??0}:{}),credential:''}
  const [form,setForm]=useState(initial),[baseline]=useState(initial),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[removing,setRemoving]=useState(false),[typed,setTyped]=useState('')
@@ -81,9 +84,9 @@ function SearchEditor({original,providers,timeout,onClose,registerClose}:{origin
    if(action==='save'){
     const google=provider?.fields.includes('project')
     await connectionCall('configure',{...form,project:google?form.project:'',location:google?form.location:'',model:google?form.model:''},undefined,'web-search')
-    setForm(f=>({...f,credential:''}));clearDirty();await client.invalidateQueries({queryKey:SEARCH_CONNECTIONS_KEY});onClose()
+    setForm(f=>({...f,credential:''}));clearDirty();await client.invalidateQueries({queryKey:SEARCH_CONNECTIONS_KEY});if(onSaved)onSaved(form.id);else onClose()
    }else if(action==='test'){
-    await connectionCall('test',{id:form.id,revision:form.revision},undefined,'web-search');setNotice(msg('Connection test passed.'))
+    await connectionCall('test',{id:form.id,revision:form.revision},undefined,'web-search');setNotice(msg('Connection test passed.'));onTested?.(form.id)
    }else{
     await connectionCall('disconnect',{id:form.id,revision:form.revision},undefined,'web-search');clearDirty();await client.invalidateQueries({queryKey:SEARCH_CONNECTIONS_KEY});onClose()
    }
@@ -105,10 +108,9 @@ function SearchEditor({original,providers,timeout,onClose,registerClose}:{origin
    {provider&&<a href={provider.docs} target="_blank" rel="noreferrer">{msg('Setup instructions')}</a>}
    <label className={styles.field}>{msg('Daily request limit')}<Input type="number" required min={1} max={10000} value={form.dailyLimit} disabled={busy} onChange={e=>update('dailyLimit',Number(e.target.value))}/></label>
    <p className={styles.caption}>{msg('Testing makes one provider request and counts toward this limit. Limits reset at midnight UTC.')}</p>
-   {timeout&&<Disclosure title={msg('Advanced settings')}><label className={styles.field}>{msg('Search timeout (seconds)')}<Input type="number" required min={timeout.minSeconds} max={timeout.maxSeconds} step={1} value={form.timeoutSeconds||timeout.defaultSeconds} disabled={busy} onChange={e=>update('timeoutSeconds',Number(e.target.value))}/></label><p className={styles.caption}>{msg('Maximum wait for one search, including authentication. Default: {{seconds}} seconds.',{seconds:timeout.defaultSeconds})}</p>{original?.timeoutRefused&&<p className={styles.caption} role="status">{msg('The saved timeout is outside the range this gateway supports. Saving sets the value shown.')}</p>}</Disclosure>}
-   {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
-   <div className={styles.footer}>{original&&<Button variant="quiet" disabled={busy||dirty} onClick={()=>setRemoving(true)}>{msg('Remove connection')}</Button>}<Button disabled={busy||dirty||!form.revision} onClick={()=>void act('test')}>{msg('Test connection')}</Button><Button onClick={()=>void close()} disabled={busy}>{msg('Cancel')}</Button><Button type="submit" variant="primary" disabled={busy||!form.name.trim()||!dirty}>{busy?msg('Saving…'):msg('Save')}</Button></div>
+   {timeout&&<Disclosure title={msg('Advanced settings')}><label className={styles.field}>{msg('Search timeout (seconds)')}<Input type="number" required min={timeout.minSeconds} max={timeout.maxSeconds} step={1} value={form.timeoutSeconds||timeout.defaultSeconds} disabled={busy} onChange={e=>update('timeoutSeconds',Number(e.target.value))}/></label><p className={styles.caption}>{msg('Maximum wait for one search, including authentication. Default: {{seconds}} seconds.',{seconds:timeout.defaultSeconds})}</p>{original?.timeoutRefused&&<SettingsFeedback>{msg('The saved timeout is outside the range this gateway supports. Saving sets the value shown.')}</SettingsFeedback>}</Disclosure>}
+   <SettingsActions feedback={<SettingsFeedback tone={error?'error':notice?'success':'neutral'}>{error||notice||(busy?msg('Working…'):dirty?msg('Unsaved changes'):null)}</SettingsFeedback>}>{original&&<Button variant="quiet" disabled={busy||dirty} onClick={()=>setRemoving(true)}>{msg('Remove connection')}</Button>}<Button disabled={busy||dirty||!form.revision} onClick={()=>void act('test')}>{msg('Test connection')}</Button><Button onClick={()=>void close()} disabled={busy}>{msg('Cancel')}</Button><Button type="submit" variant="primary" disabled={busy||!form.name.trim()||!dirty}>{busy?msg('Working…'):msg('Save')}</Button></SettingsActions>
   </form>
-  <Dialog open={removing} onOpenChange={setRemoving} title={msg('Remove connection')} description={msg('Saved sources remain available. Future searches using this connection will stop.')} footer={<DialogActions><Button disabled={busy} onClick={()=>setRemoving(false)}>{msg('Cancel')}</Button><Button variant="danger" disabled={busy||typed.trim()!==form.name.trim()} onClick={()=>void act('remove')}>{msg('Remove')}</Button></DialogActions>}><TypedConfirmation value={typed} onChange={setTyped} confirmation={form.name} disabled={busy}/>{error&&<p role="alert">{error}</p>}</Dialog>
+  <Dialog open={removing} onOpenChange={setRemoving} title={msg('Remove connection')} description={msg('Saved sources remain available. Future searches using this connection will stop.')} footer={<DialogActions><Button disabled={busy} onClick={()=>setRemoving(false)}>{msg('Cancel')}</Button><Button variant="danger" disabled={busy||typed.trim()!==form.name.trim()} onClick={()=>void act('remove')}>{msg('Remove')}</Button></DialogActions>}><TypedConfirmation value={typed} onChange={setTyped} confirmation={form.name} disabled={busy}/>{error&&<SettingsFeedback tone="error">{error}</SettingsFeedback>}</Dialog>
  </>
 }

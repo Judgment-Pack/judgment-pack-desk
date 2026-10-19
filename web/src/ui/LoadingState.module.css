@@ -1,0 +1,2 @@
+.inset { padding: var(--space-4) var(--density-gutter); }
+.inline { font-size: inherit; color: inherit; }

@@ -9,6 +9,14 @@ vi.mock('../files/client', async original => ({ ...await original<typeof import(
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 const fixture = () => structuredClone(connectionCatalogFixture)
 
+it('admits bounded recurring-source operations alongside the released Drive controls',()=>{
+ const wire=fixture(),drive=wire.providers[0]!
+ drive.operations.push('source-bind','source-bindings','source-revoke','source-observe','files-list','files-read','files-prepare','files-commit','files-status','convert-preparation')
+ expect(drive.operations).toHaveLength(18)
+ expect(parseConnectionCatalog(wire).providers.find(item=>item.id==='google-drive')?.operations).toContain('source-observe')
+ drive.operations.push('source-observe');expect(()=>parseConnectionCatalog(wire)).toThrow()
+})
+
 it('requires the supported protocol and complete operations without inventing missing providers', () => {
  const wire = fixture()
  expect(parseConnectionCatalog(wire).providers.map(item => item.id)).toEqual(['google-drive', 'gmail', 'notion', 'obsidian'])

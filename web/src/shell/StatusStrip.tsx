@@ -1,77 +1,66 @@
-import { msg, useLocale } from '../i18n'
-/** Connection health stays compact; component versions live in Help & About.
- * Configuration warnings remain visible on every route.
- */
-import { Link } from 'react-router-dom'
+import { useChats } from '../chat/ChatProvider'
+import { DeskHomeNotice, useDeskHome } from '../admin/DeskHomeSettings'
+import { ProjectLocationNotice, useProjectLocation } from '../admin/ProjectLocation'
+import { AI_CONNECTIONS_KEY } from '../assistant/aiConnections'
+import { useQueryClient } from '@tanstack/react-query'
+import { msg, systemMessage, useLocale } from '../i18n'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
+import { useMcp } from '../mcp/McpProvider'
+import { ProjectSafeguardsStatus } from '../packs/upgrade/UpgradeNote'
+import { Button, ButtonLink } from '../ui/Button'
+import { PopoverClose } from '../ui/Popover'
 import { ConnectionStatus } from './ConnectionNotices'
+import { DeskNotices, DeskStatusNotice } from './DeskNotices'
 
-export const CONFIG_REFUSED_CUE = 'configuration refused — see Admin'
+export const CONFIG_REFUSED_CUE = 'Settings need attention'
+export const CONFIG_UNREAD_CUE = 'Settings unavailable'
 
-/**
- * The other half of the same cue, and a different sentence because it is a
- * different fact: the read did not produce a file, and it was not a 404.
- * "Refused" is a verdict the decoder reached about content; this one never got
- * that far. It deliberately does **not** say the file exists — a chassis
- * refusal says something about a file, but a socket that never answered
- * establishes only that absence was not established, and one cue covers both.
- * Admin is where the two are told apart.
- */
-export const CONFIG_UNREAD_CUE = 'configuration could not be read — see Admin'
-
-/**
- * The same two cues, in the spelling a phone has room for.
- *
- * The full sentence is about 263px wide in the strip's own face and a 320px
- * viewport leaves roughly 232px beside the console button, so the link — which
- * neither shrinks nor wraps, deliberately — painted across the button and off
- * the edge of a frame that clips. The short spelling is what is *painted*
- * there; the accessible name is the full sentence at every width, because it
- * is on the link rather than in its text.
- */
-export const CONFIG_REFUSED_SHORT = 'config refused'
-export const CONFIG_UNREAD_SHORT = 'config unread'
-
-export function StatusStrip() {
+/** Global health uses existing configuration reads; visiting a page does not start new probes. */
+function SystemNotices() {
   useLocale()
-  const { problems, readFailure, desk } = useEffectiveConfig()
-  // **Either file, one cue.** The strip's job is to stop a mistyped key
-  // looking exactly like having written no file at all, and that argument does
-  // not care which of the two files carried the typo. Admin names which.
+  const { status, known } = useMcp()
+  const { store, ready: chatsReady, error: chatError, saving } = useChats()
+  const { problems, readFailure, desk, aiConnections } = useEffectiveConfig()
+  const client = useQueryClient()
   const refused = problems.length > 0 || (desk?.problems.length ?? 0) > 0
   const unread = readFailure !== undefined || desk?.readFailure !== undefined
-  return (
-    <footer className="desk-strip">
-      <span className="desk-strip-left">
-        {refused && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}
-        {!refused && unread && (
-          <ConfigCue full={msg(CONFIG_UNREAD_CUE)} short={msg(CONFIG_UNREAD_SHORT)} />
-        )}
-      </span>
-      <ConnectionStatus/>
-    </footer>
-  )
+  const local = desk?.localGateway
+  const managed = !desk?.decoded?.values?.research?.gateway
+  const refresh = () => { void client.invalidateQueries({queryKey: DESK_CONFIG_QUERY_KEY}) }
+  const settingsAction = <PopoverClose><ButtonLink to="/admin">{msg('Review settings')}</ButtonLink></PopoverClose>
+  return <>
+    {chatError && <DeskStatusNotice id="chat-history" tone={chatsReady ? 'error' : 'warning'} label={chatsReady ? msg('Chat changes not saved') : msg('Chat history unavailable')}
+      detail={systemMessage(chatError)} actions={<>{!chatsReady ? <Button onClick={() => void store?.load()}>{msg('Retry')}</Button> : store?.canCreate ? <Button disabled={saving} onClick={() => store.retrySave()}>{saving ? msg('Retrying…') : msg('Retry saving')}</Button> : null}<PopoverClose><ButtonLink to="/chats">{msg('Manage chat history')}</ButtonLink></PopoverClose></>}>
+      {chatsReady ? msg('Chat changes could not be saved. Keep this window open until saving succeeds.') : msg('Saved chats and drafts could not be loaded.')}
+    </DeskStatusNotice>}
+    {refused && <DeskStatusNotice id="configuration" tone="warning" label={msg(CONFIG_REFUSED_CUE)} actions={settingsAction}>
+      {msg('Some settings were not accepted. Review them in Admin.')}
+    </DeskStatusNotice>}
+    {!refused && unread && <DeskStatusNotice id="configuration" tone="warning" label={msg(CONFIG_UNREAD_CUE)} actions={<><Button onClick={refresh}>{msg('Retry')}</Button>{settingsAction}</>}>
+      {msg('Settings could not be read. Reload the page before making changes.')}
+    </DeskStatusNotice>}
+    {managed && local?.status === 'unavailable' && <DeskStatusNotice id="local-processing" tone="warning" label={msg('Local processing unavailable')}
+      detail={local.problem ? systemMessage(local.problem) : undefined}
+      actions={<><Button onClick={refresh}>{msg('Refresh')}</Button><PopoverClose><ButtonLink to="/admin#documents">{msg('Review settings')}</ButtonLink></PopoverClose></>}>
+      {msg('Local processing is unavailable. Check the details in Admin → Document processing.')}
+    </DeskStatusNotice>}
+    {aiConnections?.problem && <DeskStatusNotice id="ai-connections" tone="warning" label={msg('AI connections unavailable')}
+      detail={systemMessage(aiConnections.problem)} actions={<><Button onClick={() => void client.invalidateQueries({queryKey: AI_CONNECTIONS_KEY})}>{msg('Retry')}</Button><PopoverClose><ButtonLink to="/admin#connections-ai">{msg('Review settings')}</ButtonLink></PopoverClose></>}>
+      {msg('Assistant connections could not be loaded.')}
+    </DeskStatusNotice>}
+    {!refused && !unread && status === 'ready' && known && <ProjectSafeguardsStatus/>}
+  </>
 }
 
-/**
- * One cue, two spellings, one accessible name.
- *
- * Both spellings are in the DOM and CSS paints exactly one of them, because
- * the alternative — choosing in JavaScript off a `matchMedia` — makes the
- * strip re-render on every drag of a window edge for a string. The name is on
- * the link, so it is the full sentence whichever is painted, and both spans
- * are `aria-hidden` so the short one never reaches the accessible name.
- */
-function ConfigCue({ full, short }: { full: string; short: string }) {
-  useLocale()
-  return (
-    <Link className="desk-strip-warn" to="/admin" aria-label={full}>
-      <span className="desk-strip-warn-full" aria-hidden="true">
-        {full}
-      </span>
-      <span className="desk-strip-warn-short" aria-hidden="true">
-        {short}
-      </span>
-    </Link>
-  )
+export function StatusStrip() {
+  const location = useProjectLocation()
+  const home = useDeskHome()
+  return <footer className="desk-strip">
+    <SystemNotices/>
+    {!home.data?.restartRequired && <ProjectLocationNotice/>}
+    <DeskHomeNotice/>
+    <div className="desk-strip-left"><DeskNotices/></div>
+    {!location.data?.restartRequired && !home.data?.restartRequired && <ConnectionStatus/>}
+  </footer>
 }

@@ -57,6 +57,40 @@ accents. Keep headers and composers outside their scrolling content. Details
 are supplemental, not a second copy of the main document. Controls describe
 actions (Open draft, New chat, Create pack), and activity reports actual work.
 
+The attached Assistant is denser than full-page chat: 13px messages and composer
+text, 1.5 line height, density-field gaps between messages, and density-block
+insets. Markdown headings stay within the 13–14px hierarchy. Metadata remains
+12px; buttons retain their shared target sizes. The composer starts at two lines,
+expands for multiline drafts, and keeps Enter/Shift+Enter behavior. These shared
+pane rules apply to Inputs, saved and draft packs, and graphs without route-local
+font or density overrides.
+
+## Message navigation and research choices
+
+Main and attached chat use the same header controls. Jump to message opens an
+ordered list of the current session's user messages, with excerpts, timestamps,
+and local filtering. Every opening starts at the bottom, including reopening
+after a jump. Choosing a message scrolls only the transcript and focuses that
+message; Escape closes the list and restores its trigger. Chat history remains
+for switching sessions and creating a new chat. The two lists cannot be open
+together.
+
+User messages keep Copy message and eligible Retry response actions at the top
+right beside their timestamp. Controls remain keyboard and touch accessible.
+Retry is available for the latest failed, interrupted, or budget-limited response
+when the existing run permits it; it reuses that request without duplicating the
+user message or consuming unsent composer text. Reload alone never retries.
+
+Chat can suggest Research for a request that would benefit from broader web
+sources. Use Research and Keep Chat are explicit, per-message choices; they do
+not change the session's default mode. Before-send suggestions retain the
+original composer text and attachments until the user chooses. Direct requests
+to research already authorize research; reading a supplied URL still works in
+Chat. A host gate also pauses broader search and website exploration when a
+model attempts them without a recorded choice, including when the local intent
+heuristic does not recognize the language. This appears as Research suggested,
+not a failed tool call. Search policy and configuration restrictions still apply.
+
 ## References
 
 - Linear, [Behind the latest design refresh](https://linear.app/now/behind-the-latest-design-refresh): quieter navigation and compact consistent controls.
@@ -342,3 +376,206 @@ focus and dismissal behavior applies to graph artifacts and pack details.
 These choices apply [Linear's action hierarchy and restrained structure](https://linear.app/now/behind-the-latest-design-refresh)
 and [contextual proposals reviewed beside the editor](https://www.databricks.com/blog/databricks-assistant-edit-mode-fastest-way-transform-your-notebooks)
 to Desk's existing shared components.
+
+## Dialect recipe proposals (local v0.13)
+
+Main chat and the pack/graph right pane share `InputRecipeNotice` and the recipe
+review dialog. Chat can inspect saved recipe metadata and retain a proposed
+recipe; proposal tools cannot save an input, choose a credential, start research,
+or change qualification rules. A separate research request tool uses the explicit
+composer allowance described in input-preparations.md. The latest proposal appears as a compact title/metadata row with its review
+action. Field lists stay in the review. A saved recipe already open in the Inputs
+pane is omitted because its context header identifies it. Saved work and older proposals are grouped by Input in **Related work**. Main chat and other panes use the shared labeled toolbar button; the existing Inputs context header opens the same reader.
+
+**Review recipe** reuses Inputs' fields, target, connection, model and limit
+controls. Qualification stays optional under a disclosure. Company and person
+research can precede a pack; people-at-company research requires a reviewed
+company selection. The dialog has a bounded, scrolling body and fixed,
+right-aligned Cancel / Save to Inputs actions. Cancel restores focus, and the
+shared unsaved-changes guard protects edited review values.
+
+**Save to Inputs** creates an empty, project-local input and changes the card to
+**Open input**. It retains the chat/draft origin and uses that pair for idempotent
+creation. Saving never confirms a research run. Research is reviewed and started
+separately through the shared manual review or a previously reviewed one-run
+composer allowance. No Runtime ownership or spec change is needed for this
+Desk authoring interaction.
+
+Record counts, source/model request budgets and automatic retry settings belong
+in Recipe → Research → Limits and retries. Free-text intent describes who to find
+and what to research, including criteria such as employee thresholds. New chat
+proposals keep totals in structured limits. At execution, saved limits and the
+host's remaining record/request counts override conflicting totals in old prose;
+the original prose and historical recipes stay intact. A record maximum is not a
+guarantee or permission to fabricate missing evidence.
+
+Research retries explicit temporary search server failures (500/502/503) and
+rate limits under its saved policy, with bounded exponential backoff and jitter.
+Timeouts, including provider 408/504, require timeout-retry opt-in. Exhausted
+temporary searches are retained as source gaps so other permitted sources and
+existing evidence can still be processed. Repeating the failed query does not
+bypass its retry limit. Invalid requests/responses, unknown errors, authentication,
+policy, and post-acquisition failures remain terminal. Provider text never enters
+user-visible diagnostics.
+
+Inputs history includes conversations linked by saved recipe proposals, the recipe's
+retained chat origin, and reviewed-action proposals. Opening a saved recipe keeps
+its originating conversation in the right pane; an empty automatically created
+pane draft does not take precedence over a retained conversation. Explicit New
+chat and history selections still take precedence. The Inputs collection shows
+Inputs-related chats; a recipe filters to its own related chats. A conversation
+can belong to several Inputs without being copied or losing its original main,
+pack, or graph location. Navigation, New chat, and research progress use the open
+Inputs pane's scope. Existing saved links work without rewriting chat history.
+
+
+## Compact interview questions
+
+The shared main and Inputs/Library pane chat can request one structured question
+through Desk's `ask_user` host tool. It supports two to four options, single or
+multiple selection, and an optional recommendation with a short reason. No
+answer is preselected. Optional text can supplement a choice or replace it;
+open questions can omit choices entirely. Help me decide asks for an explanation
+without accepting the recommendation. After a brief explanation, the assistant
+can supply a refined question. If it replies with prose alone, Desk re-shows the
+retained choices with no selection, without making another model request.
+
+The card uses standard body text, 32px option rows, a one-line expanding text
+field and compact actions. Selecting a choice never submits it. Submit answer
+retains a user message and collapses the card; its details remain available.
+The normal composer can change direction and supersedes the pending question.
+
+At the model boundary, absent option descriptions become empty text and absent
+recommendation fields become null. Saved questions remain strictly validated;
+choices, labels, recommendations and answers are never invented or silently
+rewritten. Invalid questions return a specific, closed validation reason to the
+model with instructions to correct `ask_user` in the current turn. Both engines
+retain that reason in Work without copying raw provider errors or arguments.
+If a corrected question opens in that response, its earlier failed attempts show
+Corrected and no longer count as failures. This shared flow applies to main chat
+and workspace panes. Historical failures without a recorded reason remain
+historical; they do not restart a question or a model request.
+
+Both Vercel and Codex adapters end the model operation at the question. The
+checkpoint retains the question, selected options and text. Submission saves the
+answer before explicitly starting a fresh turn with the original conversation
+and constraints. A failed save keeps an explicit Continue action that retries the checkpoint
+with its original revision guard before starting the model; a persistent save
+error or revision conflict still blocks continuation. Reload never starts a model call. Completed operations are not replayed. Interview answers
+are preferences, not authority to save a recipe, start research or evaluate;
+the existing review controls still govern those actions.
+
+Validation: `npm test -- src/chat src/assistant/engines/vercel/engine.test.ts
+src/assistant/engines/codex/codex.test.ts src/research/run.test.ts` from `web`.
+After `npm run build`, run the disposable full browser fixture from the repo:
+`JPS_QUESTION_BROWSER="$PWD/web/scripts/chat-question-browser.mjs" go test
+-buildvcs=false ./internal/desk -run '^TestChatQuestionBrowser$' -count=1 -v`.
+It uses a local scripted provider, real persistence and a failed-save case,
+without accessing the user's conversations or provider accounts.
+
+Chat and interview fields use **Enter to send/submit** and **Shift+Enter for a
+new line**, with a quiet, screen-reader-associated hint. Enter on a focused
+question choice submits the current answer; choosing it alone does not. The
+shortcut uses the same readiness and save checks as the button. Modified Enter,
+IME composition (including the key-code 229 boundary), and held Enter never
+submit accidentally. Help, clear, and other focused controls keep their native
+keyboard behavior. This matches the documented [Slack Enter-key convention](https://slack.com/help/articles/115005523006-Set-your-Enter-key-preference).
+
+Inputs research supplies short, run-local `availableURLs` references to its model.
+A read resolves `urlRef` from the retained host journal; the model need not copy
+opaque Google redirect tokens. Legacy exact URLs remain accepted. Unknown or
+mismatched references are never fetched or repaired by fuzzy matching. The host
+retains the declined action and supplies feedback to the next model step within
+the saved model limit, allowing two corrections before stopping repeated invalid
+proposals. This is a local validation correction, not a source/network retry.
+Activity distinguishes the declined action from a completed read. Gateway access
+policy, evidence verification and record validation remain unchanged. The model
+is directed to save useful candidates after reading supporting evidence and to
+leave unsupported fields missing instead of delaying all records for enrichment.
+
+
+## Composer workflow approvals
+
+Keep work type (**Chat / Research**) separate from **Ask me / Auto within limits**.
+Ask me is the default. Auto requires a saved input, exact recipe/connection/limit
+review and an explicit **Allow one run** action. It grants this chat one research
+start within 15 minutes or one hour in the current signed-in window. The server
+owns this permission; restoring a chat preference cannot create it. Expiry,
+consumption and revocation return the composer to Ask me. Recipe changes and
+additional usage retain their existing reviews.
+
+Main chat can choose a saved input; an input pane defaults to its current input.
+The shared control uses existing menu, dialog, fields and actions. The older
+research preference is called **Search when needed**, so “Auto” has one meaning
+in the composer. Button-triggered Start research still confirms exactly that run
+in either mode. See input-preparations.md for admission and audit contracts.
+
+
+## Inputs research visibility
+
+The Inputs page status row owns compact background research progress, recovery
+and budget approvals. View steps owns source counts and detailed explanations. Its docked chat omits the duplicate block and
+already-applied references. Main chat and other panes also omit saved recipe and applied-action cards. Pending reviews remain compact and actionable; Related work retains grouped history.
+
+Expanded and narrow-screen chat use the existing `mainCovered` shell contract.
+When the page is covered, or an input chat opens on its own, show only a short
+research status and Stop while active. Related work owns navigation; opening an Input there reveals the main workspace and keeps the same chat. Keep polling the shared query when
+the progress block is hidden so research never causes an empty welcome to reappear.
+Conversation-owned Work steps remain in the transcript.
+
+
+## Related work
+
+One shared reader groups associated work by saved identity. The labeled Related
+work toolbar action serves main chat and Library panes. Inputs reuses its context
+header with that same visible action label, without another toolbar row. Input
+context, Input recipes, Input actions and Graph drafts are no longer separate
+ellipsis-menu entries. Context and history are disclosures within each item.
+Pending reviews keep the existing guarded review forms.
+
+The shared entry accepts a title, type/status description, icon, destination and
+feature-owned actions. Inputs, packs and graphs supply adapters. Jobs can reuse
+this presentation without a recipe-specific contract; Jobs does not yet host chat.
+Inspecting related work never changes chat context or starts an operation.
+Opening covered work reveals the main workspace and preserves the conversation.
+
+
+### Related work rendering audit
+
+Main chat, the Inputs list/detail pane, saved pack and pack draft panes, and
+saved graph and graph draft panes use the same flat Related work reader. Each
+entity has one title, secondary type/version text, and an aligned navigation or
+review control. Review controls reuse their feature's dialogs and stale/unsaved
+edit checks, without wrapping a second artifact card inside the entity row.
+At narrow pane widths, actions move below the identity. Context and history stay
+collapsed. Current visible work is labelled Open in workspace; when the pane
+covers it, its navigation link reveals the main workspace again.
+
+Earlier unsaved input creation proposals live under Earlier proposals, labelled
+Not saved. Only the latest creation proposal is presented as a current proposal.
+Saved inputs are grouped by persisted ID; equal names do not prove identity and
+are never silently merged. Old review controls remain available in history.
+Graphs group their revisions by path and ID. An unsaved graph workspace links to
+its draft, not a nonexistent saved graph; a saved graph's latest pending update
+appears beneath its single entity heading. The context title applies only when
+its identity matches that entity.
+
+The generic row is also tested with a Job destination. Jobs has no chat pane;
+this does not add one. Navigation/review inspection never starts research or
+changes input review decisions.
+
+## Delegated work
+
+Delegated tasks share the existing Work disclosure in main chat and attached
+Inputs, pack and graph chat. Each child occupies one row, named for its task,
+with the running spinner replacing the chevron. Selecting the row opens the
+shared reader with its objective, actual tool steps, findings and any failure.
+The main conversation shows the parent's synthesis. Completed child text is not
+injected as a separate assistant answer or pinned above the composer.
+
+There is no Agent composer mode: Chat/Research governs source access and Ask
+me/Auto retains its workflow approval meaning. Children have bounded read-only
+capabilities and share the parent budget. Stop cancels the whole response;
+reload retains findings and marks unfinished children interrupted. See
+[shared delegated tasks](../adr/0012-shared-delegated-tasks.md) for the execution,
+capability and persistence contracts.

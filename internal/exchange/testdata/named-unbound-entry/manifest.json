@@ -1,0 +1,21 @@
+[
+  {
+    "id": "example.fx-named-unbound",
+    "kind": "dialect",
+    "path": "entries/example/fx-named-unbound",
+    "entryDigest": "sha256:e71294601baeb2d1f38d36c82b683244d2515ee5530f3d6c55a3ef83d804be9c",
+    "dialectDigest": "sha256:6f2e55351da8982efae6e68ed470087d3ee9e5f19f2b70bdd36c62c478936bc8",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "binding.json",
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  }
+]

@@ -1,3 +1,5 @@
+import {PageLoading} from '../ui/PageLoading'
+import {ChatPlaceholder} from '../chat/ChatPlaceholder'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useChats } from '../chat/ChatProvider'
@@ -21,7 +23,8 @@ export function DraftPackView() {
   useLocale()
   const {draftId} = useParams(), {packDrafts,ready,error,store,dirty,saving} = useChats()
   const artifact = packDrafts.find(item=>item.id===draftId)
-  if(!ready || error) return <div className={styles.blank} role="status">{error ? systemMessage(error) : msg('Loading packs…')}{error&&<Button onClick={()=>ready?store?.retrySave():void store?.load()}>{msg('Retry')}</Button>}</div>
+  if(error) return <div className={styles.blank} role="status">{systemMessage(error)}<Button onClick={()=>ready?store?.retrySave():void store?.load()}>{msg('Retry')}</Button></div>
+  if(!ready) return <div data-layout="page"><PageLoading>{msg('Loading draft…')}</PageLoading></div>
   if(!artifact) return <div className={styles.blank}><p>{msg('This draft is no longer available.')}</p><Button onClick={()=>window.history.back()}>{msg('Back')}</Button></div>
   if(artifact.finalized && !dirty && !saving) return <Navigate replace to={`/packs/${encodeURIComponent(artifact.finalized.id)}`} />
   return <DraftReader key={`${artifact.id}:${latestText(artifact)}:${JSON.stringify(artifact.checkpoint.state.cases)}:${JSON.stringify(artifact.checkpoint.state.expectationIssues)}`} artifact={artifact}/>
@@ -44,7 +47,7 @@ function DraftReader({artifact}:{artifact:PackDraft}) {
     else store.startChat(undefined,artifact.mode,true,artifact.id)
   },[store,selected?.id,artifact.id,artifact.mode])
   if(problem)return <p role="alert">{systemMessage(problem)}</p>
-  if(!selected)return <p role="status">{msg('Loading chats…')}</p>
+  if(!selected)return <ChatPlaceholder loading/>
   return <DraftWorkspace chat={selected} artifact={artifact} fallback={fallback}/>
 }
 

@@ -1,0 +1,42 @@
+{
+  "source": "judgment-pack-runner openapi.json at v0.24.0 (393b5df0f60204fe76b9dcb4bf1ba85d0e5865ff): components.schemas.JournalEntry.properties.kind.enum and JournalActor forms",
+  "tag": "v0.24.0",
+  "revision": "393b5df0f60204fe76b9dcb4bf1ba85d0e5865ff",
+  "kinds": [
+    "trigger.configured",
+    "trigger.paused",
+    "trigger.resumed",
+    "trigger.key-rotated",
+    "occurrence.received",
+    "occurrence.skipped",
+    "occurrence.preparing",
+    "occurrence.ready",
+    "occurrence.submitted",
+    "occurrence.failed",
+    "occurrence.expired",
+    "occurrence.needs-attention",
+    "occurrence.cancelled",
+    "occurrence.reconciled",
+    "run.queued",
+    "run.started",
+    "run.expired",
+    "run.completed",
+    "run.failed",
+    "run.interrupted",
+    "release.previewed",
+    "job.created",
+    "job.upgraded",
+    "admission.refused",
+    "journal.began",
+    "runner.started",
+    "runner.stopped"
+  ],
+  "actors": [
+    "installation",
+    "trigger",
+    "trigger-credential",
+    "cloud-connection",
+    "runner"
+  ],
+  "pageSize": 50
+}

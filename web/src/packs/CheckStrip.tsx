@@ -1,3 +1,4 @@
+import {RunStatus} from '../ui/RunStatus'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 /**
@@ -53,7 +54,7 @@ export function CheckStrip({
   useLocale()
   return (
     <div className={[styles.strip, !unavailable && !fetching && !stale && report?.status === 'valid' && !rootAnchored.length && !digestsDisagree && !disagreement.length ? styles.routine : ''].join(' ')}>
-      <p className={styles.check}>
+      <RunStatus running={fetching && !unavailable} className={styles.check}>
         {unavailable ??
           // Progress is `fetchStatus`, which is about a request being in
           // flight. `isPending` is about there being no data, which a disabled
@@ -64,7 +65,7 @@ export function CheckStrip({
               ? (behind ??
                 msg("This check ran over different bytes from the ones shown, so nothing it found is placed on this document."))
               : layersReached(report, msg).text)}
-      </p>
+      </RunStatus>
       {provenance !== undefined && <p className={styles.checkWhat}>{provenance}</p>}
       {/*
         The diagnostics that landed on the document itself. `anchor()` sends a

@@ -1,3 +1,23 @@
+import {manualIntentJournal,type PendingManualIntent} from './manualIntent'
+import {ExecutionRegistration,useManualExecution,useExecutionRegistration} from './ExecutionRegistration'
+import {PersistentMappedRunInputs} from './PersistentMappedRunInputs'
+import {dialectAPI,type DialectEvaluation} from '../dialects/client'
+import {UpgradeRecords} from './UpgradeRecords'
+import {readUpgradeReceipt,needsRecordReview,upgradeDraft,upgradeDraftState,upgradePackKey,type JobUpgrade} from './upgrade'
+import {UpgradeReview} from './UpgradeReview'
+import {isExecutableDialect} from './dialectTypes'
+import {privateQuery} from '../data/privateQuery'
+import {PageLoading} from '../ui/PageLoading'
+import { DialectSubscriptions,ConnectDialectDialog,useDialectSubscriptions } from '../dialects/DialectSubscriptions'
+import { QueryStatusNotice } from '../shell/QueryStatusNotice'
+import { useCollectionSelection, type CollectionSelection } from '../ui/useCollectionSelection'
+import { SelectionTable, SelectionHeader, SelectionCell, SelectionActions } from '../ui/SelectionTable'
+import { exportSelectedRows } from '../ui/selectionExport'
+import { VisuallyHidden } from 'radix-ui'
+import { IconPlay, IconPencil, IconCheck, IconClose, IconStop, IconHistory, IconActivity, IconMore, IconDownload } from '../shell/icons'
+import { Menu } from '../ui/Menu'
+import { Dialog, DialogActions } from '../ui/Dialog'
+import { CollectionRow } from '../ui/CollectionRow'
 import { mappingErrorMessage } from './mappingError'
 import {SourcePreparations} from './SourcePreparations'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
@@ -10,8 +30,8 @@ import { useDetailsSlot } from '../shell/DetailsSlot'
 import { useInspectorControls } from '../shell/InspectorSlot'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { MappedInputFields } from './MappedInputFields'
-import { MappingReview, InputLineage } from './MappingReview'
-import { isSourceV2, type SourceV2 } from './mappingTypes'
+import { DialectReview, InputLineage } from './DialectReview'
+import { isSourceV2, type SourceV2 } from './dialectTypes'
 import { deskFetch } from '../files/client'
 import { SourceInputFields } from './SourceInputFields'
 import { SourceSummary } from './SourceSummary'
@@ -23,23 +43,28 @@ import { useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { msg, systemMessage, useLocale, formatDate } from '../i18n'
+import {CollectionToolbar} from '../ui/CollectionToolbar'
+import { CollectionLayout, CollectionEmpty } from '../ui/CollectionLayout'
+import { Pagination } from '../ui/Pagination'
+import { usePagination } from '../ui/usePagination'
 import { PageHeader, PageBody } from '../ui/PageLayout'
 import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { InputFields } from './InputFields'
 import { parseInput } from './inputModel'
 import { refreshRunnerKey } from './runnerKey'
-import { Tooltip } from '../ui/Tooltip'
+import { Tooltip, OverflowTooltip } from '../ui/Tooltip'
 import { Select } from '../ui/Select'
 import { Disclosure } from '../ui/Disclosure'
 import { usePack, usePacks } from '../mcp/queries'
-import { jobsAPI, JobsRequestError, type Decision, type Job, type Page, type Release, type Run } from './client'
+import { canonicalJobsRequest, jobsAPI, JobsRequestError, type Decision, type Job, type Page, type Release, type Run } from './client'
 import styles from './JobsView.module.css'
 import { readReleaseTests } from './releaseTests'
 import { ReleaseReadiness } from './ReleaseReadiness'
 import { ReleaseStanding } from './ReleaseStanding'
 import { ActivityView } from './ActivityView'
 import { stamp } from './activity'
+import { VerifySavedRecord } from './RunSigning'
 import { RunFields, RunTechnicalDetails } from './RunRecord'
 
 function date(value: string) { return formatDate(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }) }
@@ -52,7 +77,7 @@ function Problem({ error }: { error: unknown }) { return error ? <p className={s
 function JSONView({ value, title }: { value: unknown; title: string }) { return <Disclosure title={title}><pre className={styles.json}>{JSON.stringify(value, null, 2)}</pre></Disclosure> }
 export function decisionLabel(result?: Decision) { if (!result) return '—'; return result.disposition.outcomeId ?? (result.disposition.kind === 'not-applicable' ? msg('Not applicable') : msg('Unresolved')) }
 function stateLabel(state: Run['state']) { return { queued: msg('Queued'), running: msg('Running'), completed: msg('Completed'), failed: msg('Failed'), interrupted: msg('Interrupted') }[state] }
-function usePages<T>(path: string) { return useInfiniteQuery({ queryKey: ['jobs-pages', path], initialPageParam: 0, queryFn: ({ pageParam }) => jobsAPI<Page<T>>(`${path}${path.includes('?')?'&':'?'}after=${pageParam}`), getNextPageParam: page => page.next || undefined, refetchInterval: 2500 }) }
+function usePages<T>(path: string) { return useInfiniteQuery({ ...privateQuery, queryKey: ['jobs-pages', path], initialPageParam: 0, queryFn: ({ pageParam }) => jobsAPI<Page<T>>(`${path}${path.includes('?')?'&':'?'}after=${pageParam}`), getNextPageParam: page => page.next || undefined, refetchInterval: 2500 }) }
 function More({ hasNextPage, isFetchingNextPage, fetchNextPage }: { hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown }) { return hasNextPage ? <Button disabled={isFetchingNextPage} onClick={() => { void fetchNextPage() }}>{msg('Load more')}</Button> : null }
 
 export function JobsContent() {
@@ -63,6 +88,7 @@ export function JobsContent() {
   return <JobsIndex />
 }
 function JobsIndex() {
+ const [connectInputs,setConnectInputs]=useState(false),inputOpener=useRef<HTMLButtonElement|null>(null)
   const allRuns=useLocation().pathname==='/jobs/runs'
   const drafts = useJobDrafts()
   const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[state,setState]=useState('all'),[review,setReview]=useState(false)
@@ -72,58 +98,134 @@ function JobsIndex() {
   const list=usePages<Job|Run>(path),items=list.data?.pages.flatMap(p=>p.items)??[]
   const filtered=Boolean(query||(allRuns&&(state!=='all'||review)))
   const visibleDrafts = allRuns ? [] : (drafts.data ?? []).filter(({draft}) => `${draft.values.name} ${draft.values.packId}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const pagination=usePagination(items.length+visibleDrafts.length,path)
+  const pageItems=items.slice(pagination.start,pagination.end),pageDrafts=visibleDrafts.slice(Math.max(0,pagination.start-items.length),Math.max(0,pagination.end-items.length))
+  const selectable=[...items.map(value=>({id:(allRuns?'run:':'job:')+value.id,value})),...visibleDrafts.map(({draft})=>({id:'draft:'+draft.id,value:draft}))]
+  const selection=useCollectionSelection(selectable,item=>item.id,allRuns?'runs':'jobs')
+  const complete=!list.hasNextPage&&!list.error&&!list.isPending&&(allRuns||!drafts.isPending&&!drafts.error)
   const hasRows = items.length > 0 || visibleDrafts.length > 0
-  const showToolbar=hasRows||Boolean(search)||filtered
   return <>
-    <PageHeader variant="collection" title={msg('Jobs')} navigation={<nav className={styles.tabs} aria-label={msg('Jobs')}><Link to="/jobs" aria-current={!allRuns?'page':undefined}>{msg('Jobs')}</Link><Link to="/jobs/runs" aria-current={allRuns?'page':undefined}>{msg('Runs')}</Link></nav>} actions={<ButtonLink to="/jobs/new" variant="primary">{msg('Create job')}</ButtonLink>}/>
-    <PageBody width="full"><div className={styles.stack}>
-      <RunChainDownload/>
-      {showToolbar&&<div className={styles.toolbar}><Input className={styles.search} aria-label={allRuns?msg('Search runs'):msg('Search jobs')} placeholder={allRuns?msg('Search runs…'):msg('Search jobs…')} value={search} onChange={e=>setSearch(e.target.value)}/>{allRuns&&<><Select id="jobs-execution-filter" aria-label={msg('Execution')} value={state} options={[{value:'all',label:msg('All executions')},...(['queued','running','completed','failed','interrupted'] as const).map(value=>({value,label:stateLabel(value)}))]} onValueChange={setState}/><label className="checkbox"><input type="checkbox" checked={review} onChange={e=>setReview(e.target.checked)}/>{msg('Needs attention')}</label></>}</div>}
-      <Problem error={list.error}/>{list.isPending&&<p role="status">{msg('Loading…')}</p>}
-      {!list.isPending&&!list.error&&!hasRows&&(allRuns||!drafts.isPending)&&<section className={styles.empty} role="status"><h2>{filtered?msg('No matches'):allRuns?msg('No runs yet'):msg('No jobs yet')}</h2><p>{filtered?msg('Try another search or clear the filters.'):allRuns?msg('Run a job to see its results and history here.'):msg('Create a job to run a saved pack manually, on a schedule, or when an event arrives.')}</p></section>}
-      {hasRows&&(allRuns?<RunTable runs={items as Run[]} showJob/>:<div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{msg('Job')}</th><th>{msg('Pack release')}</th><th>{msg('Trigger')}</th><th>{msg('Recent runs')}</th><th><span className="sr-only">{msg('Actions')}</span></th></tr></thead><tbody>{(items as Job[]).map(j=><tr key={j.id}><td><Link to={`/jobs/${j.id}`}>{j.name}</Link></td><td><span>{j.packTitle??'—'}</span>{j.packVersion&&<span className={styles.cellMeta}>{j.packVersion}</span>}</td><td className="quiet">{j.triggers?.length?j.triggers.map(t=><span className={styles.cellMeta} key={t.id}>{triggerName(t.kind)} · {t.paused?msg('Paused'):t.kind==='cloud'?msg('Listening'):t.kind==='schedule'&&!t.nextAt?msg('Finished'):msg('Active')}</span>):msg('Manual / API')}</td><td><div className={styles.recentRuns}>{j.recentRuns?.length?j.recentRuns.map(r=><Tooltip key={r.id} content={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}><Link className={styles.runDot} data-state={r.state} to={`/jobs/${j.id}/runs/${r.id}`} aria-label={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}>{r.state==='completed'?'✓':r.state==='failed'||r.state==='interrupted'?'×':'·'}</Link></Tooltip>):<span className="quiet">{msg('No runs yet')}</span>}</div></td><td><ButtonLink to={`/jobs/${j.id}?run=new`} variant="quiet">{msg('Run')}</ButtonLink></td></tr>)}{visibleDrafts.map(({draft}) => <tr key={`draft-${draft.id}`}><td><div className={styles.jobName}><Link to={`/jobs/new?draft=${draft.id}`}>{draft.values.name || msg('Untitled job')}</Link><span className={styles.draftBadge}>{msg('Draft')}</span></div><span className={styles.cellMeta}>{date(draft.updatedAt)}</span></td><td className="quiet">{draft.values.packId || '—'}</td><td className="quiet">{draft.values.trigger ? triggerName(draft.values.trigger.kind) : msg('Manual / API')}<span className={styles.cellMeta}>{msg('Not active')}</span></td><td className="quiet">—</td><td><ButtonLink to={`/jobs/new?draft=${draft.id}`} variant="quiet">{msg('Resume')}</ButtonLink></td></tr>)}</tbody></table></div>)}
+    <PageHeader variant="collection" title={msg('Jobs')} navigation={<nav className={styles.collectionTabs} aria-label={msg('Jobs')}><Link to="/jobs" aria-current={!allRuns?'page':undefined}>{msg('Jobs')}</Link><Link to="/jobs/runs" aria-current={allRuns?'page':undefined}>{msg('Runs')}</Link></nav>} actions={<><Button ref={inputOpener} onClick={()=>setConnectInputs(true)}>{msg('Connect Dialects')}</Button><JobsCollectionOptions/><ButtonLink to="/jobs/new" variant="primary">{msg('Create job')}</ButtonLink></>}/>
+    {connectInputs&&<ConnectDialectDialog opener={inputOpener} onClose={()=>setConnectInputs(false)} onSaved={()=>void list.refetch()}/>}
+    <CollectionLayout label={allRuns?msg('Runs'):msg('Jobs')} loading={!hasRows&&!list.error&&(list.isPending||!allRuns&&drafts.isPending)?(allRuns?msg('Loading runs…'):msg('Loading jobs…')):undefined} scrollKey={JSON.stringify([path,pagination.page,pagination.size])} footer={<>{(list.data||visibleDrafts.length>0)&&<Pagination pagination={pagination} complete={!list.hasNextPage&&!list.error&&(allRuns||!drafts.isPending&&!drafts.error)}/>}<More {...list}/></>} toolbar={<>
+      <CollectionToolbar label={msg('Jobs')} searchLabel={allRuns?msg('Search runs'):msg('Search jobs')} search={search} onSearch={setSearch}
+       filters={allRuns?[{label:msg('Execution'),value:state,onValueChange:setState,options:[{value:'all',label:msg('All executions')},...(['queued','running','completed','failed','interrupted'] as const).map(value=>({value,label:stateLabel(value)}))]}]:[]}
+       toggles={allRuns?[{label:msg('Needs attention'),checked:review,onCheckedChange:setReview}]:[]}
+       filtered={filtered} onReset={()=>{setSearch('');setState('all');setReview(false)}}
+       actions={({compact,tight})=><SelectionActions selection={selection} compact={compact} tight={tight} onExport={()=>exportSelectedRows(allRuns?'runs':'jobs',selection.selectedRows.map(item=>item.value))}/>}/>
 
-      {!allRuns && <Problem error={drafts.error} />}
-      <More {...list}/>
-    </div></PageBody>
+      <QueryStatusNotice id={allRuns?"runs":"jobs"} label={allRuns?msg("Run history unavailable"):msg("Jobs unavailable")} error={list.error} retrying={list.isFetching} onRetry={()=>list.refetch()}>{msg("The list could not be refreshed. Previously loaded items may be out of date.")}</QueryStatusNotice>
+      {!allRuns && <QueryStatusNotice id="job-drafts" label={msg("Job drafts unavailable")} error={drafts.error} retrying={drafts.isFetching} onRetry={()=>drafts.refetch()}/>}
+    </>}>
+      {!hasRows&&list.error&&!list.data&&<CollectionEmpty title={allRuns?msg("Run history unavailable"):msg("Jobs unavailable")}>{null}</CollectionEmpty>}
+      {!list.isPending&&!list.error&&!hasRows&&(allRuns||!drafts.isPending&&!drafts.error)&&<CollectionEmpty title={filtered?msg('No matches'):allRuns?msg('No runs yet'):msg('No jobs yet')}><p>{filtered?msg('Try another search or clear the filters.'):allRuns?msg('Run a job to see its results and history here.'):msg('Create a job to run a saved pack manually, on a schedule, or when an event arrives.')}</p></CollectionEmpty>}
+      {hasRows && (allRuns ? <RunTable selection={selection} complete={complete} runs={pageItems as Run[]} showJob/> : <JobsTable selection={selection} complete={complete} jobs={pageItems as Job[]} drafts={pageDrafts}/>)}
+    </CollectionLayout>
   </>
 }
-function RunTable({runs,showJob=false}:{runs:Run[];showJob?:boolean}){return <div className={styles.tableWrap}><table className={styles.table}><thead><tr>{showJob&&<th>{msg('Job')}</th>}<th>{msg('Run')}</th><th>{msg('Execution')}</th><th>{msg('Decision')}</th><th>{msg('Submitted')}</th></tr></thead><tbody>{runs.map(r=><tr key={r.id}>{showJob&&<td><Link to={`/jobs/${r.jobId}`}>{r.jobName??r.jobId}</Link></td>}<td><Link to={`/jobs/${r.jobId}/runs/${r.id}`}>{r.id.slice(-8)}</Link></td><td>{stateLabel(r.state)}</td><td>{decisionLabel(r.result)}</td><td className="quiet">{submitted(r.createdAt)}</td></tr>)}</tbody></table></div>}
-export function CreateJobContent() {
-  const [params] = useSearchParams(), draftId = params.get('draft')
-  const loaded = useQuery({ queryKey: ['job-draft', draftId], queryFn: () => loadJobDraft(draftId!), enabled: !!draftId, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false })
-  // Seed once from a fresh read. File-watcher refetches must never replace or
-  // unmount a working editor, including when a later read fails.
-  const hydrated = useRef<{id: string; value: SavedJobDraft} | undefined>(undefined)
-  if (!draftId) hydrated.current = undefined
-  if (draftId && hydrated.current?.id !== draftId) {
-    if (loaded.isPending || loaded.isFetching) return <p role="status">{msg('Loading draft…')}</p>
-    if (loaded.error || !loaded.data || loaded.data.draft.status === 'created') return <><Problem error={loaded.error || Error(msg('This draft has already been used to create a job.'))} /><ButtonLink to="/jobs">{msg('Back to jobs')}</ButtonLink></>
-    hydrated.current = {id:draftId,value:loaded.data}
-  }
-  return <CreateJobEditor key={draftId ?? 'new'} initial={hydrated.current?.value} />
+function JobsTable({jobs,drafts,selection,complete}:{jobs:Job[];drafts:SavedJobDraft[];selection:CollectionSelection;complete:boolean}) {
+  return <SelectionTable selection={selection} variant="index" aria-label={msg('Jobs')} className={`${styles.table} ${styles.indexTable}`}>
+    <colgroup><col data-selection-column/><col data-name-column/><col className={styles.releaseColumn}/><col/><col className={styles.recentColumn}/><col className={styles.actionColumn}/></colgroup>
+    <thead><tr><SelectionHeader selection={selection} complete={complete}/><th scope="col">{msg('Job')}</th><th scope="col">{msg('Pack release')}</th><th scope="col">{msg('Trigger')}</th><th scope="col">{msg('Recent runs')}</th><th scope="col"><VisuallyHidden.Root>{msg('Actions')}</VisuallyHidden.Root></th></tr></thead>
+    <tbody>{jobs.map(job => {
+      const triggers=job.triggers?.length?job.triggers.map(trigger=>`${triggerName(trigger.kind)} · ${trigger.paused?msg('Paused'):trigger.kind==='cloud'?msg('Listening'):trigger.kind==='schedule'&&!trigger.nextAt?msg('Finished'):msg('Active')}`).join(', '):msg('Manual / API')
+      return <CollectionRow key={job.id} data-selection-selected={selection.has('job:'+job.id)||undefined}><SelectionCell selection={selection} id={'job:'+job.id} name={job.name}/>
+        <td><OverflowTooltip selector="[data-overflow-text]"><Link data-row-primary data-collection-name to={`/jobs/${job.id}`}><IconHistory/><span data-overflow-text>{job.name}</span></Link></OverflowTooltip></td>
+        <td><OverflowTooltip selector="[data-overflow-text]" content={[job.packTitle??'—',job.packVersion].filter(Boolean).join(' · ')}><span className={styles.releaseLine}><span data-overflow-text className={styles.indexText}>{job.packTitle??'—'}</span>{job.packVersion&&<span className={styles.indexMeta}> · {job.packVersion}</span>}</span></OverflowTooltip></td>
+        <td className="quiet"><OverflowTooltip><span className={styles.indexText}>{triggers}</span></OverflowTooltip></td>
+        <td><div className={styles.recentRuns}>{job.recentRuns?.length?job.recentRuns.map(run=><Tooltip key={run.id} content={`${stateLabel(run.state)}\n${msg('Submitted')}: ${submitted(run.createdAt)}`}><Link className={styles.runDot} data-state={run.state} to={`/jobs/${job.id}/runs/${run.id}`} aria-label={`${msg('View run')} · ${stateLabel(run.state)} · ${msg('Submitted')}: ${submitted(run.createdAt)}`}>
+          {run.state==='completed'?<IconCheck/>:run.state==='failed'?<IconClose/>:run.state==='interrupted'?<IconStop/>:run.state==='running'?<IconActivity/>:<IconHistory/>}
+        </Link></Tooltip>):<span className="quiet">{msg('No runs yet')}</span>}</div></td>
+        <td data-row-ignore className={styles.indexAction}><Tooltip content={msg('Run')}><ButtonLink to={`/jobs/${job.id}?run=new`} size="icon" variant="quiet" aria-label={msg('Run')}><IconPlay/></ButtonLink></Tooltip></td>
+      </CollectionRow>
+    })}{drafts.map(({draft})=><CollectionRow key={`draft-${draft.id}`} data-selection-selected={selection.has('draft:'+draft.id)||undefined}><SelectionCell selection={selection} id={'draft:'+draft.id} name={draft.values.name||msg('Untitled job')}/>
+      <td><div className={styles.jobName}><OverflowTooltip selector="[data-overflow-text]"><Link data-row-primary data-collection-name to={`/jobs/new?draft=${draft.id}`}><IconHistory/><span data-overflow-text>{draft.values.name||msg('Untitled job')}</span></Link></OverflowTooltip><Tooltip content={date(draft.updatedAt)}><span className={styles.draftBadge}>{msg('Draft')}</span></Tooltip></div></td>
+      <td className="quiet"><OverflowTooltip><span className={styles.indexText}>{draft.values.packId||'—'}</span></OverflowTooltip></td>
+      <td className="quiet"><OverflowTooltip><span className={styles.indexText}>{draft.values.trigger?triggerName(draft.values.trigger.kind):msg('Manual / API')} · {msg('Not active')}</span></OverflowTooltip></td>
+      <td className="quiet">—</td>
+      <td data-row-ignore className={styles.indexAction}><Tooltip content={msg('Resume')}><ButtonLink to={`/jobs/new?draft=${draft.id}`} size="icon" variant="quiet" aria-label={msg('Resume')}><IconPencil/></ButtonLink></Tooltip></td>
+    </CollectionRow>)}</tbody>
+  </SelectionTable>
 }
-function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
+function RunTable({runs,showJob=false,selection,complete}:{runs:Run[];showJob?:boolean;selection:CollectionSelection;complete:boolean}){return <SelectionTable selection={selection} variant={showJob?'index':undefined} aria-label={showJob?msg('Runs'):msg('Run history')} className={`${styles.table} ${showJob?styles.runsIndex:''}`}>{showJob&&<colgroup><col data-selection-column/><col data-name-column/><col className={styles.runIdColumn}/><col className={styles.runStateColumn}/><col/><col className={styles.submittedColumn}/></colgroup>}<thead><tr><SelectionHeader selection={selection} complete={complete}/>{showJob&&<th scope="col">{msg('Job')}</th>}<th scope="col">{msg('Run')}</th><th scope="col">{msg('Execution')}</th><th scope="col">{msg('Decision')}</th><th scope="col">{msg('Submitted')}</th></tr></thead><tbody>{runs.map(r=><CollectionRow key={r.id} data-selection-selected={selection.has('run:'+r.id)||undefined}><SelectionCell selection={selection} id={'run:'+r.id} name={r.id}/>{showJob&&<td><OverflowTooltip selector="[data-overflow-text]"><Link data-collection-name to={`/jobs/${r.jobId}`}><IconHistory/><span data-overflow-text>{r.jobName??r.jobId}</span></Link></OverflowTooltip></td>}<td><Link data-row-primary to={`/jobs/${r.jobId}/runs/${r.id}`}>{r.id.slice(-8)}</Link></td><td>{stateLabel(r.state)}</td><td><OverflowTooltip><span data-overflow-text>{decisionLabel(r.result)}</span></OverflowTooltip></td><td className="quiet">{submitted(r.createdAt)}</td></CollectionRow>)}</tbody></SelectionTable>}
+export function CreateJobContent() {
+ const [params]=useSearchParams()
+ return <CreateJobSession key={JSON.stringify([params.get('upgrade'),params.get('draft')])}/>
+}
+function CreateJobSession() {
+  const [params] = useSearchParams(), navigate=useNavigate(), cache=useQueryClient(), draftId=params.get('draft')
+  const loaded=useQuery({queryKey:['job-draft',draftId],queryFn:()=>loadJobDraft(draftId!),enabled:!!draftId,retry:false,staleTime:0,refetchOnMount:'always',refetchOnWindowFocus:false,refetchOnReconnect:false})
+  const upgradeId=params.get('upgrade')??loaded.data?.draft.values.upgrade?.jobId
+  const upgrade=useQuery({queryKey:['job-upgrade-base',upgradeId,draftId],queryFn:()=>jobsAPI<JobUpgrade>(`jobs/${upgradeId}`),enabled:!!upgradeId,retry:false,structuralSharing:false,staleTime:0,refetchOnMount:'always',refetchOnWindowFocus:false,refetchOnReconnect:false})
+  const packs=usePacks(), frozen=useRef<{key:string;value:JobUpgrade}|undefined>(undefined), hydrated=useRef<{id:string;value:SavedJobDraft}|undefined>(undefined)
+  const [startingError,setStartingError]=useState<unknown>(),starting=useRef<Promise<SavedJobDraft>|undefined>(undefined)
+  const session=upgradeId+':'+draftId
+  if(upgradeId&&upgrade.data&&!upgrade.error&&!upgrade.isFetching&&frozen.current?.key!==session)frozen.current={key:session,value:upgrade.data}
+  if(!draftId)hydrated.current=undefined
+  if(draftId&&loaded.data&&!loaded.error&&!loaded.isFetching&&hydrated.current?.id!==draftId)hydrated.current={id:draftId,value:loaded.data}
+  const attempt=hydrated.current?.value.draft.values.upgrade
+  const receipt=useQuery({queryKey:['job-upgrade-receipt',attempt],queryFn:()=>readUpgradeReceipt(attempt!),enabled:!!attempt?.submittedReleaseId,retry:false,staleTime:0,refetchOnMount:'always',refetchOnWindowFocus:false,refetchOnReconnect:false})
+  // Every upgrade has a durable candidate before editing. A refresh during the
+  // eventual write can recover its attempted release without replaying approval.
+  useEffect(()=>{
+    if(draftId||!upgradeId||!upgrade.data||upgrade.error||upgrade.isFetching||!packs.data||packs.error)return
+    let active=true
+    if(!starting.current){
+      const base=upgrade.data,id=crypto.randomUUID()
+      starting.current=saveJobDraft(id,upgradeDraft(base,upgradePackKey(base,packs.data.packs??[])))
+    }
+    void starting.current.then(saved=>{
+      if(!active)return
+      cache.setQueryData(['job-draft',saved.draft.id],saved)
+      navigate(`/jobs/new?upgrade=${encodeURIComponent(upgradeId)}&draft=${saved.draft.id}`,{replace:true})
+    }).catch(error=>{if(active)setStartingError(error)})
+    return()=>{active=false}
+  },[draftId,upgradeId,upgrade.data,upgrade.error,upgrade.isFetching,packs.data,packs.error,cache,navigate])
+  if(upgradeId&&!draftId)return startingError||upgrade.error||packs.error?<><Problem error={startingError||upgrade.error||packs.error}/><ButtonLink to="/jobs">{msg('Back to jobs')}</ButtonLink></>:<PageLoading>{msg('Creating draft…')}</PageLoading>
+  if(draftId&&hydrated.current?.id!==draftId)return loaded.error?<Problem error={loaded.error}/>:<PageLoading>{msg('Loading draft…')}</PageLoading>
+  const initial=hydrated.current?.value
+  if(initial?.draft.status==='created')return <><p>{msg('This draft has already been used to create a job.')}</p><ButtonLink to={initial.draft.values.upgrade?'/jobs/'+initial.draft.values.upgrade.jobId:'/jobs'}>{msg('Back to jobs')}</ButtonLink></>
+  if(attempt?.submittedReleaseId){
+    if(receipt.isPending||receipt.isFetching)return <PageLoading>{msg('Loading job…')}</PageLoading>
+    if(receipt.error)return <Problem error={receipt.error}/>
+    if(receipt.data)return <><p role="status">{msg('This upgrade has already been applied.')}</p><ButtonLink to={'/jobs/'+receipt.data.id}>{msg('Open job')}</ButtonLink></>
+  }
+  if(upgradeId){
+    if(frozen.current?.key!==session)return upgrade.error?<Problem error={upgrade.error}/>:<PageLoading>{msg('Loading job…')}</PageLoading>
+    const base=frozen.current.value
+    if(!initial?.draft.values.upgrade)return <Problem error={Error(msg('Invalid job draft.'))}/>
+    const state=upgradeDraftState(base,initial.draft.values)
+    if(state!=='current')return <><p role="status">{state==='completed'?msg('This upgrade has already been applied.'):msg('The job changed after this draft was saved. Start a new upgrade from its current release.')}</p><ButtonLink to={'/jobs/'+base.job.id}>{msg('Open job')}</ButtonLink></>
+    return <CreateJobEditor key={session} initial={initial} upgrade={base}/>
+  }
+  return <CreateJobEditor key={draftId??'new'} initial={initial}/>
+}
+function CreateJobEditor({initial,upgrade,seed=initial?.draft.values}: {initial?: SavedJobDraft;upgrade?:JobUpgrade;seed?:JobDraftValues}) {
   useLocale()
   const [step,setStep]=useState(0),[inputsValid,setInputsValid]=useState(true)
   const details=useDetailsSlot(),inspector=useInspectorControls(),previousInputs=useRef(false)
-  const [trigger,setTrigger]=useState<TriggerConfig | undefined>(initial?.draft.values.trigger),[triggerValid,setTriggerValid]=useState(true)
+  const [trigger,setTrigger]=useState<TriggerConfig | undefined>(seed?.trigger),[triggerValid,setTriggerValid]=useState(true)
   const [params] = useSearchParams()
-  const [packId, setPackId] = useState(initial?.draft.values.packId ?? params.get('pack') ?? '')
+  const [packId, setPackId] = useState(seed?.packId ?? params.get('pack') ?? '')
   const packs = usePacks(), pack = usePack(packId)
   const research = useEffectiveConfig().config.research
-  const [inputMode, setInputMode] = useState<'manual' | 'mapped'>(initial?.draft.values.inputMode ?? 'mapped'), [source, setSource] = useState<SourceInput | SourceV2>()
-  const [name, setName] = useState(initial?.draft.values.name ?? ''), [facts, setFacts] = useState(initial?.draft.values.facts ?? '{}'), [supplied, setSupplied] = useState(initial?.draft.values.supplied ?? false), [evidence, setEvidence] = useState(initial?.draft.values.evidence ?? '{}')
+  const [inputMode, setInputMode] = useState<'manual' | 'mapped'>(seed?.inputMode ?? 'mapped'), [source, setSource] = useState<SourceInput | SourceV2>()
+  const [name, setName] = useState(upgrade?.job.name ?? seed?.name ?? ''), [facts, setFacts] = useState(seed?.facts ?? '{}'), [supplied, setSupplied] = useState(seed?.supplied ?? false), [evidence, setEvidence] = useState(seed?.evidence ?? '{}')
   const [preview, setPreview] = useState<{ signature: string; release: Release; matrix?: string; project: string; packId: string }>(), [reviewed, setReviewed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>()
   const [refused, setRefused] = useState<{ releaseId: string; message: string }>()
   const navigate = useNavigate(), queryClient = useQueryClient()
-  const [mapped, setMapped] = useState<MappedDraft | undefined>(initial?.draft.values.mapped)
+  const [recordReview,setRecordReview]=useState<DialectEvaluation>()
+  const [mapped, setMapped] = useState<MappedDraft | undefined>(seed?.mapped)
   const [transientWork,setTransientWork]=useState(false)
   const [unwritten,setUnwritten]=useState(false)
   const [mappedWork, setMappedWork] = useState(false), [pendingConfig, setPendingConfig] = useState(false)
   const saved = useRef(initial), draftId = useRef(initial?.draft.id ?? crypto.randomUUID())
-  const values: JobDraftValues = { name, packId, inputMode, facts, supplied, evidence, ...(mapped ? {mapped} : {}), ...(trigger ? {trigger} : {}) }
+  const [upgradeBasis,setUpgradeBasis]=useState(seed?.upgrade)
+  const values: JobDraftValues = { ...(upgradeBasis?{upgrade:upgradeBasis}:{}), name, packId, inputMode, facts, supplied, evidence, ...(mapped ? {mapped} : {}), ...(trigger ? {trigger} : {}) }
   const [baseline, setBaseline] = useState(() => JSON.stringify(values)), [notice,setNotice] = useState('')
+  const mounted=useRef(false),currentValues=useRef(JSON.stringify(values))
+  currentValues.current=JSON.stringify(values)
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
   const dirty = JSON.stringify(values) !== baseline || pendingConfig || unwritten || transientWork
   const confirmDiscard = useConfirmDiscard()
   async function saveDraft() {
@@ -134,12 +236,27 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
       saved.current = await saveJobDraft(draftId.current, values, saved.current?.file.sha256)
       setBaseline(JSON.stringify(values)); setTransientWork(false); setNotice(msg('Draft saved locally. Reselect files and preview inputs when you resume.'))
       void queryClient.invalidateQueries({queryKey:['job-drafts']})
+      if(upgrade){queryClient.setQueryData(['job-draft',draftId.current],saved.current);clearGuard();navigate(`/jobs/new?upgrade=${encodeURIComponent(upgrade.job.id)}&draft=${draftId.current}`,{replace:true})}
     } finally { setBusy(false) }
   }
-  const clearGuard = useDirtyGuard(dirty, msg('Leave without saving this job?'), { name, busy, saveDraft: pendingConfig || unwritten || !triggerValid ? undefined : saveDraft, shouldBlock: ({currentLocation,nextLocation}) => currentLocation.pathname !== nextLocation.pathname || new URLSearchParams(currentLocation.search).get('draft') !== new URLSearchParams(nextLocation.search).get('draft') })
+  async function persistResearchDraft(next:MappedDraft,signal:AbortSignal){
+    signal.throwIfAborted()
+    const snapshot={...values,mapped:next},basis=JSON.stringify(values)
+    setBusy(true)
+    try{
+      // Reconcile the durable write even if the caller leaves; never replay it.
+      saved.current=await saveJobDraft(draftId.current,snapshot,saved.current?.file.sha256)
+      if(signal.aborted||!mounted.current||currentValues.current!==basis)return
+      setMapped(next);setBaseline(JSON.stringify(snapshot))
+      void queryClient.invalidateQueries({queryKey:['job-drafts']})
+      const target=new URLSearchParams(params);target.set('draft',draftId.current)
+      if(params.get('draft')!==draftId.current){clearGuard();navigate('/jobs/new?'+target.toString(),{replace:true})}
+    }finally{if(mounted.current)setBusy(false)}
+  }
+  const clearGuard = useDirtyGuard(dirty, msg('Leave without saving this job?'), { name, busy, saveDraft: pendingConfig || unwritten || !triggerValid ? undefined : saveDraft, shouldBlock: ({currentLocation,nextLocation}) => currentLocation.pathname !== nextLocation.pathname || new URLSearchParams(currentLocation.search).get('draft') !== new URLSearchParams(nextLocation.search).get('draft') || new URLSearchParams(currentLocation.search).get('upgrade') !== new URLSearchParams(nextLocation.search).get('upgrade') })
   async function changePack(next: string) {
     if (next === packId) return
-    if ((mappedWork || mapped || trigger || unwritten) && !await confirmDiscard(msg('Changing the pack discards its input mapping and trigger configuration.'), {name})) return
+    if ((mappedWork || mapped || trigger || unwritten) && !await confirmDiscard(msg('Changing the pack discards its dialect and trigger configuration.'), {name})) return
     setTransientWork(false); setMapped(undefined); setMappedWork(false); setPendingConfig(false); setSource(undefined); setTrigger(undefined); setPackId(next)
   }
   const signature = JSON.stringify([pack.data?.raw, facts, supplied, evidence, inputMode, source])
@@ -162,102 +279,148 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
     if (!selected) throw new Error(msg('Choose a saved pack'))
     return { pack: freshPack.data, tests: await readReleaseTests(packId, selected.matrixPath) }
   }
+  async function checkedRecords(evaluation:DialectEvaluation,signal:AbortSignal) {
+    const current=await currentInputs()
+    signal.throwIfAborted()
+    // The server's retained review owns its test snapshot. Browser imports may
+    // add metadata or serialize members differently; they are not its identity.
+    if(current.pack.raw!==evaluation.release.pack)throw Error(msg('The pack or saved tests changed. Check the release again before creating the job.'))
+    const source=evaluation.release.sample.source
+    if(!source)throw Error(msg('The inputs could not be mapped.'))
+    setSource(source);setRecordReview(evaluation);setReviewed(false)
+    setPreview({signature:JSON.stringify([current.pack.raw,facts,supplied,evidence,inputMode,source]),release:evaluation.release,matrix:current.tests.matrix,project:current.tests.project,packId})
+  }
   async function prepare() {
-    if (!pack.data) return
+    if (!pack.data || upgrade&&needsRecordReview(upgrade)) return
     setBusy(true); setError(undefined); setPreview(undefined); setReviewed(false); setRefused(undefined)
     try {
       if (inputMode !== 'manual' && !source) throw Error(msg('Configure inputs and preview them first.'))
       if (source && !isSourceV2(source) && inputMode !== 'manual') await verifySource(source, research.gateway)
       const input = inputMode === 'manual' ? parseInput(facts, supplied, evidence) : { source }
       const current = await currentInputs()
-      const release = await jobsAPI<Release>('previews', { pack: current.pack.raw, input, ...(current.tests.matrix ? { matrix: current.tests.matrix, testSource: current.tests.testSource } : {}) })
+      if(upgrade && current.pack.document.id!==upgrade.release.packId) throw Error(msg('Choose a saved version of the same pack.'))
+      const release = await jobsAPI<Release>('previews', { pack: current.pack.raw, input, ...(inputMode==='mapped'&&mapped?.exchangeImportId?{exchangeImportId:mapped.exchangeImportId}:{}), ...(current.tests.matrix ? { matrix: current.tests.matrix, testSource: current.tests.testSource } : {}) })
       // The decision id the release's bytes were served for: the project's lock is keyed by it.
       setPreview({ signature: JSON.stringify([current.pack.raw, facts, supplied, evidence, inputMode, source]), release, matrix: current.tests.matrix, project: current.tests.project, packId })
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
+  async function complete(job:Job) {
+      await queryClient.invalidateQueries({queryKey:['job',job.id]})
+      void queryClient.invalidateQueries({queryKey:['job-upgrade-base',job.id]})
+      if (saved.current) { try { saved.current = await saveJobDraft(draftId.current, saved.current.draft.values, saved.current.file.sha256, 'created'); void queryClient.invalidateQueries({queryKey:['job-drafts']}) } catch { /* The created job is durable; preserve the draft if cleanup failed. */ } }
+      clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', 'jobs'] }); navigate(`/jobs/${job.id}${job.initialTriggerId?'?tab=triggers':''}`)
+  }
   async function create() {
-    if (!validPreview || !reviewed || !canCreate || !preview || !triggerValid) return
+    if (!validPreview || !reviewed || !canCreate || !preview || !triggerValid || upgrade&&needsRecordReview(upgrade)&&!recordReview) return
     setBusy(true); setError(undefined)
     try {
+      if(upgradeBasis?.submittedReleaseId){
+        const completed=await readUpgradeReceipt(upgradeBasis)
+        if(completed){await complete(completed);return}
+      }
       const current = await currentInputs()
       if (current.pack.raw !== validPreview.pack || current.tests.matrix !== preview.matrix || current.tests.project !== preview.project) {
         setPreview(undefined); setReviewed(false)
         throw new Error(msg('The pack or saved tests changed. Check the release again before creating the job.'))
       }
       if (source && !isSourceV2(source) && inputMode !== 'manual') await verifySource(source, research.gateway)
-      const job = await jobsAPI<Job>('jobs', { name, releaseId: validPreview.id, reviewed, ...(trigger?{trigger}:{}) })
-      if (saved.current) { try { saved.current = await saveJobDraft(draftId.current, values, saved.current.file.sha256, 'created'); void queryClient.invalidateQueries({queryKey:['job-drafts']}) } catch { /* The created job is durable; preserve the draft if cleanup failed. */ } }
-      clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', 'jobs'] }); navigate(`/jobs/${job.id}${job.initialTriggerId?'?tab=triggers':''}`)
+      // Persist the exact attempted release before sending. This is recovery
+      // information, never a restored approval or permission to replay a write.
+      if(upgradeBasis){
+        const attempted={...upgradeBasis,submittedReleaseId:validPreview.id}
+        saved.current=await saveJobDraft(draftId.current,{...values,upgrade:attempted},saved.current?.file.sha256)
+        setUpgradeBasis(attempted)
+        queryClient.setQueryData(['job-draft',draftId.current],saved.current)
+        clearGuard();navigate(`/jobs/new?upgrade=${encodeURIComponent(upgradeBasis.jobId)}&draft=${draftId.current}`,{replace:true})
+      }
+      const job = upgrade
+        ? recordReview&&needsRecordReview(upgrade)
+          ? await dialectAPI<Job>(`/${recordReview.preparationId}/evaluations/${recordReview.id}/upgrade`,'POST',{reviewed:true,upgrade:{jobId:upgrade.job.id,baseReleaseId:upgrade.job.releaseId,baseRevision:upgrade.job.revision}},recordReview.revision)
+          : await jobsAPI<Job>(`jobs/${upgrade.job.id}/upgrade`,{releaseId:validPreview.id,baseReleaseId:upgrade.job.releaseId,baseRevision:upgrade.job.revision,reviewed})
+        : await jobsAPI<Job>('jobs', { name, releaseId: validPreview.id, reviewed, ...(trigger?{trigger}:{}) })
+      await complete(job)
     } catch (e) {
       if (e instanceof JobsRequestError && e.code === 'release_untested') { setRefused({ releaseId: validPreview.id, message: e.message }); setReviewed(false) }
       else setError(e)
     } finally { setBusy(false) }
   }
   return <>
-    <PageHeader title={msg('Jobs')} titleHref="/jobs" context={msg('Create job')} />
+    <PageHeader title={msg('Jobs')} titleHref="/jobs" context={upgrade?msg('Upgrade job'):msg('Create job')} />
     <PageBody fill width="full"><div className={styles.wizard}><div className={styles.wizardContent}>
-      <nav aria-label={msg('Create job')}><ol className={styles.steps}>{[msg('Job'),msg('Inputs'),msg('Trigger'),msg('Review')].map((label,index)=><li key={label} aria-current={step===index?'step':undefined}><span>{index+1}</span>{label}</li>)}</ol></nav>
+      <nav aria-label={upgrade?msg('Upgrade job'):msg('Create job')}><ol className={styles.steps}>{[msg('Job'),msg('Dialects'),msg('Trigger'),msg('Review')].map((label,index)=><li key={label} aria-current={step===index?'step':undefined}><span>{index+1}</span>{label}</li>)}</ol></nav>
       {step===0&&<p className="quiet">{msg('Choose the pack this job will apply. Later pack edits will not change its release.')}</p>}
+      {upgrade&&<p className={styles.note}>{msg('Upgrading revision {{revision}} · {{version}}. Existing runs keep their original release.',{revision:upgrade.job.revision,version:upgrade.release.packVersion})}</p>}
       <Problem error={packs.error || pack.error || error} />
       {initial && <p className={styles.note}>{msg('Resumed draft. Reselect files, preview inputs and check the release before creating this job.')}</p>}
       {notice && <p role="status" className={styles.note}>{notice}</p>}
       {pendingConfig && <p className={styles.note}>{msg('Apply the source configuration before saving this draft.')}</p>}
-      <section hidden={step!==0} className={styles.stack}><div className={styles.field}><label htmlFor="job-name">{msg('Job name')}</label><Input id="job-name" maxLength={160} value={name} disabled={busy} onChange={e => setName(e.target.value)} /></div>
+      <section hidden={step!==0} className={styles.stack}><div className={styles.field}><label htmlFor="job-name">{msg('Job name')}</label><Input id="job-name" maxLength={160} value={name} disabled={busy||!!upgrade} onChange={e => setName(e.target.value)} /></div>
       <div className={styles.field}><label htmlFor="job-pack">{msg('Pack')}</label><Select id="job-pack" value={packId} disabled={busy} placeholder={msg('Choose a saved pack')} options={(packs.data?.packs ?? []).map(p => ({ value: p.id, label: p.id }))} onValueChange={next=>void changePack(next)} />{pack.data && <p className={styles.note}>{pack.data.document.title} · {pack.data.document.version}</p>}</div>
       </section><section hidden={step!==1} className={styles.stack}><div className={styles.inputHeading}><div><h2>{msg('Where inputs come from')}</h2></div><div className={styles.inputMode}><Select id="job-input-source" aria-label={msg('Input configuration')} value={inputMode} disabled={busy} options={[{value:'mapped',label:msg('Integrations and case inputs')},{value:'manual',label:msg('Manual / API')}]} onValueChange={async v=>{if(trigger&&!await confirmDiscard(msg('Discard unsaved trigger changes?'),{name:trigger.name}))return;setInputMode(v as typeof inputMode);setSource(undefined);setTrigger(undefined)}}/></div></div><p className={styles.note}>{msg('Assign facts and evidence to sources, then preview one sample before creating the job.')}</p>
         <div hidden={inputMode!=='manual'}><InputFields doc={pack.data?.document} onValid={setInputsValid} onUnwritten={setUnwritten} {...{ facts, setFacts, supplied, setSupplied, evidence, setEvidence }} disabled={busy} /></div>
-        <div hidden={inputMode!=='mapped'}>{pack.data&&<MappedInputFields active={step===1&&inputMode==='mapped'} key={`${packId}:mapped`} doc={pack.data.document} disabled={busy} onChange={setSource} draft={mapped} onDraftChange={setMapped} onWorkChange={setMappedWork} onPendingChange={setPendingConfig} onTransientChange={()=>setTransientWork(true)}/>}</div>
+        <div hidden={inputMode!=='mapped'}>{pack.data&&(upgrade&&needsRecordReview(upgrade)?<UpgradeRecords packText={pack.data.raw} disabled={busy} onChange={setSource} onChecked={checkedRecords}/>:upgrade?.release.inputMapping?.version===1?<SourceInputFields doc={pack.data.document} provider={upgrade.release.inputMapping.provider} fixed={upgrade.release.inputMapping} disabled={busy} onChange={setSource}/>:<MappedInputFields active={step===1&&inputMode==='mapped'} key={`${packId}:mapped`} doc={pack.data.document} packText={pack.data.raw} disabled={busy} onChange={setSource} draft={mapped} onDraftChange={setMapped} onPersistResearchDraft={persistResearchDraft} onWorkChange={setMappedWork} onPendingChange={setPendingConfig} onTransientChange={()=>setTransientWork(true)}/> )}</div>
 
       </section>
-      <section hidden={step!==2} className={styles.stack}>{pack.data&&<TriggerChoice doc={pack.data.document} mapping={inputMode==='manual'?undefined:source?.mapping} value={trigger} onChange={setTrigger} onValid={setTriggerValid} disabled={busy}/>}</section>
+      <section hidden={step!==2} className={styles.stack}>{upgrade?<p className={styles.note}>{msg('Pause existing triggers and finish pending occurrences before upgrading. Triggers stay paused; connected Dialects need a new subscription review.')}</p>:pack.data&&<TriggerChoice doc={pack.data.document} mapping={inputMode==='manual'?undefined:source?.mapping} value={trigger} onChange={setTrigger} onValid={setTriggerValid} disabled={busy}/>}</section>
       <section hidden={step!==3} className={styles.stack}>
         <h2>{msg('Review job')}</h2>
         <dl className={`${styles.properties} ${styles.reviewSummary}`}>
           <div><dt>{msg('Job')}</dt><dd>{name}</dd></div>
           <div><dt>{msg('Pack')}</dt><dd>{pack.data?.document.title} · {pack.data?.document.version}</dd></div>
-          <div><dt>{msg('Inputs')}</dt><dd>{inputMode==='manual'?msg('Manual / API'):source&&isSourceV2(source)?msg('{{count}} configured sources and case inputs',{count:source.mapping.sources?.length??0}):msg('Select and preview sources')}</dd></div>
-          <div><dt>{msg('Trigger')}</dt><dd>{trigger?triggerName(trigger.kind):msg('Manual / API')}{trigger&&` · ${msg('Created paused')}`}</dd></div>
+          <div><dt>{msg('Dialects')}</dt><dd>{inputMode==='manual'?msg('Manual / API'):source&&isSourceV2(source)?msg('{{count}} configured sources and case inputs',{count:source.mapping.sources?.length??0}):msg('Select and preview sources')}</dd></div>
+          <div><dt>{msg('Trigger')}</dt><dd>{upgrade?msg('Existing triggers stay paused'):trigger?triggerName(trigger.kind):msg('Manual / API')}{trigger&&` · ${msg('Created paused')}`}</dd></div>
           <div><dt>{msg('Execution')}</dt><dd>{msg('Local runner · artifacts stored locally')}</dd></div>
         </dl>
-        {!validPreview&&<p className={styles.callout}>{msg('Structure, saved tests and the sample decision have not been checked for these inputs.')}</p>}
-        <div><Button onClick={() => { void prepare() }} disabled={busy || inputMode === 'manual' && !inputsValid || !pack.data || inputMode !== 'manual' && !source}>{busy ? msg('Working…') : msg('Check release')}</Button></div>
+        {!validPreview&&<p className={styles.callout}>{msg('Structure, saved tests and the sample decision have not been checked for this dialect.')}</p>}
+        <div><Button onClick={() => { void prepare() }} disabled={busy || !!upgrade&&needsRecordReview(upgrade) || inputMode === 'manual' && !inputsValid || !pack.data || inputMode !== 'manual' && !source}>{busy ? msg('Working…') : msg('Check release')}</Button></div>
 
-      {validPreview && <section className={styles.review}><h2>{msg('Review this release')}</h2>{trigger&&<><TriggerSummary config={trigger}/><p className={styles.note}>{msg('The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.')}</p></>}<dl className={styles.properties}><div><dt>{msg('Pack version')}</dt><dd>{validPreview.packVersion}</dd></div><div><dt>{msg('Sample decision')}</dt><dd>{decisionLabel(validPreview.preview)}</dd></div><div><dt>{msg('Structure')}</dt><dd>{msg('Validated')}</dd></div></dl><ReleaseReadiness release={validPreview} refusal={refusal} />{preview && <ReleaseStanding release={validPreview} packId={preview.packId} />}{validPreview.inputMapping?.version === 2 && <MappingReview mapping={validPreview.inputMapping} profiles={validPreview.inputProfiles} warnings={validPreview.mappingWarnings} />}<p className={styles.note}>{msg('The preview is a rehearsal. Operational runs append audit records. No external actions or schedules are enabled.')}</p><JSONView title={msg('Sample result')} value={validPreview.preview} /><label className="checkbox"><input type="checkbox" checked={reviewed} disabled={busy || !canCreate} onChange={e => setReviewed(e.target.checked)} />{msg('I reviewed this release, its test status and sample result.')}</label></section>}
+      {validPreview && <section className={styles.review}>{upgrade&&<UpgradeReview base={upgrade} candidate={validPreview}/>}<h2>{msg('Review this release')}</h2>{trigger&&<><TriggerSummary config={trigger}/><p className={styles.note}>{msg('The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.')}</p></>}<dl className={styles.properties}><div><dt>{msg('Pack version')}</dt><dd>{upgrade&&<>{upgrade.release.packVersion} → </>}{validPreview.packVersion}</dd></div><div><dt>{msg('Sample decision')}</dt><dd>{decisionLabel(validPreview.preview)}</dd></div><div><dt>{msg('Structure')}</dt><dd>{msg('Validated')}</dd></div></dl><ReleaseReadiness release={validPreview} refusal={refusal} />{preview && <ReleaseStanding release={validPreview} packId={preview.packId} />}{isExecutableDialect(validPreview.inputMapping) && <DialectReview mapping={validPreview.inputMapping} profiles={validPreview.inputProfiles} warnings={validPreview.mappingWarnings} />}<p className={styles.note}>{msg('The preview is a rehearsal. Operational runs append audit records. No external actions or schedules are enabled.')}</p><JSONView title={msg('Sample result')} value={validPreview.preview} /><label className="checkbox"><input type="checkbox" checked={reviewed} disabled={busy || !canCreate} onChange={e => setReviewed(e.target.checked)} />{msg('I reviewed this release, its test status and sample result.')}</label></section>}
       </section>
-      </div><div className={styles.wizardActions}><ButtonLink to="/jobs" variant="quiet">{msg('Cancel')}</ButtonLink><div className={styles.actions}><Button disabled={busy || pendingConfig || unwritten || !triggerValid || !dirty} onClick={()=>void saveDraft().catch(setError)}>{msg('Save draft')}</Button>{step>0&&<Button disabled={busy} onClick={()=>setStep(step-1)}>{msg('Back')}</Button>}{step<3?<Button variant="primary" disabled={busy||step===0&&(!name.trim()||!pack.data)||step===1&&(inputMode==='manual'?!inputsValid:!source)||step===2&&!triggerValid} onClick={()=>setStep(step+1)}>{msg('Continue')}</Button>:<Button variant="primary" disabled={!validPreview||!canCreate||!reviewed||!triggerValid||!name.trim()||busy} onClick={()=>void create()}>{trigger?msg('Create paused job'):msg('Create job')}</Button>}</div></div>
+      </div><div className={styles.wizardActions}><ButtonLink to="/jobs" variant="quiet">{msg('Cancel')}</ButtonLink><div className={styles.actions}>{<Button disabled={busy || pendingConfig || unwritten || !triggerValid || (!dirty && !!saved.current)} onClick={()=>void saveDraft().catch(setError)}>{msg('Save draft')}</Button>}{step>0&&<Button disabled={busy} onClick={()=>setStep(step-1)}>{msg('Back')}</Button>}{step<3?<Button variant="primary" disabled={busy||step===0&&(!name.trim()||!pack.data)||step===1&&(inputMode==='manual'?!inputsValid:!source)||step===2&&!triggerValid} onClick={()=>setStep(step+1)}>{msg('Continue')}</Button>:<Button variant="primary" disabled={!validPreview||!canCreate||!reviewed||!triggerValid||!name.trim()||busy} onClick={()=>void create()}>{upgrade?msg('Upgrade job'):trigger?msg('Create paused job'):msg('Create job')}</Button>}</div></div>
     </div></PageBody>
   </>
 }
 function JobView({ jobId }: { jobId: string }) {
+  const admission=useManualExecution(),manual=admission.data?.enabled===true
+  // Cached disabled data cannot choose the legacy key path while its current
+  // authority observation is pending, refreshing or unavailable.
+  const authorityKnown=admission.isSuccess&&admission.fetchStatus==='idle'&&!admission.error
+  const registration=useExecutionRegistration(jobId,manual)
+  const capabilities=useQuery({...privateQuery,queryKey:['runner-status'],queryFn:()=>jobsAPI<{capabilities:string[]}>('status')})
   const [hasPreparations,setHasPreparations]=useState(false)
-  const query = useQuery({ queryKey: ['job', jobId], queryFn: () => jobsAPI<{ job: Job; release: Release }>(`jobs/${jobId}`) })
+  const query = useQuery({ ...privateQuery, queryKey: ['job', jobId], queryFn: () => jobsAPI<{ job: Job; release: Release }>(`jobs/${jobId}`) })
   const runs = usePages<Run>(`jobs/${jobId}/runs`)
   const [params,setParams]=useSearchParams()
   const showInputs=params.get('run')==='new',tab=params.get('tab')??'runs'
+  const subscriptions=useDialectSubscriptions(tab==='triggers')
   function setShowInputs(show:boolean){setParams(show?{run:'new'}:{})}
   const data = query.data
+  const runItems=runs.data?.pages.flatMap(page=>page.items)??[],pagination=usePagination(runItems.length,jobId)
+  const runSelection=useCollectionSelection(runItems,run=>'run:'+run.id,jobId)
+  const collectionTab=!showInputs&&(tab==='runs'||tab==='activity')
   useBriefSubject({ id: `job:${jobId}`, path: `/api/operations/jobs/${jobId}/briefs`, title: data?.job.name ?? msg('Job brief') })
   return <>
-    <PageHeader title={msg('Jobs')} titleHref="/jobs" context={data?.job.name} navigation={data&&!showInputs&&<nav className={styles.tabs} aria-label={msg('Job')}><button aria-current={tab==='runs'?'page':undefined} onClick={()=>setParams({})}>{msg('Runs')}</button><button aria-current={tab==='triggers'?'page':undefined} onClick={()=>setParams({tab:'triggers'})}>{msg('Triggers')}</button><button aria-current={tab==='release'?'page':undefined} onClick={()=>setParams({tab:'release'})}>{msg('Release')}</button><button aria-current={tab==='activity'?'page':undefined} onClick={()=>setParams({tab:'activity'})}>{msg('Activity')}</button></nav>} actions={data && <Button variant="primary" onClick={() => setShowInputs(!showInputs)}>{showInputs ? msg('Hide inputs') : msg('Run job')}</Button>} />
-    <PageBody width="wide"><div className={styles.stack}><Problem error={query.error || runs.error} />
-      {query.isPending && <p role="status">{msg('Loading job…')}</p>}
-      {data && <><div hidden={showInputs||tab!=='release'} className={styles.release}><h2>{data.release.title}</h2><p className="quiet">{msg('Fixed version {{version}}', { version: data.release.packVersion })}</p>{data.release.inputMapping && <p className={styles.note}>{data.release.inputMapping.version === 2 ? msg('Mapped sources') : data.release.inputMapping.provider === 'local-file' ? msg('Local JSON file · Fixed input mapping') : msg('Google Drive · Fixed input mapping')}</p>}<ReleaseReadiness release={data.release} job />{data.release.inputMapping?.version === 2 && <MappingReview mapping={data.release.inputMapping} profiles={data.release.inputProfiles} warnings={data.release.mappingWarnings} />}<Disclosure title={msg('Release details')}><dl className={styles.properties}><div><dt>{msg('Pack digest')}</dt><dd><code>{data.release.packDigest}</code></dd></div><div><dt>{msg('Runtime digest')}</dt><dd><code>{data.release.runtimeDigest}</code></dd></div></dl><p className={styles.note}>{msg('To use a changed pack, create a new job and review its new release.')}</p></Disclosure></div>
-        {!showInputs&&tab==='triggers'&&<TriggersView jobId={jobId} release={data.release}/>}
-        {!showInputs&&tab==='activity'&&<ActivityView jobId={jobId} release={data.release}/>}
-        {showInputs && <RunForm job={data.job} release={data.release} />}
-        <section hidden={showInputs||tab!=='runs'} className={styles.stack}>{!showInputs&&tab==='runs'&&<SourcePreparations jobId={jobId} onHasItems={setHasPreparations}/>}<h2>{msg('Run history')}</h2>
-          {runs.isPending && <p role="status">{msg('Loading runs…')}</p>}
-          {!hasPreparations && !runs.isPending && !runs.error && runs.data?.pages.every(p => p.items.length === 0) && <p className="quiet">{msg('No runs yet. Run this job with a new input to record its first decision.')}</p>}
-          {runs.data?.pages.some(p=>p.items.length>0)&&<RunTable runs={runs.data.pages.flatMap(p=>p.items)}/>}
-          <More {...runs} />
-        </section>
-        <Disclosure title={msg('Submit through the API')}><p className="quiet">{data.release.inputMapping ? msg('Send a retained source snapshot with the exact release mapping and a unique idempotency key. File inputs use the source contract documented by the runner.') : msg('Send facts and optional evidence availability with your Desk bearer and a unique idempotency key. Retry the same submission with the same key.')}</p><pre className={styles.json}>{`POST /api/operations/jobs/${jobId}/runs\nAuthorization: Bearer <your Desk bearer>\nIdempotency-Key: <unique submission ID>\nContent-Type: application/json\n\n${data.release.inputMapping ? JSON.stringify({ source: { mapping: data.release.inputMapping, ...(data.release.inputMapping.version === 2 ? { case: {}, sources: '<named snapshots and signed responses>' } : { snapshot: '<retained source snapshot>' }) } }, null, 2) : '{"facts": {}}'}`}</pre></Disclosure>
-        <p className={styles.note}>{msg('Runs are stored by the local runner, separately from chat backups. Keep Desk running to process the queue.')}</p>
+    <PageHeader title={msg('Jobs')} titleHref="/jobs" context={data?.job.name} navigation={data&&!showInputs&&<nav className={styles.tabs} aria-label={msg('Job')}><button aria-current={tab==='runs'?'page':undefined} onClick={()=>setParams({})}>{msg('Runs')}</button><button disabled={manual} aria-current={tab==='triggers'?'page':undefined} onClick={()=>setParams({tab:'triggers'})}>{msg('Triggers')}</button><button aria-current={tab==='release'?'page':undefined} onClick={()=>setParams({tab:'release'})}>{msg('Release')}</button><button aria-current={tab==='activity'?'page':undefined} onClick={()=>setParams({tab:'activity'})}>{msg('Activity')}</button></nav>} actions={data && <Button variant="primary" onClick={() => setShowInputs(!showInputs)}>{showInputs ? msg('Hide inputs') : msg('Run job')}</Button>} />
+    <PageBody width={collectionTab?"full":"wide"} fill={collectionTab} loading={query.isPending?msg('Loading job…'):undefined}><div className={collectionTab?styles.collectionPage:styles.stack}><QueryStatusNotice id={"job:"+jobId} label={msg("Job unavailable")} context={data?.job.name} error={query.error} retrying={query.isFetching} onRetry={()=>query.refetch()}/><QueryStatusNotice id={"job-runs:"+jobId} label={msg("Run history unavailable")} context={data?.job.name} error={runs.error} retrying={runs.isFetching} onRetry={()=>runs.refetch()}>{msg("Run history could not be refreshed. Previously loaded results may be out of date.")}</QueryStatusNotice>
+      {query.error&&!data&&<p className="quiet">{msg('Job unavailable')}</p>}
+      {data && <><div className={styles.jobContext}>        <Disclosure title={msg('Submit through the API')}><p className="quiet">{manual ? msg('Use a current local administrator session and preserve the original idempotency key. An unresolved response is held; inspect run history before another submission.') : data.release.inputMapping ? msg('Send a retained source snapshot with the exact release dialect and a unique idempotency key. File inputs use the source contract documented by the runner.') : msg('Send facts and optional evidence availability with your Desk bearer and a unique idempotency key. Retry the same submission with the same key.')}</p><pre className={styles.json}>{`POST /api/operations/jobs/${jobId}/runs\nAuthorization: Bearer <your Desk bearer>\nIdempotency-Key: <unique submission ID>\nContent-Type: application/json\n\n${data.release.inputMapping ? JSON.stringify({ source: { mapping: data.release.inputMapping, ...(isExecutableDialect(data.release.inputMapping) ? { case: {}, sources: '<named snapshots and signed responses>' } : { snapshot: '<retained source snapshot>' }) } }, null, 2) : '{"facts": {}}'}`}</pre></Disclosure>
+        <p className={styles.note}>{msg('Runs are stored by the local runner, separately from chat backups. Keep Desk running to process the queue.')}</p></div><div hidden={showInputs||tab!=='release'} className={styles.release}><h2>{data.release.title}</h2><p className="quiet">{msg('Fixed version {{version}}', { version: data.release.packVersion })}</p>{data.release.inputMapping && <p className={styles.note}>{isExecutableDialect(data.release.inputMapping) ? msg('Mapped sources') : data.release.inputMapping.provider === 'local-file' ? msg('Local JSON file · Fixed dialect') : msg('Google Drive · Fixed dialect')}</p>}<ReleaseReadiness release={data.release} job />{isExecutableDialect(data.release.inputMapping) && <DialectReview mapping={data.release.inputMapping} profiles={data.release.inputProfiles} warnings={data.release.mappingWarnings} />}<Disclosure title={msg('Release details')}><dl className={styles.properties}>{data.release.dialect&&<><div><dt>{msg('Dialect')}</dt><dd>{data.release.dialect.id} · {data.release.dialect.version}</dd></div><div><dt>{msg('Dialect digest')}</dt><dd><code>{data.release.dialect.digest}</code></dd></div></>}<div><dt>{msg('Pack digest')}</dt><dd><code>{data.release.packDigest}</code></dd></div><div><dt>{msg('Runtime digest')}</dt><dd><code>{data.release.runtimeDigest}</code></dd></div></dl>{!manual&&capabilities.data?.capabilities?.includes('job-upgrades')?<ButtonLink to={`/jobs/new?upgrade=${jobId}`}>{msg('Upgrade job')}</ButtonLink>:<p className={styles.note}>{msg('To use a changed pack, create a new job and review its new release.')}</p>}</Disclosure></div>
+        {!manual&&!showInputs&&tab==='triggers'&&<><DialectSubscriptions jobId={jobId}/><TriggersView jobId={jobId} release={data.release} managedTriggers={(subscriptions.data?.items??[]).filter(b=>b.jobId===jobId).flatMap(b=>b.subscription?.triggerId?[b.subscription.triggerId]:[])}/></>}
+        {!showInputs&&tab==='activity'&&<ActivityView key={jobId} jobId={jobId} release={data.release}/>}
+        {manual&&<ExecutionRegistration jobId={jobId}/>}
+        {showInputs && <RunForm key={data.job.id+data.release.id} job={data.job} release={data.release} manual={manual} admitted={authorityKnown&&(!manual||registration.data?.eligible===true)} />}
+        <section hidden={showInputs||tab!=='runs'} className={styles.runCollection}><CollectionLayout label={msg('Run history')} loading={runs.isPending?msg('Loading runs…'):undefined} scrollKey={JSON.stringify([jobId,pagination.page,pagination.size])} footer={<><Pagination pagination={pagination} complete={!runs.hasNextPage&&!runs.error&&!runs.isPending}/><More {...runs}/></>} toolbar={<>{!manual&&!showInputs&&tab==='runs'&&<SourcePreparations jobId={jobId} onHasItems={setHasPreparations}/>}<div className={styles.actions}><h2>{msg('Run history')}</h2><SelectionActions selection={runSelection} onExport={()=>exportSelectedRows('run-history',runSelection.selectedRows)}/></div>
+
+          {!hasPreparations && !runs.isPending && !runs.error && runs.data?.pages.every(p => p.items.length === 0) && <p className="quiet">{msg('No runs yet. Run this job with a new dialect to record its first decision.')}</p>}
+        </>}>
+          {runItems.length>0&&<RunTable selection={runSelection} complete={!runs.hasNextPage&&!runs.error&&!runs.isPending} runs={runItems.slice(pagination.start,pagination.end)}/>}
+        </CollectionLayout></section>
+
       </>}
     </div></PageBody>
   </>
 }
-function RunForm({ job, release }: { job: Job; release: Release }) {
+function RunForm({ job, release, manual=false, admitted=false }: { job: Job; release: Release; manual?:boolean; admitted?:boolean }) {
   const research = useEffectiveConfig().config.research
   const [source, setSource] = useState<SourceInput | SourceV2>()
   const [facts,setFacts]=useState('{}'),[supplied,setSupplied]=useState(false),[evidence,setEvidence]=useState('{}'),[inputsValid,setInputsValid]=useState(true)
@@ -265,34 +428,42 @@ function RunForm({ job, release }: { job: Job; release: Release }) {
   const [sourceWork,setSourceWork]=useState(false),[unwritten,setUnwritten]=useState(false)
   const clearGuard = useDirtyGuard(facts !== '{}' || supplied || evidence !== '{}' || sourceWork || unwritten, msg('Discard these run inputs?'), {name:job.name,busy,shouldBlock:({currentLocation,nextLocation})=>currentLocation.pathname!==nextLocation.pathname || new URLSearchParams(nextLocation.search).get('run')!=='new'})
   const key = useRef<{ payload: string; key: string } | undefined>(undefined)
+  const [manualJournal,setManualJournal]=useState<Awaited<ReturnType<typeof manualIntentJournal>>>(),[heldIntent,setHeldIntent]=useState<PendingManualIntent>()
+  useEffect(()=>{if(!manual)return;let live=true;void manualIntentJournal(job.id).then(journal=>{if(live){setHeldIntent(journal.read());setManualJournal(journal)}}).catch(()=>{if(live)setError(Error(msg('The submission reminder is unavailable. No run was sent.')))});return()=>{live=false}},[manual,job.id])
   const navigate = useNavigate(), queryClient = useQueryClient()
   async function submit() {
     setBusy(true); setError(undefined)
     try {
+      if (!admitted||manual&&release.inputMapping) throw Error(msg('This exact release is not eligible for manual execution.'))
       if (release.inputMapping && !source) throw Error(msg('Configure inputs and preview them first.'))
       if (source && !isSourceV2(source)) await verifySource(source, research.gateway)
-      const input = release.inputMapping ? { source } : parseInput(facts, supplied, evidence), payload = JSON.stringify(input)
-      if (key.current?.payload !== payload) key.current = { payload, key: crypto.randomUUID() }
+      const input = release.inputMapping ? { source } : parseInput(facts, supplied, evidence), payload = canonicalJobsRequest(input)
+      if(manual){
+        if(!manualJournal)throw Error(msg('The submission reminder is unavailable. No run was sent.'))
+        const pending=await manualJournal.begin(payload);setHeldIntent(pending);key.current={payload,key:pending.key}
+      }else if (key.current?.payload !== payload) key.current = { payload, key: crypto.randomUUID() }
       const run = await jobsAPI<Run>(`jobs/${job.id}/runs`, input, key.current.key)
+      if(manual){manualJournal!.clear();setHeldIntent(undefined)}
       clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', `jobs/${job.id}/runs`] }); navigate(`/jobs/${job.id}/runs/${run.id}`)
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
-  return <section className={styles.runForm}><h2>{msg('New run')}</h2><p className="quiet">{msg('These inputs start an operational run and will be retained with its audit record.')}</p>{release.inputMapping?.version === 2 ? <MappedInputFields doc={JSON.parse(release.pack) as PackDocument} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : release.inputMapping ? <SourceInputFields doc={JSON.parse(release.pack) as PackDocument} provider={release.inputMapping.provider} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : <InputFields doc={JSON.parse(release.pack) as PackDocument} onValid={setInputsValid} onUnwritten={setUnwritten} {...{ facts, setFacts, supplied, setSupplied, evidence, setEvidence }} disabled={busy} />}<Problem error={error} /><div><Button variant="primary" disabled={busy || !inputsValid || Boolean(release.inputMapping && !source)} onClick={() => { void submit() }}>{busy ? msg('Submitting…') : msg('Submit run')}</Button></div></section>
+  return <section className={styles.runForm}><h2>{msg('New run')}</h2><p className="quiet">{msg('These inputs start an operational run and will be retained with its audit record.')}</p>{isExecutableDialect(release.inputMapping) ? <PersistentMappedRunInputs job={job} release={release} mapping={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork}/> : release.inputMapping ? <SourceInputFields doc={JSON.parse(release.pack) as PackDocument} provider={release.inputMapping.provider} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : <InputFields doc={JSON.parse(release.pack) as PackDocument} onValid={setInputsValid} onUnwritten={setUnwritten} {...{ facts, setFacts, supplied, setSupplied, evidence, setEvidence }} disabled={busy} />}<Problem error={error} />{manual&&heldIntent&&<div role="status"><p>{msg('This submission is retained. Inspect run history before choosing another intent; no automatic retry will occur.')}</p><code>{heldIntent.key}</code><p><Button disabled={busy} onClick={()=>{try{manualJournal!.clear();setHeldIntent(undefined);key.current=undefined}catch(e){setError(e)}}}>{msg('Choose a new intent')}</Button></p></div>}<div><Button variant="primary" disabled={busy || manual&&(!manualJournal||!!heldIntent) || !admitted || manual&&!!release.inputMapping || !inputsValid || Boolean(release.inputMapping && !source)} onClick={() => { void submit() }}>{busy ? msg('Submitting…') : msg('Submit run')}</Button></div></section>
 }
 function RunView({ runId }: { runId: string }) {
-  const query = useQuery({ queryKey: ['job-run', runId], queryFn: () => jobsAPI<Run>(`runs/${runId}`), refetchInterval: q => ['queued', 'running'].includes(q.state.data?.state ?? '') ? 1000 : false })
+  const query = useQuery({ ...privateQuery, queryKey: ['job-run', runId], queryFn: () => jobsAPI<Run>(`runs/${runId}`), refetchInterval: q => ['queued', 'running'].includes(q.state.data?.state ?? '') ? 1000 : false })
   const run = query.data
   useBriefSubject({ id: `run:${runId}`, path: `/api/operations/runs/${runId}/briefs`, title: msg('Run brief'), ...(!run || ['queued', 'running'].includes(run.state) ? { unavailable: msg('The run brief is available when execution finishes.') } : {}) })
   return <>
     <PageHeader title={msg('Jobs')} titleHref="/jobs" context={msg('Run {{id}}', { id: runId.slice(-8) })} actions={run && <ButtonLink to={`/jobs/${run.jobId}`} variant="quiet">{msg('Back to job')}</ButtonLink>} />
-    <PageBody width="wide"><div className={styles.stack}><Problem error={query.error} />
-      {query.isPending && <p role="status">{msg('Loading run…')}</p>}
+    <PageBody width="wide" loading={query.isPending?msg('Loading run…'):undefined}><div className={styles.stack}><QueryStatusNotice id={"job-run:"+runId} label={msg("Run status unavailable")} error={query.error} retrying={query.isFetching} onRetry={()=>query.refetch()}>{msg("Run status could not be refreshed. The last known status is shown; the run may still be active.")}</QueryStatusNotice>
+      {query.error&&!run&&<p className="quiet">{msg('Run status unavailable')}</p>}
       {run && <><RunFields run={run} />
         {run.trigger&&<><div className={styles.actions}><span className="quiet">{msg('Trigger')}</span><Link to={`/jobs/${run.jobId}?tab=triggers`}>{triggerName(run.trigger.kind)}</Link>{run.trigger.scheduledAt&&<span className="quiet">{date(run.trigger.scheduledAt)}</span>}</div><JSONView title={msg('Trigger record')} value={run.trigger}/></>}
         {run.problem && <p className={styles.problem}>{run.problem}</p>}
         {run.result && <section className={styles.stack}><h2>{msg('Decision details')}</h2>{run.result.disposition.reasons.length > 0 && <ul>{run.result.disposition.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}<p>{run.result.disposition.handoff.state === 'requested' ? msg('Handoff requested: {{target}}', { target: run.result.handoffTarget?.name ?? msg('See full result') }) : msg('No handoff requested')}</p><p className={styles.note}>{msg('This is a recorded decision. No external action or notification was sent.')}</p><JSONView title={msg('Full result')} value={run.result} /></section>}
-        {run.input?.source && isSourceV2(run.input.source) ? <><MappingReview mapping={run.input.source.mapping} />{run.input.preparation && <InputLineage preparation={run.input.preparation} />}<JSONView title={msg('Retained inputs')} value={{ facts: run.input.facts, evidence: run.input.evidence }} /><VerificationDownload runId={run.id} /></> : run.input?.source ? <SourceSummary source={run.input.source as SourceInput} /> : <JSONView title={msg('Retained inputs')} value={run.input} />}
+        {run.input?.source && isSourceV2(run.input.source) ? <><DialectReview mapping={run.input.source.mapping} />{run.input.preparation && <InputLineage preparation={run.input.preparation} />}<JSONView title={msg('Retained inputs')} value={{ facts: run.input.facts, evidence: run.input.evidence }} /></> : run.input?.source ? <SourceSummary source={run.input.source as SourceInput} /> : <JSONView title={msg('Retained inputs')} value={run.input} />}
         {run.audit && <JSONView title={msg('Runtime audit record')} value={run.audit} />}
+        {run.state === 'completed' && <VerifySavedRecord key={run.id} runId={run.id} actions={<VerificationDownload runId={run.id} />} />}
         <RunTechnicalDetails run={run} />
       </>}
     </div></PageBody>
@@ -370,9 +541,23 @@ async function refusalText(response: Response) {
  return msg('The local runner could not complete this request.')
 }
 
+function JobsCollectionOptions() {
+ const [open,setOpen]=useState(false),opener=useRef<HTMLButtonElement>(null),handoff=useRef(false)
+ return <>
+  <Menu.Root onOpenChange={next=>{if(next)handoff.current=false}}>
+   <Tooltip content={msg('Collection options')}><Menu.Trigger asChild><Button ref={opener} variant="quiet" size="icon" aria-label={msg('Collection options')}><IconMore/></Button></Menu.Trigger></Tooltip>
+   <Menu.Portal><Menu.Content align="end" onCloseAutoFocus={event=>{if(handoff.current)event.preventDefault()}}>
+    <Menu.Item icon={<IconDownload/>} onSelect={()=>{handoff.current=true;setOpen(true)}}>{msg('Download run history')}</Menu.Item>
+   </Menu.Content></Menu.Portal>
+  </Menu.Root>
+  <Dialog open={open} onOpenChange={setOpen} title={msg('Download run history')} openerRef={opener}>
+   <RunChainDownload onClose={()=>setOpen(false)}/>
+  </Dialog>
+ </>
+}
 /** The runner's whole chain of runs, saved as the runner sent it: Desk passes
  it on untouched, or fails it whole, and nothing here reads or checks it. */
-export function RunChainDownload() {
+export function RunChainDownload({ onClose }: { onClose?: () => void } = {}) {
  const [error,setError]=useState<unknown>(), [busy,setBusy]=useState(false), [chainSaved,setChainSaved]=useState(false)
  async function download() {
   setBusy(true);setError(undefined);setChainSaved(false)
@@ -386,8 +571,10 @@ export function RunChainDownload() {
    setChainSaved(true)
   } catch(e){setError(e)} finally {setBusy(false)}
  }
- return <div className={styles.field}><div className={styles.actions}><Button variant="quiet" disabled={busy} onClick={()=>void download()}>{msg('Download the runner’s chain of runs')}</Button>
-  <span className={styles.note}>{msg('The file is the runner’s whole chain of runs, byte for byte as the runner sent it, unverified here.')}</span></div>
+ return <div className={styles.field}>
+  <p className={styles.note}>{msg('Downloads the runner’s full run-history file, regardless of table filters. Desk saves the original file without verifying it.')}</p>
   {chainSaved && <p role="status" className={styles.note}>{msg('Saved {{file}}.', {file: RUN_CHAIN_FILE})}</p>}
-  <Problem error={error}/></div>
+  <Problem error={error}/>
+  <DialogActions>{onClose&&<Button variant="quiet" onClick={onClose}>{msg('Close')}</Button>}<Button variant="primary" disabled={busy} onClick={()=>void download()}><IconDownload/>{msg('Download')}</Button></DialogActions>
+ </div>
 }

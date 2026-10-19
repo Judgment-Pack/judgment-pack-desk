@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { Disclosure } from '../ui/Disclosure'
 import { CodeBlock } from '../ui/CodeBlock'
 import styles from './GraphWorkspace.module.css'
@@ -22,7 +23,7 @@ import { graphHostTools, graphPost, type GraphOffer } from './author'
 export function GraphAuthor({ graphId }: { graphId?: string }) {
   useLocale()
   const names = usePromptNames()
-  if (names.isPending) return <p>{msg('Reading runtime authoring prompts…')}</p>
+  if (names.isPending) return <LoadingState inset>{msg('Reading runtime authoring prompts…')}</LoadingState>
   if (!names.data?.includes(AUTHOR_GRAPH_PROMPT)) return <p>{msg('This runtime advertises no author_graph prompt.')}</p>
   return <GraphAuthorReady graphId={graphId} />
 }

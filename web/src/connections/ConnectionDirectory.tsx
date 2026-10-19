@@ -1,8 +1,13 @@
+import {LoadingState} from '../ui/LoadingState'
+import { QueryStatusNotice } from '../shell/QueryStatusNotice'
+import { DeskStatusNotice } from '../shell/DeskNotices'
+import { PopoverClose } from '../ui/Popover'
+import { ButtonLink } from '../ui/Button'
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { VisuallyHidden } from 'radix-ui'
 import { msg, useLocale, formatNumber } from '../i18n'
 import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { Select } from '../ui/Select'
 import { SegmentedControl } from '../ui/SegmentedControl'
 import { Alert } from '../ui/Alert'
@@ -105,7 +110,7 @@ export function ConnectionDirectory({ entries, unsupported = [], available, load
     { value: 'connected', label: `${msg('Connected')} · ${formatNumber(connected)}` }
    ]} />
    <div className={styles.search}>
-    <Input ref={search} value={view.query} maxLength={256} onChange={event => change({ query: event.target.value })} placeholder={msg('Search connections…')} aria-label={msg('Search connections…')} />
+    <SearchInput ref={search} value={view.query} maxLength={256} onChange={event => change({ query: event.target.value })} placeholder={msg('Search connections…')} aria-label={msg('Search connections…')} />
     {view.view === 'all' && <div className={styles.filter}><VisuallyHidden.Root asChild><label htmlFor={`${id}-status`}>{msg('Connection status')}</label></VisuallyHidden.Root><Select id={`${id}-status`} value={view.filter} onValueChange={value => change({ filter: value as Filter })} options={[
      {value:'all',label:msg('All statuses')}, {value:'setup-required',label:msg('Setup required')}, {value:'not-connected',label:msg('Not connected')}, {value:'unavailable',label:msg('Unavailable')}
     ]} /></div>}
@@ -120,7 +125,7 @@ export function ConnectionDirectory({ entries, unsupported = [], available, load
     return <li key={descriptor.id} className={styles.row}>
      <ProviderIcon provider={descriptor.id} descriptor={descriptor} />
      <div className={styles.copy}><h3>{title}</h3><p>{providerDescription(descriptor.id, descriptor)}</p></div>
-     <div className={styles.end}><span className={styles.status}>{entry.unsupported ? msg('Update Desk to use this connection.') : stateLabel(state)}</span>
+     <div className={styles.end}><span className={styles.status}>{entry.unsupported ? msg('Update Desk to use this connection.') : state === undefined ? <LoadingState inline/> : stateLabel(state)}</span>
       {!entry.unsupported && <Button data-provider={descriptor.id} className={styles.action} variant="quiet" disabled={disabled}
        aria-label={msg('{{action}}: {{provider}}', { action, provider: registration ? msg('{{provider}} registration', { provider: title }) : title })}
        onClick={event => { save({ ...current.current, selected: descriptor.id }); onSelect(entry, event.currentTarget) }}>{action}</Button>}
@@ -128,6 +133,6 @@ export function ConnectionDirectory({ entries, unsupported = [], available, load
     </li>
    })}
   </ul>
-  {!ready ? <p role="status">{msg('Loading…')}</p> : !available ? <p>{msg('Local processing is unavailable. Check the details in Admin → Document processing.')}</p> : isError ? <><Alert>{msg('Connections could not be loaded.')}</Alert><Button onClick={retry}>{msg('Retry')}</Button></> : !rows.length && <div role="status"><p>{msg('No connections found.')}</p>{(view.query || view.filter !== 'all' || view.view !== 'all') && <Button variant="quiet" onClick={() => { change(initial); search.current?.focus() }}>{msg('Clear filters')}</Button>}</div>}
+  {!ready ? <LoadingState>{msg('Loading…')}</LoadingState> : !available ? <DeskStatusNotice id="local-processing" tone="warning" label={msg('Local processing unavailable')} actions={<PopoverClose><ButtonLink to="/admin#documents">{msg('Review settings')}</ButtonLink></PopoverClose>}>{msg('Local processing is unavailable. Check the details in Admin → Document processing.')}</DeskStatusNotice> : isError ? mode==='admin'?<QueryStatusNotice id="connections" label={msg('Connections unavailable')} error={isError} onRetry={retry}>{msg('Connections could not be loaded.')}</QueryStatusNotice>:<><Alert>{msg('Connections could not be loaded.')}</Alert><Button onClick={retry}>{msg('Retry')}</Button></> : !rows.length && <div role="status"><p>{msg('No connections found.')}</p>{(view.query || view.filter !== 'all' || view.view !== 'all') && <Button variant="quiet" onClick={() => { change(initial); search.current?.focus() }}>{msg('Clear filters')}</Button>}</div>}
  </div>
 }

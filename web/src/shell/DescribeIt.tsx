@@ -55,7 +55,7 @@ import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
 import styles from './DescribeIt.module.css'
 import { recordActivity } from './consoleLog'
-import type { AssistantEvent } from '../assistant/engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 
 /** The question the field asks, which is the whole of what the desk adds. */
 export const DESCRIBE_LABEL =

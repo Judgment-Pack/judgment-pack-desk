@@ -23,7 +23,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -232,7 +231,7 @@ func (s *Server) handleDocumentProcessing(w http.ResponseWriter, r *http.Request
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
-	out, err := companion.call(ctx, s.localGateway.bundle, filepath.Join(s.assistant.dir, "gateway-connections"), method, body, "document-processing", false)
+	out, err := companion.call(ctx, s.localGateway.bundle, platformPath(s.assistant.dir, "gateway-connections"), method, body, "document-processing", false)
 	if errors.Is(err, errCompanionRequestTooLarge) {
 		writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge, "document processing request too large; nothing was sent")
 		return

@@ -1,5 +1,6 @@
+import { DeskStatusNotice } from '../../shell/DeskNotices'
 import { PaneToggle } from '../../shell/PaneToggle'
-import { useEffect, useId, useRef, useState, type ReactNode, type CSSProperties, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode, type CSSProperties, type RefObject } from 'react'
 import { Dialog as Drawer, VisuallyHidden } from 'radix-ui'
 import { Menu as DropdownMenu } from '../../ui/Menu'
 import { msg, useLocale } from '../../i18n'
@@ -11,7 +12,7 @@ import { Select } from '../../ui/Select'
 import { Tooltip, OverflowTooltip } from '../../ui/Tooltip'
 import { Alert } from '../../ui/Alert'
 import { Dialog, DialogActions } from '../../ui/Dialog'
-import { IconChevronRight, IconChevronDown, IconMore, IconPlus, IconFolder } from '../../shell/icons'
+import { IconChevronRight, IconChevronDown, IconMore, IconPlus, IconFolder, IconPencil, IconTrash } from '../../shell/icons'
 import { ALL_PACKS, HOME_FOLDER, WORKSPACE_ROOT, folderTrail, folderPath, inFolder, type PackFolder, type FolderAction } from './model'
 import { usePackFolders, type FolderState } from './FolderContext'
 import styles from './FolderBrowser.module.css'
@@ -19,25 +20,30 @@ import styles from './FolderBrowser.module.css'
 export const FolderIcon = IconFolder
 export function ShowFolders() {
  const state=usePackFolders()
- return state && <PaneToggle compact label={msg('Expand folders')} expanded={false} data-show-folders
+ return state && <PaneToggle compact label={msg('Expand folders')} expanded={state.overlay} data-show-folders
    onClick={event=>{state.drawerOpener.current=event.currentTarget;state.preferences({collapsed:false});state.setOverlay(true)}} />
+}
+/** One leading folder toggle and breadcrumb group for Library and pack pages. */
+export function LibraryLocation({folderId}:{folderId?:string}={}) {
+ const state=usePackFolders()
+ return <div className={styles.location} data-collection-location><ShowFolders/>{state ? <FolderLocation header folderId={folderId}/> : <span>{msg('Library')}</span>}</div>
 }
 export function FolderFrame({children}:{children:ReactNode}) {
  useLocale()
  const state=usePackFolders()!, frame=useRef<HTMLDivElement>(null)
- const [room,setRoom]=useState(0), paneId=useId()
+ const [room,setRoom]=useState(0), [drawerPosition,setDrawerPosition]=useState<CSSProperties>({}), paneId=useId()
  const slot=useInspectorControls()
  const requiredMain=Math.max(560,slot.minimumMainWidth??0)
  const docked=room>=state.prefs.width+requiredMain&&!state.prefs.collapsed
  const maxWidth=Math.min(320,Math.max(180,room-requiredMain))
  useEffect(()=>slot.requestLeadingWidth?.(docked?state.prefs.width:0),[slot.requestLeadingWidth,docked,state.prefs.width])
  const collapse=()=>{state.preferences({collapsed:true});state.setOverlay(false);requestAnimationFrame(()=>Array.from(frame.current?.querySelectorAll<HTMLButtonElement>('[data-show-folders]')??[]).find(button=>!button.closest('[hidden]'))?.focus())}
- useEffect(()=>{
+ useLayoutEffect(()=>{
   const element=frame.current
   if(!element)return
-  const measure=()=>setRoom(element.getBoundingClientRect().width)
-  measure(); const observer=new ResizeObserver(measure);observer.observe(element);return ()=>observer.disconnect()
- },[])
+  const measure=()=>{const rect=element.getBoundingClientRect();setRoom(rect.width);setDrawerPosition({left:rect.left-1,top:rect.top-1,bottom:"auto",height:rect.height+2,maxWidth:rect.width+2})}
+  measure(); const observer=new ResizeObserver(measure);observer.observe(element);window.addEventListener("resize",measure);return ()=>{observer.disconnect();window.removeEventListener("resize",measure)}
+ },[state.overlay])
  useEffect(()=>{if(docked)state.setOverlay(false)},[docked])
  const contents=<FolderTree state={state} onClose={()=>{if(docked)collapse();else state.setOverlay(false)}}/>
  return <div className={styles.frame} ref={frame} data-folder-frame>
@@ -46,7 +52,7 @@ export function FolderFrame({children}:{children:ReactNode}) {
     preview={{element:frame.current,property:'--folder-preview'}} onChange={width=>state.preferences({width})} onReset={()=>state.preferences({width:Math.min(220,maxWidth)})} onCollapse={collapse}/>
   </aside>}
   <div className={styles.content} data-folder-docked={docked||undefined}>{children}</div>
-  {!docked&&<Drawer.Root open={state.overlay} onOpenChange={state.setOverlay}><Drawer.Portal><Drawer.Overlay className="desk-overlay"/><Drawer.Content className={`desk-drawer desk-pane-drawer ${styles.drawer}`} aria-describedby={undefined} onCloseAutoFocus={event=>{event.preventDefault();state.drawerOpener.current?.focus()}}><VisuallyHidden.Root><Drawer.Title>{msg('Folders')}</Drawer.Title></VisuallyHidden.Root>{contents}</Drawer.Content></Drawer.Portal></Drawer.Root>}
+  {!docked&&<Drawer.Root open={state.overlay} onOpenChange={state.setOverlay}><Drawer.Portal><Drawer.Overlay className="desk-overlay"/><Drawer.Content className={`desk-drawer desk-pane-drawer ${styles.drawer}`} style={drawerPosition} aria-describedby={undefined} onCloseAutoFocus={event=>{event.preventDefault();state.drawerOpener.current?.focus()}}><VisuallyHidden.Root><Drawer.Title>{msg('Folders')}</Drawer.Title></VisuallyHidden.Root>{contents}</Drawer.Content></Drawer.Portal></Drawer.Root>}
   <FolderEditor state={state}/>
  </div>
 }
@@ -59,8 +65,8 @@ function FolderTree({state,onClose}:{state:FolderState;onClose:()=>void}) {
    <OverflowTooltip selector="span"><button type="button" className={styles.folder} data-folder={folder.id} aria-current={state.activeFolder===folder.id?'location':undefined} onClick={()=>state.select(folder.id)}><FolderIcon/><span>{folder.name}</span></button></OverflowTooltip>
    {nested.length>0&&<button className={styles.expand} type="button" aria-expanded={expanded} aria-label={expanded?msg('Collapse {{name}}',{name:folder.name}):msg('Expand {{name}}',{name:folder.name})} onClick={()=>state.preferences({expanded:expanded?state.prefs.expanded.filter(id=>id!==folder.id):[...state.prefs.expanded,folder.id]})}>{expanded?<IconChevronDown/>:<IconChevronRight/>}</button>}
    <DropdownMenu.Root><DropdownMenu.Trigger asChild><button type="button" data-folder-actions={folder.id} className={`desk-icon-button ${styles.more}`} disabled={!usable||busy} aria-label={msg('Actions for {{name}}',{name:folder.name})}><IconMore/></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="start" sideOffset={4} onCloseAutoFocus={event=>{if(state.editing)event.preventDefault()}}>
-    <DropdownMenu.Item onSelect={()=>state.edit({kind:'create',parentId:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('New subfolder')}</DropdownMenu.Item>
-    {folder.id!==HOME_FOLDER&&<><DropdownMenu.Item onSelect={()=>state.edit({kind:'rename',id:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('Rename')}</DropdownMenu.Item><DropdownMenu.Item onSelect={()=>state.edit({kind:'move',id:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('Move to…')}</DropdownMenu.Item><DropdownMenu.Separator/><DropdownMenu.Item disabled={nested.length>0||Object.values(state.document.assignments).includes(folder.id)} onSelect={()=>void state.mutation.mutateAsync({action:{type:'delete',id:folder.id}}).catch(()=>{})}>{msg('Delete empty folder')}</DropdownMenu.Item></>}
+    <DropdownMenu.Item icon={<IconPlus />} onSelect={()=>state.edit({kind:'create',parentId:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('New subfolder')}</DropdownMenu.Item>
+    {folder.id!==HOME_FOLDER&&<><DropdownMenu.Item icon={<IconPencil />} onSelect={()=>state.edit({kind:'rename',id:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('Rename')}</DropdownMenu.Item><DropdownMenu.Item icon={<IconFolder />} onSelect={()=>state.edit({kind:'move',id:folder.id},window.document.querySelector<HTMLElement>(`[data-folder-actions="${folder.id}"]`)??undefined)}>{msg('Move to…')}</DropdownMenu.Item><DropdownMenu.Separator/><DropdownMenu.Item icon={<IconTrash />} disabled={nested.length>0||Object.values(state.document.assignments).includes(folder.id)} onSelect={()=>void state.mutation.mutateAsync({action:{type:'delete',id:folder.id}}).catch(()=>{})}>{msg('Delete empty folder')}</DropdownMenu.Item></>}
    </DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
   </div>{expanded&&nested.length>0&&<ul>{nested.map(child=>node(child,depth+1))}</ul>}</li>
  }
@@ -101,7 +107,7 @@ export function FolderLocation({folderId,header=false}:{folderId?:string;header?
    <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild><button className={styles.pathMenuTrigger} type="button" aria-label={msg('Show parent folders')}><IconMore/></button></DropdownMenu.Trigger>
     <DropdownMenu.Portal><DropdownMenu.Content className={styles.pathMenu} align="start" sideOffset={4}>
-     {hidden.map(folder=><DropdownMenu.Item key={folder.id} description={folderPath(state.document,folder.id)} onSelect={()=>state.select(folder.id)}>
+     {hidden.map(folder=><DropdownMenu.Item icon={<IconFolder />} key={folder.id} description={folderPath(state.document,folder.id)} onSelect={()=>state.select(folder.id)}>
       {folder.name}
      </DropdownMenu.Item>)}
     </DropdownMenu.Content></DropdownMenu.Portal>
@@ -116,7 +122,7 @@ export function FolderLocation({folderId,header=false}:{folderId?:string;header?
 export function FolderFeedback() {
  const state=usePackFolders()
  if(!state)return null
- return state.query.isError?<div className={styles.feedback}><Alert>{msg('Folder organization is unavailable. Packs are shown without folder filtering.')}</Alert><Button variant="quiet" onClick={()=>void state.reload()}>{msg('Reload folders')}</Button></div>:state.message&&!state.editing?<div className={styles.feedback}><Alert>{state.message}</Alert><Button variant="quiet" onClick={()=>{state.setMessage('');void state.reload()}}>{msg('Reload folders')}</Button></div>:null
+ return state.query.isError?<DeskStatusNotice id="folders" tone="warning" label={msg('Folders unavailable')} actions={<Button onClick={()=>void state.reload()}>{msg('Reload folders')}</Button>}>{msg('Folder organization is unavailable. Packs are shown without folder filtering.')}</DeskStatusNotice>:state.message&&!state.editing?<DeskStatusNotice id="folder-operation" tone="warning" label={msg('Folder changes need attention')} actions={<Button onClick={()=>{state.setMessage('');void state.reload()}}>{msg('Reload folders')}</Button>}>{state.message}</DeskStatusNotice>:state.ambiguousGraphAssignments?.length?<DeskStatusNotice id="graph-folder-identity" tone="warning" label={msg('Graph folder placements need review')}>{msg('An older folder placement matches graph drafts from more than one conversation. Its saved metadata is retained. Move each draft explicitly to choose its folder.')}</DeskStatusNotice>:null
 }
 export function SubfolderRows({query}:{query:string}) {
  const state=usePackFolders()

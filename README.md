@@ -193,11 +193,38 @@ chats, drafts and their sources, keeps the original
 folder for recovery, and leaves API keys in protected settings. New installations
 use a platform data directory; existing histories move only when requested.
 
-Download workspace backup exports saved conversations, independent drafts, candidate checkpoints and
+**Download chat backup** exports saved conversations, independent drafts, candidate checkpoints and
 retained source text. Restore backup validates a ZIP into an empty private folder,
 then switches the active store and reloads Desk. It does not merge histories or
 include credential-store files or project files. Recover project history explicitly links chats and their draft repository
-when a project folder moves. Unsent browser drafts remain outside backups.
+when an older project folder moves. Recognized identity-bearing moves now link
+history automatically before the old identity path is replaced. **Admin → General
+→ Project location → Move to…** reviews and moves the startup project on the same
+filesystem, updates its saved startup location, and requires a restart. Histories
+are never merged. Named desks and startup projects with Runner jobs are not moved
+by this first flow. See [project location and local testing](docs/design/project-location.md).
+Unsent browser drafts remain outside backups.
+
+**Policy recovery archive for this project** is a separate download and restore
+flow. It contains the project's exact saved Policy history, operation receipts
+and referenced retained originals/extractions. It excludes chats, Pack/Graph
+drafts, memory, executable project files, jobs, credentials, source consent and
+browser journals. Restore inspects the selected archive and creates a new private,
+inactive project folder; it does not merge, replace the current project, change
+startup settings, open the folder or restart Desk. Explicitly open that folder to
+use the recovered Policies. It contains an empty host-created project configuration,
+not the original project's packs, graphs or jobs.
+
+Restored approvals, schedules and source status are imported historical assertions
+with unknown currentness. Integrity checks detect corruption, not a trusted author
+or current approval. Fresh review and a new publication are required before local
+release activation; provider access requires new reviewed consent. No archived
+source reads, cleanup or pending operations run automatically. A lost restore
+response is recovered by **Check restore result**, which reads the exact receipt
+without repeating restore. Archives are unencrypted; the separate Policy archive
+limit is 512 MiB expanded data plus 2 MiB ZIP overhead. Unsupported or incomplete
+archives are refused in full. See [Policy recovery](docs/design/policy-recovery-archive.md)
+for custody, authority holds, downgrade limits and recovery behavior.
 
 See [private data and recovery](docs/adr/0003-private-chat-data-and-recovery.md) for
 limits, concurrency and recovery behavior, and the proposed
@@ -1268,10 +1295,11 @@ what the holder keeps.
 
 ## What it shows
 
-**Packs and Judgment Graphs.** `/` opens chat, and `/packs` opens the pack collection.
-The main sidebar keeps Packs, Graphs, Admin and Help & About. Graphs is immediately
-below Packs and opens `/graphs`. Tests and saved cases belong inside each pack;
-the old `/matrix` collection route returns to Packs. Project files is available
+**Packs and Judgment Graphs.** `/` opens chat, and `/library` opens the shared
+Library collection of packs and graphs. The main sidebar keeps Library, Inputs,
+Jobs, Admin and Help & About. Individual documents use `/packs/:id` and
+`/graphs/:id`. Tests and saved cases belong inside each document;
+the old `/matrix` collection route returns to Library. Project files is available
 in the header’s project menu at `/author`. Pack IDs such as `tests` and `flows`
 remain valid; collection views reserve no pack IDs.
 
@@ -1295,7 +1323,7 @@ entry point.
 
 **A pack browser:**
 
-- `/packs` lists the project's packs in a pane beside the document, and
+- `/library` lists the project's packs and graphs, and
   `/packs/:id` reads one — the whole document, in the order the file writes it,
   with every member the file leaves out stated as left out, and links from it to
   its Tests workspace. Described under
@@ -1330,7 +1358,7 @@ not offer that page's previous-versus-current disposition comparison.
   version 3 matrix of saved cases that have expectations. Results describe that
   snapshot; they do not silently select a newer pack from disk.
 - The duplicate collection Tests page and **Run all tests** action have been removed.
-  Legacy `/matrix` bookmarks redirect to `/packs` without running tests.
+  Legacy `/matrix` bookmarks redirect to `/library` without running tests.
 - Opening a Tests page, changing files, window focus and reconnecting do not run
   tests. Completed runs are saved in the pack's test history with their input
   snapshots. Diagnostics records command progress without input payloads.
@@ -1901,9 +1929,9 @@ same test holds it equal to `--density-row` in both blocks.
 
 ## Pack view
 
-`/packs` is a layout: the project's packs on the left, the selected one beside
-them. The pane survives every change to the selection, so a filter and a scroll
-position are not lost by opening a pack.
+`/library` shares its workspace layout with pack and graph documents. The
+collection remains mounted while a document is open, so returning restores its
+filters, page, preview and scroll position.
 
 **The document reads in the file's own order.** A pack that writes `rules`
 before `outcomes` renders rules first, because that is the document someone
@@ -2065,10 +2093,12 @@ does not reset the viewport.
   where the check is stale, because in each of those the empty set is not an
   answer.
 
-### The Packs collection
+### The Library collection
 
-`/packs` uses one compact Browse header with its count and folder toggle,
-with Create pack on the right. Graphs has its own primary navigation entry. Search and the compact Sort menu sit beneath it.
+`/library` uses one compact folder breadcrumb header with Create on the right.
+Packs and graphs share its folder navigation, search, type and status filters,
+and Sort menu. The item total and pagination stay at the bottom while rows scroll.
+Collection links use `/library` directly; there is no `/packs` collection alias.
 Search matches the project ID and supplied description. Sorting names its actual
 key: Pack ID A–Z or Z–A; no modification date is invented.
 
@@ -3710,8 +3740,9 @@ proposal is shown.
 
 **The tier maps to provider parameters in one desk-owned table**, per endpoint
 family, and the engine receives the normalized result — it never chooses a
-parameter of its own. The table is `web/src/assistant/thinking.ts` and it is the
-whole of it:
+parameter of its own. The table is `thinking.ts` in the assistant harness,
+`@judgment-pack/harness` (Judgment-Pack/judgment-pack-agent, pinned in the
+component lock), and it is the whole of it:
 
 | family | tier | what goes on the wire |
 | --- | --- | --- |
@@ -3836,7 +3867,7 @@ below are Desk's choice, not additional restrictions imposed by the current SDK.
 
 **The ruling: a closed, documented removal list, on this family only.** The
 keywords are `$schema`, `$id`, `additionalProperties`, `const`, `examples` and
-`patternProperties` — `web/src/assistant/geminiSchema.ts`, applied at every
+`patternProperties` — the harness's `geminiSchema.ts`, applied at every
 depth, and applied to nothing else. A property whose *name* happens to be one of
 them is left alone, because under `properties` the keys are the author's words
 rather than JSON Schema's. Nothing is added, nothing is re-typed, and no value
@@ -3959,8 +3990,9 @@ endpoint — one with no thinking at all — the pass **still runs**. Its value 
 the runtime's checks over the proposed document, not the model's thinking, and a
 `validate` costs one call; the tab's line says the endpoint has no thinking, and
 the checks appear as they always do. The alternative — skip the pass wherever
-the endpoint degraded — is `REFUTE_ON_A_DEGRADED_ENDPOINT` in
-`web/src/assistant/thinking.ts` set to `false`, one boolean and nothing else,
+the endpoint degraded — is `REFUTE_ON_A_DEGRADED_ENDPOINT` in the harness's
+`thinking.ts` set to `false`, one boolean and nothing else, a change made in the
+harness's repository,
 with a conformance leg that follows it either way. ADR-0001 lists this among the
 questions the bake-off could not close, and it is open until the maintainer
 rules.
@@ -3997,7 +4029,7 @@ read — the document is handed to the critic verbatim instead.
 
 ### The ToolGate
 
-`web/src/assistant/toolGate.ts` wraps the assistant transport's `send`, and
+The harness's `toolGate.ts` wraps the assistant transport's `send`, and
 every outbound `tools/call` frame passes through it:
 
 - a name outside the session's allow-list is **refused** — the frame never
@@ -4204,7 +4236,7 @@ the provider's `fetch` option, so the shape survives the next chunk.
 
 ### The engine slot, as it stands
 
-`web/src/assistant/engine.ts` is ADR-0001's contract. `assistant/engines/` is
+The harness's `engine.ts` is ADR-0001's contract, and its `engines/` is
 the registry: one lazily loaded chunk per certified engine, so a **release**
 carries every certified chunk and a **session** downloads one. There is **one
 table**: the certified list is derived from the loaders rather than written
@@ -4267,7 +4299,7 @@ still suspended, and `for await`'s own closing discards the value, so the
 terminal event is never delivered at all. A consumer that stops listening is owed
 no terminal event; what it is owed is a closed iterator.
 
-`assistant/engines/contract.ts` holds what belongs to the contract rather than to
+The harness's `engines/contract.ts` holds what belongs to the contract rather than to
 either loop — the twenty-turn bound, the desk's own sentence to the model, the
 one reading of a proposal (exactly one fenced block, never the prose beside it),
 the rule that an answer is read by **what came back** rather than by what was
@@ -4366,9 +4398,10 @@ relay refuses one.
 
 ### The conformance session
 
-`web/src/assistant/conformance/` is the bake-off's scenario carried into the
-repository and run in CI — keyless, deterministic, no network, no runtime
-binary. **It runs over the registry**, not over one engine: every id in
+The harness's certification suite, `certification/` in
+`@judgment-pack/harness`, is the bake-off's scenario carried into the agent
+repository and run in its CI (`npm run certify -- --adapter <id>`) — keyless,
+deterministic, no network, no runtime binary. **It runs over the registry**, not over one engine: every id in
 `CERTIFIED_ENGINES` is put through all six legs and every check below, so
 certifying an adapter is adding its id to one list and a further engine is one
 PR — the adapter, its conformance run, and its row in the table above. The
@@ -4382,13 +4415,11 @@ fixture would be a finding rather than a fix.
   the five, exactly as served with the runtime's own schemas, and one
   `tools/call` answer per step T1–T6, taken from judgment-pack-runtime v0.19.0
   in a project copy that declared an audit trail. No audit record was written by
-  any of them. It is **produced by a checked-in recorder** rather than by hand:
-
-  ```sh
-  # regenerate, or byte-compare what is committed against a runtime
-  JPACK_COMMIT=<full commit> npm --prefix web run conformance:record -- ./bin/jpack /path/to/project
-  JPACK_COMMIT=<full commit> npm --prefix web run conformance:verify -- ./bin/jpack /path/to/project
-  ```
+  any of them. It was **produced by a recorder** rather than by hand,
+  `web/scripts/record-conformance.mjs`, which left this repository with the
+  fixture it writes; it belongs beside the fixture in the agent repository,
+  which does not carry it at v0.1.0 (the fixture's `recorder` member still
+  names this repository's path).
 
   The fixture carries the binary's SHA-256 and the runtime's full commit, and
   `verify` fails on a byte of drift — which is what makes "recorded" a claim
@@ -4508,9 +4539,18 @@ is needed. Signing out ends the current local session; **Continue** or reloading
 opens a new one while this mode is enabled.
 
 Without that option, a new installation prints a random **owner setup code**. Select
-**Set up sign-in**, enter that code, then configure an OIDC provider under
-**Admin → Sign-in & access**. Test the account and explicitly enable it as this
-installation's owner. Subsequent visits show **Continue with your provider**.
+**Set up sign-in**, enter that code, then choose **Set password** or configure an OIDC provider under
+**Admin → Sign-in & access**. A Desk password is shared by all desks on this
+computer; changing it requires the current password and signs out all sessions.
+Use 4–8 characters for a new password. Previously saved longer passwords still work for sign-in and Change password. Password mode persists across restarts and
+disables setup-code, launch-secret and automatic local access. It stores only a
+salted Argon2id verifier in the private sign-in policy.
+
+For OIDC, test the account and explicitly enable it as this installation's owner.
+Subsequent visits show **Continue with your provider**. An enabled provider has
+no local password fallback. Password recovery uses the existing stopped-process
+`jpack-desk --reset-sign-in` command; restart and set up sign-in again. Workspace
+files and source connections are preserved.
 
 No publisher registration is included in source or releases. The owner supplies
 one registration for the installation; ordinary sign-in uses the provider's own
@@ -4568,41 +4608,24 @@ Node 22 or newer is required (`web/package.json` says so, `.nvmrc` says `22`, an
 `npm run dev` and `npm run build` refuse an older Node with a sentence rather than
 Vite's stack trace): run `nvm use` in the repository first.
 
-**In VS Code on Linux or WSL**, use **Terminal → Run Task**:
+**In VS Code on Linux or WSL**, run **Terminal → Run Task → desk: start**
+(or **Ctrl+Shift+B** in the Desk workspace). This starts the installed Desk at
+<http://localhost:5173/> using `~/.local/bin/jpack-desk` and the saved startup
+Desk. The installed launcher selects the current complete bundle and follows
+the relocated Desk home. No project path or development environment variable
+is needed.
 
-- **desk: start** builds Desk and starts it with Vite at <http://localhost:5173/>.
-  Running it again keeps the existing servers.
-- **desk: stop** stops the servers and their child processes, preserving workspace files.
-- **desk: restart** rebuilds and restarts both servers for Go changes. If the build
-  fails, the current session keeps running. Frontend changes hot reload automatically.
-- **desk: status** shows the tracked processes and log directory.
-- **desk: prune**, with Desk stopped, removes old launch directories under
-  `bin/dev-launches` (each start leaves one, more than 100 MB) and keeps the one the
-  last start used. It refuses while servers these tasks started are running. It
-  trusts `bin/dev-launches` as yours, written only by this launcher, and cannot see
-  a Desk or companion started some other way from an old launch directory.
-- **desk: open (hot reload)** starts Desk if needed, waits for readiness, and opens
-  the browser. **Ctrl+Shift+B** runs **desk: dev**, an alias for **desk: start**.
+The task stays in its dedicated terminal. Use **Tasks: Terminate Task** to stop
+it or **Tasks: Restart Running Task** to restart it. Stop an independently
+started Desk before running the task; the installed launcher refuses a second
+instance. Starting does not pull code, rebuild companions, or launch Vite.
 
-The tasks use `python3 scripts/desk-dev.py` (Python 3, Git, Go, and Node 22+
-required). Install frontend dependencies with `npm --prefix web ci` first. Runtime,
-Runner, its source worker, Gateway and adapters are built from the component lock
-on the first start after a lock change (network access needed) and reused offline
-after verification; see [development start and restart](docs/updates.md#development-start-and-restart).
-`jpack` on `PATH` is not used. Desk's saved project is used by default; optional
-environment variables `JPACK_DESK_JPACK` and `JPACK_DESK_PROJECT` select another
-runtime executable (reported as outside the lock) and project. No VS Code settings are required. If VS
-Code has an older Node on `PATH`, the helper selects an installed Node 22 (or newer)
-from nvm without installing anything.
-
-The backend listens on `127.0.0.1:8790` with `JPACK_DESK_LOCAL_ACCESS=1` and development
-token `dev`; Vite uses port `5173` and proxies to that backend. These processes keep
-running after the task finishes; use **desk: stop** when done. PID identity checks
-and a per-checkout lock keep lifecycle commands scoped to the servers they started.
-An occupied port belonging to an untracked server produces an error, without killing
-it. Logs and process state are stored in the printed `jpack-desk-dev-…` directory
-under the system temporary directory. The helper never rewrites workspace files,
-changes the saved default desk, or replaces the installed `jpack` runtime.
+For source development with hot reload, the explicit CLI remains available:
+`python3 scripts/desk-dev.py start --open`, `restart`, `stop`, `status`, or
+`prune`. Install frontend dependencies first with `npm --prefix web ci`.
+See [development start and restart](docs/updates.md#development-start-and-restart)
+for the component lock and build prerequisites. Stop the installed Desk before
+starting development servers, which also use port 5173.
 
 Before OIDC activation, check an isolated development chassis with the desk's client code. These legacy secret-based smoke commands are refused after activation. The
 origin and the secret are separate arguments, because a credential does not ride
@@ -5634,6 +5657,7 @@ shared guard, because a new endpoint is a new place to forget one:
 | --- | --- |
 | `GET /api/files` | the project's regular files, with sizes and digests |
 | `GET /api/file?path=…` | one file's bytes |
+| `GET /api/file?path=…&optional=true` | one file’s bytes, or `204 No Content` if absent; other read errors are unchanged |
 | `PUT /api/file` | replace one file's bytes, optionally creating its parents |
 
 **Containment is a held directory descriptor, not a path check.** The chassis
@@ -6177,11 +6201,12 @@ appears anywhere on the page. `files/useFileEditing.test.ts` and
 view — `routes/AuthorView.test.tsx` staying green unedited is the proof the
 extraction preserved its behaviour.
 
-The assistant's suites are named the same way. `assistant/toolGate.test.ts`
+The assistant's suites are named the same way, and those over the harness moved
+with it to `@judgment-pack/harness`. Its `toolGate.test.ts`
 holds the gate at a **recording transport**: what left the page, never what the
-gate believes it did. `assistant/conformance/conformance.test.ts` is the desk's
+gate believes it did. Its `certification/conformance.test.ts` is the
 conformance session, described above, and is the one that certifies an engine.
-`assistant/engines/vercel/engine.test.ts` holds
+Its `engines/vercel/engine.test.ts` holds
 the ones that are about **that SDK** rather than about the contract: the address
 discipline on the `fetch` its providers are given, the placeholder credential
 that never leaves it, the two layers that put `rehearsal: true` on an evaluate
@@ -6778,8 +6803,8 @@ automatically. Native provider job resumption, callbacks and recovery of
 browser-initiated acquisition are outside this implementation. Existing
 connections without `durable` retain their bounded synchronous behavior.
 
-The bundled Gateway is pinned to an exact development commit with an extended
-source timeout ceiling; this is not a new tagged Gateway release. Background
+The bundled Gateway is pinned to the tagged release `v0.21.0`, which carries the extended
+source timeout ceiling. Background
 acquisition requires a persistent Gateway and separately running source worker.
 The temporary managed Gateway used for interactive research is not a background
 connection. Keep the worker's private database and backups separate from the

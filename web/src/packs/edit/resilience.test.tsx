@@ -237,6 +237,7 @@ describe('a pack the runtime will not serve', () => {
     drawPack(refusing(), { path: JSON_MODE })
     const raw = await editableBytes()
     expect(raw.value).toBe(BROKEN)
+    fireEvent.click(await screen.findByRole('button', {name: 'Pack unavailable'}))
     expect(screen.getByText(/pack document is not acceptable JSON/)).toBeTruthy()
     // And the toolbar, so the bytes can be repaired and written again.
     expect(screen.getByRole('toolbar', { name: 'Editing' })).toBeTruthy()

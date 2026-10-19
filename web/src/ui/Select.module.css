@@ -84,3 +84,8 @@
 .trigger[data-quiet]:not(:disabled):hover { background: var(--accent-soft); }
 
 .trigger > [data-value] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.item[data-disabled] { color: var(--ink-soft); opacity: .55; cursor: not-allowed; }
+
+.small { height: var(--density-control-small); padding-inline: var(--space-2); gap: var(--space-1); font-size: var(--text-xs); }
+@media (pointer: coarse) { .small { height: var(--density-control); } }

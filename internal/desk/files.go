@@ -1049,7 +1049,8 @@ func excludedNames() []string {
 	return names
 }
 
-// handleFileRead returns one file's bytes.
+// handleFileRead returns one file's bytes. An explicit optional=true read
+// returns 204 only for an absent file; all other refusals keep their status.
 func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
@@ -1071,6 +1072,13 @@ func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 	}
 	data, status, err := s.readThroughRoot(clean)
 	if err != nil {
+		if r.URL.Query().Get("optional") == "true" && codeOf(err) == CodeNotFound {
+			// A normal first visit need not create optional project metadata.
+			// Do not cache absence: the next read must see a newly created file.
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		writeJSONError(w, status, err)
 		return
 	}

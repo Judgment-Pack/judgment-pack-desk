@@ -53,3 +53,8 @@ it('reviews and saves selected cases as a batch while excluding previously saved
   )
   expect(screen.getByRole('status').textContent).toContain('pack changed')
 })
+it('shows the reason for deliberate wrong-type facts beside the case', () => {
+ render(<ProposalReview cases={cases} saved={{}} busy={false} stale={false} error="" intentionalTypes={[{caseId:'Normal',path:'/size/ageMonths',reason:'Deliberate JSON-number probe; keep the unknown expectation.'}]} onSave={vi.fn()} onEdit={vi.fn()} onClose={vi.fn()} />)
+ expect(screen.getByText(/Intentional fact type test/)).toBeTruthy()
+ expect(screen.getByText('Deliberate JSON-number probe; keep the unknown expectation.')).toBeTruthy()
+})

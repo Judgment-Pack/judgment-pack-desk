@@ -66,6 +66,8 @@ export interface DiffEntry {
 }
 
 export interface ProposalDiff {
+  beforeText?: string
+  afterText?: string
   /** What the proposal was compared with. */
   against: 'the draft' | 'nothing'
   /** Why there was nothing to compare with, where there was not. */
@@ -306,7 +308,7 @@ export function diffProposal(draftText: string | undefined, document: unknown): 
             after: jsonText(proposed)
           })
         ]
-    return { against: 'nothing', reason: draft.problem, entries, counts: counted(entries) }
+    return { beforeText: '', afterText: jsonText(document), against: 'nothing', reason: draft.problem, entries, counts: counted(entries) }
   }
 
   // A proposal that is not an object is one thing to accept or reject, whole.
@@ -318,7 +320,7 @@ export function diffProposal(draftText: string | undefined, document: unknown): 
       before: jsonText(draft.value),
       after: jsonText(proposed)
     })
-    return { against: 'the draft', entries: [entry], counts: counted([entry]) }
+    return { beforeText: jsonText(draft.value), afterText: jsonText(document), against: 'the draft', entries: [entry], counts: counted([entry]) }
   }
 
   const entries: DiffEntry[] = []
@@ -368,5 +370,5 @@ export function diffProposal(draftText: string | undefined, document: unknown): 
       })
     )
   }
-  return { against: 'the draft', entries, counts: counted(entries) }
+  return { beforeText: jsonText(draft.value), afterText: jsonText(document), against: 'the draft', entries, counts: counted(entries) }
 }

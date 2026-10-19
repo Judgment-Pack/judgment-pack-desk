@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { answer, deskFetch } from '../files/client'
 import { msg, useLocale } from '../i18n'
@@ -89,7 +90,7 @@ export function Updates({builds, gateway}: {builds?: ComponentBuilds; gateway?: 
         <p className="quiet">{msg('Updates are applied before Desk starts. Running work is never restarted automatically.')}</p>
         {data.latest && data.latest.asset===null && <p className="quiet">{msg('No release bundle is available for this platform.')}</p>}
       </>}
-    </> : <p role="status">{status.isError ? msg('Update information is unavailable.') : msg('Loading…')}</p>}
+    </> : status.isError ? <p role="status">{msg('Update information is unavailable.')}</p> : <LoadingState/>}
     <div className={styles.actions}>
       <Button disabled={action.isPending||status.isPending} onClick={()=>action.mutate('check')}>{action.isPending ? msg('Working…') : msg('Check for updates')}</Button>
       {canStage && <Button disabled={action.isPending} onClick={()=>action.mutate('stage')}>{msg('Prepare update')}</Button>}

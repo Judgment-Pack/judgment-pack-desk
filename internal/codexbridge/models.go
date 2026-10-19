@@ -38,7 +38,10 @@ func (m *Manager) Models(ctx context.Context) ([]Model, error) {
 	if err := m.ready(ctx); err != nil {
 		return nil, err
 	}
-	account, err := m.readAccount(ctx, true)
+	// Check native account presence without forcing a credential refresh.
+	// Discovery/preflight must not mutate sign-in; Codex owns token renewal
+	// during execution. Explicit refresh remains a separate account action.
+	account, err := m.readAccount(ctx, false)
 	if err != nil {
 		return nil, err
 	}

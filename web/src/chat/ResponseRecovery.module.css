@@ -1,0 +1,7 @@
+.recovery { width: min(100%, var(--measure-form)); margin-inline: auto; display: grid; gap: var(--space-2); padding-block: var(--density-block); border-top: 1px solid var(--border); font-size: var(--text-sm); line-height: 1.5; overflow-wrap: anywhere; }
+.header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+.title { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: 500; min-width: 0; }
+.title > svg { color: var(--unknown); flex: none; }
+.header > button { margin-inline-start: auto; flex: none; }
+.recovery p { margin: 0; }
+.caption { font-size: var(--text-xs); color: var(--ink-soft); }

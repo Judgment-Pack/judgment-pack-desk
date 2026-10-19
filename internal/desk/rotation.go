@@ -1928,6 +1928,7 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, failure.status, failure.code, message)
 		return
 	}
+	s.reconnectAfterKeyRotation()
 	writeJSON(w, http.StatusOK, answer)
 }
 

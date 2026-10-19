@@ -1,3 +1,6 @@
+import { formatJson } from '../../files/formatJson'
+const displayJSON = (raw: string) => { const result = formatJson(raw); return result.ok ? result.content.trimEnd() : raw }
+import { DeskNoticesProvider } from '../../shell/DeskNotices'
 /**
  * The upgrade offer on the page: what it lists, that it writes nothing until
  * the owner confirms, that it sends back the token of exactly the offer it
@@ -21,7 +24,10 @@ import { ReviewProvider } from '../review/ReviewContext'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { confirmUpgrade, readUpgrade, SIGNING_REASONS, StaleUpgrade, type Upgrade } from './client'
-import { dismissedKey, ProjectGates, UpgradeNote } from './UpgradeNote'
+import { dismissedKey, ProjectGates, ProjectSafeguardsStatus } from './UpgradeNote'
+import { StatusStrip } from '../../shell/StatusStrip'
+import { DeskConfigFixture } from '../../config/DeskConfigProvider'
+import { effectiveConfig } from '../../config/deskConfig'
 import { UpgradeView } from './UpgradeView'
 
 vi.mock(import('../../files/client'), async original => ({ ...(await original()), deskFetch: vi.fn() }))
@@ -93,7 +99,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 function show(node: React.ReactNode) {
-  render(<QueryClientProvider client={testQueryClient()}><MemoryRouter>{node}</MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={testQueryClient()}><MemoryRouter><DeskNoticesProvider>{node}</DeskNoticesProvider></MemoryRouter></QueryClientProvider>)
 }
 
 describe('the upgrade client', () => {
@@ -123,13 +129,13 @@ describe('the upgrade page', () => {
     expect(config.textContent).toContain('requireReviewed: a deciding run must apply exactly the packs you last locked.')
     expect(config.textContent).toContain('audit: each completed deciding run is recorded in .desk-private/audit')
     expect(config.textContent).toContain('Every other member, and the order of the members, stay as they are.')
-    expect(config.textContent).toContain(after)
+    expect(config.textContent).toContain(displayJSON(after))
     expect(screen.getByRole('listitem', { name: '.gitignore' }).textContent).toContain('Desk adds the line .desk-private/ at the end')
     const lock = screen.getByRole('listitem', { name: 'The first review and lock' })
     expect(lock.textContent).toContain('The lock covers 2 files')
     expect(lock.textContent).toContain('There is no reviewed-set lock.')
     expect(within(lock).getByText('packs/a.json')).toBeTruthy()
-    expect(lock.textContent).toContain(alpha)
+    expect(lock.textContent).toContain(displayJSON(alpha))
     expect(within(lock).queryByText('This project already keeps a lock')).toBeNull()
     const facts = screen.getByRole('listitem', { name: 'requireComparableFacts' })
     expect(within(facts).getByRole('checkbox', { name: 'Also refuse a fact of a type no comparison can match' })).toHaveProperty('checked', true)
@@ -324,34 +330,63 @@ describe('the signing key, on the project Desk was started on', () => {
 })
 
 describe('where the offer appears', () => {
-  it('is a note on Packs until the owner dismisses it, and the dismissal is kept', async () => {
-    show(<UpgradeNote />)
-    const note = await screen.findByRole('complementary', { name: 'Turn on this project’s gates' })
-    expect(within(note).getByRole('link', { name: 'See what changes' }).getAttribute('href')).toBe('/packs/_upgrade')
-    fireEvent.click(within(note).getByRole('button', { name: 'Dismiss' }))
-    expect(screen.queryByRole('complementary')).toBeNull()
+  it('opens compact setup details from the status strip and retains project dismissal', async () => {
+    const status = <McpContext.Provider value={connected()}><StatusStrip /></McpContext.Provider>
+    show(status)
+    const trigger = await screen.findByRole('button', { name: 'Project safeguards off' })
+    expect(trigger.closest('footer')).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(trigger)
+    const details = await screen.findByRole('dialog', { name: 'Project safeguards' })
+    expect(within(details).getByRole('link', { name: 'Review setup' }).getAttribute('href')).toBe('/packs/_upgrade')
+    expect(details.textContent).toContain('Require reviewed packs and keep a decision history for this project.')
+    fireEvent.click(within(details).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Project safeguards off' })).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('link', {name: 'Help & About: connected'})))
     expect(localStorage.getItem(dismissedKey('/projects/existing'))).toBe('1')
+    expect(posted).toEqual([])
     cleanup()
     reads = []
-    show(<UpgradeNote />)
+    show(status)
     await new Promise(resolve => setTimeout(resolve, 50))
-    expect(screen.queryByRole('complementary')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Project safeguards off' })).toBeNull()
     expect(reads).toEqual([])
+    cleanup()
+    show(<ProjectGates />)
+    expect(await screen.findByRole('link', {name: 'Review the upgrade'})).toBeTruthy()
+  })
+
+  it('gives connection and configuration problems priority over optional setup', async () => {
+    const scenarios = [
+      {connection: connected({status: 'reconnecting'}), config: effectiveConfig(undefined), cue: 'Connection status: reconnecting'},
+      {connection: connected({known: false}), config: effectiveConfig(undefined), cue: 'Connection status: Limited connection'},
+      {connection: connected(), config: {...effectiveConfig(undefined), readFailure: 'unread'}, cue: 'Settings unavailable'},
+    ]
+    for (const scenario of scenarios) {
+      show(<DeskConfigFixture value={scenario.config as ReturnType<typeof effectiveConfig>}><McpContext.Provider value={scenario.connection}><StatusStrip /></McpContext.Provider></DeskConfigFixture>)
+      expect(screen.getByLabelText(scenario.cue)).toBeTruthy()
+      expect(screen.queryByRole('button', {name: 'Project safeguards off'})).toBeNull()
+      expect(reads).toEqual([])
+      cleanup()
+    }
   })
 
   it('is not shown where the gates are on', async () => {
     offers.with = [{ ...gatedOn, state: 'offer', comparableFacts: 'off', token }]
     // The card reads the same offer: once it says so, the note has read it too.
-    show(<><UpgradeNote /><ProjectGates /></>)
+    show(<><ProjectSafeguardsStatus /><ProjectGates /></>)
     await screen.findByText(/requireComparableFacts is off/)
     expect(reads).toEqual(['/api/upgrade'])
-    expect(screen.queryByRole('complementary')).toBeNull()
+    expect(screen.queryByRole('button', {name: 'Project safeguards off'})).toBeNull()
   })
 
-  it('is on the Packs collection', async () => {
+  it('does not insert a banner in the Packs collection', async () => {
     const stub = stubClient({ list_packs: () => ({ text: JSON.stringify({ status: 'valid', packs: [{ id: 'alpha' }] }) }) })
     show(<McpContext.Provider value={connected({ client: stub.client })}><ReviewProvider><PacksPane /></ReviewProvider></McpContext.Provider>)
-    expect(await screen.findByRole('complementary', { name: 'Turn on this project’s gates' })).toBeTruthy()
+    await screen.findByRole('button', {name: 'Create'})
+    expect(screen.queryByRole('complementary', {name: 'Turn on this project’s gates'})).toBeNull()
+    expect(screen.queryByRole('button', {name: 'Project safeguards off'})).toBeNull()
+    expect(reads).toEqual([])
   })
 
   it('stays available in Admin → Decision safeguards', async () => {

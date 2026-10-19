@@ -105,7 +105,7 @@ describe('view and edit transitions', () => {
     await screen.findByText(/Saved, and verified/)
     expect(router.state.location.search).toContain('edit=1')
     expect(area.value).toBe(`${changed}\n`)
-    expect(screen.getByText('Editing · Unsaved changes')).toBeTruthy()
+    expect(screen.getByText('Unsaved changes')).toBeTruthy()
   })
 
   it('does not silently drop unfinished operand text on Save and return', async () => {

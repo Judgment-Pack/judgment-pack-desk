@@ -1,4 +1,11 @@
-import { validGraphDraft, type GraphDraft } from '../graphs/drafts'
+import {validPolicySources,type PolicyAuthoringSource} from '../policies/authoringSource'
+import {validPolicyInterpretationProposal,type PolicyInterpretationProposal} from '../policies/interpretation'
+import {validPolicyId,validPolicyRequest,validPolicyProposal,type PolicyRequest,type PolicyProposal} from '../policies/chat'
+import {validPlans,type ChatPlan} from '@judgment-pack/harness/planning/model'
+import type { Turn } from '../research/run'
+import {validDialectChatAction,validDialectId,type DialectChatAction} from '../dialects/chatActions'
+import {validDialectRecipeProposal,type DialectRecipeProposal} from '../dialects/proposals'
+import { validGraphSnapshot, type GraphDraft } from '../graphs/drafts'
 import { ASSISTANT_THINKING, type ThinkingTier } from '../config/deskConfig'
 import { validAIConnectionId } from '../assistant/aiConnections'
 import { validChatReasoning, type ChatReasoning } from './reasoning'
@@ -37,6 +44,17 @@ export function retainSentDocuments(previous: ChatAttachment[], sent: ChatAttach
   return [...documents.values()]
 }
 export interface Chat {
+ policySources?:PolicyAuthoringSource[]
+ policyInterpretationKind?:'pack'|'graph'
+ policyInterpretations?:PolicyInterpretationProposal[]
+ policy?:{id:string}
+ policyRequest?:PolicyRequest
+ policyProposals?:PolicyProposal[]
+ interaction?:'plan'|'work'
+ plans?:ChatPlan[]
+ input?:{id:string}
+ inputActions?:DialectChatAction[]
+ inputDrafts?:DialectRecipeProposal[]
   graphDrafts?: GraphDraft[]
   /** A graph workspace is distinct from a pack candidate. */
   graph?: { id: string; path: string; workspace: string }
@@ -92,8 +110,19 @@ function decode(value: unknown): Chat[] {
     if (chat.targetFolderId !== undefined && (typeof chat.targetFolderId !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(chat.targetFolderId))) throw new Error(sourceMessage("Invalid saved pack context"))
     if (chat.draftId !== undefined && (typeof chat.draftId !== 'string' || !/^draft-[a-z0-9-]{1,160}$/.test(chat.draftId))) throw new Error(sourceMessage('Invalid saved pack context'))
     if(chat.draftGeneration!==undefined && (!Number.isSafeInteger(chat.draftGeneration)||chat.draftGeneration<1)) throw new Error(sourceMessage('Invalid saved pack context'))
-    if (chat.graphDrafts !== undefined && (!Array.isArray(chat.graphDrafts) || chat.graphDrafts.length > 16 || !chat.graphDrafts.every(validGraphDraft) || new Set(chat.graphDrafts.map(d => d.draftId)).size !== chat.graphDrafts.length)) throw new Error(sourceMessage('Invalid saved graph drafts'))
+    if(chat.policy!==undefined&&(!chat.policy||Object.keys(chat.policy).length!==1||!validPolicyId(chat.policy.id)||chat.pack||chat.graph||chat.draftId||chat.input))throw Error(sourceMessage('Invalid saved Policy chat scope'))
+    if(chat.policyInterpretationKind!==undefined&&!['pack','graph'].includes(chat.policyInterpretationKind))throw Error(sourceMessage('Invalid Policy interpretation kind'))
+    if(chat.policySources!==undefined&&!validPolicySources(chat.policySources))throw Error(sourceMessage('Invalid saved Policy authoring sources'))
+    if(chat.policyInterpretations!==undefined&&(!chat.policy||!Array.isArray(chat.policyInterpretations)||chat.policyInterpretations.length>16||!chat.policyInterpretations.every(p=>validPolicyInterpretationProposal(p)&&p.policyId===chat.policy!.id)||new Set(chat.policyInterpretations.map(p=>p.id)).size!==chat.policyInterpretations.length))throw Error(sourceMessage('Invalid saved Policy interpretation proposals'))
+    if(chat.policyRequest!==undefined&&(!chat.policy||!validPolicyRequest(chat.policyRequest)))throw Error(sourceMessage('Invalid saved Policy request'))
+    if(chat.policyProposals!==undefined&&(!chat.policy||!Array.isArray(chat.policyProposals)||chat.policyProposals.length>16||!chat.policyProposals.every(p=>validPolicyProposal(p)&&p.policyId===chat.policy!.id)||new Set(chat.policyProposals.map(p=>p.id)).size!==chat.policyProposals.length))throw Error(sourceMessage('Invalid saved Policy proposals'))
+    if(chat.input!==undefined && (!chat.input||typeof chat.input!=='object'||Array.isArray(chat.input)||chat.pack||chat.graph||chat.draftId||Object.keys(chat.input).length!==1||!('id' in chat.input)||chat.input.id!=='list'&&!validDialectId(chat.input.id)))throw new Error(sourceMessage('Invalid saved dialect chat scope'))
+    if(chat.inputActions!==undefined&&(!Array.isArray(chat.inputActions)||chat.inputActions.length>32||!chat.inputActions.every(validDialectChatAction)||new Set(chat.inputActions.map(a=>a.id)).size!==chat.inputActions.length))throw new Error(sourceMessage('Invalid saved dialect actions'))
+    if(chat.inputDrafts!==undefined&&(!Array.isArray(chat.inputDrafts)||chat.inputDrafts.length>16||!chat.inputDrafts.every(validDialectRecipeProposal)||new Set(chat.inputDrafts.map(d=>d.draftId)).size!==chat.inputDrafts.length))throw new Error(sourceMessage('Invalid saved dialect recipe drafts'))
+    if(Object.keys(chat).some(key=>key.toLowerCase()==='graphdrafts'&&key!=='graphDrafts'))throw Error(sourceMessage('Invalid saved graph drafts'))
+    if (chat.graphDrafts !== undefined && (!Array.isArray(chat.graphDrafts) || chat.graphDrafts.length > 16 || !chat.graphDrafts.every(validGraphSnapshot) || new Set(chat.graphDrafts.map(d => d.draftId)).size !== chat.graphDrafts.length)) throw new Error(sourceMessage('Invalid saved graph drafts'))
     if (chat.graph && (chat.pack || chat.draftId || typeof chat.graph.id !== 'string' || typeof chat.graph.path !== 'string' || typeof chat.graph.workspace !== 'string' || chat.graph.id.length > 128 || chat.graph.path.length > 1024 || !/^[a-zA-Z0-9-]{1,160}$/.test(chat.graph.workspace))) throw new Error(sourceMessage('Invalid saved graph context'))
+    if(chat.interaction!==undefined&&!['plan','work'].includes(chat.interaction)||chat.plans!==undefined&&!validPlans(chat.plans))throw Error(sourceMessage('Invalid saved plan'))
     ids.add(chat.id)
     if (chat.attachments !== undefined && (!Array.isArray(chat.attachments) || chat.attachments.length > 4
       || chat.attachments.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000))) throw new Error(sourceMessage("Invalid saved attachments"))
@@ -110,7 +139,7 @@ function decode(value: unknown): Chat[] {
     if(chat.searches!==undefined && (!Array.isArray(chat.searches)||chat.searches.length>64||!chat.searches.every(validSearchReference)||new Set(chat.searches.map(s=>s.id)).size!==chat.searches.length))throw new Error(sourceMessage('Invalid saved attachments'))
     if(chat.researchMode!==undefined&&!['auto','provided'].includes(chat.researchMode)||chat.searchConnection!==undefined&&(typeof chat.searchConnection!=='string'||!/^([a-z][a-z0-9-]{0,47})$/.test(chat.searchConnection)))throw new Error(sourceMessage('Invalid saved chat'))
     if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error(sourceMessage("Invalid saved pack context"))
-    return { id: chat.id, title: chat.title, ...(chat.graph ? {graph: chat.graph} : {}), ...(chat.graphDrafts ? {graphDrafts: chat.graphDrafts} : {}), composer: chat.composer, model: chat.model, ...(chat.apiThinking?{apiThinking:chat.apiThinking}:{}), ...(chat.aiConnection?{aiConnection:chat.aiConnection,aiConnectionName:chat.aiConnectionName}:{}), ...(chat.reasoning ? {reasoning:{model:chat.reasoning.model,effort:chat.reasoning.effort}} : {}), pinned: chat.pinned, archived: chat.archived,
+    return { id: chat.id, title: chat.title, policySources:chat.policySources,policyInterpretationKind:chat.policyInterpretationKind,policyInterpretations:chat.policyInterpretations,policy:chat.policy,policyRequest:chat.policyRequest,policyProposals:chat.policyProposals, interaction:chat.interaction, plans:chat.plans, ...(chat.input?{input:chat.input}:{}), ...(chat.inputActions?{inputActions:chat.inputActions}:{}), ...(chat.inputDrafts?{inputDrafts:chat.inputDrafts}:{}), ...(chat.graph ? {graph: chat.graph} : {}), ...(chat.graphDrafts ? {graphDrafts: chat.graphDrafts} : {}), composer: chat.composer, model: chat.model, ...(chat.apiThinking?{apiThinking:chat.apiThinking}:{}), ...(chat.aiConnection?{aiConnection:chat.aiConnection,aiConnectionName:chat.aiConnectionName}:{}), ...(chat.reasoning ? {reasoning:{model:chat.reasoning.model,effort:chat.reasoning.effort}} : {}), pinned: chat.pinned, archived: chat.archived,
       updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode === 'research' && !chat.checkpoint && !chat.draftId ? 'web-research' : chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], websites:chat.websites ?? [], searches:chat.searches??[], researchMode:chat.researchMode, searchConnection:chat.searchConnection, adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.draftId ? { draftId: chat.draftId, draftGeneration:chat.draftGeneration } : {}),
       ...(chat.targetFolderId !== undefined ? { targetFolderId: chat.targetFolderId } : {}),
@@ -143,6 +172,10 @@ export class ChatStore {
     this.set({ ...patch, chats, dirty: true })
     clearTimeout(this.timer)
     this.timer = setTimeout(() => { void this.flush() }, 600)
+  }
+  retryInitialLoad(): Promise<void> {
+    if (this.state.ready || !this.state.error || this.state.dirty || this.state.saving || this.running) return Promise.resolve()
+    return this.load()
   }
   load(): Promise<void> {
     if (this.loading) return this.loading
@@ -201,6 +234,25 @@ export class ChatStore {
       return false
     }
   }
+  /** Await the current checkpoint even when a debounced save is already in flight. */
+  async checkpoint(signal:AbortSignal):Promise<void> {
+    signal.throwIfAborted()
+    if(!this.state.ready || this.state.error)throw Error(this.state.error || 'Chat history is not ready.')
+    const revision=this.revision, draftRevision=this.draftRevision
+    while(this.savedRevision<revision || this.savedDraftRevision<draftRevision) {
+      signal.throwIfAborted()
+      if(!this.state.ready || this.state.error)throw Error(this.state.error || 'Chat history is not ready.')
+      if(this.state.saving) {
+        await new Promise<void>((resolve,reject)=>{
+          let unsubscribe=()=>{}
+          const done=()=>{if(!this.state.saving){unsubscribe();signal.removeEventListener('abort',abort);resolve()}}
+          const abort=()=>{unsubscribe();signal.removeEventListener('abort',abort);reject(new DOMException('Stopped','AbortError'))}
+          unsubscribe=this.subscribe(done);signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();else done()
+        })
+      } else if(!await this.flush())throw Error(this.state.error || 'Chat history could not be saved.')
+    }
+    signal.throwIfAborted()
+  }
   retrySave() { this.set({ error: '' }); void this.flush() }
   get canCreate() { return this.state.ready && this.state.chats.length < 256 }
   private saveHomeDraft(chat?: Chat) {
@@ -211,28 +263,28 @@ export class ChatStore {
     } catch { /* A draft still works when browser storage is unavailable. */ }
   }
   /** An unsubmitted composer is not a conversation or a private-history write. */
-  startChat(pack?: Chat['pack'], mode?: Chat['mode'], fresh = false, draftId?: string, graph?: Chat['graph']): Chat {
+  startChat(pack?: Chat['pack'], mode?: Chat['mode'], fresh = false, draftId?: string, graph?: Chat['graph'], input?:Chat['input'], policy?:Chat['policy']): Chat {
     if (!this.state.ready) throw new Error(sourceMessage("Chat history is still loading"))
-    const previous = this.state.drafts.find(chat => chat.pack?.id === pack?.id && chat.draftId === draftId && chat.graph?.workspace === graph?.workspace && (mode === undefined || chat.mode === mode))
+    const previous = this.state.drafts.find(chat => chat.pack?.id === pack?.id && chat.draftId === draftId && chat.graph?.workspace === graph?.workspace && chat.input?.id===input?.id && chat.policy?.id===policy?.id && (mode === undefined || chat.mode === mode))
     if (previous && !fresh) { this.activate(previous.id); return previous }
     if (previous) this.remove(previous.id)
     let cached: Chat | undefined
-    if (!pack && !draftId && !graph && !fresh) {
+    if (!pack && !draftId && !graph && !input && !policy && !fresh) {
       try {
         const value = JSON.parse(sessionStorage.getItem(`jpack.home-draft:${this.project}`) ?? 'null')
         if (value) {
           const read = decode({ version: 1, chats: [value] })[0]!
-          if (!read.pack && !read.draftId && !read.graph && !read.checkpoint && !read.archived && !read.pinned && read.title === 'New chat'
+          if (!read.pack && !read.draftId && !read.graph && !read.input && !read.policy && !read.checkpoint && !read.archived && !read.pinned && read.title === 'New chat'
             && !this.state.chats.some(chat => chat.id === read.id) && (mode === undefined || read.mode === mode)) cached = read
         }
       } catch { /* A stale browser draft must not block opening home. */ }
     }
     const chat: Chat = cached ?? { id: crypto.randomUUID(), title: 'New chat', pinned: false, archived: false,
-      updatedAt: new Date().toISOString(), composer: '', model: '', mode: mode ?? 'draft', view: 'chat', ...(pack ? { pack } : {}), ...(draftId ? {draftId} : {}), ...(graph ? {graph} : {}) }
+      updatedAt: new Date().toISOString(), composer: '', model: '', mode: mode ?? 'draft', view: 'chat', ...(pack ? { pack } : {}), ...(draftId ? {draftId} : {}), ...(graph ? {graph} : {}), ...(input?{input}:{}), ...(policy?{policy}:{}) }
     const artifact = this.state.packDrafts.find(item => item.id === draftId)
-    if (artifact) { chat.draftGeneration=artifact.generation; chat.checkpoint = artifactCheckpoint(artifact.checkpoint); chat.documents = artifact.documents; chat.mode = artifact.mode }
+    if (artifact) { chat.draftGeneration=artifact.generation; chat.checkpoint = artifactCheckpoint(artifact.checkpoint); chat.documents = artifact.documents; chat.policySources = artifact.policySources; chat.mode = artifact.mode }
     this.set({ drafts: [chat, ...this.state.drafts] })
-    if (!pack && !draftId && !graph) this.saveHomeDraft(chat)
+    if (!pack && !draftId && !graph && !input && !policy) this.saveHomeDraft(chat)
     this.activate(chat.id)
     return chat
   }
@@ -258,16 +310,36 @@ export class ChatStore {
     if (draft) {
       const next = { ...draft, ...patch, updatedAt: new Date().toISOString() }
       this.set({ drafts: this.state.drafts.map(chat => chat.id === id ? next : chat) })
-      if (!next.pack && !next.draftId && !next.graph) this.saveHomeDraft(next)
+      if (!next.pack && !next.draftId && !next.graph && !next.input && !next.policy) this.saveHomeDraft(next)
       return
     }
     this.changed(this.state.chats.map(chat => chat.id === id ? { ...chat, ...patch } : chat))
+  }
+  /** Uses the live session so later chat checkpoints cannot overwrite task messages. */
+  appendConversation(id: string, turns: Turn[]) {
+    const owner = [...this.state.chats, ...this.state.drafts].find(chat => chat.id === id)
+    const binding = this.state.bindings.get(id)
+    if (!owner || !binding?.run) throw Error('The linked chat is still loading. Try again when it is ready.')
+    if (binding.run.running) throw Error('Finish the active chat before adding test-design messages.')
+    const previous = binding.run.getSnapshot()
+    const next = binding.run.appendConversation(turns)
+    if (next === previous && this.state.chats.some(chat=>chat.id===id)) return
+    this.retainChat(id)
+    const last = next.turns.at(-1)
+    const saved = checkpoint(next, binding.sources)
+    const bindings = new Map(this.state.bindings); bindings.set(id,{...binding,state:next})
+    this.changed(this.state.chats.map(chat => chat.id === id ? {...chat,checkpoint:saved,
+      createdAt:chat.createdAt ?? next.turns[0]?.at,updatedAt:last?.at ?? chat.updatedAt,
+      title:chat.title === 'New chat' ? (next.turns.find(turn=>turn.role==='user')?.text.slice(0,100) || chat.title) : chat.title} : chat), {bindings})
   }
   activate(id: string) {
     if (this.state.active.includes(id) || ![...this.state.chats, ...this.state.drafts].some(chat => chat.id === id)) return
     this.set({ active: [...this.state.active, id] })
   }
   report(id: string, binding: ResearchRunBinding) {
+    // A queued React report must not overwrite a task message appended meanwhile.
+    const live = binding.run?.getSnapshot?.()
+    if (live && live !== binding.state) return
     const bindings = new Map(this.state.bindings); bindings.set(id,binding)
     this.set({ bindings })
     const previous = this.observed.get(id)
@@ -277,7 +349,7 @@ export class ChatStore {
     if (prior && previous?.sources === binding.sources && Object.entries(binding.state).every(([key, value]) => key === 'streaming' || key === 'streamingId' || key === 'events' || prior[key as keyof typeof prior] === value)) return
     if (binding.state.phase !== 'idle') {
       const owner = this.state.chats.find(item => item.id === id) ?? this.state.drafts.find(item => item.id === id)
-      if (owner && !owner.pack && !owner.graph && binding.state.candidates.length && (!binding.state.restored || binding.state.checkRun === 'running' || binding.state.checkRun === 'failed' || binding.state.checkRun === 'stopped')) {
+      if (owner && !owner.pack && !owner.graph && !owner.input && !owner.policy && binding.state.candidates.length && (!binding.state.restored || binding.state.checkRun === 'running' || binding.state.checkRun === 'failed' || binding.state.checkRun === 'stopped')) {
         const saved = checkpoint(binding.state, binding.sources)
         const current = this.state.packDrafts.find(item => item.id === owner.draftId)
         if (!owner.draftId) {
@@ -287,7 +359,7 @@ export class ChatStore {
           // Never replace a newer artifact with an older conversation branch.
           const accepted = current.checkpoint.state.candidates
           if (accepted.every((candidate,index) => saved.state.candidates[index]?.text === candidate.text)) {
-            const next = {...current, title: current.titleEdited ? current.title : draftTitle(saved), checkpoint: artifactCheckpoint(saved), sourceFiles:[...new Map([...(current.sourceFiles??[]),...retainedSourceFiles(saved)].map(file=>[file.name+"\0"+file.text,file])).values()], documents: retainSentDocuments(current.documents, owner.documents ?? [])}
+            const next = {...current, title: current.titleEdited ? current.title : draftTitle(saved), checkpoint: artifactCheckpoint(saved), sourceFiles:[...new Map([...(current.sourceFiles??[]),...retainedSourceFiles(saved)].map(file=>[file.name+"\0"+file.text,file])).values()], policySources:owner.policySources??current.policySources, documents: retainSentDocuments(current.documents, owner.documents ?? [])}
             // Conversation-only work and source ownership must not advance the artifact generation.
             if (JSON.stringify(next) !== JSON.stringify(current)) {
               this.saveDraft({...next, generation:current.generation+1, updatedAt: new Date().toISOString()})

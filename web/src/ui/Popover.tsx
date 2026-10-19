@@ -1,5 +1,5 @@
 import { Popover as RadixPopover } from 'radix-ui'
-import { useId, useState, type ReactElement, type ReactNode, type ComponentProps } from 'react'
+import { useId, useState, type ReactElement, type ReactNode, type ComponentProps, type CSSProperties } from 'react'
 import styles from './Popover.module.css'
 import { Tooltip } from './Tooltip'
 import { IconClose } from '../shell/icons'
@@ -11,7 +11,8 @@ export function PopoverClose({ children }: { children: ReactElement }) {
 }
 
 /** Portaled details with collision handling, dismissal and focus restoration. */
-export function Popover({ trigger, title, children, open, onOpenChange, onCloseAutoFocus, onOpenAutoFocus, onEscapeKeyDown, triggerTooltip, variant = 'default', size = 'medium', align = 'end', dismissible = false }: {
+export function Popover({ trigger, title, children, open, onOpenChange, onCloseAutoFocus, onOpenAutoFocus, onEscapeKeyDown, triggerTooltip, variant = 'default', size = 'medium', align = 'end', dismissible = false, contentStyle }: {
+  contentStyle?: CSSProperties
   trigger: ReactElement
   title: string
   children: ReactNode
@@ -21,7 +22,7 @@ export function Popover({ trigger, title, children, open, onOpenChange, onCloseA
   onOpenAutoFocus?: ComponentProps<typeof RadixPopover.Content>['onOpenAutoFocus']
   onEscapeKeyDown?: ComponentProps<typeof RadixPopover.Content>['onEscapeKeyDown']
   triggerTooltip?: string
-  variant?: 'default' | 'list'
+  variant?: 'default' | 'list' | 'status'
   size?: 'small' | 'medium'
   align?: 'start' | 'center' | 'end'
   dismissible?: boolean
@@ -36,7 +37,7 @@ export function Popover({ trigger, title, children, open, onOpenChange, onCloseA
   return <RadixPopover.Root open={open} onOpenChange={onOpenChange} modal={modal}>
     {triggerTooltip ? <Tooltip content={triggerTooltip} disabled={open} openOnFocus={false}>{control}</Tooltip> : control}
     <RadixPopover.Portal>
-      <RadixPopover.Content className={styles.content} data-variant={variant} data-size={size} align={align} sideOffset={8}
+      <RadixPopover.Content className={styles.content} style={contentStyle} data-variant={variant} data-size={size} align={align} sideOffset={8}
         collisionPadding={16} aria-labelledby={titleId} aria-modal={modal || undefined} onCloseAutoFocus={onCloseAutoFocus} onOpenAutoFocus={onOpenAutoFocus} onEscapeKeyDown={onEscapeKeyDown}>
         {dismissible ? <div className={styles.heading}><h2 id={titleId} className={styles.title}>{title}</h2><PopoverClose><button type="button" className="desk-icon-button" aria-label={msg('Close')}><IconClose /></button></PopoverClose></div> : <h2 id={titleId} className={styles.title}>{title}</h2>}
         {children}

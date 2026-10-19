@@ -1,6 +1,7 @@
+import { withDelegation } from '@judgment-pack/harness/delegation'
 import { chatReasoningAgent, type ChatReasoning } from '../chat/reasoning'
 import { conversationMode, type AuthoringMode } from './mode'
-import { bindExecution } from '../assistant/target'
+import { bindExecution, withPersonMessage } from '../assistant/target'
 import { selectedAssistant } from '../assistant/target'
 import { useProviderModels } from '../assistant/providers'
 import { assistantReady } from '../assistant/useAssistantSlot'
@@ -22,10 +23,10 @@ import { systemMessage, useLocale } from '../i18n'
  */
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { describeEvent } from '../assistant/EventList'
-import { loadEngine } from '../assistant/engines'
-import type { AssistantEvent, CallTool, HostTool, McpToolResult } from '../assistant/engine'
+import { loadEngine } from '@judgment-pack/harness/engines/index'
+import type { AssistantEvent, CallTool, HostTool, McpToolResult } from '@judgment-pack/harness/engine'
 import { usePickedModel } from '../assistant/pickedModel'
-import { openAssistantConnection, runAssistantSession } from '../assistant/session'
+import { openAssistantConnection, runAssistantSession } from '@judgment-pack/harness/session'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useFileListing } from '../files/queries'
@@ -39,7 +40,9 @@ import type { ChatAttachment } from '../chat/store'
 import { Ledger, type SourceRecord } from './ledger'
 import { AuthoringRun, INITIAL_STATE, documentBasis, type RunState, type Turn, type TurnRequest } from './run'
 import { runtimeCheckIdentity } from './retainedCheck'
-import { researchTools } from './tools'
+import { researchTools, type ReadPolicy } from './tools'
+import { CONTEXT_DEFAULTS, contextPolicy } from '@judgment-pack/harness/context/policy'
+import { withProposePack } from '../assistant/proposePack'
 
 export const MAX_REVISIONS = 4
 
@@ -53,6 +56,8 @@ export interface DraftToolContext {
   recordDocument?: (file: import('../chat/store').ChatAttachment) => void
   recordWebsite?: (reference: import('../documents/website').WebsiteReference) => void
   turns: () => readonly Turn[]
+  /** The turn's context policy, which holds a reading tool's window (`readWindowBytes`); the harness defaults where absent. */
+  policy?: () => ReadPolicy
 }
 
 export interface ResearchRunBinding {
@@ -123,14 +128,18 @@ export function researchBlockedReason(state: {
 }
 
 export function useResearchRun(options?: {
+  savedPackReview?: import('../chat/packProposal').SavedPackReview
   apiThinking?:import('../config/deskConfig').ThinkingTier
   connectionId?:string
   model?: string
   reasoning?: ChatReasoning
   mode?: AuthoringMode
   adversarialReview?: boolean
+  authorizeContext?:(signal:AbortSignal)=>Promise<void>
+  executionContext?:()=>import('@judgment-pack/harness/context/session').ContextInput
+  checkpointDelegation?: (signal:AbortSignal)=>Promise<void>
   /** Per-message policy for Chat and web Research; legacy research keeps its source-led contract. */
-  researchPolicy?:()=>string
+  researchPolicy?:(turn?: import('./run').Turn)=>string
   draftTools?: (context: DraftToolContext) => HostTool[]
   /** The documents kept in this chat, read when a draft's citations are traced. */
   documents?: () => readonly ChatAttachment[]
@@ -153,7 +162,7 @@ export function useResearchRun(options?: {
   const authorPrompt = usePromptText(AUTHOR_PACK_PROMPT, advertised)
   const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
   const testPrompt = usePromptText(TEST_PACK_PROMPT, ((options?.apiThinking??slot.thinking) !== 'off' || options?.adversarialReview === true) && advertisesTest)
-  const { config } = useEffectiveConfig()
+  const { config, assistantProfile } = useEffectiveConfig()
   const research = config.research
   const mcp = useMcp()
 
@@ -163,7 +172,7 @@ export function useResearchRun(options?: {
     advertised,
     authorPromptRead: authorPrompt.data !== undefined,
     research,
-    mode: options?.mode,
+    mode: options?.executionContext?.().phase==='plan'?'draft':options?.mode,
     mcp
   }) || modelProblem
 
@@ -172,25 +181,28 @@ export function useResearchRun(options?: {
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents })
-  settings.current = { slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents }
+  const settings = useRef({ savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents })
+  settings.current = { savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(text, 'research')
     const spent = { searches: 0, reads: 0, bytes: 0, startedAt: Date.now() }
     const turn = async (request: TurnRequest, signal: AbortSignal, deliver: (event: AssistantEvent) => void) => {
       const { slot, picked, testPrompt, reasoning, modelProblem, apiThinking } = settings.current
+      const executionContext=settings.current.executionContext?.()
+      if(executionContext?.phase==='plan')await settings.current.checkpointDelegation?.(signal)
       if (!assistantReady(slot)) throw new Error(slot.unusable ?? sourceMessage('Configure Assistant before starting.'))
       if (modelProblem) throw new Error(modelProblem)
       request.onTarget?.(slot.connectionId?{connectionId:slot.connectionId,connectionName:slot.connectionName??slot.connectionId,model:picked.model}:undefined)
       // What the engine actually did, as it did it, on the Console: every
       // call and answer, every guardrail, every refusal -- the same line the
       // Assistant tab would show -- and never the model's prose or a page.
-      const onEvent = (event: AssistantEvent) => {
+      const onEvent = async (event: AssistantEvent) => {
         if (event.type === 'tool_call' || event.type === 'tool_result' || event.type === 'guardrail' || event.type === 'thinking_unavailable' || event.type === 'error') {
           recordActivity(describeEvent(event, sourceMessage), 'assistant')
         }
         deliver(event)
+        if(event.type==='budget_paused'||event.type==='execution_checkpoint'&&event.durable)await settings.current.checkpointDelegation?.(signal)
       }
       const sessionId = await sessionBearer()
       const opened = settings.current.mcp.status === 'ready' && settings.current.mcp.client !== null
@@ -199,17 +211,20 @@ export function useResearchRun(options?: {
         const ready = opened ? await opened.ready : { tools: [], callTool: async () => { throw new Error(sourceMessage("Connect the runtime to use pack tools.")) } }
         const engine = await loadEngine(slot.engine)
         await runAssistantSession(
-          engine,
+          request.conversation && !request.reviewer ? withDelegation(engine,{checkpoint:(_task,signal)=>settings.current.checkpointDelegation?.(signal)??Promise.resolve()}) : engine,
           {
-            prompt: [request.prompt,conversationMode(settings.current.mode)?settings.current.researchPolicy?.():undefined].filter(Boolean).join('\n\n'),
+            prompt: [request.prompt,(executionContext?.phase==='plan'||conversationMode(settings.current.mode))?settings.current.researchPolicy?.([...built?.getSnapshot().turns ?? []].reverse().find(turn=>turn.role==='user')):undefined].filter(Boolean).join('\n\n'),
             ...(request.conversation ? { allowConversation: true } : {}),
+            context:{...request.context,...executionContext,...(executionContext?.documents?{documents:[...(request.context?.documents??[]),...executionContext.documents]}:{}),authorize:settings.current.authorizeContext,checkpoint:request.conversation?async checkpoint=>{deliver({type:'execution_checkpoint',checkpoint});await settings.current.checkpointDelegation?.(signal)}:undefined,configuration:settings.current.contextConfiguration},
             interactive: true,
             adversarialReview: !request.reviewer && settings.current.adversarialReview === true,
             testPrompt: request.reviewer ? '' : testPrompt,
             tools: ready.tools,
             callTool: ready.callTool,
-            hostTools: request.hostTools,
-            ...bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking),
+            // A turn that may propose a pack offers propose_pack beside the fence;
+            // an independent reviewer, and a conversation without artifact proposals, do not.
+            hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),
+            ...withPersonMessage(bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking), request.reviewer ? undefined : request.context?.currentRequest?.message),
             signal
           },
           onEvent
@@ -222,6 +237,13 @@ export function useResearchRun(options?: {
     // than when this run was built: the desk-level file answers after the
     // first render, and a run built against the defaults would offer tools
     // that refuse everything and a verifier with no key.
+    // The policy the turn's session runs under, for its reading tools' windows:
+    // the same table and per-model override the harness applies to the run. A
+    // configuration the harness refuses is refused by the session itself; the
+    // tools fall back to the defaults, whose result limit no override changes.
+    const policy = () => {
+      try { return contextPolicy(settings.current.contextConfiguration, settings.current.picked.model) } catch { return CONTEXT_DEFAULTS }
+    }
     const toolsFor = () =>
       researchTools({
         config: settings.current.research,
@@ -229,16 +251,18 @@ export function useResearchRun(options?: {
         budget: settings.current.research.limits,
         spent,
         acquire,
-        log
+        log,
+        policy
       })
     // A draft turn's tools are the chat's own, built per turn from the turns
     // so far; the context reads the run that is about to be built, which
     // exists by the time any turn asks.
     let built: AuthoringRun | null = null
-    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [], recordDocument: file => built?.recordDocument(file), recordWebsite: reference => built?.recordWebsite(reference), recordSearch:reference=>built?.recordSearch(reference) }
+    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [], recordDocument: file => built?.recordDocument(file), recordWebsite: reference => built?.recordWebsite(reference), recordSearch:reference=>built?.recordSearch(reference), policy }
     built = new AuthoringRun({
       turn,
-      get mode() { return settings.current.mode ?? 'research' },
+      get savedPackReview() { return settings.current.savedPackReview },
+      get mode() { return settings.current.executionContext?.().phase==='plan'?'draft':settings.current.mode ?? 'research' },
       callTool: async (name, args) => {
         const client = settings.current.mcp.client
         if (client === null) throw new Error(sourceMessage("the runtime connection is not ready"))
@@ -261,7 +285,7 @@ export function useResearchRun(options?: {
       pin: () => settings.current.research.gateway,
       loadDocument: (reference, pin, signal) => loadDocument(reference, pin, signal),
       get researchTools() {
-        return conversationMode(settings.current.mode) ? (settings.current.draftTools?.(context) ?? []) : toolsFor()
+        return settings.current.executionContext?.().phase==='plan'||conversationMode(settings.current.mode) ? (settings.current.draftTools?.(context) ?? []) : toolsFor()
       },
       seal: async (session, signal) => {
         await seal(session, signal)

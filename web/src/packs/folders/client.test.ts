@@ -1,20 +1,19 @@
 import {afterEach,expect,it,vi} from 'vitest'
-import {FileRequestError,readFile,writeFile} from '../../files/client'
+import {FileRequestError,readOptionalFile,writeFile} from '../../files/client'
 import {assignCreatedPack,loadFolders,saveFolderAction} from './client'
 import {defaultFolders,FOLDERS_FILE,HOME_FOLDER} from './model'
-vi.mock('../../files/client',async original=>({...await original<typeof import('../../files/client')>(),readFile:vi.fn(),writeFile:vi.fn()}))
+vi.mock('../../files/client',async original=>({...await original<typeof import('../../files/client')>(),readOptionalFile:vi.fn(),writeFile:vi.fn()}))
 afterEach(()=>vi.resetAllMocks())
-const missing=()=>new FileRequestError(404,'No file','chassis','not-found')
 it('synthesizes home on precise absence without writing on a visit',async()=>{
- vi.mocked(readFile).mockRejectedValue(missing())
+ vi.mocked(readOptionalFile).mockResolvedValue(null)
  expect(await loadFolders()).toEqual({document:defaultFolders(),digest:''})
  expect(writeFile).not.toHaveBeenCalled()
 })
 it('does not replace unreadable or invalid metadata with a default',async()=>{
  for(const cause of [new FileRequestError(403,'Denied','chassis','forbidden'),new FileRequestError(404,'Unknown','chassis','other'),new Error('offline')]){
-  vi.mocked(readFile).mockRejectedValueOnce(cause);await expect(loadFolders()).rejects.toBe(cause)
+  vi.mocked(readOptionalFile).mockRejectedValueOnce(cause);await expect(loadFolders()).rejects.toBe(cause)
  }
- vi.mocked(readFile).mockResolvedValueOnce({path:FOLDERS_FILE,sha256:'original',bytes:3,content:'bad'})
+ vi.mocked(readOptionalFile).mockResolvedValueOnce({path:FOLDERS_FILE,sha256:'original',bytes:3,content:'bad'})
  await expect(loadFolders()).rejects.toThrow(/not been changed/)
  expect(writeFile).not.toHaveBeenCalled()
 })
@@ -26,12 +25,12 @@ it('writes organization only, using the observed digest, and refuses a stale wri
  expect(vi.mocked(writeFile).mock.calls[0]![0]).not.toHaveProperty('override')
 })
 it('re-reads the latest hierarchy when assigning a newly registered pack',async()=>{
- vi.mocked(readFile).mockResolvedValue({path:FOLDERS_FILE,sha256:'fresh',bytes:200,content:JSON.stringify(defaultFolders())})
+ vi.mocked(readOptionalFile).mockResolvedValue({path:FOLDERS_FILE,sha256:'fresh',bytes:200,content:JSON.stringify(defaultFolders())})
  vi.mocked(writeFile).mockImplementation(async input=>({path:input.path,bytes:input.content.length,sha256:'new',content:input.content}))
  const saved=await assignCreatedPack('new-pack',HOME_FOLDER)
  expect(saved.document.assignments['new-pack']).toBe(HOME_FOLDER)
  expect(vi.mocked(writeFile).mock.calls[0]![0].baseSha256).toBe('fresh')
- expect(readFile).toHaveBeenCalledWith(FOLDERS_FILE,undefined)
+ expect(readOptionalFile).toHaveBeenCalledWith(FOLDERS_FILE,undefined)
 })
 
 it('creates a folder and moves packs and graphs in one write against the observed revision',async()=>{
@@ -50,4 +49,15 @@ it('does not create a destination when the accompanying folder move is invalid',
  await expect(saveFolderAction(before,{type:'create-and-move',id:'briefs',name:'Briefs',parentId:null,target:{kind:'folder',id:HOME_FOLDER}})).rejects.toThrow('The home folder cannot be renamed, moved, or deleted.')
  expect(writeFile).not.toHaveBeenCalled()
  expect(before.document).toEqual(defaultFolders())
+})
+it('writes and reopens scoped graph folder v3 against the exact project-file revision',async()=>{
+ const original=defaultFolders(),before={document:original,digest:'observed'}
+ vi.mocked(writeFile).mockImplementation(async input=>({path:input.path,bytes:input.content.length,sha256:'v3',content:input.content}))
+ const saved=await saveFolderAction(before,{type:'assign-many',packIds:['graph-draft:origin-one:same-draft','graph-draft:origin-two:same-draft'],folderId:HOME_FOLDER})
+ expect(saved.document.version).toBe(3)
+ const input=vi.mocked(writeFile).mock.calls[0]![0]
+ expect(input).toMatchObject({path:FOLDERS_FILE,baseSha256:'observed'})
+ vi.mocked(readOptionalFile).mockResolvedValue({path:FOLDERS_FILE,bytes:input.content.length,sha256:'v3',content:input.content})
+ expect(await loadFolders()).toEqual(saved);expect(writeFile).toHaveBeenCalledOnce()
+ expect(original).toEqual(defaultFolders())
 })

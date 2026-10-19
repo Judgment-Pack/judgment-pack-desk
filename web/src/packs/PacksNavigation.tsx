@@ -8,7 +8,7 @@ export function PacksNavigation({ count, leading }: { count?: number; leading?: 
   useLocale()
   return <nav className={styles.navigation} aria-label={msg("Packs workspace")}>
     {leading}
-    <Link to="/packs" aria-current="page">{msg('Browse')}
+    <Link to="/library" aria-current="page">{msg('Browse')}
       {count !== undefined && <span className={styles.count}>{count}</span>}
     </Link>
   </nav>

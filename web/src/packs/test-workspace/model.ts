@@ -1,3 +1,4 @@
+import type { IntentionalFactType } from './factTypes'
 import { checkPayload, verifyRetainedCheck } from '../../research/retainedCheck'
 import type { TestProposal } from './proposals'
 import type { ChatAttachment } from '../../chat/store'
@@ -21,12 +22,14 @@ export interface CaseRow extends ObjectValue {
   focus?: string
 }
 export interface TestCase {
+  inputSnapshot?: import('../../dialects/testSnapshots').DialectTestSnapshot
   id: string
   name: string
   revision: number
   row: CaseRow
   sources: ChatAttachment[]
   sourceMappings: Record<string, string>
+  intentionalFactTypes?: IntentionalFactType[]
   origin: 'manual' | 'ai' | 'draft' | 'import'
   rationale: string
 }
@@ -82,7 +85,14 @@ export function decodeStore(v: unknown): TestStore {
         !Number.isSafeInteger(c.revision) ||
         !Array.isArray(c.sources) ||
         !object(c.sourceMappings) ||
+        (c.intentionalFactTypes !== undefined && (!Array.isArray(c.intentionalFactTypes) || c.intentionalFactTypes.some(entry =>
+          !object(entry) || entry.caseId !== c.id || typeof entry.path !== 'string' || typeof entry.reason !== 'string' || !entry.reason.trim() ||
+          (entry.within !== undefined && typeof entry.within !== 'string')))) ||
         typeof c.rationale !== 'string' ||
+        (c.inputSnapshot !== undefined && (!object(c.inputSnapshot) || c.inputSnapshot.version !== 1 ||
+          typeof c.inputSnapshot.identity !== 'string' || typeof c.inputSnapshot.preparationId !== 'string' ||
+          typeof c.inputSnapshot.recordId !== 'string' || typeof c.inputSnapshot.packDigest !== 'string' ||
+          !Number.isSafeInteger(c.inputSnapshot.recipeVersion) || !object(c.inputSnapshot.source) || !object(c.inputSnapshot.input))) ||
         c.sources.some(
           (f) =>
             !object(f) ||
@@ -120,6 +130,7 @@ export function decodeStore(v: unknown): TestStore {
             typeof p.request !== 'string' ||
             typeof p.packDigest !== 'string' ||
             typeof p.model !== 'string' ||
+            (p.chatId !== undefined && typeof p.chatId !== 'string') ||
             (p.additionsOnly !== undefined && typeof p.additionsOnly !== 'boolean') ||
             (p.coverageRunId !== undefined && typeof p.coverageRunId !== 'string') ||
             p.contractVersion !== '1' ||
@@ -275,6 +286,19 @@ export function latestResult(suite: TestSuite, c: TestCase, digest: string) {
     status: result?.status ?? 'not-run',
     run,
   }
+}
+/** Carry reviewed cases and retained design work together, without promoting proposals to cases. */
+export function mergeDraftSuite(suite: TestSuite, held: TestSuite | undefined, draft: Pick<PackDraft,'id'|'generation'>): TestSuite {
+  const marker = `merge-v2:${draft.id}:${draft.generation}`
+  if (!held || suite.recovered.includes(marker)) return suite
+  const next = structuredClone(suite)
+  next.deleted = [...new Set([...(next.deleted ?? []), ...(held.deleted ?? [])])]
+  next.cases.push(...held.cases.filter(row => !next.deleted!.includes(row.id) && !next.cases.some(saved => saved.id === row.id)))
+  next.runs.push(...held.runs.filter(run => !next.runs.some(saved => saved.id === run.id)))
+  next.proposals = [...(next.proposals ?? []), ...(held.proposals ?? []).filter(proposal => !next.proposals?.some(saved => saved.id === proposal.id))]
+  next.messages = [...new Map([...(next.messages ?? []), ...(held.messages ?? [])].map(message => [JSON.stringify(message), message])).values()].sort((a,b)=>a.at.localeCompare(b.at))
+  next.recovered = [...new Set([...next.recovered, ...held.recovered, marker])]
+  return next
 }
 /** Recover exact recorded trials once. Never turn observed answers into expectations. */
 export async function recoverDraft(suite: TestSuite, draft: PackDraft): Promise<TestSuite> {

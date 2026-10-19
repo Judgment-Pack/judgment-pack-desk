@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { OverflowTooltip } from '../ui/Tooltip'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useParams } from 'react-router-dom'
@@ -13,6 +14,7 @@ import { TypedConfirmation, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { IconDetails, IconFolder } from '../shell/icons'
 import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { PageHeader } from '../ui/PageLayout'
 import { PaneDivider } from '../ui/PaneDivider'
@@ -97,12 +99,12 @@ export function StorageFiles({provider}: {provider:string}) {
     <PageHeader title={title} actions={<ButtonLink variant="quiet" to="/admin#connections">{msg('Connections')}</ButtonLink>}/>
     <form className={own.search} onSubmit={e=>{e.preventDefault();void run(()=>list())}}>
      <label>{provider==='aws-s3'?msg('Prefix'):msg('Folder')}<Input value={folder} onChange={e=>setFolder(e.target.value)} disabled={busy} /></label>
-     <label>{msg('Search files')}<Input value={query} onChange={e=>setQuery(e.target.value)} disabled={busy} /></label>
+     <label>{msg('Search files')}<SearchInput value={query} onChange={e=>setQuery(e.target.value)} disabled={busy} /></label>
      <div className={styles.editorActions}><Button type="submit" disabled={busy||!ready||reconnect}>{msg('Search')}</Button><Button disabled={blocked} onClick={()=>void fresh()}>{msg('New file')}</Button></div>
      <p className="meta">{provider==='google-drive'?msg('Search uses the Drive index. Contents load only when opened.'):msg('Search matches file names within this location. Contents load only when opened.')}</p>
     </form>
     <div className={styles.fileScroll}>
-     {!ready&&<p className="note">{catalog.loading?msg('Loading…'):msg('Connect a supported storage integration in Admin → Connections.')}</p>}
+     {!ready&&(catalog.loading ? <LoadingState/> : <p className="note">{msg('Connect a supported storage integration in Admin → Connections.')}</p>)}
      {reconnect && <div className="note"><p>{msg('Reconnect Google Drive to continue.')}</p><Button disabled={busy} onClick={()=>void connectAgain()}>{msg('Reconnect')}</Button></div>}
      {ready&&page&&<><ul className={styles.fileList}>{page.items.map(file=><li key={file.id}><OverflowTooltip selector="[data-storage-label]"><button className={styles.fileEntry} disabled={busy} aria-current={selected?.id===file.id?true:undefined} onClick={()=>void choose(file)}>{file.kind==='folder'?<IconFolder/>:<IconDetails/>}<span className={styles.fileText}><span data-storage-label>{file.name}</span><small data-storage-label>{submitted.query?file.id:file.kind==='file'?formatStorageBytes(file.sizeBytes):msg('Folder')}</small></span></button></OverflowTooltip></li>)}</ul>
       {page.items.length===0&&<p className="note">{msg('No files on this page.')}</p>}

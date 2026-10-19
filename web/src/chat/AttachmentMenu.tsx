@@ -1,3 +1,4 @@
+import {ChatAction} from './ChatActions'
 import { useId, useState, type RefObject } from 'react'
 import { Menu as DropdownMenu } from '../ui/Menu'
 import { msg, useLocale } from '../i18n'
@@ -24,7 +25,7 @@ export function AttachmentMenu({ disabled, onUpload, connections = [], triggerRe
   const [linkVisible, setLinkVisible] = useState(false)
   return <DropdownMenu.Root open={open} onOpenChange={value => { if (value) { setVisible(connectionShortcuts(connections, preferences)); setLinkVisible(Boolean(onLink)) } setOpen(value) }}>
     <Tooltip content={msg('Attach files')} disabled={open} openOnFocus={false}>
-      <DropdownMenu.Trigger ref={triggerRef} type="button" className="desk-icon-button" aria-label={msg('Attach files')} disabled={disabled}><IconPlus /></DropdownMenu.Trigger>
+      <DropdownMenu.Trigger asChild><ChatAction ref={triggerRef} variant="quiet" size="icon" aria-label={msg('Attach files')} disabled={disabled}><IconPlus /></ChatAction></DropdownMenu.Trigger>
     </Tooltip>
     <DropdownMenu.Portal>
       <DropdownMenu.Content className={styles.menu} aria-label={msg('Attach files')} side="top" align="start" sideOffset={8} collisionPadding={16}

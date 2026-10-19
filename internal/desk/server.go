@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +43,14 @@ var devOrigins = []string{
 
 // Config is the chassis' whole configuration.
 type Config struct {
+	// Trusted host configuration, never portable Desk/project settings.
+	PolicyAuthority *PolicyAuthorityOptions
+	// Trusted mapping of each pinned workspace, resolved once before workers.
+	// Nil resolver retains legacy mode; a configured nil result must classify a
+	// known never-enrolled workspace. Requests cannot choose this mapping.
+	policyAuthorityForProject func(*ProjectRoot) (*policyAuthorityAnchor, error)
+	// HomeMoveShutdown drains the local server before its confirmed migration.
+	HomeMoveShutdown func()
 	// Managed desks share installation credentials and authentication, never data roots.
 	parent *Server
 	deskID string
@@ -135,6 +144,17 @@ type Config struct {
 
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
+	policyAuthorityAnchor  *policyAuthorityAnchor // immutable workspace binding from New
+	policyAuthorityMachine *policyAuthorityMachine
+	// Bound once before serving; nil selects the existing workspace file store.
+	inputPreparations  inputPreparationRepository
+	retainedArtifacts  retainedArtifactRepository
+	researchJournals   researchJournalProvider
+	evaluationJournals evaluationJournalProvider
+	dialectDrafts      dialectDraftRepository
+
+	actionGrants map[string]assistantActionGrant // scoped one-use allowances; protected by writes
+
 	desksMu     sync.Mutex
 	desks       map[string]*Server
 	desksClosed bool
@@ -150,11 +170,20 @@ type Server struct {
 	// and upgrades (`handleUpgradeConfirm`), from the fresh reading to the
 	// last restore; this project's lock (project_lock.go) serializes them
 	// with every other Desk process's.
-	reviewMu sync.Mutex
+	reviewMu              sync.Mutex
+	inputEvaluationCancel context.CancelFunc
+	inputEvaluationDone   chan struct{}
+	inputResearchCancel   context.CancelFunc
+	inputResearchDone     chan struct{}
+	policySourceCancel    context.CancelFunc
+	policySourceDone      chan struct{}
+	policySourceCall      func(context.Context, string, any) (json.RawMessage, error)
+	policySourceCanon     func(context.Context, []byte) ([]byte, error)
 	// startup is the identity of the project Desk was started on, which
 	// names what Desk keeps for it (startup_identity.go); unused on a desk
 	// Desk made.
-	startup startupIdentity
+	startup  startupIdentity
+	location projectLocationState
 	// keyMu serializes what this desk does with its signing key: the
 	// decision record's reading of its keys, a rotation from the token to the
 	// marker's removal, and the finish or undo of one a stop cut short
@@ -247,6 +276,9 @@ type Server struct {
 	// where there is no home directory to resolve it against, which each
 	// endpoint that needs it reports as a sentence rather than a dead desk.
 	configDir string
+	home      *deskHome
+	homeLease *os.File
+	homeMove  homeMoveState
 	// assistant is that directory validated and pinned — or the reason it was
 	// refused. Built once, at startup, and closed with the server. A desk whose
 	// configuration directory is not safe to keep a credential in still runs;
@@ -311,10 +343,12 @@ func New(cfg Config) (*Server, error) {
 	// descriptor it was handed, so a refusal below has to close it rather than
 	// leave it open in a process that is about to exit or retry.
 	pinned := cfg.Root
+	var machine *policyAuthorityMachine
 	adopted := false
 	defer func() {
 		if !adopted {
 			pinned.Close()
+			machine.close()
 		}
 	}()
 	if pinned == nil && cfg.ProjectDir == "" {
@@ -326,6 +360,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Port <= 0 {
 		return nil, errors.New("desk: Port is required: the launch handoff's cookie name carries it")
 	}
+
 	if cfg.JpackBin == "" {
 		cfg.JpackBin = "jpack"
 	}
@@ -355,6 +390,45 @@ func New(cfg Config) (*Server, error) {
 			return nil, err
 		}
 	}
+	configPath, configErr := resolveHomeConfig(cfg.DeskConfigDir)
+	if configErr != nil {
+		return nil, configErr
+	}
+	home, configErr := readDeskHome(configPath)
+	if configErr != nil {
+		return nil, configErr
+	}
+	if home != nil && home.entry(pinned.dir) == nil {
+		return nil, errors.New("This project is outside the registered Desk home. Import it before opening it with this installation.")
+	}
+	var policyAnchor *policyAuthorityAnchor
+	if cfg.PolicyAuthority != nil {
+		options := *cfg.PolicyAuthority
+		cfg.PolicyAuthority = &options
+		if cfg.policyAuthorityForProject != nil || policyMachineProtectedPaths(options.Root, configPath, pinned) != nil || policyMachineProjectIdle(configPath, pinned) != nil {
+			return nil, policyMachineRefusal()
+		}
+		machine, configErr = openPolicyMachine(options, false)
+		if configErr != nil {
+			return nil, configErr
+		}
+		policyAnchor, configErr = machine.resolve(pinned)
+		if configErr == nil {
+			configErr = machine.verifyExecutionStartup(pinned, policyAnchor)
+		}
+		if configErr != nil {
+			return nil, configErr
+		}
+	} else if cfg.policyAuthorityForProject != nil {
+		policyAnchor, configErr = cfg.policyAuthorityForProject(pinned)
+		if configErr != nil {
+			return nil, policyMachineRefusal()
+		}
+	}
+	marker, markerErr := readPolicyMachineMarker(pinned.own.root)
+	if markerErr != nil || marker != nil && (policyAnchor == nil || marker.InstallationID != policyAnchor.identity.InstallationID || marker.WorkspaceID != policyAnchor.identity.WorkspaceID) {
+		return nil, policyMachineRefusal()
+	}
 	sessions, serr := newSessionStore()
 	if serr != nil {
 		return nil, fmt.Errorf("desk: session store: %w", serr)
@@ -368,21 +442,24 @@ func New(cfg Config) (*Server, error) {
 		writes = cfg.parent.writes
 	}
 	s := &Server{
-		writes:        writes,
-		builds:        componentBuilds(cfg.JpackBin, cfg.RunnerBin),
-		cfg:           cfg,
-		mux:           http.NewServeMux(),
-		log:           cfg.Logger,
-		conns:         make(map[*conn]struct{}),
-		root:          pinned.own.root,
-		project:       pinned,
-		projectDir:    pinned.dir,
-		configDir:     configDirFor(cfg.DeskConfigDir),
-		relaySlots:    make(chan struct{}, maxRelayInFlight),
-		researchSlots: make(chan struct{}, maxResearchInFlight),
-		sessions:      sessions,
-		launches:      launches,
-		launchCookie:  launchCookieName(cfg.Port),
+		policyAuthorityAnchor:  policyAnchor,
+		policyAuthorityMachine: machine,
+		writes:                 writes,
+		builds:                 componentBuilds(cfg.JpackBin, cfg.RunnerBin),
+		cfg:                    cfg,
+		mux:                    http.NewServeMux(),
+		log:                    cfg.Logger,
+		conns:                  make(map[*conn]struct{}),
+		root:                   pinned.own.root,
+		project:                pinned,
+		projectDir:             pinned.dir,
+		configDir:              configPath,
+		home:                   home,
+		relaySlots:             make(chan struct{}, maxRelayInFlight),
+		researchSlots:          make(chan struct{}, maxResearchInFlight),
+		sessions:               sessions,
+		launches:               launches,
+		launchCookie:           launchCookieName(cfg.Port),
 	}
 	adopted = true
 	// **One owner from here on.** The wrapper the caller still holds stops
@@ -394,6 +471,33 @@ func New(cfg Config) (*Server, error) {
 	// project root is pinned for.
 	s.assistant = openAssistantStore(s.configDir)
 	s.assistant.logf = s.log.Printf
+	if cfg.parent == nil && s.assistant.usable() {
+		tx, err := readHomeTransaction(homeJournalPath(s.configDir))
+		if err != nil || tx != nil && !tx.Complete {
+			s.Close()
+			if err != nil {
+				return nil, err
+			}
+			return nil, errors.New("Restart Desk to recover its pending home migration.")
+		}
+		lease, err := openHomeLease(s.configDir, false)
+		if err != nil {
+			s.Close()
+			return nil, err
+		}
+		s.homeLease = lease
+	}
+
+	if s.home != nil && s.assistant.usable() {
+		for _, name := range []string{"accounts", "services"} {
+			root, err := openPrivateDataRoot(filepath.Join(s.configDir, name), true)
+			if err != nil {
+				s.Close()
+				return nil, err
+			}
+			root.Close()
+		}
+	}
 	if !s.assistant.usable() {
 		// Reported, and not fatal. A desk that refused to start because
 		// somebody's ~/.config is group-writable would be a desk nobody could
@@ -404,7 +508,7 @@ func New(cfg Config) (*Server, error) {
 	_, _ = rand.Read(s.reviewKey[:])
 	// The startup project keeps an inherited JPACK_CONFIG (`runtimeEnv`).
 	// Said once, because Desk's editor shows this project's own jpack.json.
-	if path := strings.TrimSpace(os.Getenv(runtimeConfigEnv)); path != "" && cfg.deskID == "" {
+	if path := strings.TrimSpace(os.Getenv(runtimeConfigEnv)); path != "" && s.usesStartupRuntimeEnvironment() {
 		s.log.Printf("desk: JPACK_CONFIG is set, so this project's runtime reads %s, not the project's own jpack.json; desks Desk made ignore it", path)
 	}
 	// And an inherited JPACK_SIGNING_KEY, said once beside it. Never its path,
@@ -417,7 +521,7 @@ func New(cfg Config) (*Server, error) {
 	// Not trimmed: the runtime reads it exactly as set, and a value of
 	// whitespace is a key it refuses, not none. Not its value either, as the
 	// key's is not.
-	if os.Getenv(runtimeSigningPublicKeyEnv) != "" && cfg.deskID == "" {
+	if os.Getenv(runtimeSigningPublicKeyEnv) != "" && s.usesStartupRuntimeEnvironment() {
 		s.log.Print("desk: JPACK_SIGNING_PUBLIC_KEY is set, so where this project's audit trail is chained, its runtime signs each record only with a key whose public key is the one it names, if it accepts that key; desks Desk made ignore it")
 	}
 	if cfg.parent != nil {
@@ -426,10 +530,11 @@ func New(cfg Config) (*Server, error) {
 	} else {
 		s.openSignIn()
 	}
+	s.initPolicySourceAuthority()
 	s.registerSignIn()
 	if cfg.LocalGatewayBundle != "" {
 		executable, _ := os.Executable()
-		s.localGateway = &localGateway{bundle: cfg.LocalGatewayBundle, executable: executable}
+		s.localGateway = &localGateway{bundle: cfg.LocalGatewayBundle, executable: executable, inputHandoffs: s.inputHandoffPath()}
 	}
 	s.removeStaleStaging()
 	if cfg.Static != nil {
@@ -454,6 +559,11 @@ func New(cfg Config) (*Server, error) {
 	// identity provider fills in. There is no `DELETE`: see `handleSession`.
 	s.mux.HandleFunc("/api/session", s.handleSession)
 	s.mux.HandleFunc("/api/operations/{rest...}", s.handleJobs)
+	if policyManualAdmissionAvailable {
+		s.mux.HandleFunc("GET /api/operations/policy-execution", s.handleExecutionStatus)
+		s.mux.HandleFunc("GET /api/operations/jobs/{job}/policy-registration", s.handleExecutionRegistration)
+		s.mux.HandleFunc("POST /api/operations/jobs/{job}/policy-registration", s.handleExecutionRegistration)
+	}
 	s.mux.HandleFunc("/api/job-events/{trigger}", s.handleJobEvent)
 	s.mux.HandleFunc("/api/job-events/{trigger}/occurrences/{occurrence}", s.handleJobEventResult)
 	s.mux.HandleFunc("/api/agent/run", s.handleAgentRun)
@@ -464,6 +574,11 @@ func New(cfg Config) (*Server, error) {
 	// over the relay; writes cannot, because the runtime has no write tools by
 	// design. See files.go for what this does and does not decide.
 	s.mux.HandleFunc("/api/desks", s.handleDesks)
+	s.mux.HandleFunc("GET /api/desk-home", s.handleDeskHome)
+	s.mux.HandleFunc("POST /api/desk-home/preview", s.handleHomePreview)
+	s.mux.HandleFunc("POST /api/desk-home/move", s.handleHomeMove)
+	s.mux.HandleFunc("POST /api/desk-home/choose-folder", s.handleHomeFolderPicker)
+	s.mux.HandleFunc("POST /api/desk-home/open-folder", s.handleHomeOpenFolder)
 	s.mux.HandleFunc("/api/desks/{desk}/job-events/{trigger}", s.handleDeskJobEvent)
 	s.mux.HandleFunc("/api/desks/{desk}/job-events/{trigger}/occurrences/{occurrence}", s.handleDeskJobEventResult)
 	s.mux.HandleFunc("GET /api/files", s.handleFiles)
@@ -485,13 +600,97 @@ func New(cfg Config) (*Server, error) {
 
 	s.mux.HandleFunc("GET /api/desk-config", s.handleDeskConfig)
 	s.mux.HandleFunc("GET /api/runner-key", s.handleRunnerKey)
+	s.mux.HandleFunc("POST /api/audit/runs/{run}/signature", s.handleRunSignature)
+	s.mux.HandleFunc("GET /api/input-subscriptions", s.handleInputSubscriptions)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/subscription-state", s.handleInputEvaluation)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/subscription-upgrade", s.handleSubscriptionUpgrade)
+	s.mux.HandleFunc("GET /api/input-preparations/{preparation}/evaluations/{evaluation}", s.handleSubscriptionUpgradeReview)
+	s.mux.HandleFunc("POST /api/dialect-authoring/check", s.handleDialectAuthoringCheck)
+	s.mux.HandleFunc("GET /api/input-preparations/{preparation}/publications", s.handleDialectPublications)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/publications", s.handleDialectPublications)
+	s.mux.HandleFunc("GET /api/dialect-drafts", s.handleDialectDrafts)
+	s.mux.HandleFunc("POST /api/dialect-drafts", s.handleDialectDrafts)
+	s.mux.HandleFunc("GET /api/dialect-drafts/{draft}", s.handleDialectDrafts)
+	s.mux.HandleFunc("PUT /api/dialect-drafts/{draft}", s.handleDialectDrafts)
+	s.mux.HandleFunc("DELETE /api/dialect-drafts/{draft}", s.handleDialectDrafts)
+	s.mux.HandleFunc("POST /api/dialect-drafts/{draft}/publish", s.handleDialectDrafts)
+	s.mux.HandleFunc("GET /api/policy-adoptions", s.handlePolicyAdoption)
+	s.mux.HandleFunc("POST /api/policy-adoptions", s.handlePolicyAdoption)
+	s.mux.HandleFunc("GET /api/policy-adoptions/options", s.handlePolicyAdoption)
+	s.mux.HandleFunc("GET /api/policy-adoptions/{adoption}", s.handlePolicyAdoption)
+	s.mux.HandleFunc("GET /api/policy-adoptions/{adoption}/history", s.handlePolicyAdoption)
+	s.mux.HandleFunc("GET /api/policies", s.handlePolicies)
+	s.mux.HandleFunc("POST /api/policies", s.handlePolicies)
+	s.mux.HandleFunc("GET /api/policies/{policy}", s.handlePolicies)
+	s.mux.HandleFunc("GET /api/policies/{policy}/source", s.handlePolicies)
+	s.mux.HandleFunc("GET /api/policies/{policy}/authoring-source", s.handlePolicyAuthoringSource)
+	s.mux.HandleFunc("GET /api/policies/{policy}/coverage", s.handlePolicyCoverage)
+	s.mux.HandleFunc("POST /api/policies/{policy}/coverage", s.handlePolicyCoverage)
+	s.mux.HandleFunc("GET /api/policies/{policy}/coverage-options", s.handlePolicyCoverage)
+	s.mux.HandleFunc("POST /api/policies/{policy}/coverage/resolve", s.handlePolicyCoverage)
+	s.mux.HandleFunc("GET /api/policies/{policy}/coverage/{coverage}", s.handlePolicyCoverage)
+	s.mux.HandleFunc("GET /api/policies/{policy}/coverage/{coverage}/candidates/{candidate}", s.handlePolicyCoverage)
+	s.mux.HandleFunc("POST /api/policies/{policy}/coverage/{coverage}/check", s.handlePolicyCoverage)
+	s.mux.HandleFunc("PUT /api/policies/{policy}", s.handlePolicies)
+	s.mux.HandleFunc("GET /api/policies/{policy}/revisions/{revision}", s.handlePolicies)
+	s.mux.HandleFunc("POST /api/policies/{policy}/review", s.handlePolicies)
+	s.mux.HandleFunc("POST /api/policies/{policy}/publish", s.handlePolicies)
+	s.mux.HandleFunc("GET /api/policies/{policy}/lifecycle", s.handlePolicyLifecycle)
+	s.mux.HandleFunc("POST /api/policies/{policy}/lifecycle", s.handlePolicyLifecycle)
+	s.mux.HandleFunc("GET /api/policy-operations/{operation}", s.handlePolicies)
+	s.mux.HandleFunc("GET /api/policies/{policy}/source-status", s.handlePolicySourceStatus)
+	s.mux.HandleFunc("POST /api/policies/{policy}/source-status", s.handlePolicySourceStatus)
+	s.mux.HandleFunc("GET /api/policies/{policy}/source-status/versions/{version}", s.handlePolicySourceStatus)
+	s.mux.HandleFunc("GET /api/policies/{policy}/source-sync", s.handlePolicySourceSync)
+	s.mux.HandleFunc("POST /api/policies/{policy}/source-sync", s.handlePolicySourceSync)
+	s.mux.HandleFunc("GET /api/policies/{policy}/source-sync/observations/{observation}", s.handlePolicySourceSync)
+	s.mux.HandleFunc("GET /api/policies/{policy}/source-sync/observations/{observation}/original", s.handlePolicySourceSync)
+	s.mux.HandleFunc("GET /api/input-preparations", s.handleInputPreparations)
+	s.mux.HandleFunc("POST /api/input-preparations", s.handleInputPreparations)
+	s.mux.HandleFunc("GET /api/input-preparations/{preparation}", s.handleInputPreparations)
+	s.mux.HandleFunc("PUT /api/input-preparations/{preparation}", s.handleInputPreparations)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/imports", s.handleInputPreparations)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/record-reviews", s.handleInputPreparations)
+	s.mux.HandleFunc("POST /api/portable-research", s.handlePortableResearch)
+	s.mux.HandleFunc("POST /api/portable-research/profiles", s.handlePortableResearch)
+	s.mux.HandleFunc("POST /api/portable-research/search-binding", s.handlePortableSearchBinding)
+	s.mux.HandleFunc("POST /api/portable-research/page-binding", s.handlePortablePageBinding)
+	s.mux.HandleFunc("GET /api/portable-research/{research}", s.handlePortableResearch)
+	s.mux.HandleFunc("POST /api/portable-research/{research}/confirm", s.handlePortableResearch)
+	s.mux.HandleFunc("POST /api/portable-research/{research}/stop", s.handlePortableResearch)
+	s.mux.HandleFunc("POST /api/portable-research/{research}/budget-decision", s.handlePortableResearch)
+	s.mux.HandleFunc("GET /api/input-preparations/{preparation}/research", s.handleInputResearch)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research", s.handleInputResearch)
+	s.mux.HandleFunc("GET /api/input-preparations/{preparation}/research/{research}", s.handleInputResearch)
+	s.mux.HandleFunc("GET /api/input-preparations/{preparation}/research/{research}/activity", s.handleInputResearch)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research/{research}/confirm", s.handleInputResearch)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research/{research}/authorize", s.handleInputResearch)
+	s.mux.HandleFunc("GET /api/assistant-approvals/{chat}", s.handleAssistantApproval)
+	s.mux.HandleFunc("POST /api/assistant-approvals/{chat}/{operation}", s.handleAssistantApproval)
+	s.mux.HandleFunc("GET /api/input-research-approvals/{chat}", s.handleResearchApprovals)
+	s.mux.HandleFunc("POST /api/input-research-approvals/{chat}/request", s.handleResearchApprovals)
+	s.mux.HandleFunc("POST /api/input-research-approvals/{chat}/revoke", s.handleResearchApprovals)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research/{research}/stop", s.handleInputResearch)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research/{research}/budget-review", s.handleInputResearch)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research/{research}/budget-decision", s.handleInputResearch)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/prepare", s.handleInputEvaluation)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/conversion-preview", s.handleInputEvaluation)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations", s.handleInputEvaluation)
+	s.mux.HandleFunc("GET /api/input-preparations/{preparation}/evaluations", s.handleInputEvaluation)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/confirm", s.handleInputEvaluation)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/upgrade", s.handleInputEvaluation)
+	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/evaluations/{evaluation}/resume", s.handleInputEvaluation)
+	s.mux.HandleFunc("GET /api/web-access", s.handleWebAccess)
+	s.mux.HandleFunc("POST /api/web-access", s.handleWebAccess)
 	s.mux.HandleFunc("POST /api/document-processing/{method}", s.handleDocumentProcessing)
 	s.mux.HandleFunc("POST /api/connections/{method}", s.handleConnections)
 	s.mux.HandleFunc("POST /api/connections/{provider}/{method}", s.handleConnections)
 	s.mux.HandleFunc("GET /api/attachments/{id}", s.handleAttachment)
 	s.mux.HandleFunc("PUT /api/attachments/{id}", s.handleAttachment)
+	s.mux.HandleFunc("GET /api/artifacts/versions", s.handleArtifactVersions)
 	s.mux.HandleFunc("GET /api/review", s.handleReview)
 	s.mux.HandleFunc("POST /api/review/lock", s.handleReviewLock)
+	s.mux.HandleFunc("POST /api/review/artifacts", s.handleProjectArtifactReview)
 	s.mux.HandleFunc("POST /api/graphs/validate", s.handleGraphProposalCheck)
 	s.mux.HandleFunc("POST /api/graphs/explain", s.handleGraphProposalCheck)
 	s.mux.HandleFunc("POST /api/graphs/proposal", s.handleGraphProposal)
@@ -523,14 +722,29 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/audit/witness/send", s.handleWitnessSend)
 	s.mux.HandleFunc("GET /api/upgrade", s.handleUpgrade)
 	s.mux.HandleFunc("POST /api/upgrade", s.handleUpgradeConfirm)
+	s.mux.HandleFunc("GET /api/exchange/imports", s.handleExchange)
+	s.mux.HandleFunc("GET /api/exchange/imports/{importId}", s.handleExchange)
+	s.mux.HandleFunc("POST /api/exchange/imports", s.handleExchange)
+	s.mux.HandleFunc("POST /api/exchange/review", s.handleExchange)
+	s.mux.HandleFunc("POST /api/exchange/imports/{importId}/check", s.handleExchangeTarget)
 	s.mux.HandleFunc("GET /api/source-reviews", s.handleSourceReviews)
 	s.mux.HandleFunc("PUT /api/source-reviews", s.handleSourceReviews)
 	s.mux.HandleFunc("GET /api/briefs", s.handlePackTests)
 	s.mux.HandleFunc("POST /api/briefs", s.handlePackTests)
 	s.mux.HandleFunc("GET /api/pack-tests", s.handlePackTests)
 	s.mux.HandleFunc("PUT /api/pack-tests", s.handlePackTests)
+	s.mux.HandleFunc("GET /api/draft-graphs", s.handleGraphDrafts)
+	s.mux.HandleFunc("PUT /api/draft-graphs", s.handleGraphDrafts)
 	s.mux.HandleFunc("GET /api/draft-packs", s.handleDraftPacks)
 	s.mux.HandleFunc("PUT /api/draft-packs", s.handleDraftPacks)
+	s.mux.HandleFunc("GET /api/project-location", s.handleProjectLocation)
+	s.mux.HandleFunc("POST /api/project-location/choose-folder", s.handleProjectFolderPicker)
+	s.mux.HandleFunc("POST /api/project-location/preview", s.handleProjectMove)
+	s.mux.HandleFunc("POST /api/project-location/move", s.handleProjectMove)
+	s.mux.HandleFunc("GET /api/ai-memory", s.handleAIMemory)
+	s.mux.HandleFunc("POST /api/ai-memory", s.handleAIMemory)
+	s.mux.HandleFunc("POST /api/ai-memory/recall", s.handleAIMemory)
+	s.mux.HandleFunc("POST /api/ai-memory/suggest", s.handleAIMemory)
 	s.mux.HandleFunc("GET /api/conversations", s.handleConversations)
 	s.mux.HandleFunc("PUT /api/conversations", s.handleConversations)
 	s.mux.HandleFunc("GET /api/storage", s.handleStorage)
@@ -538,6 +752,11 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/storage/project-history/preview", s.handleProjectHistory)
 	s.mux.HandleFunc("POST /api/storage/project-history/relink", s.handleProjectHistory)
 	s.mux.HandleFunc("GET /api/storage/backup", s.handleStorageBackup)
+	s.mux.HandleFunc("GET /api/policy-recovery", s.handlePolicyRecovery)
+	s.mux.HandleFunc("GET /api/policy-recovery/archive", s.handlePolicyRecovery)
+	s.mux.HandleFunc("POST /api/policy-recovery/inspect", s.handlePolicyRecovery)
+	s.mux.HandleFunc("POST /api/policy-recovery/restore", s.handlePolicyRecovery)
+	s.mux.HandleFunc("GET /api/policy-recovery/operations/{operation}", s.handlePolicyRecovery)
 	s.mux.HandleFunc("POST /api/storage/restore", s.handleStorageRestore)
 	// The one write to that file, and it replaces one member of it. It is
 	// under the same guard as everything else, takes no path, composes the
@@ -583,8 +802,12 @@ func New(cfg Config) (*Server, error) {
 	// The identity of the project Desk was started on, before anything is
 	// kept, stamped or recovered under its name (startup_identity.go).
 	s.resolveStartupIdentity()
+	s.recoverProjectMove()
 	s.initJobs()
+	s.startInputEvaluations()
 	s.initModelProviders()
+	s.startInputResearch()
+	s.startPolicySources()
 	// This desk's stamping, off the decision path: a loop that stamps where
 	// the owner set an authority, until Close (stamping.go).
 	s.startStamping()
@@ -622,7 +845,12 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) closeAll() error {
+	s.policyAuthorityMachine.stopAdmission()
 	s.closeDesks()
+	if s.policySourceCancel != nil {
+		s.policySourceCancel()
+		<-s.policySourceDone
+	}
 	// Stop admission before waiting: upgraded sockets are not tracked by
 	// http.Server.Shutdown, and a relay may still be starting its subprocess.
 	s.mu.Lock()
@@ -631,6 +859,14 @@ func (s *Server) closeAll() error {
 		c.cancel()
 	}
 	s.mu.Unlock()
+	if s.inputResearchCancel != nil {
+		s.inputResearchCancel()
+		<-s.inputResearchDone
+	}
+	if s.inputEvaluationCancel != nil {
+		s.inputEvaluationCancel()
+		<-s.inputEvaluationDone
+	}
 	if s.jobs != nil {
 		s.jobs.close()
 	}
@@ -674,6 +910,9 @@ func (s *Server) closeAll() error {
 	if s.watcher != nil {
 		err = s.watcher.Close()
 	}
+	if s.policyAuthorityMachine != nil {
+		s.policyAuthorityMachine.work.Wait()
+	}
 	if s.project != nil {
 		// **Through the shared cell, which closes at most once**, and without
 		// touching the adopted flag: a wrapper that was handed over stays
@@ -683,15 +922,27 @@ func (s *Server) closeAll() error {
 			err = rerr
 		}
 	}
+	if s.homeLease != nil {
+		_ = s.homeLease.Close()
+	}
 	if s.assistant != nil {
 		if aerr := s.assistant.Close(); err == nil {
 			err = aerr
 		}
 	}
+	s.policyAuthorityMachine.close()
 	return err
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.deskOwner().homeMove.queued.Load() && !strings.HasPrefix(r.URL.Path, "/api/desk-home") && (strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/ws") {
+		if !s.guard(w, r) {
+			return
+		}
+		writeJSONCoded(w, 409, CodeStale, "Desk home is moving. Restart Desk when the move finishes.")
+		return
+	}
+
 	r, finishPolicy := s.withSignInPolicy(r)
 	defer finishPolicy()
 	// Bind authenticated work to its session so revocation ends active relay
@@ -701,7 +952,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/ws" {
 		id, _ = offeredSessionID(r)
 	}
-	if held, ok := s.sessions.lookup(id); ok && !(r.URL.Path == "/api/session" && r.Method == http.MethodDelete) && r.URL.Path != "/api/auth/enable" {
+	if held, ok := s.sessions.lookup(id); ok && !(r.URL.Path == "/api/session" && r.Method == http.MethodDelete) && !signInPolicyMutation(r) {
 		ctx, cancel := context.WithCancel(r.Context())
 		stop := context.AfterFunc(held.ctx, cancel)
 		defer stop()
@@ -714,7 +965,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.routeDesk(w, r) {
 		return
 	}
-	s.mux.ServeHTTP(w, r)
+	s.serveProject(w, r)
 }
 
 // authorized reports whether the request may reach a gated capability, and

@@ -1,0 +1,110 @@
+import assert from 'node:assert/strict'
+import {readFile} from 'node:fs/promises'
+import {chromium} from 'playwright-core'
+const [origin,token,companyId]=process.argv.slice(2)
+const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']})
+const page=await browser.newPage({viewport:{width:1440,height:1000},colorScheme:'dark'})
+page.setDefaultTimeout(15000)
+const errors=[],runs=[]
+page.on('pageerror',e=>errors.push(e.message))
+page.on('request',r=>{if(r.method()==='POST'&&/\/api\/(codex\/run|assistant\/|input-preparations\/[^/]+\/(research|evaluations))/.test(r.url()))runs.push(r.url())})
+async function api(path){const r=await fetch(origin+path,{headers:{Authorization:'Bearer '+token}});const v=await r.json();assert(r.ok,JSON.stringify(v));return v}
+async function confirmTemplate(){const confirmation=page.getByRole('dialog',{name:'Unsaved changes'});if(await confirmation.isVisible()){await confirmation.getByRole('textbox').fill('Yes');await confirmation.getByRole('button',{name:'Discard changes',exact:true}).click()}}
+async function choose(dialog,name){await dialog.getByRole('combobox',{name:'Template',exact:true}).click();await page.getByRole('option',{name,exact:true}).click();await confirmTemplate()}
+async function configureAI(){
+ await page.getByRole('tab',{name:'Execution',exact:true}).click()
+ await page.getByRole('combobox',{name:'AI connection',exact:true}).click()
+ await page.getByRole('option',{name:'Fixture AI',exact:true}).click()
+ await page.getByRole('tab',{name:'Overview',exact:true}).click()
+}
+async function pageGeometry(){
+ return page.locator('#main').evaluate(main=>{
+  const header=main.querySelector('[data-page-header]'),measure=main.querySelector('.desk-measure'),field=main.querySelector('input')
+  const bounds=main.getBoundingClientRect(),head=header.getBoundingClientRect()
+  return {headerLeft:head.left-bounds.left,headerTop:head.top-bounds.top,headerWidth:head.width-bounds.width,outerPadding:parseFloat(getComputedStyle(measure).paddingLeft),fieldLeft:field.getBoundingClientRect().left-bounds.left}
+ })
+}
+async function openNew(){await page.waitForURL(/\/dialects\/drafts\//);return page}
+try{
+ await page.goto(origin)
+ await page.getByRole('button',{name:'Set up sign-in',exact:true}).click()
+ await page.getByLabel('Owner setup code',{exact:true}).fill(token)
+ await page.getByRole('button',{name:'Continue',exact:true}).click()
+ await page.getByRole('button',{name:'Set password',exact:true}).waitFor()
+ await page.goto(origin+'/dialects')
+ await page.getByRole('button',{name:'New dialect',exact:true}).click()
+ let dialog=await openNew()
+ assert((await dialog.getByRole('combobox',{name:'Template',exact:true}).innerText()).includes('Start from scratch'))
+ assert.equal(await page.getByRole('dialog').count(),0,'Recipe creation uses a full page')
+ assert.equal(await dialog.getByRole('combobox',{name:'Find',exact:true}).count(),0)
+ await dialog.getByLabel('Template file',{exact:true}).setInputFiles({name:'unsafe.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({templateVersion:1,id:'unsafe',name:'Bad',description:'Bad',license:'Apache-2.0',intent:'test',approved:true}))})
+ await page.getByRole('button',{name:'Dialect needs attention',exact:true}).click()
+ await page.getByText('Choose a Desk template version 1. Connections, credentials, records and executable code are not accepted.',{exact:true}).waitFor({state:'attached'})
+ await page.keyboard.press('Escape')
+ await dialog.getByLabel('Template file',{exact:true}).setInputFiles({name:'public-procurement.json',mimeType:'application/json',buffer:await readFile(new URL('../../docs/examples/dialect-templates/public-procurement.json',import.meta.url))})
+ await confirmTemplate()
+ await dialog.getByText('Template license: Apache-2.0',{exact:true}).waitFor()
+ assert.equal(await dialog.getByRole('combobox',{name:'Find',exact:true}).count(),0)
+ await choose(dialog,'Work item triage')
+ await dialog.getByRole('textbox',{name:'Name',exact:true}).fill('Service triage')
+ const draftGeometry=await pageGeometry()
+ assert.equal(draftGeometry.outerPadding,0,'The page owns one gutter; the shell adds none')
+ assert.equal(draftGeometry.headerLeft,0);assert.equal(draftGeometry.headerTop,0);assert.equal(draftGeometry.headerWidth,0)
+ await page.screenshot({path:'/tmp/jps-dialect-new-template.png'})
+ await dialog.getByRole('button',{name:'Save to Dialects',exact:true}).click()
+ await page.waitForURL(/\/dialects\/prep_.*\?tab=recipe/)
+ let id=page.url().match(/dialects\/([^?]+)/)[1]
+ let saved=await api('/api/input-preparations/'+id)
+ await page.getByRole('textbox',{name:'Name',exact:true}).waitFor()
+ assert.deepEqual(await pageGeometry(),draftGeometry,'Draft and saved pages have matching alignment')
+ assert.equal(saved.document.recipe.template.id,'work-items')
+ assert.match(saved.document.recipe.template.digest,/^sha256:[a-f0-9]{64}$/)
+ assert.equal(saved.document.recipe.research,undefined)
+
+ await page.getByRole('textbox',{name:'What records do you need?',exact:true}).fill('Triage service tickets from any provider.')
+ await page.getByRole('button',{name:'Save recipe',exact:true}).click()
+ await page.getByText('All changes saved',{exact:true}).waitFor()
+ await page.reload()
+ saved=await api('/api/input-preparations/'+id)
+ assert.equal(saved.document.recipe.template.id,'work-items','Origin survives recipe edits')
+ await page.goto(origin+'/dialects')
+ await page.getByRole('button',{name:'New dialect',exact:true}).click()
+ dialog=await openNew()
+ await choose(dialog,'Research records')
+ assert.equal(await dialog.getByRole('combobox',{name:'Find',exact:true}).count(),0)
+ await dialog.getByRole('textbox',{name:'Name',exact:true}).fill('Public tenders')
+ await dialog.getByRole('textbox',{name:'What records do you need?',exact:true}).fill('Research public procurement notices and source-backed eligibility requirements.')
+ await configureAI()
+ await dialog.getByRole('button',{name:'Save to Dialects',exact:true}).click()
+ await page.waitForURL(/\/dialects\/prep_.*\?tab=recipe/)
+ id=page.url().match(/dialects\/([^?]+)/)[1]
+ saved=await api('/api/input-preparations/'+id)
+ assert.equal(saved.document.recipe.research.target,'records')
+ assert.equal(saved.document.recipe.research.limits.searches,0,'Template cannot silently select paid search')
+ await page.goto(origin+'/dialects/'+companyId)
+ await page.getByRole('checkbox',{name:'Select Alpha',exact:true}).check()
+ await page.getByRole('button',{name:'1 selected',exact:true}).click()
+ await page.getByRole('menuitem',{name:'Find people at selected companies…',exact:true}).click()
+ dialog=await openNew()
+ assert(await dialog.getByRole('checkbox',{name:'Alpha',exact:true}).isChecked())
+ assert.equal(await dialog.getByRole('checkbox',{name:'Beta',exact:true}).isChecked(),false)
+ await dialog.getByRole('textbox',{name:'Name',exact:true}).fill('People at Alpha')
+ await configureAI()
+ await dialog.getByRole('button',{name:'Save to Dialects',exact:true}).click()
+ await page.waitForURL(/\/dialects\/prep_.*\?tab=recipe/)
+ id=page.url().match(/dialects\/([^?]+)/)[1]
+ saved=await api('/api/input-preparations/'+id)
+ assert.equal(saved.document.recipe.research.target,'records')
+ assert.equal(saved.document.recipe.research.companyInputs.length,1)
+ assert.equal(saved.document.recipe.research.companyInputs[0].entityId,'entity-Alpha')
+ assert.equal(saved.document.recipe.research.companyInputs[0].preparationId,companyId)
+ await page.reload()
+
+ await page.getByRole('checkbox',{name:'Alpha',exact:true}).waitFor()
+ assert(await page.getByRole('checkbox',{name:'Alpha',exact:true}).isChecked())
+ await page.screenshot({path:'/tmp/jps-dialect-person-handoff.png'})
+ await page.setViewportSize({width:980,height:860})
+ assert.equal((await api('/api/input-preparations/'+companyId)).document.records.length,2)
+ assert.equal(runs.length,0);assert.deepEqual(errors,[])
+ console.log(JSON.stringify({genericDefault:true,templateImport:true,unsafeTemplateRejected:true,fullPageDraft:true,sharedPageAlignment:true,nonGTMTemplate:true,originSurvivesEdits:true,genericResearch:true,selectedCompanyHandoff:true,refreshRestoresSelection:true,noUnreviewedRuns:true,browserErrors:errors}))
+}catch(e){console.error((await page.locator('body').innerText()).slice(-6500));await page.screenshot({path:'/tmp/jps-dialect-template-error.png'});throw e}finally{await browser.close()}

@@ -203,3 +203,28 @@ superseded reads do not publish late results to chat. Restored link metadata mus
 match the signed requested URL. Partial extraction follows the attachment consent
 rule: no excerpt is sent until the person confirms readable pages. If they attach
 a newer confirmed snapshot, subsequent reads use that snapshot.
+
+### Contextual web search setup
+
+Chat recognizes supplied bare website addresses (for example, `judgmentpack.org`) as HTTPS links. It does not infer new paths, turn email addresses or local filenames into sources, or bypass Gateway's public-address and receipt checks. Reading a supplied website does not require a search connection.
+
+When automatic research actually calls search without a selected connection, the host returns a typed setup failure without making a provider request. The latest response offers a compact setup action using the shared Notice component. Search configuration uses the same credential editor as Admin in a dialog, preserving the conversation and composer in both the main and right-pane chat. Existing connections can be selected for this chat without changing desk defaults. Credentials never enter chat state.
+
+Configuration never sends the pending request automatically. Continue request starts a new research turn for the failed search query; it leaves unsent text and attachments intact. Authentication failures offer connection repair, transient failures offer a retry, and loading/status errors are not presented as missing configuration. Provided-sources-only mode does not offer search or a setup workaround.
+
+### Local web access
+
+Web access uses the shared settings section in Connections and the same form
+in contextual chat recovery. The `google-grounding` switch is off by default;
+only the verified local companion's supported policy may be enabled. An
+operator environment override is read-only, and an external gateway is never
+changed. Applying explicitly warns about interrupted source connections,
+compares the loaded revision under a file lock, saves privately, and stops
+the affected gateway. Other local desks pick up shared changes before their
+next source request. Reading settings never starts a gateway or retries a page.
+
+Only a complete, typed `web-redirect-origin` refusal naming that policy can
+show `Website access needs setup / Review settings`, and only while current
+capabilities make it configurable. Bare codes, unsupported policies, private
+addresses and assistant prose cannot enable this action. Persist only the
+known policy identifier alongside the failed step, not redirect URLs or tokens.

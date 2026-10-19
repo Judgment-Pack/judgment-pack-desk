@@ -73,6 +73,8 @@ type localSigner struct {
 }
 
 type localGateway struct {
+	modelSource        *modelSourceBroker
+	inputHandoffs      string
 	mu                 sync.Mutex
 	closed             bool
 	bundle, executable string
@@ -81,6 +83,7 @@ type localGateway struct {
 	done               chan struct{}
 	pin                *localGatewayPin
 	retryAfter         time.Time
+	webPolicy          string
 	problem            error
 }
 
@@ -88,6 +91,9 @@ func (g *localGateway) close() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.closed = true
+	if g.modelSource != nil {
+		g.modelSource.close()
+	}
 	g.stop()
 }
 func (g *localGateway) stop() {
@@ -153,6 +159,52 @@ func verifyGatewayBundle(dir string) error {
 	return nil
 }
 
+// verifiedGatewayProgram admits a specific executable only when the approved
+// manifest lists it. Verifying the bundle alone does not approve extra files.
+func verifiedGatewayProgram(bundle, name string) (string, string, error) {
+	if !catalogIdentifier.MatchString(name) {
+		return "", "", errors.New("invalid local component")
+	}
+	if err := verifyGatewayBundle(bundle); err != nil {
+		return "", "", err
+	}
+	file, err := os.Open(filepath.Join(bundle, "gateway-bundle.json"))
+	if err != nil {
+		return "", "", err
+	}
+	defer file.Close()
+	raw, err := readBounded(file, 8192)
+	if err != nil {
+		return "", "", err
+	}
+	var manifest struct {
+		Files map[string]string `json:"files"`
+	}
+	if !manifestRevisionApproved(raw) || json.Unmarshal(raw, &manifest) != nil {
+		return "", "", errors.New("unapproved local component manifest")
+	}
+	digest := manifest.Files[executableName(name)]
+	decoded, err := hex.DecodeString(digest)
+	if err != nil || len(decoded) != 32 || strings.ToLower(digest) != digest {
+		return "", "", errors.New("local component is absent from the approved manifest")
+	}
+	executable := filepath.Join(bundle, executableName(name))
+	program, err := os.Open(executable)
+	if err != nil {
+		return "", "", err
+	}
+	defer program.Close()
+	info, err := program.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return "", "", errors.New("local component is not a regular file")
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, program); err != nil || hex.EncodeToString(hash.Sum(nil)) != digest {
+		return "", "", errors.New("local component checksum differs from its approved manifest")
+	}
+	return executable, digest, nil
+}
+
 // Serialize first use across Desk processes. Atomic replacement is allowed only
 // for the first creation under this lock. A missing or changed established seed
 // is an error, never a reason to rotate the trust root silently.
@@ -191,7 +243,7 @@ func localIdentity(store *assistantStore) (string, error) {
 		if markerErr == nil {
 			return "", errors.New("local gateway signing key is missing; restore the original key to keep saved documents verifiable")
 		}
-		if _, historyErr := store.root.Lstat("local-gateway"); !errors.Is(historyErr, os.ErrNotExist) {
+		if _, historyErr := store.root.Lstat(platformRelative(store.dir, "local-gateway")); !errors.Is(historyErr, os.ErrNotExist) {
 			return "", errors.New("local gateway signing identity is missing but receipt storage exists; restore the original protected settings")
 		}
 		seed := make([]byte, ed25519.SeedSize)
@@ -240,6 +292,19 @@ func (g *localGateway) ensure(store *assistantStore) (*localGatewayPin, error) {
 	if !store.usable() {
 		return nil, store.problem
 	}
+	policy, _, err := webPolicyValue(store)
+	if err != nil {
+		return nil, err
+	}
+	effectivePolicy := ""
+	if policy != nil {
+		effectivePolicy = *policy
+	}
+	// Shared settings may have been applied from another desk or process.
+	// Never serve a new request with that gateway's superseded policy.
+	if g.done != nil && g.webPolicy != effectivePolicy {
+		g.stop()
+	}
 	if g.done != nil {
 		select {
 		case <-g.done:
@@ -277,7 +342,7 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	// Each process owns a separate append-only registry. Saved document proofs
 	// retain their sealed registry entries, so reopening them needs the stable
 	// public pin, not a running instance's historic HTTP endpoint.
-	root, err := openPrivateDataRoot(filepath.Join(store.dir, "local-gateway"), true)
+	root, err := openPrivateDataRoot(platformPath(store.dir, "local-gateway"), true)
 	if err != nil {
 		return nil, err
 	}
@@ -289,8 +354,30 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	if err = root.Mkdir(run, 0700); err != nil {
 		return nil, err
 	}
-	options := localWorkerOptions{Bundle: g.bundle, Dir: filepath.Join(store.dir, "local-gateway", run), Seed: filepath.Join(store.dir, "secrets", "local-gateway.seed"), Public: public, ConnectionsDir: filepath.Join(store.dir, "gateway-connections")}
+	handoffs := g.inputHandoffs
+	if handoffs == "" {
+		handoffs = filepath.Join(store.dir, "input-handoffs")
+	}
+	if g.modelSource == nil {
+		g.modelSource, err = newModelSourceBroker()
+		if err != nil {
+			return nil, err
+		}
+	}
+	options := localWorkerOptions{Bundle: g.bundle, Dir: filepath.Join(platformPath(store.dir, "local-gateway"), run), Seed: filepath.Join(store.dir, "secrets", "local-gateway.seed"), Public: public, ConnectionsDir: platformPath(store.dir, "gateway-connections"), InputHandoffs: handoffs, ModelSource: &g.modelSource.config}
+	policy, _, err := webPolicyValue(store)
+	if err != nil {
+		return nil, err
+	}
+	g.webPolicy = ""
+	if policy != nil {
+		g.webPolicy = *policy
+	}
 	g.cmd = exec.Command(g.executable, "--local-gateway-worker")
+	g.cmd.Env = os.Environ()
+	if policy != nil {
+		g.cmd.Env = append(g.cmd.Env, webPolicyEnv+"="+*policy)
+	}
 	g.input, err = g.cmd.StdinPipe()
 	if err != nil {
 		return nil, err

@@ -16,7 +16,7 @@ it('isolates saved packs, independent drafts, and graph workspaces even with ide
 })
 it('preserves the current Tests route and filters when selecting or starting a pack chat', () => {
   const chat = {id: 'new', pack: {id: 'example'}} as Chat
-  for (const route of ['evaluate', 'matrix']) expect(assistantChatHref(chat, {pathname: '/packs/example/' + route, search: '?chat=old&history=1'})).toBe('/packs/example/' + route + '?chat=new&history=1')
+  for (const route of ['evaluate', 'matrix', 'matrix/cases/snapshot-1', 'matrix/cases/company%20case']) expect(assistantChatHref(chat, {pathname: '/packs/example/' + route, search: '?chat=old&history=1'})).toBe('/packs/example/' + route + '?chat=new&history=1')
   expect(assistantChatHref(chat, {pathname: '/packs/other/evaluate', search: '?chat=old'})).toBe('/packs/example?chat=new')
 })
 it('retains graph view and separates observed tests from authored material', () => {

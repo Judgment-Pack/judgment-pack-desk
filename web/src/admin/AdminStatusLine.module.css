@@ -2,5 +2,3 @@
 .pair { display: grid; gap: var(--space-1); min-width: 0; }
 .key { font-size: var(--text-xs); font-weight: 500; color: var(--ink-faint); }
 .value { margin: 0; font-size: var(--text-sm); color: var(--ink); overflow-wrap: anywhere; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--density-gap); margin-top: var(--density-field); }
-.actions span { color: var(--ink-soft); font-size: var(--text-xs); }

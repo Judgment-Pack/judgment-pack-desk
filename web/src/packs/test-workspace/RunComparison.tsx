@@ -31,7 +31,7 @@ export function RunComparison({ runs, currentText }: { runs: TestRun[]; currentT
         <tbody>{compareRuns(before,after).map(row => <Fragment key={row.id}><tr>
           <td><Button variant="inline" aria-expanded={selected===row.id} onClick={()=>setSelected(selected===row.id?undefined:row.id)}>{row.name}</Button></td>
           <td>{row.before?.status ?? msg('Not reported')}</td><td>{row.after?.status ?? msg('Not reported')}</td>
-          <td>{row.presence === 'added' ? msg('Added case') : row.presence === 'removed' ? msg('Removed case') : [row.inputsChanged ? msg('Inputs or sources changed') : '',row.expectationChanged ? msg('Expectation changed') : ''].filter(Boolean).join(' · ') || msg('Same inputs and expectations')}</td>
+          <td>{row.presence === 'added' ? msg('Added case') : row.presence === 'removed' ? msg('Removed case') : [row.inputsChanged ? msg('Dialects or sources changed') : '',row.expectationChanged ? msg('Expectation changed') : ''].filter(Boolean).join(' · ') || msg('Same inputs and expectations')}</td>
         </tr>{selected===row.id&&<tr><td colSpan={4}><h4>{msg('Earlier result')}</h4><MatrixRowList rows={row.before ? [row.before] : []}/><h4>{msg('Later result')}</h4><MatrixRowList rows={row.after ? [row.after] : []}/></td></tr>}</Fragment>)}</tbody>
       </table></div>
       {(before.trial || after.trial) && <Disclosure title={msg('Compare exploratory observations')}>

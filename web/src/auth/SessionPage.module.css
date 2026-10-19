@@ -4,8 +4,8 @@
 .brand { display: flex; align-items: center; gap: var(--space-2); font-weight: 600; }
 .mark, .largeMark { display: grid; place-items: center; color: var(--brand-label); background: var(--brand-fill); font-weight: 600; }
 .mark { width: 22px; height: 22px; border-radius: var(--radius-sm); font-size: 12px; }
-.preferences { display: grid; grid-template-columns: minmax(0, 220px) minmax(80px, 120px); gap: var(--space-2); width: min(100%, 348px); min-width: 0; }
-.preferences > button { min-width: 0; }
+.preferences { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); max-width: 100%; min-width: 0; }
+.preferences > button { width: auto; max-width: 100%; min-width: 0; justify-content: flex-start; gap: var(--space-2); }
 .main { flex: 1; display: grid; place-items: center; padding: var(--space-7) var(--space-5); }
 .content { max-width: 384px; width: 100%; text-align: center; margin-top: -48px; }
 .largeMark { width: 44px; height: 44px; font-size: 24px; border-radius: var(--radius); margin: 0 auto var(--space-5); }

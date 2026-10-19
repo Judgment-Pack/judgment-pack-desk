@@ -316,14 +316,21 @@ func (s *Server) madeDeskShared() (bool, string) {
 	if s.assistant == nil || s.assistant.root == nil {
 		return true, deskUnknownWords
 	}
-	desks, err := s.assistant.root.OpenRoot("desks")
+	desks, err := s.registryRoot(false)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, ""
 	} else if err != nil {
 		return true, deskUnknownWords
 	}
 	defer desks.Close()
-	info, err := desks.Lstat(s.cfg.deskID)
+	folderName, err := s.registryFolder(s.cfg.deskID)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, ""
+	}
+	if err != nil {
+		return true, deskUnknownWords
+	}
+	info, err := desks.Lstat(folderName)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, ""
 	} else if err != nil || !deskFolderAccepted(info) {
@@ -334,7 +341,7 @@ func (s *Server) madeDeskShared() (bool, string) {
 	} else if os.SameFile(info, held) {
 		return false, ""
 	}
-	folder, err := desks.OpenRoot(s.cfg.deskID)
+	folder, err := desks.OpenRoot(folderName)
 	if err != nil {
 		return true, deskUnknownWords
 	}
@@ -567,7 +574,7 @@ func (s *Server) resolveStartupIdentity() {
 	case found:
 		s.setStartup(identityKept, record.ID, record.From, "")
 		if record.Path != s.projectDir {
-			if record, info = s.copiedOrMoved(private, record, info); s.startupShared() || s.startupUnresolved() {
+			if record, info = s.copiedOrMoved(private, record, info); s.startupShared() || s.startupUnresolved() || s.locationStatus().Problem != "" {
 				return
 			}
 		} else if here := s.folderKey(); record.Folder == "" || here == "" || record.Folder != here {
@@ -616,18 +623,32 @@ func (s *Server) copiedOrMoved(private *os.Root, record identityRecord, info os.
 	here := s.folderKey()
 	if record.Folder == "" || here == "" || record.Folder != here {
 		s.setUnresolved()
+		s.setHistoryMoveProblem("Confirm whether this project was moved or copied in Decision safeguards before opening its history.")
 		s.log.Printf("desk: this project's identity was written in %s, which no longer holds it, and this folder is not shown to be that one moved here, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder was moved here or is a copy", record.Path)
 		return record, info
 	}
 	unlock, err := s.lockProject(context.Background(), 0)
 	if err != nil {
+		s.setHistoryMoveProblem("Project history could not be linked because the project is busy. Restart Desk after active work finishes.")
 		s.log.Printf("desk: this project was moved from %s; its identity is written again with its folder at the next start, because this project's lock was not taken: %v", record.Path, err)
 		return record, info
 	}
 	defer unlock()
+	current, currentInfo, found, readErr := readIdentity(private)
+	holds, lookErr := s.folderHoldsIdentity(record.Path, record.ID)
+	if readErr != nil || !found || current != record || !os.SameFile(info, currentInfo) || lookErr != nil || holds {
+		s.setHistoryMoveProblem("Project identity changed while linking history. Restart Desk to review it again.")
+		return record, info
+	}
+	if err := s.retainMovedHistory(record.Path, s.projectDir); err != nil {
+		s.setHistoryMoveProblem(err.Error())
+		s.log.Printf("desk: moved project history could not be linked; the previous identity path is retained: %v", err)
+		return record, info
+	}
 	moved := identityRecord{ID: record.ID, Path: s.projectDir, Folder: here, From: record.From}
 	written, err := writeIdentity(private, moved, info)
 	if err != nil {
+		s.setHistoryMoveProblem("Project history was linked, but the project identity could not be updated. Restart Desk to finish the move.")
 		s.log.Printf("desk: this project was moved from %s, and its identity could not be written again with its folder: %v", record.Path, err)
 		return record, info
 	}
@@ -1079,10 +1100,17 @@ func (s *Server) resolveIdentity(ctx context.Context, choice, token string) *loc
 	if choice == identityCopy {
 		resolved = identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: here}
 	}
+	if choice != identityCopy {
+		if err := s.retainMovedHistory(record.Path, s.projectDir); err != nil {
+			s.setHistoryMoveProblem(err.Error())
+			return &lockFailure{http.StatusConflict, CodeStale, err.Error()}
+		}
+	}
 	if _, err := writeIdentity(private, resolved, info); err != nil {
 		s.log.Printf("desk: this project's identity could not be written as resolved: %v", err)
 		return &lockFailure{http.StatusConflict, CodeBadRequest, "This project's identity could not be written now, so nothing was changed."}
 	}
+	s.setHistoryMoveProblem("")
 	s.setStartup(identityKept, resolved.ID, resolved.From, "")
 	if choice == identityCopy {
 		s.log.Printf("desk: this project was said to be a copy, and is named %s from now on; what Desk keeps under %s is left as it is", resolved.ID, record.ID)

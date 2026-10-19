@@ -18,7 +18,7 @@ type Screen = 'case' | 'job' | 'run' | 'changed' | 'empty'
 type Pane = 'brief' | 'source' | 'history' | 'details' | 'assistant' | 'activity' | null
 const screens: { id: Screen; label: string }[] = [
   { id: 'case', label: 'Test case' }, { id: 'job', label: 'Job setup' }, { id: 'run', label: 'Operational run' },
-  { id: 'changed', label: 'Inputs changed' }, { id: 'empty', label: 'Before generation' }
+  { id: 'changed', label: 'Dialects changed' }, { id: 'empty', label: 'Before generation' }
 ]
 function query() { return new URLSearchParams(location.hash.slice(1)) }
 function readScreen(): Screen { const value = query().get('screen'); return screens.some(s => s.id === value) ? value as Screen : 'case' }
@@ -64,7 +64,7 @@ function App() {
       <div className={styles.frame} data-pane-open={!!pane} data-expanded={expanded && !!pane}>
         <main className={styles.main}>
           <header className={styles.subjectHeader}><nav className={styles.breadcrumb} aria-label="Breadcrumb"><a href={isCase ? '#screen=case' : '#screen=job'}>{isCase ? 'Packs' : 'Jobs'}</a><IconChevronRight /><span>{isCase ? 'local.user@example.com' : 'Contribution intake review'}</span>{!isCase && !isJob && <><IconChevronRight /><span>Run 1042</span></>}</nav><div><h1>{isCase ? 'lab-notes.ai Contribution Acceptance Review' : isJob ? 'Contribution intake review' : 'Policy evidence playbook'}</h1><IconButton label="More actions" onClick={() => preview('Existing subject actions stay here. Brief is available from the right rail.')}><IconMore /></IconButton></div></header>
-          <nav className={styles.tabs} aria-label="Subject views">{(isCase ? ['Overview', 'Logic', 'Tests'] : isJob ? ['Overview', 'Runs'] : ['Overview', 'Inputs & sources', 'Activity']).map(tab => <Button key={tab} variant="quiet" aria-current={tab === (isCase ? 'Tests' : 'Overview') ? 'page' : undefined} onClick={() => preview(`${tab} keeps its existing subject view.`)}>{tab}</Button>)}</nav>
+          <nav className={styles.tabs} aria-label="Subject views">{(isCase ? ['Overview', 'Logic', 'Tests'] : isJob ? ['Overview', 'Runs'] : ['Overview', 'Dialects & sources', 'Activity']).map(tab => <Button key={tab} variant="quiet" aria-current={tab === (isCase ? 'Tests' : 'Overview') ? 'page' : undefined} onClick={() => preview(`${tab} keeps its existing subject view.`)}>{tab}</Button>)}</nav>
           <div className={styles.content}><SubjectContent isCase={isCase} isJob={isJob} preview={preview} /></div>
         </main>
         {expanded && pane && <button className={styles.expansionBackdrop} aria-label="Return to split view" onClick={restore} />}

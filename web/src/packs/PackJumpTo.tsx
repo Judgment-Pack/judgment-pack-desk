@@ -1,7 +1,7 @@
 import { msg, useLocale } from '../i18n'
 import { useRef, useState } from 'react'
 import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { InspectionRow } from '../ui/InspectionRow'
 import { Popover } from '../ui/Popover'
 import { matchingItems, type LogicProjection } from './logicModel'
@@ -19,7 +19,7 @@ export function PackJumpTo({ model, at, onJump }: { model: LogicProjection; at: 
     onCloseAutoFocus={event => {
       if (chosen.current !== null) { event.preventDefault(); onJump(chosen.current); chosen.current = null }
     }}>
-    <Input type="search" aria-label={msg("Find section or item")} placeholder={msg("Find section or item…")} value={query}
+    <SearchInput type="search" aria-label={msg("Find section or item")} placeholder={msg("Find section or item…")} value={query}
       className={styles.jumpSearch} onChange={event => setQuery(event.target.value)}
       onKeyDown={event => { if (event.key === 'Enter' && groups[0]?.items[0]) { event.preventDefault(); chosen.current = groups[0].items[0].pointer; setOpen(false) } }} />
     <div className={styles.jumpItems}>{groups.map(group => <section key={group.id} aria-label={group.label}>

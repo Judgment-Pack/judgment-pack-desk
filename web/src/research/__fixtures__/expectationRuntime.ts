@@ -1,4 +1,4 @@
-import type { McpToolResult } from '../../assistant/engine'
+import type { McpToolResult } from '@judgment-pack/harness/engine'
 import { jsonIdentity } from '../checkCandidate'
 import fixtures from './expectations.json'
 

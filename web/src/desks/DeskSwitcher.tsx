@@ -1,4 +1,4 @@
-import { useAuthorDirty } from '../shell/authorBridge'
+import {privateQuery} from '../data/privateQuery'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Menu as DropdownMenu } from '../ui/Menu'
@@ -11,7 +11,7 @@ import { useFileListing } from '../files/queries'
 import { msg, systemMessage, useLocale } from '../i18n'
 import { sourceMessage } from '../i18n/source'
 import { IconFolder, IconPlus } from '../shell/icons'
-import { useConfirmDeskExit, useConfirmDiscard, useDeskTitle, useHasUnsavedChanges } from '../shell/UnsavedChanges'
+import { useConfirmDeskExit, useConfirmDiscard, useDeskTitle, useDeskChangeState } from '../shell/UnsavedChanges'
 import { Button } from '../ui/Button'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { Field } from '../ui/Field'
@@ -48,12 +48,12 @@ export async function desksAPI<T>(name?: string): Promise<T> {
 export function DeskSwitcher() {
   useLocale()
   const listing = useFileListing(), {config} = useEffectiveConfig()
-  const directory = useQuery({queryKey:['desks'],queryFn:()=>desksAPI<Directory>()})
+  const directory = useQuery({...privateQuery,queryKey:['desks'],queryFn:()=>desksAPI<Directory>()})
   const fallback = listing.data?.root.split(/[/\\]/).filter(Boolean).at(-1) ?? msg('Desk')
   const label = directory.data?.current.name ?? fallback
   useDeskTitle(label)
-  const registeredDirty = useHasUnsavedChanges(), authorDirty = useAuthorDirty()
-  const dirty = registeredDirty || authorDirty
+  const changes = useDeskChangeState()
+  const dirty = changes.dirty
   const opener = useRef<HTMLButtonElement>(null)
   const management = useDeskManagement(opener)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -65,7 +65,7 @@ export function DeskSwitcher() {
         </Link>
       </Tooltip>
       <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
-        <Tooltip content={`${label} · ${msg('Switch desk')}`} side="bottom" disabled={menuOpen}>
+        <Tooltip content={[label,msg('Switch desk'),...(dirty?[msg('Unsaved changes'),...changes.labels]:[])].join(' · ')} side="bottom" disabled={menuOpen}>
           <DropdownMenu.Trigger ref={opener} className="desk-chip" aria-label={`${label} · ${msg('Switch desk')}`}>
             <span className="desk-chip-name">{label}</span>{dirty&&<span className="desk-dirty" aria-label={msg('unsaved changes')} role="img"/>}
           </DropdownMenu.Trigger>
@@ -81,7 +81,7 @@ export function DeskSwitcher() {
 
 /** Dialogs stay mounted outside the desk menu portal. */
 function useDeskManagement(opener: RefObject<HTMLButtonElement | null>) {
-  const directory = useQuery({queryKey:['desks'],queryFn:()=>desksAPI<Directory>()})
+  const directory = useQuery({...privateQuery,queryKey:['desks'],queryFn:()=>desksAPI<Directory>()})
   const client = useQueryClient(), {store, dirty:chatDirty} = useChats()
   const leave = useConfirmDeskExit(), discard = useConfirmDiscard()
   const [creating,setCreating] = useState(false), [name,setName] = useState(''), [busy,setBusy] = useState(false), [error,setError] = useState('')
@@ -102,7 +102,7 @@ function useDeskManagement(opener: RefObject<HTMLButtonElement | null>) {
     setBusy(true); setError('')
     try {
       const desk = await desksAPI<Created>(name.trim())
-      await client.invalidateQueries({queryKey:['desks']})
+      await client.invalidateQueries({...privateQuery,queryKey:['desks']})
       clearCreateGuard(); setCreating(false); setName('')
       // A desk made with less than a new desk has, unsigned among them, says
       // so before it opens.

@@ -1052,7 +1052,40 @@ func carriesCredential(token string, header http.Header, body []byte) bool {
 			}
 		}
 	}
-	return false
+	// Inspect logical JSON strings before any response is decoded for display
+	// or retention. Token traversal includes object names and every duplicate
+	// member occurrence, unlike a map decode. It also walks JSONL statements.
+	// Match the decoded string directly: re-encoding would hide quotes or
+	// backslashes in a credential again. The caller has bounded body already.
+	var logicalCredential func([]byte) bool
+	logicalCredential = func(data []byte) bool {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.UseNumber()
+		for {
+			value, err := decoder.Token()
+			if err != nil {
+				// An incomplete/malformed reply is never accepted or retained by ask.
+				return false
+			}
+			if text, ok := value.(string); ok {
+				if bearerLike.MatchString(text) {
+					return true
+				}
+				for _, part := range parts {
+					if strings.Contains(text, part) {
+						return true
+					}
+				}
+				// A refusal can contain JSON-encoded statement strings, which the
+				// witness reader decodes again. Inspect those logical strings too;
+				// each nested representation must be shorter than its input.
+				if nested := strings.TrimSpace(text); len(nested) > 1 && len(nested) < len(data) && strings.ContainsRune("{[\"", rune(nested[0])) && logicalCredential([]byte(nested)) {
+					return true
+				}
+			}
+		}
+	}
+	return logicalCredential(body)
 }
 
 // reasonOf is the `reason` of an answer that carried a credential, where it
@@ -1102,7 +1135,9 @@ func ask(ctx context.Context, request *http.Request, limit int, empty bool, toke
 		reply = witnessReply{Status: response.StatusCode, Credential: true, Reason: reasonOf(body, token)}
 	} else {
 		reply = readWitnessReply(response, body, empty)
-		if len(body) <= witnessAnswerLimit {
+		// Only a complete reply of the witness's form can have an original.
+		// Ambiguous/malformed content may hide strings past a decoding error.
+		if reply.Reached && len(body) <= witnessAnswerLimit {
 			reply.original = &witnessOriginal{Status: response.StatusCode, ContentType: response.Header.Get("Content-Type"), RetryAfter: response.Header.Get("Retry-After"), Body: slices.Clone(body)}
 		}
 	}

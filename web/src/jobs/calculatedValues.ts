@@ -1,5 +1,5 @@
 import { formatNumber, formattingLocale, msg } from '../i18n'
-import type { CalculatorPin, CalculationLineage } from './mappingTypes'
+import type { CalculatorPin, CalculationLineage } from './dialectTypes'
 
 export const calculatorLabel = (calculator: CalculatorPin) => msg('Calculator: {{name}} · {{version}}', {name: calculator.name, version: calculator.version})
 

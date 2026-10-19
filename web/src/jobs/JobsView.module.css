@@ -43,9 +43,16 @@
 .toolbar > :not(:first-child) { width:auto; }
 .cellMeta { display:block; color:var(--ink-soft); margin-top:var(--space-1); }
 .recentRuns { display:flex; align-items:center; gap:var(--space-2); min-height:var(--density-control); white-space:nowrap; }
-.runDot { width:20px; height:20px; border:1px solid var(--border-strong); border-radius:var(--radius-panel); display:inline-flex; align-items:center; justify-content:center; font-size:var(--text-sm); }
-.runDot[data-state='completed'] { color:var(--ink); }
-.runDot[data-state='failed'], .runDot[data-state='interrupted'] { color:var(--danger); }
+/* Status shapes and labels carry meaning alongside the semantic palette. */
+.table .runDot { box-sizing:border-box; border-width:0; border-radius:var(--radius-sm); display:inline-flex; align-items:center; justify-content:center; color:var(--ink-soft); text-decoration:none; }
+.table .runDot > svg { width:var(--space-4); height:var(--space-4); flex:none; }
+.table .runDot[data-state='completed'] { color:var(--ink-soft); }
+.table .runDot[data-state='queued'] { color:var(--ink-faint); }
+.table .runDot[data-state='running'] { color:var(--accent); }
+.table .runDot[data-state='failed'] { color:var(--danger); }
+.table .runDot[data-state='interrupted'] { color:var(--warn); }
+.table .runDot:hover { text-decoration:none; background:var(--bg); }
+.table .runDot:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .steps { list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:var(--space-5); }
 .steps li { display:flex; gap:var(--space-2); align-items:center; font-size:var(--text-sm); color:var(--ink-soft); }
 .steps li span { display:grid; place-items:center; width:22px; height:22px; border:1px solid var(--border); border-radius:var(--radius-panel); }
@@ -140,3 +147,42 @@
 @media (prefers-reduced-motion: reduce) { .sourceWaiting::before { animation: none; } }
 
 .standingFindings { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-1); overflow-wrap: anywhere; }
+
+.collectionPage { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.jobContext { position:relative; flex:0 0 auto; max-height:35%; overflow:auto; display:grid; gap:var(--space-2); }
+.collectionPage > .jobContext { padding:var(--space-2) var(--density-gutter); }
+.runCollection { display:flex; flex:1; min-height:0; overflow:hidden; }
+.runCollection[hidden] { display:none; }
+.runCollection h2 { margin:0; font-size:var(--text-control); font-weight:500; }
+
+/* The job collection follows Library's single-line density; details keep their own layouts. */
+.indexTable { table-layout:fixed; min-width:60rem; }
+.releaseColumn { width:28%; }
+.recentColumn { width:11rem; }
+.actionColumn { width:calc(var(--density-control) + var(--density-gutter) + var(--space-3)); }
+.indexText { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.releaseLine { display:flex; align-items:center; gap:var(--space-1); min-width:0; }
+.indexMeta { flex:none; color:var(--ink-soft); font-size:var(--text-xs); }
+.indexTable .jobName { flex-wrap:nowrap; min-width:0; }
+.indexTable .jobName > a { flex:0 1 auto; overflow:hidden; }
+.indexTable .draftBadge { flex:none; }
+.indexTable .recentRuns { gap:var(--space-1); }
+.indexTable .runDot { width:var(--space-5); height:var(--space-5); flex:0 0 var(--space-5); }
+.indexTable[data-collection-index] .indexAction { text-align:end; }
+
+/* A quiet action must remain visible against hovered and selected rows. */
+.indexTable .indexAction a:hover { background:var(--bg); border-color:var(--border-strong); color:var(--ink); text-decoration:none; }
+.indexTable .indexAction a:active { background:var(--selection); }
+
+.collectionTabs { display:flex; align-items:center; gap:var(--space-4); min-width:0; }
+.collectionTabs a { color:var(--ink-soft); border-bottom:2px solid var(--border); border-bottom-color:transparent; font-size:var(--text-control); font-weight:500; text-decoration:none; white-space:nowrap; }
+.collectionTabs a[aria-current='page'] { color:var(--ink); border-bottom-color:var(--ink); }
+.collectionTabs a:hover { color:var(--ink); text-decoration:none; }
+.collectionTabs a:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.runsIndex { min-width:60rem; }
+.runIdColumn { width:7rem; }
+.runStateColumn { width:8rem; }
+.submittedColumn { width:15rem; }
+.pageScope { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.pageScope ul { margin: 0; padding-left: var(--space-5); }
+.pageScope code { overflow-wrap: anywhere; }

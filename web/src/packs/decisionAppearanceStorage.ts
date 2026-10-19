@@ -1,3 +1,4 @@
+import {privateQuery} from '../data/privateQuery'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileRequestError, readFile, writeFile } from '../files/client'
 import { sourceMessage } from '../i18n/source'
@@ -34,12 +35,12 @@ export async function savePresentation(before: PresentationSnapshot, packId: str
 }
 export function useDecisionAppearance(packId?: string) {
   const client = useQueryClient()
-  const query = useQuery({ queryKey: PRESENTATION_KEY, queryFn: ({ signal }) => loadPresentation(signal), enabled: Boolean(packId), retry: false, staleTime: 0, refetchOnWindowFocus: true })
+  const query = useQuery({ ...privateQuery,queryKey: PRESENTATION_KEY, queryFn: ({ signal }) => loadPresentation(signal), enabled: Boolean(packId), retry: false, staleTime: 0, refetchOnWindowFocus: true })
   const mutation = useMutation({ mutationFn: async ({ id, appearance, resolved }: { id: string; appearance: DecisionAppearance; resolved: OutcomeAppearances }) => {
     if (!packId || !query.data || query.isError) throw new Error(sourceMessage('Reload appearance before making changes.'))
     return savePresentation(query.data, packId, { ...resolved, [id]: appearance })
-  }, onMutate: () => client.cancelQueries({ queryKey: PRESENTATION_KEY }), onSuccess: snapshot => { client.setQueryData(PRESENTATION_KEY, snapshot); void client.invalidateQueries({ queryKey: ['desk-files'] }); void client.invalidateQueries({ queryKey: ['desk-file', PRESENTATION_FILE] }) } })
-  useDirtyGuard(mutation.isPending, msg('Saving…'), { busy: mutation.isPending, shouldBlock: () => true })
+  }, onMutate: () => client.cancelQueries({ ...privateQuery,queryKey: PRESENTATION_KEY }), onSuccess: snapshot => { client.setQueryData(PRESENTATION_KEY, snapshot); void client.invalidateQueries({ queryKey: ['desk-files'] }); void client.invalidateQueries({ queryKey: ['desk-file', PRESENTATION_FILE] }) } })
+  useDirtyGuard(false, msg('Saving…'), { busy: mutation.isPending, shouldBlock: () => true })
   const saved = packId && query.data && Object.hasOwn(query.data.document.packs, packId) ? query.data.document.packs[packId]!.outcomes : undefined
   return { saved, pending: mutation.isPending, ready: Boolean(query.data) && !query.isError, error: mutation.error ?? query.error,
     change: (id: string, appearance: DecisionAppearance, resolved: OutcomeAppearances) => { if (!mutation.isPending) mutation.mutate({ id, appearance, resolved }) },

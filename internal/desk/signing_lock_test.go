@@ -43,6 +43,21 @@ func holdSigningLock(t *testing.T, folder string) (release func()) {
 	return release
 }
 
+// releaseAfter calls release from a goroutine of its own once wait has
+// passed, and has the test wait for that goroutine before its cleanups run
+// (#472): a cleanup registered before this one, such as holdSigningLock's,
+// then sees what the goroutine did.
+func releaseAfter(t *testing.T, release func(), wait time.Duration) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		time.Sleep(wait)
+		release()
+	}()
+	t.Cleanup(func() { <-done })
+}
+
 // shortLockWait makes a creation or a rotation wait for at most wait.
 func shortLockWait(t *testing.T, wait time.Duration) {
 	t.Helper()
@@ -74,7 +89,7 @@ func TestTheSweepRemovesNothingWhileTheLockIsHeld(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { testHookKeyBetween = nil })
-	postAbandoned(t, s, ts.URL)
+	postAbandoned(t, s)
 	testHookKeyBetween = nil
 	folder := signingFolderOf(s)
 	left := []string{id + ".creating", id + ".seed"}
@@ -158,10 +173,7 @@ func TestACreationWaitsForTheLockAndThenRefuses(t *testing.T) {
 	}
 
 	shortLockWait(t, 10*time.Second)
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		release()
-	}()
+	releaseAfter(t, release, 200*time.Millisecond)
 	started = time.Now()
 	row := createGatedDesk(t, ts)
 	if waited := time.Since(started); waited < 200*time.Millisecond {
@@ -197,10 +209,7 @@ func TestARotationWaitsForTheLockAndThenRefuses(t *testing.T) {
 	r.assertUnchanged(t)
 
 	shortLockWait(t, 10*time.Second)
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		release()
-	}()
+	releaseAfter(t, release, 200*time.Millisecond)
 	status, data = r.rotate(t, token)
 	if status != http.StatusOK {
 		t.Errorf("once the lock was released the rotation answered %d %s", status, data)
@@ -323,7 +332,7 @@ func TestTheSweepRemovesOnlyWhatItInspected(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { testHookKeyBetween = nil })
-	postAbandoned(t, s, ts.URL)
+	postAbandoned(t, s)
 	folder := signingFolderOf(s)
 	seed := filepath.Join(folder, id+".seed")
 	testHookKeyBetween = func(at string) {
@@ -414,19 +423,29 @@ func TestLockSigningIsExclusiveAndSaysWhy(t *testing.T) {
 // now, asked through a descriptor of the test's own.
 func lockTaken(t *testing.T, folder string) bool {
 	t.Helper()
-	file, err := os.Open(folder)
+	taken, err := lockTakenNow(folder)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return taken
+}
+
+// lockTakenNow is lockTaken without the test, for a caller that may run off
+// the test's goroutine: it answers why it could not ask, and fails nothing.
+func lockTakenNow(folder string) (bool, error) {
+	file, err := os.Open(folder)
+	if err != nil {
+		return false, err
 	}
 	defer file.Close()
 	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if err == nil {
-		return false
+		return false, nil
 	}
 	if !errors.Is(err, syscall.EWOULDBLOCK) {
-		t.Fatal(err)
+		return false, err
 	}
-	return true
+	return true, nil
 }
 
 // **The lock is held from the first look to the last change.** At every

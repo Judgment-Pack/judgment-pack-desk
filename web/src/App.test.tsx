@@ -20,8 +20,8 @@ describe('the desk, connected', () => {
     expect(screen.queryByText(/tool listing could not be read/)).toBeNull()
   })
 
-  it('keeps the pack collection available at its own URL', async () => {
-    renderConnected(<App />, connected({ client: EMPTY_PROJECT.client, known: true }), { path: '/packs' })
+  it('opens the Library collection at /library', async () => {
+    renderConnected(<App />, connected({ client: EMPTY_PROJECT.client, known: true }), { path: '/library' })
     await screen.findByRole('heading', { name: /^Library/ })
   })
 
@@ -41,4 +41,11 @@ describe('the desk, connected', () => {
     expect(await screen.findByText('Some features are unavailable because Desk could not load runtime capabilities.')).toBeTruthy()
     expect(screen.getByText('the request timed out')).toBeTruthy()
   })
+})
+
+it('keeps Help and connection recovery reachable after runtime failure', async () => {
+  renderConnected(<App />, connected({status: 'failed', error: new Error('Runtime offline'), everConnected: false}), {path: '/help'})
+  expect(await screen.findByRole('heading', {name: 'Help & About', level: 1})).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', {name: 'Connection status: not connected'}))
+  expect(await screen.findByRole('button', {name: 'Retry connection'})).toBeTruthy()
 })

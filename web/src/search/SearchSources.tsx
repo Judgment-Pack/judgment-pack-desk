@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import type { WorkItem } from '../chat/responseHistory'
 import { searchFailureMessage } from './failures'
 import { ProviderIcon, providerName } from './ProviderIcon'
@@ -35,7 +36,7 @@ export function SearchSources({reference}:{reference:SearchReference}){
  return <ReadingDetails title={msg('Web search')}>
   <div className={styles.reader}>
    <div><h3 className={styles.label}>{msg('Query sent')}</h3><p className={styles.query}>{reference.request.query}</p></div>
-   {!query.pin||query.isError?<p role="alert">{msg('Search results could not be verified; no links were authorized.')}</p>:query.isPending?<p role="status">{msg('Loading…')}</p>:<>
+   {!query.pin||query.isError?<p role="alert">{msg('Search results could not be verified; no links were authorized.')}</p>:query.isPending?<LoadingState>{msg('Loading…')}</LoadingState>:<>
     <div className={styles.metadata}><ProviderIcon provider={query.data.result.provider}/><span>{providerName(query.data.result.provider)}</span><span aria-hidden="true">·</span><time dateTime={query.data.result.retrievedAt}>{new Intl.DateTimeFormat(formattingLocale(),{dateStyle:'medium',timeStyle:'short'}).format(new Date(query.data.result.retrievedAt))}</time></div>
     {query.data.result.provider==='google-grounding'&&!!query.data.result.queries?.length&&<section><h3 className={styles.label}>{msg('Google queries')}</h3><ul className={styles.queries}>{query.data.result.queries.map((q,index)=><li key={index}>{q}</li>)}</ul></section>}
     <p className={styles.note}>{msg('Search results are leads. Page text is retained separately when read.')}</p>
@@ -57,8 +58,8 @@ export function SearchStepDetails({row}:{row:WorkItem}){
  const reason=searchFailureMessage(row.failure)
  return <ReadingDetails title={msg('Web search')}><div className={styles.reader}>
   {row.search?.provider&&<div className={styles.metadata}><ProviderIcon provider={row.search.provider}/><span>{providerName(row.search.provider)}</span></div>}
-  <p className={styles.note}>{row.status==='failed'?msg('Failed'):row.status==='complete'?msg('Done'):row.status==='working'?msg('Working…'):msg('Interrupted')}</p>
+  <p className={styles.note}>{row.researchSuggestion?msg('Research suggested'):row.status==='failed'?msg('Failed'):row.status==='complete'?msg('Done'):row.status==='working'?msg('Working…'):msg('Interrupted')}</p>
   {row.search&&<div><h3 className={styles.label}>{row.search.submitted?msg('Query sent'):msg('Requested query')}</h3><p className={styles.query}>{row.search.query}</p></div>}
-  {reason?<p className={styles.note}>{systemMessage(reason)}</p>:row.status!=='working'&&<p className={styles.note}>{msg('Details were not recorded for this step.')}</p>}
+  {row.researchSuggestion?<p className={styles.note}>{msg('No web research was started.')}</p>:reason?<p className={styles.note}>{systemMessage(reason)}</p>:row.status!=='working'&&<p className={styles.note}>{msg('Details were not recorded for this step.')}</p>}
  </div></ReadingDetails>
 }

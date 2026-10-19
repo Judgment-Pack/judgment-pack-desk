@@ -1,11 +1,12 @@
 /** OIDC redirects keep their completion proof in this tab. Provider tokens and
  * registration secrets never enter this storage. This module has no session
  * dependency so the one bootstrap can finish a redirect before mounting Desk. */
-export type SignInStatus = { enabled: boolean; label: string; unavailable: boolean; localAccess?: boolean }
+export type SignInMode = 'setup' | 'password' | 'provider'
+export type SignInStatus = { mode?: SignInMode; enabled: boolean; label: string; unavailable: boolean; localAccess?: boolean; sessionActive?: boolean }
 export type SignInProvider = { label: string; issuer: string; clientId: string; clientSecret?: string }
 export type SignInOwner = { subject: string; issuer: string; name: string; email?: string }
 export type SignInSettings = {
-  enabled: boolean; callbackUrl: string; storageAvailable: boolean;
+  mode?: SignInMode; enabled: boolean; callbackUrl: string; storageAvailable: boolean;
   provider?: SignInProvider; owner?: SignInOwner; hasSecret?: boolean;
   testedOwner?: SignInOwner; testId?: string
 }

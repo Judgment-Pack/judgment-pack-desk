@@ -1,3 +1,4 @@
+import { DeskNotices, DeskNoticesProvider } from '../../shell/DeskNotices'
 import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react'
 import {QueryClientProvider} from '@tanstack/react-query'
 import {useState} from 'react'
@@ -10,17 +11,23 @@ import {applyFolderAction,defaultFolders,FOLDERS_FILE,HOME_FOLDER} from './model
 import {FOLDERS_KEY,loadFolders,saveFolderAction,assignCreatedPack} from './client'
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),loadFolders:vi.fn(),saveFolderAction:vi.fn(),assignCreatedPack:vi.fn()}))
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.clearAllMocks();vi.unstubAllGlobals();localStorage.clear()})
-function setup({width=1100,path='/packs',corrupt=false,rootPending=false,graphs=false,state=undefined as unknown}={}){
+function setup({width=1100,path='/library',corrupt=false,rootPending=false,graphs=false,records=[] as import('../../graphs/drafts').GraphDraft[],placements={} as Record<string,string>,state=undefined as unknown}={}){
+ vi.stubGlobal('fetch',async(input:RequestInfo|URL)=>{
+  if(String(input)==='/api/draft-graphs')return Response.json({project:'/project',sha256:'graphs',content:{version:1,drafts:records,deleted:[]}})
+  if(['/api/input-preparations','/api/dialect-drafts','/api/policies'].includes(String(input)))return Response.json({items:[]})
+  throw new Error('No file fixture for this test.')
+ })
  const observers:{callback:(entries:ResizeObserverEntry[])=>void}[]=[]
  vi.stubGlobal('ResizeObserver',class {constructor(callback:(entries:ResizeObserverEntry[])=>void){observers.push({callback})} observe(){} disconnect(){} unobserve(){}})
  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(()=>({x:0,y:0,top:0,left:0,bottom:700,right:width,width,height:700,toJSON(){}}))
  let document=applyFolderAction(applyFolderAction(defaultFolders(),{type:'create',id:'dept',name:'Operations',parentId:HOME_FOLDER}),{type:'create',id:'child',name:'Intake',parentId:'dept'})
  document=applyFolderAction(document,{type:'assign',packId:'department-pack',folderId:'child'})
+ for(const [packId,folderId] of Object.entries(placements))document=applyFolderAction(document,{type:'assign',packId,folderId})
  vi.mocked(loadFolders).mockImplementation(async()=>{if(corrupt)throw new Error('Unreadable');return {document,digest:'read'}})
  vi.mocked(saveFolderAction).mockImplementation(async(before,action)=>{document=applyFolderAction(before.document,action);return {document,digest:'saved'}})
  const client=testQueryClient();if(!rootPending)client.setQueryData(['desk-files'],{root:'/project',files:[{path:FOLDERS_FILE,bytes:1,sha256:'read'}]})
  const stub=stubClient({experimental_list_graphs:()=>({text:JSON.stringify({status:'valid',graphs:[{id:'flow',graphVersion:'1.0.0'}]})}),list_packs:()=>({text:JSON.stringify({status:'valid',packs:[{id:'home-pack',packVersion:'1'},{id:'department-pack',packVersion:'1'}]})})})
- const router=createMemoryRouter([{path:'/packs',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:graphs})}><PacksLayout/></McpContext.Provider>,children:[{path:':packId',element:<><p>Pack content</p><Editable/></>}]},{path:'/create-pack',element:<p>Create</p>}],{initialEntries:[{pathname:path,state}]})
+ const router=createMemoryRouter([{element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:graphs})}><DeskNoticesProvider><PacksLayout/><footer><DeskNotices/></footer></DeskNoticesProvider></McpContext.Provider>,children:[{path:'/library',element:null},{path:'/packs/:packId',element:<><p>Pack content</p><Editable/></>}]},{path:'/create-pack',element:<p>Create</p>}],{initialEntries:[{pathname:path,state}]})
  render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>)
  return {client,router,resize:(next:number)=>{width=next;act(()=>observers.forEach(observer=>observer.callback([])))}}
 }
@@ -30,9 +37,9 @@ it('defaults existing packs to home, scopes nested search, and carries destinati
  const {router}=setup()
  await screen.findByRole('link',{name:/home-pack/})
  expect(screen.queryByRole('link',{name:/department-pack/})).toBeNull()
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'department'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search library'}),{target:{value:'department'}})
  await screen.findByRole('link',{name:/department-pack/})
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:''}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search library'}),{target:{value:''}})
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'Operations'}))
  fireEvent.keyDown(screen.getByRole('button',{name:'Create'}),{key:'Enter'})
  expect((await screen.findByRole('menuitem',{name:'Create pack'})).getAttribute('href')).toBe('/packs/new?folder=dept')
@@ -45,7 +52,7 @@ it('defaults existing packs to home, scopes nested search, and carries destinati
  expect(screen.queryByRole('navigation',{name:'Folder navigation'})).toBeNull()
  fireEvent.click(screen.getByRole('button',{name:'Expand folders'}))
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'Operations'}))
- expect(router.state.location.pathname).toBe('/packs')
+ expect(router.state.location.pathname).toBe('/library')
 })
 it('creates an empty folder in a modal and preserves it in the hierarchy',async()=>{
  const {client}=setup()
@@ -82,7 +89,9 @@ it('uses a closable drawer in narrow panes without changing the desktop preferen
 })
 it('shows all packs and disables mutations when folder metadata cannot be read',async()=>{
  setup({corrupt:true})
+ fireEvent.click(await screen.findByRole('button',{name:'Folders unavailable'}))
  await screen.findByText(/Folder organization is unavailable/)
+ fireEvent.keyDown(screen.getByRole('dialog'),{key:'Escape'})
  fireEvent.keyDown(screen.getByRole('button',{name:'Collection options'}),{key:'Enter'})
  expect((await screen.findByRole('menuitem',{name:'New folder'})).getAttribute('aria-disabled')).toBe('true')
  fireEvent.keyDown(screen.getByRole('menu'),{key:'Escape'})
@@ -103,11 +112,11 @@ it('restores a direct pack link to its folder and expanded ancestors',async()=>{
 it('keeps the original Library search scope when returning from a pack',async()=>{
  const {router}=setup();await screen.findByRole('link',{name:/home-pack/})
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Library'}))
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'pack'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search library'}),{target:{value:'pack'}})
  fireEvent.click(await screen.findByRole('link',{name:/department-pack/}))
  await screen.findByText('Pack content')
  await act(async()=>router.navigate(-1))
- expect(screen.getByRole('searchbox',{name:'Search packs and graphs'}).getAttribute('value')).toBe('pack')
+ expect(screen.getByRole('searchbox',{name:'Search library'}).getAttribute('value')).toBe('pack')
  expect(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Library'}).getAttribute('aria-current')).toBe('location')
  expect(screen.getByRole('link',{name:/home-pack/})).toBeTruthy()
 })
@@ -178,7 +187,7 @@ it('keeps the current folder visible and makes collapsed ancestors navigable',as
  fireEvent.keyDown(within(location).getByRole('button',{name:'Show parent folders'}),{key:'Enter'})
  const menu=await screen.findByRole('menu')
  fireEvent.click(within(menu).getByRole('menuitem',{name:/Operations/}))
- await waitFor(()=>expect(router.state.location.pathname).toBe('/packs'))
+ await waitFor(()=>expect(router.state.location.pathname).toBe('/library'))
  expect(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Operations'}).getAttribute('aria-current')).toBe('location')
  expect(saveFolderAction).not.toHaveBeenCalled()
 })
@@ -281,4 +290,14 @@ it('creates a destination inside the move dialog, retains it across resizing, an
  expect(doc.assignments['home-pack']).toBe(folder.id)
  expect(doc.assignments['department-pack']).toBe('child')
  expect(saveFolderAction).toHaveBeenLastCalledWith(expect.objectContaining({digest:'read'}),expect.objectContaining({type:'create-and-move',name:'Client briefs'}))
+})
+
+it('filters duplicate graph draft IDs by their independent folder placements',async()=>{
+ const initial={draftId:'same-draft',path:'flow.graph.json',content:'{}',createdAt:'2026-10-18T12:00:00Z'}
+ const {router}=setup({graphs:true,records:[{...initial,id:'first-flow',originChatId:'origin-one'},{...initial,id:'second-flow',originChatId:'origin-two'}],placements:{'graph-draft:origin-one:same-draft':'child','graph-draft:origin-two:same-draft':HOME_FOLDER}})
+ await screen.findByRole('link',{name:/second-flow/});expect(screen.queryByRole('link',{name:/first-flow/})).toBeNull()
+ await act(()=>router.navigate('/library?folder=child&type=graph'))
+ const first=await screen.findByRole('link',{name:/first-flow/})
+ expect(first.getAttribute('href')).toBe('/graphs?chat=origin-one&draft=same-draft')
+ expect(screen.queryByRole('link',{name:/second-flow/})).toBeNull()
 })

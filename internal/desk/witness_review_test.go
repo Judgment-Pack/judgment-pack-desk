@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -146,6 +147,110 @@ func TestWitnessAnswerCarryingACredentialIsWithheld(t *testing.T) {
 				t.Fatalf("%s: a credential reached a sink", step.name)
 			}
 		}
+	}
+}
+
+// Unicode escapes must not turn a credential into an original answer, an API
+// error, a persisted attempt or the decision record page's retained last attempt.
+func witnessEscapedJSONString(text string) string {
+	var out strings.Builder
+	out.WriteByte('"')
+	for _, r := range text {
+		fmt.Fprintf(&out, `\u%04x`, r)
+	}
+	out.WriteByte('"')
+	return out.String()
+}
+
+func TestWitnessEscapedCredentialsAreWithheldBeforeRetention(t *testing.T) {
+	for _, step := range []struct{ name, body, secret, safeReason string }{
+		{"exact token", `{"error":` + witnessEscapedJSONString(confirmedSecret) + `,"reason":"unauthenticated"}`, confirmedSecret, "unauthenticated"},
+		{"token segment", `{"error":` + witnessEscapedJSONString("synthetic") + `,"reason":"unauthenticated"}`, "synthetic", "unauthenticated"},
+		{"bearer credential", `{"error":` + witnessEscapedJSONString("Bearer abcdefghijklmnop") + `,"reason":"unauthenticated"}`, "abcdefghijklmnop", "unauthenticated"},
+		{"credential-bearing key", `{"error":"refused","reason":"unauthenticated",` + witnessEscapedJSONString(confirmedSecret) + `:"other"}`, confirmedSecret, "unauthenticated"},
+		{"nested value", `{"error":"refused","reason":"unauthenticated","other":[{"value":` + witnessEscapedJSONString(confirmedSecret) + `}]}`, confirmedSecret, "unauthenticated"},
+		{"duplicate error before safe error", `{"error":` + witnessEscapedJSONString(confirmedSecret) + `,"error":"refused","reason":"unauthenticated"}`, confirmedSecret, ""},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			r := newConfirmedWitnessRig(t)
+			answeredBy(t, func(req *http.Request) (*http.Response, error) {
+				if req.Method == http.MethodPost {
+					return replyOf(401, "application/json", step.body), nil
+				}
+				return replyOf(404, "application/json", `{"error":"none","reason":"unknown-trail"}`), nil
+			})
+			status, data := witnessCall(t, r.ts, r.ts.URL, "/api/audit/witness/send", "", map[string]any{})
+			var sent struct {
+				Attempt witnessAttempt `json:"attempt"`
+			}
+			if status != http.StatusOK || json.Unmarshal([]byte(data), &sent) != nil {
+				t.Fatalf("submission status %d", status)
+			}
+			if sent.Attempt.Outcome != witnessWithheld || sent.Attempt.Error != "" || sent.Attempt.Reason != step.safeReason || sent.Attempt.Status != 401 {
+				t.Errorf("credential response was not withheld")
+			}
+			answer := readFile(t, r.handoverPath(witnessHolderID, witnessAnswerName))
+			var kept witnessAnswerFile
+			if json.Unmarshal([]byte(answer), &kept) != nil || kept.Original != nil || kept.Attempt.Error != "" || kept.Attempt.Outcome != witnessWithheld {
+				t.Error("credential response reached persisted answer")
+			}
+			_, page, rawPage := readAudit(t, r.ts, "")
+			if page.Witness == nil || page.Witness.Last == nil || page.Witness.Last.Outcome != witnessWithheld || page.Witness.Last.Error != "" {
+				t.Error("retained page did not preserve withheld state")
+			}
+			for _, sink := range []string{answer, data, rawPage, r.logged.String()} {
+				if strings.Contains(sink, step.secret) || strings.Contains(sink, witnessEscapedJSONString(step.secret)) {
+					t.Error("raw or decoded credential reached a sink")
+				}
+			}
+			if through := r.cursor(t, handoverTrail).Through; through != 0 {
+				t.Error("withheld response advanced the witness cursor")
+			}
+		})
+	}
+}
+
+func TestWitnessCredentialScanDecodesEveryJSONString(t *testing.T) {
+	quoted := `synthetic"quote\credential`
+	quotedJSON, _ := json.Marshal(map[string]string{"error": quoted, "reason": "unauthenticated"})
+	nestedStatement, _ := json.Marshal(`{"signature":` + witnessEscapedJSONString(confirmedSecret) + `}`)
+	for _, step := range []struct{ name, token, body string }{
+		{"quote and backslash in credential", quoted, string(quotedJSON)},
+		{"JSON encoded statement string", confirmedSecret, `{"statements":[` + string(nestedStatement) + `]}`},
+		{"decoded nested key", confirmedSecret, `{"other":[{` + witnessEscapedJSONString(confirmedSecret) + `:0}]}`},
+		{"duplicate key occurrence", confirmedSecret, `{"value":` + witnessEscapedJSONString(confirmedSecret) + `,"value":"safe"}`},
+		{"huge JSON number before credential", confirmedSecret, `{"count":1e99999,"error":` + witnessEscapedJSONString(confirmedSecret) + `}`},
+		{"second JSONL object", confirmedSecret, "{}\n" + `{"error":` + witnessEscapedJSONString(confirmedSecret) + `}` + "\n"},
+		{"escaped bearer without submitted token", "", `{"error":` + witnessEscapedJSONString("Bearer abcdefghijklmnop") + `}`},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			if !carriesCredential(step.token, nil, []byte(step.body)) {
+				t.Error("decoded JSON credential was not detected")
+			}
+		})
+	}
+	if carriesCredential(confirmedSecret, nil, []byte(`{"error":"refused","reason":"unauthenticated"}`)) {
+		t.Error("safe refusal withheld")
+	}
+}
+
+func TestWitnessMalformedAnswersDoNotRetainOriginal(t *testing.T) {
+	for _, step := range []struct {
+		name, body string
+		limit      int
+	}{
+		{"truncated JSON", `{"error":` + witnessEscapedJSONString(confirmedSecret), witnessAnswerLimit},
+		{"invalid JSON before escaped credential", `invalid {"error":` + witnessEscapedJSONString(confirmedSecret) + `}`, witnessAnswerLimit},
+		{"oversized JSON", `{"error":` + witnessEscapedJSONString(confirmedSecret) + `,"reason":"unauthenticated"}`, 8},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			answeredBy(t, func(*http.Request) (*http.Response, error) { return replyOf(401, "application/json", step.body), nil })
+			req, _ := http.NewRequest(http.MethodPost, "https://confirmed.example/witness/checkpoints", nil)
+			got := ask(context.Background(), req, step.limit, false, confirmedSecret)
+			if got.Reached || got.original != nil || got.Error != "" || len(got.statements) != 0 {
+				t.Error("malformed or oversized response retained content")
+			}
+		})
 	}
 }
 

@@ -1,0 +1,4 @@
+.list { display: grid; gap: var(--space-3); min-width: 0; overflow-wrap: anywhere; }
+.list { padding: var(--space-3) var(--space-4); }
+.notice { padding: 0; border-width: 0; }
+.notice + .notice { padding-top: var(--space-3); border-top: 1px solid var(--border); }

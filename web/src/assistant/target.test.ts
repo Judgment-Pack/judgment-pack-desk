@@ -1,10 +1,10 @@
 import { expect, it, vi } from 'vitest'
 import { chatReasoningAgent } from '../chat/reasoning'
 import { bindExecution, selectedAssistant } from './target'
-import { bindAgentRun } from './agentTransport'
-import { bindModelCall } from './session'
-vi.mock('./agentTransport',()=>({bindAgentRun:vi.fn(()=>vi.fn())}))
-vi.mock('./session',()=>({bindModelCall:vi.fn(()=>vi.fn())}))
+import { bindAgentRun } from '@judgment-pack/harness/agentTransport'
+import { bindModelCall } from '@judgment-pack/harness/session'
+vi.mock('@judgment-pack/harness/agentTransport',()=>({bindAgentRun:vi.fn(()=>vi.fn())}))
+vi.mock('@judgment-pack/harness/session',()=>({bindModelCall:vi.fn(()=>vi.fn())}))
 it('binds subscription runs without constructing an API endpoint capability',()=>{
  const config={engine:'codex' as const,endpoint:null,agent:{provider:'openai' as const,authMethod:'subscription' as const,model:'chosen',tools:[],effort:'high' as const}}
  const bound=bindExecution(config,'chosen','ultra')

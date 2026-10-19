@@ -8,7 +8,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { testQueryClient } from '../testing/harness'
-import { useSearchPreference } from './connections'
+import { loadSearchPreference, useSearchPreference } from './connections'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -26,7 +26,10 @@ function serves(written: (content: string) => string) {
       const content = written(body.content)
       return json({ path: body.path, bytes: content.length, sha256: 'b'.repeat(64), content })
     }
-    if (path === '/api/file') return json({ error: 'no such file', code: 'not-found' }, 404)
+    if (path === '/api/file') {
+      expect(new URL(url, 'http://localhost').searchParams.get('optional')).toBe('true')
+      return new Response(null,{status:204})
+    }
     return json({ error: 'not available' }, 404)
   })
   return puts
@@ -58,4 +61,9 @@ it('is not saved where the bytes the desk read back are not the bytes it wrote',
   })
   await waitFor(() => expect(result.current.saveError).toBeTruthy())
   expect(result.current.saved).toBe(false)
+})
+
+it.each([[403,'forbidden'],[413,'too-large'],[500,'internal']])('does not default search choices after a read refusal %s',async(status,code)=>{
+ vi.stubGlobal('fetch',async()=>json({error:'Search settings cannot be read',code},status))
+ await expect(loadSearchPreference()).rejects.toMatchObject({status,code})
 })

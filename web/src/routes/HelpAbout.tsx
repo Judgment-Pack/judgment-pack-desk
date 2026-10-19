@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { Updates } from '../updates/Updates'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
@@ -120,7 +121,7 @@ export function HelpAbout() {
             </pre>
           </figure>
         ) : (
-          <p className="loading" id="authoring-method">{msg("Loading the runtime's authoring prompt…")}</p>
+          <LoadingState id="authoring-method">{msg("Loading the runtime's authoring prompt…")}</LoadingState>
         )}
       </Section>
 

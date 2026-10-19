@@ -1,12 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TestsContent } from './TestsWorkspace'
 import { emptySuite, importMatrix, type TestSuite } from './model'
 import type { PackDocument } from '../../mcp/types'
-import type { McpToolResult } from '../../assistant/engine'
+import type { McpToolResult } from '@judgment-pack/harness/engine'
 import { DetailsSlotContext } from '../../shell/DetailsSlot'
 import { languageReady, msg, setLanguage, systemMessage } from '../../i18n'
 import { findingSummary, type InvalidFinding } from '../../research/expectations'
@@ -45,16 +45,15 @@ async function saveShown(expected: unknown): Promise<string> {
   fixture.tools.mockResolvedValue({ tools: [{ name: 'experimental_test_cases' }] })
   fixture.call.mockImplementation(async (request: Parameters<typeof runtime>[0]) => runtime(request))
   details.target = document.body.appendChild(document.createElement('div'))
-  render(<QueryClientProvider client={new QueryClient()}><Tooltip.Provider><MemoryRouter><DetailsSlotContext.Provider value={details}>
+  render(<QueryClientProvider client={new QueryClient()}><Tooltip.Provider><MemoryRouter initialEntries={["/packs/pack/matrix/cases/held"]}><DetailsSlotContext.Provider value={details}><Routes><Route path="/packs/:packId/matrix/cases/:caseId" element={
     <TestsContent owner="pack" document={{ version: '1', outcomes: [] } as unknown as PackDocument} text="{}" title="Example" />
-  </DetailsSlotContext.Provider></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
-  fireEvent.click(await screen.findByRole('button', { name: 'Held case' }))
+  }/></Routes></DetailsSlotContext.Provider></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
   const save = await screen.findByRole('button', { name: msg('Save case') }) as HTMLButtonElement
   await waitFor(() => expect(save.disabled).toBe(false))
   fireEvent.click(save)
-  // The case editor, open beside the list, shows the save error under the case.
+  // The case page editor shows the save error under the case.
   const alert = await waitFor(() => {
-    const shown = within(screen.getByRole('region',{name:'Held case'})).queryAllByRole('alert').map(node => node.textContent ?? '').filter(Boolean)
+    const shown = within(screen.getByRole('region',{name:msg('Test case')})).queryAllByRole('alert').map(node => node.textContent ?? '').filter(Boolean)
     expect(shown).toHaveLength(1)
     return shown[0]!
   })

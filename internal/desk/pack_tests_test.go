@@ -15,7 +15,7 @@ func testsRequest(t *testing.T, ts *httptest.Server, method, digest, body string
 	t.Helper()
 	req, _ := http.NewRequest(method, ts.URL+"/api/pack-tests", strings.NewReader(body))
 	if auth {
-		bearer(req)
+		pageBearer(privateWorkspaceTestSession(t, ts))(req)
 	}
 	if digest != "" {
 		req.Header.Set("If-Match", digest)

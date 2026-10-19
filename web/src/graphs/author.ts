@@ -1,4 +1,4 @@
-import type { HostTool } from '../assistant/engine'
+import type { HostTool } from '@judgment-pack/harness/engine'
 import { deskFetch } from '../files/client'
 import { msg } from '../i18n'
 
@@ -19,12 +19,13 @@ export interface GraphOffer extends GraphProposal {
   nonce: string
   token: string
 }
+export class GraphRequestError extends Error{constructor(message:string,readonly notCommitted=false){super(message)}}
 export async function graphPost<T>(route: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const response = await deskFetch(`/api/graphs/${route}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal
   })
-  const answer = await response.json() as T & { error?: string }
-  if (!response.ok) throw new Error(answer.error ?? msg('The graph request could not complete.'))
+  const answer = await response.json() as T & { error?: string;outcome?:string }
+  if (!response.ok) throw new GraphRequestError(answer.error ?? msg('The graph request could not complete.'),route==='write'&&answer.outcome==='not-committed')
   return answer
 }
 

@@ -1,3 +1,5 @@
+import {deleteGraphDrafts,GRAPH_DRAFTS_KEY} from '../graphs/drafts'
+import {useQueryClient} from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { Menu as DropdownMenu } from '../ui/Menu'
 import { Link } from 'react-router-dom'
@@ -6,16 +8,15 @@ import { useChats } from '../chat/ChatProvider'
 import { Button } from '../ui/Button'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { Tooltip } from '../ui/Tooltip'
+import { SelectionCountButton } from '../ui/SelectionTable'
 import { Alert } from '../ui/Alert'
-import { IconChevronDown, IconMore, IconPack, IconGraph, IconFolder, IconTrash, IconClose } from '../shell/icons'
+import { IconChevronDown, IconMore, IconDetails, IconPack, IconGraph, IconMatrix, IconFolder, IconTrash, IconClose } from '../shell/icons'
+import {deletableLibraryDraft, folderAssignmentKey, type LibraryItem} from '../library/items'
 import { usePackFolders } from './folders/FolderContext'
 import { ALL_PACKS } from './folders/model'
 import styles from './PacksPane.module.css'
 
-export interface BrowserItem {
-  id: string; title: string; kind: 'pack' | 'graph'; status: 'draft' | 'finalized'; href: string
-  description?: string; detail?: string; packVersion?: string; chatId?: string; draftId?: string
-}
+export type BrowserItem = LibraryItem
 
 export function CollectionHeaderActions({ createHref }: {createHref: string}) {
   const folders = usePackFolders(), options = useRef<HTMLButtonElement>(null)
@@ -33,6 +34,8 @@ export function CollectionHeaderActions({ createHref }: {createHref: string}) {
       <DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={6}>
         <DropdownMenu.Item icon={<IconPack/>} asChild><Link to={createHref}>{msg('Create pack')}</Link></DropdownMenu.Item>
         <DropdownMenu.Item icon={<IconGraph/>} asChild><Link to="/graphs?view=compose">{msg('Create graph')}</Link></DropdownMenu.Item>
+        <DropdownMenu.Item icon={<IconMatrix/>} asChild><Link to="/dialects/new">{msg('New dialect')}</Link></DropdownMenu.Item>
+        <DropdownMenu.Item icon={<IconDetails/>} asChild><Link to="/policies/new">{msg('New policy')}</Link></DropdownMenu.Item>
       </DropdownMenu.Content></DropdownMenu.Portal>
     </DropdownMenu.Root>
   </>
@@ -42,7 +45,9 @@ export function SelectionActions({items, clear, onDelete, compact = false, tight
   const folders = usePackFolders(), trigger = useRef<HTMLButtonElement>(null), handoff = useRef(false)
   if (!items.length) return null
   const compose = items.every(item => item.kind === 'pack' && item.status === 'finalized')
-  const drafts = items.every(item => item.status === 'draft')
+  const drafts = items.every(deletableLibraryDraft)
+  const folderKeys = items.map(folderAssignmentKey)
+  const canMove = folderKeys.every((key): key is string => key !== undefined)
   const clearAndFocus = () => {
     clear()
     // Wait until the menu's focus trap has unmounted before leaving its portal.
@@ -50,15 +55,15 @@ export function SelectionActions({items, clear, onDelete, compact = false, tight
   }
   return <div className={styles.bulkActions} role="group" aria-label={msg('Selected item actions')}>
     <DropdownMenu.Root onOpenChange={open => {if (open) handoff.current = false}}>
-      <DropdownMenu.Trigger asChild><Button ref={trigger} variant="quiet" aria-label={msg('{{count}} selected', {count:items.length})}><span role="status">{tight ? items.length : msg('{{count}} selected', {count:items.length})}</span><IconChevronDown/></Button></DropdownMenu.Trigger>
+      <DropdownMenu.Trigger asChild><SelectionCountButton ref={trigger} count={items.length} compact={tight}/></DropdownMenu.Trigger>
       <DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={4} collisionPadding={16} onCloseAutoFocus={event => {if (handoff.current) event.preventDefault()}}>
-        {folders && <DropdownMenu.Item icon={<IconFolder/>} disabled={!folders.query.data || folders.query.isError || folders.mutation.isPending}
-          onSelect={() => {handoff.current = true; folders.edit({kind:'items',ids:items.map(item => item.id)}, trigger.current ?? undefined)}}>{msg('Move to folder…')}</DropdownMenu.Item>}
+        {folders && canMove && <DropdownMenu.Item icon={<IconFolder/>} disabled={!folders.query.data || folders.query.isError || folders.mutation.isPending}
+          onSelect={() => {handoff.current = true; folders.edit({kind:'items',ids:folderKeys}, trigger.current ?? undefined)}}>{msg('Move to folder…')}</DropdownMenu.Item>}
         {compose ? <DropdownMenu.Item icon={<IconGraph/>} asChild><Link to={'/graphs?view=compose&'+items.map(item => 'pack='+encodeURIComponent(item.id)).join('&')}>{msg('Compose graph')}</Link></DropdownMenu.Item>
           : <Tooltip content={msg('Select saved packs to compose a graph. Save drafts first; graphs cannot be nested.')}><DropdownMenu.Item icon={<IconGraph/>} aria-disabled onSelect={event => event.preventDefault()}>{msg('Compose graph')}</DropdownMenu.Item></Tooltip>}
         <DropdownMenu.Separator/>
         {drafts ? <DropdownMenu.Item icon={<IconTrash/>} onSelect={() => {handoff.current = true; onDelete(items,trigger.current ?? undefined)}}>{msg('Delete drafts')}</DropdownMenu.Item>
-          : <Tooltip content={msg('Select only drafts to delete them. Saved files may be referenced by graphs or jobs.')}><DropdownMenu.Item icon={<IconTrash/>} aria-disabled onSelect={event => event.preventDefault()}>{msg('Delete drafts')}</DropdownMenu.Item></Tooltip>}
+          : !items.some(item=>item.kind==='dialect'||item.kind==='policy') && <Tooltip content={msg('Select only drafts to delete them. Saved files may be referenced by graphs or jobs.')}><DropdownMenu.Item icon={<IconTrash/>} aria-disabled onSelect={event => event.preventDefault()}>{msg('Delete drafts')}</DropdownMenu.Item></Tooltip>}
         {compact && <><DropdownMenu.Separator/><DropdownMenu.Item icon={<IconClose/>} onSelect={() => {handoff.current = true; clearAndFocus()}}>{msg('Clear selection')}</DropdownMenu.Item></>}
       </DropdownMenu.Content></DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -68,6 +73,9 @@ export function SelectionActions({items, clear, onDelete, compact = false, tight
 
 export function ItemOptions({item, onDelete}: {item: BrowserItem; onDelete: (items: BrowserItem[], opener?:HTMLElement) => void}) {
   const folders = usePackFolders(), opener = useRef<HTMLButtonElement>(null)
+  // Dialect draft deletion and placement belong to their existing editor. The
+  // Library must not route private drafts through chat or folder mutations.
+  if (item.kind === 'dialect' || item.kind === 'policy') return null
   if (!folders && item.status !== 'draft') return null
   return <DropdownMenu.Root>
     <Tooltip content={msg('Item options')}><DropdownMenu.Trigger asChild><Button ref={opener} variant="quiet" size="icon" className={styles.rowOptions} aria-label={msg('Options for {{name}}', {name:item.title})}><IconMore/></Button></DropdownMenu.Trigger></Tooltip>
@@ -82,11 +90,11 @@ export function ItemOptions({item, onDelete}: {item: BrowserItem; onDelete: (ite
 
 /** Remove only draft artifacts. Project files and their references have another lifecycle. */
 export function DeleteDraftsDialog({items, opener:trigger, onClose, onDeleted}: {items: BrowserItem[]; opener?:HTMLElement; onClose: () => void; onDeleted?: () => void}) {
-  const {store} = useChats()
+  const {store} = useChats(),queries=useQueryClient()
   const [busy,setBusy] = useState(false), [error,setError] = useState(''), [applied,setApplied] = useState(false)
   const opener = useRef(trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null))
   const remove = async () => {
-    if (!store || busy) return
+    if (!store || busy || !items.every(deletableLibraryDraft)) return
     setBusy(true); setError('')
     try {
       // Another autosave owns the write revision until it settles. Do not report
@@ -96,7 +104,10 @@ export function DeleteDraftsDialog({items, opener:trigger, onClose, onDeleted}: 
       })}
       await settle()
       if (!applied) {
-        const removed = store.removeDraftItems(items.map(item => item.kind === 'pack'
+        const graphs=items.filter(item=>item.kind==='graph')
+        if(graphs.length){await deleteGraphDrafts(graphs.map(item=>({originChatId:item.chatId!,draftId:item.draftId!})));await queries.invalidateQueries({queryKey:GRAPH_DRAFTS_KEY})}
+        const liveItems=items.filter(item=>item.kind==='pack'||store.getSnapshot().chats.some(chat=>chat.id===item.chatId&&chat.graphDrafts?.some(d=>d.draftId===item.draftId&&!d.saved)))
+        const removed = !liveItems.length||store.removeDraftItems(liveItems.map(item => item.kind === 'pack'
           ? {kind:'pack' as const,id:item.id}
           : {kind:'graph' as const,chatId:item.chatId!,id:item.draftId!}))
         if (!removed) throw new Error(msg('The drafts changed or a conversation is running. Close this dialog and review your selection.'))

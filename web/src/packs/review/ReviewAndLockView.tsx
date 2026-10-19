@@ -1,3 +1,4 @@
+import {useRegisteredChanges} from '../../shell/UnsavedChanges'
 /**
  * "Review and lock" (ADR-0009, section 2).
  *
@@ -9,7 +10,9 @@
  * review's token, and the desk locks exactly that reading, or nothing. Where
  * a file cannot be shown, nothing can be confirmed.
  */
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import {ArtifactImpactFields} from '../../artifacts/ArtifactImpactFields'
+import type {ArtifactImpact,ArtifactReference} from '../../artifacts/review'
 import { useQueryClient } from '@tanstack/react-query'
 import { msg, systemMessage, useLocale } from '../../i18n'
 import { Alert } from '../../ui/Alert'
@@ -18,7 +21,7 @@ import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
 import { PageHeader } from '../../ui/PageLayout'
 import { SnapshotComparison } from '../SnapshotComparison'
-import { confirmLock, REVIEW_KEY, StaleReview, textOf, type Locked, type Review, type ReviewFile } from './client'
+import { checkArtifactReviews, confirmLock, REVIEW_KEY, StaleReview, textOf, type Locked, type Review, type ReviewFile } from './client'
 import { fileFindings, findingWords, otherFindings } from './findings'
 import { useReview } from './ReviewContext'
 import styles from './ReviewAndLock.module.css'
@@ -31,13 +34,34 @@ export function ReviewAndLockView() {
   const client = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState<Outcome | null>(null)
-  const review = query?.data
+  const [compatibility,setCompatibility]=useState<{token?:string;review?:Review;impacts:Record<string,ArtifactImpact>;refs?:Record<string,ArtifactReference>}>({impacts:{}})
+  const dirty=Object.keys(compatibility.impacts).length>0&&!compatibility.refs
+  const review=dirty?compatibility.review??query?.data:query?.data
+  const stale=!!review&&query?.data?.token!==review.token
+  useRegisteredChanges(dirty,msg('Discard unsaved compatibility review?'),{busy,kind:'edit',label:msg('Compatibility impact')})
+  const active=compatibility.token===review?.token?compatibility:undefined
+  const required=review?.artifactReviews?.filter(row=>row.required)??[]
+  const impact=(key:string):ArtifactImpact=>active?.impacts[key]??required.find(row=>row.key===key)?.review?.review.impact??{classification:'unknown',rationale:''}
+  const refs=active?.refs??(active&&Object.keys(active.impacts).length?{}:Object.fromEntries(required.flatMap(row=>row.review?[[row.key,row.review.reference]]:[])))
+  const ready=required.every(row=>!!refs[row.key])
+  const latest=useRef(query?.data?.token);latest.current=query?.data?.token
+  const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
+  async function checkVersions(){
+    if(!review?.token||stale)return
+    const token=review.token,impacts=Object.fromEntries(required.map(row=>[row.key,impact(row.key)]))
+    setBusy(true);setOutcome(null)
+    try{
+      const rows=await checkArtifactReviews(token,impacts)
+      if(mounted.current&&latest.current===token)setCompatibility({token,impacts,refs:Object.fromEntries(rows.flatMap(row=>row.required&&row.review?[[row.key,row.review.reference]]:[]))})
+    }catch(cause){if(mounted.current&&latest.current===token)setOutcome({kind:'error',message:cause instanceof Error?cause.message:String(cause)})}
+    finally{if(mounted.current)setBusy(false)}
+  }
   const lock = async () => {
-    if (!review?.token) return
+    if (!review?.token || !ready || stale) return
     setBusy(true)
     setOutcome(null)
     try {
-      setOutcome({ kind: 'locked', locked: await confirmLock(review.token) })
+      setOutcome({ kind: 'locked', locked: await confirmLock(review.token,refs,review.publicationPending) })
     } catch (cause) {
       setOutcome(cause instanceof StaleReview ? { kind: 'stale' } : { kind: 'error', message: cause instanceof Error ? cause.message : String(cause) })
     } finally {
@@ -49,13 +73,13 @@ export function ReviewAndLockView() {
   const matches = review?.locked && review.status === 'valid' && review.findings.length === 0
   const others = review ? otherFindings(review) : []
   return <article className={styles.page} aria-label={msg('Review and lock')}>
-    <PageHeader title={msg('Review and lock')} actions={<ButtonLink to="/packs">{msg('Back to packs')}</ButtonLink>} />
+    <PageHeader title={msg('Review and lock')} actions={<ButtonLink to="/library">{msg('Back to packs')}</ButtonLink>} />
     <div className={styles.body}>
       <p className={styles.statement}>{msg('Locking records that you confirmed these exact files as this project’s reviewed set. It is not a second person’s approval, and it records no name.')}</p>
       <p className={styles.quiet}>{msg('A change to jpack.json holds every pack: until the next lock, the runtime refuses every deciding run by decision id. Rehearsals and tests are not affected.')}</p>
       <p className={styles.quiet}>{msg('The lock holds a caller that can neither edit this project nor choose its configuration. Whoever can edit this folder can change a pack and lock again.')}</p>
       {outcome?.kind === 'locked' && <p role="status" className={styles.done}>
-        {msg('Locked. These {{count}} files are now this project’s reviewed set.', { count: outcome.locked.files })}
+        {outcome.locked.reconciled?msg('Publication history confirmed.'):msg('Locked. These {{count}} files are now this project’s reviewed set.', { count: outcome.locked.files })}
         {outcome.locked.copies === 'not-stored' && <> {msg('Desk could not keep copies of them, so the next review cannot show what changed.')} {systemMessage(outcome.locked.copiesProblem ?? '')}</>}
       </p>}
       {outcome?.kind === 'stale' && <Alert>{msg('The project changed after you reviewed it, so nothing was locked. Review the changes again.')}</Alert>}
@@ -71,7 +95,8 @@ export function ReviewAndLockView() {
             <h2 className={styles.heading}>{msg('What the runtime said')}</h2>
             <ul className={styles.diagnostics}>{review.diagnostics.map((item, index) => <li key={index}><code>{item.code}</code> {item.message}</li>)}</ul>
           </section>}
-          {matches && <p role="status">{msg('Every file matches the reviewed set. There is nothing to lock.')}</p>}
+          {matches && !review.publicationPending && <p role="status">{msg('Every file matches the reviewed set. There is nothing to lock.')}</p>}
+          {review.publicationPending&&<p role="status">{msg('Publication saved; history confirmation is pending.')}</p>}
           {review.files.length > 0 && <section aria-label={msg('Files this lock covers')}>
             <h2 className={styles.heading}>{msg('Files this lock covers')}</h2>
             <ul className={styles.findings}>{review.files.map(file => <File key={`${file.kind}:${file.id ?? ''}:${file.path}`} review={review} file={file} />)}</ul>
@@ -83,11 +108,22 @@ export function ReviewAndLockView() {
               {finding.detail && <p className={styles.quiet}>{finding.detail}</p>}
             </li>)}</ul>
           </section>}
+          {stale&&<Alert>{msg('The project changed after you reviewed it, so nothing was locked. Review the changes again.')} <Button disabled={busy} onClick={()=>setCompatibility({impacts:{}})}>{msg('Discard')}</Button></Alert>}
+          {required.length>0&&!review.blocked&&<section aria-label={msg('Compatibility impact')}>
+            <h2 className={styles.heading}>{msg('Compatibility impact')}</h2>
+            {required.map(row=><div className={styles.finding} key={row.key}>
+              <h3 className={styles.words}>{row.path}</h3>
+              <p className={styles.quiet}>{row.baseVersion?msg('Saved version {{version}}',{version:row.baseVersion}):msg('First publication')} → {row.version}</p>
+              <ArtifactImpactFields value={impact(row.key)} disabled={busy||query.isFetching} onChange={value=>setCompatibility({token:review.token,review,impacts:{...active?.impacts,[row.key]:value}})}/>
+            </div>)}
+            <Button disabled={busy||stale||query.isFetching||required.some(row=>!impact(row.key).rationale.trim()||impact(row.key).classification==='unknown')} onClick={()=>void checkVersions()}>{msg('Check versions')}</Button>
+            {ready&&<p className={styles.quiet}>{msg('Compatibility review saved. Confirm the exact files to publish.')}</p>}
+          </section>}
           {review.blocked ? <Alert reason={systemMessage(review.blocked)}>{msg('Desk cannot lock this project here until it can show you every file a lock would cover.')}</Alert>
-            : review.token && !matches && <section className={styles.confirm} aria-label={msg('Confirm')}>
+            : review.token && (!matches||review.publicationPending) && <section className={styles.confirm} aria-label={msg('Confirm')}>
               <p>{msg('This lock covers {{count}} files: jpack.json and every pack and graph it declares.', { count: covered })}</p>
-              <Button variant="primary" disabled={busy || query.isFetching} onClick={() => void lock()}>
-                {busy ? msg('Locking…') : review.locked && review.findings.length > 0 ? msg('Confirm and lock {{count}} differences', { count: review.findings.length }) : msg('Confirm and lock {{count}} files', { count: covered })}
+              <Button variant="primary" disabled={busy || stale || query.isFetching || !ready} onClick={() => void lock()}>
+                {busy ? msg('Working…') : review.publicationPending?msg('Confirm publication history'):review.locked && review.findings.length > 0 ? msg('Confirm and lock {{count}} differences', { count: review.findings.length }) : msg('Confirm and lock {{count}} files', { count: covered })}
               </Button>
             </section>}
         </>}

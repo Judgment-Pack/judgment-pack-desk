@@ -1,4 +1,4 @@
-import { TypedConfirmation, useHasUnsavedChanges } from '../shell/UnsavedChanges'
+import { TypedConfirmation, useHasPendingChanges } from '../shell/UnsavedChanges'
 import { useEffect, useState, type RefObject } from 'react'
 import { msg, useLocale } from '../i18n'
 import { signOut } from '../mcp/session'
@@ -11,7 +11,7 @@ export function SignOutDialog({ open, onOpenChange, openerRef }: {
   useLocale()
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  const dirty = useHasUnsavedChanges(), [typed, setTyped] = useState('')
+  const dirty = useHasPendingChanges(), [typed, setTyped] = useState('')
   useEffect(() => { setTyped('') }, [open])
   return <Dialog open={open} onOpenChange={value => { if (!busy) { setFailed(false); onOpenChange(value) } }} openerRef={openerRef}
     title={msg('End this local session?')}

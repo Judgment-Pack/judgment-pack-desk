@@ -1,3 +1,10 @@
+import {correctArtifact} from '@judgment-pack/harness/execution/correctArtifact'
+import {proposalProblems, legacyPackBasis, type PackProposalBasis, type PackReview, type SavedPackReview} from '../chat/packProposal'
+import {AIFailureError,readFailure,retryReady,type AIFailure} from '@judgment-pack/harness/failures'
+import {ExecutionPaused,extendExecution,canExtendInterruptedExecution,type ExecutionCheckpoint} from '@judgment-pack/harness/execution/state'
+import { modelTranscript } from './transcript'
+import { attachmentDocument, attachmentForReview, documentPages, textPages, type AttachedPages } from '../chat/attachmentContext'
+import { readUserQuestion, validQuestionDraft, type QuestionDraft, type SavedQuestion } from '@judgment-pack/harness/questions'
 import { whileChecking, runSnapshotCheck, verifyRetainedCheck, reusableRuntime } from './retainedCheck'
 import { conversationMode, type AuthoringMode } from './mode'
 import type { SearchReference } from '../search/results'
@@ -29,8 +36,8 @@ import { sourceMessage } from '../i18n/source'
  * conversation are this run's.
  */
 import { canonicalProposal } from '../assistant/useAssistantRun'
-import type { AssistantEvent, CallTool, HostTool } from '../assistant/engine'
-import { isCancelled, recoverableProposal } from '../assistant/engines/contract'
+import type { AssistantEvent, CallTool, HostTool } from '@judgment-pack/harness/engine'
+import { isCancelled, recoverableProposal } from '@judgment-pack/harness/engines/contract'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import { findingSummary, validateExpectations } from './expectations'
 import type { Ledger, SourceRecord } from './ledger'
@@ -43,12 +50,17 @@ export type Status = 'idle' | 'running' | 'complete' | 'ready' | 'needs-input' |
 
 export interface AssistantProvenance { connectionId:string; connectionName:string; model:string }
 export interface Turn {
+  packContext?: PackProposalBasis
+  /** Reviewed test-design conversation; proposals remain in the test workspace. */
+  testDesign?: { owner: string; proposalId?: string }
+  /** Per-request web choice. Separate from the conversation's default mode. */
+  researchChoice?: import('../chat/researchChoice').ResearchChoice
   target?:AssistantProvenance
   id?: string
   /** Exact attachments selected when this message was submitted. */
   attachments?: ChatAttachment[]
   role: 'user' | 'assistant'
-  kind: 'brief' | 'message' | 'unknowns' | 'note'
+  kind: 'brief' | 'message' | 'unknowns' | 'note' | 'question'
   text: string
   /** Full main-assistant input, including Desk context; never a case-writing ground. */
   input?: string
@@ -60,6 +72,7 @@ export interface Turn {
 }
 
 export interface Candidate {
+  packReview?: PackReview
   responseId?: string
   revision: number
   document: unknown
@@ -107,6 +120,8 @@ export interface HeldProposal {
 }
 
 export interface RunState {
+  failure?: AIFailure
+  questions?: SavedQuestion[]
   phase: Phase
   status: Status
   /** A disk checkpoint is not a fresh check or approval. */
@@ -123,6 +138,7 @@ export interface RunState {
   brief: string
   seedUrls: string[]
   turns: Turn[]
+  execution?:ExecutionCheckpoint
   responses?: ResponseHistory[]
   events: AssistantEvent[]
   candidates: Candidate[]
@@ -151,6 +167,7 @@ export interface RunState {
 export interface TurnRequest {
   onTarget?:(target:AssistantProvenance|undefined)=>void
   prompt: string
+  context?: import('@judgment-pack/harness/context/session').ContextInput
   hostTools: HostTool[]
   /** A reviewer turn runs with thinking off: fresh, and no critic. */
   reviewer?: boolean
@@ -158,6 +175,7 @@ export interface TurnRequest {
 }
 
 export interface RunPorts {
+  savedPackReview?: SavedPackReview
   mode?: AuthoringMode
   /** One engine run to completion; events arrive in order, `end` last. */
   turn(request: TurnRequest, signal: AbortSignal, onEvent: (event: AssistantEvent) => void): Promise<void>
@@ -190,6 +208,8 @@ export interface RunPorts {
 /** How many times a turn that spent its steps before proposing is continued. */
 export const MAX_CONTINUATIONS = 3
 
+export const CONTEXT_LIMIT_MESSAGE = sourceMessage("This conversation exceeds the 200,000-character context limit. Start a new chat with the relevant text, or attach a smaller excerpt. Nothing was sent to the model.")
+
 /** The engine's own sentence for a final turn with no proposal fence in it. */
 const NO_FENCE = /exactly one fenced JSON block.*carried 0/
 
@@ -200,6 +220,7 @@ export const INITIAL_STATE: RunState = {
   brief: '',
   seedUrls: [],
   turns: [],
+  questions: [],
   events: [],
   candidates: [],
   cases: [],
@@ -214,6 +235,8 @@ export const INITIAL_STATE: RunState = {
   sessions: [],
   readiness: ''
 }
+
+class AwaitingAnswer extends Error {}
 
 class Stopped extends Error {
   constructor() {
@@ -532,6 +555,23 @@ export class AuthoringRun {
 
   getSnapshot = (): RunState => this.state
 
+  /** Retain a task conversation in this session without invoking its model. */
+  appendConversation(turns: Turn[]): RunState {
+    if (this.running) throw Error('Finish the active chat before adding test-design messages.')
+    const byId = new Map(this.state.turns.filter(turn => turn.id).map(turn => [turn.id!, turn]))
+    const added: Turn[] = []
+    for (const turn of turns) {
+      if (!turn.id) throw Error('A retained message needs a stable identity.')
+      const previous = byId.get(turn.id)
+      if (previous) {
+        if (previous.role !== turn.role || previous.text !== turn.text || previous.at !== turn.at) throw Error('A retained message conflicts with this session.')
+      } else { byId.set(turn.id, turn); added.push(structuredClone(turn)) }
+    }
+    if (added.length) this.set({turns:[...this.state.turns,...added].sort((a,b)=>a.at.localeCompare(b.at)),
+      ...(this.state.phase === 'idle' ? {phase:'conversation',status:'complete'} : {})})
+    return this.state
+  }
+
   private set(patch: Partial<RunState>): void {
     this.state = { ...this.state, ...patch }
     for (const listener of this.listeners) listener()
@@ -541,6 +581,7 @@ export class AuthoringRun {
     return (this.ports.now?.() ?? new Date()).toISOString()
   }
 
+  private pendingExecution:ExecutionCheckpoint|undefined
   private lastMessage: string | null = null
   private responseId: string | undefined
   private responseEvents: AssistantEvent[] = []
@@ -608,28 +649,57 @@ export class AuthoringRun {
     if (this.running || this.state.phase !== 'idle') throw new Error(sourceMessage("Cannot replace an active conversation"))
     const candidates = await Promise.all(saved.candidates.map(async item => ({
       revision: item.revision, text: item.text, document: deepFreeze(JSON.parse(item.text)) as unknown,
-      digest: await digestOf(item.text), producedBy: item.producedBy, responseId: item.responseId,
+      digest: await digestOf(item.text), producedBy: item.producedBy, responseId: item.responseId, packReview:item.packReview,
       ...(item.previousCheck && (item.previousCheck.record || item.previousCheck.documentDigest === await digestOf(item.text)) ? { previousCheck: item.previousCheck } : {})
     })))
     this.set({ ...INITIAL_STATE, brief: saved.brief, seedUrls: saved.seedUrls,
+      questions: structuredClone(saved.questions ?? []),
       turns: saved.turns.map((turn, index) => ({...turn, id: turn.id ?? `legacy-turn-${index}`})),
       responses: saved.responses?.map(row => ({...row, work: {...row.work, items: row.work.items.map(item => item.status === 'working' ? {...item, status: 'interrupted' as const} : item)}})), candidates, probes: saved.probes ?? [], cases: structuredClone(saved.cases),
       expectationIssues: saved.expectationIssues.map(item => ({ id: item.id, original: structuredClone(item.original),
         message: item.message, ...(item.resolved ? { resolved: structuredClone(item.resolved) } : {}) })),
-      unknowns: saved.unknowns, revisionsUsed: saved.revisionsUsed, sessions: saved.sessions,
+      execution:saved.execution, failure:readFailure(saved.failure), unknowns: saved.unknowns, revisionsUsed: saved.revisionsUsed, sessions: saved.sessions,
       phase: candidates.length ? 'review' : saved.turns.length ? 'conversation' : 'idle',
       status: candidates.length ? 'needs-input' : !saved.turns.length ? 'idle'
-        : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'failed' || saved.status === 'budget'
+        : saved.status === 'failed' ? 'failed' : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'budget'
           || saved.turns.at(-1)?.role === 'user' ? 'stopped' : 'complete',
       restored: candidates.length > 0,
       detail: candidates.length ? sourceMessage("Saved draft. Recheck its sources and tests before creating it.")
-        : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'failed' || saved.status === 'budget' || saved.turns.at(-1)?.role === 'user'
+        : saved.status === 'failed' ? saved.detail || sourceMessage("This response was interrupted. Send a message to continue; nothing restarted automatically.") : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'budget' || saved.turns.at(-1)?.role === 'user'
           ? sourceMessage("This response was interrupted. Send a message to continue; nothing restarted automatically.") : '' })
+    const lastUser = [...this.state.turns].reverse().find(turn => turn.role === 'user')
+    if (conversationMode(this.ports.mode) && lastUser) this.lastMessage = lastUser.input ?? lastUser.text
+    if (this.state.questions?.some(q => !q.resolution)) {
+      this.set({phase:'conversation',status:'needs-input',detail:sourceMessage('Waiting for your answer')})
+      return
+    }
+    if (this.state.questions?.some(q => q.resolution && q.resolution.kind !== 'superseded' && !q.resolution.continued && q.resolution.turnId === this.state.turns.at(-1)?.id)) {
+      this.set({phase:'conversation',status:'needs-input',detail:sourceMessage('Ready to continue')})
+      return
+    }
+    if(saved.execution?.status==='paused'){this.set({phase:'conversation',status:'budget',detail:new ExecutionPaused().message});return}
     const record = candidates.at(-1)?.previousCheck?.record
     // Independent draft artifacts keep only the case's cited statements, never
     // a hidden transcript. A new chat's you-1 must not replace their provenance.
     this.set({inheritedStatements: candidates.length && !saved.turns.length ? structuredClone(record?.statements ?? saved.inheritedStatements ?? []) : saved.inheritedStatements})
     this.set({checkRun: saved.checkRun === 'running' ? 'stopped' : saved.checkRun})
+    // A draft and a conversational response have separate recovery states.
+    // Restoring the draft must not erase an unfinished explanation or replay it.
+    const response=saved.responses?.at(-1)
+    const unfinished=saved.phase==='conversation'&&response!==undefined&&response.afterTurnId===lastUser?.id
+      &&!candidates.some(candidate=>candidate.responseId===response.id)
+    if (conversationMode(this.ports.mode) && (saved.status==='failed'&&saved.detail===CONTEXT_LIMIT_MESSAGE
+      || unfinished&&['failed','stopped','running','budget'].includes(saved.status))) {
+      this.set({phase:'conversation',status:saved.status==='failed'?'failed':'stopped',
+        detail:saved.status==='failed'?saved.detail:sourceMessage('This response was interrupted. Send a message to continue; nothing restarted automatically.')})
+      return
+    }
+    if (this.ports.savedPackReview) {
+      this.set(saved.status === 'failed' || saved.status === 'stopped' || saved.status === 'running'
+        ? {phase:'review',status:saved.status === 'failed' ? 'failed' : 'stopped',detail:saved.detail}
+        : {phase:'review',status:'complete',detail:''})
+      return
+    }
     if (record && this.ports.runtimeIdentity) { await this.refreshCheck(); return }
     // A checkpoint keeps no citations, so a reopened conversation draft is
     // traced again before anything reads them: one that cites is never shown
@@ -689,6 +759,7 @@ export class AuthoringRun {
 
   /** Restore completed results, never replay evaluation, acquisition or model work. */
   async refreshCheck(): Promise<void> {
+    if (this.ports.savedPackReview) return
     const candidate = this.latest(), previous = candidate?.check ?? candidate?.previousCheck, record = previous?.record
     if (this.detached || this.running || !candidate || !record || !this.ports.runtimeIdentity) return
     this.background?.abort()
@@ -723,11 +794,12 @@ export class AuthoringRun {
       if (!active()) return
       this.set({restored:false,checkRecovery:'current',checkRun:'complete',checkIssue:undefined,
         candidates:this.state.candidates.map(c => c.digest === candidate.digest ? {...c,check} : c)})
-      this.settleReview(check.valid ? record.inputs.length ? sourceMessage('Some test cases failed. Review the results.') : this.withoutCases() : sourceMessage('The draft needs corrections before it can be created.'))
+      this.settleReview(check.valid ? record.inputs.length ? sourceMessage('Some test cases failed. Review the results.') : this.withoutCases() : sourceMessage('The draft needs corrections before it can be created.'), 'background')
     } catch (cause) {
       if (active()) {
         const reason = (cause as Error).message
-        this.set({restored:true,readiness:'',checkRecovery:/changed/.test(reason) ? 'outdated' : 'unavailable',checkIssue:reason,detail:reason,status:'needs-input',phase:'review'})
+        this.set({restored:true,checkRecovery:/changed/.test(reason) ? 'outdated' : 'unavailable',checkIssue:reason})
+        this.setReviewResult({readiness:'',status:'needs-input',detail:reason}, 'background')
       }
     } finally {
       clearTimeout(timeout)
@@ -745,8 +817,8 @@ export class AuthoringRun {
     this.set({ status: 'running', phase: 'check', detail: sourceMessage("Running draft checks."), checkRun: 'running', checkIssue: undefined, checkRecovery: undefined, readiness: '' })
     void this.drive(async signal => {
       this.set({restored:true})
-      await this.recheckRestored(signal)
-      if (!conversationMode(this.ports.mode) && !this.state.cases.length && !this.state.expectationIssues.length) throw new Error(sourceMessage("No saved cases can be rechecked. Send a message to continue research."))
+      if (!this.ports.savedPackReview) await this.recheckRestored(signal)
+      if (!this.ports.savedPackReview && !conversationMode(this.ports.mode) && !this.state.cases.length && !this.state.expectationIssues.length) throw new Error(sourceMessage("No saved cases can be rechecked. Send a message to continue research."))
       // Model-free: a chat draft saved without cases is checked and told so,
       // and its cases are established only on the person's own request.
       await this.casesAndCheck(signal, false, false)
@@ -809,12 +881,12 @@ export class AuthoringRun {
   }
 
   /** Begin: the brief, the URLs to read first, and the research turn. */
-  start(brief: string, seedUrls: string[], display = brief, attachments: ChatAttachment[] = [], statement = display): void {
+  start(brief: string, seedUrls: string[], display = brief, attachments: ChatAttachment[] = [], statement = display, researchChoice?: Turn['researchChoice'], packContext?: PackProposalBasis): void {
     if (this.running) return
     this.arm()
     this.lastMessage = brief
     this.state = { ...INITIAL_STATE, brief, seedUrls, phase: 'research', status: 'running', detail: 'Working…' }
-    this.addTurn({ role: 'user', kind: 'brief', statement, attachments: structuredClone(attachments), text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : ''), ...(brief !== display ? { input: brief } : {}) })
+    this.addTurn({ role: 'user', kind: 'brief', ...(packContext ? {packContext:structuredClone(packContext)} : {}), ...(researchChoice ? {researchChoice} : {}), statement, attachments: structuredClone(attachments), text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : ''), ...(brief !== display ? { input: brief } : {}) })
     void this.drive(async (signal) => {
       await this.researchTurn(signal)
       await this.casesAndCheck(signal)
@@ -822,32 +894,120 @@ export class AuthoringRun {
   }
 
   /** A message from the person, at any rest state. */
-  send(message: string, display = message, retry = false, attachments: ChatAttachment[] = [], statement = display): void {
+  send(message: string, display = message, retry = false, attachments: ChatAttachment[] = [], statement = display, researchChoice?: Turn['researchChoice'], packContext?: PackProposalBasis): void {
     if (this.running || this.state.phase === 'idle') return
     this.arm()
     const previous = { status: this.state.status, phase: this.state.phase, detail: this.state.detail }
     this.lastMessage = message
-    if (!retry) this.addTurn({ role: 'user', kind: 'message', statement, attachments: structuredClone(attachments), text: display, ...(message !== display ? { input: message } : {}) })
+    if (!retry) {
+      this.pendingExecution=undefined
+      this.set({execution:undefined,failure:undefined})
+      const turnId = crypto.randomUUID()
+      this.set({questions:this.state.questions?.map(q => q.resolution ? q : {...q,resolution:{kind:'superseded',at:this.stamp(),turnId}})})
+      this.addTurn({ id:turnId, role: 'user', kind: 'message', ...(packContext ? {packContext:structuredClone(packContext)} : {}), ...(researchChoice ? {researchChoice} : {}), statement, attachments: structuredClone(attachments), text: display, ...(message !== display ? { input: message } : {}) })
+    }
     this.set({ status: 'running', phase: 'conversation', detail: 'Working…', events: [], streaming: '' })
     void this.drive(async (signal) => {
       const before = this.latest()?.digest
-      const proposal = await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
+      const proposal = await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools, () => this.conversationState())
       if (!this.latest()) this.set({ phase: 'conversation', status: 'complete', detail: '' })
       else if (this.latest()?.digest !== before || proposal && !conversationMode(this.ports.mode) && !this.latest()?.check?.cases.length) {
-        if (this.state.restored) await this.recheckRestored(signal)
+        if (this.state.restored && !this.ports.savedPackReview) await this.recheckRestored(signal)
         await this.casesAndCheck(signal)
       } else if (previous.status === 'ready') await this.settle(signal, sourceMessage("The candidate needs review."))
+      else if (['failed','budget','stopped'].includes(previous.status) && (previous.phase === 'conversation' || previous.detail === CONTEXT_LIMIT_MESSAGE)) this.set({phase:'review',status:'needs-input',detail:sourceMessage('The candidate needs review.')})
       else this.set(previous)
     })
   }
 
+  /** Edits stay in the normal private conversation checkpoint, including across reloads. */
+  updateQuestionDraft(id: string, draft: QuestionDraft): void {
+    const question = this.state.questions?.find(q => q.id === id)
+    if (this.running || !question || question.resolution || !validQuestionDraft(question.prompt, draft)) return
+    this.set({questions:this.state.questions!.map(q => q === question ? {...q,draft:structuredClone(draft)} : q)})
+  }
+
+  /** Record once, then let the chat save this checkpoint before starting the next model turn. */
+  prepareQuestionAnswer(id: string, kind: 'answered' | 'help'): boolean {
+    const question = this.state.questions?.find(q => q.id === id)
+    if (this.running || !question || question.resolution || !validQuestionDraft(question.prompt, question.draft)
+      || kind === 'answered' && !question.draft.selected.length && !question.draft.text.trim()) return false
+    const turnId = crypto.randomUUID()
+    const labels = question.prompt.options.filter(o => question.draft.selected.includes(o.id)).map(o => o.label)
+    const answer = kind === 'help' ? sourceMessage('Help me decide') : labels.join('; ')
+    const display = [answer, question.draft.text.trim()].filter(Boolean).join('\n')
+    const previous = [...this.state.turns].reverse().find(t => t.role === 'user')
+    const input = `${display}\n\nANSWER TO DESK QUESTION\n${JSON.stringify({questionId:id,question:question.prompt.question,kind,selected:kind === 'help' ? [] : labels,text:question.draft.text.trim()})}\nContinue the original task using this answer. Preserve its limits and review requirements. Do not repeat completed operations. If help was requested, briefly explain the options, then call ask_user with the same choices or a more useful follow-up question. Do not choose for the person or treat this as an accepted answer.`
+    this.set({questions:this.state.questions!.map(q => q === question ? {...q,resolution:{kind,at:this.stamp(),turnId}} : q)})
+    this.addTurn({id:turnId,role:'user',kind:'message',text:display,statement:display,input,researchChoice:previous?.researchChoice},
+      {status:'needs-input',detail:sourceMessage('Ready to continue')})
+    return true
+  }
+
+  /** Explicit continuation of a recorded answer. A changed thread makes this action stale. */
+  continueQuestion(id: string): boolean {
+    const question = this.state.questions?.find(q => q.id === id)
+    const answer = this.state.turns.at(-1)
+    if (this.running || !question?.resolution || question.resolution.kind === 'superseded' || question.resolution.continued
+      || question.resolution.turnId !== answer?.id || answer.role !== 'user') return false
+    this.set({questions:this.state.questions!.map(q => q === question ? {...q,resolution:{...q.resolution!,continued:true}} : q),
+      detail:this.latest() ? sourceMessage('The candidate needs review.') : ''})
+    this.send(answer.input ?? answer.text, '', true)
+    return true
+  }
+
   get canRetryResponse(): boolean {
-    return this.lastMessage !== null && !this.latest() && ['failed', 'stopped', 'budget'].includes(this.state.status)
+    if(this.state.execution?.status==='paused'||this.state.execution&&this.state.execution.status!=='complete'&&this.state.execution.used>=this.state.execution.limit)return false
+    const response=this.state.responses?.at(-1)
+    const user=[...this.state.turns].reverse().find(turn=>turn.role==='user')
+    const unfinishedConversation=this.state.phase==='conversation'&&response?.afterTurnId===user?.id
+      &&response!==undefined&&!this.state.candidates.some(candidate=>candidate.responseId===response.id)
+    return this.lastMessage !== null && (!this.latest() || unfinishedConversation || this.state.detail === CONTEXT_LIMIT_MESSAGE) && ['failed', 'stopped', 'budget'].includes(this.state.status)
+  }
+
+  get canExtendResponse(): boolean {
+    return this.state.status==='failed'&&this.state.failure?.code!=='repeated-work'&&this.state.phase==='conversation'&&this.lastMessage!==null&&canExtendInterruptedExecution(this.state.execution)
+  }
+
+  /** UI records the grant durably before dispatch. No model tool calls this. */
+  prepareBudgetContinuation():boolean {
+    if(this.running||!this.state.execution||(this.state.execution.status!=='paused'&&!this.canExtendResponse)||!this.lastMessage||!retryReady(this.state.failure))return false
+    this.set({execution:extendExecution(this.state.execution,this.canExtendResponse),status:'stopped',detail:sourceMessage('Ready to continue')})
+    return true
+  }
+  continueExecution():void {
+    const execution=this.state.execution
+    if(this.running||!execution||execution.status!=='running'||execution.used>=execution.limit||!this.lastMessage)return
+    this.pendingExecution=structuredClone(execution)
+    this.send(this.lastMessage,'',true)
+  }
+  keepExecution():void {
+    if(this.running||this.state.execution?.status!=='paused')return
+    this.set({execution:{...this.state.execution,status:'stopped'},status:'stopped',detail:sourceMessage('Completed work kept. Send a new instruction when ready.')})
   }
 
   /** Explicit retry only, with the original context and no duplicate user turn. */
   retryResponse(): void {
-    if (this.canRetryResponse && this.lastMessage !== null) this.send(this.lastMessage, '', true)
+    if (!retryReady(this.state.failure)) return
+    if (this.canRetryResponse && this.lastMessage !== null) {
+      if(this.state.execution&&this.state.execution.status!=='complete'){this.pendingExecution={...structuredClone(this.state.execution),status:'running'};this.send(this.lastMessage,'',true);return}
+      const lastUser = [...this.state.turns].reverse().find(turn => turn.role === 'user')
+      const response = this.state.responses?.at(-1)
+      const work = response?.afterTurnId === lastUser?.id ? response?.work.items ?? [] : []
+      const continuation = work.length ? '\n\nContinue the unfinished response using the saved conversation and sources. Retained steps: ' + JSON.stringify(work.map(({name,status})=>({name,status}))) + '. Preserve completed work; do not repeat completed actions or claim an interrupted operation succeeded. Ask before repeating an action with an uncertain outcome.' : ''
+      const original = this.lastMessage
+      this.send(original + continuation, '', true)
+      this.lastMessage = original
+    }
+  }
+
+  /** Resume only the research question; never replay an earlier authoring action. */
+  chooseResearch(choice: 'research' | 'provided'): void {
+    const user = [...this.state.turns].reverse().find(turn => turn.role === 'user')
+    const response = this.state.responses?.at(-1)
+    if (this.running || !user || !response || !conversationMode(this.ports.mode) || response.afterTurnId !== user.id || !response.work.items.some(item => item.researchSuggestion) || user.researchChoice === 'research' || user.researchChoice === 'provided') return
+    this.set({turns:this.state.turns.map(turn => turn === user ? {...turn,researchChoice:choice} : turn)})
+    this.send('Continue answering my previous request using the web-research choice recorded for that message. This continuation is read-only: do not repeat previous actions, create or edit packs or graphs, or send messages. If I chose Keep Chat, answer from the conversation and supplied sources, clearly identifying anything that remains unverified.', '', true)
   }
 
   /** A fresh reviewer corrects only the expectation; the candidate and case inputs are fixed. */
@@ -983,6 +1143,7 @@ export class AuthoringRun {
   private async drive(work: (signal: AbortSignal) => Promise<void>): Promise<void> {
     const controller = new AbortController()
     this.controller = controller
+    this.set({failure:undefined})
     // An action traces and settles for itself where it needs to; a trace at
     // rest, and the settle it owed, are over.
     this.background?.abort()
@@ -990,6 +1151,11 @@ export class AuthoringRun {
     try {
       await work(controller.signal)
     } catch (cause) {
+      if(cause instanceof ExecutionPaused){this.set({status:'budget',detail:cause.message,streaming:'',streamingId:undefined});return}
+      if (cause instanceof AwaitingAnswer) {
+        this.set({status:'needs-input',detail:sourceMessage('Waiting for your answer'),streaming:'',streamingId:undefined})
+        return
+      }
       if (this.state.streaming?.trim()) this.addTurn({ id: this.state.streamingId, role: 'assistant', kind: 'message', text: this.state.streaming, interrupted: true }, {streaming: '', streamingId: undefined})
       this.set({ streaming: '', ...(this.state.checkRun === 'running' ? {checkRun: controller.signal.aborted ? 'stopped' as const : 'failed' as const} : {}) })
       if (isCancelled(cause) || cause instanceof Stopped) {
@@ -999,7 +1165,7 @@ export class AuthoringRun {
           this.set({ status: 'stopped', detail: this.alsoUndone(sourceMessage("Stopped. The last completed stage is kept.")) })
         }
       } else {
-        this.set({ status: 'failed', detail: this.alsoUndone((cause as Error)?.message ?? String(cause)) })
+        this.set({ status: 'failed', failure:cause instanceof AIFailureError?cause.failure:undefined, detail: this.alsoUndone((cause as Error)?.message ?? String(cause)) })
       }
     } finally {
       if (this.responseId) {
@@ -1078,19 +1244,74 @@ export class AuthoringRun {
    * which is all a citation holds; the person's messages by their own words.
    * Never the draft's rules or exceptions, and never an assistant turn.
    */
-  private conversationCasesPrompt(document: unknown): string {
+  private conversationCasesPrompt(document: unknown, attached: ReadonlyMap<Turn, AttachedPages[]> = new Map()): string {
     const outcomes = ((document as { outcomes?: unknown })?.outcomes ?? []) as unknown[]
     const evidence = ((document as { evidenceRequirements?: unknown })?.evidenceRequirements ?? []) as unknown[]
     const pages = this.state.citations.filter(citation => citation.traced).map(citation => ({ id: citation.location, url: citation.url, text: citation.quote }))
-    const statements = [...caseStatements(this.state)].map(([id, text]) => ({ id, text }))
+    // A message's attachments are part of what the person supplied in it. Their
+    // text reaches the author through the run's ledger, so the message names
+    // them; the reviewer, which reads no ledger, is given them with the message.
+    const files = new Map(statementTurns(this.state.turns).map(({ id, turn }) => [this.state.inheritedStatements === undefined ? id : `message:${turn.id}`, attached.get(turn) ?? []]))
+    const statements = [...caseStatements(this.state)].map(([id, text]) => {
+      const supplied = files.get(id) ?? []
+      return supplied.length ? { id, text, attachments: supplied.map(attachmentForReview) } : { id, text }
+    })
     return [
       CONVERSATION_CASES_INSTRUCTIONS,
       `OUTCOMES\n${JSON.stringify(outcomes)}`,
       `EVIDENCE REQUIREMENTS\n${JSON.stringify(evidence)}`,
       `FACT PATHS THE PACK READS\n${JSON.stringify(factPaths(document))}`,
       `QUOTED PAGES THE DRAFT CITES\n${JSON.stringify(pages, null, 1)}`,
-      `THE PERSON'S MESSAGES\n${JSON.stringify(statements, null, 1)}`
+      `THE PERSON'S MESSAGES (each with the files and document pages the person attached to it, part of what they supplied)\n${JSON.stringify(statements, null, 1)}`
     ].join('\n\n')
+  }
+
+  /** Whether any message of the person's carries an attachment. */
+  private hasAttachments(): boolean {
+    return this.state.turns.some(turn => turn.role === 'user' && (turn.attachments?.length ?? 0) > 0)
+  }
+
+  /** Verified documents by pin, id and digest: a verified extraction never changes. */
+  private verifiedAttachments = new Map<string, Promise<VerifiedDocument>>()
+
+  /**
+   * The person's attachments, by the message they came with: a text file as
+   * its text, a document as its selected pages verified under the gateway pin
+   * as it is now. Every message's, since an earlier attachment's text is in no
+   * prompt either. The latest message's were verified when it was sent; a
+   * document that cannot be verified now is retained as the reason, never as
+   * text.
+   */
+  private async attachedByTurn(signal: AbortSignal): Promise<[Turn, AttachedPages[]][]> {
+    const seen = new Set<string>()
+    const byTurn: [Turn, AttachedPages[]][] = []
+    for (const turn of this.state.turns) {
+      if (turn.role !== 'user' || !turn.attachments?.length) continue
+      const files: AttachedPages[] = []
+      for (const file of turn.attachments) {
+        const key = file.document ? `${file.id}/${file.document.digest}/${file.document.pages.join(',')}` : `${file.id}/text`
+        if (seen.has(key)) continue
+        seen.add(key)
+        if (!file.document) { files.push(textPages(file)); continue }
+        const pin = this.ports.pin?.() ?? null, load = this.ports.loadDocument
+        try {
+          if (pin === null || !load) throw new Error('no gateway is configured to verify it')
+          const cached = `${JSON.stringify(pin)}/${file.document.id}/${file.document.digest}`
+          let loading = this.verifiedAttachments.get(cached)
+          if (!loading) {
+            loading = load(file.document, pin, signal)
+            this.verifiedAttachments.set(cached, loading)
+            loading.catch(() => this.verifiedAttachments.delete(cached))
+          }
+          files.push(documentPages(file, await loading))
+        } catch (cause) {
+          if (signal.aborted) throw cause
+          files.push({ file, pages: [], unavailable: `this document could not be verified now (${(cause as Error).message}); its text is not available and is not evidence` })
+        }
+      }
+      if (files.length) byTurn.push([turn, files])
+    }
+    return byTurn
   }
 
   private repairPrompt(): string {
@@ -1107,24 +1328,39 @@ export class AuthoringRun {
   }
 
   private conversationPrompt(message: string): string {
-    const candidate = this.latest()
     return [
       CONVERSATION_INSTRUCTIONS,
-      candidate ? `CURRENT DOCUMENT\n${candidate.text}` : '',
-      this.state.cases.length ? `ESTABLISHED CASES\n${JSON.stringify(this.state.cases)}` : '',
-      candidate?.check ? `LATEST CHECK\n${JSON.stringify(candidate.check.cases)}` : '',
-      this.transcript(),
+      this.transcript(true),
       `THE PERSON'S MESSAGE\n${message}`
     ]
       .filter(Boolean)
       .join('\n\n')
   }
 
-  private transcript(): string {
-    const lines = this.state.turns
-      .filter((turn) => turn.kind !== 'note')
-      .map((turn) => `${turn.role === 'user' ? 'PERSON' : 'ASSISTANT'}: ${turn.role === 'user' ? turn.input ?? turn.text : turn.text}`)
-    return `TRANSCRIPT SO FAR\n${lines.join('\n\n')}`
+  /**
+   * What changes between a chat's requests apart from the person's message:
+   * the draft snapshot, the cases established for it, its latest check and its
+   * check against the saved tests. The run passes it as the harness's
+   * `context.currentState` (`@judgment-pack/harness` v0.1.0, agent#9), which
+   * the `vercel` engine sends after the history, inside the execution state, so
+   * a new draft changes no cached prefix; the `codex` engine appends it to its
+   * prompt. Undefined where there is nothing to send.
+   */
+  private conversationState(): string | undefined {
+    const candidate = this.latest()
+    const state = [
+      candidate ? `CHAT DRAFT SNAPSHOT (may predate the saved workspace; use the current workspace or current object reads for edits, and preserve its identity)\n${candidate.text}` : '',
+      !this.ports.savedPackReview && this.state.cases.length ? `ESTABLISHED CASES\n${JSON.stringify(this.state.cases)}` : '',
+      !this.ports.savedPackReview && candidate?.check ? `LATEST CHECK\n${JSON.stringify(candidate.check.cases)}` : '',
+      candidate?.packReview?.check ? `PROPOSAL CHECK AGAINST SAVED TESTS (observations, not authority for expectations)\n${JSON.stringify(candidate.packReview.check)}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+    return state === '' ? undefined : state
+  }
+
+  private transcript(excludeLatestUser = false): string {
+    return modelTranscript(this.state, excludeLatestUser)
   }
 
   /** One engine turn: events recorded, the proposal taken as the next candidate. */
@@ -1133,10 +1369,14 @@ export class AuthoringRun {
     producedBy: Candidate['producedBy'],
     prompt: string,
     hostTools: HostTool[],
-    reviewer = false
+    reviewer = false,
+    currentState?: () => string | undefined
   ): Promise<{ document: unknown; unknowns: string[] } | null> {
     this.check(signal)
-    if (prompt.length > 200_000) throw new Error(sourceMessage("This conversation exceeds the 200,000-character context limit. Start a new chat with the relevant text, or attach a smaller excerpt. Nothing was sent to the model."))
+    const savedTarget = !reviewer && this.ports.savedPackReview ? await this.ports.savedPackReview.target(signal) : undefined
+    this.check(signal)
+    const editorTarget = [...this.state.turns].reverse().find(t => t.role === 'user')?.packContext
+    const packBasis = producedBy==='repair' && this.ports.savedPackReview && this.latest()?.packReview ? this.latest()!.packReview!.basis : savedTarget && editorTarget?.packId === savedTarget.packId && editorTarget.path === savedTarget.path ? editorTarget : savedTarget
     if (this.responseId) this.finishResponse()
     this.currentAITarget = undefined
     this.responseId = crypto.randomUUID()
@@ -1148,9 +1388,14 @@ export class AuthoringRun {
     this.set({ sessions: [...this.state.sessions, session] })
     let proposal: { document: unknown; unknowns: string[] } | null = null
     let failure: string | null = null
+    let typedFailure:AIFailure|undefined
     let spoke = false
+    let askedQuestion = false
+    let budgetPaused=false
+    const execution=this.pendingExecution??(!reviewer&&producedBy==='repair'?this.state.execution:undefined)
+    this.pendingExecution=undefined
     const instructions: HostTool = {
-      name: 'get_authoring_instructions',
+      name: 'get_authoring_instructions', effect:'read', contextPolicy:{immutable:true,reference:true},
       description: 'Read the runtime contract before creating or changing a pack. Not needed for greetings, explanations or ordinary questions.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       execute: async () => ({ content: [{ type: 'text', text: this.ports.authorPrompt
@@ -1162,15 +1407,39 @@ export class AuthoringRun {
     this.set({ streaming: '', streamingId: crypto.randomUUID() })
     const observed: AssistantEvent[] = []
     const responseId = this.responseId
-    await this.ports.turn({onTarget:target=>{this.currentAITarget=target}, prompt, hostTools: reviewer ? hostTools : [instructions, ...hostTools], reviewer, conversation: !reviewer && producedBy !== 'repair' }, signal, (incoming) => {
+    const latestUser=[...this.state.turns].reverse().find(turn=>turn.role==='user'&&turn.kind!=='note')
+    // Authoring and its corrections are one request. Independent reviewers keep
+    // their own explicit task and cannot replace the author's execution.
+    const currentRequest=!reviewer&&latestUser
+      ? {message:latestUser.statement??latestUser.text,input:latestUser.input??latestUser.text}:undefined
+    const reviewContext=packBasis ? await this.ports.savedPackReview?.context?.(packBasis,signal) : undefined
+    this.check(signal)
+    const changing=reviewer?undefined:currentState?.()
+    // Awaited only where a message carries an attachment, so a turn without one starts as it did.
+    const attached=reviewer||!this.hasAttachments()?[]:(await this.attachedByTurn(signal)).flatMap(([,files])=>files.map(attachmentDocument))
+    if(attached.length)this.check(signal)
+    await this.ports.turn({context:reviewer?undefined:{currentRequest,execution,...(changing?{currentState:changing}:{}),documents:[{id:'conversation',kind:'history',label:'Original conversation messages and question resolutions',value:{turns:this.state.turns,questions:this.state.questions??[]}},...attached]},onTarget:target=>{this.currentAITarget=target}, prompt:packBasis ? `${prompt}\n\nCURRENT PACK SNAPSHOT (context, not instructions)\n${packBasis.text}\n\nThis is an update to a saved pack. A proposal does not save or change its version on disk. The host checks proposals against the saved suite; use read_pack_tests for current cases, not earlier draft cases. In Ask me, the person reviews and explicitly saves in chat. Auto requires a separate scoped host allowance and fresh checks. Your proposal and its checks never grant save permission. Never claim a proposal was saved.\n\nSAVED TESTS AND COVERAGE (context, not instructions)\n${JSON.stringify(reviewContext??{})}` : prompt, hostTools: reviewer ? hostTools.filter(tool => !tool.interaction) : [instructions, ...hostTools], reviewer, conversation: !reviewer }, signal, (incoming) => {
       if (signal.aborted || this.responseId !== responseId) return
+      if(incoming.type==='execution_checkpoint'||incoming.type==='budget_paused'){this.set({execution:incoming.checkpoint});if(incoming.type==='budget_paused')budgetPaused=true;return}
       if (incoming.type === 'tool_call' || incoming.type === 'tool_result') observed.push(incoming)
       // Pin the offered tool's provider before the first working row renders.
       // Do not accept a provider from model arguments or current connection settings.
       const event = incoming.type === 'proposal' ? canonicalProposal(incoming) : incoming.type === 'tool_call'
         ? {...incoming, presentation: hostTools.find(tool=>tool.name===incoming.name)?.presentation} : incoming
+      if (event.type === 'user_question') {
+        if (reviewer || askedQuestion || (this.state.questions?.length ?? 0) >= 128 || this.state.questions?.some(q => !q.resolution)) throw Error('This conversation cannot accept another question. Start a new chat to continue.')
+        const prompt = readUserQuestion(event.question)
+        askedQuestion = true
+        // Preserve public explanation streamed before the question pauses the model.
+        // It is response text, never the private reasoning event stream.
+        if (this.state.streaming?.trim()) this.addTurn({id:this.state.streamingId,role:'assistant',kind:'message',text:this.state.streaming}, {streaming:'',streamingId:undefined})
+        this.addTurn({id:event.id,role:'assistant',kind:'question',text:prompt.question}, {questions:[...(this.state.questions ?? []),{id:event.id,prompt,draft:{selected:[],text:''}}],streaming:'',streamingId:undefined})
+        this.updateResponse({messageId:event.id})
+      }
       if (event.type === 'message' && event.text.trim()) spoke = true
-      if (event.type === 'message_progress') { this.set({ streaming: event.text }); return }
+      if (event.type === 'response_recovery') { this.set({detail:sourceMessage('Finishing response from completed work…')}); return }
+      if (event.type === 'retry') { this.set({detail:sourceMessage('Reconnecting… · Retry {{attempt}} of 2', {attempt:event.attempt})}); return }
+      if (event.type === 'message_progress') { this.set({ streaming: event.text, detail:event.text?sourceMessage('Writing response…'):sourceMessage('Working…') }); return }
       this.set({ events: [...this.state.events, event] })
       this.responseEvents.push(event)
       if (event.type === 'message') {
@@ -1189,7 +1458,7 @@ export class AuthoringRun {
       }
       this.updateResponse({work: summarizeWork(this.responseEvents, true)})
       if (event.type === 'proposal') proposal = { document: event.document, unknowns: event.unknowns }
-      if (event.type === 'error') failure = event.message
+      if (event.type === 'error') {failure = event.message;typedFailure=readFailure(event.failure)}
     })
     this.check(signal)
     this.set({ streaming: '' })
@@ -1205,8 +1474,23 @@ export class AuthoringRun {
     // outcome of such a turn is the engine's error and not the verdict.
     const withholds = this.state.readiness === '' ? null : this.withheld()
     if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }
-    if (failure !== null) throw new Error(failure)
-    if (proposal === null && spoke && !reviewer && producedBy !== 'repair') { this.finishResponse(); return null }
+    if(budgetPaused){this.finishResponse();throw new ExecutionPaused()}
+    if (askedQuestion) { this.finishResponse(); throw new AwaitingAnswer() }
+    if (failure !== null) throw typedFailure ? new AIFailureError(typedFailure) : new Error(failure)
+    if (proposal === null && spoke && !reviewer) {
+      const afterTurnId = this.state.responses?.find(row => row.id === responseId)?.afterTurnId
+      const help = this.state.questions?.find(question => question.resolution?.kind === 'help' && question.resolution.turnId === afterTurnId)
+      this.finishResponse()
+      // Help is not a decision. A prose-only explanation must not strand the
+      // person without controls. Reuse the retained question without another
+      // model request. A model-authored follow-up already exits above.
+      if (help && !this.state.questions?.some(question => !question.resolution) && (this.state.questions?.length ?? 0) < 128) {
+        const id = crypto.randomUUID(), prompt = structuredClone(help.prompt)
+        this.addTurn({id,role:'assistant',kind:'question',text:prompt.question}, {questions:[...(this.state.questions ?? []),{id,prompt,draft:{selected:[],text:''}}]})
+        throw new AwaitingAnswer()
+      }
+      return null
+    }
     if (proposal === null) throw new Error(sourceMessage("the assistant ended without a proposal"))
     const taken = proposal as { document: unknown; unknowns: string[] }
     if (!reviewer) {
@@ -1214,7 +1498,7 @@ export class AuthoringRun {
       const digest = await digestOf(text)
       const identity = jsonIdentity(taken.document)
       const repeated = this.state.candidates.some((candidate) => jsonIdentity(candidate.document) === identity)
-      const candidate: Candidate = { responseId: this.responseId, revision: this.state.candidates.length + 1, document: taken.document, text, digest, producedBy }
+      const candidate: Candidate = { ...(packBasis ? {packReview:{basis:packBasis}} : {}), responseId: this.responseId, revision: this.state.candidates.length + 1, document: taken.document, text, digest, producedBy }
       if (!repeated) {
         this.set({
           candidates: [...this.state.candidates, candidate],
@@ -1267,12 +1551,13 @@ export class AuthoringRun {
     signal: AbortSignal,
     producedBy: Candidate['producedBy'],
     prompt: string,
-    hostTools: HostTool[]
+    hostTools: HostTool[],
+    currentState?: () => string | undefined
   ): Promise<{ document: unknown; unknowns: string[] } | null> {
     let attempt = prompt
     for (let continuation = 0; ; continuation += 1) {
       try {
-        return await this.engineTurn(signal, producedBy, attempt, hostTools)
+        return await this.engineTurn(signal, producedBy, attempt, hostTools, false, currentState)
       } catch (cause) {
         if (!(cause instanceof Error) || !NO_FENCE.test(cause.message) || continuation >= MAX_CONTINUATIONS) throw cause
         this.addTurn({ role: 'assistant', kind: 'note', text: sourceMessage("The turn's step budget was spent before a proposal was written; continuing ({{value0}} of {{value1}}).", { value0: continuation + 1, value1: MAX_CONTINUATIONS }) })
@@ -1298,7 +1583,9 @@ export class AuthoringRun {
     // What a chat draft's cases rest on is read as it stands now: the pages
     // it cites are traced again before the reviewer is shown their quotes.
     if (conversation) await this.traceConversation(signal)
-    const proposal = await this.engineTurn(signal, 'research', conversation ? this.conversationCasesPrompt(candidate.document) : this.casesPrompt(candidate.document), [], true)
+    const attached = conversation && this.hasAttachments() ? new Map(await this.attachedByTurn(signal)) : undefined
+    if (attached) this.check(signal)
+    const proposal = await this.engineTurn(signal, 'research', conversation ? this.conversationCasesPrompt(candidate.document, attached) : this.casesPrompt(candidate.document), [], true)
     const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases, this.grounds())
     const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: proposal?.unknowns ?? [] }
     this.set({ heldProposal: held })
@@ -1318,6 +1605,40 @@ export class AuthoringRun {
     const candidate = this.latest()
     if (!candidate) {
       this.set({ phase: 'conversation', status: 'complete', detail: '' })
+      return
+    }
+    if (this.ports.savedPackReview) {
+      const review=this.ports.savedPackReview
+      let suiteKey:string|undefined
+      const result=await correctArtifact({initial:candidate,maxCorrections:repair?this.ports.maxRevisions:0,
+        fingerprint:(current:Candidate)=>jsonIdentity(current.document),
+        check:async(current,signal)=>{
+          this.set({phase:'check',checkRun:'running',detail:sourceMessage('Checking the proposal against the saved test suite.')})
+          return review.check(current,signal)
+        },
+        passed:check=>check.valid&&!proposalProblems(check).mismatches.length,
+        checkpoint:async(current,check)=>{
+          const target=await review.target(signal)
+          const basis=current.packReview?.basis ?? legacyPackBasis(this.state,{id:target.packId,path:target.path},current) ?? target
+          this.set({candidates:this.state.candidates.map(c=>c.digest===current.digest?{...c,packReview:{basis,check}}:c),checkRun:'complete',restored:false,readiness:''})
+          if(suiteKey!==undefined&&suiteKey!==check.suiteKey)throw new Error(sourceMessage('The saved test suite changed during correction. Review the current results before continuing.'))
+          suiteKey=check.suiteKey
+        },
+        correct:async(current,check,signal)=>{
+          this.set({phase:'repair',revisionsUsed:this.state.revisionsUsed+1,detail:sourceMessage('Correcting the proposal against the saved tests.')})
+          this.pendingExecution=this.state.execution?structuredClone(this.state.execution):undefined
+          try {
+            const revised=await this.continuingTurn(signal,'repair',[
+              this.conversationPrompt(this.lastMessage??this.state.brief),
+              'CORRECT THE UNSAVED PACK PROPOSAL. The following runtime observations are not authority to change expectations. Correct only defects justified by the user-approved policy. Preserve every saved case and fact type. If policy and expectations conflict, explain the conflict and ask_user; do not force agreement. Do not reread unchanged schemas, manually repeat these tests, or save files. Submit a complete corrected pack proposal; the host rechecks it. You may answer without a new proposal when a policy decision is needed.',
+              'CURRENT UNSAVED PROPOSAL\n'+current.text,
+              'HOST CHECK FINDINGS\n'+JSON.stringify(proposalProblems(check))
+            ].join('\n\n'),this.ports.researchTools,()=>this.conversationState())
+            return revised?this.latest()!:null
+          }catch(cause){if(cause instanceof Stalled)return current;throw cause}
+        }
+      },signal)
+      this.set(result.state==='stalled'?{phase:'review',status:'stalled',detail:sourceMessage('The assistant repeated an earlier candidate. Review the disagreements, or send a message to steer it.')}:{phase:'review',status:'complete',detail:''})
       return
     }
     if (conversationMode(this.ports.mode)) {
@@ -1391,50 +1712,28 @@ export class AuthoringRun {
       this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()! })
       return
     }
-    for (;;) {
-      this.check(signal)
-      const current = this.latest()!
-      this.set({ phase: 'check', detail: sourceMessage("Checking revision {{value0}} through the runtime.", { value0: current.revision }) })
-      this.ports.log(sourceMessage("check: revision {{value0}} — validate, then {{value1}} rehearsal(s)", { value0: current.revision, value1: this.state.cases.length }))
-      const check = await this.checkCandidate(current.text, this.state.cases, this.ports.callTool, signal)
-      this.set({
-        candidates: this.state.candidates.map((candidate) => (candidate.digest === current.digest ? { ...candidate, check } : candidate))
-      })
-      const passed = completeCurrentCheck(this.state)
-      this.ports.log(sourceMessage("check: revision {{value0}} — {{value1}}, {{value2}}/{{value3}} agree", { value0: current.revision, value1: check.valid ? 'valid' : 'invalid', value2: check.cases.filter((c) => c.passed).length, value3: check.cases.length }))
-      if (passed) {
-        // Agreement is not enough where what the draft rests on did not
-        // verify: a source whose receipt failed, or a citation the run cannot
-        // trace, withholds `ready` -- the draft is shown, and what stands in
-        // its way is said.
-        await this.settle(signal, '')
-        return
+    const result=await correctArtifact({initial:this.latest()!,maxCorrections:repair?Math.max(0,this.ports.maxRevisions-this.state.revisionsUsed):0,
+      fingerprint:(current:Candidate)=>jsonIdentity(current.document),
+      check:async(current,signal)=>{
+        this.check(signal)
+        this.set({phase:'check',detail:sourceMessage('Checking revision {{value0}} through the runtime.',{value0:current.revision})})
+        return this.checkCandidate(current.text,this.state.cases,this.ports.callTool,signal)
+      },
+      checkpoint:async(current,check)=>{this.set({candidates:this.state.candidates.map(c=>c.digest===current.digest?{...c,check}:c)})},
+      passed:()=>completeCurrentCheck(this.state),
+      correct:async(current,_check,signal)=>{
+        this.set({phase:'repair',revisionsUsed:this.state.revisionsUsed+1,detail:sourceMessage('Repairing the candidate against the established cases.')})
+        try{const revised=await this.continuingTurn(signal,'repair',this.repairPrompt(),this.ports.researchTools);return revised?this.latest()!:null}
+        catch(cause){if(cause instanceof Stalled)return current;throw cause}
       }
-      if (!repair) {
-        // A run blocked on an expectation never checked its draft, so this is
-        // the first the person hears of either kind of failure. Saying the
-        // wrong one sends them to the cases when the pack is what is broken.
-        this.set({ phase: 'review', status: 'needs-input', detail: check.valid
-          ? sourceMessage("The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.")
-          : sourceMessage("The unchanged draft is not a valid pack: {{count}} diagnostics. Review them, or send a message to repair it.", { count: check.diagnostics.length }) })
-        return
-      }
-      if (this.state.revisionsUsed >= this.ports.maxRevisions) {
-        this.set({ phase: 'review', status: 'budget', detail: sourceMessage("The revision budget of {{value0}} is spent with disagreements remaining. Review the results, or send a message to continue.", { value0: this.ports.maxRevisions }) })
-        return
-      }
-      this.set({ phase: 'repair', revisionsUsed: this.state.revisionsUsed + 1, detail: sourceMessage("Repairing the candidate against the established cases.") })
-      this.ports.log(sourceMessage("repair: revision {{value0}} of {{value1}}", { value0: this.state.revisionsUsed, value1: this.ports.maxRevisions }))
-      try {
-        await this.continuingTurn(signal, 'repair', this.repairPrompt(), this.ports.researchTools)
-      } catch (cause) {
-        if (cause instanceof Stalled) {
-          this.set({ phase: 'review', status: 'stalled', detail: sourceMessage("The assistant repeated an earlier candidate. Review the disagreements, or send a message to steer it.") })
-          return
-        }
-        throw cause
-      }
-    }
+    },signal)
+    if(result.state==='ready'){await this.settle(signal,'');return}
+    if(result.state==='answered'){this.set({phase:'review',status:'needs-input',detail:sourceMessage('Review the unresolved policy before continuing.')});return}
+    if(result.state==='stalled'){this.set({phase:'review',status:'stalled',detail:sourceMessage('The assistant repeated an earlier candidate. Review the disagreements, or send a message to steer it.')});return}
+    if(!repair){this.set({phase:'review',status:'needs-input',detail:result.check.valid
+      ? sourceMessage('The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.')
+      : sourceMessage('The unchanged draft is not a valid pack: {{count}} diagnostics. Review them, or send a message to repair it.',{count:result.check.diagnostics.length})});return}
+    this.set({phase:'review',status:'budget',detail:sourceMessage('The revision budget of {{value0}} is spent with disagreements remaining. Review the results, or send a message to continue.',{value0:this.ports.maxRevisions})})
   }
 
   /**
@@ -1448,6 +1747,15 @@ export class AuthoringRun {
     return count ? sourceMessage("{{count}} invalid expectations must be corrected and approved before testing or creating the pack.", { count }) : null
   }
 
+  /** Background draft verification owns readiness, never another action's response controls. */
+  private setReviewResult(result: Pick<RunState, 'status' | 'detail' | 'readiness'>, owner: 'action' | 'background'): void {
+    if (owner === 'background' && (this.state.phase !== 'review' || !['ready', 'needs-input'].includes(this.state.status))) {
+      this.set({readiness: result.readiness})
+      return
+    }
+    this.set({...result, phase: 'review'})
+  }
+
   /**
    * Readiness is decided here, and what is decided is also recorded, as the key
    * of what it was decided about. `ready` is the status of the *last action*,
@@ -1456,18 +1764,18 @@ export class AuthoringRun {
    * record instead, which stands only while the candidate, the cases and the
    * citations it names are the ones on hand.
    */
-  private settleReview(notPassing: string): void {
+  private settleReview(notPassing: string, owner: 'action' | 'background' = 'action'): void {
     // The same refusal `casesAndCheck` makes before it checks anything, kept
     // here as a backup: no path rests at `ready` with an expectation open. It
     // fires only where a passing check and an open issue coexist, which no run
     // produces -- so nothing failing without it means nothing.
     if (this.unresolvedExpectations()) {
-      this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()!, readiness: '' })
+      this.setReviewResult({ status: 'needs-input', detail: this.unresolvedExpectations()!, readiness: '' }, owner)
       return
     }
     const passing = completeCurrentCheck(this.state)
     if (!passing) {
-      this.set({ phase: 'review', status: 'needs-input', detail: notPassing, readiness: '' })
+      this.setReviewResult({ status: 'needs-input', detail: notPassing, readiness: '' }, owner)
       return
     }
     // Sources may have been verified, or failed, since the last trace. A chat
@@ -1477,15 +1785,15 @@ export class AuthoringRun {
     if (latest && !conversationMode(this.ports.mode)) this.set({ citations: traceCitations(latest.document, this.ports.ledger) })
     const withheld = this.withheld()
     if (withheld !== null) {
-      this.set({ phase: 'review', status: 'needs-input', detail: withheld, readiness: '' })
+      this.setReviewResult({ status: 'needs-input', detail: withheld, readiness: '' }, owner)
       return
     }
-    this.set({ phase: 'review', status: 'ready', detail: !conversationMode(this.ports.mode)
+    this.setReviewResult({ status: 'ready', detail: !conversationMode(this.ports.mode)
       ? sourceMessage("Every established case agrees. Review the draft, its sources and the unknowns before creating the pack.")
       : this.state.citations.length
         ? sourceMessage("Every test case written without the draft's rules agrees, and every citation is traced to a page read in this chat. Review the draft and the unknowns before creating the pack.")
         : sourceMessage("Every test case written without the draft's rules agrees. This pack cites no source; it rests on what you told the assistant. Review the draft and the unknowns before creating the pack."),
-      readiness: readinessKey(this.state) })
+      readiness: readinessKey(this.state) }, owner)
   }
 
   /** What a chat draft's cases may rest on now: the person's messages and its traced citations. */
@@ -1591,7 +1899,7 @@ export class AuthoringRun {
     void this.traceConversation(controller.signal).then(() => {
       if (this.pendingSettle && this.background === controller && !controller.signal.aborted && !this.running) {
         this.pendingSettle = false
-        this.settleReview(sourceMessage("The candidate needs review."))
+        this.settleReview(sourceMessage("The candidate needs review."), 'background')
       }
     }, () => undefined).finally(() => {
       clearTimeout(deadline)

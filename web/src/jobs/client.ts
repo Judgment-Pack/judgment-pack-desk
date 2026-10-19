@@ -1,18 +1,20 @@
+import {msg} from '../i18n'
 import type {TriggerOrigin} from './triggerTypes'
 import { jobsRequest, RetainedJSON } from './wire'
 import { canonicalize, parseJSON } from '../dialect/canon'
-import { parseJsonText, memberOf } from '../research/verify/canon'
-import type { MappingV2, SourceV2, Preparation, InputProfile } from './mappingTypes'
+import { parseJsonText, memberOf, type JsonNode } from '../research/verify/canon'
+import type { ExecutableDialect, SourceV2, Preparation, InputProfile } from './dialectTypes'
 import type { DocumentObject } from '../documents/client'
 import type { PackTest } from '../mcp/types'
 import { deskFetch } from '../files/client'
+import { setAsideRefusal } from './setAsideProfiles'
 
-export interface InputMapping { version: 1; provider: 'local-file' | 'google-drive'; facts: { target: string; source: string }[]; evidence: { requirement: string; source: string }[] }
-export interface SourceInput { mapping: InputMapping; snapshot: DocumentObject & { selectedAt?: string }; mappingDigest?: string }
+export interface LegacyDialect { version: 1; provider: 'local-file' | 'google-drive'; facts: { target: string; source: string }[]; evidence: { requirement: string; source: string }[] }
+export interface SourceInput { mapping: LegacyDialect; snapshot: DocumentObject & { selectedAt?: string }; mappingDigest?: string }
 export interface InputPreview { input: JobInput; factsText: string; evidenceText: string }
 export interface JobInput { source?: SourceInput | SourceV2; preparation?: Preparation; facts?: unknown; evidence?: Record<string, 'present' | 'absent' | 'unknown'> }
 export interface Decision { disposition: { kind: string; outcomeId?: string; reasons: string[]; handoff: { state: string; triggeredBy?: string[] } }; handoffTarget?: { kind?: string; name?: string } }
-export interface Release { inputMapping?: InputMapping | MappingV2; inputProfiles?: InputProfile[]; mappingWarnings?: string[]; id: string; title: string; packId: string; packVersion: string; packDigest: string; runtimeDigest: string; createdAt: string; pack: string; sample: JobInput; preview: Decision; tests: 'not-run' | 'passed' | 'failed' | 'error'; testEvidence?: ReleaseTests }
+export interface Release { dialect?:{id:string;version:string;digest:string}; inputMapping?: LegacyDialect | ExecutableDialect; inputProfiles?: InputProfile[]; mappingWarnings?: string[]; id: string; title: string; packId: string; packVersion: string; packDigest: string; runtimeDigest: string; createdAt: string; pack: string; sample: JobInput; preview: Decision; tests: 'not-run' | 'passed' | 'failed' | 'error'; testEvidence?: ReleaseTests }
 export interface Job { initialTriggerId?:string; triggers?:{id:string;kind:string;paused:boolean;nextAt?:string}[]; id: string; name: string; releaseId: string; revision: number; createdAt: string; packTitle?: string; packVersion?: string; recentRuns?: Pick<Run, 'id' | 'state' | 'createdAt'>[] }
 /**
  * A run as Runner (v0.5.0, `internal/runner/model.go`) returns it. `startedAt`
@@ -23,7 +25,7 @@ export interface Job { initialTriggerId?:string; triggers?:{id:string;kind:strin
  * are base64, only on `GET runs/{run}`: every list strips them, with `input`
  * and `audit`.
  */
-export interface Run { trigger?:TriggerOrigin; jobName?: string; id: string; jobId: string; releaseId: string; revision: number; state: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted'; createdAt: string; startedAt?: string; finishedAt?: string; requestedBy?: string; attempt: number; problem?: string; input?: JobInput; result?: Decision; audit?: unknown; auditBytes?: string; auditSignatures?: string }
+export interface Run { signing?: {status:'signed';publicKey:string}|{status:'failed';reason:string}; trigger?:TriggerOrigin; jobName?: string; id: string; jobId: string; releaseId: string; revision: number; state: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted'; createdAt: string; startedAt?: string; finishedAt?: string; requestedBy?: string; attempt: number; problem?: string; input?: JobInput; result?: Decision; audit?: unknown; auditBytes?: string; auditSignatures?: string }
 export interface Page<T> { items: T[]; next: number }
 /** A refusal in the runner's words, with its code for the few refusals Desk shows differently. */
 export class JobsRequestError extends Error {
@@ -33,11 +35,12 @@ export class JobsRequestError extends Error {
  * must keep their own bytes and numeric spellings, including in constant triggers. */
 export function canonicalJobsRequest(body: unknown): string {
   const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof RetainedJSON)
-  const mapping = (value: unknown) => object(value) && value.version === 2 ? new RetainedJSON(canonicalize(value)) : value
+  const mapping = (value: unknown) => object(value) && (value.version === 2 || value.version === 3 || value.formatVersion==='2.0.0'||value.formatVersion==='3.0.0') ? new RetainedJSON(canonicalize(value)) : value
   const inputText = (text: string): string => {
     const root = parseJsonText(text), source = memberOf(root, 'source')
     const declared = source && memberOf(source, 'mapping'), version = declared && memberOf(declared, 'version')
-    if (version?.kind !== 'number' || Number(version.literal) !== 2) return text
+    const named=declared&&memberOf(declared,'formatVersion')
+    if (!(version?.kind==='number' && ['2','3'].includes(version.literal)) && !(named?.kind==='string' && ['2.0.0','3.0.0'].includes(named.value))) return text
     // Locate just source.mapping in the already strictly parsed text. Splice
     // only that value, leaving signed response strings, whitespace and numbers
     // byte for byte as retained by the trigger.
@@ -88,12 +91,49 @@ export function canonicalJobsRequest(body: unknown): string {
   }
   return jobsRequest(envelope(body))
 }
+// Retain the response's numeric tokens when copying an immutable release into an
+// editor. Presentation can keep ordinary JSON values; new inputs use these bytes.
+const retainedResponses = new WeakMap<object, string>()
+export function retainedJobMember(value: object, path: string[]): string | undefined {
+  const raw = retainedResponses.get(value)
+  if (!raw) {
+    let item: unknown = value
+    for (const key of path) item = item && typeof item === 'object' ? (item as Record<string, unknown>)[key] : undefined
+    const exact = (v: unknown): boolean => typeof v === 'number' ? Number.isSafeInteger(v) : Array.isArray(v) ? v.every(exact) : v !== null && typeof v === 'object' ? Object.values(v).every(exact) : true
+    if (!exact(item)) throw new Error(msg('The retained input must be read again to preserve its exact numeric values.'))
+    return JSON.stringify(item)
+  }
+  let node: JsonNode | undefined = parseJsonText(raw)
+  for (const key of path) node = node && memberOf(node, key)
+  const encode = (v: JsonNode): string => {
+    if (v.kind === 'number') return v.literal
+    if (v.kind === 'object') return '{' + v.members.map(m => JSON.stringify(m.name) + ':' + encode(m.value)).join(',') + '}'
+    if (v.kind === 'array') return '[' + v.items.map(encode).join(',') + ']'
+    return JSON.stringify(v.kind === 'null' ? null : v.value)
+  }
+  return node && encode(node)
+}
 export async function jobsAPI<T>(path: string, body?: unknown, key?: string, signal?: AbortSignal): Promise<T> {
   const response = await deskFetch(`/api/operations/${path}`, body === undefined ? { signal } : { signal, method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? { 'Idempotency-Key': key } : {}) }, body: canonicalJobsRequest(body) })
   // A refusal whose body is not JSON, such as an earlier Runner's plain-text
   // 404 for a route it does not serve, is still a refusal with its status.
-  const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })
-  if (!response.ok) throw new JobsRequestError(result.error?.message ?? result.message ?? 'The local runner could not complete this request.', response.status, typeof result.error?.code === 'string' ? result.error.code : undefined)
+  const raw = await response.text()
+  let result: any
+  try { result = JSON.parse(raw) } catch (error) { if (response.ok) throw error; result = {} }
+  if (result !== null && typeof result === 'object') {
+    retainedResponses.set(result, raw)
+    if(result.release && typeof result.release==='object') {
+      const release=retainedJobMember(result,['release'])
+      if(release!==undefined)retainedResponses.set(result.release,release)
+    }
+  }
+  if (!response.ok) {
+    // A binding to a profile Runner set aside: Desk's message, in the page's
+    // language, naming the profile and Runner's reason as Desk forwards them.
+    const refused = result.error
+    if (refused?.code === 'input_profile_set_aside' && typeof refused.profile === 'string') throw new JobsRequestError(setAsideRefusal(refused.profile, typeof refused.reason === 'string' ? refused.reason : undefined, true), response.status, refused.code)
+    throw new JobsRequestError(result.error?.message ?? result.message ?? 'The local runner could not complete this request.', response.status, typeof result.error?.code === 'string' ? result.error.code : undefined)
+  }
   return result as T
 }
 

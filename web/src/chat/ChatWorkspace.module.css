@@ -13,7 +13,7 @@
 .threadContent { width: min(100%, var(--measure-form)); margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-5); }
 .threadContent > * { flex: 0 0 auto; min-width: 0; }
 .welcome { max-width: var(--measure-form); margin: auto; text-align: center; padding: var(--space-5) var(--space-2); }
-.welcome h1 { font-size: var(--text-page); font-weight: 500; margin: 0 0 var(--space-3); }
+.welcome h1 { font-size: var(--text-body); font-weight: 400; line-height: 1.5; margin: 0 0 var(--space-1); }
 .welcome p { font-size: var(--text-sm); color: var(--ink-soft); margin: 0; line-height: 1.6; }
 .chat[data-landing] { justify-content: center; }
 .chat[data-landing] .transcript { flex: 0 1 auto; margin-top: auto; }
@@ -32,7 +32,7 @@
 .runStatus, .work { width: min(100%, var(--measure-form)); margin-inline: auto; color: var(--ink-soft); font-size: var(--text-xs); }
 .runStatus p { margin-block: var(--space-1) 0; }
 .work summary { cursor: pointer; }
-.work ol { display: grid; gap: var(--space-1); padding: 0; list-style: none; overflow-wrap: anywhere; }
+.work ol { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }
 .artifactList { display: grid; gap: var(--space-3); }
 .artifact { display: flex; align-items: center; gap: var(--space-3); width: min(100%, var(--measure-form)); margin-inline: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); }
 .artifact > button, .artifact > a { flex-shrink: 0; }
@@ -48,7 +48,7 @@
 .composerControls { display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
 .pick { min-width: 0; max-width: 8rem; }
 .pick button { max-width: 100%; min-width: 0; }
-.footnote { min-height: 1.6em; line-height: 1.6; color: var(--ink-faint); font-size: var(--text-xs); text-align: center; margin: var(--space-2) 0 0; }
+.footnote { min-height: 1.6em; line-height: 1.6; color: var(--ink-soft); font-size: var(--text-xs); text-align: center; margin: var(--space-2) 0 0; }
 .notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-xs); color: var(--ink-soft); margin-bottom: var(--space-3); }
 .notice p { margin: 0; }
 .history { position: relative; list-style: none; padding: 0 var(--space-2) var(--space-2); margin: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow: auto; overscroll-behavior: contain; min-height: 0; }
@@ -97,7 +97,6 @@
 .markdown ul, .markdown ol { padding-left: var(--space-5); margin-block: var(--space-2); }
 .markdown li + li { margin-top: var(--space-1); }
 .markdown blockquote { border-inline-start: 2px solid var(--border-strong); padding-inline-start: var(--space-3); margin-inline: 0; color: var(--ink-soft); }
-.markdown a { color: var(--ink); text-decoration: underline var(--ink); text-underline-offset: 3px; }
 .markdown code { font-size: var(--text-xs); }
 .messageActions { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); margin-top: var(--space-2); }
 .messageActions > button { font-size: var(--text-xs); }
@@ -117,7 +116,7 @@
 
 .day { color: var(--ink-soft); font-size: var(--text-xs); line-height: 1.6; text-align: center; padding-block: var(--space-1); }
 .documentList { display: grid; width: 100%; min-width: 0; gap: var(--space-1); }
-.send { flex: 0 0 var(--density-control); width: var(--density-control); padding: 0; }
+.send { flex: none; }
 .markdown :not(pre) > code { background: var(--accent-soft); border-radius: var(--radius-sm); padding-inline: var(--space-1); }
 
 
@@ -126,6 +125,8 @@
 
 /* Message-owned supporting material stays inside its response, at a quieter scale. */
 .responseDetails { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+/* In-flight work has no preceding message content to separate from. */
+.responseDetails:first-child { margin-top: 0; }
 .sentAttachments { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0; margin: var(--space-2) 0 0; list-style: none; }
 .sentAttachments li { max-width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .sentAttachments button { max-width: 100%; text-align: start; white-space: normal; overflow-wrap: anywhere; }
@@ -139,7 +140,9 @@
 .openQuestions li p { margin-block: 0; }
 
 
-.workTitle, .workWarning { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* Keep counts on the text baseline; the disclosure chevron is the only summary icon. */
+.workTitle { color: var(--ink-soft); }
+.workWarning { white-space: nowrap; }
 .workWarning, .work li[data-status="failed"] .workIcon, .work li[data-status="failed"] .workState { color: var(--unknown); }
 .workIcon { flex: none; display: flex; padding-top: 2px; }
 .workStep { min-width: 0; flex: 1; display: grid; gap: var(--space-1); }
@@ -147,7 +150,7 @@
 .workState { flex: none; color: var(--ink-faint); }
 
 .workGroup { width: min(100%, var(--measure-form)); min-width: 0; margin-inline: auto; }
-.workRow { display: flex; width: 100%; min-width: 0; gap: var(--space-3); align-items: center; text-align: start; font: inherit; color: inherit; border-width: 0; border-radius: var(--radius-sm); padding: var(--space-2); background: transparent; }
+.workRow { display: flex; width: 100%; min-width: 0; min-height: var(--density-control); gap: var(--space-3); align-items: center; text-align: start; font: inherit; line-height: 1.5; color: inherit; border-width: 0; border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); background: transparent; }
 .workRow:where(button) { cursor: pointer; }
 .workRow:where(button):hover, .workRow[aria-pressed="true"] { background: var(--surface-raised); }
 .workRow:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -156,9 +159,6 @@
 
 .composerReadiness { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; margin: 0; padding: 0 var(--space-3) var(--space-2); font-size: var(--text-xs); color: var(--ink-soft); overflow-wrap: anywhere; }
 
-.historySpinner { display: block; width: 16px; height: 16px; box-sizing: border-box; border-width: 1.75px; border-style: solid; border-color: currentColor; border-right-color: transparent; border-radius: var(--radius-pill); animation: historySpin .8s linear infinite; }
-@keyframes historySpin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .historySpinner { animation: none; } }
 .chatToolbar button[aria-busy='true'] { opacity: 1; cursor: progress; }
 
 .composerReadiness > span { flex: 1 1 16rem; }
@@ -168,13 +168,34 @@
 .retainedChat { height: 100%; min-height: 0; }
 .retainedChat[hidden] { display: none; }
 .chat[data-placement="pane"] .welcome { text-align: start; margin: 0; padding: var(--space-3) 0; }
-.chat[data-placement="pane"] .welcome h1 { font-size: var(--text-heading); font-weight: 600; margin-bottom: var(--space-2); }
-.chat[data-placement="pane"] .thread { padding: var(--space-4); scrollbar-gutter: stable; }
-.chat[data-placement="pane"] .composerArea { padding: var(--space-3) var(--space-4) var(--space-4); }
+/* Pane density follows the shared scale; full-page chat retains its reading measure. */
+.chat[data-placement="pane"] .thread { padding: var(--density-block); scrollbar-gutter: stable; }
+.chat[data-placement="pane"] .threadContent { gap: var(--density-field); }
+.chat[data-placement="pane"] .message { font-size: var(--text-sm); line-height: var(--leading-body); }
+.chat[data-placement="pane"] .message[data-role="user"] { padding: var(--density-gap) var(--density-block); }
+.chat[data-placement="pane"] .markdown h1,
+.chat[data-placement="pane"] .markdown h2,
+.chat[data-placement="pane"] .markdown h3,
+.chat[data-placement="pane"] .markdown h4,
+.chat[data-placement="pane"] .markdown h5,
+.chat[data-placement="pane"] .markdown h6 { font-size: var(--text-sm); margin-block: var(--density-field) var(--space-1); }
+.chat[data-placement="pane"] .markdown h1,
+.chat[data-placement="pane"] .markdown h2 { font-size: var(--text-body); }
+.chat[data-placement="pane"] .markdown > :first-child { margin-top: 0; }
+.chat[data-placement="pane"] .markdown > :last-child { margin-bottom: 0; }
+.chat[data-placement="pane"] .markdown hr { margin-block: var(--density-field); }
+.chat[data-placement="pane"] .markdown ul,
+.chat[data-placement="pane"] .markdown ol { padding-inline-start: var(--space-4); }
+.chat[data-placement="pane"] .messageActions { margin-top: var(--space-1); }
+.chat[data-placement="pane"] .userHeader > .messageActions { margin-top: 0; }
+.chat[data-placement="pane"] .composerArea { padding: var(--density-gap) var(--density-block) var(--density-block); }
+.chat[data-placement="pane"] .messageInput { font-size: var(--text-sm); line-height: var(--leading-body); padding-inline: var(--space-2); }
+.chat[data-placement="pane"] .footnote { margin-top: var(--space-1); }
 .footnote:empty { display: none; }
+.composerShortcut { text-align: end; }
 
 .composerContext { margin-bottom: var(--space-2); min-width: 0; }
-.composerContext > button, .composerContext > div { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; padding: var(--space-2); color: var(--ink-soft); text-align: start; font-size: var(--text-xs); background: transparent; border-width: 0; border-radius: var(--radius-sm); }
+.composerContext > button, .composerContext > div { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; padding: var(--space-2); color: var(--ink-soft); text-align: start; font: inherit; font-size: var(--text-xs); background: transparent; border-width: 0; border-radius: var(--radius-sm); }
 .composerContext > button { cursor: pointer; }
 .composerContext > button:hover { background: var(--false-soft); color: var(--ink); }
 .composerContext svg { width: 16px; height: 16px; flex: none; }
@@ -188,3 +209,27 @@
 .markdown { min-width: 0; }
 .historyCreate { display: flex; padding: 0 var(--space-3) var(--space-2); border-bottom: 1px solid var(--border); }
 .historyCreate > button { width: 100%; justify-content: flex-start; }
+
+.message:focus { outline: none; }
+.message[data-jump-target]:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.composerArea > [role='status'] { margin-bottom: var(--space-2); }
+
+/* Keep user-message actions with the timestamp, without covering message text. */
+.userHeader { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; column-gap: var(--space-3); row-gap: var(--space-1); margin-bottom: var(--space-1); }
+.userHeader > .messageActions { margin-top: 0; margin-inline-start: auto; flex-wrap: wrap; justify-content: flex-end; }
+
+/* Input identity shares the pane header hierarchy, outside transcript scrolling. */
+.chat > .composerContext { flex: 0 0 auto; margin: 0; padding: var(--space-1) var(--density-block); border-bottom: 1px solid var(--border); }
+
+.workTitle, .workState { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+.workIndicator { color: var(--ink-faint); display: inline-flex; align-items: center; justify-content: center; flex: none; width: 16px; height: 16px; }
+
+/* Inputs artifacts summarize work; their review owns the field-level detail. */
+.artifact[data-artifact-compact] { padding:var(--space-2) var(--space-3); }
+.artifact[data-artifact-compact] strong,
+.artifact[data-artifact-compact] small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.inputResearchLink { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-2); font-size:var(--text-sm); }
+.inputResearchLink > [role="status"] { flex:1 1 12rem; min-width:0; margin:0; }
+.inputResearchLink > a, .inputResearchLink > button { flex-shrink:0; }
+.inputResearchLink[data-attention] > [role="status"] { color:var(--unknown); }

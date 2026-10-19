@@ -22,7 +22,7 @@ beforeEach(() => {
  vi.mocked(deskFetch).mockImplementation(async (_path,init) => {
   if(init?.method==='POST') {
    const command=JSON.parse(init.body as string);commands.push(command.action)
-   if(refuse) return new Response('{"error":"The saved inputs changed"}',{status:409})
+   if(refuse) return new Response('{"error":"The saved dialects changed"}',{status:409})
    if(command.action==='begin') reply.content.subjects[command.subject]={revisions:reply.content.subjects[command.subject]?.revisions??[],pending:{token:'one',expires:new Date(Date.now()+60000).toISOString(),snapshot:command.snapshot,model:command.model}}
    if(command.action==='complete') reply.content.subjects[command.subject]={revisions:[{id:'one',revision:1,at:'2026-10-10T12:00:00Z',snapshot:reply.content.subjects[command.subject]!.pending!.snapshot,model:'fixture',method:'ai-summary-v1',text:command.text}]}
   }
@@ -45,7 +45,7 @@ it('generates only on request, persists a frozen revision, and reopens without a
 })
 it('shows outdated inputs and keeps the previous revision readable',async()=>{
  reply.content.subjects['pack:one']={revisions:[{id:'old',revision:1,at:'2026-10-09T12:00:00Z',snapshot:{...snapshot,pack:'{"version":"0"}'},text,model:'fixture',method:'ai-summary-v1'}]}
- draw();await screen.findByText('Retained context');expect(screen.getByText(/Inputs have changed/)).toBeTruthy()
+ draw();await screen.findByText('Retained context');expect(screen.getByText(/Dialects have changed/)).toBeTruthy()
  fireEvent.keyDown(screen.getByRole('button',{name:'Brief actions'}),{key:'Enter'})
  expect((await screen.findAllByRole('menuitem')).map(e=>e.textContent)).toEqual(['Regenerate brief','Revision history','Print / Save PDF'])
  expect(fixture.generate).not.toHaveBeenCalled()
@@ -54,7 +54,7 @@ it('refuses unsaved definitions and does not invoke a model when reservation is 
  const view=draw(content+' ', 'Save changes first');await screen.findByRole('button',{name:'Generate brief'})
  expect(screen.getByRole('button',{name:'Generate brief'})).toHaveProperty('disabled',true)
  view.unmount();refuse=true;draw();await screen.findByRole('button',{name:'Generate brief'})
- fireEvent.click(screen.getByRole('button',{name:'Generate brief'}));await screen.findByText(/The saved inputs changed/)
+ fireEvent.click(screen.getByRole('button',{name:'Generate brief'}));await screen.findByText(/The saved dialects changed/)
  expect(fixture.generate).not.toHaveBeenCalled();expect(commands).toEqual(['begin'])
 })
 it('keeps saved revisions available after source removal without enabling regeneration',async()=>{

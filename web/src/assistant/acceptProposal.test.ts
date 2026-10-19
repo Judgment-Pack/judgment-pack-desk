@@ -13,7 +13,7 @@
  * that rewrote the whole file.
  */
 import { describe, expect, it } from 'vitest'
-import scenario from './conformance/scenario.json'
+import { scenario } from '@judgment-pack/harness/certification'
 import { DRAFT_MOVED, acceptState, applyProposal, writable } from './acceptProposal'
 import { bytesAt, buffered } from '../packs/edit/writes'
 

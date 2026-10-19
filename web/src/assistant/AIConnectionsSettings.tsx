@@ -1,3 +1,4 @@
+import { SettingsFeedback } from '../ui/SettingsFeedback'
 import { sourceMessage } from '../i18n/source'
 import { Menu as DropdownMenu } from '../ui/Menu'
 import { IconMore } from '../shell/icons'
@@ -79,11 +80,11 @@ export function AIConnectionsSettings({unavailable,onDirtyChange}:{unavailable:b
   </div>)}</div>
   <p className="quiet">{msg('The shared default is used by desks that inherit assistant settings. Custom desks keep their own selection. Disabling a connection makes it unavailable to every desk.')}</p>
   <Disclosure title={msg('Advanced settings')}><p className={styles.meta}>{msg('Connection settings are stored on this computer.')}</p><code className={styles.meta}>{registry.path}</code><p className={styles.meta}>{msg('API keys and account credentials are stored separately and are never included in project files.')}</p></Disclosure>
-  {save.error&&!adding&&!rename&&<p role="alert">{save.error.message}</p>}
+  {save.error&&!adding&&!rename&&<SettingsFeedback tone="error">{save.error.message}</SettingsFeedback>}
   <Dialog open={adding||!!rename} onOpenChange={open=>{if(!save.isPending&&!open){setAdding(false);setRename(null)}}} title={msg(rename?sourceMessage('Rename connection'):sourceMessage('Add AI connection'))}>
    <FieldGroup><Field label={msg('Name')} error={aiConnectionNameTooLong(name)?msg(AI_CONNECTION_NAME_SAYS):undefined}>{w=><Input {...w} value={name} autoFocus placeholder={msg('For example, Anthropic — Work')} onChange={e=>setName(e.target.value)}/>}</Field>
    {adding&&<Field label={msg('Provider')}>{w=><Select {...w} value={provider} onValueChange={setProvider} options={[{value:'codex',label:msg('ChatGPT subscription')},{value:'openai-compatible',label:msg('OpenAI-compatible API')},{value:'anthropic',label:msg('Anthropic API')},{value:'gemini',label:msg('Google Gemini API')}]}/>}</Field>}</FieldGroup>
-   {save.error&&<p role="alert">{save.error.message}</p>}
+   {save.error&&<SettingsFeedback tone="error">{save.error.message}</SettingsFeedback>}
    <DialogActions><Button variant="quiet" disabled={save.isPending} onClick={()=>{setAdding(false);setRename(null)}}>{msg('Cancel')}</Button><Button disabled={busy||!name.trim()||aiConnectionNameTooLong(name)} onClick={()=>rename&&snapshot?save.mutate({base:snapshot,connections:snapshot.connections.map(c=>c.id===rename.id?{...c,name:name.trim()}:c)}):create()}>{msg(save.isPending?'Saving…':rename?sourceMessage('Save name'):'Add connection')}</Button></DialogActions>
   </Dialog>
  </div>

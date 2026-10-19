@@ -1,7 +1,7 @@
 .directory { min-width: 0; font-size: var(--text-sm); }
 .controls { display: flex; flex-direction: column; gap: var(--space-3); padding-bottom: var(--space-3); }
 .search { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.search > input { flex: 1 1 180px; min-width: 0; }
+.search > [data-search-field] { flex: 1 1 180px; min-width: 0; }
 .filter { flex: 0 1 180px; min-width: 0; }
 .filter > span, .filter button { max-width: 100%; }
 .list { list-style: none; padding: 0; margin: 0; }

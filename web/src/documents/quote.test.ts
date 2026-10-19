@@ -28,3 +28,23 @@ it('preserves the previous match contract across whitespace combinations and sub
     }
   }
 })
+it.each([
+ ['“are formally coming together”','are formally coming together'],
+ ['"are formally coming together"','are formally coming together'],
+ ['‘are formally coming together’','are formally coming together'],
+ ['« are formally coming together »','are formally coming together'],
+ ['「are formally coming together」','are formally coming together'],
+ ['“contracting and\n procurement solutions”','contracting and procurement solutions'],
+])('accepts balanced presentation quotation marks without changing source text: %s',(quote,expected)=>{
+ const text='MMC provides contracting and procurement solutions. The organizations are formally coming together.'
+ const range=quoteRange(text,quote)!
+ expect(text.slice(range.start,range.end)).toBe(expected)
+})
+it('prefers punctuation that is actually present in the source',()=>{
+ const text='a “quoted phrase” follows'
+ const range=quoteRange(text,'“quoted phrase”')!
+ expect(text.slice(range.start,range.end)).toBe('“quoted phrase”')
+})
+it.each(['“invented phrase”','“line one…line two”','“Line one line two”','“line one line two"','“line one line two','“”','“   ”','““line one line two””'])('does not turn a different or malformed quote into a match: %s',quote=>{
+ expect(quoteRange('line one line two',quote)).toBeUndefined()
+})

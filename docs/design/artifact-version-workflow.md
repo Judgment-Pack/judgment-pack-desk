@@ -1,0 +1,137 @@
+# Pack and Dialect artifact versions
+
+Status: named Dialect formats are implemented by [Spec #187](https://github.com/Judgment-Pack/judgment-pack-spec/pull/187), Runtime #288 and Runner #96. Desk publication and frozen job integration are tracked in [Desk #405](https://github.com/Judgment-Pack/judgment-pack-desk/issues/405). Shared manual/chat publication and reviewed job upgrades are implemented under [Desk #404](https://github.com/Judgment-Pack/judgment-pack-desk/issues/404).
+
+## What the audit found
+
+A pack's `version` already uses exactly `MAJOR.MINOR.PATCH`, without leading zeroes,
+prerelease suffixes or build metadata. Its `specVersion` is independent. Desk
+accepts the version supplied by a form or checked AI proposal. The shared Runtime
+arithmetic tool and Desk's capability-gated pack editor now provide patch, minor,
+and major choices from the saved base. The reviewed publication and job-upgrade boundaries now retain exact versions,
+as described below. Dialect `version: 2|3` identifies its document format, and
+Desk's `recipeVersion` counts local recipe changes. Those are different identities.
+
+## Implemented authoring slice
+
+Runtime PRs #276, #278 and #279 provide offline Dialect encoding, document
+validation, authoring resources and declared pack coverage. PR #285 extends shared
+validation, schema and pack checks to integer format 3 for `operation` (bound or
+unbound declarations) and `selected-file`. Unsupported `http`, `sql`, `web` and
+`research` kinds return explicit findings; these checks do not resolve installation
+bindings or verify preparations. Existing canonical identities are unchanged.
+PR #281 adds strict
+x.y.z validation, exact comparison and all three bump choices through
+`get_artifact_version_options` and `jpack artifact version`. Numeric arithmetic
+does not determine compatibility or grant save permission.
+
+The pack editor discovers the version tool and requests choices from its frozen
+saved base. Choosing a value edits the existing draft; repeating a selection does
+not increment an already proposed value. Existing draft edits remain intact, and
+Save retains the existing write guards. Reconnecting or changing the saved base
+invalidates old requests. Older Runtime installations retain manual version entry.
+The read-only tool follows the shared Plan and context policies, and all eleven
+non-English catalogs include the controls.
+
+Independent same-vendor Codex review and local integration checks cover this work.
+These capabilities do not imply a new stable release.
+
+## Reviewed publication and job upgrades
+
+The existing **Review & lock** action is Desk's publication boundary. Saving a
+file remains draft authoring. On confirmation, Desk retains the configuration and
+all reviewed pack/graph bytes in its private content-addressed repository, then
+locks exactly that snapshot and records an immutable publication receipt. The
+ledger binds `(kind, id, version)` to exact bytes. It refuses conflicting identity
+reuse and requires a higher Runtime-verified version when replacing an existing
+artifact alias or path. Adding a reference to an existing immutable version is
+allowed. Restoring older content into an existing alias needs a new version.
+
+Retention precedes locking so a process interruption cannot lose the bytes of a
+published lock. The next confirmation reconciles the current public lock into the
+ledger before attempting another publication. A failed or uncertain write is
+reported without replay. The ledger and content are private, bounded, and ignored
+by Git. History exposes retained versions with verified bytes and bounded stable
+pagination; it never converts an unavailable store into an empty history.
+
+Jobs remain pinned until **Upgrade job** completes the existing checked-release
+wizard. Runner requires an explicit review plus the current job revision/release,
+retains every creation and upgrade receipt, and leaves older runs pinned. Pending
+source occurrences block the upgrade. Existing triggers must be paused and stay
+paused with a new trigger revision; resuming a trigger needs a fresh review.
+Connected Dialect subscriptions use **Review upgrade** while paused. The shared
+record review freezes the candidate release, source class, processing mode and
+baseline at review time. Confirmation upgrades the existing job and retains a
+new paused subscription revision with the same trigger. The old revision and
+its execution history remain unchanged; existing records are skipped by the new
+baseline. Records arriving after review remain eligible when the replacement is
+explicitly enabled. A superseded revision cannot enable or deliver again.
+
+The coordinator leases both journals, retains intent before Runner's exact CAS,
+and resolves acknowledgement loss from the immutable upgrade receipt. **Check
+result** only reads that receipt, even if the preparation is unavailable or the
+job has advanced again. A separate, explicitly reviewed **Retry exact upgrade**
+revalidates the frozen inputs and resubmits the identical CAS once. It journals
+the retry before dispatch and preserves uncertainty after transport or retry
+authorization failure. Only an accepted receipt or Runner's immutable conflicting
+revision can resolve an uncertain attempt. A prepared, undispatched attempt can
+be explicitly cancelled. History and recovery share the file/memory journal
+contract; no host-side retry starts a second job or a record run.
+
+The UI discovers the `job-upgrades` capability and hides this action on older Runner versions.
+
+Runtime owns strict numeric version operations; Desk and Runner own their separate
+publication/admission policies. None of these operations infers compatibility,
+automatic major bumps, permission to write, or passing expected outcomes. Plan,
+Ask me/Auto, and the shared AI correction framework retain their existing guards.
+
+Named Dialect identity is available through Spec #187 and the shared publication
+workflow described in runtime-dialect-authoring.md, including resource-scoped Ask me/Auto
+approvals, server-enforced Plan restrictions and receipt-only recovery. Historical integer formats
+2 and 3 are preserved. First-job promotion and automatic impact classification
+remain separate product policies; the version selector offers explicit choices.
+
+## Shared workflow
+
+1. Start an edit from a saved artifact identity, exact content and storage revision.
+   Autosave preserves the draft; it does not publish another artifact version.
+2. Review a proposed Patch, Minor or Major bump, displaying the saved and proposed
+   values. For `0.1.0`, these are `0.1.1`, `0.2.0` and `1.0.0`. The increment uses
+   exact integer arithmetic. A new artifact can start at `0.1.0`.
+3. Review the impact independently of the number. A compatible correction suggests
+   patch, an additive compatible feature suggests minor, and a breaking change
+   suggests major. A policy change may be breaking even when its fields and tests
+   are unchanged. Document the compatibility promise during 0.x; never infer it
+   from passing tests or a model's confidence.
+4. Bind validation, tests, diff and approval to the complete candidate, including
+   its proposed version. Changing the candidate invalidates prior checks.
+5. Save through the existing Ask me/Auto framework and an authoritative storage
+   guard. A version choice is not permission to write. Refuse stale bases and
+   changed content under an existing published identity. Identical completed
+   publications reconcile without a second write. Uncertain writes stop for
+   reconciliation; they never trigger an automatic retry.
+6. Keep saved versions available. Restoring earlier content creates a new version.
+   Jobs and subscriptions keep their reviewed version and digest until an explicit
+   upgrade is reviewed. Research results, record imports and job runs do not bump
+   the reusable definition.
+
+## Format version and storage revision
+
+Named Dialects use `formatVersion: "2.0.0"` or `"3.0.0"` for the document
+grammar, an opaque `id` for the artifact identity, and `version: "x.y.z"` for
+the artifact release. Historical integer formats 2 and 3 remain readable. Both
+named families retain their own source and binding rules; the format label does
+not convert version-3 sources into version-2 sources.
+
+Spec owns these members and the canonical identity rules. Runtime supplies the
+canonical writer, validator and digest/version tooling; Runner pins execution to
+those artifacts; Exchange enforces publication identity. Desk owns the shared
+review/save experience. Gateway changes only where its actual references require
+it. Integer operation counts, local revision tokens and cryptographic digests do
+not become semantic release versions.
+
+A fresh local Desk workspace removes a local-data migration requirement. It does
+not permit rewriting historical published schemas, canonical vectors or signed
+receipts. No workspace data has been deleted. The reset follows a validated writer
+and reader rollout and must preserve credentials, signing keys and installations
+unless explicitly included in a separate reset scope.

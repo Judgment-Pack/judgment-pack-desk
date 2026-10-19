@@ -2,7 +2,7 @@ import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/reac
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {JobIntegrationPicker} from './JobIntegrationPicker'
-import type {ProfileEntry} from './mappingTypes'
+import type {ProfileEntry} from './dialectTypes'
 const mock=vi.hoisted(()=>({catalog:vi.fn(),open:vi.fn(),close:vi.fn(),config:{} as any}))
 vi.mock('../connections/catalog',()=>({useConnections:mock.catalog}))
 vi.mock('../connections/ConnectionPaneContext',()=>({useConnectionsPane:()=>({open:mock.open,close:mock.close})}))
@@ -58,8 +58,22 @@ it('names and searches calculator profiles while keeping ordinary profile labels
  fireEvent.click(screen.getByRole('button',{name:'Add source'}))
  expect(screen.getByRole('button',{name:'registry'})).toBeTruthy()
  expect(screen.getByRole('button',{name:'fx · Calculator: fx-convert · 2.1.0'})).toBeTruthy()
- fireEvent.change(screen.getByRole('textbox',{name:'Search integrations…'}),{target:{value:'fx-convert'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search integrations…'}),{target:{value:'fx-convert'}})
  expect(screen.queryByRole('button',{name:'registry'})).toBeNull()
  fireEvent.click(screen.getByRole('button',{name:'fx · Calculator: fx-convert · 2.1.0'}))
  expect(onPick).toHaveBeenCalledWith(calculator)
+})
+
+it('shows a set-aside profile with Runner\'s reason as its status and does not let it be chosen',async()=>{
+ const aside:ProfileEntry={...entry,profile:{...entry.profile,id:'old-registry'},state:'set-aside',reason:'its form is refused'}
+ const onPick=view([entry,aside])
+ fireEvent.click(screen.getByRole('button',{name:'Add source'}))
+ const option=screen.getByRole('button',{name:'old-registry'}) as HTMLButtonElement
+ expect(option.disabled).toBe(true)
+ expect(document.getElementById(option.getAttribute('aria-describedby')!)?.textContent).toBe('Set aside by Runner. Runner’s reason: its form is refused')
+ fireEvent.click(option)
+ expect(onPick).not.toHaveBeenCalled()
+ await screen.findByText('Background access configured')
+ fireEvent.click(screen.getByRole('button',{name:'registry'}))
+ expect(onPick).toHaveBeenCalledWith(entry)
 })

@@ -1,3 +1,4 @@
+import {privateQuery} from '../data/privateQuery'
 /**
  * What a run's record says, shown the same way on the run page and in the
  * Activity tab's detail pane (#213): when Runner recorded each step, who
@@ -11,11 +12,12 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { formatDate, formatNumber, msg } from '../i18n'
+import { RunSigningNotice } from './RunSigning'
 import { Disclosure } from '../ui/Disclosure'
 import { jobsAPI, type Decision, type Job, type Release, type Run, type SourceInput } from './client'
 import { decodeBase64, evidenceOf, requesterOf, sha256, stamp, type Requester, type StampName } from './activity'
-import { isSourceV2 } from './mappingTypes'
-import { InputLineage, MappingReview } from './MappingReview'
+import { isSourceV2 } from './dialectTypes'
+import { InputLineage, DialectReview } from './DialectReview'
 import { SourceSummary } from './SourceSummary'
 import { triggerName } from './TriggerForm'
 import type { Trigger } from './triggerTypes'
@@ -31,11 +33,11 @@ function storedTime(name: StampName, at: string | undefined, absent: string) { c
 
 /** The job and its release, as `GET jobs/{job}` returns them: the query the job page reads. */
 export function useJobRecord(jobId: string) {
-  return useQuery({ queryKey: ['job', jobId], queryFn: () => jobsAPI<{ job: Job; release: Release }>(`jobs/${jobId}`) })
+  return useQuery({ ...privateQuery, queryKey: ['job', jobId], queryFn: () => jobsAPI<{ job: Job; release: Release }>(`jobs/${jobId}`) })
 }
 /** The job's triggers: the query the Triggers tab reads. */
 export function useJobTriggers(jobId: string) {
-  return useQuery({ queryKey: ['job-triggers', jobId], queryFn: () => jobsAPI<{ items: Trigger[]; localFiles?: boolean }>(`jobs/${jobId}/triggers`) })
+  return useQuery({ ...privateQuery, queryKey: ['job-triggers', jobId], queryFn: () => jobsAPI<{ items: Trigger[]; localFiles?: boolean }>(`jobs/${jobId}/triggers`) })
 }
 
 export function runStateLabel(state: Run['state']) { return { queued: msg('Queued'), running: msg('Running'), completed: msg('Completed'), failed: msg('Failed'), interrupted: msg('Interrupted') }[state] }
@@ -85,8 +87,9 @@ export function RunFields({ run }: { run: Run }) {
   const job = useJobRecord(run.jobId), triggers = useJobTriggers(run.jobId)
   const release = job.data?.release.id === run.releaseId ? job.data.release : undefined
   const evidence = evidenceOf(run)
-  return <dl className={styles.properties}>
-    <div><dt>{msg('Execution')}</dt><dd role={run.state === 'queued' || run.state === 'running' ? 'status' : undefined}>{runStateLabel(run.state)}</dd></div>
+  return <><dl className={styles.properties}>
+    <div><dt>{msg('Execution')}</dt><dd role={run.state === 'queued' || run.state === 'running' ? 'status' : undefined}>{runStateLabel(run.state)}{run.signing?.status==='failed' ? ` · ${msg('Signing failed')}` : null}</dd></div>
+    <div><dt>{msg('Signature')}</dt><dd>{run.signing?.status==='signed'?msg('Signed by Runner'):run.signing?.status==='failed'?msg('Signing failed'):msg('Not recorded')}</dd></div>
     <div><dt>{msg('Decision')}</dt><dd>{decisionText(run.result)}</dd></div>
     <div><dt>{msg('Submitted')}</dt><dd>{storedTime('submitted', run.createdAt, msg('Not recorded'))}</dd></div>
     <div><dt>{msg('Started')}</dt><dd>{storedTime('started', run.startedAt, '—')}</dd></div>
@@ -99,7 +102,7 @@ export function RunFields({ run }: { run: Run }) {
     <div><dt>{msg('Exact record bytes')}</dt><dd>{presence(evidence.recordBytes)}</dd></div>
     <div><dt>{msg('Signature sidecar')}</dt><dd>{presence(evidence.sidecar)}</dd></div>
     <div><dt>{msg('Acquisition receipts')}</dt><dd>{presence(evidence.receipts)}</dd></div>
-  </dl>
+  </dl><RunSigningNotice run={run}/></>
 }
 
 /** The size and SHA-256 of a base64 member's bytes, once computed here. */
@@ -156,7 +159,7 @@ export function RunDisclosures({ run }: { run: Run }) {
     {run.trigger && <JSONView title={msg('Trigger record')} value={run.trigger} />}
     {run.problem && <p className={styles.problem}>{run.problem}</p>}
     {run.result && <section className={styles.stack}><h3>{msg('Decision details')}</h3>{run.result.disposition.reasons.length > 0 && <ul>{run.result.disposition.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}<p>{run.result.disposition.handoff.state === 'requested' ? msg('Handoff requested: {{target}}', { target: run.result.handoffTarget?.name ?? msg('See full result') }) : msg('No handoff requested')}</p><p className={styles.note}>{msg('This is a recorded decision. No external action or notification was sent.')}</p><JSONView title={msg('Full result')} value={run.result} /></section>}
-    {run.input?.source && isSourceV2(run.input.source) ? <><MappingReview mapping={run.input.source.mapping} />{run.input.preparation && <InputLineage preparation={run.input.preparation} />}<JSONView title={msg('Retained inputs')} value={{ facts: run.input.facts, evidence: run.input.evidence }} /></> : run.input?.source ? <SourceSummary source={run.input.source as SourceInput} /> : <JSONView title={msg('Retained inputs')} value={run.input} />}
+    {run.input?.source && isSourceV2(run.input.source) ? <><DialectReview mapping={run.input.source.mapping} />{run.input.preparation && <InputLineage preparation={run.input.preparation} />}<JSONView title={msg('Retained inputs')} value={{ facts: run.input.facts, evidence: run.input.evidence }} /></> : run.input?.source ? <SourceSummary source={run.input.source as SourceInput} /> : <JSONView title={msg('Retained inputs')} value={run.input} />}
     {run.audit !== undefined && <JSONView title={msg('Runtime audit record')} value={run.audit} />}
   </>
 }

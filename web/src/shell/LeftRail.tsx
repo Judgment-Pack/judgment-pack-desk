@@ -3,7 +3,7 @@ import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
-/** Primary navigation stays about destinations. Packs and graphs share Library; tests live
+/** Primary navigation stays about destinations. Packs, graphs and Dialects share Library; tests live
  * inside each pack or graph; project file editing is available from the project menu.
  * The shell never runs tests or fetches graph inventory to draw navigation. */
 import { Dialog, VisuallyHidden } from 'radix-ui'
@@ -47,7 +47,7 @@ export function LeftRail({
     <div className="desk-settings" onClick={(event) => {
       if ((event.target as HTMLElement).closest('a')) onNavigate?.()
     }}>
-      <NavLink to="/packs" className="desk-nav-item">
+      <NavLink to="/library" className="desk-nav-item">
         <IconChevronLeft /><span>{msg("Back to app")}</span>
       </NavLink>
       <SettingsNavigationTarget onNavigate={onNavigate} />
@@ -189,14 +189,14 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
   useLocale()
   const { error } = usePacks()
   const { pathname } = useLocation()
-  const active = /^\/(packs|graphs|decisions)(?:\/|$)/.test(pathname)
+  const active = /^\/(library|packs|graphs|dialects|policies|decisions)(?:\/|$)/.test(pathname)
 
   return (
     <>
       <Labelled icons={icons} label={msg("Library")}>
         <Link
           className="desk-nav-item"
-          to="/packs"
+          to="/library"
           aria-current={active ? 'page' : undefined}
           aria-label={msg("Library")}
           onClick={onNavigate}

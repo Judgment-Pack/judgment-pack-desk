@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/aifailure"
 	"io"
 	"net/http"
 	"net/url"
@@ -55,7 +56,11 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 			validQuery = false
 		}
 	}
-	if query.Has("desk") && s.cfg.deskID == "" || query.Get("desk") != s.cfg.deskID || strings.Contains(r.URL.RawQuery, ";") {
+	selector := s.cfg.deskID
+	if entry := s.homeEntry(); entry != nil && s.cfg.parent != nil {
+		selector = entry.ID
+	}
+	if query.Has("desk") && selector == "" || query.Get("desk") != selector || strings.Contains(r.URL.RawQuery, ";") {
 		validQuery = false
 	}
 	if query.Get("connection") != "" {
@@ -181,7 +186,13 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.connectionAgentAllowed(r, start.Request.Model) {
-		_ = send(map[string]string{"type": "end", "runId": runID, "error": "model-not-allowed"})
+		_ = send(map[string]any{"type": "end", "runId": runID, "error": "model-not-allowed", "failure": aifailure.New("permission", "agent", "not-started")})
+		return
+	}
+	if err = s.prepareAgentContext(start.Request); err != nil {
+		problem := aifailure.New("configuration", "context", "not-started")
+		errors.As(err, &problem)
+		_ = send(map[string]any{"type": "end", "runId": runID, "error": problem.Code, "failure": problem})
 		return
 	}
 	err = runner.Run(ctx, owner, *start.Request, func(event codexbridge.RunEvent) error {
@@ -216,6 +227,8 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, codexbridge.ErrBusy):
 			code = "busy"
+		case errors.Is(err, codexbridge.ErrRetries):
+			code = "retries-exhausted"
 		case errors.Is(err, codexbridge.ErrSignIn):
 			code = "sign-in-required"
 		case errors.Is(err, codexbridge.ErrLimit), errors.Is(err, context.DeadlineExceeded):
@@ -224,5 +237,9 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 			code = "unavailable"
 		}
 	}
-	_ = send(map[string]string{"type": "end", "runId": runID, "error": code})
+	terminal := map[string]any{"type": "end", "runId": runID, "error": code}
+	if err != nil {
+		terminal["failure"] = aiAgentFailure(err)
+	}
+	_ = send(terminal)
 }

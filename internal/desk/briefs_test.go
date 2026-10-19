@@ -14,7 +14,7 @@ func briefRequest(t *testing.T, ts *httptest.Server, method string, c any, auth 
 	b, _ := json.Marshal(c)
 	req, _ := http.NewRequest(method, ts.URL+"/api/briefs", strings.NewReader(string(b)))
 	if auth {
-		bearer(req)
+		pageBearer(privateWorkspaceTestSession(t, ts))(req)
 	}
 	resp, e := ts.Client().Do(req)
 	if e != nil {

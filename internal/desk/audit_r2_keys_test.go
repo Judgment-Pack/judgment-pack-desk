@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -92,7 +93,7 @@ func bareServer(t *testing.T, project, config, id string) (*Server, *bytes.Buffe
 		t.Fatal(err)
 	}
 	logged := &bytes.Buffer{}
-	s := &Server{cfg: Config{deskID: id}, root: root, projectDir: project, configDir: config, log: log.New(logged, "", 0),
+	s := &Server{writes: &sync.Mutex{}, cfg: Config{deskID: id, DeskConfigDir: config}, root: root, projectDir: project, configDir: config, log: log.New(logged, "", 0),
 		assistant: &assistantStore{dir: config, root: configRoot, secrets: secrets},
 		project:   &ProjectRoot{dir: project, info: info, own: &ownership{root: root, dirFile: folder}}}
 	for name, data := range map[string]string{"jpack.json": `{"configVersion":"6","packs":{},"audit":{"dir":".desk-private/audit"}}`, ".desk-private/audit/evaluations.jsonl": "{}\n"} {
@@ -556,7 +557,7 @@ func stoppedCreation(t *testing.T, calls string, s *Server, ts *httptest.Server,
 		}
 	}
 	t.Cleanup(func() { testHookKeyBetween = nil })
-	postAbandoned(t, s, ts.URL)
+	postAbandoned(t, s)
 	testHookKeyBetween = nil
 	ts.Close()
 	if names := namesIn(t, signingFolderOf(s)); !slices.Equal(names, []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}) {

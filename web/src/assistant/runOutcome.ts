@@ -27,7 +27,7 @@
  * write, and the tab keeps the session on screen with Accept refused and the
  * reason on the control. What may be acted on, and why not, is decided here.
  */
-import type { AssistantEvent } from './engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 
 export type ProposalEvent = Extract<AssistantEvent, { type: 'proposal' }>
 
@@ -65,8 +65,9 @@ export function outcomeOf(run: {
   }
   // Before a proposal exists, every error on the stream is the run's account of
   // itself; after one, only the errors that came after it withdraw it.
+  const pause=events.find(event=>event.type==='budget_paused')
   const spoiled =
-    run.failure ?? (proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1)))
+    run.failure ?? (pause?'Work paused at the approved request limit. Completed work is retained.':undefined) ?? (proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1)))
   return {
     proposal:
       proposedAt === -1 || spoiled !== undefined ? undefined : (events[proposedAt] as ProposalEvent),

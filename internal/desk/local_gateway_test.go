@@ -219,3 +219,48 @@ func TestDigestApprovedGatewayRevisionIsNotReportedAsChecked(t *testing.T) {
 		t.Fatal("missing manifest produced an identity")
 	}
 }
+
+func TestVerifiedGatewayProgramRefusesUnlistedAndChangedExecutables(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{}
+	for _, name := range []string{"gateway", "adapter-document", "gateway-connections"} {
+		name = executableName(name)
+		raw := []byte(name)
+		if err := os.WriteFile(filepath.Join(dir, name), raw, 0700); err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(raw)
+		files[name] = hex.EncodeToString(sum[:])
+	}
+	extra := executableName("adapter-sources")
+	raw := []byte("not approved for execution")
+	if err := os.WriteFile(filepath.Join(dir, extra), raw, 0700); err != nil {
+		t.Fatal(err)
+	}
+	write := func() {
+		t.Helper()
+		manifest, _ := json.Marshal(map[string]any{"revision": GatewayRevision, "files": files})
+		if err := os.WriteFile(filepath.Join(dir, "gateway-bundle.json"), manifest, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	if err := verifyGatewayBundle(dir); err != nil {
+		t.Fatal("minimal bundle invalid", err)
+	}
+	if path, _, err := verifiedGatewayProgram(dir, "adapter-sources"); err == nil || path != "" {
+		t.Fatal("unlisted executable admitted for launch")
+	}
+	sum := sha256.Sum256(raw)
+	files[extra] = hex.EncodeToString(sum[:])
+	write()
+	if path, digest, err := verifiedGatewayProgram(dir, "adapter-sources"); err != nil || path != filepath.Join(dir, extra) || digest != files[extra] {
+		t.Fatal("listed executable refused", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, extra), []byte("substituted"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if path, _, err := verifiedGatewayProgram(dir, "adapter-sources"); err == nil || path != "" {
+		t.Fatal("substituted executable admitted")
+	}
+}

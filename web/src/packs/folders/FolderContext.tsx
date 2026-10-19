@@ -1,3 +1,6 @@
+import {graphDraftsQuery,retainedGraphDrafts,graphDraftFolderId} from '../../graphs/drafts'
+import {projectGraphPlacements} from './graphPlacement'
+import {privateQuery} from '../../data/privateQuery'
 import { useDirtyGuard } from '../../shell/useDirtyGuard'
 import { useConfirmDiscard } from '../../shell/UnsavedChanges'
 import { useChats } from '../../chat/ChatProvider'
@@ -6,22 +9,24 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import { useFileListing } from '../../files/queries'
 import { msg, systemMessage } from '../../i18n'
+import {libraryKind, type LibraryKind} from '../../library/items'
 import { FOLDERS_KEY, loadFolders, saveFolderAction, type FolderSnapshot } from './client'
 import { ALL_PACKS, defaultFolders, HOME_FOLDER, WORKSPACE_ROOT, packFolder, folderTrail, type FolderAction } from './model'
-interface Preferences { selected: string; expanded: string[]; width: number; collapsed: boolean; visibilityChosen: boolean }
-const defaults: Preferences = { selected: HOME_FOLDER, expanded: [HOME_FOLDER], width: 220, collapsed: false, visibilityChosen: false }
+interface Preferences { selected: string; expanded: string[]; width: number; collapsed: boolean; visibilityChosen: boolean; kind: LibraryKind }
+const defaults: Preferences = { selected: HOME_FOLDER, expanded: [HOME_FOLDER], width: 220, collapsed: false, visibilityChosen: false, kind: 'all' }
 function read(key: string | undefined): Preferences {
  try {
   const raw = key && localStorage.getItem(key)
   if (!raw || raw.length>100000) return defaults
   const value=JSON.parse(raw)
-  return { selected: typeof value.selected==='string' ? value.selected : HOME_FOLDER, expanded: Array.isArray(value.expanded) ? value.expanded.filter((id:unknown)=>typeof id==='string').slice(0,1000) : [HOME_FOLDER], width: Number.isFinite(value.width) ? Math.max(180,Math.min(320,value.width)) : 220, collapsed: value.collapsed === true, visibilityChosen: typeof value.visibilityChosen==='boolean'?value.visibilityChosen:typeof value.collapsed==='boolean' }
+  return { selected: typeof value.selected==='string' ? value.selected : HOME_FOLDER, expanded: Array.isArray(value.expanded) ? value.expanded.filter((id:unknown)=>typeof id==='string').slice(0,1000) : [HOME_FOLDER], width: Number.isFinite(value.width) ? Math.max(180,Math.min(320,value.width)) : 220, collapsed: value.collapsed === true, visibilityChosen: typeof value.visibilityChosen==='boolean'?value.visibilityChosen:typeof value.collapsed==='boolean', kind: libraryKind(value.kind) }
  } catch { return defaults }
 }
 function useFolderState(storageKey?: string) {
  const client=useQueryClient(), navigate=useNavigate(), location=useLocation()
- const query=useQuery({queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false,staleTime:0,refetchOnWindowFocus:true})
- const {packDrafts,deletedDrafts,chats,ready}=useChats()
+ const query=useQuery({...privateQuery,queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false,staleTime:0,refetchOnWindowFocus:true})
+ const {packDrafts,deletedDrafts,chats,drafts,ready}=useChats()
+ const retainedGraphs=useQuery(graphDraftsQuery())
  const raw=query.data?.document ?? defaultFolders()
  const assignments={...raw.assignments}
  for(const draft of packDrafts) {
@@ -30,11 +35,11 @@ function useFolderState(storageKey?: string) {
   if(draft.finalized && !Object.hasOwn(assignments,draft.finalized.id))assignments[draft.finalized.id]=assignments[draft.id]!
  }
  for(const id of deletedDrafts)delete assignments[id]
- if(ready){const graphDrafts=new Set(chats.flatMap(chat=>(chat.graphDrafts??[]).map(draft=>'graph-draft:'+draft.draftId)));for(const id of Object.keys(assignments))if(id.startsWith('graph-draft:')&&!graphDrafts.has(id))delete assignments[id]}
- const document={...raw,assignments}
+ const graphPlacement=ready&&retainedGraphs.data?projectGraphPlacements({...raw,assignments},retainedGraphDrafts(retainedGraphs.data.content,[...chats,...drafts]),retainedGraphs.data.content.deleted):{document:{...raw,assignments},ambiguous:[]}
+ const {document}=graphPlacement
  const [settings,setSettings]=useState(()=>({key:storageKey,value:read(storageKey)})), [message,setMessage]=useState('')
  if(settings.key!==storageKey)setSettings({key:storageKey,value:read(storageKey)})
- const prefs={...settings.value,collapsed:!settings.value.visibilityChosen&&location.pathname!=='/packs'?true:settings.value.collapsed}
+ const prefs={...settings.value,collapsed:!settings.value.visibilityChosen&&location.pathname!=='/library'?true:settings.value.collapsed}
  const [editorFields,setEditorFields]=useState({name:'',destination:WORKSPACE_ROOT,createDestination:false,parent:WORKSPACE_ROOT})
  const [editing,setEditing]=useState<{kind:'create'|'rename'|'move'|'pack'|'items'; ids?:string[]; id?:string; parentId?:string|null}|null>(null)
  const [overlay,setOverlay]=useState(false)
@@ -56,11 +61,19 @@ function useFolderState(storageKey?: string) {
   return {key:storageKey,value:next}
  })
  useEffect(()=>{
-  if(location.pathname!=='/packs'||!query.data)return
+  if(location.pathname!=='/library'||!query.data)return
   const id=new URLSearchParams(location.search).get('folder')
   if(id && id===ALL_PACKS)preferences({selected:id});else if(id && document.folders.some(f=>f.id===id))preferences({selected:id,expanded:[...new Set([...prefs.expanded,...folderTrail(document,id).map(f=>f.id)])]})
  },[location.pathname,location.search,query.data])
- const select=(id:string)=>{preferences({selected:id});setOverlay(false);if(location.pathname!=='/packs'||new URLSearchParams(location.search).has('folder'))navigate(`/packs?folder=${encodeURIComponent(id)}`)}
+ const select=(id:string)=>{
+  preferences({selected:id});setOverlay(false)
+  if(location.pathname!=='/library'||new URLSearchParams(location.search).has('folder')){
+   const params=new URLSearchParams(location.pathname==='/library'?location.search:'')
+   params.set('folder',id)
+   if(!params.has('type')&&prefs.kind!=='all')params.set('type',prefs.kind)
+   navigate('/library?'+params)
+  }
+ }
  const edit=(request:NonNullable<typeof editing>,element?:HTMLElement)=>{
   opener.current=(overlay?drawerOpener.current:null)??element??documentElement();setOverlay(false);editorBase.current=query.data?{...query.data,document}:undefined;setMessage('')
   const folder=document.folders.find(folder=>folder.id===request.id)
@@ -71,11 +84,11 @@ function useFolderState(storageKey?: string) {
  const reload=async()=>{const result=await query.refetch();if(result.data&&!result.isError)editorBase.current=result.data}
  const saveEdit=(action:FolderAction)=>mutation.mutateAsync({action,before:editorBase.current})
  const {packId:finalId,draftId,graphId}=useParams()
- const graphDraft=new URLSearchParams(location.search).get('draft')
- const packId=finalId??draftId??(graphId?'graph:'+graphId:location.pathname==='/graphs'&&graphDraft?'graph-draft:'+graphDraft:undefined)
+ const search=new URLSearchParams(location.search),graphDraft=search.get('draft'),graphOwner=search.get('draftChat')??search.get('chat')
+ const packId=finalId??draftId??(graphId?'graph:'+graphId:location.pathname==='/graphs'&&graphDraft&&graphOwner?graphDraftFolderId({draftId:graphDraft,originChatId:graphOwner}):undefined)
  const activeFolder=packId&&query.data?packFolder(document,packId):selected
  useEffect(()=>{if(packId&&query.data)preferences({expanded:[...new Set([...prefs.expanded,...folderTrail(document,activeFolder).map(folder=>folder.id)])]})},[packId,activeFolder,settings.key])
- return {clearGuard,closeEditor,query,document,prefs,selected,activeFolder,editorFields,setEditorFields,drawerOpener,reload,saveEdit,preferences,select,editing,setEditing,edit,mutation,message,setMessage,overlay,setOverlay,opener}
+ return {clearGuard,closeEditor,query,document,ambiguousGraphAssignments:graphPlacement.ambiguous,prefs,selected,activeFolder,editorFields,setEditorFields,drawerOpener,reload,saveEdit,preferences,select,editing,setEditing,edit,mutation,message,setMessage,overlay,setOverlay,opener}
 }
 function documentElement() { return window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null }
 export type FolderState=ReturnType<typeof useFolderState>

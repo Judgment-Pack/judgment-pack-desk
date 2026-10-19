@@ -187,6 +187,7 @@ type session struct {
 	absolute time.Time
 	expires  time.Time
 	timer    *time.Timer
+	password bool
 }
 
 // sessionStore is the set of live sessions, keyed by a **MAC of the id rather
@@ -1199,8 +1200,11 @@ func (s *Server) readSession(w http.ResponseWriter, r *http.Request) {
 	}
 	got, _ := s.sessionOf(r)
 	out := map[string]any{"subject": got.subject, "issuer": got.issuer}
-	if s.cfg.LocalAccess && got.issuer == nil {
+	if s.cfg.LocalAccess && got.issuer == nil && !got.password {
 		out["localAccess"] = true
+		out["expiresAt"] = got.expires
+	}
+	if got.password {
 		out["expiresAt"] = got.expires
 	}
 	if got.issuer != nil {

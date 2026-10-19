@@ -33,11 +33,17 @@ type backupManifest struct {
 // Only recognized chat records enter a backup. Credentials, server preferences,
 // temporary files and project artifacts cannot be selected by the caller.
 func chatStorageFile(name string) bool {
-	return briefFileName.MatchString(name) || sourceReviewsFileName.MatchString(name) || packTestsFileName.MatchString(name) || draftPackFileName.MatchString(name) || conversationFileName.MatchString(name) || attachmentFileName.MatchString(name) || name == projectBindingsName
+	return graphDraftFileName.MatchString(name) || memoryFileName.MatchString(name) || briefFileName.MatchString(name) || sourceReviewsFileName.MatchString(name) || packTestsFileName.MatchString(name) || draftPackFileName.MatchString(name) || conversationFileName.MatchString(name) || attachmentFileName.MatchString(name) || name == projectBindingsName
 }
 func validateStorageFile(name string, data []byte) error {
 	if !chatStorageFile(name) {
 		return fmt.Errorf("unsupported chat data file %q", name)
+	}
+	if graphDraftFileName.MatchString(name) {
+		return validateGraphDrafts(data)
+	}
+	if memoryFileName.MatchString(name) {
+		return validateMemoryStorage(data)
 	}
 	if attachmentFileName.MatchString(name) {
 		return validateAttachmentObject(data)
@@ -94,7 +100,18 @@ func (s *Server) handleStorageBackup(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		defer store.root.Close()
-		return buildChatBackup(r.Context(), store, file)
+		return buildChatBackup(r.Context(), store, file, func(name string, data []byte) error {
+			if privateWorkspaceStorageFile(name) {
+				return s.authorizePrivateWorkspace(r)
+			}
+			if conversationFileName.MatchString(name) {
+				return s.authorizePolicyConversations(r, data)
+			}
+			if draftPackFileName.MatchString(name) {
+				return s.authorizePolicyWorkspace(r, data, true)
+			}
+			return nil
+		})
 	}()
 	if err != nil {
 		storageFailure(w, err)
@@ -105,7 +122,7 @@ func (s *Server) handleStorageBackup(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "jpack-chat-backup.zip", time.Time{}, file)
 }
 
-func buildChatBackup(ctx context.Context, store *chatDataStore, out *os.File) error {
+func buildChatBackup(ctx context.Context, store *chatDataStore, out *os.File, admit ...func(string, []byte) error) error {
 	if err := validateStoredBindings(store.root); err != nil {
 		return err
 	}
@@ -133,6 +150,11 @@ func buildChatBackup(ctx context.Context, store *chatDataStore, out *os.File) er
 		}
 		if err = validateStorageFile(name, data); err != nil {
 			return err
+		}
+		for _, authorize := range admit {
+			if err = authorize(name, data); err != nil {
+				return err
+			}
 		}
 		total += int64(len(data))
 		if total > maxBackupData {
@@ -244,7 +266,7 @@ func readBackupFile(file *zip.File, limit int) ([]byte, error) {
 	return data, nil
 }
 
-func copyChatBackup(ctx context.Context, file *os.File, target *chatDataStore, copied *[]string) error {
+func copyChatBackup(ctx context.Context, file *os.File, target *chatDataStore, copied *[]string, admit ...func(string, []byte) error) error {
 	archive, manifest, err := validateChatBackup(file)
 	if err != nil {
 		return err
@@ -266,6 +288,11 @@ func copyChatBackup(ctx context.Context, file *os.File, target *chatDataStore, c
 		}
 		if err = validateStorageFile(entry.Name, data); err != nil {
 			return err
+		}
+		for _, authorize := range admit {
+			if err = authorize(entry.Name, data); err != nil {
+				return err
+			}
 		}
 		*copied = append(*copied, entry.Name)
 		if err = writePrivateData(target.root, entry.Name, data); err != nil {
@@ -331,13 +358,39 @@ func (s *Server) handleStorageRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.changeChatStorage(w, r, request, func(ctx context.Context, source, target *chatDataStore, copied *[]string) error {
-		return copyChatBackup(ctx, file, target, copied)
+		return copyChatBackup(ctx, file, target, copied, func(name string, data []byte) error {
+			if privateWorkspaceStorageFile(name) {
+				if err := s.authorizePrivateWorkspace(r); err != nil {
+					return err
+				}
+				if graphDraftFileName.MatchString(name) {
+					return s.admitGraphDraftUpdate(r, []byte(`{"version":1,"drafts":[],"deleted":[]}`), data)
+				}
+				return nil
+			}
+			drafts := draftPackFileName.MatchString(name)
+			if !drafts && !conversationFileName.MatchString(name) {
+				return nil
+			}
+			if err := s.authorizePolicyWorkspace(r, data, drafts); err != nil {
+				return err
+			}
+			empty := []byte(`{"version":1,"chats":[]}`)
+			if drafts {
+				empty = []byte(`{"version":1,"drafts":[]}`)
+			}
+			return s.admitPolicyWorkspaceUpdate(r, empty, data, drafts)
+		})
 	})
 }
 
 // Bound the central directory before archive/zip allocates its file table.
 // Desk backups fit ordinary ZIP; ZIP64 and multi-disk archives are unnecessary.
 func checkBackupDirectory(file *os.File, size int64) error {
+	return checkArchiveDirectory(file, size, maxStorageFiles)
+}
+
+func checkArchiveDirectory(file *os.File, size int64, entryLimit int) error {
 	if size < 22 {
 		return errors.New("backup is not a complete ZIP archive")
 	}
@@ -360,7 +413,7 @@ func checkBackupDirectory(file *os.File, size int64) error {
 	count := int(binary.LittleEndian.Uint16(record[10:12]))
 	directorySize := int64(binary.LittleEndian.Uint32(record[12:16]))
 	offset := int64(binary.LittleEndian.Uint32(record[16:20]))
-	if binary.LittleEndian.Uint32(record[4:8]) != 0 || int(binary.LittleEndian.Uint16(record[8:10])) != count || count > maxStorageFiles || directorySize > 2<<20 || offset+directorySize != size-length+int64(end) {
+	if binary.LittleEndian.Uint32(record[4:8]) != 0 || int(binary.LittleEndian.Uint16(record[8:10])) != count || count > entryLimit || directorySize > 2<<20 || offset+directorySize != size-length+int64(end) {
 		return errors.New("backup directory exceeds supported limits")
 	}
 	directory := make([]byte, directorySize)
@@ -374,7 +427,7 @@ func checkBackupDirectory(file *os.File, size int64) error {
 		}
 		entrySize := 46 + int(binary.LittleEndian.Uint16(directory[28:30])) + int(binary.LittleEndian.Uint16(directory[30:32])) + int(binary.LittleEndian.Uint16(directory[32:34]))
 		actual++
-		if actual > maxStorageFiles || entrySize > len(directory) {
+		if actual > entryLimit || entrySize > len(directory) {
 			return errors.New("backup directory exceeds supported limits")
 		}
 		directory = directory[entrySize:]

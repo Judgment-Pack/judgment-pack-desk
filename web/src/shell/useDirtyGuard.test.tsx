@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter, Outlet, useNavigate } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useDirtyGuard } from './useDirtyGuard'
-import { UnsavedChangesProvider } from './UnsavedChanges'
+import { UnsavedChangesProvider, useRegisteredChanges } from './UnsavedChanges'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); document.title = 'Desk' })
 function Editor({initial=true, name, saveDraft, busy=false}: {initial?:boolean;name?:string;saveDraft?:()=>Promise<void>;busy?:boolean}) {
@@ -40,9 +40,25 @@ describe('unsaved-work protection',()=>{
   fireEvent.click(screen.getByText('Save draft and leave'));await waitFor(()=>expect(router.state.location.pathname).toBe('/elsewhere'));expect(saveDraft).toHaveBeenCalledTimes(2)
  })
  it('blocks navigation during a write without offering a discard',async()=>{
-  const router=draw({initial:false,busy:true});fireEvent.click(screen.getByText('leave'))
+  const router=draw({initial:false,busy:true});expect(document.title).toBe('Desk');fireEvent.click(screen.getByText('leave'))
   await waitFor(()=>expect(router.state.blockers.size===0||[...router.state.blockers.values()].every(b=>b.state==='unblocked')).toBe(true))
   expect(router.state.location.pathname).toBe('/packs/a');expect(screen.queryByRole('dialog')).toBeNull()
+ })
+ it('protects a failed write as soon as its recovery UI commits',async()=>{
+  function FailedSave(){
+   const [busy,setBusy]=useState(true),navigate=useNavigate()
+   useRegisteredChanges(true,'Leave without resolving the write?',{name:'Policy',busy})
+   // Navigation can follow the committed recovery UI before passive effects.
+   useLayoutEffect(()=>{if(!busy)void navigate('/elsewhere')},[busy,navigate])
+   return <button onClick={()=>setBusy(false)}>Lost save response</button>
+  }
+  const router=createMemoryRouter([{element:<UnsavedChangesProvider><Outlet/></UnsavedChangesProvider>,children:[{path:'/policy',element:<FailedSave/>},{path:'/elsewhere',element:<p>elsewhere</p>}]}],{initialEntries:['/policy']})
+  render(<RouterProvider router={router}/>);fireEvent.click(screen.getByText('Lost save response'))
+  await screen.findByRole('dialog',{name:'Unsaved changes'})
+  expect(router.state.location.pathname).toBe('/policy')
+  expect(screen.queryByRole('button',{name:'Save draft and leave'})).toBeNull()
+  fireEvent.click(screen.getByText('Keep editing'))
+  expect(screen.getByText('Lost save response')).toBeTruthy()
  })
  it('aggregates multiple editors, removes the tab marker only when all are clean, and guards tab closing',()=>{
   function Form({label}:{label:string}){const [dirty,setDirty]=useState(true);useDirtyGuard(dirty,'Leave?');return <button onClick={()=>setDirty(false)}>{label}</button>}
