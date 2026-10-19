@@ -1,11 +1,12 @@
 import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react'
 import {QueryClientProvider} from '@tanstack/react-query'
-import {createMemoryRouter,RouterProvider} from 'react-router-dom'
+import {createMemoryRouter,Route,RouterProvider,Routes} from 'react-router-dom'
+import {Suspense,type ReactNode} from 'react'
 import {afterEach,expect,it,vi} from 'vitest'
 import {testQueryClient} from '../testing/harness'
-import {UnsavedChangesProvider} from '../shell/UnsavedChanges'
+import {UnsavedChangesProvider,useRegisteredChanges} from '../shell/UnsavedChanges'
 import {DeskNoticesProvider} from '../shell/DeskNotices'
-import {PolicyPage} from './PolicyPage'
+import {PolicyView} from '../routes/PolicyView'
 import {policyLibraryItems,folderAssignmentKey,deletableLibraryDraft} from '../library/items'
 import {type PolicyReply,type PolicyMutationReply,type PolicyWrite,type PolicySourceSync,type PolicySourceObservation,type SourceStatusReply,type SourceAuthorityOutcome,writePolicy} from './client'
 import sourceWire from '../../../internal/desk/testdata/policy-source-observation.json'
@@ -20,7 +21,7 @@ function policy(revision='head-one',narrative='Expense policy',reviewState:Polic
  return {revision,document:{id:'policy-one',managementMode:'desk-managed',createdAt:at,updatedAt:at,candidate,workflow,workflowDigest:'workflow-one',reviewState,revisions:[{id:candidate.revisionId,sequence:1,digest:candidate.digest,title:candidate.title,artifactVersion:candidate.artifactVersion,content:candidate.content,workflow,workflowDigest:'workflow-one',at,actor}],reviews:[],publications:[]}}
 }
 const result=(reply:PolicyReply,delivery:'committed'|'recovered'='committed'):PolicyMutationReply=>({delivery,receipt:{operationId:'fixture'},policy:reply})
-function mount({path='/policies/policy-one',read=policy(),sync={revision:'source-none',supported:false,pending:false},mutate=async()=>result(policy('head-two')),authorityMutate}:{path?:string;read?:PolicyReply;sync?:PolicySourceSync;mutate?:(request:PolicyWrite)=>Promise<PolicyMutationReply>;authorityMutate?:(request:PolicyWrite)=>Promise<SourceAuthorityOutcome>}={}){
+function mount({path='/policies/policy-one',read=policy(),sync={revision:'source-none',supported:false,pending:false},mutate=async()=>result(policy('head-two')),authorityMutate,detailReady=()=>{},otherEditor}:{path?:string;read?:PolicyReply;sync?:PolicySourceSync;mutate?:(request:PolicyWrite)=>Promise<PolicyMutationReply>;authorityMutate?:(request:PolicyWrite)=>Promise<SourceAuthorityOutcome>;detailReady?:()=>void;otherEditor?:ReactNode}={}){
  let current=read,recovery:PolicyMutationReply|undefined,recoveryMissing=false,readFailure=false
  let authority:SourceStatusReply|undefined
  const writes:PolicyWrite[]=[],requests:string[]=[]
@@ -51,13 +52,13 @@ function mount({path='/policies/policy-one',read=policy(),sync={revision:'source
  })
  vi.stubGlobal('fetch',fetch)
  const cache=testQueryClient()
- // Match actual parameter routes so detail pages exercise frozen query bases.
- const routed=createMemoryRouter([{element:<UnsavedChangesProvider><DeskNoticesProvider><PolicyRoutes/></DeskNoticesProvider></UnsavedChangesProvider>,children:[{path:'/policies/new',element:<PolicyPage/>},{path:'/policies/:policyId',element:<PolicyPage/>},{path:'/library',element:<p>Library destination</p>}]}],{initialEntries:[path]})
+ // Match main.tsx's outer data router and App.tsx's descendant Routes. The
+ // latter use a different navigate adapter than direct data-route elements.
+ function Detail(){detailReady();return <PolicyView/>}
+ const routed=createMemoryRouter([{path:'*',element:<UnsavedChangesProvider><DeskNoticesProvider>{otherEditor}<Suspense fallback={<p>Opening policy</p>}><Routes><Route path="/policies/new" element={<PolicyView/>}/><Route path="/policies/:policyId" element={<Detail/>}/><Route path="/library" element={<p>Library destination</p>}/></Routes></Suspense></DeskNoticesProvider></UnsavedChangesProvider>}],{initialEntries:[path]})
  render(<QueryClientProvider client={cache}><RouterProvider router={routed}/></QueryClientProvider>)
  return {cache,router:routed,writes,requests,setCurrent:(next:PolicyReply)=>{current=next},setRecovery:(next?:PolicyMutationReply)=>{recovery=next},setRecoveryMissing:(value:boolean)=>{recoveryMissing=value},setReadFailure:(value:boolean)=>{readFailure=value}}
 }
-import {Outlet} from 'react-router-dom'
-function PolicyRoutes(){return <Outlet/>}
 afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionStorage.clear()})
 const edit=(text:string)=>fireEvent.change(screen.getByRole('textbox',{name:'Policy text'}),{target:{value:text}})
 const clickSave=()=>fireEvent.click(screen.getByRole('button',{name:'Save draft'}))
@@ -137,7 +138,7 @@ it('creates an independent policy, opens its stable page, and reloads the exact 
  edit('Pasted policy text');clickSave()
  await waitFor(()=>expect(app.router.state.location.pathname).toBe('/policies/policy-one'))
  expect((await screen.findByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('Pasted policy text')
- expect((screen.getByRole('textbox',{name:'Review comment'}) as HTMLTextAreaElement).disabled).toBe(false)
+ await waitFor(()=>expect(screen.getByRole('textbox',{name:'Review comment'})).toHaveProperty('disabled',false))
  expect(app.writes).toHaveLength(1);expect(app.writes[0].body).toMatchObject({title:'Expenses',narrative:'Pasted policy text',workflow:{independentReviewRequired:false}})
  expect(app.writes[0].body).not.toHaveProperty('chatId')
  await act(()=>app.router.navigate('/library'))
@@ -153,6 +154,60 @@ it('never overwrites a local buffer on refresh and requires explicit reconciliat
  fireEvent.click(screen.getByRole('button',{name:'Keep my text on latest revision'}));clickSave()
  await waitFor(()=>expect(app.writes).toHaveLength(1))
  expect(app.writes[0].body).toMatchObject({baseRevision:'remote',narrative:'My local text'})
+})
+it('holds the outgoing new editor until its saved route commits before accepting a review',async()=>{
+ let releaseDetail!:()=>void
+ // A concurrent route render may be delayed. Keep that ordering deterministic
+ // instead of relying on CPU speed or a locale to expose the retiring editor.
+ const detailGate=new Promise<void>(resolve=>{releaseDetail=resolve})
+ let ready=false
+ const created=policy('created'),reviewed=structuredClone(created)
+ reviewed.revision='reviewed';reviewed.document.reviewState='changes-requested'
+ const app=mount({path:'/policies/new',detailReady:()=>{if(!ready)throw detailGate},mutate:async request=>result(request.path.endsWith('/review')?reviewed:created)})
+ fireEvent.change(screen.getByRole('textbox',{name:'Title'}),{target:{value:'Expenses'}})
+ edit('Expense policy');clickSave()
+ await waitFor(()=>expect(app.router.state.location.pathname).toBe('/policies/policy-one'))
+ // The URL can name the saved Policy while the outgoing draft is still on
+ // screen. It must not start a review whose response will outlive its owner.
+ const outgoingReview=screen.queryByRole('button',{name:'Request changes'})
+ expect(outgoingReview===null||(outgoingReview as HTMLButtonElement).disabled).toBe(true)
+ if(outgoingReview)fireEvent.click(outgoingReview)
+ expect(app.writes).toHaveLength(1)
+ expect(screen.getByRole('textbox',{name:'Policy text'})).toHaveProperty('disabled',true)
+ expect(screen.getByRole('link',{name:'Open policy'}).getAttribute('href')).toBe('/policies/policy-one')
+ const leaving=new Event('beforeunload',{cancelable:true});window.dispatchEvent(leaving)
+ expect(leaving.defaultPrevented).toBe(false)
+ await act(async()=>{ready=true;releaseDetail();await detailGate})
+ await waitFor(()=>expect(screen.getByRole('textbox',{name:'Policy text'})).toHaveProperty('disabled',false))
+ fireEvent.change(screen.getByRole('textbox',{name:'Review comment'}),{target:{value:'Review the exact saved candidate'}})
+ fireEvent.click(screen.getByRole('button',{name:'Request changes'}))
+ await within(screen.getByRole('region',{name:'Review'})).findByText('Changes requested',{exact:true})
+ expect(screen.queryByText('Saved policy changed')).toBeNull()
+ expect(screen.queryByRole('link',{name:'Open policy'})).toBeNull()
+ expect(app.writes[1].body).toMatchObject({baseRevision:'created',candidateDigest:created.document.candidate.digest,workflowDigest:created.document.workflowDigest,decision:'request-changes',comment:'Review the exact saved candidate'})
+ expect(app.writes).toHaveLength(2)
+})
+it('can open the completed policy after another editor cancels the handoff without replaying creation',async()=>{
+ function OtherEditor(){useRegisteredChanges(true,'Other editor has unsaved changes.',{name:'Other draft'});return null}
+ const app=mount({path:'/policies/new',otherEditor:<OtherEditor/>,mutate:async()=>result(policy('created'))})
+ fireEvent.change(screen.getByRole('textbox',{name:'Title'}),{target:{value:'Expenses'}})
+ edit('Expense policy');clickSave()
+ const first=await screen.findByRole('dialog',{name:'Unsaved changes'})
+ expect(within(first).getByText('Other editor has unsaved changes.')).toBeTruthy()
+ fireEvent.click(within(first).getByRole('button',{name:'Keep editing'}))
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
+ expect(app.router.state.location.pathname).toBe('/policies/new')
+ expect(screen.getByRole('button',{name:'Request changes'})).toHaveProperty('disabled',true)
+ expect(screen.queryByText('Working…')).toBeNull()
+ fireEvent.click(screen.getByRole('link',{name:'Open policy'}))
+ const second=await screen.findByRole('dialog',{name:'Unsaved changes'})
+ expect(within(second).getByText('Other editor has unsaved changes.')).toBeTruthy()
+ fireEvent.change(within(second).getByRole('textbox'),{target:{value:'Other draft'}})
+ fireEvent.click(within(second).getByRole('button',{name:'Discard changes'}))
+ await waitFor(()=>expect(app.router.state.location.pathname).toBe('/policies/policy-one'))
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Request changes'})).toHaveProperty('disabled',false))
+ expect(app.writes).toHaveLength(1)
+ expect(app.requests.some(path=>path.startsWith('/api/policy-operations/'))).toBe(false)
 })
 it('preserves edits after a stale write and prevents a fresh save until comparison',async()=>{
  const app=mount({mutate:async()=>{throw new Error('Unused')}})
@@ -213,10 +268,14 @@ it('protects failed saves through shared exit confirmation and displays immutabl
  const app=mount({mutate:async()=>{throw new Error('Fixture network failure')}})
  await screen.findByRole('textbox',{name:'Policy text'});edit('Still unsaved');clickSave()
  await screen.findByRole('button',{name:'Check operation result'})
+ const closing=new Event('beforeunload',{cancelable:true});window.dispatchEvent(closing);expect(closing.defaultPrevented).toBe(true)
  await act(()=>app.router.navigate('/library'))
  expect(await screen.findByRole('dialog',{name:'Unsaved changes'})).toBeTruthy()
+ expect(app.router.state.location.pathname).toBe('/policies/policy-one')
+ expect(screen.queryByRole('button',{name:'Save draft and leave'})).toBeNull()
  fireEvent.click(screen.getByRole('button',{name:'Keep editing'}))
  expect((screen.getByRole('textbox',{name:'Policy text'}) as HTMLTextAreaElement).value).toBe('Still unsaved')
+ expect(app.writes).toHaveLength(1)
  fireEvent.mouseDown(screen.getByRole('tab',{name:'History'}),{button:0,ctrlKey:false})
  fireEvent.click(screen.getByRole('button',{name:'Inspect Draft saved'}))
  await screen.findByText('Immutable original text')
