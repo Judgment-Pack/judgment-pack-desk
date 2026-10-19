@@ -12,7 +12,8 @@
     "test": "vitest run",
     "smoke": "tsx scripts/smoke.ts",
     "i18n:extract": "node scripts/check-locales.mjs --extract",
-    "i18n:check": "node scripts/check-locales.mjs"
+    "i18n:check": "node scripts/check-locales.mjs",
+    "certify:harness": "node scripts/certify-harness.mjs"
   },
   "license": "Apache-2.0",
   "dependencies": {
