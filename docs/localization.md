@@ -1,6 +1,6 @@
 # Desk localization
 
-All 6,611 English messages in the frozen v0.13 integration source are covered in the 11 non-English catalogues, including required CLDR plural forms. The 2026-10-19 pass adds 5,830 translations and preserves every existing translation value. This completes catalogue coverage for that source checkpoint; independent release review and final release acceptance remain separate gates. Translations were authored and reviewed for terminology during implementation, without sending UI text or project data to an external translation API. English remains the fallback for missing messages, an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects invalid placeholders, keys that `en.json` lacks, and untranslated UI literals, and warns about a message missing from a translated catalogue (English is shown); `--strict` makes that a failure, for the release's translation pull request.
+All 6,792 English source messages in the reconciled v0.13 source are covered in all 11 non-English catalogues, including required CLDR plural forms. The main reconciliation adds 182 signer/witness messages per locale (2,002 values total) after removing one retired signer sentence. Existing English and translated values remain unchanged by that translation integration. The earlier 6,611-key checkpoint below describes the frozen #530 tree `5ded52ca8f5af7da45cad22fc94b90c16ddd8bad`. The new values were model-authored and self-reviewed; canonical strict source/catalogue and token-preservation checks pass, but no independent native-speaker review or native signer/witness layout acceptance is claimed. Independent release review and final release acceptance remain separate gates. No UI text or project data was sent to an external translation API. English remains the fallback for missing messages, an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects invalid placeholders, keys that `en.json` lacks, and untranslated UI literals, and warns about a message missing from a translated catalogue (English is shown); `--strict` makes that a failure.
 
 ## Language choice
 
@@ -162,3 +162,42 @@ pass; the earlier results above remain historical evidence for their respective
 checkpoints. The combined independent translation review is still a separate
 release gate. This checkpoint does not claim completion of release acceptance,
 provider pilots or publication approval.
+
+
+## Native candidate layout checkpoint — 2026-10-19
+
+Strict catalogue completion above remains distinct from native layout acceptance.
+The earlier [#528 candidate](https://github.com/Judgment-Pack/judgment-pack-desk/pull/528)
+measured 17 native states and stopped on a Policy review-state defect. Those
+historical totals remain unchanged. After the source-reviewed
+[#530 handoff fix](https://github.com/Judgment-Pack/judgment-pack-desk/pull/530),
+rebuilt artifact `12211232105` from
+[CI 39301122129](https://github.com/Judgment-Pack/judgment-pack-desk/actions/runs/39301122129)
+passed the bounded native Policy check and measured all 12 Library locales at
+1440/390px (24 states). All 11 non-English narrow screenshots were visually
+inspected; no observed overflow or interpolation leaks. The full bounded native
+pass measured 35 states including shared controls; the earlier 103-state source
+UI sweep remains separate evidence. This is not independent native-speaker
+validation or a claim that every translated workflow was exercised.
+See [current validation](design/v013-local-validation.md#release-acceptance-checkpoint--2026-10-19).
+
+## Main reconciliation catalogue delta
+
+Main's signer/witness work adds 182 English messages and removes one retired
+signer sentence, for 6,792 source keys. Its 2,002 new translations (182 in each of
+11 locales) are integrated without rewriting existing values. Node 22 canonical
+strict source/catalogue validation passes at **6,792/6,792 in every locale**, with
+zero missing messages and zero placeholder errors. A separate integrity check
+preserves interpolation/element markers, protocol/code tokens, source numeric
+literals and boundary whitespace. English source SHA-256 is
+`5fcb75552aafc9f9a711703d344806860f9fb84e36550b35e74c4626e6c02910`.
+
+The translation author self-reviewed proof limitations, token custody, cursor
+bookkeeping versus Runtime coverage, unsigned chains versus signed individual
+runs, key pinning and permanent poisoning/retirement statements. Regional
+Portuguese and Cantonese phrasing was also reviewed by that author. These are
+model-authored and self-reviewed values; no independent native-speaker review is
+claimed. The preceding native Library screenshots describe the #530 tree and do
+not certify the new signer/witness layouts. Complete-release-diff review and the
+bounded native delta remain separate gates; catalogue completeness establishes
+neither translation accuracy nor native layout acceptance.

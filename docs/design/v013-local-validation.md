@@ -5,9 +5,229 @@ As of 2026-10-15, Codex and Claude contribute to that one release. Dated results
 below describe the build checked at that time; they do not establish readiness
 of later changes or completion of the combined release gates.
 
-This worktree preserves the pre-existing local chat/research changes and uses
-main at ad9296f with Runtime 0.30.0, Gateway 0.11.0 and Runner 0.8.0. No PR,
-merge or release is authorized by this local test cycle.
+## Release acceptance checkpoint — 2026-10-19
+
+This is bounded candidate evidence, not a published Desk `v0.13.0` acceptance.
+The earlier dated entries below retain their original source/build scope.
+Durable integration records are
+[PR #527](https://github.com/Judgment-Pack/judgment-pack-desk/pull/527),
+[PR #528](https://github.com/Judgment-Pack/judgment-pack-desk/pull/528) and
+[PR #530](https://github.com/Judgment-Pack/judgment-pack-desk/pull/530).
+
+Earlier source-only checkpoint: Desk `c4e6ef5c6170e7d134c8c3960adc7a9c909bc2bb`
+(tree `ad65c7b1921c9edad46c103d00b9e289d1bf9e61`, same tree as reviewed
+`2ff3773a55b61c84317474fd80753f933c04ec5d`) passed
+[CI 39275718610](https://github.com/Judgment-Pack/judgment-pack-desk/actions/runs/39275718610)
+with Runtime `55a23b884f0ce67fe6a9141b04e081a518fd5d61` and Runner
+`d903728fb38368a5f0574990e01bc27acb2a2803`. That source-only result remains
+historical; the published-archive checks below supersede its artifact gap.
+
+### Published companions and manual admission
+
+The lock adopts published Runtime `v0.36.0` at
+`20d6bf86b23f1794340fdc648201dda2e80a4095` and Runner `v0.24.0` at
+`393b5df0f60204fe76b9dcb4bf1ba85d0e5865ff`. Gateway `v0.21.0` at
+`5673ea8b9db6f3bea59bb4b2c2b78f6d036e3423` and harness `v0.1.0` are unchanged.
+Exact Runtime/Runner archives, checksums and release-workflow attestations were
+verified. Runtime `v0.35.0` remains held and unpublished.
+
+Desk CI [39294713397](https://github.com/Judgment-Pack/judgment-pack-desk/actions/runs/39294713397)
+passed all 15 checks on tree `e9705c1db427835ac154b70eca192fdfa3ed04d4`
+(reviewed source `f331e5baac9921cbfb1db7819dd62d4a95344c89`, merged
+`b4383a8691b5236d7b8549f84f62d74ff97c6a16`). Its Jobs companion job
+[118204115771](https://github.com/Judgment-Pack/judgment-pack-desk/actions/runs/39294713397/job/118204115771)
+records actual non-skipped passes for all seven manual-admission checks and
+`TestJobsExecutorRealEnrolledDeskRunnerRuntime` against the pinned published
+archives. The retained job log SHA256 is
+`2773ed7ea5508afab70b8a09e7a80f9808bfa053c06de6d1279ad2220bb8d468`.
+This closes the earlier source-only/archive gap for those checks; it does not
+claim every installed enrollment or UI flow passed.
+
+### Isolated installation, upgrade and retained journey
+
+The installed CI acceptance archive was version `0.0.0`, source
+`96eb8eef1bfbe8460360f17540be3686c35055fc`, reviewed tree
+`881d969ed5710f33b8b914fa9792e00cd8ed7002`, archive SHA256
+`fdc4aba5478f4827c774f39a9008f84fea65c5dd7076fc464d6fa76402729750`.
+It used official Runtime `v0.36.0` / Runner `v0.24.0` / Gateway `v0.21.0`.
+It was not a published Desk `v0.13.0` archive.
+
+- Normal owner/password login with `localAccess=false` passed in an isolated
+  fresh installation. CSV supplied assertions retained their source identity;
+  reviewed numeric zero/boolean false mapping passed, and falsely labeling them
+  AI-researched was refused with 422. Raw case/manual input separately retained
+  `0`, `false` and `null`; CSV itself stores strings.
+- Exactly one new default manual Job completed `accept`, with signed result
+  inspected in the actual UI. The optional profile stayed off; registration-read
+  returned genuine 409 `unsupported-profile`. No enrollment was performed.
+- Upgrade from the official `v0.12.0` installation retained the original case,
+  Job, release, run count of one, typed input, audit, signatures, result and export.
+  Its frozen Runtime `v0.29.0` binary retained SHA256
+  `91d2a09efef06be57e4d7c5b1f8a78fbc97baa219170aa8c46d7266f831f0956`.
+  The old Job was not resubmitted or upgraded. Original Runner `v0.7.0` has no
+  later signing-status metadata; UI “Not recorded” is not retrospective verification.
+- A stopped 41-file backup restored offline with every byte and mode equal.
+  The relocated copy was not booted and acquired no execution authority.
+- Earlier installed EN browser checks measured 23 desktop/390px states, including
+  pre-login appearance persistence, Library, invalid UTF-8 Policy refusal,
+  supplied selection and new/legacy results. They observed no JS errors,
+  external browser requests, interpolation leaks or page overflow.
+
+The remaining selected-company → person journey subsequently passed through
+the actual frozen installed CLI, normal sessions and public worker APIs. An
+owner-configured external Gateway adapter acquired two explicit loopback source
+URLs; four local scripted compatible-model requests produced company then person
+research. Human review selected exactly one generated company, and the actual
+browser handoff retained that preparation/revision/entity in the person draft.
+Reviewed mapping, published Dialect `3.0.0`, matching/nonmatching cases and an
+explicitly confirmed evaluation preceded exactly one new Job run (`accept`).
+Saved-record verification checked its signature and independently retained
+release/profile references. Version-5 export retained parent/entity/class,
+model responses, exact Dialect digest, source/profile receipts and audit/signature
+bytes. Official Gateway issued both receipts; Desk and independent offline
+`gateway verify` checked them against the public pin captured before serving.
+Restart and final publication/evaluation/export required no additional source or
+model calls; final steps ran with those listeners off.
+
+This proves a configured **synthetic external-adapter workflow**. It does not
+prove shipped managed `adapter-web` public-HTTPS behavior, live source/model
+accuracy, all providers, cancellation/partial/stale subsets, caller authentication
+(the fixture has `caller:null`), Policy conformance or contact authority. No
+retained generated row, journal or receipt was forged. The prior supplied-row
+fixture's inability to draft people without `research.entity` remains an expected
+boundary; the later genuine worker-generated record supplies that entity.
+
+### Policy UI delta and remaining gates
+
+The later native archive from CI 39294713397 had source
+`a1ab2bbd55d556dcc24f6a8baab776a68728855e` and the same `e9705c1…` tree as
+#528. Its 17 measured states covered EN/de/pt-PT/ja/zh-Hans Library layouts and
+some real Policy operations. It stopped when one accepted request-changes still
+rendered Unreviewed with a stale-head warning. Lost-reply checks retained exact
+operation identity/text and used explicit read-only receipt recovery without
+write replay; the settled same-session unload-clear assertion remained unverified.
+At that earlier stop, seven remaining Library locales and shared AI controls had
+not been completed.
+Earlier 103-state source UI checks were not repeated on this native JavaScript.
+
+The bounded handoff correction in #530 is source-reviewed, with 28 focused
+Policy tests and type checking passed. Reviewed source
+`093e8d8a76c3f29e56939af8824a745bb0f4eac0` merged as
+`0c7d1364eb1982e4520cdf8143f398139188db3b`, tree
+`5ded52ca8f5af7da45cad22fc94b90c16ddd8bad`.
+[CI 39301122129](https://github.com/Judgment-Pack/judgment-pack-desk/actions/runs/39301122129)
+completed all 15 checks successfully or with the intentional development-only
+skip. Jobs companion
+[job 118226268660](https://github.com/Judgment-Pack/judgment-pack-desk/actions/runs/39301122129/job/118226268660)
+again passed the seven actual manual checks (including four registered/start
+subcases) and enrolled executor against the published archives. Retained log
+SHA256: `45aa70803d981a69291ee1de4ca1eb78de04391c1bbb785460ce61bde8e3b099`.
+
+Rebuilt CI artifact `12211232105`, ZIP SHA256
+`2bad573b6652d83eb64ff8e7513b6bb3df1b592d9dfacb057170e25f1a449737`,
+contained the version-`0.0.0` Linux archive SHA256
+`a4f3718f626ae214c48fe9ad4a9fbd861d98b7aa7ce738fa10fe382687e589ee`.
+Its CI merge source `1b14f0481a0c775827c34301933931e996421fe8` has the same
+reviewed/merged `5ded52ca…` tree. All 463 manifest payload files, exact component
+lock and canonical receipts passed identity checks. No outer Desk release
+attestation or published Desk tag is claimed for this CI artifact.
+
+Retained native machine-summary SHA256:
+`eb01b9b3e6c00ead5de2ce52092bd36cb5e97c8d6423b7bdafd1d0424cbb4d98`.
+Bounded native results on that exact artifact:
+
+- Exactly one new Policy create and one request-changes committed; response,
+  current-head readback and ledger agreed. The UI showed the correct current
+  review without the stale warning and preserved it after read-only reload.
+  Prior accepted operations were not replayed; continuations made no Policy write.
+- All 12 Library locales were measured at 1440/390px (24 states); all 11 translated
+  narrow screenshots were visually inspected. The full bounded pass measured
+  35 states, including appearance before sign-in/after reload and dirty-guard
+  Keep editing/unload protection. No page errors, overflow, interpolation leaks
+  or external browser requests were observed. This does not change earlier totals.
+- Plan preceded explicit Start work and persisted after refresh without automatic
+  operation replay. A separate scripted error turn exhausted three bounded
+  refusal attempts, retained normalized `rate-limited/model/refused/429` details
+  across refresh, and succeeded after explicit retry. Raw provider sentinel prose
+  did not leak into the saved conversation.
+- One harmless normal UI message saved a new chat before one scoped `pack-update`
+  Auto grant: exact Pack path/chat revision and 15-minute expiry were asserted.
+  Auto survived reload; explicit revoke used the same grant ID and persisted Ask me
+  after reload. That positive precondition used one local model call and no tools
+  or Pack writes. The earlier empty unsaved-chat grant received the expected 409
+  refusal; it was not replayed.
+
+Ten local synthetic model requests across the entire native pass included the
+Plan tool and bounded refusal/retry checks; no artifact proposal or write tool
+ran. Harness-only stops and corrections were retained, rather than restarting
+accepted writes. All owned listeners stopped, ports closed and private fixture
+custody remained unchanged. No live provider, research/Job/upgrade/restore rerun
+or user session was used.
+
+Native scheduling was not manipulated: delayed saved-route commit and independently
+cancelled completed handoff remain the actual production-shaped source regression
+evidence. There was no positive Auto Pack mutation, expiry wait or changed-file
+invalidation in this native pass. Earlier fresh/upgrade/journey and lost-reply
+proof retains its original scope; the settled same-session unload-clear assertion
+from the earlier lost-reply run is not retrospectively promoted to a pass.
+Source review and successful native execution do not establish the original
+historical native event's precise timing or a locale-specific cause.
+
+This completes the bounded prepublication acceptance checkpoint. Final integration
+is still gated by complete-release-diff review, required CI and release acceptance;
+exact disposition belongs on the final integration PR and release record before
+tag publication. Platform packaging evidence is in CI, not a claim of local
+macOS execution. Live research quality remains outside this acceptance.
+
+The independent Policy Spec is now accepted at **draft maturity** and published
+as [policy-v1.0.0-draft.1](https://github.com/Judgment-Pack/judgment-pack-spec/releases/tag/policy-v1.0.0-draft.1)
+at `0799b37b74e35c4a86bfbf70f7bee80bdb7bbe94`, exact format `1.0.0`, Core
+unchanged. Its downloaded 124-test reader, five exact public schema URLs and
+signed-tag/archive attestations passed. Limited public review, a same-vendor
+review exception and absence of independently authored interoperability remain
+limits. Desk/Runtime deliberately retain earlier prototype `0.0.2` / candidate
+`1.0.0` bytes, without official schema IDs/result maturity. Software adoption is
+separate in [Runtime #293](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/293).
+
+The user deferred the 50-candidate pilot/manual adjudication. Live research
+quality is **UNVERIFIED**, not passed. No live Desk session was changed, no old
+Job replayed, and no workspace automatically migrated or enrolled.
+
+## Main reconciliation boundary
+
+The final source also reconciles main at
+`040e67756a28992e9a32b420d4144aa9f5efa55a` with the #530 integration source.
+Main adds per-run signer/key-list checks and explicit export verification, optional
+witness checkpoint custody/submission/coverage, and applicable frontend dependency
+upgrades. Its canonical Dialect writer was already integrated and refined by the
+current authoring boundary; original fixtures and expected outcomes remain intact.
+The component lock remains Runtime `v0.36.0`, Runner `v0.24.0`, Gateway `v0.21.0`
+and harness `v0.1.0`.
+
+These changes are outside the native tree `5ded52ca…` accepted above. Final-source
+CI, bounded signer/witness native verification and read-only checks of the retained
+v0.12 record/export without replay need separate evidence. Earlier successful
+upgrade, restore and research journeys keep their original scope; merging main
+does not retroactively extend those claims.
+
+The 182-message translation delta is integrated in all 11 non-English catalogues
+(2,002 new values), preserving every earlier English and translated value.
+Canonical strict source/catalogue validation passes at 6,792/6,792 messages per
+locale with zero placeholder errors. Input/output/source hashes and separate
+placeholder, protocol/code-token, numeric-literal and whitespace checks were
+verified. English source SHA-256 is
+`5fcb75552aafc9f9a711703d344806860f9fb84e36550b35e74c4626e6c02910`.
+The author self-reviewed terminology and proof/security limits; the values remain
+model-authored and self-reviewed, without independent native-speaker review.
+These checks establish catalogue coverage and structure, not translation accuracy,
+new native layout acceptance or a pass for the final release source.
+
+## Historical implementation evidence
+
+Historical local baseline (2026-10-11): that worktree preserved the pre-existing
+local chat/research changes and used
+main at ad9296f with Runtime 0.30.0, Gateway 0.11.0 and Runner 0.8.0. That local
+test cycle did not authorize a PR, merge or release.
 
 Implemented locally: web-access opt-in and contextual recovery; repair
 preconditions; expected public keys for Runner boot and managed project

@@ -280,6 +280,12 @@ jobs:
           for name in TestPolicyManualRealDeskRunnerRuntime TestPolicyManualRealDeskRunnerRuntime/registered-exact-input-and-withdrawal-first TestPolicyManualRealDeskRunnerRuntime/commit-before-withdrawal TestPolicyManualRealDeskRunnerRuntime/lost-start-reply TestPolicyManualRealDeskRunnerRuntime/lost-reserve-reply TestPolicyManualRealMCPRefusesOperationWithJobsUnavailable TestPolicyManualActualOldDeskRegistryRollbackFence; do
             grep -Eq -- "^[[:space:]]*--- PASS: $name \(" "$RUNNER_TEMP/policy-manual-admission.log" || { echo "$name did not run and pass"; exit 1; }
           done
+      # The witness (ADR-0012): the gateway's own reference, run on loopback as
+      # a witness, with the pinned runtime reading its chain.
+      - name: A witness from the pinned gateway, read by the pinned runtime
+        run: |
+          JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" JPACK_GATEWAY_TEST_BIN="$RUNNER_TEMP/jobs-official/gateway" \
+            go test ./internal/desk -run '^TestWitnessWithThePublishedRuntimeAndGateway$' -count=1 -v
       # The Go job has no runtime, so these skip there. Here they create a desk
       # with the pinned runtime, check its lock, and drive its relay: a deciding
       # run of a draft refused, a locked pack recorded, rehearsals unaffected.

@@ -78,10 +78,10 @@ key the signing key is expected to have (`signingPublicKey`; the variable
 another signs nothing: the record is written unsigned, and `packs validate` says why,
 naming neither the key's path nor either key. Desk still makes desks at `"6"`, names no
 expected key, and offers no upgrade to `"7"`; where a project names one, the decision
-record shows the runtime's sentence. `JPACK_SIGNING_PUBLIC_KEY` is not yet removed from
-the runtimes of desks Desk made, as `JPACK_SIGNING_KEY` is: set where Desk was started,
-it holds every desk's key to the key it names, so a desk whose key is another writes its
-records unsigned, and its decision record says so in the runtime's words.
+record shows the runtime's sentence. `JPACK_SIGNING_PUBLIC_KEY` is removed from the
+runtimes of desks Desk made, with `JPACK_SIGNING_KEY` (#377): set where Desk was started,
+it holds only the project Desk was started on to the key it names, and a desk Desk made
+signs with its own key.
 
 Gateway is pinned to `v0.21.0`; since `v0.11.0` it includes `adapter-render`, required by its
 local source plan, and the two OCR workers `ocr-tesseract` and `ocr-cloud`, which

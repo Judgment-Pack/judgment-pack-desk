@@ -76,6 +76,8 @@ export type AuditCoverage = {
   witnessed: number
   unwitnessed: number
   stamped: AuditCoverageState
+  /** How far a witness's signature reaches, as runtime 0.28.0 and later report it. */
+  countersigned?: AuditCoverageState
 }
 export type AuditSegment = { firstLine: number; lastLine: number }
 export type AuditDiscontinuity = { line: number; reason: string; damagedLine: number; bytes: number; digest: string }
@@ -110,11 +112,31 @@ export type AuditReport = {
   findingsTotal: number
   signatures?: AuditSignatures
   stamps?: AuditStamps
+  /** A witness's statements as the runtime read them, given where Desk passed the witness's key (ADR-0012). */
+  witness?: AuditWitness
+  /** The countersigned coverage the owner's one check required, and whether it was met. */
+  requiredCountersigned?: { through: number; status: 'met' | 'unmet' }
   /** The trail's identity as the runtime read it; none where no line is chained. */
   trail?: string
   /** The runtime's own sentences, in English, as it wrote them. */
   establishes: string[]
   doesNotEstablish: string[]
+}
+/**
+ * A witness's statements as the runtime read them, by runtime 0.30.0's own
+ * member names: where the reading began, whether it found anything, current
+ * (to the head Desk fetched) or historical (as far as the statements were
+ * supplied), the latest checkpoint statement, the conflicts, the retirement,
+ * and whether a continuation was saved.
+ */
+export type AuditWitness = {
+  keysSupplied: number; statementsRead: number; statementsChecked: number
+  began: 'index-0' | 'continued'; continuedAfter?: number
+  status: 'read' | 'failed'; reading?: 'current' | 'historical'
+  headIndex: number | null; highestIndex?: number
+  latestCheckpoint?: { index: number; sequence: number; witnessedAt: string }
+  conflicts: number[] | null; conflictsTotal: number; retired: boolean
+  countersignedAt?: string; continuationSaved: boolean; saveRefused?: string
 }
 export type AuditDiagnostic = { code: string; message: string }
 /** One public key Desk keeps for this desk: the key, the runtime's keyId for it, and the record it signs after. */
@@ -194,8 +216,8 @@ type HeldInputs = { expected?: number; expectUnread?: string[]; handoverProblem?
  */
 export type HandedSince = { holder: string; trail: string; through: number; records?: number; lines?: number }
 export type AuditRecord =
-  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; archive?: AuditArchive; repair?: AuditRepair; stamping?: AuditStamping; since?: HandedSince[] } & HeldInputs)
-  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; archive?: AuditArchive; stamping?: AuditStamping } & HeldInputs)
+  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; archive?: AuditArchive; repair?: AuditRepair; stamping?: AuditStamping; witness?: AuditWitnessHolder; since?: HandedSince[] } & HeldInputs)
+  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; archive?: AuditArchive; stamping?: AuditStamping; witness?: AuditWitnessHolder } & HeldInputs)
   | { state: 'older-runtime'; runtime?: string; floor: string; identity?: AuditIdentity; archive?: AuditArchive }
   | { state: 'no-trail'; identity?: AuditIdentity; archive?: AuditArchive }
 
@@ -230,7 +252,7 @@ const isState = (value: unknown): value is AuditCoverageState => object(value) &
   && (value.status !== 'through' || count(value.through) && value.through > 0)
 const isCoverage = (value: unknown): value is AuditCoverage => object(value)
   && ['legacyPrefix', 'chained', 'unchained', 'uncovered', 'damaged', 'signedRecords', 'unsignedRecords', 'witnessed', 'unwitnessed'].every(name => count(value[name]))
-  && ['signed', 'checkpointed', 'stamped'].every(name => isState(value[name]))
+  && ['signed', 'checkpointed', 'stamped'].every(name => isState(value[name])) && optional(value.countersigned, isState)
 const isSegment = (value: unknown): value is AuditSegment => object(value) && count(value.firstLine) && count(value.lastLine)
 const isDiscontinuity = (value: unknown): value is AuditDiscontinuity => object(value) && count(value.line) && named(value.reason) && count(value.damagedLine) && count(value.bytes) && named(value.digest)
 const isFinding = (value: unknown): value is AuditFinding => object(value) && named(value.name) && count(value.line) && text(value.detail)
@@ -291,6 +313,8 @@ export function isAuditReport(value: unknown): value is AuditReport {
     && list(value.findings, isFinding) && count(value.findingsTotal)
     && list(value.establishes, text) && list(value.doesNotEstablish, text) && optional(value.signatures, isSignatures) && optional(value.stamps, isStamps)
     && optional(value.trail, hex(32))
+    && optional(value.witness, isAuditWitness)
+    && optional(value.requiredCountersigned, item => object(item) && count(item.through) && item.through > 0 && (item.status === 'met' || item.status === 'unmet'))
     && value.segments.length <= value.segmentsTotal && value.discontinuities.length <= value.discontinuitiesTotal
     && value.findings.length <= value.findingsTotal && (value.status === 'invalid') === (value.findingsTotal > 0)
 }
@@ -301,6 +325,7 @@ export function isAuditRecord(value: unknown): value is AuditRecord {
     || !optional(value.archive, isAuditArchive)
     || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)) return false
   if (!optional(value.stamping, isAuditStamping)) return false
+  if (!optional(value.witness, isAuditWitnessHolder) || (value.state === 'older-runtime' || value.state === 'no-trail') && value.witness !== undefined) return false
   switch (value.state) {
     case 'report': return isAuditReport(value.report) && optional(value.repair, isAuditRepair) && optional(value.since, item => list(item, isHandedSince))
     case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && value.repair === undefined && value.since === undefined
@@ -353,9 +378,13 @@ export async function checkDecisionRecordAgain(client: QueryClient): Promise<voi
   await client.fetchQuery({ queryKey: AUDIT_KEY, queryFn: ({ signal }) => readAuditRecord(signal), meta: ON_REQUEST_ONLY, staleTime: 0, retry: false }).catch(() => undefined)
 }
 
-/** The runtime's check of this desk's trail, run now. */
-export async function readAuditRecord(signal?: AbortSignal): Promise<AuditRecord> {
-  const response = await deskFetch('/api/audit/verify', { signal })
+/**
+ * The runtime's check of this desk's trail, run now; with `countersignedThrough`,
+ * the one check the owner asked for, which requires the witness's
+ * countersigned coverage through that record and saves nothing.
+ */
+export async function readAuditRecord(signal?: AbortSignal, countersignedThrough?: number): Promise<AuditRecord> {
+  const response = await deskFetch(countersignedThrough === undefined ? '/api/audit/verify' : `/api/audit/verify?countersignedThrough=${countersignedThrough}`, { signal })
   if (!response.ok) throw await refusal(response)
   const value: unknown = await response.json()
   if (!isAuditRecord(value)) throw new Error(msg('The decision record could not be loaded. Please try again.'))
@@ -857,6 +886,126 @@ export async function downloadRunChain(): Promise<Blob> {
   return response.blob()
 }
 
+/* Each run's signing (issue #345) ------------------------------------------- */
+
+/**
+ * How a completed run's `signing`, as Runner records it (Runner v0.8.0),
+ * holds against the list of public keys Desk keeps for this desk's Runner:
+ * signed under a key the list names, or one it does not, or with no list
+ * kept; a failed signing, in Runner's words; no member; signed, where the
+ * list could not be read now, so held to nothing; or a member in neither of
+ * Runner's forms.
+ */
+export const RUN_SIGNING_HELD = ['listed', 'unlisted', 'no-list', 'failed', 'none', 'not-held', 'other'] as const
+export type RunSigningHeld = typeof RUN_SIGNING_HELD[number]
+
+/** One completed run, with Runner's `signing` member as Runner served it. */
+export interface RunSigning { id: string; jobId: string; jobName?: string; finishedAt?: string; signing?: unknown; held: RunSigningHeld }
+
+/** The list of public keys Desk keeps for this desk's Runner: read, not there, or not read now and why. */
+export type RunnerKeyList =
+  | { state: 'read'; keys: string[]; current: string }
+  | { state: 'none' }
+  | { state: 'unread'; problem: string }
+
+/** A page of Runner's completed runs, newest first, with Runner's cursor for the next; or no Runner, or Runner not running. */
+export type JobsSigning =
+  | { state: 'runs'; list: RunnerKeyList; runs: RunSigning[]; next?: number }
+  | { state: 'no-runner' }
+  | { state: 'not-running' }
+
+/**
+ * What `jpack-runner verify-run --public-key <key> --require-signed` said of
+ * one run's export, the key the listed one the run's signing names or the
+ * list's key in force (`under`): its exit status, its standard output
+ * verbatim and its standard error with no path; or Runner's refusal to give
+ * the run or its export, in its words.
+ */
+export type RunVerification =
+  | { state: 'checked'; run: string; publicKey: string; under: 'listed' | 'in-force'; exportVersion?: number; exit: number; stdout?: string; stderr?: string }
+  | { state: 'export-refused'; run: string; status: number; said?: string }
+
+/** The chassis's own sentences about each run's signing, as it says them (`internal/desk/jobs_signing.go`). */
+export const JOBS_SIGNING_REASONS = [
+  sourceMessage('This desk has no Runner, so it has no run to check.'),
+  sourceMessage('Runner is not running on this desk now, so Desk could not read its runs.'),
+  sourceMessage("Desk keeps no list of public keys for this desk's Runner, so it has no key to check a run's export under."),
+  sourceMessage("Desk's copy of the run's export changed while jpack-runner verify-run read it, so its answer is not shown.")
+]
+
+const runID = (value: unknown): value is string => text(value) && /^run_[0-9a-f]{32}$/.test(value)
+const hexKey = (value: unknown): value is string => text(value) && /^[0-9a-f]{64}$/.test(value)
+
+function isRunnerKeyList(value: unknown): value is RunnerKeyList {
+  if (!object(value)) return false
+  switch (value.state) {
+    case 'read': return list(value.keys, hexKey) && value.keys.length > 0 && hexKey(value.current) && value.keys.at(-1) === value.current
+    case 'none': return value.keys === undefined
+    case 'unread': return named(value.problem)
+  }
+  return false
+}
+
+function isRunSigning(value: unknown): value is RunSigning {
+  if (!object(value) || !runID(value.id) || !text(value.jobId) || !optional(value.jobName, text) || !optional(value.finishedAt, text)) return false
+  if (!(RUN_SIGNING_HELD as readonly unknown[]).includes(value.held)) return false
+  // A failed signing is named in Runner's words, so it must carry them.
+  if (value.held === 'failed') return object(value.signing) && named(value.signing.reason)
+  if (value.held === 'none') return value.signing === undefined
+  if (value.held === 'listed' || value.held === 'unlisted' || value.held === 'no-list' || value.held === 'not-held') return object(value.signing) && hexKey(value.signing.publicKey)
+  return true
+}
+
+/**
+ * A page of runs as the chassis answers one, each run in one of the forms
+ * above. A page with no run leaves `runs` out, and is read as an empty one.
+ */
+export function isJobsSigning(value: unknown): value is JobsSigning {
+  if (!object(value)) return false
+  switch (value.state) {
+    case 'runs': return isRunnerKeyList(value.list) && optional(value.runs, item => list(item, isRunSigning)) && optional(value.next, count)
+    case 'no-runner': case 'not-running': return value.runs === undefined
+  }
+  return false
+}
+
+/** A check of one run's export as the chassis answers one. */
+export function isRunVerification(value: unknown): value is RunVerification {
+  if (!object(value) || !runID(value.run)) return false
+  switch (value.state) {
+    case 'checked': return hexKey(value.publicKey) && (value.under === 'listed' || value.under === 'in-force') && count(value.exit) && optional(value.exportVersion, count) && optional(value.stdout, text) && optional(value.stderr, text)
+    case 'export-refused': return count(value.status) && optional(value.said, text) && value.exit === undefined
+  }
+  return false
+}
+
+/** Desk's refusal, in its words, or the fallback where it gave none. */
+async function runsRefusal(response: Response, fallback: string): Promise<Error> {
+  let body: { error?: unknown } = {}
+  try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+  return new Error(named(body.error) ? body.error : fallback)
+}
+
+/** One page of Runner's completed runs, each run's signing held to the list now: the newest, or the one after Runner's cursor. */
+export async function readJobsSigning(after?: number, signal?: AbortSignal): Promise<JobsSigning> {
+  const failed = msg('The runs could not be read. Please try again.')
+  const response = await deskFetch(after === undefined ? '/api/audit/jobs-signing' : `/api/audit/jobs-signing?after=${after}`, { signal })
+  if (!response.ok) throw await runsRefusal(response, failed)
+  const value: unknown = await response.json()
+  if (!isJobsSigning(value)) throw new Error(failed)
+  return value.state === 'runs' ? { ...value, runs: value.runs ?? [] } : value
+}
+
+/** jpack-runner verify-run on one run's export, run now, at the owner's request. */
+export async function verifyJobsRun(run: string): Promise<RunVerification> {
+  const failed = msg('The run’s export could not be checked. Please try again.')
+  const response = await deskFetch(`/api/audit/jobs-verify-run?run=${encodeURIComponent(run)}`)
+  if (!response.ok) throw await runsRefusal(response, failed)
+  const value: unknown = await response.json()
+  if (!isRunVerification(value) || value.run !== run) throw new Error(failed)
+  return value
+}
+
 /* Stamping ------------------------------------------------------------------ */
 
 /** One root certificate Desk keeps: its subject, and the SHA-256 of its DER bytes. */
@@ -1033,4 +1182,196 @@ export async function stampNow(): Promise<StampRun> {
   const value: unknown = await response.json()
   if (!object(value) || !isStampRun(value.run)) throw new Error(failed)
   return value.run
+}
+
+/* Witness ------------------------------------------------------------------- */
+
+/** A witness's settings, as Desk keeps them or would keep them: `setAt` by Desk's clock, once kept. The submitter's token is never among them. */
+export type WitnessSettings = { url: string; publicKey: string; intervalMinutes: number; setAt?: number }
+/**
+ * Desk's cursor at the witness for the trail: the last record the witness
+ * countersigned for this desk, its statement's index, and when it moved, by
+ * Desk's clock; a later checkpoint the witness holds, past which Desk sends
+ * again; and whether the witness retired the trail.
+ */
+export type WitnessCursor = { through: number; index: number; digest?: string; at: number; belowHead?: number; retired?: boolean }
+/**
+ * The decision record's fetch of the trail's head: fetched; the witness's
+ * refusal in its words; withheld, an answer that carried a credential, of
+ * which only its status and a reason that is a word are kept; or Desk could
+ * not reach it.
+ */
+export type WitnessFetch = { state: 'fetched' | 'refused' | 'withheld' | 'unreached'; status?: number; reason?: string; error?: string; index?: number }
+/**
+ * One submission's outcome, by Desk's clock (`at`, in seconds): what was sent,
+ * and the witness's answer, its status, reason and sentence as it gave them;
+ * or Desk could not reach it; or Desk's own words, or the runtime's.
+ */
+export type WitnessAttempt = {
+  at: number; requested?: boolean
+  outcome: 'countersigned' | 'kept' | 'refused' | 'withheld' | 'unreached' | 'nothing' | 'problem'
+  trail?: string; from?: number; first?: number; through?: number; lines?: number; unsent?: number
+  /** `retryUntil`: the time the witness's Retry-After names, by Desk's clock, in seconds. */
+  status?: number; reason?: string; error?: string; retryAfter?: number; retryUntil?: number; index?: number
+  problem?: string; diagnostics?: AuditDiagnostic[]; findings?: AuditFinding[]
+}
+/**
+ * The decision record's word on the witness: none; one set, its settings, the
+ * trail and the cursor, the fetch of the head, whether its statements were
+ * passed to the check, and the last submission; one Desk could not read now.
+ */
+export type AuditWitnessHolder = {
+  state: 'none' | 'set' | 'unread' | 'unavailable'
+  settings?: WitnessSettings; problem?: string; trail?: string; cursor?: WitnessCursor; head?: WitnessFetch
+  passed?: boolean; passProblem?: string; steps?: boolean; noStatements?: boolean; require?: number
+  last?: WitnessAttempt; running?: boolean; setAside?: { name: string; reason: string }[]; removeToken?: string
+}
+/** What the owner proposes. */
+export type WitnessProposal = { url: string; publicKey: string; intervalMinutes?: number }
+/** What a check answers: what Desk would keep, the trail identity the witness's operator registers, and the token that confirms it. */
+export type WitnessChecked = { token: string; shown: WitnessSettings; trail?: string }
+
+/**
+ * The chassis's own sentences about a witness, as it says them, so that the
+ * page can show each in the owner's language (`systemMessage`). The witness's
+ * own words are never among them: they are shown as it gave them.
+ */
+export const WITNESS_REASONS = [
+  sourceMessage('Send the witness as JSON: its URL, its public key and the interval in minutes.'),
+  sourceMessage("Give the witness's URL as https, or as http to a loopback address such as 127.0.0.1, of at most 2048 characters, with a host, and with no user name, password, query, fragment, space or control character."),
+  sourceMessage("Give the witness's public key as its operator gave it to you: 64 hexadecimal characters."),
+  sourceMessage("Paste the submitter's token the witness's operator issued for this witness: at most 16384 characters, with no space."),
+  sourceMessage('Confirm the witness with the token Desk gave when it showed it.'),
+  sourceMessage('Remove the witness with the token the decision record gave.'),
+  sourceMessage("The witness's settings changed after Desk showed them, so nothing was changed. Check the decision record again."),
+  sourceMessage('No witness is set for this desk, so Desk submits nothing.'),
+  sourceMessage('A submission to the witness is in progress, so Desk starts no other. The decision record shows its outcome once it ends.'),
+  sourceMessage('Desk is stopping, so it starts no submission.'),
+  sourceMessage('A submission needs no settings: send {} as JSON.'),
+  sourceMessage("This is the public key of Desk's own local gateway, which is yours as the operator: it is not a witness."),
+  sourceMessage('This desk has a witness under another key. A pinned key is never changed in place: remove the witness, and add the one under the new key as a new witness.'),
+  sourceMessage("The trail's head has not moved past Desk's cursor, so there is nothing to send."),
+  sourceMessage('The trail has no chained record yet, so there is nothing to send.'),
+  sourceMessage("The witness retired this trail, so Desk submits nothing more for it. A trail's operator goes on under a new trail, registered anew, which Desk does not make."),
+  sourceMessage("The witness answered a statement for another checkpoint than the last one Desk sent, so Desk's cursor did not move. Desk keeps the statement, apart from the trail's where it is of another trail."),
+  sourceMessage("The runtime's reading of the witness's chain did not confirm the statement, so Desk's cursor did not move."),
+  sourceMessage("No witness's statements are passed to the check of this desk's trail, so there is no countersigned coverage to require."),
+  sourceMessage('Ask for a countersigned coverage once with a record from 1.'),
+  sourceMessage('This holder is a witness: Desk submits its checkpoints to it, and nothing is downloaded or confirmed for it.'),
+  sourceMessage('The runtime could not read the key Desk wrote for it, so the key is not checked and nothing was kept.'),
+  sourceMessage('This runtime (jpack {{version}}) does not read a witness\'s statements. A witness needs jpack {{floor}} or later.'),
+  sourceMessage('Desk could not read the witness it keeps for this desk, so it uses none of it now: {{reason}}.'),
+  sourceMessage('Desk could not keep this witness, and the decision record shows the witness it reads now: {{reason}}.'),
+  sourceMessage('Desk keeps no witness token here: {{reason}}.'),
+  sourceMessage('The witness holds a later checkpoint for this trail, at record {{record}}, so Desk sends again only once the trail\'s head is past it.'),
+  sourceMessage('The witness asked for no submission before {{time}}, so Desk sends nothing before then.'),
+  sourceMessage('The submission did not finish: {{reason}}.'),
+  sourceMessage('Desk did not read the witness\'s chain this time: {{reason}}.'),
+  sourceMessage("Desk could not read its own local gateway's key now, so it cannot tell this key from it: {{reason}}."),
+  sourceMessage("The key could not be checked: the runtime's audit verify did not answer as documented, so nothing was kept."),
+  sourceMessage("The witness's URL is not at the origin its token was confirmed for, so Desk sends nothing. Set the witness again, pasting its token, to confirm the new URL."),
+  sourceMessage("The witness's answer carried a credential, so Desk keeps and shows none of its words: only its HTTP status, and its reason where that is a word."),
+  sourceMessage("A cross-site request cannot change this desk's witness.")
+]
+
+const witnessInstant = (value: unknown): value is string => text(value) && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(value)
+const index = (value: unknown): value is number => count(value)
+
+/** A witness section with every member the runtime gives one, of its values. */
+export function isAuditWitness(value: unknown): value is AuditWitness {
+  if (!object(value)) return false
+  const latest = value.latestCheckpoint
+  return count(value.keysSupplied) && value.keysSupplied > 0 && count(value.statementsRead) && count(value.statementsChecked)
+    && (value.began === 'index-0' && value.continuedAfter === undefined || value.began === 'continued' && index(value.continuedAfter))
+    && (value.status === 'read' || value.status === 'failed') && optional(value.reading, item => item === 'current' || item === 'historical')
+    && (value.headIndex === null || index(value.headIndex)) && optional(value.highestIndex, index)
+    && optional(latest, item => object(item) && index(item.index) && count(item.sequence) && item.sequence > 0 && witnessInstant(item.witnessedAt))
+    && (value.conflicts === null || list(value.conflicts, count)) && count(value.conflictsTotal) && (value.conflicts ?? []).length <= value.conflictsTotal
+    && typeof value.retired === 'boolean' && optional(value.countersignedAt, witnessInstant)
+    && typeof value.continuationSaved === 'boolean' && optional(value.saveRefused, named)
+}
+
+const witnessKey = hex(64)
+const witnessToken = hex(96)
+const isWitnessSettings = (value: unknown): value is WitnessSettings => object(value) && named(value.url) && /^https?:\/\//i.test(value.url) && witnessKey(value.publicKey)
+  && count(value.intervalMinutes) && 5 <= value.intervalMinutes && value.intervalMinutes <= 1440 && optional(value.setAt, count)
+const isWitnessCursor = (value: unknown): value is WitnessCursor => object(value) && count(value.through) && index(value.index) && count(value.at)
+  && (value.digest === undefined || sha256Form(value.digest)) && optional(value.belowHead, count) && optional(value.retired, item => typeof item === 'boolean')
+  && (value.through === 0) === (value.digest === undefined)
+const isWitnessFetch = (value: unknown): value is WitnessFetch => {
+  if (!object(value) || !optional(value.status, count) || !optional(value.index, index)) return false
+  switch (value.state) {
+    case 'fetched': return value.reason === undefined && value.error === undefined
+    case 'refused': return named(value.reason) && named(value.error) && value.index === undefined
+    case 'unreached': return value.reason === undefined && value.error === undefined && value.index === undefined
+    case 'withheld': return optional(value.reason, named) && value.error === undefined && value.index === undefined
+  }
+  return false
+}
+const OUTCOMES = ['countersigned', 'kept', 'refused', 'withheld', 'unreached', 'nothing', 'problem']
+
+/** A submission as the chassis says it: an outcome of its six, with what it carries. */
+export function isWitnessAttempt(value: unknown): value is WitnessAttempt {
+  if (!object(value) || !count(value.at) || !OUTCOMES.includes(value.outcome as string) || !optional(value.requested, item => typeof item === 'boolean')
+    || !optional(value.trail, hex(32)) || !['from', 'first', 'through', 'lines', 'unsent', 'status', 'retryAfter', 'retryUntil'].every(name => optional(value[name], count))
+    || !optional(value.index, index) || !optional(value.reason, named) || !optional(value.error, named) || !optional(value.problem, named)
+    || !optional(value.diagnostics, item => list(item, isDiagnostic)) || !optional(value.findings, item => list(item, isFinding))) return false
+  switch (value.outcome) {
+    case 'refused': return named(value.reason) && named(value.error)
+    case 'withheld': return named(value.problem) && value.error === undefined
+    case 'nothing': case 'problem': return named(value.problem) || list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0
+  }
+  return true
+}
+
+/** The decision record's word on the witness: each state with what it carries, and a removal token of 96 hexadecimal characters. */
+export function isAuditWitnessHolder(value: unknown): value is AuditWitnessHolder {
+  if (!object(value) || !optional(value.removeToken, witnessToken) || !optional(value.passed, item => typeof item === 'boolean') || !optional(value.passProblem, named)
+    || !optional(value.trail, hex(32)) || !optional(value.cursor, isWitnessCursor) || !optional(value.head, isWitnessFetch) || !optional(value.steps, item => typeof item === 'boolean')
+    || !optional(value.noStatements, item => typeof item === 'boolean') || value.noStatements === true && value.passed === true
+    || !optional(value.require, count) || !optional(value.last, isWitnessAttempt) || !optional(value.running, item => typeof item === 'boolean')
+    || !optional(value.setAside, item => list(item, (entry): entry is { name: string; reason: string } => object(entry) && named(entry.name) && named(entry.reason)))) return false
+  switch (value.state) {
+    case 'none': return value.settings === undefined && value.removeToken === undefined && !value.passed
+    case 'set': return isWitnessSettings(value.settings) && value.problem === undefined && typeof value.removeToken === 'string'
+    case 'unread': case 'unavailable': return value.settings === undefined && named(value.problem) && !value.passed
+  }
+  return false
+}
+
+/** Hold a proposal to Desk's rules, the runtime's key rule among them: what Desk would keep, the trail to register and the token that confirms it, or why not. */
+export async function checkWitness(proposal: WitnessProposal): Promise<WitnessChecked> {
+  const failed = msg('The witness could not be checked. Please try again.')
+  const response = await postJSON('/api/audit/witness/check', proposal)
+  if (!response.ok) throw await stampingRefusal(response, failed)
+  const value: unknown = await response.json()
+  if (!object(value) || !witnessToken(value.token) || !isWitnessSettings(value.shown) || !optional(value.trail, hex(32))) throw new Error(failed)
+  return value as WitnessChecked
+}
+
+/** Keep the witness the token confirms, with the submitter's token pasted once; or say why not. Nothing answers with the submitter's token. */
+export async function setWitness(proposal: WitnessProposal, submitterToken: string, token: string): Promise<void> {
+  const response = await postJSON('/api/audit/witness', { ...proposal, submitterToken, token })
+  if (!response.ok) throw await stampingRefusal(response, msg('The witness could not be kept. Check the decision record again.'))
+}
+
+/** Remove the witness the decision record showed, or say why not. Its statements are kept. */
+export async function removeWitness(token: string): Promise<void> {
+  const response = await postJSON('/api/audit/witness/remove', { token })
+  if (!response.ok) throw await stampingRefusal(response, msg('The witness could not be removed. Check the decision record again.'))
+}
+
+/** One submission, on the owner's request: its outcome, or why none ran. */
+export async function sendToWitness(): Promise<WitnessAttempt> {
+  const failed = msg('Desk could not read what the submission answered. The decision record, checked again, shows the cursor as Desk keeps it.')
+  const response = await postJSON('/api/audit/witness/send', {})
+  if (!response.ok) throw await stampingRefusal(response, failed)
+  const value: unknown = await response.json()
+  if (!object(value) || !isWitnessAttempt(value.attempt)) throw new Error(failed)
+  return value.attempt
+}
+
+/** The one check the owner asks for: the decision record, requiring the countersigned coverage through `through`. Nothing of it is kept. */
+export async function checkCountersignedOnce(through: number): Promise<AuditRecord> {
+  return readAuditRecord(undefined, through)
 }

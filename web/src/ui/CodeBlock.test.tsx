@@ -61,3 +61,17 @@ it('formats newly completed JSON when a streamed source changes', () => {
   rerender(<CodeBlock text={'{"ok":true}'} />)
   expect(screen.getByRole('region', { name: 'JSON' }).textContent).toBe('{\n  "ok": true\n}')
 })
+
+it('keeps command JSON output verbatim while wrapping, copying and expanding', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  vi.stubGlobal('navigator', { clipboard: { writeText } })
+  const text = '{"result":1.00}\r\n'
+  render(<CodeBlock text={text} label="Command output" expandable verbatim />)
+  expect(screen.getByRole('region', { name: 'Command output' }).textContent).toBe(text)
+  fireEvent.click(screen.getByRole('button', { name: 'Wrap' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Copy Command output' }))
+  await screen.findByText('Copied')
+  expect(writeText).toHaveBeenCalledWith(text)
+  fireEvent.click(screen.getByRole('button', { name: 'Show code' }))
+  expect(screen.getByRole('dialog').querySelector('pre')?.textContent).toBe(text)
+})

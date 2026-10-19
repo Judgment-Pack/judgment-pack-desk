@@ -42,6 +42,7 @@ package desk
 // refuses it.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -104,6 +105,10 @@ type auditCoverage struct {
 	Witnessed       int64              `json:"witnessed"`
 	Unwitnessed     int64              `json:"unwitnessed"`
 	Stamped         auditCoverageState `json:"stamped"`
+	// Countersigned is how far a witness's signature reaches, as runtime
+	// 0.28.0 and later report it (`result.AuditCoverage.Countersigned`):
+	// given where the runtime gives it, and passed on as it is.
+	Countersigned *auditCoverageState `json:"countersigned,omitempty"`
 }
 
 type auditSegment struct {
@@ -194,6 +199,13 @@ type auditReport struct {
 	// Stamps is the stamps file as the runtime read it, given where
 	// time-stamping roots were passed (`result.AuditStamps`).
 	Stamps *auditStamps `json:"stamps,omitempty"`
+	// Witness is a witness's statements as the runtime read them, given
+	// where a witness key was passed (runtime 0.30.0, `result.AuditWitness`,
+	// by its own member names, in its order, so that the page is given the
+	// runtime's section as it printed it); RequiredCountersigned is the
+	// countersigned coverage the owner's one check required.
+	Witness               *auditWitness     `json:"witness,omitempty"`
+	RequiredCountersigned *auditRequirement `json:"requiredCountersigned,omitempty"`
 	// Establishes and DoesNotEstablish are the runtime's own sentences, in
 	// English, passed through as it wrote them.
 	Establishes      []string `json:"establishes"`
@@ -209,6 +221,49 @@ type auditReport struct {
 	// the runtime's shape; it is kept for the stamping scheduler, and the page
 	// is not given it.
 	head checkpointLine
+}
+
+// auditWitness is a witness's statements as a verification read them, by
+// runtime 0.30.0's own member names and order (`result.AuditWitness`): the
+// keys supplied, the statement lines read and the statements checked, where
+// the reading began, whether it found anything, whether it is current or
+// historical, the head's and the highest index, the latest checkpoint
+// statement, the conflicts, the retirement, the time the countersigned
+// coverage's statement states, and whether a continuation was saved, or why
+// the destination was refused.
+type auditWitness struct {
+	KeysSupplied      int64                   `json:"keysSupplied"`
+	StatementsRead    int64                   `json:"statementsRead"`
+	StatementsChecked int64                   `json:"statementsChecked"`
+	Began             string                  `json:"began"`
+	ContinuedAfter    *int64                  `json:"continuedAfter,omitempty"`
+	Status            string                  `json:"status"`
+	Reading           string                  `json:"reading,omitempty"`
+	HeadIndex         *int64                  `json:"headIndex"`
+	HighestIndex      *int64                  `json:"highestIndex,omitempty"`
+	LatestCheckpoint  *auditWitnessCheckpoint `json:"latestCheckpoint,omitempty"`
+	Conflicts         []int64                 `json:"conflicts"`
+	ConflictsTotal    int64                   `json:"conflictsTotal"`
+	Retired           bool                    `json:"retired"`
+	CountersignedAt   string                  `json:"countersignedAt,omitempty"`
+	ContinuationSaved bool                    `json:"continuationSaved"`
+	SaveRefused       string                  `json:"saveRefused,omitempty"`
+}
+
+// auditWitnessCheckpoint is a checkpoint statement by its place in the
+// witness's chain, its checkpoint's sequence, and the time the witness
+// states, its own clock's.
+type auditWitnessCheckpoint struct {
+	Index       int64  `json:"index"`
+	Sequence    int64  `json:"sequence"`
+	WitnessedAt string `json:"witnessedAt"`
+}
+
+// auditRequirement is a coverage the verification was told to require, and
+// whether it was met.
+type auditRequirement struct {
+	Through int64  `json:"through"`
+	Status  string `json:"status"`
 }
 
 // chainedAfter is how many chained records of report's trail follow the
@@ -328,6 +383,12 @@ type auditAnswer struct {
 	// (stamping.go). It is given with a report and with the runtime's
 	// refusal, on the decision record and nowhere else.
 	Stamping *auditStamping `json:"stamping,omitempty"`
+	// Witness is this desk's witness: its settings, the cursor, the fetch of
+	// the head, whether its statements were passed and how, and the last
+	// submission (witness.go). It is given where Desk keeps a witness, with
+	// a report and with the runtime's refusal, on the decision record and
+	// nowhere else.
+	Witness *auditWitnessHolder `json:"witness,omitempty"`
 }
 
 // What the panel holds of the desk's keys.
@@ -425,12 +486,21 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, status, body)
 	}
+	require, ok := requireThrough(r.URL.RawQuery)
+	if !ok {
+		refuse(http.StatusBadRequest, CodeBadRequest, witnessRequireWords)
+		return
+	}
 	dir, refusal := s.auditRuntime()
 	if refusal != "" {
 		refuse(http.StatusConflict, CodeBadRequest, refusal)
 		return
 	}
-	answer, err := s.auditVerify(r.Context(), dir)
+	answer, err := s.auditVerifyRequiring(r.Context(), dir, require)
+	if errors.Is(err, errNoWitnessToRequire) {
+		refuse(http.StatusConflict, CodeBadRequest, witnessNoRequireWords)
+		return
+	}
 	if err != nil {
 		s.log.Printf("desk: the decision record could not be checked: %v", err)
 		refuse(http.StatusInternalServerError, CodeInternal, "The decision record could not be checked: "+strings.TrimRight(s.withoutPaths(err.Error()), ".")+".")
@@ -645,6 +715,17 @@ func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 	clean := func(message string) string { return s.withoutPathsUnder(message, auditDir) }
 	answer = withoutPathsInKeys(answer, clean)
 	answer.HandoverProblem = clean(answer.HandoverProblem)
+	if answer.Witness != nil {
+		witness := *answer.Witness
+		witness.Problem = clean(witness.Problem)
+		witness.PassProblem = clean(witness.PassProblem)
+		if witness.Last != nil {
+			last := s.withoutPathsInAttempt(*witness.Last)
+			last.Problem = clean(last.Problem)
+			witness.Last = &last
+		}
+		answer.Witness = &witness
+	}
 	if answer.Stamping != nil {
 		stamping := *answer.Stamping
 		stamping.Problem = clean(stamping.Problem)
@@ -681,6 +762,16 @@ func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 	report := *answer.Report
 	for _, state := range []*auditCoverageState{&report.Coverage.Signed, &report.Coverage.Checkpointed, &report.Coverage.Stamped} {
 		state.Detail = clean(state.Detail)
+	}
+	if report.Coverage.Countersigned != nil {
+		countersigned := *report.Coverage.Countersigned
+		countersigned.Detail = clean(countersigned.Detail)
+		report.Coverage.Countersigned = &countersigned
+	}
+	if report.Witness != nil {
+		witness := *report.Witness
+		witness.SaveRefused = clean(witness.SaveRefused)
+		report.Witness = &witness
 	}
 	report.Discontinuities = slices.Clone(report.Discontinuities)
 	for i := range report.Discontinuities {
@@ -774,6 +865,18 @@ func (s *Server) projectAuditDir() (string, bool, error) {
 // the public keys Desk keeps for the desk and the checkpoints it handed over,
 // and nothing else held.
 func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, error) {
+	return s.auditVerifyRequiring(ctx, dir, 0)
+}
+
+// errNoWitnessToRequire is a one-off check of the countersigned coverage on a
+// desk whose witness's statements are not passed.
+var errNoWitnessToRequire = errors.New("no witness's statements are passed")
+
+// auditVerifyRequiring is auditVerify, with the witness's statements where
+// Desk keeps a witness (witness.go), and, where require is not 0, the one
+// check the owner asked for, `--require-countersigned-through <require>`,
+// which saves no continuation (ADR-0012, question 6).
+func (s *Server) auditVerifyRequiring(ctx context.Context, dir heldDir, require int64) (auditAnswer, error) {
 	// **Every verification that does not pass forgets** what an older run's
 	// own verification confirmed (issue #324; review round 1 of #327, finding
 	// 7): a runtime that failed, an answer that could not be read, a refusal,
@@ -799,6 +902,14 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 		return older, nil
 	}
 	signing := s.signingCheck(ctx, dir)
+	// The witness's statements, the head fetched and the continuation, held
+	// until the runtime has read them (witness.go); fetched before the desk's
+	// key lock is taken, so that no rotation waits on the witness's network.
+	witness := s.witnessForVerify(ctx, dir, require)
+	defer witness.done()
+	if require > 0 && len(witness.args) == 0 {
+		return auditAnswer{}, errNoWitnessToRequire
+	}
 	// Under the desk's key lock, so the panel never reads a rotation half
 	// made in this process, and its token names what it read.
 	s.keyMu.Lock()
@@ -832,8 +943,17 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	// same roots (issue #324), and released however this ends.
 	defer stamping.done()
 	args = append(args, stamping.args...)
-	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, args...)
+	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, append(args, witness.args...)...)
 	answer, err := readAuditVerification(out, runErr)
+	if err == nil && len(witness.args) > 0 && witnessAbsent(answer) {
+		// **A runtime that reads no witness's statements** refuses the
+		// flags: the check runs without them, and says so.
+		witness.view.Passed, witness.view.Head = false, nil
+		witness.view.PassProblem = fmt.Sprintf(witnessKeyOlderWords, schema.version, witnessRuntimeFloor)
+		witness.args = nil
+		out, runErr = runRuntime(ctx, s.cfg.JpackBin, dir, args...)
+		answer, err = readAuditVerification(out, runErr)
+	}
 	if err != nil {
 		return auditAnswer{}, err
 	}
@@ -864,6 +984,8 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.ExpectUnread = expect.unread
 	answer.HandoverProblem = expect.problem
 	answer.Since = sinceHandedOver(expect, answer.Report)
+	s.witnessAfterVerify(witness, answer.Report)
+	answer.Witness = witness.view
 	return answer, nil
 }
 
@@ -1106,6 +1228,8 @@ type auditVerification struct {
 	FindingsTotal        *int64                   `json:"findingsTotal"`
 	Signatures           *wireAuditSignatures     `json:"signatures"`
 	Stamps               *wireAuditStamps         `json:"stamps"`
+	Witness              json.RawMessage          `json:"witness"`
+	Required             json.RawMessage          `json:"requiredCountersigned"`
 	Trail                *string                  `json:"trail"`
 	Head                 json.RawMessage          `json:"head"`
 	Establishes          []string                 `json:"establishes"`
@@ -1131,6 +1255,7 @@ type wireAuditCoverage struct {
 	Witnessed       *int64                  `json:"witnessed"`
 	Unwitnessed     *int64                  `json:"unwitnessed"`
 	Stamped         *wireAuditCoverageState `json:"stamped"`
+	Countersigned   *wireAuditCoverageState `json:"countersigned"`
 }
 
 type wireAuditSegment struct {
@@ -1215,6 +1340,58 @@ func (p *auditPresence) stamps(value *wireAuditStamps, stamped auditCoverageStat
 		}
 	}
 	return stamps
+}
+
+// witness is the witness section as the runtime read it, where it gave one:
+// every member its section has, of the runtime's values, and nothing else.
+func (p *auditPresence) witness(raw json.RawMessage) *auditWitness {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	members, ok := exactMembers(raw)
+	if !ok {
+		p.missing = true
+		return nil
+	}
+	for _, name := range []string{"keysSupplied", "statementsRead", "statementsChecked", "began", "status", "headIndex", "conflicts", "conflictsTotal", "retired", "continuationSaved"} {
+		if _, ok := members[name]; !ok {
+			p.missing = true
+			return nil
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var witness auditWitness
+	if decoder.Decode(&witness) != nil {
+		p.missing = true
+		return nil
+	}
+	latest := witness.LatestCheckpoint
+	if witness.KeysSupplied < 1 || witness.StatementsRead < 0 || witness.StatementsChecked < 0 || witness.ConflictsTotal < int64(len(witness.Conflicts)) ||
+		witness.Began != "index-0" && witness.Began != "continued" || (witness.Began == "continued") != (witness.ContinuedAfter != nil) ||
+		witness.Status != "read" && witness.Status != "failed" || !slices.Contains([]string{"", "current", "historical"}, witness.Reading) ||
+		latest != nil && (latest.Index < 0 || latest.Sequence < 1 || !witnessedAtForm.MatchString(latest.WitnessedAt)) ||
+		witness.CountersignedAt != "" && !witnessedAtForm.MatchString(witness.CountersignedAt) {
+		p.missing = true
+		return nil
+	}
+	return &witness
+}
+
+// requirement is a coverage the verification was told to require, where it
+// gave one: a record from 1, and "met" or "unmet".
+func (p *auditPresence) requirement(raw json.RawMessage) *auditRequirement {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var required auditRequirement
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&required) != nil || required.Through < 1 || required.Status != "met" && required.Status != "unmet" {
+		p.missing = true
+		return nil
+	}
+	return &required
 }
 
 // auditPresence reads required members, and remembers whether any was
@@ -1302,6 +1479,12 @@ func (got auditVerification) report() (*auditReport, bool) {
 		report.Findings = append(report.Findings, auditFinding{Name: p.text(finding.Name, true), Line: p.count(finding.Line), Detail: p.text(finding.Detail, false)})
 	}
 	report.Stamps = p.stamps(got.Stamps, report.Coverage.Stamped)
+	if c.Countersigned != nil {
+		countersigned := p.state(c.Countersigned)
+		report.Coverage.Countersigned = &countersigned
+	}
+	report.Witness = p.witness(got.Witness)
+	report.RequiredCountersigned = p.requirement(got.Required)
 	if sig := got.Signatures; sig != nil {
 		report.Signatures = &auditSignatures{
 			Lines: p.count(sig.Lines), Unreadable: p.count(sig.Unreadable), Rotations: p.count(sig.Rotations),

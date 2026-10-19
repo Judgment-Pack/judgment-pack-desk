@@ -343,6 +343,16 @@ keys.
   *Amended 2026-10-08:* Desk does not copy the key into an agent's setup. The
   key is named by `jpack.json` through the upgrade, or inherited from where
   Desk started.
+
+  *Amended 2026-10-13 (issue #282, this PR):* decided: Desk's agent setup
+  carries no signing key. The key lives in the desk's `jpack.json`
+  (`audit.signingKey`, and since configVersion 7 `audit.signingPublicKey` for
+  the expected key, #376), which any runtime reading that configuration
+  honours, an agent's included. The project Desk was started on reaches that
+  through the upgrade offer (#261), or inherits `JPACK_SIGNING_KEY` from where
+  Desk started, as #378 keeps it. The reason: a key's path in an agent's
+  configuration is custody Desk cannot hold, and an agent that can read the
+  owner's files can read the key either way (section 1, "Whom the key binds").
 - **An inherited `JPACK_SIGNING_KEY` is removed** from every runtime Desk starts
   for a desk it made, as `JPACK_CONFIG` is (`runtimeEnv`, `runRuntime`).
   Measured:
@@ -683,6 +693,31 @@ passed here would check nothing; the panel instead shows Runner's key as `GET
 /api/runner-key` reports it, says that each run's signature is checked by
 `verify-run` on that run's export, and says the sentence above without "the
 keys and".
+*Amended 2026-10-11, issue #345:* the panel's sentence on what is signed says
+that the chain of runs carries no signature sidecar of its own, and that,
+where Runner has a key, it signs each run's record in that run's own
+attempt, and a run it signed carries the signature in its version-5 export.
+On request, the panel reads a page of Runner's completed runs (`GET
+/v1/runs?state=completed`) and shows each run's `signing` member as Runner
+v0.8.0 records it, held to the list of public keys Desk keeps for the desk's
+Runner, with every key of the list as read for that page and the one in
+force: a run signed under a key the list does not name is named in Desk's
+one sentence of its own, "Signed under a key the list does not name."; a
+signed run where Desk keeps no list, as "Desk keeps no list of public keys.";
+a failed signing, with one of Runner's six reasons, in Runner's words; a run
+with no member is never shown as signed; and where the list could not be
+read now, no run is held to it. On request, for one run, Desk runs
+`jpack-runner verify-run --file <copy> --profiles <the desk's input
+profiles> --release-digest <the export's own releaseDigest> --public-key
+<key> --require-signed` on the run's version-5 export, the key the one the
+run's signing names where the list names it too, on the list's word, and
+otherwise the list's key in force; it shows its exit status and output as it
+gave them, with the command and which key it was. verify-run requires the
+profiles and the release digest; the digest is the export's own, so its
+release check binds nothing there. Runner's member is the operator's record
+of Runner's own check, and establishes nothing against the operator.
+Rotating Runner's key (#238) is not part of this: this version of Desk names
+Runner a key only where its list holds one.
 
 *Local v0.13 work, Runtime 0.30.0 and Runner 0.8.0:* a completed run
 now offers **Verify saved record**, alongside the unchanged export download.
@@ -787,6 +822,14 @@ is moved to the archive of Runner's keys, the list, the seed and then the
 marker, each only while it is the file just inspected; then a key is made
 again. Where no lock can be taken, Runner starts without a key, and nothing
 changes.
+*Amended 2026-10-11, issue #345:* the boot line also names the list's key as
+`signingPublicKey`, the public key the seed is expected to have, taken from
+the list and never from the seed alone. Runner v0.8.0 refuses to start where
+the seed it reads is another key, which Desk answers as any refusal of the
+key, by starting Runner again without one; and it passes the key to each
+operational evaluation as `JPACK_SIGNING_PUBLIC_KEY`, so that runtime 0.30.0
+and later sign nothing with a seed replaced after the start, and Runner
+records that run's signing as failed. An earlier Runner ignores the member.
 
 ### 6. The version floor
 
@@ -933,6 +976,11 @@ maintainer may overrule any of them.
    runtimes of desks Desk made.
    **Answered: yes, as recommended.**
 
+   *Amended 2026-10-13 (issue #282, this PR):* the answer stands except for
+   "and in Desk's agent setup": the agent setup carries no key. The key is
+   named by the desk's `jpack.json`, which any runtime reading it honours, an
+   agent's included; see the amendment in section 1.
+
 3. **Is signing on by default for new desks?** It needs the new runtime.
    **Recommendation:** yes, where the runtime reads `"6"` and Desk's custody can
    keep a key. Elsewhere the desk is created unsigned, and the creation says so,
@@ -1006,13 +1054,22 @@ their meaning. The status column was as of 2026-10-05, and is as of 2026-10-08.
 | 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | shipped: #220, in v0.5.2 |
 | 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | shipped: #254, in v0.7.0 |
 | 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | shipped: #232, in v0.7.0 |
-| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | shipped: #254, in v0.7.0 |
+| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the held checkpoints, and no key, since the chain carries no signature sidecar (section 4, as amended 2026-10-06) | 5 and 11 | shipped: #254, in v0.7.0 |
+| 12b | Each Jobs run's signer held to Runner's list: the list's key named on the boot line as `signingPublicKey`; each completed run's `signing` shown and held to the list; `jpack-runner verify-run --require-signed` on one run's export on request (section 4 and 5, as amended 2026-10-11; issue #345) | 11 and 12; Runner v0.8.0 and runtime v0.30.0, pinned by #372 | in review: PR #380 |
 | 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | merged: PR #281, in no release yet |
-| 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | not built: waits for a holder who runs an endpoint |
+| 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | built for a witness, the holder that runs one (ADR-0012, #234): in review, PR #382; the plain HTTPS holder acknowledged by a 2xx still waits for a holder who runs one (ADR-0012, question 10) |
 
 *Amended 2026-10-08 (the archive rule):* #327 archives every key that rows
 3, 4 and 11 removed, and changes how row 7's panel checks an older stamp run
 (issue #324). It is merged, in no release yet.
+
+*Amended 2026-10-11, issue #345:* row 12's text says what its panel passes
+since 2026-10-06, the held checkpoints and no key; row 12b is #345's.
+
+*Amended 2026-10-12, issue #234:* row 10 is delivered for a witness, as
+[ADR-0012](0012-witness-as-a-holder.md) decides it: a holder whose channel is
+`witness`, whose cursor moves only on a statement the runtime confirms, not on
+a 2xx.
 
 Not in this line:
 - the gateway's `requireSignedRecord`, since Desk sends no writes through

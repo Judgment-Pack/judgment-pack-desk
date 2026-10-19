@@ -10,15 +10,15 @@ import { Tooltip } from './Tooltip'
 import { VisuallyHidden } from 'radix-ui'
 
 /** Read-only source: JSON indentation and wrapping are presentation only; Copy preserves the original text. */
-export function CodeBlock({ text, label = 'JSON', lang, expandable = false, defaultWrap = true, expanded = false }: { text: string; label?: string; lang?: string; expandable?: boolean; defaultWrap?: boolean; expanded?: boolean }) {
+export function CodeBlock({ text, label = 'JSON', lang, expandable = false, defaultWrap = true, expanded = false, verbatim = false }: { text: string; label?: string; lang?: string; expandable?: boolean; defaultWrap?: boolean; expanded?: boolean; verbatim?: boolean }) {
   useLocale()
   const displayText = useMemo(() => {
     // Reuse the file editor's lossless formatter, including its expansion bound.
     // Prose, incomplete streaming JSON and non-JSON code stay as received.
-    if (text.length > (4 << 20) || !/^\s*[\[{]/.test(text)) return text
+    if (verbatim || text.length > (4 << 20) || !/^\s*[\[{]/.test(text)) return text
     const formatted = formatJson(text)
     return formatted.ok ? formatted.content.slice(0, -1) : text
-  }, [text])
+  }, [text, verbatim])
   const [wrap, setWrap] = useState(defaultWrap)
   const [show, setShow] = useState(false)
   const opener = useRef<HTMLButtonElement>(null)
@@ -41,7 +41,7 @@ export function CodeBlock({ text, label = 'JSON', lang, expandable = false, defa
     <pre id={id} className={styles.source} data-wrap={wrap} data-expanded={expanded || undefined} role="region" tabIndex={0} aria-label={label}><code lang={lang}>{displayText}</code></pre>
     {expandable && <Dialog open={show} onOpenChange={setShow} title={label} size="wide" openerRef={opener}
       footer={<DialogActions><DialogClose asChild><Button>{msg('Close')}</Button></DialogClose></DialogActions>}>
-      <CodeBlock text={text} label={label} lang={lang} defaultWrap={wrap} expanded />
+      <CodeBlock text={text} label={label} lang={lang} defaultWrap={wrap} expanded verbatim={verbatim} />
     </Dialog>}
   </div>
 }

@@ -44,8 +44,8 @@ const (
 // stand-in's working directory: schema for `packs schema`, and lock for
 // `packs lock`. As `mcp` it reads its input until the relay closes it. Every
 // run appends one line to the returned file: its arguments, and the
-// `JPACK_CONFIG` it was given. It first appends one line to `envSeen`'s file.
-// It uses shell builtins only.
+// `JPACK_CONFIG` it was given. It first appends one line to `envSeen`'s file,
+// and one to `expectedKeySeen`'s. It uses shell builtins only.
 //
 // The commands a signed desk adds (ADR-0010) it answers by default as runtime
 // 0.26.0 does, and each can be steered from a file beside the calls file:
@@ -71,6 +71,7 @@ func writeStandInRuntime(t *testing.T, path, schema, lock string) (calls string)
 	calls = filepath.Join(t.TempDir(), "calls")
 	script := "#!/bin/sh\n" +
 		"printf '%s [JPACK_SIGNING_KEY=%s] [DESK_TEST_INHERITED=%s]\\n' \"$*\" \"${JPACK_SIGNING_KEY-unset}\" \"${DESK_TEST_INHERITED-unset}\" >> '" + calls + ".env'\n" +
+		"printf '%s [JPACK_SIGNING_PUBLIC_KEY=%s]\\n' \"$*\" \"${JPACK_SIGNING_PUBLIC_KEY-unset}\" >> '" + calls + ".signing-public-key'\n" +
 		"printf '%s [JPACK_CONFIG=%s]\\n' \"$*\" \"${JPACK_CONFIG-unset}\" >> '" + calls + "'\n" +
 		"case \"$1 $2\" in\n" +
 		"'packs schema')\n" + schema + "\n  ;;\n" +
@@ -210,6 +211,22 @@ func envSeen(t *testing.T, calls string) []string {
 		t.Fatal(err)
 	}
 	return strings.Split(seedArgument.ReplaceAllString(keyFileArgument.ReplaceAllString(strings.TrimSuffix(string(data), "\n"), "--public-key FILE"), "audit key public SEED --format json"), "\n")
+}
+
+// expectedKeySeen is what the stand-in whose calls file is calls recorded of
+// each run's `JPACK_SIGNING_PUBLIC_KEY`, one line per run, in order: its
+// arguments and the value it was given, or "unset". A stand-in never run has
+// recorded nothing.
+func expectedKeySeen(t *testing.T, calls string) []string {
+	t.Helper()
+	data, err := os.ReadFile(calls + ".signing-public-key")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 }
 
 // reading is a `packs schema --format json` that names versions as

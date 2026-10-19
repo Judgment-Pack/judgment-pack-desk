@@ -184,6 +184,7 @@ describe('Help & About', () => {
     expect(gates.textContent).toContain('it is never refused for a draft, and never recorded')
     expect(gates.textContent).toContain('This holds only as far as the agent’s client really withholds those tools')
     expect(gates.textContent).toContain("JPACK_CONFIG='/desks/a desk/jpack.json' /opt/jpack/bin/jpack mcp")
+    expect(gates.textContent).toContain('signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records')
     expect(gates.textContent).toContain('This installation refuses a job from a release whose saved tests were not run.')
     cleanup()
 
@@ -220,6 +221,11 @@ describe('Help & About', () => {
     expect(records[at + 1]).toBe(SIGNATURES_LINE)
     expect(records[at + 2]).toBe(SIGNING_KEY_LINE)
     expect(gates.textContent).not.toContain('A record is not signed')
+  })
+
+  it('says what a witness is, where its token is kept, what moves Desk’s cursor, and what a statement shows and does not', () => {
+    renderHelp(stubClient(PACKS))
+    expect(gatesParagraphs()).toContain(WITNESS_LINE)
   })
 
   it('shows Runner’s public key beside the project’s signatures, where Desk reports that Runner signs', async () => {
@@ -295,6 +301,7 @@ function gatesParagraphs(): string[] {
 }
 
 const SIGNATURES_LINE = 'Signatures. A desk Desk makes with runtime 0.26.0 or later names a signing key in its jpack.json, unless Desk cannot keep one, which its creation says. Desk keeps the key for that desk in its own configuration folder, outside the project, and every runtime that reads that jpack.json signs each record it adds, if it accepts the key. A signature binds an agent given only this desk’s jpack mcp, which cannot read the key. It binds nothing against you, who hold the key, or against an agent that can read your files. The project Desk was started on is signed by a key Desk keeps only where you chose one in its upgrade, in Admin → Decision safeguards; any other project’s records are signed only where something else names a key.'
+const WITNESS_LINE = 'Witness. In Admin → Decision safeguards → Decision record you can set a witness: a gateway another party runs, which signs the checkpoints Desk submits to it, chains its statements per trail, and serves them to anyone who names the trail. Desk keeps the submitter’s token in its own configuration folder, outside the project, sends it only with a submission, and moves its cursor only on a statement for the last checkpoint sent that the runtime’s reading confirms. A statement shows, if that witness is independent of you, that the lines up to its checkpoint existed when it signed. It does not show that the records are true, who submitted them, or anything against a witness that colludes.'
 const RUNNER_PUBLIC_KEY = '882a7f2be72a4b0c0a03b590300c72e8ed3fab24355a6950f9e6399814c67350'
 const RUNNER_KEY_ID = '4ba1de706a3baa4d8f5456340604190a'
 const RUNNER_SIGNS_LINE = 'Jobs signatures. Runner signs the record of each Jobs run on this desk with a key of its own, never this project’s. Desk keeps it in its own configuration folder, outside the project, and names it to Runner when Runner starts. A holder checks a run’s version-5 export with jpack-runner verify-run --public-key and this public key. A signature binds nothing against you, who hold the key, or against an agent that can read your files.'
