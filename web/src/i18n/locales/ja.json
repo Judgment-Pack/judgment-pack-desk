@@ -6078,5 +6078,13 @@
   "the fenced proposal block is not valid JSON": "区切られた提案ブロックは有効な JSON ではありません",
   "Delegate one to three focused tasks, each with a title, an objective and an offered profile; pass material by reference (references: ids from your context, at most twenty), and resume a finished task by its id.": "タイトル、目的、利用可能なプロファイルを指定して、焦点を絞ったタスクを 1～3 件委任してください。資料は参照で渡し（references: コンテキストの ID、最大 20 件）、完了したタスクはその ID で再開できます。",
   "Delegation profiles and tool names must be unique, and a profile stays within the children’s ceiling: its budget at most TASK_BUDGET_CEILING, its Runtime tools on the gate’s ceiling.": "委任プロファイルとツール名は一意である必要があり、プロファイルは子タスクの上限内に収まる必要があります。予算は TASK_BUDGET_CEILING 以下、Runtime ツールはゲートの上限内です。",
-  "This task was not offered that Runtime tool.": "このタスクにはその Runtime ツールは提供されていません。"
+  "This task was not offered that Runtime tool.": "このタスクにはその Runtime ツールは提供されていません。",
+  " · tokens in {{input}}, out {{output}}": " · トークン 入力 {{input}}、出力 {{output}}",
+  "Declared cases: {{compared}} compared, {{disagreed}} differ from the expected outcome.": "宣言されたケース: {{compared}} 件を比較し、{{disagreed}} 件が期待結果と異なります。",
+  "Review cost: {{requests}} agent runs on {{model}}": "レビューのコスト: {{model}} でエージェント実行 {{requests}} 回",
+  "Review cost: {{requests}} model requests on {{model}}": "レビューのコスト: {{model}} へのモデルリクエスト {{requests}} 件",
+  "Review of the declared cases": "宣言されたケースのレビュー",
+  "Some declared cases were not compared, so this review cannot say the proposal was not refuted. Not compared: {{cases}}": "宣言されたケースの一部が比較されなかったため、このレビューでは提案が反証されなかったとは言えません。未比較: {{cases}}",
+  "The review is incomplete. Nothing here says this proposal holds.": "レビューは不完全です。この提案が成り立つことを示すものはここにはありません。",
+  "The review ran on {{model}}, the model this connection names for reviews, and the answer on {{runModel}}.": "レビューは、この接続がレビュー用に指定している {{model}} で実行され、回答は {{runModel}} で実行されました。"
 }

@@ -602,7 +602,7 @@ export class AuthoringRun {
     if (row) this.updateResponse({searches: [...(row.searches ?? []).filter(s => s.id !== reference.id), structuredClone(reference)]})
   }
   private finishResponse(): void {
-    this.updateResponse({work: summarizeWork(this.responseEvents, false)})
+    this.updateResponse({work: summarizeWork(this.responseEvents, false, this.currentAITarget?.model)})
     this.responseId = undefined
     this.responseEvents = []
   }
@@ -1456,7 +1456,7 @@ export class AuthoringRun {
           this.updateResponse({sourceIds: [...new Set([...(row?.sourceIds ?? []), data.sourceId])]})
         }
       }
-      this.updateResponse({work: summarizeWork(this.responseEvents, true)})
+      this.updateResponse({work: summarizeWork(this.responseEvents, true, this.currentAITarget?.model)})
       if (event.type === 'proposal') proposal = { document: event.document, unknowns: event.unknowns }
       if (event.type === 'error') {failure = event.message;typedFailure=readFailure(event.failure)}
     })

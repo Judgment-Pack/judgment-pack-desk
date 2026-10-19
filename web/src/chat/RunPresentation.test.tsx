@@ -3,6 +3,7 @@ import { afterEach, expect, it } from 'vitest'
 import { INITIAL_STATE } from '../research/run'
 import { workItems, ComposerTaskStatus, TaskStatus, WorkSummary, candidateSummary } from './RunPresentation'
 import { MessageRenderer } from './MessageRenderer'
+import { readResponseHistory, summarizeWork } from './responseHistory'
 afterEach(cleanup)
 
 it('pairs parallel invocations by identity and preserves a pending or failed call', () => {
@@ -134,4 +135,19 @@ it('renders readable labels for restored context work after an interrupted respo
  fireEvent.click(screen.getByText('Work · 20 steps'))
  expect(screen.getAllByText('Read retained context')).toHaveLength(20)
  expect([...view.container.querySelectorAll('li')].every(row=>row.textContent?.includes('Done'))).toBe(true)
+})
+
+it('keeps the critic\'s account of the declared cases with the response, and shows it',()=>{
+ const critique={type:'critique' as const,refuted:true,checks:[{tool:'validate',status:'valid'}],text:'validate valid; incomplete, 1 declared case(s) not compared',incomplete:['c2'],cases:[{case:'c1',source:'test' as const,tool:'experimental_test_cases' as const,agrees:false,expected:{disposition:{kind:'approve'}},actual:{disposition:{kind:'decline'}}}],figures:{model:'cheap-critic',unit:'model-requests' as const,requests:2,inputTokens:500,outputTokens:60}}
+ const work=summarizeWork([critique],false,'main-model')
+ expect(work.critic).toEqual({compared:1,disagreed:1,incomplete:['c2'],figures:critique.figures,runModel:'main-model'})
+ // It survives a save and a reload, and a record that is not what the Desk writes is refused.
+ const row={id:'response-1',documents:[],websites:[],sourceIds:[],work:JSON.parse(JSON.stringify(work))}
+ expect(readResponseHistory([row])[0]!.work.critic).toEqual(work.critic)
+ expect(()=>readResponseHistory([{...row,work:{...row.work,critic:{...work.critic,disagreed:9}}}])).toThrow('invalid')
+ render(<WorkSummary work={work}/>)
+ fireEvent.click(screen.getByText('Assistant notice'))
+ expect(screen.getByText(/Some declared cases were not compared, so this review cannot say the proposal was not refuted\. Not compared: c2/)).toBeTruthy()
+ expect(screen.getByText('Declared cases: 1 compared, 1 differ from the expected outcome.')).toBeTruthy()
+ expect(screen.getByText(/The review ran on cheap-critic, the model this connection names for reviews, and the answer on main-model\./)).toBeTruthy()
 })

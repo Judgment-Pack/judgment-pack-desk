@@ -6078,5 +6078,13 @@
   "the fenced proposal block is not valid JSON": "el bloque de propuesta delimitado no es JSON válido",
   "Delegate one to three focused tasks, each with a title, an objective and an offered profile; pass material by reference (references: ids from your context, at most twenty), and resume a finished task by its id.": "Delega de una a tres tareas concretas, cada una con un título, un objetivo y un perfil ofrecido; pasa el material por referencia (references: ids de tu contexto, como máximo veinte) y reanuda una tarea terminada por su id.",
   "Delegation profiles and tool names must be unique, and a profile stays within the children’s ceiling: its budget at most TASK_BUDGET_CEILING, its Runtime tools on the gate’s ceiling.": "Los perfiles de delegación y los nombres de herramientas deben ser únicos, y un perfil se mantiene dentro del techo de las tareas hijas: su presupuesto como máximo TASK_BUDGET_CEILING y sus herramientas del Runtime dentro del techo de la puerta.",
-  "This task was not offered that Runtime tool.": "A esta tarea no se le ofreció esa herramienta del Runtime."
+  "This task was not offered that Runtime tool.": "A esta tarea no se le ofreció esa herramienta del Runtime.",
+  " · tokens in {{input}}, out {{output}}": " · tokens de entrada {{input}}, de salida {{output}}",
+  "Declared cases: {{compared}} compared, {{disagreed}} differ from the expected outcome.": "Casos declarados: {{compared}} comparados, {{disagreed}} difieren del resultado esperado.",
+  "Review cost: {{requests}} agent runs on {{model}}": "Coste de la revisión: {{requests}} ejecuciones de agente con {{model}}",
+  "Review cost: {{requests}} model requests on {{model}}": "Coste de la revisión: {{requests}} solicitudes al modelo {{model}}",
+  "Review of the declared cases": "Revisión de los casos declarados",
+  "Some declared cases were not compared, so this review cannot say the proposal was not refuted. Not compared: {{cases}}": "Algunos casos declarados no se compararon, así que esta revisión no puede decir que la propuesta no fue refutada. Sin comparar: {{cases}}",
+  "The review is incomplete. Nothing here says this proposal holds.": "La revisión está incompleta. Nada aquí dice que esta propuesta se sostenga.",
+  "The review ran on {{model}}, the model this connection names for reviews, and the answer on {{runModel}}.": "La revisión se ejecutó en {{model}}, el modelo que esta conexión indica para las revisiones, y la respuesta en {{runModel}}."
 }

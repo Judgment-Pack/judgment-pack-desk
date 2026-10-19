@@ -6078,5 +6078,13 @@
   "the fenced proposal block is not valid JSON": "有圍欄的提議區塊不是有效的 JSON",
   "Delegate one to three focused tasks, each with a title, an objective and an offered profile; pass material by reference (references: ids from your context, at most twenty), and resume a finished task by its id.": "委派一到三個專注的任務，每個任務包含標題、目標和一個可用的設定檔；資料以參照方式傳遞（references：來自你上下文的 ID，最多二十個），已完成的任務可憑其 ID 繼續。",
   "Delegation profiles and tool names must be unique, and a profile stays within the children’s ceiling: its budget at most TASK_BUDGET_CEILING, its Runtime tools on the gate’s ceiling.": "委派設定檔和工具名稱必須唯一，且設定檔須在子任務的上限之內：預算至多為 TASK_BUDGET_CEILING，其 Runtime 工具須在閘門的上限之內。",
-  "This task was not offered that Runtime tool.": "此任務未獲提供該 Runtime 工具。"
+  "This task was not offered that Runtime tool.": "此任務未獲提供該 Runtime 工具。",
+  " · tokens in {{input}}, out {{output}}": " · 輸入權杖 {{input}}，輸出 {{output}}",
+  "Declared cases: {{compared}} compared, {{disagreed}} differ from the expected outcome.": "已宣告的案例：比較了 {{compared}} 個，其中 {{disagreed}} 個與預期結果不同。",
+  "Review cost: {{requests}} agent runs on {{model}}": "審查成本：在 {{model}} 上執行代理 {{requests}} 次",
+  "Review cost: {{requests}} model requests on {{model}}": "審查成本：向 {{model}} 發出 {{requests}} 次模型請求",
+  "Review of the declared cases": "已宣告案例的審查",
+  "Some declared cases were not compared, so this review cannot say the proposal was not refuted. Not compared: {{cases}}": "部分已宣告的案例沒有比較，因此本次審查不能說該提案未被反駁。未比較：{{cases}}",
+  "The review is incomplete. Nothing here says this proposal holds.": "審查不完整。這裡沒有任何內容表示該提案成立。",
+  "The review ran on {{model}}, the model this connection names for reviews, and the answer on {{runModel}}.": "審查在此連線為審查指定的 {{model}} 上執行，答案則在 {{runModel}} 上執行。"
 }

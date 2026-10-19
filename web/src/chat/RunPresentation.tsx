@@ -23,6 +23,7 @@ import styles from './ChatWorkspace.module.css'
 import { Disclosure } from '../ui/Disclosure'
 import { RunStatus } from '../ui/RunStatus'
 import { Spinner } from '../ui/Spinner'
+import { CriticDetails } from '../assistant/CriticDetails'
 
 export { workItems } from './responseHistory'
 /** Clear selection only when this inspection actually closes, including StrictMode replay. */
@@ -64,6 +65,7 @@ export function WorkSummary({ state, work, documents=[], onRead }: { state?: Run
     })}</ol>}
     {notices.map(notice => <p key={notice}>{systemMessage(notice)}</p>)}
     {critique && <p><Message text={"Adversarial review: <0/>"} slots={[critique]} /></p>}
+    {saved.critic && <CriticDetails record={saved.critic}/>}
    </Disclosure>}
   </div>
 }

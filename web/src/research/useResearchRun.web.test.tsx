@@ -303,3 +303,30 @@ it('declares the authoring instructions as a read that depends on the Runtime th
  act(()=>result.current.run!.start('Draft a pack',[]));await waitFor(()=>expect(result.current.state.status).toBe('complete'))
  expect(declared).toEqual({immutable:true,reference:true,runtime:true})
 })
+
+it('declares the saved tests and the conversation\'s cases to a critic that will run, and to no other turn',async()=>{
+ fake.tools.mockReturnValue([])
+ const test={source:'test' as const,id:'saved',facts:{claim:60},expectedDisposition:{kind:'decline',reasons:[],handoff:null}}
+ const savedTests=vi.fn(async()=>[test])
+ const sessions:Record<string,unknown>[]=[]
+ fake.session.mockImplementation(async(_engine,request,deliver)=>{sessions.push(request);deliver({type:'end'})})
+ const drive=async(options:Parameters<typeof useResearchRun>[0],reviewer=false)=>{
+  const hook=renderHook(()=>useResearchRun(options))
+  const turn=(hook.result.current.run as unknown as {ports:{turn:(request:import('./run').TurnRequest,signal:AbortSignal,deliver:(event:unknown)=>void)=>Promise<void>}}).ports.turn
+  await act(()=>turn({prompt:'Draft it.',hostTools:[],reviewer,conversation:!reviewer},new AbortController().signal,()=>{}))
+  hook.unmount()
+  return sessions.at(-1)!
+ }
+ expect((await drive({mode:'draft',draftTools:fake.tools,adversarialReview:true,savedTests})).criticCases).toEqual([test])
+ // No critic asked for: nothing is read, nothing declared.
+ savedTests.mockClear()
+ expect(await drive({mode:'draft',draftTools:fake.tools,savedTests})).not.toHaveProperty('criticCases')
+ expect(savedTests).not.toHaveBeenCalled()
+ // An independent reviewer runs no critic.
+ expect(await drive({mode:'draft',draftTools:fake.tools,adversarialReview:true,savedTests},true)).not.toHaveProperty('criticCases')
+ expect(savedTests).not.toHaveBeenCalled()
+ // Tests that cannot be read leave the critic to review the proposal alone; they do not end the turn.
+ const unreadable=vi.fn(async():Promise<never>=>{throw new Error('Test storage cannot be read.')})
+ expect(await drive({mode:'draft',draftTools:fake.tools,adversarialReview:true,savedTests:unreadable})).not.toHaveProperty('criticCases')
+ expect(unreadable).toHaveBeenCalled()
+})

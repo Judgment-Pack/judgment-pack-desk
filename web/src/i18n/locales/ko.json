@@ -6078,5 +6078,13 @@
   "the fenced proposal block is not valid JSON": "구분된 제안 블록이 올바른 JSON이 아닙니다",
   "Delegate one to three focused tasks, each with a title, an objective and an offered profile; pass material by reference (references: ids from your context, at most twenty), and resume a finished task by its id.": "제목, 목표, 제공된 프로필을 갖춘 집중 작업을 1~3개 위임하세요. 자료는 참조로 전달하고(references: 컨텍스트의 ID, 최대 20개), 완료된 작업은 ID로 다시 이어갈 수 있습니다.",
   "Delegation profiles and tool names must be unique, and a profile stays within the children’s ceiling: its budget at most TASK_BUDGET_CEILING, its Runtime tools on the gate’s ceiling.": "위임 프로필과 도구 이름은 고유해야 하며, 프로필은 하위 작업의 상한 안에 있어야 합니다. 예산은 TASK_BUDGET_CEILING 이하, Runtime 도구는 게이트의 상한 이내여야 합니다.",
-  "This task was not offered that Runtime tool.": "이 작업에는 해당 Runtime 도구가 제공되지 않았습니다."
+  "This task was not offered that Runtime tool.": "이 작업에는 해당 Runtime 도구가 제공되지 않았습니다.",
+  " · tokens in {{input}}, out {{output}}": " · 토큰 입력 {{input}}, 출력 {{output}}",
+  "Declared cases: {{compared}} compared, {{disagreed}} differ from the expected outcome.": "선언된 케이스: {{compared}}개를 비교했고, {{disagreed}}개가 예상 결과와 다릅니다.",
+  "Review cost: {{requests}} agent runs on {{model}}": "검토 비용: {{model}}에서 에이전트 실행 {{requests}}회",
+  "Review cost: {{requests}} model requests on {{model}}": "검토 비용: {{model}} 모델 요청 {{requests}}회",
+  "Review of the declared cases": "선언된 케이스 검토",
+  "Some declared cases were not compared, so this review cannot say the proposal was not refuted. Not compared: {{cases}}": "선언된 케이스 일부를 비교하지 못했으므로 이 검토는 제안이 반박되지 않았다고 말할 수 없습니다. 비교하지 않음: {{cases}}",
+  "The review is incomplete. Nothing here says this proposal holds.": "검토가 완전하지 않습니다. 이 제안이 유효하다고 말해 주는 내용은 여기에 없습니다.",
+  "The review ran on {{model}}, the model this connection names for reviews, and the answer on {{runModel}}.": "검토는 이 연결이 검토용으로 지정한 {{model}}에서 실행되었고, 답변은 {{runModel}}에서 실행되었습니다."
 }

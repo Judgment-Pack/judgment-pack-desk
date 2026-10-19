@@ -43,6 +43,8 @@ import { runtimeCheckIdentity } from './retainedCheck'
 import { researchTools, type ReadPolicy } from './tools'
 import { CONTEXT_DEFAULTS, contextPolicy } from '@judgment-pack/harness/context/policy'
 import { withProposePack } from '../assistant/proposePack'
+import { criticCases, declaredCases } from '../assistant/criticCases'
+import type { CriticCase } from '@judgment-pack/harness/refutation'
 import { memoryInUse, runtimeIdentityOf } from '../assistant/runContext'
 
 export const MAX_REVISIONS = 4
@@ -138,6 +140,8 @@ export function useResearchRun(options?: {
   adversarialReview?: boolean
   authorizeContext?:(signal:AbortSignal)=>Promise<void>
   executionContext?:()=>import('@judgment-pack/harness/context/session').ContextInput
+  /** The linked pack's saved tests, as the critic's declared cases (`savedTestCases`); read when a critic runs. */
+  savedTests?:(signal:AbortSignal)=>Promise<CriticCase[]>
   checkpointDelegation?: (signal:AbortSignal)=>Promise<void>
   /** Per-message policy for Chat and web Research; legacy research keeps its source-led contract. */
   researchPolicy?:(turn?: import('./run').Turn)=>string
@@ -182,8 +186,8 @@ export function useResearchRun(options?: {
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents })
-  settings.current = { savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents }
+  const settings = useRef({ savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents })
+  settings.current = { savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(text, 'research')
@@ -205,6 +209,12 @@ export function useResearchRun(options?: {
         deliver(event)
         if(event.type==='budget_paused'||event.type==='execution_checkpoint'&&event.durable)await settings.current.checkpointDelegation?.(signal)
       }
+      // The cases whose outcomes the critic compares with the proposal's: the linked pack's
+      // saved tests and the cases this conversation has declared. Read only where a critic runs;
+      // one that cannot be read leaves the critic to review the proposal alone.
+      const declared = !request.reviewer && settings.current.adversarialReview === true
+        ? criticCases(await settings.current.savedTests?.(signal).catch(() => []) ?? [], declaredCases(built?.getSnapshot().cases ?? []))
+        : []
       const sessionId = await sessionBearer()
       // What the Desk knows of the run beyond the run (agent#8, agent#11): the Runtime the
       // chat's read cache keys a Runtime-served read by, and whether project memory is on,
@@ -225,6 +235,7 @@ export function useResearchRun(options?: {
             context:{...request.context,...executionContext,...(executionContext?.documents?{documents:[...(request.context?.documents??[]),...executionContext.documents]}:{}),chat:request.reviewer?undefined:executionContext?.chat,...(runtime?{runtime}:{}),...(memory===undefined?{}:{memory}),authorize:settings.current.authorizeContext,checkpoint:request.conversation?async checkpoint=>{deliver({type:'execution_checkpoint',checkpoint});await settings.current.checkpointDelegation?.(signal)}:undefined,configuration:settings.current.contextConfiguration},
             interactive: true,
             adversarialReview: !request.reviewer && settings.current.adversarialReview === true,
+            ...(declared.length ? { criticCases: declared } : {}),
             testPrompt: request.reviewer ? '' : testPrompt,
             tools: ready.tools,
             callTool: ready.callTool,

@@ -411,6 +411,15 @@ describe('what a run is told of the critic and of project memory', () => {
     expect((await run({ engine: 'codex', endpoint: null, agent: { model: 'a-model', provider: 'openai', authMethod: 'subscription', tools: scenario.scenarioTools } as never, thinking: 'on' })).adversarialReview).toBe(false)
   })
 
+  it('hands the critic the cases it was given, on the default purpose alone', async () => {
+    const cases = [{ source: 'test' as const, id: 'c1', facts: { claim: 60 }, expectedDisposition: { kind: 'decline', reasons: [], handoff: null } }]
+    expect((await run({ thinking: 'on', criticCases: cases })).criticCases).toEqual(cases)
+    handed = null; cleanup()
+    expect(await run({ thinking: 'on' })).not.toHaveProperty('criticCases')
+    handed = null; cleanup()
+    expect(await run({ purpose: 'test-design', thinking: 'on', criticCases: cases })).not.toHaveProperty('criticCases')
+  })
+
   it('asks for no critic on the purposes that never had one', async () => {
     for (const purpose of ['test-design', 'graph'] as const) {
       expect((await run({ purpose, thinking: 'on' })).adversarialReview, purpose).toBe(false)

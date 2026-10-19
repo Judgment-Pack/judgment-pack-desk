@@ -6078,5 +6078,13 @@
   "the fenced proposal block is not valid JSON": "der umzäunte Vorschlagsblock ist kein gültiges JSON",
   "Delegate one to three focused tasks, each with a title, an objective and an offered profile; pass material by reference (references: ids from your context, at most twenty), and resume a finished task by its id.": "Delegieren Sie eine bis drei gezielte Aufgaben, jeweils mit Titel, Ziel und einem angebotenen Profil; übergeben Sie Material als Verweis (references: IDs aus Ihrem Kontext, höchstens zwanzig) und setzen Sie eine abgeschlossene Aufgabe über ihre ID fort.",
   "Delegation profiles and tool names must be unique, and a profile stays within the children’s ceiling: its budget at most TASK_BUDGET_CEILING, its Runtime tools on the gate’s ceiling.": "Delegationsprofile und Werkzeugnamen müssen eindeutig sein, und ein Profil bleibt innerhalb der Obergrenze der Teilaufgaben: sein Budget höchstens TASK_BUDGET_CEILING, seine Runtime-Werkzeuge innerhalb der Obergrenze des Gates.",
-  "This task was not offered that Runtime tool.": "Dieser Aufgabe wurde dieses Runtime-Werkzeug nicht angeboten."
+  "This task was not offered that Runtime tool.": "Dieser Aufgabe wurde dieses Runtime-Werkzeug nicht angeboten.",
+  " · tokens in {{input}}, out {{output}}": " · Token ein {{input}}, aus {{output}}",
+  "Declared cases: {{compared}} compared, {{disagreed}} differ from the expected outcome.": "Angegebene Fälle: {{compared}} verglichen, {{disagreed}} weichen vom erwarteten Ergebnis ab.",
+  "Review cost: {{requests}} agent runs on {{model}}": "Prüfungsaufwand: {{requests}} Agentenläufe mit {{model}}",
+  "Review cost: {{requests}} model requests on {{model}}": "Prüfungsaufwand: {{requests}} Modellanfragen an {{model}}",
+  "Review of the declared cases": "Prüfung der angegebenen Fälle",
+  "Some declared cases were not compared, so this review cannot say the proposal was not refuted. Not compared: {{cases}}": "Einige angegebene Fälle wurden nicht verglichen, daher kann diese Prüfung nicht sagen, dass der Vorschlag nicht widerlegt wurde. Nicht verglichen: {{cases}}",
+  "The review is incomplete. Nothing here says this proposal holds.": "Die Prüfung ist unvollständig. Nichts hier besagt, dass dieser Vorschlag Bestand hat.",
+  "The review ran on {{model}}, the model this connection names for reviews, and the answer on {{runModel}}.": "Die Prüfung lief auf {{model}}, dem Modell, das diese Verbindung für Prüfungen nennt, die Antwort auf {{runModel}}."
 }

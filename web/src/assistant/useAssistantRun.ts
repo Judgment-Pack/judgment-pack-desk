@@ -48,6 +48,7 @@ import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { openAssistantConnection, runAssistantSession } from '@judgment-pack/harness/session'
 import { sessionBearer, whenSessionEnds } from '../mcp/session'
 import type { HostTool, AssistantEvent } from '@judgment-pack/harness/engine'
+import type { CriticCase } from '@judgment-pack/harness/refutation'
 import type { AssistantConnection } from '@judgment-pack/harness/session'
 import {
   NO_MODEL_CHOSEN,
@@ -246,6 +247,12 @@ export function useAssistantRun(options: {
    * run holds the set it began with.
    */
   hostTools?: HostTool[]
+  /**
+   * The cases whose outcomes the critic compares with the proposal's (the pack's
+   * saved tests and any the request declares), read at start. Only the default
+   * purpose runs a critic, so only it is handed them.
+   */
+  criticCases?: CriticCase[]
 }): AssistantRun {
   const contextConfiguration=useEffectiveConfig().assistantProfile?.value?.context
   const connectionTarget = options.target ?? {}
@@ -346,7 +353,7 @@ export function useAssistantRun(options: {
   const start = useCallback(
     (prompt: string) => {
       if (active.current !== null && !active.current.ended) return
-      const { endpoint, agent, model, engine, thinking, testPrompt, hostTools, purpose, connectionTarget } = settings.current
+      const { endpoint, agent, model, engine, thinking, testPrompt, hostTools, purpose, connectionTarget, criticCases } = settings.current
       const run: Active = { controller: new AbortController(), connection: null, ended: false }
       active.current = run
       setEvents([])
@@ -391,6 +398,7 @@ export function useAssistantRun(options: {
               // off. The default purpose, which the pack pane and Describe it start,
               // ran it for the API engine at any tier but `off` and never for Codex.
               adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off',
+              ...(purpose === undefined && criticCases?.length ? { criticCases } : {}),
               ...(purpose === 'graph' ? { adversarialReview: false } : {}),
               ...(purpose === 'test-design' || purpose === 'brief' ? { allowConversation: true, interactive: true, adversarialReview: false } : {}),
               tools: ready.tools,

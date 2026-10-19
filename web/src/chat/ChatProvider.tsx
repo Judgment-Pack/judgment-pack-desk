@@ -12,6 +12,7 @@ import {planTools} from '@judgment-pack/harness/planning/tools'
 import {projectMemoryTools} from '@judgment-pack/harness/memory/tools'
 import {MEMORY_KEY} from '@judgment-pack/harness/memory/client'
 import {chatContextFor} from '../assistant/chatContexts'
+import {savedTestCases} from '../assistant/criticCases'
 import {dialectChatTools} from '../dialects/dialectChatTools'
 import { testChatTools } from '../packs/test-workspace/chatTools'
 import { readTests, updateTests, TESTS_KEY } from '../packs/test-workspace/store'
@@ -218,7 +219,7 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
     context:async(basis,signal)=>{const saved=await readTests();signal.throwIfAborted();if(saved.project!==project)throw Error('The project changed during the checks.');return packReviewContext(basis,saved.content.suites[basis.packId]??emptySuite())},
     target:async signal=>{const pack=chatOf(store,chat.id)?.pack;if(!pack)throw Error('The linked pack is no longer available.');return {packId:pack.id,path:pack.path,text:(await readFile(pack.path,signal)).content}},
     check:async(candidate,signal)=>{const pack=chatOf(store,chat.id)?.pack;if(!pack||!mcp.client)throw Error('The pack or runtime is no longer available.');return checkPackProposal(candidate,async()=>{const saved=await readTests();if(saved.project!==project)throw Error('The project changed during the checks.');return saved.content.suites[pack.id]??emptySuite()},async(name,args)=>await mcp.client!.callTool({name,arguments:args}) as McpToolResult,signal)}
-  }:undefined, executionContext:()=>{const c=chatOf(store,chat.id);return {chat:chatContextFor(chat.id),...(c?.policySources?.length?{documents:policySourceDocuments(c.policySources)}:{}),phase:c?.interaction??'work',plan:c?.plans?.at(-1),...(c?.policy?{artifactProposals:false}:{})}},checkpointDelegation:async signal=>{
+  }:undefined, savedTests:async signal=>{const pack=chatOf(store,chat.id)?.pack;if(!pack)return [];const saved=await readTests(signal);return saved.project===project?savedTestCases(saved.content.suites[pack.id]??emptySuite()):[]}, executionContext:()=>{const c=chatOf(store,chat.id);return {chat:chatContextFor(chat.id),...(c?.policySources?.length?{documents:policySourceDocuments(c.policySources)}:{}),phase:c?.interaction??'work',plan:c?.plans?.at(-1),...(c?.policy?{artifactProposals:false}:{})}},checkpointDelegation:async signal=>{
     const current=store.getSnapshot().bindings.get(chat.id)
     if(!current?.run)throw Error('This conversation is no longer available.')
     store.report(chat.id,{...current,state:current.run.getSnapshot()})
