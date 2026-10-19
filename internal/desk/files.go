@@ -214,13 +214,20 @@ const (
 	// repairing here, the caller asked for a path outside what the relay
 	// carries. See `relaySuffixProblem`.
 	CodeAssistantRelayPath = "assistant-relay-path"
-	// CodeAssistantRelayBusy is a relayed request past the number this desk
-	// carries at once.
+	// CodeAssistantRelayBusy is a relayed request that waited for a slot for
+	// as long as this desk lets one wait and was never given one.
 	//
 	// Split from every other refusal because it is the only one that is
 	// **temporary**: the same request a moment later is fine, which is a
 	// different instruction to a caller from any of the others.
 	CodeAssistantRelayBusy = "assistant-relay-busy"
+	// CodeAssistantRelayQueueFull is a relayed request that found every slot
+	// taken and the queue for them full, answered 429 with `Retry-After` so the
+	// harness, which sends a request again after a 429 it is told to wait for,
+	// does. It has no alias in the failure catalogue on purpose: the status
+	// classifies it as rate-limited, which is what makes it retryable, and a
+	// code the catalogue aliased to `busy` would classify it as not.
+	CodeAssistantRelayQueueFull = "assistant-relay-queue-full"
 	// CodeAssistantRelayUpstream is a relayed request the configured endpoint
 	// never answered.
 	//
@@ -340,9 +347,10 @@ var codeStatus = map[string]int{
 	// The request itself, and a desk with no room for it: a bad request and a
 	// service that is temporarily full are not the desk's state disagreeing
 	// with a request, so neither is a 409.
-	CodeAssistantRelayPath:     http.StatusBadRequest,
-	CodeAssistantRelayBusy:     http.StatusServiceUnavailable,
-	CodeAssistantRelayUpstream: http.StatusBadGateway,
+	CodeAssistantRelayPath:      http.StatusBadRequest,
+	CodeAssistantRelayBusy:      http.StatusServiceUnavailable,
+	CodeAssistantRelayQueueFull: http.StatusTooManyRequests,
+	CodeAssistantRelayUpstream:  http.StatusBadGateway,
 	// The endpoint answered and this desk will not repeat what it said: a bad
 	// gateway, like an endpoint that never answered, because the fault is at
 	// the other end and no retry of the same request changes it.
@@ -372,7 +380,7 @@ var allCodes = []string{
 	CodeNotUTF8, CodeNotAFile, CodeUnauthorized, CodeForbidden, CodeBadRequest,
 	CodeStagingFile, CodeExcludedDirectory,
 	CodeAssistantUnconfigured, CodeAssistantNoKey, CodeAssistantUnusableStore,
-	CodeAssistantRelayPath, CodeAssistantRelayBusy, CodeAssistantRelayUpstream,
+	CodeAssistantRelayPath, CodeAssistantRelayBusy, CodeAssistantRelayQueueFull, CodeAssistantRelayUpstream,
 	CodeAssistantListingRefused,
 	CodeAssistantKeyUnbound, CodeDeskConfigChanged, CodeDeskConfigRefused,
 	CodeResearchUnconfigured, CodeResearchRelayPath, CodeResearchRelayBusy,

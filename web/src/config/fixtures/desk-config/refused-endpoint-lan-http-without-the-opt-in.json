@@ -1,0 +1,16 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "http://192.168.1.20:8000/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "models": [
+        "a-model"
+      ],
+      "tools": [
+        "validate"
+      ]
+    }
+  }
+}

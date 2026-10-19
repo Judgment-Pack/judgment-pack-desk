@@ -22,6 +22,7 @@ import { useAssistantRun } from './useAssistantRun'
 import { ProviderError, providerRequest, useProviderCatalog, useProviderModels, useProviderStatus, type ProviderChallenge } from './providers'
 import { whenSessionEnds } from '../mcp/session'
 import { useUnsavedChanges } from '../shell/DraftScope'
+import { RUN_MODEL, subordinateChoice, subordinateStored } from './endpointDraft'
 import styles from './AssistantSettings.module.css'
 
 export function MachineAssistantSettings({ unavailable, onDirtyChange }: { unavailable: boolean; onDirtyChange?: (dirty:boolean)=>void }) {
@@ -57,6 +58,7 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
   const [model,setModel]=useState(config.assistant.agent?.model??'')
   const [allowed,setAllowed]=useState(()=>[...allowedAgentModels(config.assistant.agent)])
   const [effort,setEffort]=useState(config.assistant.agent?.effort??'')
+  const [critic,setCritic]=useState(config.assistant.agent?.criticModel??''), [child,setChild]=useState(config.assistant.agent?.childModel??'')
   const [tools,setTools]=useState<AssistantAgentConfig['tools']>(config.assistant.agent?.tools??[...ASSISTANT_TOOLS])
   const [method,setMethod]=useState('browser'), [challenge,setChallenge]=useState<ProviderChallenge|null>(null)
   const [connecting,setConnecting]=useState(false)
@@ -66,7 +68,7 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
   const disconnectButton=useRef<HTMLButtonElement>(null)
   useUnsavedChanges(dirty)
   useEffect(()=>{onDirtyChange(dirty);return()=>onDirtyChange(false)},[dirty,onDirtyChange])
-  useEffect(()=>{if(!dirty){setAllowed([...allowedAgentModels(config.assistant.agent)]);setModel(config.assistant.agent?.model??'');setEffort(config.assistant.agent?.effort??'');setTools(config.assistant.agent?.tools??[...ASSISTANT_TOOLS])}},[config.assistant.agent,dirty])
+  useEffect(()=>{if(!dirty){setAllowed([...allowedAgentModels(config.assistant.agent)]);setModel(config.assistant.agent?.model??'');setEffort(config.assistant.agent?.effort??'');setTools(config.assistant.agent?.tools??[...ASSISTANT_TOOLS]);setCritic(config.assistant.agent?.criticModel??'');setChild(config.assistant.agent?.childModel??'')}},[config.assistant.agent,dirty])
   useEffect(()=>{
     mounted.current=true
     const ended=()=>{ generation.current++;operation.current?.abort();setChallenge(null);setBusy(false);setConnecting(false);void client.removeQueries({queryKey:['model-provider']}) }
@@ -115,8 +117,9 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
   const chosen=models.find(item=>item.id===model)
   const valid=allowed.length===0 ? model==='' : allowed.length<=128 && allowed.every(id=>models.some(row=>row.id===id)) && allowed.includes(model) && !!chosen && (!effort || chosen.efforts.includes(effort as NonNullable<AssistantAgentConfig['effort']>))
   const pending=status.data?.account==='login-pending' || !!challenge
-  const agent:AssistantAgentConfig={provider:'openai',authMethod:'subscription',model:model||null,models:allowed,tools,...(effort?{effort:effort as AssistantAgentConfig['effort']}:{})}
-  const stored=JSON.stringify(allowed)===JSON.stringify(allowedAgentModels(config.assistant.agent)) && config.assistant.engine==='codex' && config.assistant.agent?.model===model && (config.assistant.agent.effort??'')===effort && JSON.stringify(config.assistant.agent.tools)===JSON.stringify(tools)
+  const namedCritic=critic&&allowed.includes(critic)?critic:'',namedChild=child&&allowed.includes(child)?child:''
+  const agent:AssistantAgentConfig={provider:'openai',authMethod:'subscription',model:model||null,models:allowed,tools,...(effort?{effort:effort as AssistantAgentConfig['effort']}:{}),...(namedCritic?{criticModel:namedCritic}:{}),...(namedChild?{childModel:namedChild}:{})}
+  const stored=JSON.stringify(allowed)===JSON.stringify(allowedAgentModels(config.assistant.agent)) && config.assistant.engine==='codex' && config.assistant.agent?.model===model && (config.assistant.agent.effort??'')===effort && JSON.stringify(config.assistant.agent.tools)===JSON.stringify(tools) && (config.assistant.agent.criticModel??'')===namedCritic && (config.assistant.agent.childModel??'')===namedChild
   useEffect(()=>{if(dirty&&stored)setDirty(false)},[dirty,stored])
   const canReadSchema=config.assistant.agent?.tools.includes('get_schema')===true
   const executionAgent=applyAssistantProfile(config.assistant,assistantProfile).agent
@@ -150,6 +153,10 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
       {connected&&<FieldGroup>
         <SubscriptionModels label={scope?msg('Default models'):undefined} models={models} allowed={allowed} model={model} disabled={busy||testRunning||unavailable||listing.isPending||listing.isError}
           onChange={(next,nextModel)=>{edit();setAllowed(next);if(model!==nextModel)setEffort('');setModel(nextModel)}}/>
+        {allowed.length>0&&<>
+          <Field label={msg('Review model')}>{wiring=><Select {...wiring} value={subordinateChoice(namedCritic)} disabled={busy||testRunning||unavailable||write.isPending} onValueChange={value=>{edit();setCritic(subordinateStored(value))}} options={[{value:RUN_MODEL,label:msg('The model of the run')},...allowed.filter(id=>id!==RUN_MODEL).map(id=>({value:id,label:id}))]}/>}</Field>
+          <Field label={msg('Helper tasks model')}>{wiring=><Select {...wiring} value={subordinateChoice(namedChild)} disabled={busy||testRunning||unavailable||write.isPending} onValueChange={value=>{edit();setChild(subordinateStored(value))}} options={[{value:RUN_MODEL,label:msg('The model of the run')},...allowed.filter(id=>id!==RUN_MODEL).map(id=>({value:id,label:id}))]}/>}</Field>
+        </>}
         {listing.isPending&&<LoadingState>{msg('Loading models…')}</LoadingState>}
         {allowed.some(id=>!models.some(row=>row.id===id))&&!listing.isPending&&<SettingsFeedback tone="error">{msg('This model is no longer available. Choose another model.')}</SettingsFeedback>}
         {listing.error&&<SettingsFeedback tone="error" actions={<Button variant="inline" onClick={()=>void listing.refetch()}>{msg('Retry')}</Button>}>{msg(listing.error.message)}</SettingsFeedback>}

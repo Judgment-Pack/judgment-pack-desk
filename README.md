@@ -3126,8 +3126,9 @@ be a loopback name. A proxy or a self-hosted endpoint speaking any of those
 three wires is that `kind`, at its own URL.
 
 `url` must be an `https:` URL, or an `http:` one on `localhost` or
-`127.0.0.1` — a rule about transport, because a bearer credential sent in clear
-text over a network is a credential given away, and one about transport only.
+`127.0.0.1` (or, where the file says `lan: true`, on a private network address)
+— a rule about transport, because a bearer credential sent in clear text over a
+network is a credential given away, and one about transport only.
 It may **not** carry a user, a password or a fragment: a key is never written
 into configuration, and that includes into a URL. It **may** carry a query
 string, because some gateways route on one — and that query string is never
@@ -3210,6 +3211,38 @@ ready, and the Assistant tab and Describe it say so and offer no run. `""` is
 still refused, here and on the chassis: the empty string is a value somebody
 wrote, and a member whose two spellings mean different things is a member two
 readers disagree about.
+
+**Seven optional members say how a connection runs beyond that**, each read by
+both decoders and held by the shared fixtures. Absent, a file decodes as it
+always did.
+
+| member | says | held to |
+| --- | --- | --- |
+| `criticModel`, `childModel` | the model the connection runs its review of a proposal on, and the model the helper tasks the assistant delegates run on: a cheaper model the same endpoint serves, so each is one of `models` (a subscription's `agent` takes the same two, one of its allowed models) | the model rule, and the set |
+| `capacity` | how many requests the connection carries at once, which is how many helper tasks run beside the assistant | an integer, 1 to 16 |
+| `auth` | `"api-key"`: the key goes in the `api-key` header Azure's OpenAI service takes, and not as a bearer (`"bearer"` is the default and is not written) | an OpenAI-compatible endpoint |
+| `lan` | `true`: a plain `http:` address on this network is accepted, with a warning beside the field that the key travels in clear text there | the address is a private one (`10/8`, `172.16/12`, `192.168/16`), a name of one label, or one under `.local`, `.lan`, `.internal` or `.home.arpa`, read as written and never resolved |
+| `capabilities` | what the endpoint can do, for the models that differ from the provider's defaults: `probe`, what a probe of the endpoint found and when (`at`), and `override`, what its owner says instead, each member of the harness's capability record by name (`contextWindow`, `outputReserve`, `nativeToolCalls`, `parallelToolCalls`, `vision`, `reasoningKind`, `reasoningIgnored`, `reasoningField`, `wholeJsonAnswer`, `toolSchemas`, `statePlacement`, `strictAlternation`) | the harness's own bounds: a window of 4,096 to 2,000,000 tokens and an output limit of 1,024 to half of it, a reasoning dialect its wire speaks |
+
+The answer the harness is given is the probe's finding with each override laid
+over it, member by member; a member neither states is the provider's default.
+**The probe** is one press in Admin on a saved endpoint, for an
+OpenAI-compatible one: one small chat request that offers one tool and asks for
+two calls of it, and one read of the model listing. It finds whether the
+endpoint takes tool calls natively and in parallel (an endpoint that refuses a
+request offering tools has none, and the assistant then describes its tools in
+the instructions and reads one JSON call out of the answer), the member its
+reasoning arrives in, and the window and output limit where the listing states
+them. It reads counts, names and numbers out of the answers, never their text,
+and says what it could not tell (images, the reasoning dialect, tool-schema
+narrowing and the chat template's turn order) rather than guessing.
+
+**An endpoint on this computer needs no key.** For `localhost` and
+`127.0.0.1` the relay, the probe and the background model calls go out bare
+where no key is stored (a key that is stored is bound and presented as ever),
+`GET /api/assistant/key` answers `keyless: true`, and the page reads the
+assistant as ready. Nothing else is keyless: a private-network address is
+still refused with no key, and nothing is sent.
 
 `tools` is required, is validated against a closed list — `get_schema`,
 `list_examples`, `get_example`, `validate`, `experimental_evaluate` — and
@@ -5002,9 +5035,19 @@ no CORS, so a page calling one directly could not read the answer.
   seconds, so the refusal still lands rather than the page being dropped
   mid-connection. The whole bound is therefore the overall deadline plus five
   seconds, and no idle bound can extend a request past it.
-- **At most four relayed requests in flight**, and past that the answer is an
-  immediate `assistant-relay-busy` — a bound, deliberately not a queue, because
-  a queue reports a wait as latency.
+- **At most four relayed requests in flight, and a bounded queue behind
+  them.** A fifth request, which a delegating session makes in the ordinary
+  course, waits for a turn and is answered like the others; the requests
+  waiting are served in the order they arrived, at most sixteen of them. A
+  request that waits is told how long and how many were waiting (the
+  `X-Relay-Queue-Wait-Ms` and `X-Relay-Queue-Depth` headers on its answer),
+  and the run report shows it. One past the sixteenth is refused at once,
+  `429` with `Retry-After: 1` and the code `assistant-relay-queue-full`, which
+  the assistant reads and sends again; a request that has waited a minute
+  without a turn is answered `assistant-relay-busy`, nothing sent. The wait is
+  bounded so that a slot held by an endpoint that never answers cannot hold a
+  chat for ever, and the queue is bounded so that a page that fires a hundred
+  requests is not a desk holding a hundred sockets.
 - **No redirect is followed**, for the reason the probe does not follow one: Go
   strips `Authorization` across hosts and knows nothing about `x-api-key`.
 - **The answer is forwarded whole** — status, headers and body — minus the

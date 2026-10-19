@@ -64,6 +64,12 @@ export interface AssistantKeyState {
   /** That endpoint's wire protocol, empty alongside an empty origin. */
   configuredKind: string
   bound: boolean
+  /**
+   * True where no key is stored and none is needed: the endpoint this desk is
+   * configured for is one on this computer, which is sent no credential. The
+   * chassis' verdict, like `bound`; this page does not read the address.
+   */
+  keyless?: boolean
 }
 
 /**

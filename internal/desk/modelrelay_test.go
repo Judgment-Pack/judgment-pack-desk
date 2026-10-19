@@ -349,7 +349,7 @@ func TestRelayCarriesNoCredentialHeaderToTheEndpoint(t *testing.T) {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
 	seen := u.only(t)
-	injected, _, _ := credentialHeader("anthropic", testKey)
+	injected, _, _ := credentialHeader("anthropic", "", testKey)
 	for _, header := range credentialHeaderCorpus {
 		if http.CanonicalHeaderKey(header) == http.CanonicalHeaderKey(injected) {
 			// Replaced by the desk's own credential rather than merely
@@ -403,7 +403,7 @@ func TestRelayCarriesOnlyTheHeadersOnItsList(t *testing.T) {
 	}
 	// Whatever did arrive is on the list, plus the credential this desk adds
 	// and the two the transport owns.
-	own, _, _ := credentialHeader("openai-compatible", testKey)
+	own, _, _ := credentialHeader("openai-compatible", "", testKey)
 	for header := range seen.header {
 		switch http.CanonicalHeaderKey(header) {
 		case http.CanonicalHeaderKey(own), "Host", "Content-Length":
@@ -1551,11 +1551,11 @@ func TestRelayRefusesARefusedConfiguration(t *testing.T) {
 
 func TestRelayRefusesWithNoKeyStored(t *testing.T) {
 	counter := countingRelays(t)
-	u := newUpstream(t, nil)
 	s, ts, _ := assistantServer(t)
-	writeDeskConfig(t, s, fmt.Sprintf(
-		`{"deskConfigVersion":1,"assistant":{"endpoint":`+
-			`{"url":%q,"kind":"openai-compatible","model":"m","tools":[]}}}`, u.server.URL))
+	// An endpoint off this computer: one on it needs no key (see
+	// `TestRelaySendsNoCredentialToAnEndpointOnThisComputerWithNoKey`).
+	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+		`{"url":"https://api.example.invalid/v1","kind":"openai-compatible","model":"m","tools":[]}}}`)
 	resp, body := relayGet(t, ts, "chat/completions")
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status %d, want 409: %s", resp.StatusCode, body)
@@ -1583,67 +1583,331 @@ func TestRelayRefusesWhereNoKeyCanBeKept(t *testing.T) {
 	}
 }
 
-func TestRelayRefusesPastTheConcurrencyBound(t *testing.T) {
-	// A bound and not a queue: the answer past it is immediate and named.
-	arrived := make(chan struct{}, maxRelayInFlight)
-	released := make(chan struct{})
-	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
-		arrived <- struct{}{}
-		<-released
+// holdingRelay is a desk whose endpoint holds every request it is sent until
+// the test lets them go, and the clients to send them.
+type holdingRelay struct {
+	t        *testing.T
+	server   *Server
+	ts       *httptest.Server
+	u        *upstream
+	arrived  chan struct{}
+	released chan struct{}
+	wg       sync.WaitGroup
+	mu       sync.Mutex
+	answers  []*http.Response
+	bodies   []string
+}
+
+func newHoldingRelay(t *testing.T) *holdingRelay {
+	t.Helper()
+	h := &holdingRelay{t: t, arrived: make(chan struct{}, 64), released: make(chan struct{})}
+	h.u = newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		h.arrived <- struct{}{}
+		<-h.released
 		w.WriteHeader(http.StatusOK)
 	})
-	_, ts, _ := relayDesk(t, "openai-compatible", u)
+	h.server, h.ts, _ = relayDesk(t, "openai-compatible", h.u)
+	return h
+}
 
+// send starts n requests and returns without waiting for their answers.
+func (h *holdingRelay) send(n int) {
+	for i := 0; i < n; i++ {
+		h.wg.Add(1)
+		go func() {
+			defer h.wg.Done()
+			resp, err := h.ts.Client().Do(relayRequest(h.t, h.ts, http.MethodGet, "chat/completions", nil))
+			if err != nil {
+				return
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			h.mu.Lock()
+			h.answers = append(h.answers, resp)
+			h.bodies = append(h.bodies, string(raw))
+			h.mu.Unlock()
+		}()
+	}
+}
+
+// reached waits until n requests are in the endpoint's hands.
+func (h *holdingRelay) reached(n int) {
+	h.t.Helper()
+	for i := 0; i < n; i++ {
+		select {
+		case <-h.arrived:
+		case <-time.After(10 * time.Second):
+			close(h.released)
+			h.wg.Wait()
+			h.t.Fatalf("only %d of %d requests reached the endpoint", i, n)
+		}
+	}
+}
+
+// waitingIs polls until the queue holds n, or fails.
+func (h *holdingRelay) waitingIs(n int) {
+	h.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for len(h.server.relayQueue) != n {
+		if time.Now().After(deadline) {
+			close(h.released)
+			h.wg.Wait()
+			h.t.Fatalf("%d requests are waiting, want %d", len(h.server.relayQueue), n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func (h *holdingRelay) finish() {
+	close(h.released)
+	h.wg.Wait()
+}
+
+func TestRelayQueuesPastTheSlotsAndCompletesEveryRequest(t *testing.T) {
+	// Five concurrent requests, one more than the slots: the fifth waits for a
+	// turn and is answered like the rest, with the wait on its answer.
+	h := newHoldingRelay(t)
+	h.send(maxRelayInFlight)
+	h.reached(maxRelayInFlight)
+	h.send(1)
+	h.waitingIs(1)
+	// **It has not reached the endpoint**, which is what makes this a queue
+	// and not four slots with a fifth that was not counted.
+	time.Sleep(50 * time.Millisecond)
+	if got := len(h.u.arrivals()); got != maxRelayInFlight {
+		h.finish()
+		t.Fatalf("%d requests reached the endpoint while %d slots were held", got, maxRelayInFlight)
+	}
+	h.finish()
+	if len(h.answers) != maxRelayInFlight+1 {
+		t.Fatalf("%d answers, want %d", len(h.answers), maxRelayInFlight+1)
+	}
+	waited := 0
+	for i, resp := range h.answers {
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("answer %d: status %d: %s", i, resp.StatusCode, h.bodies[i])
+		}
+		if resp.Header.Get(relayQueueWaitHeader) != "" {
+			waited++
+			if got, _ := strconv.Atoi(resp.Header.Get(relayQueueWaitHeader)); got < 40 {
+				t.Errorf("the wait on the answer is %s ms, want at least the 50 it was held", resp.Header.Get(relayQueueWaitHeader))
+			}
+			if resp.Header.Get(relayQueueDepthHeader) != "1" {
+				t.Errorf("the depth on the answer is %q, want 1", resp.Header.Get(relayQueueDepthHeader))
+			}
+		}
+	}
+	if waited != 1 {
+		t.Errorf("%d answers carry a wait, want exactly the one that waited", waited)
+	}
+	if len(h.server.relayQueue) != 0 || len(h.server.relaySlots) != 0 {
+		t.Errorf("the queue holds %d and the slots %d once every request is answered", len(h.server.relayQueue), len(h.server.relaySlots))
+	}
+}
+
+func TestRelayServesTheQueueInTheOrderItArrived(t *testing.T) {
+	// Waiters are given slots in the order they joined, so a request is never
+	// kept waiting behind ones that came after it. The endpoint lets one
+	// request go at a time; each time, the slot it frees is the next waiter's.
+	permit := make(chan struct{})
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		<-permit
+		w.WriteHeader(http.StatusOK)
+	})
+	server, ts, _ := relayDesk(t, "openai-compatible", u)
 	var wg sync.WaitGroup
-	for i := 0; i < maxRelayInFlight; i++ {
+	start := func(n int) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := ts.Client().Do(relayRequest(t, ts, http.MethodGet, "chat/completions", nil))
+			body := strings.NewReader(fmt.Sprintf(`{"model":"a-model","n":%d}`, n))
+			resp, err := ts.Client().Do(relayRequest(t, ts, http.MethodPost, "chat/completions", body))
 			if err == nil {
 				_, _ = io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
 			}
 		}()
 	}
-	for i := 0; i < maxRelayInFlight; i++ {
-		select {
-		case <-arrived:
-		case <-time.After(10 * time.Second):
-			close(released)
-			wg.Wait()
-			t.Fatalf("only %d of %d requests reached the endpoint", i, maxRelayInFlight)
+	reached := func(n int) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for len(u.arrivals()) < n {
+			if time.Now().After(deadline) {
+				t.Fatalf("only %d requests reached the endpoint, want %d", len(u.arrivals()), n)
+			}
+			time.Sleep(5 * time.Millisecond)
 		}
 	}
-	// **A bounded client, and the bound is load-bearing.** A relay that queued
-	// instead of refusing would hold this request until the four ahead of it
-	// finished — and an unbounded client would turn that into a suite that
-	// hangs rather than a test that fails, which is the difference between a
-	// safeguard that is checked and one that is only believed.
-	impatient := *ts.Client()
+	for n := 0; n < maxRelayInFlight; n++ {
+		start(n)
+	}
+	reached(maxRelayInFlight)
+	// Three waiters, joined one at a time, each seen in the queue before the next is sent.
+	for joined := 1; joined <= 3; joined++ {
+		start(100 + joined)
+		for len(server.relayQueue) != joined {
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	for next := 1; next <= 3; next++ {
+		permit <- struct{}{}
+		reached(maxRelayInFlight + next)
+		want := fmt.Sprintf(`{"model":"a-model","n":%d}`, 100+next)
+		if got := string(u.arrivals()[maxRelayInFlight+next-1].body); got != want {
+			t.Fatalf("the waiter taken %s was %s, want %s", []string{"", "first", "second", "third"}[next], got, want)
+		}
+	}
+	for i := 0; i < maxRelayInFlight; i++ {
+		permit <- struct{}{}
+	}
+	wg.Wait()
+}
+
+func TestRelayAdmitsNoRequestPastOnesAlreadyWaiting(t *testing.T) {
+	// A request that finds a slot and room free still waits where others are
+	// in the line: the room and the slot a request takes are not taken from
+	// one that came first. A place is held in the line without a request
+	// behind it, so the check does not depend on a race for a freed slot.
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	server, _, _ := relayDesk(t, "openai-compatible", u)
+	turn, leave := server.relayLine.join()
+	<-turn
+	type admitted struct {
+		admission relayAdmission
+		refusal   *relayRefusal
+	}
+	done := make(chan admitted, 1)
+	go func() {
+		admission, refusal := server.admitRelay(context.Background(), "a-connection")
+		done <- admitted{admission, refusal}
+	}()
+	select {
+	case got := <-done:
+		if got.admission.release != nil {
+			got.admission.release()
+		}
+		t.Fatal("a request was admitted while another waited ahead of it")
+	case <-time.After(200 * time.Millisecond):
+	}
+	leave()
+	select {
+	case got := <-done:
+		if got.refusal != nil || got.admission.release == nil {
+			t.Fatalf("the request was refused once the line was clear: %+v", got.refusal)
+		}
+		got.admission.release()
+	case <-time.After(5 * time.Second):
+		t.Fatal("the request was not admitted once the line was clear")
+	}
+	if len(server.relayQueue) != 0 || len(server.relaySlots) != 0 {
+		t.Errorf("the queue holds %d and the slots %d once the request is released", len(server.relayQueue), len(server.relaySlots))
+	}
+}
+
+func TestRelayAnswers429WithRetryAfterOnlyWhenTheQueueIsFull(t *testing.T) {
+	h := newHoldingRelay(t)
+	h.send(maxRelayInFlight)
+	h.reached(maxRelayInFlight)
+	// The queue one short of full: a request still waits, and is not refused.
+	for i := 0; i < maxRelayQueued-1; i++ {
+		h.server.relayQueue <- struct{}{}
+	}
+	h.send(1)
+	h.waitingIs(maxRelayQueued)
+	time.Sleep(50 * time.Millisecond)
+	// Now it is full, and the next request is answered at once: bounded
+	// client, so a relay that queued it too would fail here and not hang.
+	impatient := *h.ts.Client()
 	impatient.Timeout = 5 * time.Second
-	resp, err := impatient.Do(relayRequest(t, ts, http.MethodGet, "chat/completions", nil))
+	resp, err := impatient.Do(relayRequest(t, h.ts, http.MethodGet, "chat/completions", nil))
 	if err != nil {
-		close(released)
-		wg.Wait()
-		t.Fatalf("the request past the bound was queued rather than refused: %v", err)
+		h.finish()
+		t.Fatalf("a request past the full queue was held rather than refused: %v", err)
 	}
 	raw, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	body := string(raw)
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("status %d, want 429: %s", resp.StatusCode, raw)
+	} else if got := codeOfBody(t, string(raw)); got != CodeAssistantRelayQueueFull {
+		t.Errorf("code %q, want %q", got, CodeAssistantRelayQueueFull)
+	}
+	if resp.Header.Get("Retry-After") != "1" {
+		t.Errorf("Retry-After %q, want 1", resp.Header.Get("Retry-After"))
+	}
+	// The queue the test filled by hand is given back, and the waiting request
+	// is carried like the others once the endpoint lets go.
+	for i := 0; i < maxRelayQueued-1; i++ {
+		<-h.server.relayQueue
+	}
+	h.finish()
+	if len(h.answers) != maxRelayInFlight+1 {
+		t.Fatalf("%d answers, want %d", len(h.answers), maxRelayInFlight+1)
+	}
+	for i, answer := range h.answers {
+		if answer.StatusCode != http.StatusOK {
+			t.Errorf("answer %d: status %d: %s", i, answer.StatusCode, h.bodies[i])
+		}
+	}
+}
+
+func TestRelayAnswersBusyAfterTheWaitBoundAndGivesEverythingBack(t *testing.T) {
+	old := relayQueueWait
+	relayQueueWait = 300 * time.Millisecond
+	defer func() { relayQueueWait = old }()
+	h := newHoldingRelay(t)
+	h.send(maxRelayInFlight)
+	h.reached(maxRelayInFlight)
+	// A bounded client again: a wait with no bound would hang here.
+	impatient := *h.ts.Client()
+	impatient.Timeout = 10 * time.Second
+	started := time.Now()
+	resp, err := impatient.Do(relayRequest(t, h.ts, http.MethodGet, "chat/completions", nil))
+	if err != nil {
+		h.finish()
+		t.Fatalf("a request waiting for a slot that never came was held for ever: %v", err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("status %d, want 503: %s", resp.StatusCode, body)
-	} else if got := codeOfBody(t, body); got != CodeAssistantRelayBusy {
+		t.Errorf("status %d, want 503: %s", resp.StatusCode, raw)
+	} else if got := codeOfBody(t, string(raw)); got != CodeAssistantRelayBusy {
 		t.Errorf("code %q, want %q", got, CodeAssistantRelayBusy)
 	}
-	close(released)
-	wg.Wait()
-	// And the bound is released: the same request works once the others are
-	// done, which is what makes this a bound rather than a broken route.
-	after, _ := relayGet(t, ts, "chat/completions")
+	if waited := time.Since(started); waited < 250*time.Millisecond || waited > 5*time.Second {
+		t.Errorf("answered after %v, want about the %v the wait is bounded at", waited, relayQueueWait)
+	}
+	if len(h.server.relayQueue) != 0 {
+		t.Errorf("the refused request still holds %d place(s) in the queue", len(h.server.relayQueue))
+	}
+	if len(h.server.relaySlots) != maxRelayInFlight {
+		t.Errorf("%d slots are held, want exactly the %d the endpoint holds", len(h.server.relaySlots), maxRelayInFlight)
+	}
+	h.finish()
+	// And the same request works once the others are done.
+	after, _ := relayGet(t, h.ts, "chat/completions")
 	if after.StatusCode != http.StatusOK {
 		t.Errorf("after the others finished: status %d", after.StatusCode)
 	}
+}
+
+func TestRelayLeavesTheQueueWhenThePageGoesAway(t *testing.T) {
+	h := newHoldingRelay(t)
+	h.send(maxRelayInFlight)
+	h.reached(maxRelayInFlight)
+	ctx, cancel := context.WithCancel(context.Background())
+	req := relayRequest(t, h.ts, http.MethodGet, "chat/completions", nil).WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if resp, err := h.ts.Client().Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}()
+	h.waitingIs(1)
+	cancel()
+	<-done
+	h.waitingIs(0)
+	h.finish()
 }
 
 func TestRelayReportsAnUnreachableEndpointFromTheClosedVocabulary(t *testing.T) {
@@ -2335,7 +2599,7 @@ func TestTheProbeAndTheRelayPresentTheSameCredential(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)
 		}
-		name, value, ok := credentialHeader(kind, testKey)
+		name, value, ok := credentialHeader(kind, "", testKey)
 		if !ok {
 			t.Fatalf("%s has no credential header", kind)
 		}
@@ -2343,7 +2607,7 @@ func TestTheProbeAndTheRelayPresentTheSameCredential(t *testing.T) {
 			t.Errorf("%s: the probe sends %s=%q, the relay would send %q", kind, name, got, value)
 		}
 	}
-	if _, _, ok := credentialHeader("something-else", testKey); ok {
+	if _, _, ok := credentialHeader("something-else", "", testKey); ok {
 		t.Error("a kind nothing defines was given a credential header")
 	}
 }

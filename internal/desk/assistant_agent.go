@@ -11,10 +11,14 @@ type AssistantAgentConfig struct {
 	Models     []string `json:"models,omitempty"`
 	Tools      []string `json:"tools"`
 	Effort     string   `json:"effort,omitempty"`
+	// CriticModel and ChildModel name the allowed models the connection runs
+	// its critic and its delegated children on; absent where it names none.
+	CriticModel string `json:"criticModel,omitempty"`
+	ChildModel  string `json:"childModel,omitempty"`
 }
 
 func decodeAssistantAgent(value any) (*AssistantAgentConfig, []deskProblem) {
-	a, problems := object(value, "assistant.agent", []string{"provider", "authMethod", "model", "models", "tools", "effort"})
+	a, problems := object(value, "assistant.agent", []string{"provider", "authMethod", "model", "models", "tools", "effort", "criticModel", "childModel"})
 	if a == nil {
 		return nil, problems
 	}
@@ -79,6 +83,12 @@ func decodeAssistantAgent(value any) (*AssistantAgentConfig, []deskProblem) {
 			result.Effort = named
 		}
 	}
+	allowed := result.Models
+	if allowed == nil && result.Model != nil {
+		allowed = []string{*result.Model}
+	}
+	result.CriticModel = subordinateModel(a, "criticModel", "assistant.agent", allowed, &problems)
+	result.ChildModel = subordinateModel(a, "childModel", "assistant.agent", allowed, &problems)
 	return result, problems
 }
 

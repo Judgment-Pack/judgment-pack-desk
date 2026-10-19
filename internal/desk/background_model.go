@@ -68,10 +68,11 @@ func (s *Server) validateBackgroundModelConnection(ctx context.Context, choice b
 		return e
 	}
 	stored, e := s.assistant.readKeyNamed(keyName)
-	if e != nil || !stored.present {
+	keyless := e == nil && !stored.present && endpoint.keyless()
+	if e != nil || !stored.present && !keyless {
 		return aifailure.Authored("authentication", "model", "not-started", "This AI connection needs its saved API key.")
 	}
-	if reason := bindingProblem(stored, endpoint); reason != "" {
+	if reason := bindingProblem(stored, endpoint); reason != "" && !keyless {
 		return aifailure.Authored("configuration", "model", "not-started", reason)
 	}
 	// API reasoning defaults are kept until a shared server-side mapping exists;
@@ -160,10 +161,11 @@ func (s *Server) runBackgroundModel(ctx context.Context, task backgroundModelReq
 		return nil, e
 	}
 	stored, e := s.assistant.readKeyNamed(keyName)
-	if e != nil || !stored.present {
+	keyless := e == nil && !stored.present && endpoint.keyless()
+	if e != nil || !stored.present && !keyless {
 		return nil, aifailure.Authored("authentication", "model", "not-started", "The AI credential is unavailable.")
 	}
-	if reason := bindingProblem(stored, endpoint); reason != "" {
+	if reason := bindingProblem(stored, endpoint); reason != "" && !keyless {
 		return nil, aifailure.Authored("configuration", "model", "not-started", reason)
 	}
 	var body map[string]any
@@ -200,11 +202,13 @@ func (s *Server) runBackgroundModel(ctx context.Context, task backgroundModelReq
 	if e != nil {
 		return nil, e
 	}
-	header, value, ok := credentialHeader(endpoint.kind, stored.key)
+	header, value, ok := credentialHeader(endpoint.kind, endpoint.auth, stored.key)
 	if !ok {
 		return nil, aifailure.Authored("configuration", "model", "not-started", "Unsupported credential protocol.")
 	}
-	outbound.Header.Set(header, value)
+	if !keyless {
+		outbound.Header.Set(header, value)
+	}
 	outbound.Header.Set("Content-Type", "application/json")
 	if endpoint.kind == "anthropic" {
 		outbound.Header.Set("anthropic-version", "2023-06-01")
@@ -229,17 +233,22 @@ func (s *Server) runBackgroundModel(ctx context.Context, task backgroundModelReq
 		return nil, e
 	}
 	stored, e = s.assistant.readKeyNamed(keyName)
-	if e != nil || !stored.present {
+	keyless = e == nil && !stored.present && endpoint.keyless()
+	if e != nil || !stored.present && !keyless {
 		return nil, aifailure.Authored("authentication", "model", "not-started", "The AI credential is unavailable.")
 	}
-	if reason := bindingProblem(stored, endpoint); reason != "" {
+	if reason := bindingProblem(stored, endpoint); reason != "" && !keyless {
 		return nil, aifailure.Authored("configuration", "model", "not-started", reason)
 	}
-	header, value, ok = credentialHeader(endpoint.kind, stored.key)
+	header, value, ok = credentialHeader(endpoint.kind, endpoint.auth, stored.key)
 	if !ok {
 		return nil, aifailure.Authored("configuration", "model", "not-started", "Unsupported credential protocol.")
 	}
-	outbound.Header.Set(header, value)
+	if !keyless {
+		outbound.Header.Set(header, value)
+	} else {
+		outbound.Header.Del(header)
+	}
 	if availability != nil {
 		if err := availability(false); err != nil {
 			return nil, err
@@ -268,7 +277,7 @@ func (s *Server) runBackgroundModel(ctx context.Context, task backgroundModelReq
 	if e != nil {
 		return nil, aifailure.New("invalid-response", "model", "unknown")
 	}
-	if bytes.Contains(raw, []byte(stored.key)) {
+	if stored.key != "" && bytes.Contains(raw, []byte(stored.key)) {
 		return nil, aifailure.New("invalid-response", "model", "unknown")
 	}
 	if _, err := backgroundCompletion(endpoint.kind, raw); err != nil {

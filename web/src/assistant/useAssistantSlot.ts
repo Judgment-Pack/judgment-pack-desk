@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { resolveAIConnection, type AITarget } from './aiConnections'
+import { rememberConnection } from './connectionRecords'
 import { ProviderError, useProviderStatus } from './providers'
 import { selectedAssistant } from './target'
 import { sourceMessage } from '../i18n/source'
@@ -61,6 +63,10 @@ export function useAssistantSlot(connectionId?:string): AssistantSlot {
   const key = useAssistantKey(!subscription&&!target.problem,connection?.id,connection?.revision)
   const account = useProviderStatus(subscription&&!target.problem,connection?.id)
   const endpoint = config.assistant.endpoint
+  // The harness asks the host about a run's connection by its name alone, once
+  // the run has started; what the connection names for its critic and its
+  // delegated children is read from here (`connectionModels.ts`).
+  useEffect(() => { if (connection) rememberConnection(identity, target.assistant) }, [connection?.id, connection?.revision, target.assistant])
   // **A read that did not produce a file is not a file that says none.** A
   // refused *decode* is different and is deliberately not here: that file was
   // read, this desk will not honour it, and the defaults are what apply — which
@@ -109,9 +115,10 @@ export function useAssistantSlot(connectionId?:string): AssistantSlot {
     // Use the server's binding verdict and point to the setting that repairs it.
     unusable: assistantProfile?.problem ?? (unbound ? UNBOUND_KEY : undefined) ?? (endpoint !== null && endpoint.model === null ? sourceMessage("An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.") : undefined),
     recovery: unread || endpoint === null || endpoint.model === null ? 'configure'
-      : key.isPending ? undefined : key.isError ? 'retry' : !key.data.present || unbound ? 'configure' : undefined,
+      : key.isPending ? undefined : key.isError ? 'retry' : (!key.data.present && key.data.keyless !== true) || unbound ? 'configure' : undefined,
     retrying: key.isFetching,
-    keyPresent: key.isSuccess && key.data.present,
+    // **A key that is not needed is as good as one that is there**: the desk says so (`keyless`) for an endpoint on this computer.
+    keyPresent: key.isSuccess && (key.data.present || key.data.keyless === true),
     keyStatus: key.status,
     retryKey: () => { void key.refetch() },
     engine: config.assistant.engine,

@@ -52,6 +52,8 @@ import { useFileListing } from '../files/queries'
 import { useEditing } from '../packs/edit/editingContext'
 import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { EventList } from './EventList'
+import { StreamingText } from './StreamingText'
+import { RunReportLines } from './RunReportLines'
 import { ModelPicker } from './ModelPicker'
 import { usePickedModel } from './pickedModel'
 import { ProposalDiffView } from './ProposalDiffView'
@@ -62,6 +64,7 @@ import { outcomeOf } from './runOutcome'
 import { proposePackTool } from './proposePack'
 import { stateFromEvents, thinkingLine } from '@judgment-pack/harness/thinking'
 import { useAssistantRun } from './useAssistantRun'
+import type { CriticCase } from '@judgment-pack/harness/refutation'
 import { CHECKING_KEY, UNREAD_KEY, useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
 import type { AssistantEvent } from '@judgment-pack/harness/engine'
@@ -125,7 +128,8 @@ export function AssistantPane({
   editing = false,
   identity,
   busy = noBusy,
-  diagnostics
+  diagnostics,
+  criticCases
 }: {
   /**
    * The bytes this page is about: the editor's buffer on `?edit`, the saved
@@ -177,6 +181,12 @@ export function AssistantPane({
    * nothing to fix.
    */
   diagnostics?: { count: number; bytes: string }
+  /**
+   * The cases whose outcomes the critic compares with the proposal's: the saved
+   * tests of the pack on this page, `savedTestCases` of its suite. Left out where
+   * the page has none, and the critic then reviews the proposal alone.
+   */
+  criticCases?: CriticCase[]
 } = {}) {
   useLocale()
   const helpId = useId()
@@ -303,7 +313,8 @@ export function AssistantPane({
     engine: slot.engine,
     thinking: slot.thinking,
     testPrompt: testPrompt.data?.text ?? '',
-    hostTools: PANE_HOST_TOOLS
+    hostTools: PANE_HOST_TOOLS,
+    criticCases
   })
 
   // The run starts when the prompt this submission asked for has arrived, and
@@ -549,6 +560,8 @@ export function AssistantPane({
       )}
 
       <EventList events={run.events} failure={run.failure} />
+      <StreamingText text={run.streaming} />
+      {run.report !== undefined && <RunReportLines report={run.report} />}
 
       {proposal !== undefined && disposition === 'rejected' && (
         <p className={styles.honesty}>{msg("The proposal was rejected. Nothing was written, and what the assistant did is still above.")}</p>
@@ -570,7 +583,7 @@ export function AssistantPane({
           />
           <ProposalUnknowns unknowns={proposal.unknowns} />
           <RuntimeChecks events={run.events} />
-          <RefutationReport events={run.events} />
+          <RefutationReport events={run.events} runModel={picked.model} />
           <ChatActions>
             {/*
               **The reading route has no draft to accept into**, so it says

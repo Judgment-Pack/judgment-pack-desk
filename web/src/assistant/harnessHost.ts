@@ -9,10 +9,11 @@ import * as provider from '../mcp/McpProvider'
 import * as transport from '../mcp/transport'
 import * as dialects from '../dialects/client'
 import * as capabilities from './endpointCapabilities'
+import * as connectionModels from './connectionModels'
 
 /**
  * The Desk as the harness's host: every injection point of
- * `@judgment-pack/harness` v0.1.0 (its `host.ts`) supplied once, from the Desk module
+ * `@judgment-pack/harness` v0.2.0 (its `host.ts`) supplied once, from the Desk module
  * the harness read it from before it moved into the package, under the same
  * name. Importing this module is what wires the host: the page's entry
  * (`main.tsx`) imports it before anything starts a run, and the test ground
@@ -31,8 +32,10 @@ import * as capabilities from './endpointCapabilities'
  *
  * Two points are new with v0.1.0 and are answered from
  * `assistant/endpointCapabilities.ts`: `endpointCapabilities`, which answers
- * nothing beyond each endpoint's family, and `renderImageToText`, which the
- * Desk refuses for want of a render adapter.
+ * the family and what the endpoint's connection records, and `renderImageToText`,
+ * which the Desk refuses for want of a render adapter. One is new with v0.2.0,
+ * `modelsFor`, answered from `assistant/connectionModels.ts`: the models and
+ * the concurrency a run's connection names.
  */
 configureHarness({
   assistantLanguageInstructions: (locale) =>
@@ -59,5 +62,6 @@ configureHarness({
   dialectAPI: <T,>(path?: string, method?: string, body?: unknown, revision?: string, signal?: AbortSignal) =>
     dialects.dialectAPI<T>(path, method, body, revision, signal),
   endpointCapabilities: (endpoint) => capabilities.endpointCapabilities(endpoint),
-  renderImageToText: () => capabilities.renderImageToText()
+  renderImageToText: () => capabilities.renderImageToText(),
+  modelsFor: (run) => connectionModels.modelsFor(run)
 })

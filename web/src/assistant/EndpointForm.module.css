@@ -132,3 +132,8 @@
 
 .form > fieldset { display: grid; gap: var(--density-section); }
 .form > fieldset > section + section { padding-top: var(--density-section); border-top: 1px solid var(--border); }
+.probe { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.capabilities { border-collapse: collapse; font-size: var(--text-sm); }
+.capabilities th, .capabilities td { text-align: start; padding: var(--space-1) var(--space-3) var(--space-1) 0; font-weight: normal; }
+.capabilities th { color: var(--ink-soft); }
+.warning { margin: 0; color: var(--unknown); }
