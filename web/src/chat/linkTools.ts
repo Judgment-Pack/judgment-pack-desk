@@ -3,13 +3,15 @@ import { discoverWebsite, loadWebsite, type WebsiteReference, type VerifiedWebsi
 /** Bounded reading and discovery. New URLs must come from the user or a verified search/discovery receipt. */
 import { searchAccess, type SearchDeps } from '../search/tools'
 import type { HostTool, McpToolResult } from '@judgment-pack/harness/engine'
+import type { ContextPolicy } from '@judgment-pack/harness/context/policy'
 import type { ResearchConfig } from '../config/deskConfig'
 import { ingestSiteLink, ingestLink as ingestDefault, loadDocument as loadDefault, type DocumentReference, type VerifiedDocument } from '../documents/client'
 import { anchorWords, describeLinkFailure, extractLinks, normalizeLink, type NormalizedLink } from '../documents/link'
 import { needsPartialConsent, usablePages } from '../documents/record'
 import { sourceMessage } from '../i18n/source'
 import type { Turn } from '../research/run'
-import { READ_WINDOW, RETRIEVED } from '../research/tools'
+import { RETRIEVED, heldWindow } from '../research/tools'
+import { CONTEXT_DEFAULTS, readWindowBytes } from '@judgment-pack/harness/context/policy'
 import type { DraftToolContext } from '../research/useResearchRun'
 import type { ChatAttachment } from './store'
 
@@ -147,7 +149,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
     name: READ_LINK, delegation:'read',
     description:
       'Read a public web page supplied by the person or found by search_sources or explore_website, through the configured gateway, ' +
-      `${READ_WINDOW} characters at a time. Use the supplied or discovered URL. Bare domains such as example.org are accepted with HTTPS assumed; do not request a full URL or use search just to add https://. Only a link the person ` +
+      `one window of at most ${readWindowBytes(context.policy?.() ?? CONTEXT_DEFAULTS)} bytes at a time. Use the supplied or discovered URL. Bare domains such as example.org are accepted with HTTPS assumed; do not request a full URL or use search just to add https://. Only a link the person ` +
       'wrote in this chat, attached, or a verified search_sources or explore_website result discovered can be read. Never invent links. ' +
       'A section anchor (#…) is reported, not followed; find locates words in the text. Continue with the ' +
       'same url and an offset. Cite with a Markdown link whose label is an exact quote and whose ' +
@@ -250,7 +252,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
         deps.addDocument(attachment)
         deps.log(sourceMessage("link: {{value0}} characters retained as document {{value1}}", { value0: document.record.content.chars, value1: acquired.reference.id }))
       }
-      const result = window(attachment, document, link, offset, find)
+      const result = window(attachment, document, link, offset, find, context.policy?.() ?? CONTEXT_DEFAULTS)
       if (!result.isError) context.recordDocument?.({...attachment, document: {...attachment.document!, pages: (result.structuredContent as {pages: number[]}).pages}})
       return result
     }
@@ -288,8 +290,12 @@ function anchorLines(link: NormalizedLink, phrase: string, found: Range[]): stri
   ]
 }
 
-/** One window of the retained text, with everything the model needs to say where it came from. */
-function window(attachment: ChatAttachment, document: VerifiedDocument, link: NormalizedLink, offset: number | null, find: string): McpToolResult {
+/**
+ * One window of the retained text, with everything the model needs to say
+ * where it came from, held to one tool result by the run's policy
+ * (`heldWindow`, `readWindowBytes`).
+ */
+function window(attachment: ChatAttachment, document: VerifiedDocument, link: NormalizedLink, offset: number | null, find: string, policy: Pick<ContextPolicy, 'toolResultBytes'>): McpToolResult {
   const reference = attachment.document!
   const { record } = document
   const source = record.provenance.source
@@ -316,53 +322,54 @@ function window(attachment: ChatAttachment, document: VerifiedDocument, link: No
   const phrase = link.anchorKind === 'section' ? anchorWords(link.anchor) : ''
   const anchorFound = phrase === '' ? [] : locate(joined, phrase)
   const start = Math.min(joined.length, offset ?? (found.length > 0 ? Math.max(0, found[0]!.start - 200) : 0))
-  const end = Math.min(start + READ_WINDOW, joined.length)
-  const more = end < joined.length
-  const shown = spans.filter((span) => span.end > start && span.start < end)
   const citation = (span: Span) => `attachment:${reference.id}/${reference.digest}/page/${span.number}`
   const snapshot = source.format === 'static-text-v1'
-  const lines = [
-    RETRIEVED,
-    '',
-    `link: ${link.displayUrl}`,
-    `fetched: ${source.url ?? link.fetchUrl}` + (source.url !== undefined && source.url !== link.fetchUrl ? ` (the gateway followed a redirect from ${link.fetchUrl})` : ''),
-    `title: ${record.document.name}`,
-    ...(needsPartialConsent(record) ? ['partial extraction: only the confirmed readable pages are shown; missing text is not evidence'] : []),
-    snapshot
-      ? 'what was retained: a static text snapshot of the HTML page; scripts, styles and anything the page draws with JavaScript are not in it'
-      : `what was retained: the original ${source.mediaType ?? record.document.mediaType} file, ${record.content.pageCount} page(s)`,
-    `${joined.length} characters of text` +
-      (spans.length > 1 ? `, in ${spans.length} pages: ${spans.map((span) => `page ${span.number} at ${at(span)}`).join('; ')}` : ''),
-    ...(snapshot && joined.length < SHORT_SNAPSHOT ? ['the static text is very short; the page may need JavaScript to show its content, which this snapshot cannot'] : []),
-    ...anchorLines(link, phrase, anchorFound),
-    ...(find === ''
-      ? []
-      : [
-          found.length > 0
-            ? `find ${JSON.stringify(find)}: ${found.map(at).join(', ')} (a text match; the window starts just before the first)`
-            : `find ${JSON.stringify(find)}: no match in the text`
-        ]),
-    `cite exactly: write a Markdown link whose label is an exact quote from the text shown and whose destination is ${
-      shown.length === 1 ? citation(shown[0]!) : shown.map((span) => `${citation(span)} for page ${span.number}`).join(', ')
-    }`,
-    `showing characters ${start}–${end} of ${joined.length}` + (more ? ` (more: call ${READ_LINK} with the same url and offset ${end})` : ''),
-    '',
-    joined.slice(start, end)
-  ]
-  return text(lines.join('\n'), {
-    documentId: reference.id,
-    pages: shown.map(span => span.number),
-    digest: reference.digest,
-    link: link.displayUrl,
-    url: link.fetchUrl,
-    fetched: source.url ?? link.fetchUrl,
-    anchor: link.anchor,
-    anchorKind: link.anchorKind,
-    anchorMatches: anchorFound,
-    matches: found,
-    chars: joined.length,
-    offset: start,
-    more
+  return heldWindow(joined, start, policy, (end) => {
+    const more = end < joined.length
+    const shown = spans.filter((span) => span.end > start && span.start < end)
+    const lines = [
+      RETRIEVED,
+      '',
+      `link: ${link.displayUrl}`,
+      `fetched: ${source.url ?? link.fetchUrl}` + (source.url !== undefined && source.url !== link.fetchUrl ? ` (the gateway followed a redirect from ${link.fetchUrl})` : ''),
+      `title: ${record.document.name}`,
+      ...(needsPartialConsent(record) ? ['partial extraction: only the confirmed readable pages are shown; missing text is not evidence'] : []),
+      snapshot
+        ? 'what was retained: a static text snapshot of the HTML page; scripts, styles and anything the page draws with JavaScript are not in it'
+        : `what was retained: the original ${source.mediaType ?? record.document.mediaType} file, ${record.content.pageCount} page(s)`,
+      `${joined.length} characters of text` +
+        (spans.length > 1 ? `, in ${spans.length} pages: ${spans.map((span) => `page ${span.number} at ${at(span)}`).join('; ')}` : ''),
+      ...(snapshot && joined.length < SHORT_SNAPSHOT ? ['the static text is very short; the page may need JavaScript to show its content, which this snapshot cannot'] : []),
+      ...anchorLines(link, phrase, anchorFound),
+      ...(find === ''
+        ? []
+        : [
+            found.length > 0
+              ? `find ${JSON.stringify(find)}: ${found.map(at).join(', ')} (a text match; the window starts just before the first)`
+              : `find ${JSON.stringify(find)}: no match in the text`
+          ]),
+      `cite exactly: write a Markdown link whose label is an exact quote from the text shown and whose destination is ${
+        shown.length === 1 ? citation(shown[0]!) : shown.map((span) => `${citation(span)} for page ${span.number}`).join(', ')
+      }`,
+      `showing characters ${start}–${end} of ${joined.length}` + (more ? ` (more: call ${READ_LINK} with the same url and offset ${end})` : ''),
+      '',
+      joined.slice(start, end)
+    ]
+    return text(lines.join('\n'), {
+      documentId: reference.id,
+      pages: shown.map(span => span.number),
+      digest: reference.digest,
+      link: link.displayUrl,
+      url: link.fetchUrl,
+      fetched: source.url ?? link.fetchUrl,
+      anchor: link.anchor,
+      anchorKind: link.anchorKind,
+      anchorMatches: anchorFound,
+      matches: found,
+      chars: joined.length,
+      offset: start,
+      more
+    })
   })
 }
 

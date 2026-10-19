@@ -5,7 +5,8 @@ import type { ResearchConfig } from '../config/deskConfig'
 import type { Acquired } from './gatewayClient'
 import { GatewayError, OverBudget } from './gatewayClient'
 import { Ledger } from './ledger'
-import { READ_WINDOW, researchTools, type ResearchDeps } from './tools'
+import { researchTools, type ResearchDeps } from './tools'
+import { CONTEXT_DEFAULTS, readWindowBytes, utf8Bytes } from '@judgment-pack/harness/context/policy'
 import { parseJsonText } from './verify/canon'
 import { readingTool } from '@judgment-pack/harness/framing'
 
@@ -17,9 +18,9 @@ const store = JSON.parse(readFileSync(join(import.meta.dirname, 'verify', 'fixtu
   files: Record<string, string>
 }
 
-/** An acquire answer built from a provider fixture and a corpus receipt. */
-function acquired(name: string, callIndex = 0): Acquired {
-  const result = JSON.stringify(answers[name])
+/** An acquire answer built from a provider fixture (or an answer of that shape) and a corpus receipt. */
+function acquired(name: string, callIndex = 0, answer: unknown = answers[name]): Acquired {
+  const result = JSON.stringify(answer)
   const receipt = store.files[`receipts/s1/${callIndex}.json`]!.trim()
   const text = `{"result":${result},"receipt":${receipt},"salts":{"args":"00","statement":"11"}}`
   const parsed = parseJsonText(text)
@@ -136,7 +137,40 @@ describe('read_source', () => {
     // Continuing by offset windows the same text.
     const later = await tool('read_source').execute({ source_id: 'src-1', offset: 100 }, signal)
     expect((later.structuredContent as { offset: number }).offset).toBe(100)
-    expect(later.content![0]!.text).toContain(`showing characters 100–${Math.min(100 + READ_WINDOW, record.document!.text.length)}`)
+    expect(later.content![0]!.text).toContain(`showing characters 100–${record.document!.text.length}`)
+  })
+  it('holds each window to one tool result under the run\'s policy, and pages on from where it ends', async () => {
+    // A page far longer than one window, with text whose JSON encoding is longer
+    // than the text: quotes, backslashes, newlines and non-ASCII letters.
+    const body = 'Clause "7" \\ applies — résumé. '.repeat(4_000)
+    const answer = structuredClone(answers.jinaReader) as { body: { data: { content: string } } }
+    answer.body.data.content = body
+    for (const toolResultBytes of [CONTEXT_DEFAULTS.toolResultBytes, 6_000]) {
+      const { tool } = harness({ acquire: async () => acquired('jinaReader', 0, answer), policy: () => ({ toolResultBytes }) })
+      expect(tool('read_source').description).toContain(`one window of at most ${readWindowBytes({ toolResultBytes })} bytes at a time`)
+      let offset = 0, reads = 0, assembled = ''
+      for (;;) {
+        const read = await tool('read_source').execute(reads === 0 ? { url: URL } : { source_id: 'src-1', offset }, signal)
+        reads++
+        // The whole answer is one result: within the limit, never left to the ledger's reference and preview.
+        expect(utf8Bytes(JSON.stringify(read))).toBeLessThanOrEqual(toolResultBytes)
+        const said = read.content![0]!.text!
+        const shown = /showing characters (\d+)–(\d+)/.exec(said)!
+        expect(Number(shown[1])).toBe(offset)
+        const end = Number(shown[2])
+        const window = said.slice(said.indexOf('\n\n', said.indexOf('showing characters')) + 2)
+        expect(window.length).toBe(end - offset)
+        assembled += window
+        const { more } = read.structuredContent as { more: boolean }
+        if (!more) break
+        expect(said).toContain(`(more: call read_source with source_id src-1 and offset ${end})`)
+        // Most of the window is the page: the reader's own lines stay near the envelope.
+        expect(utf8Bytes(JSON.stringify(window))).toBeGreaterThan(readWindowBytes({ toolResultBytes }) - 2_048)
+        offset = end
+      }
+      expect(assembled).toBe(body)
+      expect(reads).toBeGreaterThan(Math.floor(utf8Bytes(JSON.stringify(body)) / toolResultBytes))
+    }
   })
   it('refuses a bad url, an unknown source id, and a spent read budget', async () => {
     const { tool, calls } = harness()

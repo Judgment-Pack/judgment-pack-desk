@@ -40,7 +40,8 @@ import type { ChatAttachment } from '../chat/store'
 import { Ledger, type SourceRecord } from './ledger'
 import { AuthoringRun, INITIAL_STATE, documentBasis, type RunState, type Turn, type TurnRequest } from './run'
 import { runtimeCheckIdentity } from './retainedCheck'
-import { researchTools } from './tools'
+import { researchTools, type ReadPolicy } from './tools'
+import { CONTEXT_DEFAULTS, contextPolicy } from '@judgment-pack/harness/context/policy'
 import { withProposePack } from '../assistant/proposePack'
 
 export const MAX_REVISIONS = 4
@@ -55,6 +56,8 @@ export interface DraftToolContext {
   recordDocument?: (file: import('../chat/store').ChatAttachment) => void
   recordWebsite?: (reference: import('../documents/website').WebsiteReference) => void
   turns: () => readonly Turn[]
+  /** The turn's context policy, which holds a reading tool's window (`readWindowBytes`); the harness defaults where absent. */
+  policy?: () => ReadPolicy
 }
 
 export interface ResearchRunBinding {
@@ -234,6 +237,13 @@ export function useResearchRun(options?: {
     // than when this run was built: the desk-level file answers after the
     // first render, and a run built against the defaults would offer tools
     // that refuse everything and a verifier with no key.
+    // The policy the turn's session runs under, for its reading tools' windows:
+    // the same table and per-model override the harness applies to the run. A
+    // configuration the harness refuses is refused by the session itself; the
+    // tools fall back to the defaults, whose result limit no override changes.
+    const policy = () => {
+      try { return contextPolicy(settings.current.contextConfiguration, settings.current.picked.model) } catch { return CONTEXT_DEFAULTS }
+    }
     const toolsFor = () =>
       researchTools({
         config: settings.current.research,
@@ -241,13 +251,14 @@ export function useResearchRun(options?: {
         budget: settings.current.research.limits,
         spent,
         acquire,
-        log
+        log,
+        policy
       })
     // A draft turn's tools are the chat's own, built per turn from the turns
     // so far; the context reads the run that is about to be built, which
     // exists by the time any turn asks.
     let built: AuthoringRun | null = null
-    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [], recordDocument: file => built?.recordDocument(file), recordWebsite: reference => built?.recordWebsite(reference), recordSearch:reference=>built?.recordSearch(reference) }
+    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [], recordDocument: file => built?.recordDocument(file), recordWebsite: reference => built?.recordWebsite(reference), recordSearch:reference=>built?.recordSearch(reference), policy }
     built = new AuthoringRun({
       turn,
       get savedPackReview() { return settings.current.savedPackReview },

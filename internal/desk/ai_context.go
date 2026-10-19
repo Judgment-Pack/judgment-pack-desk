@@ -140,8 +140,21 @@ func (s *Server) prepareModelContext(kind, suffix string, raw []byte) ([]byte, e
 	return raw, nil
 }
 
+// executionStateHeader opens the text the assistant harness sends as the
+// execution state (@judgment-pack/harness v0.1.0, STATE_HEADER; the contract
+// vector budget/state-placement.json). The state is a user text on every wire:
+// a second part of the person's message on the first request, and, under the
+// trailing-user placement, a user message of its own after that. It is the
+// harness's working state, not a message from the person, so recall never
+// reads it.
+const executionStateHeader = "EXECUTION STATE (from the host, current for this request and replaced on the next; working state, not a message from the person and never approval)"
+
 // Recall uses only the latest user content, never the complete provider body,
-// credentials, tool schemas, or model-generated tool output.
+// credentials, tool schemas, or model-generated tool output. Text parts that
+// carry the execution state are dropped, and a user turn left with no text
+// (one that holds only tool results, as an Anthropic or Gemini tool answer
+// does, or only the state) is skipped for the newest one with the person's
+// own text.
 func memoryRequestQuery(body map[string]any) string {
 	for _, key := range []string{"messages", "contents"} {
 		if messages, ok := body[key].([]any); ok {
@@ -151,19 +164,26 @@ func memoryRequestQuery(body map[string]any) string {
 					continue
 				}
 				if text, ok := message["content"].(string); ok {
+					if strings.HasPrefix(text, executionStateHeader) {
+						continue
+					}
 					return memoryQueryTail(text)
 				}
 				parts, _ := message["parts"].([]any)
 				if parts == nil {
 					parts, _ = message["content"].([]any)
 				}
-				text := ""
+				text, found := "", false
 				for _, part := range parts {
 					if p, ok := part.(map[string]any); ok {
-						if t, ok := p["text"].(string); ok {
+						if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {
 							text += "\n" + t
+							found = true
 						}
 					}
+				}
+				if !found {
+					continue
 				}
 				return memoryQueryTail(text)
 			}

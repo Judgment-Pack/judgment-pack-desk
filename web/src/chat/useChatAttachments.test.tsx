@@ -118,3 +118,18 @@ it('delivers files to a test case without a chat and discards a late read after 
   expect(append).toHaveBeenCalledTimes(1)
   expect(selected).toHaveLength(1)
 })
+
+it('sends a text file\'s name and how to read it, never its text, and holds a message\'s attachments to the ledger\'s bound', async () => {
+  const { result } = await setup()
+  let said: string | undefined
+  await act(async () => { said = await result.current.prepare([{ id: 'one', name: 'policy.md', text: 'Applicants with 1,560 hours qualify.' }]) })
+  expect(said).toContain('Attached file: policy.md')
+  expect(said).toContain('read it with read_window')
+  expect(said).not.toContain('1,560')
+  const large = (id: string) => ({ id, name: `${id}.txt`, text: 'x'.repeat(199_990) })
+  await act(async () => { said = await result.current.prepare(['a', 'b', 'c', 'd'].map(large)) })
+  expect(said).toBeUndefined()
+  expect(result.current.error).toBe('The selected pages exceed the message context limit. Select fewer pages.')
+  await act(async () => { said = await result.current.prepare(['a', 'b', 'c'].map(large)) })
+  expect(said).toContain('Attached file: c.txt')
+})

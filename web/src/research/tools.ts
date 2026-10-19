@@ -8,6 +8,7 @@ import { sourceMessage } from '../i18n/source'
  * provider could not render.
  */
 import type { HostTool, McpToolResult } from '@judgment-pack/harness/engine'
+import { CONTEXT_DEFAULTS, encodedPrefix, readWindowBytes, utf8Bytes, type ContextPolicy } from '@judgment-pack/harness/context/policy'
 import type { ResearchConfig } from '../config/deskConfig'
 import { GatewayError, OverBudget, acquire as acquireDefault, type Acquired } from './gatewayClient'
 import type { Ledger } from './ledger'
@@ -27,8 +28,28 @@ export interface Spent {
   startedAt: number
 }
 
-/** How much of a page one read answer carries; the rest is paged by offset. */
-export const READ_WINDOW = 20_000
+/** The part of a run's context policy a reading tool's window is held to. */
+export type ReadPolicy = Pick<ContextPolicy, 'toolResultBytes'>
+
+/**
+ * One reading tool's answer, held to one tool result (`@judgment-pack/harness`
+ * v0.1.0, agent#1): the window is `readWindowBytes(policy)` of the text's
+ * JSON-encoded bytes from `start`, cut further by whatever the reader's own
+ * header and members take beyond the 1,024-byte envelope, so the whole answer
+ * stays within the result limit and reaches the model whole, as one result,
+ * never as a ledger reference and a preview. `render` builds the answer for a
+ * window that ends at `end`; the rest is paged by offset from there.
+ */
+export function heldWindow(text: string, start: number, policy: ReadPolicy, render: (end: number) => McpToolResult): McpToolResult {
+  let budget = readWindowBytes(policy)
+  for (;;) {
+    const end = start + encodedPrefix(text.slice(start), Math.max(2, budget)).length
+    const answer = render(end)
+    const over = utf8Bytes(JSON.stringify(answer)) - policy.toolResultBytes
+    if (over <= 0 || end === start) return answer
+    budget -= over
+  }
+}
 /** The most hits one search asks for. */
 export const MAX_SEARCH_RESULTS = 10
 
@@ -47,6 +68,8 @@ export interface ResearchDeps {
   /** A milestone for the Console; never a prompt, a credential or page text. */
   log: (text: string) => void
   now?: () => number
+  /** The run's context policy, which holds each read's window; the harness defaults where absent. */
+  policy?: () => ReadPolicy
 }
 
 function text(content: string, structured?: unknown, isError = false): McpToolResult {
@@ -196,12 +219,13 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
 
   const readSource = config.sources.read
   const readDialect = readSource ? READ_DIALECTS[readSource.dialect] : undefined
+  const policy = () => deps.policy?.() ?? CONTEXT_DEFAULTS
   tools.push({
     name: 'read_source',
     effect: 'read',
     description:
       'Read a web page or PDF through the configured gateway and return its text, rendered by the ' +
-      `reader service, ${READ_WINDOW} characters at a time. Give a url to read it, or a source_id ` +
+      `reader service, one window of at most ${readWindowBytes(policy())} bytes at a time. Give a url to read it, or a source_id ` +
       'already read with an offset to continue. Cite what you rely on with cite_excerpt.',
     inputSchema: {
       type: 'object',
@@ -215,24 +239,26 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
       const offset = Math.max(0, Number(args.offset) || 0)
       const window = (record: { id: string; document: ReadDocument }): McpToolResult => {
         const { document } = record
-        const slice = document.text.slice(offset, offset + READ_WINDOW)
-        const more = offset + READ_WINDOW < document.text.length
-        const header =
-          `${RETRIEVED}\n\nsource ${record.id}: ${document.title || '(untitled)'}\nurl: ${document.url}\n` +
-          `${document.text.length} characters` +
-          (document.pages ? `, ${document.pages} pages` : '') +
-          (document.httpStatus !== undefined ? `; the reader saw HTTP ${document.httpStatus} at the page` : '') +
-          `\n${dateLine(document)}\n` +
-          `showing characters ${offset}–${Math.min(offset + READ_WINDOW, document.text.length)}` +
-          (more ? ` (more: call read_source with source_id ${record.id} and offset ${offset + READ_WINDOW})` : '')
-        return text(`${header}\n\n${slice}`, {
-          sourceId: record.id,
-          url: document.url,
-          title: document.title,
-          chars: document.text.length,
-          offset,
-          more,
-          pageDates: document.pageDates
+        const start = Math.min(offset, document.text.length)
+        return heldWindow(document.text, start, policy(), (end) => {
+          const more = end < document.text.length
+          const header =
+            `${RETRIEVED}\n\nsource ${record.id}: ${document.title || '(untitled)'}\nurl: ${document.url}\n` +
+            `${document.text.length} characters` +
+            (document.pages ? `, ${document.pages} pages` : '') +
+            (document.httpStatus !== undefined ? `; the reader saw HTTP ${document.httpStatus} at the page` : '') +
+            `\n${dateLine(document)}\n` +
+            `showing characters ${start}–${end}` +
+            (more ? ` (more: call read_source with source_id ${record.id} and offset ${end})` : '')
+          return text(`${header}\n\n${document.text.slice(start, end)}`, {
+            sourceId: record.id,
+            url: document.url,
+            title: document.title,
+            chars: document.text.length,
+            offset: start,
+            more,
+            pageDates: document.pageDates
+          })
         })
       }
       const sourceId = typeof args.source_id === 'string' ? args.source_id : ''

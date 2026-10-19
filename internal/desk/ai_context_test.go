@@ -136,3 +136,58 @@ func TestResearchContextCompactionPreservesAuthorityAndOriginals(t *testing.T) {
 		t.Fatal("changed original journal")
 	}
 }
+
+// The harness places its execution state in a user text: a second part of the
+// person's message on the first request, and a user message of its own after
+// the history (trailing-user) on later ones; under system-tail the newest user
+// turn holds only tool results. Each body below follows the shape the contract
+// vector budget/state-placement.json gives for that wire, and recall reads the
+// person's own text in each.
+func TestMemoryRecallQueryDropsTheExecutionStateOnEachWire(t *testing.T) {
+	const person = "THE PERSON'S MESSAGE\nRecall the outreach plan for the northern region."
+	state := executionStateHeader + "\nRequest 2 of 40. Plan: none."
+	toolResult := `{"content":[{"type":"text","text":"schema text the model read"}]}`
+	cases := map[string]string{
+		"openai-compatible first request": `{"messages":[{"role":"system","content":"host"},{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `},{"type":"text","text":` + jsonText(state) + `}]}]}`,
+		"openai-compatible trailing-user": `{"messages":[{"role":"system","content":"host"},{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `}]},{"role":"assistant","content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"get_schema","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call-1","content":` + jsonText(toolResult) + `},{"role":"user","content":` + jsonText(state) + `}]}`,
+		"openai-compatible system-tail":   `{"messages":[{"role":"system","content":` + jsonText("host\n"+state) + `},{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `}]},{"role":"assistant","content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"get_schema","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call-1","content":` + jsonText(toolResult) + `}]}`,
+		"anthropic first request":         `{"system":"host","messages":[{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `},{"type":"text","text":` + jsonText(state) + `}]}]}`,
+		"anthropic trailing-user":         `{"system":"host","messages":[{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `}]},{"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"get_schema","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":` + jsonText(toolResult) + `},{"type":"text","text":` + jsonText(state) + `}]}]}`,
+		"anthropic system-tail":           `{"system":[{"type":"text","text":"host"},{"type":"text","text":` + jsonText(state) + `}],"messages":[{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `}]},{"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"get_schema","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":` + jsonText(toolResult) + `}]}]}`,
+		"gemini first request":            `{"systemInstruction":{"parts":[{"text":"host"}]},"contents":[{"role":"user","parts":[{"text":` + jsonText(person) + `},{"text":` + jsonText(state) + `}]}]}`,
+		"gemini trailing-user":            `{"systemInstruction":{"parts":[{"text":"host"}]},"contents":[{"role":"user","parts":[{"text":` + jsonText(person) + `}]},{"role":"model","parts":[{"functionCall":{"name":"get_schema","args":{}}}]},{"role":"user","parts":[{"functionResponse":{"name":"get_schema","response":{"content":"schema text the model read"}}}]},{"role":"user","parts":[{"text":` + jsonText(state) + `}]}]}`,
+		"gemini system-tail":              `{"systemInstruction":{"parts":[{"text":"host"},{"text":` + jsonText(state) + `}]},"contents":[{"role":"user","parts":[{"text":` + jsonText(person) + `}]},{"role":"model","parts":[{"functionCall":{"name":"get_schema","args":{}}}]},{"role":"user","parts":[{"functionResponse":{"name":"get_schema","response":{"content":"schema text the model read"}}}]}]}`,
+	}
+	want := memoryQueryTail("\n" + person)
+	for name, raw := range cases {
+		var body map[string]any
+		if err := json.Unmarshal([]byte(raw), &body); err != nil {
+			t.Fatal(name, err)
+		}
+		got := memoryRequestQuery(body)
+		if got != want {
+			t.Fatalf("%s: recall query %q, want %q", name, got, want)
+		}
+		if strings.Contains(got, "EXECUTION STATE") || strings.Contains(got, "schema text the model read") {
+			t.Fatalf("%s: recall query reads the state or a tool result: %q", name, got)
+		}
+	}
+	// A body with the state alone, or with tool results alone, recalls nothing.
+	for name, raw := range map[string]string{
+		"state only":        `{"messages":[{"role":"user","content":` + jsonText(state) + `}]}`,
+		"tool results only": `{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":"x"}]}]}`,
+	} {
+		var body map[string]any
+		if err := json.Unmarshal([]byte(raw), &body); err != nil {
+			t.Fatal(name, err)
+		}
+		if got := memoryRequestQuery(body); got != "" {
+			t.Fatalf("%s: recall query %q, want none", name, got)
+		}
+	}
+}
+
+func jsonText(text string) string {
+	raw, _ := json.Marshal(text)
+	return string(raw)
+}

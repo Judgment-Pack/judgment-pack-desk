@@ -1669,6 +1669,27 @@ describe('conversation-first task lifecycle', () => {
     expect(answered.status).toBe('needs-input')
   })
 
+  it('sends the chat draft snapshot as the harness\'s current state, never in the prompt', async () => {
+    const first = harness([async (request, _signal, emit) => {
+      // No draft yet: nothing changes between requests apart from the message.
+      expect(request.context?.currentState).toBeUndefined()
+      emit({ type: 'proposal', document: PACK, unknowns: [] })
+    }], { mode: 'draft' })
+    first.run.start('Create a draft', [])
+    const saved = await settled(first.run)
+    const resumed = harness([async (request, _signal, emit) => {
+      expect(request.prompt).toContain("THE PERSON'S MESSAGE\nWhat does the rule mean?")
+      expect(request.prompt).not.toContain('CHAT DRAFT SNAPSHOT')
+      expect(request.prompt).not.toContain(saved.candidates[0]!.text)
+      expect(request.context?.currentState).toContain(`CHAT DRAFT SNAPSHOT (may predate the saved workspace; use the current workspace or current object reads for edits, and preserve its identity)\n${saved.candidates[0]!.text}`)
+      emit({ type: 'message', text: 'The rule compares the supplied hours with the threshold.' })
+    }], { mode: 'draft' })
+    await resumed.run.restore(saved)
+    resumed.run.send('What does the rule mean?')
+    await settled(resumed.run)
+    expect(resumed.requests).toHaveLength(1)
+  })
+
   it('restores a finished reply as complete, while an interrupted reply stays interrupted', async () => {
     const { checkpoint, decodeCheckpoint } = await import('../chat/checkpoint')
     const first = harness([async (_request, _signal, emit) => emit({ type: 'message', text: 'Hello.' })], { mode: 'draft' })
@@ -1771,6 +1792,45 @@ describe('conversation draft citations', () => {
       })
     }
   }
+
+  it('hands the author every message\'s attachments as ledger documents and the case writer each message\'s attachments, never through the prompt', async () => {
+    const page = kept()
+    const supplied = { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'requirements.txt', text: 'People with 1,560 hours qualify; fewer do not.' }
+    const h = chat('draft', citing(pageOf(page.file)), [page])
+    h.run.start('Draft from what I attached.\n\nAttached file: requirements.txt.', [], 'Draft from what I attached.', [supplied, page.file], 'Draft from what I attached.\n\nAttached file: requirements.txt.')
+    await settled(h.run)
+    const author = h.requests.find(request => !request.reviewer)!
+    const documents = author.context!.documents!
+    expect(documents.map(document => document.id)).toEqual(['conversation', `attachment-${supplied.id}`, `attachment-${page.file.id}`])
+    expect(documents[1]).toMatchObject({ kind: 'artifact', label: 'Attached file: requirements.txt', value: { pages: [supplied.text] } })
+    expect((documents[2]!.value as { pages: string[] }).pages).toEqual([`[page 1; cite it as ${pageOf(page.file)}]\n${PAGE_TEXT}`])
+    expect(author.prompt).not.toContain(supplied.text)
+    expect(author.prompt).not.toContain(QUOTE)
+    // The case writer reads no ledger: each attachment comes with the message it was attached to.
+    const reviewer = h.requests.find(request => request.reviewer)!
+    expect(reviewer.context).toBeUndefined()
+    const messages = JSON.parse(reviewer.prompt.slice(reviewer.prompt.indexOf('\n', reviewer.prompt.indexOf("THE PERSON'S MESSAGES")) + 1))
+    expect(messages).toEqual([{ id: 'you-1', text: 'Draft from what I attached.\n\nAttached file: requirements.txt.', attachments: [
+      { name: 'requirements.txt', text: supplied.text },
+      { name: 'Eligibility', pages: [{ page: 1, citation: pageOf(page.file), text: PAGE_TEXT }] }
+    ] }])
+    // A later turn retains the earlier message's attachments again, the document verified once.
+    const loaded = h.loads.length
+    h.run.send('Explain the threshold.')
+    await settled(h.run)
+    const later = h.requests.filter(request => !request.reviewer).at(-1)!
+    expect(later.context!.documents!.map(document => document.id)).toEqual(['conversation', `attachment-${supplied.id}`, `attachment-${page.file.id}`])
+    expect(h.loads.length - loaded).toBeLessThanOrEqual(1)
+  })
+
+  it('retains why an attached document cannot be verified now, never its text', async () => {
+    const page = kept([PAGE_TEXT], false, 'gateway-b')
+    const h = chat('draft', PACK, [page])
+    h.run.start('Draft this.', [], 'Draft this.', [page.file], 'Draft this.')
+    await settled(h.run)
+    const documents = h.requests.find(request => !request.reviewer)!.context!.documents!
+    expect(documents[1]!.value).toEqual({ unavailable: 'this document could not be verified now (does not verify under this pin); its text is not available and is not evidence' })
+  })
 
   it.each(['draft', 'web-research'] as const)('traces a %s citation to the quoted page of a document kept in the chat, and is then ready', async mode => {
     const page = kept()
@@ -2356,12 +2416,14 @@ describe('conversation draft citations', () => {
       const saved = decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(state, []))))
       expect([...statementsOf(saved.state.turns).values()].at(-1)).toBe(text + material)
       expect(saved.state.turns.filter(turn => turn.role === 'user').at(-1)?.input).toContain(rule.id)
-      // The current draft still supplies its rules; historical workspace snapshots need not repeat them.
+      // The current draft still supplies its rules, as the harness's current state since v0.1.0;
+      // historical workspace snapshots need not repeat them.
       const reopened = harness([async (_request, _signal, emit) => emit({ type: 'message', text: 'Noted.' })], { mode: 'draft' })
       await reopened.run.restore(saved.state)
       reopened.run.send('Explain the draft.')
       await settled(reopened.run)
-      expect(reopened.requests[0]?.prompt).toContain(rule.id)
+      expect(reopened.requests[0]?.context?.currentState).toContain(rule.id)
+      expect(reopened.requests[0]?.prompt).not.toContain(rule.id)
     }
   })
 

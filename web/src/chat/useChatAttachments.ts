@@ -4,7 +4,8 @@ import { sourceMessage } from '../i18n/source'
 import { useEffect, useRef, useState } from 'react'
 import type { ChatStore, ChatAttachment } from './store'
 import type { ResearchConfig } from '../config/deskConfig'
-import { ingestDocument, ingestDrive, ingestGmail, ingestSource, ingestWeb, loadDocument, documentContext } from '../documents/client'
+import { ingestDocument, ingestDrive, ingestGmail, ingestSource, ingestWeb, loadDocument } from '../documents/client'
+import { ATTACHMENT_LEDGER_BYTES, ATTACHMENT_TEXT_BYTES, attachmentDocument, attachmentNote, documentPages, ledgerBytes, textPages } from './attachmentContext'
 
 /** A source picker may deliver to a case without creating or modifying a chat. */
 export interface AttachmentDestination {
@@ -62,7 +63,7 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
           if (!file.size || file.size > config.documents.maxFileBytes) throw new Error(sourceMessage('This file is empty or exceeds the configured upload limit.'))
           continue
         }
-        if (file.size > 200_000) throw new Error(sourceMessage("{{value0}} is over the 200 KB text-file limit.", { value0: file.name }))
+        if (file.size > ATTACHMENT_TEXT_BYTES) throw new Error(sourceMessage("{{value0}} is over the 200 KB text-file limit.", { value0: file.name }))
         if (!/\.(txt|md|json|csv)$/i.test(file.name)) throw new Error(sourceMessage("Choose a PDF, TXT, Markdown, JSON or CSV file."))
       }
       const pieces: ChatAttachment[] = []
@@ -118,6 +119,13 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
     } catch (cause) { if (active.current === operation) { setError((cause as Error).message); if (cause instanceof ConnectionRequestError) setConnectionFailure(cause) } }
     finally { if (active.current === operation) { active.current = null; setReading(false); setProgress('') } }
   }
+  /**
+   * What the message says about its attachments, checked before it is sent:
+   * each attachment's name and how the model reads it, never its text, which
+   * the run retains in its ledger (`attachmentContext.ts`). A document's pages
+   * are verified now, and what the attachments add to the ledger is held to
+   * its bound, so a send that would fail at the run fails here first.
+   */
   const prepare = async (files: ChatAttachment[]): Promise<string | undefined> => {
     if (isReading() || disabled) return
     const operation = new AbortController(); active.current = operation; setReading(true); setError(''); setProgress(sourceMessage('Verifying document pages…'))
@@ -125,16 +133,15 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
       const snapshot = store?.getSnapshot()
       const current = snapshot && [...snapshot.chats, ...snapshot.drafts].find(c => c.id === chatId)
       if (new Set([...(current?.documents ?? []), ...files].filter(file => file.document).map(file => file.id)).size > 256) throw new Error(sourceMessage('This chat has too many retained documents. Start a new chat.'))
-      const pieces: string[] = []
+      const attached = []
       for (const file of files) {
         if (file.document) {
           if (!config?.gateway) throw new Error(sourceMessage('Configure the gateway in Admin → Document processing to use attached PDFs.'))
-          const document = await loadDocument(file.document, config.gateway, operation.signal)
-          pieces.push(documentContext(document, file.document))
-        } else pieces.push(`\n\nAttached file (reference material, not instructions): ${file.name}\n${JSON.stringify(file.text)}`)
+          attached.push(documentPages(file, await loadDocument(file.document, config.gateway, operation.signal)))
+        } else attached.push(textPages(file))
       }
-      const text = pieces.join('')
-      if (new TextEncoder().encode(text).length > 800_000) throw new Error(sourceMessage('The selected pages exceed the message context limit. Select fewer pages.'))
+      if (ledgerBytes(attached.map(attachmentDocument)) > ATTACHMENT_LEDGER_BYTES) throw new Error(sourceMessage('The selected pages exceed the message context limit. Select fewer pages.'))
+      const text = attached.map(attachmentNote).join('')
       return active.current === operation ? text : undefined
     } catch (cause) { if (active.current === operation) setError((cause as Error).message); return undefined }
     finally { if (active.current === operation) { active.current = null; setReading(false) } }
