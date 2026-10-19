@@ -1140,7 +1140,6 @@
   "Definition history unavailable": "定义历史记录不可用",
   "Definition summary. Recorded tests are historical observations, not an operational decision or proof of current readiness.": "定义摘要。已记录的测试是历史观察结果，不是操作决策，也不能证明当前已准备就绪。",
   "Definition version": "定义版本",
-  "Delegate one to three focused tasks, each with a title, objective, explicit context and an offered profile.": "委派一到三个专门任务，每个任务都需包含标题、目标、明确的上下文以及一个可用配置。",
   "Delegate tasks": "委派任务",
   "Delegated": "已委派",
   "Delegated task": "已委派的任务",
@@ -4545,7 +4544,6 @@
   "The setup code is incorrect. Use the code shown by the running Desk process.": "设置代码不正确。请使用正在运行的 Desk 进程显示的代码。",
   "The shared agent-invocation limit was reached. No additional run was sent.": "已达到共享智能体调用上限。未发送额外运行。",
   "The shared default is used by desks that inherit assistant settings. Custom desks keep their own selection. Disabling a connection makes it unavailable to every desk.": "继承助手设置的 Desk 使用共享默认值。自定义 Desk 保留自己的选择。停用连接后，所有 Desk 都将无法使用该连接。",
-  "The shared tool limit was reached. Return retained findings to the parent.": "已达到共享工具上限。请将保留的发现返回上级助手。",
   "The sign-in callback port is in use. Close other Desk windows and try again.": "登录回调端口已被占用。请关闭其他 Desk 窗口后重试。",
   "The sign-in configuration could not be saved securely. Check this computer’s configuration directory.": "无法安全保存登录配置。请检查此计算机的配置目录。",
   "The sign-in settings changed or the test expired. Test sign-in again.": "登录设置已更改或测试已过期。请重新测试登录。",
@@ -4661,7 +4659,6 @@
   "This connection does not have permission for this operation.": "此连接没有执行此操作的权限。",
   "This connection is unavailable in the current gateway.": "当前网关不支持此连接。",
   "This connection, and what this runtime advertises": "此连接及运行时公布的功能",
-  "This context reference is unavailable in the current execution. Read the current object or history again.": "此上下文引用在当前执行中不可用。请重新读取当前对象或历史记录。",
   "This conversation exceeds the 200,000-character context limit. Start a new chat with the relevant text, or attach a smaller excerpt. Nothing was sent to the model.": "此对话超过 200,000 字符的上下文限制。请用相关文本开启新聊天，或附加更短的摘录。未向模型发送任何内容。",
   "This conversation has an older draft. Open the pack and start a new chat to continue.": "此对话包含旧版草稿。请打开规则包并开始新对话以继续。",
   "This conversation is no longer available.": "此对话已不可用。",
@@ -4839,7 +4836,6 @@
   "This stops active Codex work and signs out the account stored by this Desk.": "这会停止正在进行的 Codex 工作，并退出此 Desk 保存的账户。",
   "This store exceeds the supported move size of <0/>.": "此存储超出支持的迁移大小 <0/>。",
   "This suite has reached its 256-case limit.": "此测试集已达到 256 个用例的上限。",
-  "This task has no runtime tool capability.": "此任务没有运行时工具能力。",
   "This template could not be read — {{value0}}": "无法读取此模板 — {{value0}}",
   "This template could not be read.": "无法读取此模板。",
   "This template could not be used.": "无法使用此模板。",
@@ -6079,5 +6075,8 @@
   "its capability record says the endpoint ignores the reasoning parameter": "其能力记录表明端点会忽略推理参数",
   "the answer carried a proposal through propose_pack and another in a fenced JSON block; it must carry exactly one": "回答通过 propose_pack 携带了一个提议，又在带围栏的 JSON 块中携带了另一个；回答必须恰好携带一个",
   "the endpoint answered whole where a stream was asked for, and its answer is not complete JSON": "请求流式响应时端点一次性作答，且其回答不是完整的 JSON",
-  "the fenced proposal block is not valid JSON": "带围栏的提议块不是有效的 JSON"
+  "the fenced proposal block is not valid JSON": "带围栏的提议块不是有效的 JSON",
+  "Delegate one to three focused tasks, each with a title, an objective and an offered profile; pass material by reference (references: ids from your context, at most twenty), and resume a finished task by its id.": "委派一到三个专注的任务，每个任务包含标题、目标和一个可用的配置；资料以引用方式传递（references：来自你上下文的 ID，最多二十个），已完成的任务可凭其 ID 继续。",
+  "Delegation profiles and tool names must be unique, and a profile stays within the children’s ceiling: its budget at most TASK_BUDGET_CEILING, its Runtime tools on the gate’s ceiling.": "委派配置和工具名称必须唯一，且配置须在子任务的上限之内：预算至多为 TASK_BUDGET_CEILING，其 Runtime 工具须在闸门的上限之内。",
+  "This task was not offered that Runtime tool.": "此任务未获提供该 Runtime 工具。"
 }

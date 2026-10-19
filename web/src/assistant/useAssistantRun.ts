@@ -382,6 +382,12 @@ export function useAssistantRun(options: {
               context:{configuration:settings.current.contextConfiguration},
               testPrompt: testPrompt ?? '',
               purpose,
+              // **The critic is asked for, here, where the panes had it.** Since
+              // `@judgment-pack/harness` v0.2.0 neither engine starts it on a thinking
+              // tier by itself: both read the session's `adversarialReview`, otherwise
+              // off. The default purpose, which the pack pane and Describe it start,
+              // ran it for the API engine at any tier but `off` and never for Codex.
+              adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off',
               ...(purpose === 'graph' ? { adversarialReview: false } : {}),
               ...(purpose === 'test-design' || purpose === 'brief' ? { allowConversation: true, interactive: true, adversarialReview: false } : {}),
               tools: ready.tools,

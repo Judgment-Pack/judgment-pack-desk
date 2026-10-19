@@ -1140,7 +1140,6 @@
   "Definition history unavailable": "정의 기록을 사용할 수 없음",
   "Definition summary. Recorded tests are historical observations, not an operational decision or proof of current readiness.": "정의 요약입니다. 기록된 테스트는 과거의 관찰이며, 운영상의 판단이나 현재 준비 상태를 입증하지 않습니다.",
   "Definition version": "정의 버전",
-  "Delegate one to three focused tasks, each with a title, objective, explicit context and an offered profile.": "제목, 목표, 명시적인 맥락 및 제공된 프로필을 포함하여 집중된 작업을 1~3개 위임하세요.",
   "Delegate tasks": "작업 위임",
   "Delegated": "위임됨",
   "Delegated task": "위임된 작업",
@@ -4545,7 +4544,6 @@
   "The setup code is incorrect. Use the code shown by the running Desk process.": "설정 코드가 올바르지 않습니다. 실행 중인 Desk 프로세스에 표시된 코드를 사용하세요.",
   "The shared agent-invocation limit was reached. No additional run was sent.": "공유 에이전트 호출 한도에 도달했습니다. 추가 실행은 전송하지 않았습니다.",
   "The shared default is used by desks that inherit assistant settings. Custom desks keep their own selection. Disabling a connection makes it unavailable to every desk.": "어시스턴트 설정을 상속하는 Desk는 공유 기본값을 사용합니다. 개별 설정된 Desk는 자체 선택을 유지합니다. 연결을 비활성화하면 모든 Desk에서 사용할 수 없게 됩니다.",
-  "The shared tool limit was reached. Return retained findings to the parent.": "공유 도구 한도에 도달했습니다. 보관된 결과를 상위 에이전트에 반환하세요.",
   "The sign-in callback port is in use. Close other Desk windows and try again.": "로그인 콜백 포트가 사용 중입니다. 다른 Desk 창을 닫고 다시 시도하세요.",
   "The sign-in configuration could not be saved securely. Check this computer’s configuration directory.": "로그인 설정을 안전하게 저장할 수 없습니다. 이 컴퓨터의 설정 디렉터리를 확인하세요.",
   "The sign-in settings changed or the test expired. Test sign-in again.": "로그인 설정이 변경되었거나 테스트가 만료되었습니다. 다시 테스트하세요.",
@@ -4661,7 +4659,6 @@
   "This connection does not have permission for this operation.": "이 연결에는 이 작업을 수행할 권한이 없습니다.",
   "This connection is unavailable in the current gateway.": "현재 게이트웨이에서는 이 연결을 사용할 수 없습니다.",
   "This connection, and what this runtime advertises": "이 연결과 런타임이 제공한다고 알린 기능",
-  "This context reference is unavailable in the current execution. Read the current object or history again.": "이 맥락 참조는 현재 실행에서 사용할 수 없습니다. 현재 객체 또는 기록을 다시 읽으세요.",
   "This conversation exceeds the 200,000-character context limit. Start a new chat with the relevant text, or attach a smaller excerpt. Nothing was sent to the model.": "대화가 컨텍스트 한도인 200,000자를 초과합니다. 관련 텍스트로 새 채팅을 시작하거나 더 짧은 발췌문을 첨부하세요. 모델에 전송한 내용은 없습니다.",
   "This conversation has an older draft. Open the pack and start a new chat to continue.": "이 대화에는 이전 초안이 있습니다. 계속하려면 팩을 열고 새 채팅을 시작하세요.",
   "This conversation is no longer available.": "이 대화는 더 이상 사용할 수 없습니다.",
@@ -4839,7 +4836,6 @@
   "This stops active Codex work and signs out the account stored by this Desk.": "실행 중인 Codex 작업을 중지하고 이 Desk에 저장된 계정에서 로그아웃합니다.",
   "This store exceeds the supported move size of <0/>.": "저장소가 지원되는 이동 크기 <0/>을 초과합니다.",
   "This suite has reached its 256-case limit.": "이 모음은 사례 256개 제한에 도달했습니다.",
-  "This task has no runtime tool capability.": "이 작업에는 런타임 도구 기능이 없습니다.",
   "This template could not be read — {{value0}}": "템플릿을 읽지 못했습니다 — {{value0}}",
   "This template could not be read.": "템플릿을 읽지 못했습니다.",
   "This template could not be used.": "템플릿을 사용하지 못했습니다.",
@@ -6079,5 +6075,8 @@
   "its capability record says the endpoint ignores the reasoning parameter": "기능 레코드에 따르면 엔드포인트가 추론 매개변수를 무시합니다",
   "the answer carried a proposal through propose_pack and another in a fenced JSON block; it must carry exactly one": "응답에 propose_pack을 통한 제안과 구분된 JSON 블록의 다른 제안이 함께 있었습니다. 제안은 정확히 하나여야 합니다",
   "the endpoint answered whole where a stream was asked for, and its answer is not complete JSON": "스트림을 요청했는데 엔드포인트가 한 번에 응답했고, 그 응답은 완전한 JSON이 아닙니다",
-  "the fenced proposal block is not valid JSON": "구분된 제안 블록이 올바른 JSON이 아닙니다"
+  "the fenced proposal block is not valid JSON": "구분된 제안 블록이 올바른 JSON이 아닙니다",
+  "Delegate one to three focused tasks, each with a title, an objective and an offered profile; pass material by reference (references: ids from your context, at most twenty), and resume a finished task by its id.": "제목, 목표, 제공된 프로필을 갖춘 집중 작업을 1~3개 위임하세요. 자료는 참조로 전달하고(references: 컨텍스트의 ID, 최대 20개), 완료된 작업은 ID로 다시 이어갈 수 있습니다.",
+  "Delegation profiles and tool names must be unique, and a profile stays within the children’s ceiling: its budget at most TASK_BUDGET_CEILING, its Runtime tools on the gate’s ceiling.": "위임 프로필과 도구 이름은 고유해야 하며, 프로필은 하위 작업의 상한 안에 있어야 합니다. 예산은 TASK_BUDGET_CEILING 이하, Runtime 도구는 게이트의 상한 이내여야 합니다.",
+  "This task was not offered that Runtime tool.": "이 작업에는 해당 Runtime 도구가 제공되지 않았습니다."
 }

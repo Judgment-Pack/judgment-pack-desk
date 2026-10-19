@@ -32,7 +32,7 @@ it('confines model SDK imports to the managed adapters (type imports excluded)',
 })
 it('keeps both frontend and backend execution paths inside the context boundary',()=>{
  for(const path of ['engines/codex/index.js','engines/vercel/loop.js']){
-  const source=harness(path);expect(source).toContain('managedContext(');expect(source).toContain('context.result(');expect(source).toContain('context.beginIsolatedPhase()')
+  const source=harness(path);expect(source).toContain('managedContext(');expect(source).toContain('context.result(');expect(source).toContain('context.beginCriticPhase()')
  }
  for(const path of ['assistant/useAssistantRun.ts','research/useResearchRun.ts'])expect(readFileSync(resolve(root,path),'utf8')).toContain('configuration:settings.current.contextConfiguration')
  for(const file of ['input_research_model.go','portable_research_worker.go'])expect(readFileSync(resolve(root,'../../internal/desk',file),'utf8')).toContain('s.runBackgroundModel(')

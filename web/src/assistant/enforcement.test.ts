@@ -733,6 +733,7 @@ const SESSION_KEYS = [
   'allowConversation',
   'interactive',
   'adversarialReview',
+  'criticCases',
   'tools',
   'callTool',
   'hostTools',
@@ -866,9 +867,10 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
    * The harness modules that freeze constant tables, never a proposal: the
    * budget's defaults (`context/policy`), the families' default capability
    * records (`capabilities`, v0.1.0) and the refusals a request is retried
-   * after (`failures`, v0.1.0).
+   * after (`failures`, v0.1.0), and a delegated task's budgets and the report's
+   * bounds (`delegationContract`, v0.2.0).
    */
-  const FROZEN_TABLES = ['context/policy.', 'capabilities.', 'failures.'].map(module => `@judgment-pack/harness/dist/${module}`)
+  const FROZEN_TABLES = ['context/policy.', 'capabilities.', 'failures.', 'delegationContract.'].map(module => `@judgment-pack/harness/dist/${module}`)
   const others = () =>
     [...sourcesUnder('assistant'), ...harnessSourcesUnder()].filter(
       (source) =>

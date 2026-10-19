@@ -1140,7 +1140,6 @@
   "Definition history unavailable": "定義履歴を利用できません",
   "Definition summary. Recorded tests are historical observations, not an operational decision or proof of current readiness.": "定義の要約です。記録済みのテストは過去の観測であり、運用上の判断や現在の利用準備状況の証明ではありません。",
   "Definition version": "定義のバージョン",
-  "Delegate one to three focused tasks, each with a title, objective, explicit context and an offered profile.": "タイトル、目的、明示的なコンテキスト、利用可能なプロファイルを指定して、焦点を絞ったタスクを 1～3 件委任してください。",
   "Delegate tasks": "タスクを委任",
   "Delegated": "委任済み",
   "Delegated task": "委任されたタスク",
@@ -4545,7 +4544,6 @@
   "The setup code is incorrect. Use the code shown by the running Desk process.": "設定コードが正しくありません。実行中のDeskプロセスに表示されるコードを使用してください。",
   "The shared agent-invocation limit was reached. No additional run was sent.": "共有のエージェント呼び出し上限に達しました。追加の実行は送信されていません。",
   "The shared default is used by desks that inherit assistant settings. Custom desks keep their own selection. Disabling a connection makes it unavailable to every desk.": "アシスタント設定を継承する Desk は共有の既定値を使用します。個別に設定した Desk は独自の選択を維持します。接続を無効にすると、すべての Desk で利用できなくなります。",
-  "The shared tool limit was reached. Return retained findings to the parent.": "共有のツール上限に達しました。保持された結果を親に返してください。",
   "The sign-in callback port is in use. Close other Desk windows and try again.": "ログインのコールバック用ポートが使用中です。他の Desk ウィンドウを閉じて再試行してください。",
   "The sign-in configuration could not be saved securely. Check this computer’s configuration directory.": "ログイン設定を安全に保存できませんでした。このコンピューターの設定ディレクトリを確認してください。",
   "The sign-in settings changed or the test expired. Test sign-in again.": "ログイン設定が変更されたか、テストの有効期限が切れました。もう一度ログインをテストしてください。",
@@ -4661,7 +4659,6 @@
   "This connection does not have permission for this operation.": "この接続には、この操作を行う権限がありません。",
   "This connection is unavailable in the current gateway.": "現在のゲートウェイでは、この接続を利用できません。",
   "This connection, and what this runtime advertises": "この接続とランタイムが提供する機能",
-  "This context reference is unavailable in the current execution. Read the current object or history again.": "このコンテキスト参照は現在の実行では利用できません。現在のオブジェクトまたは履歴を再度読み込んでください。",
   "This conversation exceeds the 200,000-character context limit. Start a new chat with the relevant text, or attach a smaller excerpt. Nothing was sent to the model.": "この会話はコンテキストの上限である 200,000 文字を超えています。関連するテキストで新しいチャットを始めるか、短い抜粋を添付してください。モデルには何も送信していません。",
   "This conversation has an older draft. Open the pack and start a new chat to continue.": "この会話には古い下書きがあります。続けるにはパックを開いて新しいチャットを開始してください。",
   "This conversation is no longer available.": "この会話は利用できなくなりました。",
@@ -4839,7 +4836,6 @@
   "This stops active Codex work and signs out the account stored by this Desk.": "実行中の Codex の処理を停止し、この Desk に保存されたアカウントからサインアウトします。",
   "This store exceeds the supported move size of <0/>.": "この保存領域は移動可能なサイズ <0/> を超えています。",
   "This suite has reached its 256-case limit.": "このスイートは上限の256ケースに達しています。",
-  "This task has no runtime tool capability.": "このタスクにはランタイムツールを使用する機能がありません。",
   "This template could not be read — {{value0}}": "このテンプレートを読み取れませんでした — {{value0}}",
   "This template could not be read.": "このテンプレートを読み取れませんでした。",
   "This template could not be used.": "このテンプレートを使用できませんでした。",
@@ -6079,5 +6075,8 @@
   "its capability record says the endpoint ignores the reasoning parameter": "その機能レコードによると、エンドポイントは推論パラメーターを無視します",
   "the answer carried a proposal through propose_pack and another in a fenced JSON block; it must carry exactly one": "回答には propose_pack による提案と、区切られた JSON ブロック内の別の提案が含まれていました。提案はちょうど 1 つでなければなりません",
   "the endpoint answered whole where a stream was asked for, and its answer is not complete JSON": "ストリームを求めたのにエンドポイントが一括で応答し、その応答は完全な JSON ではありません",
-  "the fenced proposal block is not valid JSON": "区切られた提案ブロックは有効な JSON ではありません"
+  "the fenced proposal block is not valid JSON": "区切られた提案ブロックは有効な JSON ではありません",
+  "Delegate one to three focused tasks, each with a title, an objective and an offered profile; pass material by reference (references: ids from your context, at most twenty), and resume a finished task by its id.": "タイトル、目的、利用可能なプロファイルを指定して、焦点を絞ったタスクを 1～3 件委任してください。資料は参照で渡し（references: コンテキストの ID、最大 20 件）、完了したタスクはその ID で再開できます。",
+  "Delegation profiles and tool names must be unique, and a profile stays within the children’s ceiling: its budget at most TASK_BUDGET_CEILING, its Runtime tools on the gate’s ceiling.": "委任プロファイルとツール名は一意である必要があり、プロファイルは子タスクの上限内に収まる必要があります。予算は TASK_BUDGET_CEILING 以下、Runtime ツールはゲートの上限内です。",
+  "This task was not offered that Runtime tool.": "このタスクにはその Runtime ツールは提供されていません。"
 }
