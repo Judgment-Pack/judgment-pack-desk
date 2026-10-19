@@ -1395,7 +1395,7 @@ export class AuthoringRun {
     const execution=this.pendingExecution??(!reviewer&&producedBy==='repair'?this.state.execution:undefined)
     this.pendingExecution=undefined
     const instructions: HostTool = {
-      name: 'get_authoring_instructions', effect:'read', contextPolicy:{immutable:true,reference:true},
+      name: 'get_authoring_instructions', effect:'read', contextPolicy:{immutable:true,reference:true,runtime:true},
       description: 'Read the runtime contract before creating or changing a pack. Not needed for greetings, explanations or ordinary questions.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       execute: async () => ({ content: [{ type: 'text', text: this.ports.authorPrompt

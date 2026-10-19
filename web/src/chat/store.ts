@@ -8,6 +8,7 @@ import {validDialectRecipeProposal,type DialectRecipeProposal} from '../dialects
 import { validGraphSnapshot, type GraphDraft } from '../graphs/drafts'
 import { ASSISTANT_THINKING, type ThinkingTier } from '../config/deskConfig'
 import { validAIConnectionId } from '../assistant/aiConnections'
+import { disposeChatContext } from '../assistant/chatContexts'
 import { validChatReasoning, type ChatReasoning } from './reasoning'
 import type { AuthoringMode } from '../research/mode'
 import { validSearchReference, type SearchReference } from '../search/results'
@@ -446,6 +447,7 @@ export class ChatStore {
     this.set({ bindings, active: this.state.active.filter(active => active !== id), drafts: this.state.drafts.filter(chat => chat.id !== id) })
     if (draft && !draft.pack && !draft.draftId && !draft.graph) this.saveHomeDraft()
     if (!draft) this.changed(this.state.chats.filter(chat => chat.id !== id))
+    disposeChatContext(id)
   }
   dispose() { clearTimeout(this.timer); this.state.bindings.forEach(binding => binding.run?.stop()) }
 }

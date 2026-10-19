@@ -1,7 +1,7 @@
 import { withDelegation } from '@judgment-pack/harness/delegation'
 import { chatReasoningAgent, type ChatReasoning } from '../chat/reasoning'
 import { conversationMode, type AuthoringMode } from './mode'
-import { bindExecution, withPersonMessage } from '../assistant/target'
+import { bindExecution } from '../assistant/target'
 import { selectedAssistant } from '../assistant/target'
 import { useProviderModels } from '../assistant/providers'
 import { assistantReady } from '../assistant/useAssistantSlot'
@@ -43,6 +43,7 @@ import { runtimeCheckIdentity } from './retainedCheck'
 import { researchTools, type ReadPolicy } from './tools'
 import { CONTEXT_DEFAULTS, contextPolicy } from '@judgment-pack/harness/context/policy'
 import { withProposePack } from '../assistant/proposePack'
+import { memoryInUse, runtimeIdentityOf } from '../assistant/runContext'
 
 export const MAX_REVISIONS = 4
 
@@ -205,6 +206,11 @@ export function useResearchRun(options?: {
         if(event.type==='budget_paused'||event.type==='execution_checkpoint'&&event.durable)await settings.current.checkpointDelegation?.(signal)
       }
       const sessionId = await sessionBearer()
+      // What the Desk knows of the run beyond the run (agent#8, agent#11): the Runtime the
+      // chat's read cache keys a Runtime-served read by, and whether project memory is on,
+      // which decides whether the memory reserve is left out of the input allowance.
+      const runtimeClient = settings.current.mcp.status === 'ready' ? settings.current.mcp.client : null
+      const [runtime, memory] = await Promise.all([runtimeClient ? runtimeIdentityOf(runtimeClient, callToolThrough(runtimeClient)) : undefined, memoryInUse(signal)])
       const opened = settings.current.mcp.status === 'ready' && settings.current.mcp.client !== null
         ? openAssistantConnection({ allowed: selectedAssistant(slot)?.tools ?? [], onEvent, sessionId, signal }) : null
       try {
@@ -215,7 +221,8 @@ export function useResearchRun(options?: {
           {
             prompt: [request.prompt,(executionContext?.phase==='plan'||conversationMode(settings.current.mode))?settings.current.researchPolicy?.([...built?.getSnapshot().turns ?? []].reverse().find(turn=>turn.role==='user')):undefined].filter(Boolean).join('\n\n'),
             ...(request.conversation ? { allowConversation: true } : {}),
-            context:{...request.context,...executionContext,...(executionContext?.documents?{documents:[...(request.context?.documents??[]),...executionContext.documents]}:{}),authorize:settings.current.authorizeContext,checkpoint:request.conversation?async checkpoint=>{deliver({type:'execution_checkpoint',checkpoint});await settings.current.checkpointDelegation?.(signal)}:undefined,configuration:settings.current.contextConfiguration},
+            // An independent reviewer works from a scope of its own, so it is handed none of the chat's.
+            context:{...request.context,...executionContext,...(executionContext?.documents?{documents:[...(request.context?.documents??[]),...executionContext.documents]}:{}),chat:request.reviewer?undefined:executionContext?.chat,...(runtime?{runtime}:{}),...(memory===undefined?{}:{memory}),authorize:settings.current.authorizeContext,checkpoint:request.conversation?async checkpoint=>{deliver({type:'execution_checkpoint',checkpoint});await settings.current.checkpointDelegation?.(signal)}:undefined,configuration:settings.current.contextConfiguration},
             interactive: true,
             adversarialReview: !request.reviewer && settings.current.adversarialReview === true,
             testPrompt: request.reviewer ? '' : testPrompt,
@@ -224,7 +231,7 @@ export function useResearchRun(options?: {
             // A turn that may propose a pack offers propose_pack beside the fence;
             // an independent reviewer, and a conversation without artifact proposals, do not.
             hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),
-            ...withPersonMessage(bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking), request.reviewer ? undefined : request.context?.currentRequest?.message),
+            ...bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking),
             signal
           },
           onEvent

@@ -8,19 +8,21 @@ import type { AuthoringMode } from './mode'
 const fake = vi.hoisted(() => ({ engine:'test', allowed:['test-model','second-model'], models:{isPending:false,isError:false,error:new Error('Models unavailable'),data:{models:[{id:'test-model'},{id:'second-model'}]}}, bind:vi.fn((slot:any)=>({effort:slot.agent?.effort})), session: vi.fn(), tools: vi.fn(), policy: vi.fn(() => 'WEB POLICY FOR THIS MESSAGE'), load: vi.fn(), gateway: { authority: 'test', signer: { public: 'test' } } }))
 vi.mock('../documents/client', async (original) => ({ ...(await original<typeof import('../documents/client')>()), loadDocument: fake.load }))
 vi.mock('../assistant/providers',()=>({useProviderModels:()=>fake.models}))
-vi.mock('../assistant/target', async (original) => ({ withPersonMessage: (await original<typeof import('../assistant/target')>()).withPersonMessage, bindExecution: fake.bind, selectedAssistant: () => ({ models: fake.allowed, model: 'test-model', tools: [] }) }))
+vi.mock('../assistant/target', async () => ({ bindExecution: fake.bind, selectedAssistant: () => ({ models: fake.allowed, model: 'test-model', tools: [] }) }))
 vi.mock('../assistant/useAssistantSlot', () => ({ assistantReady: () => true, useAssistantSlot: () => ({ state: 'ready', endpoint: 'https://example.invalid', keyStatus: 'stored', keyPresent: true, engine: fake.engine, thinking: 'off', agent:{model:'test-model',provider:'openai',authMethod:'subscription',tools:[],effort:'medium'} }) }))
 vi.mock('../assistant/pickedModel', () => ({ usePickedModel: () => ({ model: 'test-model', models: ['test-model'] }) }))
 vi.mock('@judgment-pack/harness/engines/index', () => ({ loadEngine: async () => ({}) }))
-vi.mock('@judgment-pack/harness/session', () => ({ runAssistantSession: fake.session }))
+vi.mock('@judgment-pack/harness/session', () => ({ runAssistantSession: fake.session, openAssistantConnection: () => ({ ready: Promise.resolve({ tools: [], callTool: async () => ({}) }), close: async () => {} }) }))
 vi.mock('../files/queries', () => ({ useFileListing: () => ({ data: { root: '/test' } }) }))
 // The rest of the module stays the Desk's own: the harness's host wiring reads its error and sentence.
 vi.mock('../mcp/session', async original => ({ ...await original<typeof import('../mcp/session')>(), sessionBearer: async () => 'test-session' }))
-vi.mock('../mcp/McpProvider', () => ({ useMcp: () => ({ status: 'disconnected', client: null }) }))
+const host = vi.hoisted(() => ({ mcp: { status: 'disconnected', client: null } as { status: string; client: unknown }, memory: vi.fn(async (): Promise<boolean | undefined> => undefined), runtime: vi.fn(async (): Promise<{ identity: string; version: string } | undefined> => undefined) }))
+vi.mock('../mcp/McpProvider', () => ({ useMcp: () => host.mcp }))
+vi.mock('../assistant/runContext', () => ({ memoryInUse: host.memory, runtimeIdentityOf: host.runtime }))
 vi.mock('../mcp/prompts', () => ({ AUTHOR_PACK_PROMPT: 'author_pack', TEST_PACK_PROMPT: 'test_pack', usePromptNames: () => ({ data: [] }), usePromptText: () => ({}) }))
 vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => ({ config: { research: { gateway: fake.gateway, sources: { search: null, read: null }, limits: { seconds: 30 } } } }) }))
 vi.mock('../shell/consoleLog', () => ({ recordActivity: () => {} }))
-afterEach(() => { cleanup(); vi.clearAllMocks();fake.engine='test';fake.allowed=['test-model','second-model'];fake.models.isPending=false;fake.models.isError=false })
+afterEach(() => { cleanup(); vi.clearAllMocks();host.mcp={status:'disconnected',client:null};host.memory.mockImplementation(async()=>undefined);host.runtime.mockImplementation(async()=>undefined);fake.engine='test';fake.allowed=['test-model','second-model'];fake.models.isPending=false;fake.models.isError=false })
 
 it('offers current web tools and policy on the first Research message and its follow-up', async () => {
   const search: HostTool = { name: 'search_sources', description: 'Fixture search', inputSchema: {}, execute: vi.fn(async () => ({ content: [] })) }
@@ -267,20 +269,37 @@ it('offers propose_pack with the package\'s schema where a turn may propose a pa
  expect(planningTool(proposePackTool())).toBe(false)
 })
 
-it('sends the person\'s message beside a Codex run\'s request, and only that, for memory recall',async()=>{
- fake.engine='codex';fake.tools.mockReturnValue([])
- const runs:Record<string,unknown>[]=[]
- const agentRun=vi.fn(async(request:Record<string,unknown>)=>{runs.push(request)})
- fake.bind.mockImplementation((slot:any)=>({agent:{model:'test-model',run:agentRun},effort:slot.agent?.effort}))
- fake.session.mockImplementation(async(_engine,request,deliver)=>{
-  await request.agent.run({prompt:request.prompt+'\n\nCHAT DRAFT SNAPSHOT\n{}\n\nEXECUTION GUIDANCE',instructions:'',tools:[],phase:'author'},{signal:request.signal,event:async()=>{},tool:async()=>({text:'',isError:false})})
-  deliver({type:'message',text:'Answered.'})
- })
+it('hands each turn the chat\'s context, the Runtime it reaches and the memory setting, and an independent reviewer none of the chat\'s',async()=>{
+ const {ChatContext}=await import('@judgment-pack/harness/context/chat')
+ const chat=new ChatContext()
+ const identity={identity:'f'.repeat(64),version:'0.35.0'}
+ host.mcp={status:'ready',client:{callTool:vi.fn()}}
+ host.runtime.mockImplementation(async()=>identity)
+ host.memory.mockImplementation(async()=>false)
+ fake.tools.mockReturnValue([])
+ const hook=renderHook(()=>useResearchRun({mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work',chat})}))
+ const turn=(hook.result.current.run as unknown as {ports:{turn:(request:import('./run').TurnRequest,signal:AbortSignal,deliver:(event:unknown)=>void)=>Promise<void>}}).ports.turn
+ const contexts:Record<string,unknown>[]=[]
+ fake.session.mockImplementation(async(_engine,request,deliver)=>{contexts.push(request.context);deliver({type:'end'})})
+ for(const reviewer of [false,true])await act(()=>turn({prompt:'Write the cases.',hostTools:[],reviewer,conversation:!reviewer},new AbortController().signal,()=>{}))
+ expect(contexts[0]).toMatchObject({runtime:identity,memory:false})
+ expect(contexts[0]!.chat).toBe(chat)
+ // The reviewer works from a scope of its own: the chat's ledger and read cache are not its to read.
+ expect(contexts[1]).toMatchObject({runtime:identity,memory:false})
+ expect(contexts[1]!.chat).toBeUndefined()
+ // A memory setting that cannot be read, and a Runtime with no release identity, are left unsaid: the harness keeps the reserve and caches such reads for the run.
+ host.runtime.mockImplementation(async()=>undefined);host.memory.mockImplementation(async()=>undefined)
+ await act(()=>turn({prompt:'Write the cases.',hostTools:[],reviewer:false,conversation:true},new AbortController().signal,()=>{}))
+ expect(contexts[2]).not.toHaveProperty('runtime')
+ expect(contexts[2]).not.toHaveProperty('memory')
+ hook.unmount()
+})
+
+it('declares the authoring instructions as a read that depends on the Runtime that serves it',async()=>{
+ fake.tools.mockReturnValue([])
+ let declared:unknown
+ fake.session.mockImplementation(async(_engine,request,deliver)=>{declared=request.hostTools.find((tool:HostTool)=>tool.name==='get_authoring_instructions')?.contextPolicy;deliver({type:'message',text:'Answered.'})})
  const {result}=renderHook(()=>useResearchRun({mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work'})}))
- act(()=>result.current.run!.start('Recall the outreach plan for the northern region.',[]))
- await waitFor(()=>expect(result.current.state.status).toBe('complete'))
- expect(runs).toHaveLength(1)
- expect(runs[0]!.personMessage).toBe('Recall the outreach plan for the northern region.')
- expect(String(runs[0]!.prompt)).toContain('CHAT DRAFT SNAPSHOT')
- fake.bind.mockImplementation((slot:any)=>({effort:slot.agent?.effort}))
+ act(()=>result.current.run!.start('Draft a pack',[]));await waitFor(()=>expect(result.current.state.status).toBe('complete'))
+ expect(declared).toEqual({immutable:true,reference:true,runtime:true})
 })

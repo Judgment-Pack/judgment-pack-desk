@@ -388,3 +388,42 @@ it('uses explicit run settings when the connection slot also carries default eng
   expect(result.current.failure).toBeUndefined()
   expect(handed?.model.model).toBe(ENDPOINT.model)
 })
+
+describe('what a run is told of the critic and of project memory', () => {
+  const memoryReply = (use: boolean) => ({ sha256: 'a'.repeat(64), content: { version: 1, settings: { use, suggest: false }, entries: [] } })
+  const run = async (options: Partial<Parameters<typeof useAssistantRun>[0]>, memory?: boolean) => {
+    engine = records
+    runtime = scriptedWebSocket({})
+    vi.stubGlobal('WebSocket', runtime.WebSocket)
+    vi.stubGlobal('fetch', async (url: unknown) => String(url).includes('/api/ai-memory') && memory !== undefined ? Response.json(memoryReply(memory)) : new Response('{}'))
+    const { result } = renderHook(() => useAssistantRun({ endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'off', ...options }))
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(handed).not.toBeNull())
+    return handed!
+  }
+
+  it('asks for the critic where the panes ran it: the API engine at any thinking tier but off, never Codex', async () => {
+    expect((await run({ thinking: 'off' })).adversarialReview).toBe(false)
+    handed = null; cleanup()
+    expect((await run({ thinking: 'on' })).adversarialReview).toBe(true)
+    handed = null; cleanup()
+    // Codex carries its own tier and never the critic.
+    expect((await run({ engine: 'codex', endpoint: null, agent: { model: 'a-model', provider: 'openai', authMethod: 'subscription', tools: scenario.scenarioTools } as never, thinking: 'on' })).adversarialReview).toBe(false)
+  })
+
+  it('asks for no critic on the purposes that never had one', async () => {
+    for (const purpose of ['test-design', 'graph'] as const) {
+      expect((await run({ purpose, thinking: 'on' })).adversarialReview, purpose).toBe(false)
+      handed = null; cleanup()
+    }
+  })
+
+  it('tells the harness whether project memory is on, so the reserve is left out of a run that has none', async () => {
+    expect((await run({}, false)).context?.memory).toBe(false)
+    handed = null; cleanup()
+    expect((await run({}, true)).context?.memory).toBe(true)
+    handed = null; cleanup()
+    // A setting that cannot be read is left unsaid, and the harness keeps the reserve.
+    expect((await run({})).context).not.toHaveProperty('memory')
+  })
+})

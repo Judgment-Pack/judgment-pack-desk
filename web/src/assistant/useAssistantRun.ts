@@ -1,6 +1,7 @@
 import {failureEvent,authoredFailure} from '@judgment-pack/harness/failures'
 import type { AITarget } from './aiConnections'
 import { bindExecution } from './target'
+import { memoryInUse } from './runContext'
 import { sourceMessage } from '../i18n/source'
 /**
  * One run of the assistant, as the pane holds it.
@@ -375,11 +376,13 @@ export function useAssistantRun(options: {
           run.connection = opened
           const ready = opened ? await opened.ready : { tools: [], callTool: async () => { throw new Error('Brief generation has no tool capability.') } }
           const loaded = await loadEngine(engine)
+          // Whether project memory is on, so the memory reserve is left out of a run that has none (agent#11).
+          const memory = purpose === 'brief' ? undefined : await memoryInUse(run.controller.signal)
           await runAssistantSession(
             loaded,
             {
               prompt,
-              context:{configuration:settings.current.contextConfiguration},
+              context:{configuration:settings.current.contextConfiguration,...(memory===undefined?{}:{memory})},
               testPrompt: testPrompt ?? '',
               purpose,
               // **The critic is asked for, here, where the panes had it.** Since
