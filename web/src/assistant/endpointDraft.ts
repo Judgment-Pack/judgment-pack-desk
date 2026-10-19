@@ -308,6 +308,20 @@ function capabilitiesWrite(draft: EndpointDraft): { capabilities?: unknown } {
 }
 
 /** Name the model the connection runs its critic or its delegated children on, or `''` for the run's own. */
+/**
+ * How the model pickers for the review and the helper tasks spell "the model of
+ * the run". The member is the empty string where nothing is named, but a
+ * select's option is never spelled `""` (see `ui/Select`), so the picker
+ * offers this value for it and the form turns it back on the way in and out.
+ */
+export const RUN_MODEL = '*'
+
+/** What a subordinate model picker shows for a stored member. */
+export const subordinateChoice = (stored: string): string => (stored === '' ? RUN_MODEL : stored)
+
+/** The stored member for what the picker reported. */
+export const subordinateStored = (choice: string): string => (choice === RUN_MODEL ? '' : choice)
+
 /** The decoder's own rule for the address, with the plain-address opt-in the draft carries. */
 export function draftUrlProblem(draft: EndpointDraft): string | undefined {
   return draft.url.trim() === '' ? undefined : endpointUrlProblem(draft.url.trim(), draft.lan)

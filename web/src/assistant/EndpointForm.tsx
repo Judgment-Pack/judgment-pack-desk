@@ -67,6 +67,9 @@ import {
   withKind,
   capacityProblem,
   withSubordinateModel,
+  RUN_MODEL,
+  subordinateChoice,
+  subordinateStored,
   withTool,
   type EndpointDraft
 } from './endpointDraft'
@@ -636,17 +639,17 @@ function SubordinateChoice({
   problems: { criticModel: string | undefined; childModel: string | undefined; capacity: string | undefined }
 }) {
   useLocale()
-  const options = [{ value: '', label: msg('The model of the run') }, ...draft.models.map((id) => ({ value: id, label: id }))]
+  const options = [{ value: RUN_MODEL, label: msg('The model of the run') }, ...draft.models.filter((id) => id !== RUN_MODEL).map((id) => ({ value: id, label: id }))]
   return (
     <>
       <Field label={msg("Review model")} error={problems.criticModel}>
         {(wiring) => (
-          <Select {...wiring} value={draft.criticModel} onValueChange={(value) => onChange(withSubordinateModel(draft, 'criticModel', value))} options={options} />
+          <Select {...wiring} value={subordinateChoice(draft.criticModel)} onValueChange={(value) => onChange(withSubordinateModel(draft, 'criticModel', subordinateStored(value)))} options={options} />
         )}
       </Field>
       <Field label={msg("Helper tasks model")} error={problems.childModel}>
         {(wiring) => (
-          <Select {...wiring} value={draft.childModel} onValueChange={(value) => onChange(withSubordinateModel(draft, 'childModel', value))} options={options} />
+          <Select {...wiring} value={subordinateChoice(draft.childModel)} onValueChange={(value) => onChange(withSubordinateModel(draft, 'childModel', subordinateStored(value)))} options={options} />
         )}
       </Field>
       <Field label={msg("Requests at once")} hint={msg("How many requests this connection carries at once, 1 to 16. Helper tasks run that many at a time.")} error={problems.capacity ?? (capacityProblem(draft.capacity) === undefined ? undefined : systemMessage(capacityProblem(draft.capacity)!))}>

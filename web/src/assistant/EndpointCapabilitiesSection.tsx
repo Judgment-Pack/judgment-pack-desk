@@ -14,6 +14,8 @@ import styles from './EndpointForm.module.css'
 
 /** What a member the draft does not state falls back to, in words. */
 const SOURCE = { probe: () => msg('probe'), override: () => msg('yours'), family: () => msg('provider default') } as const
+/** The option for a flag the owner has not stated. */
+const UNSTATED = 'default'
 const YES_NO: Record<Tri, () => string> = { '': () => msg('Use the probe or the provider default'), yes: () => msg('Yes'), no: () => msg('No') }
 const FLAG_LABEL: Record<(typeof OVERRIDE_FLAGS)[number], () => string> = {
   nativeToolCalls: () => msg('Native tool calls'),
@@ -153,8 +155,9 @@ export function EndpointCapabilitiesSection({
       {OVERRIDE_FLAGS.map((flag) => (
         <Field key={flag} label={FLAG_LABEL[flag]()} error={problems[flag]}>
           {(wiring) => (
-            <Select {...wiring} value={draft.override[flag]} onValueChange={(value) => setFlag(flag, value as Tri)}
-              options={(['', 'yes', 'no'] as const).map((value) => ({ value, label: YES_NO[value]() }))} />
+            // A select's option is never spelled `""` (see `ui/Select`), so "not stated" is offered as `default`.
+            <Select {...wiring} value={draft.override[flag] === '' ? UNSTATED : draft.override[flag]} onValueChange={(value) => setFlag(flag, value === UNSTATED ? '' : (value as Tri))}
+              options={([UNSTATED, 'yes', 'no'] as const).map((value) => ({ value, label: YES_NO[value === UNSTATED ? '' : value]() }))} />
           )}
         </Field>
       ))}

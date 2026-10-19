@@ -22,6 +22,7 @@ import { useAssistantRun } from './useAssistantRun'
 import { ProviderError, providerRequest, useProviderCatalog, useProviderModels, useProviderStatus, type ProviderChallenge } from './providers'
 import { whenSessionEnds } from '../mcp/session'
 import { useUnsavedChanges } from '../shell/DraftScope'
+import { RUN_MODEL, subordinateChoice, subordinateStored } from './endpointDraft'
 import styles from './AssistantSettings.module.css'
 
 export function MachineAssistantSettings({ unavailable, onDirtyChange }: { unavailable: boolean; onDirtyChange?: (dirty:boolean)=>void }) {
@@ -153,8 +154,8 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
         <SubscriptionModels label={scope?msg('Default models'):undefined} models={models} allowed={allowed} model={model} disabled={busy||testRunning||unavailable||listing.isPending||listing.isError}
           onChange={(next,nextModel)=>{edit();setAllowed(next);if(model!==nextModel)setEffort('');setModel(nextModel)}}/>
         {allowed.length>0&&<>
-          <Field label={msg('Review model')}>{wiring=><Select {...wiring} value={namedCritic} disabled={busy||testRunning||unavailable||write.isPending} onValueChange={value=>{edit();setCritic(value)}} options={[{value:'',label:msg('The model of the run')},...allowed.map(id=>({value:id,label:id}))]}/>}</Field>
-          <Field label={msg('Helper tasks model')}>{wiring=><Select {...wiring} value={namedChild} disabled={busy||testRunning||unavailable||write.isPending} onValueChange={value=>{edit();setChild(value)}} options={[{value:'',label:msg('The model of the run')},...allowed.map(id=>({value:id,label:id}))]}/>}</Field>
+          <Field label={msg('Review model')}>{wiring=><Select {...wiring} value={subordinateChoice(namedCritic)} disabled={busy||testRunning||unavailable||write.isPending} onValueChange={value=>{edit();setCritic(subordinateStored(value))}} options={[{value:RUN_MODEL,label:msg('The model of the run')},...allowed.filter(id=>id!==RUN_MODEL).map(id=>({value:id,label:id}))]}/>}</Field>
+          <Field label={msg('Helper tasks model')}>{wiring=><Select {...wiring} value={subordinateChoice(namedChild)} disabled={busy||testRunning||unavailable||write.isPending} onValueChange={value=>{edit();setChild(subordinateStored(value))}} options={[{value:RUN_MODEL,label:msg('The model of the run')},...allowed.filter(id=>id!==RUN_MODEL).map(id=>({value:id,label:id}))]}/>}</Field>
         </>}
         {listing.isPending&&<LoadingState>{msg('Loading models…')}</LoadingState>}
         {allowed.some(id=>!models.some(row=>row.id===id))&&!listing.isPending&&<SettingsFeedback tone="error">{msg('This model is no longer available. Choose another model.')}</SettingsFeedback>}
