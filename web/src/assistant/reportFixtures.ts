@@ -17,4 +17,3 @@ export const checkpoint = (more: Partial<ExecutionCheckpoint> = {}): ExecutionCh
   version: 1, id: 'execution-1', requestKey: 'a'.repeat(64), phase: 'work', status: 'complete', unit: 'model-requests', used: 11, limit: 20, grants: [],
   plan: [], explanation: '', operations: [], context: { scope: 'scope-1', entries: [] }, ...more
 })
-
