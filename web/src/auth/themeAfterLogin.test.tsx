@@ -7,6 +7,15 @@ import { AppearanceProvider, appearanceKey, useAppearance } from '../shell/appea
 import { projectKey } from '../shell/paneState'
 import { SessionPage } from './SessionPage'
 
+// These boundary tests retain real authentication transitions while isolating
+// the independently tested public identity directory.
+vi.mock('./flow', async importActual => {
+ const actual = await importActual<typeof import('./flow')>()
+ return {...actual, authCall: (path: string, body?: unknown, bearer?: string, signal?: AbortSignal) => path === 'desks'
+  ? Promise.resolve({startup:'',desks:[{id:'',name:'Unveil',mark:null}]})
+  : actual.authCall(path, body, bearer, signal)}
+})
+
 // These tests drive confirmed entry's appearance controls; SessionGate tests
 // exercise the sign-in form and its authentication requests independently.
 vi.mock('./SignInEntry', () => ({ SignInEntry: () => null }))

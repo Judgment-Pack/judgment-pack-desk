@@ -2650,7 +2650,6 @@
   "Open tests": "開啟測試",
   "Open this project at startup": "啟動時開啟此專案",
   "Open working chat": "開啟目前聊天",
-  "Open your local Desk": "開啟本機的 Desk",
   "OpenAI / ChatGPT": "OpenAI / ChatGPT",
   "OpenAI-compatible": "相容 OpenAI",
   "OpenAI-compatible API": "相容 OpenAI 的 API",
@@ -3894,7 +3893,6 @@
   "Showing the newest {{shown}} of {{read}} journal entries read.": "顯示已讀取的 {{read}} 筆日誌條目中最新的 {{shown}} 筆。",
   "Side by side": "並排",
   "Sign in": "登入",
-  "Sign in to Unveil": "登入 Unveil",
   "Sign in to open your local workspace. Signing in does not upload your packs or chats.": "登入以開啟本機工作區。登入不會上傳您的套件或聊天。",
   "Sign this project’s decisions": "為此專案的決策簽署",
   "Sign-in & access": "登入與存取",
@@ -6790,5 +6788,13 @@
   "which of the two is the trail’s; who that submitter was": "兩者中哪一個屬於軌跡；該提交者是誰",
   "why; whether the trail’s operator went on under another trail, as it does after a retirement, registered anew": "原因；軌跡營運方是否像除役後一樣，在重新註冊的另一軌跡下繼續",
   "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "游標之後較早的{{count}}行未傳送：鏈頭聲明透過軌跡自身的鏈涵蓋這些行。",
-  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "請更新已連接的 Runtime，以支援官方 Policy 草案 policy-v1.0.0-draft.1（格式 1.0.0）。您的選擇和已儲存的管轄政策歷程仍可使用。"
+  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "請更新已連接的 Runtime，以支援官方 Policy 草案 policy-v1.0.0-draft.1（格式 1.0.0）。您的選擇和已儲存的管轄政策歷程仍可使用。",
+  "Choose a desk": "選擇 Desk",
+  "Desk unavailable": "Desk 無法使用",
+  "No desks found.": "找不到 Desk。",
+  "Open {{desk}}": "開啟 {{desk}}",
+  "Search desks": "搜尋 Desk",
+  "Sign in to {{desk}}": "登入 {{desk}}",
+  "The selected desk is unavailable. Choose another desk.": "所選 Desk 無法使用。請選擇其他 Desk。",
+  "This browser could not save the selected desk. Allow site storage and try again.": "此瀏覽器無法儲存所選 Desk。請允許儲存網站資料，然後再試。"
 }

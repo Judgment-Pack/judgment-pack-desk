@@ -146,10 +146,11 @@ func chooseDeskGates(schema runtimeSchema) (deskGates, error) {
 }
 
 type deskRecord struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Folder  string `json:"folder"`
-	Managed bool   `json:"managed"`
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Folder  string  `json:"folder"`
+	Managed bool    `json:"managed"`
+	Mark    *string `json:"mark"`
 }
 
 func validDeskName(name string) bool {
@@ -163,6 +164,24 @@ func (s *Server) deskOwner() *Server {
 }
 func (s *Server) deskRecord() (deskRecord, error) {
 	row := deskRecord{ID: s.cfg.deskID, Name: filepath.Base(s.projectDir), Folder: s.projectDir, Managed: s.cfg.deskID != ""}
+	row.Mark = s.deskOwner().entryMark(s.root)
+	if s.home != nil {
+		home, err := readDeskHome(s.configDir)
+		if err != nil {
+			return row, err
+		}
+		entry := home.entry(s.projectDir)
+		if entry == nil {
+			return row, errors.New("desk is no longer registered")
+		}
+		row.Name = entry.Name
+		if s.cfg.parent != nil {
+			row.ID = entry.ID
+		} else {
+			row.ID = ""
+		}
+		return row, nil
+	}
 	if s.cfg.deskID == "" {
 		if entry := s.homeEntry(); entry != nil {
 			row.Name = entry.Name
@@ -322,11 +341,25 @@ func (s *Server) handleDesks(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
+	startup := ""
+	if owner.home != nil {
+		home, err := readDeskHome(owner.configDir)
+		if err != nil {
+			storageFailure(w, err)
+			return
+		}
+		for _, entry := range home.Registry.Desks {
+			if entry.ID == home.Registry.Startup && filepath.Join(home.Path, entry.Folder) != owner.projectDir {
+				startup = entry.ID
+			}
+		}
+	}
 	writeJSON(w, 200, struct {
 		Current  deskRecord   `json:"current"`
 		Desks    []deskRecord `json:"desks"`
 		Location string       `json:"location"`
-	}{current, rows, owner.registryPath()})
+		Startup  string       `json:"startup"`
+	}{current, rows, owner.registryPath(), startup})
 }
 
 // maxDesks bounds the registry: the desks one installation opens, with those
@@ -899,6 +932,11 @@ func (s *Server) closeDesks() {
 	}
 }
 func (s *Server) routeDesk(w http.ResponseWriter, r *http.Request) bool {
+	// Anonymous identity discovery is installation-wide. This exact read alone
+	// ignores a stale desk header; all other auth and project routes keep their guard.
+	if r.Method == http.MethodGet && r.URL.Path == "/api/auth/desks" {
+		return false
+	}
 	if s.cfg.parent != nil || strings.HasPrefix(r.URL.Path, "/api/project-location") || strings.HasPrefix(r.URL.Path, "/api/desk-home") {
 		return false
 	}

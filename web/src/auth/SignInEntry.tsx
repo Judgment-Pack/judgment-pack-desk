@@ -11,7 +11,7 @@ import { authCall, beginSignIn, signInProblem, type SignInStatus } from './flow'
 import { signInMessage } from './messages'
 import styles from './SessionPage.module.css'
 
-export function SignInEntry() {
+export function SignInEntry({ name, onBusyChange }: { name?: string; onBusyChange?: (busy: boolean) => void }) {
   useLocale()
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { heading.current?.focus() }, [])
@@ -30,7 +30,7 @@ export function SignInEntry() {
     return () => abort.abort()
   }, [])
   async function submit() {
-    setBusy(true); setError('')
+    setBusy(true); onBusyChange?.(true); setError('')
     try {
       if (status?.mode === 'password') {
         const reply = await authCall<{ id: string }>('password/login', { password })
@@ -44,12 +44,12 @@ export function SignInEntry() {
       } else {
         await beginSignIn('login', { returnPath: window.location.pathname + window.location.search + window.location.hash })
       }
-    } catch (cause) { setError(cause instanceof Error ? ('code' in cause ? String(cause.code) : 'unavailable') : 'unavailable'); setBusy(false) }
+    } catch (cause) { setError(cause instanceof Error ? ('code' in cause ? String(cause.code) : 'unavailable') : 'unavailable'); setBusy(false); onBusyChange?.(false) }
   }
   const passwordMode = status?.mode === 'password'
   const local = status?.localAccess === true && !status.enabled && !status.unavailable
   return <>
-    <h1 ref={heading} tabIndex={-1}>{local ? msg('Open your local Desk') : setup || status?.enabled === false ? msg('Set up sign-in') : msg('Sign in to Unveil')}</h1>
+    <h1 ref={heading} tabIndex={-1}>{local ? msg('Open {{desk}}', {desk: name ?? msg('Desk')}) : setup || status?.enabled === false ? msg('Set up sign-in') : msg('Sign in to {{desk}}', {desk: name ?? msg('Desk')})}</h1>
     <p className={styles.lead}>{local ? msg('Personal · This computer') : status?.enabled ? msg('Sign in to open your local workspace. Signing in does not upload your packs or chats.') : msg('The installation owner needs to configure sign-in once on this computer.')}</p>
     {error && <p role="alert" className={styles.notice}>{signInMessage(error)}</p>}
     {status?.unavailable && <p role="alert">{msg('Sign-in is locked because its configuration cannot be read. Contact the installation owner.')}</p>}

@@ -14,10 +14,12 @@ it('requires a tab-held proof, not just the callback URL',async()=>{
  expect(location.hash).toBe('')
 })
 it('finishes login once and sends no existing session to the login completion',async()=>{
+ sessionStorage.setItem('jpack.active-desk','d'.repeat(32))
  pending();const fetcher=vi.fn().mockResolvedValue(Response.json({kind:'login',id:session,returnPath:'/packs?filter=draft'}));vi.stubGlobal('fetch',fetcher)
  expect(await finishSignIn('old')).toEqual({handled:true,id:session})
  expect(fetcher).toHaveBeenCalledWith('/api/auth/complete',expect.objectContaining({body:JSON.stringify({attemptId:id,proof}),credentials:'omit',redirect:'error'}))
  expect(fetcher.mock.calls[0]![1].headers.Authorization).toBeUndefined()
+ expect(sessionStorage.getItem('jpack.active-desk')).toBe('d'.repeat(32))
  expect(location.pathname).toBe('/packs');expect(sessionStorage.getItem(key)).toBeNull()
  history.replaceState(null,'','/auth/return#attempt='+id)
  expect((await finishSignIn(null)).id).toBeNull();expect(fetcher).toHaveBeenCalledTimes(1)

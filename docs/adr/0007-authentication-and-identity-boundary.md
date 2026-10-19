@@ -24,6 +24,25 @@ reset the policy; a Desk password is not encryption of local files.
 
 ## Context
 
+The sign-in desk picker uses the same identity menu as the workspace. Its only
+anonymous directory is `GET /api/auth/desks`: startup ID and desk IDs, names and
+approved self-contained image marks. This deliberately public identity contains
+no paths, configuration, credentials or management capabilities. The read is
+loopback and same-origin, rejects cross-site requests, sends `no-store`, and
+never opens a runtime, creates a desk or updates the registry. Only that exact
+GET route bypasses desk-header routing; `/api/desks` and every protected auth
+route retain their guards. Discovery scans at most 257 registered desks, 128 KiB
+of project branding per desk and an 8 KiB image per mark; unsupported branding
+uses the shared bundled mark in both menus.
+
+The current registry supplies names and startup identity. The running owner uses
+the existing empty ID alias. A missing tab selection defaults to startup, while
+an explicit empty selection remains the owner across refresh and sign-in.
+Choosing a destination does not change startup or grant access. Missing saved
+choices require an explicit replacement. Switching clears password input and
+is disabled during sign-in. Protected providers stay unmounted until verification;
+checking remains the neutral loading view.
+
 Local Desk binds loopback. By default, initial setup requires a code printed by
 its process. `JPACK_DESK_LOCAL_ACCESS=1` opts a personal installation into
 automatic local sessions until OIDC is activated; it never overrides an existing
