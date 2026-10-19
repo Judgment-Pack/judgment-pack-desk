@@ -6790,5 +6790,6 @@
   "to the witness, an issuer and a subject; it opens the witness and nothing else": "証人に対する発行者と主体。利用できるのはその証人だけです",
   "which of the two is the trail’s; who that submitter was": "2つのうちどちらが証跡の記録か、その提出者が誰だったか",
   "why; whether the trail’s operator went on under another trail, as it does after a retirement, registered anew": "理由、運用者が廃止後と同様に新たに登録した別の証跡で続けたかどうか",
-  "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "カーソル以降の先行する{{count}}行は未送信です。先頭の声明は証跡自身のチェーンを通じてそれらを網羅します。"
+  "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "カーソル以降の先行する{{count}}行は未送信です。先頭の声明は証跡自身のチェーンを通じてそれらを網羅します。",
+  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "接続されたRuntimeを更新して、公式Policyドラフト policy-v1.0.0-draft.1（形式1.0.0）に対応させてください。選択内容と保存済みの適用ポリシーの履歴は引き続き利用できます。"
 }

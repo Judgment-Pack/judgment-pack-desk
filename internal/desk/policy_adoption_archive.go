@@ -15,7 +15,14 @@ func archivedAdoptionReport(ctx context.Context, a retainedArtifactRepository, r
 		return policyArchiveInvalid()
 	}
 	var report policyCoverageRuntimeReport
-	if coverageDecode(raw, &report) != nil || !validPolicyRuntimeReport(report, "check", adoptionRuntimeContract) || report.Status != "references-valid" || report.ValidationScope != policyAdoptionCheckScope || len(report.Diagnostics) != 0 || report.DiagnosticsTruncated || report.Kind != "governing-adoption" || report.ArtifactID != c.PortableID || report.ArtifactVersion != "1.0.0" || report.BytesDigest != "sha256:"+digestOf(doc) || report.CanonicalDigest != report.BytesDigest || report.Document != "" && report.Document != string(doc) {
+	if coverageDecode(raw, &report) != nil {
+		return policyArchiveInvalid()
+	}
+	contract := adoptionRuntimeContract
+	if report.SpecRevision == legacyAdoptionRuntimeContract.SpecRevision {
+		contract = legacyAdoptionRuntimeContract
+	}
+	if !validPolicyRuntimeReport(report, "check", contract) || report.Status != "references-valid" || report.ValidationScope != contract.CheckScope || len(report.Diagnostics) != 0 || report.DiagnosticsTruncated || report.Kind != "governing-adoption" || report.ArtifactID != c.PortableID || report.ArtifactVersion != "1.0.0" || report.BytesDigest != "sha256:"+digestOf(doc) || report.CanonicalDigest != report.BytesDigest || report.Document != "" && report.Document != string(doc) {
 		return policyArchiveInvalid()
 	}
 	return nil

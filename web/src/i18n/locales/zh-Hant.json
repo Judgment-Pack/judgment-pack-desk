@@ -6790,5 +6790,6 @@
   "to the witness, an issuer and a subject; it opens the witness and nothing else": "對見證者而言的簽發者和主體；只能存取該見證者，不能存取其他內容",
   "which of the two is the trail’s; who that submitter was": "兩者中哪一個屬於軌跡；該提交者是誰",
   "why; whether the trail’s operator went on under another trail, as it does after a retirement, registered anew": "原因；軌跡營運方是否像除役後一樣，在重新註冊的另一軌跡下繼續",
-  "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "游標之後較早的{{count}}行未傳送：鏈頭聲明透過軌跡自身的鏈涵蓋這些行。"
+  "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "游標之後較早的{{count}}行未傳送：鏈頭聲明透過軌跡自身的鏈涵蓋這些行。",
+  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "請更新已連接的 Runtime，以支援官方 Policy 草案 policy-v1.0.0-draft.1（格式 1.0.0）。您的選擇和已儲存的管轄政策歷程仍可使用。"
 }

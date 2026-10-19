@@ -201,3 +201,15 @@ claimed. The preceding native Library screenshots describe the #530 tree and do
 not certify the new signer/witness layouts. Complete-release-diff review and the
 bounded native delta remain separate gates; catalogue completeness establishes
 neither translation accuracy nor native layout acceptance.
+
+## Official Policy draft follow-up — 2026-10-19
+
+The official draft follow-up adds one actionable Runtime-support message in
+English and all 11 existing translated catalogues: German, Spanish, French,
+Italian, Japanese, Korean, Brazilian Portuguese, European Portuguese, Cantonese,
+Simplified Chinese and Traditional Chinese. Every previous key/value is retained.
+Strict source/catalogue validation passes at **6,793/6,793** in each locale with
+zero placeholder errors. The six focused adoption-client tests pass, including
+retained selection/recovery state on an outdated Runtime. The new translations
+were authored and self-reviewed by the gpt-6.1-sol/high implementation worker;
+this is not independent native-speaker review or native layout acceptance.

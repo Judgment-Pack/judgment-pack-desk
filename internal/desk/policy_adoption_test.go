@@ -47,7 +47,7 @@ func adoptionAcceptedFixture(_ context.Context, m policyAdoptionMaterial) policy
 	r.ProfileVersion = policyAdoptionFormat
 	r.SpecRevision = policyAdoptionSpecRevision
 	r.Specification = adoptionRuntimeContract.Specification
-	r.Maturity = "proposed-draft"
+	r.Maturity = adoptionRuntimeContract.Maturity
 	r.Capabilities.Maturity = r.Maturity
 	r.Capabilities.ProfileVersions = []string{policyAdoptionFormat}
 	r.Capabilities.CheckScope = policyAdoptionCheckScope
@@ -56,7 +56,7 @@ func adoptionAcceptedFixture(_ context.Context, m policyAdoptionMaterial) policy
 	r.Capabilities.MaxCoreNumberBytes = 128
 	r.Capabilities.MaxCoreExponentMagnitude = 308
 	r.Capabilities.MaxArtifactVersionBytes = 256
-	r.CandidateResult = &policyRuntimeCandidateResult{Status: "valid", FormatVersion: policyAdoptionFormat, Maturity: "proposed-draft"}
+	r.CandidateResult = &policyRuntimeCandidateResult{Status: "valid", FormatVersion: policyAdoptionFormat, Maturity: adoptionRuntimeContract.Maturity}
 	r.Status = "references-valid"
 	r.ValidationScope = policyAdoptionCheckScope
 	r.Kind = "governing-adoption"
@@ -295,7 +295,7 @@ func TestPolicyAdoptionArchiveClosedAndRestoreInactive(t *testing.T) {
 func TestPolicyAdoptionRealRuntimeRawNumbersAndMaterialCaps(t *testing.T) {
 	bin := os.Getenv("JPACK_POLICY_TEST_BIN")
 	if bin == "" {
-		t.Skip("set JPACK_POLICY_TEST_BIN to candidate-capable Runtime")
+		t.Skip("set JPACK_POLICY_TEST_BIN to a Runtime supporting official Policy draft policy-v1.0.0-draft.1")
 	}
 	s, token, p, _ := coverageFixture(t)
 	s.cfg.JpackBin = bin
@@ -608,7 +608,7 @@ func TestPolicyAdoptionOptionsUseExactSavedBytesAndClosedHTTP(t *testing.T) {
 func TestPolicyAdoptionRealRuntimeArchiveResolvesExactPolicyRole(t *testing.T) {
 	bin := os.Getenv("JPACK_POLICY_TEST_BIN")
 	if bin == "" {
-		t.Skip("set JPACK_POLICY_TEST_BIN to candidate-capable Runtime")
+		t.Skip("set JPACK_POLICY_TEST_BIN to a Runtime supporting official Policy draft policy-v1.0.0-draft.1")
 	}
 	s, token, p, pack := coverageFixture(t)
 	s.cfg.JpackBin = bin

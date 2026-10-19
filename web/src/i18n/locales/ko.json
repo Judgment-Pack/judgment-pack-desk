@@ -6790,5 +6790,6 @@
   "to the witness, an issuer and a subject; it opens the witness and nothing else": "증인에 대한 발급자와 주체이며 해당 증인만 열 수 있음",
   "which of the two is the trail’s; who that submitter was": "둘 중 어느 기록이 추적에 속하는지, 제출자가 누구였는지",
   "why; whether the trail’s operator went on under another trail, as it does after a retirement, registered anew": "그 이유, 운영자가 폐기 후처럼 새로 등록한 다른 추적에서 계속했는지 여부",
-  "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "커서 이후의 앞선 {{count}}행은 전송되지 않았습니다. 헤드 진술이 추적 자체의 체인을 통해 해당 행을 포함합니다."
+  "{{count}} earlier lines since the cursor were left unsent: the statement for the head covers them through the trail’s own chain.": "커서 이후의 앞선 {{count}}행은 전송되지 않았습니다. 헤드 진술이 추적 자체의 체인을 통해 해당 행을 포함합니다.",
+  "Update the connected Runtime to support official Policy draft policy-v1.0.0-draft.1 (format 1.0.0). Your selection and saved governing-policy history remain available.": "공식 Policy 초안 policy-v1.0.0-draft.1(형식 1.0.0)을 지원하도록 연결된 Runtime을 업데이트하세요. 선택 항목과 저장된 지배 정책 기록은 계속 사용할 수 있습니다."
 }
