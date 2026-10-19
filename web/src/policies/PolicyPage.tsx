@@ -4,7 +4,7 @@ import {useRef,useState} from 'react'
 import {useQuery,useQueryClient} from '@tanstack/react-query'
 import {useNavigate,useParams,useSearchParams} from 'react-router-dom'
 import {msg,systemMessage,useLocale} from '../i18n'
-import {Button} from '../ui/Button'
+import {Button,ButtonLink} from '../ui/Button'
 import {Field,FieldGroup} from '../ui/Field'
 import {Input} from '../ui/Input'
 import {TextArea} from '../ui/TextArea'
@@ -51,6 +51,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const [imported,setImported]=useState<PolicyImport>(),[importError,setImportError]=useState(false),[importBusy,setImportBusy]=useState(false)
  const [saved,setSaved]=useState(initial),[value,setValue]=useState<Buffer>(()=>initial?fields(initial):blank)
  const [busy,setBusy]=useState(false),[error,setError]=useState<PolicyRequestError>(),[pending,setPending]=useState<{operation:PolicyWrite;submitted:Buffer;result?:PolicyMutationReply}>()
+ const [opening,setOpening]=useState<string>()
  const [lifecycleBusy,setLifecycleBusy]=useState(false)
  const [coverageBusy,setCoverageBusy]=useState(false),[coverageEditing,setCoverageEditing]=useState(false)
  const [sourceStatusBusy,setSourceStatusBusy]=useState(false),[sourceSyncBusy,setSourceSyncBusy]=useState(false)
@@ -64,7 +65,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  const dirty=!!imported&&!saved||!equal(value,saved?fields(saved):blank)
  const observedLatest=latest??(observed&&saved&&observed.revision!==saved.revision?observed:undefined)
  const authorityBusy=lifecycleBusy||sourceStatusBusy||sourceSyncBusy||coverageBusy
- const held=!!pending,disabled=busy||held||importBusy||authorityBusy
+ const held=!!pending,disabled=busy||held||importBusy||authorityBusy||!!opening
  const discuss=async(request:PolicyComparisonRequest,append=false)=>{
   if(!saved||!chatStore||!chatsReady)return
   const preferred=params.get('chat')??undefined,existing=findPolicyChat(chatStore,saved.document.id,preferred)
@@ -82,7 +83,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
   const operation:PolicyWrite={path:saved?'/'+encodeURIComponent(saved.document.id):'',method:saved?'PUT':'POST',body:{operationId:crypto.randomUUID(),...value,...(!saved&&imported?{import:imported}:{}),workflow:saved?.document.workflow??{independentReviewRequired:false},...(saved?{baseRevision:saved.revision}:{})}}
   await execute({operation,submitted:{...value}})
  }
- const clear=useRegisteredChanges(dirty||held||!!comment,msg('Leaving will discard unsaved policy changes.'),{label:msg('Policy'),name:value.title,busy:busy||importBusy||authorityBusy,saveFailed:!!error,saveDraft:!held&&!authorityBusy&&!comment&&!observedLatest?save:undefined})
+ const clear=useRegisteredChanges(dirty||held||!!comment,msg('Leaving will discard unsaved policy changes.'),{label:msg('Policy'),name:value.title,busy:busy||importBusy||authorityBusy,saveFailed:!!error,saveDraft:!held&&!authorityBusy&&!comment&&!observedLatest&&!opening?save:undefined})
  const updateCache=(reply:PolicyReply)=>{cache.setQueryData([...POLICIES_KEY,reply.document.id],reply);void cache.invalidateQueries({queryKey:POLICIES_KEY,exact:true})}
  async function refreshAfterSourceDecision(outcome:SourceAuthorityOutcome,action:string){
   if(action!=='set-ownership'&&action!=='import-draft')return true
@@ -101,7 +102,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
  async function execute(work:{operation:PolicyWrite;submitted:Buffer;result?:PolicyMutationReply},recover=false){
   if(active.current)return
   active.current=true;setBusy(true);setError(undefined);setNotice('')
-  let result=work.result
+  let result=work.result,handingOff=false
   try{
    if(!result)result=recover?await recoverPolicyOperation(String(work.operation.body.operationId)):await writePolicy(work.operation)
    // Keep the exact response available if its follow-up read fails. Recovery
@@ -114,16 +115,20 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
    if(work.operation.path.endsWith('/review'))setComment(heldComment=>heldComment===work.operation.body.comment?'':heldComment)
    if(!changedSinceResult){setValue(fields(current));setNotice(result.delivery==='recovered'?msg('Operation recovered; current policy loaded.'):work.operation.path.endsWith('/publish')?msg('Published'):work.operation.path.endsWith('/review')?reviewStateLabel(current.document.reviewState):msg('Draft saved'))}
    else {setValue(work.submitted);setNotice(msg('The operation completed, then the saved policy changed. Your local text is preserved. Review it before saving again.'))}
-   if(!initial&&!changedSinceResult){clear();navigate(policyHref(current.document.id),{replace:true})}
+   // A descendant-route navigation may retain this editor during a transition.
+   // Retire its write controls until unmount: a new review must belong to the
+   // saved page. The completed creation no longer needs an unsaved-work guard.
+   if(!initial&&!changedSinceResult){setOpening(current.document.id);clear();navigate(policyHref(current.document.id),{replace:true});handingOff=true}
   }catch(cause){
    const failure=cause instanceof PolicyRequestError?cause:new PolicyRequestError('unavailable')
+   setOpening(undefined)
    setError(recover&&!result&&failure.code==='not-found'?new PolicyRequestError('operation-unresolved'):failure)
    if(result||failure.uncertain||recover)setPending({...work,result})
    else if(failure.code==='revision-conflict'&&saved){
     try{const current=await readPolicy(saved.document.id);updateCache(current);setLatest(current)}catch{/* Preserve the buffer and its original revision. */}
    }
    throw failure
-  }finally{active.current=false;setBusy(false)}
+  }finally{active.current=handingOff;setBusy(false)}
  }
  async function importFile(file?:File){
   if(!file||disabled||active.current)return
@@ -191,7 +196,7 @@ export function PolicyEditor({initial,observed}:{initial?:PolicyReply;observed?:
    {value:'coverage',label:msg('Coverage'),panel:<div className={styles.panel}><PageBody width="wide">{saved?<PolicyCoverage policy={saved} active={tab==='coverage'} editing={dirty||!!observedLatest||!!comment} disabled={disabled} onPendingChange={setCoverageBusy} onEditingChange={setCoverageEditing}/>:<p>{msg('Publish a Policy version to review coverage.')}</p>}</PageBody></div>},
    {value:'history',label:msg('History'),panel:<div className={styles.panel}><PageBody width="wide">{document?<PolicyHistory newerPolicyState={!!observedLatest} onDiscuss={chatsReady?request=>void discuss(request):undefined} document={document} designBlocked={disabled||dirty||coverageEditing||!!observedLatest||!!comment} designAction={selection=><><PolicyInterpretationAction recovery={(observed??saved)?.recovery} selection={selection} disabled={disabled||dirty||coverageEditing||!!observedLatest||!!comment}/><PolicyInterpretationAction recovery={(observed??saved)?.recovery} artifactKind="graph" selection={selection} disabled={disabled||dirty||coverageEditing||!!observedLatest||!!comment}/></>}/>:<p>{msg('Save a draft to start its history.')}</p>}</PageBody></div>}
   ]}/>
-  <footer className={styles.footer}><span role="status">{busy?<LoadingState inline>{msg('Working…')}</LoadingState>:held?msg('Operation recovery required'):dirty?msg('Unsaved changes'):saved?msg('Draft saved'):msg('New policy')}</span><div className={styles.feedback}>{error&&<p role="alert">{systemMessage(error.message)}</p>}{notice&&<p role="status">{notice}</p>}{held?<Button size="small" disabled={busy} onClick={()=>void execute(pending!,true).catch(()=>{})}>{pending?.result?msg('Reload current policy'):msg('Check operation result')}</Button>:error?.code==='revision-conflict'&&!observedLatest?<Button size="small" disabled={busy} onClick={()=>void loadLatest()}>{msg('Compare latest saved draft')}</Button>:null}</div></footer>
+  <footer className={styles.footer}><span role="status">{busy?<LoadingState inline>{msg('Working…')}</LoadingState>:held?msg('Operation recovery required'):dirty?msg('Unsaved changes'):saved?msg('Draft saved'):msg('New policy')}</span><div className={styles.feedback}>{error&&<p role="alert">{systemMessage(error.message)}</p>}{notice&&<p role="status">{notice}</p>}{opening&&<ButtonLink size="small" to={policyHref(opening)} replace>{msg('Open policy')}</ButtonLink>}{held?<Button size="small" disabled={busy} onClick={()=>void execute(pending!,true).catch(()=>{})}>{pending?.result?msg('Reload current policy'):msg('Check operation result')}</Button>:error?.code==='revision-conflict'&&!observedLatest?<Button size="small" disabled={busy} onClick={()=>void loadLatest()}>{msg('Compare latest saved draft')}</Button>:null}</div></footer>
   {comparisonError&&<p role="alert">{msg('The comparison request could not be saved to chat. Review the existing composer before continuing.')}</p>}
   <Dialog open={!!appendComparison} onOpenChange={open=>{if(!open)setAppendComparison(undefined)}} title={msg('Append comparison request?')} description={msg('Your Assistant composer already contains text. Append an unsent request with these exact comparison references to your existing message.')} footer={<DialogActions><Button onClick={()=>setAppendComparison(undefined)}>{msg('Cancel')}</Button><Button onClick={()=>{if(appendComparison)void discuss(appendComparison,true)}}>{msg('Append request')}</Button></DialogActions>}><pre className={styles.snapshot}>{appendComparison?JSON.stringify(appendComparison,null,2):''}</pre></Dialog>
   <Dialog open={publishOpen} onOpenChange={setPublishOpen} title={msg('Publish policy version?')} description={msg('Confirm publication of this exact saved and approved candidate.')} footer={<DialogActions><Button onClick={()=>setPublishOpen(false)}>{msg('Cancel')}</Button><Button variant="primary" disabled={approveDisabled||document?.reviewState!=='approved'||sourceBlocked} onClick={()=>void action('publish').catch(()=>{})}>{msg('Publish version')}</Button></DialogActions>}>
