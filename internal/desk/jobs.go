@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -84,21 +85,68 @@ type jobsCompanion struct {
 	// Runner waits for it, so that its key's decision does not hold the lock
 	// that sweep would otherwise find held, and skip.
 	started chan struct{}
+	// Immutable enrollment demand. Any failed owned startup stays held for this
+	// Desk lifetime; endpoint polling cannot retry an uncertain launch.
+	ownership      *runnerExecutorOwnership
+	ownershipCheck func() error
+	held           error
+	runnerSource   *runnerExecutableSource
+	admission      *policyExecutionService
+	authority      *jobsAuthorityChannel
+	// Isolated fixtures proxy this inherited socket to delay/drop a reply after
+	// its durable transaction; the actual Runner and Runtime remain unchanged.
+	authoritySocketForTest func() (net.Conn, *os.File, error)
 }
 
 func (s *Server) initJobs() {
 	if s.cfg.RunnerBin == "" || !s.assistant.usable() {
 		return
 	}
-	connections, err := runnerConnectionsForDesk(s.cfg.RunnerConnections, s.cfg.deskID, s.cfg.parent == nil)
+	id, startup := s.cfg.deskID, s.cfg.parent == nil
+	if entry := s.homeEntry(); entry != nil {
+		id, startup = entry.ID, entry.Kind == "project"
+		if startup {
+			id = ""
+		}
+	}
+	connections, err := runnerConnectionsForDesk(s.cfg.RunnerConnections, id, startup)
 	if err != nil {
 		s.log.Printf("desk: Jobs background connections are invalid: %v", err)
 		return
 	}
-	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
-	if s.cfg.deskID != "" {
-		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
-		s.jobs.workspace = s.cfg.deskID
+	profiles, err := s.reviewedInputProfiles()
+	if err != nil {
+		s.log.Printf("desk: Jobs input profiles are invalid: %v", err)
+		return
+	}
+	location, err := resolveJobsLocation(s.configDir, s.projectDir, s.cfg.deskID, s.home)
+	if err != nil {
+		s.log.Printf("desk: Jobs retained namespace is unavailable")
+		return
+	}
+	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: profiles, bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: location.Dir, workspace: location.Workspace, owner: location.Owner, stop: make(chan struct{})}
+	if s.policyAuthorityMachine != nil {
+		ownership, e := s.policyAuthorityMachine.executorForProject(s.project, s.jobs.workspace)
+		s.jobs.ownership, s.jobs.held = ownership, e
+		if ownership != nil {
+			s.jobs.ownershipCheck = func() error {
+				current, err := s.policyAuthorityMachine.executorForProject(s.project, s.jobs.workspace)
+				if err != nil || current == nil || *current != *ownership {
+					return policyMachineRefusal()
+				}
+				return nil
+			}
+			s.jobs.runnerSource, e = pinRunnerExecutable(s.jobs.bin)
+			if e != nil {
+				s.jobs.held = e
+			}
+		}
+	}
+	core, enabled, e := s.executionCore()
+	if e != nil {
+		s.jobs.held = e
+	} else if enabled {
+		s.jobs.admission = &core
 	}
 	// Runner's own key is kept under the name of its workspace: the desk's
 	// id, or the startup desk's state directory's name (ADR-0010, section 5).
@@ -129,6 +177,13 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	if j.closed {
 		return "", "", errors.New("runner closed")
 	}
+	if j.held != nil {
+		j.key.notRunning(j.held)
+		return "", "", j.held
+	}
+	if j.authority != nil && j.authority.failure() != nil {
+		return "", "", j.holdOwned(j.authority.failure())
+	}
 	if j.done != nil {
 		select {
 		case <-j.done:
@@ -136,14 +191,23 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 			j.input.Close()
 			j.input = nil
 			j.done = nil
+			if j.ownership != nil {
+				return "", "", j.holdOwned(errors.New("executor-owned Runner stopped; Jobs is held"))
+			}
 		default:
 			return j.url, j.token, nil
 		}
 	}
 	if !filepath.IsAbs(j.bin) || !filepath.IsAbs(j.runtime) {
-		return "", "", errors.New("absolute runner and Runtime paths required")
+		return "", "", j.holdOwned(errors.New("absolute runner and Runtime paths required"))
 	}
-	if err := os.MkdirAll(j.dir, 0700); err != nil {
+	if j.ownership != nil {
+		root, err := openPrivateDataRoot(j.dir, true)
+		if err != nil {
+			return "", "", j.holdOwned(runnerOwnershipUnavailable())
+		}
+		root.Close()
+	} else if err := os.MkdirAll(j.dir, 0700); err != nil {
 		return "", "", err
 	}
 	// **Runner's own key, or none** (ADR-0010, section 5). Where Runner
@@ -157,17 +221,33 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	// start with a seed that is another key, a refusal answered as any other.
 	signingKey, decided := j.key.prepare()
 	keyBetween("runner: decided")
-	refusal, err := j.start(signingKey, decided.PublicKey)
-	if err != nil && signingKey != "" && refusal != nil {
-		decided = j.key.refused(*refusal)
-		_, err = j.start("", "")
-	}
+	decided, err := j.startWithSigningFallback(signingKey, decided)
 	if err != nil {
+		if j.ownership != nil {
+			j.held = err
+		}
 		j.key.notRunning(err)
 		return "", "", err
 	}
 	j.key.started(decided)
 	return j.url, j.token, nil
+}
+
+func (j *jobsCompanion) startWithSigningFallback(signingKey string, decided RunnerKeyStatus) (RunnerKeyStatus, error) {
+	refusal, err := j.start(signingKey, decided.PublicKey)
+	if err != nil && signingKey != "" && refusal != nil {
+		decided = j.key.refused(*refusal)
+		_, err = j.start("", "")
+	}
+	return decided, err
+}
+
+func (j *jobsCompanion) holdOwned(err error) error {
+	if j.ownership != nil {
+		j.held = err
+		j.key.notRunning(err)
+	}
+	return err
 }
 
 // start starts Runner and reads its handshake, naming signingKey on the boot
@@ -176,14 +256,68 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 // did not start, and what it wrote to its standard error says it refused a
 // signing key, refusal is its reason.
 func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *string, err error) {
+	bin := j.bin
+	cleanup := func() {}
+	if j.ownership != nil {
+		if j.ownershipCheck == nil || j.ownershipCheck() != nil || j.runnerSource == nil {
+			return nil, errors.New("executor ownership is unavailable; Jobs is held")
+		}
+		bin, cleanup, err = j.runnerSource.snapshot()
+		if err != nil {
+			return nil, err
+		}
+		if j.admission != nil {
+			err = probeRunnerAdmission(bin)
+		} else {
+			err = probeRunnerOwnership(bin)
+		}
+		if err != nil {
+			cleanup()
+			return nil, err
+		}
+		if j.runnerSource.check() != nil {
+			cleanup()
+			return nil, runnerOwnershipUnavailable()
+		}
+		if j.ownershipCheck() != nil {
+			cleanup()
+			return nil, errors.New("executor ownership changed; Jobs is held")
+		}
+	}
+	started := false
+	defer func() {
+		if !started {
+			cleanup()
+		}
+	}()
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return nil, err
 	}
 	j.token = hex.EncodeToString(secret[:])
-	cmd := exec.Command(j.bin)
+	cmd := exec.Command(bin)
 	cmd.Env = []string{"LANG=C", "LC_ALL=C"}
 	cmd.Dir = j.dir
+	var authority *jobsAuthorityChannel
+	var admissionBoot runnerExecutorAdmission
+	var authorityChild *os.File
+	if j.admission != nil {
+		socket := jobsAuthoritySocket
+		if j.authoritySocketForTest != nil {
+			socket = j.authoritySocketForTest
+		}
+		authority, authorityChild, admissionBoot, err = newJobsAuthorityChannelWithSocket(*j.admission, func() error { return verifyRunnerLeaseHeld(j.ownership) }, socket)
+		if err != nil {
+			return nil, err
+		}
+		defer authorityChild.Close()
+		defer func() {
+			if !started {
+				authority.close()
+			}
+		}()
+		cmd.ExtraFiles = []*os.File{authorityChild}
+	}
 	// Kept, to a bound, only to read a refusal of the key from it.
 	said := &cappedBuffer{limit: runnerSaidLimit}
 	cmd.Stderr = said
@@ -200,20 +334,42 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 		input.Close()
 		return nil, err
 	}
+	if authorityChild != nil {
+		authorityChild.Close()
+	}
+	started = true
 	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(done) }()
+	go func() {
+		_ = cmd.Wait()
+		if authority != nil {
+			authority.fault(errors.New("manual authority Runner exited; Jobs is held"))
+		}
+		cleanup()
+		close(done)
+	}()
 	// failed stops this Runner and answers err, with Runner's refusal of the
 	// key where it wrote one: once it has exited, all it wrote has been read.
 	failed := func(err error) (*string, error) {
 		input.Close()
 		cmd.Process.Kill()
 		<-done
+		if authority != nil {
+			authority.close()
+		}
 		if reason, refused := runnerKeyRefusal(said.Bytes()); refused {
 			return &reason, err
 		}
 		return nil, err
 	}
 	boot := map[string]any{"dir": j.dir, "runtime": j.runtime, "workspace": j.workspace, "owner": j.owner, "token": j.token, "inputRoot": j.inputRoot}
+	if j.ownership != nil {
+		boot["executorOwnership"] = j.ownership
+		boot["requiredCapabilities"] = runnerRequiredOwnershipCapabilities()
+	}
+	if j.admission != nil {
+		boot["executorAdmission"] = admissionBoot
+		boot["requiredCapabilities"] = runnerRequiredAdmissionCapabilities()
+	}
 	if len(j.connections) > 0 {
 		var connections struct {
 			Cloud   json.RawMessage `json:"cloud"`
@@ -237,12 +393,7 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 	boot["requireTestedReleases"] = j.requireTested
 	if signingKey != "" {
 		boot["signingKey"] = signingKey
-		// Runner v0.8.0 and later hold the seed to it at start, and pass it
-		// to each operational evaluation as JPACK_SIGNING_PUBLIC_KEY; an
-		// earlier Runner decodes the boot line leniently and ignores it.
-		if signingPublicKey != "" {
-			boot["signingPublicKey"] = signingPublicKey
-		}
+		boot["signingPublicKey"] = signingPublicKey
 	}
 	if err = json.NewEncoder(input).Encode(boot); err != nil {
 		return failed(err)
@@ -267,7 +418,10 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 	if err != nil || parseErr != nil || hello.Protocol != "jobs/1" || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		return failed(errors.New("runner unavailable"))
 	}
-	j.cmd, j.input, j.done, j.url = cmd, input, done, hello.URL
+	if authority != nil && authority.failure() != nil {
+		return failed(authority.failure())
+	}
+	j.cmd, j.input, j.done, j.url, j.authority = cmd, input, done, hello.URL, authority
 	return nil, nil
 }
 func (j *jobsCompanion) close() {
@@ -278,6 +432,12 @@ func (j *jobsCompanion) close() {
 	}
 	j.closed = true
 	close(j.stop)
+	if j.runnerSource != nil {
+		defer j.runnerSource.close()
+	}
+	if j.authority != nil {
+		j.authority.close()
+	}
 	if j.input != nil {
 		j.input.Close()
 	}
@@ -295,7 +455,7 @@ func (j *jobsCompanion) close() {
 // job's journal of job activity (Runner v0.6.0, `GET /v1/jobs/{job}/events`),
 // which the Activity tab reads; see journalPath. Runner's store-wide `events`
 // route is not forwarded.
-var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|run-chain|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
+var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|run-chain|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
@@ -310,8 +470,20 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
 		return
 	}
+	// Installation configuration is read-only at the browser proxy. Runner may
+	// expose trusted-host writes (such as immutable profile registration); a new
+	// companion capability must never implicitly grant that authority here.
+	installationRead := tail == "status" || tail == "background-connections" || tail == "input-profiles"
+	if installationRead && r.Method != http.MethodGet {
+		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
+		return
+	}
 	// The chain of runs and a job's journal are read, never written: Runner
 	// serves each on GET alone.
+	if strings.HasSuffix(tail, "/upgrade") && r.Method != http.MethodPost || strings.HasSuffix(tail, "/upgrade-receipt") && r.Method != http.MethodGet {
+		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
+		return
+	}
 	if !jobsPath.MatchString(tail) || (r.Method != http.MethodGet && r.Method != http.MethodPost) || (tail == runChainRoute || journalPath.MatchString(tail)) && r.Method != http.MethodGet {
 		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
 		return
@@ -377,30 +549,38 @@ var (
 	verificationPath = regexp.MustCompile(`^runs/run_[a-f0-9]{32}/verification$`)
 )
 
-// journalPath is a job's journal of job activity (Runner v0.6.0,
-// `GET /v1/jobs/{job}/events?after=`), read with GET alone and with its cursor
-// alone: journalCursor. A page holds at most 50 entries, each reason cut at
-// 1,024 bytes, well within runnerAnswerLimit.
+// journalPath is a job activity journal, read with GET alone. journalQuery
+// validates forward paging and Runner v0.8 backward paging. A page holds at
+// most 50 entries, each reason cut at 1,024 bytes, within runnerAnswerLimit.
 var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/events$`)
 
-// journalCursor is the cursor a journal request asks Runner for: "" when the
-// query names none, which Runner reads as 0, the start; or exactly one
-// `after` of 1 to 18 decimal digits, as Runner reads a cursor. A repeated,
-// empty or non-decimal cursor, or a query that does not parse, is refused
-// rather than forwarded: a lenient reader would keep one of repeated values,
-// or drop a malformed one and read from the start, where Runner refuses both.
-// Every other key is left out.
-func journalCursor(rawQuery string) (string, error) {
-	values, malformed := url.ParseQuery(rawQuery)
-	switch cursor, given := values["after"]; {
-	case malformed != nil:
-		// Refused below, as Runner refuses it.
-	case !given:
-		return "", nil
-	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):
-		return cursor[0], nil
+// journalQuery forwards only the released paging modes. Unknown list filters
+// stay stripped. Repeated, malformed or conflicting cursors never become a
+// different page. tail=false retains the existing forward semantics.
+func journalQuery(raw string) (url.Values, error) {
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return nil, errors.New("invalid journal query")
 	}
-	return "", errors.New("invalid journal cursor")
+	result := url.Values{}
+	for _, name := range []string{"after", "before"} {
+		if cursor, given := values[name]; given {
+			if len(cursor) != 1 || !journalSequence.MatchString(cursor[0]) {
+				return nil, errors.New("invalid journal cursor")
+			}
+			result.Set(name, cursor[0])
+		}
+	}
+	if tail, given := values["tail"]; given {
+		if len(tail) != 1 || tail[0] != "true" && tail[0] != "false" {
+			return nil, errors.New("invalid journal tail")
+		}
+		result.Set("tail", tail[0])
+	}
+	if result.Has("before") && result.Has("after") || result.Get("tail") == "true" && (result.Has("after") || result.Has("before")) {
+		return nil, errors.New("conflicting journal cursors")
+	}
+	return result, nil
 }
 
 var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)
@@ -477,6 +657,13 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	}
 	limit := runnerAnswerLimit
 	switch {
+	case strings.HasSuffix(tail, "/upgrade-receipt"):
+		parsed, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(parsed) != 3 || len(parsed["baseRevision"]) != 1 || len(parsed["baseReleaseId"]) != 1 || len(parsed["releaseId"]) != 1 || !referenceReleaseID.MatchString(parsed.Get("baseReleaseId")) || !referenceReleaseID.MatchString(parsed.Get("releaseId")) || !regexp.MustCompile(`^[1-9][0-9]{0,18}$`).MatchString(parsed.Get("baseRevision")) {
+			writeJSONCoded(w, 400, CodeBadRequest, "Choose the exact job upgrade to reconcile.")
+			return
+		}
+		query = parsed
 	case tail == runChainRoute:
 		query = url.Values{}
 		limit = runChainLimit
@@ -493,19 +680,31 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	case runPath.MatchString(tail):
 		limit = runnerExportLimit
 	case journalPath.MatchString(tail):
-		after, err := journalCursor(r.URL.RawQuery)
+		paging, err := journalQuery(r.URL.RawQuery)
 		if err != nil {
-			writeJSONCoded(w, 400, CodeBadRequest, "Ask for a journal page with at most one after, a sequence in decimal digits, in a well-formed query.")
+			writeJSONCoded(w, 400, CodeBadRequest, "Ask for one journal paging mode: after, before or tail=true, with a valid decimal cursor.")
 			return
 		}
-		query = url.Values{}
-		if after != "" {
-			query.Set("after", after)
-		}
+		query = paging
 	}
 	if s.jobs == nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "Jobs requires the local runner companion. Install jpack-runner beside Desk or start Desk with --runner.")
 		return
+	}
+	manual := s.jobs.admission != nil
+	if manual && !manualJobsRouteAllowed(r.Method, tail) {
+		policyHTTPFailure(w, executionFailure("unsupported-profile"))
+		return
+	}
+	if manual && manualJobsRunPath.MatchString(tail) && r.Method == http.MethodPost {
+		if _, err := s.localExecutionCore(r); err != nil {
+			policyHTTPFailure(w, err)
+			return
+		}
+		if len(authorityHeaderValues(r, manualIntentHeader)) != 0 {
+			policyHTTPFailure(w, executionFailure("invalid-request"))
+			return
+		}
 	}
 	endpoint, token, err := s.jobs.endpoint()
 	if err != nil {
@@ -516,6 +715,21 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	if err != nil {
 		writeJSONCoded(w, 413, CodeTooLarge, "Jobs requests are limited to 2 MiB.")
 		return
+	}
+	intentID := ""
+	if manual && r.Method == http.MethodPost && manualJobsRunPath.MatchString(tail) {
+		intentID, err = s.prepareManualJobsRequest(r, tail, data)
+		if err != nil {
+			policyHTTPFailure(w, err)
+			return
+		}
+	}
+	if tail == "previews" && r.Method == http.MethodPost {
+		data, err = s.checkExchangePreview(r.Context(), data)
+		if err != nil {
+			writeJSONCoded(w, 422, CodeBadRequest, err.Error())
+			return
+		}
 	}
 	request, err := http.NewRequestWithContext(r.Context(), r.Method, endpoint+"/v1/"+tail, bytes.NewReader(data))
 	if err != nil {
@@ -528,7 +742,16 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	if eventToken != "" {
 		request.Header.Set("X-Trigger-Token", eventToken)
 	}
-	request.Header.Set("Idempotency-Key", r.Header.Get("Idempotency-Key"))
+	key := r.Header.Get("Idempotency-Key")
+	if intentID != "" {
+		// prepareManualJobsRequest accepted exactly one original value, including
+		// requests constructed by a trusted Go caller with noncanonical key case.
+		key = authorityHeaderValues(r, "Idempotency-Key")[0]
+	}
+	request.Header.Set("Idempotency-Key", key)
+	if intentID != "" {
+		request.Header.Set(manualIntentHeader, intentID)
+	}
 	// Release checks perform four bounded Runtime invocations in sequence.
 	timeout := 40 * time.Second
 	if tail == "previews" {
@@ -538,7 +761,11 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	defer client.CloseIdleConnections()
 	response, err := client.Do(request)
 	if err != nil {
-		writeJSONCoded(w, 503, CodeBadRequest, "The runner did not respond. Retry a run submission with the same idempotency key.")
+		if manual {
+			writeJSONCoded(w, 503, "operation-held", "The Runner response is unresolved. Preserve the original operation key and inspect Jobs history before another submission.")
+		} else {
+			writeJSONCoded(w, 503, CodeBadRequest, "The runner did not respond. Retry a run submission with the same idempotency key.")
+		}
 		return
 	}
 	defer response.Body.Close()
@@ -555,6 +782,21 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	if len(body) > limit {
 		writeJSONCoded(w, 502, CodeBadRequest, "The runner response exceeded its limit.")
 		return
+	}
+	if r.Method == http.MethodPost && tail == "previews" && response.StatusCode == http.StatusCreated {
+		// Capture independent references before a reviewed release can be used
+		// to create a job. Storage failure does not discard Runner's release;
+		// future checks report references unavailable, never self-trust an export.
+		if err := s.retainRunReferences(body, data); err != nil {
+			s.log.Printf("desk: release verification references could not be retained")
+		}
+	}
+	// The page's refusal of a binding to a set-aside profile is Desk's, never
+	// Runner's text. A trigger's caller gets Runner's answer unchanged.
+	if eventToken == "" {
+		if mapped, ok := s.setAsideAnswer(r.Context(), response.StatusCode, body); ok {
+			body = mapped
+		}
 	}
 	if tail == runChainRoute {
 		// Runner's own type, application/jsonl for the chain and JSON for a

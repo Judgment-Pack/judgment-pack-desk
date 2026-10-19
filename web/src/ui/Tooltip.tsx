@@ -85,19 +85,38 @@ function TooltipContent({ children, content, shortcut, disabled, openOnFocus = t
   const enabled = !disabled && text.trim() !== ''
   useEffect(() => { setOpen(false) }, [enabled, text])
   useEffect(() => {
-    const dismiss = () => setOpen(false)
+    const dismiss = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== id) setOpen(false)
+    }
     document.addEventListener(DISMISS, dismiss)
     window.addEventListener('resize', dismiss)
     return () => { document.removeEventListener(DISMISS, dismiss); window.removeEventListener('resize', dismiss) }
-  }, [])
+  }, [id])
+  const changeOpen = (next: boolean) => {
+    if (next && enabled) {
+      // Direct controlled opens bypass Radix's internal "tooltip.open" event.
+      // Claim ownership first so dense-trigger handoffs cannot leave two hints.
+      document.dispatchEvent(new CustomEvent(DISMISS, {detail: id}))
+      setOpen(true)
+    } else setOpen(false)
+  }
   const childDescription = (children.props as { 'aria-describedby'?: string })['aria-describedby']
   const description = [childDescription, open && enabled ? id : undefined].filter(Boolean).join(' ') || undefined
-  return <Primitive.Root open={open && enabled} onOpenChange={next => setOpen(next && enabled)}>
-    <Primitive.Trigger asChild ref={setTrigger} aria-describedby={description} onFocus={event => { if (!openOnFocus) event.preventDefault() }}>
+  return <Primitive.Root open={open && enabled} onOpenChange={changeOpen}>
+    <Primitive.Trigger asChild ref={setTrigger} aria-describedby={description} onPointerDownCapture={() => setOpen(false)} onFocus={event => { if (!openOnFocus) event.preventDefault() }}
+      onPointerEnter={event => {
+        // Radix's hover corridor can cover an adjacent trigger in a dense row.
+        // Entering another control is an explicit handoff, not travel to the old
+        // tooltip. Keep first-hover delay and hoverable content; only skip the
+        // delay when another shared hint is already visible.
+        if (event.defaultPrevented || event.pointerType === 'touch' || !enabled) return
+        const previous = document.querySelector('[data-desk-tooltip]')
+        if (previous && previous.getAttribute('data-desk-tooltip') !== id) changeOpen(true)
+      }}>
       {cloneElement(children as ReactElement<{ 'aria-describedby'?: string }>, { 'aria-describedby': description })}
     </Primitive.Trigger>
     <Primitive.Portal>
-      <Primitive.Content id={id} className={styles.content} side={side} sideOffset={8}
+      <Primitive.Content id={id} data-desk-tooltip={id} className={styles.content} side={side} sideOffset={8}
         collisionPadding={12} hideWhenDetached>
         <span>{text}</span>{shortcut && <kbd className={styles.shortcut}>{shortcut}</kbd>}
       </Primitive.Content>

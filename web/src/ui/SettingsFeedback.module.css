@@ -1,0 +1,13 @@
+.feedback { min-width: 0; display: grid; gap: var(--space-1); color: var(--ink-soft); font-size: var(--text-sm); line-height: 1.5; }
+.message { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; overflow-wrap: anywhere; }
+.message > span:last-child { min-width: 0; }
+.icon { display: inline-flex; flex: 0 0 16px; height: 1.5em; align-items: center; }
+.icon svg { width: 16px; height: 16px; }
+.feedback[data-tone='success'] .icon { color: var(--true); }
+.feedback[data-tone='error'], .feedback[data-tone='warning'] { color: var(--unknown); }
+.recovery { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.footer { min-width: 0; display: grid; gap: var(--space-2); }
+.hint { color: var(--ink-soft); font-size: var(--text-sm); line-height: 1.5; overflow-wrap: anywhere; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); min-width: 0; }
+.result { flex: 1 1 12rem; min-width: 0; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-inline-start: auto; max-width: 100%; }

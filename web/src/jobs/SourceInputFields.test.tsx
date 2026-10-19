@@ -25,7 +25,7 @@ function view(onChange = vi.fn(), fixed = false) { return { onChange, ...render(
 async function choose() { fireEvent.change(screen.getByLabelText('Choose JSON file'), { target: { files: [new File(['{}'], 'input.json')] } }); await screen.findByText('input.json') }
 it('requires an explicit mapping preview and clears approval on mapping or file changes', async () => {
  const { onChange } = view(); await choose(); expect(jobsAPI).not.toHaveBeenCalled()
- fireEvent.click(screen.getByRole('button', { name: 'Preview mapping' })); await screen.findByText('Mapped inputs')
+ fireEvent.click(screen.getByRole('button', { name: 'Preview dialect' })); await screen.findByText('Mapped inputs')
  expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ snapshot, mapping }))
  expect(jobsAPI).toHaveBeenCalledWith('inputs/preview', { source: { snapshot, mapping } }, undefined, expect.any(AbortSignal))
  fireEvent.change(screen.getByLabelText('request · type'), { target: { value: '/different' } })
@@ -33,21 +33,21 @@ it('requires an explicit mapping preview and clears approval on mapping or file 
  await choose(); expect(onChange).toHaveBeenLastCalledWith(undefined)
 })
 it('a frozen mapping cannot be changed and starts without a sample file', async () => {
- view(vi.fn(), true); expect(screen.queryByRole('button', { name: 'Preview mapping' })).toBeNull(); await choose()
+ view(vi.fn(), true); expect(screen.queryByRole('button', { name: 'Preview dialect' })).toBeNull(); await choose()
  expect((screen.getByLabelText('request · type') as HTMLInputElement).closest('fieldset')?.disabled).toBe(true)
  expect(screen.getByText(/Select a new file for every run/)).toBeTruthy()
 })
 it('ignores a late preview after unmount', async () => {
  let resolve!: (value: unknown) => void
  vi.mocked(jobsAPI).mockReturnValue(new Promise(r => { resolve = r }))
- const { onChange, unmount } = view(); await choose(); fireEvent.click(screen.getByRole('button', { name: 'Preview mapping' }))
+ const { onChange, unmount } = view(); await choose(); fireEvent.click(screen.getByRole('button', { name: 'Preview dialect' }))
  await waitFor(() => expect(jobsAPI).toHaveBeenCalled()); unmount()
  await act(async () => resolve({ input: { source: { snapshot, mapping } }, factsText: '{}' }))
  expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ snapshot }))
 })
 it('reports a refused mapping and never enables dependent submission', async () => {
  vi.mocked(jobsAPI).mockRejectedValue(Error('Mapped evidence must use availability words'))
- const { onChange } = view(); await choose(); fireEvent.click(screen.getByRole('button', { name: 'Preview mapping' }))
+ const { onChange } = view(); await choose(); fireEvent.click(screen.getByRole('button', { name: 'Preview dialect' }))
  expect((await screen.findByRole('alert')).textContent).toContain('Mapped evidence')
  expect(onChange).toHaveBeenLastCalledWith(undefined)
 })
@@ -60,6 +60,6 @@ it('opens the explicit Drive picker, verifies the receipt and submits only retai
  await act(()=>picker.props!.onSelect([{resourceId:object.proof!.drive!.fileId,grant:object.proof!.drive!.grant}],new AbortController().signal))
  await screen.findByText('input.json')
  expect(ingestDrive).toHaveBeenCalledWith(object.proof!.drive,config.config.research,expect.any(AbortSignal),expect.any(Function))
- fireEvent.click(screen.getByRole('button', { name: 'Preview mapping' })); await screen.findByText('Mapped inputs')
+ fireEvent.click(screen.getByRole('button', { name: 'Preview dialect' })); await screen.findByText('Mapped inputs')
  expect(jobsAPI).toHaveBeenLastCalledWith('inputs/preview', { source: { snapshot: object, mapping: { ...mapping, provider: 'google-drive' } } }, undefined, expect.any(AbortSignal))
 })

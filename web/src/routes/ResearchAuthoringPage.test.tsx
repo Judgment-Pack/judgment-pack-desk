@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AssistantEvent } from '../assistant/engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 import { Ledger, type SourceRecord } from '../research/ledger'
 import { INITIAL_STATE, readinessKey, type RunState } from '../research/run'
 import type { ResearchRunBinding } from '../research/useResearchRun'

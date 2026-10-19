@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { UNSAFE_DataRouterContext, useBlocker, type BlockerFunction } from 'react-router-dom'
 import { msg } from '../i18n'
 import { Dialog, DialogActions } from '../ui/Dialog'
@@ -7,18 +7,37 @@ import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 
 export interface UnsavedOptions {
+  /** Edits need an explicit save; autosaves stay quiet until saving fails.
+   * Activity can protect a running operation without claiming unsaved edits. */
+  kind?: 'edit' | 'autosave' | 'activity'
+  label?: string
+  saveFailed?: boolean
   name?: string
   busy?: boolean
   saveDraft?: () => Promise<void>
   /** Query-only navigation usually retains editors. Override only when it destroys work. */
   shouldBlock?: BlockerFunction
 }
-interface Entry extends UnsavedOptions { question: string }
+interface Entry extends UnsavedOptions { question: string; changed?: boolean }
+export interface DeskChangeState {
+  /** Attention indicator: manual edits or a failed automatic save. */
+  dirty: boolean
+  /** Any unpersisted work or active write still protects document exit. */
+  pending: boolean
+  labels: string[]
+}
+const CLEAN: DeskChangeState = {dirty:false,pending:false,labels:[]}
+function changeState(entries: Iterable<Entry>): DeskChangeState {
+  const held=[...entries]
+  const unsaved=held.filter(entry=>entry.changed && entry.kind!=='activity' && (entry.kind!=='autosave' || entry.saveFailed))
+  return {dirty:unsaved.length>0,pending:held.length>0,labels:[...new Set(unsaved.map(entry=>entry.label||entry.name).filter((label):label is string=>!!label))]}
+}
 interface Request extends Entry { resolve: (leave: boolean) => void; opener: HTMLElement | null }
 const Context = createContext<{
   publish: (id: string, entry?: Entry) => void
   confirm: (entry: Entry) => Promise<boolean>
-  dirty: boolean
+  state: DeskChangeState
+  hasOtherPending: (id: string) => boolean
   setTitle: (title: string) => void
   leave: () => Promise<boolean>
 } | null>(null)
@@ -32,10 +51,17 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
   const opener = useRef<HTMLElement | null>(null)
   const [typed, setTyped] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('')
   const publish = useCallback((id: string, entry?: Entry) => {
-    if (entry) entries.current.set(id, entry)
+    if (entry) {
+      // Retrying a failed autosave is not success. Keep attention until its
+      // owner confirms there are no unsaved changes left.
+      const previous=entries.current.get(id)
+      const saveFailed=entry.kind==='autosave' && entry.changed && (entry.saveFailed || previous?.saveFailed)
+      entries.current.set(id, {...entry,saveFailed})
+    }
     else entries.current.delete(id)
     setRevision(n => n + 1)
   }, [])
+  const hasOtherPending = useCallback((id: string) => [...entries.current.keys()].some(key => key !== id), [])
   const confirm = useCallback((entry: Entry) => {
     // Refuse a competing exit; never overwrite another pending decision.
     if (pending.current || entry.busy) return Promise.resolve(false)
@@ -50,7 +76,8 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     pending.current = undefined; setRequest(undefined); held?.resolve(leave)
   }, [])
   useEffect(() => () => { pending.current?.resolve(false) }, [])
-  const dirty = entries.current.size > 0
+  const state = changeState(entries.current.values())
+  const {dirty,pending:protectedWork} = state
   const originalTitle = useRef(document.title)
   const [title, setTitle] = useState(document.title.replace(/^\*\s*/, ''))
   useEffect(() => () => { document.title = originalTitle.current }, [])
@@ -65,11 +92,11 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     return agreed
   }, [confirm])
   useEffect(() => {
-    if (!dirty) return
+    if (!protectedWork) return
     const warn = (event: BeforeUnloadEvent) => { if (entries.current.size) { event.preventDefault(); event.returnValue = '' } }
     window.addEventListener('beforeunload', warn)
     return () => { window.removeEventListener('beforeunload', warn) }
-  }, [dirty])
+  }, [protectedWork])
   const router = useContext(UNSAFE_DataRouterContext)
   const confirmation = request?.name?.trim() || msg('Yes')
   async function save() {
@@ -79,7 +106,7 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     catch (e) { setError(e instanceof Error ? e.message : msg('The draft could not be saved. Your changes are still here.')) }
     finally { setSaving(false) }
   }
-  return <Context.Provider value={{ publish, confirm, dirty, setTitle, leave }}>
+  return <Context.Provider value={{ publish, confirm, state, hasOtherPending, setTitle, leave }}>
     {router && <NavigationGuard entries={entries.current} revision={revision} confirm={confirm} />}
     {children}
     <Dialog open={!!request} onOpenChange={open => { if (!open && !saving) finish(false) }} title={msg('Unsaved changes')} description={request?.question}
@@ -118,19 +145,33 @@ export function useConfirmDiscard() {
   const context = useContext(Context)
   return useCallback((question: string, options: UnsavedOptions = {}) => context?.confirm({ question, ...options }) ?? Promise.resolve(false), [context?.confirm])
 }
-export function useHasUnsavedChanges() { return useContext(Context)?.dirty ?? false }
+export function useDeskChangeState() { return useContext(Context)?.state ?? CLEAN }
+export function useHasUnsavedChanges() { return useDeskChangeState().dirty }
+/** Destructive exits must also protect quiet autosaves and in-flight writes. */
+export function useHasPendingChanges() { return useDeskChangeState().pending }
 export function useRegisteredChanges(dirty: boolean, question: string, options: UnsavedOptions = {}) {
+  return useChangesRegistration(dirty, question, options).clearGuard
+}
+/** Protect a reviewed operation from other editors/activity without counting its own setup. */
+export function useRegisteredChangesGuard(dirty: boolean, question: string, options: UnsavedOptions = {}) {
+  const {clearGuard,context,id}=useChangesRegistration(dirty, question, options)
+  return {clearGuard,otherPending:context?.hasOtherPending(id)??false}
+}
+function useChangesRegistration(dirty: boolean, question: string, options: UnsavedOptions) {
   const context = useContext(Context), id = useId()
   const latest = useRef(options); latest.current = options
   const publish = context?.publish
-  useEffect(() => {
-    publish?.(id, dirty || options.busy ? { question, name: options.name, busy: options.busy,
+  useLayoutEffect(() => () => publish?.(id), [publish,id])
+  // A committed recovery UI must not leave the registry holding the previous
+  // busy state until passive effects run: navigation would silently reset.
+  useLayoutEffect(() => {
+    publish?.(id, dirty || options.busy ? { question, changed:dirty, kind:options.kind, label:options.label, saveFailed:options.saveFailed, name: options.name, busy: options.busy,
       ...(options.saveDraft ? { saveDraft: () => latest.current.saveDraft!() } : {}),
       ...(options.shouldBlock ? { shouldBlock: args => latest.current.shouldBlock!(args) } : {}) } : undefined)
-    return () => publish?.(id)
-  }, [publish, id, dirty, question, options.name, options.busy, !!options.saveDraft, !!options.shouldBlock])
+  }, [publish, id, dirty, question, options.kind, options.label, options.saveFailed, options.name, options.busy, !!options.saveDraft, !!options.shouldBlock])
   // A successful write clears the live registration before synchronous navigation.
-  return useCallback(() => publish?.(id), [publish, id])
+  const clearGuard=useCallback(() => publish?.(id), [publish, id])
+  return {clearGuard,context,id}
 }
 
 export function useConfirmDeskExit() { const context = useContext(Context); return context?.leave ?? (() => Promise.resolve(false)) }

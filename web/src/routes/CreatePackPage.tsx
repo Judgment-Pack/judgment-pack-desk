@@ -9,11 +9,11 @@ export function CreatePackPage() {
   const navigate = useNavigate()
   const [dirty, setDirty] = useState(false)
   const [writing, setWriting] = useState(false)
-  useDirtyGuard(dirty || writing, msg('Leave without creating this pack? Your draft will be discarded.'), { busy: writing })
+  useDirtyGuard(dirty, msg('Leave without creating this pack? Your draft will be discarded.'), { busy: writing })
   return <div data-layout="page">
     <CreatePackDialog open presentation="page"
       onDirtyChange={setDirty} onWritingChange={setWriting}
-      onOpenChange={(open) => { if (!open) navigate('/packs') }}
+      onOpenChange={(open) => { if (!open) navigate('/library') }}
       onCreated={() => flushSync(() => { setDirty(false); setWriting(false) })} />
   </div>
 }

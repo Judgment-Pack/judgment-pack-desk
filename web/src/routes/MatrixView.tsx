@@ -30,7 +30,7 @@ export function MatrixView() {
   const { packId } = useParams<{ packId: string }>()
   // Old collection bookmarks return to Packs and cannot run a project-wide suite.
   return <article className="detail" data-layout="page">
-    {packId ? <PackMatrixContent packId={packId} /> : <Navigate to="/packs" replace />}
+    {packId ? <PackMatrixContent packId={packId} /> : <Navigate to="/library" replace />}
   </article>
 }
 
@@ -46,7 +46,7 @@ function PackMatrixContent({ packId }: { packId: string }) {
   }
   const configured = (inventory.data?.packs ?? []).filter(pack => pack.matrix && pack.id === packId)
   return <>
-    <PageHeader variant="context" title={msg("Packs")} context={packId} titleHref="/packs"
+    <PageHeader variant="context" title={msg("Packs")} context={packId} titleHref="/library"
       navigation={<PackNavigation packId={packId} current="test" />}
       actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
         {isFetching ? msg("Running…") : msg("Run tests")}

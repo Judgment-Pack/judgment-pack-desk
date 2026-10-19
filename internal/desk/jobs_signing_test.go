@@ -333,14 +333,15 @@ func standInVerifier(t *testing.T, record, stdout, stderr string, code int) stri
 func TestJobsVerifyRunShowsWhatVerifyRunSaid(t *testing.T) {
 	rig := newSigningRig(t)
 	run := "run_" + strings.Repeat("1", 32)
+	job := "job_" + strings.Repeat("2", 32)
 	digest := "sha256:" + strings.Repeat("ab", 32)
-	export := []byte(`{"version":5,"releaseDigest":"` + digest + `","run":{"id":"` + run + `","auditSignatures":"eA=="},"note":"a&b"}` + "\n")
+	export := []byte(`{"version":5,"releaseDigest":"` + digest + `","run":{"id":"` + run + `","jobId":"` + job + `","auditSignatures":"eA=="},"note":"a&b"}` + "\n")
 	exportStatus := http.StatusOK
 	signing := `{"status":"signed","publicKey":"` + signerA + `"}`
 	rig.serveWith(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/runs/"+run && r.URL.RawQuery == "" {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"id":"` + run + `","state":"completed","signing":` + signing + `}`))
+			w.Write([]byte(`{"id":"` + run + `","jobId":"` + job + `","state":"completed","signing":` + signing + `}`))
 			return
 		}
 		if r.URL.Path != "/v1/runs/"+run+"/verification" || r.URL.RawQuery != "version=5" {
@@ -476,6 +477,80 @@ func TestJobsVerifyRunShowsWhatVerifyRunSaid(t *testing.T) {
 		if status, _, data := verify(query); status != http.StatusBadRequest {
 			t.Errorf("%q answered %d %s", query, status, data)
 		}
+	}
+}
+
+// The request identity is separate from cryptographic validity: another run can
+// legitimately share the same listed key and still must not be labeled this run.
+func TestJobsVerifyRunBindsRequestedRunAndJob(t *testing.T) {
+	requested := "run_" + strings.Repeat("1", 32)
+	otherRun := "run_" + strings.Repeat("2", 32)
+	job := "job_" + strings.Repeat("3", 32)
+	otherJob := "job_" + strings.Repeat("4", 32)
+	digest := "sha256:" + strings.Repeat("ab", 32)
+	for _, step := range []struct {
+		name, recordedRun, recordedJob, exportRun, exportJob string
+		version, exit                                        int
+		unsigned, valid                                      bool
+	}{
+		{"another same-key run returned for the request", otherRun, job, otherRun, job, 5, 0, false, false},
+		{"another same-key export returned for the run", requested, job, otherRun, job, 5, 0, false, false},
+		{"export belongs to another job", requested, job, requested, otherJob, 5, 0, false, false},
+		{"missing recorded job", requested, "", requested, "", 5, 0, false, false},
+		{"missing export run", requested, job, "", job, 5, 0, false, false},
+		{"same-key matching version 5", requested, job, requested, job, 5, 0, false, true},
+		{"matching retained unsigned version 4", requested, job, requested, job, 4, 1, true, true},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			rig := newSigningRig(t)
+			var signing any = map[string]string{"status": "signed", "publicKey": signerA}
+			if step.unsigned {
+				signing = nil
+			}
+			record, _ := json.Marshal(map[string]any{"id": step.recordedRun, "jobId": step.recordedJob, "state": "completed", "signing": signing})
+			export, _ := json.Marshal(map[string]any{"version": step.version, "releaseDigest": digest, "run": map[string]any{"id": step.exportRun, "jobId": step.exportJob}})
+			rig.serveWith(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/v1/runs/" + requested:
+					w.Write(record)
+				case "/v1/runs/" + requested + "/verification":
+					w.Write(export)
+				default:
+					http.NotFound(w, r)
+				}
+			})
+			invoked := filepath.Join(t.TempDir(), "verifier-arguments")
+			rig.s.jobs.bin = standInVerifier(t, invoked, "exact verifier output", "exact verifier diagnostic", step.exit)
+			status, data := reviewCall(t, rig.ts, "GET", "/api/audit/jobs-verify-run?run="+requested, "", nil, bearer)
+			var answer runVerifyAnswer
+			if err := json.Unmarshal(data, &answer); err != nil {
+				t.Fatal(err)
+			}
+			if !step.valid {
+				if status != http.StatusBadGateway || answer.State == jobsRunChecked || answer.Run != "" || answer.Exit != nil || answer.Stdout != "" {
+					t.Errorf("unbound response was attributed to the request: status %d, state %q, run %q", status, answer.State, answer.Run)
+				}
+				if _, err := os.Stat(invoked); !os.IsNotExist(err) {
+					t.Error("verifier invoked for unbound identities")
+				}
+				copies, _ := filepath.Glob(filepath.Join(rig.project, ".desk-private", "handover", jobsRunExportName+"*"))
+				if len(copies) != 0 {
+					t.Error("unbound export was retained as a verification copy")
+				}
+				return
+			}
+			under := underListed
+			if step.unsigned {
+				under = underInForce
+			}
+			if status != http.StatusOK || answer.State != jobsRunChecked || answer.Run != requested || answer.ExportVersion != step.version || answer.PublicKey != signerA || answer.Under != under || answer.Exit == nil || *answer.Exit != step.exit || answer.Stdout != "exact verifier output\n" {
+				t.Errorf("matching retained response refused or changed: status %d, %+v", status, answer)
+			}
+			if _, err := os.Stat(invoked); err != nil {
+				t.Error("matching response never reached the verifier")
+			}
+		})
 	}
 }
 

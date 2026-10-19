@@ -40,7 +40,7 @@ it('opens exact per-call details with provider marks and keeps attribution out o
  await screen.findByText('failed Tavily query')
  await waitFor(()=>expect(failed.getAttribute('aria-pressed')).toBe('true'))
  expect(screen.getByText(/took too long/).closest('aside')).not.toBeNull()
- fireEvent.click(screen.getByRole('button',{name:'Search sources · Google Search · Done'}))
+ fireEvent.click(screen.getByRole('button',{name:'Search sources · Google Search · Gemini grounding · Done'}))
  await screen.findByText('NASA official mission updates')
  expect(screen.getByText('Query sent')).toBeTruthy()
  expect(screen.getByTitle('Search provider attribution').closest('aside')).not.toBeNull()
@@ -61,7 +61,7 @@ it('updates the open pane when its in-flight call fails',async()=>{
  const client=testQueryClient()
  const content=(work:WorkRecord)=><StrictMode><QueryClientProvider client={client}><Harness work={work}/></QueryClientProvider></StrictMode>
  const view=render(content(pending));fireEvent.click(screen.getByText('Work · 1 step'))
- const working=screen.getByRole('button',{name:'Search sources · Google Search · Working…'})
+ const working=screen.getByRole('button',{name:'Search sources · Google Search · Gemini grounding · Working…'})
  const icon=working.querySelector('img')!.getAttribute('src')
  expect(icon).toBeTruthy()
  fireEvent.click(working)
@@ -69,8 +69,8 @@ it('updates the open pane when its in-flight call fails',async()=>{
  view.rerender(content({items:[{...pending.items[0]!,status:'failed',failure:'search-timeout',search:{query:'pending',provider:'google-grounding',submitted:true}}],notices:[]}))
  await screen.findByText(/took too long/)
  expect(screen.getByText('Query sent')).toBeTruthy()
- expect(screen.getByRole('button',{name:'Search sources · Google Search · Failed'}).getAttribute('aria-pressed')).toBe('true')
- expect(screen.getByRole('button',{name:'Search sources · Google Search · Failed'}).querySelector('img')!.getAttribute('src')).toBe(icon)
+ expect(screen.getByRole('button',{name:'Search sources · Google Search · Gemini grounding · Failed'}).getAttribute('aria-pressed')).toBe('true')
+ expect(screen.getByRole('button',{name:'Search sources · Google Search · Gemini grounding · Failed'}).querySelector('img')!.getAttribute('src')).toBe(icon)
 })
 it('does not expose result links or provider-supplied queries when verification fails',async()=>{
  load.mockRejectedValue(new Error('signature mismatch'))

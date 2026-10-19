@@ -1,3 +1,4 @@
+import {validPolicySources,type PolicyAuthoringSource} from '../../policies/authoringSource'
 import { decodeCheckpoint, type Checkpoint } from '../../chat/checkpoint'
 import type { Chat, ChatAttachment } from '../../chat/store'
 import { answer, deskFetch } from '../../files/client'
@@ -9,6 +10,7 @@ export interface PackDraft {
   generation: number
   id: string; title: string; titleEdited?: boolean; folderId: string
   createdAt: string; updatedAt: string; mode: Chat['mode']; checkpoint: Checkpoint
+  policySources?:PolicyAuthoringSource[]
   sourceFiles?: {name:string;text:string}[]
   documents: ChatAttachment[]; finalized?: NonNullable<Chat['pack']>
 }
@@ -37,6 +39,7 @@ export function decodeDrafts(value: unknown): DraftDocument {
       const ref=file.document
       if(file.id!==ref.id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(ref.id) || !/^sha256:[a-f0-9]{64}$/.test(ref.digest) || !Array.isArray(ref.pages) || ref.pages.length>500 || ref.pages.some(n=>!Number.isSafeInteger(n)||n<1) || new Set(ref.pages).size!==ref.pages.length || typeof ref.allowPartial!=='boolean') return invalid()
     }
+    if(draft.policySources!==undefined&&!validPolicySources(draft.policySources))return invalid()
     if (draft.sourceFiles !== undefined && (!Array.isArray(draft.sourceFiles) || draft.sourceFiles.some(file=>!file || typeof file.name!=='string' || typeof file.text!=='string'))) return invalid()
     seen.add(draft.id)
     const saved = decodeCheckpoint(draft.checkpoint)
@@ -46,7 +49,7 @@ export function decodeDrafts(value: unknown): DraftDocument {
 }
 /** An artifact retains its evidence, never a hidden copy of conversation turns. */
 export function artifactCheckpoint(value: Checkpoint): Checkpoint {
-  return { ...value, state: {...value.state, turns: [], responses: [], candidates: value.state.candidates.map(({responseId: _responseId, ...candidate}) => candidate), streaming: undefined, streamingId: undefined, events: []} }
+  return { ...value, state: {...value.state, turns: [], questions: [], responses: [], candidates: value.state.candidates.map(({responseId: _responseId, ...candidate}) => candidate), streaming: undefined, streamingId: undefined, events: []} }
 }
 export function draftTitle(saved: Checkpoint): string {
   const title = (saved.state.candidates.at(-1)?.document as {title?:unknown} | undefined)?.title
@@ -66,7 +69,7 @@ export function retainedSourceFiles(saved: Checkpoint): {name:string;text:string
 export function fromChat(chat: Chat, saved: Checkpoint): PackDraft {
   return {generation:1,id: `draft-${Array.from(new TextEncoder().encode(chat.id),byte=>byte.toString(16).padStart(2,'0')).join('')}`, title: draftTitle(saved), folderId: chat.targetFolderId ?? HOME_FOLDER,
     createdAt: chat.createdAt ?? chat.updatedAt, updatedAt: chat.updatedAt, mode: chat.mode,
-    checkpoint: artifactCheckpoint(saved), sourceFiles:retainedSourceFiles(saved), documents: chat.documents ?? []}
+    checkpoint: artifactCheckpoint(saved), policySources:chat.policySources, sourceFiles:retainedSourceFiles(saved), documents: chat.documents ?? []}
 }
 export const draftHref = (id: string) => `/packs/drafts/${encodeURIComponent(id)}`
 export const latestText = (draft: PackDraft) => draft.checkpoint.state.candidates.at(-1)?.text

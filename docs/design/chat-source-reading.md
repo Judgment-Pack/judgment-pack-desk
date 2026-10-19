@@ -133,3 +133,29 @@ is an explicit unsaved edit, followed by Save and an explicit rerun.
 
 See [workflow review](../reviews/desk-workflow-features-20260924.md) for limits,
 known impact scope and verification evidence.
+
+## Failed link reads
+
+Work stores only an allowlisted host failure code for failed page reads. The
+reader shows the corresponding explanation before a collapsed Requested URL,
+which uses the shared external-link component. Raw tool errors and page text
+are not copied into failure records. Earlier steps without a recorded reason
+say so; opening an old failure does not replay a request. Successful reads use
+the same URL styling and still verify the exact retained document before reading.
+
+### Quotation labels and retained source inspection
+
+The shared quote matcher first seeks the literal quotation, folding whitespace
+only when necessary. It also accepts one balanced pair of presentation quotation
+marks around otherwise exact words. It does not normalize case, internal
+punctuation, omitted words or ellipses. Highlight offsets always refer to the
+unchanged retained text, and matches remain bound to the cited selected readable
+page. Chat and authoring citation tracing use the same matcher.
+
+Source verification and quote matching are separate states in
+`documents/useDocumentSource.ts`. A verified document remains inspectable when a
+quotation fails to match; the reader shows a warning without a match highlight.
+That deterministic mismatch offers Open source text, not Retry. Loading or
+verification failures still withhold source bytes and may be explicitly retried.
+The retained message, acquisition receipt and source bytes are never rewritten
+to repair presentation punctuation.

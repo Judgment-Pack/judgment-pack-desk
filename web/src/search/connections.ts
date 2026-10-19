@@ -1,13 +1,13 @@
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { connectionCall } from '../connections/client'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { useConnections } from '../connections/catalog'
-import { FileRequestError, readFile, writeFile } from '../files/client'
+import { useConnections, validResearchCapabilities, type ResearchCapability } from '../connections/catalog'
+import { readOptionalFile, writeFile } from '../files/client'
 import { useFileListing } from '../files/queries'
 
 export interface SearchConnection { id:string; revision:string; name:string; provider:string; project?:string; location?:string; model?:string; dailyLimit:number; timeoutSeconds?:number; requests?:number; day?:string
  /** Set by Desk, never by the gateway: the saved timeout was outside the bounds, so it is not shown or sent. */
- timeoutRefused?:true }
+ timeoutRefused?:true; research?:{capabilities:ResearchCapability[];model?:string} }
 export interface SearchProvider { id:string; name:string; kind:'search-results'|'grounded-answer'; fields:string[]; docs:string }
 export interface SearchTimeout { defaultSeconds:number; minSeconds:number; maxSeconds:number }
 export interface SearchStatus { version:1; providers:SearchProvider[]; connections:SearchConnection[]; timeout?:SearchTimeout }
@@ -22,7 +22,9 @@ export function decodeSearchStatus(raw:unknown):SearchStatus {
  for(const p of v.providers){
   if(!identifier(p.id)||typeof p.name!=='string'||p.name.length>120||!['search-results','grounded-answer'].includes(p.kind)||!Array.isArray(p.fields)||!p.fields.every(f=>['api-key','project','location','model','service-account-json'].includes(f))||typeof p.docs!=='string'||!p.docs.startsWith('https://'))throw new Error('Unsupported search provider')
  }
- for(const c of v.connections){if(!identifier(c.id)||!/^[a-f0-9]{64}$/.test(c.revision)||typeof c.name!=='string'||c.name.length>80||!v.providers.some(p=>p.id===c.provider)||!Number.isSafeInteger(c.dailyLimit)||c.dailyLimit<1||c.dailyLimit>10000||Object.hasOwn(c,'credential')||Object.hasOwn(c,'timeoutRefused'))throw new Error('Invalid search connection')}
+ for(const c of v.connections){
+  if(c.research!==undefined){const r=c.research;if(!r||Object.keys(r).some(k=>!['capabilities','model'].includes(k))||!validResearchCapabilities(r.capabilities)||!r.capabilities.length||(r.capabilities.includes('answer') ? typeof r.model!=='string'||!r.model.length||new TextEncoder().encode(r.model).length>256 : Object.hasOwn(r,'model')))throw new Error('Invalid research capability declaration')}
+  if(!identifier(c.id)||!/^[a-f0-9]{64}$/.test(c.revision)||typeof c.name!=='string'||c.name.length>80||!v.providers.some(p=>p.id===c.provider)||!Number.isSafeInteger(c.dailyLimit)||c.dailyLimit<1||c.dailyLimit>10000||Object.hasOwn(c,'credential')||Object.hasOwn(c,'timeoutRefused'))throw new Error('Invalid search connection')}
  if(new Set(v.connections.map(c=>c.id)).size!==v.connections.length||new Set(v.providers.map(p=>p.id)).size!==v.providers.length)throw new Error('Invalid search connection response')
  // A timeout outside the bounds is that connection's problem alone: the
  // connection is kept, without the value, and marked; the others are as sent.
@@ -40,8 +42,10 @@ export function decodeSearchPreference(value:unknown):SearchPreference {
  return v
 }
 export async function loadSearchPreference(signal?:AbortSignal){
- try{const f=await readFile(SEARCH_PREFERENCE_FILE,signal);if(f.bytes>4096)throw new Error('Search settings are too large');return {value:decodeSearchPreference(JSON.parse(f.content)),digest:f.sha256}}
- catch(e){if(e instanceof FileRequestError&&e.status===404&&e.code==='not-found')return {value:{version:1,connection:null,mode:'auto'} as SearchPreference,digest:''};throw e}
+ const f=await readOptionalFile(SEARCH_PREFERENCE_FILE,signal)
+ if(f===null)return {value:{version:1,connection:null,mode:'auto'} as SearchPreference,digest:''}
+ if(f.bytes>4096)throw new Error('Search settings are too large')
+ return {value:decodeSearchPreference(JSON.parse(f.content)),digest:f.sha256}
 }
 export function useSearchPreference(){
  const root=useFileListing().data?.root,client=useQueryClient(),key=['web-search-preference',root]

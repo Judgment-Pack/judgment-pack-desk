@@ -335,6 +335,13 @@ export async function readFile(path: string, signal?: AbortSignal): Promise<File
   return answer<FileContent>(await deskFetch(endpoint('/api/file', { path }), { signal }))
 }
 
+/** Read optional metadata without treating an absent file as a failed request. */
+export async function readOptionalFile(path: string, signal?: AbortSignal): Promise<FileContent | null> {
+  const response = await deskFetch(endpoint('/api/file', { path, optional: 'true' }), { signal })
+  if (response.status === 204) return null
+  return answer<FileContent>(response)
+}
+
 /**
  * Replace one file's bytes, and answer with what is on disk afterwards.
  *

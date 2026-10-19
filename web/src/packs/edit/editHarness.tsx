@@ -1,3 +1,4 @@
+import { DeskNotices, DeskNoticesProvider } from '../../shell/DeskNotices'
 import { UnsavedChangesProvider } from '../../shell/UnsavedChanges'
 import { msg, useLocale } from '../../i18n'
 /**
@@ -372,7 +373,7 @@ export function drawPack(
   const queryClient = testQueryClient()
   const view = render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <DeskNoticesProvider><RouterProvider router={router} /><DeskNotices/></DeskNoticesProvider>
     </QueryClientProvider>
   )
   return { ...view, router, queryClient, calls: stub.calls, revealed }

@@ -2,11 +2,11 @@ import { useEffect, useLayoutEffect, useImperativeHandle, useRef, type Ref } fro
 import { Annotation, Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { bracketMatching, codeFolding, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, HighlightStyle } from '@codemirror/language'
+import { bracketMatching, codeFolding, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting } from '@codemirror/language'
 import { json, jsonParseLinter } from '@codemirror/lang-json'
 import { searchKeymap, search, openSearchPanel, highlightSelectionMatches } from '@codemirror/search'
 import { linter, lintGutter } from '@codemirror/lint'
-import { tags } from '@lezer/highlight'
+import {codeColors as colors, codeTheme as theme} from './codeTheme'
 import { msg, useLocale } from '../i18n'
 import styles from './CodeEditor.module.css'
 import { glyphDOM } from '../shell/glyph'
@@ -16,30 +16,6 @@ import { DOMTooltips } from '../ui/Tooltip'
 export interface CodeEditorHandle { find:()=>void; focus:()=>void }
 export interface CodeEditorProps { ref?:Ref<CodeEditorHandle>; id:string; path:string; value:string; wrap:boolean; readOnly?:boolean; describedBy?:string; onChange:(value:string)=>void; onFormat:()=>void; onSave:()=>void }
 const external=Annotation.define<boolean>()
-const colors=HighlightStyle.define([
- {tag:tags.propertyName,color:'var(--decision-cyan)'},
- {tag:tags.string,color:'var(--decision-green)'},
- {tag:[tags.number,tags.bool,tags.null],color:'var(--decision-violet)'},
- {tag:tags.punctuation,color:'var(--ink-soft)'}
-])
-const theme=EditorView.theme({
- '&':{height:'100%',backgroundColor:'var(--bg)',color:'var(--ink)',fontSize:'var(--text-sm)'},
- '&.cm-focused':{outline:'none'},
- '.cm-scroller':{overflow:'auto',fontFamily:'ui-monospace, SFMono-Regular, Consolas, monospace',lineHeight:'1.65'},
- '.cm-content':{padding:'12px 0',caretColor:'var(--ink)'},
- '.cm-line':{padding:'0 12px'},
- '.cm-gutters':{backgroundColor:'var(--bg)',color:'var(--ink-faint)',borderRight:'1px solid var(--border)'},
- '.cm-activeLineGutter, .cm-activeLine':{backgroundColor:'var(--accent-soft)'},
- '.cm-cursor':{borderLeftColor:'var(--ink)'},
- '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':{backgroundColor:'var(--accent-soft)'},
- '.cm-panels':{backgroundColor:'var(--surface)',color:'var(--ink)',borderColor:'var(--border)'},
- '.cm-textfield, .cm-button':{background:'var(--surface-raised)',color:'var(--ink)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)'},
- '.cm-tooltip':{backgroundColor:'var(--surface-raised)',color:'var(--ink)',border:'1px solid var(--border)'},
- '&.cm-light .cm-searchMatch, &.cm-dark .cm-searchMatch':{backgroundColor:'var(--accent-soft)'},
- '&.cm-light .cm-searchMatch-selected, &.cm-dark .cm-searchMatch-selected':{backgroundColor:'var(--accent-soft)',outline:'1px solid var(--accent)'},
- '.cm-diagnostic-error':{borderLeftColor:'var(--danger)'},
- '.cm-foldPlaceholder':{background:'var(--surface-raised)',color:'var(--ink-soft)',borderColor:'var(--border)'}
-})
 /** A view of the same byte buffer; validation is advisory and never gates Save. */
 export default function CodeEditor(props:CodeEditorProps){
  const locale=useLocale()

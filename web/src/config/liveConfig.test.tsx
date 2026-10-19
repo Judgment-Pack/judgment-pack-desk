@@ -94,6 +94,8 @@ function serveConfig(answer: unknown, status = 200, delayMs = 0, listingDelayMs 
     // otherwise: its `root` is the project identity both browser records are
     // keyed on, and which of the two answers first is a race the shell has to
     // survive in both orders.
+    if (path === '/api/ai-connections') return {ok:true,status:200,text:async()=>JSON.stringify({version:1,defaultConnection:'',connections:[],sha256:'',path:'/ai.json'})}
+    if (path === '/api/upgrade') return {ok:true,status:200,text:async()=>JSON.stringify({state:'unavailable',reason:'fixture',gated:false,changes:[],locked:false})}
     if (path.includes('/api/files')) {
       if (listingDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, listingDelayMs))
       return {
@@ -164,14 +166,15 @@ describe('the desk reading jpack-desk.json', () => {
     // this read that changed rather than the file API.
     expect(asked.some((url) => url.includes('/api/desk-config'))).toBe(true)
     // Project files, configuration, the named desk directory and the AI
-    // connections shared on this computer use the chassis.
+    // connections shared on this computer use the chassis. The optional
+    // safeguards cue now reads its offer from the status strip.
     expect(
       asked.every(
         (url) =>
           url.includes('/api/file?') ||
           url.includes('/api/files') ||
           url.includes('/api/desk-config') || url === '/api/desks' ||
-          url.includes('/api/ai-connections')
+          url.includes('/api/ai-connections') || url === '/api/upgrade' || url === '/api/desk-home' || url === '/api/project-location'
       )
     ).toBe(true)
   })
@@ -430,9 +433,10 @@ describe('the desk reading jpack-desk.json', () => {
       content: JSON.stringify({ deskConfigVersion: 1, organization: { name: 'Acme Co.' }, colour: 'blue' })
     })
     renderDesk()
-    const cue = await screen.findByRole('link', { name: 'configuration refused — see Admin' })
-    expect(cue.getAttribute('href')).toBe('/admin')
-    expect(screen.getByRole('contentinfo').textContent).toContain('configuration refused')
+    const cue = await screen.findByRole('button', { name: 'Settings need attention' })
+    fireEvent.click(cue)
+    expect(screen.getByRole('link', {name: 'Review settings'}).getAttribute('href')).toBe('/admin')
+    expect(screen.getByRole('contentinfo').textContent).toContain('Settings need attention')
   })
 
   it('says the desk-level file was refused, on the same cue', async () => {
@@ -443,7 +447,9 @@ describe('the desk reading jpack-desk.json', () => {
     // visible on Admin and nowhere else.
     vi.stubGlobal('fetch', async (url: string) => {
       const path = String(url)
-      if (path.includes('/api/files')) {
+      if (path === '/api/ai-connections') return {ok:true,status:200,text:async()=>JSON.stringify({version:1,defaultConnection:'',connections:[],sha256:'',path:'/ai.json'})}
+    if (path === '/api/upgrade') return {ok:true,status:200,text:async()=>JSON.stringify({state:'unavailable',reason:'fixture',gated:false,changes:[],locked:false})}
+    if (path.includes('/api/files')) {
         return {
           ok: true,
           status: 200,
@@ -469,8 +475,9 @@ describe('the desk reading jpack-desk.json', () => {
       return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(LIVE_ANSWER) }
     })
     renderDesk()
-    const cue = await screen.findByRole('link', { name: 'configuration refused — see Admin' })
-    expect(cue.getAttribute('href')).toBe('/admin')
+    const cue = await screen.findByRole('button', { name: 'Settings need attention' })
+    fireEvent.click(cue)
+    expect(screen.getByRole('link', {name: 'Review settings'}).getAttribute('href')).toBe('/admin')
   })
 
   it('says a configuration it could not read is unread, not absent', async () => {
@@ -479,31 +486,20 @@ describe('the desk reading jpack-desk.json', () => {
     // not honoured, and until this cue the two were the same silence.
     serveConfig({ error: 'the file is too large to read' }, 413)
     renderDesk()
-    const cue = await screen.findByRole('link', {
-      name: 'configuration could not be read — see Admin'
+    const cue = await screen.findByRole('button', {
+      name: 'Settings unavailable'
     })
-    expect(cue.getAttribute('href')).toBe('/admin')
+    fireEvent.click(cue)
+    expect(screen.getByRole('link', {name: 'Review settings'}).getAttribute('href')).toBe('/admin')
     expect(screen.queryByText(/configuration refused/)).toBeNull()
   })
 
-  it('keeps the cue’s full sentence as its accessible name, and a short one on the face', async () => {
-    // The link neither shrinks nor wraps, deliberately — and the full sentence
-    // is wider than a 320px strip has left beside the console button. Both
-    // spellings are in the DOM and CSS paints one; the name is on the link, so
-    // it is the full sentence at every width.
+  it('keeps the complete notice name accessible when the footer truncates it', async () => {
     serveConfig({ error: 'the file is too large to read' }, 413)
     renderDesk()
-    const cue = await screen.findByRole('link', {
-      name: 'configuration could not be read — see Admin'
-    })
-    expect(cue.querySelector('.desk-strip-warn-full')!.textContent).toBe(
-      'configuration could not be read — see Admin'
-    )
-    expect(cue.querySelector('.desk-strip-warn-short')!.textContent).toBe('config unread')
-    // Neither span may reach the accessible name, or it would read twice.
-    for (const span of cue.querySelectorAll('span')) {
-      expect(span.getAttribute('aria-hidden')).toBe('true')
-    }
+    const cue = await screen.findByRole('button', {name: 'Settings unavailable'})
+    expect(cue.closest('footer')).toBeTruthy()
+    expect(cue.getAttribute('aria-label')).toBe('Settings unavailable')
   })
 
   it('says nothing about the configuration where the file is simply absent', async () => {

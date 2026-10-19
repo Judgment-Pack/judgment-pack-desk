@@ -1,0 +1,6 @@
+.root { width: min(100%, var(--measure-form)); min-width: 0; margin-inline: auto; border-block: 1px solid var(--border); padding-block: var(--density-block); display: grid; gap: var(--space-2); font-size: var(--text-sm); }
+.summary { display: grid; gap: var(--space-1); color: var(--ink-soft); font-size: var(--text-xs); line-height: 1.5; }
+.title { color: var(--ink); font-size: var(--text-sm); font-weight: 500; }
+.caption { margin: 0; color: var(--ink-soft); font-size: var(--text-xs); line-height: 1.5; }
+.details { min-width: 0; }
+.details:empty { display: none; }

@@ -1,5 +1,8 @@
+import {MemorySettingsDisclosure} from './memory/MemorySettings'
+import {LoadingState} from '../ui/LoadingState'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { listModels } from './modelListing'
-import { bindModelCall } from './session'
+import { bindModelCall } from '@judgment-pack/harness/session'
 import { useAssistantKey } from './queries'
 import { sourceMessage } from '../i18n/source'
 import { useEffect, useState } from 'react'
@@ -15,7 +18,7 @@ import { useUnsavedChanges } from '../shell/DraftScope'
 import { Button, ButtonLink } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Select } from '../ui/Select'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { Popover } from '../ui/Popover'
 import { Disclosure } from '../ui/Disclosure'
 import { SubscriptionModels } from './SubscriptionModels'
@@ -27,7 +30,8 @@ import styles from './AIConnectionsSettings.module.css'
 function initialProfile(read:EffectiveConfig['assistantProfile'],registry:AIRegistry):AssistantProfile {
  if(read?.value?.profileVersion===2)return read.value
  const models=Object.fromEntries(registry.connections.flatMap(c=>{const p=modelPreferences(read,c);return p&&!p.inherit?[[c.id,p]]:[]}))
- return Object.keys(models).length?{profileVersion:2,inherit:false,connections:registry.connections.filter(c=>c.enabled).map(c=>c.id),defaultConnection:registry.defaultConnection||null,models}:{profileVersion:2,inherit:true}
+ const context=read?.value?.context
+ return Object.keys(models).length?{profileVersion:2,context,inherit:false,connections:registry.connections.filter(c=>c.enabled).map(c=>c.id),defaultConnection:registry.defaultConnection||null,models}:{profileVersion:2,context,inherit:true}
 }
 function ConnectionPreferences({connection:c,value,disabled,onChange}:{connection:AIConnection;value:ModelPreferences;disabled:boolean;onChange:(p:ModelPreferences)=>void}) {
  const native=c.assistant.engine==='codex',account=useProviderStatus(native&&c.enabled,c.id),catalog=useProviderModels(native&&c.enabled&&account.data?.account==='connected',c.id)
@@ -49,15 +53,15 @@ function ConnectionPreferences({connection:c,value,disabled,onChange}:{connectio
   {value.inherit?<span className={styles.meta}>{msg('Default model')} · {baseline.model??msg('No model selected')}</span>:<>
    <SubscriptionModels models={choices} allowed={current.models} model={current.model??''} disabled={disabled} onChange={(models,model)=>onChange({inherit:false,models,model:model||null,...(native?model===current.model&&current.effort?{effort:current.effort}:{}:{thinking:current.thinking})})}/>
    {native&&current.model&&<Field label={msg('Reasoning effort')}>{w=><Select {...w} disabled={disabled||catalog.isPending||catalog.isError} value={current.effort??'__default__'} onValueChange={v=>{if(!value.inherit){const {effort:_,...rest}=value;onChange({...rest,...(v==='__default__'?{}:{effort:v as typeof value.effort})})}}} options={[{value:'__default__',label:msg('Model default')},...(chosen?.efforts??[]).map(value=>({value,label:value}))]}/>}</Field>}
-   {!native&&<><Button variant="quiet" disabled={disabled||discovered.isPending||!key.data?.bound} onClick={()=>discovered.mutate()}>{discovered.isPending?msg('Loading models…'):msg('Refresh models')}</Button>{discovered.error&&<span role="alert" className={styles.meta}>{discovered.error.message}</span>}{key.isError&&<span role="alert" className={styles.meta}>{key.error.message} <Button variant="inline" onClick={()=>void key.refetch()}>{msg('Retry')}</Button></span>}{key.isSuccess&&!key.data.bound&&<span className={styles.meta}>{msg('Save an API key in Connections > AI to load models.')}</span>}</>}
+   {!native&&<><Button variant="quiet" disabled={disabled||discovered.isPending||!key.data?.bound} onClick={()=>discovered.mutate()}>{discovered.isPending?<LoadingState inline>{msg('Loading models…')}</LoadingState>:msg('Refresh models')}</Button>{discovered.error&&<SettingsFeedback tone="error" actions={<Button variant="inline" onClick={()=>void key.refetch()}>{msg('Retry')}</Button>}>{discovered.error.message}</SettingsFeedback>}{key.isError&&<SettingsFeedback tone="error">{key.error.message}</SettingsFeedback>}{key.isSuccess&&!key.data.bound&&<span className={styles.meta}>{msg('Save an API key in Connections > AI to load models.')}</span>}</>}
    {!native&&<Field label={msg('Reasoning effort')}>{w=><Select {...w} disabled={disabled} value={current.thinking??c.assistant.thinking} onValueChange={v=>{if(!value.inherit)onChange({...value,thinking:v as typeof c.assistant.thinking})}} options={[{value:'off',label:msg('off')},{value:'on',label:msg('standard')},{value:'ultra',label:msg('deep')}]}/>}</Field>}
   </>}
-  {native&&catalog.error&&<span role="alert" className={styles.meta}>{msg('Model details could not be loaded.')} <Button variant="inline" onClick={()=>void catalog.refetch()}>{msg('Retry')}</Button></span>}
+  {native&&catalog.error&&<SettingsFeedback tone="error" actions={<Button variant="inline" onClick={()=>void catalog.refetch()}>{msg('Retry')}</Button>}>{msg('Model details could not be loaded.')}</SettingsFeedback>}
  </div>
 }
 export function DeskAISettings(props:{unavailable:boolean;onDirtyChange?:(dirty:boolean)=>void}) {
  const effective=useEffectiveConfig()
- return effective.aiConnections?<ConnectedDeskSettings {...props}/>:<DeskModelPreferences {...props}/>
+ return <>{effective.aiConnections?<ConnectedDeskSettings {...props}/>:<DeskModelPreferences {...props}/>}<MemorySettingsDisclosure disabled={props.unavailable}/></>
 }
 function ConnectedDeskSettings({unavailable,onDirtyChange}:{unavailable:boolean;onDirtyChange?:(dirty:boolean)=>void}) {
  const effective=useEffectiveConfig(),client=useQueryClient(),registry=effective.aiConnections?.data,read=effective.assistantProfile
@@ -85,20 +89,19 @@ function ConnectedDeskSettings({unavailable,onDirtyChange}:{unavailable:boolean;
  if(!draft.inherit&&(missing.length||ids.length>0&&!choices.some(c=>c.id===selected)))valid=false
  return <section className={styles.stack} aria-label={msg('Desk assistant settings')}>
   <p className="quiet">{msg('Choose the AI connections and models available in this desk. Credentials are managed in Connections > AI.')}</p>
-  <label className={styles.label}><input type="checkbox" checked={!!draft.inherit} disabled={locked} onChange={e=>edit(e.target.checked?{profileVersion:2,inherit:true}:{profileVersion:2,inherit:false,connections:enabled.map(c=>c.id),defaultConnection:registry.defaultConnection||enabled[0]?.id||null,models:{}})}/>{msg('Use shared assistant defaults')}</label>
+  <label className={styles.label}><input type="checkbox" checked={!!draft.inherit} disabled={locked} onChange={e=>edit(e.target.checked?{profileVersion:2,context:draft.context,inherit:true}:{profileVersion:2,context:draft.context,inherit:false,connections:enabled.map(c=>c.id),defaultConnection:registry.defaultConnection||enabled[0]?.id||null,models:{}})}/>{msg('Use shared assistant defaults')}</label>
   {draft.inherit?<div className={styles.stack}><span className={styles.meta}>{msg('Default connection')} · {registry.connections.find(c=>c.id===registry.defaultConnection)?.name??msg('Not selected')}</span><span className={styles.meta}>{msg('Available connections')} · {enabled.map(c=>c.name).join(', ')||msg('None')}</span><span className={styles.meta}>{msg('Shared connection and model defaults apply here. Existing chats keep their selected connection.')}</span></div>:<>
    <Field label={msg('Enabled connections')}>{w=><Popover title={msg('Enabled connections')} align="start" trigger={<Button id={w.id} disabled={locked}>{msg('Connections')} · {ids.length}</Button>}>
-    <Input type="search" aria-label={msg('Search connections')} placeholder={msg('Search connections')} value={search} onChange={e=>setSearch(e.target.value)}/>
+    <SearchInput type="search" aria-label={msg('Search connections')} placeholder={msg('Search connections')} value={search} onChange={e=>setSearch(e.target.value)}/>
     <div className={styles.toolbar}><Button variant="quiet" disabled={locked} onClick={()=>setConnections(enabled.map(c=>c.id))}>{msg('Select all')}</Button><Button variant="quiet" disabled={locked} onClick={()=>setConnections([])}>{msg('Remove all')}</Button></div>
     <div className={styles.choices}>{enabled.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())).map(c=><label key={c.id} className={styles.label}><input type="checkbox" disabled={locked} checked={ids.includes(c.id)} onChange={e=>setConnections(e.target.checked?[...ids,c.id]:ids.filter(id=>id!==c.id))}/>{c.name}</label>)}</div>
    </Popover>}</Field>
-   {missing.length>0&&<p role="alert">{msg('A selected connection is disabled or no longer available.')} <Button variant="inline" onClick={()=>setConnections(ids.filter(id=>!missing.includes(id)))}>{msg('Remove unavailable connections')}</Button></p>}
+   {missing.length>0&&<SettingsFeedback tone="error" actions={<Button variant="inline" onClick={()=>setConnections(ids.filter(id=>!missing.includes(id)))}>{msg('Remove unavailable connections')}</Button>}>{msg('A selected connection is disabled or no longer available.')}</SettingsFeedback>}
    <Field label={msg('Default connection')}>{w=><Select {...w} value={selected??''} disabled={locked||!choices.length} onValueChange={defaultConnection=>edit({...draft,defaultConnection})} placeholder={msg('Choose a connection')} options={choices.map(c=>({value:c.id,label:c.name}))}/>}</Field>
    {choices.map(c=><ConnectionPreferences key={c.id} connection={c} value={draft.models?.[c.id]??{inherit:true}} disabled={locked} onChange={value=>edit({...draft,models:{...draft.models,[c.id]:value}})}/>)}
   </>}
   <ButtonLink variant="quiet" to="/admin#connections-ai">{msg('Manage AI connections')}</ButtonLink>
-  {read?.problem&&<p role="alert">{read.problem}</p>}{save.error&&<p role="alert">{save.error.message}</p>}
-  <div className={styles.toolbar}><span role="status" className={styles.meta}>{saved?msg('Assistant preferences saved.'):dirty?msg('Unsaved changes'):''}</span><div className={styles.actions}>{dirty&&<Button variant="quiet" onClick={()=>{setDirty(false);save.reset()}}>{msg('Cancel')}</Button>}<Button variant="primary" disabled={locked||!dirty||!valid} onClick={()=>save.mutate()}>{msg(save.isPending?'Saving…':'Save preferences')}</Button></div></div>
+  <SettingsActions feedback={<SettingsFeedback tone={read?.problem||save.error?'error':saved&&!dirty?'success':'neutral'}>{read?.problem||save.error?.message||(save.isPending?msg('Saving…'):saved&&!dirty?msg('Assistant preferences saved.'):dirty?msg('Unsaved changes'):null)}</SettingsFeedback>}>{dirty&&<Button variant="quiet" onClick={()=>{setDirty(false);save.reset()}}>{msg('Cancel')}</Button>}<Button variant="primary" disabled={locked||!dirty||!valid} onClick={()=>save.mutate()}>{msg(save.isPending?'Saving…':'Save preferences')}</Button></SettingsActions>
   <Disclosure title={msg('Advanced settings')}><div className={styles.actions}><Button variant="quiet" disabled={dirty||save.isPending} onClick={()=>void client.invalidateQueries({queryKey:DESK_CONFIG_QUERY_KEY})}>{msg('Reload from disk')}</Button>{read?.present&&<ButtonLink variant="inline" to="/author" onClick={()=>requestOpen(ASSISTANT_PROFILE_PATH)}>{ASSISTANT_PROFILE_PATH}</ButtonLink>}</div></Disclosure>
  </section>
 }

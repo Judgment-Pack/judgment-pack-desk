@@ -1,0 +1,6 @@
+.root { min-width:0; }
+.links { display:grid; grid-template-columns:7rem minmax(0,1fr); gap:var(--space-1) var(--space-3); margin:0 0 var(--density-block); font-size:var(--text-xs); }
+.links dt { color:var(--ink-soft); }
+.links dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.source { display:grid; gap:var(--space-1); min-width:0; overflow-wrap:anywhere; }
+.note { color:var(--ink-soft); font-size:var(--text-xs); }

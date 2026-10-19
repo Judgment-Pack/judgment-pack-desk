@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Viewport } from '@xyflow/react'
 import type { NodePositions } from '../components/RelationshipMap'
@@ -8,6 +9,7 @@ import { BuilderSplit, useBuilderPreference } from '../builders/BuilderSplit'
 import { Button, ButtonLink } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { Select } from '../ui/Select'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { InspectionRow } from '../ui/InspectionRow'
@@ -98,7 +100,7 @@ export function GraphComposition({content, onChange, packs, disabled = false, to
           <Button disabled={disabled || !packs.length} onClick={event => {addOpener.current = event.currentTarget; setAdding(true)}}>{msg('Add first pack')}</Button>
           {!packs.length && <p>{msg('Create a pack before composing a graph.')}</p>}
         </div> : <>
-          {view !== 'list' && shape ? <div className={styles.canvas}><Suspense fallback={<p role="status">{msg('Loading diagram…')}</p>}>
+          {view !== 'list' && shape ? <div className={styles.canvas}><Suspense fallback={<LoadingState inset>{msg('Loading diagram…')}</LoadingState>}>
             <RelationshipMap unit={16} nodeWidth={240} columnGap={5} ariaLabel={msg('Graph composition')} viewport={viewport} onViewportChange={setViewport} nodePositions={positions} onNodePositionsChange={setPositions}
               nodes={shape.nodes.map(n => ({id: n.id, title: n.id, column: n.layer, selected: selection.node === n.id, action: msg('Edit node'), content: <><span>{n.pack === n.id ? msg('Pack') : n.pack}</span>{n.isResult && <Pill tone="quiet">{msg('Result')}</Pill>}</>}))}
               edges={shape.edges.filter(e => e.drawable).map(e => ({id: String(e.index), source: e.from, target: e.to, label: e.fact && e.evidence ? msg('Fact + evidence') : e.fact ? msg('Fact') : msg('Evidence')}))}
@@ -114,7 +116,7 @@ export function GraphComposition({content, onChange, packs, disabled = false, to
       <p className={styles.compositionHint}>{msg('Every node runs. Connections pass outcomes or evidence availability; they do not skip steps.')}</p>
     </section>
     <Dialog openerRef={addOpener} open={adding} onOpenChange={setAdding} title={msg('Add pack')} description={msg('Choose a declared pack to reuse in this graph.')}>
-      <Field label={msg('Search packs')}>{w => <Input {...w} value={query} onChange={e => setQuery(e.target.value)}/>}</Field>
+      <Field label={msg('Search packs')}>{w => <SearchInput {...w} value={query} onChange={e => setQuery(e.target.value)}/>}</Field>
       <div className={styles.picker}>{matchingPacks.map(pack => <InspectionRow key={pack} label={pack} disabled={disabled} onClick={() => {
         if (!doc || nodes.length >= 64) return
         let id = pack, index = 2; while (Object.hasOwn(doc.nodes, id)) id = `${pack}-${index++}`

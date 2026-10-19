@@ -18,6 +18,7 @@ func TestRunHelper(t *testing.T) {
 		return
 	}
 	mode := os.Getenv("JPS_RUN_MODE")
+	refreshSignedOut := false
 	write := func(v any) { _ = json.NewEncoder(os.Stdout).Encode(v) }
 	note := func(method string, params any) { write(map[string]any{"method": method, "params": params}) }
 	tool := func(name, thread, call string) {
@@ -52,8 +53,18 @@ func TestRunHelper(t *testing.T) {
 			reply(map[string]string{"userAgent": "jps_desk/0.157.1 (Linux)"})
 		case "initialized":
 		case "account/read":
+			var params struct {
+				Refresh bool `json:"refreshToken"`
+			}
+			_ = json.Unmarshal(f.Params, &params)
+			// A forced refresh may clear native in-memory auth even though the
+			// completed credential remains on disk. Ordinary checks must not
+			// turn a working connection into a sign-in requirement.
+			if mode == "refresh-signs-out" && params.Refresh {
+				refreshSignedOut = true
+			}
 			var account any
-			if _, err := os.Stat(filepath.Join(os.Getenv("CODEX_HOME"), "account.fixture")); err == nil {
+			if _, err := os.Stat(filepath.Join(os.Getenv("CODEX_HOME"), "account.fixture")); err == nil && !refreshSignedOut {
 				account = map[string]string{"type": "chatgpt", "planType": "plus", "email": "PRIVATE_SENTINEL"}
 			}
 			reply(map[string]any{"requiresOpenaiAuth": true, "account": account})
@@ -107,6 +118,21 @@ func TestRunHelper(t *testing.T) {
 			}
 			reply(map[string]any{"turn": map[string]string{"id": "turn"}})
 			switch mode {
+			case "retry", "retry-exhausted", "retry-terminal", "retry-wrong-thread", "retry-hang":
+				count := 2
+				if mode == "retry-exhausted" {
+					count = 3
+				}
+				for i := 0; i < count; i++ {
+					thread := "thread"
+					if mode == "retry-wrong-thread" {
+						thread = "other"
+					}
+					note("error", map[string]any{"threadId": thread, "turnId": "turn", "willRetry": mode != "retry-terminal" || i == 0, "error": map[string]any{"message": "PRIVATE_SENTINEL"}})
+				}
+				if mode == "retry" {
+					tool("desk_runtime_0", "thread", "call")
+				}
 			case "hang":
 			case "permission":
 				write(map[string]any{"id": "request", "method": "item/commandExecution/requestApproval", "params": map[string]string{"secret": "PRIVATE_SENTINEL"}})
@@ -161,6 +187,10 @@ func TestNativeRunUsesOnlyHostToolsAndClosedEvents(t *testing.T) {
 	calls := 0
 	err := m.Run(context.Background(), o, runRequest(), func(event RunEvent) error { events = append(events, event); return nil }, func(ctx context.Context, call ToolCall) (ToolAnswer, error) {
 		calls++
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) <= time.Minute {
+			t.Fatal("hidden tool cutoff overrides the configured host timeout")
+		}
 		if call.ID == "call" || call.Name != "desk_runtime_0" || string(call.Arguments) != `{"rehearsal":false}` {
 			t.Fatalf("bad call: %+v", call)
 		}
@@ -334,5 +364,99 @@ func TestModelDiscoveryBoundsAndUnsafeDefaults(t *testing.T) {
 				t.Fatal("invalid catalog accepted")
 			}
 		})
+	}
+}
+
+func TestOrdinaryModelAndRunChecksPreserveConnectedAccount(t *testing.T) {
+	for _, action := range []string{"models", "run"} {
+		t.Run(action, func(t *testing.T) {
+			m := runManager(t, "refresh-signs-out")
+			owner, cancelSession, cancelPolicy := ownerFixture()
+			defer cancelSession()
+			defer cancelPolicy()
+			status, err := m.Status(context.Background(), owner.ID, false)
+			if err != nil || status.Account != "connected" {
+				t.Fatal("fixture is not connected", err)
+			}
+			if action == "models" {
+				models, err := m.Models(context.Background())
+				if err != nil || len(models) != 1 {
+					t.Fatal("ordinary model discovery lost the connection", err)
+				}
+			} else {
+				err = m.Run(context.Background(), owner, runRequest(), func(RunEvent) error { return nil }, func(context.Context, ToolCall) (ToolAnswer, error) { return ToolAnswer{Text: "ok"}, nil })
+				if err != nil {
+					t.Fatal("ordinary run preflight lost the connection", err)
+				}
+			}
+			// Password changes and sign-out end Desk session/policy contexts, not a
+			// completed subscription connection. A new owner can still check it.
+			cancelSession()
+			cancelPolicy()
+			status, err = m.Status(context.Background(), "new-password-session", false)
+			if err != nil || status.Account != "connected" {
+				t.Fatal("completed subscription did not survive session change", err)
+			}
+		})
+	}
+}
+
+func TestNativeRecoveryStaysInTheSameRunAndIsBounded(t *testing.T) {
+	for _, mode := range []string{"retry", "retry-exhausted", "retry-terminal", "retry-wrong-thread"} {
+		t.Run(mode, func(t *testing.T) {
+			m := runManager(t, mode)
+			o, a, b := ownerFixture()
+			defer a()
+			defer b()
+			calls := 0
+			var events []RunEvent
+			err := m.Run(context.Background(), o, runRequest(), func(e RunEvent) error { events = append(events, e); return nil }, func(context.Context, ToolCall) (ToolAnswer, error) { calls++; return ToolAnswer{Text: "saved"}, nil })
+			if mode == "retry" {
+				if err != nil || calls != 1 || len(events) != 4 {
+					t.Fatalf("recovery: %v calls=%d events=%+v", err, calls, events)
+				}
+			} else {
+				want := ErrRetries
+				if mode == "retry-wrong-thread" {
+					want = ErrRun
+				}
+				if !errors.Is(err, want) || calls != 0 {
+					t.Fatalf("terminal: %v calls=%d", err, calls)
+				}
+			}
+			raw, _ := json.Marshal(events)
+			if strings.Contains(string(raw), "PRIVATE_SENTINEL") {
+				t.Fatal("native error leaked")
+			}
+			retries := 0
+			for _, e := range events {
+				if e.Type == "retry" {
+					retries++
+					if e.Attempt != retries || retries > 2 {
+						t.Fatal("invalid retry sequence")
+					}
+				}
+			}
+		})
+	}
+}
+func TestStopDuringNativeRecovery(t *testing.T) {
+	m := runManager(t, "retry-hang")
+	o, a, b := ownerFixture()
+	defer a()
+	defer b()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := m.Run(ctx, o, runRequest(), func(e RunEvent) error {
+		if e.Type == "retry" {
+			cancel()
+		}
+		return nil
+	}, func(context.Context, ToolCall) (ToolAnswer, error) {
+		t.Fatal("unexpected tool")
+		return ToolAnswer{}, nil
+	})
+	if err == nil {
+		t.Fatal("cancelled recovery succeeded")
 	}
 }

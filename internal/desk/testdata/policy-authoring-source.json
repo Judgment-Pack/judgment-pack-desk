@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "policyId": "policy_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "revisionId": "revision_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "candidateDigest": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+  "content": {
+    "sha256": "a71bdfd8a00ef99a740d981ff9cbd49dbf04871a9553c30a92a40705589a68cd",
+    "bytes": 121
+  },
+  "title": "Data access",
+  "artifactVersion": "1.0.0",
+  "narrative": "Only approved staff may access records."
+}

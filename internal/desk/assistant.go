@@ -117,9 +117,14 @@ var probeTimeout = 10 * time.Second
 // error here: it becomes one at the point of use, where it can be reported as
 // a sentence rather than as a failure to start the desk.
 func configDirFor(explicit string) string {
-	if explicit != "" {
-		return explicit
+	path, err := resolveHomeConfig(explicit)
+	if err != nil {
+		return ""
 	}
+	return path
+}
+
+func legacyConfigDir() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(xdg) {
 		return filepath.Join(xdg, deskDirName)
 	}

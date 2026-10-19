@@ -1,0 +1,12 @@
+.path { min-width: 0; overflow-wrap: anywhere; }
+.location { display: block; color: var(--ink-soft); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.destination { display: grid; gap: var(--density-field-gap); }
+.destinationHeading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-label); }
+.destinationChoice { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); }
+.caption { margin: 0; color: var(--ink-faint); font-size: var(--text-xs); }
+.explanation { margin: 0; color: var(--ink-soft); font-size: var(--text-sm); line-height: 1.5; }
+.moves { display: grid; }
+.move { display: grid; gap: var(--space-1); padding-block: var(--space-3); border-top: 1px solid var(--border); }
+.move > span:not(:first-child) { font-size: var(--text-sm); color: var(--ink-soft); }
+@media (max-width: 560px) { .destinationChoice { grid-template-columns: minmax(0,1fr); } .destinationChoice button { justify-self: start; } }

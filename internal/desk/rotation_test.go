@@ -990,13 +990,13 @@ func (r *rotationRig) abandonRotation(t *testing.T, at string) {
 		}
 	}
 	defer func() { testHookKeyBetween = nil }()
-	request, _ := http.NewRequest("POST", r.ts.URL+"/api/audit/key/rotate", strings.NewReader(`{"token":"`+token+`"}`))
-	request.Header.Set("Authorization", "Bearer "+testToken)
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Jpack-Desk", r.id)
-	if response, err := http.DefaultClient.Do(request); err == nil {
-		response.Body.Close()
-	}
+	sendAbandoned(t, r.s, func(url string) *http.Request {
+		request, _ := http.NewRequest("POST", url+"/api/audit/key/rotate", strings.NewReader(`{"token":"`+token+`"}`))
+		request.Header.Set("Authorization", "Bearer "+testToken)
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Jpack-Desk", r.id)
+		return request
+	})
 }
 
 // restart stops the chassis and starts it again over the same folders, and
@@ -1766,13 +1766,13 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { testHookKeyBetween = nil })
-	request, _ := http.NewRequest("POST", ts.URL+"/api/audit/key/rotate", strings.NewReader(`{"token":"`+token+`"}`))
-	request.Header.Set("Authorization", "Bearer "+testToken)
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Jpack-Desk", row.ID)
-	if response, err := http.DefaultClient.Do(request); err == nil {
-		response.Body.Close()
-	}
+	sendAbandoned(t, s, func(url string) *http.Request {
+		request, _ := http.NewRequest("POST", url+"/api/audit/key/rotate", strings.NewReader(`{"token":"`+token+`"}`))
+		request.Header.Set("Authorization", "Bearer "+testToken)
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Jpack-Desk", row.ID)
+		return request
+	})
 	testHookKeyBetween = nil
 	if names := liveIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + nextSeedSuffix, row.ID + rotatingSuffix, row.ID + seedSuffix}) {
 		t.Fatalf("the stop left %q", names)

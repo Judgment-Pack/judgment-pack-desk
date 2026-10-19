@@ -63,7 +63,7 @@ try {
     await page.getByRole('heading', { name: catalogue['What would you like to work on?'], exact: true }).waitFor()
     // Exercise routed views and portal menus, not only the landing page.
     const routes = [
-      '/packs', '/matrix', '/graphs', '/admin#assistant', '/admin#storage', '/admin#identity-provider', '/help',
+      '/library', '/dialects', '/jobs', '/jobs/new', '/graphs', '/admin#assistant', '/admin#storage', '/admin#identity-provider', '/help',
       '/packs/vendor-onboarding', '/packs/vendor-onboarding?view=logic', '/packs/vendor-onboarding?view=evidence',
       '/packs/vendor-onboarding/evaluate', '/packs/vendor-onboarding?view=review', '/packs/vendor-onboarding?view=brief',
       '/packs/vendor-onboarding?view=history', '/packs/vendor-onboarding?view=usage', '/packs/vendor-onboarding?edit=1',
@@ -74,6 +74,16 @@ try {
     for (const route of routes) {
       await page.goto(origin + route)
       await showWorkspace(page, catalogue)
+      // Exercise current recipe labels and save behavior explanations without
+      // creating records or starting any research.
+      if (route === '/dialects') {
+        if (language === 'ko') {
+          const contextAction = page.getByRole('button', { name: catalogue['Related work'], exact: true })
+          assert.match(await contextAction.evaluate(el => getComputedStyle(el).fontFamily), /Noto Sans KR/, 'chat context inherits the Korean font')
+        }
+        await page.getByRole('button', { name: catalogue['New dialect'], exact: true }).click()
+        await page.getByRole('dialog', { name: catalogue['New dialect'], exact: true }).waitFor()
+      }
       const labels = await page.locator('button, [role="tab"], nav a, label, h1, h2, h3, .quiet, [role="status"]').evaluateAll(elements =>
         elements.filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
           .map(el => el.textContent.trim()).filter(Boolean))
@@ -81,11 +91,15 @@ try {
         if (language !== 'en' && english[text] && catalogue[text] !== text) untranslatedLabels.push({ language, route, text })
       }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${language} ${route}: no overflow`)
-      if (['de', 'yue-Hant', 'ja'].includes(language)) await page.screenshot({ path: `${output}/${language}-${route.replace(/[^a-z]+/gi, '-')}.png`, fullPage: true })
+      if (['de', 'yue-Hant', 'ja'].includes(language) || route === '/dialects') await page.screenshot({ path: `${output}/${language}-${route.replace(/[^a-z]+/gi, '-')}.png`, fullPage: true })
+      if (route === '/dialects') {
+        await page.getByRole('dialog', { name: catalogue['New dialect'], exact: true })
+          .getByRole('button', { name: catalogue.Cancel, exact: true }).click()
+      }
     }
     await page.goto(origin)
     await page.locator('textarea').first().waitFor()
-    results.push(`${language}: Library, all eight pack and graph sections, pack editing, Assistant settings, storage, identity and Help`)
+    results.push(`${language}: Library, Dialects, Jobs, job creation, all eight pack and graph sections, pack editing, Assistant settings, storage, identity and Help`)
     const configure = page.getByRole('button', { name: catalogue['Configure Assistant'], exact: true }).filter({ hasText: catalogue['Configure Assistant'] })
     if (await configure.count()) {
       await configure.click()

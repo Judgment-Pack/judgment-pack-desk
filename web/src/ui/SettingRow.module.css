@@ -4,3 +4,5 @@
 .summary p { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--ink-faint); }
 .action { flex-shrink: 0; }
 @media (max-width: 420px) { .row { align-items: flex-start; flex-wrap: wrap; } .summary { flex-basis: 65%; } }
+
+.row[data-separator='false'] { border-bottom: none; }

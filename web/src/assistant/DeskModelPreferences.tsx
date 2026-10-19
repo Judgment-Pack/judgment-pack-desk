@@ -1,3 +1,4 @@
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { msg } from '../i18n'
@@ -62,18 +63,15 @@ export function DeskModelPreferences({unavailable,onDirtyChange}:{unavailable:bo
   {!codex&&<Field label={msg('Reasoning effort')}>{wiring=><Select {...wiring} value={current.thinking??machine.thinking} disabled={locked||draft.inherit} onValueChange={value=>{if(!draft.inherit)edit({...draft,thinking:value as typeof machine.thinking})}} options={[{value:'off',label:msg('off')},{value:'on',label:msg('standard')},{value:'ultra',label:msg('deep')}]}/>}</Field>}
   </>}
   <ButtonLink variant="quiet" to="/admin#connections-ai">{msg('Manage shared AI settings')}</ButtonLink>
-  {catalog.error&&codex&&<p role="alert">{msg(catalog.error.message)}</p>}
-  {read?.problem&&<p role="alert">{msg(read.problem)}</p>}
-  {write.error&&<p role="alert">{write.error.message}</p>}
-  <div className={styles.actions}>
+  {catalog.error&&codex&&<SettingsFeedback tone="error">{msg(catalog.error.message)}</SettingsFeedback>}
+  <SettingsActions feedback={<SettingsFeedback tone={read?.problem||write.error?'error':saved?'success':'neutral'}>{read?.problem?msg(read.problem):write.error?write.error.message:write.isPending?msg('Saving…'):saved?msg('Desk model preferences saved.'):dirty?msg('Unsaved changes'):null}</SettingsFeedback>}>
    {dirty&&<Button variant="quiet" onClick={()=>{setDirty(false);setDraft(baseline);setSaved(false);write.reset()}}>{msg('Cancel')}</Button>}
    <Button variant="primary" disabled={locked||!valid||(!dirty&&read?.present)} onClick={()=>write.mutate()}>{write.isPending?msg('Saving…'):msg('Save preferences')}</Button>
-  </div>
+  </SettingsActions>
   <Disclosure title={msg('Advanced settings')}>
    <div className={styles.actions}><Button variant="quiet" disabled={write.isPending||dirty} onClick={()=>void client.invalidateQueries({queryKey:DESK_CONFIG_QUERY_KEY})}>{msg('Reload from disk')}</Button>
    {read?.present&&<ButtonLink variant="inline" to="/author" onClick={()=>requestOpen(ASSISTANT_PROFILE_PATH)}>{ASSISTANT_PROFILE_PATH}</ButtonLink>}
   </div>
   </Disclosure>
-  {saved&&<p role="status">{msg('Desk model preferences saved.')}</p>}
  </section>
 }

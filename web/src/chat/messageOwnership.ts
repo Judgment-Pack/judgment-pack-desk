@@ -1,6 +1,6 @@
 import type { Chat, ChatAttachment } from './store'
 import type { RunState, Turn } from '../research/run'
-import { recoverableProposal } from '../assistant/engines/contract'
+import { recoverableProposal } from '@judgment-pack/harness/engines/contract'
 import { jsonIdentity } from '../research/checkCandidate'
 import { attachmentKey, mergeReferences, type ResponseHistory } from './responseHistory'
 

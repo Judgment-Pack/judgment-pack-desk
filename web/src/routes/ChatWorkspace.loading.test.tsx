@@ -67,11 +67,10 @@ it('opens the saved chat unlocked once history has loaded', () => {
   expect(panels.some((each) => each.chat.id === 'loading-history')).toBe(false)
 })
 
-it('says why history could not load, offers a retry, and shows no composer', () => {
+it('shows the shared unavailable placeholder without an editable composer; the shell owns recovery', () => {
   chats.value = { store, chats: [], drafts: [], ready: false, error: 'Chat history could not be read.' }
   show('/')
-  expect(screen.getByRole('alert').textContent).toContain('Chat history could not be read.')
-  expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toContain('Chat history unavailable')
   expect(screen.queryByTestId('panel')).toBeNull()
 })
 

@@ -638,12 +638,17 @@ refused, so the confirmation's last sentence would not be true. The
 confirmation is bound to the trail as Desk read it, its identity, the
 incomplete line, the size the runtime reported, and the file's device,
 inode, size and SHA-256, and to one attempt by a nonce Desk spends before the
-runtime runs, whatever it answers. A window remains that Desk cannot close: a
-writer that appends between Desk's last reading and the runtime's own is not
-excluded, because `audit repair` takes no precondition. Desk compares the
-damaged line the runtime reports, its length and its digest, with what it
-read, and where they differ says so, never as the repair confirmed. Closing
-the window needs a precondition in the runtime's `audit repair`.
+runtime runs, whatever it answers.
+
+*Local v0.13 work, Runtime 0.30.0:* Desk passes the confirmed damaged byte
+count and SHA-256 to `audit repair --damaged-bytes … --damaged-digest …`.
+Runtime checks these while holding its repair lock. A changed, completed,
+empty or missing tail is refused without repair. Desk maps
+`JPS-AUDIT-REPAIR-TAIL-CHANGED` to a stale confirmation and requires refreshing
+history and confirming again. Unknown and older Runtime versions offer no
+repair; Desk never retries without the preconditions. The returned damaged
+line, length and digest are still checked against the confirmation.
+
 
 **When it runs:** when the panel opens, and after a stamp, a hand-over or a
 repair. Never on a timer.
@@ -713,6 +718,33 @@ release check binds nothing there. Runner's member is the operator's record
 of Runner's own check, and establishes nothing against the operator.
 Rotating Runner's key (#238) is not part of this: this version of Desk names
 Runner a key only where its list holds one.
+
+*Local v0.13 work, Runtime 0.30.0 and Runner 0.8.0:* a completed run
+now offers **Verify saved record**, alongside the unchanged export download.
+The explicit action checks the original audit bytes and signature sidecar
+against Desk's retained Runner public-key history. Signature validity is
+reported separately from release/input verification and from job completion.
+Desk captures the release digest from the local release-check response before
+it reaches the browser and saves the installation's input profiles with it.
+For those releases, the same action runs Runner's `verify-run` against that
+saved digest and historical profile snapshot. When the signature verifies,
+Runner also receives that independently retained public key and
+`--require-signed`. The export supplies no trusted digest, key or profile.
+
+References live in the owner-only project folder
+`.desk-private/run-references/`, bound to Runner's workspace and release ID.
+They remain local installation evidence, not an independent witness. Their
+absence on an older run, or after a partial restore, is shown as **Not checked
+— saved references unavailable**; viewing or exporting a run never backfills
+them. Chat backups do not include these project files. Restore them alongside
+the project's Runner state and the retained signing-key list when keeping
+these checks available across a move or restore.
+
+The details explicitly say **Decision outcome: Not re-run**. Neither a valid
+signature nor a matching release establishes source accuracy, policy
+correctness or trail completeness. The Jobs chain remains a separate check
+with no signature sidecar, as described above. Downloading the export does
+not run or imply any verification.
 
 ### 5. Runner
 

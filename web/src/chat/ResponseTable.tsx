@@ -1,3 +1,4 @@
+import {ChatAction} from './ChatActions'
 import { useRef, useState, type ReactNode } from 'react'
 import { msg, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
@@ -15,7 +16,7 @@ export function ResponseTable({ children }: { children: ReactNode }) {
     <table>{children}</table>
   </div>
   return <div className={styles.root}>
-    <div className={styles.toolbar}><span>{msg('Table')}</span><Tooltip content={msg('Show table')} disabled={open}><button ref={opener} type="button" className="desk-icon-button" aria-label={msg('Show table')} aria-haspopup="dialog" onClick={() => setOpen(true)}><IconFocus /></button></Tooltip></div>
+    <div className={styles.toolbar}><span>{msg('Table')}</span><Tooltip content={msg('Show table')} disabled={open}><ChatAction variant="quiet" size="icon" ref={opener} type="button" aria-label={msg('Show table')} aria-haspopup="dialog" onClick={() => setOpen(true)}><IconFocus /></ChatAction></Tooltip></div>
     {table()}
     <Dialog open={open} onOpenChange={setOpen} title={msg('Response table')} size="wide" openerRef={opener}
       footer={<DialogActions><DialogClose asChild><Button>{msg('Close')}</Button></DialogClose></DialogActions>}>

@@ -1,0 +1,7 @@
+.plan { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); display: grid; gap: var(--space-2); font-size: var(--text-sm); min-width: 0; overflow-wrap: anywhere; }
+.header { display: flex; align-items: center; gap: var(--space-2); }
+.header span, .plan small { color: var(--ink-soft); font-size: var(--text-xs); }
+.plan p { margin: 0; }
+.plan ol, .plan ul { margin: 0; padding-inline-start: var(--space-5); }
+.plan li + li { margin-top: var(--space-1); }
+.actions { display: flex; justify-content: flex-end; gap: var(--space-2); }

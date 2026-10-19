@@ -1,3 +1,5 @@
+import {LoadingState} from '../ui/LoadingState'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useAIConnectionScope } from './aiConnections'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
@@ -345,10 +347,10 @@ export function EndpointForm({
         <p className={styles.setup}>
           <strong>{msg("Assistant setup")}</strong>{' '}
           {unavailable ? msg("Configuration unavailable.") : key.isError ? msg("Could not read key status.")
-            : !key.isSuccess ? msg("Reading key status…")
+            : !key.isSuccess ? <LoadingState inline>{msg("Reading key status…")}</LoadingState>
             : remove.isPending ? msg("Removing the API key…")
             : busy ? msg("Saving changes…")
-            : checking ? msg("Checking the connection…")
+            : checking ? <LoadingState inline>{msg("Checking the connection…")}</LoadingState>
             : editingKey ? msg("Save your API key to continue.")
             : !connected ? msg("Save an API key for this endpoint.")
             : !here ? msg("Save the endpoint changes before testing.")
@@ -364,7 +366,9 @@ export function EndpointForm({
           title={msg("Connection")}
           description={msg("Choose a provider and securely save its API key.")}
           footer={
-            <div className={styles.connection}>
+            <SettingsActions feedback={<div id={testHintId}><SettingsFeedback>
+              {checking ? msg('Testing connection…') : check.answer !== undefined ? <CheckReading answer={check.answer} /> : !mayTest ? whyNotTest : msg('Connection not tested.')}
+            </SettingsFeedback></div>}>
               <Button
                 disabled={!mayTest}
                 aria-describedby={testHintId}
@@ -372,11 +376,7 @@ export function EndpointForm({
               >
                 {checking ? msg("Testing connection…") : msg("Test connection")}
               </Button>
-              <span id={testHintId} role="status" className="quiet">
-                {check.answer !== undefined ? <CheckReading answer={check.answer} />
-                  : !mayTest ? whyNotTest : msg("Connection not tested.")}
-              </span>
-            </div>
+            </SettingsActions>
           }
         >
           <Field label={msg("Provider")} error={problemFor('assistant.endpoint.kind')}>
@@ -491,13 +491,11 @@ export function EndpointForm({
           </Field>
         </SettingsSection>
 
-        <div className={styles.saveActions}>
-          {busy && <span className="quiet">{msg("Saving…")}</span>}
-          {editingKey && !busy && <span className="quiet">{msg("Save or cancel the API key changes first.")}</span>}
-          {dirty && saved === undefined && !busy && !editingKey && <span className="quiet">{msg("Unsaved settings")}</span>}
-          {saved !== undefined && !busy && <span className="quiet" role="status">{systemMessage(saved)}</span>}
+        <SettingsActions feedback={<SettingsFeedback tone={saved !== undefined && !busy ? 'success' : 'neutral'}>
+          {busy ? msg('Saving…') : editingKey ? msg('Save or cancel the API key changes first.') : saved !== undefined ? systemMessage(saved) : dirty ? msg('Unsaved settings') : null}
+        </SettingsFeedback>}>
           <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={!settingsChanged || blocked || busy || checking || editingKey}>{msg("Save settings")}</Button>
-        </div>
+        </SettingsActions>
 
         {configured !== null && !connectionScope && (
           <section className={styles.dangerSection} aria-label={msg("Remove endpoint")}>

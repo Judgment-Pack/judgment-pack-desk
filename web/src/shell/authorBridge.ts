@@ -2,7 +2,7 @@
  * The two facts the shell and the authoring view have to share.
  *
  * **This is a real deviation from "the routes move verbatim", and it is
- * argued rather than slipped in.** The rail's dirty dot and the Create-pack
+ * argued rather than slipped in.** The editor write guards and the Create-pack
  * dialog's open-the-new-file cannot work without it: `dirty` is component-
  * local state in `AuthorView`, fed by `FileEditor`'s `onDirty`, and the file
  * selection has no URL parameter to carry it. The alternative is to drop both
@@ -31,8 +31,7 @@ import { useEffect, useSyncExternalStore } from 'react'
  * and the authoring view unmounting withdrew the dot the pack editor was
  * holding. Each publisher owns its own key and withdraws only its own.
  *
- * What the rail's dot means is unchanged, and is what `useAuthorDirty`
- * answers: **something** on this desk has unsaved bytes.
+ * The path-specific write guards use `useAuthorDirty` to determine whether **something** on this desk has unsaved bytes.
  */
 const dirtyPaths = new Map<string, boolean>()
 const dirtyListeners = new Set<() => void>()
@@ -45,7 +44,7 @@ function announceDirty(): void {
   for (const listener of dirtyListeners) listener()
 }
 
-/** An editor publishes for its own path; the rail reads the union. */
+/** Editors publish for path-specific write guards. The shell indicator uses UnsavedChanges. */
 export function publishDirty(path: string, next: boolean): void {
   if (next) dirtyPaths.set(path, true)
   else dirtyPaths.delete(path)

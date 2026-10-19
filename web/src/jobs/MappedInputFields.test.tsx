@@ -1,3 +1,5 @@
+import {checkDialect,DialectCheckError} from '../dialect/authoring'
+vi.mock('../dialect/authoring',async original=>({...await original<object>(),checkDialect:vi.fn()}))
 import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -14,19 +16,20 @@ import { jobsAPI } from './client'
 import { localSnapshot } from './sourceInputs'
 import { prepareMappedInputs } from './mappedInputs'
 import type { PackDocument } from '../mcp/types'
-import type { MappingV2 } from './mappingTypes'
+import type { ExecutableDialect } from './dialectTypes'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('./mappedInputs',async original=>({...await original<object>(),prepareMappedInputs:vi.fn()}))
 vi.mock('./sourceInputs',async original=>({...await original<object>(),localSnapshot:vi.fn()}))
 const doc={rules:[{condition:{op:'fact',path:'/score',value:7}}],evidenceRequirements:[]} as unknown as PackDocument
-const mapping: MappingV2=mappingFixture('case-score')
+const packText='{ "precise":9007199254740993, "record":"non-GTM" }'
+const mapping: ExecutableDialect=mappingFixture('case-score')
 const source={mapping,case:{facts:{score:7}},sources:{},mappingDigest:'digest'}
 const result={input:{source,facts:{score:7}},factsText:'{"score":7}',evidenceText:''}
-beforeEach(()=>{vi.mocked(jobsAPI).mockResolvedValue([]);vi.mocked(prepareMappedInputs).mockResolvedValue(result)})
+beforeEach(()=>{vi.mocked(checkDialect).mockResolvedValue({status:'complete',digest:'sha256:checked',diagnostics:[]});vi.mocked(jobsAPI).mockResolvedValue([]);vi.mocked(prepareMappedInputs).mockResolvedValue(result)})
 afterEach(()=>{cleanup();vi.resetAllMocks()})
-async function view(fixed?:MappingV2) {
+async function view(fixed?:ExecutableDialect) {
  const onChange=vi.fn(), query=new QueryClient({defaultOptions:{queries:{retry:false}}})
- const rendered=render(<QueryClientProvider client={query}><Tooltip.Provider><MappedInputFields doc={doc} fixed={fixed} disabled={false} onChange={onChange}/></Tooltip.Provider></QueryClientProvider>)
+ const rendered=render(<QueryClientProvider client={query}><Tooltip.Provider><MappedInputFields doc={doc} packText={packText} fixed={fixed} disabled={false} onChange={onChange}/></Tooltip.Provider></QueryClientProvider>)
  await waitFor(()=>expect((screen.getByRole('button',{name:'Read sources and preview'}) as HTMLButtonElement).disabled).toBe(false))
  return {...rendered,onChange}
 }
@@ -42,7 +45,7 @@ it('never acquires on mount; explicit preview enables submission and edits inval
 })
 it('locks a released mapping and starts without retained case values or files',async()=>{
  await view({...mapping,sources:undefined})
- expect(screen.queryByText('Edit mapping')).toBeNull()
+ expect(screen.queryByText('Edit dialect')).toBeNull()
  expect(screen.queryByRole('button',{name:'Add local file'})).toBeNull()
  fireEvent.click(screen.getByText('Case inputs (JSON)',{selector:'summary span'}))
  expect((screen.getByLabelText('Case inputs (JSON)') as HTMLTextAreaElement).value).toBe('{"facts": {}, "evidence": {}}')
@@ -60,8 +63,8 @@ it('cancel and unmount discard late preparation results',async()=>{
 })
 it('does not allow malformed mapping text to trigger acquisition',async()=>{
  await view()
- fireEvent.click(screen.getByText('Edit mapping'))
- fireEvent.change(screen.getByLabelText('Mapping JSON'),{target:{value:'{"version":2,"sources":{}}'}})
+ fireEvent.click(screen.getByText('Edit dialect'))
+ fireEvent.change(screen.getByLabelText('Dialect JSON'),{target:{value:'{"version":2,"sources":{}}'}})
  expect((screen.getByRole('button',{name:'Read sources and preview'}) as HTMLButtonElement).disabled).toBe(true)
  expect(prepareMappedInputs).not.toHaveBeenCalled()
 })
@@ -87,16 +90,16 @@ it('keeps a selected file when an output pointer changes, while requiring a new 
 
 it('requires pending request edits to be applied before replacing the source mapping',async()=>{
  await view()
- fireEvent.click(screen.getByText('Edit mapping'))
- fireEvent.change(screen.getByLabelText('Mapping JSON'),{target:{value:JSON.stringify({...mapping,sources:[{name:'records',kind:'operation',profile:'registry',arguments:{tool:'read',arguments:{}},read:{copy:{facts:[],evidence:[]}}}]})}})
+ fireEvent.click(screen.getByText('Edit dialect'))
+ fireEvent.change(screen.getByLabelText('Dialect JSON'),{target:{value:JSON.stringify({...mapping,sources:[{name:'records',kind:'operation',profile:'registry',arguments:{tool:'read',arguments:{}},read:{copy:{facts:[],evidence:[]}}}]})}})
  fireEvent.click(await screen.findByRole('button',{name:'records'}))
  fireEvent.change(screen.getByLabelText('Request parameters (JSON)'),{target:{value:'{"case":"pending"}'}})
  expect((screen.getByRole('button',{name:'Add source'}) as HTMLButtonElement).disabled).toBe(true)
- expect((screen.getByLabelText('Mapping JSON') as HTMLTextAreaElement).disabled).toBe(true)
+ expect((screen.getByLabelText('Dialect JSON') as HTMLTextAreaElement).disabled).toBe(true)
  expect((screen.getByRole('button',{name:'Read sources and preview'}) as HTMLButtonElement).disabled).toBe(true)
  fireEvent.click(screen.getByRole('button',{name:'Apply configuration'}))
  await waitFor(()=>expect((screen.getByRole('button',{name:'Add source'}) as HTMLButtonElement).disabled).toBe(false))
- expect(JSON.parse((screen.getByLabelText('Mapping JSON') as HTMLTextAreaElement).value).sources[0].arguments.arguments).toEqual({case:'pending'})
+ expect(JSON.parse((screen.getByLabelText('Dialect JSON') as HTMLTextAreaElement).value).sources[0].arguments.arguments).toEqual({case:'pending'})
 })
 
 it('maps an explicitly selected Drive resource to fileId only for the selected mapping source',async()=>{
@@ -136,8 +139,16 @@ it.each(['complete','cancel','unmount'] as const)('offers explicit reconnect for
 
 it('shows the translated canonical rule in the advanced mapping error',async()=>{
  await view()
- fireEvent.click(screen.getByText('Edit mapping'))
- fireEvent.change(screen.getByLabelText('Mapping JSON'),{target:{value:'{"version":2,"version":2}'}})
+ fireEvent.click(screen.getByText('Edit dialect'))
+ fireEvent.change(screen.getByLabelText('Dialect JSON'),{target:{value:'{"version":2,"version":2}'}})
  expect(screen.getByRole('alert').textContent).toBe('JSON member “version” appears more than once (§1).')
  expect(prepareMappedInputs).not.toHaveBeenCalled()
+})
+it('checks declared coverage before acquisition and refuses a Runtime failure',async()=>{
+ await view()
+ vi.mocked(checkDialect).mockRejectedValue(new DialectCheckError({status:'incomplete',diagnostics:[{code:'missing-producer',message:'The pack input is unmapped.'}]}))
+ fireEvent.click(screen.getByRole('button',{name:'Read sources and preview'}))
+ await screen.findByText(/The pack input is unmapped/)
+ expect(prepareMappedInputs).not.toHaveBeenCalled()
+ expect(checkDialect).toHaveBeenCalledWith(expect.anything(),packText,expect.any(AbortSignal))
 })

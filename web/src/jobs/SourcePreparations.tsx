@@ -1,3 +1,4 @@
+import { QueryStatusNotice } from '../shell/QueryStatusNotice'
 import {useEffect,useRef,useState} from 'react'
 import {useInfiniteQuery,useQueryClient} from '@tanstack/react-query'
 import {Link} from 'react-router-dom'
@@ -47,7 +48,7 @@ export function SourcePreparations({jobId,onHasItems}:{jobId:string;onHasItems?:
  const query=useInfiniteQuery({queryKey:['job-occurrences',jobId,'preparations'],initialPageParam:0,queryFn:({pageParam})=>jobsAPI<Page<Occurrence>>(`jobs/${jobId}/occurrences?preparations=1&after=${pageParam}`),getNextPageParam:p=>p.next||undefined,refetchInterval:5000})
  const items=query.data?.pages.flatMap(p=>p.items).filter(o=>o.preparation)??[]
  useEffect(()=>onHasItems?.(items.length>0),[items.length,onHasItems])
- if(query.error)return <p role="alert" className={styles.problem}>{msg('Source preparation could not be loaded.')}</p>
- if(!items.length)return null
- return <section className={styles.stack}><h2>{msg('Source preparation')}</h2><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{msg('Received')}</th><th>{msg('Status')}</th><th>{msg('Details')}</th></tr></thead><tbody>{items.map(o=><tr key={o.id}><td>{date(o.receivedAt)}</td><td><span className={o.state==='waiting'?styles.sourceWaiting:undefined}>{occurrenceState(o.state)}</span>{o.reason&&o.state!=='waiting'&&<span className={styles.cellMeta}>{o.reason}</span>}{o.runId&&<Link className={styles.cellMeta} to={`/jobs/${jobId}/runs/${o.runId}`}>{msg('View run')}</Link>}</td><td><SourceProgress occurrence={o}/></td></tr>)}</tbody></table></div>{query.hasNextPage&&<div><Button disabled={query.isFetchingNextPage} onClick={()=>void query.fetchNextPage()}>{msg('Load more')}</Button></div>}</section>
+ const notice=<QueryStatusNotice id={"job-source-preparations:"+jobId} label={msg("Source preparation unavailable")} error={query.error} retrying={query.isFetching} onRetry={()=>query.refetch()}>{msg("Source preparation could not be refreshed. Previously loaded status may be out of date.")}</QueryStatusNotice>
+ if(!items.length)return notice
+ return <>{notice}<section className={styles.stack}><h2>{msg('Source preparation')}</h2><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{msg('Received')}</th><th>{msg('Status')}</th><th>{msg('Details')}</th></tr></thead><tbody>{items.map(o=><tr key={o.id}><td>{date(o.receivedAt)}</td><td><span className={o.state==='waiting'?styles.sourceWaiting:undefined}>{occurrenceState(o.state)}</span>{o.reason&&o.state!=='waiting'&&<span className={styles.cellMeta}>{o.reason}</span>}{o.runId&&<Link className={styles.cellMeta} to={`/jobs/${jobId}/runs/${o.runId}`}>{msg('View run')}</Link>}</td><td><SourceProgress occurrence={o}/></td></tr>)}</tbody></table></div>{query.hasNextPage&&<div><Button disabled={query.isFetchingNextPage} onClick={()=>void query.fetchNextPage()}>{msg('Load more')}</Button></div>}</section></>
 }

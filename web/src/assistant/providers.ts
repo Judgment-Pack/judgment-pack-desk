@@ -2,7 +2,7 @@ import { aiHeaders, useAIConnectionScope } from './aiConnections'
 import { useQuery } from '@tanstack/react-query'
 import { chassisUrl, deskFetch } from '../files/client'
 import { sourceMessage } from '../i18n/source'
-import type { CodexEffort } from './agent'
+import type { CodexEffort } from '@judgment-pack/harness/agent'
 
 export interface Provider { id: string; authMethod: string; agent: string; configured: boolean; enabled: boolean; engineReady: boolean; requiredVersion: string; availability?: string; loginMethods: string[] }
 export interface ProviderStatus { provider: string; authMethod: string; agent: string; runtime: string; account: string; plan?: string; login?: { id: string; state: string; expiresAt: string } }

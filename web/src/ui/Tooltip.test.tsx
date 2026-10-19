@@ -31,6 +31,44 @@ describe('shared tooltip behavior', () => {
     expect(button.hasAttribute('title')).toBe(false)
   })
 
+  it('hands an open hint to an adjacent trigger without moving focus or activating it', async () => {
+    const click = vi.fn()
+    render(<TooltipProvider><Tooltip content="Completed"><button>First run</button></Tooltip><Tooltip content="Failed"><button onClick={click}>Second run</button></Tooltip></TooltipProvider>)
+    const first = screen.getByRole('button', {name:'First run'}), second = screen.getByRole('button', {name:'Second run'})
+    focus(first)
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Completed')
+    fireEvent.pointerEnter(second, {pointerType:'mouse'})
+    await waitFor(() => expect(screen.getByRole('tooltip').textContent).toBe('Failed'))
+    expect(document.activeElement).toBe(first)
+    expect(click).not.toHaveBeenCalled()
+    fireEvent.keyDown(second, {key:'Escape'})
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+  })
+
+  it('renders only one tooltip during repeated pointer handoffs, including identical statuses', async () => {
+    render(<TooltipProvider>{[0,1,2,3,4].map(i => <Tooltip key={i} content={`Completed · Run ${i}`}><button>Run {i}</button></Tooltip>)}</TooltipProvider>)
+    const buttons = screen.getAllByRole('button')
+    focus(buttons[0]!)
+    await screen.findByRole('tooltip')
+    for (const i of [1,2,3,4,3,2,1,0]) {
+      fireEvent.pointerEnter(buttons[i]!, {pointerType:'mouse'})
+      await waitFor(() => {
+        const hints = document.querySelectorAll('[data-desk-tooltip]')
+        expect(hints).toHaveLength(1)
+        expect(hints[0]!.textContent).toContain(`Completed · Run ${i}`)
+      })
+    }
+  })
+
+  it('dismisses on activation even when a menu trigger prevents the pointer default', async () => {
+    render(<Tooltip content="Options"><button onPointerDown={event => event.preventDefault()}>Menu</button></Tooltip>)
+    const trigger = screen.getByRole('button')
+    focus(trigger)
+    await screen.findByRole('tooltip')
+    fireEvent.pointerDown(trigger)
+    await waitFor(() => expect(document.querySelector('[data-desk-tooltip]')).toBeNull())
+  })
+
   it('does not show a tooltip for text that fits or hidden text', () => {
     dimensions(100, 80)
     const { rerender } = render(<OverflowTooltip><button>Fits</button></OverflowTooltip>)

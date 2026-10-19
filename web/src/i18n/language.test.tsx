@@ -9,7 +9,7 @@ import type { PackDocument } from '../mcp/types'
 import { NoSession, NO_SESSION_MESSAGE } from '../mcp/session'
 import { ErrorBox } from '../components/primitives'
 import { walkFallbackReason, readGraphDocument, edgeCarries } from '../mcp/graphDocument'
-import { thinkingNotice, alwaysFromRefusal } from '../assistant/thinking'
+import { thinkingNotice, alwaysFromRefusal } from '@judgment-pack/harness/thinking'
 import { listingRefusal } from '../assistant/modelListing'
 import { describeEvent } from '../assistant/EventList'
 import { checkpoint, decodeCheckpoint } from '../chat/checkpoint'
@@ -184,7 +184,7 @@ describe('personal language preference', () => {
     await act(async () => { setLanguage('ja'); await languageReady() })
     expect(screen.getByRole('status').textContent).toBe(msg('Copied'))
     expect(writeText).toHaveBeenCalledExactlyOnceWith('{"outcomeId":"Save"}')
-    expect(document.querySelector('pre code')?.textContent).toBe('{"outcomeId":"Save"}')
+    expect(document.querySelector('pre code')?.textContent).toBe('{\n  "outcomeId": "Save"\n}')
     vi.unstubAllGlobals()
   })
 

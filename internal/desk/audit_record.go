@@ -979,7 +979,7 @@ func (s *Server) auditVerifyRequiring(ctx context.Context, dir heldDir, require 
 	answer.Keys = &keys
 	answer.Signing = &signing
 	answer.Rotation = &rotation
-	answer.Repair = s.repairOffer(ctx, answer.Report)
+	answer.Repair = s.repairOffer(ctx, answer.Report, schema.version)
 	answer.Expected = expect.count
 	answer.ExpectUnread = expect.unread
 	answer.HandoverProblem = expect.problem

@@ -1,6 +1,7 @@
 import importlib.util
 import contextlib
 import io
+import json
 import os
 from pathlib import Path
 import sys
@@ -132,5 +133,97 @@ class FreshnessTest(unittest.TestCase):
              contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as exit:
             pins.main()
         self.assertEqual(exit.exception.code, 1)
+
+class WebPackagesTest(unittest.TestCase):
+    """The lock's web-packages entry, held against web/package.json and its npm lockfile, offline and online."""
+    ASSET = b'the release asset bytes'
+
+    def setUp(self):
+        self.plan = pins.read_plan()
+        self.package = self.plan['web-packages']['harness']
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.web = Path(self.temp.name)
+        self.url = pins.asset_url(self.package)
+        self.write(self.url, self.url, pins.npm_integrity(self.ASSET))
+
+    def write(self, wanted, resolved, integrity, version=None):
+        npm = self.package['package']
+        (self.web / 'package.json').write_text(json.dumps({'dependencies': {npm: wanted}}))
+        (self.web / 'package-lock.json').write_text(json.dumps({'packages': {'': {'dependencies': {npm: wanted}},
+            'node_modules/' + npm: {'version': version or self.package['version'][1:], 'resolved': resolved, 'integrity': integrity}}}))
+
+    def test_the_lock_names_the_release_asset(self):
+        self.assertEqual(self.url, 'https://github.com/Judgment-Pack/judgment-pack-agent/releases/download/' + self.package['version'] + '/' + self.package['asset'])
+        pins.check_web_packages(self.plan, pins.WEB)
+
+    def test_check_refuses_another_install_source(self):
+        for wanted, resolved, version in ((self.url.replace('v0.1.0', 'v0.0.9'), self.url, None), ('file:../.harness/package.tgz', 'file:../.harness/package.tgz', None),
+                                          (self.url, self.url.replace('agent', 'other'), None), (self.url, self.url, '0.1.0-dev')):
+            with self.subTest(wanted=wanted, resolved=resolved, version=version):
+                self.write(wanted, resolved, pins.npm_integrity(self.ASSET), version)
+                with self.assertRaises(ValueError): pins.check_web_packages(self.plan, self.web)
+        # package.json alone naming another source, beside a lockfile that matches the lock.
+        self.write(self.url, self.url, pins.npm_integrity(self.ASSET))
+        (self.web / 'package.json').write_text(json.dumps({'dependencies': {self.package['package']: 'file:../.harness/package.tgz'}}))
+        with self.assertRaisesRegex(ValueError, 'package.json'): pins.check_web_packages(self.plan, self.web)
+
+    def test_read_plan_refuses_an_unknown_or_malformed_web_package(self):
+        for change in ({'repository': 'someone/else'}, {'sha256': 'b' * 63}, {'asset': '../escape.tgz'}, {'channel': 'development'}, {'version': 'main'}, {'extra': 1}):
+            plan = json.loads(json.dumps(self.plan)); plan['web-packages']['harness'].update(change)
+            with self.subTest(change=change), patch.object(pins, 'LOCK') as lock:
+                lock.read_text.return_value = json.dumps(plan)
+                with self.assertRaises(ValueError): pins.read_plan()
+        for change in (lambda plan: plan.pop('web-packages'), lambda plan: plan['web-packages'].update(other=plan['web-packages']['harness']), lambda plan: plan.update(npm={})):
+            plan = json.loads(json.dumps(self.plan)); change(plan)
+            with self.subTest(plan=sorted(plan)), patch.object(pins, 'LOCK') as lock:
+                lock.read_text.return_value = json.dumps(plan)
+                with self.assertRaises(ValueError): pins.read_plan()
+
+    def fake_gh(self, status=0, subjects=None):
+        """A `gh` on PATH that records its arguments and answers as `gh attestation verify --format json` does."""
+        bin_dir = self.web / 'bin'; bin_dir.mkdir(exist_ok=True)
+        answer = self.web / 'gh-answer.json'
+        subjects = subjects if subjects is not None else [{'name': self.package['asset'], 'digest': {'sha256': self.package['sha256']}}]
+        answer.write_text(json.dumps([{'verificationResult': {'statement': {'subject': subjects}}}]))
+        gh = bin_dir / 'gh'
+        gh.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "$FAKE_GH_ARGS"\ncat "$FAKE_GH_ANSWER"\nexit ' + str(status) + '\n')
+        gh.chmod(0o755)
+        return {'PATH': str(bin_dir) + os.pathsep + os.environ.get('PATH', ''), 'FAKE_GH_ARGS': str(self.web / 'gh-args'), 'FAKE_GH_ANSWER': str(answer)}
+
+    def verify(self, data, release=None, commit=None, gh=None):
+        release = release or {'tag_name': self.package['version'], 'draft': False, 'prerelease': False}
+        with patch.object(pins, 'get_release', return_value=release), patch.object(pins, 'tag_commit', return_value=commit or self.package['revision']), \
+             patch.object(pins, 'download_asset', return_value=data) as download, patch.dict(os.environ, gh or self.fake_gh()), contextlib.redirect_stdout(io.StringIO()):
+            pins.verify_web_packages(self.plan, self.web)
+        return download
+
+    def test_verify_holds_the_asset_to_its_attestation(self):
+        self.package['sha256'] = pins.hashlib.sha256(self.ASSET).hexdigest()
+        self.verify(self.ASSET)
+        args = (self.web / 'gh-args').read_text().splitlines()
+        repository = self.package['repository']
+        self.assertEqual(args[:2], ['attestation', 'verify'])
+        self.assertTrue(args[2].endswith('/' + self.package['asset']))
+        self.assertEqual(args[3:], ['--repo', repository, '--signer-workflow', repository + '/.github/workflows/release.yml',
+                                    '--source-ref', 'refs/tags/' + self.package['version'], '--source-digest', self.package['revision'], '--format', 'json'])
+        with self.assertRaisesRegex(ValueError, 'attestation did not verify'):
+            self.verify(self.ASSET, gh=self.fake_gh(status=1))
+        for subjects in ([{'name': self.package['asset'], 'digest': {'sha256': 'c' * 64}}], [{'name': 'other.tgz', 'digest': {'sha256': self.package['sha256']}}], []):
+            with self.subTest(subjects=subjects), self.assertRaisesRegex(ValueError, 'names another asset or digest'):
+                self.verify(self.ASSET, gh=self.fake_gh(subjects=subjects))
+
+    def test_verify_holds_the_asset_to_both_digests(self):
+        with self.assertRaisesRegex(ValueError, 'locked sha256'): self.verify(self.ASSET)
+        self.package['sha256'] = pins.hashlib.sha256(self.ASSET).hexdigest()
+        self.verify(self.ASSET).assert_called_once_with(self.url)
+        self.write(self.url, self.url, pins.npm_integrity(b'other bytes'))
+        with self.assertRaisesRegex(ValueError, 'integrity disagrees'): self.verify(self.ASSET)
+
+    def test_verify_refuses_a_moved_tag_or_an_unpublished_release(self):
+        self.package['sha256'] = pins.hashlib.sha256(self.ASSET).hexdigest()
+        self.verify(self.ASSET)
+        with self.assertRaisesRegex(ValueError, 'disagrees with locked commit'): self.verify(self.ASSET, commit='a' * 40)
+        for release in ({'tag_name': self.package['version'], 'draft': True, 'prerelease': False}, {'tag_name': self.package['version'], 'prerelease': True}, {'tag_name': 'v9.9.9', 'prerelease': False}):
+            with self.subTest(release=release), self.assertRaisesRegex(ValueError, 'Missing or mismatched'): self.verify(self.ASSET, release)
 
 if __name__=='__main__': unittest.main()

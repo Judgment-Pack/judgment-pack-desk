@@ -21,6 +21,7 @@
  * about how far back it can go.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {useVerifiedWrites} from '../../files/verifiedWrites'
 import type { FileContent } from '../../files/client'
 
 /** How many committed actions can be taken back. */
@@ -359,6 +360,15 @@ export function useDocumentBuffer(
     },
     [adopt]
   )
+
+  // A verified write made by another host surface can update a clean reader.
+  // Watcher refetches remain frozen; dirty/pending edits are never replaced.
+  useVerifiedWrites(({beforeSha256,file})=>{
+    if(!base||loaded?.path!==file.path||seeded.current!==file.path||base.path!==file.path||base.sha256!==beforeSha256||
+      current.current!==base.content||otherWork.current||edits.current!==revision)return
+    edited() // Invalidate reload tickets issued before this acknowledged write.
+    rebase(file,{path:base.path,generation:generationNow.current,revision:edits.current})
+  })
 
   const landed = useCallback((fresh: FileContent, submitted: string, expect?: BufferIdentity) => {
     if (expect !== undefined) {

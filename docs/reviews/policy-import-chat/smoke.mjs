@@ -1,0 +1,118 @@
+import {chromium} from '../../../web/node_modules/playwright-core/index.mjs'
+import fs from 'node:fs/promises'
+import crypto from 'node:crypto'
+const base=process.argv[2],out=process.argv[3]||'/tmp/jps-policy-import-chat-browser'
+if(!base)throw Error('Pass the isolated running Desk base URL as the first argument.')
+await fs.mkdir(out,{recursive:true})
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_BIN||'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']})
+const context=await browser.newContext({viewport:{width:1440,height:1050},colorScheme:'light',acceptDownloads:true})
+const page=await context.newPage(),errors=[],mutations=[],modelRequests=[]
+page.on('pageerror',error=>errors.push(error.message))
+page.on('request',request=>{if(request.method()==='POST'&&/\/(?:relay|model-relay|research-relay|codex|claude)\//.test(new URL(request.url()).pathname))modelRequests.push(new URL(request.url()).pathname)})
+page.on('response',async response=>{if(response.url().includes('/api/policies')&&['POST','PUT'].includes(response.request().method())){try{const body=await response.json();mutations.push({path:new URL(response.url()).pathname,status:response.status(),delivery:body.delivery,policyId:body.policy?.document.id,reviewState:body.policy?.document.reviewState,publications:body.policy?.document.publications.length,source:body.policy?.document.candidate.source,actor:body.receipt?.actor})}catch{}}})
+const originalName='Policy café.md',originalText='\ufeff# Source policy\r\n\r\nCafé 中文 — retain exact bytes.\r\nOriginal wording before interpretation.\r\n'
+const original=Buffer.from(originalText,'utf8'),sourceDigest=crypto.createHash('sha256').update(original).digest('hex')
+const title='Imported policy browser smoke',narrative='# Reviewed interpretation\n\nAn authenticated local administrator reviews every claim.\nThis editable draft deliberately differs from the retained original.'
+const chatTitle='Policy discussion retained locally',chatDraft='Unsent policy discussion. No model request is needed for this browser check.'
+async function api(path,{method='GET',body,revision,raw=false}={}){
+ return page.evaluate(async({path,method,body,revision,raw})=>{
+  const session=sessionStorage.getItem('jpack-desk-session:'+location.host),desk=sessionStorage.getItem('jpack.active-desk')
+  const headers={Authorization:'Bearer '+session,...(desk?{'X-Jpack-Desk':desk}:{}),...(body?{'Content-Type':'application/json'}:{}),...(revision?{'If-Match':revision}:{})}
+  const response=await fetch(path,{method,headers,...(body?{body:JSON.stringify(body)}:{})})
+  if(!response.ok)throw Error(path+' refused with '+response.status)
+  return raw?Array.from(new Uint8Array(await response.arrayBuffer())):response.json()
+ },{path,method,body,revision,raw})
+}
+try{
+ await page.goto(base+'/library',{waitUntil:'domcontentloaded'})
+ await page.getByRole('button',{name:'Create',exact:true}).click()
+ await page.getByRole('menuitem',{name:'New policy',exact:true}).click()
+ await page.locator('input[type="file"][accept=".md,.txt,text/plain,text/markdown"]').setInputFiles({name:originalName,mimeType:'text/markdown',buffer:original})
+ await page.getByText('Selected original:',{exact:false}).waitFor()
+ if(await page.getByRole('textbox',{name:'Policy text',exact:true}).inputValue()!==originalText.replace(/\r\n/g,'\n'))throw Error('Imported editor text changed unexpectedly.')
+ if(mutations.length)throw Error('Selecting the file committed a draft without explicit Save draft.')
+ await page.getByRole('textbox',{name:'Title',exact:true}).fill(title)
+ await page.getByRole('textbox',{name:'Artifact version',exact:true}).fill('1.0.0')
+ await page.getByRole('textbox',{name:'Policy text',exact:true}).fill(narrative)
+ await page.getByRole('button',{name:'Save draft',exact:true}).click()
+ await page.waitForURL(/\/policies\/policy_/)
+ const policyPath=new URL(page.url()).pathname,policyId=policyPath.split('/').at(-1)
+ await page.reload({waitUntil:'domcontentloaded'})
+ await page.getByRole('textbox',{name:'Policy text',exact:true}).waitFor()
+ if(await page.getByRole('textbox',{name:'Policy text',exact:true}).inputValue()!==narrative)throw Error('Edited narrative did not survive reload.')
+ const sourceRegion=page.getByRole('region',{name:'Original source',exact:true})
+ await sourceRegion.getByText(originalName,{exact:true}).waitFor()
+ await sourceRegion.getByText(sourceDigest,{exact:true}).waitFor()
+ await sourceRegion.getByRole('button',{name:'Read original',exact:true}).click()
+ await sourceRegion.locator('pre').waitFor()
+ if((await sourceRegion.locator('pre').textContent()).replace(/\r\n/g,'\n')!==originalText.replace(/\r\n/g,'\n'))throw Error('Read-original preview differs from retained source.')
+ const retained=Buffer.from(await api('/api/policies/'+policyId+'/source',{raw:true}))
+ if(!retained.equals(original))throw Error('Authorized source GET changed original bytes.')
+ const downloadPromise=page.waitForEvent('download')
+ await sourceRegion.getByRole('button',{name:'Download original',exact:true}).click()
+ const download=await downloadPromise
+ if(download.suggestedFilename()!==originalName)throw Error('Original download filename changed.')
+ const downloadPath=out+'/downloaded-source.md';await download.saveAs(downloadPath)
+ if(!(await fs.readFile(downloadPath)).equals(original))throw Error('Browser download did not preserve exact original bytes.')
+ // Seed a user-authored saved conversation through the existing authenticated
+ // CAS boundary. No assistant turn, proposal, approval or model call is forged.
+ const pane=page.locator('[data-chat-id][data-placement="pane"]')
+ await pane.waitFor()
+ const chatId=await pane.getAttribute('data-chat-id'),history=await api('/api/conversations')
+ const chat={id:chatId,title:chatTitle,pinned:false,archived:false,updatedAt:new Date().toISOString(),composer:chatDraft,model:'',mode:'draft',view:'chat',policy:{id:policyId}}
+ await api('/api/conversations',{method:'PUT',revision:history.sha256,body:{version:1,chats:[chat,...history.content.chats.filter(item=>item.id!==chatId)]}})
+ await page.reload({waitUntil:'domcontentloaded'})
+ const savedPane=page.locator('[data-chat-id="'+chatId+'"][data-placement="pane"]')
+ await savedPane.waitFor()
+ if(await savedPane.locator('textarea').inputValue()!==chatDraft)throw Error('Policy pane lost the persisted linked chat draft.')
+ await page.getByRole('group',{name:'Chat actions',exact:true}).getByRole('button',{name:'Chat history',exact:true}).click()
+ await page.getByRole('button',{name:new RegExp('^'+chatTitle)}).click()
+ await page.waitForURL(new RegExp('[?&]chat='+chatId))
+ await page.goto(new URL('/chats/'+chatId,base).href,{waitUntil:'domcontentloaded'})
+ const main=page.locator('[data-chat-id="'+chatId+'"][data-placement="main"]')
+ await main.waitFor()
+ if(await main.locator('textarea').inputValue()!==chatDraft)throw Error('Main chat lost Policy conversation draft.')
+ await page.reload({waitUntil:'domcontentloaded'});await main.waitFor()
+ if(await main.locator('textarea').inputValue()!==chatDraft)throw Error('Main chat reload lost Policy conversation draft.')
+ await page.getByRole('button',{name:'Related work',exact:true}).click()
+ const policyLink=page.getByRole('link',{name:'Open policy',exact:true})
+ await policyLink.waitFor();await policyLink.click()
+ await page.waitForURL(new RegExp('/policies/'+policyId))
+ await page.getByRole('textbox',{name:'Policy text',exact:true}).waitFor()
+ if(await page.getByRole('textbox',{name:'Policy text',exact:true}).inputValue()!==narrative)throw Error('Policy draft changed during chat navigation.')
+ await page.getByRole('textbox',{name:'Review comment',exact:true}).fill('Reviewed the exact imported basis and editable interpretation.')
+ await page.getByRole('button',{name:'Approve candidate',exact:true}).click()
+ await page.getByRole('region',{name:'Review',exact:true}).getByText('Approved',{exact:true}).waitFor()
+ await page.getByRole('button',{name:'Publish version',exact:true}).click()
+ const dialog=page.getByRole('dialog',{name:'Publish policy version?',exact:true});await dialog.waitFor()
+ await dialog.getByRole('button',{name:'Publish version',exact:true}).click()
+ await page.getByText('Current candidate published',{exact:true}).waitFor()
+ if(mutations.length!==3||mutations.some(item=>item.status!==200)||mutations.at(-1).publications!==1)throw Error('Policy UI issued unexpected create/review/publication mutations: '+JSON.stringify(mutations))
+ const current=await api('/api/policies/'+policyId)
+ if(current.document.candidate.source.content.sha256!==sourceDigest||current.document.reviewState!=='approved'||current.document.publications.length!==1)throw Error('Final publication lost reviewed source basis.')
+ await page.getByRole('tab',{name:'History',exact:true}).click()
+ const table=page.getByRole('table',{name:'Policy history',exact:true});await table.waitFor()
+ for(const event of ['Draft saved','Approved','Published'])await table.getByRole('rowheader',{name:event,exact:true}).waitFor()
+ await table.getByRole('button',{name:'Inspect Published',exact:true}).click()
+ await page.getByText(narrative,{exact:true}).waitFor()
+ await page.screenshot({path:out+'/policy-source-history-desktop.png',fullPage:true})
+ await page.getByRole('tab',{name:'Draft',exact:true}).click()
+ await page.setViewportSize({width:420,height:920})
+ // The retained chat is the mobile takeover surface. Capture it, then use
+ // its actual accessible Back control to return to the Policy editor.
+ const backToEditor=page.locator('#desk-inspector').getByRole('button',{name:'Back to policy',exact:true})
+ await backToEditor.waitFor({state:'visible'})
+ await page.screenshot({path:out+'/policy-chat-narrow.png',fullPage:true})
+ await backToEditor.click()
+ const editor=page.getByRole('textbox',{name:'Policy text',exact:true})
+ await editor.waitFor({state:'visible'})
+ if(await editor.inputValue()!==narrative)throw Error('Returning from mobile Assistant lost the Policy editor.')
+ await page.locator('[data-page-scroll]').evaluateAll(elements=>elements.forEach(element=>{element.scrollTop=0}))
+ await page.screenshot({path:out+'/policy-source-editor-narrow.png',fullPage:true})
+ const geometry=await editor.evaluate(element=>{const bounds=element.getBoundingClientRect(),main=element.closest('[data-page-scroll]');return {viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,editorLeft:bounds.left,editorRight:bounds.right,editorWidth:bounds.width,editorVisible:!!element.getClientRects().length,mainClientWidth:main?.clientWidth,mainScrollWidth:main?.scrollWidth}})
+ if(!geometry.editorVisible||geometry.editorLeft<0||geometry.editorRight>geometry.viewport||geometry.documentWidth>geometry.viewport||geometry.mainScrollWidth>geometry.mainClientWidth)throw Error('Narrow source editor overflows or is hidden: '+JSON.stringify(geometry))
+ if(errors.length||modelRequests.length)throw Error('Unexpected browser/model activity: '+JSON.stringify({errors,modelRequests}))
+ const evidence={passed:true,policyPath,chatId,originalName,sourceDigest,sourceBytes:original.length,exactDownload:true,originalDistinctFromEditedNarrative:true,linkedChatPaneHistoryMainReload:true,mutations,geometry,pageErrors:errors,modelRequests,screenshots:['policy-source-history-desktop.png','policy-chat-narrow.png','policy-source-editor-narrow.png']}
+ await fs.writeFile(out+'/smoke-result.json',JSON.stringify(evidence,null,2)+'\n');console.log(JSON.stringify(evidence,null,2))
+}catch(error){await page.screenshot({path:out+'/failure.png',fullPage:true});await fs.writeFile(out+'/failure.txt',String(error)+'\n'+await page.locator('body').innerText());throw error}
+finally{await browser.close()}

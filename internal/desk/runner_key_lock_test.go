@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -45,6 +46,10 @@ func TestHelperProcessHoldsTheKeyCustodyLock(t *testing.T) {
 	}
 	fmt.Println("held")
 	_, _ = io.Copy(io.Discard, os.Stdin)
+	// The lock lasts as long as file's descriptor. Without this, file is
+	// unreachable once it is locked: a collection in this process closes it,
+	// and the lock goes while this process still says it holds it (#472).
+	runtime.KeepAlive(file)
 	os.Exit(0)
 }
 
@@ -66,20 +71,36 @@ func holdKeyCustodyLock(t *testing.T, folder string) func() {
 		t.Fatal(err)
 	}
 	released := false
-	release := func() {
+	end := func() {
 		if !released {
 			released = true
 			input.Close()
 			_ = cmd.Wait()
 		}
 	}
-	t.Cleanup(release)
+	t.Cleanup(end)
 	line, _ := bufio.NewReader(output).ReadString('\n')
 	if line != "held\n" {
-		release()
+		end()
 		t.Fatalf("the helper process did not hold the lock: %q", line)
 	}
-	return release
+	if !lockTaken(t, folder) {
+		end()
+		t.Fatal("the helper process said it held the lock, and this process could take it")
+	}
+	// What the test saw while the lock was held counts only if the helper
+	// still held it at the end (#472). It reports with t.Error, never
+	// t.Fatal, so that it may be called off the test's goroutine.
+	return func() {
+		if !released {
+			if taken, err := lockTakenNow(folder); err != nil {
+				t.Errorf("the helper process's lock could not be checked at its release: %v", err)
+			} else if !taken {
+				t.Error("the helper process no longer held the lock when it was released")
+			}
+		}
+		end()
+	}
 }
 
 // generations is how many keys the stand-in runtime whose calls file is

@@ -1,3 +1,4 @@
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { Message } from '../i18n/Message'
 import { systemMessage, msg, useLocale } from '../i18n'
 /** API key entry, explicit saving, replacement, and confirmed removal. */
@@ -108,7 +109,9 @@ export function KeyField({
         <p className="quiet">{bindingSays(binding, read, destination)}</p>
       )}
 
-      <div className={styles.keyActions}>
+      <SettingsActions feedback={<SettingsFeedback tone={storeProblem !== undefined || removeProblem !== undefined ? 'error' : saved !== undefined && !saving ? 'success' : 'neutral'}>
+        {storeProblem !== undefined ? <Message text={"not stored: <0/>"} slots={[<code className="partial-reason">{storeProblem}</code>]} /> : removeProblem !== undefined ? <Message text={"not removed: <0/>"} slots={[<code className="partial-reason">{removeProblem}</code>]} /> : saving ? msg('Saving API key…') : saved !== undefined ? saved : entry && typed ? msg('API key changes are not saved.') : null}
+      </SettingsFeedback>}>
         {entry && (
           <>
             <Button variant="primary" disabled={saveDisabled} onClick={onStore}>
@@ -122,9 +125,7 @@ export function KeyField({
           <Button variant="danger" onClick={() => setConfirmingRemoval(true)}>{msg("Remove key")}</Button>
         )}
         {!read.present && answered && failed === null && <span className="quiet">{keySays(read, answered, failed)}</span>}
-      </div>
-      {saved !== undefined && <p className="quiet" role="status">{saved}</p>}
-      {entry && typed && !saving && <p className="quiet">{msg("API key changes are not saved.")}</p>}
+      </SettingsActions>
       {confirmingRemoval && read.present && (
         <div className={styles.removal}>
           <p>{msg("Removing the key prevents assistant requests until you save another key.")}</p>
@@ -137,12 +138,7 @@ export function KeyField({
         </div>
       )}
 
-      {storeProblem !== undefined && (
-        <p className="quiet" role="alert"><Message text={"not stored: <0/>"} slots={[<code className="partial-reason">{storeProblem}</code>]} /></p>
-      )}
-      {removeProblem !== undefined && (
-        <p className="quiet" role="alert"><Message text={"not removed: <0/>"} slots={[<code className="partial-reason">{removeProblem}</code>]} /></p>
-      )}
+
     </div>
   )
 }

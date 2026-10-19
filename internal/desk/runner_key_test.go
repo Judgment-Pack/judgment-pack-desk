@@ -209,6 +209,9 @@ func TestEachDesksRunnerIsNamedAKeyOfItsOwn(t *testing.T) {
 		}
 	}
 	for _, boot := range boots {
+		if got := string(boot["signingPublicKey"]); got != `"`+standInPublicKey+`"` {
+			t.Errorf("Runner was not bound to its retained public key: %s", got)
+		}
 		if key := bootKey(t, boot); key == inherited || key == projectKey || !strings.HasPrefix(key, folder+string(filepath.Separator)) {
 			t.Errorf("a Runner was named %s", key)
 		}

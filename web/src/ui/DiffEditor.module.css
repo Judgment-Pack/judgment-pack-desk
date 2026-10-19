@@ -1,0 +1,17 @@
+.editor { position:relative; min-width: 0; min-height: 96px; max-height: 60vh; overflow: auto; }
+.editor :global(.cm-editor) { height: auto; font-size: var(--text-xs); }
+.editor :global(.cm-content) { padding: var(--space-1) 0; }
+.editor :global(.cm-scroller) { line-height: 1.5; }
+.editor :global(.cm-mergeView) { position:relative; overflow: auto; }
+.editor :global(.cm-mergeViewEditors) { min-width: 640px; }
+.editor :global(.cm-changedLine), .editor :global(.cm-merge-b .cm-changedLine) { background: var(--diff-added-line); }
+.editor :global(.cm-deletedChunk), .editor :global(.cm-merge-a .cm-changedLine) { background: var(--diff-removed-line); }
+.editor :global(.cm-changedText) { background: var(--diff-added-text); }
+.editor :global(.cm-deletedText), .editor :global(.cm-merge-a .cm-changedText) { background: var(--diff-removed-text); }
+.editor :global(.cm-deletedLine)::before { content: '− '; color: var(--danger); }
+.editor :global(.cm-merge-b .cm-changedLine)::before { content: '+ '; color: var(--decision-green); }
+.editor :global(.cm-collapsedLines) { background: var(--surface); color: var(--ink-soft); border-color: var(--border); cursor: pointer; }
+
+.editor :global(.cm-collapsedLines)::before, .editor :global(.cm-collapsedLines)::after { content: ''; }
+
+.notice { margin: 0; padding: var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); }

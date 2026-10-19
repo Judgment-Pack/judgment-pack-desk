@@ -6,6 +6,10 @@ export function signInMessage(error: unknown): string {
   switch (code) {
     case 'cancelled': return msg('Sign-in was cancelled. You can try again.')
     case 'access-denied': return msg('This account is not the owner of this Desk. Sign in with the configured owner account.')
+    case 'password-incorrect': return msg('The password is incorrect. Try again.')
+    case 'password-current-incorrect': return msg('The current password is incorrect.')
+    case 'password-length': return msg('Use 4 to 8 characters.')
+    case 'password-mode-changed': return msg('Sign-in settings changed. Return to sign-in to continue.')
     case 'setup-code': return msg('The setup code is incorrect. Use the code shown by the running Desk process.')
     case 'browser-storage': return msg('Allow session storage in this browser to complete sign-in.')
     case 'invalid-settings': return msg('Check the issuer URL and client registration settings.')

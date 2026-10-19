@@ -2409,20 +2409,20 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # in a query that does not parse, is refused, while none means the start.
   # No Jobs path at all may be percent-encoded (review of #228).
   mutate go "jobs journal (route): not on the route list" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|'
   mutate go "jobs journal (route): a path that begins with it forwarded" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events.*|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events.*|'
   mutate go "jobs journal (route): the store-wide journal forwarded" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|events|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|events|'
   mutate go "jobs journal (route): an id in upper-case hex forwarded" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-fA-F0-9]{32}/events|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-fA-F0-9]{32}/events|'
   mutate go "jobs journal (route): an id with hex letters refused" "$J" \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
-    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[0-9]{32}/events|'
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/upgrade|jobs/job_[a-f0-9]{32}/upgrade-receipt|jobs/job_[0-9]{32}/events|'
   mutate go "jobs journal (route): written with POST" "$J" \
     ' || (tail == runChainRoute || journalPath.MatchString(tail)) && r.Method != http.MethodGet {' \
     ' || tail == runChainRoute && r.Method != http.MethodGet {'
@@ -2430,12 +2430,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/events$`)' \
     'var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/eventz$`)'
   mutate go "jobs journal (cursor): the shared query keys forwarded" "$J" \
-    '		query = url.Values{}
-		if after != "" {' \
-    '		if after != "" {'
+    '		query = paging' \
+    '		_ = paging'
+
   mutate go "jobs journal (cursor): a repeated cursor read as its first" "$J" \
-    '	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):' \
-    '	case len(cursor) >= 1 && journalSequence.MatchString(cursor[0]):'
+    '			if len(cursor) != 1 || !journalSequence.MatchString(cursor[0]) {' \
+    '			if len(cursor) < 1 || !journalSequence.MatchString(cursor[0]) {'
+
   mutate go "jobs journal (cursor): a cursor that only begins with digits forwarded" "$J" \
     'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)' \
     'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}`)'
@@ -2446,12 +2447,15 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)' \
     'var journalSequence = regexp.MustCompile(`^[0-9]+$`)'
   mutate go "jobs journal (cursor): a query that does not parse read leniently" "$J" \
-    '	case malformed != nil:
-		// Refused below, as Runner refuses it.' \
-    '	case malformed != nil && false:'
+    '	values, err := url.ParseQuery(raw)
+	if err != nil {' \
+    '	values, err := url.ParseQuery(raw)
+	if err != nil && false {'
+
   mutate go "jobs journal (cursor): no cursor refused rather than read as the start" "$J" \
-    '	case !given:' \
-    '	case !given && false:'
+    '		if cursor, given := values[name]; given {' \
+    '		if cursor, given := values[name]; given || true {'
+
   mutate go "jobs proxy (path): a percent-encoded path forwarded" "$J" \
     '	if strings.Contains(r.URL.EscapedPath(), "%") {' \
     '	if false {'
@@ -2587,11 +2591,9 @@ func (b *cappedBuffer) exceeded() bool {'
   # JPACK_CONFIG before ./jpack.json; inherited, it put a gated desk under
   # another project's law. The startup desk keeps it, and the launch says so.
   mutate go "named desk: the relay inherits JPACK_CONFIG" "$NRT" \
-    '	if s.cfg.deskID == "" {
-		return nil
-	}
-	return withoutVariables(os.Environ(), append([]string{runtimeConfigEnv}, runtimeSigningEnv...)...)' \
-    '	return nil'
+    '		env = withoutVariables(os.Environ(), append([]string{runtimeConfigEnv}, runtimeSigningEnv...)...)' \
+    '		env = withoutVariables(os.Environ(), runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv)'
+
   mutate go "named desk: the relay's environment is never set" internal/desk/relay.go \
     '	cmd.Env = s.runtimeEnv()
 ' \
@@ -2607,12 +2609,10 @@ func (b *cappedBuffer) exceeded() bool {'
 ' \
     ''
   mutate go "startup desk: an inherited JPACK_CONFIG is dropped" "$NRT" \
-    '	if s.cfg.deskID == "" {
-		return nil
-	}' \
-    '	if s.cfg.deskID == "" {
-		return withoutVariables(os.Environ(), runtimeConfigEnv)
-	}'
+    'func (s *Server) runtimeEnv() []string {' \
+    'func (s *Server) runtimeEnv() []string {
+	if s.usesStartupRuntimeEnvironment() { return withoutVariables(os.Environ(), runtimeConfigEnv) }'
+
   mutate go "startup desk: the inherited JPACK_CONFIG is not said" internal/desk/server.go \
     '		s.log.Printf("desk: JPACK_CONFIG is set, so this project'"'"'s runtime reads %s, not the project'"'"'s own jpack.json; desks Desk made ignore it", path)' \
     '		_ = path'
@@ -2624,31 +2624,32 @@ func (b *cappedBuffer) exceeded() bool {'
   # in the commands Desk runs over it or a private copy of it; the launch says
   # so without naming it, and the desk-config answer reports it there only.
   mutate go "signing key: a named desk's relay inherits it" "$NRT" \
-    '	return withoutVariables(os.Environ(), append([]string{runtimeConfigEnv}, runtimeSigningEnv...)...)' \
-    '	return withoutVariables(os.Environ(), runtimeConfigEnv)'
+    '		env = withoutVariables(os.Environ(), append([]string{runtimeConfigEnv}, runtimeSigningEnv...)...)' \
+    '		env = withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningPublicKeyEnv)'
+
   mutate go "signing key: a made desk's commands inherit it" "$NRT" \
     '	if !dir.startup {
 		drop = append(drop, runtimeSigningEnv...)' \
     '	if false {
 		drop = append(drop, runtimeSigningEnv...)'
+
   mutate go "signing key: the startup desk's relay drops it" "$NRT" \
-    '	if s.cfg.deskID == "" {
-		return nil
-	}' \
-    '	if s.cfg.deskID == "" {
-		return withoutVariables(os.Environ(), runtimeSigningKeyEnv)
-	}'
+    'func (s *Server) runtimeEnv() []string {' \
+    'func (s *Server) runtimeEnv() []string {
+	if s.usesStartupRuntimeEnvironment() { return withoutVariables(os.Environ(), runtimeSigningKeyEnv) }'
+
   mutate go "signing key: the startup desk's commands drop it" "$NRT" \
     '	if !dir.startup {
 		drop = append(drop, runtimeSigningEnv...)' \
     '	if true {
 		drop = append(drop, runtimeSigningEnv...)'
+
   mutate go "signing key: the startup desk's project is not marked" internal/desk/review.go \
-    'info: s.project.info, startup: s.cfg.deskID == ""}' \
-    'info: s.project.info}'
+    'info: s.project.info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation}' \
+    'info: s.project.info, expectedSigning: s.runtimeSigningExpectation}'
   mutate go "signing key: the startup desk's private copy is not marked" internal/desk/review.go \
-    'info: info, startup: s.cfg.deskID == ""})' \
-    'info: info})'
+    'info: info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation})' \
+    'info: info, expectedSigning: s.runtimeSigningExpectation})'
   mutate go "signing key: a named desk's review of an unreadable project inherits it" internal/desk/review.go \
     '		verified, err = s.runVerify(ctx, dir)' \
     '		dir.startup = true
@@ -2658,17 +2659,17 @@ func (b *cappedBuffer) exceeded() bool {'
     'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (any, *lockFailure) {
 	dir.startup = false'
   mutate go "signing key: a named desk's project is marked the startup desk's" internal/desk/review.go \
-    'info: s.project.info, startup: s.cfg.deskID == ""}' \
-    'info: s.project.info, startup: true}'
+    'info: s.project.info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation}' \
+    'info: s.project.info, startup: true, expectedSigning: s.runtimeSigningExpectation}'
   mutate go "signing key: a named desk's private copy is marked the startup desk's" internal/desk/review.go \
-    'info: info, startup: s.cfg.deskID == ""})' \
-    'info: info, startup: true})'
+    'info: info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation})' \
+    'info: info, startup: true, expectedSigning: s.runtimeSigningExpectation})'
   mutate go "signing key: a named desk reports the startup desk's" "$NRT" \
-    '	return s.cfg.deskID == "" && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
+    '	return s.usesStartupRuntimeEnvironment() && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
     '	return strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""'
   mutate go "signing key: a blank value counts as one" "$NRT" \
-    '	return s.cfg.deskID == "" && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
-    '	return s.cfg.deskID == "" && os.Getenv(runtimeSigningKeyEnv) != ""'
+    '	return s.usesStartupRuntimeEnvironment() && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
+    '	return s.usesStartupRuntimeEnvironment() && os.Getenv(runtimeSigningKeyEnv) != ""'
   # **And the public key it is expected to have, through the same list
   # (#377).** Runtime 0.30.0 holds every key it signs with to the public key
   # JPACK_SIGNING_PUBLIC_KEY names; inherited, a made desk's own key signed
@@ -2677,12 +2678,9 @@ func (b *cappedBuffer) exceeded() bool {'
     'var runtimeSigningEnv = []string{runtimeSigningKeyEnv, runtimeSigningPublicKeyEnv}' \
     'var runtimeSigningEnv = []string{runtimeSigningKeyEnv}'
   mutate go "signing key: the startup desk's relay drops the expected public key" "$NRT" \
-    '	if s.cfg.deskID == "" {
-		return nil
-	}' \
-    '	if s.cfg.deskID == "" {
-		return withoutVariables(os.Environ(), runtimeSigningPublicKeyEnv)
-	}'
+    'func (s *Server) runtimeEnv() []string {' \
+    'func (s *Server) runtimeEnv() []string {
+	if s.usesStartupRuntimeEnvironment() { return withoutVariables(os.Environ(), runtimeSigningPublicKeyEnv) }'
   mutate go "signing key: desk-config reports it never" internal/desk/assistant.go \
     'InheritsSigningKey: s.inheritsSigningKey()}' \
     'InheritsSigningKey: false}'
@@ -5232,8 +5230,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	cmd.Stderr = io.Discard'
   mutate go "runner key: a Runner that did not start is not said" "$J" \
     '		j.key.notRunning(err)
-' \
-    ''
+		return "", "", err' \
+    '		return "", "", err'
   mutate go "runner key: what Runner answered with is not recorded" "$J" \
     '	j.key.started(decided)' \
     '	_ = decided'
@@ -5267,7 +5265,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if false {'
   mutate go "runner key: the key commands inherit JPACK_SIGNING_KEY" "$RK" \
     '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info}, true' \
-    '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}, true'
+    '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation}, true'
   mutate go "runner key: the folder opened is not held to custody" "$RK" \
     '	if err := safeDirectory(path, checked, true); err != nil {
 		return failed(err)
@@ -5417,7 +5415,7 @@ func (b *cappedBuffer) exceeded() bool {'
   # Every row's name starts "run signer:".
   JS=internal/desk/jobs_signing.go
   mutate go "run signer: the boot line names no expected key" "$J" \
-    '			boot["signingPublicKey"] = signingPublicKey' \
+    '		boot["signingPublicKey"] = signingPublicKey' \
     '			_ = signingPublicKey'
   mutate go "run signer: a key the list does not name is not named" "$JS" \
     '		return signingUnlisted' \
@@ -5995,8 +5993,8 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'repair: offered without the finding' "$RPR" \
     '		if finding.Name == incompleteLastLine {' \
     '		if finding.Name != "" {'
-  mutate go 'repair: the decision record offers no repair' "$RPA" \
-    '	answer.Repair = s.repairOffer(ctx, answer.Report)
+  mutate go 'repair: the decision record offers no repair' internal/desk/audit_record.go \
+    '	answer.Repair = s.repairOffer(ctx, answer.Report, schema.version)
 ' \
     ''
   mutate go 'repair: the token is not the desk'"'"'s own' "$RPR" \
@@ -6247,9 +6245,9 @@ func (b *cappedBuffer) exceeded() bool {'
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, stampingConfirmWords)' \
     '	if len(request.Token) < stampingNonceLength {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, stampingConfirmWords)'
-  mutate go 'stamping: the settings are kept in the project' "$STP" \
-    'root, _, err := openOwnFolder(s.assistant.root, []string{stampingDirName, name}, create, stampingKept)' \
-    'root, _, err := openOwnFolder(s.root, []string{stampingDirName, name}, create, stampingKept)'
+  mutate go 'stamping: legacy-project settings leak into the project' internal/desk/stamping.go \
+    'base, parts := s.assistant.root, []string{stampingDirName, name}' \
+    'base, parts := s.root, []string{stampingDirName, name}'
   mutate go 'stamping: the startup desk keeps its settings under another name' "$STP" \
     '	name := s.signingKeyName()
 	if !stampingName.MatchString(name) {' \
@@ -7346,8 +7344,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     'if(!site&&!givenInChat(link.fetchUrl,context.turns(),deps.documents())&&!await searched(link.fetchUrl,signal))' \
     'if(false)'
   mutate web "read_link hands the model the whole page" "$LT" \
-    '  const end = Math.min(start + READ_WINDOW, joined.length)' \
-    '  const end = joined.length'
+    '  return heldWindow(joined, start, policy, (end) => {' \
+    '  return ((render: (end: number) => McpToolResult) => render(joined.length))((end) => {'
 
   mutate web "rail calls the whole-project graph walk" web/src/shell/LeftRail.tsx \
     'import { usePacks } from '"'"'../mcp/queries'"'"'' \
@@ -7401,8 +7399,8 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   # cue it was indistinguishable from having no configuration file at all
   # anywhere except /admin.
   mutate web 'a refused configuration is silent outside Admin' web/src/shell/StatusStrip.tsx \
-    '        {refused && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}' \
-    '        {false && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}'
+    '{refused && <DeskStatusNotice id="configuration"' \
+    '{false && <DeskStatusNotice id="configuration"'
   mutate web 'main remounts on a pane change' web/src/shell/AppShell.tsx \
     '            <main id="main" tabIndex={-1} className="desk-main" inert={covering || undefined}>' \
     '            <main id="main" key={shell.left.mode} tabIndex={-1} className="desk-main" inert={covering || undefined}>'
@@ -7716,9 +7714,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the field describes an element it did not render" "$FD" \
     '  const described = [hint ? hintId : undefined, error ? errorId : undefined].filter(Boolean)' \
     '  const described = [hintId, errorId]'
-  mutate web "the select reports back a value nobody offered" "$SEL" \
-    '        if (offered.has(next)) onValueChange(next)' \
-    '        onValueChange(next)'
+  mutate web 'the select reports back a value nobody offered' web/src/ui/Select.tsx \
+    'if (!offered.has(next) || options.find(option => option.value === next)?.disabled) return' \
+    'if (options.find(option => option.value === next)?.disabled) return'
   # Admin's storage section, and the decoder behind it.
   mutate web "Admin claims a location the listing does not show" "$V" \
     "  if (files.some((file) => file.path.startsWith(\`\${dir}/\`))) return 'holds-files'" \
@@ -7915,18 +7913,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      if (true) {
         return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel, undefined, undefined, await profile)
       }'
-  mutate web "an unreadable configuration is silent outside Admin" "$S" \
-    '        {!refused && unread && (' \
-    '        {false && unread && ('
-  mutate web "the strip's warning is the half that disappears" "$G" \
-    '  .desk-strip-warn {
-    flex: 0 0 auto;
-    white-space: nowrap;
-    color: var(--warn);
-  }' \
-    '  .desk-strip-warn {
-    color: var(--warn);
-  }'
+  mutate web 'an unreadable configuration is silent outside Admin' web/src/shell/StatusStrip.tsx \
+    '{!refused && unread && <DeskStatusNotice id="configuration"' \
+    '{false && unread && <DeskStatusNotice id="configuration"'
+  # Retired (2026-10-16): the strip's warning is the half that disappears. ConfigCue and its full/short responsive markup were replaced by shared DeskStatusNotice and DeskNotices. Current configuration-notice mutations remain above; the removed layout has no equivalent.
 
   # 14. The identity slot's guard was a blacklist of five names, so the rule it
   # held was "not these five" rather than "one field".
@@ -8013,21 +8003,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 4. The full cue is wider than a 320px strip has beside the console button,
   # and it neither shrinks nor wraps.
-  mutate web "the narrow strip paints the full sentence over the console control" "$S" \
-    '      <span className="desk-strip-warn-short" aria-hidden="true">
-        {short}
-      </span>' \
-    ''
-  mutate web "the short cue is never the one painted" "$G" \
-    '    .desk-strip-warn-short {
-      display: inline;
-    }' \
-    '    .desk-strip-warn-short {
-      display: none;
-    }'
-  mutate web "the cue's accessible name is whichever spelling is painted" "$S" \
-    '    <Link className="desk-strip-warn" to="/admin" aria-label={full}>' \
-    '    <Link className="desk-strip-warn" to="/admin">'
+  # Retired (2026-10-16): the narrow strip paints the full sentence over the console control. ConfigCue and its full/short responsive markup were replaced by shared DeskStatusNotice and DeskNotices. Current configuration-notice mutations remain above; the removed layout has no equivalent.
+  # Retired (2026-10-16): the short cue is never the one painted. ConfigCue and its full/short responsive markup were replaced by shared DeskStatusNotice and DeskNotices. Current configuration-notice mutations remain above; the removed layout has no equivalent.
+  # Retired (2026-10-16): the cue's accessible name is whichever spelling is painted. ConfigCue and its full/short responsive markup were replaced by shared DeskStatusNotice and DeskNotices. Current configuration-notice mutations remain above; the removed layout has no equivalent.
 
   # 5. The live layout was cleared even where the deletion was refused, so
   # Admin said "the layout is unchanged" over panes that had visibly moved.
@@ -8237,12 +8215,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "run chain: earlier saved line kept after a failed attempt" "$JV" \
     'setBusy(true);setError(undefined);setChainSaved(false)' \
     'setBusy(true);setError(undefined)'
-  mutate web "run chain: not said to be unverified" "$JV" \
-    "  <span className={styles.note}>{msg('The file is the runner’s whole chain of runs, byte for byte as the runner sent it, unverified here.')}</span>" \
+  mutate web 'run chain: not said to be unverified' web/src/jobs/JobsView.tsx \
+    '  <p className={styles.note}>{msg('"'"'Downloads the runner’s full run-history file, regardless of table filters. Desk saves the original file without verifying it.'"'"')}</p>' \
     ''
-  mutate web "run chain: not offered on the Jobs page" "$JV" \
-    '      <RunChainDownload/>
-' \
+  mutate web 'run chain: not offered on the Jobs page' web/src/jobs/JobsView.tsx \
+    '   <RunChainDownload onClose={()=>setOpen(false)}/>' \
     ''
 
   # 4. Admin printed a decoded number with nothing said about what bounds it,
@@ -9136,10 +9113,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '"op": "alll"'
 
   # react-query keeps the last good data through a refetch error. Failed
-  # refreshes must replace those stale rows with the retry state.
-  mutate web "a failed refresh still displays stale packs" "$PN" \
-    '    {includePacks && error ? <section' \
-    '    {error && !data ? <section'
+  # refreshes retain cached rows and expose the refresh failure separately.
+  mutate web 'a failed refresh discards previously loaded packs' web/src/packs/PacksPane.tsx \
+    '(data?.packs ?? []).map' \
+    '(error ? [] : data?.packs ?? []).map'
   mutate web "an empty version is drawn as a version" "$PN" \
     'isSpelled(pack.packVersion) ?' \
     'pack.packVersion !== undefined ?'
@@ -10409,33 +10386,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # second module to point at; `CERTIFICATION_IS_TOTAL` is a compile error in
   # its place, and "an unregistered engine id loads something anyway" below
   # still holds the loader itself.
-  TG=web/src/assistant/toolGate.ts
-  ASN=web/src/assistant/session.ts
   AR=web/src/assistant/useAssistantRun.ts
   AP=web/src/assistant/AssistantPane.tsx
   RO=web/src/assistant/runOutcome.ts
 
-  CT=web/src/assistant/conformance/conformance.test.ts
-  EN=web/src/assistant/engines/index.ts
-  EC=web/src/assistant/engines/contract.ts
-  VL=web/src/assistant/engines/vercel/loop.ts
-  VR=web/src/assistant/engines/vercel/relay.ts
-  VC=web/src/assistant/engines/vercel/channel.ts
-
-  # ---- Canonical bytes ----------------------------------------------------
-  #
-  # The lesson the chassis' relay learned over four rounds, and the one this
-  # gate learned in round 2: a classification made about a mutable object is a
-  # classification the object can change out from under you. Each row here
-  # restores one version of that mistake.
-  mutate web "the frame is classified before it is canonicalized" "$TG" \
-    '  const frame = canonical(message)' \
-    '  const frame = message as unknown'
-  # The round-2 defect exactly: copy the caller's own properties — toJSON
-  # included — and let the serializer invoke it after the member was written.
-  mutate web "the arguments are copied rather than canonicalized" "$TG" \
-    '  const args = (supplied ?? {}) as Record<string, unknown>' \
-    '  const args = { ...((message as { params?: { arguments?: Record<string, unknown> } }).params?.arguments ?? {}) }'
   # **Two rows retired here, and a third below, because one row replaced all
   # three.** "a frame need not declare jsonrpc 2.0", "a response is exempted
   # without checking its shape" and "a frame with no method at all is passed"
@@ -10447,221 +10401,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # accept" breaks that check, and the corpus it fails on is every case those
   # three used to own plus five they did not.
 
-  # ---- The model capability's own answer ----------------------------------
-  #
-  # A browser Response carries the requested URL on `.url`, and that URL is the
-  # relay address with this chassis' session token in it.
-  mutate web "the model answer is handed back as fetch produced it" "$ASN" \
-    '    return facade(answered)' \
-    '    return answered'
-  # A fetch TypeError quotes the URL, so the browser's own error is the token.
-  # Anchored on the catch it belongs to: the opaque-redirect branch throws the
-  # same sentence, so a needle naming only the throw matched the wrong one.
-  mutate web "a failed model call rethrows the browser's own error" "$ASN" \
-    '      throw new Error(CALL_FAILED)
-    }
-    // **An opaque redirect is not an answer.**' \
-    '      throw cause
-    }
-    // **An opaque redirect is not an answer.**'
-  mutate web "the answer's headers are not filtered" "$ASN" \
-    '    if (MODEL_ANSWER_HEADERS.includes(name.toLowerCase())) carried.set(name, value)' \
-    '    carried.set(name, value)'
-  # A string-like object answers an innocuous split() while the validator looks
-  # and a different toString() when the URL is built.
-  mutate web "the suffix is not required to be a primitive string" "$ASN" \
-    "  if (typeof suffix !== 'string') {" \
-    '  if (false) {'
-
-  # ---- The seal, which is itself a claim -----------------------------------
-  #
-  # **A row over the harness, deliberately.** "The engine touches no network
-  # global" is a property of the conformance session, and the two certification
-  # fixtures are what hold it. Moving the seal back to where round 2 found it —
-  # after the import — is the defect, and the load-time fixture is what notices.
-  mutate web "the seal goes up after the engine's chunk is loaded" "$CT" \
-    '    seal = sealNetwork()
-    tracker = trackDeferredWork()
-    const engine = await load()' \
-    '    const engine = await load()
-    seal = sealNetwork()
-    tracker = trackDeferredWork()'
-
-  # The SDK's own message schema, which replaced this desk's hand-written shape
-  # rules: an id of null beside a result, a string error and a fractional id all
-  # satisfied those and none of them is a JSON-RPC message.
-  mutate web "a frame need not be a message the SDK would accept" "$TG" \
-    '  if (!JSONRPCMessageSchema.safeParse(frame).success) {' \
-    '  if (false) {'
-
-  # ---- The model answer, and what an engine can reach through it -----------
-  #
-  # A Response built from a ReadableStream keeps that very object as its body,
-  # so a stream somebody decorated is reachable through the facade.
-  mutate web "the facade carries the answer's own body stream" "$ASN" \
-    '    empty || answered.body === null ? null : answered.body.pipeThrough(new TransformStream())' \
-    '    empty ? null : answered.body'
-  # A rejection named AbortError can carry the URL in its message and again in
-  # its cause; only the classification may travel.
-  mutate web "an aborted call rethrows the error it caught" "$ASN" \
-    '        throw new DOMException(CALL_ABORTED, '"'"'AbortError'"'"')' \
-    '        throw cause'
-
-  # ---- The seal's barrier, which is itself a claim -------------------------
-  #
-  # A fixed wait is a delay an engine can out-wait. The fixture schedules at
-  # five minutes, on an interval, and chained behind another timer.
-  mutate web "the deferred barrier is a fixed wait again" "$CT" \
-    '        leftPending = await drainDeferredWork(tracker)' \
-    '        await new Promise((resolve) => setTimeout(resolve, 200))'
-
   # ---- The seal's two rules about what an engine leaves behind ------------
   #
   # An interval nobody cleared is a certification failure in its own right:
   # running it a few times and clearing it on the engine's behalf let a reach
   # hide behind a later tick and report a clean drain.
-  mutate web "the drain runs an engine's interval on its behalf" "$CT" \
-    '    pending: () => tracked.filter((entry) => entry.pending && !entry.repeating),' \
-    '    pending: () => tracked.filter((entry) => entry.pending),'
-  mutate web "a live interval is not reported" "$CT" \
-    '    liveIntervals: () => tracked.filter((entry) => entry.repeating && !entry.cancelled),' \
-    '    liveIntervals: () => [],'
-  # A handle the engine itself cancelled must never be run on its behalf: doing
-  # so reports a reach the engine had already decided not to make.
-  mutate web "a cancelled handle is fired anyway" "$CT" \
-    '    byHandle.get(handle)?.cancel()
-    clear(handle)' \
-    '    clear(handle)'
-  # A deferred callback that throws used to leave the finally before the
-  # sentinels and the timer wrappers came off, poisoning every later leg.
-  mutate web "a throwing callback escapes the cleanup" "$CT" \
-    '    } catch (cause) {
-      drainThrew = `${(cause as Error).name}: ${(cause as Error).message}`
-    } finally {' \
-    '    } finally {'
-  # **Not a row: the certification fixtures travelling `loadEngine`.** They do —
-  # `fromCertification` calls it, which is why the loader takes its table as a
-  # parameter — but a mutant that called the table directly would import the
-  # same chunk under the same seal and be caught by the same sentinel, so the
-  # row would report "nothing failed" for ever. What IS observable is the
-  # loader's own contract, below.
-  mutate web "an unregistered engine id loads something anyway" "$EN" \
-    '  const load = loaders[id]
-  if (load === undefined) throw new Error(`no engine chunk is registered for ${id}`)
-  return load()' \
-    '  return loaders[id]!()'
-
-  # K3(b). Without the allow-list, write_file leaves the page and reaches the
-  # runtime — which is the arrival the scripted server counts as a failure.
-  mutate web "the allow-list check is removed" "$TG" \
-    "  if (typeof name !== 'string' || !allowed.has(name)) {" \
-    '  if (false) {'
-  # K3(a) — and the one an inspect-and-forward gate cannot hold. A call that
-  # already reads as rehearsed still may not be forwarded as it arrived: the
-  # object can serialize without the member it appears to carry.
-  mutate web "an evaluate that reads as rehearsed is forwarded unchanged" "$TG" \
-    '  if (already) {
-    // Nothing to report: the caller asked for exactly what it got. The frame is
-    // still the canonical one, because canonical is what travels.
-    return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }
-  }' \
-    '  if (already) {
-    return { verdict: '"'"'send'"'"', notice: null, frame: message }
-  }'
-  # **Deliberately not a row: reading each own property twice.** It was one, and
-  # it reported "nothing failed" — correctly. `ownArguments` reads once so that
-  # a getter cannot answer the check and the wire differently, but the value
-  # that check is about is written unconditionally straight afterwards, so a
-  # second read of `rehearsal` is overwritten and a second read of `pack` is
-  # observed by nothing. The property is real and cheap; it is not, on its own,
-  # observable, and a row that says otherwise for ever reads as a missing
-  # safeguard rather than an unobservable one. What IS observable is the branch
-  # above: an evaluate forwarded because it read as rehearsed.
-  # Fail closed. A batch has no method, and "no method is harmless traffic" is
-  # what let an array carrying write_file out whole.
-  # **Explicitly `send`, not merely a disabled branch.** Round 3 pointed out that
-  # `if (false)` let a batch fall through to the next check and be refused
-  # there, so the row went red on a *different* corpus member throwing — a true
-  # failure for the wrong reason. This mutant sends the unreadable frame, which
-  # is the named defect, and the batch-carrying-write_file case is what fails.
-  mutate web "a frame this gate cannot read is passed as harmless traffic" "$TG" \
-    '  if (!isRecord(frame)) {
-    return refuse(' \
-    '  if (!isRecord(frame)) {
-    return { verdict: '"'"'send'"'"', notice: null, frame: frame as unknown as JSONRPCMessage }
-    return refuse('
-  # (The third retired row was here — see the note above.)
-  # A near-spelling some other reader folds to tools/call.
-  mutate web "a near-spelling of tools/call is waved through" "$TG" \
-    '    if (method.trim().toLowerCase() === TOOLS_CALL) {' \
-    '    if (false) {'
-
-  # The gate is not installed at all: the engine's calls go straight to the
-  # socket. Both K3 rows fail together, which is the point of a wire-level gate.
-  mutate web "the gate is not installed on the assistant's transport" "$ASN" \
-    '  const gated = gateTransport(raw, { allowed, onGuardrail: notify })' \
-    '  const gated = raw'
-  # **The row this replaces only widened a TypeScript interface.** It added
-  # `client?: unknown` to AssistantSession, which no engine could use and no
-  # gate was bypassed by: the member-set test failed, and that demonstrated
-  # interface-shape sensitivity rather than the guardrail it was named for.
-  # This one is a real bypass — the gate is installed and reporting, on a decoy,
-  # while the client the engine's caller is bound to speaks straight to the
-  # socket — and the conformance server observes the ungated arrivals.
-  mutate web "the engine's caller is bound to an ungated client" "$ASN" \
-    '  const gated = gateTransport(raw, { allowed, onGuardrail: notify })' \
-    '  const decoy: Transport = {
-    start: () => raw.start(),
-    close: () => raw.close(),
-    send: (message, sendOptions) => raw.send(message, sendOptions)
-  }
-  gateTransport(decoy, { allowed, onGuardrail: notify })
-  const gated = raw'
-  # One shared transport instead of one per session: two sessions would share a
-  # jpack mcp and a gate, and closing either would take the other's connection.
-  # Repaired: the transport now takes the session id its caller awaited, so the
-  # needle names the new signature. The property is unchanged.
-  mutate web "the assistant reuses one shared transport" "$ASN" \
-    'export function assistantTransport(id: string): Transport {
-  if (id === '"'"''"'"') throw new NoSession()
-  return new DeskWebSocketTransport(socketURL(), socketProtocols(id))
-}' \
-    'let sharedTransport: Transport | undefined
-export function assistantTransport(id: string): Transport {
-  if (id === '"'"''"'"') throw new NoSession()
-  sharedTransport ??= new DeskWebSocketTransport(socketURL(), socketProtocols(id))
-  return sharedTransport
-}'
-  # A setup that fails leaves a socket and a jpack mcp with nothing holding a
-  # reference to either.
-  mutate web "a failed setup leaves the connection open" "$ASN" \
-    '      await close()
-      throw cause' \
-    '      throw cause'
-  # The desk's model capability, which is what an engine is handed instead of a
-  # URL: the address, the header allow-list and the suffix rule are all here.
-  mutate web "the model call forwards every header it is handed" "$ASN" \
-    '      if (MODEL_REQUEST_HEADERS.includes(name.toLowerCase())) headers[name] = value' \
-    '      headers[name] = value'
-  mutate web "the model call accepts any suffix at all" "$ASN" \
-    '    const problem = suffixProblem(suffix, family)' \
-    "    const problem = ''"
-
-  # K1. The page holds no key; a header here is a credential it had to have got.
-  # The whole reason session.model is a capability rather than a base URL: an
-  # engine that reaches for a network global is an engine that can open its own
-  # socket to /ws with this chassis' token. Every leg seals fetch, WebSocket,
-  # XMLHttpRequest and EventSource for the duration of the engine's run.
-  # `end` twice: a pane that renders "running" until it sees one would be right
-  # either way, so what this breaks is the contract's own "exactly once".
-  # The proposal taken from the prose rather than from the fenced block: a
-  # worked example in an explanation becomes the document a person accepts.
-  # **The reading moved to `engines/contract.ts` when the second engine landed**,
-  # because it is the contract's rule and not either loop's — so this row now
-  # breaks it for both of them at once, which is a stronger row than it was.
-  mutate web 'the proposal is taken from the prose' web/src/assistant/engines/contract.ts \
-    '  const blocks = jsonFences(text ?? '"'"''"'"').filter(block => explicitProposal(block.body))' \
-    '  const blocks = [{ body: (text ?? '"'"''"'"').slice((text ?? '"'"''"'"').indexOf('"'"'{'"'"'), (text ?? '"'"''"'"').lastIndexOf('"'"'}'"'"') + 1) }]'
 
   # The run's terminal event, normalized in the hook. Stop used to clear the
   # run's identity before the engine handled the abort, so no end was observed.
@@ -10678,8 +10422,8 @@ export function assistantTransport(id: string): Transport {
   # picker and a standing line both showing something else.
   # Repaired: the run carries the AI connection it was started on.
   mutate web 'the run ignores the model that was picked' web/src/assistant/useAssistantRun.ts \
-    '              ...bindExecution({ endpoint, agent, engine, ...connectionTarget }, modelOf(model), thinking),' \
-    '              ...bindExecution({ endpoint, agent, engine, ...connectionTarget }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking),'
+    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, modelOf(model), thinking),' \
+    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking),'
   mutate web "Stop writes no terminal event" "$AR" \
     '    finish(run)
     release(run)
@@ -11010,65 +10754,6 @@ export function assistantTransport(id: string): Transport {
   # own suite is the catcher where the conformance legs cannot be — the legs
   # STAY green for the first row, which is the point of it.
 
-  # **The refine hook, removed entirely.** The desk's gate is the layer that
-  # holds, so every conformance leg stays green: the rehearsal still reaches the
-  # runtime and `write_file` still never does. What is lost is the SDK's own
-  # layer — the rewritten input the model is shown on its next turn — which is
-  # the only observable consequence the hook has, and the only thing that can
-  # discriminate this row. A row whose catcher were a leg would be a row lying
-  # about which layer holds.
-  # (The hook moved into a `refine` constant when the critic landed, so the
-  # main loop and the critic's second stream are given the same one. The row is
-  # the same claim about the same line, at the indentation it now has.)
-  mutate web "the SDK's rehearsal hook never fires, and only the gate holds" "$VL" \
-    '      [REHEARSAL_TOOL]: (input: unknown) => {' \
-    '      [`${REHEARSAL_TOOL}_NEVER_CALLED`]: (input: unknown) => {'
-
-  # The gate handed a call somebody already fixed reports nothing, and the
-  # guardrail line in the tab is the only place a person learns the flag was
-  # forced. K3a goes red on every leg of both engines' matrix.
-  mutate web "the gate is handed the call the adapter already rehearsed" "$VL" \
-    "      const args = (name === REHEARSAL_TOOL && asked.length > 0 ? asked.shift() : input) as Record<
-        string,
-        unknown
-      >" \
-    "      const args = input as Record<string, unknown>"
-
-  # The whole reason `session.model` is a capability: the SDK composes an
-  # absolute URL and the wrapper is what reduces it to a suffix the desk admits.
-  # Passing it through hands the desk's own capability a URL, which it refuses —
-  # and this row proves the wrapper is the layer doing the reducing.
-  mutate web "the SDK's absolute URL is handed to the capability whole" "$VR" \
-    "  const suffix = url.slice(PLACEHOLDER_ORIGIN.length + 1)
-  // The query travels **inside the suffix**" \
-    '  return url
-  const suffix = url.slice(PLACEHOLDER_ORIGIN.length + 1)
-  // The query travels **inside the suffix**'
-
-  # K1. `createAnthropic` throws without a key, so the provider is handed a
-  # placeholder — and a wrapper that forwarded whatever the SDK set would send
-  # `x-api-key` to this desk's own route. The allow-list is the guard; the
-  # capability's own is the second one, and this row shows the first is real.
-  mutate web "the wrapper forwards every header the SDK set" "$VR" \
-    '      if (PROTOCOL_HEADERS.includes(name.toLowerCase())) headers[name] = value' \
-    '      if (PROTOCOL_HEADERS.length >= 0) headers[name] = value'
-
-  # K2. The model is offered the runtime's own five and nothing else. A sixth
-  # tool bound here would be a tool the session never handed over — and the gate
-  # below would still refuse the call, which is why the row that matters is the
-  # one about what the model was **shown** rather than what it reached.
-  mutate web "a tool the session never offered is bound to the model" "$VL" \
-    '  for (const tool of tools) {' \
-    "  for (const tool of [...tools, { name: 'write_file', description: '' }]) {"
-
-  # `end` exactly once, on the path an error takes.
-  mutate web "the vercel engine ends twice on the error path" "$VL" \
-    "  const finish = async (): Promise<void> => {
-    await channel.push({ type: 'end' })" \
-    "  const finish = async (): Promise<void> => {
-    await channel.push({ type: 'end' })
-    await channel.push({ type: 'end' })"
-
   # **Retired: "the rejection guard is left installed after the run".** There is
   # no guard to leave installed. Review round 1 was right that a page listener
   # keyed on an error *name* suppresses every rejection carrying it, an
@@ -11080,435 +10765,13 @@ export function assistantTransport(id: string): Transport {
   # leg twice over and certify nothing — which is exactly what the fallback this
   # PR removed used to do on purpose.
 
-  # ---- What review round 1 found, each broken again ------------------------
-  #
-  # **The one that deadlocked.** `drain` takes an entry off the queue before
-  # yielding it, so a consumer that stops at exactly that event leaves a
-  # delivery nothing else can settle: not the queue, and not the loop that never
-  # resumes. The producer waited on it for ever.
-  mutate web "the drain does not settle the event it was yielding" "$VC" \
-    '        releaseAll()
-      }' \
-    '        void releaseAll
-      }'
-  # A member of the SDK's result read and left unclaimed is a rejection nobody
-  # on the page can catch. The mutant reads one and claims nothing, which is
-  # the defect exactly — and the count is measured at Node's own handler,
-  # because jsdom never turns such a rejection into a window event.
-  mutate web "the SDK's result promises are read and left unclaimed" "$VL" \
-    '    claimPromises(result)' \
-    '    void claimPromises
-    void (result as { text?: unknown }).text'
-  # The contract has a `reasoning` event and the SDK has three part types for
-  # it. An adapter that drops them decides, on the desk's behalf, that what the
-  # model said about its own reasoning is not worth showing.
-  # (Needled with the comment above it, because the critic's second stream now
-  # reads the same part type and a bare needle would be ambiguous.)
-  mutate web "the SDK's reasoning parts are dropped" "$VL" \
-    "      // own reasoning is not worth showing.
-      if (part.type === 'reasoning-delta') {" \
-    '      // own reasoning is not worth showing.
-      if (false) {'
-  # K2's other half: the model is shown the contract the runtime enforces **or
-  # it is shown nothing**. A permissive schema written here is this desk telling
-  # the model that anything goes for a tool whose contract it does not know.
-  mutate web "a tool with no served schema is given an invented one" "$EC" \
-    '  if (tool.inputSchema === undefined || tool.inputSchema === null) {' \
-    '  if (tool.inputSchema === undefined) return { type: 42 }
-  if (false) {'
-  # jsdom has no `requestIdleCallback`, so a reach scheduled on one did nothing
-  # during certification and ran in Chrome after the seal lifted. The harness
-  # installs one; this mutant installs it without tracking it.
-  mutate web "an idle callback is scheduled but not tracked" "$CT" \
-    "      return record('requestIdleCallback', label, run, schedule, clear, false, timeout ?? 1)" \
-    '      void record
-      void label
-      void clear
-      return schedule(run)'
-  # A canceller that is not wrapped leaves a cancelled callback pending in the
-  # bookkeeping, and the drain fires it — a reach attributed to an engine that
-  # had already decided not to make it.
-  mutate web "a cancelled immediate is fired by the drain anyway" "$CT" \
-    "    if (typeof realClearImmediate === 'function') {
-      keep('clearImmediate')
-      scope.clearImmediate = (handle: unknown) => forget(handle, (inner) => realClearImmediate(inner))
-    }" \
-    '    void realClearImmediate'
-
-  # ---- What review round 2 found, each broken again ------------------------
-  #
-  # The in-flight slot is a single slot. Two readers would overwrite each
-  # other's, and the overwritten entry would be in neither the queue nor the
-  # slot — a delivery nothing can ever settle.
-  mutate web "a second consumer of the channel is admitted" "$VC" \
-    '      if (consuming) throw new ChannelHasOneConsumer()' \
-    '      void ChannelHasOneConsumer'
-  # **The whole regression, not half of it.** Round 3 was right that removing the
-  # channel's terminal event alone kills the mutant for the wrong reason: the
-  # named claim is about `return()` semantics, so the mutant has to be the shape
-  # that had them wrong — an async generator again, with `end` yielded from its
-  # `finally` and nothing pushed on the channel. The return-semantics test then
-  # fails for the reason it is named after: the first `return()` answers
-  # `{ done: false }` carrying an event.
-  mutate web "the run is a generator again, with end yielded from its finally" "$VL" \
-    '  const finish = async (): Promise<void> => {
-    await channel.push({ type: '"'"'end'"'"' })
-    channel.close()
-  }
-  /**
-   * The run itself starts on the consumer'"'"'s first `next()`.
-   *
-   * A consumer that opens a session and leaves without asking for an event has
-   * asked the model nothing, and this is what makes that true.
-   */
-  const open = (): AsyncGenerator<AssistantEvent> => {
-    const loop = drive().catch(async (cause: unknown) => {
-      // A cancelled run is the viewer stopping the session, or a consumer
-      // walking away: it ends the run and there is no failure to report.
-      if (isCancelled(cause) || gate.signal.aborted) return
-      await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
-    })
-    // Nothing else awaits this; a rejection out of the catch above would be
-    // unhandled. It cannot reject, and this is what says so.
-    void loop.then(finish, finish)
-    return channel.drain()
-  }
-
-  return eventIterator({ gate, open })' \
-    '  const finish = async (): Promise<void> => {
-    channel.close()
-  }
-  const open = (): AsyncGenerator<AssistantEvent> => {
-    const loop = drive().catch(async (cause: unknown) => {
-      if (isCancelled(cause) || gate.signal.aborted) return
-      await channel.push({ type: '"'"'error'"'"', message: describe(cause) })
-    })
-    void loop.then(finish, finish)
-    return channel.drain()
-  }
-  void eventIterator
-  return (async function* (): AsyncGenerator<AssistantEvent> {
-    try {
-      yield* open()
-    } finally {
-      gate.close()
-      yield { type: '"'"'end'"'"' }
-    }
-  })()'
-
-  # `return()` has to cancel **before** it awaits: what a pending `next()` is
-  # waiting on is exactly what the cancel ends, and the queued close cannot run
-  # until that `next()` settles.
-  mutate web "the iterator cancels only after it has waited" "$EC" \
-    '      options.gate.close()
-      await events?.return(undefined)' \
-    '      await events?.return(undefined)
-      options.gate.close()'
-
-  # A `next()` that finds the iterator closed under it must not wait on the same
-  # closing promise the `return()` is waiting on: the `return()` registered
-  # first and would settle first, telling the consumer the iterator was closed
-  # before the `next()` it was holding had come back.
-  mutate web "a closed iterator's pending next waits on the closing too" "$EC" \
-    '      if (options.gate.isClosed()) return done
-      if (step.done === true) {' \
-    '      if (step.done === true || options.gate.isClosed()) {'
-  # The connection is closed once however many times it is released: the abort
-  # closes it and the setup's own failure closes it again.
-  mutate web "the connection is closed once per release, not once" "$ASN" \
-    '    shutting ??= (async () => {' \
-    '    shutting = (async () => {'
-  # ---- What review round 5 found: the two orderings a signal cannot hold ---
-  #
-  # A session already aborted is a run that is over. It used to abort the run's
-  # controller and nothing else, so an engine still reported a tier, still built
-  # a provider, and still made a request — for a session that never happened.
-  mutate web "a session aborted before the run is not closed, only aborted" "$EC" \
-    "  if (session.signal.aborted) close()" \
-    '  if (session.signal.aborted) stop.abort()'
-  # **Closed, then aborted, then released.** When the thing an engine was
-  # awaiting wins its race with the abort by a microtask, the loop resumes
-  # holding a value; aborting cannot stop it delivering that, and a flag the
-  # delivery path reads can — but only if it is set first.
-  mutate web "the run is aborted and released before it is marked closed" "$EC" \
-    "    closed = true
-    session.signal.removeEventListener('abort', close)
-    stop.abort()
-    release()" \
-    "    session.signal.removeEventListener('abort', close)
-    stop.abort()
-    release()
-    closed = true"
-  # And the delivery path is where that flag is read. A loop that resumed after
-  # the run closed can yield whatever it likes; none of it is anybody's.
-  mutate web "the delivery path does not read the closed gate" "$EC" \
-    '      if (options.gate.isClosed()) return done
-      if (step.done === true) {' \
-    '      if (step.done === true) {'
-  # A thunk, so a closed run starts no work at all: taking a promise meant the
-  # call had already been made by the time the signal was read.
-  mutate web "an await on the world is started before the signal is read" "$EC" \
-    '  if (signal.aborted) return Promise.reject(new RunCancelled())
-  let started: Promise<T>' \
-    '  let started: Promise<T>'
-
-  # ---- What review round 4 found: the class, broken again -----------------
-  #
-  # Every await on the world outside an engine is bounded by the run's own
-  # signal, because aborting the awaited thing only works where the thing
-  # honours a signal — a model request does, a `tools/call` over a socket does
-  # not. Each row here unbinds one of them.
-  mutate web "the vercel adapter's tool call is not bounded by the run" "$VL" \
-    '  const callTool = guardedCallTool(session, gate.signal)' \
-    '  const callTool: CallTool = (name, args) => session.callTool(name, args)'
-  # **Retired: "the runtime is asked without reading the run's signal first".**
-  # `guardedCallTool` still reads the signal before it dispatches, and that is
-  # the readable statement of the rule where the rule lives — but it is no
-  # longer the line that *holds* it. `withAbort` takes a thunk and refuses a
-  # closed run **without invoking it**, so removing the explicit check changes
-  # nothing anyone can observe, and a row saying otherwise would read as a
-  # missing safeguard rather than a doubly-held one. The row that holds it is
-  # "an await on the world is started before the signal is read", above.
-  # **Retired: "a session abort aborts the SDK and abandons nothing".** It was
-  # discriminating when the abandon was the only thing that could settle a
-  # `next()` waiting behind a tool call. It is not any more: the tool call is
-  # bounded by the run's signal, so the loop unwinds on its own and its `end`
-  # reaches the waiting consumer, which the closed gate then drops. What
-  # `abandon()` still does is release a producer nobody will ever take from
-  # after a consumer's `return()`, and the channel's own tests hold that — "the
-  # drain does not settle the event it was yielding", below. Two layers, and
-  # the row that broke one of them stopped saying anything.
-  # The drain runs what an engine left behind in the order a browser would
-  # have, not all at once: a sixty-second idle callback must not run before the
-  # one-second timer that was going to cancel it.
-  mutate web "the drain fires every pending handle at once again" "$CT" \
-    '    tracker.advanceTo(next.dueAt)
-    next.fire()' \
-    '    for (const entry of tracker.pending()) entry.fire()'
-
-  # A timeout is a deadline, not a hint: firing every positive one after a
-  # millisecond credits an engine with work it would have cancelled first.
-  mutate web "the idle callback is fired before its deadline" "$CT" \
-    '            realSetTimeout(wrapped, timeout ?? 1)' \
-    '            realSetTimeout(wrapped, timeout === undefined ? 1 : Math.min(1, timeout))'
-
-  # A shim that answers zero to `timeRemaining()` runs the ordinary idle
-  # pattern, watches it decline to do anything, and certifies a clean leg —
-  # while a browser gives it a real budget and lets it reach.
-  mutate web "the idle deadline reports no budget at all" "$CT" \
-    '          timeRemaining: () => Math.max(0, IDLE_BUDGET_MS - (Date.now() - startedAt))' \
-    '          timeRemaining: () => 0'
-  # And the other half of the same object: code that waits for its own timeout.
-  mutate web "the idle deadline never reports its own timeout" "$CT" \
-    '        const didTimeout = deadlineAt !== undefined && now() >= deadlineAt' \
-    '        const didTimeout = false'
-
   # ---- The thinking tier, and the refutation pass --------------------------
   #
   # ADR-0001 puts both in the desk rather than in an engine: one table per
   # endpoint family, five states of which two are the desk's to report, and a
   # refutation pass held to three rules no prototype kept on its own. Each row
   # below breaks one of them.
-  TH=web/src/assistant/thinking.ts
-  RF=web/src/assistant/refutation.ts
 
-  # `off` is expressed by OMISSION: Anthropic rejects `{"type":"disabled"}` on
-  # the models that always think and several endpoints answer 400 to
-  # `reasoning_effort: "none"`, so a tier member sent at `off` is a request a
-  # desk configured for no thinking never agreed to make.
-  mutate web "the tier member is sent when the tier is off" "$TH" \
-    "    return null
-  }
-  const effort = tier === 'ultra' ? 'xhigh' : 'high'" \
-    "    return wireFor('on', dialect)
-  }
-  const effort = tier === 'ultra' ? 'xhigh' : 'high'"
-
-  # The degrade is sticky for the session: the member the endpoint refused is
-  # never sent again. Without this the retry re-sends what was just refused,
-  # and every request after it does too.
-  mutate web "a refused tier member is sent again on the next request" "$TH" \
-    "      unavailable = true
-      // The status, and the desk's own sentence. The endpoint's body is
-      // matched against a closed list and never quoted past it." \
-    "      // The status, and the desk's own sentence. The endpoint's body is
-      // matched against a closed list and never quoted past it."
-
-  # Anthropic spends the thinking budget out of `max_tokens`, so the table that
-  # chooses the budget chooses the maximum with it. Without the allowance the
-  # budget is not below the maximum and every enabled-dialect endpoint refuses
-  # the request — which the conformance endpoint now enforces.
-  mutate web "the enabled dialect's response allowance is dropped" "$TH" \
-    "          max_tokens: budget + RESPONSE_TOKENS" \
-    "          max_tokens: budget"
-
-  # **The line, once.** A degrade said on every request is a reader learning to
-  # skip it; the split-signature leg is where a second one can actually happen,
-  # because a fresh block arrives on every turn.
-  mutate web "the degrade is announced more than once" "$TH" \
-    "    truncated(reason) {
-      if (unavailable) return null
-      unavailable = true
-      return notice('unavailable', reason)
-    }," \
-    "    truncated(reason) {
-      unavailable = true
-      return { type: 'thinking_unavailable', detail: thinkingNotice('unavailable', reason) }
-    },"
-
-  # The slot changes at the transition and the request that leaves is already
-  # the degraded one, so a notice held until the next stream part left the tab
-  # saying `thinking on` about a request that carried none — for as long as it
-  # took, or for ever.
-  mutate web "the truncation notice waits for the next stream part" "$VL" \
-    "    const said = slot.truncated(reason)
-    if (said !== null) await channel.push(said)" \
-    "    const said = slot.truncated(reason)
-    if (said !== null) void Promise.resolve().then(() => channel.push(said))"
-
-  # **A turn is not a capability.** One unsolicited passage at tier off used to
-  # label the model "always thinks" for the whole session.
-  mutate web "one reasoning turn makes a model that always thinks" "$TH" \
-    "        if (always || reasoningRun < PERMANENCE) return null" \
-    "        if (always || reasoningRun < 1) return null"
-  # …and the other direction: one quiet turn used to strip the tier from every
-  # request after it, on an endpoint that reasons perfectly well.
-  mutate web "one quiet turn makes an endpoint with no thinking" "$TH" \
-    "      quietRun += 1
-      if (quietRun < PERMANENCE) return null" \
-    "      quietRun += 1
-      if (quietRun < 1) return null"
-  # A turn that only called a tool is no evidence that an endpoint will not
-  # reason, and counting it made a tool-first session degrade itself.
-  mutate web "a tool-only turn counts as evidence of no thinking" "$TH" \
-    '      if (!hadText) return null' \
-    '      void hadText'
-  # …and the same rule in the other tier, where it was written and not applied:
-  # a reasoning answer, a tool call and a second reasoning answer never reached
-  # "always", because the tool call in the middle wiped the count.
-  mutate web "a tool-only turn wipes the off-tier count" "$TH" \
-    "      if (!hadText) return null
-      if (tier === 'off') {" \
-    "      if (tier === 'off') {
-        if (!hadText) reasoningRun = 0"
-
-
-  # **The conjunction.** `Unsupported parameter` and `Extra inputs are not
-  # permitted` are what an endpoint says about *any* member, so prose alone
-  # degraded the tier on a refusal about `temperature` and hid a real failure
-  # behind a misleading "thinking is unavailable" line. (This replaces the
-  # "any 400" row, which did not prove the conjunction it was named for.)
-  mutate web "a refusal need not name a member the desk sent" "$TH" \
-    "  if (status !== 400) return false
-  return namesSent(members).some((name) => message.includes(name))" \
-    "  if (status !== 400) return false
-  return /unsupported parameter|extra inputs are not permitted|not supported/i.test(message)"
-
-  # vercel/ai#19663. A block whose signature came back as a fragment is removed
-  # rather than sent: a malformed thinking block is a request the endpoint
-  # refuses, and sending one is the defect the ledger exists for.
-  mutate web "a truncated thinking signature is sent back anyway" "$VR" \
-    "      if (sent === undefined || !isTruncatedSignature(sent.signature, carried)) return true" \
-    "      if (true) return true"
-
-  # **Block identity, by position.** Comparing a carried signature against every
-  # signature ever ledgered threw away a later block whose own signature was
-  # legitimately shorter and happened to be a prefix of an earlier one.
-  mutate web "a carried signature is compared with every signature ever seen" "$VR" \
-    "      const sent = signed[at]
-      at += 1" \
-    "      const sent = signed.find((one) => isTruncatedSignature(one.signature, String(block.signature)))
-      at += 1"
-
-  # **A filter is not a rebuild.** The body was composed before the slot
-  # degraded, so filtering the damaged block out of it leaves a request that
-  # still asks for thinking while no longer carrying a block the endpoint
-  # signed — a continuation the split-signature endpoint refuses.
-  mutate web "the degraded request is filtered rather than rebuilt" "$VR" \
-    '  shape.retier(payload, membersAfter())' \
-    '  void membersAfter'
-
-  # The block ids repeat every turn on the Anthropic wire, so a ledger with no
-  # turn boundary concatenates one turn's signature onto the next and reports
-  # the next turn's whole signature as a fragment of the pair — degrading a
-  # perfectly good session on its third turn.
-  mutate web "the signature ledger has no turn boundary" "$VR" \
-    "    boundary: settle," \
-    "    boundary: () => {},"
-  # **Two blocks signed the same are two blocks.** Collapsing them left a later
-  # block compared against the wrong entry, or against none, and sent.
-  mutate web "two blocks signed the same collapse into one" "$VR" \
-    "      if (signature !== '') done.push({ conversation, turn, block, signature })" \
-    "      if (signature !== '' && !done.some((one) => one.signature === signature)) {
-        done.push({ conversation, turn, block, signature })
-      }"
-  # The critic's history carries none of the main loop's blocks, so comparing
-  # its first block against the loop's first signature compares two different
-  # conversations' positions.
-  mutate web "the critic is compared against the main loop's blocks" "$VR" \
-    "      return done.filter((entry) => entry.conversation === conversation)" \
-    "      return [...done]"
-
-  # **The verdict is the runtime's.** The critic's prose disagrees with the
-  # runtime on purpose on both conformance legs, so a verdict read out of it is
-  # wrong in both directions.
-  mutate web "the refutation verdict is read out of the critic's prose" "$RF" \
-    "    critique(modelText) {
-      return { refuted: verdictOf(checks), checks: [...checks], text: quoteOf(checks), modelText }
-    }" \
-    "    critique(modelText) {
-      return {
-        refuted: /refut/i.test(modelText),
-        checks: [...checks],
-        text: quoteOf(checks),
-        modelText
-      }
-    }"
-
-  # A non-empty list of checks before "not refuted" is rendered. A critic that
-  # talked and asked the runtime nothing has produced no evidence, and a
-  # refutation line on that proposal is a clean bill of health nobody measured.
-  mutate web "a proposal the critic never checked is rendered as not refuted" "$RF" \
-    "  if (critique === null || critique.checks.length === 0) return {}" \
-    "  if (critique === null) return {}"
-
-  # **The separation, broken in the one way that matters.** The distinction is
-  # a type: the refusal arm of `ToolOutcome` has no `report`, so a call the gate
-  # refused cannot reach the recorder from the loop at all. The row that merely
-  # removed the old boolean was not discriminating, because today's guardrail
-  # prose happens not to parse as JSON — so this one hands the recorder the
-  # refusal's words **shaped like a runtime answer**, which is the failure the
-  # separation exists to make impossible.
-  # The recorder itself, which must not invent a status the runtime never
-  # used for an answer that carried none.
-  mutate web "an answer with no runtime status is recorded as refused" "$RF" \
-    "      const said = statusOf(text)
-      if (said === null) return" \
-    "      const said = statusOf(text)
-      if (said === null) {
-        checks.push({ tool, status: 'refused', diagnostics: 0 })
-        return
-      }"
-  # An object literal inherits `toString`, `constructor` and the rest, so `in`
-  # made a tool the table does not name into a check.
-  mutate web "the settled table is read through its prototype" "$RF" \
-    '  return Object.hasOwn(SETTLED_STATUS, tool)' \
-    '  return tool in SETTLED_STATUS'
-
-  # The runtime has one word per command for "this went through". A rule that
-  # read `status !== 'valid'` over both tools would report every session ever
-  # run as refuted, because a rehearsal evaluation answers `evaluated`.
-  mutate web "one settled status is used for every check" "$RF" \
-    "  return checks.length > 0 && checks.some((check) => check.status !== SETTLED_STATUS[check.tool])" \
-    "  return checks.length > 0 && checks.some((check) => check.status !== 'valid')"
-
-  # The pass is gated on the tier: a desk configured for no thinking runs no
-  # critic, makes no second conversation, and spends no extra call.
-  mutate web "the refutation pass runs even with the tier off" "$TH" \
-    "    runsRefutation() {
-      if (tier === 'off') return false" \
-    "    runsRefutation() {
-      if (false) return false"
 
   # **Both prompts, or neither.** Starting on the author prompt alone handed the
   # engine an empty `testPrompt`, and the critic then ran on this desk's one
@@ -11525,12 +10788,6 @@ export function assistantTransport(id: string): Transport {
   mutate web "the run starts before the runtime's testing prompt arrives" "$AP" \
     '    if (waitingForTest) return' \
     '    void waitingForTest'
-  # …and the other half: with no testing prompt at all the pass must report that
-  # it cannot run rather than putting a critic in front of a document with only
-  # the desk's sentence to go on.
-  mutate web "the critic runs on the desk's sentence alone" "$RF" \
-    "  if (testPrompt.trim() !== '') return null" \
-    "  if (true) return null"
 
   # The critic runs under the **run's** gate, not on the session capability
   # directly: a viewer who presses Stop during the pass must end it where they
@@ -11545,16 +10802,6 @@ export function assistantTransport(id: string): Transport {
   # argument `relay.ts` makes about checking an address the SDK composed), and
   # its absence from this table is stated here rather than left as a gap. What
   # IS observable is the seam on the tool dispatch, above.
-
-  # A signal that aborted *while* the work was running fired before the
-  # listener existed, so the await hung on whatever the work returned — which
-  # is exactly what a capability that ends the session from inside a request
-  # does.
-  mutate web "a run that closed while the work ran is never noticed" "$EC" \
-    "    if (signal.aborted) cancelled()
-  })" \
-    "    void cancelled
-  })"
 
   # **Reasoning is for the person reading the tab.** The runtime is asked about
   # documents, and a tool call carrying the model's own reasoning would put it
@@ -11846,19 +11093,18 @@ export function assistantTransport(id: string): Transport {
 
   # And the selector itself: a failure reported after the terminal event
   # withdraws the proposal for everybody that reads it.
-  mutate web "a post-end failure does not withdraw the proposal" "$RO" \
-    '  const spoiled =
-    run.failure ?? (proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1)))' \
-    '  const spoiled = proposedAt === -1 ? said(events) : said(events.slice(proposedAt + 1))'
+  mutate web 'a post-end failure does not withdraw the proposal' web/src/assistant/runOutcome.ts \
+    'run.failure ?? (pause?'"'"'Work paused at the approved request limit. Completed work is retained.'"'"':undefined)' \
+    '(pause?'"'"'Work paused at the approved request limit. Completed work is retained.'"'"':undefined)'
 
   # **A failure after the terminal event is still a failure.** One `end` is the
   # contract, so a throw while an engine unwinds cannot go on the stream — and
   # dropping it made `proposal -> end -> throw` read as a clean run to
   # everything downstream, which offered the proposal for writing.
-  mutate web "a failure after the run's terminal event is dropped" "$AR" \
+  mutate web 'a failure after the run'"'"'s terminal event is dropped' web/src/assistant/useAssistantRun.ts \
     '            setFailure(said)
-            if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })' \
-    '            if (!run.ended) push(run, { type: '"'"'error'"'"', message: said })'
+            if (!run.ended) push(run, event)' \
+    '            if (!run.ended) push(run, event)'
 
   # **Every diagnostic, or the author cannot see what is wrong.** The refusal
   # prevents the page that would have shown the rest from existing, so this is
@@ -11959,30 +11205,6 @@ export function assistantTransport(id: string): Transport {
   #
   # Two closed exceptions and one closed removal list. Each row below opens one
   # of them, or breaks the property that makes it safe to have opened it at all.
-  GS=web/src/assistant/geminiSchema.ts
-
-  # **The page's mirror is only worth having if it is the chassis' rule.** A
-  # method the page admits and the relay does not is a refusal after the request
-  # left; the enforcement test reads the Go list and holds the two equal.
-  mutate web "the page's mirror admits a method the chassis does not" "$ASN" \
-    '      if (index !== segments.length - 1 || name === '"'"''"'"' || !RELAY_PATH_METHODS.includes(method)) {' \
-    '      if (index !== segments.length - 1 || name === '"'"''"'"') {'
-  # And only in the **final** segment: round 1 of chunk 5a found
-  # `v1beta/a:countTokens/b` forwarded with the credential, because the rule was
-  # written per segment and never asked where the segment was.
-  mutate web "the page's mirror admits a colon method in a middle segment" "$ASN" \
-    '      if (index !== segments.length - 1 || name === '"'"''"'"' || !RELAY_PATH_METHODS.includes(method)) {' \
-    '      if (name === '"'"''"'"' || !RELAY_PATH_METHODS.includes(method)) {'
-  # The one pair is admitted for one wire and refused for the other two, which
-  # carry streaming in the request body and need none.
-  mutate web "the page's mirror admits the stream pair on every kind" "$ASN" \
-    "  return family === 'gemini' ? RELAY_STREAM_PAIR : ''" \
-    '  return RELAY_STREAM_PAIR'
-  # Byte equality against one fixed literal is the whole of the exception: a
-  # comparison with a second reading is the class the refusal exists to keep out.
-  mutate web "the page's mirror compares the pair by name rather than by bytes" "$ASN" \
-    "    if (rest.length > 1 || rest[0] !== admitted || admitted === '') {" \
-    "    if (rest.length > 1 || !(rest[0] ?? '').startsWith('alt=') || admitted === '') {"
 
   # **The model turn goes back as it came, or the signature does not.** The
   # scripted endpoint refuses a continuation that dropped a signed part, so this
@@ -12002,75 +11224,9 @@ export function assistantTransport(id: string): Transport {
   # stream; asked for in any other spelling, the desk'"'"'s own mirror refuses it
   # and nothing is sent.
 
-  # **The removal list is closed, or it is not a ruling.** Opened, the endpoint
-  # refuses the declaration; the leg fails at the wire.
-  mutate web "the removal list loses the keyword every runtime schema carries" "$GS" \
-    "  'additionalProperties',
-" \
-    ""
-  # …and applied at every depth, because a schema'"'"'s keywords live inside
-  # `properties`, `items` and `$defs` as much as at the top.
-  mutate web "the removal list is applied at the top level only" "$GS" \
-    '    const walked = withoutKeywords(value, removals, inNameMap ? false : namesUnder(key))' \
-    '    const walked = value'
-  # A keyword the list does not name is **reported**, never stripped: a desk
-  # that widened its idea of the runtime'"'"'s contract on being refused would show
-  # the model a contract nobody wrote down.
-  mutate web "the SDK-backed engine swallows a refused schema keyword" "$VL" \
-    "        if (said.kind === 'other') throw schemaRefusal(cause) ?? cause" \
-    "        if (said.kind === 'other') throw cause"
-
-  # **Off is a member on this wire and an omission on the others**, because
-  # omission here means thinking. Take the member away and the endpoint that
-  # cannot be turned off has nothing to refuse, so the desk never learns it.
-  mutate web "off is expressed by omission on the Gemini wire too" "$TH" \
-    "    if (dialect === 'gemini-budget') {
-      return {
-        members: { thinkingConfig: { thinkingBudget: 0 } }," \
-    "    if (false) {
-      return {
-        members: { thinkingConfig: { thinkingBudget: 0 } },"
-  # The refused member is never sent again — the same rule the degrade follows,
-  # and the reason `always` reached by a refusal withdraws it while `always`
-  # reached from absence does not.
-  mutate web "the refused tier member is sent again after the endpoint refused it" "$TH" \
-    '  const wire = () => (unavailable || offRefused ? null : wireFor(tier, dialect))' \
-    '  const wire = () => wireFor(tier, dialect)'
-  # A 400 at `off` is equally "cannot be turned off" and "spells it the other
-  # way", and only trying the other spelling tells them apart.
-  mutate web "a first refusal at off is read as a model that always thinks" "$TH" \
-    '      const next = nextDialect(dialect)
-      if (next !== null) {' \
-    '      const next = nextDialect(dialect)
-      if (next !== null && tier !== '"'"'off'"'"') {'
-
-  # The SDK'"'"'s translation, and the two rows that hold it: the members the table
-  # asked for must reach the wire, and the signature this SDK surfaces under a
-  # different name must still be ledgered.
-  mutate web "the Gemini tier is not translated into the SDK's provider option" "$VL" \
-    '    return { providerOptions: { [GOOGLE_OPTIONS]: { thinkingConfig: members.thinkingConfig } } }' \
-    '    return {}'
-  mutate web "the SDK's Gemini signature is ledgered under the wrong provider" "$VR" \
-    "  gemini: { provider: 'google', member: 'thoughtSignature' }" \
-    "  gemini: { provider: 'anthropic', member: 'signature' }"
-  # The tier lives one level down on this wire, so the rebuild after a
-  # truncation has to reach it there.
-  mutate web "the Gemini rebuild strips the tier from the top level" "$VR" \
-    '      const config = (payload.generationConfig ?? {}) as Record<string, unknown>
-      for (const member of TIER_MEMBERS) delete config[member]' \
-    '      const config = (payload.generationConfig ?? {}) as Record<string, unknown>
-      for (const member of TIER_MEMBERS) delete payload[member]'
-  # This wire asks to stream in the **address**; a reader that looked in the
-  # body would answer "no" to every streamed call and never re-frame a whole
-  # answer the SDK asked to have streamed.
-  mutate web "the Gemini re-framing decides from the body rather than the address" "$VR" \
-    "  if (family === 'gemini') return suffix.includes(':streamGenerateContent')" \
-    '  if (false) return false'
-
   # ---- Round 1's five findings, each broken again ---------------------------
   #
   # A row per ruling, and each one restores the exact shape the review found.
-  SM=web/src/assistant/conformance/scriptedModel.ts
 
   # **A signature certifies the exact bytes it came with.** Merging a signed
   # part with an unsigned one produces a signature over text the endpoint never
@@ -12087,37 +11243,6 @@ export function assistantTransport(id: string): Transport {
   # emits one when a summary is empty, and counting only readable passages let a
   # model think through every turn at tier off without the desk noticing.
 
-  # **A name is not a keyword.** A definition called `const` was deleted as
-  # though it were the keyword, leaving a `$ref` pointing at nothing.
-  mutate web "the walker knows only two of the schema name maps" "$GS" \
-    "  'properties',
-  '\$defs',
-  'definitions',
-  'dependentSchemas',
-  'dependentRequired',
-  'patternProperties'
-]" \
-    "  'properties',
-  '\$defs'
-]"
-  # And the second layer of the same mistake, found by writing the test: a key
-  # *inside* a name map is a name, so its value is an ordinary schema.
-  mutate web "a name inside a name map is read as a name-map keyword" "$GS" \
-    '    const walked = withoutKeywords(value, removals, inNameMap ? false : namesUnder(key))' \
-    '    const walked = withoutKeywords(value, removals, namesUnder(key))'
-
-  # **Gemini signs the first functionCall part**, and the fixture's validator
-  # called every placement outside a thought part malformed — which would have
-  # refused the shape the wire actually sends.
-  mutate web "a signature on a function call is called malformed" "$SM" \
-    '      const onCall = part.functionCall !== undefined' \
-    '      const onCall = false'
-  # The desk's own half of it: a scanner that reads only thought parts never
-  # compares the signature function calling actually carries.
-  mutate web "the Gemini scanner reads a signature only off a thought part" "$VR" \
-    '      typeof block?.thoughtSignature === '"'"'string'"'"' &&
-      (block.thought === true || block.functionCall !== undefined)' \
-    "      typeof block?.thoughtSignature === 'string' && block.thought === true"
   # **Retired, with its reason: NOT DISCRIMINATING, and the reason is worth
   # writing down.** It was "the SDK-backed engine ledgers no signature from a
   # function call". The ledger's only observable consequence is the truncation
@@ -12128,21 +11253,6 @@ export function assistantTransport(id: string): Transport {
   # provoke it while the SDK is correct. The half that *can* be observed is the
   # scanner, and the row below breaks that.
 
-  # **The declaration is derived, or it is a sentence that rots.** Widening it by
-  # hand is the failure this leg exists for.
-  mutate web "the declared SDK removal set is widened by hand" "$GS" \
-    'export const SDK_SCHEMA_REMOVALS: readonly string[] = []' \
-    "export const SDK_SCHEMA_REMOVALS: readonly string[] = ['propertyNames']"
-  # @ai-sdk/google 4.0.82 preserves empty-object schemas. The wire equality
-  # must catch a declaration that still models the old provider's omission.
-  mutate web "the empty-schema omission is incorrectly declared" "$GS" \
-    '  return withoutKeywords(served, removals)' \
-    "  if (isRecord(served) && isRecord(served.properties) && Object.keys(served.properties).length === 0) return undefined
-  return withoutKeywords(served, removals)"
-  # Whole-schema equality also holds the desk's own compatibility policy.
-  mutate web "the declared narrowing is not applied to what the model is shown" "$GS" \
-    '  return withoutKeywords(served, removals)' \
-    '  return served'
   # Retired: narrowing an already empty SDK removal set, and suppressing a
   # provider-loss notice. The current provider loses nothing beyond Desk's
   # policy, so neither mutation has a real subject. The conformance legs now
@@ -12150,43 +11260,6 @@ export function assistantTransport(id: string): Transport {
 
   # ---- Round 2's four findings, each broken again ---------------------------
 
-  # **A notice is a loss beyond the ruling, never the ruling itself.** Comparing
-  # the runtime's raw schema against a set that includes the desk's own six made
-  # every tool produce a notice about `additionalProperties` — the desk warning
-  # about the thing it wrote down, five times a run.
-  mutate web "the narrowing notice is measured against the raw schema" "$GS" \
-    '  const desk = withoutUnsupportedKeywords(served)
-  const shown = schemaShown(engine, family, desk)' \
-    '  const desk = served
-  const shown = schemaShown(engine, family, desk)'
-
-  # **The fixture the declaration is derived over is the runtime's vocabulary,
-  # or it is a schema somebody made up.** Aimed at the fixture and not at the
-  # assertion: a row that weakens a check cannot discriminate, because a
-  # weakened check is exactly one that does not fail. A fixture that has quietly
-  # stopped carrying a keyword the runtime emits is the failure this lock is
-  # for, and it is what this restores.
-  mutate web "the derivation fixture drops a keyword the runtime emits" "$CT" \
-    "      d: { type: 'object', propertyNames: { type: 'string' } }," \
-    "      d: { type: 'object' },"
-  # …and the other half: a vocabulary computed from the tool schemas alone
-  # leaves out the pack schema, which is where most of the keywords are.
-  mutate web "the runtime vocabulary ignores the recorded pack schema" "$CT" \
-    '  keywordsSent(JSON.parse(answered.content[0]!.text), found)' \
-    '  void answered'
-
-  # **A rule about one wire's schema dialect belongs to that wire.** Installed
-  # on every family, a 400 saying "unsupported response type" names `type` and
-  # the real failure was rewritten into a sentence about a removal list.
-  mutate web "the SDK-backed engine classifies a schema refusal on every family" "$VL" \
-    "    if (session.model.family !== 'gemini') return null" \
-    '    if (false) return null'
-
-  # **An empty signed thought is a shape the wire sends**, so a validator that
-  # calls it malformed refuses a client that replayed it faithfully.
-  mutate web "an empty signed thought is called malformed" "$SM" \
-    '      const onThought = part.thought === true' \
-    "      const onThought = part.thought === true && typeof part.text === 'string' && part.text !== ''"
   # And the desk's own half: the parts that arrived are the parts that go back,
   # empty ones included.
 
@@ -12680,9 +11753,9 @@ export function assistantTransport(id: string): Transport {
   # the same refusal before it checks anything, which is why nothing reaches the
   # copy in `settleReview`; where a passing check and an open issue do coexist,
   # it is the only thing between them and `ready`.
-  mutate web "a run settles at ready with an expectation still open" "$RR" \
+  mutate web 'a run settles at ready with an expectation still open' web/src/research/run.ts \
     '    if (this.unresolvedExpectations()) {
-      this.set({ phase: '"'"'review'"'"', status: '"'"'needs-input'"'"', detail: this.unresolvedExpectations()!, readiness: '"'"''"'"' })
+      this.setReviewResult({ status: '"'"'needs-input'"'"', detail: this.unresolvedExpectations()!, readiness: '"'"''"'"' }, owner)
       return
     }
     const passing = completeCurrentCheck(this.state)' \
@@ -13021,8 +12094,8 @@ export function assistantTransport(id: string): Transport {
   # convention. The full measure now belongs to PageBody; dropping it makes
   # the graph content silently become the default reading column.
   mutate web 'the page measure unstated by a route (graphs takes the default)' web/src/routes/GraphView.tsx \
-    '    <PageBody width="full">' \
-    '    <PageBody>'
+    '<PageBody width="full" fill=' \
+    '<PageBody fill='
 
   # **And the rule that reads the attribute.** The other half: a route may
   # state `form` and be given the wide measure anyway, because the `:has` rule
@@ -13166,7 +12239,6 @@ export function assistantTransport(id: string): Transport {
   # id, and five review rounds closed the races between them one pair at a
   # time.
   MS=web/src/mcp/session.ts
-  ASN2=web/src/assistant/session.ts
   FC=web/src/files/client.ts
   # **Memoised, and never reset.** Ten components mounting at once must spend
   # one handoff; the handoff is single use, so a second exchange is a `401` and
@@ -13186,15 +12258,6 @@ export function assistantTransport(id: string): Transport {
   mutate web "a chassis call does not await the bootstrap" "$FC" \
     '  const id = await sessionBearer()' \
     "  const id = ''"
-  # **The relay is a gated chassis route like any other.** It carried no bearer
-  # on the branch this replaces, so every model listing and every generation
-  # turn answered 401 the moment the session stopped being a cookie — and the
-  # builder's own drive never reached either path.
-  # Repaired: the desk headers are bound with the call, and the AI connection's
-  # headers travel beside them.
-  mutate web 'the assistant'"'"'s relay sends no bearer' 'web/src/assistant/session.ts' \
-    '        headers: { ...headers, ...boundDeskHeaders, ...aiHeaders(target?.connectionId,target?.connectionRevision), Authorization: `Bearer ${id}` },' \
-    '        headers: { ...headers, ...boundDeskHeaders, ...aiHeaders(target?.connectionId,target?.connectionRevision) },'
   # **A response nobody reads is a request nobody closes.** A body stream that
   # is neither consumed nor cancelled leaves the request in flight for the life
   # of the page: invisible in using the desk, and caught by the containment
@@ -13238,33 +12301,6 @@ export function assistantTransport(id: string): Transport {
     '    const stopWatching = whenSessionEnds(() => {
       if (true) return
       if (timer !== undefined) clearTimeout(timer)'
-  # **A relay 401 is classified by the mark and not by the status.** Reading the
-  # status alone ends a desk session over an expired model key.
-  mutate web "any relay 401 ends the session" "$ASN2" \
-    "    if (answered.status === 401 && refusalCode(answered) === 'unauthorized') {" \
-    '    if (answered.status === 401) {'
-  # **Retired, with the reason: the feature was withdrawn.** Four rows here
-  # broke the page's attempts to make a stolen handoff visible — the
-  # other-sessions line, its derivation, and the comparison that told a page's
-  # own spent link from somebody else's. All of it is deleted.
-  #
-  #   - "the page never asks how many other sessions there are"
-  #   - "the other-sessions line is never derived"
-  #   - "a page's own spent handoff reads as a theft"
-  #   - "any spent handoff reads as this page's own"
-  #   - "the page never compares the minted count" (retired a round earlier)
-  #
-  # What stands in their place is one row: a spent handoff must be read as a
-  # reload, because this desk cannot tell whose spend it was.
-  # **An opaque redirect is not an answer**, and an engine handed one is handed
-  # nothing it can read.
-  mutate web "an opaque redirect is delivered to the engine" "$ASN2" \
-    "    if (answered.type === 'opaqueredirect' || (answered.status === 0 && answered.redirected)) {
-      throw new Error(CALL_FAILED)
-    }" \
-    '    if (false) {
-      throw new Error(CALL_FAILED)
-    }'
   # **The dialog's proposal goes with the session.** Stopping the run leaves
   # `offered` true and Create willing to write it.
   mutate web 'the Describe-it proposal survives the session'"'"'s end' web/src/shell/DescribeIt.tsx \
@@ -13278,19 +12314,6 @@ export function assistantTransport(id: string): Transport {
         discardNow.current()
         setLost(SLOT_LOST)
       }),'
-  # **`unauthorized` and no other code.** A 307 into the exchange answers a
-  # marked `no-handoff`, and a classifier that read the mark alone turned that
-  # into a forgotten valid session.
-  mutate web "any marked relay 401 ends the session" "$ASN2" \
-    "    if (answered.status === 401 && refusalCode(answered) === 'unauthorized') {" \
-    '    if (answered.status === 401 && refusalCode(answered) !== null) {'
-  # **A result that arrived after the end is not delivered.** Closing the socket
-  # does not unmake a call that was already in flight.
-  mutate web "a tool result in flight is delivered after the end" "$ASN2" \
-    '          const answered = (await client.callTool({ name, arguments: args })) as McpToolResult
-          if (ended !== null) throw new NoSession(ended)
-          return answered' \
-    '          return (await client.callTool({ name, arguments: args })) as McpToolResult'
   # **A refusal is the end of the road.** An id the chassis has rejected that
   # stays in storage is an id every later call re-sends, and a page that never
   # says the one sentence a person can act on.
@@ -13443,8 +12466,8 @@ export function assistantTransport(id: string): Transport {
     "    : finding.kind === file.kind && finding.id === file.id)" \
     "    : finding.id === file.id)"
   mutate web "review: the confirmation does not carry the token" "$RC" \
-    "body: JSON.stringify({ token }) })" \
-    "body: JSON.stringify({}) })"
+    "body: JSON.stringify({ token, " \
+    "body: JSON.stringify({ "
   mutate web "review: a stale confirmation reads as any failure" "$RC" \
     "  return body.code === 'stale' ? new StaleReview(message) : new Error(message)" \
     "  return new Error(message)"
@@ -13458,7 +12481,7 @@ export function assistantTransport(id: string): Transport {
     "    {before !== undefined && after !== undefined" \
     "    {after !== undefined"
   mutate web "review: a lock is offered when every file matches" "$RVV" \
-    "            : review.token && !matches && <section" \
+    "            : review.token && (!matches||review.publicationPending) && <section" \
     "            : review.token && <section"
   mutate web "review: a lock is offered over a file that cannot be shown" "$RVV" \
     "          {review.blocked ? <Alert" \
@@ -13665,17 +12688,17 @@ export function assistantTransport(id: string): Transport {
     "{ setState({ phase: 'absent' }); return }" \
     "{ setState({ phase: 'absent' }); await new Promise(resolve => setTimeout(resolve, JOURNAL_REFRESH_MS)); continue }"
   mutate web "jobs journal (reading): a refusal that is not JSON loses its status" web/src/jobs/client.ts \
-    "  const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })" \
-    "  const result = await response.json()"
-  mutate web "jobs journal (order): a record stands by its time, not its creation entry" "$JAC" \
-    "return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }" \
-    "return [0, row.when.time] }"
+    "  try { result = JSON.parse(raw) } catch (error) { if (response.ok) throw error; result = {} }" \
+    "  result = JSON.parse(raw)"
+  mutate web 'jobs journal (order): a record stands by its time, not its creation entry' web/src/jobs/activity.ts \
+    'return at === undefined ? [0, row.when.time] : [1, entryPlace(at) + 0.5] }' \
+    'return [0, row.when.time] }'
   mutate web "jobs journal (order): entries are ordered by their time, not Runner's order" "$JAC" \
     "entry: journal.entries[index]!, place: at }, at: [1, at] })" \
     "entry: journal.entries[index]!, place: at }, at: [1, Date.parse(String(journal.entries[index]!.at))] })"
-  mutate web "jobs journal (order): a place does not count the entries read and not kept" "$JAC" \
-    "return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }" \
-    "return at === undefined ? [0, row.when.time] : [1, at + 0.5] }"
+  mutate web 'jobs journal (order): a place does not count the entries read and not kept' web/src/jobs/activity.ts \
+    'return at === undefined ? [0, row.when.time] : [1, entryPlace(at) + 0.5] }' \
+    'return at === undefined ? [0, row.when.time] : [1, at + 0.5] }'
   mutate web "jobs journal (order): the oldest record's own creation entry is held back" "$JAC" \
     "return lowest(oldest, at[0] === 1 ? [1, at[1] - 0.5] : at) }" \
     "return lowest(oldest, at) }"
@@ -13700,15 +12723,15 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs journal (record): a run row takes its state from the journal" "$JAC" \
     "    runs: rowsOf(streams.runs?.records.map(runRow))," \
     "    runs: rowsOf(streams.runs?.records.map(run => runRow({ ...run, state: ([...(journal?.entries ?? [])].reverse().find(entry => entry.concerns?.run === run.id && typeof entry.to === 'string')?.to as Run['state'] | undefined) ?? run.state })))," 
-  mutate web "jobs journal (filters): entries are shown under a filter" "$JAV" \
-    "served && { entries: served.entries, dropped: served.dropped, from, show: !filtered })" \
-    "served && { entries: served.entries, dropped: served.dropped, from, show: true })"
+  mutate web 'jobs journal (filters): entries are shown under a filter' web/src/jobs/ActivityView.tsx \
+    'served && { entries: served.entries, dropped: served.dropped, from, show: !filtered, sequence: !!backward })' \
+    'served && { entries: served.entries, dropped: served.dropped, from, show: true, sequence: !!backward })'
   mutate web "jobs journal (progress): entries are shown before the journal is read to its end" "$JJ" \
     "          await catchUp(journal, page, keep, () => status('reading'), yieldToBrowser, controller.signal)" \
     "          await catchUp(journal, page, keep, () => { reading.snapshot = { entries: journal.entries.slice(), dropped: journal.dropped, began: journal.began }; status('reading') }, yieldToBrowser, controller.signal)"
-  mutate web "jobs journal (progress): the reading's progress is not said" "$JAV" \
-    "  if (state.phase === 'reading') return <p className=\"quiet\" role=\"status\">" \
-    "  if (state.phase === 'reading') return null; if (false) return <p className=\"quiet\" role=\"status\">"
+  mutate web 'jobs journal (progress): the reading'"'"'s progress is not said' web/src/jobs/ActivityView.tsx \
+    '  if (state.phase === '"'"'reading'"'"') return <LoadingState>' \
+    '  if (state.phase === '"'"'reading'"'"') return null; if (false) return <LoadingState>'
   mutate web "jobs journal (progress): the table is not said to wait for the end" "$JAV" \
     "    : msg('Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.')" \
     "    : ''"
@@ -13724,9 +12747,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs journal (window): the newest-entries line is not shown" "$JAV" \
     "    {served && !filtered && !pending && entriesShown < readTotal && " \
     "    {false && "
-  mutate web "jobs journal (window): the step control shows nothing more" "$JAV" \
-    "setWindowFor({ jobId, size: windowSize + limits.step })" \
-    "setWindowFor({ jobId, size: windowSize })"
+  mutate web 'jobs journal (window): the step control shows nothing more' web/src/jobs/ActivityView.tsx \
+    'onClick={() => setWindowFor({ jobId, size: windowSize + limits.step })}' \
+    'onClick={() => setWindowFor({ jobId, size: windowSize })}'
   mutate web "jobs journal (window): the step control is offered past what is kept" "$JAV" \
     "  const earlier = served && !filtered && !pending && from > served.dropped && merged.heldEntries === 0" \
     "  const earlier = served && !filtered && !pending && merged.heldEntries === 0"
@@ -13778,12 +12801,12 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs run times (#223): the Runs table formats the time unguarded" web/src/jobs/JobsView.tsx \
     "<td className=\"quiet\">{submitted(r.createdAt)}</td>" \
     "<td className=\"quiet\">{date(r.createdAt)}</td>"
-  mutate web "jobs run times (#223): the index dot's label formats the time unguarded" web/src/jobs/JobsView.tsx \
-    'aria-label={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}' \
-    'aria-label={`${stateLabel(r.state)} · ${date(r.createdAt)}`}'
-  mutate web "jobs run times (#223): the index dot's tooltip formats the time unguarded" web/src/jobs/JobsView.tsx \
-    'content={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}' \
-    'content={`${stateLabel(r.state)} · ${date(r.createdAt)}`}'
+  mutate web 'jobs run times (#223): the index dot'"'"'s label formats the time unguarded' web/src/jobs/JobsView.tsx \
+    'aria-label={`${msg('"'"'View run'"'"')} · ${stateLabel(run.state)} · ${msg('"'"'Submitted'"'"')}: ${submitted(run.createdAt)}`}' \
+    'aria-label={`${msg('"'"'View run'"'"')} · ${stateLabel(run.state)} · ${msg('"'"'Submitted'"'"')}: ${date(run.createdAt)}`}'
+  mutate web 'jobs run times (#223): the index dot'"'"'s tooltip formats the time unguarded' web/src/jobs/JobsView.tsx \
+    'content={`${stateLabel(run.state)}\n${msg('"'"'Submitted'"'"')}: ${submitted(run.createdAt)}`}' \
+    'content={`${stateLabel(run.state)}\n${msg('"'"'Submitted'"'"')}: ${date(run.createdAt)}`}'
   mutate web "jobs run times (#223): the run page formats a time that does not read as one" "$JRV" \
     "return stored ? when(stored.at) : at ? msg('Not recorded') : absent" \
     "return at ? when(at) : absent"
@@ -13856,9 +12879,7 @@ export function assistantTransport(id: string): Transport {
   mutate web "upgrade: the note is shown where the gates are on" "$UN" \
     "  if (hidden || offer.data?.state !== 'offer' || offer.data.gated) return null" \
     "  if (hidden || offer.data?.state !== 'offer') return null"
-  mutate web "upgrade: the note is not on Packs" web/src/packs/PacksPane.tsx \
-    "    {review && <UpgradeNote/>}" \
-    "    {false && <UpgradeNote/>}"
+  # Retired (2026-10-16): upgrade: the note is not on Packs. PacksPane no longer imports or renders UpgradeNote. No current equivalent exists in this assigned file; retire this location-specific row rather than reintroducing removed UI. Any upgrade affordance elsewhere requires a separate scoped audit.
   mutate web "upgrade: Admin → Project does not offer it" "$UN" \
     "              <div><ButtonLink to=\"/packs/_upgrade\">{msg('Review the upgrade')}</ButtonLink></div>" \
     "              <div />"
@@ -14130,9 +13151,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "key panel: a made desk without a key is not said" "$DR" \
     "{keys?.state === 'none' && <p>" \
     "{false && <p>"
-  mutate web "key panel: keys Desk could not read are not said" "$DR" \
-    "<p role=\"alert\">{systemMessage(keys.problem)}</p>" \
-    "<p role=\"alert\"></p>"
+  mutate web 'key panel: keys Desk could not read are not said' web/src/audit/DecisionRecord.tsx \
+    '<SettingsFeedback tone="error">{systemMessage(keys.problem)}</SettingsFeedback>' \
+    '<SettingsFeedback tone="error"></SettingsFeedback>'
   mutate web "key panel: the runtime's diagnostics on the key are not shown" "$DR" \
     "aria-label={msg('What the runtime said of the key')}>{signing.diagnostics.map(" \
     "aria-label={msg('What the runtime said of the key')}>{signing.diagnostics.slice(0, 0).map("
@@ -14455,9 +13476,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "hand-over page: the held statement is not said" "$DR" \
     "  const held = (record.expected ?? 0) > 0" \
     "  const held = false"
-  mutate web "hand-over page: a holder's file passed over is not named" "$DR" \
-    "{record.expectUnread && <p role=\"alert\">" \
-    "{record.expectUnread && record.expectUnread.length < 0 && <p role=\"alert\">"
+  mutate web 'hand-over page: a holder'"'"'s file passed over is not named' web/src/audit/DecisionRecord.tsx \
+    '{record.expectUnread && <SettingsFeedback tone="error">' \
+    '{record.expectUnread && record.expectUnread.length < 0 && <SettingsFeedback tone="error">'
   mutate web 'hand-over page: not beside the report' 'web/src/audit/DecisionRecord.tsx' \
     '                    {archiveSection(record.archive)}
                     {handoverSection(record.since)}' \
@@ -14470,16 +13491,16 @@ export function assistantTransport(id: string): Transport {
     "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt])" \
     "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt > 0])"
   # Review round 1 (finding 3): a record Desk could not read is said.
-  mutate web "hand-over page: a record Desk could not read is not said beside the report" "$DR" \
-    "{record.handoverProblem && <p role=\"alert\">{systemMessage(record.handoverProblem)}</p>}
-                    {record.expectUnread" \
-    "{record.handoverProblem && record.handoverProblem.length < 0 && <p role=\"alert\">{systemMessage(record.handoverProblem)}</p>}
-                    {record.expectUnread"
-  mutate web "hand-over page: a record Desk could not read is not said beside the runtime's refusal" "$DR" \
-    "</ul>
-                  {record.handoverProblem && <p role=\"alert\">" \
-    "</ul>
-                  {record.handoverProblem && record.handoverProblem.length < 0 && <p role=\"alert\">"
+  mutate web 'hand-over page: a record Desk could not read is not said beside the report' web/src/audit/DecisionRecord.tsx \
+    '{record.handoverProblem && <SettingsFeedback tone="error">{systemMessage(record.handoverProblem)}</SettingsFeedback>}
+                    {record.expectUnread' \
+    '{record.handoverProblem && record.handoverProblem.length < 0 && <SettingsFeedback tone="error">{systemMessage(record.handoverProblem)}</SettingsFeedback>}
+                    {record.expectUnread'
+  mutate web 'hand-over page: a record Desk could not read is not said beside the runtime'"'"'s refusal' web/src/audit/DecisionRecord.tsx \
+    '</ul>
+                  {record.handoverProblem && <SettingsFeedback tone="error">' \
+    '</ul>
+                  {record.handoverProblem && record.handoverProblem.length < 0 && <SettingsFeedback tone="error">'
   mutate web "hand-over client: an empty word on the record is read" "$AC" \
     " || !optional(value.handoverProblem, named)) return false" \
     " || !optional(value.handoverProblem, text)) return false"
@@ -14531,9 +13552,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs record page: the copy's lines are not said" "$JRP" \
     '{msg('"'"'Lines in Desk’s copy of the chain: {{number}}'"'"', { number: record.chainLines })}' \
     '{msg('"'"'Lines in Desk’s copy of the chain: {{number}}'"'"', { number: 0 })}'
-  mutate web "jobs record page: a holder's file passed over is not named" "$JRP" \
-    '      {record.expectUnread && <p role="alert">' \
-    '      {record.expectUnread && record.expectUnread.length < 0 && <p role="alert">'
+  mutate web 'jobs record page: a holder'"'"'s file passed over is not named' web/src/audit/JobsRecord.tsx \
+    '{record.expectUnread && <SettingsFeedback tone="error">' \
+    '{record.expectUnread && record.expectUnread.length < 0 && <SettingsFeedback tone="error">'
   mutate web "jobs record page: no Runner is not said" "$JRP" \
     '    case '"'"'no-runner'"'"': return <p>' \
     '    case '"'"'no-runner'"'"': return null && <p>'
@@ -14626,9 +13647,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs record client: the check after a confirmation follows every change to the project" "$AC" \
     'queryFn: ({ signal }) => readJobsRecord(signal), meta: ON_REQUEST_ONLY, staleTime: 0, retry: false' \
     'queryFn: ({ signal }) => readJobsRecord(signal), staleTime: 0, retry: false'
-  mutate web "jobs record page: an error leaves an earlier report shown" "$JRP" \
-    '        : query.error ? <p role="alert">{systemMessage(query.error.message)}</p>' \
-    '        : query.error && !record ? <p role="alert">{systemMessage(query.error.message)}</p>'
+  mutate web 'jobs record page: an error leaves an earlier report shown' web/src/audit/JobsRecord.tsx \
+    ': query.error ? <SettingsFeedback tone="error">{systemMessage(query.error.message)}</SettingsFeedback>' \
+    ': query.error && !record ? <SettingsFeedback tone="error">{systemMessage(query.error.message)}</SettingsFeedback>'
   # ADR-0010 row 6, the repair offer, on the page (RepairTrail.tsx) and in the
   # client: the confirmation before anything runs, its three sentences; the
   # record checked again after a repair; what a repair answered, and when it
@@ -14649,14 +13670,14 @@ export function assistantTransport(id: string): Transport {
   mutate web 'repair page: the repair'"'"'s sentence is not said' "$RTP" \
     '{outcome?.kind === '"'"'repaired'"'"' && <p role="status">' \
     '{false && <p role="status">'
-  mutate web 'repair page: a refusal is not said' "$RTP" \
-    '{outcome?.kind === '"'"'failed'"'"' && <>' \
-    '{false && <>'
-  mutate web 'repair page: the runtime'"'"'s words are not shown' "$RTP" \
-    '{outcome.diagnostics.length > 0 && <ul' \
-    '{false && <ul'
-  mutate web 'repair page: the decision record is not checked again after a repair' "$RDR" \
-    'onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />' \
+  mutate web 'repair page: a refusal is not said' web/src/audit/RepairTrail.tsx \
+    '{outcome?.kind === '"'"'failed'"'"' && <Notice' \
+    '{outcome?.kind === '"'"'failed'"'"' && false && <Notice'
+  mutate web 'repair page: the runtime'"'"'s words are not shown' web/src/audit/RepairTrail.tsx \
+    'detail={outcome.diagnostics.length ? <ul' \
+    'detail={false ? <ul'
+  mutate web 'repair page: the decision record is not checked again after a repair' web/src/audit/DecisionRecord.tsx \
+    'onOutcome={outcome => { setRepaired(outcome); if(outcome.kind!=='"'"'failed'"'"'||!outcome.stale)void query.refetch() }} />' \
     'onOutcome={outcome => { setRepaired(outcome) }} />'
   mutate web 'repair page: an outcome outlives a later check' 'web/src/audit/DecisionRecord.tsx' \
     '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined); void query.refetch() }' \
@@ -14686,9 +13707,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'repair client: the runtime'"'"'s words are dropped from a refusal' "$RAC" \
     'list(body.diagnostics, isDiagnostic) ? body.diagnostics : []' \
     '[]'
-  mutate web 'repair page: an offer that is not available opens a confirmation' "$RTP" \
-    '{repair?.state === '"'"'available'"'"' && <>' \
-    '{repair && <>'
+  mutate web 'repair page: an offer that is not available opens a confirmation' web/src/audit/RepairTrail.tsx \
+    '{repair?.state === '"'"'available'"'"' && !(outcome?.kind==='"'"'failed'"'"' && outcome.stale) && <>' \
+    '{repair && !(outcome?.kind==='"'"'failed'"'"' && outcome.stale) && <>'
   mutate web 'repair page: why no repair is offered is not said' "$RTP" \
     '{repair?.state === '"'"'unavailable'"'"' && <p' \
     '{false && <p'
@@ -14881,9 +13902,6 @@ export function assistantTransport(id: string): Transport {
   mutate web "ai connections: the page's requests name no connection" web/src/assistant/aiConnections.tsx \
     "export const aiHeaders=(id?:string,revision?:string):Record<string,string>=>id?{'X-Assistant-Connection':id,...(revision?{'X-Assistant-Revision':revision}:{})}:{}" \
     'export const aiHeaders=(_id?:string,_revision?:string):Record<string,string>=>({})'
-  mutate web "ai connections: the run socket names no connection" web/src/assistant/agentTransport.ts \
-    "  if(target?.connectionId){url.searchParams.set('connection',target.connectionId);if(target.connectionRevision)url.searchParams.set('revision',target.connectionRevision)}" \
-    ''
   mutate web "ai connections: a name the desk refuses is offered for saving" web/src/assistant/AIConnectionsSettings.tsx \
     'export const aiConnectionNameTooLong=(name:string)=>[...name.trim()].length>128' \
     'export const aiConnectionNameTooLong=(name:string)=>name.trim().length>256'
@@ -15068,9 +14086,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'audit r2 fix: the identity question is not asked where no trail is kept' 'web/src/audit/DecisionRecord.tsx' \
     'deciding runs.'"'"')}</p>{identitySection(record.identity)}{archiveSection(record.archive)}</>' \
     'deciding runs.'"'"')}</p>{archiveSection(record.archive)}</>'
-  mutate web 'audit r2 fix: the identity question is not asked beside a refusal' 'web/src/audit/DecisionRecord.tsx' \
-    '{systemMessage(query.error.message)}</p>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
-    '{systemMessage(query.error.message)}</p>{archiveSection(archiveOf(query.error))}</>'
+  mutate web 'audit r2 fix: the identity question is not asked beside a refusal' web/src/audit/DecisionRecord.tsx \
+    '</SettingsFeedback>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
+    '</SettingsFeedback>{archiveSection(archiveOf(query.error))}</>'
   mutate web 'audit r2 fix: a refusal'"'"'s identity question is not read' 'web/src/audit/client.ts' \
     '  if (isAuditIdentity(body.identity)) Object.assign(error, { identity: body.identity })' \
     ''
@@ -15092,9 +14110,9 @@ export function assistantTransport(id: string): Transport {
     '                    {archiveSection(record.archive)}
                     {handoverSection(record.since)}' \
     '                    {handoverSection(record.since)}'
-  mutate web 'archive page: not beside a refusal' 'web/src/audit/DecisionRecord.tsx' \
-    '</p>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
-    '</p>{identitySection(identityOf(query.error))}</>'
+  mutate web 'archive page: not beside a refusal' web/src/audit/DecisionRecord.tsx \
+    '</SettingsFeedback>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
+    '</SettingsFeedback>{identitySection(identityOf(query.error))}</>'
   mutate web 'archive page: a refusal'"'"'s archive is not read' 'web/src/audit/client.ts' \
     '  if (isAuditArchive(body.archive)) Object.assign(error, { archive: body.archive })' \
     ''
@@ -15132,9 +14150,9 @@ export function assistantTransport(id: string): Transport {
     "      <Head status={says.state === 'read' ? undefined : says}/>" \
     "      <Head status={undefined}/>"
   # "Could not read now" is never "still loading".
-  mutate web "ui pass: the desk name loads for ever when it could not be read" "$UIV" \
-    "{directory.data?.current.name ?? (directory.isError ? msg('could not be read') : msg('Loading…'))}" \
-    "{directory.data?.current.name ?? msg('Loading…')}"
+  mutate web 'ui pass: the desk name loads for ever when it could not be read' web/src/routes/AdminView.tsx \
+    '{directory.data?.current.name ?? (directory.isError ? msg('"'"'could not be read'"'"') : <LoadingState inline>{msg('"'"'Loading…'"'"')}</LoadingState>)}' \
+    '{directory.data?.current.name ?? <LoadingState inline>{msg('"'"'Loading…'"'"')}</LoadingState>}'
   # Every panel the Project section carried is kept: the Jobs record is
   # Decision safeguards', beside the decision record, and runs only while that
   # section is open.
@@ -15362,12 +14380,6 @@ export function assistantTransport(id: string): Transport {
   mutate web 'graph row 3: the graph session runs the pack critic' web/src/assistant/useAssistantRun.ts \
     '...(purpose === '"'"'graph'"'"' ? { adversarialReview: false } : {}),' \
     '...(purpose === '"'"'graph'"'"' ? { adversarialReview: true } : {}),'
-  mutate web 'graph row 3: the vercel engine uses pack authoring instructions' web/src/assistant/engines/vercel/loop.ts \
-    'session.purpose === '"'"'graph'"'"' ? GRAPH_SYSTEM' \
-    'session.purpose === '"'"'graph'"'"' ? (GRAPH_SYSTEM && SYSTEM)'
-  mutate web 'graph row 3: the codex engine uses pack authoring instructions' web/src/assistant/engines/codex/index.ts \
-    'session.purpose === '"'"'graph'"'"' ? GRAPH_SYSTEM' \
-    'session.purpose === '"'"'graph'"'"' ? (GRAPH_SYSTEM && SYSTEM)'
 
   # ADR-0011, row 4.
   mutate web 'graph row 4: command not checked on page' web/src/graphs/GraphRehearsal.tsx \
@@ -15419,7 +14431,7 @@ export function assistantTransport(id: string): Transport {
     'digest(value.graphSha256)' \
     'digest(value.graphSha256 ?? (value as {artifact?: {bundleDigest?: string}}).artifact?.bundleDigest)'
   mutate web 'graph row 4: trail silence omitted' web/src/graphs/GraphRehearsal.tsx \
-    'Inputs and results on this page last until you leave. Rehearsals requested in chat are retained with the conversation and sent to its selected model provider.' \
+    'Dialects and results on this page last until you leave. Rehearsals requested in chat are retained with the conversation and sent to its selected model provider.' \
     'Desk keeps a trail of rehearsals.'
 
   mutate web 'graph row 4: rehearsal does not unmount on leaving' web/src/routes/GraphView.tsx \
@@ -15430,6 +14442,122 @@ export function assistantTransport(id: string): Transport {
     'useEffect(() => () => { active.current?.abort() }, [])' \
     'useEffect(() => { void run(); return () => { active.current?.abort() } }, [])'
 
+fi
+
+# The Desk's own safeguards around @judgment-pack/harness v0.1.0 (#515; review of #516):
+# the recall query, the completion reader, the read windows, attachments in the
+# ledger, the current state, propose_pack's offer, framing and the host wiring.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'harness swap: recall reads the execution state part' internal/desk/ai_context.go \
+    'if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {' \
+    'if t, ok := p["text"].(string); ok {'
+  mutate go 'harness swap: recall reads the execution state message' internal/desk/ai_context.go \
+    'return text, !strings.HasPrefix(text, executionStateHeader)' \
+    'return text, true'
+  mutate go 'harness swap: recall reads a tool-only turn' internal/desk/ai_context.go \
+    '				if !ok {
+					continue
+				}
+				if strings.Contains(text, personMessageMarker) {' \
+    '				if false && !ok {
+					continue
+				}
+				if strings.Contains(text, personMessageMarker) {'
+  mutate go 'harness swap: recall reads the harness'"'"'s own request' internal/desk/ai_context.go \
+    '				if strings.Contains(text, personMessageMarker) {' \
+    '				if false && strings.Contains(text, personMessageMarker) {'
+  mutate go 'harness swap: codex recall ignores the person'"'"'s message' internal/desk/ai_context.go \
+    '	if request.PersonMessage != "" {' \
+    '	if false && request.PersonMessage != "" {'
+  mutate go 'harness swap: anthropic cache read dropped' internal/desk/background_completion.go \
+    '		result.CacheReadTokens = backgroundTokenCount(wire.Usage.CacheRead)
+' \
+    ''
+  mutate go 'harness swap: openai-compatible cache read dropped' internal/desk/background_completion.go \
+    '		result.CacheReadTokens = backgroundTokenCount(wire.Usage.PromptDetails.Cached)
+' \
+    ''
+  mutate go 'harness swap: cache figures leave the completion JSON' internal/aifailure/failure.go \
+    'CacheReadTokens  *int64 `json:"cacheReadTokens,omitempty"`' \
+    'CacheReadTokens  *int64 `json:"-"`'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'harness swap: a read window is not cut to the result' web/src/research/tools.ts \
+    '    if (over <= 0 || end === start) return answer' \
+    '    return answer'
+  mutate web 'harness swap: a read window starts from 20,000 bytes' web/src/research/tools.ts \
+    '  let budget = readWindowBytes(policy)
+' \
+    '  let budget = 20_000
+'
+  mutate web 'harness swap: read_link ignores the turn'"'"'s policy' web/src/chat/linkTools.ts \
+    '      const result = window(attachment, document, link, offset, find, context.policy?.() ?? CONTEXT_DEFAULTS)' \
+    '      const result = window(attachment, document, link, offset, find, CONTEXT_DEFAULTS)'
+  mutate web 'harness swap: read_source ignores the run'"'"'s policy' web/src/research/tools.ts \
+    '  const policy = () => deps.policy?.() ?? CONTEXT_DEFAULTS
+' \
+    '  const policy = () => CONTEXT_DEFAULTS
+'
+  mutate web 'harness swap: attachment text inlined in the message' web/src/chat/attachmentContext.ts \
+    '  if (!file.document) return `\n\nAttached file: ${file.name}. ${READ_IT}`' \
+    '  if (!file.document) return `\n\nAttached file: ${file.name}. ${READ_IT}\n${JSON.stringify(file.text)}`'
+  mutate web 'harness swap: a message'"'"'s attachments unbounded on send' web/src/chat/useChatAttachments.ts \
+    '      if (ledgerBytes(attached.map(attachmentDocument)) > ATTACHMENT_LEDGER_BYTES) throw' \
+    '      if (false) throw'
+  mutate web 'harness swap: attachments not in the run'"'"'s ledger' web/src/research/run.ts \
+    'value:{turns:this.state.turns,questions:this.state.questions??[]}},...attached]},' \
+    'value:{turns:this.state.turns,questions:this.state.questions??[]}}]},'
+  mutate web 'harness swap: the case writer gets no attachments' web/src/research/run.ts \
+    '      return supplied.length ? { id, text, attachments: supplied.map(attachmentForReview) } : { id, text }' \
+    '      return { id, text }'
+  mutate web 'harness swap: an unverifiable attachment fails the turn' web/src/research/run.ts \
+    '          if (signal.aborted) throw cause
+          files.push({ file, pages: [], unavailable:' \
+    '          throw cause
+          files.push({ file, pages: [], unavailable:'
+  mutate web 'harness swap: the draft snapshot is not the current state' web/src/research/run.ts \
+    '    const changing=reviewer?undefined:currentState?.()' \
+    '    const changing=undefined as string|undefined'
+  mutate web 'harness swap: the draft snapshot back in the prompt' web/src/research/run.ts \
+    '      CONVERSATION_INSTRUCTIONS,
+      this.transcript(true),' \
+    '      CONVERSATION_INSTRUCTIONS,
+      this.conversationState() ?? '"'"''"'"',
+      this.transcript(true),'
+  mutate web 'harness swap: chat offers no propose_pack' web/src/research/useResearchRun.ts \
+    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
+    'hostTools: request.hostTools,'
+  mutate web 'harness swap: propose_pack offered in a Policy chat' web/src/research/useResearchRun.ts \
+    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
+    'hostTools: request.reviewer ? request.hostTools : withProposePack(request.hostTools),'
+  mutate web 'harness swap: propose_pack offered to the reviewer' web/src/research/useResearchRun.ts \
+    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
+    'hostTools: executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),'
+  mutate web 'harness swap: the pack pane offers no propose_pack' web/src/assistant/AssistantPane.tsx \
+    '    hostTools: PANE_HOST_TOOLS
+' \
+    '    hostTools: []
+'
+  mutate web 'harness swap: read_source is not framed as retrieved data' web/src/research/tools.ts \
+    '    name: '"'"'read_source'"'"',
+    effect: '"'"'read'"'"',
+' \
+    '    name: '"'"'read_source'"'"',
+'
+  mutate web 'harness swap: endpointCapabilities left unwired' web/src/assistant/harnessHost.ts \
+    '  endpointCapabilities: (endpoint) => capabilities.endpointCapabilities(endpoint),
+' \
+    ''
+  mutate web 'harness swap: renderImageToText left unwired' web/src/assistant/harnessHost.ts \
+    '  renderImageToText: () => capabilities.renderImageToText()
+' \
+    ''
+  mutate web 'harness swap: the Go state header drifts from the package'"'"'s' internal/desk/ai_context.go \
+    'const executionStateHeader = "EXECUTION STATE (from the host,' \
+    'const executionStateHeader = "EXECUTION STATE (from the desk,'
+  mutate web 'harness swap: a Codex run sends no person'"'"'s message' web/src/research/useResearchRun.ts \
+    '            ...withPersonMessage(bindExecution(' \
+    '            ...((bound:ReturnType<typeof bindExecution>,_message?:string)=>bound)(bindExecution('
 fi
 
 restore

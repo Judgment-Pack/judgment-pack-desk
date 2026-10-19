@@ -1,14 +1,17 @@
+import { configurableRedirect, linkFailure } from './linkFailure'
 import { discoverWebsite, loadWebsite, type WebsiteReference, type VerifiedWebsite } from '../documents/website'
 /** Bounded reading and discovery. New URLs must come from the user or a verified search/discovery receipt. */
 import { searchAccess, type SearchDeps } from '../search/tools'
-import type { HostTool, McpToolResult } from '../assistant/engine'
+import type { HostTool, McpToolResult } from '@judgment-pack/harness/engine'
+import type { ContextPolicy } from '@judgment-pack/harness/context/policy'
 import type { ResearchConfig } from '../config/deskConfig'
 import { ingestSiteLink, ingestLink as ingestDefault, loadDocument as loadDefault, type DocumentReference, type VerifiedDocument } from '../documents/client'
 import { anchorWords, describeLinkFailure, extractLinks, normalizeLink, type NormalizedLink } from '../documents/link'
 import { needsPartialConsent, usablePages } from '../documents/record'
 import { sourceMessage } from '../i18n/source'
 import type { Turn } from '../research/run'
-import { READ_WINDOW, RETRIEVED } from '../research/tools'
+import { RETRIEVED, heldWindow } from '../research/tools'
+import { CONTEXT_DEFAULTS, readWindowBytes } from '@judgment-pack/harness/context/policy'
 import type { DraftToolContext } from '../research/useResearchRun'
 import type { ChatAttachment } from './store'
 
@@ -95,7 +98,6 @@ export function linkReading(deps: LinkReadingDeps): (context: DraftToolContext) 
   const sites=new Map<string,VerifiedWebsite>()
   let active:{userId:string;tools:HostTool[]}|undefined
   return context=>{
-   if(!deps.available())return []
    const userId=[...context.turns()].reverse().find(t=>t.role==='user')?.id
    if(userId&&active?.userId===userId)return active.tools
    const spent:Spent={reads:0}
@@ -119,6 +121,7 @@ export function linkReading(deps: LinkReadingDeps): (context: DraftToolContext) 
     }
     return false
    }
+   if(!deps.available())return search.tools
    const tools=[...search.tools,readLinkTool(deps,context,held,spent,sites,authorized),...(enabled()&&deps.discoveryAvailable?.()?[exploreWebsiteTool(deps,context,spent,sites,authorized)]:[])]
    if(userId)active={userId,tools}
    return tools
@@ -143,10 +146,10 @@ const readContext = (config: ResearchConfig) => JSON.stringify(config)
 
 function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Map<string, VerifiedDocument>, spent: Spent, sites:Map<string,VerifiedWebsite>,searched:(url:string,signal:AbortSignal)=>Promise<boolean>): HostTool {
   return {
-    name: READ_LINK,
+    name: READ_LINK, delegation:'read',
     description:
       'Read a public web page supplied by the person or found by search_sources or explore_website, through the configured gateway, ' +
-      `${READ_WINDOW} characters at a time. Use the exact supplied or discovered URL. Only a link the person ` +
+      `one window of at most ${readWindowBytes(context.policy?.() ?? CONTEXT_DEFAULTS)} bytes at a time. Use the supplied or discovered URL. Bare domains such as example.org are accepted with HTTPS assumed; do not request a full URL or use search just to add https://. Only a link the person ` +
       'wrote in this chat, attached, or a verified search_sources or explore_website result discovered can be read. Never invent links. ' +
       'A section anchor (#…) is reported, not followed; find locates words in the text. Continue with the ' +
       'same url and an offset. Cite with a Markdown link whose label is an exact quote and whose ' +
@@ -206,7 +209,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
             loaded = await (deps.load ?? loadDefault)(reference, config.gateway, signal)
           } catch (cause) {
             const failure = signal.aborted ? 'the read was stopped' : describeLinkFailure(cause)
-            return text(`the page could not be re-read from this chat: ${failure}`, undefined, true)
+            return text(`the page could not be re-read from this chat: ${failure}`, {linkFailure:linkFailure(cause), redirectPolicy:configurableRedirect(cause)}, true)
           }
           const refused = invalidated()
           if (refused) return refused
@@ -233,7 +236,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
         } catch (cause) {
           const failure = signal.aborted ? 'the read was stopped' : describeLinkFailure(cause)
           deps.log(sourceMessage("link: failed — {{value0}}", { value0: failure }))
-          return text(`read failed: ${failure}`, undefined, true)
+          return text(`read failed: ${failure}`, {linkFailure:linkFailure(cause), redirectPolicy:configurableRedirect(cause)}, true)
         }
         const refused = invalidated()
         if (refused) return refused
@@ -249,7 +252,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
         deps.addDocument(attachment)
         deps.log(sourceMessage("link: {{value0}} characters retained as document {{value1}}", { value0: document.record.content.chars, value1: acquired.reference.id }))
       }
-      const result = window(attachment, document, link, offset, find)
+      const result = window(attachment, document, link, offset, find, context.policy?.() ?? CONTEXT_DEFAULTS)
       if (!result.isError) context.recordDocument?.({...attachment, document: {...attachment.document!, pages: (result.structuredContent as {pages: number[]}).pages}})
       return result
     }
@@ -287,8 +290,12 @@ function anchorLines(link: NormalizedLink, phrase: string, found: Range[]): stri
   ]
 }
 
-/** One window of the retained text, with everything the model needs to say where it came from. */
-function window(attachment: ChatAttachment, document: VerifiedDocument, link: NormalizedLink, offset: number | null, find: string): McpToolResult {
+/**
+ * One window of the retained text, with everything the model needs to say
+ * where it came from, held to one tool result by the run's policy
+ * (`heldWindow`, `readWindowBytes`).
+ */
+function window(attachment: ChatAttachment, document: VerifiedDocument, link: NormalizedLink, offset: number | null, find: string, policy: Pick<ContextPolicy, 'toolResultBytes'>): McpToolResult {
   const reference = attachment.document!
   const { record } = document
   const source = record.provenance.source
@@ -315,59 +322,60 @@ function window(attachment: ChatAttachment, document: VerifiedDocument, link: No
   const phrase = link.anchorKind === 'section' ? anchorWords(link.anchor) : ''
   const anchorFound = phrase === '' ? [] : locate(joined, phrase)
   const start = Math.min(joined.length, offset ?? (found.length > 0 ? Math.max(0, found[0]!.start - 200) : 0))
-  const end = Math.min(start + READ_WINDOW, joined.length)
-  const more = end < joined.length
-  const shown = spans.filter((span) => span.end > start && span.start < end)
   const citation = (span: Span) => `attachment:${reference.id}/${reference.digest}/page/${span.number}`
   const snapshot = source.format === 'static-text-v1'
-  const lines = [
-    RETRIEVED,
-    '',
-    `link: ${link.displayUrl}`,
-    `fetched: ${source.url ?? link.fetchUrl}` + (source.url !== undefined && source.url !== link.fetchUrl ? ` (the gateway followed a redirect from ${link.fetchUrl})` : ''),
-    `title: ${record.document.name}`,
-    ...(needsPartialConsent(record) ? ['partial extraction: only the confirmed readable pages are shown; missing text is not evidence'] : []),
-    snapshot
-      ? 'what was retained: a static text snapshot of the HTML page; scripts, styles and anything the page draws with JavaScript are not in it'
-      : `what was retained: the original ${source.mediaType ?? record.document.mediaType} file, ${record.content.pageCount} page(s)`,
-    `${joined.length} characters of text` +
-      (spans.length > 1 ? `, in ${spans.length} pages: ${spans.map((span) => `page ${span.number} at ${at(span)}`).join('; ')}` : ''),
-    ...(snapshot && joined.length < SHORT_SNAPSHOT ? ['the static text is very short; the page may need JavaScript to show its content, which this snapshot cannot'] : []),
-    ...anchorLines(link, phrase, anchorFound),
-    ...(find === ''
-      ? []
-      : [
-          found.length > 0
-            ? `find ${JSON.stringify(find)}: ${found.map(at).join(', ')} (a text match; the window starts just before the first)`
-            : `find ${JSON.stringify(find)}: no match in the text`
-        ]),
-    `cite exactly: write a Markdown link whose label is an exact quote from the text shown and whose destination is ${
-      shown.length === 1 ? citation(shown[0]!) : shown.map((span) => `${citation(span)} for page ${span.number}`).join(', ')
-    }`,
-    `showing characters ${start}–${end} of ${joined.length}` + (more ? ` (more: call ${READ_LINK} with the same url and offset ${end})` : ''),
-    '',
-    joined.slice(start, end)
-  ]
-  return text(lines.join('\n'), {
-    documentId: reference.id,
-    pages: shown.map(span => span.number),
-    digest: reference.digest,
-    link: link.displayUrl,
-    url: link.fetchUrl,
-    fetched: source.url ?? link.fetchUrl,
-    anchor: link.anchor,
-    anchorKind: link.anchorKind,
-    anchorMatches: anchorFound,
-    matches: found,
-    chars: joined.length,
-    offset: start,
-    more
+  return heldWindow(joined, start, policy, (end) => {
+    const more = end < joined.length
+    const shown = spans.filter((span) => span.end > start && span.start < end)
+    const lines = [
+      RETRIEVED,
+      '',
+      `link: ${link.displayUrl}`,
+      `fetched: ${source.url ?? link.fetchUrl}` + (source.url !== undefined && source.url !== link.fetchUrl ? ` (the gateway followed a redirect from ${link.fetchUrl})` : ''),
+      `title: ${record.document.name}`,
+      ...(needsPartialConsent(record) ? ['partial extraction: only the confirmed readable pages are shown; missing text is not evidence'] : []),
+      snapshot
+        ? 'what was retained: a static text snapshot of the HTML page; scripts, styles and anything the page draws with JavaScript are not in it'
+        : `what was retained: the original ${source.mediaType ?? record.document.mediaType} file, ${record.content.pageCount} page(s)`,
+      `${joined.length} characters of text` +
+        (spans.length > 1 ? `, in ${spans.length} pages: ${spans.map((span) => `page ${span.number} at ${at(span)}`).join('; ')}` : ''),
+      ...(snapshot && joined.length < SHORT_SNAPSHOT ? ['the static text is very short; the page may need JavaScript to show its content, which this snapshot cannot'] : []),
+      ...anchorLines(link, phrase, anchorFound),
+      ...(find === ''
+        ? []
+        : [
+            found.length > 0
+              ? `find ${JSON.stringify(find)}: ${found.map(at).join(', ')} (a text match; the window starts just before the first)`
+              : `find ${JSON.stringify(find)}: no match in the text`
+          ]),
+      `cite exactly: write a Markdown link whose label is an exact quote from the text shown and whose destination is ${
+        shown.length === 1 ? citation(shown[0]!) : shown.map((span) => `${citation(span)} for page ${span.number}`).join(', ')
+      }`,
+      `showing characters ${start}–${end} of ${joined.length}` + (more ? ` (more: call ${READ_LINK} with the same url and offset ${end})` : ''),
+      '',
+      joined.slice(start, end)
+    ]
+    return text(lines.join('\n'), {
+      documentId: reference.id,
+      pages: shown.map(span => span.number),
+      digest: reference.digest,
+      link: link.displayUrl,
+      url: link.fetchUrl,
+      fetched: source.url ?? link.fetchUrl,
+      anchor: link.anchor,
+      anchorKind: link.anchorKind,
+      anchorMatches: anchorFound,
+      matches: found,
+      chars: joined.length,
+      offset: start,
+      more
+    })
   })
 }
 
 const websiteKey=(ref:WebsiteReference,config:ResearchConfig)=>`${JSON.stringify(config.gateway)}/${ref.id}/${ref.digest}/${ref.seed}`
 function exploreWebsiteTool(deps:LinkReadingDeps,context:DraftToolContext,spent:Spent,sites:Map<string,VerifiedWebsite>,searched:(url:string,signal:AbortSignal)=>Promise<boolean>):HostTool{
- return {name:EXPLORE_WEBSITE,
+ return {name:EXPLORE_WEBSITE,delegation:'research',
  description:'When the person asks to explore a website or read other pages, discover linked pages on a supplied website or one found by search_sources. At most 10 pages, two link levels. Use a seed URL from their messages, attachments or verified search results. Results are a navigation map, not page evidence: then call read_link on relevant discovered URLs, with offset paging for in-depth reading. Cite retained page text. Never claim all pages were read; report limits and unread pages.',
  inputSchema:{type:'object',properties:{url:{type:'string',description:'A supplied website URL or a verified search result URL.'}},required:['url']},
  execute:async(args,signal)=>{

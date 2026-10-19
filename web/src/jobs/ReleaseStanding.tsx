@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { msg, systemMessage, useLocale } from '../i18n'
@@ -61,7 +62,7 @@ export function ReleaseStanding({ release, packId }: { release: Release; packId:
   const review = <Link to="/packs/_review">{msg('Review and lock')}</Link>
   return <div className={styles.readiness} data-standing={standing?.state ?? 'checking'}>
     <div className={styles.readinessHeading}><h3>{msg('Project reviewed set')}</h3><span data-label>{label(standing)}</span></div>
-    {!standing ? <p role="status" className={styles.note}>{msg('Comparing the pack bytes of this release with the project’s lock…')}</p>
+    {!standing ? <LoadingState>{msg('Comparing the pack bytes of this release with the project’s lock…')}</LoadingState>
       : standing.state === 'unreadable' ? <>
         <p>{msg('Desk could not read the project’s review, so this does not say whether the pack bytes of this release are in its reviewed set.')}</p>
         {standing.reason && <p className={styles.note}>{systemMessage(standing.reason)}</p>}

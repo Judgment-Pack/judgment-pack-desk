@@ -1,13 +1,18 @@
+import {LoadingState} from '../ui/LoadingState'
+import { QueryStatusNotice } from '../shell/QueryStatusNotice'
+import { useCollectionSelection } from '../ui/useCollectionSelection'
+import { SelectionTable, SelectionHeader, SelectionCell, SelectionActions } from '../ui/SelectionTable'
+import { exportSelectedRows } from '../ui/selectionExport'
+import { CollectionRow } from '../ui/CollectionRow'
 import { Disclosure } from '../ui/Disclosure'
 import { useId, useRef, useState } from 'react'
 import { msg, useLocale } from '../i18n'
 import { Button, ButtonLink } from '../ui/Button'
 import { SegmentedControl } from '../ui/SegmentedControl'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { Pagination } from '../ui/Pagination'
 import { usePagination } from '../ui/usePagination'
 import { Tooltip } from '../ui/Tooltip'
-import { ErrorBox } from '../components/primitives'
 import { IconClose, IconGraph, IconHistory } from '../shell/icons'
 import { triggerName } from '../jobs/TriggerForm'
 import type { Run } from '../jobs/client'
@@ -32,6 +37,7 @@ function PackUsage({ configuredKey, documentId, draft }: Extract<UsageSubject, {
   const [filter, setFilter] = useState('all'), [search, setSearch] = useState(''), [selected, setSelected] = useState<string>()
   const opener = useRef<HTMLButtonElement | null>(null), detailsId = useId()
   const rows = data.rows.filter(row => (filter === 'all' || row.kind === filter) && row.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
+  const selection = useCollectionSelection(rows,row=>row.id,JSON.stringify([configuredKey,documentId]))
   const pagination = usePagination(rows.length, JSON.stringify([filter, search, configuredKey, documentId]))
   const visible = rows.slice(pagination.start, pagination.end)
   const detail = visible.find(row => row.id === selected)
@@ -48,9 +54,9 @@ function PackUsage({ configuredKey, documentId, draft }: Extract<UsageSubject, {
       <SegmentedControl label={msg('Usage type')} value={filter} onValueChange={setFilter} segments={[
         { value: 'all', label: msg('All') }, { value: 'graph', label: msg('Graphs') }, { value: 'job', label: msg('Jobs') }
       ]}/>
-      <Input aria-label={msg('Search usage')} placeholder={msg('Search usage…')} value={search} onChange={event => setSearch(event.target.value)}/>
+      <SearchInput aria-label={msg('Search usage')} placeholder={msg('Search usage…')} value={search} onChange={event => setSearch(event.target.value)}/><SelectionActions selection={selection} onExport={()=>exportSelectedRows('usage',selection.selectedRows)}/>
     </div>
-    <div className={styles.list}>
+    <div className={styles.list} tabIndex={0} role="region" aria-label={msg('Usage references')}>
       <p className={styles.note}>{draft ? msg('References to saved versions of this pack. Graphs and job releases do not use this draft.') : msg('Graphs reference the saved pack. Jobs keep a frozen release and do not follow edits.')}</p>
       {!complete && !pending && <div role="status">
         <p className={styles.note}>{msg('Usage is incomplete. Only confirmed references are shown.')}</p>
@@ -58,36 +64,35 @@ function PackUsage({ configuredKey, documentId, draft }: Extract<UsageSubject, {
       {data.status !== 'ready' && <p role="status" className={styles.note}>{msg('Connect to the runtime to load current usage.')}</p>}
       {filter !== 'job' && <>
         {!data.supported && <p role="status" className={styles.note}>{msg('Graph usage is unavailable with this runtime.')}</p>}
-        {data.packs.error && <ErrorBox title={msg('Could not read pack references')} error={data.packs.error}/>}
+        <QueryStatusNotice id="packs" label={msg('Packs unavailable')} error={data.packs.error} retrying={data.packs.isFetching} onRetry={()=>data.packs.refetch()}/>
         {data.supported && data.inventory.data && !data.inventoryKnown && <p role="status" className={styles.note}>{msg('Graph inventory is incomplete. Usage cannot be confirmed.')}</p>}
-        {data.inventory.error && <ErrorBox title={msg('Could not list graphs')} error={data.inventory.error}/>}
-        {data.graphReads.error && <ErrorBox title={msg('Could not read graph references')} error={data.graphReads.error}/>}
+        <QueryStatusNotice id="graphs" label={msg('Graphs unavailable')} error={data.inventory.error} retrying={data.inventory.isFetching} onRetry={()=>data.inventory.refetch()}/>
+        <QueryStatusNotice id="graph-references" label={msg('Graph references unavailable')} error={data.graphReads.error} retrying={data.graphReads.isFetching} onRetry={()=>data.graphReads.refetch()}/>
         {!!data.graphReads.data?.unread && <p role="status" className={styles.note}>{msg('{{count}} graphs could not be read. Usage is incomplete.', { count: data.graphReads.data.unread })}</p>}
         {(!data.chats.store || !data.chats.ready || !!data.chats.error || data.unreadDrafts > 0) && <p role="status" className={styles.note}>{msg('Some saved graph drafts could not be read yet. Their references are not included.')}</p>}
         {!graphPending && !data.packs.error && !data.references.length && <p className={styles.note}>{msg('No configured pack reference is linked to this document yet.')}</p>}
       </>}
       {filter !== 'graph' && <>
         {!documentId && <p className={styles.note}>{msg('A pack document ID is needed to find its job releases.')}</p>}
-        {data.jobs.error && <><ErrorBox title={msg('Could not read job usage')} error={data.jobs.error}/><Button variant="quiet" onClick={() => void data.jobs.refetch()} disabled={data.jobs.isFetching}>{msg('Retry')}</Button></>}
+        <QueryStatusNotice id={'job-usage:'+documentId} label={msg('Job usage unavailable')} error={data.jobs.error} retrying={data.jobs.isFetching} onRetry={()=>data.jobs.refetch()}/>
         {data.unreadJobs > 0 && <p role="status" className={styles.note}>{msg('{{count}} job releases could not be read. Usage is incomplete.', { count: data.unreadJobs })}</p>}
 
       </>}
         </Disclosure>
       </div>}
-      {data.jobs.hasNextPage && <div className={styles.more}><p className={styles.note}>{msg('Matches from {{count}} loaded jobs. More jobs remain to be checked.', { count: data.scannedJobs })}</p><Button disabled={data.jobs.isFetching} onClick={() => void data.jobs.fetchNextPage()}>{data.jobs.isFetchingNextPage ? msg('Loading…') : msg('Load more jobs')}</Button></div>}
-      {pending && <p role="status" className={styles.note}>{msg('Loading usage…')}</p>}
+      {data.jobs.hasNextPage && <div className={styles.more}><p className={styles.note}>{msg('Matches from {{count}} loaded jobs. More jobs remain to be checked.', { count: data.scannedJobs })}</p><Button disabled={data.jobs.isFetching} onClick={() => void data.jobs.fetchNextPage()}>{data.jobs.isFetchingNextPage ? <LoadingState inline>{msg('Loading…')}</LoadingState> : msg('Load more jobs')}</Button></div>}
+      {pending && <LoadingState>{msg('Loading usage…')}</LoadingState>}
       {!pending && !rows.length && <p className={styles.empty} role="status">{complete ? search ? msg('No matching references.') : msg('No usage found.') : msg('No references found in the loaded data.')}</p>}
-      {rows.length > 0 && <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={msg('Usage references')}><table className={styles.table}>
-        <thead><tr><th scope="col">{msg('Name')}</th><th scope="col">{msg('Pack version')}</th><th scope="col">{msg('Status')}</th></tr></thead>
-        <tbody>{visible.map(row => <tr key={row.id} data-selected={selected === row.id || undefined}>
-          <td><Button variant="quiet" className={styles.name} aria-expanded={detail?.id === row.id} aria-controls={detailsId} onClick={event => { opener.current = event.currentTarget; setSelected(row.id) }}>{row.kind === 'graph' ? <IconGraph/> : <IconHistory/>}{row.name}</Button>
+      {rows.length > 0 && <SelectionTable selection={selection} className={styles.table}>
+        <thead><tr><SelectionHeader selection={selection} complete={complete}/><th scope="col">{msg('Name')}</th><th scope="col">{msg('Pack version')}</th><th scope="col">{msg('Status')}</th></tr></thead>
+        <tbody>{visible.map(row => <CollectionRow key={row.id} data-selected={selected === row.id || undefined} data-selection-selected={selection.has(row.id)||undefined}><SelectionCell selection={selection} id={row.id} name={row.name}/>
+          <td><Button data-row-primary variant="quiet" className={styles.name} aria-expanded={detail?.id === row.id} aria-controls={detailsId} onClick={event => { opener.current = event.currentTarget; setSelected(row.id) }}>{row.kind === 'graph' ? <IconGraph/> : <IconHistory/>}{row.name}</Button>
             <span className={styles.meta}>{row.kind === 'graph' ? row.draft ? msg('Draft graph') : msg('Graph') : triggerLabel(row)}</span></td>
           <td>{row.versions.join(', ') || '—'}<span className={styles.meta}>{row.kind === 'job' ? msg('Frozen release') : msg('Saved pack')}</span></td>
           <td>{row.kind === 'graph' ? row.draft ? msg('Draft reference') : msg('Configured reference') : latestRun(row) ? runState(latestRun(row)!.state) : msg('No runs yet')}</td>
-        </tr>)}</tbody>
-      </table></div>}
+        </CollectionRow>)}</tbody>
+      </SelectionTable>}
     </div>
-    <Pagination pagination={pagination} complete={complete}/>
     <section id={detailsId} hidden={!detail} className={styles.details} aria-label={msg('Usage details')}>
       {detail && <><header><h2>{detail.name}</h2><ButtonLink to={detail.href}>{detail.kind === 'graph' ? msg('Open graph') : msg('Open job')}</ButtonLink>
         <Tooltip content={msg('Close details')}><Button variant="quiet" size="icon" aria-label={msg('Close details')} onClick={close}><IconClose/></Button></Tooltip></header>
@@ -96,6 +101,7 @@ function PackUsage({ configuredKey, documentId, draft }: Extract<UsageSubject, {
           : <><p className={styles.note}>{msg('This job uses its frozen release, not the current draft or unsaved edits. Open the job for schedules and run history.')}</p><dl><dt>{msg('Pack version')}</dt><dd>{detail.release?.packVersion}</dd><dt>{msg('Release')}</dt><dd>{detail.release?.id}</dd><dt>{msg('Pack digest')}</dt><dd><code>{detail.release?.packDigest}</code></dd><dt>{msg('Trigger')}</dt><dd>{triggerLabel(detail)}</dd><dt>{msg('Latest run')}</dt><dd>{latestRun(detail) ? <ButtonLink variant="inline" to={`${detail.href}/runs/${encodeURIComponent(latestRun(detail)!.id)}`}>{runState(latestRun(detail)!.state)} · {new Date(latestRun(detail)!.createdAt).toLocaleString()}</ButtonLink> : msg('No runs yet')}</dd></dl></>}
         </div></>}
     </section>
+    <Pagination pagination={pagination} complete={complete}/>
   </section>
 }
 function latestRun(row: UsageRow) { return row.job?.recentRuns?.reduce<Pick<Run, 'id' | 'state' | 'createdAt'> | undefined>((latest, run) => !latest || run.createdAt > latest.createdAt ? run : latest, undefined) }

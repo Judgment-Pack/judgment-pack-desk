@@ -22,9 +22,9 @@ function setup(extraIds: string[] = []) {
     ...extraIds.map(id => ({ id, packVersion: '1.0.0' }))
   ] }) }) })
   const queryClient = testQueryClient()
-  const router = createMemoryRouter([{ path: '/packs', element: <PacksLayout />, children: [
-    { index: true, element: <PacksIndex /> }, { path: ':packId', element: <h1>Pack document</h1> }, { path: 'drafts/:draftId', element: <h1>Draft document</h1> }
-  ] }], { initialEntries: ['/packs?type=pack'] })
+  const router = createMemoryRouter([{ element: <PacksLayout />, children: [
+    { path: '/library', element: <PacksIndex /> }, { path: '/packs/:packId', element: <h1>Pack document</h1> }, { path: '/packs/drafts/:draftId', element: <h1>Draft document</h1> }
+  ] }], { initialEntries: ['/library?type=pack'] })
   render(<QueryClientProvider client={queryClient}><McpContext.Provider value={connected({ client: stub.client })}>
     <InspectorSlotContext.Provider value={slot}><RouterProvider router={router} /></InspectorSlotContext.Provider>
   </McpContext.Provider></QueryClientProvider>)
@@ -37,7 +37,7 @@ it('previews inventory metadata without navigation or additional runtime calls',
   expect(screen.queryByText('Select a pack')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Preview alpha' }))
   await within(target).findByRole('heading', { name: 'alpha' })
-  expect(router.state.location.pathname).toBe('/packs')
+  expect(router.state.location.pathname).toBe('/library')
   expect(reveal).toHaveBeenCalledOnce()
   expect(within(target).getByText('packs/alpha.json')).toBeTruthy()
   expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
@@ -50,9 +50,9 @@ it('previews inventory metadata without navigation or additional runtime calls',
 it('retains search, ordering and scroll when returning from a pack, and releases its preview while away', async () => {
   const { router, target } = setup()
   await screen.findByRole('link', { name: /alpha/ })
-  fireEvent.keyDown(screen.getByLabelText('Sort packs and graphs'), { key: 'Enter' })
+  fireEvent.keyDown(screen.getByLabelText('Sort library'), { key: 'Enter' })
   fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Name: Z–A' }))
-  fireEvent.change(screen.getByRole('searchbox', { name: 'Search packs and graphs' }), { target: { value: 'Vendor' } })
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search library' }), { target: { value: 'Vendor' } })
   expect(within(screen.getByRole('navigation', { name: 'Library' })).getAllByRole('link')).toHaveLength(1)
   const list = document.querySelector('[data-pack-list]') as HTMLElement
   list.scrollTop = 80; fireEvent.scroll(list)
@@ -62,11 +62,11 @@ it('retains search, ordering and scroll when returning from a pack, and releases
   await waitFor(() => expect(target.textContent).toBe(''))
   expect(screen.queryByRole('searchbox')).toBeNull()
   // Retained, hidden content cannot change the active route's page measure.
-  expect(document.querySelector('[aria-label="Pack and graph collection"]')?.hasAttribute('data-layout')).toBe(false)
+  expect(document.querySelector('[aria-label="Library collection"]')?.hasAttribute('data-layout')).toBe(false)
   await act(async () => { await router.navigate(-1) })
-  expect(screen.getByRole('article', { name: 'Pack and graph collection' }).getAttribute('data-layout')).toBe('page')
+  expect(screen.getByRole('article', { name: 'Library collection' }).getAttribute('data-layout')).toBe('page')
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('Vendor')
-  fireEvent.keyDown(screen.getByLabelText('Sort packs and graphs'), { key: 'Enter' })
+  fireEvent.keyDown(screen.getByLabelText('Sort library'), { key: 'Enter' })
   expect((await screen.findByRole('menuitemradio', { name: 'Name: Z–A' })).getAttribute('aria-checked')).toBe('true')
   fireEvent.keyDown(screen.getByRole('menuitemradio', { name: 'Name: Z–A' }), { key: 'Escape' })
   expect((document.querySelector('[data-pack-list]') as HTMLElement).scrollTop).toBe(80)
@@ -77,7 +77,7 @@ it('clears obsolete preview metadata when the search excludes that pack', async 
   const { target } = setup()
   fireEvent.click(await screen.findByRole('button', { name: 'Preview alpha' }))
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'no-match' } })
-  expect(screen.getByRole('heading', { name: 'No matching packs or graphs' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'No matching library items' })).toBeTruthy()
   expect(within(target).queryByRole('heading', { name: 'alpha' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
   await screen.findByRole('link', { name: /alpha/ })
@@ -89,7 +89,7 @@ it('filters lifecycle before sorting, keeps finalized artifacts unique, and reta
   artifacts.drafts=[draft,{...draft,id:'draft-completed',finalized:{id:'alpha',path:'packs/alpha.json',digest:'saved'}}]
   const {router}=setup()
   await screen.findByRole('link',{name:/Vendor draft/})
-  const status=screen.getByRole('button',{name:'Status'}),sort=screen.getByLabelText('Sort packs and graphs')
+  const status=screen.getByRole('button',{name:'Status'}),sort=screen.getByLabelText('Sort library')
   expect(status.compareDocumentPosition(sort)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   fireEvent.keyDown(status,{key:'Enter'});fireEvent.click(await screen.findByRole('menuitemradio',{name:/^Draft$/}))
   fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Vendor'}})
@@ -102,7 +102,7 @@ it('filters lifecycle before sorting, keeps finalized artifacts unique, and reta
   fireEvent.keyDown(screen.getByRole('button',{name:'Status'}),{key:'Enter'});fireEvent.click(await screen.findByRole('menuitemradio',{name:'Saved'}))
   expect(screen.queryByRole('link',{name:/Vendor draft/})).toBeNull()
   fireEvent.change(screen.getByRole('searchbox'),{target:{value:'no match'}})
-  expect(screen.getByRole('heading',{name:'No matching packs or graphs'})).toBeTruthy()
+  expect(screen.getByRole('heading',{name:'No matching library items'})).toBeTruthy()
   fireEvent.click(screen.getByRole('button',{name:'Reset filters'}))
   expect(screen.getByRole('button',{name:'Status'}).textContent).toBe('All statuses')
   expect(within(screen.getByRole('navigation',{name:'Library'})).getAllByRole('link')).toHaveLength(3)

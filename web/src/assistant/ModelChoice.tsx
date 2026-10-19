@@ -43,6 +43,7 @@ import { modelAddProblem } from '../config/deskConfig'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { withDefaultModel, withModel, type EndpointDraft } from './endpointDraft'
 import type { ModelRow } from './modelListing'
 import styles from './ModelChoice.module.css'
@@ -92,7 +93,7 @@ export function ModelChoice({
       <legend className={styles.srOnly}>{msg("Models")}</legend>
       <p id={hintId} className="quiet">{msg(HOW)}</p>
       <Field label={msg("Search models")}>
-        {(wiring) => <Input {...wiring} type="search" value={search}
+        {(wiring) => <SearchInput {...wiring} type="search" value={search}
           onChange={(event) => setSearch(event.target.value)} />}
       </Field>
       <p className="quiet" role="status"><Message text={"<0/> enabled · <1/> shown"} slots={[draft.models.length, filtered.length]} /></p>

@@ -1,6 +1,11 @@
+import { packVersion as savedArtifactVersion } from '../chat/packProposal'
+import {LoadingState} from '../ui/LoadingState'
+import {PageLoading} from '../ui/PageLoading'
+import { QueryStatusNotice } from '../shell/QueryStatusNotice'
 import { DefinitionBrief } from '../briefs/DefinitionBrief'
 import { DefinitionHistory } from '../definitions/DefinitionHistory'
-import { DraftSources } from '../research/ui/DraftSources'
+import { SavedPackSources } from '../packs/drafts/SavedPackSources'
+import { DeskStatusNotice } from '../shell/DeskNotices'
 import { useInspectorPresentation } from '../shell/InspectorPresentation'
 import { useShellState } from '../shell/paneState'
 import { BuilderSplit, useBuilderPreference } from '../builders/BuilderSplit'
@@ -56,7 +61,7 @@ import { systemMessage, msg, useLocale } from '../i18n'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ErrorBox, Loading } from '../components/primitives'
+import { ErrorBox } from '../components/primitives'
 import { AlertPanel } from '../ui/AlertPanel'
 import { Button, ButtonLink } from '../ui/Button'
 import { StaleWrite } from '../files/client'
@@ -109,10 +114,10 @@ import { matchingItems, projectLogic, selectedItem, text } from '../packs/logicM
 import { useLogicState, rememberLogicMode, type LogicMode } from '../packs/logicState'
 import { usePackRun, traceMatches } from '../packs/runContext'
 import styles from './PackView.module.css'
-import { PageBody } from '../ui/PageLayout'
+import { PageBody, PageHeader } from '../ui/PageLayout'
 import { PackReview } from '../briefs/PackReview'
 import { DefinitionUsage } from '../usage/DefinitionUsage'
-import { PackHeader, PackQuestion, PackOverview, PACK_GROUPS, type PackSection } from '../packs/PackWorkspace'
+import { PackHeader, PackNavigation, PackQuestion, PackOverview, PACK_GROUPS, type PackSection } from '../packs/PackWorkspace'
 
 const LEAVING = 'This pack has unsaved changes. Leave without saving?'
 
@@ -578,6 +583,7 @@ export function PackView() {
   const session: EditingSession = useMemo(
     () => ({
       editing: editing && shape === 'form' && read !== undefined,
+      baseArtifactVersion: savedArtifactVersion(buffer.base?.content),
       buffer: read ?? { text: '', index: { spans: new Map(), duplicates: [] } },
       write: (edit, options) => {
         if (read === undefined) return
@@ -588,7 +594,7 @@ export function PackView() {
       pending: drafts,
       hold
     }),
-    [editing, shape, read, commit, byPointer, drawn, summary?.consultedFactPaths, drafts, hold]
+    [editing, shape, read, commit, byPointer, drawn, summary?.consultedFactPaths, drafts, hold, buffer.base?.content]
   )
 
   /**
@@ -928,7 +934,7 @@ export function PackView() {
       identity={onPath ? buffer.identity : undefined} busy={busyDraft} diagnostics={diagnosticsToFix} />)
 
 
-  if (pack.isPending) return <Loading what={msg("pack {{value0}}", { value0: packId })} />
+  if (pack.isPending) return <article data-layout="page"><PageHeader variant="title" title={packId ?? ''} navigation={<PackNavigation packId={packId ?? ''} current={section}/>}/><PageLoading>{msg('Loading pack…')}</PageLoading></article>
   /**
    * **The refusal replaces the page only when there is nothing behind it.**
    *
@@ -941,7 +947,7 @@ export function PackView() {
    * has held this rule since it was written; this is the same rule.
    */
   if (pack.error && file.data === undefined) {
-    return <ErrorBox title={msg("Could not load pack {{value0}}", { value0: packId })} error={pack.error} />
+    return <><QueryStatusNotice id={"pack:"+packId} label={msg("Pack unavailable")} context={packId} error={pack.error} retrying={pack.isFetching} onRetry={()=>pack.refetch()}/><p className="quiet">{msg("Pack unavailable")}</p></>
   }
   if (pack.data === undefined && file.data === undefined) return null
 
@@ -1010,6 +1016,8 @@ export function PackView() {
     <SelectionContext.Provider value={{ at, select }}>
       <EditingContext.Provider value={session}>
         {inspector}{details}
+        {section === 'logic' && (unavailable || digestsDisagree || disagreement.length > 0 || Boolean(report?.diagnostics?.length) || Boolean(report && report.status !== 'valid')) && <DeskStatusNotice id={'pack-checks:'+packId} label={unavailable ? msg('Pack checks unavailable') : msg('Pack checks need review')} tone="warning">{strip}</DeskStatusNotice>}
+
         <div data-layout="page">
         {editing ? <PackEditHeader
           title={text(drawn?.title, packId ?? msg('Pack'))}
@@ -1046,7 +1054,7 @@ export function PackView() {
           }}
           onUndo={buffer.undo}
           onDiscard={async () => { if (await confirmDiscard(msg(LEAVING), { name: drawn?.title })) discardAll() }}
-        /> : <PackHeader packId={packId ?? ''} document={drawn} sourceText={shownText} checkStatus={fetching ? msg('Checking structure…') : digestsDisagree || disagreement.length ? msg('Checks need review') : unavailable ? msg('Checks unavailable') : stale ? msg('Checks outdated') : report?.status === 'valid' ? msg('Structure valid') : report ? msg('Checks need review') : msg('Not checked')} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />}
+        /> : <PackHeader packId={packId ?? ''} document={drawn} sourceText={shownText} checkStatus={fetching ? <LoadingState inline>{msg('Checking structure…')}</LoadingState> : digestsDisagree || disagreement.length ? msg('Checks need review') : unavailable ? msg('Checks unavailable') : stale ? msg('Checks outdated') : report?.status === 'valid' ? msg('Structure valid') : report ? msg('Checks need review') : msg('Not checked')} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />}
         <Dialog open={exitOpen} onOpenChange={setExitOpen} title={msg("Save changes before leaving?")}
           description={msg("Your changes have not been saved to the pack.")} openerRef={editing ? backButton : editButton}>
           <TypedConfirmation confirmation={drawn?.title || msg('Yes')} value={exitTyped} onChange={setExitTyped} disabled={savePending} />
@@ -1063,19 +1071,14 @@ export function PackView() {
           const next = new URLSearchParams(params); next.set('editorClosed', '1'); retainInspectorOnNavigation.current = true; setParams(next, {replace: true})
         }}>
         <div className={styles.builderContent} hidden={editing && builderView === 'tests'}>
-        <PageBody fill={section === 'logic' || section === 'usage'} width={section === 'logic' || section === 'usage' ? 'full' : 'wide'}>
-        {section !== 'overview' && section !== 'logic' && section !== 'review' && section !== 'brief' && section !== 'history' && section !== 'usage' && <PackQuestion document={drawn} />}
+        <PageBody fill={section === 'logic' || section === 'usage' || section === 'history' || (section === 'evidence' && !editing)} width={section === 'logic' || section === 'usage' || section === 'history' || (section === 'evidence' && !editing) ? 'full' : 'wide'}>
+        {section !== 'evidence' && section !== 'overview' && section !== 'logic' && section !== 'review' && section !== 'brief' && section !== 'history' && section !== 'usage' && <PackQuestion document={drawn} />}
         <div
           className={styles.workspace}
-          data-logic={section === 'logic' || section === 'usage' || undefined}
+          data-logic={section === 'logic' || section === 'usage' || section === 'history' || (section === 'evidence' && !editing) || undefined}
         >
           <div className={styles.column}>
-            {pack.error !== null && (
-              <ErrorBox
-                title={msg("The runtime could not read {{value0}}", { value0: path ?? 'this pack' })}
-                error={pack.error}
-              />
-            )}
+            <QueryStatusNotice id={"pack:"+packId} label={msg("Pack unavailable")} context={packId} error={pack.error} retrying={pack.isFetching} onRetry={()=>pack.refetch()}>{msg("The pack could not be refreshed. Your current edit remains open.")}</QueryStatusNotice>
             {/*
               A revision for another file, held rather than taken. The path a
               page is about can move under an address nobody navigated — the
@@ -1184,11 +1187,8 @@ export function PackView() {
               </>
             ) : (
               <>
-                {section === 'brief' ? <DefinitionBrief kind="pack" owner={packId ?? ''} title={drawn.title || packId || ''} content={shownText ?? ''}/> : section === 'history' ? <DefinitionHistory kind="pack" owner={packId ?? ''} documentId={drawn.id}/> : section === 'usage' ? <DefinitionUsage kind="pack" configuredKey={packId} documentId={typeof drawn.id === 'string' ? drawn.id : undefined}/> : section === 'review' ? <PackReview owner={packId ?? ''} title={drawn.title || packId || ''} content={servedText ?? ''} validation={fetching ? msg('Checking…') : stale ? msg('Outdated') : report?.status ?? msg('Not checked')} findings={strip} attention={Boolean(digestsDisagree || disagreement.length || unavailable || report?.diagnostics?.length || report && report.status !== 'valid')}/> : section === 'overview' || section === 'logic' ? <>
+                {section === 'brief' ? <DefinitionBrief kind="pack" owner={packId ?? ''} title={drawn.title || packId || ''} content={shownText ?? ''}/> : section === 'history' ? <DefinitionHistory kind="pack" owner={packId ?? ''} documentId={drawn.id}/> : section === 'usage' ? <DefinitionUsage kind="pack" configuredKey={packId} documentId={typeof drawn.id === 'string' ? drawn.id : undefined}/> : section === 'review' ? <PackReview adoptionDisabled={hasWork || savePending || reloading || fetching || !onPath} owner={packId ?? ''} title={drawn.title || packId || ''} content={servedText ?? ''} validation={fetching ? msg('Checking…') : stale ? msg('Outdated') : report?.status ?? msg('Not checked')} findings={strip} attention={Boolean(digestsDisagree || disagreement.length || unavailable || report?.diagnostics?.length || report && report.status !== 'valid')}/> : section === 'overview' || section === 'logic' ? <>
                   {selectionNotice && <p role="status" className={styles.warning}>{systemMessage(selectionNotice)}</p>}
-                  {section === 'logic' && (fetching || stale || unavailable || digestsDisagree || disagreement.length > 0 || Boolean(report?.diagnostics?.length) || (report?.status && report.status !== 'valid')) && <details className={styles.validation} open={Boolean(digestsDisagree || disagreement.length || report?.diagnostics?.length || (report?.status && report.status !== 'valid'))}>
-                    <summary><Message text={"Validation · <0/>"} slots={[fetching ? msg("checking") : stale ? msg("out of date") : report?.status ?? msg("not checked")]} /></summary>{strip}
-                  </details>}
                   {section === 'overview' ? <PackOverview document={drawn} packId={packId} logicHref={`/packs/${encodeURIComponent(packId ?? '')}?view=logic${params.get('chat') ? `&chat=${encodeURIComponent(params.get('chat')!)}` : ''}`} /> : model && <>
                     {runRequested && <div className={styles.runContext} role="status">
                       {run ? <><Message text={"<0/><1/> · Handoff: <2/><3/>"} slots={[<strong>{run.run.payload.disposition.kind}</strong>, run.run.payload.disposition.outcomeId ? ` · ${run.run.payload.disposition.outcomeId}` : '', run.run.payload.disposition.handoff.state, <p>{matchingRun ? msg("Recorded run on these exact pack bytes.") : msg("Different or unbound revision. No trace overlay is shown.")}</p>]} /></> : <p>{msg("This recorded run is no longer available. Run the test again to inspect its trace.")}</p>}
@@ -1202,7 +1202,7 @@ export function PackView() {
                         : !editing && (stale || !report) ? msg("A current validation is needed before displaying a complete map.")
                         : !editing && report?.status !== 'valid' ? msg("This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.") : undefined} />
                   </>}
-                </> : section === 'evidence' && !editing ? <DraftSources document={drawn}/> : <PackDocumentView key={section} document={drawn} active={active}
+                </> : section === 'evidence' && !editing ? <SavedPackSources owner={packId ?? ""} path={path} matrixPath={summary?.matrixPath} document={drawn}/> : <PackDocumentView key={section} document={drawn} active={active}
                   members={section === 'evidence' ? PACK_GROUPS.evidence : undefined}
                   outline={section === 'document'}>
                   {strip}

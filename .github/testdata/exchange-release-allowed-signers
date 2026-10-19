@@ -1,0 +1,3 @@
+# Test-only trust pin for the reviewed Exchange v0.2.0 tag at565ddf4.
+# This public key is carried by that tag's SSH signature. No application trust.
+kikashy@hotmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINs7vrZSLqFSn3Fk3Dz9cgNQzbD9PzXUZNEz3Hx8IT8v

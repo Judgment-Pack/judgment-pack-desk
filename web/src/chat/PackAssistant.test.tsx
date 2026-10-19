@@ -5,6 +5,8 @@ import type { BufferIdentity } from '../packs/edit/useDocumentBuffer'
 import { PackAssistant } from './PackAssistant'
 
 const fake = vi.hoisted(() => ({ snapshot: {} as any, editing: {} as any, open: false }))
+vi.mock('./usePackProposalSave',()=>({usePackProposalSave:()=>({save:vi.fn(),saving:false,error:'',reason:''})}))
+vi.mock('../files/queries', () => ({useFileContent:()=>({data:undefined})}))
 vi.mock('../packs/test-workspace/store', () => ({ useTestStorage: () => ({suite: {cases: [], runs: []}, query: {isSuccess: true}}) }))
 vi.mock('./ChatProvider', () => ({ useChats: () => fake.snapshot }))
 vi.mock('../shell/InspectorSlot', () => ({ useInspectorControls: () => ({ open: fake.open }) }))
@@ -19,7 +21,7 @@ function snapshot(revision: number, status = 'ready') {
   return { state: { status, restored: false, candidates: [{ revision, document: { id: 'proposed' }, digest: `digest-${revision}` }] } }
 }
 function view(identity = base, draft = original) {
-  return <MemoryRouter><PackAssistant packId="p" editing draft={draft} identity={identity} busy={() => ''} diagnostics={undefined} /></MemoryRouter>
+  return <MemoryRouter><PackAssistant packId="p" path={base.path} editing draft={draft} identity={identity} busy={() => ''} diagnostics={undefined} /></MemoryRouter>
 }
 beforeEach(() => {
   fake.open = false
@@ -54,7 +56,7 @@ it('carries a view-mode proposal into Edit only when path and bytes still match'
   fake.snapshot.bindings = new Map([['chat-one', snapshot(2)]])
   rendered.rerender(<MemoryRouter><PackAssistant {...props} editing={false} /></MemoryRouter>)
   fireEvent.click(screen.getByText('Review proposed changes'))
-  expect(screen.getByRole('button', { name: 'Apply to draft' }).hasAttribute('disabled')).toBe(true)
+  expect(screen.queryByRole('button', { name: 'Apply to draft' })).toBeNull()
   fake.editing.editing = true
   rendered.rerender(<MemoryRouter><PackAssistant {...props} editing identity={{ ...base, generation: 4 }} /></MemoryRouter>)
   expect(screen.getByRole('button', { name: 'Apply to draft' }).hasAttribute('disabled')).toBe(false)
@@ -69,6 +71,32 @@ it('opening Assistant preserves the builder tab and selected item', async () => 
  fake.open=true;fake.snapshot.chats=[]
  fake.snapshot.store={canCreate:true,activate:vi.fn(),startChat:vi.fn(()=>{fake.snapshot.chats=[chat];return chat})}
  function Address(){const location=useLocation();return <output aria-label="Address">{location.pathname+location.search}</output>}
- render(<MemoryRouter initialEntries={['/packs/p?edit=1&builder=build&editItem=%2Frules%2F0']}><Address/><PackAssistant packId="p" editing draft={original} identity={base} busy={()=>''} diagnostics={undefined}/></MemoryRouter>)
+ render(<MemoryRouter initialEntries={['/packs/p?edit=1&builder=build&editItem=%2Frules%2F0']}><Address/><PackAssistant packId="p" path={base.path} editing draft={original} identity={base} busy={()=>''} diagnostics={undefined}/></MemoryRouter>)
  await waitFor(()=>expect(screen.getByLabelText('Address').textContent).toBe('/packs/p?edit=1&builder=build&editItem=%2Frules%2F0&chat=chat-one'))
+})
+
+it('restores a pending saved-pack proposal after remount and hides it after Save', async()=>{
+ const bytes='{"id":"p","version":"0.1.0"}',proposal={id:'p',version:'0.1.1'},updated=JSON.stringify(proposal)
+ const linked={...chat,pack:{id:'p',path:base.path},createdCandidateDigest:'created'}
+ const state={status:'complete',restored:true,turns:[],candidates:[{revision:3,document:proposal,text:updated,digest:'new',packReview:{basis:{packId:'p',path:base.path,text:bytes}}}]}
+ fake.snapshot.chats=[linked];fake.snapshot.bindings=new Map([['chat-one',{state}]])
+ const props={packId:'p',path:base.path,draft:bytes,busy:()=>'',diagnostics:undefined,onEdit:vi.fn()}
+ const first=render(<MemoryRouter><PackAssistant {...props} editing={false}/></MemoryRouter>)
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Save proposal'})).toBeTruthy())
+ expect(screen.getByText('Saved version 0.1.0 · Changes not saved')).toBeTruthy()
+ first.unmount()
+ const second=render(<MemoryRouter><PackAssistant {...props} editing identity={base}/></MemoryRouter>)
+ await waitFor(()=>expect(screen.getByText('Review proposed changes')).toBeTruthy())
+ fireEvent.click(screen.getByText('Review proposed changes'))
+ expect(screen.getByRole('button',{name:'Apply to draft'}).hasAttribute('disabled')).toBe(false)
+ second.rerender(<MemoryRouter><PackAssistant {...props} editing={false} draft={updated}/></MemoryRouter>)
+ expect(screen.queryByLabelText('Proposed pack update')).toBeNull()
+})
+it('a recovered proposal cannot overwrite a changed saved pack',async()=>{
+ fake.snapshot.chats=[{...chat,pack:{id:'p',path:base.path},createdCandidateDigest:'created'}]
+ fake.snapshot.bindings=new Map([['chat-one',{state:{status:'complete',restored:true,turns:[],candidates:[{revision:3,document:{id:'proposed'},text:'{"id":"proposed"}',digest:'new',packReview:{basis:{packId:'p',path:base.path,text:original}}}]}}]])
+ render(<MemoryRouter><PackAssistant packId="p" path={base.path} editing draft='{"id":"changed"}' identity={base} busy={()=>''} diagnostics={undefined}/></MemoryRouter>)
+ await waitFor(()=>expect(screen.getByText('Review proposed changes')).toBeTruthy())
+ fireEvent.click(screen.getByText('Review proposed changes'))
+ expect(screen.getByRole('button',{name:'Apply to draft'}).hasAttribute('disabled')).toBe(true)
 })

@@ -1,9 +1,10 @@
+import {privateQuery} from '../data/privateQuery'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMcp } from '../mcp/McpProvider'
 import { fetchGraphDocument, useGraphInventory, usePacks } from '../mcp/queries'
 import { readGraphDocument } from '../mcp/graphDocument'
 import { useChats } from '../chat/ChatProvider'
-import { graphDraftHref } from '../graphs/drafts'
+import { graphDraftHref,graphDraftsQuery,retainedGraphDrafts } from '../graphs/drafts'
 import { jobsAPI } from '../jobs/client'
 import { graphReferences, packReferences, readBatch, readJobUsagePage, type UsageRow } from './model'
 
@@ -37,18 +38,19 @@ export function usePackUsage(configuredKey?: string, documentId?: string) {
       return { rows, unread }
     }
   })
+  const retained=useQuery(graphDraftsQuery())
   const drafts: UsageRow[] = []
   let unreadDrafts = 0
-  if (references.length) for (const chat of [...chats.chats, ...chats.drafts]) for (const draft of chat.graphDrafts ?? []) {
+  if (references.length) for (const draft of retainedGraphDrafts(retained.data?.content,[...chats.chats,...chats.drafts])) {
     if (draft.saved) continue
     const read = readGraphDocument(draft.content)
     if (!read.ok) { unreadDrafts++; continue }
     const reference = graphReferences(read.document, references)
-    if (reference.nodes.length) drafts.push({ id: `draft:${chat.id}:${draft.draftId}`, kind: 'graph', name: draft.id,
-      href: graphDraftHref(chat.id, draft.draftId), draft: true, graphVersion: read.document.version, ...reference })
+    if (reference.nodes.length) drafts.push({ id: `draft:${draft.originChatId}:${draft.draftId}`, kind: 'graph', name: draft.id,
+      href: graphDraftHref(draft.originChatId??'', draft.draftId), draft: true, graphVersion: read.document.version, ...reference })
   }
   const jobs = useInfiniteQuery({
-    queryKey: ['pack-usage-jobs', connectionEpoch, documentId], initialPageParam: 0,
+    ...privateQuery, queryKey: ['pack-usage-jobs', connectionEpoch, documentId], initialPageParam: 0,
     enabled: !!documentId && status === 'ready',
     queryFn: ({ pageParam, signal }) => readJobUsagePage(<T,>(path: string) => jobsAPI<T>(path, undefined, undefined, signal), pageParam, documentId!, signal),
     getNextPageParam: page => page.next || undefined,

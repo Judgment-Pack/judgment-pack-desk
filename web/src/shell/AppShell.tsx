@@ -1,3 +1,4 @@
+import { DeskNoticesProvider } from './DeskNotices'
 import { useChats } from '../chat/ChatProvider'
 import { useDirtyGuard } from './useDirtyGuard'
 import { UnsavedChangesProvider } from './UnsavedChanges'
@@ -106,7 +107,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         projectDefault={config.appearance}
         projectDefaultKnown={configRead}
       >
-        <TooltipProvider><UnsavedChangesProvider><ChatSaveIndicator />
+        <TooltipProvider><UnsavedChangesProvider><ChatPersistenceGuard />
           <ShellFrame railIsDrawer={railIsDrawer} inspectorIsDrawer={inspectorIsDrawer}>
             {children}
           </ShellFrame>
@@ -121,10 +122,10 @@ export function AppShell({ children }: { children: ReactNode }) {
  * rather than in the rail — a control inside a closed drawer opens nothing.
  * That is why `railIsDrawer` is threaded into `HeaderBar` at all.
  */
-function ChatSaveIndicator() {
-  const {dirty}=useChats()
+function ChatPersistenceGuard() {
+  const {dirty,error}=useChats()
   // Chat state survives route changes; only closing the document risks losing a pending write.
-  useDirtyGuard(dirty,msg('Chat changes have not been saved.'),{shouldBlock:()=>false})
+  useDirtyGuard(dirty,msg('Chat changes have not been saved.'),{kind:'autosave',label:msg('Chat history'),saveFailed:!!error,shouldBlock:()=>false})
   return null
 }
 
@@ -444,7 +445,7 @@ function ShellFrame({
   } as CSSProperties
 
   return (
-    <DiagnosticsContext.Provider value={openDiagnostics}>
+    <DeskNoticesProvider><DiagnosticsContext.Provider value={openDiagnostics}>
     <ConnectionPaneContext.Provider value={connectionContext}>
     <InspectorPresentationContext.Provider value={registerPresentation}>
     <InspectorSlotContext.Provider value={slot}><InspectorSizeProvider pane={inspectorPane} open={inspectorOpen}>
@@ -483,7 +484,7 @@ function ShellFrame({
               brief={briefSubject && <BriefPane key={briefSubject.id} subject={briefSubject} headerTarget={briefHeaderTarget} />} publishBriefHeaderTarget={setBriefHeaderTarget}
               workspaceTools={workspaceTools} tool={rightTool ?? 'route'} expanded={overlay} fullWidth={takeover}
               contextTitle={!rightTool && chatHeading ? undefined : routePresentation?.contextTitle ?? briefSubject?.title}
-              returnLabel={route.pathname.startsWith('/jobs/') ? msg('Back to job') : route.pathname.startsWith('/graphs') ? msg('Back to builder') : undefined}
+              returnLabel={route.pathname.startsWith('/jobs/') ? msg('Back to job') : route.pathname.startsWith('/dialects') ? msg('Back to dialect') : route.pathname.startsWith('/graphs') ? msg('Back to builder') : route.pathname.startsWith('/policies/') ? msg('Back to policy') : undefined}
               expandButtonRef={expandButtonRef}
               onExpand={() => setToolExpanded(true)} onReturn={returnToPack}
               resize={overlay ? { value: overlayLayout.width, min: overlayLayout.min, max: overlayLayout.max, onChange: shell.resizeOverlay, onReset: shell.resetOverlayWidth, preview: { element: workspaceElement, property: '--overlay-preview' } } : undefined}
@@ -521,6 +522,6 @@ function ShellFrame({
     </InspectorSizeProvider></InspectorSlotContext.Provider>
     </InspectorPresentationContext.Provider>
     </ConnectionPaneContext.Provider>
-    </DiagnosticsContext.Provider>
+    </DiagnosticsContext.Provider></DeskNoticesProvider>
   )
 }

@@ -13,6 +13,22 @@ function setup(io?: Partial<ChatPersistence>) {
   return { store, read, write }
 }
 describe('project conversation history', () => {
+  it('persists a production Policy identity, request and checked proposal independently of pack drafts',async()=>{
+    const {store,write}=setup();await store.load()
+    const policyId='policy_'+'a'.repeat(48),revision='b'.repeat(64),candidate={title:'Policy',narrative:'Saved exact source',artifactVersion:'1.0.0'}
+    const chat=store.startChat(undefined,undefined,false,undefined,undefined,undefined,{id:policyId})
+    expect(store.startChat(undefined,undefined,false,undefined,undefined,undefined,{id:policyId}).id).toBe(chat.id)
+    expect(store.startChat().id).not.toBe(chat.id)
+    store.update(chat.id,{policyRequest:{revision,candidate},policyProposals:[{version:1,id:'proposal',policyId,revision,before:candidate,candidate:{...candidate,title:'Updated title'},operationId:crypto.randomUUID(),createdAt:'2026-10-18T00:00:00Z',check:{scope:'draft-shape-and-revision',status:'passed'},save:{state:'uncertain'}}]})
+    store.retainChat(chat.id);await store.flush()
+    const document=write.mock.calls.at(-1)![0] as {version:1;chats:import('./store').Chat[]}
+    const loaded=setup({read:async()=>({project:'/project',sha256:'saved',content:document})});await loaded.store.load()
+    expect(loaded.store.getSnapshot().chats[0]).toMatchObject({id:chat.id,policy:{id:policyId},policyRequest:{revision,candidate},policyProposals:[{save:{state:'uncertain'}}]})
+    expect(loaded.store.getSnapshot().packDrafts).toEqual([])
+    loaded.store.remove(chat.id);await loaded.store.flush()
+    expect(loaded.store.getSnapshot().chats).toEqual([])
+  })
+
   it('keeps home visits, typing and New chat out of history until the first accepted Send', async () => {
     const { store, write } = setup(); await store.load()
     const draft = store.startChat()
@@ -294,4 +310,122 @@ it('saves model-free checks from an unsent draft workspace without creating a co
   store.update(stale.id,{draftGeneration:artifact.generation})
   const before=action.mock.calls.length
   expect(store.perform(stale.id,action,false)).toBe(false);expect(action).toHaveBeenCalledTimes(before)
+})
+
+it('retains portable input proposals and their saved link across chat reloads',async()=>{
+ const {store,write}=setup();await store.load();const chat=store.create()
+ const proposal={version:1 as const,draftId:'proposal-1',createdAt:'2026-10-12T12:00:00Z',name:'Find owners',intent:'Research decision owners',target:'people' as const,fields:[{name:'role',description:'Current role',type:'string' as const}],criteria:[],limits:{records:25,searches:10,pages:30,modelCalls:30},afterTurnId:'turn-1',savedInputId:'prep_'+'a'.repeat(32)}
+ store.update(chat.id,{inputDrafts:[proposal]});await store.flush()
+ const saved=write.mock.calls.at(-1)![0]
+ const restored=setup({read:async()=>({project:'/project',sha256:'loaded',content:saved})});await restored.store.load()
+ expect(restored.store.getSnapshot().chats[0].inputDrafts).toEqual([proposal])
+ const poisoned=structuredClone(saved) as any;poisoned.chats[0].inputDrafts[0].ai={connection:'injected'}
+ const invalid=setup({read:async()=>({project:'/project',sha256:'loaded',content:poisoned})});await invalid.store.load()
+ expect(invalid.store.getSnapshot().ready).toBe(false);expect(invalid.write).not.toHaveBeenCalled()
+})
+
+it('keeps Dialects drafts separate from home, packs, and other inputs and restores their action history',async()=>{
+ const {store,write}=setup();await store.load()
+ const id='prep_'+'a'.repeat(32),other='prep_'+'b'.repeat(32)
+ const home=store.startChat(),first=store.startChat(undefined,undefined,false,undefined,undefined,{id}),second=store.startChat(undefined,undefined,false,undefined,undefined,{id:other})
+ expect(store.startChat().id).toBe(home.id)
+ expect(store.startChat(undefined,undefined,false,undefined,undefined,{id}).id).toBe(first.id)
+ expect(new Set([home.id,first.id,second.id]).size).toBe(3)
+ const action={version:1 as const,id:'action',createdAt:'2026-01-01',inputId:id,name:'Company research',revision:'a'.repeat(64),recipeVersion:2,kind:'research' as const}
+ store.update(first.id,{inputActions:[action]});store.retainChat(first.id);await store.flush()
+ const content=write.mock.calls.at(-1)![0]
+ const restored=setup({read:async()=>({project:'/project',sha256:'saved',content})});await restored.store.load()
+ expect(restored.store.getSnapshot().chats[0]).toMatchObject({id:first.id,input:{id},inputActions:[action]})
+ expect(restored.store.startChat().input).toBeUndefined()
+})
+it('rejects persisted input actions with injected mutation authority',async()=>{
+ const inputId='prep_'+'a'.repeat(32)
+ const chat={id:'bad-input',title:'Dialects',mode:'draft',view:'chat',pinned:false,archived:false,updatedAt:'2026-01-01',composer:'',model:'',input:{id:inputId},inputActions:[{version:1,id:'action',createdAt:'2026-01-01',inputId,name:'Input',revision:'a'.repeat(64),recipeVersion:1,kind:'update-recipe',patch:{research:{ai:{connection:'injected'}}}}]}
+ const {store}=setup({read:async()=>({project:'/project',sha256:'saved',content:{version:1,chats:[chat]}})});await store.load()
+ expect(store.getSnapshot().chats).toHaveLength(0)
+ expect(store.getSnapshot().error).toContain('Invalid saved dialect actions')
+})
+
+it('waits for an in-flight save and checkpoints the newer task state before dispatch',async()=>{
+ let release!:()=>void
+ let calls=0
+ const saved:unknown[]=[]
+ const {store}=setup({write:async document=>{saved.push(document);if(++calls===1)await new Promise<void>(resolve=>{release=resolve});return {project:'/project',sha256:'revision-'+calls,content:document}}})
+ await store.load();const chat=store.create();const first=store.flush()
+ await vi.waitFor(()=>expect(calls).toBe(1))
+ store.update(chat.id,{composer:'Checkpoint requested after the first save started'})
+ let finished=false
+ const checkpoint=store.checkpoint(new AbortController().signal).then(()=>{finished=true})
+ await Promise.resolve();expect(finished).toBe(false)
+ release();await first;await checkpoint
+ expect(calls).toBe(2)
+ expect((saved[1] as {chats:{composer:string}[]}).chats[0]?.composer).toBe('Checkpoint requested after the first save started')
+})
+
+it('refuses further delegated work when its checkpoint cannot be saved',async()=>{
+ const {store}=setup({write:async()=>{throw Error('disk unavailable')}})
+ await store.load();store.create()
+ await expect(store.checkpoint(new AbortController().signal)).rejects.toThrow('disk unavailable')
+ expect(store.getSnapshot().dirty).toBe(true)
+})
+
+it('cancels a checkpoint wait without cancelling or replaying the existing save',async()=>{
+ let release!:()=>void
+ const {store}=setup({write:async document=>{await new Promise<void>(resolve=>{release=resolve});return {project:'/project',sha256:'saved',content:document}}})
+ await store.load();store.create();const saved=store.flush()
+ await vi.waitFor(()=>expect(release).toBeTypeOf('function'))
+ const stop=new AbortController(),waiting=store.checkpoint(stop.signal)
+ stop.abort();await expect(waiting).rejects.toMatchObject({name:'AbortError'})
+ release();await saved
+ expect(store.getSnapshot().error).toBe('')
+})
+
+it('stores test-design exchanges in the existing session, deduplicates checkpoints, and reloads them', async () => {
+ const {AuthoringRun}=await import('../research/run')
+ const {store,write}=setup();await store.load()
+ const chat=store.startChat({id:'pack',path:'pack.json',digest:'digest'})
+ const run=new AuthoringRun({} as import('../research/run').RunPorts)
+ store.report(chat.id,{run,state:run.getSnapshot(),sources:[],model:'fixture'} as unknown as ResearchRunBinding)
+ const turns=[{id:'test-user',role:'user' as const,kind:'message' as const,text:'Design boundary cases',at:'2026-10-13T12:00:00Z',testDesign:{owner:'pack',proposalId:'proposal'}},{id:'test-assistant',role:'assistant' as const,kind:'message' as const,text:'Proposed cases for review',at:'2026-10-13T12:01:00Z',testDesign:{owner:'pack',proposalId:'proposal'}}]
+ store.appendConversation(chat.id,turns);store.appendConversation(chat.id,turns)
+ store.report(chat.id,{run,state:INITIAL_STATE,sources:[],model:'fixture'} as unknown as ResearchRunBinding)
+ await store.checkpoint(new AbortController().signal)
+ expect(store.getSnapshot().chats).toHaveLength(1)
+ expect(run.getSnapshot().turns).toHaveLength(2)
+ expect(write).toHaveBeenCalledOnce()
+ const content=write.mock.calls[0]![0]
+ const restored=setup({read:async()=>({project:'/project',sha256:'saved',content})});await restored.store.load()
+ expect(restored.store.getSnapshot().chats[0]?.checkpoint?.state.turns).toHaveLength(2)
+ expect(restored.store.getSnapshot().chats[0]?.checkpoint?.state.turns).toMatchObject(turns)
+ expect(()=>store.appendConversation(chat.id,[{...turns[0]!,text:'Changed answer'}])).toThrow('conflicts')
+})
+
+it('retries failed initial hydration without replaying writes or reloading a live transcript',async()=>{
+ const io=vi.fn().mockRejectedValueOnce(Error('storage busy')).mockResolvedValue({project:'/project',sha256:'saved',content:{version:1,chats:[]}})
+ const {store,write}=setup({read:io})
+ await store.load()
+ expect(store.getSnapshot().ready).toBe(false)
+ await store.retryInitialLoad()
+ expect(store.getSnapshot().ready).toBe(true)
+ expect(store.getSnapshot().error).toBe('')
+ const chat=store.startChat();store.update(chat.id,{composer:'Keep this unfinished message'})
+ await store.retryInitialLoad()
+ expect(io).toHaveBeenCalledTimes(2)
+ expect(store.getSnapshot().drafts[0].composer).toBe('Keep this unfinished message')
+ expect(write).not.toHaveBeenCalled()
+})
+
+it('restores refused Dialect candidates and exact findings without saved-action authority',async()=>{
+ const {store,write}=setup();await store.load();const chat=store.create()
+ const action={version:1 as const,id:'mapping-attempt',createdAt:'2026-10-16',inputId:'prep_'+'a'.repeat(32),name:'Triage',revision:'a'.repeat(64),recipeVersion:1,kind:'update-dialect' as const,
+  dialect:{packKey:'triage',packDigest:'sha256:'+'b'.repeat(64),facts:[],evidence:[],summary:'Unknown fields remain unknown.'},
+  dialectCheck:{document:'{"version":3,"case":{"facts":[],"evidence":[]}}',report:{status:'refused',diagnostics:[{code:'JPS-DIALECT-FORM',instancePath:'/case',message:'Review this declaration.'}]}}}
+ store.update(chat.id,{inputActions:[action]});await store.flush()
+ const saved=write.mock.calls.at(-1)![0]
+ const restored=setup({read:async()=>({project:'/project',sha256:'loaded',content:saved})});await restored.store.load()
+ expect(restored.store.getSnapshot().chats[0].inputActions).toEqual([action])
+ expect(restored.store.getSnapshot().chats[0].inputActions?.[0].applied).toBeUndefined()
+ const bad=structuredClone(saved) as any;bad.chats[0].inputActions[0].dialectCheck.report.compatibility={notes:'not findings'}
+ const invalid=setup({read:async()=>({project:'/project',sha256:'loaded',content:bad})});await invalid.store.load()
+ expect(invalid.store.getSnapshot().ready).toBe(false);expect(invalid.write).not.toHaveBeenCalled()
 })

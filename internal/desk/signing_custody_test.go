@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -85,12 +86,28 @@ func TestASwappedSigningFolderNeverMakesASignedDesk(t *testing.T) {
 
 // postAbandoned sends a creation whose handler is stopped, as a crash would
 // stop it, and ignores the broken answer.
-func postAbandoned(t *testing.T, s *Server, url string) {
+func postAbandoned(t *testing.T, s *Server) {
 	t.Helper()
-	request, _ := http.NewRequest("POST", url+"/api/desks", strings.NewReader(`{"name":"Stopped"}`))
-	request.Header.Set("Authorization", "Bearer "+testToken)
-	request.Header.Set("Content-Type", "application/json")
-	if response, err := http.DefaultClient.Do(request); err == nil {
+	sendAbandoned(t, s, func(url string) *http.Request {
+		request, _ := http.NewRequest("POST", url+"/api/desks", strings.NewReader(`{"name":"Stopped"}`))
+		request.Header.Set("Authorization", "Bearer "+testToken)
+		request.Header.Set("Content-Type", "application/json")
+		return request
+	})
+}
+
+// sendAbandoned sends the request made for url, whose handler a test hook
+// stops, to a server over s of its own, and returns only once that handler
+// has ended (#472). The client's broken answer does not show that: the
+// handler's goroutine may still be unwinding, and nothing orders what it did,
+// such as reading a test hook or writing Desk's log, before what the test
+// does next. Closing the server waits for it.
+func sendAbandoned(t *testing.T, s *Server, request func(url string) *http.Request) {
+	t.Helper()
+	// A second server over s: its Close waits for the handler to end before the test checks the files.
+	server := httptest.NewServer(s)
+	defer server.Close()
+	if response, err := http.DefaultClient.Do(request(server.URL)); err == nil {
 		response.Body.Close()
 	}
 }
@@ -130,7 +147,7 @@ func TestAStoppedCreationLeavesNoKeyPastTheNextStart(t *testing.T) {
 				}
 			}
 			t.Cleanup(func() { testHookKeyBetween = nil })
-			postAbandoned(t, s, ts.URL)
+			postAbandoned(t, s)
 			testHookKeyBetween = nil
 			folder := signingFolderOf(s)
 			if names := namesIn(t, folder); !slices.Equal(names, tc.left) {
@@ -406,7 +423,7 @@ func TestAManifestThatIsNotWholeIsNotAPublication(t *testing.T) {
 				}
 			}
 			t.Cleanup(func() { testHookKeyBetween = nil })
-			postAbandoned(t, s, ts.URL)
+			postAbandoned(t, s)
 			testHookKeyBetween = nil
 			if err := os.WriteFile(filepath.Join(s.configDir, "desks", id, ".desk-private", "desk.json"), []byte(tc.manifest), 0o600); err != nil {
 				t.Fatal(err)
@@ -456,7 +473,7 @@ func TestAManifestNotReadNowKeepsItsKey(t *testing.T) {
 				}
 			}
 			t.Cleanup(func() { testHookKeyBetween = nil })
-			postAbandoned(t, s, ts.URL)
+			postAbandoned(t, s)
 			testHookKeyBetween = nil
 			if _, err := os.Stat(filepath.Join(s.configDir, "desks", id, deskManifest)); err != nil {
 				t.Fatal("the desk's manifest was not published:", err)

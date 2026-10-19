@@ -17,7 +17,7 @@
  *
  * **Only the top-level routes.** `data-measure` is read by `:has()` on
  * `.desk-measure`, so it describes the element the shell mounts into the
- * measure — and for `/packs` that is `PacksLayout`, with `PacksIndex` and
+ * measure — and for `/library` that is `PacksLayout`, with `PacksIndex` and
  * `PackView` rendering inside it through its `<Outlet />`. A nested child
  * stating a second kind would be a second answer to a question its layout has
  * already answered, and `:has()` would take whichever the sheet ordered last.
@@ -190,9 +190,9 @@ describe('every route states the width kind of its page', () => {
     expect(ROUTES.map((route) => route.name)).toContain('PacksLayout')
   })
 
-  it('keeps both saved Tests URLs inside the shared packs layout', () => {
+  it('keeps saved Tests and case URLs inside the shared packs layout', () => {
     const tests = routeTags(APP).filter(({ span }) => elementOf(span) === 'PackTests')
-    expect(tests).toHaveLength(2)
+    expect(tests).toHaveLength(3)
     expect(tests.every(({ nested }) => nested)).toBe(true)
   })
 

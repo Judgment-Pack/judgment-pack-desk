@@ -1,0 +1,93 @@
+{
+  "passed": true,
+  "policyPath": "/policies/policy_025cee39e3236dedf3be662f53de921562543e8d7185ba05",
+  "chatId": "c68cf0f2-9bb2-4ef3-965c-ab41cde901ca",
+  "originalName": "Policy café.md",
+  "sourceDigest": "793795c204b2f3c4ceb31cd93c80aea3ece1ae66bef743790e438578df985ca3",
+  "sourceBytes": 101,
+  "exactDownload": true,
+  "originalDistinctFromEditedNarrative": true,
+  "linkedChatPaneHistoryMainReload": true,
+  "mutations": [
+    {
+      "path": "/api/policies",
+      "status": 200,
+      "delivery": "committed",
+      "policyId": "policy_025cee39e3236dedf3be662f53de921562543e8d7185ba05",
+      "reviewState": "unreviewed",
+      "publications": 0,
+      "source": {
+        "name": "Policy café.md",
+        "mediaType": "text/markdown",
+        "origin": "user-upload",
+        "content": {
+          "sha256": "793795c204b2f3c4ceb31cd93c80aea3ece1ae66bef743790e438578df985ca3",
+          "bytes": 101
+        }
+      },
+      "actor": {
+        "kind": "local",
+        "subject": "local user"
+      }
+    },
+    {
+      "path": "/api/policies/policy_025cee39e3236dedf3be662f53de921562543e8d7185ba05/review",
+      "status": 200,
+      "delivery": "committed",
+      "policyId": "policy_025cee39e3236dedf3be662f53de921562543e8d7185ba05",
+      "reviewState": "approved",
+      "publications": 0,
+      "source": {
+        "name": "Policy café.md",
+        "mediaType": "text/markdown",
+        "origin": "user-upload",
+        "content": {
+          "sha256": "793795c204b2f3c4ceb31cd93c80aea3ece1ae66bef743790e438578df985ca3",
+          "bytes": 101
+        }
+      },
+      "actor": {
+        "kind": "local",
+        "subject": "local user"
+      }
+    },
+    {
+      "path": "/api/policies/policy_025cee39e3236dedf3be662f53de921562543e8d7185ba05/publish",
+      "status": 200,
+      "delivery": "committed",
+      "policyId": "policy_025cee39e3236dedf3be662f53de921562543e8d7185ba05",
+      "reviewState": "approved",
+      "publications": 1,
+      "source": {
+        "name": "Policy café.md",
+        "mediaType": "text/markdown",
+        "origin": "user-upload",
+        "content": {
+          "sha256": "793795c204b2f3c4ceb31cd93c80aea3ece1ae66bef743790e438578df985ca3",
+          "bytes": 101
+        }
+      },
+      "actor": {
+        "kind": "local",
+        "subject": "local user"
+      }
+    }
+  ],
+  "geometry": {
+    "viewport": 420,
+    "documentWidth": 420,
+    "editorLeft": 29,
+    "editorRight": 336,
+    "editorWidth": 307,
+    "editorVisible": true,
+    "mainClientWidth": 339,
+    "mainScrollWidth": 339
+  },
+  "pageErrors": [],
+  "modelRequests": [],
+  "screenshots": [
+    "policy-source-history-desktop.png",
+    "policy-chat-narrow.png",
+    "policy-source-editor-narrow.png"
+  ]
+}

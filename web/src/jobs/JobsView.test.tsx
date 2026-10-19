@@ -1,38 +1,40 @@
-import { loadJobDraft } from './drafts'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { loadJobDraft,saveJobDraft } from './drafts'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate, Routes, Route } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { CreateJobContent } from './JobsView'
+import { CreateJobContent, JobsContent } from './JobsView'
 import { jobsAPI, JobsRequestError } from './client'
 import { readReleaseTests } from './releaseTests'
 import { refreshRunnerKey } from './runnerKey'
 import { DeskConfigProvider } from '../config/DeskConfigProvider'
-import { createHash } from 'node:crypto'
+import { createHash, webcrypto } from 'node:crypto'
 import { readReview, type Review } from '../packs/review/client'
-vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn()}))
-vi.mock('./MappedInputFields',()=>({MappedInputFields:()=>null}))
+vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn(),saveJobDraft:vi.fn()}))
+const mappedEditor=vi.hoisted(()=>({props:undefined as import('react').ComponentProps<typeof import('./MappedInputFields').MappedInputFields>|undefined}))
+vi.mock('./MappedInputFields',()=>({MappedInputFields:(props:import('react').ComponentProps<typeof import('./MappedInputFields').MappedInputFields>)=>{mappedEditor.props=props;return null}}))
 vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
 vi.mock('./releaseTests', () => ({ readReleaseTests: vi.fn() }))
 vi.mock('./runnerKey', async original => ({ ...await original<typeof import('./runnerKey')>(), refreshRunnerKey: vi.fn() }))
 vi.mock('../packs/review/client', async original => ({ ...await original<typeof import('../packs/review/client')>(), readReview: vi.fn() }))
 const { pack, packs } = vi.hoisted(() => ({
- pack: { data: { raw: '{"version":"1"}', document: { title: 'Example pack', version: '1' } }, refetch: vi.fn() },
- packs: { data: { packs: [{ id: 'pack', matrixPath: 'cases.json' }] }, refetch: vi.fn() },
+ pack: { data: { raw: '{"version":"1"}', document: { id:'policy',title: 'Example pack', version: '1' } }, refetch: vi.fn() },
+ packs: { data: { packs: [{ id: 'pack', packId:'policy', matrixPath: 'cases.json' }] }, refetch: vi.fn() },
 }))
 vi.mock('../mcp/queries', () => ({ usePacks: () => packs, usePack: () => pack }))
 const source = { packKey: 'pack', suiteRevision: 1, caseNames: { clean: 'Clean case' }, exploratoryCount: 0 }
 const saved = { project: 'project', matrix: '{"matrixVersion":"3","cases":[{"id":"clean"}]}', testSource: source }
-const release = { id: 'release', pack: '{"version":"1"}', packVersion: '1', tests: 'passed', preview: { disposition: { kind: 'outcome', outcomeId: 'accept', reasons: [], handoff: { state: 'none' } } } }
+const release = { packId:'policy',sample:{facts:{}},id: 'release', pack: '{"version":"1"}', packVersion: '1', tests: 'passed', preview: { disposition: { kind: 'outcome', outcomeId: 'accept', reasons: [], handoff: { state: 'none' } } } }
 beforeEach(() => {
+ vi.mocked(saveJobDraft).mockImplementation(async(id,values)=>{const result={file:{path:'draft',sha256:'sha',content:'',bytes:0},draft:{version:1 as const,id,updatedAt:new Date().toISOString(),status:'draft' as const,values}};vi.mocked(loadJobDraft).mockResolvedValue(result);return result})
  pack.refetch.mockResolvedValue(pack); packs.refetch.mockResolvedValue(packs)
  vi.mocked(readReview).mockRejectedValue(new Error('The review could not be loaded. Please try again.'))
  vi.mocked(readReleaseTests).mockResolvedValue(saved)
  vi.mocked(jobsAPI).mockResolvedValue(release)
 })
 afterEach(() => { cleanup(); vi.resetAllMocks(); vi.unstubAllGlobals() })
-function renderCreate() { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/new?pack=pack']}><CreateJobContent /></MemoryRouter></Tooltip.Provider></QueryClientProvider>) }
+function renderCreate(path='/jobs/new?pack=pack') { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><Tooltip.Provider><MemoryRouter initialEntries={[path]}><CreateJobContent /></MemoryRouter></Tooltip.Provider></QueryClientProvider>) }
 function next(){fireEvent.click(screen.getByRole('button',{name:'Continue'}));const input=screen.queryByRole('combobox',{name:'Input configuration'});if(input){fireEvent.keyDown(input,{key:'Enter'});fireEvent.click(screen.getByRole('option',{name:'Manual / API'}))}}
 function toReview(){fireEvent.change(screen.getByLabelText('Job name'),{target:{value:'Intake'}});next();next();next()}
 async function check() {
@@ -158,6 +160,7 @@ it('creates the immutable reviewed release after checking freshness again', asyn
 })
 
 it('starts an operational run with fresh facts and omitted evidence',async()=>{
+ vi.stubGlobal('fetch',async()=>new Response('Not found',{status:404}))
  const {JobsContent}=await import('./JobsView')
  const {Routes,Route}=await import('react-router-dom')
  vi.mocked(jobsAPI).mockImplementation(async(path:string)=>{
@@ -201,7 +204,7 @@ it('shows Not recorded in the Runs table for a run without a readable submission
   {...run,id:'run-cccccccc',createdAt:'not a time'},
  ]:[]}) as never)
  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/runs']}><JobsContent/></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
- const submitted=async(run:string)=>(await screen.findByRole('link',{name:run})).closest('tr')!.querySelectorAll('td')[4]!.textContent
+ const submitted=async(run:string)=>(await screen.findByRole('link',{name:run})).closest('tr')!.querySelectorAll<HTMLTableCellElement>('td:not([data-selection-cell])')[4]!.textContent
  expect(await submitted('bbbbbbbb')).toBe('Not recorded')
  expect(await submitted('cccccccc')).toBe('Not recorded')
  expect(await submitted('aaaaaaaa')).toBe(formatDate(new Date('2026-09-26T12:00:00Z'),{dateStyle:'medium',timeStyle:'short'}))
@@ -274,4 +277,150 @@ it('leaves the tested-releases policy as it was: a reviewed release whose tests 
  renderCreate(); await check()
  expect(await standing('reviewed')).toBe('In the reviewed set')
  expect(review().disabled).toBe(true); expect(button().disabled).toBe(true)
+})
+
+it('upgrades only the reviewed frozen job revision through the existing checked-release flow',async()=>{
+ const base={job:{id:'job-base',name:'Existing',releaseId:'old-release',revision:4},release:{...release,packId:'policy',packVersion:'0.1.0'}}
+ vi.mocked(jobsAPI).mockImplementation(async(path)=>path==='jobs/job-base'?base:path==='previews'?release:base.job)
+ renderCreate('/jobs/new?upgrade=job-base')
+ await screen.findByDisplayValue('Existing')
+ expect((screen.getByLabelText('Job name') as HTMLInputElement).disabled).toBe(true)
+ expect(screen.getByRole('button',{name:'Save draft'})).toBeTruthy()
+ next();next();next();fireEvent.click(screen.getByRole('button',{name:'Check release'}))
+ await screen.findByText('Review this release')
+ expect((screen.getByRole('button',{name:'Upgrade job'}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.click(review());fireEvent.click(screen.getByRole('button',{name:'Upgrade job'}))
+ await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith('jobs/job-base/upgrade',{releaseId:release.id,baseReleaseId:'old-release',baseRevision:4,reviewed:true}))
+ expect(vi.mocked(jobsAPI).mock.calls.some(([path])=>path==='jobs')).toBe(false)
+})
+
+it('recovers a historical completed upgrade after reload without restoring approval or checking changed project inputs',async()=>{
+ const attempt={jobId:'job-base',baseReleaseId:'old-release',baseRevision:4,submittedReleaseId:'accepted-release'}
+ const values={name:'Existing',packId:'pack',facts:'{}',supplied:false,evidence:'{}',inputMode:'manual' as const,upgrade:attempt}
+ vi.mocked(loadJobDraft).mockResolvedValue({file:{path:'draft',content:'',bytes:0,sha256:'retained'},draft:{version:1,id:'recover',status:'draft',updatedAt:'2026-10-16T12:00:00Z',values}})
+ const receipt={id:'job-base',name:'Existing',releaseId:'accepted-release',revision:5,createdAt:''}
+ vi.mocked(jobsAPI).mockImplementation(async(path)=>path.includes('/upgrade-receipt?')?receipt:{job:{...receipt,releaseId:'later-release',revision:6},release})
+ vi.mocked(readReleaseTests).mockRejectedValue(Error('Project changed'))
+ renderCreate('/jobs/new?draft=recover')
+ await screen.findByText('This upgrade has already been applied.')
+ expect(screen.getByRole('link',{name:'Open job'}).getAttribute('href')).toBe('/jobs/job-base')
+ expect(readReleaseTests).not.toHaveBeenCalled()
+ expect(vi.mocked(jobsAPI).mock.calls.every(([,body])=>body===undefined)).toBe(true)
+ expect(saveJobDraft).not.toHaveBeenCalled()
+})
+
+it('reconciles an interrupted attempt before checking changed inputs on an explicit retry',async()=>{
+ const base={job:{id:'job-base',name:'Existing',releaseId:'old-release',revision:4},release:{...release,packId:'policy',packVersion:'0.1.0'}}
+ const receipt={...base.job,releaseId:release.id,revision:5}
+ vi.mocked(jobsAPI).mockImplementation(async(path)=>{
+  if(path==='jobs/job-base')return base
+  if(path==='previews')return release
+  if(path.includes('/upgrade-receipt?'))return receipt
+  if(path.endsWith('/upgrade')){vi.mocked(readReleaseTests).mockRejectedValue(Error('Project changed'));throw Error('Response lost')}
+  throw Error('Unexpected write')
+ })
+ renderCreate('/jobs/new?upgrade=job-base');await screen.findByDisplayValue('Existing')
+ next();next();next();fireEvent.click(screen.getByRole('button',{name:'Check release'}));await screen.findByText('Review this release')
+ fireEvent.click(review());fireEvent.click(screen.getByRole('button',{name:'Upgrade job'}));await screen.findByText('Response lost')
+ const reads=vi.mocked(readReleaseTests).mock.calls.length
+ fireEvent.click(screen.getByRole('button',{name:'Upgrade job'}))
+ await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith(expect.stringContaining('/upgrade-receipt?')))
+ expect(readReleaseTests).toHaveBeenCalledTimes(reads)
+ expect(vi.mocked(jobsAPI).mock.calls.filter(([path])=>path.endsWith('/upgrade'))).toHaveLength(1)
+})
+
+
+it.each(['cancel','leave'] as const)('does not navigate after a delayed research checkpoint when its owner will %s',async action=>{
+ let finish!:(value:Awaited<ReturnType<typeof saveJobDraft>>)=>void
+ vi.mocked(saveJobDraft).mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+ function Location(){const location=useLocation(),navigate=useNavigate();return <><output data-testid="location">{location.pathname+location.search}</output><button onClick={()=>navigate('/elsewhere')}>Leave editor</button></>}
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/new?pack=pack']}><Location/><Routes><Route path="/jobs/new" element={<CreateJobContent/>}/><Route path="/elsewhere" element={<span>Another page</span>}/></Routes></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
+ await waitFor(()=>expect(mappedEditor.props?.onPersistResearchDraft).toBeDefined())
+ const task=new AbortController(),draft={text:'{}',caseText:'{}'}
+ let pending!:Promise<void>
+ act(()=>{pending=mappedEditor.props!.onPersistResearchDraft!(draft,task.signal)})
+ expect((screen.getByLabelText('Job name') as HTMLInputElement).disabled).toBe(true)
+ expect(screen.getByRole('combobox',{name:'Input configuration',hidden:true}).getAttribute('data-disabled')).not.toBeNull()
+ if(action==='leave')fireEvent.click(screen.getByRole('button',{name:'Leave editor'}))
+ else task.abort()
+ await act(async()=>{const [id,values]=vi.mocked(saveJobDraft).mock.calls[0]!;finish({file:{path:'draft',content:'',bytes:0,sha256:'saved'},draft:{version:1,id,updatedAt:new Date().toISOString(),status:'draft',values}});await pending})
+ expect(screen.getByTestId('location').textContent).toBe(action==='leave'?'/elsewhere':'/jobs/new?pack=pack')
+ if(action==='cancel')expect((screen.getByLabelText('Job name') as HTMLInputElement).disabled).toBe(false)
+})
+
+function authorityRunPage(client=new QueryClient({defaultOptions:{queries:{retry:false}}})){
+ return render(<QueryClientProvider client={client}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/job-one?run=new']}><Routes><Route path="/jobs/:jobId" element={<JobsContent/>}/><Route path="/jobs/:jobId/runs/:runId" element={<span/>}/></Routes></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
+}
+function authorityRunData(onSubmit?: (key?:string)=>unknown){
+ vi.mocked(jobsAPI).mockImplementation(async(path,body,key)=>{
+  if(path==='jobs/job-one')return {job:{id:'job-one',name:'Intake'},release:{...release,title:'Policy'}} as never
+  if(path.startsWith('jobs/job-one/runs?'))return {items:[]} as never
+  if(path==='jobs/job-one/runs'&&body!==undefined){onSubmit?.(key);return {id:'run-new',jobId:'job-one'} as never}
+  return {} as never
+ })
+}
+const authoritySubmit=()=>screen.getByRole('button',{name:'Submit run'}) as HTMLButtonElement
+it.each([false,true])('holds submission while authority status is delayed or failed (cached disabled: %s)',async cached=>{
+ let rejectStatus!:(error:Error)=>void
+ vi.stubGlobal('fetch',()=>new Promise<Response>((_,reject)=>{rejectStatus=reject}))
+ authorityRunData()
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ if(cached)client.setQueryData(['policy-execution'],{enabled:false})
+ authorityRunPage(client)
+ await screen.findByRole('button',{name:'Submit run'})
+ expect(authoritySubmit().disabled).toBe(true)
+ fireEvent.click(authoritySubmit())
+ expect(vi.mocked(jobsAPI).mock.calls.some(([path,body])=>path==='jobs/job-one/runs'&&body!==undefined)).toBe(false)
+ await act(async()=>rejectStatus(Error('authority unavailable')))
+ await waitFor(()=>expect(client.getQueryState(['policy-execution'])?.status).toBe('error'))
+ expect(authoritySubmit().disabled).toBe(true)
+ fireEvent.click(authoritySubmit())
+ expect(vi.mocked(jobsAPI).mock.calls.some(([path,body])=>path==='jobs/job-one/runs'&&body!==undefined)).toBe(false)
+})
+it.each([200,404])('allows legacy submit only after verified disabled authority status (%s)',async status=>{
+ vi.stubGlobal('fetch',async()=>new Response(status===200?JSON.stringify({version:1,enabled:false}):'Not found',{status}))
+ authorityRunData()
+ authorityRunPage()
+ await waitFor(()=>expect(authoritySubmit().disabled).toBe(false))
+ fireEvent.click(authoritySubmit())
+ await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith('jobs/job-one/runs',{facts:{}},expect.any(String)))
+})
+it('retains the enabled authority submission key before send and holds it across refresh after a lost reply',async()=>{
+ vi.stubGlobal('crypto',webcrypto)
+ for(const key of Object.keys(sessionStorage))if(key.startsWith('jpack.manual-intent.v1:'))sessionStorage.removeItem(key)
+ vi.stubGlobal('fetch',async(url:unknown)=>new Response(JSON.stringify(String(url).includes('/policy-registration')?{version:1,state:'registered',eligible:true,reason:'eligible',resource:{jobId:'job-one',jobRevision:'1',releaseId:'release'}}:{version:1,enabled:true,profile:'local-admin-manual-pack/1'}),{status:200}))
+ let originalKey:string|undefined,sends=0
+ authorityRunData(key=>{
+  originalKey=key;sends++
+  expect(Object.keys(sessionStorage).filter(k=>k.startsWith('jpack.manual-intent.v1:')).some(k=>JSON.parse(sessionStorage.getItem(k)!).key===key)).toBe(true)
+  throw Error('The actual submission reply was lost.')
+ })
+ authorityRunPage()
+ await waitFor(()=>expect(authoritySubmit().disabled).toBe(false))
+ fireEvent.click(authoritySubmit())
+ await screen.findByText('The actual submission reply was lost.')
+ expect(sends).toBe(1);expect(originalKey).toBeTruthy();expect(authoritySubmit().disabled).toBe(true)
+ cleanup();authorityRunPage()
+ await screen.findByText(originalKey!)
+ expect(authoritySubmit().disabled).toBe(true)
+ fireEvent.click(authoritySubmit());expect(sends).toBe(1)
+ expect(screen.getByRole('button',{name:'Choose a new intent'})).toBeTruthy()
+ for(const key of Object.keys(sessionStorage))if(key.startsWith('jpack.manual-intent.v1:'))sessionStorage.removeItem(key)
+})
+
+it('holds submission during paused authority refresh with cached disabled status',async()=>{
+ vi.stubGlobal('fetch',async()=>new Response(JSON.stringify({version:1,enabled:false}),{status:200}))
+ authorityRunData()
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ client.setQueryData(['policy-execution'],{enabled:false})
+ client.setQueryData(['job','job-one'],{job:{id:'job-one',name:'Intake'},release:{...release,title:'Policy'}})
+ onlineManager.setOnline(false)
+ try{
+  authorityRunPage(client)
+  await screen.findByRole('button',{name:'Submit run'})
+  await waitFor(()=>expect(client.getQueryState(['policy-execution'])?.fetchStatus).toBe('paused'))
+  expect(authoritySubmit().disabled).toBe(true)
+  fireEvent.click(authoritySubmit())
+  expect(vi.mocked(jobsAPI).mock.calls.some(([path,body])=>path==='jobs/job-one/runs'&&body!==undefined)).toBe(false)
+ }finally{cleanup();onlineManager.setOnline(true)}
 })

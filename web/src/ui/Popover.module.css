@@ -39,3 +39,7 @@
 .heading { display: flex; flex: 0 0 auto; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
 .heading .title { margin: 0; min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .heading > button { flex: 0 0 auto; }
+
+/* Status details use one inset, not a notice nested inside another padded panel. */
+.content[data-variant='status'] { padding: 0; }
+.content[data-variant='status'] .title { font-size: var(--text-sm); }

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, type CSSProperties, type KeyboardEvent } from 'react'
 import { msg } from '../i18n'
 import { Button } from '../ui/Button'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { OverflowTooltip } from '../ui/Tooltip'
 import { IconChevronRight, IconChevronDown, IconFolder, IconDetails } from '../shell/icons'
 import type { FileEntry } from './client'
@@ -48,7 +48,7 @@ export function FileBrowser({files,selected,dirty,expanded,search,scroll,onSearc
    </button></OverflowTooltip>{expanded.includes(item.path)&&<ul>{item.children.map(child=>node(child,depth+1))}</ul>}</>:fileRow(item.path,item.name,depth)}
  </li>
  return <div className={styles.browser} ref={host}>
-  <div className={styles.search}><Input type="search" aria-label={msg('Search files')} placeholder={msg('Search files…')} value={search} onChange={event=>onSearch(event.target.value)} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();onSearch('')}else if(event.key==='ArrowDown'){event.preventDefault();host.current?.querySelector<HTMLButtonElement>('[data-file-row]')?.focus()}}}/></div>
+  <div className={styles.search}><SearchInput type="search" aria-label={msg('Search files')} placeholder={msg('Search files…')} value={search} onChange={event=>onSearch(event.target.value)} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();onSearch('')}else if(event.key==='ArrowDown'){event.preventDefault();host.current?.querySelector<HTMLButtonElement>('[data-file-row]')?.focus()}}}/></div>
   {query&&<div className={styles.results}><span role="status">{msg('{{matches}} of {{total}} files',{matches:matches.length,total:files.length})}</span><Button variant="inline" onClick={()=>onSearch('')}>{msg('Clear')}</Button></div>}
   <div ref={scroller} className={styles.scroll} onScroll={event=>onScroll(event.currentTarget.scrollTop)}>
    <nav aria-label={msg('Files')} onKeyDown={keyboard}><ul className={styles.list}>{query?matches.map(file=><li key={file.path}>{fileRow(file.path,file.path.split('/').at(-1)!,0,file.path.includes('/')?file.path.split('/').slice(0,-1).join('/'):undefined)}</li>):tree.map(item=>node(item,0))}</ul></nav>

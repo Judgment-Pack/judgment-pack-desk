@@ -26,11 +26,11 @@ function setup(savedOpen = true) {
     { id: 'beta', description: 'A different description', packVersion: '2', matrix: false }
   ] }) }) })
   const router = createMemoryRouter([{ path: '/', element: <AppShell><Outlet /></AppShell>, children: [
-    { path: 'packs', element: <PacksLayout />, children: [
-      { index: true, element: null },
-      { path: ':packId', element: <><h1>Pack document</h1><Link to="/packs">Back to packs</Link></> }
+    { element: <PacksLayout />, children: [
+      { path: 'library', element: null },
+      { path: 'packs/:packId', element: <><h1>Pack document</h1><Link to="/library">Back to packs</Link></> }
     ] }
-  ] }], { initialEntries: ['/packs?type=pack'] })
+  ] }], { initialEntries: ['/library?type=pack'] })
   const query = testQueryClient()
   render(<QueryClientProvider client={query}><McpContext.Provider value={connected({ client: stub.client })}>
     <RouterProvider router={router} />
@@ -75,8 +75,8 @@ it('supports Space, arrow browsing, Escape and filtering without navigation or t
   fireEvent.click(screen.getByRole('button', { name: 'Preview alpha' }))
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'beta' } })
   await waitFor(() => expect(screen.queryByRole('complementary')).toBeNull())
-  expect(screen.getByRole('status').textContent).toBe('1 item')
-  expect(router.state.location.pathname).toBe('/packs')
+  expect(within(screen.getByRole('main')).getByRole('status').textContent).toBe('1 item')
+  expect(router.state.location.pathname).toBe('/library')
   expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
 })
 

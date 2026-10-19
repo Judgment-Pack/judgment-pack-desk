@@ -198,7 +198,7 @@ const NOTHING_SHOWN: Place = [Infinity, Infinity]
  * were read before them and not kept; the place of the oldest entry to show as
  * a row (the window); and whether entries are rows at all.
  */
-export interface JournalWindow { entries: JournalEntry[]; dropped: number; from: number; show: boolean }
+export interface JournalWindow { entries: JournalEntry[]; dropped: number; from: number; show: boolean; sequence?: boolean }
 
 export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loaded<Occurrence> }, keep: (row: ActivityRow) => boolean = () => true, journal?: JournalWindow): Merged {
   const built: Record<StreamName, ActivityRow[]> = {
@@ -206,7 +206,8 @@ export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loade
     occurrences: rowsOf(streams.occurrences?.records.map(occurrenceRow))
   }
   const created = creations(journal?.entries ?? []), offset = journal?.dropped ?? 0
-  const place = (row: ActivityRow): Place => { const at = created.get(row.key); return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }
+  const entryPlace = (index: number) => offset + index
+  const place = (row: ActivityRow): Place => { const at = created.get(row.key); return at === undefined ? [0, row.when.time] : [1, entryPlace(at) + 0.5] }
   // A list with more pages holds back every row older than its oldest loaded
   // record: a record not yet loaded was made before it, and so was the entry
   // that created it. The oldest record's own creation entry is not held. A
@@ -223,8 +224,8 @@ export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loade
   const records = placed.length
   if (journal?.show) {
     for (let index = Math.max(0, journal.from - offset); index < journal.entries.length; index++) {
-      const at = offset + index
-      placed.push({ row: { key: `journal:${at}`, kind: 'journal', entry: journal.entries[index]!, place: at }, at: [1, at] })
+      const at = entryPlace(index)
+      placed.push({ row: { key: `journal:${journal.sequence ? journal.entries[index]!.sequence : at}`, kind: 'journal', entry: journal.entries[index]!, place: at }, at: [1, at] })
     }
   }
   const windowed = placed.length - records

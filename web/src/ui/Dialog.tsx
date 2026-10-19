@@ -58,7 +58,7 @@ export function Dialog({
   onCloseAutoFocus?: (event: Event) => void
   /** A fixed action area; the body scrolls independently when supplied. */
   footer?: ReactNode
-  size?: 'default' | 'wide'
+  size?: 'default' | 'wide' | 'form'
   children: ReactNode
 }) {
   const descriptionId = useId()

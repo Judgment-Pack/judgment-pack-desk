@@ -1,3 +1,5 @@
+import {privateQuery} from '../data/privateQuery'
+import {LoadingState} from '../ui/LoadingState'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -7,12 +9,17 @@ import { useFileListing } from '../files/queries'
 import { useChats } from '../chat/ChatProvider'
 import { chatTitle } from '../chat/navigation'
 import { draftHref } from '../packs/drafts/model'
+import {graphDraftHref,graphDraftsQuery,retainedGraphDrafts} from '../graphs/drafts'
+import {policyListQuery} from '../policies/client'
+import {dialectListQuery} from '../dialects/queries'
+import {dialectDraftListQuery} from '../dialects/drafts'
+import {policyLibraryItems,policyLibraryStatus,dialectLibraryItems, libraryKindLabel} from '../library/items'
 import { FOLDERS_KEY, loadFolders } from '../packs/folders/client'
 import { folderPath } from '../packs/folders/model'
-import { msg } from '../i18n'
+import { msg, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { Tooltip } from '../ui/Tooltip'
 import { IconSearch } from './icons'
 import { isTypingTarget } from './shortcuts'
@@ -42,8 +49,11 @@ export function QuickSwitcher() {
   </>
 }
 function SwitchResults({ recentKey,close }: { recentKey?:string;close:()=>void }) {
+  const locale=useLocale()
   const packs=usePacks(), graphs=useGraphInventory(), chats=useChats(), queryClient=useQueryClient(), navigate=useNavigate()
-  const folders=useQuery({queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false})
+  const graphDrafts=useQuery(graphDraftsQuery())
+  const policies=useQuery(policyListQuery()),dialects=useQuery(dialectListQuery()), dialectDrafts=useQuery(dialectDraftListQuery())
+  const folders=useQuery({...privateQuery,queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false})
   const [query,setQuery]=useState(''), [selected,setSelected]=useState(0)
   const id=useId(), input=useRef<HTMLInputElement|null>(null)
   const items=useMemo(() => {
@@ -53,33 +63,36 @@ function SwitchResults({ recentKey,close }: { recentKey?:string;close:()=>void }
       const draft=chats.packDrafts.find(d=>d.finalized?.id===pack.id)
       rows.push({id:`pack:${pack.id}`,title:String(loaded?.document?.title??draft?.title??pack.id),kind:msg('Pack'),detail:`${pack.id} ${pack.description??''}`,href:`/packs/${encodeURIComponent(pack.id)}`})
     }
-    for (const draft of chats.packDrafts.filter(d=>!d.finalized)) rows.push({id:draft.id,title:draft.title,kind:msg('Draft'),detail:'',href:draftHref(draft.id)})
+    for (const draft of chats.packDrafts.filter(d=>!d.finalized)) rows.push({id:'pack-draft:'+draft.id,title:draft.title,kind:msg('Pack'),detail:msg('Draft'),href:draftHref(draft.id)})
     for (const graph of graphs.data?.graphs??[]) rows.push({id:`graph:${graph.id}`,title:graph.id,kind:msg('Graph'),detail:graph.description??'',href:`/graphs/${encodeURIComponent(graph.id)}`})
+    for (const draft of retainedGraphDrafts(graphDrafts.data?.content,chats.chats)) if (!draft.saved) rows.push({id:'graph-draft:'+draft.originChatId+':'+draft.draftId,title:draft.id,kind:msg('Graph'),detail:msg('Draft'),href:graphDraftHref(draft.originChatId??'',draft.draftId)})
+    for (const item of dialectLibraryItems(dialects.data?.items??[],dialectDrafts.data?.items??[])) rows.push({id:item.key,title:item.title,kind:libraryKindLabel(item),detail:item.status==='draft'?msg('Draft'):'',href:item.href})
+    for (const item of policyLibraryItems(policies.data?.items??[])) rows.push({id:item.key,title:item.title,kind:libraryKindLabel(item),detail:item.kind==='policy'?policyLibraryStatus(item):'',href:item.href})
     for (const chat of chats.chats) rows.push({id:`chat:${chat.id}`,title:chatTitle(chat),kind:chat.archived?msg('Archived chat'):msg('Chat'),detail:'',href:`/chats/${encodeURIComponent(chat.id)}`})
-    if(folders.data) for(const folder of folders.data.document.folders) rows.push({id:`folder:${folder.id}`,title:folder.name,kind:msg('Folder'),detail:folderPath(folders.data.document,folder.id),href:`/packs?folder=${encodeURIComponent(folder.id)}`})
+    if(folders.data) for(const folder of folders.data.document.folders) rows.push({id:`folder:${folder.id}`,title:folder.name,kind:msg('Folder'),detail:folderPath(folders.data.document,folder.id),href:`/library?folder=${encodeURIComponent(folder.id)}`})
     return rows
-  },[packs.data,graphs.data,chats.packDrafts,chats.chats,folders.data,queryClient])
+  },[packs.data,graphs.data,graphDrafts.data,chats.packDrafts,chats.chats,dialects.data,dialectDrafts.data,policies.data,folders.data,queryClient,locale])
   const results=searchItems(items,query,recentKey?readRecent(recentKey):[])
   const index=Math.min(selected,Math.max(0,results.length-1))
   useEffect(()=>{input.current?.focus()},[])
   useEffect(()=>{document.getElementById(`${id}-${index}`)?.scrollIntoView?.({block:'nearest'})},[index,id])
   const choose=(item:SwitchItem)=>{close();navigate(item.href)}
   return <div className={styles.root}>
-    <Input ref={input} role="combobox" aria-label={msg('Search packs, folders, drafts, graphs and chats')} aria-controls={id} aria-expanded="true" aria-autocomplete="list" aria-activedescendant={results.length?`${id}-${index}`:undefined}
-      placeholder={msg('Search packs, folders, drafts, graphs and chats')} value={query}
+    <SearchInput ref={input} role="combobox" aria-label={msg('Search library, folders and chats')} aria-controls={id} aria-expanded="true" aria-autocomplete="list" aria-activedescendant={results.length?`${id}-${index}`:undefined}
+      placeholder={msg('Search library, folders and chats')} value={query}
       onChange={e=>{setQuery(e.target.value);setSelected(0)}} onKeyDown={e=>{
         if(e.nativeEvent.isComposing)return
         if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();setSelected((index+(e.key==='ArrowDown'?1:-1)+results.length)%Math.max(1,results.length))}
         if(e.key==='Enter'&&results[index]){e.preventDefault();choose(results[index])}
       }}/>
     <p className={styles.hint}>{query?msg('Matching items'):msg('Recently visited items appear first.')}</p>
-    {(packs.error||graphs.error||folders.error||chats.error) && <p role="status">{msg('Some items could not be loaded. Available results are shown.')} <Button variant="inline" onClick={()=>{void packs.refetch();void graphs.refetch();void folders.refetch();void chats.store?.load()}}>{msg('Retry')}</Button></p>}
+    {(packs.error||graphs.error||folders.error||chats.error||dialects.error||dialectDrafts.error||policies.error) && <p role="status">{msg('Some items could not be loaded. Available results are shown.')} <Button variant="inline" onClick={()=>{void packs.refetch();void graphs.refetch();void folders.refetch();void dialects.refetch();void dialectDrafts.refetch();void policies.refetch();void chats.store?.load()}}>{msg('Retry')}</Button></p>}
     <div id={id} role="listbox" aria-label={msg('Search results')} className={styles.results}>
       {results.map((item,i)=><button key={item.id} id={`${id}-${i}`} role="option" aria-selected={index===i} tabIndex={-1} type="button" className={styles.item} onClick={()=>choose(item)} onMouseMove={()=>setSelected(i)}>
         <span><strong>{item.title}</strong><small>{item.detail}</small></span><span className={styles.kind}>{item.kind}</span>
       </button>)}
     </div>
-    {!results.length && <p role="status">{packs.isPending||!chats.ready?msg('Loading items…'):msg('No matching items.')}</p>}
+    {!results.length && (packs.isPending||graphs.isLoading||folders.isPending||dialects.isPending||dialectDrafts.isPending||policies.isPending||!chats.ready&&!chats.error ? <LoadingState>{msg('Loading items…')}</LoadingState> : <p role="status">{msg('No matching items.')}</p>)}
     <Button variant="quiet" onClick={close}>{msg('Close')}</Button>
   </div>
 }

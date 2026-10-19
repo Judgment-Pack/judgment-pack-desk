@@ -38,7 +38,16 @@ func validateConversations(data []byte) error {
 	if err := json.Unmarshal(data, &doc); err != nil || doc.Version != 1 || doc.Chats == nil || len(doc.Chats) > 256 {
 		return errors.New("chat history must have version 1 and at most 256 chats")
 	}
-	return nil
+	for _, chat := range doc.Chats {
+		if err := validateChatPlan(chat); err != nil {
+			return err
+		}
+		if err := validateConversationGraphSnapshots(chat); err != nil {
+			return err
+		}
+	}
+	_, err := policyWorkspaceEntries(data, false)
+	return err
 }
 
 var draftPackFileName = regexp.MustCompile(`^draft-packs-[a-f0-9]{64}\.json$`)
@@ -79,14 +88,17 @@ func validateDraftPacks(data []byte) error {
 	if err := json.Unmarshal(data, &doc); err != nil || doc.Version != 1 || doc.Drafts == nil || len(doc.Drafts) > 256 || len(doc.Deleted) > 4096 {
 		return errors.New("draft packs must have version 1 and at most 256 drafts")
 	}
-	return nil
+	_, err := policyWorkspaceEntries(data, true)
+	return err
 }
 func (s *Server) readConversationFile(root *os.Root, name string) (conversationReply, error) {
 	return s.readWorkspaceRecord(root, name, false)
 }
 func (s *Server) readWorkspaceRecord(root *os.Root, name string, drafts bool) (conversationReply, error) {
 	reply := conversationReply{Project: s.projectDir, SHA256: "absent", Content: json.RawMessage(`{"version":1,"chats":[]}`)}
-	if briefFileName.MatchString(name) {
+	if graphDraftFileName.MatchString(name) {
+		reply.Content = json.RawMessage(`{"version":1,"drafts":[],"deleted":[]}`)
+	} else if briefFileName.MatchString(name) {
 		reply.Content = json.RawMessage(`{"version":1,"subjects":{}}`)
 	} else if sourceReviewsFileName.MatchString(name) {
 		reply.Content = json.RawMessage(`{"version":1,"reviews":[]}`)
@@ -131,7 +143,9 @@ func (s *Server) readWorkspaceRecord(root *os.Root, name string, drafts bool) (c
 		return reply, withCode(CodeTooLarge, errors.New("chat history exceeds its 16 MiB limit"))
 	}
 	validate := validateConversations
-	if briefFileName.MatchString(name) {
+	if graphDraftFileName.MatchString(name) {
+		validate = validateGraphDrafts
+	} else if briefFileName.MatchString(name) {
 		validate = validateBriefs
 	} else if sourceReviewsFileName.MatchString(name) {
 		validate = validateSourceReviews
@@ -157,10 +171,15 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
 		return
 	}
+	graphs := r.URL.Path == "/api/draft-graphs"
+	private := graphs || r.URL.Path == "/api/briefs" || r.URL.Path == "/api/pack-tests"
+	if private && !s.guardPrivateWorkspace(w, r) {
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	s.writes.Lock()
 	defer s.writes.Unlock()
-	lock, err := s.privateDataLock(true)
+	lock, err := s.privateDataLockContext(r.Context(), true)
 	if err != nil {
 		storageFailure(w, err)
 		return
@@ -181,7 +200,9 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	briefs := r.URL.Path == "/api/briefs"
 	reviews := r.URL.Path == "/api/source-reviews"
 	tests := r.URL.Path == "/api/pack-tests"
-	if briefs {
+	if graphs {
+		recordName = graphDraftName(recordName)
+	} else if briefs {
 		recordName = strings.Replace(recordName, "conversations-", "briefs-", 1)
 	} else if reviews {
 		recordName = strings.Replace(recordName, "conversations-", "source-reviews-", 1)
@@ -192,6 +213,12 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	}
 	read := func() (conversationReply, error) {
 		reply, err := s.readWorkspaceRecord(root, recordName, drafts)
+		if err == nil && private {
+			err = s.authorizePrivateWorkspace(r)
+		}
+		if err == nil && !graphs && !briefs && !reviews && !tests {
+			err = s.authorizePolicyWorkspace(r, reply.Content, drafts)
+		}
 		if err == nil && briefs && r.URL.Query().Get("subject") != "" {
 			reply.Snapshot, err = s.definitionBriefSnapshot(root, recordName, r.URL.Query().Get("subject"))
 			if err != nil {
@@ -202,7 +229,9 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		return reply, err
 	}
 	validate := validateConversations
-	if briefs {
+	if graphs {
+		validate = validateGraphDrafts
+	} else if briefs {
 		validate = validateBriefs
 	} else if reviews {
 		validate = validateSourceReviews
@@ -212,6 +241,11 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		validate = validateDraftPacks
 	}
 	fail := func(err error) {
+		var failure *policyFailure
+		if errors.As(err, &failure) {
+			policyHTTPFailure(w, err)
+			return
+		}
 		code := codeOf(err)
 		writeJSONCoded(w, statusForRefusal(err), code, "Workspace data could not be saved or read: "+err.Error())
 	}
@@ -220,6 +254,12 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		if err != nil {
 			fail(err)
 			return
+		}
+		if !graphs && !briefs && !reviews && !tests && !drafts {
+			if err = s.retainConversationDialectDrafts(r.Context(), reply.Content); err != nil {
+				fail(err)
+				return
+			}
 		}
 		writeConversationReply(w, reply)
 		return
@@ -255,6 +295,12 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
+	if !graphs && !briefs && !reviews && !tests {
+		if err = s.authorizePolicyWorkspace(r, data, drafts); err != nil {
+			fail(err)
+			return
+		}
+	}
 	matches := func() error {
 		current, err := read()
 		if err != nil {
@@ -268,6 +314,41 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	if err = matches(); err != nil {
 		fail(err)
 		return
+	}
+	if !graphs && !briefs && !reviews && !tests {
+		previous, e := read()
+		if e == nil {
+			e = s.admitPolicyWorkspaceUpdate(r, previous.Content, data, drafts)
+		}
+		if e != nil {
+			fail(e)
+			return
+		}
+	}
+	if graphs {
+		previous, e := read()
+		if e == nil {
+			e = s.admitGraphDraftUpdate(r, previous.Content, data)
+		}
+		if e != nil {
+			fail(e)
+			return
+		}
+	}
+	if !graphs && !briefs && !reviews && !tests && !drafts {
+		previous, e := read()
+		if e != nil {
+			fail(e)
+			return
+		}
+		if e = s.retainConversationGraphDrafts(r, root, recordName, previous.Content, data); e != nil {
+			fail(e)
+			return
+		}
+		if e = s.retainConversationDialectDrafts(r.Context(), previous.Content, data); e != nil {
+			fail(e)
+			return
+		}
 	}
 	stage, name, err := newDataStage(root)
 	if err != nil {
@@ -297,6 +378,12 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	if err = matches(); err != nil {
 		fail(err)
 		return
+	}
+	if private {
+		if err = s.authorizePrivateWorkspace(r); err != nil {
+			fail(err)
+			return
+		}
 	}
 	if err = root.Rename(name, recordName); err != nil {
 		fail(err)
@@ -329,6 +416,9 @@ func writeConversationReply(w http.ResponseWriter, reply conversationReply) {
 }
 
 func (s *Server) conversationIdentity() string {
+	if entry := s.homeEntry(); entry != nil {
+		return entry.HistoryIdentity
+	}
 	if s.cfg.deskID != "" {
 		return "desk:" + s.cfg.deskID
 	}

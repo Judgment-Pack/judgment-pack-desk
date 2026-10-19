@@ -112,6 +112,8 @@ func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method stri
 	limit := 64 << 10
 	if method == "files-read" {
 		limit = 6 << 20
+	} else if method == "source-observe" && provider == "google-drive" {
+		limit = (16 << 20) + (64 << 10)
 	} else if method == "files-list" {
 		limit = 512 << 10
 	}
@@ -236,11 +238,21 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		bundle = s.localGateway.bundle
-		directory = filepath.Join(s.assistant.dir, "gateway-connections")
+		directory = platformPath(s.assistant.dir, "gateway-connections")
 	}
 	timeout := 55 * time.Second
 	if provider == "web-search" && method == "test" {
 		timeout = 130 * time.Second
+	}
+	if provider == "google-drive" && method == "disconnect" {
+		s.signIn.policySourceMu.Lock()
+		defer s.signIn.policySourceMu.Unlock()
+		// Fence every durable source grant before sending disconnect. A lost
+		// provider reply or failed project annotation cannot admit old bytes.
+		if err := s.assistant.rotatePolicySourceAuthority(); err != nil {
+			writeJSONCoded(w, 503, CodeBadRequest, "Source authorization could not be ended; disconnect was not sent.")
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
@@ -278,6 +290,14 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
 		return
+	}
+	if provider == "google-drive" && method == "disconnect" {
+		var disconnected struct {
+			Disconnected bool `json:"disconnected"`
+		}
+		if json.Unmarshal(out, &disconnected) == nil && disconnected.Disconnected {
+			s.endPolicySourceConnection(ctx)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)

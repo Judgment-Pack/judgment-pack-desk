@@ -57,7 +57,7 @@ const (
 	// a copy is reported as not shown rather than read.
 	reviewEarlierLimit = 8 << 20
 	// reviewConfirmLimit bounds a confirmation's body: it carries a token.
-	reviewConfirmLimit = 4 << 10
+	reviewConfirmLimit = 256 << 10
 	// reviewEntryLimit bounds how many documents a configuration may declare
 	// for Desk to review it. Past it, nothing is read.
 	reviewEntryLimit = 1024
@@ -351,8 +351,8 @@ func (s *Server) projectRuntime() (dir heldDir, named string, ok bool) {
 	if s.project == nil || s.project.own == nil {
 		return heldDir{}, "", false
 	}
-	dir = heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}
-	if s.cfg.deskID != "" {
+	dir = heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation}
+	if !s.usesStartupRuntimeEnvironment() {
 		return dir, "", true
 	}
 	named = strings.TrimSpace(os.Getenv(runtimeConfigEnv))
@@ -432,6 +432,8 @@ type runtimeDiagnostic struct {
 
 // reviewAnswer is what the review step shows.
 type reviewAnswer struct {
+	PublicationPending bool                    `json:"publicationPending,omitempty"`
+	ArtifactReviews    []projectArtifactReview `json:"artifactReviews,omitempty"`
 	// Status is the runtime's own: "valid", "invalid", or "error".
 	Status      string              `json:"status"`
 	Locked      bool                `json:"locked"`
@@ -526,7 +528,7 @@ func (s *Server) verifySnapshot(ctx context.Context, snap *reviewSnapshot) (veri
 		return verifiedAnswer{}, err
 	}
 	// A copy of the startup desk's project is still the startup desk's.
-	return s.runVerify(ctx, heldDir{file: file, path: where, info: info, startup: s.cfg.deskID == ""})
+	return s.runVerify(ctx, heldDir{file: file, path: where, info: info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation})
 }
 
 func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) {
@@ -534,6 +536,29 @@ func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) 
 	answer, err := s.reviewOf(ctx, dir, snap, readErr)
 	if err == nil && readErr == nil {
 		answer.Token = s.reviewToken(snap)
+		ledger, e := s.readDialectPublicationLedger()
+		if e != nil {
+			answer.Blocked = e.Error()
+			return answer, nil
+		}
+		pending, pendingErr := s.pendingProjectPublication(snap)
+		if pendingErr != nil {
+			answer.Blocked = pendingErr.Error()
+			return answer, nil
+		}
+		if pending != nil {
+			answer.PublicationPending = true
+			for _, item := range ledger.Items {
+				if item.ID == pending.ID {
+					answer.PublicationPending = false
+				}
+			}
+		}
+		answer.ArtifactReviews, e = s.projectReviewRows(ctx, snap, ledger)
+		if e != nil {
+			answer.Blocked = e.Error()
+
+		}
 	}
 	return answer, err
 }
@@ -820,7 +845,9 @@ func (s *Server) handleReviewLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		Token string `json:"token"`
+		Token     string                         `json:"token"`
+		Reviews   map[string]retainedArtifactRef `json:"reviews,omitempty"`
+		Reconcile bool                           `json:"reconcile,omitempty"`
 	}
 	data, err := readBounded(r.Body, reviewConfirmLimit)
 	if err != nil || decodeDataJSON(data, &request) != nil || len(request.Token) != 64 {
@@ -833,7 +860,7 @@ func (s *Server) handleReviewLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reviewMu.Lock()
-	answer, failure := s.lockConfirmed(r.Context(), dir, request.Token)
+	answer, failure := s.lockConfirmed(r.Context(), dir, request.Token, request.Reviews, request.Reconcile)
 	s.reviewMu.Unlock()
 	if failure != nil {
 		writeJSONCoded(w, failure.status, failure.code, failure.message)
@@ -845,7 +872,7 @@ func (s *Server) handleReviewLock(w http.ResponseWriter, r *http.Request) {
 // lockConfirmed locks what the review the token names showed, or puts the
 // previous lock back, under this project's lock (project_lock.go) from the
 // fresh reading to the lock put back (issue #284).
-func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string) (any, *lockFailure) {
+func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string, reviews map[string]retainedArtifactRef, reconcile bool) (any, *lockFailure) {
 	unlock, failure := s.lockProjectFor(ctx, "a review's lock", "locked")
 	if failure != nil {
 		return nil, failure
@@ -854,6 +881,34 @@ func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string) (
 	snap, err := s.readSnapshot()
 	if err != nil || !hmac.Equal([]byte(s.reviewToken(snap)), []byte(token)) {
 		return nil, &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed it, so nothing was locked. Review it again."}
+	}
+	if reconcile {
+		pending, err := s.pendingProjectPublication(snap)
+		if err != nil || pending == nil {
+			return nil, &lockFailure{http.StatusConflict, CodeStale, "Review the current publication state before confirming its history."}
+		}
+		// beginPublication reconciles only an already committed exact lock.
+		// It never calls Runtime or writes a new public lock in this path.
+		p, err := s.beginPublication(ctx, snap)
+		if err != nil {
+			return nil, &lockFailure{http.StatusConflict, CodeStale, err.Error()}
+		}
+		p.close()
+		return map[string]any{"files": 1 + len(snap.set.Entries), "copies": "stored", "reconciled": true}, nil
+	}
+	publication, admissionErr := s.beginPublication(ctx, snap)
+	if admissionErr != nil {
+		return nil, &lockFailure{http.StatusConflict, CodeStale, admissionErr.Error()}
+	}
+	defer publication.close()
+	if err := s.checkPublicationVersions(ctx, dir, publication); err != nil {
+		return nil, &lockFailure{http.StatusConflict, CodeStale, err.Error()}
+	}
+	if err := s.admitProjectArtifactReviews(ctx, dir, snap, publication, reviews); err != nil {
+		return nil, &lockFailure{http.StatusConflict, CodeStale, err.Error()}
+	}
+	if err := publication.stageReview(); err != nil {
+		return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, "The accepted publication review could not be retained. Nothing was locked."}
 	}
 	lockErr := lockRuntimeProjectAt(ctx, s.cfg.JpackBin, dir)
 	locked := false
@@ -879,6 +934,10 @@ func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string) (
 			status, code = http.StatusInternalServerError, CodeInternal
 		}
 		return nil, &lockFailure{status, code, message}
+	}
+	if err := publication.commit(); err != nil {
+		s.log.Printf("desk: reviewed lock is saved but version history could not be confirmed: %v", err)
+		return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, "The reviewed lock was saved, but artifact version history could not be confirmed. Inspect the retained history and review again before continuing. The write was not retried."}
 	}
 	result := struct {
 		Files         int    `json:"files"`

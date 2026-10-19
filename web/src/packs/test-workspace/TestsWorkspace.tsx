@@ -1,9 +1,21 @@
-import { Menu as DropdownMenu, MenuChoice } from '../../ui/Menu'
+import {QueryStatusNotice} from '../../shell/QueryStatusNotice'
+import {LoadingState} from '../../ui/LoadingState'
+import {PageLoading} from '../../ui/PageLoading'
+import { DialectTestsDialog } from '../../dialects/DialectTestsDialog'
+import { TestsCollection } from './TestsCollection'
+import { CollectionLayout, CollectionEmpty } from '../../ui/CollectionLayout'
+import { DeskStatusNotice } from '../../shell/DeskNotices'
+import { Spinner } from '../../ui/Spinner'
+import { intentionalFactTypes } from './factTypes'
+import { testConversationTurns } from './conversation'
+import { Menu as DropdownMenu } from '../../ui/Menu'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { flushSync } from 'react-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { msg, useLocale } from '../../i18n'
 import { useMcp } from '../../mcp/McpProvider'
 import type { PackTest, PackDocument } from '../../mcp/types'
-import type { McpToolResult } from '../../assistant/engine'
+import type { McpToolResult } from '@judgment-pack/harness/engine'
 import { useChats } from '../../chat/ChatProvider'
 import type { ChatAttachment } from '../../chat/store'
 import {
@@ -26,8 +38,7 @@ import { useDirtyGuard } from '../../shell/useDirtyGuard'
 import { Button } from '../../ui/Button'
 import { Tooltip, OverflowTooltip } from '../../ui/Tooltip'
 import { Dialog, DialogActions } from '../../ui/Dialog'
-import { IconCopy, IconTrash, IconMore } from '../../shell/icons'
-import { Input } from '../../ui/Input'
+import { IconMore, IconPlus, IconAssistant, IconPaperclip, IconDownload, IconPlay, IconInfo, IconChevronRight, IconHistory } from '../../shell/icons'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 import { InspectionRow } from '../../ui/InspectionRow'
 import { Disclosure } from '../../ui/Disclosure'
@@ -36,21 +47,22 @@ import { valueLabel } from '../terminology'
 import { MatrixRowList } from '../../components/MatrixRowList'
 import { CoverageReport } from '../../components/CoverageReport'
 import { CaseEditor } from './CaseEditor'
-import { TestAssistant } from './TestAssistant'
-import { currentCoverage, latestCoverage, missingProbes } from './coverage'
+import { currentCoverage, latestCoverage, missingProbes, missingTestsRequest } from './coverage'
 import { ProposalReview } from './ProposalReview'
 import { RunComparison } from './RunComparison'
 import { proposalCases, saveReviewedCases, validateTestProposal, type TestProposal } from './proposals'
 import { useTestStorage, updateTests } from './store'
 import {
   executable,
-  expectedLabel,
-  importMatrix,
   latestResult,
+  decodeStore,
+  emptySuite,
+  importMatrix,
   matrix,
   newCase,
   object,
   recoverDraft,
+  mergeDraftSuite,
   recoverResearchRecord,
   type TestCase,
   type TestRun,
@@ -98,43 +110,28 @@ function trialOutcome(run: TestRun): string {
 }
 export async function carryDraftTests(draft: PackDraft, packId: string) {
   return updateTests(packId, async (s, doc) => {
-    const held = doc.suites[draft.id]
-    const merged = 'merge:' + draft.id + ':' + draft.generation
-    if (held && !s.recovered.includes(merged)) {
-      s.recovered.push(merged)
-      s.deleted = [...new Set([...(s.deleted ?? []), ...(held.deleted ?? [])])]
-      s.cases.push(...held.cases.filter((c) => !s.cases.some((x) => x.id === c.id)))
-      s.runs.push(...held.runs.filter((r) => !s.runs.some((x) => x.id === r.id)))
-      s.proposals = [
-        ...(s.proposals ?? []),
-        ...(held.proposals ?? []).filter((p) => !s.proposals?.some((x) => x.id === p.id)),
-      ]
-      s.messages = held.messages
-      s.recovered = [...new Set([...s.recovered, ...held.recovered])]
-    }
-    return recoverDraft(s, draft)
+    return recoverDraft(mergeDraftSuite(s, doc.suites[draft.id], draft), draft)
   })
 }
 export function TestsContent({
+  chatId,
   owner,
   document: doc,
   text,
-  title,
   matrixPath,
   active = true,
   draft,
   initialHistory = false,
-  onAssistantBusyChange,
 }: {
   owner: string
   document: PackDocument
   text: string
   title: string
   matrixPath?: string
+  chatId?: string
   active?: boolean
   draft?: PackDraft
   initialHistory?: boolean
-  onAssistantBusyChange?: (busy: boolean) => void
 }) {
   useLocale()
   const { client, status, connectionEpoch } = useMcp(),
@@ -146,18 +143,77 @@ export function TestsContent({
     config = useEffectiveConfig()
   const [bottomOpen,setBottomOpen]=useState(false)
   const details={open:bottomOpen,reveal:()=>setBottomOpen(true)}
-  const [designing, setDesigning] = useState(false),
-    [working, setWorking] = useState<TestCase | null>(null),
+  const [viewParams, setViewParams] = useSearchParams()
+  const location = useLocation(), navigate = useNavigate(), {caseId: routeCaseId} = useParams()
+  const requestedCase = draft ? viewParams.get('case') : routeCaseId
+  const [inputTests,setInputTests]=useState(false)
+  const [showSuiteHelp, setShowSuiteHelp] = useState(false)
+  const [sort, setSort] = useState(viewParams.get('testSort') ?? 'saved')
+  function listParams() {
+    const next = new URLSearchParams(viewParams)
+    next.delete('case'); next.delete('testProposal'); next.delete('assistant')
+    if (linkedChat) next.set('chat',linkedChat.id)
+    return next
+  }
+  function casesHref() { const next=listParams(); return `${draft ? location.pathname : `/packs/${encodeURIComponent(owner)}/matrix`}${next.size ? '?'+next : ''}` }
+  function caseHref(id: string) {
+    const next=listParams()
+    if (draft) next.set('case',id)
+    return `${draft ? location.pathname : `/packs/${encodeURIComponent(owner)}/matrix/cases/${encodeURIComponent(id)}`}${next.size ? '?'+next : ''}`
+  }
+  function updateListParam(key: string, value: string, fallback: string) {
+    setViewParams(previous => {const next=new URLSearchParams(previous); if(value===fallback)next.delete(key);else next.set(key,value);return next},{replace:true})
+  }
+  // Old designer links now open the same retained conversation.
+  useEffect(() => {
+    if (viewParams.get('assistant') === 'tests') setViewParams(previous => {
+      const next = new URLSearchParams(previous); next.delete('assistant'); return next
+    }, {replace: true})
+  }, [viewParams, setViewParams])
+  const availableChats = [...chats.chats, ...chats.drafts]
+  const requestedChat = chatId ?? viewParams.get('chat')
+  const linkedChat = (requestedChat ? availableChats.find(chat => chat.id === requestedChat && (chat.pack?.id === owner || chat.draftId === owner)) : undefined)
+    ?? availableChats.filter(chat => !chat.archived && (chat.pack?.id === owner || chat.draftId === owner)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0]
+  const linkedBinding = linkedChat ? chats.bindings.get(linkedChat.id) : undefined
+  useEffect(() => {
+    if (!active || !chats.ready || !chats.store) return
+    if (linkedChat) chats.store.activate(linkedChat.id)
+  }, [active, chats.ready, chats.store, linkedChat?.id, owner, draft?.id])
+  const migrating = useRef(false)
+  useEffect(() => {
+    if (!active || !chats.store || !linkedChat || !linkedBinding?.run || linkedBinding.run.running || !suite.messages?.length || migrating.current) return
+    migrating.current = true
+    const messages = suite.messages, destination = linkedChat.id, store = chats.store
+    void (async () => {
+      const turns = await testConversationTurns(owner,messages,suite)
+      store.appendConversation(destination,turns)
+      await store.checkpoint(new AbortController().signal)
+      // Remove only the legacy rows whose chat write has been acknowledged.
+      await storage.update(current=>({...current,messages:current.messages?.filter(message=>!messages.some(saved=>JSON.stringify(saved)===JSON.stringify(message))),
+        proposals:current.proposals?.map(proposal=>({...proposal,chatId:proposal.chatId ?? destination}))}))
+    })().catch(error=>setError(error.message)).finally(()=>{migrating.current=false})
+  }, [active, chats.store, linkedChat?.id, linkedBinding?.run, linkedBinding?.state.status, suite.messages])
+  const [working, setWorking] = useState<TestCase | null>(null),
     [baseline, setBaseline] = useState(''),
     [runView, setRunView] = useState<TestRun | null>(null),
     [sourceMenu, setSourceMenu] = useState(false)
-  const [query, setQuery] = useState(''),
-    [filter, setFilter] = useState('all'),
+  const [query, setQuery] = useState(viewParams.get('testSearch') ?? ''),
+    [filter, setFilter] = useState(viewParams.get('testResult') ?? 'all'),
     [history, setHistory] = useState(initialHistory),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [digest, setDigest] = useState(''),
-    [supported, setSupported] = useState(false)
+    [supported, setSupported] = useState<boolean | null>(null),
+    [capabilityError, setCapabilityError] = useState('')
+  useEffect(() => {
+    setQuery(viewParams.get('testSearch') ?? '')
+    setFilter(viewParams.get('testResult') ?? 'all')
+    setSort(viewParams.get('testSort') ?? 'saved')
+    setHistory(viewParams.get('history') === '1')
+  }, [viewParams])
+  function resetList() {
+    setViewParams(previous => {const next=new URLSearchParams(previous); for(const key of ['testSearch','testResult','testSort'])next.delete(key); return next}, {replace:true})
+  }
   const [reviewing, setReviewing] = useState<TestProposal | null>(null)
   const [reviewRows, setReviewRows] = useState<TestCase[]>([])
   const [reviewEditing, setReviewEditing] = useState(false)
@@ -168,15 +224,9 @@ export function TestsContent({
   const deleteOpener = useRef<HTMLElement | null>(null)
   const newCaseButton = useRef<HTMLButtonElement | null>(null)
   const [retry, setRetry] = useState(0)
-  const [aiSources, setAISources] = useState<ChatAttachment[]>([]),
-    [aiRequest, setAIRequest] = useState<{ id: number; text: string; additionsOnly?: boolean; coverageRunId?: string }>({ id: 0, text: '' })
-  const [sourceTarget, setSourceTarget] = useState<'case' | 'ai'>('case')
-  const workRef = useRef(working),
-    sourceRef = useRef(aiSources),
-    mounted = useRef(true),
-    running = useRef(false)
+  const workRef = useRef(working), mounted = useRef(true), running = useRef(false)
   workRef.current = working
-  sourceRef.current = aiSources
+  const caseResult = working ? latestResult(suite, working, digest) : undefined
   const briefCase = working && suite.cases.find(c => c.id === working.id)
   const [showCaseBrief, setShowCaseBrief] = useState(false)
   const briefOpener = useRef<HTMLButtonElement>(null)
@@ -195,7 +245,7 @@ export function TestsContent({
   const confirmDiscard = useConfirmDiscard()
   const [deleteTyped, setDeleteTyped] = useState('')
   useEffect(() => { setDeleteTyped('') }, [pendingDelete?.id])
-  useDirtyGuard(dirty || reviewDirty, msg('Leave without saving these test changes?'), { name: working?.name, busy })
+  useDirtyGuard(dirty || reviewDirty, msg('Leave without saving these test changes?'), { name: working?.name, busy, shouldBlock: ({currentLocation,nextLocation}) => currentLocation.pathname !== nextLocation.pathname || new URLSearchParams(currentLocation.search).get('case') !== new URLSearchParams(nextLocation.search).get('case') })
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -214,18 +264,19 @@ export function TestsContent({
   }, [text])
   useEffect(() => {
     let keep = true
-    setSupported(false)
+    setSupported(null)
+    setCapabilityError('')
     if (client && status === 'ready')
       void client
         .listTools()
         .then((r) => {
           if (keep) setSupported(r.tools.some((t) => t.name === 'experimental_test_cases'))
         })
-        .catch(() => {})
+        .catch(error => {if(keep)setCapabilityError(error instanceof Error ? error.message : String(error))})
     return () => {
       keep = false
     }
-  }, [client, status, connectionEpoch])
+  }, [client, status, connectionEpoch, retry])
   const listing = useFileListing()
   const researchPath = matrixPath?.endsWith('.matrix.json')
     ? matrixPath.replace(/\.matrix\.json$/, '.research.json')
@@ -252,16 +303,7 @@ export function TestsContent({
     void storage
       .update(async (s, document) => {
         for (const artifact of artifacts) {
-          if (artifact.finalized) {
-            const held = document.suites[artifact.id],
-              merged = 'merge:' + artifact.id + ':' + artifact.generation
-            if (held && !s.recovered.includes(merged)) {
-              s.recovered.push(merged)
-              s.deleted = [...new Set([...(s.deleted ?? []), ...(held.deleted ?? [])])]
-              s.cases.push(...held.cases.filter((c) => !s.cases.some((x) => x.id === c.id)))
-              s.runs.push(...held.runs.filter((r) => !s.runs.some((x) => x.id === r.id)))
-            }
-          }
+          if (artifact.finalized) s = mergeDraftSuite(s, document.suites[artifact.id], artifact)
           s = await recoverDraft(s, artifact)
         }
         if (matrixPath && !s.recovered.includes('matrix:' + matrixPath)) {
@@ -279,7 +321,34 @@ export function TestsContent({
       })
       .catch((e) => setError((e as Error).message))
   }, [storage.query.isSuccess, chats.ready, recoveryKey])
+  const loadedCase = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (!active || !storage.query.isSuccess || loadedCase.current === requestedCase) return
+    if (!requestedCase) {
+      loadedCase.current = requestedCase
+      setWorking(null); setBaseline(''); setRunView(null); setSourceMenu(false); setBottomOpen(false)
+      return
+    }
+    let selected = suite.cases.find(c => c.id === requestedCase)
+    if (!selected && location.state?.testCaseOwner === owner) {
+      try {
+        const held=decodeStore({version:1,suites:{[owner]:{...emptySuite(),cases:[location.state.testCaseDraft]}}}).suites[owner]!.cases[0]
+        if (held?.id === requestedCase && held.revision === 0) selected=held
+      } catch { /* An invalid browser-history snapshot never replaces saved cases. */ }
+    }
+    if (!selected) {
+      setWorking(null); setBaseline(''); setRunView(null); setSourceMenu(false)
+      return
+    }
+    loadedCase.current = requestedCase
+    const next=structuredClone(selected)
+    setWorking(next); setBaseline(next.revision===0 ? '' : jsonIdentity(next)); setRunView(null); setSourceMenu(false); setBottomOpen(false)
+  }, [active, requestedCase, storage.query.isSuccess, suite.cases, location.state, owner])
   async function select(c: TestCase, reveal = true) {
+    if (reveal) {
+      navigate(caseHref(c.id), c.revision === 0 ? {state:{testCaseOwner:owner,testCaseDraft:structuredClone(c)}} : undefined)
+      return true
+    }
     if (dirty && !await confirmDiscard(msg('Discard unsaved changes to this case?'), { name: working?.name, busy })) return false
     const next = structuredClone(c)
     setWorking(next)
@@ -291,31 +360,43 @@ export function TestsContent({
   }
   async function startNew() {
     const next = newCase()
-    if (await select(next)) setBaseline('')
+    await select(next)
+  }
+  function openTestChat(request: string, sources: ChatAttachment[] = []) {
+    const store = chats.store
+    if (!store || !chats.ready) { setError(msg('Chat history is still loading')); return }
+    try {
+      const chat = linkedChat ?? store.startChat(draft ? undefined : {id:owner,path:'',digest:''}, undefined, false, draft?.id)
+      const attachments = [...new Map([...(chat.attachments ?? []), ...sources].map(source => [source.id,source])).values()]
+      if (attachments.length > 4) throw Error(msg('Attach up to four files at a time.'))
+      const composer = chat.composer.includes(request) ? chat.composer : [chat.composer.trim(), request].filter(Boolean).join('\n\n')
+      store.update(chat.id, { composer, attachments })
+      store.activate(chat.id)
+      setViewParams(previous => { const next = new URLSearchParams(previous); next.set('chat',chat.id); next.delete('assistant'); return next }, {replace:true})
+      assistant.reveal()
+    } catch (error) { setError((error as Error).message) }
   }
   function requestAI(fill = false) {
-    setAISources(working?.sources ?? aiSources)
-    setAIRequest({
-      id: Date.now(),
-      text:
-        fill && working
-          ? `Propose inputs for this case without changing its intended expectation: ${working.name}. Current case: ${JSON.stringify(working.row)}`
-          : 'Design test cases for this pack. Cover normal decisions, exceptions, missing evidence and boundaries.',
-    })
-    setDesigning(true)
-    assistant.revealMain?.()
+    openTestChat(fill && working
+      ? `Propose inputs for this case without changing its intended expectation: ${working.name}. Current case: ${JSON.stringify(working.row)}`
+      : 'Design test cases for this pack. Cover normal decisions, exceptions, missing evidence and boundaries.', working?.sources ?? [])
   }
   function designMissing(run: TestRun) {
     if (!currentCoverage(run, suite.cases, digest) || !missingProbes(run).length) return
-    setAISources([...new Map([...aiSources, ...suite.cases.flatMap(c => c.sources)].map(s => [s.id, s])).values()])
-    setAIRequest({ id: Date.now(), text: msg('Design additional test cases for the uncovered behavior in this run. Keep existing cases unchanged and explain any gaps that need a policy decision.'), additionsOnly: true, coverageRunId: run.id })
-    setDesigning(true)
-    assistant.revealMain?.()
+    openTestChat(missingTestsRequest(run))
   }
+  const openedProposal = useRef('')
+  const requestedProposal = viewParams.get('testProposal')
+  useEffect(() => {
+    if (!active || !requestedProposal || openedProposal.current === requestedProposal || !storage.query.isSuccess) return
+    const proposal = suite.proposals?.find(proposal => proposal.id === requestedProposal)
+    if (!proposal || proposal.state !== 'ready') return
+    openedProposal.current = requestedProposal
+    void review(proposal)
+  }, [active, requestedProposal, suite.proposals, storage.query.isSuccess])
   async function review(proposal: TestProposal) {
     if (busy) return
     if (reviewing?.id === proposal.id) {
-      setDesigning(false)
       assistant.revealMain?.()
       return
     }
@@ -324,7 +405,6 @@ export function TestsContent({
     setBaseline('')
     setReviewEditing(false)
     setError('')
-    setDesigning(false)
     setReviewRows(proposalCases(proposal))
     setReviewing(proposal)
     assistant.revealMain?.()
@@ -335,6 +415,8 @@ export function TestsContent({
     setBaseline('')
     setReviewEditing(false)
     setReviewing(null)
+    setViewParams(previous => { const next = new URLSearchParams(previous); next.delete('testProposal'); return next }, {replace:true})
+    openedProposal.current = ''
     setHistory(false)
     setError('')
   }
@@ -352,10 +434,12 @@ export function TestsContent({
           matrixVersion: '3',
           cases: snapshot.map((c) => c.row),
           sourceMappings: Object.fromEntries(snapshot.map((c) => [c.id, c.sourceMappings])),
+          intentionalFactTypes: intentionalFactTypes(proposal.attempts.at(-1)?.document).filter(entry => snapshot.some(c => c.id === entry.caseId)),
         },
         sources,
         async (name, args) => (await client.callTool({ name, arguments: args })) as McpToolResult,
         new AbortController().signal,
+        text,
       )
       if (errors.length) throw Error(errors.map((f) => `${f.path}: ${f.message}`).join('\n'))
       if (!mounted.current || digestRef.current !== packDigest)
@@ -375,35 +459,25 @@ export function TestsContent({
   const destination: AttachmentDestination = useMemo(
     () => ({
       kind: 'test-case',
-      id: owner + ':' + sourceTarget + ':' + (working?.id ?? 'ai'),
-      current: () => (sourceTarget === 'case' ? workRef.current?.sources : sourceRef.current),
+      id: owner + ':case:' + (working?.id ?? ''),
+      current: () => workRef.current?.sources,
       append: (files) => {
         if (!mounted.current) throw Error(msg('This test workspace is no longer open.'))
-        if (sourceTarget === 'case') {
-          const w = workRef.current
-          if (!w || w.id !== working?.id)
-            throw Error(msg('The selected case changed. Choose the source again.'))
-          if (w.sources.length + files.length > 4) throw Error(msg('Attach up to four files at a time.'))
-          setWorking({ ...w, sources: [...w.sources, ...files] })
-          setSourceMenu(false)
-          if (reviewEditing) assistant.revealMain?.()
-        } else {
-          if (sourceRef.current.length + files.length > 4)
-            throw Error(msg('Attach up to four files at a time.'))
-          setAISources([...sourceRef.current, ...files])
-          setSourceMenu(false)
-          setDesigning(true)
-          assistant.revealMain?.()
-        }
+        const w = workRef.current
+        if (!w || w.id !== working?.id) throw Error(msg('The selected case changed. Choose the source again.'))
+        if (w.sources.length + files.length > 4) throw Error(msg('Attach up to four files at a time.'))
+        setWorking({ ...w, sources: [...w.sources, ...files] })
+        setSourceMenu(false)
+        if (reviewEditing) assistant.revealMain?.()
+
       },
     }),
-    [owner, working?.id, sourceTarget, reviewEditing],
+    [owner, working?.id, reviewEditing],
   )
   const upload = useChatAttachments(null, '', busy, config.config.research, destination)
   const fileInput = useRef<HTMLInputElement>(null),
     importInput = useRef<HTMLInputElement>(null)
-  function addSource(target: 'case' | 'ai', _element: HTMLElement) {
-    setSourceTarget(target)
+  function addSource(_element: HTMLElement) {
     setSourceMenu(true)
     details.reveal()
   }
@@ -561,8 +635,8 @@ export function TestsContent({
       setBusy(false)
     }
   }
-  function exportCases() {
-    const blob = new Blob([JSON.stringify(matrix(suite.cases), null, 2) + '\n'], {
+  function exportCases(cases = suite.cases) {
+    const blob = new Blob([JSON.stringify(matrix(cases), null, 2) + '\n'], {
         type: 'application/json',
       }),
       url = URL.createObjectURL(blob),
@@ -598,7 +672,7 @@ export function TestsContent({
     c.origin = 'draft'
     c.row.facts = r.trial.facts
     if (r.trial.evidence !== undefined) c.row.evidenceAvailability = r.trial.evidence
-    if (await select(c)) setBaseline('')
+    await select(c)
   }
   const caseEditor = working ? (
     <CaseEditor
@@ -611,12 +685,10 @@ export function TestsContent({
       onSave={() => void save()}
       onDiscard={async () => {
         if (dirty && !await confirmDiscard(msg('Discard unsaved changes to this case?'), { name: working?.name, busy })) return
-        setWorking(null)
-        setBaseline('')
-        setError('')
-        setReviewEditing(false)
+        flushSync(()=>{setWorking(null);setBaseline('');setUnwritten(false);setError('');setReviewEditing(false)})
+        if (requestedCase) navigate(casesHref())
       }}
-      onAddSource={(el) => addSource('case', el)}
+      onAddSource={(el) => addSource(el)}
       onAI={() => requestAI(true)}
       onRun={() => void runCases([working])}
       busy={busy || upload.reading}
@@ -646,16 +718,13 @@ export function TestsContent({
       <p className={styles.muted}>
         {msg('Sources are references. Review their values before mapping them to case inputs.')}
       </p>
-      {upload.reading && <p role="status">{upload.progress}</p>}
+      {upload.reading && <LoadingState>{upload.progress}</LoadingState>}
       {upload.error && <p role="alert">{upload.error}</p>}
       <Button
         variant="inline"
         onClick={() => {
           setSourceMenu(false)
-          if (sourceTarget === 'ai') {
-            setDesigning(true)
-            assistant.revealMain?.()
-          }
+
         }}
       >
         {msg('Back')}
@@ -669,16 +738,7 @@ export function TestsContent({
         </Button>
       )}
       <header className={styles.resultHeading}>
-        <h3>
-          {runView.trial
-            ? msg('Draft trial') +
-              ' ' +
-              (suite.runs
-                .filter((r) => r.trial && r.origin === 'draft')
-                .findIndex((r) => r.id === runView.id) +
-                1)
-            : msg('Test result')}
-        </h3>
+        {runView.trial && <h3>{msg('Draft trial')} {suite.runs.filter(r => r.trial && r.origin === 'draft').findIndex(r => r.id === runView.id) + 1}</h3>}
         <p className={styles.muted}>
           {new Date(runView.at).toLocaleString()} · {msg('Version')} {runView.packVersion}
         </p>
@@ -692,16 +752,16 @@ export function TestsContent({
       {runView.report?.packs?.map((p) => (
         <div key={p.id}>
           <MatrixRowList
-            rows={p.rows ?? []}
+            rows={(p.rows ?? []).filter(row=>!requestedCase || row.id===requestedCase)}
             names={Object.fromEntries(runView.cases.map((c) => [c.id, c.name]))}
           />
-          <Disclosure title={msg('Coverage')}>
+          {!requestedCase && <Disclosure title={msg('Coverage')}>
             <CoverageReport coverage={p.coverage} />
             {missingProbes(runView).length > 0 && <>
-              <Button disabled={busy || !currentCoverage(runView, suite.cases, digest)} onClick={() => designMissing(runView)}>{msg('Design missing tests')}</Button>
+              <Button disabled={busy || !currentCoverage(runView, suite.cases, digest)} onClick={() => designMissing(runView)}><IconAssistant />{msg('Design missing tests')}</Button>
               {!currentCoverage(runView, suite.cases, digest) && <p className={styles.muted}>{msg('Run the current suite before designing tests from these gaps.')}</p>}
             </>}
-          </Disclosure>
+          </Disclosure>}
         </div>
       ))}
       {runView.trial && (
@@ -724,7 +784,7 @@ export function TestsContent({
                 <p className={styles.muted}>{msg('Handoff requested')}</p>
               )}
             <p className={styles.muted}>{msg('Exploratory run · no expected result was compared.')}</p>
-            <Button onClick={() => openTrial(runView)}>{msg('Open inputs as a case')}</Button>
+            <Button onClick={() => openTrial(runView)}>{msg('Open dialects as a case')}</Button>
           </section>
         </>
       )}
@@ -739,44 +799,70 @@ export function TestsContent({
       <p>{msg('Select a case to view inputs, sources and expected results.')}</p>
     </div>
   )
-  const testDesigner = (
-    <section hidden={!designing} className={styles.testDesigner} aria-label={msg('Design tests')}>
-      <div className={styles.designerHeader}><h2>{msg('Design tests')}</h2><Button variant="quiet" onClick={() => setDesigning(false)}>{msg('Back to tests')}</Button></div>
-      <TestAssistant
-        key={owner}
-        title={title}
-        document={text}
-        packDigest={digest}
-        suite={suite}
-        sources={aiSources}
-        onSource={(el) => addSource('ai', el)}
-        onReview={review}
-        reviewing={reviewing?.id}
-        reviewDisabled={busy}
-        blocked={Boolean(chats.store?.running)}
-        onRunningChange={onAssistantBusyChange}
-        onRemoveSource={(id) => setAISources((files) => files.filter((f) => f.id !== id))}
-        request={aiRequest}
-        onCheckpoint={async (record, rows) => {
-          await storage.update((s) => ({
-            ...s,
-            proposals: [...(s.proposals ?? []).filter((p) => p.id !== record.id), record],
-            messages: rows ? [...(s.messages ?? []), ...rows] : s.messages,
-          }))
-        }}
-      />
-    </section>
-  )
-  const filtered = suite.cases.filter(
-    (c) =>
-      (c.name + ' ' + c.rationale).toLowerCase().includes(query.toLowerCase()) &&
-      (filter === 'all' || latestResult(suite, c, digest).status === filter),
-  )
   const coverageRun = latestCoverage(suite, digest)
-  const trials = suite.runs.filter((r) => r.trial && r.origin === 'draft')
+  const listHeader = (<div className={styles.toolbar}>
+                <SegmentedControl
+                  label={msg('Test views')}
+                  value={history ? 'history' : 'cases'}
+                  onValueChange={(view) => {setHistory(view === 'history');updateListParam('history',view === 'history'?'1':'','')}}
+                  segments={[
+                    { value: 'cases', label: msg('Cases') + ' · ' + suite.cases.length },
+                    { value: 'history', label: msg('Run history') },
+                  ]}
+                />
+                <div className={styles.actions}>
+                  <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button ref={newCaseButton} disabled={busy}><IconPlus />{msg('Add case')}</Button></DropdownMenu.Trigger>
+                    <DropdownMenu.Portal><DropdownMenu.Content align="end">
+                      <DropdownMenu.Item icon={<IconPlus />} onSelect={()=>void startNew()}>{msg('New case')}</DropdownMenu.Item>
+                      {!draft&&<DropdownMenu.Item icon={<IconPaperclip />} onSelect={()=>setInputTests(true)}>{msg('From Dialects')}</DropdownMenu.Item>}
+                      <DropdownMenu.Item icon={<IconAssistant />} onSelect={()=>requestAI()}>{msg('Design with AI')}</DropdownMenu.Item>
+                    </DropdownMenu.Content></DropdownMenu.Portal>
+                  </DropdownMenu.Root>
+                  <Button
+                    variant="primary"
+                    onClick={() => void runCases(suite.cases.filter(executable))}
+                    disabled={busy || status !== 'ready' || !supported || !suite.cases.some(executable)}
+                  >
+                    {running.current?<Spinner/>:<IconPlay />}{running.current ? msg('Running…') : msg('Run tests')}
+                  </Button>
+                  <DropdownMenu.Root>
+                    <Tooltip content={msg('More test actions')}><DropdownMenu.Trigger asChild>
+                      <Button variant="quiet" size="icon" aria-label={msg('More test actions')}>
+                        <IconMore />
+                      </Button>
+                    </DropdownMenu.Trigger></Tooltip>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.Content align="end" sideOffset={4}>
+                        <DropdownMenu.Item icon={<IconPaperclip />}
+                          disabled={busy}
+                          onSelect={() => importInput.current?.click()}
+                        >
+                          {msg('Import cases')}
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item icon={<IconDownload />}
+                          onSelect={()=>exportCases()}
+                          disabled={!suite.cases.some(executable)}
+                        >
+                          {msg('Export cases')}
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Separator/><DropdownMenu.Item icon={<IconInfo/>} onSelect={()=>setShowSuiteHelp(true)}>{msg('About cases and history')}</DropdownMenu.Item>
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Root>
+                </div>
+              </div>
+  )
   return (
     <div className={styles.root} data-tests-workspace>
-      {testDesigner}
+      {inputTests&&<DialectTestsDialog packId={owner} packText={text} opener={newCaseButton} onClose={()=>setInputTests(false)} onSaved={()=>{setInputTests(false);void storage.query.refetch()}}/>}
+      {active&&<QueryStatusNotice id={'test-storage:'+owner} label={msg('Tests unavailable')} error={storage.query.error} retrying={storage.query.isFetching} onRetry={()=>storage.query.refetch()}/>}
+      {active && error && !working && !reviewing && <DeskStatusNotice id={'test-workspace:'+owner} tone="warning" label={msg('Tests need attention')} actions={<Button onClick={()=>{attempted.current='';setRetry(n=>n+1);setError('');void storage.query.refetch()}}>{msg('Retry')}</Button>}>{error}</DeskStatusNotice>}
+      {active && capabilityError && <DeskStatusNotice id="test-capabilities" tone="warning" label={msg('Test capabilities unavailable')} detail={capabilityError} actions={<Button onClick={()=>setRetry(n=>n+1)}>{msg('Retry')}</Button>}>{msg('Runtime test capabilities could not be checked. Cases and history remain available.')}</DeskStatusNotice>}
+      {active && status==='ready' && supported===false && <DeskStatusNotice id="test-runtime" tone="warning" label={msg('Test runtime update needed')}>{msg('Update the runtime to run snapshot test suites. Cases and history remain available.')}</DeskStatusNotice>}
+      <Dialog open={showSuiteHelp} onOpenChange={setShowSuiteHelp} title={msg('About cases and history')} footer={<DialogActions><Button onClick={()=>setShowSuiteHelp(false)}>{msg('Close')}</Button></DialogActions>}>
+        <p>{msg('Cases and history are saved on this computer. Export a matrix to share saved expectations.')}</p>
+        <p>{msg('Test runs do not change the pack. Results belong to the exact inputs and revision that ran.')}</p>
+      </Dialog>
       <Dialog
         open={pendingDelete !== null}
         title={msg('Delete case?')}
@@ -842,12 +928,14 @@ export function TestsContent({
         footer={<DialogActions><Button onClick={() => setShowCaseBrief(false)}>{msg('Close')}</Button></DialogActions>}>
         {showCaseBrief && briefSubject && <BriefPane key={briefSubject.id} subject={briefSubject} embedded/>}
       </Dialog>
-      {!designing && (reviewing ? (
+      {reviewing ? (
         <>
           <div className={styles.proposalList} hidden={reviewEditing}>
             <ProposalReview
               key={reviewing.id}
               cases={reviewRows}
+              previousCases={suite.cases}
+              intentionalTypes={intentionalFactTypes(reviewing.attempts.at(-1)?.document)}
               saved={(suite.proposals?.find((p) => p.id === reviewing.id) ?? reviewing).savedCases ?? {}}
               busy={busy}
               stale={!digest || reviewing.packDigest !== digest || status !== 'ready'}
@@ -866,306 +954,35 @@ export function TestsContent({
         </>
       ) : (
         <>
-          <BuilderSplit preference="pack" title={runView ? msg('Test result') : working?.name || msg('Case details')} open={active && bottomOpen} onClose={()=>setBottomOpen(false)} editor={detailNode}>
-          <div className={styles.content}>
-            <div className={styles.workspaceBody}>
-              <div className={styles.toolbar}>
-                <SegmentedControl
-                  label={msg('Test views')}
-                  value={history ? 'history' : 'cases'}
-                  onValueChange={(view) => setHistory(view === 'history')}
-                  segments={[
-                    { value: 'cases', label: msg('Cases') + ' · ' + suite.cases.length },
-                    { value: 'history', label: msg('Run history') },
-                  ]}
-                />
-                {!history && suite.cases.length > 0 && <>
-                      <Input
-                        aria-label={msg('Search cases')}
-                        placeholder={msg('Search cases…')}
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                      />
-                      <MenuChoice
-                        label={msg('Test result filter')}
-                        value={filter}
-                        onValueChange={setFilter}
-                        options={[
-                          { value: 'all', label: msg('All results') },
-                          { value: 'passed', label: msg('Passed') },
-                          { value: 'mismatch', label: msg('Mismatch') },
-                          { value: 'exploratory', label: msg('Exploratory') },
-                          { value: 'not-run', label: msg('Not run') },
-                          { value: 'stale', label: msg('Needs rerun') },
-                          { value: 'error', label: msg('Could not run') },
-                        ]}
-                      />
-                </>}
-                <div className={styles.actions}>
-                  {briefCase && <Button variant="quiet" ref={briefOpener} onClick={() => setShowCaseBrief(true)}>{msg('Case brief')}</Button>}
-                  <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button ref={newCaseButton} disabled={busy}>{msg('Add case')}</Button></DropdownMenu.Trigger>
-                    <DropdownMenu.Portal><DropdownMenu.Content align="end">
-                      <DropdownMenu.Item onSelect={()=>void startNew()}>{msg('New case')}</DropdownMenu.Item>
-                      <DropdownMenu.Item onSelect={()=>requestAI()}>{msg('Design with AI')}</DropdownMenu.Item>
-                    </DropdownMenu.Content></DropdownMenu.Portal>
-                  </DropdownMenu.Root>
-                  <Button
-                    variant="primary"
-                    onClick={() => void runCases(suite.cases.filter(executable))}
-                    disabled={busy || status !== 'ready' || !supported || !suite.cases.some(executable)}
-                  >
-                    {running.current ? msg('Running…') : msg('Run tests')}
-                  </Button>
-                  <DropdownMenu.Root>
-                    <Tooltip content={msg('More test actions')}><DropdownMenu.Trigger asChild>
-                      <Button variant="quiet" size="icon" aria-label={msg('More test actions')}>
-                        <IconMore />
-                      </Button>
-                    </DropdownMenu.Trigger></Tooltip>
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.Content align="end" sideOffset={4}>
-                        <DropdownMenu.Item
-                          disabled={busy}
-                          onSelect={() => importInput.current?.click()}
-                        >
-                          {msg('Import cases')}
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Item
-                          onSelect={exportCases}
-                          disabled={!suite.cases.some(executable)}
-                        >
-                          {msg('Export cases')}
-                        </DropdownMenu.Item>
-                      </DropdownMenu.Content>
-                    </DropdownMenu.Portal>
-                  </DropdownMenu.Root>
-                </div>
+          {requestedCase ? <section className={styles.casePage} aria-label={msg('Test case')}>
+            <header className={styles.casePageHeader}>
+              <nav aria-label={msg('Test case breadcrumb')}><Link to={casesHref()}>{msg('Tests')}</Link><IconChevronRight/><OverflowTooltip content={working?.name ?? requestedCase}><span aria-current="page">{working?.name || msg('New case')}</span></OverflowTooltip></nav>
+              {caseResult?.run && !runView && <Button variant="quiet" disabled={busy} aria-label={msg('View last result')} onClick={()=>{setRunView(caseResult.run!);setSourceMenu(false)}}><IconHistory/>{msg(caseResult.label)}</Button>}
+              {briefCase && <Button variant="quiet" ref={briefOpener} onClick={()=>setShowCaseBrief(true)}><IconInfo/>{msg('Case brief')}</Button>}
+            </header>
+            {working ? <div className={styles.casePageBody} data-result={!!runView||undefined}>{detailNode}</div> : storage.query.isPending ? <PageLoading>{msg('Loading tests…')}</PageLoading> : storage.query.error ? <CollectionEmpty title={msg('Tests unavailable')}>{null}</CollectionEmpty> : <CollectionEmpty title={msg('Case not found')}><p>{msg('This case may have been deleted or its unsaved draft is no longer available.')}</p><Link to={casesHref()}>{msg('Back to cases')}</Link></CollectionEmpty>}
+          </section> : <BuilderSplit preference="pack" title={msg('Test result')} open={active && bottomOpen && !!runView} onClose={()=>setBottomOpen(false)} editor={detailNode}>
+            {history ? <CollectionLayout label={msg('Test run history')} loading={storage.query.isPending&&!suite.runs.length?msg('Loading tests…'):undefined} toolbar={listHeader}>
+              <div className={styles.history}>
+                {suite.runs.length > 0 && <Disclosure title={msg('Compare runs and pack changes')}><RunComparison runs={suite.runs} currentText={text}/></Disclosure>}
+                {storage.query.error&&!suite.runs.length ? <CollectionEmpty title={msg('Tests unavailable')}>{null}</CollectionEmpty> : !suite.runs.length && <CollectionEmpty title={msg('No runs yet')}><p>{msg('Run a case to save its result here.')}</p></CollectionEmpty>}
+                {[...suite.runs].reverse().map(r=><Button variant="quiet" key={r.id} onClick={()=>{setRunView(r);setSourceMenu(false);details.reveal()}}>
+                  <span>{new Date(r.at).toLocaleString()} · {r.origin === 'draft' ? msg('From draft') : msg('Tests')}</span>
+                  <span>{r.error ? msg('Could not run') : r.trial ? msg('Exploratory') : r.packDigest !== digest ? msg('Historical') : r.report?.status}</span>
+                </Button>)}
               </div>
-              {coverageRun && missingProbes(coverageRun).length > 0 && <div className={styles.coverageAction}>
-                <span>{missingProbes(coverageRun).length===1 ? msg('1 coverage gap in the current suite') : msg('{{count}} coverage gaps in the current suite', { count: missingProbes(coverageRun).length })}</span>
-                <Button variant="quiet" disabled={busy} onClick={() => designMissing(coverageRun)}>{msg('Design missing tests')}</Button>
-              </div>}
-              {(error || storage.query.error) && (
-                <p role="alert" className={styles.error}>
-                  {error || storage.query.error?.message}
-                  <Button
-                    variant="quiet"
-                    onClick={() => {
-                      attempted.current = ''
-                      setRetry((n) => n + 1)
-                      setError('')
-                      void storage.query.refetch()
-                    }}
-                  >
-                    {msg('Retry')}
-                  </Button>
-                </p>
-              )}
-              {storage.query.isPending ? (
-                <p role="status">{msg('Loading tests…')}</p>
-              ) : history ? (
-                <div className={styles.history}>
-                  {suite.runs.length > 0 && <Disclosure title={msg('Compare runs and pack changes')}><RunComparison runs={suite.runs} currentText={text}/></Disclosure>}
-                  {!suite.runs.length && <p>{msg('No runs yet. Run a case to save its result here.')}</p>}
-                  {[...suite.runs].reverse().map((r) => (
-                    <Button
-                      variant="quiet"
-                      key={r.id}
-                      onClick={() => {
-                        setRunView(r)
-                        setSourceMenu(false)
-                        details.reveal()
-                      }}
-                    >
-                      <span>
-                        {new Date(r.at).toLocaleString()} ·{' '}
-                        {r.origin === 'draft' ? msg('From draft') : msg('Tests')}
-                      </span>
-                      <span>
-                        {r.error
-                          ? msg('Could not run')
-                          : r.trial
-                            ? msg('Exploratory')
-                            : r.packDigest !== digest
-                              ? msg('Historical')
-                              : r.report?.status}
-                      </span>
-                    </Button>
-                  ))}
-                </div>
-              ) : (
-                <>
-                  {suite.cases.length > 0 && !filtered.length && (
-                    <p>{msg('No cases match these filters.')}</p>
-                  )}
-                  {!suite.cases.length ? (
-                    <div className={styles.empty}>
-                      <h2>{msg('No saved cases yet')}</h2>
-                      <p className={styles.muted}>
-                        {msg(
-                          'Create a case or ask Assistant to design one. Add an expected result to make it repeatable.',
-                        )}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className={styles.tableWrap}>
-                      <table className={`${styles.table} ${styles.casesTable}`}>
-                        <thead>
-                          <tr>
-                            <th>{msg('Case')}</th>
-                            <th>{msg('Expected')}</th>
-                            <th>{msg('Last result')}</th>
-                            <th>{msg('Origin')}</th>
-                            <th aria-label={msg('Actions')} />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filtered.map((c) => {
-                            const result = latestResult(suite, c, digest)
-                            return (
-                              <tr key={c.id} data-selected={working?.id === c.id}>
-                                <td>
-                                  <OverflowTooltip content={c.name}>
-                                    <Button
-                                      variant="inline"
-                                      className={styles.savedCaseName}
-                                      onClick={() => select(c)}
-                                    >
-                                      {c.name}
-                                    </Button>
-                                  </OverflowTooltip>
-                                </td>
-                                <td>{expectedLabel(c.row)}</td>
-                                <td>
-                                  <Button
-                                    variant="inline"
-                                    disabled={!result.run}
-                                    onClick={() => {
-                                      if (result.run) {
-                                        setRunView(result.run)
-                                        setSourceMenu(false)
-                                        details.reveal()
-                                      }
-                                    }}
-                                  >
-                                    <span className={styles.status} data-status={result.status}>
-                                      {msg(result.label)}
-                                    </span>
-                                  </Button>
-                                </td>
-                                <td>
-                                  {c.origin === 'draft'
-                                    ? msg('Draft')
-                                    : c.origin === 'ai'
-                                      ? msg('AI')
-                                      : c.origin === 'manual'
-                                        ? msg('Manual')
-                                        : msg('Imported')}
-                                </td>
-                                <td>
-                                  <div className={styles.rowActions}>
-                                    <Tooltip content={msg('Duplicate case')}>
-                                      <Button
-                                        variant="quiet"
-                                        size="icon"
-                                        aria-label={msg('Duplicate case')}
-                                        disabled={busy}
-                                        onClick={async () => {
-                                          const id = 'case-' + crypto.randomUUID()
-                                          if (
-                                            await select({
-                                              ...structuredClone(c),
-                                              id,
-                                              row: { ...c.row, id },
-                                              revision: 0,
-                                              name: c.name + ' ' + msg('copy'),
-                                            })
-                                          )
-                                            setBaseline('')
-                                        }}
-                                      >
-                                        <IconCopy />
-                                      </Button>
-                                    </Tooltip>
-                                    <Tooltip content={msg('Delete case')}>
-                                      <Button
-                                        variant="quiet"
-                                        size="icon"
-                                        aria-label={msg('Delete case')}
-                                        disabled={busy}
-                                        onClick={(event) => {
-                                          deleteOpener.current = event.currentTarget
-                                          setDeleteError('')
-                                          setPendingDelete(structuredClone(c))
-                                        }}
-                                      >
-                                        <IconTrash />
-                                      </Button>
-                                    </Tooltip>
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  {trials.length > 0 && (
-                    <Disclosure className={styles.trials} title={msg('Exploratory draft runs')}>
-                      <p className={styles.muted}>
-                        {msg(
-                          'Exploratory runs from the draft, without saved expectations. Open a trial to review its result or reuse its inputs.',
-                        )}
-                      </p>
-                      <div className={styles.trialList}>
-                        <div className={styles.trialColumns} aria-hidden="true">
-                          <span>{msg('Trial')}</span>
-                          <span>{msg('Observed result')}</span>
-                        </div>
-                        {trials.map((r, i) => (
-                          <InspectionRow
-                            key={r.id}
-                            className={styles.trial}
-                            label={msg('Draft trial') + ' ' + (i + 1)}
-                            value={trialOutcome(r)}
-                            current={runView?.id === r.id && details.open}
-                            onClick={() => {
-                              setRunView(r)
-                              setSourceMenu(false)
-                              details.reveal()
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </Disclosure>
-                  )}
-                </>
-              )}
-              {status === 'ready' && !supported && (
-                <p className={styles.footnote}>
-                  {msg('Update the runtime to run snapshot test suites. Cases and history remain available.')}
-                </p>
-              )}
-              <div className={styles.storageHelp}>
-                <Disclosure title={msg('About cases and history')}>
-                  <p className={styles.muted}>
-                    {msg(
-                      'Cases and history are saved on this computer. Export a matrix to share saved expectations.',
-                    )}
-                  </p>
-                  <p className={styles.muted}>
-                    {msg(
-                      'Test runs do not change the pack. Results belong to the exact inputs and revision that ran.',
-                    )}
-                  </p>
-                </Disclosure>
-              </div>
-            </div>
-          </div>
-          </BuilderSplit>
+            </CollectionLayout> : <TestsCollection suite={suite} digest={digest} query={query} onQuery={value=>{setQuery(value);updateListParam('testSearch',value,'')}} filter={filter} onFilter={value=>{setFilter(value);updateListParam('testResult',value,'all')}} sort={sort} onSort={value=>{setSort(value);updateListParam('testSort',value,'saved')}}
+              busy={busy} canRun={status==='ready'&&supported===true} header={listHeader} caseHref={caseHref} onRun={cases=>void runCases(cases)}
+              onResult={run=>{setRunView(run);setSourceMenu(false);details.reveal()}}
+              onDuplicate={c=>{const id='case-'+crypto.randomUUID(); void select({...structuredClone(c),id,row:{...c.row,id},revision:0,name:c.name+' '+msg('copy'),intentionalFactTypes:c.intentionalFactTypes?.map(entry=>({...entry,caseId:id}))})}}
+              onDelete={(c,opener)=>{deleteOpener.current=opener;setDeleteError('');setPendingDelete(structuredClone(c))}}
+              onExport={exportCases} onReset={resetList} loading={storage.query.isPending} unavailable={!!storage.query.error&&!suite.cases.length}
+              coverage={coverageRun ? missingProbes(coverageRun).length : 0} onCoverage={()=>{if(coverageRun){setRunView(coverageRun);details.reveal()}}} onDesign={()=>{if(coverageRun)designMissing(coverageRun)}}/>
+            }
+          </BuilderSplit>}
+
         </>
-      ))}
+      )}
     </div>
   )
 }

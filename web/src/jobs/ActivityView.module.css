@@ -4,8 +4,9 @@
 .stamps { display: grid; gap: var(--space-1); }
 .stamps time { white-space: nowrap; }
 .stampName { color: var(--ink-soft); }
-.select { background: none; border-width: 0; padding: 0; margin: 0; font: inherit; color: var(--ink); text-align: start; cursor: pointer; text-decoration-line: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
-.select:hover { text-decoration-color: currentColor; }
+.select { background: none; border-width: 0; padding: 0; margin: 0; font: inherit; color: var(--ink); text-align: start; cursor: pointer; border-radius: var(--radius-sm); text-decoration: none; }
+.select:hover { background: var(--false-soft); }
+.select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .select[aria-pressed='true'] { font-weight: 600; text-decoration-line: none; }
 .selected > td { background: var(--surface); }
 .evidence { display: grid; gap: var(--space-1); }
@@ -14,3 +15,7 @@
 .pane h2, .pane h3 { margin: 0; font-size: var(--text-body); font-weight: 600; }
 .pane p { margin: 0; }
 .journalStop { display: grid; gap: var(--space-2); }
+
+.collection { display:flex; flex-direction:column; height:100%; flex:1; min-height:0; overflow:hidden; }
+.collection [data-collection-bottom] { min-height:calc(var(--density-control) + var(--space-4)); padding-block:var(--space-2); }
+.collection [data-collection-bottom] > span { margin-inline-end:auto; }

@@ -23,3 +23,12 @@ describe('local job drafts',()=>{
   expect(()=>decodeJobDraft(JSON.stringify({version:1,id:'example',updatedAt:'now',status:'draft',values:{...values,trigger:{name:'bad',kind:'schedule'}}}))).toThrow('Invalid')
  })
 })
+it('persists only bounded research references, leaving results in the private journal',async()=>{
+ vi.mocked(writeFile).mockImplementation(async input=>({path:input.path,content:input.content,sha256:'next',bytes:input.content.length}))
+ const reference={id:'research_'+'a'.repeat(32),context:'b'.repeat(64)}
+ const saved=await saveJobDraft('example',{...values,mapped:{...values.mapped!,researchRuns:{companies:reference}}})
+ expect(decodeJobDraft(saved.file.content).values.mapped?.researchRuns).toEqual({companies:reference})
+ for(const ref of [{...reference,id:'../secret'},{...reference,context:''},{...reference,response:{result:'should not persist'}}]){
+  expect(()=>decodeJobDraft(JSON.stringify({...saved.draft,values:{...values,mapped:{...values.mapped,researchRuns:{companies:ref}}}}))).toThrow('Invalid')
+ }
+})

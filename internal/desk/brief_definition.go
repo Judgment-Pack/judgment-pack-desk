@@ -126,34 +126,26 @@ func (s *Server) definitionBriefSnapshot(root *os.Root, name, subject string) (j
 			}
 		}
 	case "graph-draft":
-		saved, err := s.readWorkspaceRecord(root, strings.Replace(name, "briefs-", "conversations-", 1), false)
+		saved, err := s.readWorkspaceRecord(root, strings.Replace(name, "briefs-", "draft-graphs-", 1), false)
 		if err != nil {
 			return nil, err
 		}
-		var store struct {
-			Chats []struct {
-				GraphDrafts []struct {
-					ID          string `json:"id"`
-					DraftID     string `json:"draftId"`
-					Content     string `json:"content"`
-					Description string `json:"description"`
-				} `json:"graphDrafts"`
-			} `json:"chats"`
-		}
+		var store graphDraftDocument
 		if json.Unmarshal(saved.Content, &store) != nil {
 			return nil, errors.New("Saved graph drafts could not be read.")
 		}
-		for _, chat := range store.Chats {
-			for _, draft := range chat.GraphDrafts {
-				if draft.DraftID == id {
-					if snapshot.Pack != "" && snapshot.Pack != draft.Content {
-						return nil, errors.New("Conflicting graph drafts share this identity. Reopen the intended draft.")
-					}
-					snapshot.Pack, snapshot.Title = draft.Content, draft.ID
-					definition["description"] = draft.Description
+		for _, draft := range store.Drafts {
+			// Scoped subjects are canonical; accept an old unscoped identity only
+			// when it resolves uniquely, so legacy links cannot select another chat.
+			if graphDraftIdentity(draft) == id || draft.DraftID == id {
+				if snapshot.Pack != "" {
+					return nil, errors.New("Choose the graph draft with its conversation identity.")
 				}
+				snapshot.Pack, snapshot.Title = draft.Content, draft.ID
+				definition["description"] = draft.Description
 			}
 		}
+
 	}
 	if snapshot.Pack == "" || !json.Valid([]byte(snapshot.Pack)) || !strings.HasPrefix(strings.TrimSpace(snapshot.Pack), "{") {
 		return nil, errors.New("Keep a valid saved definition before generating its brief.")

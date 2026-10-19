@@ -23,7 +23,7 @@ function views() {
     <Route path="/graphs" element={<GraphView />} />
     <Route path="/graphs/:graphId" element={<GraphView />} />
     <Route path="/matrix" element={<MatrixView />} />
-    <Route path="/packs" element={<p>Pack collection</p>} />
+    <Route path="/library" element={<p>Pack collection</p>} />
     <Route path="/packs/:packId/matrix" element={<MatrixView />} />
   </Routes>
 }

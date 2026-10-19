@@ -27,7 +27,7 @@ const jsonl = (body: BodyInit | null, status = 200, type = 'application/jsonl') 
 const aborted = () => jsonl(new ReadableStream({ start(controller) { controller.enqueue(chain.slice(0, 20)); controller.error(new TypeError('network error')) } }))
 async function attempt() {
  const calls = vi.mocked(deskFetch).mock.calls.length
- fireEvent.click(screen.getByRole('button', { name: 'Download the runner’s chain of runs' }))
+ fireEvent.click(screen.getByRole('button', { name: 'Download' }))
  await waitFor(() => expect(vi.mocked(deskFetch).mock.calls.length).toBe(calls + 1))
  await waitFor(() => expect(screen.queryByRole('status') ?? screen.queryByRole('alert')).toBeTruthy())
  expect(deskFetch).toHaveBeenLastCalledWith('/api/operations/run-chain')
@@ -36,7 +36,7 @@ async function attempt() {
 it('saves the runner’s chain of runs as run-chain.jsonl, byte for byte, and says it is unverified here', async () => {
  vi.mocked(deskFetch).mockResolvedValue(jsonl(chain))
  render(<RunChainDownload />)
- expect(screen.getByText('The file is the runner’s whole chain of runs, byte for byte as the runner sent it, unverified here.')).toBeTruthy()
+ expect(screen.getByText('Downloads the runner’s full run-history file, regardless of table filters. Desk saves the original file without verifying it.')).toBeTruthy()
  await attempt()
  expect(saved.map(s => s.file)).toEqual(['run-chain.jsonl'])
  expect(await saved[0].bytes).toEqual(chain)

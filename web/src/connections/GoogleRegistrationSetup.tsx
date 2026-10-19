@@ -1,7 +1,8 @@
+import {LoadingState} from '../ui/LoadingState'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { msg, useLocale } from '../i18n'
-import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
 import { Disclosure } from '../ui/Disclosure'
 import { useInspectorControls } from '../shell/InspectorSlot'
@@ -49,22 +50,19 @@ export function GoogleRegistrationSetup({ provider, available, instructionsIniti
     <div className={styles.body}>
       <p className={styles.scope}>{msg('Personal · This computer')}</p>
       <p>{msg('Set up a Google app once on this computer, then connect your account.')}</p>
-      {!editable && <p>{state === 'connected' ? msg('Disconnect this account in My connections before changing its registration.') : state === undefined ? msg('Loading…') : msg('Unavailable')}</p>}
+      {!editable && (state === undefined ? <LoadingState/> : <p>{state === 'connected' ? msg('Disconnect this account in My connections before changing its registration.') : msg('Unavailable')}</p>)}
       <Disclosure title={msg('Setup instructions')} open={instructionsOpen} onToggle={event => setInstructionsOpen(event.currentTarget.open)}>
         <GoogleRegistrationGuide provider={provider} />
       </Disclosure>
     </div>
     <footer className={styles.footer}>
-      {busy && <p role="status">{msg('Working…')}</p>}
-      {saved && !contextual && <p role="status">{msg('Registration saved. Connect your account from the chat attachment menu.')}</p>}
-      {error && <Alert>{error}</Alert>}
-      <div className={styles.actions}>
+      <SettingsActions feedback={<SettingsFeedback tone={error?'error':saved&&!contextual?'success':'neutral'}>{error||(busy?msg('Working…'):saved&&!contextual?msg('Changes saved'):null)}</SettingsFeedback>}>
         {editable && <>
           <Button variant="primary" disabled={busy} onClick={() => file.current?.click()}>{msg('Choose credentials file')}</Button>
           <input ref={file} type="file" accept=".json,application/json" hidden onChange={event => void configure(event.target.files?.[0])} />
         </>}
         {(!contextual || busy) && <Button variant="quiet" onClick={close}>{busy ? msg('Cancel') : msg('Done')}</Button>}
-      </div>
+      </SettingsActions>
     </footer>
   </section>
 }

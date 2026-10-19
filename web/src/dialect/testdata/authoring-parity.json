@@ -1,0 +1,326 @@
+[
+  {
+    "name": "complete",
+    "pack": "{\"specVersion\":\"0.2.0-draft\",\"id\":\"https://example.invalid/pack/work-item-priority\",\"version\":\"1.0.0\",\"decision\":{\"intent\":\"Triage a work item\",\"question\":\"Ready for review?\"},\"outcomes\":[{\"id\":\"ready\",\"label\":\"Ready\"},{\"id\":\"other\",\"label\":\"Other\"}],\"rules\":[{\"id\":\"priority\",\"when\":{\"op\":\"fact\",\"path\":\"/workItem/priority\",\"operator\":\"equals\",\"value\":\"high\"},\"outcome\":\"ready\",\"description\":\"High priority\",\"onUnknown\":\"escalate\"}],\"evidenceRequirements\":[{\"id\":\"policy\",\"description\":\"Policy evidence\",\"required\":false}],\"title\":\"Work item governance\"}",
+    "mapping": {
+      "version": 2,
+      "case": {
+        "facts": [
+          {
+            "target": "/workItem/priority",
+            "source": "/values/Priority"
+          }
+        ],
+        "evidence": [
+          {
+            "requirement": "policy",
+            "source": "/values/Policy"
+          }
+        ]
+      },
+      "sources": [],
+      "unmapped": [],
+      "unmappedEvidence": []
+    },
+    "report": {
+      "outputVersion": "2",
+      "tool": {
+        "name": "jpack",
+        "version": "0.33.0-dev.8335027"
+      },
+      "command": "dialect check",
+      "contractVersion": "1",
+      "specification": "https://github.com/Judgment-Pack/judgment-pack-spec/blob/b7cc8906c23d92c63f4e42c4706cc1e21b9d324f/spec/dialect.md",
+      "specRevision": "b7cc8906c23d92c63f4e42c4706cc1e21b9d324f",
+      "maturity": "draft",
+      "status": "complete",
+      "validationScope": "version-2-document-and-declared-pack-inventory",
+      "fullDocumentConformance": false,
+      "dialectVersion": 2,
+      "document": "{\"case\":{\"evidence\":[{\"requirement\":\"policy\",\"source\":\"/values/Policy\"}],\"facts\":[{\"source\":\"/values/Priority\",\"target\":\"/workItem/priority\"}]},\"sources\":[],\"unmapped\":[],\"unmappedEvidence\":[],\"version\":2}",
+      "digest": "sha256:9b51adfb2909466abdf1ad99d1427a70ad6d85d8c7d880efd9e7494a221f4a08",
+      "diagnostics": [],
+      "compatibility": {
+        "scope": "declared-inventory-coverage",
+        "status": "complete",
+        "pack": {
+          "id": "https://example.invalid/pack/work-item-priority",
+          "version": "1.0.0",
+          "specVersion": "0.2.0-draft",
+          "sha256": "3e3a6195845e188243677a8fff8a3ca9065370bb6eb22413cd77891881f59883"
+        },
+        "inventoryOverApproximates": true,
+        "valueTypesChecked": false,
+        "executionChecked": false,
+        "facts": [
+          {
+            "target": "/workItem/priority",
+            "status": "mapped",
+            "producers": [
+              "/workItem/priority"
+            ],
+            "acknowledgedBy": []
+          }
+        ],
+        "evidence": [
+          {
+            "target": "policy",
+            "status": "mapped",
+            "producers": [
+              "policy"
+            ],
+            "acknowledgedBy": []
+          }
+        ],
+        "notes": []
+      },
+      "packValidation": {
+        "outputVersion": "2",
+        "tool": {
+          "name": "jpack",
+          "version": "0.33.0-dev.8335027"
+        },
+        "command": "spec validate",
+        "status": "valid",
+        "specVersion": "0.2.0-draft",
+        "validationScope": {
+          "requestedThrough": "semantic",
+          "fullDocumentConformance": true
+        },
+        "layers": [
+          {
+            "name": "carrier",
+            "status": "passed"
+          },
+          {
+            "name": "structural",
+            "status": "passed"
+          },
+          {
+            "name": "semantic",
+            "status": "passed"
+          }
+        ],
+        "extensions": {
+          "required": [],
+          "supported": [],
+          "unsupported": []
+        },
+        "diagnostics": [],
+        "diagnosticsTruncated": false,
+        "artifact": {
+          "specVersion": "0.2.0-draft",
+          "bundleDigest": "081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185",
+          "provenance": "immutable-git-ref"
+        }
+      }
+    }
+  },
+  {
+    "name": "omission",
+    "pack": "{\"specVersion\":\"0.2.0-draft\",\"id\":\"https://example.invalid/pack/work-item-priority\",\"version\":\"1.0.0\",\"decision\":{\"intent\":\"Triage a work item\",\"question\":\"Ready for review?\"},\"outcomes\":[{\"id\":\"ready\",\"label\":\"Ready\"},{\"id\":\"other\",\"label\":\"Other\"}],\"rules\":[{\"id\":\"priority\",\"when\":{\"op\":\"fact\",\"path\":\"/workItem/priority\",\"operator\":\"equals\",\"value\":\"high\"},\"outcome\":\"ready\",\"description\":\"High priority\",\"onUnknown\":\"escalate\"}],\"evidenceRequirements\":[{\"id\":\"policy\",\"description\":\"Policy evidence\",\"required\":false}],\"title\":\"Work item governance\"}",
+    "mapping": {
+      "version": 2,
+      "case": {
+        "facts": [],
+        "evidence": [
+          {
+            "requirement": "policy",
+            "source": "/values/Policy"
+          }
+        ]
+      },
+      "sources": [],
+      "unmapped": [
+        "/workItem/priority"
+      ],
+      "unmappedEvidence": []
+    },
+    "report": {
+      "outputVersion": "2",
+      "tool": {
+        "name": "jpack",
+        "version": "0.33.0-dev.8335027"
+      },
+      "command": "dialect check",
+      "contractVersion": "1",
+      "specification": "https://github.com/Judgment-Pack/judgment-pack-spec/blob/b7cc8906c23d92c63f4e42c4706cc1e21b9d324f/spec/dialect.md",
+      "specRevision": "b7cc8906c23d92c63f4e42c4706cc1e21b9d324f",
+      "maturity": "draft",
+      "status": "review-required",
+      "validationScope": "version-2-document-and-declared-pack-inventory",
+      "fullDocumentConformance": false,
+      "dialectVersion": 2,
+      "document": "{\"case\":{\"evidence\":[{\"requirement\":\"policy\",\"source\":\"/values/Policy\"}],\"facts\":[]},\"sources\":[],\"unmapped\":[\"/workItem/priority\"],\"unmappedEvidence\":[],\"version\":2}",
+      "digest": "sha256:63f2c42da79ff6af06c6cb7fe0dfe1c318e63a2ddedaa77be759eb3ec57bb600",
+      "diagnostics": [],
+      "compatibility": {
+        "scope": "declared-inventory-coverage",
+        "status": "review-required",
+        "pack": {
+          "id": "https://example.invalid/pack/work-item-priority",
+          "version": "1.0.0",
+          "specVersion": "0.2.0-draft",
+          "sha256": "3e3a6195845e188243677a8fff8a3ca9065370bb6eb22413cd77891881f59883"
+        },
+        "inventoryOverApproximates": true,
+        "valueTypesChecked": false,
+        "executionChecked": false,
+        "facts": [
+          {
+            "target": "/workItem/priority",
+            "status": "acknowledged",
+            "producers": [],
+            "acknowledgedBy": [
+              "/workItem/priority"
+            ]
+          }
+        ],
+        "evidence": [
+          {
+            "target": "policy",
+            "status": "mapped",
+            "producers": [
+              "policy"
+            ],
+            "acknowledgedBy": []
+          }
+        ],
+        "notes": [
+          {
+            "code": "acknowledged-omission",
+            "kind": "fact",
+            "target": "/workItem/priority",
+            "severity": "warning"
+          }
+        ]
+      },
+      "packValidation": {
+        "outputVersion": "2",
+        "tool": {
+          "name": "jpack",
+          "version": "0.33.0-dev.8335027"
+        },
+        "command": "spec validate",
+        "status": "valid",
+        "specVersion": "0.2.0-draft",
+        "validationScope": {
+          "requestedThrough": "semantic",
+          "fullDocumentConformance": true
+        },
+        "layers": [
+          {
+            "name": "carrier",
+            "status": "passed"
+          },
+          {
+            "name": "structural",
+            "status": "passed"
+          },
+          {
+            "name": "semantic",
+            "status": "passed"
+          }
+        ],
+        "extensions": {
+          "required": [],
+          "supported": [],
+          "unsupported": []
+        },
+        "diagnostics": [],
+        "diagnosticsTruncated": false,
+        "artifact": {
+          "specVersion": "0.2.0-draft",
+          "bundleDigest": "081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185",
+          "provenance": "immutable-git-ref"
+        }
+      }
+    }
+  },
+  {
+    "name": "refused",
+    "pack": "{\"specVersion\":\"999.0.0\",\"id\":\"https://example.invalid/pack/work-item-priority\",\"version\":\"1.0.0\",\"decision\":{\"intent\":\"Triage a work item\",\"question\":\"Ready for review?\"},\"outcomes\":[{\"id\":\"ready\",\"label\":\"Ready\"},{\"id\":\"other\",\"label\":\"Other\"}],\"rules\":[{\"id\":\"priority\",\"when\":{\"op\":\"fact\",\"path\":\"/workItem/priority\",\"operator\":\"equals\",\"value\":\"high\"},\"outcome\":\"ready\",\"description\":\"High priority\",\"onUnknown\":\"escalate\"}],\"evidenceRequirements\":[{\"id\":\"policy\",\"description\":\"Policy evidence\",\"required\":false}],\"title\":\"Work item governance\"}",
+    "mapping": {
+      "version": 2,
+      "case": {
+        "facts": [
+          {
+            "target": "/workItem/priority",
+            "source": "/values/Priority"
+          }
+        ],
+        "evidence": [
+          {
+            "requirement": "policy",
+            "source": "/values/Policy"
+          }
+        ]
+      },
+      "sources": [],
+      "unmapped": [],
+      "unmappedEvidence": []
+    },
+    "report": {
+      "outputVersion": "2",
+      "tool": {
+        "name": "jpack",
+        "version": "0.33.0-dev.8335027"
+      },
+      "command": "dialect check",
+      "contractVersion": "1",
+      "specification": "https://github.com/Judgment-Pack/judgment-pack-spec/blob/b7cc8906c23d92c63f4e42c4706cc1e21b9d324f/spec/dialect.md",
+      "specRevision": "b7cc8906c23d92c63f4e42c4706cc1e21b9d324f",
+      "maturity": "draft",
+      "status": "refused",
+      "validationScope": "version-2-document-and-declared-pack-inventory",
+      "fullDocumentConformance": false,
+      "dialectVersion": 2,
+      "diagnostics": [
+        {
+          "code": "JPS-DIALECT-PACK-INVALID",
+          "codeStability": "provisional",
+          "layer": "dialect",
+          "severity": "error",
+          "instancePath": "",
+          "message": "Pack validation did not pass; no mapping coverage was checked."
+        }
+      ],
+      "packValidation": {
+        "outputVersion": "2",
+        "tool": {
+          "name": "jpack",
+          "version": "0.33.0-dev.8335027"
+        },
+        "command": "spec validate",
+        "status": "unsupported",
+        "specVersion": "999.0.0",
+        "validationScope": {
+          "requestedThrough": "semantic",
+          "fullDocumentConformance": true
+        },
+        "layers": [
+          {
+            "name": "carrier",
+            "status": "passed"
+          }
+        ],
+        "extensions": {
+          "required": [],
+          "supported": [],
+          "unsupported": []
+        },
+        "diagnostics": [
+          {
+            "code": "JPS-CAPABILITY-SPEC-VERSION",
+            "codeStability": "provisional",
+            "layer": "capability",
+            "severity": "error",
+            "instancePath": "/specVersion",
+            "message": "The exact JPS specification version is not bundled with this CLI."
+          }
+        ],
+        "diagnosticsTruncated": false
+      }
+    }
+  }
+]

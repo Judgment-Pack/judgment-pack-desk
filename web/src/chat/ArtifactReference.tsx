@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Button, ButtonLink } from '../ui/Button'
+import { ChatAction, ChatActionLink } from './ChatActions'
+import { OverflowTooltip } from '../ui/Tooltip'
 import styles from './ChatWorkspace.module.css'
 
 /** A quiet reference to work reviewed in the workspace, shared by drafts and tests. */
@@ -12,6 +13,7 @@ export function ArtifactReference({
   href,
   disabled,
   revision,
+  compact = false,
 }: {
   title: string
   description: ReactNode
@@ -21,21 +23,20 @@ export function ArtifactReference({
   href?: string
   disabled?: boolean
   revision?: number
+  compact?: boolean
 }) {
+  const content = <div><strong>{title}</strong><small>{description}</small></div>
   return (
-    <div className={styles.artifact} data-draft-revision={revision}>
-      <div>
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </div>
+    <div className={styles.artifact} data-draft-revision={revision} data-artifact-compact={compact||undefined}>
+      {compact ? <OverflowTooltip selector="strong,small">{content}</OverflowTooltip> : content}
       {indicator ? (
         <span className={styles.caption}>{indicator}</span>
       ) : href && action ? (
-        <ButtonLink to={href}>{action}</ButtonLink>
+        <ChatActionLink to={href}>{action}</ChatActionLink>
       ) : onOpen && action ? (
-        <Button disabled={disabled} onClick={onOpen}>
+        <ChatAction disabled={disabled} onClick={onOpen}>
           {action}
-        </Button>
+        </ChatAction>
       ) : null}
     </div>
   )

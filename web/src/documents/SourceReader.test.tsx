@@ -29,14 +29,16 @@ it('loads only on click, highlights normalized quotes and opens a read-only full
   expect(onRead).toHaveBeenCalledOnce()
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })
-it.each([['made up', [1]], ['line one', [2]]] as const)('does not offer a reader for a mismatched quote or unselected page', async (quote, pages) => {
+it.each([['made up', [1]], ['line one', [2]]] as const)('keeps the selected source inspectable without verifying a mismatched quote or unselected page', async (quote, pages) => {
   const { value, config, reference } = await fixture()
   mocks.load.mockResolvedValue(value)
   render(<DeskConfigFixture value={config}><CitationPreview name="notes.txt" reference={{ ...reference, pages: [...pages] }} citation={{ page: 1, quote }} number={1} onRead={vi.fn()} /></DeskConfigFixture>)
   fireEvent.click(screen.getByRole('button', { name: /View source 1/ }))
   await screen.findByRole('alert')
   expect(screen.queryByText('Quote found on page 1')).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Open source text' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Open source text' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+  expect(screen.queryByText('line one line two', {selector:'mark'})).toBeNull()
 })
 it('aborts on close and ignores late document bytes', async () => {
   const { value, config, reference } = await fixture()
@@ -61,4 +63,28 @@ it('keeps verification failures visible and retries without showing unverified s
   expect(await screen.findByText('line one line two')).toBeTruthy()
   expect(screen.queryByRole('checkbox')).toBeNull()
   expect(screen.getByRole('button', { name: 'Download original' })).toBeTruthy()
+})
+
+it('shows verified source text and a warning for a real mismatch, without a false highlight or retry',async()=>{
+ const {value,config,reference}=await fixture();mocks.load.mockResolvedValue(value)
+ render(<DeskConfigFixture value={config}><SourceReader name="notes.txt" reference={reference} citation={{page:1,quote:'“invented words”'}}/></DeskConfigFixture>)
+ expect((await screen.findByRole('alert')).textContent).toBe('This quote does not match the cited page.')
+ expect(screen.getByText('line one line two')).toBeTruthy()
+ expect(screen.queryByRole('button',{name:'Retry'})).toBeNull()
+ expect(document.querySelector('mark')).toBeNull()
+})
+it('does not expose an unselected cited page while opening the retained source',async()=>{
+ const {value,config,reference}=await fixture();mocks.load.mockResolvedValue(value)
+ render(<DeskConfigFixture value={config}><SourceReader name="notes.txt" reference={{...reference,pages:[2]}} citation={{page:1,quote:'line one'}}/></DeskConfigFixture>)
+ await screen.findByRole('alert')
+ expect(screen.queryByText('line one line two')).toBeNull()
+ expect(document.querySelector('mark')).toBeNull()
+})
+it('accepts curly quotation marks while highlighting only the exact source span',async()=>{
+ const {value,config,reference}=await fixture();mocks.load.mockResolvedValue(value)
+ render(<DeskConfigFixture value={config}><CitationPreview name="notes.txt" reference={reference} citation={{page:1,quote:'“line one line two”'}} number={3} onRead={vi.fn()}/></DeskConfigFixture>)
+ fireEvent.click(screen.getByRole('button',{name:/View source 3/}))
+ await screen.findByText('Quote found on page 1')
+ expect(screen.getByText('line one line two',{selector:'mark'})).toBeTruthy()
+ expect(screen.queryByRole('alert')).toBeNull()
 })

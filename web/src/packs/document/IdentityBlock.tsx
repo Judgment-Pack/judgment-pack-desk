@@ -1,3 +1,5 @@
+import {ArtifactVersionOptions} from '../../artifacts/ArtifactVersionOptions'
+import {setString} from '../edit/writes'
 import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS } from '../terminology'
 /**
@@ -33,8 +35,8 @@ export function TitleBlock({ document: doc }: { document: PackDocument }) {
 
 export function VersionBlock({ document: doc }: { document: PackDocument }) {
   useLocale()
-  const { editing } = useEditing()
-  if (editing) return <StringField pointer="/version" label={msg("version")} />
+  const { editing, baseArtifactVersion, write } = useEditing()
+  if (editing) return <StringField pointer="/version" label={msg("version")} hint={<ArtifactVersionOptions base={baseArtifactVersion} onSelect={version=>write(current=>setString(current,"/version",version))}/>} />
   return (
     <Block pointer="/version" className={styles.identity}>
       <p className={styles.eyebrow}>

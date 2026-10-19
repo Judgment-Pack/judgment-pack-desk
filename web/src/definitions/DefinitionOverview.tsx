@@ -1,3 +1,4 @@
+import {LoadingState} from '../ui/LoadingState'
 import type { ReactNode } from 'react'
 import { msg, useLocale } from '../i18n'
 import { Disclosure } from '../ui/Disclosure'
@@ -12,7 +13,7 @@ export function DefinitionOverview({ label, purpose, description, context, resul
 }) {
   useLocale()
   return <section className={styles.overview} aria-label={label} aria-busy={loading || undefined}>
-    {loading ? <p role="status" className={styles.muted}>{msg('Loading overview…')}</p> : unavailable ? <div role="status" className={styles.muted}>{unavailable}</div> : <>
+    {loading ? <LoadingState>{msg('Loading overview…')}</LoadingState> : unavailable ? <div role="status" className={styles.muted}>{unavailable}</div> : <>
       <div className={styles.purpose}>
         <div className={styles.lead}><ExpandableText text={purpose || msg('No purpose has been described yet.')} label={msg('purpose')}/></div>
         {description && <div className={styles.description}><ExpandableText text={description} label={msg('description')}/></div>}

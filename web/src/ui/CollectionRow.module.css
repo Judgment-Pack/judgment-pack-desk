@@ -1,0 +1,3 @@
+.row[data-row-action] { cursor:pointer; }
+.row[data-row-action]:hover,.row[data-row-action]:focus-within { background:var(--accent-soft); }
+.row [data-row-ignore] { cursor:default; }

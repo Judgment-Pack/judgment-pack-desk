@@ -1,0 +1,11 @@
+.link {
+ color: var(--accent);
+ text-decoration-line: underline;
+ text-decoration-color: var(--accent);
+ text-decoration-thickness: 1px;
+ text-underline-offset: 3px;
+ border-radius: var(--radius-sm);
+ overflow-wrap: anywhere;
+}
+.link:hover, .link:focus-visible { text-decoration-color: currentColor; }
+.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

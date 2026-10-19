@@ -301,8 +301,23 @@ func (s *Server) runnerAnswer(ctx context.Context, tail string, query url.Values
 	return response.StatusCode, data, nil
 }
 
+// jobsSigningCursor retains the runs list's forward-only cursor contract.
+// Journal activity has separate before/tail modes; they are not run-list cursors.
+func jobsSigningCursor(rawQuery string) (string, error) {
+	values, malformed := url.ParseQuery(rawQuery)
+	switch cursor, given := values["after"]; {
+	case malformed != nil:
+		// Refused below, as Runner refuses it.
+	case !given:
+		return "", nil
+	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):
+		return cursor[0], nil
+	}
+	return "", errors.New("invalid journal cursor")
+}
+
 // handleJobsSigning answers `GET /api/audit/jobs-signing`, with at most one
-// `after`, Runner's cursor, as the journal's is read (`journalCursor`). It
+// `after`, Runner's cursor, as the journal's is read (`jobsSigningCursor`). It
 // runs only when the page asks.
 func (s *Server) handleJobsSigning(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
@@ -313,7 +328,7 @@ func (s *Server) handleJobsSigning(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, jobsSigningAnswer{State: jobsStateNoRunner})
 		return
 	}
-	after, err := journalCursor(r.URL.RawQuery)
+	after, err := jobsSigningCursor(r.URL.RawQuery)
 	if err != nil {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Ask for a page of runs with at most one after, a sequence in decimal digits, in a well-formed query.")
 		return
@@ -460,12 +475,13 @@ func (s *Server) jobsVerifyRun(ctx context.Context, dir heldDir, run string) (ru
 		return answerOr(refused), failure
 	}
 	var recorded struct {
+		ID      string          `json:"id"`
+		JobID   string          `json:"jobId"`
 		Signing json.RawMessage `json:"signing"`
 	}
-	if json.Unmarshal(record, &recorded) != nil {
+	if json.Unmarshal(record, &recorded) != nil || recorded.ID != run || !evaluationJobID.MatchString(recorded.JobID) {
 		return runVerifyAnswer{}, &lockFailure{http.StatusBadGateway, CodeBadRequest, "Desk could not read the run's export: the runner's answer is not a run."}
 	}
-	key, under := verifyKey(recorded.Signing, list)
 	export, refused, failure := readRunner("runs/"+run+"/verification", url.Values{"version": {"5"}})
 	if refused != nil || failure != nil {
 		return answerOr(refused), failure
@@ -473,10 +489,19 @@ func (s *Server) jobsVerifyRun(ctx context.Context, dir heldDir, run string) (ru
 	var head struct {
 		Version       int    `json:"version"`
 		ReleaseDigest string `json:"releaseDigest"`
+		Run           struct {
+			ID    string `json:"id"`
+			JobID string `json:"jobId"`
+		} `json:"run"`
 	}
-	if json.Unmarshal(export, &head) != nil || !releaseDigestPattern.MatchString(head.ReleaseDigest) {
+	// A valid export can belong to another run signed with the same key. Bind
+	// both reads to this request and job before selecting trust metadata,
+	// retaining a verification copy or invoking the verifier. These identities
+	// are present in the retained older export forms too.
+	if json.Unmarshal(export, &head) != nil || !releaseDigestPattern.MatchString(head.ReleaseDigest) || head.Run.ID != run || head.Run.JobID != recorded.JobID {
 		return runVerifyAnswer{}, &lockFailure{http.StatusBadGateway, CodeBadRequest, "Desk could not read the run's export: the runner's answer is not an export with a release digest."}
 	}
+	key, under := verifyKey(recorded.Signing, list)
 	profiles := []byte(s.jobs.profiles)
 	if len(profiles) == 0 {
 		profiles = []byte("[]")

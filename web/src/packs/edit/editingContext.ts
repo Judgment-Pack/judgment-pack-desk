@@ -35,6 +35,8 @@ export interface DeclaredIds {
 }
 
 export interface EditingSession {
+  /** Version from the frozen saved base, never the changing draft field. */
+  baseArtifactVersion?: string
   /** True while the document is being edited as a form. */
   editing: boolean
   /** The bytes and this desk's reading of them. */

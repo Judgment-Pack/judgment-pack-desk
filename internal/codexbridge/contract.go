@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// MaxPromptBytes is shared with host-side context builders.
+const MaxPromptBytes = 200_000
+
 var errContract = errors.New("unsupported Codex request or response")
 var toolName = regexp.MustCompile(`^desk_[A-Za-z0-9_]{1,59}$`)
 
@@ -20,17 +23,23 @@ type Tool struct {
 }
 
 type RunRequest struct {
-	Model        string `json:"model"`
-	Prompt       string `json:"prompt"`
-	Instructions string `json:"instructions"`
-	Tools        []Tool `json:"tools"`
-	Effort       string `json:"effort,omitempty"`
-	Phase        string `json:"phase,omitempty"`
+	// Host-only admission policy. Never accepted from the browser or sent to Codex.
+	WaitForAvailability bool   `json:"-"`
+	Model               string `json:"model"`
+	Prompt              string `json:"prompt"`
+	Instructions        string `json:"instructions"`
+	Tools               []Tool `json:"tools"`
+	Effort              string `json:"effort,omitempty"`
+	Phase               string `json:"phase,omitempty"`
+	// The person's own message, for the Desk's memory recall alone: the page
+	// sends it beside a prompt the harness has added its execution state and
+	// guidance to after the message. Never sent to Codex.
+	PersonMessage string `json:"personMessage,omitempty"`
 }
 
 func threadParams(request RunRequest, privateWork string) (map[string]any, error) {
 	if request.Model == "" || len(request.Model) > 128 || strings.ContainsAny(request.Model, "\r\n\x00") ||
-		len(request.Prompt) == 0 || len(request.Prompt) > 200_000 || len(request.Instructions) > 200_000 || len(request.Tools) > 128 {
+		len(request.Prompt) == 0 || len(request.Prompt) > MaxPromptBytes || len(request.PersonMessage) > MaxPromptBytes || len(request.Instructions) > 200_000 || len(request.Tools) > 128 {
 		return nil, errContract
 	}
 	switch request.Effort {

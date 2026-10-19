@@ -1,0 +1,9 @@
+.progress { font-size: var(--text-sm); color: var(--ink-soft); }
+.steps { list-style: none; padding: 0; margin: var(--space-2) 0; display: grid; gap: var(--space-2); }
+.steps li { display: flex; align-items: baseline; gap: var(--space-2); }
+.indicator { display: inline-flex; width: 16px; flex: none; }
+.indicator svg { width: 14px; height: 14px; }
+.steps small { display: block; color: var(--ink-faint); }
+.pause { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3) 0; }
+.pause strong { color: var(--ink); }
+.pause p { width: 100%; margin: 0; }

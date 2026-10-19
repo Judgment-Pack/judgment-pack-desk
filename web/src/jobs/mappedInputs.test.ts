@@ -1,6 +1,6 @@
 import { mappingFixture } from '../dialect/__fixtures__/desk-mappings'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { prepareMappedInputs, parseMappedObject, parseMapping, mappedCase } from './mappedInputs'
+import { prepareMappedInputs, parseMappedCase, parseMappedObject, parseMapping, mappedCase } from './mappedInputs'
 import { jobsRequest, RetainedJSON } from './wire'
 import { jobsAPI } from './client'
 import { parseMapping as legacyParse, prepareMappedInputs as legacyPrepare } from '../dialect/__fixtures__/legacy-producer/producer/mappedInputs'
@@ -9,12 +9,12 @@ import { acquire, seal } from '../research/gatewayClient'
 import type { Acquired } from '../research/gatewayClient'
 import { ConnectionRequestError } from '../connections/client'
 import { DESK_DEFAULTS } from '../config/deskConfig'
-import type { MappingV2, ProfileEntry } from './mappingTypes'
+import type { ExecutableDialect, ProfileEntry } from './dialectTypes'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('../dialect/__fixtures__/legacy-producer/producer/client',()=>({jobsAPI:vi.fn()}))
 vi.mock('../research/gatewayClient',()=>({acquire:vi.fn(),seal:vi.fn(),newResearchSession:()=> 'one-session'}))
 const profile: ProfileEntry={digest:'sha256:pin',profile:{id:'records',publicKey:'ab'.repeat(32),authority:'gateway:test',source:'records',class:'record',shape:'mcp',adapter:{name:'mcp',version:'1',digest:'sha256:adapter'},endpoint:null,tools:['lookup']}}
-const mapping: MappingV2=mappingFixture('sequential')
+const mapping: ExecutableDialect=mappingFixture('sequential')
 const config={...DESK_DEFAULTS.research,gateway:{url:'http://127.0.0.1:1',authority:profile.profile.authority,signer:{algorithm:'ed25519' as const,public:profile.profile.publicKey}}}
 const options=()=>({mapping,caseValue:{},files:{},selections:{},config,profiles:[profile],signal:new AbortController().signal,progress:vi.fn()})
 beforeEach(()=>{vi.resetAllMocks();vi.mocked(seal).mockResolvedValue(undefined as never)})
@@ -90,7 +90,7 @@ it('ignores late replies after cancellation',async()=>{
  expect(acquire).not.toHaveBeenCalled()
 })
 it('places picker values only at explicit typed case parameters',()=>{
- const drive: MappingV2=mappingFixture('drive-selection')
+ const drive: ExecutableDialect=mappingFixture('drive-selection')
  expect(mappedCase(drive,{subject:'test'},{drive:{fileId:'selected',grant:'grant'}})).toEqual({subject:'test',picked:{id:'selected',grant:'grant'}})
  drive.case!.parameters!.file!.pointer='/__proto__/polluted'
  expect(()=>mappedCase(drive,{}, {drive:{fileId:'selected',grant:'grant'}})).toThrow()
@@ -98,9 +98,91 @@ it('places picker values only at explicit typed case parameters',()=>{
 })
 
 it('normalizes a Drive acquisition reconnect refusal and still seals the abandoned session',async()=>{
- const drive:MappingV2=mappingFixture('drive-reconnect')
+ const drive:ExecutableDialect=mappingFixture('drive-reconnect')
  vi.mocked(jobsAPI).mockResolvedValue({next:{name:'drive',kind:'selected-file',provider:'google-drive',profile:'records',source:'records',arguments:{fileId:'chosen',grant:'grant'}}})
  vi.mocked(acquire).mockRejectedValue(Error('source failed: reconnect-required'))
  await expect(prepareMappedInputs({...options(),mapping:drive,selections:{drive:{fileId:'chosen',grant:'grant'}},config:{...config,managedLocal:true,documents:{enabled:true,source:'documents',maxFileBytes:200000,maxRequestBytes:1000000,maxResponseBytes:1000000}}})).rejects.toEqual(new ConnectionRequestError('reconnect-required','google-drive'))
  expect(seal).toHaveBeenCalledWith('one-session',expect.any(AbortSignal),'local-documents')
+})
+
+it('retains named identity and absent optional members while refusing null sources',()=>{
+ for(const formatVersion of ['2.0.0','3.0.0']) {
+  const mapping={formatVersion,id:'urn:test',version:'1.0.0',case:{facts:[],evidence:[]}}
+  expect(parseMapping(JSON.stringify(mapping))).toEqual(mapping)
+  expect(()=>parseMapping(JSON.stringify({...mapping,sources:null}))).toThrow()
+ }
+})
+
+it('does not add legacy defaults or repair explicit invalid omissions in integer v3',()=>{
+ const value={version:3,case:{facts:[],evidence:[]}}
+ expect(parseMapping(JSON.stringify(value))).toEqual(value)
+ const explicit={...value,sources:[]}
+ expect(parseMapping(JSON.stringify(explicit))).toEqual(explicit)
+})
+
+it('preserves every case number spelling through picker insertion and imported preparation',async()=>{
+ const text='{"large":9007199254740993,"scale":1.000,"exponent":1e2,"negativeZero":-0,"null":null,"false":false}'
+ const mapping:ExecutableDialect={formatVersion:'3.0.0',id:'urn:test',version:'1.0.0',case:{facts:[],evidence:[]}}
+ const imported={dialect:mapping,binding:{dialect:'sha256:'+'a'.repeat(64),sources:{}}}
+ vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{},source:{mapping,mappingDigest:'sha256:bound'}}})
+ const result=await prepareMappedInputs({...options(),mapping,caseValue:parseMappedCase(text),imported})
+ expect(jobsRequest((result.input.source as import('./dialectTypes').SourceV2)?.case)).toBe(text)
+ expect(result.input.source).toHaveProperty('import',imported)
+ expect(jobsAPI).toHaveBeenCalledWith('inputs/next',expect.objectContaining({source:expect.objectContaining({import:imported})}),undefined,expect.any(AbortSignal))
+ expect(acquire).not.toHaveBeenCalled()
+})
+
+it('lets Runner bind an imported research definition and verifies retained bytes without gateway replay',async()=>{
+ const digest='sha256:'+'b'.repeat(64)
+ const definition=parseMapping(JSON.stringify({version:3,case:{parameters:{dataset:{pointer:'/dataset',type:'string'}},facts:[],evidence:[]},sources:[{name:'classification',kind:'research',maxAge:3600,model:'model-a',question:{$param:'dataset'},constraints:{},evidence:[],fields:[{name:'size',type:'decimal',required:false}],capabilities:['answer'],read:{copy:{facts:[],evidence:[]}}}]}))
+ const binding={dialect:digest,sources:{classification:{profile:'ai',profileDigest:digest,webProfiles:{}}}}
+ const bound={...definition,sources:definition.sources!.map(s=>({...s,profile:'ai',profileDigest:digest,webProfiles:{}}))}
+ const raw='{"result":{"fields":{"size":{"status":"found","value":"1.00","cites":[0]}},"responses":[{"result":{"large":9007199254740993,"scale":1.000},"receipt":{},"salts":{}}]}}'
+ const requests:string[]=[]
+ vi.mocked(jobsAPI).mockImplementation(async(_path,body)=>{requests.push(jobsRequest(body));return requests.length===1?{next:{name:'classification',kind:'research',profile:'ai',source:'answer',arguments:{question:'Data'}}}:{input:{facts:{},source:{mapping:bound,mappingDigest:digest}},factsText:'{}'} as any})
+ const result=await prepareMappedInputs({...options(),mapping:definition,imported:{dialect:definition,binding},caseValue:{dataset:'Data'},retainedResearch:{classification:new RetainedJSON(raw)},profiles:[],config:{...config,gateway:null}})
+ expect(JSON.parse(requests[0]).source).not.toHaveProperty('mapping')
+ expect(JSON.parse(requests[0]).source.import.dialect).toEqual(definition)
+ expect(requests[1]).toContain(raw)
+ expect(jobsRequest(result.input)).toContain(raw)
+ expect(result.input.source?.mapping).toEqual(bound)
+ expect(acquire).not.toHaveBeenCalled();expect(seal).not.toHaveBeenCalled()
+})
+it('does not invent a bound mapping when Runner omits it for an import',async()=>{
+ const definition:ExecutableDialect={version:3,case:{facts:[],evidence:[]}}
+ vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{}}})
+ await expect(prepareMappedInputs({...options(),mapping:definition,imported:{dialect:definition,binding:{dialect:'sha256:'+'c'.repeat(64),sources:{}}}})).rejects.toThrow('could not be mapped')
+ expect(acquire).not.toHaveBeenCalled()
+})
+
+it('suspends for a pure research review and preserves preceding signed bytes',async()=>{
+ const raw='{"result":{"id":9007199254740993},"receipt":{},"salts":{}}'
+ const research={name:'research',kind:'research',profile:'records',profileDigest:profile.digest,maxAge:3600,model:'fixture',question:'Check',constraints:{},fields:[],evidence:[],capabilities:['answer'],read:{copy:{facts:[],evidence:[]}}}
+ const declaration=parseMapping(JSON.stringify({version:3,case:{parameters:{},facts:[],evidence:[]},sources:[mapping.sources![0],research]}))
+ vi.mocked(acquire).mockResolvedValue({text:raw} as Acquired)
+ vi.mocked(jobsAPI).mockResolvedValueOnce({next:{name:'first',kind:'operation',profile:'records',source:'records',arguments:{tool:'lookup',arguments:{}}}}).mockResolvedValueOnce({next:{name:'research',kind:'research',profile:'records',source:'answer',arguments:{question:'Check'}}})
+ const {PortableResearchRequired}=await import('./mappedInputs')
+ const problem=await prepareMappedInputs({...options(),mapping:declaration,reviewResearch:true}).catch(e=>e)
+ expect(problem).toBeInstanceOf(PortableResearchRequired)
+ expect(problem.name).toBe('research');expect(problem.input.text).toContain(raw)
+ expect(acquire).toHaveBeenCalledTimes(1)
+})
+it('resumes from a retained frozen prefix without rereading earlier sources and rejects changed case values',async()=>{
+ const declaration=parseMapping(JSON.stringify({version:3,case:{parameters:{},facts:[],evidence:[]},sources:[mapping.sources![0],{name:'research',kind:'research',profile:'records',profileDigest:profile.digest,read:{copy:{facts:[],evidence:[]}}}]}))
+ const raw='{"result":{"id":9007199254740993},"receipt":{}}'
+ const caseValue=parseMappedCase('{"large":9007199254740993,"fraction":1.0000,"no":false}')
+ const input=new RetainedJSON(jobsRequest({source:{mapping:declaration,case:caseValue,sources:{first:{response:new RetainedJSON(raw)}}}}))
+ const response=new RetainedJSON('{"result":{"fields":{"decimal":{"status":"found","value":"1.00","cites":[0]}},"responses":[]}}')
+ vi.mocked(jobsAPI).mockResolvedValue({input:{facts:{},source:{mappingDigest:'digest'}},factsText:'{}'})
+ const result=await prepareMappedInputs({...options(),mapping:declaration,caseValue,retainedPrefix:{input,name:'research',response},profiles:[],config:{...config,gateway:null}})
+ expect(jobsRequest(result.input)).toContain(raw);expect(jobsRequest(result.input)).toContain(response.text)
+ expect(acquire).not.toHaveBeenCalled();expect(seal).not.toHaveBeenCalled()
+ vi.mocked(jobsAPI).mockClear()
+ await expect(prepareMappedInputs({...options(),mapping:declaration,caseValue:{...caseValue,no:true},retainedPrefix:{input,name:'research',response}})).rejects.toThrow('different inputs')
+ expect(jobsAPI).not.toHaveBeenCalled()
+})
+it('binds nothing to a profile Runner set aside: it is refused by its name and reason before any request',async()=>{
+ const aside:ProfileEntry={...profile,state:'set-aside',reason:'its form is refused'}
+ await expect(prepareMappedInputs({...options(),profiles:[aside]})).rejects.toThrow('The input profile records was set aside by Runner and cannot be bound. Runner’s reason: its form is refused. Choose another profile for this source, or upgrade the job to a release that does not name it.')
+ expect(jobsAPI).not.toHaveBeenCalled();expect(acquire).not.toHaveBeenCalled()
 })

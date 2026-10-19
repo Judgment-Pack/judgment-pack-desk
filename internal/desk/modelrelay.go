@@ -818,6 +818,14 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	capacityKey := s.modelCapacityKey(endpoint.url, keyName)
+	releaseCapacity, admitted := modelCapacity.Try(capacityKey)
+	if !admitted {
+		writeJSONCoded(w, http.StatusServiceUnavailable, CodeAssistantRelayBusy, "This AI connection is busy. Nothing was sent.")
+		return
+	}
+	defer releaseCapacity()
+
 	ctx, cancel := context.WithTimeout(r.Context(), relayDeadline)
 	defer cancel()
 	r = r.WithContext(ctx)
@@ -860,6 +868,14 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusForbidden, CodeForbidden, "Choose a model enabled for this AI connection and desk.")
 		return
 	}
+	if !listing {
+		body, err = s.prepareModelContext(endpoint.kind, suffix, body)
+		if err != nil {
+			writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge, err.Error())
+			return
+		}
+	}
+
 	if !listing && connection == nil && profile.API != nil && !profile.API.Inherit && !profileAPIModelAllowed(endpoint.kind, suffix, body, profile.API.Models) {
 		writeJSONCoded(w, http.StatusForbidden, CodeForbidden, "Choose an enabled model in Admin › Assistant.")
 		return
@@ -913,6 +929,9 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel},
 		FlushInterval: -1,
 		ModifyResponse: func(response *http.Response) error {
+			if response.StatusCode == http.StatusTooManyRequests {
+				modelCapacity.Throttle(capacityKey)
+			}
 			status = response.StatusCode
 			// **The answer's headers are filtered too**, and the reason is the
 			// key: an endpoint that echoes what it was sent would otherwise

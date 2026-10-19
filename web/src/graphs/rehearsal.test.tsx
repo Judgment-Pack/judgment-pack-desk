@@ -1,3 +1,5 @@
+import { formatJson } from '../files/formatJson'
+const displayJSON = (raw: string) => { const result = formatJson(raw); return result.ok ? result.content.trimEnd() : raw }
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { deskFetch } from '../files/client'
@@ -12,9 +14,9 @@ it('asks only when chosen, shows labels verbatim, and preserves all runtime byte
   const { unmount } = render(<GraphRehearsal graphId="onboarding" />)
   expect(deskFetch).not.toHaveBeenCalled()
   expect(screen.getByText(/Try supplied facts/).textContent).toContain('creates no decision audit record')
-  expect(screen.getByText(/Inputs and results on this page/).textContent).toContain('retained with the conversation')
+  expect(screen.getByText(/Dialects and results on this page/).textContent).toContain('retained with the conversation')
   const inputs = '{"node":{"facts":{"number":1.0,"text":"$(touch nope)"}}}'
-  fireEvent.change(screen.getByLabelText('Inputs by node id'), { target: { value: inputs } })
+  fireEvent.change(screen.getByLabelText('Dialects by node id'), { target: { value: inputs } })
   fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   await screen.findByText('evaluated')
   expect(screen.getByText(/Results are shown separately from the current graph/)).toBeTruthy()
@@ -26,13 +28,17 @@ it('asks only when chosen, shows labels verbatim, and preserves all runtime byte
   expect(document.querySelector('.graph-labels')?.textContent).toContain('experimental true')
   fireEvent.click(screen.getByText('Exact run record',{selector:'summary span'}))
   const pre = screen.getByRole('region',{name:'Exact run record'})
-  expect(pre.textContent).toBe(raw.slice(raw.indexOf('"answer":') + 9, -1))
+  expect(pre.textContent).toBe(displayJSON(raw.slice(raw.indexOf('"answer":') + 9, -1)))
+  const copy = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', {value: {writeText: copy}, configurable: true})
+  fireEvent.click(screen.getByRole('button', {name: 'Copy Exact run record'}))
+  expect(copy).toHaveBeenCalledWith(raw.slice(raw.indexOf('"answer":') + 9, -1))
   expect(pre.querySelector('code')?.getAttribute('lang')).toBe('en')
   const signal = vi.mocked(deskFetch).mock.calls[0][1]!.signal!
   unmount()
   expect(signal.aborted).toBe(true)
   render(<GraphRehearsal graphId="onboarding" />)
-  expect((screen.getByLabelText('Inputs by node id') as HTMLTextAreaElement).value).toBe('{}')
+  expect((screen.getByLabelText('Dialects by node id') as HTMLTextAreaElement).value).toBe('{}')
   expect(document.querySelector('pre')).toBeNull()
   expect(deskFetch).toHaveBeenCalledTimes(1)
 })
@@ -64,7 +70,7 @@ it('aborts on leaving and clears a result when inputs change', async () => {
   const { unmount } = render(<GraphRehearsal graphId="g" />)
   fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   await screen.findByText('evaluated')
-  fireEvent.change(screen.getByLabelText('Inputs by node id'), { target: { value: '{"other":{}}' } })
+  fireEvent.change(screen.getByLabelText('Dialects by node id'), { target: { value: '{"other":{}}' } })
   expect(document.querySelector('pre')).toBeNull()
   vi.mocked(deskFetch).mockImplementationOnce(() => new Promise(() => {}))
   fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
@@ -101,7 +107,7 @@ it('lists runtime members verbatim under their own names', async () => {
   ])
   for (const item of items) expect(item.querySelector('code')?.getAttribute('lang')).toBe('en')
   fireEvent.click(screen.getByText('Exact run record', {selector:'summary span'}))
-  expect(screen.getByRole('region', { name: 'Exact run record' }).textContent).toBe(answer)
+  expect(screen.getByRole('region', { name: 'Exact run record' }).textContent).toBe(displayJSON(answer))
 })
 
 it('does not invent absent runtime members', async () => {
@@ -117,7 +123,7 @@ it('does not invent absent runtime members', async () => {
 
 it('does not mark Desk refusals as English', async () => {
   const { container } = render(<div lang="fr"><GraphRehearsal graphId="g" /></div>)
-  fireEvent.change(screen.getByLabelText('Inputs by node id'), { target: { value: '[]' } })
+  fireEvent.change(screen.getByLabelText('Dialects by node id'), { target: { value: '[]' } })
   fireEvent.click(screen.getByRole('button', { name: 'Try inputs' }))
   const alert = await screen.findByRole('alert')
   expect(alert.closest('[lang]')).toBe(container.firstChild)

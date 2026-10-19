@@ -1,3 +1,5 @@
+import {LoadingState} from '../ui/LoadingState'
+import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { TypedConfirmation, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { sourceMessage } from '../i18n/source'
@@ -58,13 +60,11 @@ export function ChatBackupSettings({ status, blocked, onRestored }: { status: Ch
   return <SettingsSection title={msg("Backups & exports")} variant="plain" description={msg("Download all saved chat history, drafts and retained source text. Pack files and credential settings are kept separately.")}>
     <div className={styles.details}>
       <p className={styles.caption}>{msg("Backups are unencrypted and may contain private messages and source material. Keep them in a private location.")}</p>
-      <div className={styles.actions}>
+      <SettingsActions feedback={<SettingsFeedback tone={error&&!open?'error':notice?'success':'neutral'}>{!open&&error?systemMessage(error):busy==='backup'?msg('Preparing backup…'):notice?systemMessage(notice):null}</SettingsFeedback>}>
         <Button disabled={blocked || busy !== null || status.bytes > status.maxBackupBytes || Boolean(status.problem)} onClick={() => void download()}>{busy === 'backup' ? msg("Preparing backup…") : msg("Download chat backup")}</Button>
         <Button ref={opener} disabled={blocked || busy !== null} onClick={() => { setConfirmed(''); setOpen(true); setRevision(status.revision); setFile(null); setPath(status.managed ? `${status.recommendedPath}-restored-${Date.now()}` : ''); setError(''); setNotice('') }}>{msg("Restore backup…")}</Button>
-      </div>
+      </SettingsActions>
       <p className={styles.caption}><Message text={"Saved data only; unsent messages are kept in this browser. Backup limit: <0/>."} slots={[formatStorageBytes(status.maxBackupBytes)]} /></p>
-      {notice && <p role="status" className={styles.caption}>{systemMessage(notice)}</p>}
-      {error && !open && <p role="alert">{systemMessage(error)}</p>}
     </div>
     <Dialog open={open} onOpenChange={value => { if (!value) void close() }} title={msg("Restore chat backup")} openerRef={opener}
       description={status.managed ? msg("Restore replaces this desk’s saved conversations and documents. Current files stay in the desk folder for recovery.") : msg("Restore replaces the active chat store for all projects. Current files remain in their original folder for recovery. Desk reloads after switching to the restored data.")}>
@@ -78,11 +78,11 @@ export function ChatBackupSettings({ status, blocked, onRestored }: { status: Ch
           </Field>
           {!status.managed && <p className={styles.caption}>{msg("Existing chats are not merged. Chats keep their project association. After moving a project, use its previous folder path to recover its history.")}</p>}
           <TypedConfirmation value={confirmed} onChange={setConfirmed} disabled={busy==='restore'} />
-          {error && <p role="alert">{systemMessage(error)}</p>}
-          {busy === 'restore' && <p role="status" className={styles.caption}>{msg("Uploading, verifying and restoring chat data…")}</p>}
+          {error && <SettingsFeedback tone="error">{systemMessage(error)}</SettingsFeedback>}
+          {busy === 'restore' && <SettingsFeedback>{msg("Uploading, verifying and restoring chat data…")}</SettingsFeedback>}
         </FieldGroup>
         <DialogActions><Button disabled={busy === 'restore'} onClick={()=>void close()}>{msg("Cancel")}</Button>
-          <Button type="submit" variant="primary" disabled={blocked || busy !== null || !file || !path.trim() || path.trim() === status.path || tooLarge || confirmed.trim()!==msg('Yes')}>{busy === 'restore' ? msg("Restoring…") : msg("Restore and reload")}</Button></DialogActions>
+          <Button type="submit" variant="primary" disabled={blocked || busy !== null || !file || !path.trim() || path.trim() === status.path || tooLarge || confirmed.trim()!==msg('Yes')}>{busy === 'restore' ? <LoadingState inline>{msg("Restoring…")}</LoadingState> : msg("Restore and reload")}</Button></DialogActions>
       </form>
     </Dialog>
   </SettingsSection>

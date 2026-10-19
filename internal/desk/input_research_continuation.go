@@ -1,0 +1,215 @@
+package desk
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/url"
+	"os"
+	"regexp"
+	"strings"
+)
+
+func researchCanContinue(run inputResearchRun) bool {
+	return len(run.Sources) > 0 && contains([]string{"stopped", "completed", "completed-with-gaps", "partial", "blocked", "interrupted"}, run.State)
+}
+
+// The caller holds the research-root admission lock. Fail closed if any saved
+// state cannot be inspected; another window must not start a duplicate run.
+func (s *Server) researchInputAvailable(ctx context.Context, root *os.Root, prep, except string) error {
+	dir, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !inputResearchID.MatchString(entry.Name()) || entry.Name() == except {
+			continue
+		}
+		rr, err := openInputResearch(root, entry.Name(), false)
+		if err != nil {
+			return err
+		}
+		run, err := s.researchJournal(rr, entry.Name()).Read(ctx)
+		rr.Close()
+		if err != nil {
+			return err
+		}
+		if run.PreparationID == prep && (run.State == "queued" || run.State == "running" || run.State == "paused") {
+			return errors.New("Research is already queued or running, or is waiting for budget approval for these inputs. Finish or stop it before starting another run.")
+		}
+	}
+	return nil
+}
+
+var researchProofID = regexp.MustCompile(`^attempt_[a-f0-9]{64}(_[1-4])?$`)
+
+func (s *Server) writeResearchReview(ctx context.Context, root *os.Root, run inputResearchRun, parent *os.Root) error {
+	if err := validateResearchJournal(run, run.ID); err != nil {
+		return err
+	}
+	// The coordinator publishes only by renaming a fully prepared directory.
+	// A journal backend may commit before that rename, but workers and HTTP reads
+	// cannot discover it yet. Retain hidden staging after an uncertain create.
+	staging := ".review-" + run.ID
+	for _, name := range []string{run.ID, staging} {
+		if _, err := root.Lstat(name); err == nil {
+			return os.ErrExist
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	rr, _, err := openOwnFolder(root, []string{staging}, true, "research review")
+	if err != nil {
+		return err
+	}
+	defer rr.Close()
+	retainStage := false
+	defer func() {
+		if !retainStage {
+			_ = root.RemoveAll(staging)
+		}
+	}()
+	if parent != nil || run.Reprocess {
+		for _, source := range run.Sources {
+			sourceRoot := parent
+			if run.Reprocess {
+				var err error
+				sourceRoot, err = openInputResearch(root, run.SourceRuns[source.ID], false)
+				if err != nil {
+					return err
+				}
+				defer sourceRoot.Close()
+			}
+			if !researchProofID.MatchString(source.ID) {
+				return errors.New("A saved source reference is invalid.")
+			}
+			originID := source.ID
+			if run.Reprocess && run.SourceOriginIDs[source.ID] != "" {
+				originID = run.SourceOriginIDs[source.ID]
+			}
+			if !researchProofID.MatchString(originID) {
+				return errors.New("A saved source origin is invalid.")
+			}
+			saved, err := s.loadResearchProof(ctx, sourceRoot, originID)
+			if err != nil {
+				return errors.New("A retained source proof is unavailable. Start new research instead.")
+			}
+			if saved.Proof.Pin != run.Gateway {
+				return errors.New("A saved source proof no longer matches this research.")
+			}
+			run.RetrievedBytes += saved.Bytes
+			if run.RetrievedBytes > inputResearchRetainedByteLimit-inputResearchSourceMetadataReserve {
+				return errors.New("Retained sources exceed the continuation storage limit.")
+			}
+			if err = s.copyResearchProof(ctx, rr, source.ID, saved); err != nil {
+				return err
+			}
+		}
+	}
+	// Create can have committed even when its acknowledgement fails. Never
+	// delete its evidence or retry creation in that case. The admission lease
+	// prevents another publisher from replacing this staged run.
+	retainStage = true
+	if err = s.researchJournal(rr, run.ID).Create(ctx, run); err != nil {
+		return err
+	}
+	if err = root.Rename(staging, run.ID); err != nil {
+		return err
+	}
+	return syncPrivateDirectory(root)
+}
+
+// Match exact person URLs. Companies additionally require the same normalized
+// name and host, avoiding domain-only merges of parents, subsidiaries or people.
+func researchEntityKey(entity inputResearchEntity) string {
+	u, err := url.Parse(entity.URL)
+	if err != nil || u.Host == "" {
+		return entity.Kind + "\n" + entity.URL + "\n" + entity.Name
+	}
+	if entity.Kind == "company" {
+		return "company\n" + strings.TrimPrefix(strings.ToLower(u.Host), "www.") + "\n" + strings.ToLower(strings.Join(strings.Fields(entity.Name), " "))
+	}
+	return entity.Kind + "\n" + entity.URL
+}
+
+func (s *Server) researchRecordIsNewer(record preparedInputRecord, incoming inputResearchRun) (bool, error) {
+	if record.Research.RunID == incoming.ID {
+		return false, nil
+	}
+	root, err := s.inputResearchRoot(false)
+	if err != nil {
+		return false, err
+	}
+	defer root.Close()
+	rr, err := openInputResearch(root, record.Research.RunID, false)
+	if err != nil {
+		return false, err
+	}
+	defer rr.Close()
+	previous, err := s.researchRunStore(rr, record.Research.RunID).read()
+	if err != nil {
+		return false, err
+	}
+	return previous.CreatedAt > incoming.CreatedAt || previous.CreatedAt == incoming.CreatedAt && previous.ID > incoming.ID, nil
+}
+
+// Continuation re-verifies retained bytes locally before permitting new AI
+// work. It never reacquires a source or repeats an uncertain operation.
+func (s *Server) verifyResearchContinuation(ctx context.Context, root *os.Root, run inputResearchRun) error {
+	program, err := s.researchVerifier()
+	if err != nil {
+		return err
+	}
+	for _, source := range run.Sources {
+		if !researchProofID.MatchString(source.ID) {
+			return errors.New("A saved source reference is invalid.")
+		}
+		saved, err := s.loadResearchProof(ctx, root, source.ID)
+		if err != nil {
+			return errors.New("A retained source proof is unavailable.")
+		}
+		proof := saved.Proof
+		if proof.Pin != run.Gateway {
+			return errors.New("A saved source proof changed.")
+		}
+		result, digest, err := verifyResearchProof(ctx, program, proof)
+		if err != nil || digest != source.Digest {
+			return errors.New("A retained source proof could not be verified.")
+		}
+		decoded, err := decodeInputResearchSource(inputResearchSource{ID: source.ID, Kind: source.Kind, At: source.At, Digest: digest, Verification: "verified", Bytes: source.Bytes}, proof.Arguments, result)
+		// Older journals did not carry this display-only truncation marker.
+		if !source.TextTruncated {
+			decoded.TextTruncated = false
+		}
+		a, _ := json.Marshal(decoded)
+		b, _ := json.Marshal(source)
+		if err != nil || string(a) != string(b) {
+			return errors.New("Saved research text no longer matches its source proof.")
+		}
+	}
+	return nil
+}
+
+// Version 2 keeps the selected parent in identity. A public profile may be a
+// separate research result for more than one selected organisation. Historical
+// journals retain their original key so replay never changes saved identities.
+func researchEntityKeyForRun(run inputResearchRun, entity inputResearchEntity) string {
+	key := researchEntityKey(entity)
+	if run.IdentityVersion >= 2 {
+		raw, _ := json.Marshal([]string{key, researchName(entity.Name), entity.CompanyID})
+		return string(raw)
+	}
+	return key
+}
+
+func researchSameIdentityForRun(run inputResearchRun, a, b inputResearchEntity) bool {
+	if run.IdentityVersion >= 2 && a.CompanyID != b.CompanyID {
+		return false
+	}
+	return researchSameIdentity(a, b)
+}

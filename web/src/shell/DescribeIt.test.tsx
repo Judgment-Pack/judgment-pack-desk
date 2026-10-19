@@ -17,7 +17,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { useState } from 'react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AssistantEvent, Engine } from '../assistant/engine'
+import type { AssistantEvent, Engine } from '@judgment-pack/harness/engine'
 
 /**
  * An engine this suite puts in the registry's place, where a case needs one.
@@ -27,17 +27,17 @@ import type { AssistantEvent, Engine } from '../assistant/engine'
  */
 let injected: Engine | null = null
 
-vi.mock('../assistant/engines', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../assistant/engines')>()
+vi.mock('@judgment-pack/harness/engines/index', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@judgment-pack/harness/engines/index')>()
   return {
     ...original,
     loadEngine: async (id: 'vercel' | 'vercel') => injected ?? original.loadEngine(id)
   }
 })
 
-import { scriptedModel } from '../assistant/conformance/scriptedModel'
-import { scriptedWebSocket } from '../assistant/conformance/scriptedServer'
-import scenario from '../assistant/conformance/scenario.json'
+import { scriptedModel } from '@judgment-pack/harness/certification/scriptedModel'
+import { scriptedWebSocket } from '@judgment-pack/harness/certification/scriptedServer'
+import { scenario } from '@judgment-pack/harness/certification'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
@@ -848,7 +848,7 @@ describe('Create writes the proposal', () => {
     expect(sent).toEqual([])
   })
 
-  it('will not create where the relay refused the model call, and quotes the status', async () => {
+  it('will not create where the relay refused the model call, and explains the required credential repair', async () => {
     // The chassis answers 409 with its own envelope; the run fails, no proposal
     // arrives, and the dialog quotes the run rather than inventing a sentence
     // about a refusal it did not make. (This is the *relay's* refusal, not the
@@ -856,7 +856,7 @@ describe('Create writes the proposal', () => {
     const { sent } = serve({ refuse: true })
     draw()
     await propose()
-    await waitFor(() => expect(helpText(createButton())).toContain('409'), { timeout: 15_000 })
+    await waitFor(() => expect(helpText(createButton())).toContain('needs authentication'), { timeout: 15_000 })
     fireEvent.change(screen.getByLabelText('Name (required)'), {
       target: { value: 'Vendor Onboarding' }
     })
@@ -965,7 +965,7 @@ describe('a proposal belongs to the submission that produced it', () => {
     draw()
     await propose()
     await waitFor(() =>
-      expect(screen.getAllByText(/the session could not be closed/).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/The response could not complete/).length).toBeGreaterThan(0)
     )
     fireEvent.change(screen.getByLabelText('Name (required)'), {
       target: { value: 'Vendor Onboarding' }
@@ -973,7 +973,8 @@ describe('a proposal belongs to the submission that produced it', () => {
     await waitFor(() => expect(createButton().disabled).toBe(true))
     expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()
     expect(screen.getByLabelText('Template').textContent).not.toContain('The assistant’s proposal')
-    expect(helpText(createButton())).toContain('the session could not be closed')
+    expect(helpText(createButton())).toContain('The response could not complete')
+    expect(screen.queryByText('the session could not be closed')).toBeNull()
     fireEvent.click(createButton())
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(sent).toEqual([])
@@ -1155,7 +1156,7 @@ describe('a route change is a dismissal', () => {
     // A navigation the dialog is never told about: the rail sits above the
     // route, so nothing here unmounts.
     await act(async () => {
-      await router.navigate('/packs')
+      await router.navigate('/library')
     })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create a pack' })).toBeNull())
     await waitFor(() => expect(runtime!.closed).toBe(1))
@@ -1207,7 +1208,7 @@ describe('a route change is a dismissal', () => {
     serve({ hang: true })
     const router = drawShell()
     await act(async () => {
-      await router.navigate('/packs')
+      await router.navigate('/library')
     })
     fireEvent.click(await screen.findByRole('button', { name: 'Open creation dialog' }))
     await screen.findByRole('dialog', { name: 'Create a pack' })

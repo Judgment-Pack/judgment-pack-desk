@@ -1,7 +1,6 @@
 /**
- * Where the upgrade offer appears (ADR-0009, section 4): once, as a note on
- * Packs the owner can dismiss, and for as long as it applies, in Admin →
- * Project.
+ * The optional safeguards offer lives in the bottom status strip and remains
+ * available in Admin → Decision safeguards. It never displaces page content.
  *
  * The note shows only where the project's gates are off and the desk can
  * offer the upgrade. Dismissing it is remembered in this browser, per
@@ -13,6 +12,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { msg, systemMessage, useLocale } from '../../i18n'
 import { Button, ButtonLink } from '../../ui/Button'
+import { PopoverClose } from '../../ui/Popover'
+import { DeskStatusNotice } from '../../shell/DeskNotices'
 import { SettingsSection } from '../../ui/SettingsSection'
 import { useFileListing } from '../../files/queries'
 import { identityIsResolved, projectKey } from '../../shell/paneState'
@@ -34,8 +35,8 @@ function useOffer(enabled: boolean) {
   return useQuery({ queryKey: [...UPGRADE_KEY, true, false], queryFn: ({ signal }) => readUpgrade(true, false, signal), retry: false, enabled })
 }
 
-/** The note on Packs: shown until the owner dismisses it, or takes the upgrade. */
-export function UpgradeNote() {
+/** Optional setup, shown only while no connection or configuration issue takes priority. */
+export function ProjectSafeguardsStatus() {
   useLocale()
   const root = useFileListing().data?.root
   const resolved = identityIsResolved(root)
@@ -48,11 +49,10 @@ export function UpgradeNote() {
     try { localStorage.setItem(key, '1') } catch { /* Dismissed for this page, then. */ }
     setDismissed(keys => [...keys, key])
   }
-  return <aside className={styles.note} aria-label={msg('Turn on this project’s gates')}>
-    <p><strong>{msg('This project’s gates are off.')}</strong> {msg('Desk can hold its deciding runs to a reviewed set of packs and record each one. Nothing changes until you confirm, and the offer stays in Admin → Decision safeguards.')}</p>
-    <ButtonLink to="/packs/_upgrade">{msg('See what changes')}</ButtonLink>
-    <Button variant="quiet" onClick={dismiss}>{msg('Dismiss')}</Button>
-  </aside>
+  return <DeskStatusNotice id="project-safeguards" tone="warning" priority="setup" label={msg('Project safeguards off')} title={msg('Project safeguards')}
+    actions={<><PopoverClose><ButtonLink to="/packs/_upgrade">{msg('Review setup')}</ButtonLink></PopoverClose><Button variant="quiet" onClick={dismiss}>{msg('Dismiss')}</Button></>}>
+    {msg('Require reviewed packs and keep a decision history for this project.')}
+  </DeskStatusNotice>
 }
 
 /** Admin → Decision safeguards: where the offer stays available. */

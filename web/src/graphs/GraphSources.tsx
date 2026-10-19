@@ -1,8 +1,12 @@
+import policyStyles from '../policies/PolicyPage.module.css'
+import {PolicySourceIdentity} from '../policies/PolicySourceIdentity'
+import type {PolicyAuthoringSource} from '../policies/authoringSource'
+import {LoadingState} from '../ui/LoadingState'
 import { useState } from 'react'
 import type { GraphDocument } from '../mcp/types'
 import { usePack } from '../mcp/queries'
 import { msg } from '../i18n'
-import { Input } from '../ui/Input'
+import { SearchInput } from '../ui/SearchInput'
 import { Disclosure } from '../ui/Disclosure'
 import { ButtonLink } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
@@ -13,7 +17,7 @@ import styles from '../definitions/DefinitionWorkspace.module.css'
 const text = (value: unknown): string => typeof value === 'string' ? value : ''
 
 /** Sources belong to packs; this view never copies them into the graph. */
-export function GraphSources({document}: {document?: GraphDocument}) {
+export function GraphSources({document,policySources=[]}: {document?: GraphDocument;policySources?:PolicyAuthoringSource[]}) {
   const [search, setSearch] = useState('')
   const readable = isRecord(document?.nodes)
   const nodes = readable ? Object.entries(document.nodes ?? {}) : []
@@ -23,7 +27,8 @@ export function GraphSources({document}: {document?: GraphDocument}) {
   }
   const incomplete = nodes.some(([, node]) => !isRecord(node) || typeof node.pack !== 'string')
   return <section className={styles.reading} aria-label={msg('Graph sources')}>
-    <div className={styles.toolbar}><Input type="search" aria-label={msg('Search graph sources')} placeholder={msg('Search sources…')} value={search} onChange={event => setSearch(event.target.value)}/></div>
+    {policySources.map(source=><Disclosure key={source.revisionId+':'+(source.publicationId??'')} title={source.title}><PolicySourceIdentity source={source}/><pre className={policyStyles.snapshot}>{source.narrative}</pre></Disclosure>)}
+    <div className={styles.toolbar}><SearchInput type="search" aria-label={msg('Search graph sources')} placeholder={msg('Search sources…')} value={search} onChange={event => setSearch(event.target.value)}/></div>
     <p className={styles.muted}>{msg('References declared by the current saved packs. Edit them in their owning pack. Execution receipts belong to the run history.')}</p>
     {incomplete && <p role="status">{msg('Some graph steps could not be read. Their source references are unavailable.')}</p>}
     {!readable ? <p>{msg('No readable graph document was returned.')}</p> : !packs.size && !incomplete ? <p>{msg('No packs referenced yet.')}</p> : [...packs].map(([pack, steps]) => <PackSources key={pack} id={pack} steps={steps} search={search}/>)}
@@ -38,7 +43,7 @@ function PackSources({id, steps, search}: {id: string; steps: string[]; search: 
     <div className={styles.toolbar}><h2>{document?.title ?? id}</h2><div className={styles.actions}><ButtonLink variant="quiet" to={'/packs/' + encodeURIComponent(id) + '?view=evidence'}>{msg('Open pack sources')}</ButtonLink></div></div>
     <p className={styles.muted}>{msg('Used by: {{steps}}', {steps: steps.join(', ')})}</p>
     {pack.error ? <p role="status">{msg('This pack could not be read. Its source references are unavailable.')}</p>
-      : !pack.data ? <p role="status">{msg('Loading sources…')}</p>
+      : !pack.data ? <LoadingState>{msg('Loading sources…')}</LoadingState>
       : malformed || !document ? <p role="status">{msg('Source references could not be read. Inspect View JSON for the exact definition.')}</p>
       : !rows.length ? <p className={styles.muted}>{sources.length ? msg('No matching sources.') : msg('This pack declares no source references.')}</p>
       : rows.map((source, index) => {

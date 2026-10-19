@@ -9,6 +9,13 @@ export default defineConfig({
     setupFiles: ['src/testing/setup.ts'],
     include: ['src/**/*.test.tsx', 'src/**/*.test.ts'],
     /**
+     * The assistant harness package ships modules for a bundler, as Vite builds
+     * the page: extensionless relative imports and JSON imported directly. So
+     * the tests take it through Vite's own resolution, as the build does, and
+     * one module instance holds the host the Desk wires (`assistant/harnessHost.ts`).
+     */
+    server: { deps: { inline: ['@judgment-pack/harness'] } },
+    /**
      * Vitest's default is 5s, chosen for unit tests.
      *
      * Seventy files run in parallel, one per core, and a good half of them

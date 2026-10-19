@@ -1,0 +1,10 @@
+.root {
+ display: flex;
+ flex: 1 1 0;
+ align-items: center;
+ justify-content: center;
+ min-width: 0;
+ min-height: 0;
+ padding: var(--density-gutter);
+ text-align: center;
+}

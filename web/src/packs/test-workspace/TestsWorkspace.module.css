@@ -33,11 +33,11 @@
   margin-bottom: var(--space-4);
 }
 .actions { gap: var(--space-2); margin-inline-start: auto; }
-.toolbar > input { flex: 1 1 10rem; max-width: 22rem; min-width: 8rem; }
+.toolbar > [data-search-field] { flex: 1 1 10rem; max-width: 22rem; min-width: 8rem; }
 .filters {
   margin-bottom: var(--space-3);
 }
-.filters > input {
+.filters > [data-search-field] {
   max-width: 360px;
   flex: 1;
   min-width: 140px;
@@ -211,7 +211,7 @@
   flex: 0 1 7rem;
   width: auto;
 }
-.valueEditor > input {
+.valueEditor > [data-search-field] {
   flex: 1;
   width: 0;
   min-width: 5rem;
@@ -238,20 +238,18 @@
   min-width: 0;
 }
 .results {
-  padding: var(--density-gutter);
-  position: relative;
-  overflow: auto;
-  height: 100%;
+  /* BuilderSplit owns the gutter and scroll container. */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--density-section);
-  scrollbar-gutter: stable;
+  gap: var(--density-field);
 }
 .resultHeading {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
+.resultHeading p { margin: 0; }
 .resultHeading h3,
 .observed h3 {
   margin: 0;
@@ -283,30 +281,6 @@
 }
 .observed > button {
   justify-self: start;
-}
-.assistant {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.transcript {
-  overflow-anchor: none;
-  scrollbar-gutter: stable both-edges;
-  overscroll-behavior: contain;
-  flex: 1;
-  min-height: 0;
-  position: relative;
-  overflow: auto;
-  padding: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
-.responseDetails {
-  display: grid;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
 }
 .history {
   display: grid;
@@ -346,10 +320,6 @@
   padding: var(--density-gutter);
 }
 @container (max-width: 48rem) {
-  .casesTable th:nth-child(4),
-  .casesTable td:nth-child(4) {
-    display: none;
-  }
   .toolbar {
     align-items: flex-start;
   }
@@ -391,15 +361,19 @@
 .table td:first-child button {
   color: var(--ink);
 }
+.results :global(.rows) { gap: 0; }
 .results :global(.row) {
-  padding: var(--density-field) 0;
+  padding: var(--density-block) 0;
   border: none;
   border-bottom: 1px solid var(--border);
   background: none;
 }
 .results :global(.row-compare) {
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--density-field);
+}
+@container (max-width: 480px) {
+  .results :global(.row-compare) { grid-template-columns: minmax(0, 1fr); }
 }
 .results :global(.row-side) {
   border: none;
@@ -419,7 +393,8 @@
   font-family: inherit;
 }
 .results :global(.row-name) {
-  flex-basis: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .reviewHeading {
@@ -489,25 +464,16 @@
 
 .deleteCaseName { margin: 0; font-size: var(--text-sm); overflow-wrap: anywhere; }
 
-/* Action columns have one small gap; long case titles keep a readable two-line limit. */
-.casesTable { table-layout: fixed; min-width: 28rem; }
-.casesTable th:nth-child(2) { width: 7.5rem; }
-.casesTable th:nth-child(3) { width: 6rem; }
-.casesTable th:nth-child(4) { width: 4rem; }
-.casesTable th:last-child { width: calc(2 * var(--density-control) + var(--space-1) + 2 * var(--density-cell-x)); }
 .rowActions { display: flex; justify-content: flex-end; gap: var(--space-1); }
-.savedCaseName { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; max-width: 100%; }
 .sourceMenu h3 { margin: 0; font-size: var(--text-heading); }
 .sourceMenu > button { justify-self: start; }
 .sourceChoices { display: grid; gap: var(--space-1); }
 .sourceChoices > button { min-height: var(--density-row); }
 .backToCase { align-self: start; margin: var(--space-3) var(--density-gutter); }
 
-.transcript > * { flex: 0 0 auto; min-width: 0; }
 .sources > div > span { min-width: 0; overflow-wrap: anywhere; }
 .sources > div > button:first-child { flex: 1; }
 
-.coverageAction { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-2); padding:var(--density-block) 0; color:var(--ink-soft); border-bottom:1px solid var(--border); margin-bottom:var(--density-block); }
 
 .comparisonTable {table-layout:fixed;min-width:36rem;}
 .comparisonTable th:first-child {width:40%;}
@@ -519,9 +485,32 @@
 .comparisonPicker label {color:var(--ink-soft);font-size:var(--text-xs);}
 .comparisonPicker > button {width:100%;}
 
-.testDesigner { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-.testDesigner[hidden] { display: none; }
-.designerHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-3) var(--density-gutter); border-bottom: 1px solid var(--border); }
-.designerHeader h2 { font-size: var(--text-heading); margin: 0; }
 
-.testDesigner > .assistant { flex: 1; height: auto; }
+
+.retainedAssistant { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
+
+.workspaceBody > [data-collection-toolbar] { margin-bottom: var(--space-3); }
+
+/* Saved cases use the same full-width collection geometry as Library and Inputs. */
+.caseIndex { min-width: 40rem; }
+.expectedColumn { width: 7rem; }
+.resultColumn { width: 7rem; }
+.originColumn { width: 5rem; }
+.actionsColumn { width: calc(2 * var(--density-control) + var(--space-1) + var(--density-gutter)); }
+.coverageFooter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.casePage { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; }
+.casePageHeader { display:flex; align-items:center; gap:var(--space-2); min-height:var(--space-7); padding:var(--space-2) var(--density-gutter); border-bottom:1px solid var(--border); }
+.casePageHeader nav { display:flex; align-items:center; gap:var(--space-2); flex:1; min-width:0; font-size:var(--text-control); }
+.casePageHeader nav a { color:var(--ink-soft); text-decoration:none; flex:none; }
+.casePageHeader nav a:hover { color:var(--ink); }
+.casePageHeader nav svg { flex:none; color:var(--ink-faint); }
+.casePageHeader nav span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.casePageBody { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.casePageBody[data-result] { position:relative; overflow:auto; padding:var(--density-gutter); }
+.casePageBody .editorFields { max-width:var(--measure-form); }
+.root :global([data-collection-layout]) .toolbar { margin-bottom:0; gap:var(--space-2); }
+
+@media (hover:hover) and (pointer:fine) {
+  .caseIndex .rowActions { opacity:0; }
+  .caseIndex tr:hover .rowActions, .caseIndex tr:focus-within .rowActions { opacity:1; }
+}

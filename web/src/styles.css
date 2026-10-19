@@ -21,6 +21,8 @@
   /* Judgment Pack: judgmentpack.org. Green and gold are the brand accents; decision colors identify authored outcomes.
      Page, panel, field, border and text surfaces retain the neutral palette. */
   color-scheme: light;
+  --forced-muted: GrayText;
+  --forced-text: CanvasText;
 
   /* Shared stacking order for page chrome and portaled controls. */
   --z-page-header: 10;
@@ -68,6 +70,11 @@
   --decision-indigo: #585ba0;
   --decision-slate: #555f71;
   --ink-inverse: #fefeff;
+  /* Read-only diffs share theme-aware insertion and deletion surfaces. */
+  --diff-added-line: color-mix(in srgb, var(--decision-green) 10%, transparent);
+  --diff-removed-line: color-mix(in srgb, var(--danger) 10%, transparent);
+  --diff-added-text: color-mix(in srgb, var(--decision-green) 24%, transparent);
+  --diff-removed-text: color-mix(in srgb, var(--danger) 24%, transparent);
 
   /* Green links/selections and the primary action hover/pressed fills. The **focus ring is
      `--accent`** and has no token of its own: twelve rings across ten modules
@@ -139,6 +146,7 @@
      list kept by hand. */
   --density-row: 40px;
   --density-control: 32px;
+  --density-control-small: 28px;
   --density-form-control: 32px;
   --density-cell-y: 0.5rem;
   --density-cell-x: 0.75rem;
@@ -187,6 +195,10 @@
      that are a table and want every pixel. */
   --measure-form: 44rem;
   --measure-wide: 72rem;
+  /* Shared collection geometry, relative to the collection pane. */
+  --collection-search-width: 23rem;
+  --collection-name-width: clamp(10rem, 26cqi, 18rem);
+  --collection-selection-width: 2rem;
 
   /* Shared typography and spacing. Density tokens describe context; these
      fixed steps describe relationships within a component. */
@@ -226,6 +238,7 @@
 :root[data-density="compact"] {
   --density-row: 32px;
   --density-control: 28px;
+  --density-control-small: 24px;
   --density-form-control: 28px;
   --density-cell-y: 0.3rem;
   --density-cell-x: 0.5rem;
@@ -312,6 +325,10 @@
   --decision-indigo: #aeb0eb;
   --decision-slate: #b0bacb;
     --ink-inverse: #fefeff;
+  --diff-added-line: color-mix(in srgb, var(--decision-green) 12%, transparent);
+  --diff-removed-line: color-mix(in srgb, var(--danger) 12%, transparent);
+  --diff-added-text: color-mix(in srgb, var(--decision-green) 28%, transparent);
+  --diff-removed-text: color-mix(in srgb, var(--danger) 28%, transparent);
     --accent: #a7c8bc;
     --accent-hover: #39786e;
     --accent-active: #30635c;
@@ -360,6 +377,10 @@
   --decision-indigo: #aeb0eb;
   --decision-slate: #b0bacb;
   --ink-inverse: #fefeff;
+  --diff-added-line: color-mix(in srgb, var(--decision-green) 12%, transparent);
+  --diff-removed-line: color-mix(in srgb, var(--danger) 12%, transparent);
+  --diff-added-text: color-mix(in srgb, var(--decision-green) 28%, transparent);
+  --diff-removed-text: color-mix(in srgb, var(--danger) 28%, transparent);
   --accent: #a7c8bc;
   --accent-hover: #39786e;
   --accent-active: #30635c;

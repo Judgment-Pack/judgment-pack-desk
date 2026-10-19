@@ -14,7 +14,7 @@ import { AssistantPane, DRAFT_SENTENCE, withDraft } from './AssistantPane'
 import { EditingContext, type EditingSession } from '../packs/edit/editingContext'
 import { useDocumentBuffer, type DocumentBuffer } from '../packs/edit/useDocumentBuffer'
 import { buffered, bytesAt } from '../packs/edit/writes'
-import type { AssistantEvent, Engine } from './engine'
+import type { AssistantEvent, Engine } from '@judgment-pack/harness/engine'
 
 /**
  * An engine this suite puts in the registry's place, where a case needs one.
@@ -24,16 +24,18 @@ import type { AssistantEvent, Engine } from './engine'
  */
 let injected: Engine | null = null
 
-vi.mock('./engines', async (importOriginal) => {
-  const original = await importOriginal<typeof import('./engines')>()
+vi.mock('@judgment-pack/harness/engines/index', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@judgment-pack/harness/engines/index')>()
   return {
     ...original,
     loadEngine: async (id: 'vercel' | 'vercel') => injected ?? original.loadEngine(id)
   }
 })
-import { scriptedModel } from './conformance/scriptedModel'
-import { scriptedWebSocket } from './conformance/scriptedServer'
-import scenario from './conformance/scenario.json'
+import { scriptedModel } from '@judgment-pack/harness/certification/scriptedModel'
+import { scriptedWebSocket } from '@judgment-pack/harness/certification/scriptedServer'
+import { scenario } from '@judgment-pack/harness/certification'
+import { STATE_HEADER } from '@judgment-pack/harness/engines/vercel/loop'
+import { PROPOSE_PACK_SCHEMA, PROPOSE_PACK_TOOL } from '@judgment-pack/harness/engines/contract'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'
@@ -478,26 +480,18 @@ describe('one whole run', () => {
     const drawn = await draw({ draft: JSON.stringify(scenario.documents.DRAFT_V1, null, 2) })
     await runIt(drawn)
     const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
-    expect(diff.textContent).toContain('Compared with the draft on this page')
-    // The two members that moved, the one that arrived, and the eleven that
-    // did not — under one line with a count.
-    expect(diff.textContent).toContain('/version')
-    expect(diff.textContent).toContain('/rules')
-    expect(diff.textContent).toContain('/exceptions')
-    expect(diff.textContent).toContain('11 members unchanged')
-    // The rule the proposal drops is named, and the three it keeps are not
-    // redrawn as rewrites.
-    expect(diff.textContent).toContain('/rules/3')
-    expect(diff.textContent).toContain('3 elements unchanged, in the same place.')
-    // And the draft's own bytes are quoted beside the proposal's.
-    const before = screen.getByLabelText('/version, in the draft') as HTMLTextAreaElement
-    expect(JSON.parse(before.value)).toBe('0.0.1')
+    expect(diff.textContent).toContain('Compared with the document this request started from.')
+    expect(diff.textContent).toContain('Changed: version, rules, exceptions')
+    expect(screen.getByRole('button',{name:'Expand diff'})).toBeTruthy()
+    // Both revisions share one read-only line comparison, including deletions.
+    await waitFor(()=>expect(diff.querySelector('.cm-deletedChunk')?.textContent).toContain('0.0.1'))
+
   })
 
   it('says there was nothing to compare with where the page has no bytes', async () => {
     await runIt()
     const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
-    expect(diff.textContent).toContain('There was nothing to compare with')
+    expect(diff.textContent).toContain('No comparison available:')
     expect(diff.textContent).toContain('no draft on this page')
   })
 
@@ -599,7 +593,7 @@ describe('exactly one end, on every path', () => {
     await typeAndRun()
     await waitFor(() => expect(ends()).toHaveLength(1))
     const stream = screen.getByRole('list', { name: 'What the assistant did' })
-    expect(stream.textContent).toContain('409')
+    expect(stream.textContent).toContain('needs authentication')
   })
 
   it('one, when the connection itself never comes up', async () => {
@@ -871,14 +865,23 @@ describe('accepting the proposal into the draft', () => {
   })
 })
 
+/**
+ * The person's own text in the first user message of the first request the
+ * pane made: its first part. Since v0.1.0 the second part is the harness's
+ * execution state, headed `STATE_HEADER` (agent#9), and the pane's text is
+ * never inside it.
+ */
+const firstUserMessage = (relayed: { body: string }[]) => {
+  const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string | { type: string; text: string }[] }[] }
+  const content = body.messages.find((message) => message.role === 'user')!.content
+  if (typeof content === 'string') return content
+  expect(content).toHaveLength(2)
+  expect(content[1]!.text.startsWith(STATE_HEADER)).toBe(true)
+  return content[0]!.text
+}
+
 describe('the draft the session is given', () => {
   const DRAFT = `${JSON.stringify(scenario.documents.DRAFT_V1, null, 4)}\n`
-
-  /** The first user message of the first request the pane made. */
-  const firstUserMessage = (relayed: { body: string }[]) => {
-    const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string }[] }
-    return body.messages.find((message) => message.role === 'user')!.content
-  }
 
   async function runOver(options: { buffer?: { text: string }; draft?: string } = {}) {
     const drawn = await draw({ ...options, editing: true })
@@ -902,6 +905,13 @@ describe('the draft the session is given', () => {
     expect(sent).toContain(DRAFT_SENTENCE)
     expect(sent).toContain(`\`\`\`json\n${DRAFT}\n\`\`\``)
     expect(sent.indexOf(DRAFT_SENTENCE)).toBeGreaterThan(0)
+  })
+
+  it('offers propose_pack beside the runtime tools, with the schema the package exports', async () => {
+    const { relayed } = await runOver()
+    const body = JSON.parse(relayed[0]!.body) as { tools?: { type?: string; function?: { name: string; parameters: unknown }; name?: string; input_schema?: unknown }[] }
+    const offered = (body.tools ?? []).map((tool) => tool.function ? { name: tool.function.name, schema: tool.function.parameters } : { name: tool.name, schema: tool.input_schema })
+    expect(offered.find((tool) => tool.name === PROPOSE_PACK_TOOL)?.schema).toMatchObject(PROPOSE_PACK_SCHEMA)
   })
 
   it('calls the proposal an update where a draft was sent', async () => {
@@ -1041,8 +1051,7 @@ describe('fixing what the check refused', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Fix' }))
     await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
-    const body = JSON.parse(relayed[0]!.body) as { messages: { role: string; content: string }[] }
-    const sent = body.messages.find((message) => message.role === 'user')!.content
+    const sent = firstUserMessage(relayed)
     expect(sent).toContain('The runtime’s repair prompt, with the diagnostics in it.')
     expect(sent).toContain(DRAFT)
   })
@@ -1081,7 +1090,7 @@ describe('the proposal the pane reads is the one the hook canonicalized', () => 
     await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
     // The diff and the whole-document display are both on screen by now.
     expect(screen.getByRole('region', { name: 'The proposal as a diff' }).textContent).toContain(
-      '/title'
+      'title'
     )
     expect(
       JSON.parse((screen.getByLabelText('The proposed document') as HTMLTextAreaElement).value)
@@ -1105,8 +1114,8 @@ describe('the proposal the pane reads is the one the hook canonicalized', () => 
     await runIt()
     await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
     const diff = screen.getByRole('region', { name: 'The proposal as a diff' })
-    expect(diff.textContent).toContain('added')
-    expect(diff.textContent).toContain('removed')
+    await waitFor(()=>expect(diff.querySelector('.cm-deletedChunk')?.textContent).toContain('a'))
+    expect(diff.textContent).toContain('b')
     expect(complaints.filter((line) => /same key|duplicate/i.test(line))).toEqual([])
     spy.mockRestore()
   })
@@ -1199,9 +1208,9 @@ describe('a proposal belongs to the draft it was given', () => {
     // **And the caption says which draft that is.** "The draft on this page" is
     // a different document now, and a caption that named it would make the
     // comparison look like one it is not.
-    expect(diff.textContent).toContain('Compared with the draft this proposal was given')
-    expect(diff.textContent).toContain('the draft on this page has changed since')
-    expect(diff.textContent).not.toContain('Compared with the draft on this page')
+    expect(diff.textContent).toContain('Compared with the request-time document.')
+    expect(diff.textContent).toContain('The current document has changed.')
+    expect(diff.textContent).not.toContain('Compared with the document this request started from.')
   })
 
   it('goes back to naming the page’s own draft once it is that draft again', async () => {
@@ -1210,7 +1219,7 @@ describe('a proposal belongs to the draft it was given', () => {
     await waitFor(() =>
       expect(
         screen.getByRole('region', { name: 'The proposal as a diff' }).textContent
-      ).toContain('Compared with the draft on this page')
+      ).toContain('Compared with the document this request started from.')
     )
   })
 
@@ -1271,7 +1280,8 @@ describe('a session that failed after it ended', () => {
     await waitFor(() =>
       expect(stream.textContent).toContain('the session failed after it ended')
     )
-    expect(stream.textContent).toContain('the session could not be closed')
+    expect(stream.textContent).toContain('The response could not complete.')
+    expect(stream.textContent).not.toContain('the session could not be closed')
     // And it is still exactly one terminal event: the failure is beside the
     // stream, not a second `end` on it.
     expect(
@@ -1284,7 +1294,7 @@ describe('a session that failed after it ended', () => {
     const accept = () => screen.getByRole('button', { name: 'Accept into draft' })
     await waitFor(() => expect(accept().hasAttribute('disabled')).toBe(true))
     // The run's own words, which carry the error's name as the hook records it.
-    expect(helpText(accept())).toBe('Error: the session could not be closed')
+    expect(helpText(accept())).toBe('The response could not complete. Review completed work before continuing.')
     expect(
       screen.getByRole('region', { name: 'The proposal' }).textContent
     ).toContain('did not stand behind what it proposed')

@@ -106,9 +106,9 @@ describe('the status strip keeps its warning', () => {
     expect(connection).toMatch(/overflow:\s*hidden;/)
     expect(connection).toMatch(/text-overflow:\s*ellipsis;/)
     expect(connection).toMatch(/min-width:\s*0;/)
-    const warn = declarations('.desk-strip-warn')
-    expect(warn).toMatch(/flex:\s*0 0 auto;/)
-    expect(warn).toMatch(/white-space:\s*nowrap;/)
+    const trigger = readFileSync(join(import.meta.dirname, 'StatusTrigger.module.css'), 'utf8')
+    expect(trigger).toContain('max-width: 100%')
+    expect(trigger).toContain('text-overflow: ellipsis')
   })
 })
 
@@ -201,15 +201,14 @@ describe('no pane may eat the frame, whatever the file says', () => {
 })
 
 describe('the strip’s cue fits the strip', () => {
-  it('paints a short spelling below 600px and the full one above', () => {
-    // The full sentence is about 263px in the strip's own face; a 320px
-    // viewport leaves roughly 232px beside the console button. Unshrinkable
-    // and unwrappable by design, it painted across that button and off the
-    // edge of a frame that clips.
-    expect(declarations('.desk-strip-warn-short')).toMatch(/display:\s*none;/)
-    const narrow = SHEET.slice(SHEET.indexOf('@media (max-width: 599px)'))
-    expect(narrow.slice(0, 260)).toMatch(/\.desk-strip-warn-full\s*\{\s*display:\s*none;/)
-    expect(narrow.slice(0, 260)).toMatch(/\.desk-strip-warn-short\s*\{\s*display:\s*inline;/)
+  it('bounds shared status text while retaining a full accessible label and details', () => {
+    const trigger = readFileSync(join(import.meta.dirname, 'StatusTrigger.module.css'), 'utf8')
+    expect(trigger).toContain('min-width: 0')
+    expect(trigger).toContain('white-space: nowrap')
+    expect(trigger).toContain('text-overflow: ellipsis')
+    const notices = readFileSync(join(import.meta.dirname, 'DeskNotices.tsx'), 'utf8')
+    expect(notices).toContain('aria-label={label}')
+    expect(notices).toContain('<Popover')
   })
 })
 

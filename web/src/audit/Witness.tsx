@@ -149,7 +149,7 @@ function WhatAStatementEstablishes() {
     [msg('The submitter’s token'), msg('to the witness, an issuer and a subject; it opens the witness and nothing else'), msg('that its holder is the trail’s operator: a credential is enough to poison a trail for good, by a checkpoint signed at a sequence no honest one will exceed, which revoking the token does not unsign; recovery is retirement, not erasure')],
     [msg('Desk’s cursor and its record of submissions'), '—', msg('anything: they are the operator’s')]
   ]
-  return <dl className={styles.facts} aria-label={msg('What a witness establishes')}>
+  return <dl className={styles.proseFacts} aria-label={msg('What a witness establishes')}>
     {rows.map(([part, establishes, not]) => <div key={part}>
       <dt>{part}</dt>
       <dd>{msg('Establishes: {{what}}', { what: establishes })} {msg('Does not establish: {{what}}', { what: not })}</dd>
