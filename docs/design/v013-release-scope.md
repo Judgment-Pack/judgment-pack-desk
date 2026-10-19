@@ -13,10 +13,11 @@ claim that every item has passed acceptance.
 | Dialect-to-pack and Jobs | Reviewed mappings, typed facts, pack snapshots, preparation previews, tests made from reviewed records, durable evaluation and incremental Job connections. Tracked by [#371](https://github.com/Judgment-Pack/judgment-pack-desk/issues/371). |
 | Shared AI interactions | Shared context and project memory, planning, Ask me/Auto permissions, request accounting, progress, recovery, bounded self-correction, checked proposals, saved sessions and provider-neutral behavior. |
 | Shared workspace UX | Consistent loading, notices, chat actions, dirty state, toolbars, tables, navigation, test pages and record-review workspaces. |
-| Portable Dialects | Spec-backed document types, canonical form/digest, staged-vector verification, mapping production and research/import source authoring. Claude's ongoing [#398](https://github.com/Judgment-Pack/judgment-pack-desk/issues/398) integration is part of this same release. |
-| Reusable templates | Generic authoring and pinned Exchange-template consumption with local connection binding are the agreed portability direction. These remain implementation/acceptance work; #398 itself explicitly excludes Exchange publishing. |
+| Portable Dialects | Spec-backed document types, canonical form/digest, staged-vector verification, mapping production and research/import source authoring. The [#398](https://github.com/Judgment-Pack/judgment-pack-desk/issues/398) integration is part of this same release. |
+| Reusable templates | Generic authoring and exact pinned Exchange-template import with reviewed local connection binding are implemented and covered by source fixtures; final installed acceptance remains open. #398 itself explicitly excludes Exchange publishing. |
 | Existing v0.13 foundations | Reviewed Web access, private-data freshness, local install/restart behavior, Jobs activity, retained input/release references and saved-record verification. |
-| Localization and release quality | Current catalogs translated in all 11 non-English languages; re-extract after integration, translate any new messages, then repeat strict checks and release acceptance. |
+| Local Policy lifecycle | Unified Library, retained originals, local-administrator review/publication, connected-source observations and consent, comparison, coverage/adoption review and bounded recovery. Optional `local-admin-manual-pack/1` remains a private experimental whole-workspace profile requiring explicit enrollment and compatible companions; it is not normative Policy adoption or team RBAC. |
+| Localization and release quality | Complete final catalogs in all 11 non-English languages after integration, then pass strict checks, representative translated layouts and release acceptance. Earlier complete catalog snapshots are historical evidence. |
 
 ## Implementation lanes
 
@@ -51,20 +52,40 @@ and external CRM writes remain outside this work.
 
 ## Shared release gates
 
-- [ ] Integrate Codex's checkpoint and Claude's portable-Dialect work, reconcile
-  overlapping mapping/Jobs changes, and complete the required reviews.
-- [ ] Verify the integrated Dialect output against the pinned spec fixtures and
-  verifier; keep draft/staged-vector status distinct from a released conformance
-  claim. Preserve exact mapping bytes and local credential custody.
-- [ ] Complete and validate the generic template import/authoring path; explicitly
-  report unsupported or unbound sources instead of presenting them as executable.
-- [ ] Run an isolated end-to-end journey on the integrated build: design/import a
+Checked source items below refer to `c4e6ef5c6170e7d134c8c3960adc7a9c909bc2bb`
+(tree `ad65c7b1921c9edad46c103d00b9e289d1bf9e61`) and recorded Desk CI
+[39275718610](https://github.com/Judgment-Pack/judgment-pack-desk/actions/runs/39275718610).
+The cumulative review found no open P1/P2 in the inspected interactions; it reused
+earlier exact material reviews and does not certify final installed acceptance.
+
+- [x] Integrate the combined Dialect, mapping/Jobs, shared AI/UI and Policy source
+  scope, with recorded material reviews and bounded cumulative interaction review.
+- [x] Verify integrated Dialect output with pinned fixtures, canonical/typed
+  preparation and negative/refusal checks in source CI. This is not a released
+  conformance claim; exact mapping bytes and local credential custody remain distinct.
+- [x] Validate generic authoring and signed Exchange-template import/local binding
+  through source fixtures, including two installations and unsupported/unbound
+  source refusals. These fixtures do not establish live research quality.
+- [x] Pass the actual combined manual source acceptance's seven required checks
+  with Runner `d903728fb38368a5f0574990e01bc27acb2a2803` and Runtime
+  `55a23b884f0ce67fe6a9141b04e081a518fd5d61`; this is not archive/installed acceptance.
+- [ ] Verify and adopt exact published/attested Runtime `v0.36.0` and Runner
+  `v0.24.0` companions after their required gates, then repeat all seven actual
+  manual checks and native bundle smoke against that final set. Current pins
+  remain Runtime `v0.34.0`/Runner `v0.23.0`; Runtime `v0.35.0` stays held.
+- [ ] Run the final isolated browser/end-to-end journey on the frozen candidate: design/import a
   Dialect, research and review records, map/test a pack, create and run a Job,
   inspect retained results, select companies, and research people. Cover restart,
-  cancellation, partial results, stale revisions and unavailable connections.
-- [ ] Complete the reviewed live pilot and usage/reliability assessment required
-  by #369. Fixture success alone does not establish live discovery quality.
-- [x] Complete the current 5,696-message catalog in all 11 non-English languages.
+  cancellation, partial results, stale revisions and unavailable connections;
+  Policy lifecycle/recovery and shared Plan/Ask me/Auto/error/retry/refresh/dirty/theme flows.
+- [ ] Complete isolated fresh-install and `v0.12.0` upgrade acceptance, retaining
+  legacy records/Jobs and checking explicit enrollment, backup/restore and refusal
+  paths without changing live user data.
+- [ ] Complete the reviewed 50-candidate live pilot, manual adjudication and
+  usage/reliability assessment required by #369. Fixture success alone does not
+  establish live discovery quality.
+- [x] Complete the historical 5,696-message catalog snapshot in all 11 non-English
+  languages. This does not establish completion of the later integrated catalogs.
 - [ ] Re-extract catalogs after integration, translate any new messages in all
   11 languages, and pass strict locale/source and representative layout checks.
 - [ ] Pass frontend/backend checks, packaging and companion verification on the
