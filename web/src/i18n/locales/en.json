@@ -21,6 +21,8 @@
   " · tokens in {{input}}, out {{output}}": " · tokens in {{input}}, out {{output}}",
   " · tokens reported by the provider: {{tokens}}": " · tokens reported by the provider: {{tokens}}",
   " · tool calls: {{calls}} ({{seconds}} s)": " · tool calls: {{calls}} ({{seconds}} s)",
+  " · waited for a turn: {{seconds}} s (requests held: {{queued}})": " · waited for a turn: {{seconds}} s (requests held: {{queued}})",
+  " · waited {{seconds}} s": " · waited {{seconds}} s",
   " · {{count}} failed": " · {{count}} failed",
   " — line {{value0}}, column {{value1}}": " — line {{value0}}, column {{value1}}",
   " — not declared": " — not declared",

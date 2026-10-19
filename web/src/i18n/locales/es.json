@@ -6155,5 +6155,7 @@
   "Step": "Paso",
   "Steps": "Pasos",
   "The assistant is writing": "El asistente está escribiendo",
-  "Tools": "Herramientas"
+  "Tools": "Herramientas",
+  " · waited for a turn: {{seconds}} s (requests held: {{queued}})": " · esperó turno: {{seconds}} s (solicitudes retenidas: {{queued}})",
+  " · waited {{seconds}} s": " · esperó {{seconds}} s"
 }

@@ -5002,9 +5002,19 @@ no CORS, so a page calling one directly could not read the answer.
   seconds, so the refusal still lands rather than the page being dropped
   mid-connection. The whole bound is therefore the overall deadline plus five
   seconds, and no idle bound can extend a request past it.
-- **At most four relayed requests in flight**, and past that the answer is an
-  immediate `assistant-relay-busy` — a bound, deliberately not a queue, because
-  a queue reports a wait as latency.
+- **At most four relayed requests in flight, and a bounded queue behind
+  them.** A fifth request, which a delegating session makes in the ordinary
+  course, waits for a turn and is answered like the others; the requests
+  waiting are served in the order they arrived, at most sixteen of them. A
+  request that waits is told how long and how many were waiting (the
+  `X-Relay-Queue-Wait-Ms` and `X-Relay-Queue-Depth` headers on its answer),
+  and the run report shows it. One past the sixteenth is refused at once,
+  `429` with `Retry-After: 1` and the code `assistant-relay-queue-full`, which
+  the assistant reads and sends again; a request that has waited a minute
+  without a turn is answered `assistant-relay-busy`, nothing sent. The wait is
+  bounded so that a slot held by an endpoint that never answers cannot hold a
+  chat for ever, and the queue is bounded so that a page that fires a hundred
+  requests is not a desk holding a hundred sockets.
 - **No redirect is followed**, for the reason the probe does not follow one: Go
   strips `Authorization` across hosts and knows nothing about `x-api-key`.
 - **The answer is forwarded whole** — status, headers and body — minus the

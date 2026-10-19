@@ -95,12 +95,14 @@ const (
 	// maxRelayInFlight is how many relayed requests this desk will carry at
 	// once.
 	//
-	// **A bound, and deliberately not a queue.** A queue would turn a page
-	// that fires a hundred requests into a desk holding a hundred sockets and
-	// a hundred deadlines, and would report the wait as latency. Four is more
-	// than one authoring session's own parallelism — a loop is a loop, plus a
-	// critic — and past it the answer is an immediate, named refusal that a
-	// caller can act on.
+	// **A bound, with a bounded queue behind it** (`relay_queue.go`). The four
+	// stay: they are the sockets and deadlines one desk is willing to hold. A
+	// request past them used to be refused at once, which was right while a
+	// session's parallelism was a loop and a critic; a delegating session runs
+	// its children beside the parent, a fifth request is the ordinary case,
+	// and it waits for a turn instead, up to `maxRelayQueued` of them and
+	// `relayQueueWait` each. Past those the answer is a refusal a caller can act
+	// on.
 	maxRelayInFlight = 4
 
 	// maxListingBody bounds the one relayed answer this desk reads.
@@ -806,25 +808,16 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	defer work.Close()
 
-	// A bound, not a queue: taken without waiting, and refused where there is
-	// nothing to take.
-	select {
-	case s.relaySlots <- struct{}{}:
-		defer func() { <-s.relaySlots }()
-	default:
-		writeJSONCoded(w, http.StatusServiceUnavailable, CodeAssistantRelayBusy,
-			fmt.Sprintf("this desk is already carrying %d requests to the endpoint; "+
-				"nothing was sent", maxRelayInFlight))
-		return
-	}
-
+	// A slot, waited for in a bounded queue where none is free: see
+	// `admitRelay`. The connection's room is taken with it, the same
+	// per-connection limit the background workers share.
 	capacityKey := s.modelCapacityKey(endpoint.url, keyName)
-	releaseCapacity, admitted := modelCapacity.Try(capacityKey)
-	if !admitted {
-		writeJSONCoded(w, http.StatusServiceUnavailable, CodeAssistantRelayBusy, "This AI connection is busy. Nothing was sent.")
+	admission, refusal := s.admitRelay(r.Context(), capacityKey)
+	if refusal != nil {
+		refusal.write(w)
 		return
 	}
-	defer releaseCapacity()
+	defer admission.release()
 
 	ctx, cancel := context.WithTimeout(r.Context(), relayDeadline)
 	defer cancel()
@@ -933,6 +926,9 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 				modelCapacity.Throttle(capacityKey)
 			}
 			status = response.StatusCode
+			// **The wait goes back with the answer**, set after the filter below so an
+			// endpoint cannot say it for us and cannot take it out.
+			defer admission.markQueued(response.Header)
 			// **The answer's headers are filtered too**, and the reason is the
 			// key: an endpoint that echoes what it was sent would otherwise
 			// hand the machine-held credential to the page. `Set-Cookie` is on
@@ -1056,8 +1052,8 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	// that has stopped reading, and the outer server has no `WriteTimeout` by
 	// design — `/ws` is a socket it holds open for a session. So four clients
 	// that authenticate and then stop reading could hold all four slots for
-	// ever, and every later request would answer `assistant-relay-busy` about
-	// a desk that was not carrying anything. The connection's write deadline is
+	// ever, and every later request would wait out its turn behind slots that
+	// were carrying nothing. The connection's write deadline is
 	// extended by the idle bound before each write and never past the overall
 	// one, so a page that stops reading loses its answer and gives back the
 	// slot.

@@ -6155,5 +6155,7 @@
   "Step": "ステップ",
   "Steps": "ステップ",
   "The assistant is writing": "アシスタントが入力中です",
-  "Tools": "ツール"
+  "Tools": "ツール",
+  " · waited for a turn: {{seconds}} s (requests held: {{queued}})": " · 順番待ち: {{seconds}} 秒（待たされたリクエスト: {{queued}}）",
+  " · waited {{seconds}} s": " · {{seconds}} 秒待機"
 }

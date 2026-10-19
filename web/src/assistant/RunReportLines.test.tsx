@@ -51,3 +51,14 @@ it('says how long the requests and the tools took and which requests did not com
   ])
   expect(screen.getByText('Earlier steps left out of this list: 2')).toBeTruthy()
 })
+
+it('says how long requests waited for a turn at the relay, in the summary and against the step', () => {
+  render(<RunReportLines report={{ requests: 2, unit: 'model-requests', timing: { omitted: 0, steps: [
+    { model: 'a-model', requestBytes: 1024, firstByteMs: 300, durationMs: 2000, status: 200, outcome: 'complete', queuedMs: 4200, queueDepth: 2 },
+    { model: 'a-model', requestBytes: 1024, firstByteMs: 200, durationMs: 1000, status: 200, outcome: 'complete' }
+  ] } }} />)
+  expect(screen.getByText(/waited for a turn: 4\.2 s \(requests held: 1\)/)).toBeTruthy()
+  fireEvent.click(screen.getByText('Steps'))
+  expect(rowsOf()[0]![5]).toBe('Done · 200 · waited 4.2 s')
+  expect(rowsOf()[1]![5]).toBe('Done · 200')
+})

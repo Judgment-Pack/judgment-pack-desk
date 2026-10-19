@@ -36,6 +36,7 @@ export function RunReportLines({ report, titles = {}, className }: { report: Run
           {msg('Requests took {{seconds}} s in all', { seconds: seconds(totals.modelMs) })}
           {totals.firstByteMs !== undefined && msg(' · first byte {{seconds}} s on average', { seconds: seconds(totals.firstByteMs) })}
           {totals.toolCalls > 0 && msg(' · tool calls: {{calls}} ({{seconds}} s)', { calls: totals.toolCalls, seconds: seconds(totals.toolMs) })}
+          {totals.queued > 0 && msg(' · waited for a turn: {{seconds}} s (requests held: {{queued}})', { seconds: seconds(totals.queuedMs), queued: totals.queued })}
           {totals.failed > 0 && msg(' · requests that did not complete: {{failed}}', { failed: totals.failed })}
         </p>
       )}
@@ -107,7 +108,7 @@ function StepRow({ number, step }: { number: number; step: StepRecord }) {
       <td>{(step.requestBytes / 1024).toFixed(1)}</td>
       <td>{seconds(step.firstByteMs)}</td>
       <td>{seconds(step.durationMs)}</td>
-      <td>{step.status === undefined ? result : `${result} · ${step.status}`}</td>
+      <td>{step.status === undefined ? result : `${result} · ${step.status}`}{step.queuedMs !== undefined && msg(' · waited {{seconds}} s', { seconds: seconds(step.queuedMs) })}</td>
       <td>{step.tools?.map((tool) => `${tool.name} ${seconds(tool.ms)} s${tool.failed ? ' ✗' : ''}`).join(', ') ?? '—'}</td>
     </tr>
   )

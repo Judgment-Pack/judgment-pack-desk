@@ -27,6 +27,12 @@ export interface StepRecord {
   /** The HTTP status the relay answered, absent for a subscription run or a request that never was answered. */
   status?: number
   outcome: 'complete' | 'failed' | 'aborted'
+  /**
+   * How long the desk's relay held the request for a turn before sending it, when it did (the relay carries
+   * four requests at once and queues the rest), and how many were waiting when it joined, itself among them.
+   */
+  queuedMs?: number
+  queueDepth?: number
   /** The tools the model called after this request, in order, with how long each took. */
   tools?: { name: string; ms: number; failed?: true }[]
 }
@@ -36,6 +42,10 @@ export interface RunTiming {
   steps: StepRecord[]
   omitted: number
 }
+
+/** The headers the desk's relay puts on an answer whose request waited for a turn (`relay_queue.go`). */
+export const QUEUE_WAIT_HEADER = 'X-Relay-Queue-Wait-Ms'
+export const QUEUE_DEPTH_HEADER = 'X-Relay-Queue-Depth'
 
 /** The most steps a report keeps, and the most tools one step keeps. */
 export const MAX_STEPS = 100
@@ -87,6 +97,11 @@ export class RunMeter {
         throw error
       }
       step.record.status = answered.status
+      const waited = Number(answered.headers.get(QUEUE_WAIT_HEADER)), depth = Number(answered.headers.get(QUEUE_DEPTH_HEADER))
+      if (Number.isSafeInteger(waited) && waited > 0 && Number.isSafeInteger(depth) && depth > 0) {
+        step.record.queuedMs = waited
+        step.record.queueDepth = depth
+      }
       const ok = answered.ok
       if (answered.body === null) {
         step.record.firstByteMs = Math.round(this.clock() - step.started)
@@ -191,7 +206,7 @@ export function joinTiming(first: RunTiming | undefined, second: RunTiming): Run
 }
 
 /** What a timing adds up to: requests, the time they took in all, how long the first byte took on average, and the tools. */
-export function timingTotals(timing: RunTiming): { requests: number; modelMs: number; firstByteMs: number | undefined; toolCalls: number; toolMs: number; failed: number } {
+export function timingTotals(timing: RunTiming): { requests: number; modelMs: number; firstByteMs: number | undefined; toolCalls: number; toolMs: number; failed: number; queued: number; queuedMs: number } {
   const first = timing.steps.flatMap((step) => (step.firstByteMs === undefined ? [] : [step.firstByteMs]))
   const tools = timing.steps.flatMap((step) => step.tools ?? [])
   return {
@@ -200,6 +215,8 @@ export function timingTotals(timing: RunTiming): { requests: number; modelMs: nu
     firstByteMs: first.length === 0 ? undefined : Math.round(first.reduce((total, ms) => total + ms, 0) / first.length),
     toolCalls: tools.length,
     toolMs: tools.reduce((total, tool) => total + tool.ms, 0),
-    failed: timing.steps.filter((step) => step.outcome !== 'complete').length
+    failed: timing.steps.filter((step) => step.outcome !== 'complete').length,
+    queued: timing.steps.filter((step) => step.queuedMs !== undefined).length,
+    queuedMs: timing.steps.reduce((total, step) => total + (step.queuedMs ?? 0), 0)
   }
 }

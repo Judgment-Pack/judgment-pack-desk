@@ -75,6 +75,25 @@ describe('a model request, measured', () => {
   })
 })
 
+describe('the wait the desk\'s relay put on a request', () => {
+  it('records how long the request waited for a turn and how many were waiting', async () => {
+    const time = clock()
+    const meter = new RunMeter(time.now)
+    const response = await meter.call(async () => new Response('{}', { headers: { 'X-Relay-Queue-Wait-Ms': '2400', 'X-Relay-Queue-Depth': '3' } }), 'a-model')('chat/completions', { method: 'POST', body: '{}' })
+    await response.text()
+    expect(meter.snapshot().steps[0]).toMatchObject({ queuedMs: 2400, queueDepth: 3 })
+    expect(timingTotals(meter.snapshot())).toMatchObject({ queued: 1, queuedMs: 2400 })
+  })
+
+  it('records none for a request that was not held, or a wait an answer states badly', async () => {
+    for (const headers of [{}, { 'X-Relay-Queue-Wait-Ms': '0', 'X-Relay-Queue-Depth': '0' }, { 'X-Relay-Queue-Wait-Ms': 'soon', 'X-Relay-Queue-Depth': '2' }, { 'X-Relay-Queue-Wait-Ms': '100' }] as Record<string, string>[]) {
+      const meter = new RunMeter(clock().now)
+      await (await meter.call(async () => new Response('{}', { headers }), 'a-model')('chat/completions', { method: 'POST', body: '{}' })).text()
+      expect(meter.snapshot().steps[0], JSON.stringify(headers)).not.toHaveProperty('queuedMs')
+    }
+  })
+})
+
 describe('the tools a model called', () => {
   const call = (name: string, callId?: string): AssistantEvent => ({ type: 'tool_call', name, args: {}, ...(callId ? { callId } : {}) })
   const result = (name: string, callId?: string, isError = false): AssistantEvent => ({ type: 'tool_result', name, isError, text: '', ...(callId ? { callId } : {}) })
@@ -148,7 +167,7 @@ describe('what a timing adds up to', () => {
 
   it('sums the time the requests took, averages the first byte, and sums the tools', () => {
     const timing: RunTiming = { omitted: 0, steps: [step({ firstByteMs: 400, durationMs: 2000, tools: [{ name: 'a', ms: 100 }, { name: 'b', ms: 300 }] }), step({ firstByteMs: 800, durationMs: 4000 }), step({ outcome: 'failed', status: 503, durationMs: 100 })] }
-    expect(timingTotals(timing)).toEqual({ requests: 3, modelMs: 6100, firstByteMs: 600, toolCalls: 2, toolMs: 400, failed: 1 })
+    expect(timingTotals(timing)).toEqual({ requests: 3, modelMs: 6100, firstByteMs: 600, toolCalls: 2, toolMs: 400, failed: 1, queued: 0, queuedMs: 0 })
   })
 
   it('keeps the latest steps and counts the ones it dropped, across turns', () => {

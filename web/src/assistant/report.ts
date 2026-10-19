@@ -72,11 +72,11 @@ const DAY = 86_400_000
 /** A saved timing, read closed. */
 export function validTiming(value: unknown): value is RunTiming {
   const step = (item: unknown) =>
-    object(item) && Object.keys(item).every((key) => ['model', 'requestBytes', 'firstByteMs', 'durationMs', 'status', 'outcome', 'tools'].includes(key)) &&
+    object(item) && Object.keys(item).every((key) => ['model', 'requestBytes', 'firstByteMs', 'durationMs', 'status', 'outcome', 'tools', 'queuedMs', 'queueDepth'].includes(key)) &&
     typeof item.model === 'string' && item.model.length > 0 && item.model.length <= 200 && count(item.requestBytes, 1 << 30) &&
     (item.firstByteMs === undefined || count(item.firstByteMs, DAY)) && (item.durationMs === undefined || count(item.durationMs, DAY)) &&
     (item.status === undefined || (Number.isInteger(item.status) && Number(item.status) >= 100 && Number(item.status) <= 599)) &&
-    ['complete', 'failed', 'aborted'].includes(String(item.outcome)) &&
+    ['complete', 'failed', 'aborted'].includes(String(item.outcome)) && (item.queuedMs === undefined || count(item.queuedMs, DAY)) && (item.queueDepth === undefined || count(item.queueDepth, 1000)) &&
     (item.tools === undefined || (Array.isArray(item.tools) && item.tools.length <= MAX_TOOLS_PER_STEP && item.tools.every((tool) =>
       object(tool) && Object.keys(tool).every((key) => ['name', 'ms', 'failed'].includes(key)) && typeof tool.name === 'string' && tool.name.length > 0 && tool.name.length <= 150 && count(tool.ms, DAY) && (tool.failed === undefined || tool.failed === true))))
   return object(value) && Object.keys(value).every((key) => key === 'steps' || key === 'omitted') && Array.isArray(value.steps) && value.steps.length <= MAX_STEPS && value.steps.every(step) && count(value.omitted, 1_000_000)

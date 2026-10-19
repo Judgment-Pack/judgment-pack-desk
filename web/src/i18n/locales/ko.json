@@ -6155,5 +6155,7 @@
   "Step": "단계",
   "Steps": "단계",
   "The assistant is writing": "어시스턴트가 작성하는 중입니다",
-  "Tools": "도구"
+  "Tools": "도구",
+  " · waited for a turn: {{seconds}} s (requests held: {{queued}})": " · 순서 대기: {{seconds}}초 (대기한 요청: {{queued}})",
+  " · waited {{seconds}} s": " · {{seconds}}초 대기"
 }

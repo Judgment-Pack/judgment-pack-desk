@@ -6155,5 +6155,7 @@
   "Step": "步驟",
   "Steps": "步驟",
   "The assistant is writing": "助手寫緊嘢",
-  "Tools": "工具"
+  "Tools": "工具",
+  " · waited for a turn: {{seconds}} s (requests held: {{queued}})": " · 等候輪候：{{seconds}} 秒（被擱住嘅請求：{{queued}}）",
+  " · waited {{seconds}} s": " · 等咗 {{seconds}} 秒"
 }
