@@ -36,7 +36,7 @@ import type { AssistantEndpointConfig } from '../config/deskConfig'
 import { DIAGNOSTIC_SAYS, probeAssistantEndpoint, type ProbeResult } from './client'
 import type { EndpointDraft } from './endpointDraft'
 import { listModels, type ModelRow } from './modelListing'
-import { bindModelCall } from './session'
+import { bindModelCall } from '@judgment-pack/harness/session'
 
 /**
  * What the button says where the protocol's probe would have to name a model

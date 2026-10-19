@@ -1,4 +1,4 @@
-import type { HostTool } from '../assistant/engine'
+import type { HostTool } from '@judgment-pack/harness/engine'
 import { deskFetch } from '../files/client'
 import { msg } from '../i18n'
 

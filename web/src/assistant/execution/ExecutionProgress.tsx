@@ -3,7 +3,7 @@ import {ChatAction,ChatActions} from '../../chat/ChatActions'
 import {Disclosure} from '../../ui/Disclosure'
 import {Spinner} from '../../ui/Spinner'
 import {IconCheck} from '../../shell/icons'
-import {MAX_REQUEST_ALLOWANCE,REQUEST_INCREMENT,type ExecutionCheckpoint} from './state'
+import {MAX_REQUEST_ALLOWANCE,REQUEST_INCREMENT,type ExecutionCheckpoint} from '@judgment-pack/harness/execution/state'
 import styles from './ExecutionProgress.module.css'
 export function ExecutionProgress({execution,disabled,onContinue,onStop}:{execution?:ExecutionCheckpoint;disabled?:boolean;onContinue?:()=>void;onStop?:()=>void}){
  if(!execution||!execution.plan.length&&execution.status!=='paused')return null

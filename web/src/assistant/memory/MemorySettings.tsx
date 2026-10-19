@@ -11,7 +11,7 @@ import {Dialog,DialogActions} from '../../ui/Dialog'
 import {LoadingState} from '../../ui/LoadingState'
 import {SettingsFeedback} from '../../ui/SettingsFeedback'
 import {CollectionToolbar} from '../../ui/CollectionToolbar'
-import {MEMORY_KEY,memoryRequest,type MemoryEntry} from './client'
+import {MEMORY_KEY,memoryRequest,type MemoryEntry} from '@judgment-pack/harness/memory/client'
 import styles from '../AIConnectionsSettings.module.css'
 export function MemorySettings({disabled=false}:{disabled?:boolean}){
  const query=useQuery({...privateQuery,queryKey:MEMORY_KEY,queryFn:()=>memoryRequest(),retry:false}),cache=useQueryClient()

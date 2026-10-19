@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import type { McpToolResult } from '../../assistant/engine'
+import type { McpToolResult } from '@judgment-pack/harness/engine'
 import { digestOf } from '../../research/checkCandidate'
 import { emptySuite, importMatrix } from './model'
 import { testChatTools, testReviewHref, type TestChatPorts } from './chatTools'

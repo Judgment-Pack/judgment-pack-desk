@@ -1,5 +1,5 @@
-import type {HostTool} from '../assistant/engine'
-import {toolInputFailure} from '../assistant/failures'
+import type {HostTool} from '@judgment-pack/harness/engine'
+import {toolInputFailure} from '@judgment-pack/harness/failures'
 import {dialectAPI,type PreparationReply} from './client'
 import {validDialectId,validDialectRevision,type DialectChatAction} from './chatActions'
 import {validPublicationProposal} from './publicationProposal'

@@ -117,3 +117,41 @@ func TestBackgroundCompletionUsageTotalsAndOverflow(t *testing.T) {
 		t.Fatalf("overflow: %+v %v", got, err)
 	}
 }
+
+// The cache figures, as the page's harness records them since v0.1.0: read
+// from each wire where the provider reports them, absent where it does not, and
+// kept when a completion is written and read back as JSON.
+func TestBackgroundCompletionAdmitsCacheFigures(t *testing.T) {
+	count := func(n int64) *int64 { return &n }
+	for _, tc := range []struct {
+		kind, raw   string
+		read, write *int64
+	}{
+		{"openai-compatible", `{"choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":17,"prompt_tokens_details":{"cached_tokens":12},"completion_tokens":8}}`, count(12), nil},
+		{"anthropic", `{"stop_reason":"end_turn","usage":{"input_tokens":17,"cache_read_input_tokens":5,"cache_creation_input_tokens":7,"output_tokens":8}}`, count(5), count(7)},
+		{"gemini", `{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":17,"cachedContentTokenCount":9,"candidatesTokenCount":8}}`, count(9), nil},
+		{"openai-compatible", `{"choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":17,"completion_tokens":8}}`, nil, nil},
+		{"anthropic", `{"stop_reason":"end_turn","usage":{"input_tokens":17,"cache_read_input_tokens":-1,"cache_creation_input_tokens":"7","output_tokens":8}}`, nil, nil},
+	} {
+		got, err := backgroundCompletion(tc.kind, []byte(tc.raw))
+		if err != nil {
+			t.Fatal(tc.kind, err)
+		}
+		same := func(a, b *int64) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
+		if !same(got.CacheReadTokens, tc.read) || !same(got.CacheWriteTokens, tc.write) {
+			t.Fatalf("%s %s: cache figures %v %v", tc.kind, tc.raw, got.CacheReadTokens, got.CacheWriteTokens)
+		}
+	}
+	raw := []byte(`{"version":1,"code":"output-limit","source":"model","outcome":"unknown","completion":{"finishReason":"length","inputTokens":29,"outputTokens":8,"cacheReadTokens":5,"cacheWriteTokens":7}}`)
+	var failure aifailure.Failure
+	if err := json.Unmarshal(raw, &failure); err != nil {
+		t.Fatal(err)
+	}
+	if c := failure.Completion; c == nil || c.CacheReadTokens == nil || *c.CacheReadTokens != 5 || c.CacheWriteTokens == nil || *c.CacheWriteTokens != 7 {
+		t.Fatalf("cache figures dropped on read: %+v", failure.Completion)
+	}
+	again, _ := json.Marshal(failure)
+	if !strings.Contains(string(again), `"cacheReadTokens":5`) || !strings.Contains(string(again), `"cacheWriteTokens":7`) {
+		t.Fatalf("cache figures dropped on write: %s", again)
+	}
+}

@@ -21,7 +21,7 @@ import { systemMessage, msg, useLocale } from '../i18n'
  * are different documents.
  */
 import { CodeArea } from '../ui/CodeArea'
-import type { AssistantEvent } from './engine'
+import type { AssistantEvent } from '@judgment-pack/harness/engine'
 import styles from './AssistantPane.module.css'
 
 /** The two answers a proposal is reported with, in the order they are shown. */

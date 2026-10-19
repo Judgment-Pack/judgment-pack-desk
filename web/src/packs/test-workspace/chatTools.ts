@@ -1,5 +1,5 @@
-import {toolInputFailure} from '../../assistant/failures'
-import type { HostTool, McpToolResult } from '../../assistant/engine'
+import {toolInputFailure} from '@judgment-pack/harness/failures'
+import type { HostTool, McpToolResult } from '@judgment-pack/harness/engine'
 import type { ChatAttachment } from '../../chat/store'
 import { digestOf, jsonIdentity } from '../../research/checkCandidate'
 import { additionFindings, currentCoverage, latestCoverage, missingProbes, missingTestsRequest } from './coverage'

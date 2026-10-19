@@ -1,7 +1,7 @@
 import {researchFieldTypes} from './research'
-import {toolInputFailure} from '../assistant/failures'
+import {toolInputFailure} from '@judgment-pack/harness/failures'
 import {DialectRecipeDraftError,dialectRecipeFailureMessage,type DialectRecipeFailureCode} from './proposalFailure'
-import type {HostTool} from '../assistant/engine'
+import type {HostTool} from '@judgment-pack/harness/engine'
 import {dialectAPI,type PreparationReply,type PreparationSummary} from './client'
 import {validDialectRecipeContent,dialectRecipeContentProblem,type DialectRecipeProposal} from './proposals'
 const schema=(properties:Record<string,unknown>,required:string[]=[])=>({type:'object',properties,required,additionalProperties:false})

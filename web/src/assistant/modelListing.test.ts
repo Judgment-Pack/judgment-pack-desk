@@ -16,7 +16,7 @@ import {
   listingRefusal,
   modelRows
 } from './modelListing'
-import { bindModelCall } from './session'
+import { bindModelCall } from '@judgment-pack/harness/session'
 
 afterEach(() => {
   vi.unstubAllGlobals()

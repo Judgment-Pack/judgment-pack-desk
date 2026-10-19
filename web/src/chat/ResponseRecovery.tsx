@@ -3,7 +3,7 @@ import { msg, systemMessage, useLocale } from '../i18n'
 import {IconException} from '../shell/icons'
 import {RetryResponseButton} from './RetryResponseButton'
 import {FailureDetails} from '../assistant/FailureDetails'
-import {failureMessage,failureRecovery,retryReady,type AIFailure} from '../assistant/failures'
+import {failureMessage,failureRecovery,retryReady,type AIFailure} from '@judgment-pack/harness/failures'
 import styles from './ResponseRecovery.module.css'
 export function ResponseRecovery({detail,failure,disabled,onRetry,additionalRequests}: {detail:string;failure?:AIFailure;disabled:boolean;onRetry?:()=>void;additionalRequests?:number}) {
  useLocale()

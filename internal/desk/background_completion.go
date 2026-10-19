@@ -36,10 +36,13 @@ func backgroundCompletion(kind string, raw []byte) (*aifailure.Completion, error
 			BlockReason string `json:"blockReason"`
 		} `json:"promptFeedback"`
 		Usage struct {
-			Input      json.RawMessage `json:"input_tokens"`
-			CacheRead  json.RawMessage `json:"cache_read_input_tokens"`
-			CacheWrite json.RawMessage `json:"cache_creation_input_tokens"`
-			Prompt     json.RawMessage `json:"prompt_tokens"`
+			Input         json.RawMessage `json:"input_tokens"`
+			CacheRead     json.RawMessage `json:"cache_read_input_tokens"`
+			CacheWrite    json.RawMessage `json:"cache_creation_input_tokens"`
+			Prompt        json.RawMessage `json:"prompt_tokens"`
+			PromptDetails struct {
+				Cached json.RawMessage `json:"cached_tokens"`
+			} `json:"prompt_tokens_details"`
 			Output     json.RawMessage `json:"output_tokens"`
 			Completion json.RawMessage `json:"completion_tokens"`
 			Details    struct {
@@ -49,6 +52,7 @@ func backgroundCompletion(kind string, raw []byte) (*aifailure.Completion, error
 		GoogleUsage struct {
 			Input     json.RawMessage `json:"promptTokenCount"`
 			ToolInput json.RawMessage `json:"toolUsePromptTokenCount"`
+			Cached    json.RawMessage `json:"cachedContentTokenCount"`
 			Output    json.RawMessage `json:"candidatesTokenCount"`
 			Reasoning json.RawMessage `json:"thoughtsTokenCount"`
 		} `json:"usageMetadata"`
@@ -68,6 +72,7 @@ func backgroundCompletion(kind string, raw []byte) (*aifailure.Completion, error
 		result.InputTokens = backgroundTokenCount(wire.Usage.Prompt)
 		result.OutputTokens = backgroundTokenCount(wire.Usage.Completion)
 		result.ReasoningTokens = backgroundTokenCount(wire.Usage.Details.Reasoning)
+		result.CacheReadTokens = backgroundTokenCount(wire.Usage.PromptDetails.Cached)
 		switch reason {
 		case "stop":
 			result.FinishReason = "stop"
@@ -87,6 +92,8 @@ func backgroundCompletion(kind string, raw []byte) (*aifailure.Completion, error
 		}
 		result.InputTokens = backgroundTokenTotal(wire.Usage.Input, wire.Usage.CacheRead, wire.Usage.CacheWrite)
 		result.OutputTokens = backgroundTokenCount(wire.Usage.Output)
+		result.CacheReadTokens = backgroundTokenCount(wire.Usage.CacheRead)
+		result.CacheWriteTokens = backgroundTokenCount(wire.Usage.CacheWrite)
 		switch reason {
 		case "end_turn", "stop_sequence", "pause_turn":
 			result.FinishReason = "stop"
@@ -109,6 +116,7 @@ func backgroundCompletion(kind string, raw []byte) (*aifailure.Completion, error
 		result.InputTokens = backgroundTokenTotal(wire.GoogleUsage.Input, wire.GoogleUsage.ToolInput)
 		result.OutputTokens = backgroundTokenTotal(wire.GoogleUsage.Output, wire.GoogleUsage.Reasoning)
 		result.ReasoningTokens = backgroundTokenCount(wire.GoogleUsage.Reasoning)
+		result.CacheReadTokens = backgroundTokenCount(wire.GoogleUsage.Cached)
 		switch reason {
 		case "STOP":
 			result.FinishReason = "stop"

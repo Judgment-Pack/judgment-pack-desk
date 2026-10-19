@@ -3,8 +3,8 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {afterEach,expect,it,vi} from 'vitest'
 import {Tooltip} from 'radix-ui'
 import {MemorySettings} from './MemorySettings'
-import {memoryRequest,MEMORY_KEY,type MemoryReply} from './client'
-vi.mock('./client',async original=>({...await original<typeof import('./client')>(),memoryRequest:vi.fn()}))
+import {memoryRequest,MEMORY_KEY,type MemoryReply} from '@judgment-pack/harness/memory/client'
+vi.mock('@judgment-pack/harness/memory/client',async original=>({...await original<typeof import('@judgment-pack/harness/memory/client')>(),memoryRequest:vi.fn()}))
 afterEach(()=>{cleanup();vi.resetAllMocks()})
 it('does not silently rebase a memory edit when another chat updates memory',async()=>{
  const saved:MemoryReply={sha256:'reviewed',content:{version:1,settings:{use:true,suggest:true},entries:[{id:'one',key:'preference',text:'Old preference',state:'active',createdAt:'2026-10-14',updatedAt:'2026-10-14'}]}}

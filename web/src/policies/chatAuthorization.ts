@@ -1,5 +1,5 @@
 import {deskFetch} from '../files/client'
-import {failureError} from '../assistant/failures'
+import {failureError} from '@judgment-pack/harness/failures'
 /** Local Policy access requires a current authenticated administrator. Keep
  * availability of the current Policy blobs separate from retained chat access. */
 export async function authorizePolicyChat(signal:AbortSignal){

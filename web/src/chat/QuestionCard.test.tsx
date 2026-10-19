@@ -3,7 +3,7 @@ import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testi
 import { afterEach, expect, it, vi } from 'vitest'
 import { QuestionCard } from './QuestionCard'
 import { interviewQuestion } from '../testing/question'
-import type { SavedQuestion } from '../assistant/questions'
+import type { SavedQuestion } from '@judgment-pack/harness/questions'
 afterEach(cleanup)
 function setup(multiple=false,submit=vi.fn(async()=>{})){
  function View(){const [q,set]=useState<SavedQuestion>({id:'q',prompt:{...interviewQuestion,selection:multiple?'multiple':'single'},draft:{selected:[],text:''}});return <QuestionCard question={q} disabled={false} canContinue={false} onDraft={draft=>set({...q,draft})} onSubmit={submit} onContinue={async()=>{}}/>}

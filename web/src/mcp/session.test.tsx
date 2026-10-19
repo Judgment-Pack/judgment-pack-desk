@@ -33,7 +33,7 @@ import {
   whenSessionEnds
 } from './session'
 import { deskFetch, listFiles } from '../files/client'
-import { bindModelCall, openAssistantConnection } from '../assistant/session'
+import { bindModelCall, openAssistantConnection } from '@judgment-pack/harness/session'
 import { ConnectionStatus } from '../shell/ConnectionNotices'
 
 /**

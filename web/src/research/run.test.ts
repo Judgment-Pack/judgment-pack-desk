@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { AssistantEvent, CallTool, McpToolResult } from '../assistant/engine'
+import type { AssistantEvent, CallTool, McpToolResult } from '@judgment-pack/harness/engine'
 import { Ledger } from './ledger'
 import { AuthoringRun, admitCases, canCreateDraft, canCreateResearchDraft, canEstablishCases, documentBasis, factPaths, statementsOf, matrixDocument, readinessKey, researchRecord, traceCitations, type Candidate, type RunPorts, type RunState, type TurnRequest } from './run'
 import { digestOf, type AuthoringCase, type CandidateCheck } from './checkCandidate'
@@ -1669,6 +1669,27 @@ describe('conversation-first task lifecycle', () => {
     expect(answered.status).toBe('needs-input')
   })
 
+  it('sends the chat draft snapshot as the harness\'s current state, never in the prompt', async () => {
+    const first = harness([async (request, _signal, emit) => {
+      // No draft yet: nothing changes between requests apart from the message.
+      expect(request.context?.currentState).toBeUndefined()
+      emit({ type: 'proposal', document: PACK, unknowns: [] })
+    }], { mode: 'draft' })
+    first.run.start('Create a draft', [])
+    const saved = await settled(first.run)
+    const resumed = harness([async (request, _signal, emit) => {
+      expect(request.prompt).toContain("THE PERSON'S MESSAGE\nWhat does the rule mean?")
+      expect(request.prompt).not.toContain('CHAT DRAFT SNAPSHOT')
+      expect(request.prompt).not.toContain(saved.candidates[0]!.text)
+      expect(request.context?.currentState).toContain(`CHAT DRAFT SNAPSHOT (may predate the saved workspace; use the current workspace or current object reads for edits, and preserve its identity)\n${saved.candidates[0]!.text}`)
+      emit({ type: 'message', text: 'The rule compares the supplied hours with the threshold.' })
+    }], { mode: 'draft' })
+    await resumed.run.restore(saved)
+    resumed.run.send('What does the rule mean?')
+    await settled(resumed.run)
+    expect(resumed.requests).toHaveLength(1)
+  })
+
   it('restores a finished reply as complete, while an interrupted reply stays interrupted', async () => {
     const { checkpoint, decodeCheckpoint } = await import('../chat/checkpoint')
     const first = harness([async (_request, _signal, emit) => emit({ type: 'message', text: 'Hello.' })], { mode: 'draft' })
@@ -1771,6 +1792,45 @@ describe('conversation draft citations', () => {
       })
     }
   }
+
+  it('hands the author every message\'s attachments as ledger documents and the case writer each message\'s attachments, never through the prompt', async () => {
+    const page = kept()
+    const supplied = { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'requirements.txt', text: 'People with 1,560 hours qualify; fewer do not.' }
+    const h = chat('draft', citing(pageOf(page.file)), [page])
+    h.run.start('Draft from what I attached.\n\nAttached file: requirements.txt.', [], 'Draft from what I attached.', [supplied, page.file], 'Draft from what I attached.\n\nAttached file: requirements.txt.')
+    await settled(h.run)
+    const author = h.requests.find(request => !request.reviewer)!
+    const documents = author.context!.documents!
+    expect(documents.map(document => document.id)).toEqual(['conversation', `attachment-${supplied.id}`, `attachment-${page.file.id}`])
+    expect(documents[1]).toMatchObject({ kind: 'artifact', label: 'Attached file: requirements.txt', value: { pages: [supplied.text] } })
+    expect((documents[2]!.value as { pages: string[] }).pages).toEqual([`[page 1; cite it as ${pageOf(page.file)}]\n${PAGE_TEXT}`])
+    expect(author.prompt).not.toContain(supplied.text)
+    expect(author.prompt).not.toContain(QUOTE)
+    // The case writer reads no ledger: each attachment comes with the message it was attached to.
+    const reviewer = h.requests.find(request => request.reviewer)!
+    expect(reviewer.context).toBeUndefined()
+    const messages = JSON.parse(reviewer.prompt.slice(reviewer.prompt.indexOf('\n', reviewer.prompt.indexOf("THE PERSON'S MESSAGES")) + 1))
+    expect(messages).toEqual([{ id: 'you-1', text: 'Draft from what I attached.\n\nAttached file: requirements.txt.', attachments: [
+      { name: 'requirements.txt', text: supplied.text },
+      { name: 'Eligibility', pages: [{ page: 1, citation: pageOf(page.file), text: PAGE_TEXT }] }
+    ] }])
+    // A later turn retains the earlier message's attachments again, the document verified once.
+    const loaded = h.loads.length
+    h.run.send('Explain the threshold.')
+    await settled(h.run)
+    const later = h.requests.filter(request => !request.reviewer).at(-1)!
+    expect(later.context!.documents!.map(document => document.id)).toEqual(['conversation', `attachment-${supplied.id}`, `attachment-${page.file.id}`])
+    expect(h.loads.length - loaded).toBeLessThanOrEqual(1)
+  })
+
+  it('retains why an attached document cannot be verified now, never its text', async () => {
+    const page = kept([PAGE_TEXT], false, 'gateway-b')
+    const h = chat('draft', PACK, [page])
+    h.run.start('Draft this.', [], 'Draft this.', [page.file], 'Draft this.')
+    await settled(h.run)
+    const documents = h.requests.find(request => !request.reviewer)!.context!.documents!
+    expect(documents[1]!.value).toEqual({ unavailable: 'this document could not be verified now (does not verify under this pin); its text is not available and is not evidence' })
+  })
 
   it.each(['draft', 'web-research'] as const)('traces a %s citation to the quoted page of a document kept in the chat, and is then ready', async mode => {
     const page = kept()
@@ -2356,12 +2416,14 @@ describe('conversation draft citations', () => {
       const saved = decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(state, []))))
       expect([...statementsOf(saved.state.turns).values()].at(-1)).toBe(text + material)
       expect(saved.state.turns.filter(turn => turn.role === 'user').at(-1)?.input).toContain(rule.id)
-      // The current draft still supplies its rules; historical workspace snapshots need not repeat them.
+      // The current draft still supplies its rules, as the harness's current state since v0.1.0;
+      // historical workspace snapshots need not repeat them.
       const reopened = harness([async (_request, _signal, emit) => emit({ type: 'message', text: 'Noted.' })], { mode: 'draft' })
       await reopened.run.restore(saved.state)
       reopened.run.send('Explain the draft.')
       await settled(reopened.run)
-      expect(reopened.requests[0]?.prompt).toContain(rule.id)
+      expect(reopened.requests[0]?.context?.currentState).toContain(rule.id)
+      expect(reopened.requests[0]?.prompt).not.toContain(rule.id)
     }
   })
 
@@ -2719,7 +2781,7 @@ it.runIf(Boolean(process.env.JPS_CHAT_CONTEXT_STORE&&process.env.JPS_CHAT_CONTEX
  const history=JSON.stringify(state.turns)
  let projectedBytes=0
  const h=harness([async(request,_s,emit)=>{
-  const {SessionContext}=await import('../assistant/context/session')
+  const {SessionContext}=await import('@judgment-pack/harness/context/session')
   const context=new SessionContext({prompt:request.prompt,context:request.context,testPrompt:'',hostTools:[],tools:[],callTool:async()=>({}),signal:_s,agent:{model:'fixture',run:async()=>{throw Error('No provider')}}})
   await context.initialize(request.context?.documents)
   const projected=await context.prompt(request.prompt,'Host instructions',context.ledger.tools().map(({name,description,inputSchema})=>({name,description,inputSchema})),request.context?.currentRequest)
@@ -2731,11 +2793,11 @@ it.runIf(Boolean(process.env.JPS_CHAT_CONTEXT_STORE&&process.env.JPS_CHAT_CONTEX
    const focus=context.ledger.list().items.find(i=>i.label.startsWith('Latest user'))
    if(focus){expect(context.ledger.read({id:focus.contextId,path:'/input'})).toMatchObject({text:expect.any(String)})}
   }
-  const {vercel}=await import('../assistant/engines/vercel')
-  const {normalize}=await import('../assistant/thinking')
-  const {MAX_TURNS}=await import('../assistant/engines/contract')
+  const {vercel}=await import('@judgment-pack/harness/vercel')
+  const {normalize}=await import('@judgment-pack/harness/thinking')
+  const {MAX_TURNS}=await import('@judgment-pack/harness/engines/contract')
   let calls=0
-  const call:import('../assistant/engine').ModelCall=async(_path,wire)=>{
+  const call:import('@judgment-pack/harness/engine').ModelCall=async(_path,wire)=>{
    const body=JSON.parse(wire.body),json=JSON.stringify(body);calls++
    const final=calls===MAX_TURNS
    const id=json.match(/[0-9a-f-]{36}:current-request:[0-9a-f]{16}/)?.[0]
@@ -2799,8 +2861,8 @@ it('does not turn an interrupted artifact check into a retried conversation afte
 })
 
 it('restores a budget pause and resumes only after an explicit persisted allowance without duplicating the user request',async()=>{
- const {contextualSession}=await import('../assistant/context/session')
- const {normalize}=await import('../assistant/thinking')
+ const {contextualSession}=await import('@judgment-pack/harness/context/session')
+ const {normalize}=await import('@judgment-pack/harness/thinking')
  const {checkpoint,decodeCheckpoint}=await import('../chat/checkpoint')
  const ready=await contextualSession({prompt:'Fix it',testPrompt:'',hostTools:[],tools:[],callTool:async()=>({}),model:{family:'gemini',model:'fixture',call:async()=>new Response('{}')},thinking:normalize('off','gemini'),signal:new AbortController().signal})
  ready.context.execution.state.used=20

@@ -42,7 +42,7 @@ it('preserves a reader’s code wrapping preference while the answer grows', () 
 
 
 it('renders growing code, headings, lists, quotes and tables before the reply finishes', async () => {
-  const {streamingProse}=await import('../assistant/engines/contract')
+  const {streamingProse}=await import('@judgment-pack/harness/engines/contract')
   const code='```typescript\nconst count = 1;'
   const rendered=render(<MessageRenderer text={streamingProse(code)}/>)
   const pre=screen.getByLabelText('typescript',{selector:'pre'})

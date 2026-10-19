@@ -43,13 +43,47 @@ import {
 import { PROBE_DIAGNOSTICS } from './client'
 import { PREFILLED_URL } from './endpointDraft'
 import { LISTING_SUFFIX } from './modelListing'
-import { suffixProblem } from './session'
+import { suffixProblem } from '@judgment-pack/harness/session'
+import { ASSISTANT_TOOLS as HARNESS_CEILING } from '@judgment-pack/harness/host'
 import type { AssistantSlot } from './useAssistantSlot'
 
 const SRC = join(import.meta.dirname, '..')
 
 function read(relative: string): string {
   return readFileSync(join(SRC, relative), 'utf8')
+}
+
+/**
+ * The harness as the Desk installs and bundles it: `@judgment-pack/harness`'s
+ * `dist/`, its emitted modules (`.js`) and their declarations (`.d.ts`). The
+ * engine slot, the adapters and the session's relay moved there from
+ * `assistant/`, and the package publishes no TypeScript source, so the guards
+ * over them read what the page actually runs. The compiler prints that text,
+ * so a guard over a declaration's spacing is written as a pattern.
+ */
+const HARNESS = join(SRC, '..', 'node_modules', '@judgment-pack', 'harness', 'dist')
+
+function harness(relative: string): string {
+  return readFileSync(join(HARNESS, relative), 'utf8')
+}
+
+/** Every emitted module and declaration of the harness under a directory of `dist/`, all the way down. */
+function harnessSourcesUnder(directory = ''): { path: string; text: string }[] {
+  const found: { path: string; text: string }[] = []
+  const walk = (relative: string) => {
+    for (const entry of readdirSync(join(HARNESS, relative), { withFileTypes: true })) {
+      const path = relative ? `${relative}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        walk(path)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (!entry.name.endsWith('.js') && !entry.name.endsWith('.d.ts')) continue
+      found.push({ path: `@judgment-pack/harness/dist/${path}`, text: harness(path) })
+    }
+  }
+  walk(directory)
+  return found
 }
 
 /**
@@ -468,6 +502,21 @@ describe('(3) the tool list is closed, and is one list across both sides', () =>
     expect(go).toEqual([...ASSISTANT_TOOLS])
   })
 
+  it('is the harness ceiling less the one tool the Desk does not grant', () => {
+    // `@judgment-pack/harness` v0.1.0 puts a sixth name on its ceiling (agent#7):
+    // `experimental_test_cases`, under an argument allow-list and a per-turn
+    // cap. The gate offers the intersection of the ceiling and the allow-list,
+    // and the allow-list comes from this list, which still holds five: the
+    // Desk grants the sixth only by widening this list, both decoders and the
+    // chassis' AssistantTools together, which this swap does not do.
+    expect([...HARNESS_CEILING].filter((tool) => !(ASSISTANT_TOOLS as readonly string[]).includes(tool))).toEqual([
+      'experimental_test_cases'
+    ])
+    expect([...ASSISTANT_TOOLS].every((tool) => (HARNESS_CEILING as readonly string[]).includes(tool))).toBe(true)
+    const sixth = decodeDesk({ endpoint: { ...GOOD_ENDPOINT, tools: ['experimental_test_cases'] } })
+    expect(sixth.values).toBeUndefined()
+  })
+
   it('requires the list rather than defaulting it', () => {
     // A defaulted tool list is a capability granted by a file that never
     // mentioned it.
@@ -496,7 +545,7 @@ describe('(4) no component branches on the endpoint — a WEAK, enumerated guard
       /url\.includes\(/,
       /\.includes\(\s*['"]https/
     ]
-    for (const source of sourcesUnder('assistant', 'config', 'routes')) {
+    for (const source of [...sourcesUnder('assistant', 'config', 'routes'), ...harnessSourcesUnder()]) {
       if (source.path.includes('.test.')) continue
       for (const pattern of comparisons) {
         expect(source.text, `${source.path} compares an endpoint`).not.toMatch(pattern)
@@ -513,7 +562,7 @@ describe('(4) no component branches on the endpoint — a WEAK, enumerated guard
     // enumerated here and has to be one of the loopback spellings, so a
     // comparison against a *vendor's* host cannot hide among them.
     const loopback = ["'localhost'", "'127.0.0.1'", "'::1'"]
-    for (const source of sourcesUnder('assistant', 'config', 'routes')) {
+    for (const source of [...sourcesUnder('assistant', 'config', 'routes'), ...harnessSourcesUnder()]) {
       if (source.path.includes('.test.')) continue
       for (const match of source.text.matchAll(/host(?:name)?\s*[=!]==\s*(('[^']*')|("[^"]*"))/g)) {
         expect(loopback, `${source.path} compares a host to ${match[1]}`).toContain(match[1])
@@ -550,7 +599,7 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
     // Admitting them anywhere else, or under any other name, still fails.
     const prefills = Object.values(PREFILLED_URL)
     const PREFILL_MODULE = 'assistant/endpointDraft.ts'
-    for (const source of sourcesUnder('assistant', 'config', 'routes')) {
+    for (const source of [...sourcesUnder('assistant', 'config', 'routes'), ...harnessSourcesUnder()]) {
       if (source.path.includes('.test.')) continue
       for (const literal of [...source.text.matchAll(/https:\/\/[^\s'"`)]+/g)].map((m) => m[0])) {
         const prefill = prefills.includes(literal) && source.path === PREFILL_MODULE
@@ -693,7 +742,7 @@ const SESSION_KEYS = [
 ] as const
 
 const sessionKeysAreExact: Exactly<
-  keyof import('./engine').AssistantSession,
+  keyof import('@judgment-pack/harness/engine').AssistantSession,
   (typeof SESSION_KEYS)[number]
 > = true
 
@@ -703,13 +752,13 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // beside the ToolGate rather than behind it, and every guarantee the gate
     // holds would become a guarantee about the door engines happened to use.
     expect(sessionKeysAreExact).toBe(true)
-    expect(membersOf(interfaceBody(read('assistant/engine.ts'), 'AssistantSession'))).toEqual([
+    expect(membersOf(interfaceBody(harness('engine.d.ts'), 'AssistantSession'))).toEqual([
       ...SESSION_KEYS
     ])
   })
 
   it('declares callTool as a function type, which cannot grow a member', () => {
-    const source = read('assistant/engine.ts')
+    const source = harness('engine.d.ts')
     expect(source).toContain(
       'export type CallTool = (name: string, args: Record<string, unknown>) => Promise<McpToolResult>'
     )
@@ -726,7 +775,7 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // on `WebSocket` lives in the conformance session, so an engine that opened
     // its own connection would fail this repository's suite rather than be
     // prevented by the running desk.
-    const source = read('assistant/engine.ts')
+    const source = harness('engine.d.ts')
     expect(membersOf(interfaceBody(source, 'ModelRequest'))).toEqual([
       'headers',
       'method',
@@ -736,7 +785,13 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     expect(source).toContain(
       'export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Response>'
     )
-    expect(source).toContain('model: { family: EndpointKind; model: string; call: ModelCall }')
+    // Since v0.1.0 the model carries one more member, `capabilities`: what the
+    // endpoint can do (its window, tool calls, vision, reasoning), the
+    // capability record's members, read closed by the harness. It is not an
+    // address and not a credential, so the rule above holds with it.
+    expect(source).toMatch(
+      /model: \{\s*family: EndpointKind;\s*model: string;\s*call: ModelCall;\s*capabilities\?: Partial<import\('\.\/capabilities'\)\.ModelCapabilities>;?\s*\}/
+    )
   })
 
   it('admits two methods and no more, because the relay forwards the method', () => {
@@ -748,7 +803,7 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // because each protocol's model listing is one and the listing goes over
     // this capability rather than round it; the type is what holds the pair,
     // and this reads the declaration so that widening it fails here.
-    const source = read('assistant/engine.ts')
+    const source = harness('engine.d.ts')
     expect(source).toContain("method?: 'GET' | 'POST'")
   })
 
@@ -771,7 +826,7 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // engine may write is `experimental_evaluate`, because ADR-0001 names it:
     // the SDK-backed adapter's rehearsal hook is keyed by tool name. Every other
     // name is a capability the engine would be asserting.
-    const sources = sourcesUnder('assistant/engines')
+    const sources = harnessSourcesUnder('engines')
     expect(sources.length, 'the sweep found no engine sources at all').toBeGreaterThan(5)
     for (const source of sources) {
       if (source.path.includes('.test.')) continue
@@ -784,9 +839,16 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
       // tool. Weak, and enumerated — what actually holds the rule is that a
       // served schema is the only thing any engine passes on, and that a tool
       // arriving without one is refused rather than given one.
-      expect(source.text, `${source.path} writes a schema of its own`).not.toMatch(
-        /properties\s*:\s*\{/
-      )
+      //
+      // One schema is written, and it is not a runtime tool's: the contract's
+      // input schema of `propose_pack` (`tool-offer.json#/$defs/proposePack`),
+      // the host tool a proposal may arrive through, which the engine reads
+      // itself (v0.1.0, agent#6). It is declared once, in `engines/contract`,
+      // and is the one object the sweep may find there.
+      const written = source.text.match(/properties\s*:\s*\{/g) ?? []
+      const proposePack = /^@judgment-pack\/harness\/dist\/engines\/contract\.(js|d\.ts)$/.test(source.path)
+      expect(written.length, `${source.path} writes a schema of its own`).toBe(proposePack ? 1 : 0)
+      if (proposePack) expect(source.text).toContain('PROPOSE_PACK_SCHEMA')
     }
   })
 })
@@ -800,11 +862,18 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
    * readings of one proposal are two documents: the diff can describe the first
    * and the writer write the second.
    */
+  /**
+   * The harness modules that freeze constant tables, never a proposal: the
+   * budget's defaults (`context/policy`), the families' default capability
+   * records (`capabilities`, v0.1.0) and the refusals a request is retried
+   * after (`failures`, v0.1.0).
+   */
+  const FROZEN_TABLES = ['context/policy.', 'capabilities.', 'failures.'].map(module => `@judgment-pack/harness/dist/${module}`)
   const others = () =>
-    sourcesUnder('assistant').filter(
+    [...sourcesUnder('assistant'), ...harnessSourcesUnder()].filter(
       (source) =>
         !source.path.includes('.test.') &&
-        !source.path.includes('/conformance/') &&
+        !source.path.includes('/certification/') &&
         source.path !== 'assistant/useAssistantRun.ts'
     )
 
@@ -820,7 +889,7 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
         'JSON.parse(JSON.stringify'
       )
       expect(source.text, `${source.path} calls plain()`).not.toMatch(/[^A-Za-z]plain\(/)
-      if(source.path!=='assistant/context/policy.ts')expect(source.text, `${source.path} freezes again`).not.toContain('Object.freeze(')
+      if(!FROZEN_TABLES.some(table=>source.path.startsWith(table)))expect(source.text, `${source.path} freezes again`).not.toContain('Object.freeze(')
     }
   })
 
@@ -856,10 +925,10 @@ describe('(9) the page sends no request header the chassis would drop', () => {
     )
     expect(carried.length).toBeGreaterThan(5)
 
-    const page = /const MODEL_REQUEST_HEADERS: readonly string\[\] = \[([^\]]*)\]/.exec(
-      read('assistant/session.ts')
+    const page = /const MODEL_REQUEST_HEADERS(?:: readonly string\[\])? = \[([^\]]*)\]/.exec(
+      harness('session.js')
     )
-    expect(page, 'MODEL_REQUEST_HEADERS is declared in assistant/session.ts').not.toBeNull()
+    expect(page, 'MODEL_REQUEST_HEADERS is declared in the harness session module').not.toBeNull()
     const sent = [...page![1]!.matchAll(/'([^']+)'/g)].map((match) => match[1]!.toLowerCase())
     expect(sent.length).toBeGreaterThan(5)
 
@@ -873,7 +942,7 @@ describe('(10) the page addresses nothing the chassis relay would refuse', () =>
   /** The Go source, read once for the three declarations below. */
   const chassis = () =>
     readFileSync(join(SRC, '..', '..', 'internal', 'desk', 'modelrelay.go'), 'utf8')
-  const page = () => read('assistant/session.ts')
+  const page = () => harness('session.js')
 
   it('holds the colon method list equal to the chassis’, name for name', () => {
     // **Two hand-mirrored closed lists, and containment is not enough here.**
@@ -887,8 +956,8 @@ describe('(10) the page addresses nothing the chassis relay would refuse', () =>
     const chassisMethods = [...declared![1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
     expect(chassisMethods.length).toBeGreaterThan(0)
 
-    const mirrored = /const RELAY_PATH_METHODS: readonly string\[\] = \[([^\]]*)\]/.exec(page())
-    expect(mirrored, 'RELAY_PATH_METHODS is declared in assistant/session.ts').not.toBeNull()
+    const mirrored = /const RELAY_PATH_METHODS(?:: readonly string\[\])? = \[([^\]]*)\]/.exec(page())
+    expect(mirrored, 'RELAY_PATH_METHODS is declared in the harness session module').not.toBeNull()
     const pageMethods = [...mirrored![1]!.matchAll(/'([^']+)'/g)].map((match) => match[1]!)
 
     expect([...pageMethods].sort()).toEqual([...chassisMethods].sort())
@@ -904,7 +973,7 @@ describe('(10) the page addresses nothing the chassis relay would refuse', () =>
     const pair = /relayStreamPair\s+= "([^"]+)"/.exec(go)
     expect(pair, 'relayStreamPair is declared in internal/desk/modelrelay.go').not.toBeNull()
     const mirroredPair = /const RELAY_STREAM_PAIR = '([^']+)'/.exec(page())
-    expect(mirroredPair, 'RELAY_STREAM_PAIR is declared in assistant/session.ts').not.toBeNull()
+    expect(mirroredPair, 'RELAY_STREAM_PAIR is declared in the harness session module').not.toBeNull()
     expect(mirroredPair![1]).toBe(pair![1])
 
     // `relayExtraQueryPair` is a switch over kinds; every kind it names returns

@@ -1,6 +1,6 @@
 import type { SearchStep } from './step'
 import { searchFailure } from './failures'
-import type { HostTool } from '../assistant/engine'
+import type { HostTool } from '@judgment-pack/harness/engine'
 import type { ResearchConfig } from '../config/deskConfig'
 import type { DraftToolContext } from '../research/useResearchRun'
 import { RETRIEVED } from '../research/tools'

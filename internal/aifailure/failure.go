@@ -28,11 +28,17 @@ func init() {
 }
 
 // Completion carries normalized counters and stop reasons, never model prose.
+// The cache figures are the input tokens a provider reports it read from, or
+// wrote to, its prompt cache, as the page's harness (@judgment-pack/harness
+// v0.1.0, ModelCompletion) records them; absent where the provider reports
+// none. InputTokens stays the whole input, cached tokens included.
 type Completion struct {
-	FinishReason    string `json:"finishReason"`
-	InputTokens     *int64 `json:"inputTokens,omitempty"`
-	OutputTokens    *int64 `json:"outputTokens,omitempty"`
-	ReasoningTokens *int64 `json:"reasoningTokens,omitempty"`
+	FinishReason     string `json:"finishReason"`
+	InputTokens      *int64 `json:"inputTokens,omitempty"`
+	OutputTokens     *int64 `json:"outputTokens,omitempty"`
+	ReasoningTokens  *int64 `json:"reasoningTokens,omitempty"`
+	CacheReadTokens  *int64 `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens *int64 `json:"cacheWriteTokens,omitempty"`
 }
 
 type Failure struct {

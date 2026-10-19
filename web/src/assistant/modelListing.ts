@@ -37,7 +37,7 @@ import { sourceMessage } from '../i18n/source'
  */
 import { modelIdProblem, type EndpointKind } from '../config/deskConfig'
 import { DIAGNOSTIC_SAYS, type ProbeDiagnostic } from './client'
-import type { ModelCall } from './engine'
+import type { ModelCall } from '@judgment-pack/harness/engine'
 
 /**
  * The listing path each protocol documents, **relative to the configured

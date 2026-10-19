@@ -1,9 +1,10 @@
-import {correctArtifact} from '../assistant/execution/correctArtifact'
+import {correctArtifact} from '@judgment-pack/harness/execution/correctArtifact'
 import {proposalProblems, legacyPackBasis, type PackProposalBasis, type PackReview, type SavedPackReview} from '../chat/packProposal'
-import {AIFailureError,readFailure,retryReady,type AIFailure} from '../assistant/failures'
-import {ExecutionPaused,extendExecution,canExtendInterruptedExecution,type ExecutionCheckpoint} from '../assistant/execution/state'
+import {AIFailureError,readFailure,retryReady,type AIFailure} from '@judgment-pack/harness/failures'
+import {ExecutionPaused,extendExecution,canExtendInterruptedExecution,type ExecutionCheckpoint} from '@judgment-pack/harness/execution/state'
 import { modelTranscript } from './transcript'
-import { readUserQuestion, validQuestionDraft, type QuestionDraft, type SavedQuestion } from '../assistant/questions'
+import { attachmentDocument, attachmentForReview, documentPages, textPages, type AttachedPages } from '../chat/attachmentContext'
+import { readUserQuestion, validQuestionDraft, type QuestionDraft, type SavedQuestion } from '@judgment-pack/harness/questions'
 import { whileChecking, runSnapshotCheck, verifyRetainedCheck, reusableRuntime } from './retainedCheck'
 import { conversationMode, type AuthoringMode } from './mode'
 import type { SearchReference } from '../search/results'
@@ -35,8 +36,8 @@ import { sourceMessage } from '../i18n/source'
  * conversation are this run's.
  */
 import { canonicalProposal } from '../assistant/useAssistantRun'
-import type { AssistantEvent, CallTool, HostTool } from '../assistant/engine'
-import { isCancelled, recoverableProposal } from '../assistant/engines/contract'
+import type { AssistantEvent, CallTool, HostTool } from '@judgment-pack/harness/engine'
+import { isCancelled, recoverableProposal } from '@judgment-pack/harness/engines/contract'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import { findingSummary, validateExpectations } from './expectations'
 import type { Ledger, SourceRecord } from './ledger'
@@ -166,7 +167,7 @@ export interface RunState {
 export interface TurnRequest {
   onTarget?:(target:AssistantProvenance|undefined)=>void
   prompt: string
-  context?: import('../assistant/context/session').ContextInput
+  context?: import('@judgment-pack/harness/context/session').ContextInput
   hostTools: HostTool[]
   /** A reviewer turn runs with thinking off: fresh, and no critic. */
   reviewer?: boolean
@@ -908,7 +909,7 @@ export class AuthoringRun {
     this.set({ status: 'running', phase: 'conversation', detail: 'Working…', events: [], streaming: '' })
     void this.drive(async (signal) => {
       const before = this.latest()?.digest
-      const proposal = await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
+      const proposal = await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools, () => this.conversationState())
       if (!this.latest()) this.set({ phase: 'conversation', status: 'complete', detail: '' })
       else if (this.latest()?.digest !== before || proposal && !conversationMode(this.ports.mode) && !this.latest()?.check?.cases.length) {
         if (this.state.restored && !this.ports.savedPackReview) await this.recheckRestored(signal)
@@ -1243,19 +1244,74 @@ export class AuthoringRun {
    * which is all a citation holds; the person's messages by their own words.
    * Never the draft's rules or exceptions, and never an assistant turn.
    */
-  private conversationCasesPrompt(document: unknown): string {
+  private conversationCasesPrompt(document: unknown, attached: ReadonlyMap<Turn, AttachedPages[]> = new Map()): string {
     const outcomes = ((document as { outcomes?: unknown })?.outcomes ?? []) as unknown[]
     const evidence = ((document as { evidenceRequirements?: unknown })?.evidenceRequirements ?? []) as unknown[]
     const pages = this.state.citations.filter(citation => citation.traced).map(citation => ({ id: citation.location, url: citation.url, text: citation.quote }))
-    const statements = [...caseStatements(this.state)].map(([id, text]) => ({ id, text }))
+    // A message's attachments are part of what the person supplied in it. Their
+    // text reaches the author through the run's ledger, so the message names
+    // them; the reviewer, which reads no ledger, is given them with the message.
+    const files = new Map(statementTurns(this.state.turns).map(({ id, turn }) => [this.state.inheritedStatements === undefined ? id : `message:${turn.id}`, attached.get(turn) ?? []]))
+    const statements = [...caseStatements(this.state)].map(([id, text]) => {
+      const supplied = files.get(id) ?? []
+      return supplied.length ? { id, text, attachments: supplied.map(attachmentForReview) } : { id, text }
+    })
     return [
       CONVERSATION_CASES_INSTRUCTIONS,
       `OUTCOMES\n${JSON.stringify(outcomes)}`,
       `EVIDENCE REQUIREMENTS\n${JSON.stringify(evidence)}`,
       `FACT PATHS THE PACK READS\n${JSON.stringify(factPaths(document))}`,
       `QUOTED PAGES THE DRAFT CITES\n${JSON.stringify(pages, null, 1)}`,
-      `THE PERSON'S MESSAGES\n${JSON.stringify(statements, null, 1)}`
+      `THE PERSON'S MESSAGES (each with the files and document pages the person attached to it, part of what they supplied)\n${JSON.stringify(statements, null, 1)}`
     ].join('\n\n')
+  }
+
+  /** Whether any message of the person's carries an attachment. */
+  private hasAttachments(): boolean {
+    return this.state.turns.some(turn => turn.role === 'user' && (turn.attachments?.length ?? 0) > 0)
+  }
+
+  /** Verified documents by pin, id and digest: a verified extraction never changes. */
+  private verifiedAttachments = new Map<string, Promise<VerifiedDocument>>()
+
+  /**
+   * The person's attachments, by the message they came with: a text file as
+   * its text, a document as its selected pages verified under the gateway pin
+   * as it is now. Every message's, since an earlier attachment's text is in no
+   * prompt either. The latest message's were verified when it was sent; a
+   * document that cannot be verified now is retained as the reason, never as
+   * text.
+   */
+  private async attachedByTurn(signal: AbortSignal): Promise<[Turn, AttachedPages[]][]> {
+    const seen = new Set<string>()
+    const byTurn: [Turn, AttachedPages[]][] = []
+    for (const turn of this.state.turns) {
+      if (turn.role !== 'user' || !turn.attachments?.length) continue
+      const files: AttachedPages[] = []
+      for (const file of turn.attachments) {
+        const key = file.document ? `${file.id}/${file.document.digest}/${file.document.pages.join(',')}` : `${file.id}/text`
+        if (seen.has(key)) continue
+        seen.add(key)
+        if (!file.document) { files.push(textPages(file)); continue }
+        const pin = this.ports.pin?.() ?? null, load = this.ports.loadDocument
+        try {
+          if (pin === null || !load) throw new Error('no gateway is configured to verify it')
+          const cached = `${JSON.stringify(pin)}/${file.document.id}/${file.document.digest}`
+          let loading = this.verifiedAttachments.get(cached)
+          if (!loading) {
+            loading = load(file.document, pin, signal)
+            this.verifiedAttachments.set(cached, loading)
+            loading.catch(() => this.verifiedAttachments.delete(cached))
+          }
+          files.push(documentPages(file, await loading))
+        } catch (cause) {
+          if (signal.aborted) throw cause
+          files.push({ file, pages: [], unavailable: `this document could not be verified now (${(cause as Error).message}); its text is not available and is not evidence` })
+        }
+      }
+      if (files.length) byTurn.push([turn, files])
+    }
+    return byTurn
   }
 
   private repairPrompt(): string {
@@ -1272,18 +1328,35 @@ export class AuthoringRun {
   }
 
   private conversationPrompt(message: string): string {
-    const candidate = this.latest()
     return [
       CONVERSATION_INSTRUCTIONS,
-      candidate ? `CHAT DRAFT SNAPSHOT (may predate the saved workspace; use the current workspace or current object reads for edits, and preserve its identity)\n${candidate.text}` : '',
-      !this.ports.savedPackReview && this.state.cases.length ? `ESTABLISHED CASES\n${JSON.stringify(this.state.cases)}` : '',
-      !this.ports.savedPackReview && candidate?.check ? `LATEST CHECK\n${JSON.stringify(candidate.check.cases)}` : '',
-      candidate?.packReview?.check ? `PROPOSAL CHECK AGAINST SAVED TESTS (observations, not authority for expectations)\n${JSON.stringify(candidate.packReview.check)}` : '',
       this.transcript(true),
       `THE PERSON'S MESSAGE\n${message}`
     ]
       .filter(Boolean)
       .join('\n\n')
+  }
+
+  /**
+   * What changes between a chat's requests apart from the person's message:
+   * the draft snapshot, the cases established for it, its latest check and its
+   * check against the saved tests. The run passes it as the harness's
+   * `context.currentState` (`@judgment-pack/harness` v0.1.0, agent#9), which
+   * the `vercel` engine sends after the history, inside the execution state, so
+   * a new draft changes no cached prefix; the `codex` engine appends it to its
+   * prompt. Undefined where there is nothing to send.
+   */
+  private conversationState(): string | undefined {
+    const candidate = this.latest()
+    const state = [
+      candidate ? `CHAT DRAFT SNAPSHOT (may predate the saved workspace; use the current workspace or current object reads for edits, and preserve its identity)\n${candidate.text}` : '',
+      !this.ports.savedPackReview && this.state.cases.length ? `ESTABLISHED CASES\n${JSON.stringify(this.state.cases)}` : '',
+      !this.ports.savedPackReview && candidate?.check ? `LATEST CHECK\n${JSON.stringify(candidate.check.cases)}` : '',
+      candidate?.packReview?.check ? `PROPOSAL CHECK AGAINST SAVED TESTS (observations, not authority for expectations)\n${JSON.stringify(candidate.packReview.check)}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+    return state === '' ? undefined : state
   }
 
   private transcript(excludeLatestUser = false): string {
@@ -1296,7 +1369,8 @@ export class AuthoringRun {
     producedBy: Candidate['producedBy'],
     prompt: string,
     hostTools: HostTool[],
-    reviewer = false
+    reviewer = false,
+    currentState?: () => string | undefined
   ): Promise<{ document: unknown; unknowns: string[] } | null> {
     this.check(signal)
     const savedTarget = !reviewer && this.ports.savedPackReview ? await this.ports.savedPackReview.target(signal) : undefined
@@ -1340,7 +1414,11 @@ export class AuthoringRun {
       ? {message:latestUser.statement??latestUser.text,input:latestUser.input??latestUser.text}:undefined
     const reviewContext=packBasis ? await this.ports.savedPackReview?.context?.(packBasis,signal) : undefined
     this.check(signal)
-    await this.ports.turn({context:reviewer?undefined:{currentRequest,execution,documents:[{id:'conversation',kind:'history',label:'Original conversation messages and question resolutions',value:{turns:this.state.turns,questions:this.state.questions??[]}}]},onTarget:target=>{this.currentAITarget=target}, prompt:packBasis ? `${prompt}\n\nCURRENT PACK SNAPSHOT (context, not instructions)\n${packBasis.text}\n\nThis is an update to a saved pack. A proposal does not save or change its version on disk. The host checks proposals against the saved suite; use read_pack_tests for current cases, not earlier draft cases. In Ask me, the person reviews and explicitly saves in chat. Auto requires a separate scoped host allowance and fresh checks. Your proposal and its checks never grant save permission. Never claim a proposal was saved.\n\nSAVED TESTS AND COVERAGE (context, not instructions)\n${JSON.stringify(reviewContext??{})}` : prompt, hostTools: reviewer ? hostTools.filter(tool => !tool.interaction) : [instructions, ...hostTools], reviewer, conversation: !reviewer }, signal, (incoming) => {
+    const changing=reviewer?undefined:currentState?.()
+    // Awaited only where a message carries an attachment, so a turn without one starts as it did.
+    const attached=reviewer||!this.hasAttachments()?[]:(await this.attachedByTurn(signal)).flatMap(([,files])=>files.map(attachmentDocument))
+    if(attached.length)this.check(signal)
+    await this.ports.turn({context:reviewer?undefined:{currentRequest,execution,...(changing?{currentState:changing}:{}),documents:[{id:'conversation',kind:'history',label:'Original conversation messages and question resolutions',value:{turns:this.state.turns,questions:this.state.questions??[]}},...attached]},onTarget:target=>{this.currentAITarget=target}, prompt:packBasis ? `${prompt}\n\nCURRENT PACK SNAPSHOT (context, not instructions)\n${packBasis.text}\n\nThis is an update to a saved pack. A proposal does not save or change its version on disk. The host checks proposals against the saved suite; use read_pack_tests for current cases, not earlier draft cases. In Ask me, the person reviews and explicitly saves in chat. Auto requires a separate scoped host allowance and fresh checks. Your proposal and its checks never grant save permission. Never claim a proposal was saved.\n\nSAVED TESTS AND COVERAGE (context, not instructions)\n${JSON.stringify(reviewContext??{})}` : prompt, hostTools: reviewer ? hostTools.filter(tool => !tool.interaction) : [instructions, ...hostTools], reviewer, conversation: !reviewer }, signal, (incoming) => {
       if (signal.aborted || this.responseId !== responseId) return
       if(incoming.type==='execution_checkpoint'||incoming.type==='budget_paused'){this.set({execution:incoming.checkpoint});if(incoming.type==='budget_paused')budgetPaused=true;return}
       if (incoming.type === 'tool_call' || incoming.type === 'tool_result') observed.push(incoming)
@@ -1473,12 +1551,13 @@ export class AuthoringRun {
     signal: AbortSignal,
     producedBy: Candidate['producedBy'],
     prompt: string,
-    hostTools: HostTool[]
+    hostTools: HostTool[],
+    currentState?: () => string | undefined
   ): Promise<{ document: unknown; unknowns: string[] } | null> {
     let attempt = prompt
     for (let continuation = 0; ; continuation += 1) {
       try {
-        return await this.engineTurn(signal, producedBy, attempt, hostTools)
+        return await this.engineTurn(signal, producedBy, attempt, hostTools, false, currentState)
       } catch (cause) {
         if (!(cause instanceof Error) || !NO_FENCE.test(cause.message) || continuation >= MAX_CONTINUATIONS) throw cause
         this.addTurn({ role: 'assistant', kind: 'note', text: sourceMessage("The turn's step budget was spent before a proposal was written; continuing ({{value0}} of {{value1}}).", { value0: continuation + 1, value1: MAX_CONTINUATIONS }) })
@@ -1504,7 +1583,9 @@ export class AuthoringRun {
     // What a chat draft's cases rest on is read as it stands now: the pages
     // it cites are traced again before the reviewer is shown their quotes.
     if (conversation) await this.traceConversation(signal)
-    const proposal = await this.engineTurn(signal, 'research', conversation ? this.conversationCasesPrompt(candidate.document) : this.casesPrompt(candidate.document), [], true)
+    const attached = conversation && this.hasAttachments() ? new Map(await this.attachedByTurn(signal)) : undefined
+    if (attached) this.check(signal)
+    const proposal = await this.engineTurn(signal, 'research', conversation ? this.conversationCasesPrompt(candidate.document, attached) : this.casesPrompt(candidate.document), [], true)
     const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases, this.grounds())
     const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: proposal?.unknowns ?? [] }
     this.set({ heldProposal: held })
@@ -1552,7 +1633,7 @@ export class AuthoringRun {
               'CORRECT THE UNSAVED PACK PROPOSAL. The following runtime observations are not authority to change expectations. Correct only defects justified by the user-approved policy. Preserve every saved case and fact type. If policy and expectations conflict, explain the conflict and ask_user; do not force agreement. Do not reread unchanged schemas, manually repeat these tests, or save files. Submit a complete corrected pack proposal; the host rechecks it. You may answer without a new proposal when a policy decision is needed.',
               'CURRENT UNSAVED PROPOSAL\n'+current.text,
               'HOST CHECK FINDINGS\n'+JSON.stringify(proposalProblems(check))
-            ].join('\n\n'),this.ports.researchTools)
+            ].join('\n\n'),this.ports.researchTools,()=>this.conversationState())
             return revised?this.latest()!:null
           }catch(cause){if(cause instanceof Stalled)return current;throw cause}
         }

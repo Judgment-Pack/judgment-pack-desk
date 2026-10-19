@@ -4,7 +4,7 @@ import { cleanup, render as baseRender, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { INITIAL_STATE } from '../research/run'
 import { readFile, deskFetch } from '../files/client'
-import type { HostTool } from '../assistant/engine'
+import type { HostTool } from '@judgment-pack/harness/engine'
 import { ChatProvider } from './ChatProvider'
 
 const render=(node:React.ReactNode)=>{const client=new QueryClient({defaultOptions:{queries:{retry:false}}});return baseRender(node,{wrapper:({children})=><QueryClientProvider client={client}>{children}</QueryClientProvider>})}

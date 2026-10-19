@@ -2,10 +2,10 @@ import type { AITarget } from './aiConnections'
 import { allowedAgentModels } from '../config/deskConfig'
 import { sourceMessage } from '../i18n/source'
 import type { AssistantAgentConfig, AssistantConfig, AssistantEndpointConfig, ThinkingTier } from '../config/deskConfig'
-import type { AssistantSession, AgentAssistantSession } from './engine'
-import { bindAgentRun } from './agentTransport'
-import { bindModelCall } from './session'
-import { normalize } from './thinking'
+import type { AssistantSession, AgentAssistantSession } from '@judgment-pack/harness/engine'
+import { bindAgentRun } from '@judgment-pack/harness/agentTransport'
+import { bindModelCall } from '@judgment-pack/harness/session'
+import { normalize } from '@judgment-pack/harness/thinking'
 
 /** UI selection has no endpoint impersonation: an agent target stays an agent. */
 export function selectedAssistant(slot: { engine?: string; endpoint: AssistantEndpointConfig | null; agent?: AssistantAgentConfig }) {
@@ -19,4 +19,18 @@ export function bindExecution(config: Pick<AssistantConfig,'engine'|'endpoint'|'
   }
   if (!config.endpoint) throw new Error(sourceMessage('Choose an enabled Assistant model.'))
   return { model:{ family:config.endpoint.kind,model,call:config.connectionId?bindModelCall(config.endpoint.kind,config):bindModelCall(config.endpoint.kind) }, thinking:normalize(thinking,config.endpoint.kind) }
+}
+
+/**
+ * An agent run's requests with the person's own message beside the prompt, as
+ * `personMessage`, for the Desk's memory recall alone (Go `agentRecallQuery`).
+ * The codex engine appends the execution state (the chat's draft snapshot) and
+ * its guidance after the person's message in the one prompt it sends, so the
+ * server cannot cut the message out of it; Codex is never sent this member. A
+ * model session, and a turn with no message of the person's, are unchanged.
+ */
+export function withPersonMessage<T extends ReturnType<typeof bindExecution>>(bound: T, message: string | undefined): T {
+  if (message === undefined || message === '' || !('agent' in bound)) return bound
+  const run = bound.agent.run
+  return { ...bound, agent: { ...bound.agent, run: (request, callbacks) => run({ ...request, personMessage: message } as typeof request, callbacks) } }
 }

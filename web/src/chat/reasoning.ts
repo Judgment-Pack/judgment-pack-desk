@@ -1,5 +1,5 @@
 import { CODEX_EFFORTS, type AssistantAgentConfig } from '../config/deskConfig'
-import type { CodexEffort } from '../assistant/agent'
+import type { CodexEffort } from '@judgment-pack/harness/agent'
 
 /** A chat override belongs to the selected model; null explicitly uses its default. */
 export interface ChatReasoning { model: string; effort: CodexEffort | null }

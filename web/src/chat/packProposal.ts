@@ -1,5 +1,5 @@
 import {latestCoverage, missingProbes} from '../packs/test-workspace/coverage'
-import type { CallTool } from '../assistant/engine'
+import type { CallTool } from '@judgment-pack/harness/engine'
 import type { PackTest } from '../mcp/types'
 import { digestOf, jsonIdentity } from '../research/checkCandidate'
 import { checkPayload, whileChecking } from '../research/retainedCheck'

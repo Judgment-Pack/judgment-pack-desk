@@ -1,4 +1,4 @@
-import type {ContextDocument} from '../assistant/context/ledger'
+import type {ContextDocument} from '@judgment-pack/harness/context/ledger'
 import {validPolicyId} from './chat'
 
 /** Private Desk authoring basis. Never a JPS dependency or a Gateway citation. */

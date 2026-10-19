@@ -1,5 +1,5 @@
 /** Caller-owned rehearsal history. No saved UI flag grants finalization authority. */
-import type { CallTool, McpToolResult } from '../assistant/engine'
+import type { CallTool, McpToolResult } from '@judgment-pack/harness/engine'
 import { digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 
 export interface RetainedCheck {

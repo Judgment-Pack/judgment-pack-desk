@@ -1,4 +1,4 @@
-import {AIFailureError,normalizeFailure} from '../assistant/failures'
+import {AIFailureError,normalizeFailure} from '@judgment-pack/harness/failures'
 import { FileRequestError } from '../files/client'
 import { GatewayError, OverBudget } from '../research/gatewayClient'
 

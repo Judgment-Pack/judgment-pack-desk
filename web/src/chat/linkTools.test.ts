@@ -7,7 +7,8 @@ import { GatewayError } from '../research/gatewayClient'
 import { Ledger } from '../research/ledger'
 import { AuthoringRun, type Turn } from '../research/run'
 import type { DraftToolContext } from '../research/useResearchRun'
-import { READ_WINDOW, RETRIEVED } from '../research/tools'
+import { RETRIEVED } from '../research/tools'
+import { CONTEXT_DEFAULTS, readWindowBytes, utf8Bytes } from '@judgment-pack/harness/context/policy'
 import { MAX_LINK_READS_PER_TURN, EXPLORE_WEBSITE, READ_LINK, givenInChat, linkReadable, linkReading, webSourceOffered, type LinkReadingDeps } from './linkTools'
 import type { WebsiteReference, VerifiedWebsite } from '../documents/website'
 import type { ChatAttachment } from './store'
@@ -108,23 +109,40 @@ describe('read_link', () => {
     expect(ingested).toEqual([FETCHED])
   })
 
-  it('hands over a window, never the page, and pages by offset', async () => {
+  it('hands over a window, never the page, held to one tool result, and pages by offset', async () => {
     const text = 'word '.repeat(151_800).trimEnd()
     expect(text.length).toBe(759_000 - 1)
     const { tool, ingested } = harness({ text })
+    expect(tool.description).toContain(`one window of at most ${readWindowBytes(CONTEXT_DEFAULTS)} bytes at a time`)
     const first = await tool.execute({ url: INCIDENT }, signal)
     const answer = said(first)
     const shown = answer.slice(answer.lastIndexOf('\n\n') + 2)
-    expect(shown.length).toBe(READ_WINDOW)
-    expect(answer.length).toBeLessThan(READ_WINDOW + 2_000)
-    expect(answer).toContain(`showing characters 0–${READ_WINDOW} of ${text.length} (more: call ${READ_LINK} with the same url and offset ${READ_WINDOW})`)
+    // The window is readWindowBytes of the policy, less what the reader's own lines take
+    // beyond the envelope; the whole answer is one tool result.
+    expect(utf8Bytes(JSON.stringify(first))).toBeLessThanOrEqual(CONTEXT_DEFAULTS.toolResultBytes)
+    expect(utf8Bytes(JSON.stringify(shown))).toBeLessThanOrEqual(readWindowBytes(CONTEXT_DEFAULTS))
+    expect(shown.length).toBeGreaterThan(readWindowBytes(CONTEXT_DEFAULTS) - 2_048)
+    expect(text.startsWith(shown)).toBe(true)
+    const end = shown.length
+    expect(answer).toContain(`showing characters 0–${end} of ${text.length} (more: call ${READ_LINK} with the same url and offset ${end})`)
     expect(first.structuredContent).toMatchObject({ offset: 0, more: true, chars: text.length })
-    const next = await tool.execute({ url: INCIDENT, offset: READ_WINDOW }, signal)
-    expect(said(next)).toContain(`showing characters ${READ_WINDOW}–${2 * READ_WINDOW} of ${text.length}`)
+    const next = await tool.execute({ url: INCIDENT, offset: end }, signal)
+    expect(utf8Bytes(JSON.stringify(next))).toBeLessThanOrEqual(CONTEXT_DEFAULTS.toolResultBytes)
+    expect(said(next)).toMatch(new RegExp(`showing characters ${end}–\\d+ of ${text.length}`))
     const last = await tool.execute({ url: INCIDENT, offset: text.length - 10 }, signal)
     expect(said(last)).toContain(`showing characters ${text.length - 10}–${text.length} of ${text.length}`)
     expect(last.structuredContent).toMatchObject({ more: false })
     expect(ingested).toEqual([FETCHED])
+  })
+
+  it('takes its window from the turn\'s policy', async () => {
+    const text = 'word '.repeat(10_000).trimEnd()
+    const h = harness({ text })
+    const tool = h.factory({ turns: () => h.turns, policy: () => ({ toolResultBytes: 5_000 }) }).find((each) => each.name === READ_LINK)!
+    expect(tool.description).toContain(`one window of at most ${readWindowBytes({ toolResultBytes: 5_000 })} bytes at a time`)
+    const read = await tool.execute({ url: INCIDENT }, signal)
+    expect(utf8Bytes(JSON.stringify(read))).toBeLessThanOrEqual(5_000)
+    expect(read.structuredContent).toMatchObject({ offset: 0, more: true })
   })
 
   it('serves a link already in the chat from its document, whatever its fragment', async () => {
@@ -464,12 +482,13 @@ describe('website exploration in chat',()=>{
 
 
 it('records a successful cached read for each response and only the pages actually returned', async () => {
-  const acquired = webDocument('first', FETCHED, ['x'.repeat(READ_WINDOW + 100), 'second'])
+  const PAGE_ONE = readWindowBytes(CONTEXT_DEFAULTS) + 100
+  const acquired = webDocument('first', FETCHED, ['x'.repeat(PAGE_ONE), 'second'])
   const h = harness({ingest: async () => acquired})
   const first = vi.fn(), second = vi.fn()
   await h.factory({turns:()=>h.turns,recordDocument:first})[0]!.execute({url:FETCHED},signal)
   expect(first.mock.calls[0]?.[0].document.pages).toEqual([1])
-  await h.factory({turns:()=>h.turns,recordDocument:second})[0]!.execute({url:FETCHED,offset:READ_WINDOW+102},signal)
+  await h.factory({turns:()=>h.turns,recordDocument:second})[0]!.execute({url:FETCHED,offset:PAGE_ONE+2},signal)
   expect(second.mock.calls[0]?.[0].document.pages).toEqual([2])
   expect(h.documents).toHaveLength(1)
   await h.factory({turns:()=>h.turns,recordDocument:second})[0]!.execute({url:'https://unprovided.example'},signal)

@@ -1,7 +1,7 @@
 import {validPolicySources,type PolicyAuthoringSource} from '../policies/authoringSource'
 import {validPolicyInterpretationProposal,type PolicyInterpretationProposal} from '../policies/interpretation'
 import {validPolicyId,validPolicyRequest,validPolicyProposal,type PolicyRequest,type PolicyProposal} from '../policies/chat'
-import {validPlans,type ChatPlan} from '../assistant/planning/model'
+import {validPlans,type ChatPlan} from '@judgment-pack/harness/planning/model'
 import type { Turn } from '../research/run'
 import {validDialectChatAction,validDialectId,type DialectChatAction} from '../dialects/chatActions'
 import {validDialectRecipeProposal,type DialectRecipeProposal} from '../dialects/proposals'

@@ -17,7 +17,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { useState } from 'react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AssistantEvent, Engine } from '../assistant/engine'
+import type { AssistantEvent, Engine } from '@judgment-pack/harness/engine'
 
 /**
  * An engine this suite puts in the registry's place, where a case needs one.
@@ -27,17 +27,17 @@ import type { AssistantEvent, Engine } from '../assistant/engine'
  */
 let injected: Engine | null = null
 
-vi.mock('../assistant/engines', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../assistant/engines')>()
+vi.mock('@judgment-pack/harness/engines/index', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@judgment-pack/harness/engines/index')>()
   return {
     ...original,
     loadEngine: async (id: 'vercel' | 'vercel') => injected ?? original.loadEngine(id)
   }
 })
 
-import { scriptedModel } from '../assistant/conformance/scriptedModel'
-import { scriptedWebSocket } from '../assistant/conformance/scriptedServer'
-import scenario from '../assistant/conformance/scenario.json'
+import { scriptedModel } from '@judgment-pack/harness/certification/scriptedModel'
+import { scriptedWebSocket } from '@judgment-pack/harness/certification/scriptedServer'
+import { scenario } from '@judgment-pack/harness/certification'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { McpContext } from '../mcp/McpProvider'

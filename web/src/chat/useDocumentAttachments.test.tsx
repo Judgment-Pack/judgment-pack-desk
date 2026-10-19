@@ -29,7 +29,10 @@ it('blocks new PDF uploads when processing is off while still verifying previous
  expect(s.result.current.error).toContain('Enable PDF processing')
  let prompt:string|undefined
  await act(async()=>{prompt=await s.result.current.prepare([{id:s.reference.id,name:'policy.pdf',text:'',document:s.reference}])})
- expect(prompt).toContain('selectedPages')
+ // The message names the verified document and how to read it; its pages go to the run's ledger, never into the message.
+ expect(prompt).toContain('Attached document: policy.pdf')
+ expect(prompt).toContain('read it with read_window')
+ for(const page of s.document.record.content.pages)if(page.text.trim())expect(prompt).not.toContain(page.text)
  expect(mocked.load).toHaveBeenCalledOnce()
 })
 it('stores only a reference in an unsent home draft',async()=>{
@@ -65,7 +68,7 @@ it('requires consent before using partial extraction and re-verifies before ever
  await act(async()=>{prompt=await s.result.current.prepare([file])})
  expect(prompt).toBeUndefined();expect(s.result.current.error).toMatch(/confirmation/)
  await act(async()=>{prompt=await s.result.current.prepare([{...file,document:{...s.reference,allowPartial:true}}])})
- expect(prompt).toContain('selectedPages');expect(prompt).not.toContain('"page":2')
+ expect(prompt).toContain('Attached document: policy.pdf');expect(prompt).toMatch(/1 selected page \(1\)/);expect(prompt).toContain('extraction is partial')
  mocked.load.mockRejectedValue(new Error('tampered receipt'))
  await act(async()=>{prompt=await s.result.current.prepare([file])})
  expect(prompt).toBeUndefined();expect(mocked.load).toHaveBeenCalledTimes(3)

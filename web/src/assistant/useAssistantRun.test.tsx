@@ -15,10 +15,10 @@ import { effectiveConfig } from '../config/deskConfig'
 import type { AIRegistry } from './aiConnections'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { scriptedWebSocket } from './conformance/scriptedServer'
-import scenario from './conformance/scenario.json'
+import { scriptedWebSocket } from '@judgment-pack/harness/certification/scriptedServer'
+import { scenario } from '@judgment-pack/harness/certification'
 import { canonicalProposal, frozen, plain, useAssistantRun } from './useAssistantRun'
-import type { AssistantEvent, AssistantSession, Engine } from './engine'
+import type { AssistantEvent, AssistantSession, Engine } from '@judgment-pack/harness/engine'
 
 /** What the engine was handed, for the case that is about the model. */
 let handed: AssistantSession | null = null
@@ -58,8 +58,8 @@ const endsThenThrows: Engine = {
 
 let engine: Engine = deaf
 
-vi.mock('./engines', async (importOriginal) => {
-  const original = await importOriginal<typeof import('./engines')>()
+vi.mock('@judgment-pack/harness/engines/index', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@judgment-pack/harness/engines/index')>()
   return { ...original, loadEngine: async () => engine }
 })
 
