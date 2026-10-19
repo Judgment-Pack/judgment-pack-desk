@@ -84,6 +84,12 @@ type jobsCompanion struct {
 	// Runner waits for it, so that its key's decision does not hold the lock
 	// that sweep would otherwise find held, and skip.
 	started chan struct{}
+	// Immutable enrollment demand. Any failed owned startup stays held for this
+	// Desk lifetime; endpoint polling cannot retry an uncertain launch.
+	ownership      *runnerExecutorOwnership
+	ownershipCheck func() error
+	held           error
+	runnerSource   *runnerExecutableSource
 }
 
 func (s *Server) initJobs() {
@@ -116,6 +122,23 @@ func (s *Server) initJobs() {
 		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
 		s.jobs.workspace = entry.RunnerWorkspace
 	}
+	if s.policyAuthorityMachine != nil {
+		ownership, e := s.policyAuthorityMachine.executorForProject(s.project, s.jobs.workspace)
+		s.jobs.ownership, s.jobs.held = ownership, e
+		if ownership != nil {
+			s.jobs.ownershipCheck = func() error {
+				current, err := s.policyAuthorityMachine.executorForProject(s.project, s.jobs.workspace)
+				if err != nil || current == nil || *current != *ownership {
+					return policyMachineRefusal()
+				}
+				return nil
+			}
+			s.jobs.runnerSource, e = pinRunnerExecutable(s.jobs.bin)
+			if e != nil {
+				s.jobs.held = e
+			}
+		}
+	}
 	// Runner's own key is kept under the name of its workspace: the desk's
 	// id, or the startup desk's state directory's name (ADR-0010, section 5).
 	s.jobs.key = s.newRunnerKey(s.jobs.workspace)
@@ -145,6 +168,10 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	if j.closed {
 		return "", "", errors.New("runner closed")
 	}
+	if j.held != nil {
+		j.key.notRunning(j.held)
+		return "", "", j.held
+	}
 	if j.done != nil {
 		select {
 		case <-j.done:
@@ -152,14 +179,23 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 			j.input.Close()
 			j.input = nil
 			j.done = nil
+			if j.ownership != nil {
+				return "", "", j.holdOwned(errors.New("executor-owned Runner stopped; Jobs is held"))
+			}
 		default:
 			return j.url, j.token, nil
 		}
 	}
 	if !filepath.IsAbs(j.bin) || !filepath.IsAbs(j.runtime) {
-		return "", "", errors.New("absolute runner and Runtime paths required")
+		return "", "", j.holdOwned(errors.New("absolute runner and Runtime paths required"))
 	}
-	if err := os.MkdirAll(j.dir, 0700); err != nil {
+	if j.ownership != nil {
+		root, err := openPrivateDataRoot(j.dir, true)
+		if err != nil {
+			return "", "", j.holdOwned(runnerOwnershipUnavailable())
+		}
+		root.Close()
+	} else if err := os.MkdirAll(j.dir, 0700); err != nil {
 		return "", "", err
 	}
 	// **Runner's own key, or none** (ADR-0010, section 5). Where Runner
@@ -169,12 +205,11 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	// it is starting, and a Runner that did not start is reported as not
 	// running, never as signing.
 	signingKey, decided := j.key.prepare()
-	refusal, err := j.start(signingKey, decided.PublicKey)
-	if err != nil && signingKey != "" && refusal != nil {
-		decided = j.key.refused(*refusal)
-		_, err = j.start("", "")
-	}
+	decided, err := j.startWithSigningFallback(signingKey, decided)
 	if err != nil {
+		if j.ownership != nil {
+			j.held = err
+		}
 		j.key.notRunning(err)
 		return "", "", err
 	}
@@ -182,16 +217,62 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	return j.url, j.token, nil
 }
 
+func (j *jobsCompanion) startWithSigningFallback(signingKey string, decided RunnerKeyStatus) (RunnerKeyStatus, error) {
+	refusal, err := j.start(signingKey, decided.PublicKey)
+	if err != nil && signingKey != "" && refusal != nil {
+		decided = j.key.refused(*refusal)
+		_, err = j.start("", "")
+	}
+	return decided, err
+}
+
+func (j *jobsCompanion) holdOwned(err error) error {
+	if j.ownership != nil {
+		j.held = err
+		j.key.notRunning(err)
+	}
+	return err
+}
+
 // start starts Runner and reads its handshake, naming signingKey on the boot
 // line where it is not empty. Where Runner did not start, and what it wrote
 // to its standard error says it refused a signing key, refusal is its reason.
 func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *string, err error) {
+	bin := j.bin
+	cleanup := func() {}
+	if j.ownership != nil {
+		if j.ownershipCheck == nil || j.ownershipCheck() != nil || j.runnerSource == nil {
+			return nil, errors.New("executor ownership is unavailable; Jobs is held")
+		}
+		bin, cleanup, err = j.runnerSource.snapshot()
+		if err != nil {
+			return nil, err
+		}
+		if err = probeRunnerOwnership(bin); err != nil {
+			cleanup()
+			return nil, err
+		}
+		if j.runnerSource.check() != nil {
+			cleanup()
+			return nil, runnerOwnershipUnavailable()
+		}
+		if j.ownershipCheck() != nil {
+			cleanup()
+			return nil, errors.New("executor ownership changed; Jobs is held")
+		}
+	}
+	started := false
+	defer func() {
+		if !started {
+			cleanup()
+		}
+	}()
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
 		return nil, err
 	}
 	j.token = hex.EncodeToString(secret[:])
-	cmd := exec.Command(j.bin)
+	cmd := exec.Command(bin)
 	cmd.Env = []string{"LANG=C", "LC_ALL=C"}
 	cmd.Dir = j.dir
 	// Kept, to a bound, only to read a refusal of the key from it.
@@ -210,8 +291,9 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 		input.Close()
 		return nil, err
 	}
+	started = true
 	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(done) }()
+	go func() { _ = cmd.Wait(); cleanup(); close(done) }()
 	// failed stops this Runner and answers err, with Runner's refusal of the
 	// key where it wrote one: once it has exited, all it wrote has been read.
 	failed := func(err error) (*string, error) {
@@ -224,6 +306,10 @@ func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *str
 		return nil, err
 	}
 	boot := map[string]any{"dir": j.dir, "runtime": j.runtime, "workspace": j.workspace, "owner": j.owner, "token": j.token, "inputRoot": j.inputRoot}
+	if j.ownership != nil {
+		boot["executorOwnership"] = j.ownership
+		boot["requiredCapabilities"] = runnerRequiredOwnershipCapabilities()
+	}
 	if len(j.connections) > 0 {
 		var connections struct {
 			Cloud   json.RawMessage `json:"cloud"`
@@ -283,6 +369,9 @@ func (j *jobsCompanion) close() {
 	}
 	j.closed = true
 	close(j.stop)
+	if j.runnerSource != nil {
+		defer j.runnerSource.close()
+	}
 	if j.input != nil {
 		j.input.Close()
 	}

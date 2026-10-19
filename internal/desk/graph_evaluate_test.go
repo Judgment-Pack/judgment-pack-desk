@@ -338,12 +338,14 @@ func TestGraphRow4CompanionRuntimeSelection(t *testing.T) {
 	lists := regexp.MustCompile(`go test[^\n]*-run '([^']+)'`).FindAllStringSubmatch(string(data), -1)
 	checked := 0
 	for _, list := range lists {
-		if !strings.Contains(list[1], "TestJobs") && !strings.Contains(list[1], "TestNewDeskWithTheRuntime") {
-			continue
-		}
 		selection, err := regexp.Compile(list[1])
 		if err != nil {
 			t.Fatal(err)
+		}
+		// Classify the broad cohorts by what their selector matches; a
+		// dedicated test whose name contains TestJobs is a separate cohort.
+		if !selection.MatchString("TestJobs") && !selection.MatchString("TestNewDeskWithTheRuntime") {
+			continue
 		}
 		for _, name := range []string{"TestGraphRow1WithThePublishedRuntime", "TestGraphRow1WithThePublishedRuntimeEscapes", "TestGraphRow3RealRuntime", "TestGraphRow4PublishedRuntimeTrailUnchanged"} {
 			if !selection.MatchString(name) {

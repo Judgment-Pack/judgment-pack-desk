@@ -5218,8 +5218,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	cmd.Stderr = io.Discard'
   mutate go "runner key: a Runner that did not start is not said" "$J" \
     '		j.key.notRunning(err)
-' \
-    ''
+		return "", "", err' \
+    '		return "", "", err'
   mutate go "runner key: what Runner answered with is not recorded" "$J" \
     '	j.key.started(decided)' \
     '	_ = decided'

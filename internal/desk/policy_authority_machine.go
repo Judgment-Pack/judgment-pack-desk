@@ -27,6 +27,7 @@ type PolicyAuthorityStatus struct {
 	State            string `json:"state"`
 	LedgerDigest     string `json:"ledgerDigest,omitempty"`
 	AnchorGeneration uint64 `json:"anchorGeneration,omitempty"`
+	ExecutorState    string `json:"executorState,omitempty"`
 }
 
 const policyMachineRegistryName = "registry.json"
@@ -40,11 +41,12 @@ type policyMachineIntent struct {
 	LedgerDigest string `json:"ledgerDigest"`
 }
 type policyMachineWorkspace struct {
-	WorkspaceID     string               `json:"workspaceId"`
-	ProjectPath     string               `json:"projectPath"`
-	ProjectIdentity string               `json:"projectIdentity"`
-	State           string               `json:"state"`
-	Intent          *policyMachineIntent `json:"intent,omitempty"`
+	WorkspaceID     string                 `json:"workspaceId"`
+	ProjectPath     string                 `json:"projectPath"`
+	ProjectIdentity string                 `json:"projectIdentity"`
+	State           string                 `json:"state"`
+	Intent          *policyMachineIntent   `json:"intent,omitempty"`
+	Executor        *policyMachineExecutor `json:"executor,omitempty"`
 }
 type policyMachineRegistry struct {
 	Version        int                      `json:"version"`
@@ -149,7 +151,7 @@ func policyMachineNoDemand(project *os.Root) error {
 }
 func decodePolicyMachineRegistry(raw []byte) (policyMachineRegistry, error) {
 	var r policyMachineRegistry
-	if len(raw) > policyMachineRegistryLimit || rejectDuplicateMembers(raw) != nil || policyAuthorityAnchorObject(raw, []string{"version", "installationId", "rootIdentity", "generation", "workspaces"}, "") != nil || decodeDataJSON(raw, &r) != nil || r.Version != 1 || !retainedArtifactDigest.MatchString(r.InstallationID) || !fileIdentityForm.MatchString(r.RootIdentity) || r.Generation == 0 || r.Generation > policyAuthorityAnchorMaxGeneration || r.Workspaces == nil || len(r.Workspaces) > policyMachineWorkspaceLimit {
+	if len(raw) > policyMachineRegistryLimit || rejectDuplicateMembers(raw) != nil || policyAuthorityAnchorObject(raw, []string{"version", "installationId", "rootIdentity", "generation", "workspaces"}, "") != nil || decodeDataJSON(raw, &r) != nil || (r.Version != 1 && r.Version != 2) || !retainedArtifactDigest.MatchString(r.InstallationID) || !fileIdentityForm.MatchString(r.RootIdentity) || r.Generation == 0 || r.Generation > policyAuthorityAnchorMaxGeneration || r.Workspaces == nil || len(r.Workspaces) > policyMachineWorkspaceLimit {
 		return r, policyMachineRefusal()
 	}
 	var wire struct {
@@ -160,7 +162,10 @@ func decodePolicyMachineRegistry(raw []byte) (policyMachineRegistry, error) {
 	}
 	ids, paths, folders := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for i, w := range r.Workspaces {
-		if policyAuthorityAnchorObject(wire.Workspaces[i], []string{"workspaceId", "projectPath", "projectIdentity", "state", "intent"}, "intent") != nil || !retainedArtifactDigest.MatchString(w.WorkspaceID) || !validProjectHistoryPath(w.ProjectPath) || len(w.ProjectPath) > 2048 || filepath.Clean(w.ProjectPath) != w.ProjectPath || !fileIdentityForm.MatchString(w.ProjectIdentity) || ids[w.WorkspaceID] || paths[w.ProjectPath] || folders[w.ProjectIdentity] || !contains([]string{"legacy", "enrolling", "enrolled"}, w.State) || (w.State == "enrolling") != (w.Intent != nil) {
+		if policyMachineWorkspaceShape(wire.Workspaces[i], r.Version) != nil || !retainedArtifactDigest.MatchString(w.WorkspaceID) || !validProjectHistoryPath(w.ProjectPath) || len(w.ProjectPath) > 2048 || filepath.Clean(w.ProjectPath) != w.ProjectPath || !fileIdentityForm.MatchString(w.ProjectIdentity) || ids[w.WorkspaceID] || paths[w.ProjectPath] || folders[w.ProjectIdentity] || !contains([]string{"legacy", "enrolling", "enrolled"}, w.State) || (w.State == "enrolling") != (w.Intent != nil) {
+			return r, policyMachineRefusal()
+		}
+		if policyMachineExecutorShape(wire.Workspaces[i], w) != nil {
 			return r, policyMachineRefusal()
 		}
 		if w.Intent != nil {
@@ -283,6 +288,9 @@ func (m *policyAuthorityMachine) readRegistry() (policyMachineRegistry, error) {
 	if err != nil || r.InstallationID != m.options.InstallationID || r.RootIdentity != identityKey(m.info) {
 		return r, policyMachineRefusal()
 	}
+	if m.executorRegistryCustody(r) != nil {
+		return r, policyMachineRefusal()
+	}
 	// A rolled-back legacy classification cannot hide an existing/orphan anchor.
 	anchors, _, err := openOwnFolder(m.root, []string{"anchors"}, false, "Policy anchors")
 	if errors.Is(err, os.ErrNotExist) {
@@ -317,12 +325,15 @@ func (m *policyAuthorityMachine) readRegistry() (policyMachineRegistry, error) {
 }
 func (m *policyAuthorityMachine) persist(phase, name string, root *os.Root, value any) error {
 	raw, err := json.Marshal(value)
+	if phase == "executor-file" {
+		raw = nil
+	}
 	if err != nil || len(raw) > policyMachineRegistryLimit {
 		return policyMachineRefusal()
 	}
 	if m.persistForTest != nil {
 		err = m.persistForTest(phase, root, name, raw)
-	} else if phase == "marker" {
+	} else if phase == "marker" || phase == "executor-file" {
 		err = claimPrivateData(root, name, raw)
 		if err == nil {
 			var retained []byte
@@ -367,7 +378,7 @@ func (m *policyAuthorityMachine) resolve(p *ProjectRoot) (*policyAuthorityAnchor
 		return nil, err
 	}
 	w, found, err := policyMachineWorkspaceFor(r, p)
-	if err != nil || !found || w.State == "enrolling" {
+	if err != nil || !found || w.State == "enrolling" || w.Executor != nil && w.Executor.State != "enrolled" {
 		return nil, policyMachineRefusal()
 	}
 	marker, err := readPolicyMachineMarker(p.own.root)
@@ -417,7 +428,7 @@ func PolicyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 }
 func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityOptions, projectDir string, hook func(string, *os.Root, string, []byte) error) (PolicyAuthorityStatus, error) {
 	var status PolicyAuthorityStatus
-	if ctx.Err() != nil || !contains([]string{"init", "status", "classify-legacy", "enroll"}, action) {
+	if ctx.Err() != nil || !contains([]string{"init", "status", "classify-legacy", "enroll", "enroll-executor"}, action) {
 		return status, policyMachineRefusal()
 	}
 	config, err := ResolveDeskConfigDir()
@@ -441,7 +452,7 @@ func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 		}
 		defer project.Close()
 	}
-	if (action == "enroll" || action == "classify-legacy") && project == nil {
+	if (action == "enroll" || action == "enroll-executor" || action == "classify-legacy") && project == nil {
 		return status, policyMachineRefusal()
 	}
 	if err = policyMachineProtectedPaths(o.Root, config, project); err != nil {
@@ -474,6 +485,16 @@ func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 			return status, nil
 		}
 		status.WorkspaceID, status.State = w.WorkspaceID, w.State
+		status.ExecutorState = "unenrolled"
+		if w.Executor != nil {
+			status.ExecutorState = w.Executor.State
+			if w.Executor.State != "enrolled" {
+				return status, nil
+			}
+			if _, e := m.executorOwnership(w, "status"); e != nil {
+				status.ExecutorState = "unavailable"
+			}
+		}
 		if w.State != "enrolled" {
 			return status, nil
 		}
@@ -522,6 +543,12 @@ func policyAuthorityLocal(ctx context.Context, action string, o PolicyAuthorityO
 	}
 	if err = policyMachineProjectIdle(config, project); err != nil {
 		return PolicyAuthorityStatus{}, err
+	}
+	if action == "enroll-executor" {
+		if !found || w.State != "enrolled" || w.Executor != nil {
+			return PolicyAuthorityStatus{}, policyMachineRefusal()
+		}
+		return m.enrollExecutor(ctx, project, w)
 	}
 	if action == "classify-legacy" {
 		if found || policyMachineNoDemand(project.own.root) != nil {

@@ -231,7 +231,7 @@ func (k *runnerKey) set(status RunnerKeyStatus) {
 	case runnerKeyUnsigned:
 		k.s.log.Printf("desk: Runner was started without a signing key, so this desk's runs are not signed (%s): %s", status.Reason, status.Detail)
 	case runnerKeyNotRunning:
-		k.s.log.Printf("desk: Runner did not start, so this desk runs and signs nothing now: %s", status.Detail)
+		k.s.log.Printf("desk: Runner is unavailable: %s", status.Detail)
 	}
 }
 

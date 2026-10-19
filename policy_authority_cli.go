@@ -19,7 +19,7 @@ type policyAuthorityLocalCall func(context.Context, string, desk.PolicyAuthority
 // injected call lets argument rejection and help be checked without any storage,
 // Runtime resolution, adapters or listeners.
 func runPolicyAuthorityCommand(ctx context.Context, args []string, output io.Writer, local policyAuthorityLocalCall) error {
-	usage := "usage: jpack-desk policy-authority <init|status|classify-legacy|enroll> --root <absolute> [--installation <id>] [projectDir]\n"
+	usage := "usage: jpack-desk policy-authority <init|status|classify-legacy|enroll|enroll-executor> --root <absolute> [--installation <id>] [projectDir]\n"
 	if len(args) == 0 {
 		return errors.New(strings.TrimSpace(usage))
 	}
@@ -32,7 +32,7 @@ func runPolicyAuthorityCommand(ctx context.Context, args []string, output io.Wri
 	}
 	action := args[0]
 	switch action {
-	case "init", "status", "classify-legacy", "enroll":
+	case "init", "status", "classify-legacy", "enroll", "enroll-executor":
 	default:
 		return fmt.Errorf("unknown policy-authority action %q", action)
 	}
@@ -67,7 +67,7 @@ func runPolicyAuthorityCommand(ctx context.Context, args []string, output io.Wri
 	} else if strings.TrimSpace(*installation) == "" {
 		return errors.New("policy-authority requires --installation with the expected installation identity")
 	}
-	if (action == "enroll" || action == "classify-legacy") && flags.NArg() != 1 {
+	if (action == "enroll" || action == "enroll-executor" || action == "classify-legacy") && flags.NArg() != 1 {
 		return fmt.Errorf("policy-authority %s requires an explicit projectDir", action)
 	}
 	status, err := local(ctx, action, desk.PolicyAuthorityOptions{Root: *root, InstallationID: *installation}, project)
