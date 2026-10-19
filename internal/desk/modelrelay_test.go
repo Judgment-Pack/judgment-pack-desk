@@ -156,8 +156,9 @@ func relayBare(t *testing.T, ts *httptest.Server, method, suffix string, body io
 // `TestTheSessionIDNeverReachesTheEndpoint`.
 //
 // It is faithful, too. The page's relay client holds `Authorization` off its
-// allow-list (`MODEL_REQUEST_HEADERS` in `assistant/session.ts`), so an engine
-// cannot put one on a relayed request at all.
+// allow-list (`MODEL_REQUEST_HEADERS` in `session.ts` of the page's assistant
+// harness, `@judgment-pack/harness`), so an engine cannot put one on a relayed
+// request at all.
 func authorizeAsPage(t *testing.T, ts *httptest.Server, req *http.Request) {
 	t.Helper()
 	pageBearer(beginSession(t, ts))(req)

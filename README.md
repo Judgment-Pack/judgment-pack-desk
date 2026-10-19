@@ -3622,8 +3622,9 @@ proposal is shown.
 
 **The tier maps to provider parameters in one desk-owned table**, per endpoint
 family, and the engine receives the normalized result — it never chooses a
-parameter of its own. The table is `web/src/assistant/thinking.ts` and it is the
-whole of it:
+parameter of its own. The table is `thinking.ts` in the assistant harness,
+`@judgment-pack/harness` (Judgment-Pack/judgment-pack-agent, pinned in the
+component lock), and it is the whole of it:
 
 | family | tier | what goes on the wire |
 | --- | --- | --- |
@@ -3748,7 +3749,7 @@ below are Desk's choice, not additional restrictions imposed by the current SDK.
 
 **The ruling: a closed, documented removal list, on this family only.** The
 keywords are `$schema`, `$id`, `additionalProperties`, `const`, `examples` and
-`patternProperties` — `web/src/assistant/geminiSchema.ts`, applied at every
+`patternProperties` — the harness's `geminiSchema.ts`, applied at every
 depth, and applied to nothing else. A property whose *name* happens to be one of
 them is left alone, because under `properties` the keys are the author's words
 rather than JSON Schema's. Nothing is added, nothing is re-typed, and no value
@@ -3871,8 +3872,9 @@ endpoint — one with no thinking at all — the pass **still runs**. Its value 
 the runtime's checks over the proposed document, not the model's thinking, and a
 `validate` costs one call; the tab's line says the endpoint has no thinking, and
 the checks appear as they always do. The alternative — skip the pass wherever
-the endpoint degraded — is `REFUTE_ON_A_DEGRADED_ENDPOINT` in
-`web/src/assistant/thinking.ts` set to `false`, one boolean and nothing else,
+the endpoint degraded — is `REFUTE_ON_A_DEGRADED_ENDPOINT` in the harness's
+`thinking.ts` set to `false`, one boolean and nothing else, a change made in the
+harness's repository,
 with a conformance leg that follows it either way. ADR-0001 lists this among the
 questions the bake-off could not close, and it is open until the maintainer
 rules.
@@ -3909,7 +3911,7 @@ read — the document is handed to the critic verbatim instead.
 
 ### The ToolGate
 
-`web/src/assistant/toolGate.ts` wraps the assistant transport's `send`, and
+The harness's `toolGate.ts` wraps the assistant transport's `send`, and
 every outbound `tools/call` frame passes through it:
 
 - a name outside the session's allow-list is **refused** — the frame never
@@ -4116,7 +4118,7 @@ the provider's `fetch` option, so the shape survives the next chunk.
 
 ### The engine slot, as it stands
 
-`web/src/assistant/engine.ts` is ADR-0001's contract. `assistant/engines/` is
+The harness's `engine.ts` is ADR-0001's contract, and its `engines/` is
 the registry: one lazily loaded chunk per certified engine, so a **release**
 carries every certified chunk and a **session** downloads one. There is **one
 table**: the certified list is derived from the loaders rather than written
@@ -4179,7 +4181,7 @@ still suspended, and `for await`'s own closing discards the value, so the
 terminal event is never delivered at all. A consumer that stops listening is owed
 no terminal event; what it is owed is a closed iterator.
 
-`assistant/engines/contract.ts` holds what belongs to the contract rather than to
+The harness's `engines/contract.ts` holds what belongs to the contract rather than to
 either loop — the twenty-turn bound, the desk's own sentence to the model, the
 one reading of a proposal (exactly one fenced block, never the prose beside it),
 the rule that an answer is read by **what came back** rather than by what was
@@ -4278,9 +4280,10 @@ relay refuses one.
 
 ### The conformance session
 
-`web/src/assistant/conformance/` is the bake-off's scenario carried into the
-repository and run in CI — keyless, deterministic, no network, no runtime
-binary. **It runs over the registry**, not over one engine: every id in
+The harness's certification suite, `certification/` in
+`@judgment-pack/harness`, is the bake-off's scenario carried into the agent
+repository and run in its CI (`npm run certify -- --adapter <id>`) — keyless,
+deterministic, no network, no runtime binary. **It runs over the registry**, not over one engine: every id in
 `CERTIFIED_ENGINES` is put through all six legs and every check below, so
 certifying an adapter is adding its id to one list and a further engine is one
 PR — the adapter, its conformance run, and its row in the table above. The
@@ -4294,13 +4297,11 @@ fixture would be a finding rather than a fix.
   the five, exactly as served with the runtime's own schemas, and one
   `tools/call` answer per step T1–T6, taken from judgment-pack-runtime v0.19.0
   in a project copy that declared an audit trail. No audit record was written by
-  any of them. It is **produced by a checked-in recorder** rather than by hand:
-
-  ```sh
-  # regenerate, or byte-compare what is committed against a runtime
-  JPACK_COMMIT=<full commit> npm --prefix web run conformance:record -- ./bin/jpack /path/to/project
-  JPACK_COMMIT=<full commit> npm --prefix web run conformance:verify -- ./bin/jpack /path/to/project
-  ```
+  any of them. It was **produced by a recorder** rather than by hand,
+  `web/scripts/record-conformance.mjs`, which left this repository with the
+  fixture it writes; it belongs beside the fixture in the agent repository,
+  which does not carry it at v0.1.0 (the fixture's `recorder` member still
+  names this repository's path).
 
   The fixture carries the binary's SHA-256 and the runtime's full commit, and
   `verify` fails on a byte of drift — which is what makes "recorded" a claim
@@ -6082,11 +6083,12 @@ appears anywhere on the page. `files/useFileEditing.test.ts` and
 view — `routes/AuthorView.test.tsx` staying green unedited is the proof the
 extraction preserved its behaviour.
 
-The assistant's suites are named the same way. `assistant/toolGate.test.ts`
+The assistant's suites are named the same way, and those over the harness moved
+with it to `@judgment-pack/harness`. Its `toolGate.test.ts`
 holds the gate at a **recording transport**: what left the page, never what the
-gate believes it did. `assistant/conformance/conformance.test.ts` is the desk's
+gate believes it did. Its `certification/conformance.test.ts` is the
 conformance session, described above, and is the one that certifies an engine.
-`assistant/engines/vercel/engine.test.ts` holds
+Its `engines/vercel/engine.test.ts` holds
 the ones that are about **that SDK** rather than about the contract: the address
 discipline on the `fetch` its providers are given, the placeholder credential
 that never leaves it, the two layers that put `rehearsal: true` on an evaluate

@@ -11,8 +11,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "smoke": "tsx scripts/smoke.ts",
-    "conformance:record": "node scripts/record-conformance.mjs record",
-    "conformance:verify": "node scripts/record-conformance.mjs verify",
     "i18n:extract": "node scripts/check-locales.mjs --extract",
     "i18n:check": "node scripts/check-locales.mjs"
   },
