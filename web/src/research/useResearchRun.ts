@@ -1,7 +1,7 @@
 import { withDelegation } from '@judgment-pack/harness/delegation'
 import { chatReasoningAgent, type ChatReasoning } from '../chat/reasoning'
 import { conversationMode, type AuthoringMode } from './mode'
-import { bindExecution } from '../assistant/target'
+import { bindExecution, withPersonMessage } from '../assistant/target'
 import { selectedAssistant } from '../assistant/target'
 import { useProviderModels } from '../assistant/providers'
 import { assistantReady } from '../assistant/useAssistantSlot'
@@ -224,7 +224,7 @@ export function useResearchRun(options?: {
             // A turn that may propose a pack offers propose_pack beside the fence;
             // an independent reviewer, and a conversation without artifact proposals, do not.
             hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),
-            ...bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking),
+            ...withPersonMessage(bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking), request.reviewer ? undefined : request.context?.currentRequest?.message),
             signal
           },
           onEvent

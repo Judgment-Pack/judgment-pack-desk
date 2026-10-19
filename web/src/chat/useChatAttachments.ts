@@ -123,8 +123,8 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
    * What the message says about its attachments, checked before it is sent:
    * each attachment's name and how the model reads it, never its text, which
    * the run retains in its ledger (`attachmentContext.ts`). A document's pages
-   * are verified now, and what the attachments add to the ledger is held to
-   * its bound, so a send that would fail at the run fails here first.
+   * are verified now, and what the attachments would add to the ledger is held
+   * to the Desk's per-message bound, `ATTACHMENT_LEDGER_BYTES`, here, on send.
    */
   const prepare = async (files: ChatAttachment[]): Promise<string | undefined> => {
     if (isReading() || disabled) return

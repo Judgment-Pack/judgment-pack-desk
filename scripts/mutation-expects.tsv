@@ -596,6 +596,14 @@ go	hand-over: the record does not keep where the last batch starts	TestAConfirma
 go	hand-over: the record is not written	TestAConfirmationRecordsExactlyWhatWasDownloaded,TestAHolderStartsAt0ForATrailMovedAside,TestAStaleConfirmationRecordsNothing,TestCheckpointsAreAskedForInBatchesAndBounded,TestConfirmationsAreOneAtATime,TestEachHolderHasACursorOfItsOwn
 go	hand-over: the record moves to another record	TestAConfirmationRecordsExactlyWhatWasDownloaded,TestAHeldFileThatCannotBeReadIsPassedOverAndNamed,TestAHeldFileThatIsNotWhatWasHandedOverIsPassedOverAndNamed,TestAHolderStartsAt0ForATrailMovedAside,TestARecordOfHandOversDeskCannotReadIsSaid,TestAStaleConfirmationRecordsNothing,TestCheckpointsAreAskedForInBatchesAndBounded,TestEachHolderHasACursorOfItsOwn,TestTheDecisionRecordIsHeldToTheCheckpointsHandedOver
 go	hand-over: what a stopped confirmation wrote is appended again	TestTheHoldersFileIsOnlyAppendedTo
+go	harness swap: anthropic cache read dropped	TestBackgroundCompletionAdmitsCacheFigures
+go	harness swap: cache figures leave the completion JSON	TestBackgroundCompletionAdmitsCacheFigures
+go	harness swap: codex recall ignores the person's message	TestMemoryRecallQueryDropsTheExecutionStateOnEachWire
+go	harness swap: openai-compatible cache read dropped	TestBackgroundCompletionAdmitsCacheFigures
+go	harness swap: recall reads a tool-only turn	TestMemoryRecallQueryDropsTheExecutionStateOnEachWire
+go	harness swap: recall reads the execution state message	TestMemoryRecallQueryDropsTheExecutionStateOnEachWire
+go	harness swap: recall reads the execution state part	TestMemoryRecallQueryDropsTheExecutionStateOnEachWire
+go	harness swap: recall reads the harness's own request	TestMemoryRecallQueryDropsTheExecutionStateOnEachWire
 go	http is accepted off loopback	TestARefusedFileSendsNothing,TestConfiguredEndpointRefusals,TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse,TestRelayRefusesARefusedConfiguration,TestSharedFixturesDecodeAsTheVerdictSays
 go	jobs hand-over: a chain shorter than what was handed over is read	TestJobsHandOverKeepsACursorApartFromTheDeskTrails
 go	jobs hand-over: a confirmation names the chain in another way	TestJobsHandOverIsAskedForInOneWay
@@ -1820,6 +1828,26 @@ web	hand-over page: the held statement is not said	src/audit/decisionRecord.test
 web	hand-over page: the holders are not read again with the decision record	src/audit/handover.test.tsx
 web	hand-over page: the holders follow every change to the project	src/audit/handover.test.tsx
 web	hand-over page: the stale sentence is not said	src/audit/handover.test.tsx
+web	harness swap: a Codex run sends no person's message	src/research/useResearchRun.web.test.tsx
+web	harness swap: a message's attachments unbounded on send	src/chat/useChatAttachments.test.tsx
+web	harness swap: a read window is not cut to the result	src/chat/linkTools.test.ts
+web	harness swap: a read window starts from 20,000 bytes	src/research/tools.test.ts
+web	harness swap: an unverifiable attachment fails the turn	src/research/run.test.ts
+web	harness swap: attachment text inlined in the message	src/chat/attachmentContext.test.ts,src/chat/useChatAttachments.test.tsx
+web	harness swap: attachments not in the run's ledger	src/research/run.test.ts
+web	harness swap: chat offers no propose_pack	src/research/useResearchRun.web.test.tsx
+web	harness swap: endpointCapabilities left unwired	src/assistant/harnessHost.test.ts
+web	harness swap: propose_pack offered in a Policy chat	src/research/useResearchRun.web.test.tsx
+web	harness swap: propose_pack offered to the reviewer	src/research/useResearchRun.web.test.tsx
+web	harness swap: read_link ignores the turn's policy	src/chat/linkTools.test.ts
+web	harness swap: read_source ignores the run's policy	src/research/tools.test.ts
+web	harness swap: read_source is not framed as retrieved data	src/research/tools.test.ts
+web	harness swap: renderImageToText left unwired	src/assistant/harnessHost.test.ts
+web	harness swap: the Go state header drifts from the package's	src/assistant/harnessHost.test.ts
+web	harness swap: the case writer gets no attachments	src/research/run.test.ts
+web	harness swap: the draft snapshot back in the prompt	src/research/run.test.ts
+web	harness swap: the draft snapshot is not the current state	src/research/run.test.ts
+web	harness swap: the pack pane offers no propose_pack	src/assistant/AssistantPane.test.tsx
 web	help: a path is not quoted for the shell	src/routes/HelpAbout.test.tsx
 web	help: the agent command names no configuration	src/routes/HelpAbout.test.tsx
 web	help: the tested-releases setting is not read	src/routes/HelpAbout.test.tsx

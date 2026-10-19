@@ -10,8 +10,9 @@ The lock's `web-packages` are the web page's own pinned packages, each one
 release asset of its repository installed by web/package.json from that
 asset's URL. `check` holds web/package.json and web/package-lock.json to the
 lock's entry; `verify` downloads the asset and holds its digests to the lock
-and the npm lockfile, and its tag to the locked commit. `status`, `propose`
-and `ci` read the binary components only.
+and the npm lockfile, its tag to the locked commit, and its attestation (`gh
+attestation verify`) to the repository's release workflow at that tag and
+commit. `status`, `propose` and `ci` read the binary components only.
 """
 import argparse
 import base64
@@ -21,6 +22,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -118,6 +120,28 @@ def download_asset(url):
     if len(data) > ASSET_BYTES: raise ValueError('Oversized release asset')
     return data
 
+def verify_attestation(package, data):
+    """The asset's build-provenance attestation, as `gh attestation verify` reads it: made by the
+    repository's release workflow at the locked tag and commit, for an asset of this name and digest."""
+    repository = package['repository']
+    with tempfile.TemporaryDirectory(prefix='desk-web-package-') as directory:
+        asset = Path(directory) / package['asset']
+        asset.write_bytes(data)
+        result = subprocess.run(['gh', 'attestation', 'verify', str(asset), '--repo', repository,
+                                 '--signer-workflow', repository + '/.github/workflows/release.yml',
+                                 '--source-ref', 'refs/tags/' + package['version'],
+                                 '--source-digest', package['revision'], '--format', 'json'],
+                                capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        raise ValueError('Web package attestation did not verify: ' + package['package'])
+    try:
+        verified = json.loads(result.stdout)
+        subjects = [subject for entry in verified for subject in entry['verificationResult']['statement']['subject']]
+    except (ValueError, KeyError, TypeError):
+        raise ValueError('Web package attestation answered in a shape this script cannot read: ' + package['package'])
+    if not any(subject.get('name') == package['asset'] and subject.get('digest', {}).get('sha256') == package['sha256'] for subject in subjects):
+        raise ValueError('Web package attestation names another asset or digest: ' + package['package'])
+
 def verify_web_packages(plan, web=WEB):
     """Online: the published release, its tag's commit, and the asset's digests, against the lock and the npm lockfile."""
     check_web_packages(plan, web)
@@ -133,7 +157,8 @@ def verify_web_packages(plan, web=WEB):
             raise ValueError('Web package asset disagrees with the locked sha256: ' + name)
         if locked['packages']['node_modules/' + package['package']]['integrity'] != npm_integrity(data):
             raise ValueError('web/package-lock.json integrity disagrees with the release asset: ' + name)
-        print(name + ': published asset, digest and commit verified')
+        verify_attestation(package, data)
+        print(name + ': published asset, digest, commit and attestation verified')
 
 def verify_plan(plan):
     for name, component in plan['components'].items():

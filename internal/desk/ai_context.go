@@ -38,7 +38,7 @@ func (s *Server) prepareAgentContext(request *codexbridge.RunRequest) error {
 	if err != nil {
 		return err
 	}
-	memory, err := s.memoryBackground(memoryQueryTail(request.Prompt))
+	memory, err := s.memoryBackground(agentRecallQuery(*request))
 	if err != nil {
 		return err
 	}
@@ -140,6 +140,22 @@ func (s *Server) prepareModelContext(kind, suffix string, raw []byte) ([]byte, e
 	return raw, nil
 }
 
+// personMessageMarker heads the person's message in the prompts the Desk
+// writes for a chat turn; recall reads from it.
+const personMessageMarker = "THE PERSON'S MESSAGE\n"
+
+// agentRecallQuery is the recall query for a Codex run. The codex engine
+// appends the execution state (the chat's draft snapshot among it) and its
+// guidance after the person's message, so where the page sends the person's
+// message beside the prompt the query is taken from that alone; a request
+// without it (server-owned research, a pane run) is read as before.
+func agentRecallQuery(request codexbridge.RunRequest) string {
+	if request.PersonMessage != "" {
+		return memoryQueryTail(personMessageMarker + request.PersonMessage)
+	}
+	return memoryQueryTail(request.Prompt)
+}
+
 // executionStateHeader opens the text the assistant harness sends as the
 // execution state (@judgment-pack/harness v0.1.0, STATE_HEADER; the contract
 // vector budget/state-placement.json). The state is a user text on every wire:
@@ -155,44 +171,64 @@ const executionStateHeader = "EXECUTION STATE (from the host, current for this r
 // (one that holds only tool results, as an Anthropic or Gemini tool answer
 // does, or only the state) is skipped for the newest one with the person's
 // own text.
+//
+// The newest user text that carries the person's-message marker is preferred:
+// the harness also sends texts of its own as user turns, the finishing request
+// of a synthesis and the reformat request, and those are not the person's.
+// Where no user text carries the marker (a pane run), the newest remaining
+// user text is read, as before. desk #517 replaces this rule at the next
+// package pin, with the contract's first-user-turn rule.
 func memoryRequestQuery(body map[string]any) string {
 	for _, key := range []string{"messages", "contents"} {
 		if messages, ok := body[key].([]any); ok {
+			newest, found := "", false
 			for i := len(messages) - 1; i >= 0; i-- {
 				message, ok := messages[i].(map[string]any)
 				if !ok || message["role"] != "user" {
 					continue
 				}
-				if text, ok := message["content"].(string); ok {
-					if strings.HasPrefix(text, executionStateHeader) {
-						continue
-					}
-					return memoryQueryTail(text)
-				}
-				parts, _ := message["parts"].([]any)
-				if parts == nil {
-					parts, _ = message["content"].([]any)
-				}
-				text, found := "", false
-				for _, part := range parts {
-					if p, ok := part.(map[string]any); ok {
-						if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {
-							text += "\n" + t
-							found = true
-						}
-					}
-				}
-				if !found {
+				text, ok := userText(message)
+				if !ok {
 					continue
 				}
-				return memoryQueryTail(text)
+				if strings.Contains(text, personMessageMarker) {
+					return memoryQueryTail(text)
+				}
+				if !found {
+					newest, found = text, true
+				}
+			}
+			if found {
+				return memoryQueryTail(newest)
 			}
 		}
 	}
 	return ""
 }
+
+// userText is one user turn's own text: a string content, or its text parts
+// joined, the execution state left out. False where nothing is left.
+func userText(message map[string]any) (string, bool) {
+	if text, ok := message["content"].(string); ok {
+		return text, !strings.HasPrefix(text, executionStateHeader)
+	}
+	parts, _ := message["parts"].([]any)
+	if parts == nil {
+		parts, _ = message["content"].([]any)
+	}
+	text, found := "", false
+	for _, part := range parts {
+		if p, ok := part.(map[string]any); ok {
+			if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {
+				text += "\n" + t
+				found = true
+			}
+		}
+	}
+	return text, found
+}
 func memoryQueryTail(text string) string {
-	if at := strings.LastIndex(text, "THE PERSON'S MESSAGE\n"); at >= 0 {
+	if at := strings.LastIndex(text, personMessageMarker); at >= 0 {
 		return aicontext.Prefix(text[at:], 3000)
 	}
 	r := []rune(text)

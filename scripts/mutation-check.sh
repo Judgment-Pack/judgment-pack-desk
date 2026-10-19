@@ -14215,6 +14215,122 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
 fi
 
+# The Desk's own safeguards around @judgment-pack/harness v0.1.0 (#515; review of #516):
+# the recall query, the completion reader, the read windows, attachments in the
+# ledger, the current state, propose_pack's offer, framing and the host wiring.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'harness swap: recall reads the execution state part' internal/desk/ai_context.go \
+    'if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {' \
+    'if t, ok := p["text"].(string); ok {'
+  mutate go 'harness swap: recall reads the execution state message' internal/desk/ai_context.go \
+    'return text, !strings.HasPrefix(text, executionStateHeader)' \
+    'return text, true'
+  mutate go 'harness swap: recall reads a tool-only turn' internal/desk/ai_context.go \
+    '				if !ok {
+					continue
+				}
+				if strings.Contains(text, personMessageMarker) {' \
+    '				if false && !ok {
+					continue
+				}
+				if strings.Contains(text, personMessageMarker) {'
+  mutate go 'harness swap: recall reads the harness'"'"'s own request' internal/desk/ai_context.go \
+    '				if strings.Contains(text, personMessageMarker) {' \
+    '				if false && strings.Contains(text, personMessageMarker) {'
+  mutate go 'harness swap: codex recall ignores the person'"'"'s message' internal/desk/ai_context.go \
+    '	if request.PersonMessage != "" {' \
+    '	if false && request.PersonMessage != "" {'
+  mutate go 'harness swap: anthropic cache read dropped' internal/desk/background_completion.go \
+    '		result.CacheReadTokens = backgroundTokenCount(wire.Usage.CacheRead)
+' \
+    ''
+  mutate go 'harness swap: openai-compatible cache read dropped' internal/desk/background_completion.go \
+    '		result.CacheReadTokens = backgroundTokenCount(wire.Usage.PromptDetails.Cached)
+' \
+    ''
+  mutate go 'harness swap: cache figures leave the completion JSON' internal/aifailure/failure.go \
+    'CacheReadTokens  *int64 `json:"cacheReadTokens,omitempty"`' \
+    'CacheReadTokens  *int64 `json:"-"`'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'harness swap: a read window is not cut to the result' web/src/research/tools.ts \
+    '    if (over <= 0 || end === start) return answer' \
+    '    return answer'
+  mutate web 'harness swap: a read window starts from 20,000 bytes' web/src/research/tools.ts \
+    '  let budget = readWindowBytes(policy)
+' \
+    '  let budget = 20_000
+'
+  mutate web 'harness swap: read_link ignores the turn'"'"'s policy' web/src/chat/linkTools.ts \
+    '      const result = window(attachment, document, link, offset, find, context.policy?.() ?? CONTEXT_DEFAULTS)' \
+    '      const result = window(attachment, document, link, offset, find, CONTEXT_DEFAULTS)'
+  mutate web 'harness swap: read_source ignores the run'"'"'s policy' web/src/research/tools.ts \
+    '  const policy = () => deps.policy?.() ?? CONTEXT_DEFAULTS
+' \
+    '  const policy = () => CONTEXT_DEFAULTS
+'
+  mutate web 'harness swap: attachment text inlined in the message' web/src/chat/attachmentContext.ts \
+    '  if (!file.document) return `\n\nAttached file: ${file.name}. ${READ_IT}`' \
+    '  if (!file.document) return `\n\nAttached file: ${file.name}. ${READ_IT}\n${JSON.stringify(file.text)}`'
+  mutate web 'harness swap: a message'"'"'s attachments unbounded on send' web/src/chat/useChatAttachments.ts \
+    '      if (ledgerBytes(attached.map(attachmentDocument)) > ATTACHMENT_LEDGER_BYTES) throw' \
+    '      if (false) throw'
+  mutate web 'harness swap: attachments not in the run'"'"'s ledger' web/src/research/run.ts \
+    'value:{turns:this.state.turns,questions:this.state.questions??[]}},...attached]},' \
+    'value:{turns:this.state.turns,questions:this.state.questions??[]}}]},'
+  mutate web 'harness swap: the case writer gets no attachments' web/src/research/run.ts \
+    '      return supplied.length ? { id, text, attachments: supplied.map(attachmentForReview) } : { id, text }' \
+    '      return { id, text }'
+  mutate web 'harness swap: an unverifiable attachment fails the turn' web/src/research/run.ts \
+    '          if (signal.aborted) throw cause
+          files.push({ file, pages: [], unavailable:' \
+    '          throw cause
+          files.push({ file, pages: [], unavailable:'
+  mutate web 'harness swap: the draft snapshot is not the current state' web/src/research/run.ts \
+    '    const changing=reviewer?undefined:currentState?.()' \
+    '    const changing=undefined as string|undefined'
+  mutate web 'harness swap: the draft snapshot back in the prompt' web/src/research/run.ts \
+    '      CONVERSATION_INSTRUCTIONS,
+      this.transcript(true),' \
+    '      CONVERSATION_INSTRUCTIONS,
+      this.conversationState() ?? '"'"''"'"',
+      this.transcript(true),'
+  mutate web 'harness swap: chat offers no propose_pack' web/src/research/useResearchRun.ts \
+    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
+    'hostTools: request.hostTools,'
+  mutate web 'harness swap: propose_pack offered in a Policy chat' web/src/research/useResearchRun.ts \
+    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
+    'hostTools: request.reviewer ? request.hostTools : withProposePack(request.hostTools),'
+  mutate web 'harness swap: propose_pack offered to the reviewer' web/src/research/useResearchRun.ts \
+    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
+    'hostTools: executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),'
+  mutate web 'harness swap: the pack pane offers no propose_pack' web/src/assistant/AssistantPane.tsx \
+    '    hostTools: PANE_HOST_TOOLS
+' \
+    '    hostTools: []
+'
+  mutate web 'harness swap: read_source is not framed as retrieved data' web/src/research/tools.ts \
+    '    name: '"'"'read_source'"'"',
+    effect: '"'"'read'"'"',
+' \
+    '    name: '"'"'read_source'"'"',
+'
+  mutate web 'harness swap: endpointCapabilities left unwired' web/src/assistant/harnessHost.ts \
+    '  endpointCapabilities: (endpoint) => capabilities.endpointCapabilities(endpoint),
+' \
+    ''
+  mutate web 'harness swap: renderImageToText left unwired' web/src/assistant/harnessHost.ts \
+    '  renderImageToText: () => capabilities.renderImageToText()
+' \
+    ''
+  mutate web 'harness swap: the Go state header drifts from the package'"'"'s' internal/desk/ai_context.go \
+    'const executionStateHeader = "EXECUTION STATE (from the host,' \
+    'const executionStateHeader = "EXECUTION STATE (from the desk,'
+  mutate web 'harness swap: a Codex run sends no person'"'"'s message' web/src/research/useResearchRun.ts \
+    '            ...withPersonMessage(bindExecution(' \
+    '            ...((bound:ReturnType<typeof bindExecution>,_message?:string)=>bound)(bindExecution('
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

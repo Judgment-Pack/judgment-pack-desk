@@ -8,7 +8,7 @@ import type { AuthoringMode } from './mode'
 const fake = vi.hoisted(() => ({ engine:'test', allowed:['test-model','second-model'], models:{isPending:false,isError:false,error:new Error('Models unavailable'),data:{models:[{id:'test-model'},{id:'second-model'}]}}, bind:vi.fn((slot:any)=>({effort:slot.agent?.effort})), session: vi.fn(), tools: vi.fn(), policy: vi.fn(() => 'WEB POLICY FOR THIS MESSAGE'), load: vi.fn(), gateway: { authority: 'test', signer: { public: 'test' } } }))
 vi.mock('../documents/client', async (original) => ({ ...(await original<typeof import('../documents/client')>()), loadDocument: fake.load }))
 vi.mock('../assistant/providers',()=>({useProviderModels:()=>fake.models}))
-vi.mock('../assistant/target', () => ({ bindExecution: fake.bind, selectedAssistant: () => ({ models: fake.allowed, model: 'test-model', tools: [] }) }))
+vi.mock('../assistant/target', async (original) => ({ withPersonMessage: (await original<typeof import('../assistant/target')>()).withPersonMessage, bindExecution: fake.bind, selectedAssistant: () => ({ models: fake.allowed, model: 'test-model', tools: [] }) }))
 vi.mock('../assistant/useAssistantSlot', () => ({ assistantReady: () => true, useAssistantSlot: () => ({ state: 'ready', endpoint: 'https://example.invalid', keyStatus: 'stored', keyPresent: true, engine: fake.engine, thinking: 'off', agent:{model:'test-model',provider:'openai',authMethod:'subscription',tools:[],effort:'medium'} }) }))
 vi.mock('../assistant/pickedModel', () => ({ usePickedModel: () => ({ model: 'test-model', models: ['test-model'] }) }))
 vi.mock('@judgment-pack/harness/engines/index', () => ({ loadEngine: async () => ({}) }))
@@ -239,5 +239,48 @@ it('offers propose_pack with the package\'s schema where a turn may propose a pa
  pack.unmount()
  const policy=renderHook(()=>useResearchRun({mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work',artifactProposals:false})}))
  act(()=>policy.result.current.run!.start('Review the Policy',[]));await waitFor(()=>expect(policy.result.current.state.status).toBe('complete'))
+ policy.unmount()
  expect(offered).toEqual([['get_authoring_instructions','propose_pack'],['get_authoring_instructions']])
+ // An independent reviewer is never offered it: in a pack chat, a Policy chat, Plan and on the research page.
+ // Each scope's turn port is driven as the run drives it, once as the author and once as the reviewer.
+ const scopes:{name:string;options:Parameters<typeof useResearchRun>[0]}[]=[
+  {name:'pack chat',options:{mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work'})}},
+  {name:'Policy chat',options:{mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work',artifactProposals:false})}},
+  {name:'Plan',options:{mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'plan'})}},
+  {name:'research page',options:undefined}
+ ]
+ const seen:Record<string,{author:string[];reviewer:string[]}>={}
+ for(const scope of scopes){
+  const hook=renderHook(()=>useResearchRun(scope.options))
+  const turn=(hook.result.current.run as unknown as {ports:{turn:(request:import('./run').TurnRequest,signal:AbortSignal,deliver:(event:unknown)=>void)=>Promise<void>}}).ports.turn
+  const names:string[][]=[]
+  fake.session.mockImplementation(async(_engine,request,deliver)=>{names.push(request.hostTools.map((tool:HostTool)=>tool.name));deliver({type:'end'})})
+  for(const reviewer of [false,true])await act(()=>turn({prompt:'Write the cases.',hostTools:[],reviewer,conversation:!reviewer},new AbortController().signal,()=>{}))
+  seen[scope.name]={author:names[0]!,reviewer:names[1]!}
+  hook.unmount()
+ }
+ for(const scope of scopes)expect(seen[scope.name]!.reviewer,scope.name).toEqual([])
+ expect(Object.fromEntries(scopes.map(scope=>[scope.name,seen[scope.name]!.author.includes('propose_pack')]))).toEqual({'pack chat':true,'Policy chat':false,'Plan':true,'research page':true})
+ // Plan offers no proposal tool: the package's planning filter drops propose_pack by its effect.
+ const {planningTool}=await import('@judgment-pack/harness/planning/policy')
+ const {proposePackTool}=await import('../assistant/proposePack')
+ expect(planningTool(proposePackTool())).toBe(false)
+})
+
+it('sends the person\'s message beside a Codex run\'s request, and only that, for memory recall',async()=>{
+ fake.engine='codex';fake.tools.mockReturnValue([])
+ const runs:Record<string,unknown>[]=[]
+ const agentRun=vi.fn(async(request:Record<string,unknown>)=>{runs.push(request)})
+ fake.bind.mockImplementation((slot:any)=>({agent:{model:'test-model',run:agentRun},effort:slot.agent?.effort}))
+ fake.session.mockImplementation(async(_engine,request,deliver)=>{
+  await request.agent.run({prompt:request.prompt+'\n\nCHAT DRAFT SNAPSHOT\n{}\n\nEXECUTION GUIDANCE',instructions:'',tools:[],phase:'author'},{signal:request.signal,event:async()=>{},tool:async()=>({text:'',isError:false})})
+  deliver({type:'message',text:'Answered.'})
+ })
+ const {result}=renderHook(()=>useResearchRun({mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work'})}))
+ act(()=>result.current.run!.start('Recall the outreach plan for the northern region.',[]))
+ await waitFor(()=>expect(result.current.state.status).toBe('complete'))
+ expect(runs).toHaveLength(1)
+ expect(runs[0]!.personMessage).toBe('Recall the outreach plan for the northern region.')
+ expect(String(runs[0]!.prompt)).toContain('CHAT DRAFT SNAPSHOT')
+ fake.bind.mockImplementation((slot:any)=>({effort:slot.agent?.effort}))
 })

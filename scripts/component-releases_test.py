@@ -179,12 +179,38 @@ class WebPackagesTest(unittest.TestCase):
                 lock.read_text.return_value = json.dumps(plan)
                 with self.assertRaises(ValueError): pins.read_plan()
 
-    def verify(self, data, release=None, commit=None):
+    def fake_gh(self, status=0, subjects=None):
+        """A `gh` on PATH that records its arguments and answers as `gh attestation verify --format json` does."""
+        bin_dir = self.web / 'bin'; bin_dir.mkdir(exist_ok=True)
+        answer = self.web / 'gh-answer.json'
+        subjects = subjects if subjects is not None else [{'name': self.package['asset'], 'digest': {'sha256': self.package['sha256']}}]
+        answer.write_text(json.dumps([{'verificationResult': {'statement': {'subject': subjects}}}]))
+        gh = bin_dir / 'gh'
+        gh.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "$FAKE_GH_ARGS"\ncat "$FAKE_GH_ANSWER"\nexit ' + str(status) + '\n')
+        gh.chmod(0o755)
+        return {'PATH': str(bin_dir) + os.pathsep + os.environ.get('PATH', ''), 'FAKE_GH_ARGS': str(self.web / 'gh-args'), 'FAKE_GH_ANSWER': str(answer)}
+
+    def verify(self, data, release=None, commit=None, gh=None):
         release = release or {'tag_name': self.package['version'], 'draft': False, 'prerelease': False}
         with patch.object(pins, 'get_release', return_value=release), patch.object(pins, 'tag_commit', return_value=commit or self.package['revision']), \
-             patch.object(pins, 'download_asset', return_value=data) as download, contextlib.redirect_stdout(io.StringIO()):
+             patch.object(pins, 'download_asset', return_value=data) as download, patch.dict(os.environ, gh or self.fake_gh()), contextlib.redirect_stdout(io.StringIO()):
             pins.verify_web_packages(self.plan, self.web)
         return download
+
+    def test_verify_holds_the_asset_to_its_attestation(self):
+        self.package['sha256'] = pins.hashlib.sha256(self.ASSET).hexdigest()
+        self.verify(self.ASSET)
+        args = (self.web / 'gh-args').read_text().splitlines()
+        repository = self.package['repository']
+        self.assertEqual(args[:2], ['attestation', 'verify'])
+        self.assertTrue(args[2].endswith('/' + self.package['asset']))
+        self.assertEqual(args[3:], ['--repo', repository, '--signer-workflow', repository + '/.github/workflows/release.yml',
+                                    '--source-ref', 'refs/tags/' + self.package['version'], '--source-digest', self.package['revision'], '--format', 'json'])
+        with self.assertRaisesRegex(ValueError, 'attestation did not verify'):
+            self.verify(self.ASSET, gh=self.fake_gh(status=1))
+        for subjects in ([{'name': self.package['asset'], 'digest': {'sha256': 'c' * 64}}], [{'name': 'other.tgz', 'digest': {'sha256': self.package['sha256']}}], []):
+            with self.subTest(subjects=subjects), self.assertRaisesRegex(ValueError, 'names another asset or digest'):
+                self.verify(self.ASSET, gh=self.fake_gh(subjects=subjects))
 
     def test_verify_holds_the_asset_to_both_digests(self):
         with self.assertRaisesRegex(ValueError, 'locked sha256'): self.verify(self.ASSET)

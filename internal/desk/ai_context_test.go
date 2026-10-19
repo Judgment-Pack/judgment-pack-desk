@@ -158,6 +158,30 @@ func TestMemoryRecallQueryDropsTheExecutionStateOnEachWire(t *testing.T) {
 		"gemini trailing-user":            `{"systemInstruction":{"parts":[{"text":"host"}]},"contents":[{"role":"user","parts":[{"text":` + jsonText(person) + `}]},{"role":"model","parts":[{"functionCall":{"name":"get_schema","args":{}}}]},{"role":"user","parts":[{"functionResponse":{"name":"get_schema","response":{"content":"schema text the model read"}}}]},{"role":"user","parts":[{"text":` + jsonText(state) + `}]}]}`,
 		"gemini system-tail":              `{"systemInstruction":{"parts":[{"text":"host"},{"text":` + jsonText(state) + `}]},"contents":[{"role":"user","parts":[{"text":` + jsonText(person) + `}]},{"role":"model","parts":[{"functionCall":{"name":"get_schema","args":{}}}]},{"role":"user","parts":[{"functionResponse":{"name":"get_schema","response":{"content":"schema text the model read"}}}]}]}`,
 	}
+	// The harness's own user texts, as the package's loop.ts sends them (written
+	// here by hand from @judgment-pack/harness v0.1.0): a synthesis request under
+	// trailing-user ends the history with FINISH_RESPONSE_INSTRUCTIONS, and a
+	// reformat request, under either placement, with the answer it could not
+	// read and the reformat request; the state is a second part of that last
+	// user message. Recall reads the person's message, not these.
+	finish := "The previous model response ended without a complete answer. Complete the current response using only the supplied request and completed results. Tools are unavailable. Do not restart discovery, repeat actions, or claim an unsaved change or an unperformed check succeeded. Keep the answer concise. If a complete supported proposal is not possible, explain the verified findings and the exact remaining work. Return a complete answer, not a continuation of a partial JSON block."
+	reformat := "The previous answer carried a proposal that could not be read. Return the same proposal, unchanged in content, as exactly one fenced ```json block whose root object has a single \"proposal\" member shaped as your instructions describe. Valid JSON only: no comments, no trailing commas, no second proposal block. Tools are unavailable. The problem: the fenced proposal block is not valid JSON."
+	unread := "Here is the pack.\n```json\n{\"proposal\": {\"document\": \n```"
+	for _, placement := range []string{"trailing-user", "system-tail"} {
+		system := `"host"`
+		anthropicSystem, geminiSystem := `"host"`, `{"parts":[{"text":"host"}]}`
+		if placement == "system-tail" {
+			// The request before carried the state in the system text; this one ends with a user message, so the state is its second part.
+			system, anthropicSystem, geminiSystem = `"host"`, `[{"type":"text","text":"host"}]`, `{"parts":[{"text":"host"}]}`
+		}
+		cases["openai-compatible reformat "+placement] = `{"messages":[{"role":"system","content":` + system + `},{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `}]},{"role":"assistant","content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"get_schema","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call-1","content":` + jsonText(toolResult) + `},{"role":"assistant","content":` + jsonText(unread) + `},{"role":"user","content":[{"type":"text","text":` + jsonText(reformat) + `},{"type":"text","text":` + jsonText(state) + `}]}]}`
+		cases["anthropic reformat "+placement] = `{"system":` + anthropicSystem + `,"messages":[{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `}]},{"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"get_schema","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":` + jsonText(toolResult) + `}]},{"role":"assistant","content":[{"type":"text","text":` + jsonText(unread) + `}]},{"role":"user","content":[{"type":"text","text":` + jsonText(reformat) + `},{"type":"text","text":` + jsonText(state) + `}]}]}`
+		cases["gemini reformat "+placement] = `{"systemInstruction":` + geminiSystem + `,"contents":[{"role":"user","parts":[{"text":` + jsonText(person) + `}]},{"role":"model","parts":[{"functionCall":{"name":"get_schema","args":{}}}]},{"role":"user","parts":[{"functionResponse":{"name":"get_schema","response":{"content":"schema text the model read"}}}]},{"role":"model","parts":[{"text":` + jsonText(unread) + `}]},{"role":"user","parts":[{"text":` + jsonText(reformat) + `},{"text":` + jsonText(state) + `}]}]}`
+	}
+	cases["openai-compatible synthesis trailing-user"] = `{"messages":[{"role":"system","content":"host"},{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `}]},{"role":"assistant","content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"get_schema","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call-1","content":` + jsonText(toolResult) + `},{"role":"user","content":[{"type":"text","text":` + jsonText(finish) + `},{"type":"text","text":` + jsonText(state) + `}]}]}`
+	// The Anthropic provider joins the tool result and the finishing request into one user turn.
+	cases["anthropic synthesis trailing-user"] = `{"system":"host","messages":[{"role":"user","content":[{"type":"text","text":` + jsonText(person) + `}]},{"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"get_schema","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":` + jsonText(toolResult) + `},{"type":"text","text":` + jsonText(finish) + `},{"type":"text","text":` + jsonText(state) + `}]}]}`
+	cases["gemini synthesis trailing-user"] = `{"systemInstruction":{"parts":[{"text":"host"}]},"contents":[{"role":"user","parts":[{"text":` + jsonText(person) + `}]},{"role":"model","parts":[{"functionCall":{"name":"get_schema","args":{}}}]},{"role":"user","parts":[{"functionResponse":{"name":"get_schema","response":{"content":"schema text the model read"}}}]},{"role":"user","parts":[{"text":` + jsonText(finish) + `},{"text":` + jsonText(state) + `}]}]}`
 	want := memoryQueryTail("\n" + person)
 	for name, raw := range cases {
 		var body map[string]any
@@ -171,6 +195,46 @@ func TestMemoryRecallQueryDropsTheExecutionStateOnEachWire(t *testing.T) {
 		if strings.Contains(got, "EXECUTION STATE") || strings.Contains(got, "schema text the model read") {
 			t.Fatalf("%s: recall query reads the state or a tool result: %q", name, got)
 		}
+		if strings.Contains(got, "The previous model response ended") || strings.Contains(got, "could not be read") || strings.Contains(got, "Here is the pack") {
+			t.Fatalf("%s: recall query reads the harness's own request: %q", name, got)
+		}
+	}
+	// Where no user text carries the person's-message marker (a pane run), the
+	// newest remaining user text is read, as before.
+	var pane map[string]any
+	if err := json.Unmarshal([]byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"Draft a pack for the outreach plan."}]},{"role":"assistant","content":"partial"},{"role":"user","content":[{"type":"text","text":"Finish it."},{"type":"text","text":`+jsonText(state)+`}]}]}`), &pane); err != nil {
+		t.Fatal(err)
+	}
+	if got := memoryRequestQuery(pane); got != memoryQueryTail("\nFinish it.") {
+		t.Fatalf("pane fallback: %q", got)
+	}
+	// And a turn that holds only tool results is still skipped there.
+	if err := json.Unmarshal([]byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"Draft a pack for the outreach plan."}]},{"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"get_schema","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":"x"}]}]}`), &pane); err != nil {
+		t.Fatal(err)
+	}
+	if got := memoryRequestQuery(pane); got != memoryQueryTail("\nDraft a pack for the outreach plan.") {
+		t.Fatalf("pane fallback past a tool-only turn: %q", got)
+	}
+
+	// The codex wire: the engine appends the current state (the chat's draft
+	// snapshot) and its guidance after the person's message in one prompt, and
+	// the page sends the person's message beside it. The query reads that alone.
+	snapshot := "CHAT DRAFT SNAPSHOT (may predate the saved workspace; use the current workspace or current object reads for edits, and preserve its identity)\n{\"id\":\"northern-outreach\",\"rules\":[{\"id\":\"private-threshold\"}]}"
+	guidance := "EXECUTION GUIDANCE\n{\"requests\":{\"used\":2,\"limit\":40},\"retainedOperations\":[]}"
+	message := "Recall the outreach plan for the northern region."
+	codex := codexbridge.RunRequest{Prompt: "Conversation instructions\n\nTRANSCRIPT SO FAR\n\n" + personMessageMarker + message + "\n\n" + snapshot + "\n\n" + guidance, PersonMessage: message}
+	got := agentRecallQuery(codex)
+	if got != memoryQueryTail(personMessageMarker+message) {
+		t.Fatalf("codex recall query %q", got)
+	}
+	for _, leak := range []string{"CHAT DRAFT SNAPSHOT", "private-threshold", "EXECUTION GUIDANCE", "retainedOperations"} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("codex recall query reads %q: %q", leak, got)
+		}
+	}
+	// A request without the person's message (server-owned research) is read from its prompt, as before.
+	if got := agentRecallQuery(codexbridge.RunRequest{Prompt: "outreach"}); got != memoryQueryTail("outreach") {
+		t.Fatalf("prompt fallback: %q", got)
 	}
 	// A body with the state alone, or with tool results alone, recalls nothing.
 	for name, raw := range map[string]string{

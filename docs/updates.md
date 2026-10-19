@@ -15,8 +15,10 @@ Judgment-Pack/judgment-pack-agent (version, tag commit, asset name and sha256),
 which `web/package.json` installs by that asset's URL and `web/package-lock.json`
 holds by its sha512. `scripts/component-releases.py check` holds the two npm
 files to the entry, and `verify` downloads the asset and holds both digests and
-the tag's commit to it; the binary bundle does not carry it, since Vite builds it
-into the page. Development pins
+the tag's commit to it, and verifies the asset's attestation with `gh attestation
+verify`: made by the agent repository's release workflow at the locked tag and
+commit, for an asset of that name and sha256. The binary bundle does not carry
+it, since Vite builds it into the page. Development pins
 are held rather than replaced with an older published release. A stable Desk
 release refuses development pins. A store holding a Desk-registered scoped profile from before #466 whose entry RFC 0018 round 16 refuses is set aside by Runner v0.23.0 at upgrade; the Desk shows it as set aside with Runner's reason and never offers it (#480), and a binding to it is refused as `input_profile_set_aside`, shown as the Desk's message naming the profile and that reason; a run queued against it ends `failed` with reason `profile-set-aside`, it still counts toward the bound of 16, and a Gateway connection configured for it refuses to start. Runner is pinned to `v0.23.0`; since `v0.8.0` it includes calculator profiles, bindings,
 calculated input lineage, verification export versions 3 to 5, the installation's chain

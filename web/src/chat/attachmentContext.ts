@@ -11,11 +11,18 @@ import type { ChatAttachment } from './store'
  * model finds with `list_context` or `search` and reads with `read_window`. An
  * attachment costs no prompt bytes until a part of it is read.
  *
- * The two bounds an attachment was held to as text inlined in the message are
- * the ledger's now: what one text file may hold, and what one message's
- * attachments add to the run's ledger, counted as the ledger counts an item
- * (the bytes of its JSON-encoded value). The ledger's own bound on everything a
- * run retains, `retainedBytes`, stands behind both.
+ * The two bounds an attachment was held to as text inlined in the message keep
+ * their values and stay the Desk's, enforced by the Desk where it handles an
+ * attachment, never by the ledger:
+ * - `ATTACHMENT_TEXT_BYTES`, what one text file may hold: on attach
+ *   (`useChatAttachments`, the file's size), and on restore (`chat/store.ts` and
+ *   `chat/responseHistory.ts` refuse a saved attachment over 200,000 characters).
+ * - `ATTACHMENT_LEDGER_BYTES`, what one message's attachments may add to the
+ *   run's ledger, counted as the ledger counts an item (the bytes of its
+ *   JSON-encoded value): on send (`useChatAttachments`'s `prepare`).
+ * The ledger's own bound is `retainedBytes` (8 MiB in the budget table), on
+ * everything one run retains, the attachments among it; a run over it stops with
+ * the context-limit failure.
  */
 export const ATTACHMENT_TEXT_BYTES = 200_000
 export const ATTACHMENT_LEDGER_BYTES = 800_000
