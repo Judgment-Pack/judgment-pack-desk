@@ -1899,10 +1899,14 @@ listed: they separate regions rather than identify controls, and holding them
 to 3:1 would be a dark palette re-authoring the light desk on its way past.
 
 **Entry and workspace preferences have separate lifetimes.** While checking a
-session, Desk leaves the palette to the operating system rather than applying
-an old saved entry preference. The public entry preference applies once sign-in
-or recovery is confirmed. A fresh explicit entry choice can cross into exactly
-one workspace, including across sign-in's document reload. Workspace choices
+session, Desk shows one neutral loading indicator without sign-in branding,
+preferences or forms. Protected workspace providers mount only after access is
+verified; a confirmed refusal shows sign-in and an unavailable server shows
+recovery. Refresh keeps the selected desk. Checking leaves the palette to the
+operating system rather than applying an old saved entry preference. The public
+entry preference applies once sign-in or recovery is confirmed. A fresh explicit
+entry choice can cross into exactly one workspace, including across sign-in's
+document reload. Workspace choices
 remain scoped to their own project. Known themes apply before the next paint,
 and cleanup from a previous owner cannot reset a newer owner's theme.
 

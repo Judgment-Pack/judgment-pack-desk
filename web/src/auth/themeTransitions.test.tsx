@@ -59,7 +59,7 @@ it('does not apply an old entry Light during actual checking → ready with a Sy
   localStorage.setItem('jpack-desk:entry-theme', 'light')
   const applied = watchThemes()
   const finish = mountGate()
-  expect(screen.getByRole('heading', { name: 'Opening Desk…' })).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toBe('Opening Desk…')
   expect(applied).toEqual([])
   await act(async () => finish(Response.json({ subject: 'local user', issuer: null })))
   await screen.findByText('Private workspace')
