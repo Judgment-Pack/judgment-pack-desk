@@ -7176,8 +7176,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     'if(!site&&!givenInChat(link.fetchUrl,context.turns(),deps.documents())&&!await searched(link.fetchUrl,signal))' \
     'if(false)'
   mutate web "read_link hands the model the whole page" "$LT" \
-    '  const end = Math.min(start + READ_WINDOW, joined.length)' \
-    '  const end = joined.length'
+    '  return heldWindow(joined, start, policy, (end) => {' \
+    '  return ((render: (end: number) => McpToolResult) => render(joined.length))((end) => {'
 
   mutate web "rail calls the whole-project graph walk" web/src/shell/LeftRail.tsx \
     'import { usePacks } from '"'"'../mcp/queries'"'"'' \
