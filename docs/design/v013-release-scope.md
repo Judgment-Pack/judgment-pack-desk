@@ -69,10 +69,16 @@ earlier exact material reviews and does not certify final installed acceptance.
 - [x] Pass the actual combined manual source acceptance's seven required checks
   with Runner `d903728fb38368a5f0574990e01bc27acb2a2803` and Runtime
   `55a23b884f0ce67fe6a9141b04e081a518fd5d61`; this is not archive/installed acceptance.
-- [ ] Verify and adopt exact published/attested Runtime `v0.36.0` and Runner
-  `v0.24.0` companions after their required gates, then repeat all seven actual
-  manual checks and native bundle smoke against that final set. Current pins
-  remain Runtime `v0.34.0`/Runner `v0.23.0`; Runtime `v0.35.0` stays held.
+- [x] Verify exact official immutable Runtime `v0.36.0` and Runner `v0.24.0`
+  release archives, checksums and attestations, and adopt source commits
+  `20d6bf86b23f1794340fdc648201dda2e80a4095` and
+  `393b5df0f60204fe76b9dcb4bf1ba85d0e5865ff` in the component lock. Gateway
+  `v0.21.0` and harness `v0.1.0` are unchanged; Runtime `v0.35.0` stays held.
+  Artifact verification is separate from installed Desk acceptance and does not
+  migrate or enroll a workspace.
+- [ ] Repeat all seven actual manual checks and native bundle smoke against
+  that exact adopted archive set. Pin adoption is not a passing result for these
+  checks or for new installed/enrollment acceptance.
 - [ ] Run the final isolated browser/end-to-end journey on the frozen candidate: design/import a
   Dialect, research and review records, map/test a pack, create and run a Job,
   inspect retained results, select companies, and research people. Cover restart,
@@ -81,13 +87,18 @@ earlier exact material reviews and does not certify final installed acceptance.
 - [ ] Complete isolated fresh-install and `v0.12.0` upgrade acceptance, retaining
   legacy records/Jobs and checking explicit enrollment, backup/restore and refusal
   paths without changing live user data.
-- [ ] Complete the reviewed 50-candidate live pilot, manual adjudication and
-  usage/reliability assessment required by #369. Fixture success alone does not
-  establish live discovery quality.
+- [ ] **Deferred by the user:** the 50-candidate live pilot, manual adjudication
+  and usage/reliability assessment tracked by #369. Live research quality remains
+  **UNVERIFIED**. Deferral is not a pass, and fixture success alone does not
+  establish live discovery quality. This pilot is deferred rather than claimed
+  complete; the other release gates remain pending as recorded here.
 - [x] Complete the historical 5,696-message catalog snapshot in all 11 non-English
   languages. This does not establish completion of the later integrated catalogs.
-- [ ] Re-extract catalogs after integration, translate any new messages in all
-  11 languages, and pass strict locale/source and representative layout checks.
+- [x] Complete the integrated 6,611-message catalogues in all 11 translated
+  languages and pass strict locale/source checks; see the dated
+  [localization evidence](../localization.md). This does not establish layout acceptance.
+- [ ] Complete representative translated critical layout checks on the final
+  release candidate.
 - [ ] Pass frontend/backend checks, packaging and companion verification on the
   final integrated revision, then obtain release acceptance before publishing.
 
