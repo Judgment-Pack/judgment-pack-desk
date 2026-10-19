@@ -301,10 +301,12 @@ func TestMemoryRecallQueryHoldsOnEachShape(t *testing.T) {
 		"anthropic delegated child":         {an(oaText(objective, delegated, state)), objective},
 		"gemini delegated child":            {gm(geminiText(objective, delegated, state)), objective},
 		// A Gemini thought is not text, and a part that is not of type text is not either.
-		"gemini thought first":  {gm(`{"role":"user","parts":[{"text":"private reasoning","thought":true},{"text":` + jsonText(person) + `}]}`), person},
-		"anthropic image first": {an(`{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}},{"type":"text","text":` + jsonText(person) + `}]}`), person},
-		"state part first":      {oa(oaText(state, person)), person},
-		"string content":        {oa(`{"role":"user","content":` + jsonText(person) + `}`), person},
+		"gemini thought first":                   {gm(`{"role":"user","parts":[{"text":"private reasoning","thought":true},{"text":` + jsonText(person) + `}]}`), person},
+		"anthropic image first":                  {an(`{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}},{"type":"text","text":` + jsonText(person) + `}]}`), person},
+		"state part first":                       {oa(oaText(state, person)), person},
+		"gemini state part first":                {gm(geminiText(state, person)), person},
+		"part of another type that carries text": {an(`{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","text":"stray text"},{"type":"text","text":` + jsonText(person) + `}]}`), person},
+		"string content":                         {oa(`{"role":"user","content":` + jsonText(person) + `}`), person},
 		// The first user turn is the one read, even where a later one holds text.
 		"the state alone first":    {oa(`{"role":"user","content":`+jsonText(state)+`}`, oaText(finish)), ""},
 		"tool results alone first": {an(anResult(), oaText(finish)), ""},
@@ -323,7 +325,7 @@ func TestMemoryRecallQueryHoldsOnEachShape(t *testing.T) {
 		if got != want {
 			t.Fatalf("%s: recall query %q, want %q", name, got, want)
 		}
-		for _, leak := range []string{"EXECUTION STATE", "schema text the model read", "TOOL RESULT", "The previous model response ended", "could not be read", "Earlier completed steps", "Earlier runs in this chat", "private reasoning"} {
+		for _, leak := range []string{"EXECUTION STATE", "schema text the model read", "TOOL RESULT", "The previous model response ended", "could not be read", "Earlier completed steps", "Earlier runs in this chat", "private reasoning", "stray text"} {
 			if strings.Contains(got, leak) {
 				t.Fatalf("%s: recall query reads %q: %q", name, leak, got)
 			}

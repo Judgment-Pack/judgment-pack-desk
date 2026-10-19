@@ -1763,6 +1763,47 @@ func TestRelayServesTheQueueInTheOrderItArrived(t *testing.T) {
 	wg.Wait()
 }
 
+func TestRelayAdmitsNoRequestPastOnesAlreadyWaiting(t *testing.T) {
+	// A request that finds a slot and room free still waits where others are
+	// in the line: the room and the slot a request takes are not taken from
+	// one that came first. A place is held in the line without a request
+	// behind it, so the check does not depend on a race for a freed slot.
+	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	server, _, _ := relayDesk(t, "openai-compatible", u)
+	turn, leave := server.relayLine.join()
+	<-turn
+	type admitted struct {
+		admission relayAdmission
+		refusal   *relayRefusal
+	}
+	done := make(chan admitted, 1)
+	go func() {
+		admission, refusal := server.admitRelay(context.Background(), "a-connection")
+		done <- admitted{admission, refusal}
+	}()
+	select {
+	case got := <-done:
+		if got.admission.release != nil {
+			got.admission.release()
+		}
+		t.Fatal("a request was admitted while another waited ahead of it")
+	case <-time.After(200 * time.Millisecond):
+	}
+	leave()
+	select {
+	case got := <-done:
+		if got.refusal != nil || got.admission.release == nil {
+			t.Fatalf("the request was refused once the line was clear: %+v", got.refusal)
+		}
+		got.admission.release()
+	case <-time.After(5 * time.Second):
+		t.Fatal("the request was not admitted once the line was clear")
+	}
+	if len(server.relayQueue) != 0 || len(server.relaySlots) != 0 {
+		t.Errorf("the queue holds %d and the slots %d once the request is released", len(server.relayQueue), len(server.relaySlots))
+	}
+}
+
 func TestRelayAnswers429WithRetryAfterOnlyWhenTheQueueIsFull(t *testing.T) {
 	h := newHoldingRelay(t)
 	h.send(maxRelayInFlight)
