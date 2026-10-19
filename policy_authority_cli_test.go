@@ -33,6 +33,7 @@ func TestPolicyAuthorityCommandValidatesBeforeLocalCall(t *testing.T) {
 		{"status", "--root", root, "--installation", "expected", "--", "--unknown"},
 		{"status", "--root", root, "--installation", "expected", ""},
 		{"enroll", "--root", root, "--installation", "expected"},
+		{"enroll-executor", "--root", root, "--installation", "expected"},
 		{"classify-legacy", "--root", root, "--installation", "expected"},
 		{"--help", "extra"},
 	} {
@@ -55,7 +56,7 @@ func TestPolicyAuthorityCommandDispatchAndBoundedOutput(t *testing.T) {
 		action, project string
 	}{
 		{"init", ""}, {"status", ""}, {"status", "project"},
-		{"classify-legacy", "project"}, {"enroll", "project"},
+		{"classify-legacy", "project"}, {"enroll", "project"}, {"enroll-executor", "project"},
 	} {
 		t.Run(row.action+"/"+row.project, func(t *testing.T) {
 			args := []string{row.action, "--root", root}

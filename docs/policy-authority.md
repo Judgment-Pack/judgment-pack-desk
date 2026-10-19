@@ -97,3 +97,73 @@ This feature applies to the current Policy repository and its provenance
 checks. Historical reads retain their separate read-only contract. It does not
 grant execution authority, prove prior operation delivery, govern every Jobs
 execution path, or publish a Runtime release.
+
+An already Policy-enrolled workspace can explicitly enable local executor
+ownership as a separate operator action:
+
+```sh
+jpack-desk policy-authority enroll-executor --root /absolute/independent/policy-authority --installation INSTALLATION_ID /absolute/project
+```
+
+Stop all older or unconfigured Desk, Runner and Runtime processes first. The
+machine-use lease excludes configured Desk processes; it cannot prove that an
+older process or one launched without these flags has stopped. Executor
+enrollment requires the existing exact anchored Policy ledger and retained
+history to be current. It preserves those bytes and does not initialize or
+repair missing Policy state.
+
+This explicit action upgrades the machine registry to its closed version 2 and
+retains an executor intent before creating
+`executors/<machineWorkspace>/<machineWorkspace>.lease` beneath the independent
+authority root. It creates that private directory and empty stable file once,
+syncs their ancestry, and retains their separate device and inode identities in
+the registry. Ordinary startup creates none of them. A retained pending or partial
+enrollment stays held and cannot be replayed or repaired by repeating
+the command. Status reports `executorState` separately from Policy `state`;
+`enrolled` describes retained ownership configuration, never current run
+permission. A final write error may leave an observable stable enrollment, but
+does not turn the failed command into a successful delivery.
+
+Version 1 storage-only workspaces retain their existing behavior. They are not
+automatically upgraded. Older Desk binaries refuse the version 2 registry.
+Orphan executor directories refuse the profile, including when a restored
+registry removes executor metadata. Missing or replaced enrolled custody holds
+Jobs rather than creating a new lease or falling back to an unowned Runner.
+
+Every owned Jobs start first runs the configured Runner's closed version 2
+capability probe with EOF input, bounded output and a timeout. Probe and boot
+execute the same private executable snapshot, with the configured source's
+identity and digest pinned for this Desk lifetime. Boot explicitly requires
+`executor-ownership/1` and carries both independent machine and Runner workspace
+identities. Signing-key refusal can retry only with the same ownership demand
+and a fresh paired snapshot. Ownership/probe/setup failure and an unexpected
+owned Runner exit hold Jobs for this Desk lifetime; background endpoint retries
+cannot restart it. Investigate before an explicit operator restart. A stopped
+Runner does not establish that a Runtime child stopped: inherited external
+ownership remains the actual exclusion boundary until those children exit.
+
+Snapshot custody validates and pins the temporary parent before creating its
+fresh private directory. Legitimate OS temporary-path aliases remain supported;
+unsafe shared writable ancestry refuses before creation. Cleanup uses the held
+directory and its retained identity, removes only the snapshot file and matching
+empty directory, and never recursively follows a substituted temporary leaf.
+
+Ownership is supported only where Runner can retain and inherit the external
+lease. It does not implement governance admission, exact resource registration,
+executor epochs, durable logical attempts, withdrawal enforcement or
+`commitStart`. Existing jobs remain ungoverned. The shared wire fixture is
+[executor-ownership-boot.json](design/executor-ownership-boot.json).
+
+The required integration profile uses an isolated source-built ownership-aware
+Runner and Runtime, without changing published component pins:
+
+```sh
+JPACK_EXECUTOR_RUNNER_TEST_BIN=/absolute/candidate/jpack-runner \
+JPACK_BIN=/absolute/candidate/jpack \
+go test ./internal/desk -run '^TestJobsExecutorRealEnrolledDeskRunnerRuntime$' -count=1
+```
+
+Supplying an incompatible Runner fails this profile. The fixture enrolls only
+temporary projects and proves a real saved check and job run, copied-store
+exclusion, held unexpected exit and explicit isolated restart. Runner's process
+death fixtures separately prove that actual Runtime children retain ownership.

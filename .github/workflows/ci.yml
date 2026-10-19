@@ -241,6 +241,22 @@ jobs:
         run: |
           JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
             go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1
+      # Test-only merged source pin from Runner PR #160. Published companion
+      # tests and component release pins above remain independent of this pin.
+      - name: Check out executor ownership Runner source (test-only)
+        uses: actions/checkout@v7
+        with:
+          repository: Judgment-Pack/judgment-pack-runner
+          ref: 1cc6b29885b344716a970cd21fefeaca0a4edaeb
+          path: .ci-executor-runner
+          persist-credentials: false
+      - name: Real enrolled Desk executor ownership
+        run: |
+          set -o pipefail
+          go -C .ci-executor-runner build -trimpath -o "$RUNNER_TEMP/jpack-executor-runner" ./cmd/jpack-runner
+          JPACK_EXECUTOR_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-executor-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
+            go test -race ./internal/desk -run '^TestJobsExecutorRealEnrolledDeskRunnerRuntime$' -count=1 -v | tee "$RUNNER_TEMP/executor-ownership.log"
+          grep -Fq -- '--- PASS: TestJobsExecutorRealEnrolledDeskRunnerRuntime (' "$RUNNER_TEMP/executor-ownership.log" || { echo 'Executor ownership integration did not run and pass'; exit 1; }
       # The Go job has no runtime, so these skip there. Here they create a desk
       # with the pinned runtime, check its lock, and drive its relay: a deciding
       # run of a draft refused, a locked pack recorded, rehearsals unaffected.
