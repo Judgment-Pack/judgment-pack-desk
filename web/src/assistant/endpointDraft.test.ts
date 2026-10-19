@@ -15,6 +15,8 @@ import {
   type AssistantConfig
 } from '../config/deskConfig'
 import {
+  capacityOf,
+  capacityProblem,
   KIND_LABEL,
   KIND_OPTIONS,
   PREFILLED_URL,
@@ -24,6 +26,8 @@ import {
   draftFrom,
   seedOf,
   withKind,
+  withModel,
+  withSubordinateModel,
   withTool,
   type EndpointDraft
 } from './endpointDraft'
@@ -34,7 +38,10 @@ const DRAFT: EndpointDraft = {
   model: 'a-model',
   models: ['a-model'],
   tools: ['validate', 'get_schema'],
-  thinking: 'ultra'
+  thinking: 'ultra',
+  criticModel: '',
+  childModel: '',
+  capacity: ''
 }
 
 describe('the object a save sends', () => {
@@ -150,7 +157,10 @@ describe('the draft a configuration opens on', () => {
       model: 'a-model',
       models: ['a-model'],
       tools: ['validate'],
-      thinking: 'on'
+      thinking: 'on',
+      criticModel: '',
+      childModel: '',
+      capacity: ''
     })
   })
 
@@ -214,5 +224,57 @@ describe('what the pickers offer', () => {
       'Google Gemini'
     ])
     expect(KIND_LABEL.gemini).toBe('Google Gemini')
+  })
+})
+
+describe('the capacity a connection states', () => {
+  it('writes the whole number typed, and nothing for a blank field', () => {
+    expect((assistantWrite(DRAFT) as { endpoint: object }).endpoint).not.toHaveProperty('capacity')
+    expect((assistantWrite({ ...DRAFT, capacity: ' 4 ' }) as { endpoint: Record<string, unknown> }).endpoint.capacity).toBe(4)
+    expect(capacityOf('')).toBeUndefined()
+    expect(capacityOf('16')).toBe(16)
+  })
+
+  it('refuses what the decoder refuses, with its sentence, before a save is tried', () => {
+    for (const typed of ['0', '17', '2.5', 'two', '-1', '1e1']) {
+      expect(capacityProblem(typed), typed).toContain('must be an integer from 1 to 16')
+    }
+    for (const typed of ['', '1', '16', ' 8 ']) expect(capacityProblem(typed), typed).toBeUndefined()
+  })
+
+  it('opens on the capacity the file states', () => {
+    const config: AssistantConfig = { engine: 'vercel', thinking: 'off', endpoint: { url: 'https://api.example.invalid/v1', kind: 'openai-compatible', model: 'a-model', models: ['a-model'], tools: [], capacity: 6 } }
+    expect(draftFrom(config).capacity).toBe('6')
+    expect(draftFrom(DESK_DEFAULTS.assistant).capacity).toBe('')
+  })
+})
+
+describe('the models a connection names for its review and its helper tasks', () => {
+  const TWO: EndpointDraft = { ...DRAFT, models: ['a-model', 'a-cheaper-model'] }
+
+  it('writes each one named, and none the draft leaves to the run', () => {
+    expect((assistantWrite(TWO) as { endpoint: object }).endpoint).not.toHaveProperty('criticModel')
+    const named = assistantWrite({ ...TWO, criticModel: 'a-cheaper-model', childModel: 'a-cheaper-model' }) as { endpoint: Record<string, unknown> }
+    expect(named.endpoint).toMatchObject({ criticModel: 'a-cheaper-model', childModel: 'a-cheaper-model' })
+    expect(decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, assistant: named }), 'desk').problems).toEqual([])
+  })
+
+  it('offers only a model the set holds, and drops a name when its model leaves the set', () => {
+    expect(withSubordinateModel(TWO, 'criticModel', 'not-enabled')).toBe(TWO)
+    const named = withSubordinateModel(withSubordinateModel(TWO, 'criticModel', 'a-cheaper-model'), 'childModel', 'a-cheaper-model')
+    expect(named).toMatchObject({ criticModel: 'a-cheaper-model', childModel: 'a-cheaper-model' })
+    const dropped = withModel(named, 'a-cheaper-model', false)
+    expect(dropped).toMatchObject({ criticModel: '', childModel: '' })
+    expect(withSubordinateModel(named, 'criticModel', '')).toMatchObject({ criticModel: '', childModel: 'a-cheaper-model' })
+  })
+
+  it('writes no name the set does not hold, whatever the draft carries', () => {
+    const stale = assistantWrite({ ...TWO, criticModel: 'gone' }) as { endpoint: object }
+    expect(stale.endpoint).not.toHaveProperty('criticModel')
+  })
+
+  it('opens on what the file names', () => {
+    const config: AssistantConfig = { engine: 'vercel', thinking: 'off', endpoint: { url: 'https://api.example.invalid/v1', kind: 'openai-compatible', model: 'a-model', models: ['a-model', 'a-cheaper-model'], tools: [], criticModel: 'a-cheaper-model' } }
+    expect(draftFrom(config)).toMatchObject({ criticModel: 'a-cheaper-model', childModel: '' })
   })
 })

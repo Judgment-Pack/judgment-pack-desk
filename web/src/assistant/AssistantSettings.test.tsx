@@ -227,6 +227,17 @@ it('saves bulk model grants and keeps the default inside the allowed set',async(
  await waitFor(()=>expect(calls.some(c=>c.method==='PUT')).toBe(true))
  expect(calls.find(c=>c.method==='PUT')!.body).toEqual({ifMatch:digest,assistant:{engine:'codex',endpoint,thinking:'off',agent:{...agent,model:'second',models:['model','second']}}})
 })
+it('saves the models the subscription runs its review and its helper tasks on, and no name for a model it no longer allows',async()=>{
+ const {calls}=setup();await screen.findByText('Connected to ChatGPT')
+ const trigger=screen.getByRole('button',{name:'Allowed models'}) as HTMLButtonElement
+ await waitFor(()=>expect(trigger.disabled).toBe(false));fireEvent.click(trigger)
+ fireEvent.click(screen.getByRole('button',{name:'Select all'}))
+ fireEvent.keyDown(screen.getByRole('dialog',{name:'Allowed models'}),{key:'Escape'})
+ await pick('Review model','second');await pick('Helper tasks model','second')
+ fireEvent.click(screen.getByRole('button',{name:'Save shared settings'}))
+ await waitFor(()=>expect(calls.some(c=>c.method==='PUT')).toBe(true))
+ expect((calls.find(c=>c.method==='PUT')!.body as {assistant:{agent:Record<string,unknown>}}).assistant.agent).toMatchObject({models:['model','second'],criticModel:'second',childModel:'second'})
+})
 it('saves Remove all as a disabled model set with no default',async()=>{
  const {calls}=setup();await screen.findByText('Connected to ChatGPT')
  const trigger=screen.getByRole('button',{name:'Allowed models'}) as HTMLButtonElement

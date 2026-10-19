@@ -11,7 +11,7 @@ it('says what was compared, what was not, what the review cost and which model r
   render(<CriticDetails record={{ compared: 5, disagreed: 2, incomplete: ['c8', 'c9'], figures, runModel: 'main-model' }} />)
   expect(screen.getByText('Declared cases: 5 compared, 2 differ from the expected outcome.')).toBeTruthy()
   expect(screen.getByRole('status').textContent).toContain('this review cannot say the proposal was not refuted. Not compared: c8, c9')
-  expect(screen.getByText(/Review cost: 4 model requests on cheap-critic · tokens in 1200, out 90/)).toBeTruthy()
+  expect(screen.getByText(/Review requests: 4 on cheap-critic · tokens in 1200, out 90/)).toBeTruthy()
   expect(screen.getByText(/The review ran on cheap-critic, the model this connection names for reviews, and the answer on main-model\./)).toBeTruthy()
 })
 

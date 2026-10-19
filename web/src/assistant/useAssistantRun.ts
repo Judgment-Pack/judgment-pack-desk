@@ -389,7 +389,9 @@ export function useAssistantRun(options: {
             loaded,
             {
               prompt,
-              context:{configuration:settings.current.contextConfiguration,...(memory===undefined?{}:{memory})},
+              // The connection the run is bound to, so the harness asks the host for that connection's
+              // review and helper models and its capacity (`modelsFor`), and not for a model name's.
+              context:{configuration:settings.current.contextConfiguration,...(memory===undefined?{}:{memory}),...(connectionTarget.connectionId?{connection:connectionTarget}:{})},
               testPrompt: testPrompt ?? '',
               purpose,
               // **The critic is asked for, here, where the panes had it.** Since

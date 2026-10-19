@@ -1015,7 +1015,7 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 		return slot, problems
 	}
 	inner, innerProblems := object(endpoint, "assistant.endpoint",
-		[]string{"url", "kind", "model", "models", "tools"})
+		[]string{"url", "kind", "model", "models", "tools", "criticModel", "childModel", "capacity"})
 	problems = append(problems, innerProblems...)
 	if inner == nil {
 		return slot, problems
@@ -1116,19 +1116,72 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 		}
 	}
 
+	// The models the connection names for subordinate work (the critic's and
+	// delegated children's), each one of the enabled set: a model the desk's
+	// relay would refuse is a model the file cannot name.
+	criticModel := subordinateModel(inner, "criticModel", "assistant.endpoint", enabled, &problems)
+	childModel := subordinateModel(inner, "childModel", "assistant.endpoint", enabled, &problems)
+	capacity := 0
+	if given, present := inner["capacity"]; present && given != nil {
+		number, ok := given.(float64)
+		if !ok || number != float64(int64(number)) || number < minEndpointCapacity || number > maxEndpointCapacity {
+			problems = append(problems, deskProblem{Key: "assistant.endpoint.capacity",
+				Reason: fmt.Sprintf("must be an integer from %d to %d; found %s", minEndpointCapacity, maxEndpointCapacity, describe(given))})
+		} else {
+			capacity = int(number)
+		}
+	}
+
 	// Same rule one level down: the object is handed back whenever it decoded
 	// into something, and whether it may be *used* is `refused()`'s answer.
 	if len(problems) > 0 {
 		return slot, problems
 	}
 	slot.endpoint = &assistantEndpoint{
-		url:    normalizedEndpointURL(trimmedURL),
-		kind:   kind,
-		model:  trimmedModel,
-		models: enabled,
-		tools:  tools,
+		url:         normalizedEndpointURL(trimmedURL),
+		kind:        kind,
+		model:       trimmedModel,
+		models:      enabled,
+		tools:       tools,
+		criticModel: criticModel,
+		childModel:  childModel,
+		capacity:    capacity,
 	}
 	return slot, problems
+}
+
+// The bounds of `assistant.endpoint.capacity`, how many model requests the
+// connection carries at once: the number delegated children run at a time and
+// the harness's own limit on it, mirrored by `ENDPOINT_CAPACITY` in
+// `deskConfig.ts`.
+const (
+	minEndpointCapacity = 1
+	maxEndpointCapacity = 16
+)
+
+// subordinateModel decodes a member naming the model a connection runs its
+// critic or its delegated children on: absent or null is the run's own model,
+// and a value is a model id held to the rule every model is held to and to the
+// connection's enabled set, so the model is one the relay admits. It is the
+// rule `subordinateModelProblem` holds in `deskConfig.ts`, and the shared
+// fixtures hold the two together.
+func subordinateModel(inner map[string]any, member, scope string, enabled []string, problems *[]deskProblem) string {
+	declared, present := inner[member]
+	if !present || declared == nil {
+		return ""
+	}
+	key := scope + "." + member
+	if reason := modelIDProblem(declared); reason != "" {
+		*problems = append(*problems, deskProblem{Key: key, Reason: reason})
+		return ""
+	}
+	id := strings.TrimSpace(declared.(string))
+	if !contains(enabled, id) {
+		*problems = append(*problems, deskProblem{Key: key, Reason: fmt.Sprintf(
+			"must be one of the models enabled for this endpoint; %q is not one of them", id)})
+		return ""
+	}
+	return id
 }
 
 // modelSet decodes the enabled set — **each id held to the rule one model is

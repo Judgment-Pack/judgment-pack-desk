@@ -14,6 +14,7 @@ import { sourceMessage } from '../i18n/source'
  * no shape here the schema does not already have.
  */
 import {
+  ENDPOINT_CAPACITY,
   ASSISTANT_KINDS,
   ASSISTANT_THINKING,
   ASSISTANT_TOOLS,
@@ -47,6 +48,14 @@ export interface EndpointDraft {
   models: string[]
   tools: AssistantTool[]
   thinking: ThinkingTier
+  /**
+   * The models the connection runs its critic and its delegated children on,
+   * each one of `models`, and `''` where it names none: the run's own model.
+   */
+  criticModel: string
+  childModel: string
+  /** How many requests the connection carries at once, as typed; `''` where it states none. */
+  capacity: string
 }
 
 /**
@@ -114,7 +123,10 @@ export function draftFrom(config: AssistantConfig): EndpointDraft {
       endpoint === null
         ? [...ASSISTANT_TOOLS]
         : ASSISTANT_TOOLS.filter((tool) => endpoint.tools.includes(tool)),
-    thinking: config.thinking
+    thinking: config.thinking,
+    criticModel: endpoint?.criticModel ?? '',
+    childModel: endpoint?.childModel ?? '',
+    capacity: endpoint?.capacity === undefined ? '' : String(endpoint.capacity)
   }
 }
 
@@ -165,7 +177,40 @@ export function withModel(draft: EndpointDraft, id: string, enabled: boolean): E
       : [...draft.models, id]
     : draft.models.filter((each) => each !== id)
   const model = models.includes(draft.model) ? draft.model : (models[0] ?? '')
-  return { ...draft, models, model }
+  // A model the set no longer holds cannot be the critic's or the children's: the relay admits only the set.
+  return {
+    ...draft,
+    models,
+    model,
+    criticModel: models.includes(draft.criticModel) ? draft.criticModel : '',
+    childModel: models.includes(draft.childModel) ? draft.childModel : ''
+  }
+}
+
+/**
+ * The capacity a typed value states: the whole number it spells, or nothing for
+ * a blank field. A value that is not a whole number in the schema's range is
+ * returned as `NaN`, so a draft carrying one is refused by the form and by the
+ * decoder rather than quietly written as something else.
+ */
+export function capacityOf(typed: string): number | undefined {
+  const text = typed.trim()
+  if (text === '') return undefined
+  return /^\d+$/.test(text) ? Number(text) : Number.NaN
+}
+
+/** Why a typed capacity cannot be written, or nothing: the decoder's own bounds. */
+export function capacityProblem(typed: string): string | undefined {
+  const value = capacityOf(typed)
+  if (value === undefined) return undefined
+  const [low, high] = ENDPOINT_CAPACITY
+  return Number.isInteger(value) && value >= low && value <= high ? undefined : sourceMessage('must be an integer from {{value0}} to {{value1}}; found {{value2}}', { value0: low, value1: high, value2: JSON.stringify(typed.trim()) })
+}
+
+/** Name the model the connection runs its critic or its delegated children on, or `''` for the run's own. */
+export function withSubordinateModel(draft: EndpointDraft, member: 'criticModel' | 'childModel', id: string): EndpointDraft {
+  if (id !== '' && !draft.models.includes(id)) return draft
+  return { ...draft, [member]: id }
 }
 
 /**
@@ -224,7 +269,12 @@ export function assistantWrite(draft: EndpointDraft): unknown {
       // What the decoder accepts is the trimmed id, so a set written untrimmed
       // would be a form showing one string and writing another.
       models: draft.models.map((id) => id.trim()),
-      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
+      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool)),
+      // Named only where the set holds the model, so the form cannot compose a file its own reader refuses.
+      ...(draft.criticModel !== '' && draft.models.includes(draft.criticModel) ? { criticModel: draft.criticModel.trim() } : {}),
+      ...(draft.childModel !== '' && draft.models.includes(draft.childModel) ? { childModel: draft.childModel.trim() } : {}),
+      // Written as the number the schema has, or not at all: a field left blank states no capacity.
+      ...(capacityOf(draft.capacity) === undefined ? {} : { capacity: capacityOf(draft.capacity) })
     },
     thinking: draft.thinking
   }

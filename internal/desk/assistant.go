@@ -529,6 +529,15 @@ type AssistantEndpointView struct {
 	// the empty set is a state this schema has, and null is not it.
 	Models []string `json:"models"`
 	Tools  []string `json:"tools"`
+	// CriticModel and ChildModel are the models the connection names for the
+	// critic and for delegated children, each one of Models; absent where the
+	// connection names none.
+	CriticModel string `json:"criticModel,omitempty"`
+	ChildModel  string `json:"childModel,omitempty"`
+	// Capacity is how many model requests the connection carries at once, 1 to
+	// 16: how many delegated children run beside the parent. Absent where the
+	// connection states none.
+	Capacity int `json:"capacity,omitempty"`
 }
 
 // slotView renders one accepted decode as an answer.
@@ -550,10 +559,13 @@ func slotView(decoded deskDecode) AssistantSlotView {
 		models = []string{}
 	}
 	view.Endpoint = &AssistantEndpointView{
-		URL:    decoded.Endpoint.url,
-		Kind:   decoded.Endpoint.kind,
-		Models: models,
-		Tools:  tools,
+		URL:         decoded.Endpoint.url,
+		Kind:        decoded.Endpoint.kind,
+		Models:      models,
+		Tools:       tools,
+		CriticModel: decoded.Endpoint.criticModel,
+		ChildModel:  decoded.Endpoint.childModel,
+		Capacity:    decoded.Endpoint.capacity,
 	}
 	if decoded.Endpoint.model != "" {
 		model := decoded.Endpoint.model
@@ -1563,6 +1575,14 @@ type assistantEndpoint struct {
 	// where there are any, and the empty string where there are none.
 	models []string
 	tools  []string
+	// criticModel and childModel name the models the connection runs its critic
+	// and its delegated children on: one of models, or the empty string for the
+	// run's own.
+	criticModel string
+	childModel  string
+	// capacity is how many model requests the connection carries at once, as
+	// its owner states it (1 to 16); zero where the file states none.
+	capacity int
 }
 
 // configuredEndpoint decodes the whole desk-level file and answers the

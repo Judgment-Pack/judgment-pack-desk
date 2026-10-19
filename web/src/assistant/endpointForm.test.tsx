@@ -574,6 +574,9 @@ describe('Test connection: the probe and the listing, in one press', () => {
       'Models',
       'Search models',
       'Other model… (type an id)',
+      'Review model',
+      'Helper tasks model',
+      'Requests at once',
       'Tools the assistant may use',
       'Reasoning effort'
     ])
@@ -1398,5 +1401,43 @@ describe('API key save and connection readiness', () => {
     save()
     await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
     expect(theWrite(sent).assistant.endpoint).toMatchObject({ model: 'a-model', models: ['a-model', 'another-model'] })
+  })
+})
+
+describe('the models named for reviews and helper tasks', () => {
+  it('writes the model each is named on, and nothing where both are left to the run', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm(configured({ endpoint: { ...ENDPOINT, models: ['a-model', 'a-cheaper-model'] } }))
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).not.toHaveProperty('criticModel')
+    expect(theWrite(sent).assistant.endpoint).not.toHaveProperty('childModel')
+  })
+
+  it('offers the enabled models and the run\'s own, and writes the ones chosen', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm(configured({ endpoint: { ...ENDPOINT, models: ['a-model', 'a-cheaper-model'], criticModel: 'a-cheaper-model' } }))
+    const review = screen.getByRole('combobox', { name: 'Review model' })
+    expect(review.textContent).toContain('a-cheaper-model')
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).toMatchObject({ criticModel: 'a-cheaper-model' })
+    expect(theWrite(sent).assistant.endpoint).not.toHaveProperty('childModel')
+  })
+
+  it('writes the capacity typed, and refuses one outside 1 to 16 before a save is tried', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm()
+    fireEvent.change(screen.getByLabelText('Requests at once'), { target: { value: '40' } })
+    expect(await screen.findByText(/must be an integer from 1 to 16/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Requests at once'), { target: { value: '4' } })
+    expect(screen.queryByText(/must be an integer from 1 to 16/)).toBeNull()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).toMatchObject({ capacity: 4 })
   })
 })

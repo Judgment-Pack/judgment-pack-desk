@@ -347,7 +347,7 @@ export class ChatStore {
     if (previous?.state === binding.state && previous?.sources === binding.sources) return
     this.observed.set(id, { state: binding.state, sources: binding.sources })
     const prior = previous?.state as ResearchRunBinding['state'] | undefined
-    if (prior && previous?.sources === binding.sources && Object.entries(binding.state).every(([key, value]) => key === 'streaming' || key === 'streamingId' || key === 'events' || prior[key as keyof typeof prior] === value)) return
+    if (prior && previous?.sources === binding.sources && Object.entries(binding.state).every(([key, value]) => key === 'streaming' || key === 'streamingId' || key === 'taskProgress' || key === 'events' || prior[key as keyof typeof prior] === value)) return
     if (binding.state.phase !== 'idle') {
       const owner = this.state.chats.find(item => item.id === id) ?? this.state.drafts.find(item => item.id === id)
       if (owner && !owner.pack && !owner.graph && !owner.input && !owner.policy && binding.state.candidates.length && (!binding.state.restored || binding.state.checkRun === 'running' || binding.state.checkRun === 'failed' || binding.state.checkRun === 'stopped')) {

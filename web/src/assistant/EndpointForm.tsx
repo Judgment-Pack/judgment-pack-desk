@@ -64,6 +64,8 @@ import {
   draftFrom,
   seedOf,
   withKind,
+  capacityProblem,
+  withSubordinateModel,
   withTool,
   type EndpointDraft
 } from './endpointDraft'
@@ -292,7 +294,7 @@ export function EndpointForm({
 
   const busy = write.isPending || store.isPending || remove.isPending
   const checking = check.answer?.asking ?? false
-  const blocked = digest === undefined || draft.url.trim() === '' || urlProblem !== undefined
+  const blocked = digest === undefined || draft.url.trim() === '' || urlProblem !== undefined || capacityProblem(draft.capacity) !== undefined
   const configured = config.assistant.endpoint
   const connected = configured !== null && binding === 'bound' && key.isSuccess
   const here = configured !== null && identityOf(draft) === identityOf(configured)
@@ -470,6 +472,10 @@ export function EndpointForm({
           />
         </SettingsSection>
 
+        <SettingsSection variant="plain" title={msg("Reviews and delegated tasks")} description={msg("Name a cheaper model this endpoint serves for reviews and for helper tasks.")}>
+          <SubordinateChoice draft={draft} onChange={edit} problems={{ criticModel: problemFor('assistant.endpoint.criticModel'), childModel: problemFor('assistant.endpoint.childModel'), capacity: problemFor('assistant.endpoint.capacity') }} />
+        </SettingsSection>
+
         <SettingsSection variant="plain" title={msg("Behavior")} description={msg("Choose the tools and reasoning available to the assistant.")}>
           <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
 
@@ -577,8 +583,48 @@ const PLACED = [
   'assistant.endpoint.model',
   'assistant.endpoint.models',
   'assistant.endpoint.tools',
+  'assistant.endpoint.criticModel',
+  'assistant.endpoint.childModel',
+  'assistant.endpoint.capacity',
   'assistant.thinking'
 ] as const
+
+/**
+ * The models the connection runs its review and its delegated tasks on: one
+ * of the enabled set each, or the model of the run. Only enabled models are
+ * offered, because the relay admits nothing else.
+ */
+function SubordinateChoice({
+  draft,
+  onChange,
+  problems
+}: {
+  draft: EndpointDraft
+  onChange: (next: EndpointDraft) => void
+  problems: { criticModel: string | undefined; childModel: string | undefined; capacity: string | undefined }
+}) {
+  useLocale()
+  const options = [{ value: '', label: msg('The model of the run') }, ...draft.models.map((id) => ({ value: id, label: id }))]
+  return (
+    <>
+      <Field label={msg("Review model")} error={problems.criticModel}>
+        {(wiring) => (
+          <Select {...wiring} value={draft.criticModel} onValueChange={(value) => onChange(withSubordinateModel(draft, 'criticModel', value))} options={options} />
+        )}
+      </Field>
+      <Field label={msg("Helper tasks model")} error={problems.childModel}>
+        {(wiring) => (
+          <Select {...wiring} value={draft.childModel} onValueChange={(value) => onChange(withSubordinateModel(draft, 'childModel', value))} options={options} />
+        )}
+      </Field>
+      <Field label={msg("Requests at once")} hint={msg("How many requests this connection carries at once, 1 to 16. Helper tasks run that many at a time.")} error={problems.capacity ?? (capacityProblem(draft.capacity) === undefined ? undefined : systemMessage(capacityProblem(draft.capacity)!))}>
+        {(wiring) => (
+          <Input {...wiring} value={draft.capacity} inputMode="numeric" spellCheck={false} onChange={(event) => onChange({ ...draft, capacity: event.target.value })} />
+        )}
+      </Field>
+    </>
+  )
+}
 
 /**
  * The five tools, as five checkboxes.

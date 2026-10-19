@@ -27,8 +27,8 @@ export function CriticDetails({ record, className }: { record: CriticRecord; cla
       {figures && (
         <li>
           {figures.unit === 'agent-runs'
-            ? msg('Review cost: {{requests}} agent runs on {{model}}', { requests: figures.requests, model: figures.model })
-            : msg('Review cost: {{requests}} model requests on {{model}}', { requests: figures.requests, model: figures.model })}
+            ? msg('Review agent runs: {{requests}} on {{model}}', { requests: figures.requests, model: figures.model })
+            : msg('Review requests: {{requests}} on {{model}}', { requests: figures.requests, model: figures.model })}
           {tokens && msg(' · tokens in {{input}}, out {{output}}', { input: figures.inputTokens ?? 0, output: figures.outputTokens ?? 0 })}
         </li>
       )}

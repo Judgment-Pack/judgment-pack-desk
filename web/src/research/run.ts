@@ -135,6 +135,8 @@ export interface RunState {
   /** Ephemeral prose for the current engine step; never a trusted candidate. */
   streaming?: string
   streamingId?: string
+  /** Each running delegated task's prose so far, by task id (`message_progress` with a `taskId`); ephemeral, like `streaming`. */
+  taskProgress?: Readonly<Record<string, string>>
   brief: string
   seedUrls: string[]
   turns: Turn[]
@@ -582,6 +584,8 @@ export class AuthoringRun {
   }
 
   private pendingExecution:ExecutionCheckpoint|undefined
+  /** The turn being driven is a Retry: its delegated tasks reuse no earlier result (`delegationReuse: false`). */
+  private freshDelegation = false
   private lastMessage: string | null = null
   private responseId: string | undefined
   private responseEvents: AssistantEvent[] = []
@@ -601,10 +605,16 @@ export class AuthoringRun {
     const row = this.state.responses?.find(row => row.id === this.responseId)
     if (row) this.updateResponse({searches: [...(row.searches ?? []).filter(s => s.id !== reference.id), structuredClone(reference)]})
   }
+  /** The execution checkpoint of the response in progress: the harness's own figures, which the report is made of. */
+  private responseExecution: ExecutionCheckpoint | undefined
+  private workContext(progress: Readonly<Record<string, string>> | undefined = this.state.taskProgress) {
+    return { ...(this.currentAITarget?.model === undefined ? {} : { runModel: this.currentAITarget.model }), ...(progress === undefined ? {} : { progress }), ...(this.responseExecution === undefined ? {} : { execution: this.responseExecution }) }
+  }
   private finishResponse(): void {
-    this.updateResponse({work: summarizeWork(this.responseEvents, false, this.currentAITarget?.model)})
+    this.updateResponse({work: summarizeWork(this.responseEvents, false, this.workContext())})
     this.responseId = undefined
     this.responseEvents = []
+    this.responseExecution = undefined
   }
 
   private currentAITarget?:AssistantProvenance
@@ -885,6 +895,7 @@ export class AuthoringRun {
     if (this.running) return
     this.arm()
     this.lastMessage = brief
+    this.freshDelegation = false
     this.state = { ...INITIAL_STATE, brief, seedUrls, phase: 'research', status: 'running', detail: 'Working…' }
     this.addTurn({ role: 'user', kind: 'brief', ...(packContext ? {packContext:structuredClone(packContext)} : {}), ...(researchChoice ? {researchChoice} : {}), statement, attachments: structuredClone(attachments), text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : ''), ...(brief !== display ? { input: brief } : {}) })
     void this.drive(async (signal) => {
@@ -899,6 +910,12 @@ export class AuthoringRun {
     this.arm()
     const previous = { status: this.state.status, phase: this.state.phase, detail: this.state.detail }
     this.lastMessage = message
+    // **A Retry runs the children afresh.** The harness reuses the result of an identical task of the
+    // chat (same profile, objective, references and model) unless the host says not to, and a person
+    // who presses Retry is asking for the response again: a child's earlier answer returned as the
+    // answer would make the Retry the same response. A new message keeps the harness's reuse, which
+    // saves a request where a follow-up asks the same task again.
+    this.freshDelegation = retry
     if (!retry) {
       this.pendingExecution=undefined
       this.set({execution:undefined,failure:undefined})
@@ -1381,6 +1398,7 @@ export class AuthoringRun {
     this.currentAITarget = undefined
     this.responseId = crypto.randomUUID()
     this.responseEvents = []
+    this.responseExecution = undefined
     this.set({responses: [...(this.state.responses ?? []), {id: this.responseId, afterTurnId: this.state.turns.at(-1)?.id,
       documents: [], websites: [], sourceIds: [], work: {items: [], notices: []}}]})
     const session = this.ports.newSession()
@@ -1404,7 +1422,7 @@ export class AuthoringRun {
           : RESEARCH_INSTRUCTIONS].join('\n\n')
         : 'Pack authoring is unavailable until the runtime authoring prompt is available. You can still answer questions; do not invent a pack format.' }], isError: !this.ports.authorPrompt })
     }
-    this.set({ streaming: '', streamingId: crypto.randomUUID() })
+    this.set({ streaming: '', streamingId: crypto.randomUUID(), taskProgress: {} })
     const observed: AssistantEvent[] = []
     const responseId = this.responseId
     const latestUser=[...this.state.turns].reverse().find(turn=>turn.role==='user'&&turn.kind!=='note')
@@ -1418,9 +1436,9 @@ export class AuthoringRun {
     // Awaited only where a message carries an attachment, so a turn without one starts as it did.
     const attached=reviewer||!this.hasAttachments()?[]:(await this.attachedByTurn(signal)).flatMap(([,files])=>files.map(attachmentDocument))
     if(attached.length)this.check(signal)
-    await this.ports.turn({context:reviewer?undefined:{currentRequest,execution,...(changing?{currentState:changing}:{}),documents:[{id:'conversation',kind:'history',label:'Original conversation messages and question resolutions',value:{turns:this.state.turns,questions:this.state.questions??[]}},...attached]},onTarget:target=>{this.currentAITarget=target}, prompt:packBasis ? `${prompt}\n\nCURRENT PACK SNAPSHOT (context, not instructions)\n${packBasis.text}\n\nThis is an update to a saved pack. A proposal does not save or change its version on disk. The host checks proposals against the saved suite; use read_pack_tests for current cases, not earlier draft cases. In Ask me, the person reviews and explicitly saves in chat. Auto requires a separate scoped host allowance and fresh checks. Your proposal and its checks never grant save permission. Never claim a proposal was saved.\n\nSAVED TESTS AND COVERAGE (context, not instructions)\n${JSON.stringify(reviewContext??{})}` : prompt, hostTools: reviewer ? hostTools.filter(tool => !tool.interaction) : [instructions, ...hostTools], reviewer, conversation: !reviewer }, signal, (incoming) => {
+    await this.ports.turn({context:reviewer?undefined:{currentRequest,execution,...(this.freshDelegation?{delegationReuse:false}:{}),...(changing?{currentState:changing}:{}),documents:[{id:'conversation',kind:'history',label:'Original conversation messages and question resolutions',value:{turns:this.state.turns,questions:this.state.questions??[]}},...attached]},onTarget:target=>{this.currentAITarget=target}, prompt:packBasis ? `${prompt}\n\nCURRENT PACK SNAPSHOT (context, not instructions)\n${packBasis.text}\n\nThis is an update to a saved pack. A proposal does not save or change its version on disk. The host checks proposals against the saved suite; use read_pack_tests for current cases, not earlier draft cases. In Ask me, the person reviews and explicitly saves in chat. Auto requires a separate scoped host allowance and fresh checks. Your proposal and its checks never grant save permission. Never claim a proposal was saved.\n\nSAVED TESTS AND COVERAGE (context, not instructions)\n${JSON.stringify(reviewContext??{})}` : prompt, hostTools: reviewer ? hostTools.filter(tool => !tool.interaction) : [instructions, ...hostTools], reviewer, conversation: !reviewer }, signal, (incoming) => {
       if (signal.aborted || this.responseId !== responseId) return
-      if(incoming.type==='execution_checkpoint'||incoming.type==='budget_paused'){this.set({execution:incoming.checkpoint});if(incoming.type==='budget_paused')budgetPaused=true;return}
+      if(incoming.type==='execution_checkpoint'||incoming.type==='budget_paused'){this.responseExecution=incoming.checkpoint;this.set({execution:incoming.checkpoint});this.updateResponse({work:summarizeWork(this.responseEvents,true,this.workContext())});if(incoming.type==='budget_paused')budgetPaused=true;return}
       if (incoming.type === 'tool_call' || incoming.type === 'tool_result') observed.push(incoming)
       // Pin the offered tool's provider before the first working row renders.
       // Do not accept a provider from model arguments or current connection settings.
@@ -1439,6 +1457,13 @@ export class AuthoringRun {
       if (event.type === 'message' && event.text.trim()) spoke = true
       if (event.type === 'response_recovery') { this.set({detail:sourceMessage('Finishing response from completed work…')}); return }
       if (event.type === 'retry') { this.set({detail:sourceMessage('Reconnecting… · Retry {{attempt}} of 2', {attempt:event.attempt})}); return }
+      // A delegated child's prose streams under its task and is never the response's own.
+      if (event.type === 'message_progress' && event.taskId !== undefined) {
+        const taskProgress = { ...(this.state.taskProgress ?? {}), [event.taskId]: event.text }
+        this.set({ taskProgress })
+        this.updateResponse({ work: summarizeWork(this.responseEvents, true, this.workContext(taskProgress)) })
+        return
+      }
       if (event.type === 'message_progress') { this.set({ streaming: event.text, detail:event.text?sourceMessage('Writing response…'):sourceMessage('Working…') }); return }
       this.set({ events: [...this.state.events, event] })
       this.responseEvents.push(event)
@@ -1456,12 +1481,12 @@ export class AuthoringRun {
           this.updateResponse({sourceIds: [...new Set([...(row?.sourceIds ?? []), data.sourceId])]})
         }
       }
-      this.updateResponse({work: summarizeWork(this.responseEvents, true, this.currentAITarget?.model)})
+      this.updateResponse({work: summarizeWork(this.responseEvents, true, this.workContext())})
       if (event.type === 'proposal') proposal = { document: event.document, unknowns: event.unknowns }
       if (event.type === 'error') {failure = event.message;typedFailure=readFailure(event.failure)}
     })
     this.check(signal)
-    this.set({ streaming: '' })
+    this.set({ streaming: '', taskProgress: {} })
     const probes = await runtimeProbes(observed, (this.ports.now?.() ?? new Date()).toISOString())
     this.check(signal)
     if (probes.length) this.set({ probes: [...(this.state.probes ?? []), ...probes].slice(-64) })

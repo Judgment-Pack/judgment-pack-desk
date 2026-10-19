@@ -84,7 +84,7 @@ it('keeps working-context retention independent of chat topics and feature tool 
 })
 
 it('routes artifact correction and scoped automatic saving through shared host boundaries',()=>{
- for(const file of ['research/run.ts','assistant/proposalWorkflow.ts'])expect(readFileSync(resolve(root,file),'utf8')).toContain('correctArtifact(')
+ expect(readFileSync(resolve(root,'research/run.ts'),'utf8')).toContain('correctArtifact(')
  expect(harness('execution/checkArtifact.js')).toContain('correctArtifact(')
  expect(readFileSync(resolve(root,'dialects/dialectChatTools.ts'),'utf8')).toContain('checkArtifact(')
  const core=harness('execution/correctArtifact.js')

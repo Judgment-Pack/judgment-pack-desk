@@ -1849,5 +1849,121 @@
     "keys": [
       "assistant.agent.models"
     ]
+  },
+  "accepted-codex-critic-and-child-models": {
+    "accepted": true,
+    "keys": [],
+    "engine": "codex",
+    "thinking": "off",
+    "agent": {
+      "provider": "openai",
+      "authMethod": "subscription",
+      "model": "model",
+      "models": [
+        "model",
+        "small"
+      ],
+      "tools": [
+        "get_schema",
+        "validate"
+      ],
+      "criticModel": "small",
+      "childModel": "small"
+    }
+  },
+  "accepted-endpoint-child-model-only": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model",
+      "a-cheaper-model"
+    ],
+    "model": "a-model",
+    "childModel": "a-cheaper-model"
+  },
+  "accepted-endpoint-critic-and-child-models": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model",
+      "a-cheaper-model"
+    ],
+    "model": "a-model",
+    "criticModel": "a-cheaper-model",
+    "childModel": "a-cheaper-model"
+  },
+  "refused-codex-child-model-not-allowed": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.childModel"
+    ]
+  },
+  "refused-endpoint-child-model-blank": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.childModel"
+    ]
+  },
+  "refused-endpoint-child-model-not-a-string": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.childModel"
+    ]
+  },
+  "refused-endpoint-critic-model-outside-the-set": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.criticModel"
+    ]
+  },
+  "accepted-endpoint-capacity": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model",
+    "capacity": 4
+  },
+  "accepted-endpoint-capacity-at-the-bounds": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "models": [
+      "a-model"
+    ],
+    "model": "a-model",
+    "capacity": 16
+  },
+  "refused-endpoint-capacity-zero": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capacity"
+    ]
+  },
+  "refused-endpoint-capacity-over-the-bound": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capacity"
+    ]
+  },
+  "refused-endpoint-capacity-fraction": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capacity"
+    ]
+  },
+  "refused-endpoint-capacity-not-a-number": {
+    "accepted": false,
+    "keys": [
+      "assistant.endpoint.capacity"
+    ]
   }
 }

@@ -270,6 +270,22 @@ export interface AssistantEndpointConfig {
    */
   models: string[]
   tools: string[]
+  /**
+   * The models this connection runs its critic and its delegated children on
+   * (`@judgment-pack/harness`, `modelsFor`): one of `models` each, and absent
+   * where the connection names none, when the critic and the children run on
+   * the model of the run. Typically a cheaper model the same endpoint serves.
+   * Held to the set so that a model the relay would refuse cannot be named.
+   */
+  criticModel?: string
+  childModel?: string
+  /**
+   * How many model requests this connection carries at once, 1 to 16: how many
+   * delegated children run beside the parent on it. Absent where its owner
+   * states none, and the harness runs two. A subscription connection runs one
+   * child at a time whatever it says, so it has no such member.
+   */
+  capacity?: number
 }
 
 /**
@@ -290,6 +306,9 @@ export interface AssistantAgentConfig {
   model: string | null
   tools: AssistantTool[]
   effort?: (typeof CODEX_EFFORTS)[number]
+  /** The allowed models the connection runs its critic and its delegated children on; see `AssistantEndpointConfig`. */
+  criticModel?: string
+  childModel?: string
 }
 export interface AssistantConfig {
   agent?: AssistantAgentConfig
@@ -1724,7 +1743,7 @@ function endpointValue(
   const endpoint = section(
     value,
     'assistant.endpoint',
-    ['url', 'kind', 'model', 'models', 'tools'],
+    ['url', 'kind', 'model', 'models', 'tools', 'criticModel', 'childModel', 'capacity'],
     problems
   )
   if (!endpoint) return null
@@ -1816,13 +1835,65 @@ function endpointValue(
     tools = endpoint.tools as string[]
   }
 
+  const criticModel = subordinateModel(endpoint, 'criticModel', 'assistant.endpoint', models, problems)
+  const childModel = subordinateModel(endpoint, 'childModel', 'assistant.endpoint', models, problems)
+  let capacity: number | undefined
+  if (endpoint.capacity !== undefined && endpoint.capacity !== null) {
+    const [low, high] = ENDPOINT_CAPACITY
+    if (typeof endpoint.capacity !== 'number' || !Number.isInteger(endpoint.capacity) || endpoint.capacity < low || endpoint.capacity > high) {
+      problems.push({
+        key: 'assistant.endpoint.capacity',
+        reason: sourceMessage("must be an integer from {{value0}} to {{value1}}; found {{value2}}", { value0: low, value1: high, value2: describe(endpoint.capacity) })
+      })
+    } else capacity = endpoint.capacity
+  }
+
   return {
     url: url ?? '',
     kind: kind ?? 'openai-compatible',
     model,
     models,
-    tools
+    tools,
+    ...(criticModel === undefined ? {} : { criticModel }),
+    ...(childModel === undefined ? {} : { childModel }),
+    ...(capacity === undefined ? {} : { capacity })
   }
+}
+
+/** The bounds of `assistant.endpoint.capacity`: the harness's own limit on how many children run at once. Held to `minEndpointCapacity` in `deskfile.go`. */
+export const ENDPOINT_CAPACITY = [1, 16] as const
+
+/**
+ * A member naming the model a connection runs its critic or its delegated
+ * children on: absent or null is the run's own model, and a value is a model id
+ * held to the rule every model is held to and to the connection's enabled set,
+ * so the model is one the relay admits. Held to `subordinateModel` in
+ * `deskfile.go` by the shared fixtures.
+ */
+function subordinateModel(
+  record: Record<string, unknown>,
+  member: 'criticModel' | 'childModel',
+  scope: string,
+  enabled: readonly string[],
+  problems: ConfigProblem[]
+): string | undefined {
+  const declared = record[member]
+  if (declared === undefined || declared === null) return undefined
+  const key = `${scope}.${member}`
+  const problem = modelIdProblem(declared)
+  if (problem !== undefined) {
+    problems.push({ key, reason: problem })
+    return undefined
+  }
+  const id = (declared as string).trim()
+  if (!enabled.includes(id)) {
+    problems.push({
+      key,
+      reason: sourceMessage("must be one of the models enabled for this endpoint; {{value0}} is not one of them", { value0: JSON.stringify(id) })
+    })
+    return undefined
+  }
+  return id
 }
 
 /**
@@ -2443,7 +2514,7 @@ export function effectiveConfig(
 
 /** Credential-free provider target. Unknown fields refuse the whole file. */
 function agentValue(value: unknown, problems: ConfigProblem[]): AssistantAgentConfig | undefined {
-  const a = section(value, 'assistant.agent', ['provider', 'authMethod', 'model', 'models', 'tools', 'effort'], problems)
+  const a = section(value, 'assistant.agent', ['provider', 'authMethod', 'model', 'models', 'tools', 'effort', 'criticModel', 'childModel'], problems)
   if (!a) return undefined
   if (a.provider !== 'openai') problems.push({ key: 'assistant.agent.provider', reason: 'must be openai' })
   if (a.authMethod !== 'subscription') problems.push({ key: 'assistant.agent.authMethod', reason: 'must be subscription' })
@@ -2468,7 +2539,10 @@ function agentValue(value: unknown, problems: ConfigProblem[]): AssistantAgentCo
     if (typeof a.effort !== 'string' || !(CODEX_EFFORTS as readonly string[]).includes(a.effort)) problems.push({ key: 'assistant.agent.effort', reason: 'must be a supported Codex reasoning effort' })
     else effort = a.effort as AssistantAgentConfig['effort']
   }
-  return { provider: 'openai', authMethod: 'subscription', model, ...(models === undefined ? {} : {models}), tools: validTools ? a.tools as AssistantTool[] : [], ...(effort ? { effort } : {}) }
+  const allowed = models ?? (model === null ? [] : [model])
+  const criticModel = subordinateModel(a, 'criticModel', 'assistant.agent', allowed, problems)
+  const childModel = subordinateModel(a, 'childModel', 'assistant.agent', allowed, problems)
+  return { provider: 'openai', authMethod: 'subscription', model, ...(models === undefined ? {} : {models}), tools: validTools ? a.tools as AssistantTool[] : [], ...(effort ? { effort } : {}), ...(criticModel === undefined ? {} : { criticModel }), ...(childModel === undefined ? {} : { childModel }) }
 }
 
 /** An omitted allowlist preserves the legacy single-model grant. */

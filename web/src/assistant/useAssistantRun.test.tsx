@@ -420,6 +420,15 @@ describe('what a run is told of the critic and of project memory', () => {
     expect(await run({ purpose: 'test-design', thinking: 'on', criticCases: cases })).not.toHaveProperty('criticCases')
   })
 
+  it('binds the run to the connection it was started with, whatever its purpose', async () => {
+    const target = { connectionId: 'ai-111111111111111111111111', connectionRevision: 'a'.repeat(64), connectionName: 'Open weights' }
+    expect((await run({ target })).context?.connection).toEqual(target)
+    handed = null; cleanup()
+    expect((await run({ target, purpose: 'brief' })).context?.connection).toEqual(target)
+    handed = null; cleanup()
+    expect((await run({})).context).not.toHaveProperty('connection')
+  })
+
   it('asks for no critic on the purposes that never had one', async () => {
     for (const purpose of ['test-design', 'graph'] as const) {
       expect((await run({ purpose, thinking: 'on' })).adversarialReview, purpose).toBe(false)

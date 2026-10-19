@@ -9,20 +9,20 @@ const fake = vi.hoisted(() => ({ engine:'test', allowed:['test-model','second-mo
 vi.mock('../documents/client', async (original) => ({ ...(await original<typeof import('../documents/client')>()), loadDocument: fake.load }))
 vi.mock('../assistant/providers',()=>({useProviderModels:()=>fake.models}))
 vi.mock('../assistant/target', async () => ({ bindExecution: fake.bind, selectedAssistant: () => ({ models: fake.allowed, model: 'test-model', tools: [] }) }))
-vi.mock('../assistant/useAssistantSlot', () => ({ assistantReady: () => true, useAssistantSlot: () => ({ state: 'ready', endpoint: 'https://example.invalid', keyStatus: 'stored', keyPresent: true, engine: fake.engine, thinking: 'off', agent:{model:'test-model',provider:'openai',authMethod:'subscription',tools:[],effort:'medium'} }) }))
+vi.mock('../assistant/useAssistantSlot', () => ({ assistantReady: () => true, useAssistantSlot: () => ({ state: 'ready', endpoint: 'https://example.invalid', keyStatus: 'stored', keyPresent: true, engine: fake.engine, thinking: 'off', agent:{model:'test-model',provider:'openai',authMethod:'subscription',tools:[],effort:'medium'}, ...host.slot }) }))
 vi.mock('../assistant/pickedModel', () => ({ usePickedModel: () => ({ model: 'test-model', models: ['test-model'] }) }))
 vi.mock('@judgment-pack/harness/engines/index', () => ({ loadEngine: async () => ({}) }))
 vi.mock('@judgment-pack/harness/session', () => ({ runAssistantSession: fake.session, openAssistantConnection: () => ({ ready: Promise.resolve({ tools: [], callTool: async () => ({}) }), close: async () => {} }) }))
 vi.mock('../files/queries', () => ({ useFileListing: () => ({ data: { root: '/test' } }) }))
 // The rest of the module stays the Desk's own: the harness's host wiring reads its error and sentence.
 vi.mock('../mcp/session', async original => ({ ...await original<typeof import('../mcp/session')>(), sessionBearer: async () => 'test-session' }))
-const host = vi.hoisted(() => ({ mcp: { status: 'disconnected', client: null } as { status: string; client: unknown }, memory: vi.fn(async (): Promise<boolean | undefined> => undefined), runtime: vi.fn(async (): Promise<{ identity: string; version: string } | undefined> => undefined) }))
+const host = vi.hoisted(() => ({ slot: {} as Record<string, string>, mcp: { status: 'disconnected', client: null } as { status: string; client: unknown }, memory: vi.fn(async (): Promise<boolean | undefined> => undefined), runtime: vi.fn(async (): Promise<{ identity: string; version: string } | undefined> => undefined) }))
 vi.mock('../mcp/McpProvider', () => ({ useMcp: () => host.mcp }))
 vi.mock('../assistant/runContext', () => ({ memoryInUse: host.memory, runtimeIdentityOf: host.runtime }))
 vi.mock('../mcp/prompts', () => ({ AUTHOR_PACK_PROMPT: 'author_pack', TEST_PACK_PROMPT: 'test_pack', usePromptNames: () => ({ data: [] }), usePromptText: () => ({}) }))
 vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => ({ config: { research: { gateway: fake.gateway, sources: { search: null, read: null }, limits: { seconds: 30 } } } }) }))
 vi.mock('../shell/consoleLog', () => ({ recordActivity: () => {} }))
-afterEach(() => { cleanup(); vi.clearAllMocks();host.mcp={status:'disconnected',client:null};host.memory.mockImplementation(async()=>undefined);host.runtime.mockImplementation(async()=>undefined);fake.engine='test';fake.allowed=['test-model','second-model'];fake.models.isPending=false;fake.models.isError=false })
+afterEach(() => { cleanup(); vi.clearAllMocks();host.mcp={status:'disconnected',client:null};host.slot={};host.memory.mockImplementation(async()=>undefined);host.runtime.mockImplementation(async()=>undefined);fake.engine='test';fake.allowed=['test-model','second-model'];fake.models.isPending=false;fake.models.isError=false })
 
 it('offers current web tools and policy on the first Research message and its follow-up', async () => {
   const search: HostTool = { name: 'search_sources', description: 'Fixture search', inputSchema: {}, execute: vi.fn(async () => ({ content: [] })) }
@@ -329,4 +329,21 @@ it('declares the saved tests and the conversation\'s cases to a critic that will
  const unreadable=vi.fn(async():Promise<never>=>{throw new Error('Test storage cannot be read.')})
  expect(await drive({mode:'draft',draftTools:fake.tools,adversarialReview:true,savedTests:unreadable})).not.toHaveProperty('criticCases')
  expect(unreadable).toHaveBeenCalled()
+})
+
+it('binds every run, an independent reviewer\'s too, to the connection its slot resolved',async()=>{
+ fake.tools.mockReturnValue([])
+ host.slot={connectionId:'ai-111111111111111111111111',connectionRevision:'a'.repeat(64),connectionName:'Open weights'}
+ const hook=renderHook(()=>useResearchRun({mode:'draft',draftTools:fake.tools,executionContext:()=>({phase:'work'})}))
+ const turn=(hook.result.current.run as unknown as {ports:{turn:(request:import('./run').TurnRequest,signal:AbortSignal,deliver:(event:unknown)=>void)=>Promise<void>}}).ports.turn
+ const contexts:Record<string,unknown>[]=[]
+ fake.session.mockImplementation(async(_engine,request,deliver)=>{contexts.push(request.context);deliver({type:'end'})})
+ for(const reviewer of [false,true])await act(()=>turn({prompt:'Write the cases.',hostTools:[],reviewer,conversation:!reviewer},new AbortController().signal,()=>{}))
+ for(const context of contexts)expect(context.connection).toEqual({connectionId:'ai-111111111111111111111111',connectionRevision:'a'.repeat(64),connectionName:'Open weights'})
+ expect(contexts).toHaveLength(2)
+ // A slot with no connection of its own binds none.
+ host.slot={};hook.rerender()
+ await act(()=>turn({prompt:'Write the cases.',hostTools:[],reviewer:false,conversation:true},new AbortController().signal,()=>{}))
+ expect(contexts[2]).not.toHaveProperty('connection')
+ hook.unmount()
 })
