@@ -20,6 +20,13 @@ import { scenario } from '@judgment-pack/harness/certification'
 import { canonicalProposal, frozen, plain, useAssistantRun } from './useAssistantRun'
 import type { AssistantEvent, AssistantSession, Engine } from '@judgment-pack/harness/engine'
 import { checkpoint } from './reportFixtures'
+import { ChatContext } from '@judgment-pack/harness/context/chat'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { McpContext } from '../mcp/McpProvider'
+import { connected } from '../testing/harness'
 
 /** What the engine was handed, for the case that is about the model. */
 let handed: AssistantSession | null = null
@@ -92,6 +99,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   runtime = null
   window.sessionStorage.clear()
@@ -498,6 +506,102 @@ describe('the pack pane streams its text and reports what its run did', () => {
     await waitFor(() => expect(result.current.status).toBe('finished'))
     expect(result.current.streaming).toBe('')
     expect(result.current.events.some((event) => event.type === 'message' && event.text === 'I read the pack.')).toBe(true)
+  })
+
+  it('keeps one progress snapshot per task when children and the parent alternate', async () => {
+    let release!: () => void
+    const done = new Promise<void>((resolve) => { release = resolve })
+    engine = {
+      id: 'vercel',
+      async *start(): AsyncGenerator<AssistantEvent> {
+        yield { type: 'message_progress', text: 'Parent' }
+        for (let i = 0; i < 20; i++) {
+          yield { type: 'message_progress', taskId: 'first', text: `First ${i}` }
+          yield { type: 'message_progress', taskId: 'second', text: `Second ${i}` }
+        }
+        await done
+        yield { type: 'end' }
+      }
+    }
+    const { result } = drive()
+    act(() => result.current.start('the runtime’s prompt'))
+    await waitFor(() => expect(result.current.events.filter((event) => event.type === 'message_progress' && event.taskId === 'second').at(-1)).toMatchObject({ text: 'Second 19' }))
+    expect(result.current.events.filter((event) => event.type === 'message_progress')).toEqual([
+      { type: 'message_progress', text: 'Parent' },
+      { type: 'message_progress', taskId: 'first', text: 'First 19' },
+      { type: 'message_progress', taskId: 'second', text: 'Second 19' }
+    ])
+    expect(result.current.streaming).toBe('')
+    act(() => release())
+    await waitFor(() => expect(result.current.status).toBe('finished'))
+  })
+
+  it('reads Runtime identity through the host while keeping it outside the model gate, and disposes pane context', async () => {
+    const hostCalls: string[] = []
+    const host = new Server({ name: 'host-runtime', version: '0.37.0' }, { capabilities: { tools: {} } })
+    host.setRequestHandler(CallToolRequestSchema, async (request) => {
+      hostCalls.push(request.params.name)
+      expect(request.params).toMatchObject({ name: 'describe_runtime', arguments: {} })
+      return { content: [{ type: 'text', text: JSON.stringify({ tool: { name: 'jpack', version: '0.37.0' }, specVersions: ['0.2.0-draft'] }) }] }
+    })
+    const client = new Client({ name: 'host-desk', version: '1' }, { capabilities: {} })
+    const [toHost, toClient] = InMemoryTransport.createLinkedPair()
+    await host.connect(toHost)
+    await client.connect(toClient)
+    const wrapper = ({ children }: { children: import('react').ReactNode }) => <McpContext.Provider value={connected({ client })}>{children}</McpContext.Provider>
+    let release!: () => void
+    const wait = new Promise<void>((resolve) => { release = resolve })
+    engine = {
+      id: 'vercel',
+      async *start(session: AssistantSession): AsyncGenerator<AssistantEvent> {
+        handed = session
+        await wait
+        yield { type: 'end' }
+      }
+    }
+    runtime = scriptedWebSocket({})
+    vi.stubGlobal('WebSocket', runtime.WebSocket)
+    vi.stubGlobal('fetch', async () => new Response('{}'))
+    const { result, unmount } = renderHook(() => useAssistantRun({ endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'off' }), { wrapper })
+    try {
+      act(() => result.current.start('first'))
+      await waitFor(() => expect(handed).not.toBeNull())
+      const chat = handed!.context!.chat! as ChatContext
+      expect(handed!.context!.runtime).toEqual({ identity: expect.stringMatching(/^[a-f0-9]{64}$/), version: '0.37.0' })
+      expect(hostCalls).toEqual(['describe_runtime'])
+      expect(result.current.events.filter((event) => event.type === 'guardrail' && event.action === 'refused')).toEqual([])
+      expect(handed!.tools.some((tool) => tool.name === 'describe_runtime')).toBe(false)
+      // A model trying the same read is refused by the real gated MCP client,
+      // before reaching its Runtime transport; the host's identity read grants it nothing.
+      await act(async () => { await expect(handed!.callTool('describe_runtime', {})).rejects.toThrow() })
+      expect(result.current.events.some((event) => event.type === 'guardrail' && event.tool === 'describe_runtime' && event.action === 'refused')).toBe(true)
+      expect(runtime.seen.some((seen) => seen.name === 'describe_runtime')).toBe(false)
+      expect(hostCalls).toEqual(['describe_runtime'])
+      expect(chat.isDisposed).toBe(false)
+      act(() => release())
+      await waitFor(() => expect(result.current.status).toBe('finished'))
+      handed = null
+      act(() => result.current.start('second'))
+      await waitFor(() => expect(handed).not.toBeNull())
+      expect(handed!.context!.chat).toBe(chat)
+      expect(handed!.context!.runtime).toMatchObject({ version: '0.37.0' })
+      expect(hostCalls).toEqual(['describe_runtime'])
+      expect(result.current.events.filter((event) => event.type === 'guardrail' && event.action === 'refused')).toEqual([])
+      unmount()
+      expect(chat.isDisposed).toBe(true)
+      handed = null
+      const other = renderHook(() => useAssistantRun({ endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'off' }), { wrapper })
+      act(() => other.result.current.start('another pane'))
+      await waitFor(() => expect(handed).not.toBeNull())
+      expect(handed!.context!.chat).not.toBe(chat)
+      expect((handed!.context!.chat! as ChatContext).isDisposed).toBe(false)
+      other.unmount()
+    } finally {
+      release()
+      unmount()
+      await client.close()
+      await host.close()
+    }
   })
 
   it('reports the requests, the provider\'s tokens and what the connection measured, once the run has ended', async () => {

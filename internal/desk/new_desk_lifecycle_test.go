@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -544,5 +545,100 @@ func TestABlankSigningKeyIsNotSaid(t *testing.T) {
 	_, _, logged := gatesServer(t, standInRuntime(t))
 	if strings.Contains(logged.String(), "JPACK_SIGNING_KEY") {
 		t.Errorf("the launch spoke of a blank JPACK_SIGNING_KEY: %s", logged)
+	}
+}
+
+// **The signing variables are removed through one list** (#377).
+// JPACK_SIGNING_PUBLIC_KEY came with runtime 0.30.0, after JPACK_SIGNING_KEY
+// was removed from the runtimes of desks Desk made, and was not removed with
+// it. Both places that remove them, a made desk's relay (`runtimeEnv`) and
+// the commands Desk runs (`runRuntime`), read runtimeSigningEnv, so the list
+// is where a signing variable joins them: it holds both, spelled as the
+// runtime reads them, and a made desk's relay gets neither, nor JPACK_CONFIG,
+// while the startup desk's inherits Desk's environment whole.
+func TestTheSigningVariablesAreRemovedTogether(t *testing.T) {
+	for _, name := range []string{"JPACK_SIGNING_KEY", "JPACK_SIGNING_PUBLIC_KEY"} {
+		if !slices.Contains(runtimeSigningEnv, name) {
+			t.Errorf("the signing variables a made desk's runtimes go without are %q, not %s", runtimeSigningEnv, name)
+		}
+	}
+	t.Setenv("JPACK_CONFIG", filepath.Join(t.TempDir(), "jpack.json"))
+	t.Setenv("JPACK_SIGNING_KEY", filepath.Join(t.TempDir(), "owner.seed"))
+	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", strings.Repeat("ab", 32))
+	t.Setenv("DESK_TEST_INHERITED", "kept")
+	made := (&Server{cfg: Config{deskID: "made"}}).runtimeEnv()
+	for _, entry := range made {
+		if name, _, _ := strings.Cut(entry, "="); strings.HasPrefix(name, "JPACK_SIGNING") || name == "JPACK_CONFIG" {
+			t.Errorf("a made desk's relay inherits %s", name)
+		}
+	}
+	if !slices.Contains(made, "DESK_TEST_INHERITED=kept") {
+		t.Errorf("a made desk's relay lost the rest of Desk's environment")
+	}
+	if startup := (&Server{}).runtimeEnv(); startup != nil {
+		t.Errorf("the startup desk's relay was given an environment of its own, %d entries, want Desk's inherited whole", len(startup))
+	}
+}
+
+// **A desk Desk made never holds its key to the public key named where Desk
+// was started** (#377). Runtime 0.30.0 reads JPACK_SIGNING_PUBLIC_KEY, before
+// the configuration's own `signingPublicKey`, as the public key the signing
+// key must have: inherited, it held every desk's key to that one key, and a
+// desk whose key is another wrote its records unsigned. It is removed with
+// JPACK_SIGNING_KEY, from the commands that made a desk and from its relay.
+// The startup desk's relay keeps it, as the owner's, and the launch says so
+// once, not naming the key.
+func TestAnInheritedExpectedKeyStaysWithTheStartupDesk(t *testing.T) {
+	stray := strings.Repeat("ab", 32)
+	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", stray)
+	bin := filepath.Join(t.TempDir(), "jpack")
+	calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+	_, ts, logged := gatesServer(t, bin)
+	row := createGatedDesk(t, ts)
+	made := []string{
+		"packs schema --format json [JPACK_SIGNING_PUBLIC_KEY=unset]",
+		"packs lock --config jpack.json --format json [JPACK_SIGNING_PUBLIC_KEY=unset]",
+	}
+	if got := expectedKeySeen(t, calls); !slices.Equal(got, made) {
+		t.Errorf("the commands that made a desk ran with %q, want %q", got, made)
+	}
+	relayStarted(t, ts, "?desk="+row.ID, calls, 1)
+	relayStarted(t, ts, "", calls, 2)
+	var relays []string
+	for _, line := range expectedKeySeen(t, calls) {
+		if strings.HasPrefix(line, "mcp ") {
+			relays = append(relays, line)
+		}
+	}
+	want := []string{"mcp [JPACK_SIGNING_PUBLIC_KEY=unset]", "mcp [JPACK_SIGNING_PUBLIC_KEY=" + stray + "]"}
+	if !slices.Equal(relays, want) {
+		t.Errorf("the named desk's and the startup desk's runtimes started as %q, want %q", relays, want)
+	}
+	said := logged.String()
+	if n := strings.Count(said, expectedKeySaid); n != 1 {
+		t.Errorf("the launch said the inherited JPACK_SIGNING_PUBLIC_KEY %d times, want once: %s", n, said)
+	}
+	if strings.Contains(said, stray) {
+		t.Errorf("the log names the expected key: %s", said)
+	}
+}
+
+// expectedKeySaid is what the launch says of an inherited
+// JPACK_SIGNING_PUBLIC_KEY.
+const expectedKeySaid = "desk: JPACK_SIGNING_PUBLIC_KEY is set, so where this project's audit trail is chained, its runtime signs each record only with a key whose public key is the one it names, if it accepts that key; desks Desk made ignore it"
+
+// A JPACK_SIGNING_PUBLIC_KEY that is empty names no key to the runtime, and
+// the launch says nothing of one. One of whitespace is said: the runtime
+// reads it exactly as set, and refuses it as a key.
+func TestAnEmptyExpectedKeyIsNotSaid(t *testing.T) {
+	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", "")
+	_, _, logged := gatesServer(t, standInRuntime(t))
+	if strings.Contains(logged.String(), "JPACK_SIGNING_PUBLIC_KEY") {
+		t.Errorf("the launch spoke of an empty JPACK_SIGNING_PUBLIC_KEY: %s", logged)
+	}
+	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", "  ")
+	_, _, logged = gatesServer(t, standInRuntime(t))
+	if n := strings.Count(logged.String(), expectedKeySaid); n != 1 {
+		t.Errorf("the launch said a JPACK_SIGNING_PUBLIC_KEY of whitespace %d times, want once: %s", n, logged)
 	}
 }

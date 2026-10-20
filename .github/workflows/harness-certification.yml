@@ -16,6 +16,9 @@ on:
     paths:
       - 'web/src/assistant/**'
       - 'web/src/testing/**'
+      - 'web/src/desks/scope.ts'
+      - 'web/src/mcp/session.ts'
+      - 'web/src/files/client.ts'
       - 'web/vitest.certification.config.mts'
       - 'web/vitest.certification.setup.ts'
       - 'web/scripts/certify-harness.mjs'
@@ -23,6 +26,8 @@ on:
       - 'web/package-lock.json'
       - 'internal/releaseplan/components.json'
       - 'internal/desk/testdata/harness-recall/**'
+      - 'internal/desk/testdata/harness-approval/**'
+      - 'internal/desk/assistant_approval*.go'
       - '.github/workflows/harness-certification.yml'
   push:
     branches: [main, 'integration/**']
@@ -38,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        adapter: [vercel, codex]
+        adapter: [vercel, codex, deepagents]
     steps:
       - uses: actions/checkout@v7
 
@@ -68,6 +73,9 @@ jobs:
       - name: The recall vectors are the package's
         run: diff -r internal/desk/testdata/harness-recall .harness-source/contract/vectors/recall
 
+      - name: The approval vector is the package's
+        run: diff internal/desk/testdata/harness-approval/grant-states.json .harness-source/contract/vectors/approval/grant-states.json
+
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -76,6 +84,12 @@ jobs:
 
       - name: npm ci
         working-directory: web
+        run: npm ci
+
+      # Source imports resolve dependencies from this checkout, not web/node_modules.
+      # Its committed workspace lock is at the same attested revision as the tests.
+      - name: Install the locked certification source dependencies
+        working-directory: .harness-source
         run: npm ci
 
       - name: Certify the ${{ matrix.adapter }} adapter on the Desk's wiring

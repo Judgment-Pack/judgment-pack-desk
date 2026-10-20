@@ -329,14 +329,8 @@ func TestAgentModelPolicyRereadsDiskAndFailsClosed(t *testing.T) {
 	}
 }
 
-// A subscription connection names the models its review (a critic run) and its
-// delegated children run on, each one of the models it allows. The bridge
-// admits a run by the connection's list and by nothing else: the wire a child's
-// run travels on carries no marker of its own (the harness's transport keeps
-// `delegated` off it), so a named model is admitted on a critic run and on a
-// child's run alike, and a model the connection does not allow is refused on
-// either. Which runs may name a model at all is the page transport's rule,
-// `bindAgentRun`; the list is what the bridge holds it to.
+// All run phases use the connection's enabled-model allowlist. Review and
+// helper preferences select models; the wire carries no child-only permission.
 func TestAgentSocketAdmitsTheModelsAConnectionNamesForReviewAndChildren(t *testing.T) {
 	const agent = `{"provider":"openai","authMethod":"subscription","model":"model","models":["model","small"],"tools":[],"criticModel":"small","childModel":"small"}`
 	for _, tc := range []struct {
@@ -345,9 +339,11 @@ func TestAgentSocketAdmitsTheModelsAConnectionNamesForReviewAndChildren(t *testi
 	}{
 		{"a critic run on the review model", "critic", "small", true},
 		{"a child run on the helper model", "author", "small", true},
+		{"a main run on another enabled model", "", "small", true},
 		{"the run's own model", "author", "model", true},
 		{"a critic run on a model the connection does not allow", "critic", "large", false},
 		{"a child run on a model the connection does not allow", "author", "large", false},
+		{"a main run on a model the connection does not allow", "", "large", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			called := make(chan codexbridge.RunRequest, 1)

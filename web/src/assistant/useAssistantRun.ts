@@ -1,7 +1,8 @@
 import {failureEvent,authoredFailure} from '@judgment-pack/harness/failures'
 import type { AITarget } from './aiConnections'
 import { bindExecution } from './target'
-import { memoryInUse } from './runContext'
+import { memoryInUse, runtimeIdentityOf } from './runContext'
+import { ChatContext } from '@judgment-pack/harness/context/chat'
 import { sourceMessage } from '../i18n/source'
 /**
  * One run of the assistant, as the pane holds it.
@@ -47,9 +48,10 @@ import { RunMeter, type RunTiming } from './runMeter'
 import { reportFromExecution, type RunReport } from './report'
 import { loadEngine } from '@judgment-pack/harness/engines/index'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { useMcp } from '../mcp/McpProvider'
 import { openAssistantConnection, runAssistantSession } from '@judgment-pack/harness/session'
 import { sessionBearer, whenSessionEnds } from '../mcp/session'
-import type { HostTool, AssistantEvent } from '@judgment-pack/harness/engine'
+import type { HostTool, AssistantEvent, McpToolResult } from '@judgment-pack/harness/engine'
 import type { CriticCase } from '@judgment-pack/harness/refutation'
 import type { AssistantConnection } from '@judgment-pack/harness/session'
 import {
@@ -272,6 +274,7 @@ export function useAssistantRun(options: {
   criticCases?: CriticCase[]
 }): AssistantRun {
   const contextConfiguration=useEffectiveConfig().assistantProfile?.value?.context
+  const mcp = useMcp()
   const connectionTarget = options.target ?? {}
   const [status, setStatus] = useState<RunStatus>('idle')
   const [runningEngine, setRunningEngine] = useState(options.engine)
@@ -279,12 +282,15 @@ export function useAssistantRun(options: {
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [timing, setTiming] = useState<RunTiming | undefined>(undefined)
   const active = useRef<Active | null>(null)
+  // The mounted authoring pane owns its retained context, independently of saved chats.
+  // Reuse Runtime reads across its runs only under the Runtime identity; dispose on unmount.
+  const retained = useRef<ChatContext | null>(null)
   // One object for the life of the hook. See `AssistantRun.terminals`.
   const terminals = useRef({ count: 0 })
   // Read at call time rather than captured, so a run started with one
   // configuration is not carried on with another.
-  const settings = useRef({...options,connectionTarget,contextConfiguration})
-  settings.current = {...options,connectionTarget,contextConfiguration}
+  const settings = useRef({...options,connectionTarget,contextConfiguration,mcp})
+  settings.current = {...options,connectionTarget,contextConfiguration,mcp}
 
   /**
    * Put one event on the stream, for the run that produced it.
@@ -304,11 +310,11 @@ export function useAssistantRun(options: {
     run.meter.event(held)
     // **Progress is the prose so far, whole each time**, so only the latest one is kept: a long answer
     // streamed in hundreds of events would otherwise hold each of its prefixes.
-    setEvents((previous) =>
-      held.type === 'message_progress' && previous.at(-1)?.type === 'message_progress' && (previous.at(-1) as { taskId?: string }).taskId === held.taskId
-        ? [...previous.slice(0, -1), held]
-        : [...previous, held]
-    )
+    setEvents((previous) => {
+      if (held.type !== 'message_progress') return [...previous, held]
+      // Each task's progress is a complete snapshot, even when tasks alternate.
+      return [...previous.filter((event) => event.type !== 'message_progress' || event.taskId !== held.taskId), held]
+    })
   }, [])
 
   /** The run's one terminal event, where nothing else has written it. */
@@ -356,6 +362,8 @@ export function useAssistantRun(options: {
       const run = active.current
       if (run !== null) finish(run)
       release(run)
+      retained.current?.dispose()
+      retained.current = null
     }
   }, [finish, release])
 
@@ -410,14 +418,23 @@ export function useAssistantRun(options: {
           const ready = opened ? await opened.ready : { tools: [], callTool: async () => { throw new Error('Brief generation has no tool capability.') } }
           const loaded = await loadEngine(engine)
           // Whether project memory is on, so the memory reserve is left out of a run that has none (agent#11).
-          const memory = purpose === 'brief' ? undefined : await memoryInUse(run.controller.signal)
+          // Runtime identity is host metadata, outside the model's tool offer.
+          const runtimeClient = settings.current.mcp.status === 'ready' ? settings.current.mcp.client : null
+          const [memory, runtime] = await Promise.all([
+            purpose === 'brief' ? undefined : memoryInUse(run.controller.signal),
+            purpose !== 'brief' && runtimeClient
+              ? runtimeIdentityOf(runtimeClient, async (name, args) => await runtimeClient.callTool({ name, arguments: args }) as McpToolResult)
+              : undefined
+          ])
+          if (run.controller.signal.aborted) return
+          if (!retained.current || retained.current.isDisposed) retained.current = new ChatContext()
           await runAssistantSession(
             loaded,
             {
               prompt,
               // The connection the run is bound to, so the harness asks the host for that connection's
               // review and helper models and its capacity (`modelsFor`), and not for a model name's.
-              context:{configuration:settings.current.contextConfiguration,...(memory===undefined?{}:{memory}),...(connectionTarget.connectionId?{connection:connectionTarget}:{})},
+              context:{configuration:settings.current.contextConfiguration,chat:retained.current,...(runtime?{runtime}:{}),...(memory===undefined?{}:{memory}),...(connectionTarget.connectionId?{connection:connectionTarget}:{})},
               testPrompt: testPrompt ?? '',
               purpose,
               // **The critic is asked for, here, where the panes had it.** Since

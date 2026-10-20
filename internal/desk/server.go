@@ -210,6 +210,18 @@ type Server struct {
 	// stamping is this desk's scheduler of stamps: one loop, one run at a
 	// time, stopped by Close (stamping.go).
 	stamping *stampScheduler
+	// witnessMu guards this desk's witness: its settings and the submitter's
+	// token, read under it, written and removed under it for writing, and
+	// held for reading while a submission is sent and while the decision
+	// record reads the witness's chain (witness.go). witnessNonces holds the
+	// nonce of each witness token spent in this process, under it for
+	// writing. witnessReadMu serializes the readings of the witness's chain,
+	// which fetch, keep and save. witnessLoop is this desk's submission loop:
+	// one attempt at a time, stopped by Close.
+	witnessMu     sync.RWMutex
+	witnessNonces map[string]bool
+	witnessReadMu sync.Mutex
+	witnessLoop   *witnessScheduler
 	// reviewKey is this desk's own key for review tokens (`reviewToken`):
 	// random per process, so a token names one desk and does not outlive it.
 	reviewKey  [32]byte
@@ -511,6 +523,13 @@ func New(cfg Config) (*Server, error) {
 	if s.inheritsSigningKey() {
 		s.log.Print("desk: JPACK_SIGNING_KEY is set, so where this project's audit trail is chained, its runtime signs each record with the key it names, if it accepts that key; desks Desk made ignore it")
 	}
+	// And an inherited JPACK_SIGNING_PUBLIC_KEY, said once beside them (#377).
+	// Not trimmed: the runtime reads it exactly as set, and a value of
+	// whitespace is a key it refuses, not none. Not its value either, as the
+	// key's is not.
+	if os.Getenv(runtimeSigningPublicKeyEnv) != "" && s.usesStartupRuntimeEnvironment() {
+		s.log.Print("desk: JPACK_SIGNING_PUBLIC_KEY is set, so where this project's audit trail is chained, its runtime signs each record only with a key whose public key is the one it names, if it accepts that key; desks Desk made ignore it")
+	}
 	if cfg.parent != nil {
 		s.sessions = cfg.parent.sessions
 		s.signIn = cfg.parent.signIn
@@ -697,10 +716,16 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/audit/holders/{id}/confirm", s.handleConfirmHandover)
 	s.mux.HandleFunc("GET /api/audit/checkpoints", s.handleCheckpoints)
 	s.mux.HandleFunc("GET /api/audit/jobs-verify", s.handleJobsVerify)
+	s.mux.HandleFunc("GET /api/audit/jobs-signing", s.handleJobsSigning)
+	s.mux.HandleFunc("GET /api/audit/jobs-verify-run", s.handleJobsVerifyRun)
 	s.mux.HandleFunc("POST /api/audit/stamping/check", s.handleStampingCheck)
 	s.mux.HandleFunc("POST /api/audit/stamping", s.handleStampingSet)
 	s.mux.HandleFunc("POST /api/audit/stamping/remove", s.handleStampingRemove)
 	s.mux.HandleFunc("POST /api/audit/stamping/stamp", s.handleStampNow)
+	s.mux.HandleFunc("POST /api/audit/witness/check", s.handleWitnessCheck)
+	s.mux.HandleFunc("POST /api/audit/witness", s.handleWitnessSet)
+	s.mux.HandleFunc("POST /api/audit/witness/remove", s.handleWitnessRemove)
+	s.mux.HandleFunc("POST /api/audit/witness/send", s.handleWitnessSend)
 	s.mux.HandleFunc("GET /api/upgrade", s.handleUpgrade)
 	s.mux.HandleFunc("POST /api/upgrade", s.handleUpgradeConfirm)
 	s.mux.HandleFunc("GET /api/exchange/imports", s.handleExchange)
@@ -792,6 +817,9 @@ func New(cfg Config) (*Server, error) {
 	// This desk's stamping, off the decision path: a loop that stamps where
 	// the owner set an authority, until Close (stamping.go).
 	s.startStamping()
+	// And its submissions to a witness, off the decision path too: a loop
+	// that submits where the owner set a witness, until Close (witness.go).
+	s.startWitness()
 	if cfg.parent == nil {
 		s.resumeDesks()
 	}
@@ -851,6 +879,7 @@ func (s *Server) closeAll() error {
 	// Before the project's folder is let go: a stamp in progress is waited
 	// for, never killed mid-write.
 	s.stamping.close()
+	s.witnessLoop.close()
 	if s.cfg.parent == nil {
 		s.closeAIAccounts()
 	}

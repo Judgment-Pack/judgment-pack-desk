@@ -18,7 +18,9 @@
  * Beside those, the key this desk's Runner signs its runs with (ADR-0010,
  * section 5): its public key, or why its runs are not signed, as Desk reports
  * it now (`useRunnerKey`, asked again while this is open). Nothing where this
- * desk has no Runner.
+ * desk has no Runner. And the witness, which the decision record sets
+ * (ADR-0012): what it is, where its token is kept, what moves Desk's cursor,
+ * and what a statement shows and does not, in ADR-0013's words.
  */
 import { Section } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -96,6 +98,7 @@ export function GatesHelp() {
     <p className="quiet"><Message text={"<0/> A desk Desk makes with runtime 0.26.0 or later names a signing key in its jpack.json, unless Desk cannot keep one, which its creation says. Desk keeps the key for that desk in its own configuration folder, outside the project, and every runtime that reads that jpack.json signs each record it adds, if it accepts the key. A signature binds an agent given only this desk’s jpack mcp, which cannot read the key. It binds nothing against you, who hold the key, or against an agent that can read your files. The project Desk was started on is signed by a key Desk keeps only where you chose one in its upgrade, in Admin → Decision safeguards; any other project’s records are signed only where something else names a key."} slots={[<strong>{msg('Signatures.')}</strong>]} /></p>
     {chassis?.runtimeInheritsSigningKey === true && <p className="quiet">{msg('But JPACK_SIGNING_KEY is set where Desk was started. Where this project’s audit trail is chained, as it is by default, its runtime signs each record with the key it names, if it accepts that key. Desks Desk made do not inherit it.')}</p>}
     <RunnerKeyNow />
+    <p className="quiet" id="witness"><Message text={"<0/> In Admin → Decision safeguards → Decision record you can set a witness: a gateway another party runs, which signs the checkpoints Desk submits to it, chains its statements per trail, and serves them to anyone who names the trail. Desk keeps the submitter’s token in its own configuration folder, outside the project, sends it only with a submission, and moves its cursor only on a statement for the last checkpoint sent that the runtime’s reading confirms. A statement shows, if that witness is independent of you, that the lines up to its checkpoint existed when it signed. It does not show that the records are true, who submitted them, or anything against a witness that colludes."} slots={[<strong>{msg('Witness.')}</strong>]} /></p>
     <p className="quiet"><Message text={"<0/> Where jpack.json sets requireComparableFacts, the runtime refuses any evaluation, rehearsals included, that reads a fact of a JSON type no comparison in the pack can match, and names the fact. Saved tests and Jobs are not refused."} slots={[<strong>{msg('Comparable facts.')}</strong>]} /></p>
     <p className="quiet">{requireTested === true
       ? <Message text={"<0/> This installation refuses a job from a release whose saved tests were not run. Start Desk with <1/> to allow it; that applies to every desk."} slots={[<strong>{msg('Tested releases.')}</strong>, flag]} />
@@ -107,5 +110,6 @@ export function GatesHelp() {
     <p className="quiet"><Message text={"<0/> To give an agent this project’s tools without that access, start jpack mcp for it with JPACK_CONFIG naming this desk’s jpack.json, and give the agent no file or shell tools:"} slots={[<strong>{msg('An outside agent.')}</strong>]} /></p>
     <CodeBlock text={outsideAgentCommand(chassis?.projectDir, chassis?.runtimeBin)} label={msg('Shell command')} />
     <p className="quiet">{msg('This holds only as far as the agent’s client really withholds those tools: the server runs as your user, and Desk does not host it.')}</p>
+    <p className="quiet">{msg('An agent started with this signs its records where this desk’s jpack.json names the signing key, and otherwise writes unsigned records; Desk puts no key in the agent’s setup.')}</p>
   </Section>
 }

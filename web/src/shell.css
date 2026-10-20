@@ -438,7 +438,7 @@
     margin-left: auto;
   }
 
-  .desk-identity { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; }
+  .desk-identity { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; max-width: 100%; }
   .desk-orgmark { display: block; width: 24px; height: 24px; flex: 0 0 auto; border-radius: var(--radius-sm); object-fit: contain; }
   .desk-home {
     display: inline-flex;
@@ -487,6 +487,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .desk-chip > svg { width: var(--space-3); height: var(--space-3); flex: 0 0 auto; }
+  .desk-chip:disabled { cursor: default; opacity: .6; }
 
   .desk-user {
     display: inline-flex;
@@ -862,7 +864,8 @@
   .desk-drawer-right { right: var(--workspace-edge); }
 
   .desk-header-menu { width: 22rem; }
-  .desk-switcher-menu { width: 20rem; }
+  .desk-switcher-menu { width: min(20rem, calc(100vw - 24px)); }
+  .desk-switcher-search { padding: var(--space-2); }
   .desk-switcher-list {
     position: relative;
     max-height: min(20rem, calc(var(--radix-dropdown-menu-content-available-height, 100dvh) - 8rem));

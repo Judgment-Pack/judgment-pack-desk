@@ -1809,11 +1809,11 @@ func TestRelayAnswers429WithRetryAfterOnlyWhenTheQueueIsFull(t *testing.T) {
 	h.send(maxRelayInFlight)
 	h.reached(maxRelayInFlight)
 	// The queue one short of full: a request still waits, and is not refused.
-	for i := 0; i < maxRelayQueued-1; i++ {
+	for i := 0; i < 16-1; i++ {
 		h.server.relayQueue <- struct{}{}
 	}
 	h.send(1)
-	h.waitingIs(maxRelayQueued)
+	h.waitingIs(16)
 	time.Sleep(50 * time.Millisecond)
 	// Now it is full, and the next request is answered at once: bounded
 	// client, so a relay that queued it too would fail here and not hang.
@@ -1836,7 +1836,7 @@ func TestRelayAnswers429WithRetryAfterOnlyWhenTheQueueIsFull(t *testing.T) {
 	}
 	// The queue the test filled by hand is given back, and the waiting request
 	// is carried like the others once the endpoint lets go.
-	for i := 0; i < maxRelayQueued-1; i++ {
+	for i := 0; i < 16-1; i++ {
 		<-h.server.relayQueue
 	}
 	h.finish()

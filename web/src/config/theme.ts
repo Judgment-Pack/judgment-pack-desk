@@ -12,20 +12,17 @@
  * reader has to see is measured at WCAG AA in each — so choosing dark now
  * changes the colours and not only the attribute.
  *
- * **There is still no pre-paint inline script, and one cannot be written for
- * the preference.** Under `system` — the default — nothing flashes: the media
- * block paints the dark palette on the first paint, before any script runs. An
- * explicit `dark` over an OS set to light is the case a pre-paint script would
- * be for, and the record that holds it is keyed on the chassis' project root,
- * which the page does not know until the file listing answers. A script that
- * guessed the key would apply one project's preference to another's desk. So
- * that one case paints light for a frame, and the README says so rather than
- * this file pretending otherwise.
+ * Before a cold load knows the project, CSS follows the operating system. A
+ * saved project preference needs the authorized project root; guessing its key
+ * would apply one project's preference to another. Once known, a layout
+ * effect applies the answer before the next paint. The public entry preference
+ * belongs only to confirmed entry/recovery, never an authenticated check.
  */
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import type { Density, ThemeChoice } from './deskConfig'
 
 export const THEME_ATTRIBUTE = 'data-theme'
+let themeOwner: symbol | undefined
 
 /** Write one theme choice onto `<html>`, or clear it for `system`. */
 export function applyTheme(theme: ThemeChoice): void {
@@ -40,8 +37,9 @@ export function applyTheme(theme: ThemeChoice): void {
 
 /**
  * Keep the attribute in step with the theme once there **is** one, and take it
- * back off on unmount — a desk that is not on the page should not still be
- * theming it.
+ * back off on unmount if this application still owns it. Apply before paint;
+ * an obsolete owner's cleanup must not clear a newer entry/workspace owner,
+ * even when both selected the same value.
  *
  * `undefined` is "not known yet", and it writes nothing and removes nothing.
  * The desk's theme is the viewer's preference over the project file's default,
@@ -54,10 +52,16 @@ export function applyTheme(theme: ThemeChoice): void {
  * clear, so nothing is removed either.
  */
 export function useAppliedTheme(theme: ThemeChoice | undefined): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (theme === undefined) return
+    const owner = Symbol('theme owner')
+    themeOwner = owner
     applyTheme(theme)
-    return () => applyTheme('system')
+    return () => {
+      if (themeOwner !== owner) return
+      themeOwner = undefined
+      applyTheme('system')
+    }
   }, [theme])
 }
 

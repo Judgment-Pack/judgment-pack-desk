@@ -891,6 +891,16 @@ go	run chain: read whole before its size is checked	TestJobsRefusesARunChainPast
 go	run chain: the caller's query forwarded	TestJobsPassesTheRunChainThroughUntouched
 go	run chain: type rewritten to JSON	TestJobsPassesTheRunChainThroughUntouched,TestJobsReadsTheRunChainOnItsRouteAlone
 go	run chain: written with POST	TestJobsReadsTheRunChainOnItsRouteAlone
+go	run signer: a failed signing's reason is not held to Runner's	TestARunsSigningIsHeldToTheList
+go	run signer: a key the list does not name is not named	TestARunsSigningIsHeldToTheList,TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
+go	run signer: a list not read now is taken for one that names nothing	TestARunsSigningIsHeldToTheList,TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
+go	run signer: a path in a member reaches the page	TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
+go	run signer: a signed run with no list is said to be under a key the list does not name	TestARunsSigningIsHeldToTheList,TestJobsSigningReadsEachRunsSigningAsRunnerServesIt
+go	run signer: every run is checked under the key in force	TestJobsVerifyRunShowsWhatVerifyRunSaid
+go	run signer: the boot line names no expected key	TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestTheBootLineNamesTheListsKeyAsTheOneToExpect
+go	run signer: the copies are not held to what Desk wrote	TestJobsVerifyRunShowsWhatVerifyRunSaid
+go	run signer: verify-run is not told to require a signature	TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestJobsVerifyRunShowsWhatVerifyRunSaid
+go	run signer: verify-run's answer is altered	TestJobsRealCompanionHoldsEachRunsSignerToTheList,TestJobsVerifyRunShowsWhatVerifyRunSaid
 go	runner key: Runner inherits Desk's environment	TestEachDesksRunnerIsNamedAKeyOfItsOwn
 go	runner key: Runner's first start does not wait for the start's sweep	TestDesksStartSweepsBeforeItsRunnerTakesTheLock
 go	runner key: Runner's refusal is not reported	TestARunnerThatRefusesItsKeyStartsWithout
@@ -978,6 +988,7 @@ go	signed desk: the marker is left after publishing	TestANewDeskIsSignedWhereThe
 go	signed desk: the notice's paragraphs run together	TestANewDeskFallsBackToVersion4WhenTheRuntimeCannotRead5
 go	signed desk: the seed's path is not checked before publishing	TestASwappedSigningFolderNeverMakesASignedDesk
 go	signing key: a blank value counts as one	TestABlankSigningKeyIsNotSaid,TestDeskConfigReportsAnInheritedSigningKeyOnTheStartupDeskOnly
+go	signing key: a made desk inherits the expected public key	TestAnInheritedExpectedKeyStaysWithTheStartupDesk,TestTheSigningVariablesAreRemovedTogether
 go	signing key: a made desk's commands inherit it	TestANewDeskIsSignedWhereTheRuntimeReads6,TestAReviewOfAnUnreadableProjectKeepsTheSigningKeyOnlyOnTheStartupDesk,TestAnInheritedSigningKeyStaysWithTheStartupDesk,TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk,TestEachDesksRunnerIsNamedAKeyOfItsOwn,TestThePanelsCommandsKeepTheSigningKeyOnlyOnTheStartupDesk,TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk
 go	signing key: a named desk reports the startup desk's	TestARotationRunsItsStepsInOrder,TestAnInheritedSigningKeyStaysWithTheStartupDesk,TestDeskConfigReportsAnInheritedSigningKeyOnTheStartupDeskOnly,TestNoRotationPastTheKeyListsBound
 go	signing key: a named desk's private copy is marked the startup desk's	TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk
@@ -993,6 +1004,7 @@ go	signing key: the startup desk's commands drop it	TestAReviewOfAnUnreadablePro
 go	signing key: the startup desk's private copy is not marked	TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk
 go	signing key: the startup desk's project is not marked	TestAReviewOfAnUnreadableProjectKeepsTheSigningKeyOnlyOnTheStartupDesk,TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk,TestThePanelsCommandsKeepTheSigningKeyOnlyOnTheStartupDesk,TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk
 go	signing key: the startup desk's relay drops it	TestAnInheritedSigningKeyStaysWithTheStartupDesk
+go	signing key: the startup desk's relay drops the expected public key	TestAnInheritedExpectedKeyStaysWithTheStartupDesk,TestTheSigningVariablesAreRemovedTogether
 go	signing key: the startup desk's upgrade drops it	TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk
 go	signing lock: a creation lets the lock go before its marker goes	TestTheLockIsHeldFromTheFirstLookToTheLastChange
 go	signing lock: a creation or a rotation does not wait	TestACreationWaitsForTheLockAndThenRefuses,TestAKeyCustodyLockHeldByAnotherProcess,TestARotationWaitsForTheLockAndThenRefuses,TestTwoFirstCreationsAtOnceAreBothSigned,TestTwoStartsNeverRemoveANamedKey
@@ -1332,6 +1344,30 @@ go	verification export: refused version still forwarded	TestJobsRefusesAnyOtherV
 go	verification export: run read to the ordinary limit	TestJobsReadsAnExportUpToRunnersLimit
 go	verification export: version 6 forwarded	TestJobsRefusesAnyOtherVerificationVersion
 go	verification export: version forwarded on every route	TestJobsForwardsAJobsJournalWithItsCursorAlone,TestJobsForwardsVerificationVersionOnlyOnItsRoute,TestJobsReadsAnExportUpToRunnersLimit
+go	witness: Retry-After as a date is dropped	TestWitnessRetryAfterIsHeldInEitherFormFromReceipt
+go	witness: a file Desk cannot use is removed, not moved aside	TestWitnessFilesOutOfFormAreMovedAsideAndKept
+go	witness: a head is passed where none was fetched	TestWitnessPanelFetchesTheHeadAndReadsHistoricallyWithoutIt
+go	witness: a head or an answer out of form is written over	TestWitnessHeadAndAnswerOutOfFormAreMovedAsideBeforeReplacement
+go	witness: a redirect is followed	TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission
+go	witness: a replacement goes on when the original cannot be moved aside	TestWitnessHeadAndAnswerOutOfFormAreMovedAsideBeforeReplacement
+go	witness: a statement of another trail is dropped	TestWitnessKeepsTheOriginalAnswerAndAnotherTrailsStatementApart
+go	witness: an answer carrying a credential is kept and shown	TestWitnessAnswerCarryingACredentialIsWithheld
+go	witness: the answer as received is not kept	TestWitnessKeepsTheOriginalAnswerAndAnotherTrailsStatementApart
+go	witness: the body is not cut at the witness's bound	TestWitnessBodyIsCutAtTheWitnessBound
+go	witness: the cursor moves on a refusal	TestWitnessCursorMovesOnlyOnAConfirmedStatementForTheLastLineSent,TestWitnessWaitsBelowItsHeadAndStopsOnARetirement
+go	witness: the decision record fetches no head	TestWitnessPanelFetchesTheHeadAndReadsHistoricallyWithoutIt
+go	witness: the key is kept on an answer of no form	TestWitnessKeyCheckFailsClosedOnAnUndocumentedAnswer,TestWitnessKeyIsHeldToTheRuntimesRefusal
+go	witness: the key is not given to the runtime's check	TestWitnessCheckHoldsTheKeyToTheRuntimeAndRefusesTheOperatorsOwn
+go	witness: the owner's one check saves a continuation	TestWitnessPanelFetchesTheHeadAndReadsHistoricallyWithoutIt
+go	witness: the runtime's reading does not decide the cursor	TestWitnessCursorMovesOnlyOnAConfirmedStatementForTheLastLineSent
+go	witness: the runtime's refusal of the key is not read	TestWitnessCheckHoldsTheKeyToTheRuntimeAndRefusesTheOperatorsOwn,TestWitnessKeyIsHeldToTheRuntimesRefusal
+go	witness: the statement is not held to the last line sent	TestWitnessCursorMovesOnlyOnAConfirmedStatementForTheLastLineSent
+go	witness: the token is in the confirmation's answer	TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission
+go	witness: the token is read before anything is known to send	TestWitnessTokenIsNotReadWhenNothingIsSent
+go	witness: the token is sent to an origin it was not confirmed for	TestWitnessTokenIsSentOnlyToTheOriginItWasConfirmedFor
+go	witness: the token is written to Desk's log	TestWitnessTokenIsKeptInCustodyAndSentOnlyOnASubmission
+go	witness: the witness is listed as a holder to hand over to	TestWitnessIsNotAHolderToDownloadFor
+go	witness: the witness's deadline does not hold the next submission	TestWitnessRetryAfterIsHeldInEitherFormFromReceipt
 web	Accept is drawn on the reading route	src/assistant/AssistantPane.test.tsx
 web	Accept is enabled while the session is still running	src/assistant/acceptProposal.test.ts
 web	Accept pushes a second undo entry	src/assistant/AssistantPane.test.tsx
@@ -2124,6 +2160,11 @@ web	run chain: not offered on the Jobs page	src/jobs/JobsIndex.test.tsx
 web	run chain: not said to be unverified	src/jobs/RunChainDownload.test.tsx
 web	run chain: saved as text decoded from the answer	src/jobs/RunChainDownload.test.tsx
 web	run chain: saved under another name	src/jobs/RunChainDownload.test.tsx
+web	run signer page: a failed signing is not named in Runner's words	src/audit/jobsRecord.test.tsx
+web	run signer page: a key the list does not name is not named	src/audit/jobsRecord.test.tsx
+web	run signer page: a signed run with no list is said to be under a key the list does not name	src/audit/jobsRecord.test.tsx
+web	run signer page: the list's earlier keys are not shown	src/audit/jobsRecord.test.tsx
+web	run signer page: verify-run's output is not shown as it gave it	src/audit/jobsRecord.test.tsx
 web	runner key: Runner not running not said	src/jobs/runnerKey.test.tsx,src/routes/HelpAbout.test.tsx
 web	runner key: a Jobs action does not ask again	src/jobs/JobsView.test.tsx
 web	runner key: a malformed public key read	src/jobs/runnerKey.test.tsx
@@ -2522,5 +2563,20 @@ web	verification export: version 6 saved	src/jobs/VerificationDownload.test.tsx
 web	what a save actually did is never printed	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx,src/packs/edit/transition.test.tsx
 web	what was seen in one document is kept for the next	src/packs/useDocumentSpy.test.tsx
 web	widening never gives an untouched pane its layout back	src/shell/narrowShell.test.tsx
+web	witness client: a refusal of the head is read without the witness's words	src/audit/witness.test.tsx
+web	witness client: a withheld answer with words is read	src/audit/witness.test.tsx
+web	witness page: Desk says more than that it could not reach the witness	src/audit/witness.test.tsx
+web	witness page: a head that carried a credential is not said	src/audit/witness.test.tsx
+web	witness page: a historical reading is shown as current	src/audit/witness.test.tsx
+web	witness page: the countersigned coverage is not shown	src/audit/witness.test.tsx
+web	witness page: the poison sentence is left out	src/audit/witness.test.tsx
+web	witness page: the submitter's token is typed in the clear	src/audit/witness.test.tsx
+web	witness page: the witness is kept before it is confirmed	src/audit/witness.test.tsx
+web	witness page: with no cursor, Desk says the witness countersigned nothing	src/audit/witness.test.tsx
 web	write state dropped from the card's status comparison	src/routes/AdminView.test.tsx
 web	writing a chat case is offered over established ones	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
+go	harness approval: a ready grant admits another id	TestAssistantApprovalHarnessGrantStates
+go	relay queue: more than sixteen requests may wait	TestRelayAnswers429WithRetryAfterOnlyWhenTheQueueIsFull
+web	harness credentials: Desk headers omitted	web/src/assistant/harnessCredentialsCertification.test.ts
+web	harness credentials: AI headers omitted	web/src/assistant/harnessCredentialsCertification.test.ts
+web	harness credentials: session bearer omitted	web/src/assistant/harnessCredentialsCertification.test.ts

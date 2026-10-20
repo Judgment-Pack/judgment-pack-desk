@@ -15,7 +15,9 @@
 // copies, and the suite would run on the stand-in the Desk never replaced.
 //
 // `HARNESS_SOURCE` names the package directory (`packages/harness`) of a
-// checkout of the pinned revision. `scripts/certify-harness.mjs` is what runs
+// checkout of the pinned revision, with its root `npm ci` completed (source
+// engine imports resolve from that checkout's locked node_modules).
+// `scripts/certify-harness.mjs` is what runs
 // this, one adapter at a time, and CI checks the revision out of the lock.
 import { resolve } from 'node:path'
 import { defineConfig } from 'vitest/config'
@@ -34,6 +36,7 @@ export default defineConfig({
       { find: /^@judgment-pack\/harness\/contract$/, replacement: pkg + '/entries/contract.ts' },
       { find: /^@judgment-pack\/harness\/vercel$/, replacement: pkg + '/engines/vercel/index.ts' },
       { find: /^@judgment-pack\/harness\/codex$/, replacement: pkg + '/engines/codex/index.ts' },
+      { find: /^@judgment-pack\/harness\/deepagents$/, replacement: pkg + '/engines/deepagents/index.ts' },
       { find: /^@judgment-pack\/harness\/certification$/, replacement: pkg + '/certification/index.ts' },
       { find: /^@judgment-pack\/harness\/(.*)$/, replacement: pkg + '/$1' }
     ],

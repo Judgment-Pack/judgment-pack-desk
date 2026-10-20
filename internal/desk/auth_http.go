@@ -19,6 +19,7 @@ import (
 
 func (s *Server) registerSignIn() {
 	s.mux.HandleFunc("GET /api/auth/status", s.handleSignInStatus)
+	s.mux.HandleFunc("GET /api/auth/desks", s.handleEntryDesks)
 	s.mux.HandleFunc("POST /api/auth/setup", s.handleSignInSetup)
 	s.mux.HandleFunc("GET /api/auth/settings", s.handleSignInSettings)
 	s.mux.HandleFunc("POST /api/auth/test", s.handleSignInStart)

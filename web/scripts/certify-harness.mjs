@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Run the harness package's certification on the Desk's own wiring, one adapter
-// at a time: `HARNESS_SOURCE=<packages/harness> node scripts/certify-harness.mjs --adapter vercel|codex`.
+// at a time: `HARNESS_SOURCE=<packages/harness> node scripts/certify-harness.mjs --adapter vercel|codex|deepagents`.
 //
 // It is the package's own `scripts/certify.mjs` over the Desk's test ground
 // (`vitest.certification.config.mts`): the suite's checks of the recorded
@@ -34,7 +34,7 @@ if (!source) {
 const pkg = resolve(web, source)
 
 /** The adapters the Desk certifies, and the kind of each. */
-const ADAPTERS = { vercel: 'model', codex: 'agent' }
+const ADAPTERS = { vercel: 'model', codex: 'agent', deepagents: 'model' }
 
 const argument = (() => {
   const argv = process.argv.slice(2)
@@ -63,8 +63,8 @@ const vitest = resolve(web, 'node_modules/.bin/vitest')
 const reports = mkdtempSync(join(tmpdir(), 'certify-harness-'))
 const config = resolve(web, 'vitest.certification.config.mts')
 
-function run(args, report) {
-  const result = spawnSync(vitest, ['run', '--config', config, ...args, '--reporter=default', '--reporter=json', `--outputFile.json=${report}`], {
+function run(args, report, selectedConfig = config) {
+  const result = spawnSync(vitest, ['run', '--maxWorkers=2', '--config', selectedConfig, ...args, '--reporter=default', '--reporter=json', `--outputFile.json=${report}`], {
     cwd: web,
     stdio: 'inherit',
     env: { ...process.env, HARNESS_SOURCE: pkg }
@@ -102,7 +102,15 @@ if (kind === 'agent') runs.push([`engines/${adapter}/${adapter}.test.ts`, '--tes
 let status = 0
 let checks = 0
 try {
+  // The package checks credential exclusion; this mandatory Desk row checks
+  // what the actual configureHarness functions supply. An omitted row fails too.
+  const credentials = join(reports, 'desk-credentials.json')
+  const credentialCode = run(['src/assistant/harnessCredentialsCertification.test.ts'], credentials, resolve(web, 'vitest.config.ts'))
+  const credentialReport = JSON.parse(readFileSync(credentials, 'utf8'))
+  const credentialChecks = (credentialReport.testResults ?? []).flatMap((file) => file.assertionResults ?? []).filter((test) => test.status === 'passed' && test.title === 'certifies the Desk configureHarness credentials')
+  if (credentialCode !== 0 || credentialChecks.length !== 1) status = credentialCode || 1
   for (const [index, args] of runs.entries()) {
+    if (status !== 0) break
     console.log(`certify-harness ${adapter}: vitest run ${args.join(' ')}`)
     const report = join(reports, `run-${index}.json`)
     const code = run(args, report)

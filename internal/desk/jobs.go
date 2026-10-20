@@ -216,7 +216,11 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	// as is published only once Runner has started and answered: until then
 	// it is starting, and a Runner that did not start is reported as not
 	// running, never as signing.
+	// The key Desk's list names for that seed goes on the boot line with it,
+	// as the key Runner is to expect (issue #345): Runner v0.8.0 refuses to
+	// start with a seed that is another key, a refusal answered as any other.
 	signingKey, decided := j.key.prepare()
+	keyBetween("runner: decided")
 	decided, err := j.startWithSigningFallback(signingKey, decided)
 	if err != nil {
 		if j.ownership != nil {
@@ -247,8 +251,10 @@ func (j *jobsCompanion) holdOwned(err error) error {
 }
 
 // start starts Runner and reads its handshake, naming signingKey on the boot
-// line where it is not empty. Where Runner did not start, and what it wrote
-// to its standard error says it refused a signing key, refusal is its reason.
+// line where it is not empty, with signingPublicKey, the public key Desk's
+// list names for it, as the key that seed is expected to have. Where Runner
+// did not start, and what it wrote to its standard error says it refused a
+// signing key, refusal is its reason.
 func (j *jobsCompanion) start(signingKey, signingPublicKey string) (refusal *string, err error) {
 	bin := j.bin
 	cleanup := func() {}

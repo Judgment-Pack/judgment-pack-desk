@@ -44,7 +44,10 @@ package desk
 // signature sidecar, and the runtime would look for one only beside the copy
 // (runtime 0.27.1, `openTrailFiles`), where none is: a key passed here would
 // check nothing. So none is passed, the key is shown as `GET /api/runner-key`
-// reports it, and the page says where each run's signature is checked.
+// reports it, and the page says that the chain carries no signature sidecar
+// of its own and that Runner's key signs each run's record. What Runner
+// recorded of each run's signing, held to Desk's list, and each run's export
+// checked by verify-run, are jobs_signing.go's (issue #345).
 //
 // # What it establishes
 //

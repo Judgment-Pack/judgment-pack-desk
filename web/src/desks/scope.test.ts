@@ -13,3 +13,13 @@ it('does not forward invalid stored identifiers',async()=>{
  sessionStorage.setItem('jpack.active-desk','../outside');const scope=await import('./scope')
  expect(scope.deskHeaders()).toEqual({});expect(scope.deskSocketURL('ws://localhost/ws')).toBe('ws://localhost/ws')
 })
+it('distinguishes a fresh visit from an explicit owner selection without changing the live document scope',async()=>{
+ const scope=await import('./scope')
+ expect(scope.readDeskSelection()).toBeUndefined()
+ scope.selectDesk('')
+ expect(scope.readDeskSelection()).toBe('')
+ scope.selectDesk('c'.repeat(32))
+ expect(scope.readDeskSelection()).toBe('c'.repeat(32))
+ expect(scope.activeDeskId).toBe('')
+ expect(()=>scope.selectDesk('../bad')).toThrow('Invalid desk')
+})

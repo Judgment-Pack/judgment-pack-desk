@@ -4,8 +4,8 @@
   "components": {
     "runtime": {
       "repository": "Judgment-Pack/judgment-pack-runtime",
-      "version": "v0.36.0",
-      "revision": "20d6bf86b23f1794340fdc648201dda2e80a4095",
+      "version": "v0.37.0",
+      "revision": "bde356c084c1e7786e0a6c327addcd16ec856ebc",
       "channel": "stable"
     },
     "runner": {
@@ -25,10 +25,10 @@
     "harness": {
       "package": "@judgment-pack/harness",
       "repository": "Judgment-Pack/judgment-pack-agent",
-      "version": "v0.2.0",
-      "revision": "32655a4dd043e9edbda9a2d1428a626b6de54beb",
-      "asset": "judgment-pack-harness-0.2.0.tgz",
-      "sha256": "2ca3b8d161e9fe830cc3385f7624569ad9df831d34c06c28215f3c0da029c824",
+      "version": "v0.3.0",
+      "revision": "82235e1d180fbec4634e19c43ea80f06280b298c",
+      "asset": "judgment-pack-harness-0.3.0.tgz",
+      "sha256": "ccbf6adff495cb3898690afffb068fb675c968deaf78110d55e80f7104f25b13",
       "channel": "stable"
     }
   }

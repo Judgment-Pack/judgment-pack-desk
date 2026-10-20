@@ -11,6 +11,7 @@ package desk
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +25,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 )
 
 // A second public key, with its keyId as the first 32 hexadecimal
@@ -1356,6 +1360,199 @@ func TestNewDeskWithTheRuntimeShowsAnExpectedKeyRefusal(t *testing.T) {
 	for _, named := range []string{s.configDir, keys, other.PublicKey} {
 		if strings.Contains(string(data), named) {
 			t.Errorf("the panel names %q: %s", named, data)
+		}
+	}
+}
+
+// **With the runtime: a desk made under a stray expected key signs with its
+// own key** (#377). JPACK_SIGNING_PUBLIC_KEY, set where Desk was started,
+// names the public key of another key, kept apart from Desk's. Runtime 0.30.0
+// holds every key it signs with to the public key that variable names, so a
+// desk's runtime that inherited it would refuse the desk's own seed and write
+// its records unsigned. Desk makes the desk signed at "6"; a deciding run
+// through the desk's own relay, the runtime Desk starts for it, is recorded
+// and signed by the desk's key; the decision record, whose `packs validate`
+// and `audit verify` Desk runs, says the key signs and the record is signed;
+// and the runtime's own `audit verify --public-key`, run apart from Desk with
+// the desk's public key, agrees.
+//
+// **Never vacuous.** A runtime that does not read the variable would pass
+// without testing anything, so: a release older than 0.30.0, the first that
+// reads it, by the version it reports, is skipped; and, whatever the version,
+// the runtime itself, given the variable apart from Desk, must refuse the
+// desk's key in `packs validate` before the test goes on. A build that
+// reports no release (a source build, as CI's companion job makes, reports
+// "0.0.0-dev") and does not refuse is skipped; a release of 0.30.0 or later
+// that does not refuse fails.
+func TestNewDeskWithTheRuntimeSignsWithItsOwnKeyUnderAStrayExpectedKey(t *testing.T) {
+	bin := requireBinary(t)
+	t.Setenv("JPACK_CONFIG", "")
+	t.Setenv("JPACK_SIGNING_KEY", "")
+	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", "")
+	var version struct {
+		Tool struct {
+			Version string `json:"version"`
+		} `json:"tool"`
+	}
+	if err := json.Unmarshal(jpackIn(t, bin, t.TempDir(), "version", "--format", "json"), &version); err != nil {
+		t.Fatal(err)
+	}
+	release := !strings.HasPrefix(version.Tool.Version, "0.0.0-")
+	if release && !runtimeAtLeast(version.Tool.Version, 0, 30, 0) {
+		t.Skipf("runtime %q is older than 0.30.0, the first that reads JPACK_SIGNING_PUBLIC_KEY", version.Tool.Version)
+	}
+
+	// Another key, kept apart from Desk's, whose public key is the stray one.
+	keys := t.TempDir()
+	var other struct {
+		PublicKey string `json:"publicKey"`
+	}
+	if err := json.Unmarshal(jpackIn(t, bin, keys, "audit", "key", "generate", filepath.Join(keys, "other.seed"), "--format", "json"), &other); err != nil || len(other.PublicKey) != 64 {
+		t.Fatalf("the other key: %v %+v", err, other)
+	}
+	t.Setenv("JPACK_SIGNING_PUBLIC_KEY", other.PublicKey)
+
+	s, ts, _ := gatesServer(t, bin)
+	row := createGatedDesk(t, ts)
+	if row.ConfigVersion != "6" || !row.Signed || row.Notice != "" {
+		t.Fatalf("runtime %s made %+v, want it signed at 6", version.Tool.Version, row)
+	}
+	assertGatedFolder(t, row.Folder, wantSignedConfig(s.configDir, row.ID))
+	var public struct {
+		PublicKey string `json:"publicKey"`
+		KeyID     string `json:"keyId"`
+	}
+	if err := json.Unmarshal(jpackIn(t, bin, row.Folder, "audit", "key", "public", filepath.Join(signingFolderOf(s), row.ID+".seed"), "--format", "json"), &public); err != nil {
+		t.Fatal(err)
+	}
+	if public.PublicKey == other.PublicKey {
+		t.Fatal("the desk's key is the other key")
+	}
+	// The runtime, given the stray key apart from Desk, refuses the desk's.
+	probe := exec.Command(bin, "packs", "validate", "--config", "jpack.json", "--format", "json")
+	probe.Dir = row.Folder
+	probe.Env = append(os.Environ(), "JPACK_CONFIG=")
+	said, _ := probe.Output()
+	type check struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+	var validated struct {
+		Checks []check `json:"checks"`
+	}
+	refused := json.Unmarshal(said, &validated) == nil && slices.Contains(validated.Checks, check{auditSigningKeyCheck, "failed"})
+	switch {
+	case !refused && release:
+		t.Fatalf("runtime %s, given JPACK_SIGNING_PUBLIC_KEY naming another key, did not refuse the desk's key: %s", version.Tool.Version, said)
+	case !refused:
+		t.Skipf("runtime %q does not hold the key to JPACK_SIGNING_PUBLIC_KEY: %s", version.Tool.Version, said)
+	}
+
+	// A reviewed pack, locked as the owner locks it; neither writing nor
+	// locking signs anything.
+	config := strings.Replace(wantSignedConfig(s.configDir, row.ID), `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)
+	writeProject(t, row.Folder, map[string]string{"packs/a.json": reviewPack, "jpack.json": config})
+	jpackIn(t, bin, row.Folder, "packs", "lock", "--config", "jpack.json", "--format", "json")
+
+	// A deciding run through the desk's own relay.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, wsURL(ts)+"/ws?desk="+row.ID, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{ts.URL}, "Authorization": []string{"Bearer " + testToken}},
+	})
+	if err != nil {
+		t.Fatalf("dial the new desk: %v", err)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	c.SetReadLimit(readLimit)
+	rpc := &rpcSession{t: t, ctx: ctx, ws: c}
+	rpc.initialize()
+	result := rpc.call(11, "experimental_evaluate", map[string]any{"pack_id": "alpha", "facts": "{}"})
+	if structured, _ := result["structuredContent"].(map[string]any); structured["status"] != "evaluated" || structured["reviewed"] != true {
+		t.Fatalf("the deciding run answered %v", result)
+	}
+	if trail := readFile(t, filepath.Join(row.Folder, ".desk-private", "audit", "evaluations.jsonl")); strings.Count(trail, "\n") != 1 {
+		t.Fatalf("the deciding run left %d record(s), want 1", strings.Count(trail, "\n"))
+	}
+
+	status, data := reviewCall(t, ts, "GET", "/api/audit/verify", row.ID, nil, bearer)
+	var answer auditAnswer
+	if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || answer.Report == nil {
+		t.Fatalf("the panel answered %d %s", status, data)
+	}
+	report := answer.Report
+	if report.Status != "valid" || report.Coverage.Signed != (auditCoverageState{Status: "through", Through: 1}) || report.Coverage.SignedRecords != 1 ||
+		report.Signatures == nil || report.Signatures.KeyInForce != public.KeyID {
+		t.Errorf("the panel reports %+v, signatures %+v; want the record signed by the desk's key %s", report, report.Signatures, public.KeyID)
+	}
+	// The current managed-project boundary independently pins the retained key
+	// for validation as well as the relay; Runtime reports that stronger binding.
+	wantCheck := auditSigning{State: signingChecked, Status: "passed", Detail: "Chained records are signed with key " + public.KeyID + ", named by the audit member's signingKey; it is the expected key JPACK_SIGNING_PUBLIC_KEY names."}
+	if answer.Signing == nil || mustJSON(*answer.Signing) != mustJSON(wantCheck) {
+		t.Errorf("the panel shows the key check %+v, want %+v", answer.Signing, wantCheck)
+	}
+
+	// The runtime's own check, run apart from Desk, with no expected key and
+	// the desk's public key in a file of the holder's.
+	held := filepath.Join(t.TempDir(), "desk.pub")
+	if err := os.WriteFile(held, []byte(public.PublicKey+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "audit", "verify", "--config", "jpack.json", "--format", "json", "--public-key", held)
+	cmd.Dir = row.Folder
+	cmd.Env = append(os.Environ(), "JPACK_CONFIG=", "JPACK_SIGNING_PUBLIC_KEY=")
+	out, err := cmd.Output()
+	var own struct {
+		Status   string `json:"status"`
+		Coverage struct {
+			Signed        auditCoverageState `json:"signed"`
+			SignedRecords int64              `json:"signedRecords"`
+		} `json:"coverage"`
+		Signatures struct {
+			KeyInForce string `json:"keyInForce"`
+		} `json:"signatures"`
+	}
+	if err != nil || json.Unmarshal(out, &own) != nil || own.Status != "valid" || own.Coverage.Signed != (auditCoverageState{Status: "through", Through: 1}) ||
+		own.Coverage.SignedRecords != 1 || own.Signatures.KeyInForce != public.KeyID {
+		t.Errorf("the runtime's own audit verify answered %v %s", err, out)
+	}
+}
+
+// runtimeAtLeast reports whether version, as the runtime reports it
+// ("0.30.0", or with a suffix after a "-" or "+"), is major.minor.patch or
+// later. A version it cannot read is not.
+func runtimeAtLeast(version string, major, minor, patch int) bool {
+	core, _, _ := strings.Cut(strings.TrimPrefix(version, "v"), "-")
+	core, _, _ = strings.Cut(core, "+")
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	var got [3]int
+	for i, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 {
+			return false
+		}
+		got[i] = n
+	}
+	for i, want := range [3]int{major, minor, patch} {
+		if got[i] != want {
+			return got[i] > want
+		}
+	}
+	return true
+}
+
+// The real-binary test above skips by runtimeAtLeast, so a version read wrong
+// would skip it, or run it against a runtime that ignores the variable.
+func TestRuntimeAtLeastReadsTheReportedVersion(t *testing.T) {
+	for version, want := range map[string]bool{
+		"0.30.0": true, "0.30.1": true, "0.31.0": true, "1.0.0": true, "0.30.0-dev": true, "v0.30.0": true,
+		"0.29.9": false, "0.29.10": false, "0.3.0": false, "0.30": false, "": false, "0.30.x": false, "0.0.0-stand-in": false,
+	} {
+		if got := runtimeAtLeast(version, 0, 30, 0); got != want {
+			t.Errorf("runtimeAtLeast(%q, 0.30.0) = %v, want %v", version, got, want)
 		}
 	}
 }

@@ -390,9 +390,10 @@ The runtime chains each desk's audit trail, and can sign it, check it against
 checkpoints someone else holds, and have it time-stamped. Desk's part, set out
 in [ADR-0010](docs/adr/0010-defensible-decision-records.md), is to keep the
 key, to show what the runtime's own check finds, to hand checkpoints to holders
-you name, and to run the stamping, all on the owner's word. Desk adds no claim
-of its own: where this section quotes a sentence, it is the runtime's or
-Runner's, or ADR-0010's, as written. **Help & About → Gates** and the panels in
+you name, to run the stamping, and to submit checkpoints to a witness you set
+([ADR-0012](docs/adr/0012-witness-as-a-holder.md)), all on the owner's word.
+Desk adds no claim of its own: where this section quotes a sentence, it is the
+runtime's or Runner's, the witness's, or ADR-0010's or ADR-0012's, as written. **Help & About → Gates** and the panels in
 **Admin → Workspace → Decision safeguards** say the same in brief. A runtime older than 0.26.0 has none
 of this, and Desk offers none of it with one.
 
@@ -421,6 +422,13 @@ of this, and Desk offers none of it with one.
   Where that project's audit trail is chained, as it is by default, the
   runtime Desk pins (0.30.0) signs each record with the key it names, if it
   accepts that key.
+- A `JPACK_SIGNING_PUBLIC_KEY` set where Desk was started, which names the
+  public key the signing key is expected to have (runtime 0.30.0), is removed
+  with it, from the same runtimes, so a desk Desk made signs with its own key
+  whatever public key is named in Desk's environment. The project Desk was
+  started on keeps it too, as the owner's, and Desk's log says so once at
+  start, not naming the key: there the runtime signs nothing with a key whose
+  public key is another.
 - The folder is private: owner-only, never committed (`.desk-private/` is in a
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
   no backup. Losing the desk's folder loses its records.
@@ -933,8 +941,9 @@ of the trail is held to what they kept with `jpack audit verify --expect`.
   them, and its record of what went to each, in `.desk-private/handover/`
   under the project: owner-only, opened through the project's root and never
   through a link, refused by the file API, and in no backup, like the trail.
-- **Download or copy is the one channel.** Desk sends a checkpoint to no
-  endpoint itself. "Download
+- **Download or copy is the one channel to a holder you name.** Desk sends a
+  checkpoint to no endpoint of a holder's; a witness (below) is the one
+  endpoint it submits to. "Download
   checkpoints" saves the checkpoints after that holder's last confirmed record
   as the exact bytes `jpack audit checkpoint --since <n> --limit 300` printed,
   batch after batch, up to 6,000 in one file, which is named for the trail and
@@ -1125,6 +1134,115 @@ authority's stated time, as far as that authority is independent of the
 operator", and not "when any record was made: a stamp is an upper bound on
 existence; anything against an authority that colludes; revocation, where no
 supplied list speaks for it; anything after the last checkpoint stamped".
+
+### A witness
+
+**A witness, in the decision record** (ADR-0012, accepted 2026-10-12;
+ADR-0010's delivery row 10). A witness is a gateway another party runs
+(Gateway v0.11.0, `SPEC.md` §6 and §8) that signs each checkpoint handed to
+it, chains its statements per trail, and serves them to anyone who names the
+trail. Desk treats it as a holder whose channel is `witness`, one per desk.
+**There is none by default.**
+
+- **Setting one.** You give its URL (https, or http to a loopback address
+  only), its public key, 64 hexadecimal characters from the witness's
+  operator out of band and never from the witness it checks, the submitter's
+  token its operator issued for the witness's audience, and an interval from
+  5 minutes to 24 hours, an hour unless you say otherwise. Desk holds the key
+  to the runtime's rule by running `jpack audit verify --config jpack.json
+  --format json --witness-key <key>` once: its refusal,
+  `JPS-AUDIT-WITNESS-KEY-INVALID`, is shown as the runtime said it, and the
+  key is kept only on an answer the runtime gives once it has read the key
+  (a report whose witness section names one key, or its refusal of a trail
+  not written yet); any other answer is "the key could not be checked", and
+  nothing is kept. Desk refuses its own local gateway's key, which is yours
+  as the operator. A pinned key is
+  never changed in place: a witness under a new key is a new witness. The
+  confirmation says, before anything is kept, that choosing a witness is a
+  trust decision; that each submission sends it the trail identity, sequences
+  and record digests, never a record's contents; that its reads are open, so
+  whoever holds one of the trail's checkpoints can follow the trail there;
+  that only the last line of a submission is countersigned; that whoever
+  holds the token can poison the trail there for good; and that the
+  witness's operator registers the trail first, with the trail identity to
+  give them.
+- **What Desk keeps.** The URL and the key in `witness.json` (and the key as
+  the runtime reads it, `witness.pub`), the cursor in the holder's
+  `record.json`, every statement the witness answered or served exactly as
+  received in `statements-<trail>.jsonl`, the head last fetched, the
+  runtime's continuation and the witness's last answer, all in the holder's
+  folder under `.desk-private/handover/`, owner-only, refused by the file API
+  and in no backup. The token is kept in Desk's custody, outside the project,
+  at `secrets/witness/<desk>/<holder id>.token`, 0600, bound to the origin
+  (scheme, host and port) of the URL you confirmed it for: never shown again,
+  never written to a log, an answer or a project file, passed to no process,
+  read only immediately before a submission, and sent only as
+  `Authorization: Bearer` on a submission to that origin, with no redirect
+  followed. A URL at another origin, however it came to be in the settings,
+  sends nothing until you set the witness again and paste its token for the
+  new URL. The witness's answer to a submission is kept as received in
+  `answer.json`, at most 64 KiB, apart from what Desk read of it, and a
+  statement of another trail in `unusable.jsonl`; neither is ever given to a
+  verification. A head or an answer Desk cannot use is moved aside before
+  anything replaces it, and nothing replaces it where it cannot be. Everything read back is held to its form
+  first; a file Desk cannot use is moved aside in that folder under a name
+  that says when and why, named on the decision record, and kept until you
+  remove it. Desk removes no statement. Removing the witness removes its
+  token and settings and keeps its statements.
+- **What Desk sends, and when.** At the interval, where the trail's head has
+  moved past the cursor, one submission at a time per desk, and on **Send
+  now**: the lines `jpack audit checkpoint --since <cursor> --limit 300`
+  printed, joined untouched through the trail's last chained record, as
+  `application/jsonl`, each request with 15 seconds. Over the witness's
+  1 MiB, Desk sends the whole lines that end with the head's and says how many
+  earlier ones it left unsent. Only the last line is countersigned: nothing
+  the witness keeps shows that the lines before it were sent, and the
+  statement for the head covers them through the trail's own chain. Nothing a deciding run
+  does waits for it; while Desk is not running, nothing is sent.
+- **What moves the cursor.** Only a `200` whose statement is a checkpoint
+  statement for the last line sent, by trail, sequence and record digest,
+  compared by Desk, and which the runtime's reading with it as the head
+  confirms: the witness section read, no `witness-*` finding, its latest
+  checkpoint statement at that index and sequence. A `409` (`conflict`,
+  `below-head`, `retired`), a `401`, `403`, `429` or `503`, and an answer
+  that is not of the witness's form never move it. Each refusal is shown with
+  the witness's own `reason` and sentence; Desk's own words for a witness
+  that did not answer as asked are only "Desk could not reach the witness",
+  with the HTTP status where there was one. **The token's secrecy comes
+  first**: an answer that carries the token, a part of it, or anything that
+  reads as a bearer token is kept and shown as its HTTP status and a
+  `reason` that is a word, and none of its words. After `below-head` Desk
+  sends again only once the trail's head is past the witness's; after
+  `retired` it sends nothing more for the trail; and every submission,
+  scheduled or Send now, waits for the time a `Retry-After` names, in seconds
+  or as a date, counted from when the answer was received.
+- **What the decision record reads.** When the panel opens, Desk fetches the
+  trail's head with no token, then the statements after its continuation, up
+  to the head's, and runs `audit verify` with the pinned key, the statements,
+  the head, its continuation and `--witness-save`. The panel shows the
+  runtime's `countersigned` coverage beside the held one, and its witness
+  section: where the reading began, whether it is current, to the head Desk
+  fetched, or historical, read only as far as it was supplied, the latest
+  checkpoint statement, the conflicts and the retirement. With the witness
+  stopped, Desk keeps working and the reading is historical.
+  `--require-countersigned-through` is passed only for one check you ask
+  for, which saves nothing.
+
+What a witness establishes, and does not, is ADR-0012 section 5's, in
+ADR-0013's words:
+
+| Part | Establishes | Does not establish |
+|---|---|---|
+| A `checkpoint` statement, verified under the pinned key | the key's holder was given this checkpoint and signed it as statement `index` of its chain for the trail, and states that it did so at `witnessedAt` | that the checkpoint names a real record; that it extends the one before; that the submitter was the trail's operator; that `witnessedAt` is true; anything against a witness that colludes, or whose key is stolen |
+| The same, held against the trail | lines 1 to its sequence are the lines that existed when the witness signed, if the witness is independent of the operator | anything after that sequence; that this is the project's only trail; that the records are true, or that every decision was recorded |
+| The chain read to a head Desk fetched | Desk holds every statement that head commits to, as the witness signed them: none missing, out of order or altered | that the head is still the witness's after the fetch; that the witness signed no second chain for another audience; that it will serve these tomorrow |
+| A `conflict` statement | a submitter the witness allowed offered another record for a sequence the witness held | which of the two is the trail's; who that submitter was |
+| A `retirement` statement | the witness accepts no more statements for the trail, and the chain ends there | why; whether the trail's operator went on under another trail, as it does after a retirement, registered anew |
+| The submitter's token | to the witness, an issuer and a subject; it opens the witness and nothing else | that its holder is the trail's operator: a credential is enough to poison a trail for good, by a checkpoint signed at a sequence no honest one will exceed, which revoking the token does not unsign; recovery is retirement, not erasure |
+| Desk's cursor and its record of submissions | — | anything: they are the operator's |
+
+Not in this line: Runner's chain of runs at a witness, a second witness per
+desk, and moving a trail aside.
 
 ### What each part establishes, and does not
 
@@ -1780,13 +1898,24 @@ are deliberately not in that set and the test says so where the pairs are
 listed: they separate regions rather than identify controls, and holding them
 to 3:1 would be a dark palette re-authoring the light desk on its way past.
 
-**One case still flashes, and it cannot be fixed with a script.** Under
-`system` nothing does: the media block paints dark on the first paint, before
-any JavaScript runs. A viewer who has explicitly chosen `dark` while their
-computer is set to light gets one light frame, because the record that holds
-that choice is keyed on the chassis' project root and the page does not know it
-until the file listing answers — a pre-paint script would have to guess the
-key, and a wrong guess applies one project's preference to another's desk.
+**Entry and workspace preferences have separate lifetimes.** While checking a
+session, Desk shows one neutral loading indicator without sign-in branding,
+preferences or forms. Protected workspace providers mount only after access is
+verified; a confirmed refusal shows sign-in and an unavailable server shows
+recovery. Refresh keeps the selected desk. Checking leaves the palette to the
+operating system rather than applying an old saved entry preference. The public
+entry preference applies once sign-in or recovery is confirmed. A fresh explicit
+entry choice can cross into exactly one workspace, including across sign-in's
+document reload. Workspace choices
+remain scoped to their own project. Known themes apply before the next paint,
+and cleanup from a previous owner cannot reset a newer owner's theme.
+
+**Cold loads still need the project's identity.** CSS follows the operating
+system before JavaScript runs. A saved project `dark` choice on a light system
+(or `light` on a dark system) can therefore show the system palette until the
+authorized project root/configuration answers. That delay depends on loading;
+it is not guaranteed to be one frame. Guessing a project key or using a global
+last-workspace choice would apply one project's preference to another's desk.
 
 **What compact does.** `appearance.density` writes `data-density` on the same
 element — `compact` sets it, `comfortable` removes it, because comfortable is
@@ -6674,7 +6803,7 @@ See [unsaved-work behavior](docs/design/unsaved-work.md) for coverage and limits
 
 Use the desk name beside the brand to switch desks or **Create desk…**. Each new desk keeps its packs, source documents, chats, drafts, tests, briefs, jobs, and run artifacts in its own folder. Its private data lives under `.desk-private/`, excluded from the project file editor. Machine credentials remain in protected settings. The browser title uses the desk name and keeps `*` while edits are unsaved; the favicon follows the configured brand.
 
-A new desk starts gated ([ADR-0009](docs/adr/0009-gates-on-by-default.md)). Its `jpack.json` sets `requireReviewed`, `requireComparableFacts` and an audit trail in `.desk-private/audit/`, and the runtime locks the empty project before the desk exists, in `jpack.lock.json`. A deciding run of a draft is then refused, while rehearsals and tests of it still answer. `requireComparableFacts` refuses any evaluation, rehearsals included, that reads a fact of a type no comparison in the pack can match. With runtime 0.26.0 or later, it is also signed: its `jpack.json` is at configVersion `"6"` and names a signing key Desk keeps for it, outside the desk, in `secrets/signing/` in Desk's configuration folder (see "The signing key of a desk Desk makes" under Gates). With a runtime older than 0.26.0, or where Desk's custody cannot keep a key, the desk is created at configVersion `"5"`, unsigned, and the creation says so and why, before the desk opens. With a runtime older than 0.25.0, the desk is created without `requireComparableFacts`, and the creation says so. With one older than 0.24.0, if the runtime fails to generate the key, or if the lock fails, no desk is created. A named desk's runtime always reads the desk's own `jpack.json`, and inherits no signing key: a `JPACK_CONFIG` or `JPACK_SIGNING_KEY` set where Desk was started applies only to the startup project.
+A new desk starts gated ([ADR-0009](docs/adr/0009-gates-on-by-default.md)). Its `jpack.json` sets `requireReviewed`, `requireComparableFacts` and an audit trail in `.desk-private/audit/`, and the runtime locks the empty project before the desk exists, in `jpack.lock.json`. A deciding run of a draft is then refused, while rehearsals and tests of it still answer. `requireComparableFacts` refuses any evaluation, rehearsals included, that reads a fact of a type no comparison in the pack can match. With runtime 0.26.0 or later, it is also signed: its `jpack.json` is at configVersion `"6"` and names a signing key Desk keeps for it, outside the desk, in `secrets/signing/` in Desk's configuration folder (see "The signing key of a desk Desk makes" under Gates). With a runtime older than 0.26.0, or where Desk's custody cannot keep a key, the desk is created at configVersion `"5"`, unsigned, and the creation says so and why, before the desk opens. With a runtime older than 0.25.0, the desk is created without `requireComparableFacts`, and the creation says so. With one older than 0.24.0, if the runtime fails to generate the key, or if the lock fails, no desk is created. A named desk's runtime always reads the desk's own `jpack.json`, and inherits no signing key and no expected public key: a `JPACK_CONFIG`, `JPACK_SIGNING_KEY` or `JPACK_SIGNING_PUBLIC_KEY` set where Desk was started applies only to the startup project.
 
 Switching desks checks unsaved work and does not stop another desk's runner. Existing projects retain their storage locations; creating a desk does not migrate existing data. Use the paired runtime update, which accepts an empty project until its first pack is created. See [named desk storage and lifecycle](docs/design/named-desks.md).
 

@@ -203,12 +203,17 @@ var errCheckpointsChanged = errors.New("the trail changed while Desk read its ch
 /* What Desk keeps ----------------------------------------------------------- */
 
 // handoverHolder is one holder, as `holders.json` keeps it: the owner's label
-// and channel, and when it was added, by Desk's clock.
+// and channel, and when it was added, by Desk's clock. Witness is true for
+// the desk's witness (witness.go), whose channel is `witness` and whose
+// checkpoints Desk submits rather than hands over; it is left out of the
+// list for every other holder, so a list written before it is the same
+// bytes.
 type handoverHolder struct {
 	ID      string `json:"id"`
 	Label   string `json:"label"`
 	Channel string `json:"channel"`
 	AddedAt int64  `json:"addedAt"`
+	Witness bool   `json:"witness,omitempty"`
 }
 
 type holdersFile struct {
@@ -229,11 +234,13 @@ type handedOver struct {
 // handoverRecord is a holder's record: Trails for the desk's own trail, and
 // Jobs for Runner's chain of runs, each by identity. Jobs is left out where
 // nothing of the chain was handed over, so a record written before it is the
-// same bytes.
+// same bytes. Witness is a witness holder's cursor at the witness, by trail
+// identity (witness.go), and is left out for every other holder.
 type handoverRecord struct {
-	Version string                `json:"version"`
-	Trails  map[string]handedOver `json:"trails"`
-	Jobs    map[string]handedOver `json:"jobs,omitempty"`
+	Version string                   `json:"version"`
+	Trails  map[string]handedOver    `json:"trails"`
+	Jobs    map[string]handedOver    `json:"jobs,omitempty"`
+	Witness map[string]witnessCursor `json:"witness,omitempty"`
 }
 
 /* What a hand-over is of ------------------------------------------------------ */
@@ -410,16 +417,29 @@ func readHolders(handover *os.Root) ([]handoverHolder, error) {
 		return nil, fmt.Errorf("%s is not a list of holders Desk wrote", handoverHoldersName)
 	}
 	seen := map[string]bool{}
+	witnesses := 0
 	for _, holder := range file.Holders {
 		label, labelOK := holderText(holder.Label, holderLabelLimit)
 		channel, channelOK := holderText(holder.Channel, holderChannelLimit)
 		if !holderIDForm.MatchString(holder.ID) || seen[holder.ID] || !labelOK || label != holder.Label ||
-			!channelOK || channel != holder.Channel || holder.AddedAt < 0 {
+			!channelOK || channel != holder.Channel || holder.AddedAt < 0 || holder.Witness && holder.Channel != witnessChannel {
 			return nil, fmt.Errorf("%s is not a list of holders Desk wrote", handoverHoldersName)
 		}
 		seen[holder.ID] = true
+		if holder.Witness {
+			witnesses++
+		}
+	}
+	// **One witness a desk** (ADR-0012, question 1).
+	if witnesses > 1 {
+		return nil, fmt.Errorf("%s is not a list of holders Desk wrote", handoverHoldersName)
 	}
 	return file.Holders, nil
+}
+
+// withoutWitness is holders without the desk's witness.
+func withoutWitness(holders []handoverHolder) []handoverHolder {
+	return slices.DeleteFunc(slices.Clone(holders), func(h handoverHolder) bool { return h.Witness })
 }
 
 // readHandoverRecord is a holder's record: empty where Desk has recorded no
@@ -444,6 +464,11 @@ func readHandoverRecord(holder *os.Root) (handoverRecord, error) {
 			if !keyIDForm.MatchString(trail) || handed.From < 0 || handed.Through <= handed.From || handed.ConfirmedAt < 0 || !recordForm.MatchString(handed.Digest) {
 				return handoverRecord{}, fmt.Errorf("%s is not a record Desk wrote", handoverRecordName)
 			}
+		}
+	}
+	for trail, entry := range record.Witness {
+		if !checkWitnessCursor(trail, entry) {
+			return handoverRecord{}, fmt.Errorf("%s is not a record Desk wrote", handoverRecordName)
 		}
 	}
 	return record, nil
@@ -820,6 +845,9 @@ func (s *Server) handleHolders(w http.ResponseWriter, r *http.Request) {
 		s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("Desk's list of holders could not be read: ", err)})
 		return
 	}
+	// The witness is the decision record's (witness.go): nothing is
+	// downloaded or confirmed for it, and it is not listed here.
+	holders = withoutWitness(holders)
 	var jobs *checkpointHead
 	if len(holders) > 0 {
 		answer.Jobs = s.jobsChainNow(r.Context(), dir)
@@ -979,13 +1007,16 @@ func (s *Server) handleCheckpoints(w http.ResponseWriter, r *http.Request) {
 	}
 	s.handoverMu.Lock()
 	defer s.handoverMu.Unlock()
-	_, record, found, err := s.readHolderRecord(id)
+	listed, record, found, err := s.readHolderRecord(id)
 	switch {
 	case err != nil:
 		s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("Desk's record of hand-overs could not be read: ", err)})
 		return
 	case !found:
 		writeJSONCoded(w, http.StatusNotFound, CodeNotFound, noSuchHolderWords)
+		return
+	case listed.Witness:
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, witnessHolderWords)
 		return
 	}
 	if failure := s.copyChain(r.Context(), chain, "nothing was handed over"); failure != nil {
@@ -1145,6 +1176,9 @@ func (s *Server) handleConfirmHandover(w http.ResponseWriter, r *http.Request) {
 	case !found:
 		writeJSONCoded(w, http.StatusNotFound, CodeNotFound, noSuchHolderWords)
 		return
+	case holder.Witness:
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, witnessHolderWords)
+		return
 	case chain.entries(record)[request.Trail].Through != from:
 		staleRefusal(w)
 		return
@@ -1221,7 +1255,7 @@ func (s *Server) recordHandover(id string, chain handoverChain, trail string, fr
 		trails = map[string]handedOver{}
 	}
 	trails[trail] = handedOver{From: from, Through: through, ConfirmedAt: handoverClock().Unix(), Digest: sha256Digest(data)}
-	updated := handoverRecord{Version: handoverVersion, Trails: record.Trails, Jobs: record.Jobs}
+	updated := handoverRecord{Version: handoverVersion, Trails: record.Trails, Jobs: record.Jobs, Witness: record.Witness}
 	if chain.jobs {
 		updated.Jobs = trails
 	} else {
@@ -1318,6 +1352,9 @@ func (s *Server) heldOf(ctx context.Context, dir heldDir, chain handoverChain) h
 		held.problem = handoverWords(recordUnreadWords, err)
 		return held
 	}
+	// A witness's statements are read as its own (witness.go), never as
+	// held checkpoints.
+	holders = withoutWitness(holders)
 	if len(holders) == 0 {
 		return held
 	}

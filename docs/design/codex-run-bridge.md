@@ -201,3 +201,11 @@ model requests or source retries. The journal commits Started before native
 account/thread work. A stopped, expired or process-interrupted wait becomes Not
 started; a submitted request whose response was lost stays Outcome uncertain.
 Process recovery does not restart either kind of operation automatically.
+
+
+Every run is admitted against the enabled-model allowlist of its saved AI
+connection, including main, review and delegated runs. Review and helper model
+preferences choose among that same set; they do not widen it. The Codex wire
+carries no child marker, so admission does not infer a special child-only model
+permission from a model name. The server rereads the saved connection at admission
+and refuses models removed from its enabled set.

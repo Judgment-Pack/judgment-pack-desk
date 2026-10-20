@@ -23,7 +23,10 @@ import { SettingsFeedback } from '../ui/SettingsFeedback'
  * and only there, the repair, on the owner's word (ADR-0010, section 4;
  * `RepairTrail`). And stamping: the owner's time-stamping authority, kept by
  * Desk, the records pending a stamp, the last stamp run and "Stamp now"
- * (ADR-0010, section 3; `Stamping`).
+ * (ADR-0010, section 3; `Stamping`). And the witness: a gateway another
+ * party runs, which countersigns the trail's checkpoints Desk submits to it;
+ * its settings, Desk's cursor, the runtime's reading of its chain to the head
+ * Desk fetched, the last submission and "Send now" (ADR-0012; `Witness`).
  *
  * It runs when the panel becomes visible and when the owner asks again: never
  * on a timer, on focus, on a reconnect or on a change to the project. The
@@ -43,7 +46,7 @@ import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
 import { ArchivedKeys, type ArchiveOutcome } from './ArchivedKeys'
-import { archiveOf, AUDIT_KEY, AuditUnavailable, identityOf, readAuditRecord, type AuditArchive, type AuditCoverageState, type AuditIdentity, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping, type HandedSince } from './client'
+import { archiveOf, AUDIT_KEY, AuditUnavailable, identityOf, readAuditRecord, type AuditArchive, type AuditCoverageState, type AuditIdentity, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping, type AuditWitnessHolder, type HandedSince } from './client'
 import styles from './DecisionRecord.module.css'
 import { Handover, NO_HANDOVER, type HandoverState } from './Handover'
 import { RepairTrail, type RepairOutcome } from './RepairTrail'
@@ -51,6 +54,7 @@ import { ResolveIdentity, type IdentityOutcome } from './ResolveIdentity'
 import { RotateSigningKey, type RotationOutcome } from './RotateSigningKey'
 import { Stamping, type StampingOutcome } from './Stamping'
 import { TrailDownloads } from './TrailDownloads'
+import { Witness, type WitnessOutcome } from './Witness'
 
 /**
  * The panel's one query: run each time the panel becomes visible, and on the
@@ -107,6 +111,13 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   useEffect(() => { if (visible) setStamped(undefined) }, [visible])
   const stampingSection = (stamping?: AuditStamping, report?: AuditReport) => <Stamping stamping={stamping} report={report} outcome={stamped}
     onOutcome={outcome => { setStamped(outcome); void query.refetch() }} />
+  // What a witness action answered, kept across the check run after it, as a
+  // stamping action's is, and dropped when the owner checks again or opens
+  // the panel again.
+  const [witnessed, setWitnessed] = useState<WitnessOutcome>()
+  useEffect(() => { if (visible) setWitnessed(undefined) }, [visible])
+  const witnessSection = (witness?: AuditWitnessHolder, report?: AuditReport) => <Witness witness={witness} report={report} outcome={witnessed}
+    onOutcome={outcome => { setWitnessed(outcome); void query.refetch() }} />
   const handoverSection = (since?: HandedSince[]) => <Handover checkedAt={query.dataUpdatedAt} since={since} state={handover} onState={setHandover} onConfirmed={() => void query.refetch()} />
   // What the owner's answer on this project's identity did, kept across the
   // check run after it, as a rotation's is, and dropped when the owner checks
@@ -124,7 +135,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
     onOutcome={outcome => { setArchived(outcome); void query.refetch() }} />
   const rotation = (keys?: AuditKeys, rotation?: AuditRotation) => <RotateSigningKey rotation={rotation} keyCount={keys?.state === 'kept' ? keys.public.length : 0}
     outcome={rotated} onOutcome={outcome => { setRotated(outcome); void query.refetch() }} />
-  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
+  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); setWitnessed(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
   return <SettingsSection title={msg('Decision record')} description={msg('Jobs runs are recorded by the runner, not in this trail.')} variant="plain">
     <div className={styles.card} data-testid="decision-record">
       {query.isPending || query.isFetching ? <SettingsFeedback>{msg('Asking the runtime…')}</SettingsFeedback>
@@ -142,12 +153,14 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   {rotation(record.keys, record.rotation)}
                   {archiveSection(record.archive)}
                   {handoverSection()}
+                  {witnessSection(record.witness)}
                   {stampingSection(record.stamping)}
                   <TrailDownloads files={record.files ?? []} />
                   {again}
                 </>
                   : record?.state === 'report' && <>
                     <p className={styles.statement}>{ranWith(record)}</p>
+                    {record.witness?.passed && <p className={styles.quiet}>{msg('Desk also gave the runtime the witness’s statements it keeps for this trail, and the witness’s key you pinned.')}</p>}
                     {record.handoverProblem && <SettingsFeedback tone="error">{systemMessage(record.handoverProblem)}</SettingsFeedback>}
                     {record.expectUnread && <SettingsFeedback tone="error">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</SettingsFeedback>}
                     <Report report={record.report} />
@@ -157,6 +170,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                     {rotation(record.keys, record.rotation)}
                     {archiveSection(record.archive)}
                     {handoverSection(record.since)}
+                    {witnessSection(record.witness, record.report)}
                     {stampingSection(record.stamping, record.report)}
                     <TrailDownloads files={record.files ?? []} />
                     {record.runtime && <p className={styles.quiet}>{msg('Checked by jpack {{version}}.', { version: record.runtime })}</p>}
@@ -245,13 +259,13 @@ function statusWords(status: string): string | undefined {
   }
 }
 
-type Protection = 'signed' | 'checkpointed' | 'stamped'
+type Protection = 'signed' | 'checkpointed' | 'stamped' | 'countersigned'
 
 /** How far one protection reaches, as the report says it. */
 function reach(kind: Protection, state: AuditCoverageState) {
   const through = state.through ?? 0
   const words = state.status === 'through'
-    ? { signed: () => msg('Signed through record {{sequence}}', { sequence: through }), checkpointed: () => msg('Witnessed through record {{sequence}}', { sequence: through }), stamped: () => msg('Stamped through record {{sequence}}', { sequence: through }) }[kind]()
+    ? { signed: () => msg('Signed through record {{sequence}}', { sequence: through }), checkpointed: () => msg('Witnessed through record {{sequence}}', { sequence: through }), stamped: () => msg('Stamped through record {{sequence}}', { sequence: through }), countersigned: () => msg('Countersigned through record {{sequence}}', { sequence: through }) }[kind]()
     : state.status === 'none' && kind === 'signed' ? msg('No record carries a valid signature')
       : state.status === 'none' && kind === 'stamped' ? msg('No trusted stamp covers a record')
         : state.status === 'failed' && kind === 'checkpointed' ? msg('The held checkpoints did not match')
@@ -293,6 +307,7 @@ export function Report({ report }: { report: AuditReport }) {
       <div><dt>{msg('Held checkpoints')}</dt><dd>{reach('checkpointed', coverage.checkpointed)}</dd></div>
       <div><dt>{msg('Records a held checkpoint witnesses')}</dt><dd>{coverage.witnessed}</dd></div>
       <div><dt>{msg('Records no held checkpoint witnesses')}</dt><dd>{coverage.unwitnessed}</dd></div>
+      {coverage.countersigned && coverage.countersigned.status !== 'not-checked' && <div><dt>{msg('Witness countersignature')}</dt><dd data-countersigned={coverage.countersigned.status}>{reach('countersigned', coverage.countersigned)}</dd></div>}
       <div><dt>{msg('Stamps')}</dt><dd>{reach('stamped', coverage.stamped)}</dd></div>
     </dl>
     <section aria-label={msg('Segments')}>

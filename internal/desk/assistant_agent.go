@@ -92,7 +92,10 @@ func decodeAssistantAgent(value any) (*AssistantAgentConfig, []deskProblem) {
 	return result, problems
 }
 
-// Read the saved policy at admission; browser state cannot expand this grant.
+// Read the saved connection policy at admission; browser state cannot expand it.
+// Every run (main, review or child) may name any enabled model on its connection.
+// The Codex wire has no child marker; subordinate model preferences select models,
+// and do not grant a separate class of authorization.
 func (s *Server) agentModelAllowed(model string) bool {
 	present, data, err := s.readDeskFile()
 	if err != nil || !present || !validUTF8(data) {
