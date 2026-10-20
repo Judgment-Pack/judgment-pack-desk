@@ -2650,3 +2650,16 @@ go	assistant chat projection: saved conversation refusal is hidden	TestAssistant
 go	assistant chat projection: unsupported Unicode reaches prepared output	TestAssistantChatProjectionUnicodeRefusal
 go	assistant chat projection: checkpoint raw Unicode is not validated	TestAssistantChatProjectionUnicodeRefusal
 go	assistant chat projection: serialized candidate Unicode is not validated	TestAssistantChatProjectionUnicodeRefusal
+go	assistant critic: Runtime testing guidance omitted	TestAssistantCriticActualAPI
+go	assistant critic: admitted declared cases omitted	TestAssistantCriticActualAPI
+go	assistant critic: duplicate case id admitted	TestAssistantCriticCases
+go	assistant critic: published case limit omitted	TestAssistantCriticCases
+go	assistant critic: changed target bytes accepted	TestAssistantCriticSnapshotRefusesChange
+go	assistant critic: changed saved suite accepted	TestAssistantCriticSnapshotRefusesChange
+go	assistant critic: physical model custody recheck omitted	TestAssistantCriticQueuedSnapshot
+go	assistant critic: gated Runtime custody recheck omitted	TestAssistantCriticSnapshotRefusesChange,TestAssistantCriticQueuedRuntime
+go	assistant critic: linked target identity ignored	TestAssistantCriticTargetRefusal
+go	assistant critic: saved review and Plan controls ignored	TestAssistantCriticControlsAndSupport
+go	assistant critic: durable checkpoint binding ignored	TestAssistantCriticDurableCustody
+go	assistant critic: missing resumed custody is recaptured	TestAssistantCriticDurableCustody
+go	assistant critic: canonical snapshot loses private custody	TestAssistantCriticCanonicalCustody

@@ -200,6 +200,9 @@ func (r *assistantRuntime) Call(ctx context.Context, message json.RawMessage) (j
 	// response can never be mistaken for another call or safely replayed.
 	stop := context.AfterFunc(ctx, r.cancel)
 	defer stop()
+	if err := r.execution.recheckAssistantCritic(ctx); err != nil {
+		return nil, err
+	}
 	if err := r.execution.Dispatch(ctx, op.ID); err != nil {
 		return nil, err
 	}
