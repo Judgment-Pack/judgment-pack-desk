@@ -31,7 +31,10 @@
 # rows in the files one PR touches, and days for the list. Selection is how
 # mutation tools run a mutant, and it is how this runs a row:
 #
-# - **A Go row** with an entry in the record runs `go test ./internal/desk -run
+# - **A Go row** may name a sixth argument, one local `./internal/package`;
+#   omitted, it defaults to `./internal/desk`. Its baseline, selection and
+#   whole-package fallback all use that package. Package changes rerun the row.
+#   A row with an entry in the record runs `go test <package> -run
 #   '^(Test1|Test2|…)$'`, the top-level tests its entry names. A Go row with no
 #   entry runs the whole package, as before: one package has no import graph
 #   finer than itself to choose from.
@@ -56,7 +59,7 @@
 #   below says the whole suite is green, and a Go selection is a different run:
 #   a test that passes after the tests before it can fail without them, and
 #   that failure would read as a catch. So each Go selection first runs once on
-#   the unmutated tree, from a test binary built once per run; one that is not
+#   the unmutated tree, from a test binary built once per package; one that is not
 #   green is set aside, and its row runs the whole package. Vitest runs each
 #   test file isolated from the others, so a web file passes alone as it
 #   passes in the baseline.
@@ -328,7 +331,7 @@ bounded() {
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
 #
-# run_go [pattern]: the whole package, or only the tests the pattern names.
+# run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
   # **240s, and the number is not arbitrary.** The bound exists to turn a
   # mutation that hangs a handler into a reported hang rather than a stalled
@@ -352,27 +355,74 @@ run_go() {
   # a build is not a hang), so that the 240s is the run's, and the link's.
   local log code
   log="$(mktemp)"
-  bounded 1800 "$log" go test ./internal/desk -count=1 -run '^$'
+  local package="$1"
+  shift
+  bounded 1800 "$log" go test "$package" -count=1 -run '^$'
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    go_verdict "$code" "$log"
+    mv -f "$log" "$work/last-go.log"
+    return
+  fi
   if [ -n "${1:-}" ]; then
-    bounded 240 "$log" go test ./internal/desk -count=1 -timeout 300s -run "$1"
+    bounded 240 "$log" go test "$package" -count=1 -timeout 300s -run "$1"
   else
-    bounded 240 "$log" go test ./internal/desk -count=1 -timeout 300s
+    bounded 240 "$log" go test "$package" -count=1 -timeout 300s
   fi
   code=$?
   go_verdict "$code" "$log"
   mv -f "$log" "$work/last-go.log"
 }
 
-# run_go_unmutated <pattern>: the selection, on the test binary built from the
-# unmutated tree (go_binary), run where `go test` runs it.
+# Go package selectors are authored in rows, never derived from source paths.
+# Admit one local internal package only, with actual Go sources; no patterns,
+# traversal, options, absolute paths or remote module names.
+go_package_valid() {
+  [[ "$1" =~ ^\./internal/[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$ ]] || return 1
+  [ -d "$1" ] || return 1
+  local source
+  for source in "$1"/*.go; do [ ! -f "$source" ] || return 0; done
+  return 1
+}
+go_package_key() { printf '%s' "$1" | sha256sum | cut -c1-32; }
+
+# The clean baseline and its binary are cached by package. Do not run unrelated
+# packages for a selected row. Failed builds/baselines never measure a mutant.
+go_package_green() {
+  local package="$1" key log code verdict
+  key=$(go_package_key "$package")
+  [ ! -f "$work/package-$key.green" ] || return 0
+  [ ! -f "$work/package-$key.failed" ] || return 1
+  log="$work/package-$key.build.log"
+  echo "checking the unmutated Go baseline for $package…" >&2
+  bounded 1800 "$log" go test -c -o "$work/package-$key.test" "$package"
+  code=$?
+  if [ "$code" -ne 0 ] || [ ! -x "$work/package-$key.test" ]; then
+    echo "unmutated Go binary did not build: $package" >&2
+    tail -n 30 "$log" >&2
+    : > "$work/package-$key.failed"
+    return 1
+  fi
+  verdict=$(run_go_unmutated "$package" '.')
+  if [ -n "$verdict" ]; then
+    echo "unmutated Go baseline is not green: $package: $verdict" >&2
+    tail -n 30 "$work/package-$key.baseline.log" >&2
+    : > "$work/package-$key.failed"
+    return 1
+  fi
+  echo "unmutated Go baseline passed: $package" >&2
+  : > "$work/package-$key.green"
+}
+
+# Run in the same package directory as go test, with its own clean binary.
 run_go_unmutated() {
-  local log code
-  log="$(mktemp)"
-  bounded 240 "$log" bash -c 'cd internal/desk && exec "$0" -test.paniconexit0 -test.count=1 -test.timeout=300s -test.run "$1"' \
-    "$work/desk.test" "$1"
+  local package="$1" key log code
+  key=$(go_package_key "$package")
+  log="$work/package-$key.baseline.log"
+  bounded 240 "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout=300s -test.run "$3"' \
+    _ "$package" "$work/package-$key.test" "$2"
   code=$?
   go_verdict "$code" "$log"
-  rm -f "$log"
 }
 
 # plain <log>: the log as text, without the terminal's colour codes (every
@@ -403,7 +453,7 @@ go_verdict() {
     echo "INCONCLUSIVE — suite timed out (the mutation hangs a handler)"
     return
   fi
-  if grep -q '^panic:' <<<"$out"; then
+  if grep -qE '^(panic:|fatal error:)' <<<"$out"; then
     echo "INCONCLUSIVE — suite panicked"
     return
   fi
@@ -506,21 +556,31 @@ web_verdict() {
   echo "$named"
 }
 
-# go_selection_green <pattern>: whether the selection passes on the unmutated
-# tree. Each pattern is run once a run.
+# 0: selection passes clean; 1: known tests need whole-package setup;
+# 2: unsupported/missing selection (not a verdict, never trust another test).
+# Both caches include package identity as well as the declared test names.
 go_selection_green() {
-  grep -qxF -- "$1" "$work/green" 2>/dev/null && return 0
-  grep -qxF -- "$1" "$work/not-green" 2>/dev/null && return 1
-  if [ -x "$work/desk.test" ] && [ -z "$(run_go_unmutated "$1")" ]; then
-    printf '%s\n' "$1" >> "$work/green"
+  local package="$1" entry="$2" pattern="^(${2//,/|})\$" key list code test
+  [[ "$entry" =~ ^Test[A-Za-z0-9_]+(,Test[A-Za-z0-9_]+)*$ ]] || return 2
+  key=$(go_package_key "$package:$entry")
+  [ ! -f "$work/selection-$key.green" ] || return 0
+  [ ! -f "$work/selection-$key.not-green" ] || return 1
+  list="$work/selection-$key.list"
+  bounded 240 "$list" bash -c 'cd "$1" && exec "$2" -test.list "$3"' \
+    _ "$package" "$work/package-$(go_package_key "$package").test" "$pattern"
+  code=$?
+  [ "$code" -eq 0 ] || return 2
+  while IFS= read -r test; do grep -qxF -- "$test" "$list" || return 2; done < <(tr , '\n' <<<"$entry")
+  if [ -z "$(run_go_unmutated "$package" "$pattern")" ]; then
+    : > "$work/selection-$key.green"
     return 0
   fi
-  printf '%s\n' "$1" >> "$work/not-green"
-  echo "the tests recorded for a row do not pass by themselves on the unmutated tree; it runs the whole package: $1" >&2
+  : > "$work/selection-$key.not-green"
+  echo "the tests recorded for a row do not pass by themselves on the unmutated tree; it runs the whole package: $package $entry" >&2
   return 1
 }
 
-mutate() { # mutate <lang> <name> <file> <needle> <replacement>
+mutate() { # mutate <lang> <name> <file> <needle> <replacement> [go-package]
   local lang="$1" name="$2" file="$3" needle="$4" replacement="$5"
   case "$name" in
     *"$only"*) ;;
@@ -532,13 +592,28 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
   # --shard k/n: every n-th row matched, from the k-th.
   [ $(((matched - 1) % shard_n)) -eq $((shard_k - 1)) ] || return
   restore
-  local entry how started=$SECONDS pattern="" selection=() line failures caught=""
+  local entry how started=$SECONDS pattern="" selection=() line failures caught="" package="${6-./internal/desk}" selected_status
+  if [ "$lang" = go ]; then
+    if ! go_package_valid "$package"; then
+      report "$name" "**INCONCLUSIVE — unsupported or missing Go test package: $package**"
+      fail=$((fail + 1)); return
+    fi
+    if ! go_package_green "$package"; then
+      report "$name" "**BASELINE NOT GREEN — $package — not run**"
+      fail=$((fail + 1)); return
+    fi
+  fi
   entry="$(expect_of "$lang" "$name")"
   # The selection, chosen on the unmutated tree (see the header).
   if [ "$whole" -eq 1 ]; then
     how=whole
-  elif [ "$lang" = go ] && [ -n "$entry" ]; then
-    if go_selection_green "^(${entry//,/|})\$"; then
+  elif [ "$lang" = go ] && { [ -n "$entry" ] || want_kind=go want_name="$name" awk -F'\t' '$1 == ENVIRON["want_kind"] && $2 == ENVIRON["want_name"] { found=1 } END { exit !found }' "$expects"; }; then
+    go_selection_green "$package" "$entry"
+    selected_status=$?
+    if [ "$selected_status" -eq 2 ]; then
+      report "$name" "**INCONCLUSIVE — missing or unsupported Go test selection: $package $entry**"
+      fail=$((fail + 1)); return
+    elif [ "$selected_status" -eq 0 ]; then
       pattern="^(${entry//,/|})\$"
       how=selected
     else
@@ -559,7 +634,7 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
     return
   fi
   if [ "$how" = selected ]; then
-    if [ "$lang" = go ]; then failures="$(run_go "$pattern")"; else failures="$(run_web "${selection[@]}")"; fi
+    if [ "$lang" = go ]; then failures="$(run_go "$package" "$pattern")"; else failures="$(run_web "${selection[@]}")"; fi
     # Only a failing test decides on a selection's word; everything else is
     # run again whole, which decides as it always did.
     case "$failures" in
@@ -567,7 +642,7 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
     esac
   fi
   if [ "$how" != selected ]; then
-    if [ "$lang" = go ]; then failures="$(run_go)"; else failures="$(run_web)"; fi
+    if [ "$lang" = go ]; then failures="$(run_go "$package")"; else failures="$(run_web)"; fi
   fi
   restore
   case "$failures" in
@@ -633,7 +708,7 @@ echo "checking the unmutated baseline at ${commit:0:7}…" >&2
 # promised web-only and spent forty seconds in `go test` before every run,
 # and a Go toolchain that is not installed failed a mode that needs none.
 baseline_go=""
-if [ "$which" = all ] || [ "$which" = go ]; then baseline_go="$(run_go)"; fi
+# Go baselines are lazy per selected package, immediately before mutation.
 baseline_web=""
 if [ "$which" = all ] || [ "$which" = web ]; then baseline_web="$(run_web)"; fi
 if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
@@ -659,12 +734,6 @@ if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
   echo "| --- | --- |"
   report "${only:-every row}" "**BASELINE NOT GREEN — not run**"
   exit 2
-fi
-# The unmutated test binary each Go selection is first run on. Where it cannot
-# be built, no Go selection is trusted, and each Go row runs the whole package.
-if [ "$whole" -eq 0 ] && { [ "$which" = all ] || [ "$which" = go ]; }; then
-  bounded 1800 "$work/desk.test.log" go test -c -o "$work/desk.test" ./internal/desk \
-    || echo "the unmutated test binary did not build; every Go row runs the whole package" >&2
 fi
 
 echo "mutation check against $commit"
@@ -14623,10 +14692,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'named.Critic, named.Child = connection.Agent.CriticModel, ""'
   mutate go 'assistant Codex: bridge skips host admission fence' internal/codexbridge/run.go \
     'if request.AuthorizeAdmission != nil {' \
-    'if false {'
+    'if false {' ./internal/codexbridge
   mutate go 'assistant Codex: bridge skips host generation fence' internal/codexbridge/run.go \
     'if request.BeforeGeneration != nil {' \
-    'if false {'
+    'if false {' ./internal/codexbridge
   # Actual private execution bindings; production activation remains separate.
   mutate go 'assistant execution: reconstructed operation identities restart' internal/desk/assistant_run_store_writer.go \
     'id := nextAssistantRunIdentity(run, kind)' \

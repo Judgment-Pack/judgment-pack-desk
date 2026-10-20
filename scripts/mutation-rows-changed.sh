@@ -6,7 +6,7 @@
 # writes <out-dir>/go and <out-dir>/web: the names of the Go and web rows, one
 # a line, the form `mutation-check.sh --rows` reads. A row counts where HEAD
 # has it and <base-commit> has no row of that kind and name, or has one that
-# mutates another file, needle or replacement. So a row whose needle moved
+# mutates another file, needle, replacement or test package. So a row whose needle moved
 # with the code it targets is run again, and a row that was only removed is
 # not (there is nothing left to run).
 #
@@ -29,7 +29,7 @@ rows_of() {
     apply() { :; }; report() { :; }; run_web() { :; }; run_go() { :; }
     restore() { :; }; selection_report() { :; }
     mutate() {
-      printf '%s\t%s\t%s\n' "$1" "$2" "$(printf '%s\0%s\0%s' "$3" "$4" "$5" | sha256sum | cut -c1-32)" >&3
+      printf '%s\t%s\t%s\n' "$1" "$2" "$(printf '%s\0%s\0%s\0%s' "$3" "$4" "$5" "${6-./internal/desk}" | sha256sum | cut -c1-32)" >&3
     }
     which=all only="" rows="" pass=0 fail=0 matched=0
     # shellcheck disable=SC1091
