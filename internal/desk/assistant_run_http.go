@@ -16,22 +16,25 @@ import (
 )
 
 type assistantRunView struct {
-	ID         string                  `json:"id"`
-	Revision   uint64                  `json:"revision"`
-	Owner      assistantRunOwner       `json:"owner"`
-	RequestID  string                  `json:"requestId"`
-	State      string                  `json:"state"`
-	Historical bool                    `json:"historical,omitempty"`
-	Checkpoint *contract.Checkpoint    `json:"checkpoint,omitempty"`
-	Operations []assistantRunOperation `json:"operations"`
-	Events     []assistantRunEvent     `json:"events"`
-	Cursor     string                  `json:"cursor"`
+	ChatProjection  *assistantChatProjectionView `json:"chatProjection,omitempty"`
+	ProjectionIssue string                       `json:"projectionIssue,omitempty"`
+	ID              string                       `json:"id"`
+	Revision        uint64                       `json:"revision"`
+	Owner           assistantRunOwner            `json:"owner"`
+	RequestID       string                       `json:"requestId"`
+	State           string                       `json:"state"`
+	Historical      bool                         `json:"historical,omitempty"`
+	Checkpoint      *contract.Checkpoint         `json:"checkpoint,omitempty"`
+	Operations      []assistantRunOperation      `json:"operations"`
+	Events          []assistantRunEvent          `json:"events"`
+	Cursor          string                       `json:"cursor"`
 }
 
 func assistantRunPublic(run assistantRunRecord) assistantRunView {
-	return assistantRunView{ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
+	return assistantRunView{ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
 }
 func (s *Server) registerAssistantRuns() {
+	s.mux.HandleFunc("GET /api/assistant-runs/owners/{owner}/requests/{request}", s.handleAssistantChatRuns)
 	s.mux.HandleFunc("POST /api/assistant-runs", s.handleAssistantRunStart)
 	s.mux.HandleFunc("GET /api/assistant-runs/{run}", s.handleAssistantRunRead)
 	s.mux.HandleFunc("GET /api/assistant-runs/{run}/events", s.handleAssistantRunEvents)
