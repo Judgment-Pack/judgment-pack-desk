@@ -7,6 +7,7 @@
 # gh, and git; the downloads read GH_TOKEN.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
+. "$root/scripts/dev/gateway-fixture.sh"
 cd "$root"
 
 official="$tmp/jobs-official"
@@ -22,9 +23,7 @@ install_official() {
 
 # The Gateway bundle the dialect journeys use, built from the pinned source.
 build_dialect_gateway() {
-  [ -f "$dialect/gateway-bundle.json" ] && return 0
-  rm -rf "$dialect"
-  python3 scripts/build-bundle.py --gateway-only --output "$dialect"
+  prepare_gateway_fixture
 }
 
 # The historical Desk's command line, for the rollback refusal test. Only that command line is
@@ -156,6 +155,40 @@ case "$step" in
     JPACK_RUNNER_TEST_BIN="$official/jpack-runner" JPACK_BIN="$official/jpack" \
       go test -race ./internal/desk -run 'TestDialectPublication|TestPublishedRelease|TestInputSubscriptionRealRunnerOutbox|TestDialectCompanyPeopleTestedJobJourney|TestDialectProcurementTestedJobJourney|TestPublishedReviewedInputRealGatewayRunner|TestPortableResearch|TestPortableSearchBinding|TestPortablePageBinding|TestPortableScopedPage' -count=1 -v | tee "$tmp/dialect-journey.log"
     need_passed "$tmp/dialect-journey.log" TestDialectCompanyPeopleTestedJobJourney/file TestDialectCompanyPeopleTestedJobJourney/memory TestDialectProcurementTestedJobJourney/file TestDialectProcurementTestedJobJourney/memory TestPublishedReviewedInputRealGatewayRunner TestPortableResearchUsesSharedJournalAndRealReceipts/file TestPortableResearchUsesSharedJournalAndRealReceipts/memory TestPortableResearchHTTPAndSharedChatApproval TestPortableResearchImportOnTwoInstallations/first TestPortableResearchImportOnTwoInstallations/second TestPortableResearchCompanyPersonImportOnTwoInstallations/first TestPortableResearchCompanyPersonImportOnTwoInstallations/second TestPortableResearchAcrossAPIFamiliesWithRealReceipts/openai-compatible TestPortableResearchAcrossAPIFamiliesWithRealReceipts/anthropic TestPortableResearchAcrossAPIFamiliesWithRealReceipts/gemini TestPortableResearchStaleConnectionBindingRefusedBeforeAcquisition TestPortableResearchInterruptedCallKeepsCompletedAndNeverReplays/worker_cancelled TestPortableResearchInterruptedCallKeepsCompletedAndNeverReplays/stop_saved TestPortableResearchContextIsFittedAndReadFromRetainedSource TestPortableSearchBindingReviewAndImmutableRegistration TestPortablePageBindingActualCompanionReviewAndRegistration TestPortablePageBindingActualCompanionPlanAndCapacity TestPortablePageBindingActualCompanionRejectsStaleAdapterBeforeAcquisition TestPortableScopedPageRefusedBeforeAnyAcquisition TestPortableScopedPageRefusedAtItsReceiptIsNotRequestedAgain TestPortableScopedPageRefusalSurvivesRestartAndResume
+    ;;
+
+  # The same pinned Gateway verifies saved-chat documents offline. PASS is
+  # required: the ordinary Go lane deliberately skips crypto without this bundle.
+  saved-context)
+    build_dialect_gateway
+    reference_inputs=$(mktemp -d "$tmp/document-reference-inputs.XXXXXX")
+    JPS_TEST_GATEWAY_BUNDLE="$dialect" JPS_DOCUMENT_REFERENCE_FIXTURES="$reference_inputs" \
+      go test -race ./internal/desk -run '^TestAssistant(Document|ChatDocument)' -count=1 -v | tee "$tmp/assistant-saved-context.log"
+    need_passed "$tmp/assistant-saved-context.log" \
+      TestAssistantDocumentSupportedSources \
+      TestAssistantDocumentTamperingAndSelection \
+      TestAssistantDocumentSignedContractAndPartialConsent \
+      TestAssistantDocumentUnreadablePagesAndOCR \
+      TestAssistantDocumentAuthenticatedRootAndRecheck \
+      TestAssistantDocumentCommandBoundsAndCancellation \
+      TestAssistantChatDocumentFactory/api TestAssistantChatDocumentFactory/codex \
+      TestAssistantChatDocumentSelectionsAndConsent/repeat \
+      TestAssistantChatDocumentSelectionsAndConsent/pages \
+      TestAssistantChatDocumentSelectionsAndConsent/consent \
+      TestAssistantChatDocumentSelectionsAndConsent/partial-no-upgrade \
+      TestAssistantChatDocumentSelectionsAndConsent/revision \
+      TestAssistantChatDocumentUnverified \
+      TestAssistantChatDocumentQueuedDispatch/api-attachment \
+      TestAssistantChatDocumentQueuedDispatch/api-trust \
+      TestAssistantChatDocumentQueuedDispatch/api-owner \
+      TestAssistantChatDocumentQueuedDispatch/codex-attachment \
+      TestAssistantChatDocumentQueuedDispatch/codex-trust \
+      TestAssistantChatDocumentQueuedDispatch/codex-owner \
+      TestAssistantChatDocumentContinuation/before-child \
+      TestAssistantChatDocumentContinuation/before-parent
+    web/node_modules/.bin/esbuild scripts/assistant-document-reference-check.mjs \
+      --bundle --platform=node --format=esm --outfile="$tmp/assistant-document-reference.mjs"
+    node "$tmp/assistant-document-reference.mjs" "$reference_inputs"
     ;;
 
   signed-exchange-release)

@@ -193,3 +193,53 @@ root/test identity on capability reconstruction. These are bounded binding check
 not complete certification or production migration. Positive critic/test execution
 still needs its served tool ceiling and workflow migration. No production executor,
 domain action, final chat journal projection or browser path is activated here.
+
+### Private saved-chat input projection
+
+The private factory now compiles only the exact authenticated chat and latest
+non-note user request retained by the source binding. Original conversation and
+request bytes remain unchanged. Duplicate keys, malformed text, unsupported typed
+fields, ambiguous identities and values the canonical JSON representation would
+change refuse before provider dispatch. Explicit statement/input fields preserve
+empty values; absent fields fall back to text, rather than serializing the turn.
+
+Canonical history documents retain original turns/questions, exact candidate and
+source strings, typed cases and saved observations. The disposable transcript
+matches the existing browser projection: earlier explicit authored statements
+replace obsolete workspace snapshots, ambiguous legacy mixed inputs stay whole,
+notes are skipped, question suggestions are labeled as suggestions, and the latest
+request appears once. Saved drafts/checks/source replies and historical approvals
+remain data, never current artifact authority, fresh verification or grants.
+
+Runtime prompts in this saved-chat factory are method guidance with no arguments;
+request-bearing arguments refuse. The host appends transcript and exact submitted
+input once. Explicit authoring-pane arguments remain outside this private path.
+Plain-text submitted attachments become canonical bounded page documents for
+retrieval; composer-only attachments are not selected. Submitted document
+references are shape-checked during source resolution and verified outside the
+storage lock against the current permitted Gateway, signed receipt, extraction
+digest, selected readable pages and explicit partial consent (Desk #566). The
+execution holds private verified snapshots and rechecks exact attachment bytes,
+trust and current owner immediately before every physical API/Codex dispatch,
+including queued work and child/parent continuations. Reconstructed capabilities
+share this custody; changed custody cancels the root. Exact repeated references
+are deduplicated, while distinct page/consent tuples have distinct canonical
+Document IDs and retain original page citations. No selection union, consent
+upgrade, saved text or automatic acquisition substitutes for verification.
+
+Saved interaction defaults to Work only when omitted. Explicit values must be
+exactly `work` or `plan`; the resolver and compiler share that rule and the
+compiler requires agreement with the immutable phase binding. Invalid persisted
+controls refuse before a run is created, without rewriting saved bytes.
+
+Validated chat review, API thinking and model-specific Codex reasoning choices
+are applied over retained project/connection defaults. Explicit null reasoning
+selects the native model default. Project context policy stays canonical; the
+private memory store's use setting controls recall and its query is the authored
+message. Host instructions/brief/memory remain assembled by the published Host
+boundary. No second context budget, compactor or cache is introduced.
+
+This remains an input-only private slice. Domain-specific authoring targets,
+policy/test expectation workflows and their fresh artifact reads remain with the
+owning later domain migration. No response journal CAS, output write, production
+executor registration, browser removal or complete certification is delivered.

@@ -29,6 +29,13 @@ if [ "$go_rows" -eq 0 ] && [ "$web_rows" -eq 0 ]; then
   exit 0
 fi
 
+# As the nightly: Go mutations receive the pinned offline crypto fixture. A
+# missing fixture is a setup failure, never a skipped-document mutant verdict.
+if [ "$go_rows" -ne 0 ]; then
+  . "$root/scripts/dev/gateway-fixture.sh"
+  prepare_gateway_fixture
+fi
+
 # As the nightly: the web suite reads the bundle (src/testing/bundle.test.ts).
 if [ "$web_rows" -ne 0 ]; then
   npm --prefix web ci
