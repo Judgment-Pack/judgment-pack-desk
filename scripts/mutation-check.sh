@@ -14666,6 +14666,36 @@ fi
 # Desk-owned v0.3.0 admission and credential safeguards (#529, #533).
 if [ "$which" = all ] || [ "$which" = go ]; then
   # Actual private subscription binding safeguards.
+  mutate go 'assistant saved context: physical dispatch omits document recheck' internal/desk/assistant_execution_model.go \
+    'if err := d.execution.recheckAssistantInput(ctx); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant saved context: different selections share context identity' internal/desk/assistant_chat_input.go \
+    'document.ID += "-" + digestOf([]byte(assistantChatReferenceKey(held.reference)))[:16]' \
+    'document.ID += ""'
+  mutate go 'assistant chat input: explicit invalid interaction becomes work' internal/desk/assistant_chat_input.go \
+    'if len(raw) == 0 {' \
+    'if len(raw) == 0 || string(raw) == "null" || string(raw) == "\"\"" {'
+  mutate go 'assistant chat input: latest request repeated in transcript' internal/desk/assistant_chat_input.go \
+    'if i == latest || t.Get("kind").Str() == "note" {' \
+    'if t.Get("kind").Str() == "note" {'
+  mutate go 'assistant chat input: obsolete snapshot replaces authored history' internal/desk/assistant_chat_input.go \
+    'text = t.Get("statement").Str()' \
+    'text = t.Get("input").Str()'
+  mutate go 'assistant chat input: explicit empty becomes fallback' internal/desk/assistant_chat_input.go \
+    'if !v.Has(key) {' \
+    'if !v.Has(key) || v.Get(key).IsString() && v.Get(key).Str() == "" {'
+  mutate go 'assistant chat input: unverified document reference admitted' internal/desk/assistant_chat_input.go \
+    'if file.Has("document") {' \
+    'if false {'
+  mutate go 'assistant chat input: request-bearing Runtime arguments admitted' internal/desk/assistant_execution.go \
+    'if len(prompt.Arguments) != 0 {' \
+    'if false {'
+  mutate go 'assistant chat input: saved chat reasoning ignored' internal/desk/assistant_execution_agent.go \
+    'if chat.Reasoning != nil && chat.Reasoning.Get("model").Str() == e.record.Binding.Model {' \
+    'if false {'
+  mutate go 'assistant chat input: lossy typed number admitted' internal/desk/assistant_chat_input.go \
+    'if !a || !b || before.Cmp(after) != 0 {' \
+    'if !a || !b || before.Cmp(after) < -2 {'
   mutate go 'assistant Codex: saved project effort uses shared configuration' internal/desk/assistant_execution_agent.go \
     'effort = preferences.Effort' \
     'effort = config.Agent.Effort'
@@ -14787,6 +14817,30 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'harness credentials: session bearer omitted' web/src/assistant/harnessHost.ts \
     'sessionBearer: () => session.sessionBearer(),' \
     'sessionBearer: () => Promise.resolve(""),'
+fi
+
+# Private saved-document consumer; offline Gateway fixtures are required for
+# these rows (JPS_TEST_GATEWAY plus JPS_TEST_DOCUMENT_BUNDLE, or the shared
+# JPS_TEST_GATEWAY_BUNDLE used by the companion acceptance lane).
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant documents: signed receipt verdict is ignored' internal/desk/assistant_documents.go \
+    'if json.Unmarshal(verdict, &verified) != nil || !verified.OK {' \
+    'if false && (json.Unmarshal(verdict, &verified) != nil || !verified.OK) {'
+  mutate go 'assistant documents: argument commitment is ignored' internal/desk/assistant_documents.go \
+    'receipt.Commitment != "sha256:"+digestOf(append(append(salt, []byte("args:")...), canonicalArgs...))' \
+    '(false && receipt.Commitment != "sha256:"+digestOf(append(append(salt, []byte("args:")...), canonicalArgs...)))'
+  mutate go 'assistant documents: partial pages bypass consent' internal/desk/assistant_documents.go \
+    'if record.partial && !ref.AllowPartial {' \
+    'if false && record.partial && !ref.AllowPartial {'
+  mutate go 'assistant documents: unreadable selected pages enter context' internal/desk/assistant_documents.go \
+    'if !page.usable {' \
+    'if false && !page.usable {'
+  mutate go 'assistant documents: substituted saved request is accepted' internal/desk/assistant_documents.go \
+    'if !reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !assistantDocumentReferenced(current.Original, ref) {' \
+    'if false && (!reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !assistantDocumentReferenced(current.Original, ref)) {'
+  mutate go 'assistant documents: changed attachment or trust survives recheck' internal/desk/assistant_documents.go \
+    'if digestOf(raw) != held.attachmentDigest || !reflect.DeepEqual(pin, held.gateway) {' \
+    'if false && (digestOf(raw) != held.attachmentDigest || !reflect.DeepEqual(pin, held.gateway)) {'
 fi
 
 restore

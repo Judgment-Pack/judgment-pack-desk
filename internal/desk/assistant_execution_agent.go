@@ -23,18 +23,30 @@ func (e *assistantRunExecution) assistantAgent() (*adapter.Agent, error) {
 	if config.Engine != "codex" || config.Agent == nil {
 		return nil, errAssistantRunUnavailable
 	}
+	chat, err := compileAssistantChatInput(e.source)
+	if err != nil {
+		return nil, err
+	}
 	// Resolve the retained validated profile using connectionModels' preference
 	// selection and inheritance rules. A non-inherited preference with omitted
 	// effort deliberately requests the model default, rather than the shared value.
 	effort := config.Agent.Effort
-	var preferences *modelPreferences
-	if e.source.Profile.Version == 2 {
-		preferences = e.source.Profile.Models[e.source.Connection.ID]
-	} else if e.source.Connection.ID == "legacy-codex" {
-		preferences = e.source.Profile.Codex
-	}
+	model := config.Agent.Model
+	preferences := assistantChatPreferences(e.source)
 	if preferences != nil && !preferences.Inherit {
 		effort = preferences.Effort
+		model = preferences.Model
+	}
+	// Shared/project effort belongs to its selected default model. A saved
+	// chat override belongs to the model it explicitly names (reasoning.ts).
+	if model == nil || *model != e.record.Binding.Model {
+		effort = ""
+	}
+	if chat.Reasoning != nil && chat.Reasoning.Get("model").Str() == e.record.Binding.Model {
+		effort = ""
+		if choice := chat.Reasoning.Get("effort"); choice.IsString() {
+			effort = choice.Str()
+		}
 	}
 	r := e.request.Clone(e.ctx)
 	r.Header.Set(aiConnectionHeader, e.record.Binding.ConnectionID)

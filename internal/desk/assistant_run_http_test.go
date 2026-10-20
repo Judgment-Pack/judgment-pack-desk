@@ -23,7 +23,11 @@ type assistantProtocolExecutor struct {
 }
 
 func (x *assistantProtocolExecutor) Prepare(ctx context.Context, source assistantRunSource) (contract.Checkpoint, error) {
-	run, err := runcontext.ContextualSession(ctx, runcontext.Session{Prompt: source.Text, Purpose: "chat", Model: &runcontext.ModelSession{Family: "gemini", Model: source.Binding.Model}, Context: &runcontext.Input{Phase: source.Binding.Phase, CurrentRequest: &runcontext.CurrentRequest{Message: source.Text, Input: string(source.Request)}}})
+	chat, err := compileAssistantChatInput(source)
+	if err != nil {
+		return contract.Checkpoint{}, err
+	}
+	run, err := runcontext.ContextualSession(ctx, runcontext.Session{Prompt: source.Text, Purpose: "chat", Model: &runcontext.ModelSession{Family: "gemini", Model: source.Binding.Model}, Context: &runcontext.Input{Phase: source.Binding.Phase, CurrentRequest: &chat.Request}})
 	if err != nil {
 		return contract.Checkpoint{}, err
 	}

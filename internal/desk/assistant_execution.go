@@ -58,6 +58,23 @@ func (e *assistantRunExecution) assistantExecutionModels() (runcontext.RunModels
 }
 
 func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prompt assistantExecutionPrompt) (_ *assistantExecution, err error) {
+	// Saved chat uses method guidance only. Request/document prompt arguments
+	// belong to explicit authoring panes; accepting them here would duplicate or
+	// smuggle the retained request into instruction material.
+	if len(prompt.Arguments) != 0 {
+		return nil, errAssistantRunInvalid
+	}
+	if err := e.Authorize(ctx); err != nil {
+		return nil, err
+	}
+	chat, err := e.prepareAssistantChatInput(ctx)
+	if err != nil {
+		return nil, err
+	}
+	memory, err := e.assistantChatMemory(ctx)
+	if err != nil {
+		return nil, err
+	}
 	host, err := e.service.server.assistantPromptHost(ctx)
 	if err != nil {
 		return nil, err
@@ -134,7 +151,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if _, err = runtime.rpc(ctx, "tools/call", map[string]any{"name": "describe_runtime", "arguments": map[string]any{}}); err != nil {
 		return nil, err
 	}
-	input := &runcontext.Input{Phase: e.record.Binding.Phase, Connection: e.record.Binding.ConnectionID, Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: e.record.Checkpoint, Approval: e.decision, CurrentRequest: &runcontext.CurrentRequest{Message: e.source.Text, Input: string(e.source.Request)}}
+	input := &runcontext.Input{Phase: e.record.Binding.Phase, Connection: e.record.Binding.ConnectionID, Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: e.record.Checkpoint, Approval: e.decision, CurrentRequest: &chat.Request, Documents: chat.Documents, CurrentState: chat.State, Memory: memory}
 	if e.source.Profile.Context != nil {
 		raw, marshalErr := json.Marshal(e.source.Profile.Context)
 		if marshalErr != nil {
@@ -149,7 +166,8 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 			return nil, err
 		}
 	}
-	run := &adapter.Run{Purpose: e.source.Start.Purpose, ModelName: e.record.Binding.Model, Thinking: e.source.Connection.Assistant.Thinking, Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
+	promptText += "\n\n" + chat.Transcript + "\n\nTHE PERSON'S MESSAGE\n" + chat.Request.Input
+	run := &adapter.Run{Purpose: e.source.Start.Purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Review: chat.Review, Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
 	var base adapter.Adapter = eino.New()
 	if e.source.Connection.Assistant.Engine == "codex" {
 		run.Agent, err = e.assistantAgent()
@@ -248,7 +266,11 @@ func (r *assistantRuntime) Prompt(ctx context.Context, request assistantExecutio
 	if !found {
 		return "", errAssistantRunUnavailable
 	}
-	answer, err := r.rpc(ctx, "prompts/get", map[string]any{"name": request.Name, "arguments": request.Arguments})
+	arguments := request.Arguments
+	if arguments == nil {
+		arguments = map[string]string{}
+	}
+	answer, err := r.rpc(ctx, "prompts/get", map[string]any{"name": request.Name, "arguments": arguments})
 	if err != nil {
 		return "", err
 	}

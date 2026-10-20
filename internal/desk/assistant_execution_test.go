@@ -285,15 +285,15 @@ with open('execution-fixture.json') as f: config=json.load(f)
 for line in sys.stdin:
  q=json.loads(line)
  with open(config['ledger']) as f: ledger=json.load(f)
- ops=[op for run in ledger['runs'] for op in run['operations'] if op['id']==q.get('id')]
+ ops=[op for run in ledger['runs'] for op in (run.get('operations') or []) if op['id']==q.get('id')]
  if 'id' in q and (len(ops)!=1 or ops[0]['state']!='dispatched'): sys.exit(31)
  with open('execution-fixture.jsonl','a') as f: f.write(json.dumps(q)+'\n')
  if 'id' not in q: continue
  method=q['method']; p=q.get('params',{}); name=p.get('name','')
  if method=='initialize': result={'protocolVersion':'2025-06-18','capabilities':{},'serverInfo':{'name':'fixture','version':'1'}}
  elif method=='tools/list': result={'tools':[{'name':n,'description':n,'inputSchema':{'type':'object','properties':{}}} for n in ['validate','get_schema','experimental_evaluate','experimental_test_cases','unsafe_extra']]}
- elif method=='prompts/list': result={'prompts':[{'name':'served','arguments':[{'name':'input','required':True}]}]}
- elif method=='prompts/get': result={'messages':[{'role':'user','content':{'type':'text','text':'SERVED-RUNTIME-PROMPT '+p['arguments']['input']}}]}
+ elif method=='prompts/list': result={'prompts':[{'name':'served','arguments':[]},{'name':'requires-input','arguments':[{'name':'input','required':True}]}]}
+ elif method=='prompts/get': result={'messages':[{'role':'user','content':{'type':'text','text':'SERVED-RUNTIME-PROMPT'}}]}
  else:
   mode=p.get('arguments',{}).get('fixture','')
   if mode=='hang': time.sleep(30)
@@ -319,7 +319,7 @@ func assistantExecutionRuntimeFixture(t *testing.T, s *Server, e *assistantRunEx
 func assistantExecutionOpen(t *testing.T, s *Server, e *assistantRunExecution) *assistantExecution {
 	t.Helper()
 	assistantExecutionRuntimeFixture(t, s, e)
-	x, err := e.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served", Arguments: map[string]string{"input": e.source.Text}})
+	x, err := e.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served"})
 	assistantRunMust(t, err)
 	t.Cleanup(x.Close)
 	return x
@@ -339,7 +339,7 @@ func assistantExecutionRuntimeLog(t *testing.T, s *Server) []map[string]json.Raw
 func TestAssistantExecutionRuntimeRootIDsAndReceipts(t *testing.T) {
 	s, _, e := assistantExecutionFixture(t, "http://127.0.0.1:1", "work")
 	x := assistantExecutionOpen(t, s, e)
-	if x.Run.Prompt != "SERVED-RUNTIME-PROMPT Review exact input" {
+	if x.Run.Prompt != "SERVED-RUNTIME-PROMPT\n\nTRANSCRIPT SO FAR\n\n\nTHE PERSON'S MESSAGE\nReview exact input" {
 		t.Fatal(x.Run.Prompt)
 	}
 	for _, tool := range x.Run.Tools {
@@ -451,7 +451,7 @@ func TestAssistantExecutionRuntimePromptAndProjectRefusal(t *testing.T) {
 	r, err := e.assistantRuntime(context.Background())
 	assistantRunMust(t, err)
 	defer r.Close()
-	if _, err = r.Prompt(context.Background(), assistantExecutionPrompt{Name: "served"}); err == nil {
+	if _, err = r.Prompt(context.Background(), assistantExecutionPrompt{Name: "requires-input"}); err == nil {
 		t.Fatal("omitted served prompt argument admitted")
 	}
 	if _, err = r.Prompt(context.Background(), assistantExecutionPrompt{Name: "invented"}); err == nil {
@@ -544,12 +544,12 @@ func TestAssistantExecutionEinoServedPromptAndCheckpoint(t *testing.T) {
 		t.Fatalf("canonical checkpoint lost: %+v events=%+v", record.Checkpoint, record.Events)
 	}
 	arrival := u.only(t)
-	for _, part := range []string{"SERVED-RUNTIME-PROMPT Review exact input", "HOST-INSTRUCTIONS-ONCE", "HOST-BRIEF-ONCE"} {
+	for _, part := range []string{"SERVED-RUNTIME-PROMPT", "HOST-INSTRUCTIONS-ONCE", "HOST-BRIEF-ONCE"} {
 		if strings.Count(string(arrival.body), part) != 1 {
 			t.Fatalf("prompt part count for %q: %s", part, arrival.body)
 		}
 	}
-	if observer.brief != 1 || observer.instructions != 1 || observer.memory != 1 || observer.query != e.source.Text {
+	if observer.brief != 1 || observer.instructions != 1 || observer.memory != 0 || observer.query != "" {
 		t.Fatalf("host parts were not requested once with exact current query: %+v", observer)
 	}
 	if len(record.Checkpoint.Prompts) != 1 {
@@ -681,7 +681,7 @@ func TestAssistantExecutionReconstructedIdentities(t *testing.T) {
 	continued.record = assistantExecutionRecord(t, e)
 	continued.writer, err = e.writer.lease.Writer(context.Background(), e.record.Binding, e.record.ID)
 	assistantRunMust(t, err)
-	second, err := continued.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served", Arguments: map[string]string{"input": continued.source.Text}})
+	second, err := continued.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served"})
 	assistantRunMust(t, err)
 	defer second.Close()
 	second.Run.Emit(message)

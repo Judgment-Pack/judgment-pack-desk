@@ -38,6 +38,7 @@ type assistantRunExecution struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	done     chan struct{}
+	input    *assistantChatCustody
 }
 
 func (s *Server) assistantRunService() *assistantRunService {
@@ -176,7 +177,7 @@ func (h *assistantRunService) launch(r *http.Request, record assistantRunRecord,
 	if session.Err() != nil {
 		cancel()
 	}
-	execution := &assistantRunExecution{service: h, source: source, request: r.Clone(ctx), record: record, writer: writer, decision: decision, ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	execution := &assistantRunExecution{service: h, source: source, request: r.Clone(ctx), record: record, writer: writer, decision: decision, ctx: ctx, cancel: cancel, done: make(chan struct{}), input: &assistantChatCustody{}}
 	h.active[record.ID] = execution
 	go func() {
 		defer close(execution.done)

@@ -2614,3 +2614,19 @@ go	assistant Codex: tool callback precedes acknowledged dispatch	TestAssistantEx
 go	assistant Codex: arbitrary cancellation keeps root dispatch	TestAssistantExecutionCodexCancellationReleasesAccount
 go	assistant Codex: canonical stop acknowledgement omitted	TestAssistantExecutionCodexFactoryDelegation,TestAssistantExecutionCodexQuestionAndAllowancePolicy
 go	assistant Codex: saved project effort uses shared configuration	TestAssistantExecutionCodexProjectEffort
+go	assistant chat input: latest request repeated in transcript	TestAssistantChatInputActualFactory
+go	assistant chat input: obsolete snapshot replaces authored history	TestAssistantChatInputProjection
+go	assistant chat input: explicit empty becomes fallback	TestAssistantChatInputPresenceAndRefusal
+go	assistant chat input: unverified document reference admitted	TestAssistantChatDocumentUnverified
+go	assistant chat input: request-bearing Runtime arguments admitted	TestAssistantChatInputControlsAndAdmission
+go	assistant chat input: saved chat reasoning ignored	TestAssistantChatInputControlsAndAdmission
+go	assistant chat input: lossy typed number admitted	TestAssistantChatInputPresenceAndRefusal
+go	assistant documents: signed receipt verdict is ignored	TestAssistantDocumentTamperingAndSelection
+go	assistant documents: argument commitment is ignored	TestAssistantDocumentTamperingAndSelection
+go	assistant documents: partial pages bypass consent	TestAssistantDocumentSignedContractAndPartialConsent
+go	assistant documents: unreadable selected pages enter context	TestAssistantDocumentUnreadablePagesAndOCR
+go	assistant documents: substituted saved request is accepted	TestAssistantDocumentAuthenticatedRootAndRecheck
+go	assistant documents: changed attachment or trust survives recheck	TestAssistantDocumentAuthenticatedRootAndRecheck
+go	assistant saved context: physical dispatch omits document recheck	TestAssistantChatDocumentQueuedDispatch,TestAssistantChatDocumentContinuation
+go	assistant saved context: different selections share context identity	TestAssistantChatDocumentSelectionsAndConsent
+go	assistant chat input: explicit invalid interaction becomes work	TestAssistantChatInputInteraction,TestAssistantChatInputInteractionAdmission

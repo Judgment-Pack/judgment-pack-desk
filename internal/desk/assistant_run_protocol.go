@@ -140,16 +140,13 @@ func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, i
 	// Read declared fields by their exact wire names, not encoding/json aliases.
 	var chat map[string]json.RawMessage
 	_ = json.Unmarshal(selected, &chat)
-	var phase, connectionID, model string
-	_ = json.Unmarshal(chat["interaction"], &phase)
+	phase, err := assistantChatPhase(chat["interaction"])
+	if err != nil {
+		return assistantRunSource{}, err
+	}
+	var connectionID, model string
 	_ = json.Unmarshal(chat["aiConnection"], &connectionID)
 	_ = json.Unmarshal(chat["model"], &model)
-	if phase == "" {
-		phase = "work"
-	}
-	if !contains([]string{"work", "plan"}, phase) {
-		return assistantRunSource{}, errAssistantRunInvalid
-	}
 	var checkpoint map[string]json.RawMessage
 	var state map[string]json.RawMessage
 	var turns []json.RawMessage
@@ -168,10 +165,10 @@ func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, i
 		_ = json.Unmarshal(fields["id"], &id)
 		_ = json.Unmarshal(fields["kind"], &kind)
 		_ = json.Unmarshal(fields["text"], &value)
-		if role == "user" {
+		if role == "user" && kind != "note" {
 			request = nil
 			text = ""
-			if kind == "message" && id == start.RequestID && value != "" {
+			if contains([]string{"message", "brief"}, kind) && id == start.RequestID {
 				request = turn
 				text = value
 			}
@@ -211,7 +208,11 @@ func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, i
 	binding.ProfileRevision = digestOf(profileRaw)
 	binding.Model = model
 	binding.Phase = phase
-	return assistantRunSource{Start: start, Binding: binding, Original: bytes.Clone(selected), Request: bytes.Clone(request), Text: text, Connection: *connection, Profile: *profile}, nil
+	source := assistantRunSource{Start: start, Binding: binding, Original: bytes.Clone(selected), Request: bytes.Clone(request), Text: text, Connection: *connection, Profile: *profile}
+	if _, err := compileAssistantChatInput(source); err != nil {
+		return assistantRunSource{}, err
+	}
+	return source, nil
 }
 
 func (s *Server) readAssistantRunSource(r *http.Request, start assistantRunStart, identity assistantRunBinding, project string) (assistantRunSource, error) {

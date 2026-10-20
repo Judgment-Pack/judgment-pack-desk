@@ -72,7 +72,7 @@ for line in sys.stdin:
  elif method=='turn/start':
   with open(ledger) as f: runs=json.load(f)['runs']
   prompt=p['input'][0]['text']
-  ops=[op for r in runs for op in r['operations'] if op['kind']=='model' and json.loads(base64.b64decode(op['intent']))['prompt']==prompt]
+  ops=[op for r in runs for op in (r.get('operations') or []) if op['kind']=='model' and json.loads(base64.b64decode(op['intent']))['prompt']==prompt]
   if not ops or ops[-1]['state']!='dispatched': sys.exit(73)
   old=[]
   if os.path.exists(trace):
@@ -103,7 +103,11 @@ for line in sys.stdin:
 type assistantCodexExecutor struct{ *assistantProtocolExecutor }
 
 func (x *assistantCodexExecutor) Prepare(ctx context.Context, source assistantRunSource) (contract.Checkpoint, error) {
-	run, err := runcontext.ContextualSession(ctx, runcontext.Session{Prompt: source.Text, Purpose: "chat", Agent: &runcontext.AgentSession{Model: source.Binding.Model}, Context: &runcontext.Input{Phase: source.Binding.Phase, Connection: source.Binding.ConnectionID, CurrentRequest: &runcontext.CurrentRequest{Message: source.Text, Input: string(source.Request)}}})
+	chat, err := compileAssistantChatInput(source)
+	if err != nil {
+		return contract.Checkpoint{}, err
+	}
+	run, err := runcontext.ContextualSession(ctx, runcontext.Session{Prompt: source.Text, Purpose: "chat", Agent: &runcontext.AgentSession{Model: source.Binding.Model}, Context: &runcontext.Input{Phase: source.Binding.Phase, Connection: source.Binding.ConnectionID, CurrentRequest: &chat.Request}})
 	if err != nil {
 		return contract.Checkpoint{}, err
 	}
@@ -340,7 +344,7 @@ func TestAssistantExecutionCodexFactoryDelegation(t *testing.T) {
 					t.Fatal("canonical instructions prepared twice or omitted", part)
 				}
 			}
-			if strings.Count(string(generations[i]["prompt"]), "SERVED-RUNTIME-PROMPT Review exact input") != 1 {
+			if strings.Count(string(generations[i]["prompt"]), "SERVED-RUNTIME-PROMPT") != 1 {
 				t.Fatal("served prompt changed")
 			}
 		}
@@ -350,7 +354,7 @@ func TestAssistantExecutionCodexFactoryDelegation(t *testing.T) {
 			}
 		}
 	}
-	if observer.brief != 3 || observer.instructions != 3 || observer.memory != 3 {
+	if observer.brief != 3 || observer.instructions != 3 || observer.memory != 0 {
 		t.Fatal("canonical Host did not assemble once", observer)
 	}
 	if record.Checkpoint.Delegation == nil || record.Checkpoint.Handoff == nil || len(record.Checkpoint.Handoff.Tasks) != 1 || record.Checkpoint.Handoff.Tasks[0].State != "complete" {
@@ -746,7 +750,7 @@ func TestAssistantExecutionCodexReconstructionRetainsIdentityAndTests(t *testing
 	retained := assistantExecutionRecord(t, e)
 	e.record.Checkpoint = retained.Checkpoint
 	x.Close()
-	x2, err := e.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served", Arguments: map[string]string{"input": e.source.Text}})
+	x2, err := e.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served"})
 	assistantRunMust(t, err)
 	defer x2.Close()
 	if x2.gate.TestCalls() != 1 || x2.Run.Context.Execution.ID != before.Checkpoint.ID {
