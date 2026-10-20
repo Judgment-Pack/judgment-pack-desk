@@ -14596,6 +14596,37 @@ fi
 
 # Desk-owned v0.3.0 admission and credential safeguards (#529, #533).
 if [ "$which" = all ] || [ "$which" = go ]; then
+  # Actual private subscription binding safeguards.
+  mutate go 'assistant Codex: saved project effort uses shared configuration' internal/desk/assistant_execution_agent.go \
+    'effort = preferences.Effort' \
+    'effort = config.Agent.Effort'
+  mutate go 'assistant Codex: arbitrary cancellation keeps root dispatch' internal/desk/assistant_execution_agent.go \
+    'if !knownStop {' \
+    'if false {'
+  mutate go 'assistant Codex: canonical stop acknowledgement omitted' internal/desk/assistant_execution_agent.go \
+    's.retained = s.call == id && s.kind != "" && stopped' \
+    's.retained = false'
+  mutate go 'assistant Codex: generation skips acknowledged dispatch' internal/desk/assistant_execution_agent.go \
+    'return dispatch.dispatch(ctx)' \
+    'return error(nil)'
+  mutate go 'assistant Codex: tool callback precedes acknowledged dispatch' internal/desk/assistant_execution_agent.go \
+    'if err = e.Dispatch(callCtx, op.ID); err != nil {' \
+    'if err = error(nil); err != nil {'
+  mutate go 'assistant Codex: busy becomes admitted outcome' internal/desk/assistant_execution_agent.go \
+    'return adapter.ErrBusy' \
+    'return codexbridge.ErrRun'
+  mutate go 'assistant Codex: tool receipt loses invocation pairing' internal/desk/assistant_execution_agent.go \
+    '}{dispatch.operation.ID, call})' \
+    '}{"", call})'
+  mutate go 'assistant Codex: child preference uses parent model' internal/desk/assistant_execution.go \
+    'named.Critic, named.Child = connection.Agent.CriticModel, connection.Agent.ChildModel' \
+    'named.Critic, named.Child = connection.Agent.CriticModel, ""'
+  mutate go 'assistant Codex: bridge skips host admission fence' internal/codexbridge/run.go \
+    'if request.AuthorizeAdmission != nil {' \
+    'if false {'
+  mutate go 'assistant Codex: bridge skips host generation fence' internal/codexbridge/run.go \
+    'if request.BeforeGeneration != nil {' \
+    'if false {'
   # Actual private execution bindings; production activation remains separate.
   mutate go 'assistant execution: reconstructed operation identities restart' internal/desk/assistant_run_store_writer.go \
     'id := nextAssistantRunIdentity(run, kind)' \

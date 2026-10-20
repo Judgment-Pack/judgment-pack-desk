@@ -2604,3 +2604,13 @@ go	assistant execution: reconstructed operation identities restart	TestAssistant
 go	assistant execution: reconstructed event identities restart	TestAssistantExecutionReconstructedIdentities
 go	assistant execution: canceled unread close leaves root admission open	TestAssistantExecutionCanceledResponseClose
 go	assistant execution: budget pause reaches semantic event sink	TestAssistantExecutionEinoBudgetPause
+go	assistant Codex: generation skips acknowledged dispatch	TestAssistantExecutionCodexFactoryDelegation,TestAssistantExecutionCodexExactReceiptsAndRefusals
+go	assistant Codex: busy becomes admitted outcome	TestAssistantExecutionCodexBusyAndCallbackOutcomes
+go	assistant Codex: tool receipt loses invocation pairing	TestAssistantExecutionCodexExactReceiptsAndRefusals
+go	assistant Codex: child preference uses parent model	TestAssistantExecutionCodexFactoryDelegation
+go	assistant Codex: bridge skips host admission fence	TestRunHostFencesAtPhysicalAdmissionAndGeneration
+go	assistant Codex: bridge skips host generation fence	TestRunHostFencesAtPhysicalAdmissionAndGeneration
+go	assistant Codex: tool callback precedes acknowledged dispatch	TestAssistantExecutionCodexExactReceiptsAndRefusals
+go	assistant Codex: arbitrary cancellation keeps root dispatch	TestAssistantExecutionCodexCancellationReleasesAccount
+go	assistant Codex: canonical stop acknowledgement omitted	TestAssistantExecutionCodexFactoryDelegation,TestAssistantExecutionCodexQuestionAndAllowancePolicy
+go	assistant Codex: saved project effort uses shared configuration	TestAssistantExecutionCodexProjectEffort

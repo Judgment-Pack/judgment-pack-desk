@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter"
+	agentadapter "github.com/Judgment-Pack/judgment-pack-agent/go/adapter/agent"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/delegate"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/eino"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/turn"
@@ -33,13 +34,17 @@ type assistantExecutionPrompt struct {
 func (x *assistantExecution) Close() { x.runtime.Close() }
 
 func (e *assistantRunExecution) assistantExecutionModels() (runcontext.RunModels, error) {
-	endpoint := e.source.Connection.Assistant.Endpoint
-	if endpoint == nil {
+	named := runcontext.NamedModels{}
+	connection := e.source.Connection.Assistant
+	if connection.Engine == "codex" && connection.Agent != nil {
+		named.Critic, named.Child = connection.Agent.CriticModel, connection.Agent.ChildModel
+	} else if connection.Engine == "vercel" && connection.Endpoint != nil {
+		named.Critic, named.Child = connection.Endpoint.CriticModel, connection.Endpoint.ChildModel
+		if connection.Endpoint.Capacity != 0 {
+			named.ConcurrentRequests = &connection.Endpoint.Capacity
+		}
+	} else {
 		return runcontext.RunModels{}, errAssistantRunUnavailable
-	}
-	named := runcontext.NamedModels{Critic: endpoint.CriticModel, Child: endpoint.ChildModel}
-	if endpoint.Capacity != 0 {
-		named.ConcurrentRequests = &endpoint.Capacity
 	}
 	models, err := runcontext.ReadRunModels(runcontext.RunIdentity{Connection: e.record.Binding.ConnectionID, Model: e.record.Binding.Model}, named)
 	if err != nil {
@@ -53,10 +58,6 @@ func (e *assistantRunExecution) assistantExecutionModels() (runcontext.RunModels
 }
 
 func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prompt assistantExecutionPrompt) (_ *assistantExecution, err error) {
-	model, err := e.assistantModel()
-	if err != nil {
-		return nil, err
-	}
 	host, err := e.service.server.assistantPromptHost(ctx)
 	if err != nil {
 		return nil, err
@@ -98,11 +99,19 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		e.changed(err)
 	}
 	endpoint := e.source.Connection.Assistant.Endpoint
+	var granted []string
+	if e.source.Connection.Assistant.Engine == "codex" && e.source.Connection.Assistant.Agent != nil {
+		granted = e.source.Connection.Assistant.Agent.Tools
+	} else if endpoint != nil {
+		granted = endpoint.Tools
+	} else {
+		return nil, errAssistantRunUnavailable
+	}
 	testCalls := 0
 	if e.record.Checkpoint.TestCalls != nil {
 		testCalls = int(*e.record.Checkpoint.TestCalls)
 	}
-	options := gate.Options{Runtime: runtime.Call, Granted: endpoint.Tools, TestCalls: testCalls, Emit: emit}
+	options := gate.Options{Runtime: runtime.Call, Granted: granted, TestCalls: testCalls, Emit: emit}
 	g = gate.New(options)
 	// The coordinator supplies the canonical declaration/function; the host
 	// gate permits this interaction without granting any domain action.
@@ -140,8 +149,21 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 			return nil, err
 		}
 	}
-	run := &adapter.Run{Purpose: e.source.Start.Purpose, Wire: endpoint.Kind, ModelName: e.record.Binding.Model, Model: model, Thinking: e.source.Connection.Assistant.Thinking, Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
-	if endpoint.Capabilities != nil {
+	run := &adapter.Run{Purpose: e.source.Start.Purpose, ModelName: e.record.Binding.Model, Thinking: e.source.Connection.Assistant.Thinking, Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
+	var base adapter.Adapter = eino.New()
+	if e.source.Connection.Assistant.Engine == "codex" {
+		run.Agent, err = e.assistantAgent()
+		base = assistantCanonicalAgent(agentadapter.New())
+	} else {
+		run.Model, err = e.assistantModel()
+		if endpoint != nil {
+			run.Wire = endpoint.Kind
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if endpoint != nil && endpoint.Capabilities != nil {
 		raw, marshalErr := json.Marshal(endpoint.Capabilities)
 		if marshalErr != nil {
 			return nil, marshalErr
@@ -161,13 +183,13 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		if err := e.Authorize(ctx); err != nil {
 			return nil, nil, err
 		}
-		child := gate.New(gate.Options{Runtime: runtime.Call, Granted: endpoint.Tools, Turn: g, Emit: childEmit})
+		child := gate.New(gate.Options{Runtime: runtime.Call, Granted: granted, Turn: g, Emit: childEmit})
 		child.SetOffer(offer)
 		childPhase := gate.ChildPhase(profile, offer, phase)
 		child.Enter(childPhase)
 		return child.Calls(), childPhase.Offer(offer).Tools, nil
 	}
-	return &assistantExecution{Run: run, Adapter: delegate.With(eino.New(), delegate.Options{}), runtime: runtime, gate: g}, nil
+	return &assistantExecution{Run: run, Adapter: delegate.With(base, delegate.Options{}), runtime: runtime, gate: g}, nil
 }
 
 func (r *assistantRuntime) rpc(ctx context.Context, method string, params any) (json.RawMessage, error) {
