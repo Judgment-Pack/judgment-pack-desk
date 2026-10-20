@@ -48,9 +48,10 @@ import { RunMeter, type RunTiming } from './runMeter'
 import { reportFromExecution, type RunReport } from './report'
 import { loadEngine } from '@judgment-pack/harness/engines/index'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { useMcp } from '../mcp/McpProvider'
 import { openAssistantConnection, runAssistantSession } from '@judgment-pack/harness/session'
 import { sessionBearer, whenSessionEnds } from '../mcp/session'
-import type { HostTool, AssistantEvent } from '@judgment-pack/harness/engine'
+import type { HostTool, AssistantEvent, McpToolResult } from '@judgment-pack/harness/engine'
 import type { CriticCase } from '@judgment-pack/harness/refutation'
 import type { AssistantConnection } from '@judgment-pack/harness/session'
 import {
@@ -273,6 +274,7 @@ export function useAssistantRun(options: {
   criticCases?: CriticCase[]
 }): AssistantRun {
   const contextConfiguration=useEffectiveConfig().assistantProfile?.value?.context
+  const mcp = useMcp()
   const connectionTarget = options.target ?? {}
   const [status, setStatus] = useState<RunStatus>('idle')
   const [runningEngine, setRunningEngine] = useState(options.engine)
@@ -287,8 +289,8 @@ export function useAssistantRun(options: {
   const terminals = useRef({ count: 0 })
   // Read at call time rather than captured, so a run started with one
   // configuration is not carried on with another.
-  const settings = useRef({...options,connectionTarget,contextConfiguration})
-  settings.current = {...options,connectionTarget,contextConfiguration}
+  const settings = useRef({...options,connectionTarget,contextConfiguration,mcp})
+  settings.current = {...options,connectionTarget,contextConfiguration,mcp}
 
   /**
    * Put one event on the stream, for the run that produced it.
@@ -416,9 +418,13 @@ export function useAssistantRun(options: {
           const ready = opened ? await opened.ready : { tools: [], callTool: async () => { throw new Error('Brief generation has no tool capability.') } }
           const loaded = await loadEngine(engine)
           // Whether project memory is on, so the memory reserve is left out of a run that has none (agent#11).
+          // Runtime identity is host metadata, outside the model's tool offer.
+          const runtimeClient = settings.current.mcp.status === 'ready' ? settings.current.mcp.client : null
           const [memory, runtime] = await Promise.all([
             purpose === 'brief' ? undefined : memoryInUse(run.controller.signal),
-            opened ? runtimeIdentityOf(opened, ready.callTool) : undefined
+            purpose !== 'brief' && runtimeClient
+              ? runtimeIdentityOf(runtimeClient, async (name, args) => await runtimeClient.callTool({ name, arguments: args }) as McpToolResult)
+              : undefined
           ])
           if (run.controller.signal.aborted) return
           if (!retained.current || retained.current.isDisposed) retained.current = new ChatContext()
