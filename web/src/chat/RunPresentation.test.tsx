@@ -3,6 +3,8 @@ import { afterEach, expect, it } from 'vitest'
 import { INITIAL_STATE } from '../research/run'
 import { workItems, ComposerTaskStatus, TaskStatus, WorkSummary, candidateSummary } from './RunPresentation'
 import { MessageRenderer } from './MessageRenderer'
+import { readResponseHistory, summarizeWork } from './responseHistory'
+import { checkpoint, DELEGATION } from '../assistant/reportFixtures'
 afterEach(cleanup)
 
 it('pairs parallel invocations by identity and preserves a pending or failed call', () => {
@@ -134,4 +136,40 @@ it('renders readable labels for restored context work after an interrupted respo
  fireEvent.click(screen.getByText('Work · 20 steps'))
  expect(screen.getAllByText('Read retained context')).toHaveLength(20)
  expect([...view.container.querySelectorAll('li')].every(row=>row.textContent?.includes('Done'))).toBe(true)
+})
+
+it('keeps the critic\'s account of the declared cases with the response, and shows it',()=>{
+ const critique={type:'critique' as const,refuted:true,checks:[{tool:'validate',status:'valid'}],text:'validate valid; incomplete, 1 declared case(s) not compared',incomplete:['c2'],cases:[{case:'c1',source:'test' as const,tool:'experimental_test_cases' as const,agrees:false,expected:{disposition:{kind:'approve'}},actual:{disposition:{kind:'decline'}}}],figures:{model:'cheap-critic',unit:'model-requests' as const,requests:2,inputTokens:500,outputTokens:60}}
+ const work=summarizeWork([critique],false,{runModel:'main-model'})
+ expect(work.critic).toEqual({compared:1,disagreed:1,incomplete:['c2'],figures:critique.figures,runModel:'main-model'})
+ // It survives a save and a reload, and a record that is not what the Desk writes is refused.
+ const row={id:'response-1',documents:[],websites:[],sourceIds:[],work:JSON.parse(JSON.stringify(work))}
+ expect(readResponseHistory([row])[0]!.work.critic).toEqual(work.critic)
+ expect(()=>readResponseHistory([{...row,work:{...row.work,critic:{...work.critic,disagreed:9}}}])).toThrow('invalid')
+ render(<WorkSummary work={work}/>)
+ fireEvent.click(screen.getByText('Assistant notice'))
+ expect(screen.getByText(/Some declared cases were not compared, so this review cannot say the proposal was not refuted\. Not compared: c2/)).toBeTruthy()
+ expect(screen.getByText('Declared cases: 1 compared, 1 differ from the expected outcome.')).toBeTruthy()
+ expect(screen.getByText(/The review ran on cheap-critic, the model this connection names for reviews, and the answer on main-model\./)).toBeTruthy()
+})
+
+it('shows each child\'s figures beside the parent\'s, from the checkpoint, and again after a reload',()=>{
+ const [first,second]=DELEGATION.batches[0]!.children
+ const task=(id:string,title:string)=>({type:'delegated_task' as const,task:{id,parentRunId:crypto.randomUUID(),title,objective:title,profile:'review',state:'complete' as const,createdAt:new Date().toISOString(),modelRequests:1,toolCalls:0,attempts:1,steps:[],result:'Findings.'}})
+ const events=[task(first!.task,'Review the pack'),task(second!.task,'Research the threshold')]
+ const work=summarizeWork(events,false,{execution:checkpoint({delegation:DELEGATION})})
+ expect(work.report).toMatchObject({requests:11,delegation:DELEGATION})
+ const reloaded=readResponseHistory([{id:'response-1',documents:[],websites:[],sourceIds:[],work:JSON.parse(JSON.stringify(work))}])[0]!.work
+ expect(reloaded.report).toEqual(work.report)
+ render(<WorkSummary work={reloaded}/>)
+ fireEvent.click(screen.getByText('Work · 2 steps'))
+ const table=screen.getByRole('table')
+ expect([...table.querySelectorAll('tbody tr')].map(row=>row.querySelector('th')!.textContent)).toEqual(['Assistant (its own)','Review the pack','Research the threshold (partial)','Batch 1 total'])
+ expect(()=>readResponseHistory([{id:'response-1',documents:[],websites:[],sourceIds:[],work:{...JSON.parse(JSON.stringify(work)),report:{...work.report,requests:-3}}}])).toThrow('invalid')
+})
+
+it('leaves a reply that did no work and delegated nothing without a report',()=>{
+ const work=summarizeWork([],false,{execution:checkpoint({used:1,completions:[{request:1,phase:'work',result:{finishReason:'stop',inputTokens:10,outputTokens:3}}]})})
+ expect(work.report).toMatchObject({requests:1,tokens:{inputTokens:10,outputTokens:3}})
+ expect(render(<WorkSummary work={work}/>).container.textContent).toBe('')
 })

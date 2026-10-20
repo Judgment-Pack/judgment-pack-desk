@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ChatStore, type ChatPersistence } from './store'
 import { INITIAL_STATE } from '../research/run'
 import type { ResearchRunBinding } from '../research/useResearchRun'
+import { chatContextFor, disposeChatContext } from '../assistant/chatContexts'
 
 const stores: ChatStore[] = []
 afterEach(() => { stores.forEach(store => store.dispose()); stores.length = 0; sessionStorage.clear(); vi.useRealTimers() })
@@ -102,6 +103,21 @@ describe('project conversation history', () => {
     expect(() => store.remove(a.id)).toThrow('Stop')
     running = false
     expect(store.perform(b.id,second)).toBe(true)
+  })
+  it('disposes a chat\'s harness context when the chat is deleted, and not before', async () => {
+    const { store } = setup(); await store.load()
+    const kept = store.create(), deleted = store.create()
+    const keptContext = chatContextFor(kept.id), deletedContext = chatContextFor(deleted.id)
+    store.remove(deleted.id)
+    expect(deletedContext.isDisposed).toBe(true)
+    expect(keptContext.isDisposed).toBe(false)
+    expect(chatContextFor(kept.id)).toBe(keptContext)
+    // A deletion refused because the chat is running disposes nothing.
+    const running = { state: INITIAL_STATE, sources: [], blocked: '', model: 'model', researchConfigured: false, run: { running: true, stop: vi.fn() }, ledger: null } as unknown as ResearchRunBinding
+    store.report(kept.id, running)
+    expect(() => store.remove(kept.id)).toThrow('Stop')
+    expect(keptContext.isDisposed).toBe(false)
+    disposeChatContext(kept.id)
   })
   it('does not overwrite unreadable history or claim saving succeeded after a conflict', async () => {
     const bad = setup({ read: async () => ({ project: '/other-project', sha256: 'x', content: { version: 1, chats: [] } }) })

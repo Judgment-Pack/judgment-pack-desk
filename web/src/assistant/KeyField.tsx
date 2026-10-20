@@ -105,6 +105,7 @@ export function KeyField({
 
       {(read.present || !answered || failed !== null) && <p className="quiet">{keySays(read, answered, failed)}</p>}
       {failed !== null && <Button variant="quiet" onClick={onRetry}>{msg("Retry key status")}</Button>}
+      {binding === 'keyless' && <p className="quiet">{msg("Add a key only if this endpoint asks for one.")}</p>}
       {(binding === 'rebind' || binding === 'no-endpoint') && (
         <p className="quiet">{bindingSays(binding, read, destination)}</p>
       )}
@@ -157,7 +158,7 @@ export function keySays(
 ): string {
   if (failed !== null) return msg("this desk could not say — {{value0}}", { value0: failed.message })
   if (!answered) return msg("Not read yet")
-  if (!state.present) return msg("No key stored")
+  if (!state.present) return state.keyless === true ? msg("No key is needed for an endpoint on this computer") : msg("No key stored")
   const provider = providerName(state.kind)
   if (state.fingerprint === '') {
     return msg("Stored — too short to show any of it without showing all of it, for {{value0}}", { value0: provider })

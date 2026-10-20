@@ -63,6 +63,16 @@ describe('what the key row is about', () => {
     expect(keyBinding(NONE)).toBe('none')
   })
 
+  it('is keyless where the desk says no key is stored and none is needed, and only then', () => {
+    expect(keyBinding({ ...NONE, keyless: true })).toBe('keyless')
+    expect(keyBinding({ ...NONE, keyless: false })).toBe('none')
+    // A key that is stored is bound or not whatever the desk says about need.
+    expect(keyBinding({ ...BOUND, keyless: true })).toBe('bound')
+    expect(keyBinding({ ...BOUND, bound: false, keyless: true })).toBe('rebind')
+    // Nowhere to bind to is still nowhere to bind to.
+    expect(keyBinding({ ...NOWHERE, keyless: true })).toBe('no-endpoint')
+  })
+
   it('takes the verdict from the desk and computes none of its own', () => {
     // **Both halves, over identical page-side inputs.** The stored origin and
     // the configured one are the same string in these two cases and only the

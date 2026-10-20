@@ -25,10 +25,10 @@
     "harness": {
       "package": "@judgment-pack/harness",
       "repository": "Judgment-Pack/judgment-pack-agent",
-      "version": "v0.1.0",
-      "revision": "b9e3a19fe90833c3d9b665f5ca1337aeaeaa4470",
-      "asset": "judgment-pack-harness-0.1.0.tgz",
-      "sha256": "b0a1e4e983ae650b21b26456aab50262b9454f6cb1509b5eaaecccb1de7476ee",
+      "version": "v0.3.0",
+      "revision": "82235e1d180fbec4634e19c43ea80f06280b298c",
+      "asset": "judgment-pack-harness-0.3.0.tgz",
+      "sha256": "ccbf6adff495cb3898690afffb068fb675c968deaf78110d55e80f7104f25b13",
       "channel": "stable"
     }
   }

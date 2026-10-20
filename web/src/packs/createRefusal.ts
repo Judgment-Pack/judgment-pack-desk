@@ -54,6 +54,7 @@ export const CHASSIS_CODES = [
   'assistant-unusable-store',
   'assistant-relay-path',
   'assistant-relay-busy',
+  'assistant-relay-queue-full',
   'assistant-relay-upstream',
   'assistant-listing-refused',
   'assistant-key-unbound',
@@ -98,10 +99,11 @@ export const OTHER_ENDPOINT_CODES = [
   'assistant-unconfigured',
   'assistant-no-key',
   'assistant-unusable-store',
-  // The model relay's three. A create writes a file through the file API and
+  // The model relay's four. A create writes a file through the file API and
   // never carries model traffic, so none of them can reach this dialog either.
   'assistant-relay-path',
   'assistant-relay-busy',
+  'assistant-relay-queue-full',
   'assistant-relay-upstream',
   // …and the one the relay answers about a listing whose body carried the
   // configured key. A create carries no model traffic and asks for no listing.

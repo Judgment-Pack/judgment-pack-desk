@@ -574,6 +574,15 @@ describe('Test connection: the probe and the listing, in one press', () => {
       'Models',
       'Search models',
       'Other model… (type an id)',
+      'Review model',
+      'Helper tasks model',
+      'Requests at once',
+      'Context window (tokens)',
+      'Output limit (tokens)',
+      'Native tool calls',
+      'Parallel tool calls',
+      'Images',
+      'Strict turn order',
       'Tools the assistant may use',
       'Reasoning effort'
     ])
@@ -1398,5 +1407,171 @@ describe('API key save and connection readiness', () => {
     save()
     await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
     expect(theWrite(sent).assistant.endpoint).toMatchObject({ model: 'a-model', models: ['a-model', 'another-model'] })
+  })
+})
+
+describe('the models named for reviews and helper tasks', () => {
+  it('writes the model each is named on, and nothing where both are left to the run', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm(configured({ endpoint: { ...ENDPOINT, models: ['a-model', 'a-cheaper-model'] } }))
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).not.toHaveProperty('criticModel')
+    expect(theWrite(sent).assistant.endpoint).not.toHaveProperty('childModel')
+  })
+
+  it('offers the enabled models and the run\'s own, and writes the ones chosen', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm(configured({ endpoint: { ...ENDPOINT, models: ['a-model', 'a-cheaper-model'], criticModel: 'a-cheaper-model' } }))
+    const review = screen.getByRole('combobox', { name: 'Review model' })
+    expect(review.textContent).toContain('a-cheaper-model')
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).toMatchObject({ criticModel: 'a-cheaper-model' })
+    expect(theWrite(sent).assistant.endpoint).not.toHaveProperty('childModel')
+  })
+
+  it('writes the capacity typed, and refuses one outside 1 to 16 before a save is tried', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm()
+    fireEvent.change(screen.getByLabelText('Requests at once'), { target: { value: '40' } })
+    expect(await screen.findByText(/must be an integer from 1 to 16/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Requests at once'), { target: { value: '4' } })
+    expect(screen.queryByText(/must be an integer from 1 to 16/)).toBeNull()
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).toMatchObject({ capacity: 4 })
+  })
+})
+
+async function pick(label: string, option: string) {
+  const trigger = screen.getByRole('combobox', { name: label }) as HTMLButtonElement
+  await waitFor(() => expect(trigger.disabled).toBe(false))
+  fireEvent.click(trigger)
+  fireEvent.click(await screen.findByRole('option', { name: option }))
+}
+
+describe('the header form, the plain address on this network, and what an endpoint can do', () => {
+  const OPEN = configured({ endpoint: { ...ENDPOINT, models: ['a-model'] } })
+
+  it('offers the api-key header for an OpenAI-compatible endpoint, writes it, and offers none for another protocol', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm(OPEN)
+    fireEvent.click(screen.getByText('Advanced settings'))
+    await pick('Key header', 'api-key (Azure)')
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).toMatchObject({ auth: 'api-key' })
+    cleanup()
+    renderForm(configured({ endpoint: { ...ENDPOINT, kind: 'anthropic', url: 'https://api.example.invalid' } }))
+    fireEvent.click(screen.getByText('Advanced settings'))
+    expect(screen.queryByText('Key header')).toBeNull()
+  })
+
+  it('refuses a plain http address on the network until it is allowed, says what that costs, and then writes it', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm(OPEN)
+    fireEvent.click(screen.getByText('Advanced settings'))
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'http://192.168.1.20:8000/v1' } })
+    expect(await screen.findByText(/must be an https: URL/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Allow a plain http address on my local network'))
+    // The warning is visible beside the field, and the address is accepted.
+    expect(screen.getByRole('alert').textContent).toContain('travels in clear text on your network')
+    expect(screen.queryByText(/must be an https: URL/)).toBeNull()
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).toMatchObject({ url: 'http://192.168.1.20:8000/v1', lan: true })
+  })
+
+  it('still refuses a plain http address on the public internet, whatever is allowed', async () => {
+    renderForm(OPEN)
+    fireEvent.click(screen.getByText('Advanced settings'))
+    fireEvent.click(screen.getByLabelText('Allow a plain http address on my local network'))
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'http://llm.example.com/v1' } })
+    expect(await screen.findByText(/must be an https: URL/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('writes the context window and the output limit typed, refuses ones the decoder would, and writes what is said about images', async () => {
+    const { sent } = stubWrites([{}])
+    renderForm(OPEN)
+    fireEvent.change(screen.getByLabelText('Context window (tokens)'), { target: { value: '1000' } })
+    expect(await screen.findByText(/must be an integer from 4096 to 2000000/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Context window (tokens)'), { target: { value: '32768' } })
+    fireEvent.change(screen.getByLabelText('Output limit (tokens)'), { target: { value: '4096' } })
+    await pick('Images', 'Yes')
+    await pick('Native tool calls', 'No')
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).toMatchObject({ capabilities: { override: { contextWindow: 32768, outputReserve: 4096, vision: true, nativeToolCalls: false } } })
+  })
+
+  it('shows what the assistant will assume, each member with where it came from', () => {
+    renderForm(configured({ endpoint: { ...ENDPOINT, models: ['a-model'], capabilities: { probe: { at: '2026-10-19T12:00:00Z', nativeToolCalls: false, contextWindow: 16384 }, override: { contextWindow: 65536 } } } }))
+    const table = screen.getByRole('table', { name: 'What the assistant will assume' })
+    const rows = [...table.querySelectorAll('tr')].map((row) => [...row.querySelectorAll('th, td')].map((cell) => cell.textContent))
+    expect(rows).toEqual([['Context window', '65536 tokens', 'yours'], ['Native tool calls', 'No', 'probe']])
+  })
+
+  it('probes the saved endpoint with one small request through the relay, keeps what it found with the time, and writes it on save', async () => {
+    const urls: { url: string; method: string; body?: string }[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      urls.push({ url, method: init?.method ?? 'GET', body: init?.body as string | undefined })
+      if (url.includes('/api/assistant/key')) return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(keyAnswer) }
+      if (url.includes('/api/assistant/relay/v1/chat/completions')) {
+        return Response.json({ choices: [{ message: { tool_calls: [{ id: 'a', type: 'function', function: { name: 'probe_echo', arguments: '{"value":1}' } }] } }] })
+      }
+      if (url.includes('/api/assistant/relay/v1/models')) return Response.json({ data: [{ id: 'a-model', max_model_len: 32768 }] })
+      return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(WRITTEN) }
+    })
+    renderForm(OPEN)
+    const probeButton = (await screen.findByRole('button', { name: 'Probe the endpoint' })) as HTMLButtonElement
+    await waitFor(() => expect(probeButton.disabled).toBe(false))
+    fireEvent.click(probeButton)
+    expect(await screen.findByText(/^Probed 20\d\d-/)).toBeTruthy()
+    const chat = urls.filter((request) => request.url.includes('/relay/v1/chat/completions'))
+    expect(chat).toHaveLength(1)
+    expect(JSON.parse(chat[0]!.body!)).toMatchObject({ model: 'a-model', stream: false, max_tokens: 128 })
+    const table = screen.getByRole('table', { name: 'What the assistant will assume' })
+    expect(table.textContent).toContain('32768 tokens')
+    expect(table.textContent).toContain('probe')
+    // Written with the settings, and with nothing the probe did not find.
+    const { sent } = stubWrites([{}])
+    save()
+    await waitFor(() => expect(sent.some((request) => request.method === 'PUT')).toBe(true))
+    expect(theWrite(sent).assistant.endpoint).toMatchObject({ capabilities: { probe: { contextWindow: 32768, nativeToolCalls: true, parallelToolCalls: false } } })
+    expect((theWrite(sent).assistant.endpoint as { capabilities: { probe: Record<string, unknown> } }).capabilities.probe.at).toMatch(/^20\d\d-/)
+  })
+
+  it('will not probe an endpoint that is not saved or a protocol with one form, and says why', async () => {
+    renderForm(OPEN)
+    fireEvent.change(screen.getByLabelText('Endpoint URL'), { target: { value: 'https://changed.example/v1' } })
+    expect((screen.getByRole('button', { name: 'Probe the endpoint' }) as HTMLButtonElement).disabled).toBe(true)
+    cleanup()
+    renderForm(configured({ endpoint: { ...ENDPOINT, kind: 'gemini', url: 'https://api.example.invalid' } }))
+    expect(screen.queryByRole('button', { name: 'Probe the endpoint' })).toBeNull()
+  })
+})
+
+describe('an endpoint on this computer needs no key', () => {
+  it('says so, offers a key only for one that asks, and lets the endpoint be tested', async () => {
+    keyAnswer = { ...keyState(false, false), configuredOrigin: 'http://127.0.0.1:11434', keyless: true }
+    stubWrites([{}])
+    render(
+      <QueryClientProvider client={testQueryClient()}>
+        <DeskConfigFixture value={configured({ endpoint: { ...ENDPOINT, url: 'http://127.0.0.1:11434/v1' } })}><EndpointForm unavailable={false} /></DeskConfigFixture>
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText('No key is needed for an endpoint on this computer')).toBeTruthy()
+    expect(screen.getByText('Add a key only if this endpoint asks for one.')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByText('No key stored')).toBeNull()
   })
 })

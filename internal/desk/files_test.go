@@ -2728,10 +2728,8 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 			return getJSON(t, ts, relayPrefix)
 		},
 		CodeAssistantRelayBusy: func(t *testing.T) (int, map[string]any) {
-			// Every slot taken, held for the length of one request. Filling
-			// the channel rather than starting four real relays because what
-			// this witnesses is the bound, and four concurrent sockets would
-			// witness the scheduler as well.
+			// Every slot taken, and a wait that is allowed to end at once: the
+			// request is answered busy rather than held.
 			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
 				`{"url":"https://e.example/v1","kind":"openai-compatible","model":"m",`+
 				`"tools":[]}}}`)
@@ -2746,17 +2744,53 @@ func TestEveryCodeHasAStatusAndAWitness(t *testing.T) {
 					<-server.relaySlots
 				}
 			}()
-			// **A client with a deadline, and it is load-bearing.** A relay
-			// that queued instead of refusing would hold this request behind
-			// the four slots this witness is holding, and an unbounded client
-			// would turn that into a suite that hangs rather than a witness
-			// that fails.
+			old := relayQueueWait
+			relayQueueWait = 50 * time.Millisecond
+			defer func() { relayQueueWait = old }()
+			// **A client with a deadline, and it is load-bearing**: a wait with
+			// no bound would turn this into a suite that hangs rather than a
+			// witness that fails.
 			client := &http.Client{Timeout: 5 * time.Second}
 			busy, _ := http.NewRequest(http.MethodGet, ts.URL+relayPrefix+"models", nil)
 			bearer(busy)
 			resp, err := client.Do(busy)
 			if err != nil {
-				t.Fatalf("the relay never answered past its bound: %v", err)
+				t.Fatalf("the relay never answered past its wait: %v", err)
+			}
+			defer resp.Body.Close()
+			var body map[string]any
+			_ = json.NewDecoder(resp.Body).Decode(&body)
+			return resp.StatusCode, body
+		},
+		CodeAssistantRelayQueueFull: func(t *testing.T) (int, map[string]any) {
+			// Every slot taken and every place in the queue, the request after
+			// them answered at once.
+			writeDeskConfig(t, server, `{"deskConfigVersion":1,"assistant":{"endpoint":`+
+				`{"url":"https://e.example/v1","kind":"openai-compatible","model":"m",`+
+				`"tools":[]}}}`)
+			if status, _ := storeKey(t, ts, testKey); status != http.StatusOK {
+				t.Fatalf("store")
+			}
+			for i := 0; i < maxRelayInFlight; i++ {
+				server.relaySlots <- struct{}{}
+			}
+			for i := 0; i < maxRelayQueued; i++ {
+				server.relayQueue <- struct{}{}
+			}
+			defer func() {
+				for i := 0; i < maxRelayInFlight; i++ {
+					<-server.relaySlots
+				}
+				for i := 0; i < maxRelayQueued; i++ {
+					<-server.relayQueue
+				}
+			}()
+			client := &http.Client{Timeout: 5 * time.Second}
+			full, _ := http.NewRequest(http.MethodGet, ts.URL+relayPrefix+"models", nil)
+			bearer(full)
+			resp, err := client.Do(full)
+			if err != nil {
+				t.Fatalf("the relay never answered past its queue: %v", err)
 			}
 			defer resp.Body.Close()
 			var body map[string]any
