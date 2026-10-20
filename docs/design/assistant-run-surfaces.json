@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "status": "accepted architecture; durable ledger/storage/recovery and authenticated protocol implemented; production activation pending",
-  "deskEvidence": "reviewed private ledger/protocol, actual API/Codex/critic, input and projection fixtures; production registration and browser migration pending",
+  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph host foundations implemented; production activation pending",
+  "deskEvidence": "reviewed private foundations and focused actual API/native execution proofs; existing browser features remain on current engines pending full migration/certification",
   "agentEvidence": {
     "version": "v0.6.0",
     "revision": "3f308215afadd9d72ae963ebea1062247d1963ba"
@@ -277,7 +277,7 @@
       "id": "subscription-generic-delegation",
       "category": "conversation-subphase",
       "currentOwner": "canonical TS withDelegation + runCodex delegation_requested/release/batch/parent continuation",
-      "targetOwner": "published provider-managed Go coordinator with a private actual Desk bridge binding; production migration remains pending",
+      "targetOwner": "published Go Agent v0.6.0 coordinator and actual private Desk Codex transport foundations; full browser cutover/certification pending",
       "entrypoints": [
         "Agent packages/harness/engines/codex/index.ts:145-151",
         "Agent packages/harness/delegation.ts:844-864",
@@ -290,10 +290,10 @@
         "retain child reports/scopes/receipts and explicit recovery; do not silently remove feature"
       ],
       "verification": [
-        "read-only consumer proof in ADR; canonical upstream seam required before this slice",
-        "new actual-bridge parent handoff/child/parent continuation certification"
+        "private actual CodexManager parent handoff/child/parent continuation and checkpoint/release fixtures are implemented",
+        "complete product/provider-managed certification and browser activation remain pending"
       ],
-      "blockedByProviderManagedCoordinator": true
+      "blockedByProviderManagedCoordinator": false
     },
     {
       "id": "input-research-single-step",
@@ -525,17 +525,22 @@
         "web/src/graphs/author.ts",
         "internal/desk/graphs.go",
         "internal/desk/graph_author.go",
-        "internal/desk/graph_drafts.go"
+        "internal/desk/graph_drafts.go",
+        "internal/desk/assistant_host_tools.go",
+        "internal/desk/assistant_graph_tools.go",
+        "internal/desk/assistant_domain_output.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "finite Go host registry through published Agent HostTool and phase gate; concrete rooted Graph producers and terminal GraphDraft projection",
       "preserve": [
         "Go current handlers + retained draft proposal; saved rehearsal only; no operational audit/save inferred",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
-        "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
-      ]
+        "internal/desk/assistant_graph_tools_test.go: actual API/Eino seven-tool execution, exact proposal and terminal write/ack recovery",
+        "internal/desk/assistant_graph_boundary_test.go: actual CodexManager parent/child/parent, immutable callback scope, stale custody, failed persistence and storage/import refusal",
+        "scripts/assistant-graph-projection-reference.mjs: existing browser Graph snapshot/detached draft readers"
+      ],
+      "status": "private-implemented; production/browser migration pending"
     },
     {
       "id": "policy-host",
@@ -828,12 +833,14 @@
       "hand-authored actual private Codex subprocess parent-child-parent, account reaping, exact invocation/tool receipts, current-authority refusal, bounded admission retries, cancellation, canonical interaction stops and unchanged provider-managed allowance policy",
       "private saved-chat canonical input: exact statement/input, retained typed history/questions/attachments, transcript projection and validated chat preference precedence through actual API/Codex factories",
       "server verified submitted document selections with signed receipt/digest/readable-page/partial-consent custody, distinct selection identities and rechecks at physical API/Codex dispatch including waits and child/parent continuation (Desk #566)",
+      "completed private foundations from Desk #564/#570/#573/#574: published provider-managed binding, final journal prepare/CAS/readback/ack and positive critic/test-tool custody; these do not activate browser features",
+      "private finite Graph host registry, seven concrete tools, canonical producer-bound draft/read receipts and GraphDraft terminal projection; focused actual API/native and existing browser reader evidence",
       "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures"
     ],
     "pending": [
-      "complete provider-managed Desk binding certification",
-      "production test-tool registry and workflow migration",
-      "domain tools/actions, final journal CAS and browser migration"
+      "complete provider-managed Desk binding and feature certification",
+      "remaining Policy/Dialect/tests/sources/attachments/action/workflow migrations",
+      "browser cutover and production executor registration after complete migration/review"
     ],
     "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",
     "activation": "production executor remains unregistered"

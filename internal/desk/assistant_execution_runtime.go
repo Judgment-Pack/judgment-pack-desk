@@ -203,6 +203,10 @@ func (r *assistantRuntime) Call(ctx context.Context, message json.RawMessage) (j
 	if err := r.execution.recheckAssistantCritic(ctx); err != nil {
 		return nil, err
 	}
+	if err := recheckAssistantHost(ctx); err != nil {
+		return nil, err
+	}
+
 	if err := r.execution.Dispatch(ctx, op.ID); err != nil {
 		return nil, err
 	}

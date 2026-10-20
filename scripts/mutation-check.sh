@@ -14979,6 +14979,77 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '_ = cp'
 fi
 
+# Private finite Graph host producers and durable proposal custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant graph: duplicate registry name accepted' internal/desk/assistant_host_tools.go \
+    't.Name == "" || seen[t.Name] ||' \
+    't.Name == "" || false ||'
+  mutate go 'assistant graph: argument aliases accepted' internal/desk/assistant_graph_tools.go \
+    '!ok || bytes.Equal(bytes.TrimSpace(raw[member.start:member.end]), []byte("null"))' \
+    'false && (!ok || bytes.Equal(bytes.TrimSpace(raw[member.start:member.end]), []byte("null")))'
+  mutate go 'assistant graph: excessive check input accepted' internal/desk/assistant_graph_tools.go \
+    'len(a.Content) > maxFileBytes' \
+    false
+  mutate go 'assistant graph: changed declaration accepted' internal/desk/assistant_graph_tools.go \
+    'basis.Declaration != assistantDeclarationDigest(entry)' \
+    false
+  mutate go 'assistant graph: changed target accepted' internal/desk/assistant_graph_tools.go \
+    'file.err != nil || !file.present || digestOf(file.data) != base' \
+    'file.err != nil || !file.present'
+  mutate go 'assistant graph: deleted declaration recaptured' internal/desk/assistant_graph_tools.go \
+    '} else if basis != nil {' \
+    '} else if false && basis != nil {'
+  mutate go 'assistant graph: foreign execution gains root metadata' internal/desk/assistant_host_tools.go \
+    '&& run.Context.Execution.RequestKey == binding.ExecutionKey' \
+    '&& true'
+  mutate go 'assistant graph: native callback identity omitted' internal/desk/assistant_execution_agent.go \
+    'callbacks.Tool(context.WithValue(callCtx, assistantHostCallbackKey{}, op.ID),' \
+    'callbacks.Tool(callCtx,'
+  mutate go 'assistant graph: native callback association ignored' internal/desk/assistant_domain_output.go \
+    'if intent.CallbackID == "" {' \
+    'if true {'
+  mutate go 'assistant graph: queued guidance freshness omitted' internal/desk/assistant_execution_runtime.go \
+    'if err := recheckAssistantHost(ctx); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant graph: persistence failure exposes success' internal/desk/assistant_domain_output.go \
+    'e.changed(err)
+	if err != nil {
+		return refuse(err)
+	}
+	return result, nil' \
+    'e.changed(err)
+	if false && err != nil {
+		return refuse(err)
+	}
+	return result, nil'
+  mutate go 'assistant graph: projection digest drops domain output' internal/desk/assistant_chat_projection.go \
+    'run.Events, run.DomainOutputs' \
+    'run.Events, nil'
+  mutate go 'assistant graph: domain output omitted from chat' internal/desk/assistant_chat_projection.go \
+    'drafts = append(drafts, assistantChatJSON(out.Draft))' \
+    'drafts = drafts'
+  mutate go 'assistant graph: unmatched root call accepted' internal/desk/assistant_domain_output.go \
+    'return count == 1' \
+    'return count <= 1'
+  mutate go 'assistant graph: foreign output run accepted' internal/desk/assistant_domain_output.go \
+    'out.RunID != run.ID' \
+    false
+  mutate go 'assistant graph: custody receipt aliases accepted' internal/desk/assistant_host_tools_receipt.go \
+    'members, err := configMembers(raw)' \
+    'if true { return json.Unmarshal(raw,into) }; members, err := configMembers(raw)'
+  mutate go 'assistant graph: producer result status changes' internal/desk/assistant_domain_output.go \
+    '!bytes.Equal(result.Result, expected.Value().JSON())' \
+    'false && !bytes.Equal(result.Result, expected.Value().JSON())'
+
+  mutate go 'assistant graph: request cancellation discards observed output' internal/desk/assistant_domain_output.go \
+    'context.WithoutCancel(ctx)' \
+    ctx
+  mutate go 'assistant graph: Stop discards uncertain observed output' internal/desk/assistant_domain_output.go \
+    'held.State != "dispatched" && held.State != "uncertain"' \
+    'held.State != "dispatched"'
+
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

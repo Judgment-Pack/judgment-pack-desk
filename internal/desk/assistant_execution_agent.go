@@ -168,7 +168,7 @@ func (e *assistantRunExecution) assistantAgent() (*adapter.Agent, error) {
 			if stopping != nil {
 				stopping.begin(call.ID)
 			}
-			answer, callErr := callbacks.Tool(callCtx, adapter.AgentToolCall{ID: call.ID, Name: call.Name, Arguments: call.Arguments})
+			answer, callErr := callbacks.Tool(context.WithValue(callCtx, assistantHostCallbackKey{}, op.ID), adapter.AgentToolCall{ID: call.ID, Name: call.Name, Arguments: call.Arguments})
 			if len(answer.Text) > 1<<20 {
 				return codexbridge.ToolAnswer{}, codexbridge.ErrLimit
 			}

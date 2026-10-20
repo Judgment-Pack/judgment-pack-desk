@@ -37,7 +37,7 @@
     {"name": "exchange-presets", "run": "scripts/dev/jobs-companion.sh exchange-presets", "toolchain": "go", "summary": "^(ok|FAIL) ", "timeout": 3000},
     {"name": "dialect-journeys", "run": "scripts/dev/jobs-companion.sh dialect-journeys", "toolchain": "go", "summary": "^(ok|FAIL) ", "timeout": 3000},
     {"name": "assistant-saved-context", "run": "scripts/dev/jobs-companion.sh saved-context", "toolchain": "go", "summary": "^(ok|FAIL|Browser reference verification:)", "timeout": 900},
-    {"name": "assistant-chat-projection-readers", "run": "scripts/dev/assistant-chat-projection.sh", "toolchain": "go", "summary": "^(ok|FAIL|Shared chat readers:|Unicode positive:|Case-sensitive history:)", "timeout": 900},
+    {"name": "assistant-chat-projection-readers", "run": "scripts/dev/assistant-chat-projection.sh", "toolchain": "go", "summary": "^(ok|FAIL|Shared chat readers:|Unicode positive:|Case-sensitive history:|Graph shared readers:)", "timeout": 900},
     {"name": "signed-exchange-release", "run": "scripts/dev/jobs-companion.sh signed-exchange-release", "toolchain": "go", "summary": "^(ok|FAIL) ", "timeout": 3000},
     {"name": "acquisition-fixture", "run": "scripts/dev/jobs-companion.sh acquisition-fixture", "toolchain": "go", "timeout": 3000},
     {"name": "acquisition-acceptance", "run": "scripts/dev/jobs-companion.sh acquisition-acceptance", "toolchain": "go", "summary": "^(ok|FAIL) ", "timeout": 3000},

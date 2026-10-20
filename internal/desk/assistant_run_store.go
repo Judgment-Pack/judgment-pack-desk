@@ -76,6 +76,7 @@ type assistantRunEvent struct {
 	Event contract.RunEvent `json:"event"`
 }
 type assistantRunRecord struct {
+	DomainOutputs   []assistantDomainOutput     `json:"domainOutputs,omitempty"`
 	ChatProjection  *assistantChatProjection    `json:"chatProjection,omitempty"`
 	ProjectionIssue string                      `json:"projectionIssue,omitempty"`
 	ID              string                      `json:"id"`
@@ -468,6 +469,9 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 			return errAssistantRunInvalid
 		}
 		if err := validateAssistantChatProjection(run); err != nil {
+			return err
+		}
+		if err := validateAssistantDomainOutputs(run); err != nil {
 			return err
 		}
 		if err := validateAssistantRunActionReceipts(run); err != nil {

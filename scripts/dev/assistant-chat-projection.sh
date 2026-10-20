@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Produce fresh hand-authored Go observations and check both shared browser readers offline.
+# Produce fresh hand-authored Go observations and check shared browser readers offline.
 # shellcheck shell=bash
 set -euo pipefail
 
@@ -11,7 +11,8 @@ trap 'rm -rf "$tmp"' EXIT
 
 chat_outputs="$tmp/chat"
 unicode_outputs="$tmp/unicode"
-mkdir -m 700 "$chat_outputs" "$unicode_outputs"
+graph_outputs="$tmp/graph"
+mkdir -m 700 "$chat_outputs" "$unicode_outputs" "$graph_outputs"
 chat_log="$tmp/chat-producers.log"
 unicode_log="$tmp/unicode-producers.log"
 go_env=()
@@ -35,6 +36,17 @@ awk -v want='--- PASS: ' '{ sub(/^[ \t]+/, ""); if (index($0, want) == 1 && $0 ~
 }
 awk -v want='--- PASS: ' '{ sub(/^[ \t]+/, ""); if (index($0, want) == 1 && $0 ~ /TestAssistantChatProjection(UnicodeRefusal|ValidUnicode) \(/) found[$3]=1 } END { for (n in found) count++; exit count != 2 }' "$unicode_log" || {
   echo 'Unicode projection producer tests did not all run and pass' >&2
+  exit 1
+}
+
+(
+  cd "$root"
+  env "${go_env[@]}" DESK_GRAPH_READER_OUTPUT="$graph_outputs/chat.json" \
+    DESK_GRAPH_DETACHED_OUTPUT="$graph_outputs/detached.json" \
+    go test ./internal/desk -run '^TestAssistantGraphProducerDurableReadAndProjection$' -count=1 -v
+) | tee "$tmp/graph-producer.log"
+grep -Eq '^--- PASS: TestAssistantGraphProducerDurableReadAndProjection \(' "$tmp/graph-producer.log" || {
+  echo 'Graph projection producer test did not run and pass' >&2
   exit 1
 }
 
@@ -80,3 +92,11 @@ done
   --outfile="$tmp/case-sensitive-history-reference.mjs"
 "$node_bin" "$tmp/case-sensitive-history-reference.mjs" "$history_outputs" | tee "$tmp/case-sensitive-history-reader.log"
 grep -Fxq 'Case-sensitive history: 4 actual reader observations passed.' "$tmp/case-sensitive-history-reader.log"
+
+"$esbuild" "$root/scripts/assistant-graph-projection-reference.mjs" \
+  --bundle --platform=node --format=esm \
+  --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+  --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$tmp/graph-reference.mjs"
+"$node_bin" "$tmp/graph-reference.mjs" "$graph_outputs/chat.json" "$graph_outputs/detached.json" | tee "$tmp/graph-reader.log"
+grep -Fxq 'Graph shared readers: exact producer draft and detached deletion retention passed.' "$tmp/graph-reader.log"
