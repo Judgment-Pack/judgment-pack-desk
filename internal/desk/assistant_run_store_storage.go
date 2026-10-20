@@ -86,17 +86,27 @@ func assistantRunJSONField(shape reflect.Type, key string) (reflect.Type, error)
 		return nil, nil
 	}
 	fields := []reflect.StructField{}
-	for i := 0; i < shape.NumField(); i++ {
-		field := shape.Field(i)
-		if shape == reflect.TypeOf(contract.RunEvent{}) {
-			leg := field.Type.Elem()
-			for j := 0; j < leg.NumField(); j++ {
-				fields = append(fields, leg.Field(j))
+	// Generated unions expose their object legs as untagged pointers (not only
+	// RunEvent). Traverse those wrappers, including nested union wrappers, so
+	// declared content/result names cannot fall through as arbitrary open data.
+	// RawMessage/map/scalar legs remain opaque: their keys are case sensitive.
+	seen := map[reflect.Type]bool{}
+	var collect func(reflect.Type)
+	collect = func(current reflect.Type) {
+		if seen[current] {
+			return
+		}
+		seen[current] = true
+		for i := 0; i < current.NumField(); i++ {
+			field := current.Field(i)
+			if current.PkgPath() == reflect.TypeOf(contract.RunEvent{}).PkgPath() && field.Tag.Get("json") == "" && field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct {
+				collect(field.Type.Elem())
+			} else {
+				fields = append(fields, field)
 			}
-		} else {
-			fields = append(fields, field)
 		}
 	}
+	collect(shape)
 	for _, field := range fields {
 		name := strings.Split(field.Tag.Get("json"), ",")[0]
 		if name == "" || name == "-" {

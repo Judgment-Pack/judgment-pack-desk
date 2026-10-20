@@ -513,3 +513,81 @@ func TestAssistantRunStorageSiblingRelinkAndConflict(t *testing.T) {
 		})
 	}
 }
+
+func TestAssistantRunStorageNestedContentAliases(t *testing.T) {
+	for _, kind := range []string{"clean", "text-alias", "type-alias"} {
+		t.Run(kind, func(t *testing.T) {
+			server, ts, store, binding, record, lease, writer := assistantRunHTTPFixture(t)
+			saved, err := store.Read(context.Background(), binding, record.ID)
+			assistantRunMust(t, err)
+			textType, text := "text", "original"
+			result := &contract.ToolResultMCPToolResult{
+				Content:           []contract.ToolResultMCPToolResultContentItem{{Option1: &contract.ToolResultMCPToolResultContentItemOption1{Type: &textType, Text: &text}}},
+				StructuredContent: json.RawMessage(`{"Text":false,"text":null,"decimal":"24.00"}`),
+			}
+			cp := *saved.Checkpoint
+			cp.Operations = append(cp.Operations, contract.CheckpointOperation{ID: "3f71c7b0-7df4-4eb6-96f3-f3a1390dc3a0", Name: "read_exact", Args: json.RawMessage(`{"Fact":false,"fact":null}`), Status: "complete", Result: result})
+			assistantRunMust(t, writer.Checkpoint(context.Background(), cp))
+			assistantRunMust(t, lease.Close())
+			original := assistantRunRaw(t, store)
+			raw := original
+			if kind != "clean" {
+				replacement := `"text":"original","Text":"changed"`
+				if kind == "type-alias" {
+					replacement = `"text":"original","Type":"other"`
+				}
+				raw = bytes.Replace(original, []byte(`"text":"original"`), []byte(replacement), 1)
+				if bytes.Equal(raw, original) {
+					t.Fatal("nested content mutation did not apply")
+				}
+			}
+			parsed, parseErr := decodeAssistantRunStorage(store.name, raw)
+			if kind == "clean" {
+				assistantRunMust(t, parseErr)
+			} else if parseErr == nil {
+				t.Errorf("parser accepted nested union alias: %+v", parsed.Runs[0].Checkpoint.Operations[0].Result.Content[0].Option1)
+			}
+			archive := assistantRunArchive(t, store.name, raw, 0)
+			archiveHash := digestOf(archive)
+			before := storageGet(t, ts)
+			target := filepath.Join(t.TempDir(), "nested-result-restore")
+			code, body := restoreBackup(t, ts, moveChatData{Path: target, Revision: before.Revision}, archive)
+			if kind != "clean" {
+				if code == 200 {
+					t.Fatalf("nested content alias promoted: %s", body)
+				}
+				after := storageGet(t, ts)
+				if after.Path != before.Path || after.Revision != before.Revision {
+					t.Fatal("refused nested alias switched storage")
+				}
+				if _, err = os.Lstat(filepath.Join(target, store.name)); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("refused nested alias retained staged ledger: %v", err)
+				}
+			} else {
+				if code != 200 {
+					t.Fatalf("valid canonical content refused: %d %s", code, body)
+				}
+				held, err := server.assistantRuns().Read(context.Background(), binding, record.ID)
+				assistantRunMust(t, err)
+				restored := held.Checkpoint.Operations[0]
+				if restored.Result.Content[0].Option1 == nil || *restored.Result.Content[0].Option1.Text != "original" || *restored.Result.Content[0].Option1.Type != "text" {
+					t.Fatal("completed content changed")
+				}
+				var facts map[string]any
+				assistantRunMust(t, json.Unmarshal(restored.Result.StructuredContent, &facts))
+				if len(facts) != 3 || facts["Text"] != false || facts["text"] != nil || facts["decimal"] != "24.00" {
+					t.Fatal("case-sensitive structured facts changed", facts)
+				}
+				var args map[string]any
+				assistantRunMust(t, json.Unmarshal(restored.Args, &args))
+				if len(args) != 2 || args["Fact"] != false || args["fact"] != nil {
+					t.Fatal("case-sensitive arguments changed", args)
+				}
+			}
+			if digestOf(archive) != archiveHash {
+				t.Fatal("source archive changed")
+			}
+			mustBytes(t, filepath.Join(before.Path, store.name), string(original))
+		})
+	}
+}
