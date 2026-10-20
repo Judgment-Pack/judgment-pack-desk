@@ -75,6 +75,12 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 	if err = m.admitRun(ctx, request.WaitForAvailability, emit); err != nil {
 		return err
 	}
+	if request.AuthorizeAdmission != nil {
+		if err = request.AuthorizeAdmission(ctx); err != nil {
+			m.mu.Unlock()
+			return err
+		}
+	}
 	if err = m.ready(ctx); err != nil {
 		m.mu.Unlock()
 		return err
@@ -158,6 +164,11 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 		Turn struct {
 			ID string `json:"id"`
 		} `json:"turn"`
+	}
+	if request.BeforeGeneration != nil {
+		if err = request.BeforeGeneration(ctx); err != nil {
+			return err
+		}
 	}
 	if err = c.call(ctx, "turn/start", turnParams(threadID, request), &turn); err != nil {
 		return err

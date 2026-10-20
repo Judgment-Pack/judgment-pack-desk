@@ -1,6 +1,7 @@
 package codexbridge
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -24,13 +25,17 @@ type Tool struct {
 
 type RunRequest struct {
 	// Host-only admission policy. Never accepted from the browser or sent to Codex.
-	WaitForAvailability bool   `json:"-"`
-	Model               string `json:"model"`
-	Prompt              string `json:"prompt"`
-	Instructions        string `json:"instructions"`
-	Tools               []Tool `json:"tools"`
-	Effort              string `json:"effort,omitempty"`
-	Phase               string `json:"phase,omitempty"`
+	WaitForAvailability bool `json:"-"`
+	// Go-only host fences: admission follows the account lock; generation follows
+	// native auth/model discovery, immediately before turn/start.
+	AuthorizeAdmission func(context.Context) error `json:"-"`
+	BeforeGeneration   func(context.Context) error `json:"-"`
+	Model              string                      `json:"model"`
+	Prompt             string                      `json:"prompt"`
+	Instructions       string                      `json:"instructions"`
+	Tools              []Tool                      `json:"tools"`
+	Effort             string                      `json:"effort,omitempty"`
+	Phase              string                      `json:"phase,omitempty"`
 }
 
 func threadParams(request RunRequest, privateWork string) (map[string]any, error) {

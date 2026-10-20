@@ -33,11 +33,17 @@ GO_TESTS = {
 
 FAKE_GO = r'''#!PYTHON
 import json, os, re, sys
-TESTS = json.loads(os.environ["FAKE_GO_TESTS"])
+args = sys.argv[1:]
+package = next((a for a in args if a.startswith('./internal/')), './internal/desk')
+TESTS = json.loads(os.environ.get('FAKE_GO_PACKAGES', '{}')).get(package, json.loads(os.environ["FAKE_GO_TESTS"]))
+if os.environ.get('FAKE_GO_COMPILE_PACKAGE') == package:
+    print('FAIL %s [build failed]' % package)
+    sys.exit(1)
+source_path = os.path.join(os.environ["FAKE_ROOT"], package[2:], 'a.go')
 with open(os.environ["FAKE_LOG"], "a") as log:
     log.write("go " + " ".join(sys.argv[1:]) + "\n")
 def failing(selected):
-    source = open(os.path.join(os.environ["FAKE_ROOT"], "internal/desk/a.go")).read()
+    source = open(source_path).read()
     out = [t for t in selected if any(m in source for m in TESTS[t])]
     if "TestAlone" in selected and "TestSetup" not in selected:
         out.append("TestAlone")
@@ -57,14 +63,19 @@ args = sys.argv[1:]
 if args[:2] == ["test", "-c"]:
     out = args[args.index("-o") + 1]
     # A binary of the tree as it is now: what fails is fixed at build time.
-    snapshot = open(os.path.join(os.environ["FAKE_ROOT"], "internal/desk/a.go")).read()
+    snapshot = open(source_path).read()
     with open(out, "w") as f:
         f.write("#!PYTHON\nimport re, sys\n")
         f.write("TESTS = %r\nSOURCE = %r\n" % (TESTS, snapshot))
         f.write(
             "argv = sys.argv[1:]\n"
+            "if '-test.list' in argv:\n"
+            "    pattern = argv[argv.index('-test.list') + 1]\n"
+            "    [print(t) for t in TESTS if re.search(pattern,t)]\n"
+            "    sys.exit(0)\n"
             "pattern = argv[argv.index('-test.run') + 1]\n"
             "selected = [t for t in TESTS if re.search(pattern, t)]\n"
+            "if not selected: print('testing: warning: no tests to run')\n"
             "bad = [t for t in selected if any(m in SOURCE for m in TESTS[t])]\n"
             "if 'TestAlone' in selected and 'TestSetup' not in selected: bad.append('TestAlone')\n"
             "[print('--- FAIL: %s (0.00s)' % t) for t in bad]\n"
@@ -171,7 +182,8 @@ def harness_around(rows):
     body = []
     for lang in ("go", "web"):
         body.append('if [ "$which" = all ] || [ "$which" = %s ]; then' % lang)
-        body += ["  mutate " + " ".join(map(shlex.quote, row)) for row in rows if row[0] == lang]
+        selected = ["  mutate " + " ".join(map(shlex.quote, row)) for row in rows if row[0] == lang]
+        body += selected or ["  :"]
         body.append("fi")
     return source[:start] + "\n".join(body) + "\n" + source[tail:]
 
@@ -375,10 +387,157 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(table["web nothing catches"], "**NOT DISCRIMINATING — nothing failed**")
         self.assertEqual(self.expects()[("web", "web caught by its walk")], "src/a.test.ts,src/c.test.ts")
 
+    def package_fixture(self, rows, entries, packages):
+        self.env["FAKE_GO_PACKAGES"] = json.dumps(packages)
+        for package in packages:
+            path = self.root / package[2:] / "a.go"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("guard one\nguard bridge\n")
+        (self.root / "scripts/mutation-check.sh").write_text(harness_around(rows))
+        (self.root / "scripts/mutation-expects.tsv").write_text("".join(
+            "go\t%s\t%s\n" % (name, tests) for name, tests in entries.items()))
+        self.git("add", "-A")
+        self.git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-qsm", "package fixture")
+
+    def test_non_desk_package_baseline_selection_and_fallback(self):
+        rows = [("go", "bridge selected", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge"),
+                ("go", "bridge fallback", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge")]
+        self.package_fixture(rows, {"bridge selected": "TestBridge", "bridge fallback": "TestOther"},
+                             {"./internal/bridge": {"TestBridge": ["broken bridge"], "TestOther": []}})
+        result = self.harness("go")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.table(result), {"bridge selected": "TestBridge", "bridge fallback": "TestBridge"})
+        self.assertEqual(self.how(result)["bridge fallback"], "fallback")
+        calls = self.log.read_text()
+        self.assertIn("./internal/bridge", calls)
+        self.assertNotIn("./internal/desk", calls)
+        self.assertEqual(calls.count("go test -c"), 1, calls)
+
+    def test_clean_listing_uses_package_directory_for_initialization(self):
+        row = ("go", "package-relative initialization", "internal/bridge/a.go",
+               "guard bridge", "broken bridge", "./internal/bridge")
+        self.package_fixture([row], {row[1]: "TestBridge"},
+                             {"./internal/bridge": {"TestBridge": ["broken bridge"]}})
+        # Like TestMain, initialization runs before listing as well as tests.
+        # Require the package-local fixture in the actual generated clean binary.
+        fake_go = self.dir / "bin/go"
+        source = fake_go.read_text()
+        needle = "import re, sys\\n"
+        self.assertEqual(source.count(needle), 1, "initialization guard must be injected exactly once")
+        source = source.replace(
+            needle, "import re, sys, os\\nif not os.path.isfile('a.go'): sys.exit(91)\\n")
+        fake_go.write_text(source)
+        result = self.harness("go")
+        self.assertIn("unmutated Go baseline passed: ./internal/bridge", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.table(result), {row[1]: "TestBridge"})
+        self.assertEqual(self.how(result), {row[1]: "selected"})
+
+    def test_same_named_tests_do_not_share_package_selection_cache(self):
+        rows = [("go", "desk shared", "internal/desk/a.go", "guard one", "broken desk"),
+                ("go", "bridge shared", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge")]
+        self.package_fixture(rows, {"desk shared": "TestShared", "bridge shared": "TestShared"},
+                             {"./internal/desk": {"TestShared": ["broken desk"]},
+                              "./internal/bridge": {"TestShared": ["broken bridge"]}})
+        result = self.harness("go")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.how(result), {"desk shared": "selected", "bridge shared": "selected"})
+        self.assertEqual(self.log.read_text().count("go test -c"), 2)
+
+    def test_missing_or_empty_go_selection_is_no_verdict(self):
+        for entry in ["", "TestMissing", "TestBridge,TestMissing", "TestBridge.*"]:
+            with self.subTest(entry=entry):
+                row=("go", "bad selection", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge")
+                self.package_fixture([row], {"bad selection":entry}, {"./internal/bridge":{"TestBridge":["broken bridge"]}})
+                result=self.harness("go")
+                self.assertNotEqual(result.returncode,0)
+                self.assertIn("INCONCLUSIVE",self.table(result)["bad selection"])
+                self.assertNotIn("-count=1 -timeout",self.log.read_text(),"missing selection must not fall back to unrelated tests")
+
+    def test_unsupported_and_missing_go_packages_are_no_verdict(self):
+        for package in ["", "./internal/missing", "./...", "./internal/../desk", "github.invalid/pkg", "-race"]:
+            with self.subTest(package=package):
+                row=("go", "bad package", "internal/desk/a.go", "guard one", "broken one", package)
+                self.package_fixture([row], {}, {})
+                result=self.harness("go")
+                self.assertNotEqual(result.returncode,0)
+                self.assertIn("INCONCLUSIVE",self.table(result)["bad package"])
+                self.assertEqual(self.log.read_text(),"")
+
+    def test_failed_package_baseline_or_build_never_measures_a_mutant(self):
+        row=("go", "bad baseline", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge")
+        for build in [False,True]:
+            with self.subTest(build=build):
+                self.package_fixture([row], {"bad baseline":"TestBridge"}, {"./internal/bridge":{"TestBridge":["guard bridge"]}})
+                if build:self.env["FAKE_GO_COMPILE_PACKAGE"]="./internal/bridge"
+                result=self.harness("go")
+                self.assertNotEqual(result.returncode,0)
+                self.assertIn("BASELINE NOT GREEN",self.table(result)["bad baseline"])
+                self.assertNotIn("-count=1 -timeout",self.log.read_text())
+                self.env.pop("FAKE_GO_COMPILE_PACKAGE",None)
+
+    def test_go_non_verdicts_never_become_caught_or_survived(self):
+        source=HARNESS.read_text();functions=source[source.index('plain() {'):source.index('# run_web [test-file...]:')]
+        for code,output in [(124,'--- FAIL: TestBridge (0.00s)\n'),(1,'--- FAIL: TestBridge (0.00s)\npanic: fixture\n'),(1,'--- FAIL: TestBridge (0.00s)\nfatal error: fixture\n'),(1,'FAIL fixture [build failed]\n'),(0,'ok fixture [no tests to run]\n'),(2,'unavailable\n')]:
+            with self.subTest(code=code,output=output):
+                path=self.dir/'verdict.log';path.write_text(output)
+                result=subprocess.run(['bash','-c',functions+'\nwork="$1"; go_verdict "$2" "$3"','fixture',str(self.dir),str(code),str(path)],env=self.env,capture_output=True,text=True)
+                self.assertTrue(result.stdout.startswith('INCONCLUSIVE'),result.stdout)
+
     def _rows(self, *names):
         path = self.dir / "rows.txt"
         path.write_text("".join(n + "\n" for n in names))
         return path
+
+
+class DiagnosticLogsTests(unittest.TestCase):
+    def test_late_failure_keeps_original_full_output_without_replay_or_environment_dump(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory);logs=root/"logs";counter=root/"calls"
+            probe=root/"failing-check.py"
+            probe.write_text("from pathlib import Path\np=Path("+repr(str(counter))+")\np.write_text(p.read_text()+'x' if p.exists() else 'x')\nfor i in range(1000): print('fixture line',i)\nprint('ORIGINAL ASSERTION after long output')\nraise SystemExit(37)\n")
+            manifest=root/"manifest.json"
+            manifest.write_text(json.dumps({"checks":[{"name":"late-failure","run":shlex.quote(sys.executable)+" "+shlex.quote(str(probe))}]}))
+            env={"PATH":"/usr/bin:/bin","JPDEV_ROOT":str(root),"JPDEV_LOGDIR":str(logs),"PRIVATE_DIAGNOSTIC_TOKEN":"secret-fixture-never-printed"}
+            result=subprocess.run(["bash",str(ROOT/"scripts/dev/check.sh"),"--manifest",str(manifest)],env=env,capture_output=True,text=True)
+            self.assertEqual(result.returncode,1,result.stdout+result.stderr)
+            self.assertIn("exit 37",result.stdout)
+            self.assertNotIn("ORIGINAL ASSERTION",result.stdout)
+            retained=(logs/"late-failure.log").read_text()
+            self.assertIn("ORIGINAL ASSERTION after long output",retained)
+            self.assertIn("fixture line 999",retained)
+            self.assertNotIn(env["PRIVATE_DIAGNOSTIC_TOKEN"],retained)
+            self.assertEqual(counter.read_text(),"x","diagnostic must retain the failed execution without replay")
+            self.assertEqual([p.name for p in logs.iterdir()],["late-failure.log"])
+
+    def test_split_jobs_upload_only_their_logs_on_all_outcomes_with_distinct_attempt_names(self):
+        workflow=(ROOT/".github/workflows/ci.yml").read_text()
+        commands={
+            "go":["scripts/dev/check.sh --only gofmt,component-policy,python-tests,needle-check,component-identities,go-vet,go-test"],
+            "web":["scripts/dev/check.sh --setup --only npm-ci",
+                   "scripts/dev/check.sh --only i18n-check,ui-message-audit,typecheck,vite-build,web-tests,dialect-read"],
+        }
+        for job,next_job in [("go","web"),("web","local-gateway")]:
+            block=workflow.split("\n  "+job+":",1)[1].split("\n  "+next_job+":",1)[0]
+            header,steps=block.split("\n    steps:",1)
+            # runner context is unavailable in job.env; every command producing logs
+            # must set its own step.env, including Web's separate setup command.
+            self.assertNotIn("runner.temp",header)
+            self.assertNotIn("JPDEV_LOGDIR",header)
+            run_steps=[step for step in steps.split("\n      - ")[1:] if step.startswith("run:")]
+            self.assertEqual([step.splitlines()[0] for step in run_steps],
+                             ["run: "+command for command in commands[job]])
+            for step in run_steps:
+                self.assertEqual(step.count("JPDEV_LOGDIR:"),1,step)
+                self.assertIn("\n        env:\n          JPDEV_LOGDIR: ${{ runner.temp }}/"+job+"-check-logs\n",step)
+            self.assertEqual(block.count("JPDEV_LOGDIR:"),len(commands[job]))
+            upload=block.split("- name: Upload the "+job+" step logs",1)[1]
+            self.assertIn("if: always()",upload)
+            self.assertIn("name: "+job+"-check-logs-${{ github.run_id }}-${{ github.run_attempt }}",upload)
+            self.assertIn("path: ${{ runner.temp }}/"+job+"-check-logs/",upload)
+            self.assertIn("retention-days: 7",upload)
+            self.assertIn("if-no-files-found: ignore",upload)
+            self.assertNotIn("github.workspace",upload)
 
 
 if __name__ == "__main__":

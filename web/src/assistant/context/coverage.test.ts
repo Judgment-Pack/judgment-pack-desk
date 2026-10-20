@@ -40,8 +40,14 @@ it('keeps both frontend and backend execution paths inside the context boundary'
  for(const boundary of ['fitResearchContextWithInstructions(', 'researchContextRead(', 'researchAttempt(', 'portableResearchChatWork(', 'pauseResearchForBudget('])expect(portable).toContain(boundary)
  const backend=resolve(root,'../../internal/desk')
  const runners=readdirSync(backend).filter(p=>p.endsWith('.go')&&!p.endsWith('_test.go')&&/runner\.Run\(/.test(readFileSync(resolve(backend,p),'utf8'))).sort()
- expect(runners).toEqual(['agent_run.go','background_model.go'])
- for(const file of runners){const text=readFileSync(resolve(backend,file),'utf8');expect(text.indexOf('prepareAgentContext(')).toBeLessThan(text.indexOf('runner.Run('))}
+ expect(runners).toEqual(['agent_run.go','assistant_execution_agent.go','background_model.go'])
+ for(const file of ['agent_run.go','background_model.go']){const text=readFileSync(resolve(backend,file),'utf8');expect(text).toContain('prepareAgentContext(');expect(text.indexOf('prepareAgentContext(')).toBeLessThan(text.indexOf('runner.Run('))}
+ // The private Go factory uses the published Agent/context Host boundary;
+ // legacy preparation here would assemble instructions a second time.
+ const factory=readFileSync(resolve(backend,'assistant_execution.go'),'utf8')
+ for(const boundary of ['runcontext.Input{','CurrentRequest:','Host: host','assistantCanonicalAgent(agentadapter.New())','delegate.With(base,'])expect(factory).toContain(boundary)
+ const agent=readFileSync(resolve(backend,'assistant_execution_agent.go'),'utf8')
+ for(const boundary of ['e.Authorize(', 'enabled(ctx, request.Model)', 'bridge.BeforeGeneration', 'return dispatch.dispatch(ctx)'])expect(agent).toContain(boundary)
  for(const file of ['background_model.go','modelrelay.go'])expect(readFileSync(resolve(backend,file),'utf8')).toContain('prepareModelContext(')
 })
 

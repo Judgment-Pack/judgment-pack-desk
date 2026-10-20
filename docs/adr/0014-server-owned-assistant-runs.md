@@ -147,6 +147,49 @@ The saved-chat source pin covers the exact selected chat bytes. The later thin c
 
 The private execution factory now binds published Eino and the delegation coordinator to the actual Desk relay and a rooted Runtime stdio child. Session, selected connection/revision and exact saved sources are retained by the host; admission is checked again after the real relay queue, with durable intent/dispatch before external I/O and exact transport receipts afterward. Interrupted provider bodies close admission and retain uncertainty even when the in-process reverse proxy suppresses a copy error. OpenAI-compatible, Anthropic and Gemini paths use the existing family-specific relay rules; Gemini stream query admission uses the path's method separately from its permitted query. Completed HTTP receipts establish transport completion only. Host operation and semantic event identities are allocated with their append in the existing persisted-run transaction, so rebuilt capabilities and concurrent child requests cannot reset a local counter or overwrite earlier receipts. Explicit-ID receipt deduplication and replay refusal retain their existing semantics. Closing a canceled or incomplete admitted response closes root dispatch unless its exact EOF receipt was successfully retained; closing a durably completed response remains healthy. Canonical budget pauses use the same root-identity-validated checkpoint acknowledgement as execution checkpoints, preserving the shared test count and the owning service's paused-budget state without granting allowance.
 
-The Runtime binding uses existing command/environment custody and project/Policy frame guards, serializes host-generated request IDs across parent and child gates, bounds frames and cancels/reaps its child. Served prompt arguments and text come from prompts/list and prompts/get; canonical Host parts, Input, checkpoint acknowledgement and prompt digests stay in the published adapter/context boundary. The trusted assembled-prompt marker is private Go context, with legacy consumers retaining their context injection. Plan/child offers intersect existing grants. Desk's current configuration ceiling still excludes experimental_test_cases; fixtures verify refusal and the published shared count for refused child attempts. Positive test execution, critic prompt/domain readiness and actual delegation completion remain pending.
+The Runtime binding uses existing command/environment custody and project/Policy frame guards, serializes host-generated request IDs across parent and child gates, bounds frames and cancels/reaps its child. Served prompt arguments and text come from prompts/list and prompts/get; canonical Host parts, Input, checkpoint acknowledgement and prompt digests stay in the published adapter/context boundary. The trusted assembled-prompt marker is private Go context, with legacy consumers retaining their context injection. Plan/child offers intersect existing grants. Desk's current configuration ceiling still excludes experimental_test_cases; fixtures verify refusal and the published shared count for refused child attempts. Positive test execution and critic prompt/domain readiness remain pending; the following private subscription fixture covers actual delegation transport completion.
 
-The factory is unregistered and production starts still fail closed. Remaining gates include the actual Codex bridge/account binding, all feature owners and domain actions, final journal CAS, browser migration/removal, actual Desk binding certification, required CI and independent security/release review. Focused binding fixtures do not certify the complete cutover.
+The factory is unregistered and production starts still fail closed. Remaining gates include complete provider-managed binding certification, all feature owners and domain actions, final journal CAS, browser migration/removal, actual Desk binding certification, required CI and independent security/release review. Focused binding fixtures do not certify the complete cutover.
+
+
+### Private subscription capability binding
+
+The same unregistered factory now selects published `adapter/agent.New()` through
+`delegate.With` for a subscription connection. It retains the exact server-selected
+private `codexbridge.Manager` or `LazyManager`, session and Policy epoch; each model
+(including critic and child preference) must remain enabled in the current profile.
+The bridge has Go-only host fences after account admission and after native
+account/model discovery, immediately before generation. No browser or model JSON
+can provide either fence. The canonical Host assembles instructions, brief and
+memory once; the existing socket path keeps its own preparation until cutover.
+Reasoning effort comes from the retained validated project preference for the
+selected v2 connection or legacy Codex connection. Inherited or absent preferences
+use shared configuration; a non-inherited preference with omitted effort leaves
+it omitted for native model-default resolution. The same effective effort reaches
+parent and configured child invocations without changing model authorization.
+
+Every physical invocation attempt gets a fresh run-lifetime operation identity and
+an exact request intent. The acknowledged dispatch precedes `turn/start`. Native
+callback identities/offers/duplicates remain guarded by the bridge; each accepted
+tool callback additionally records its invocation pairing, exact arguments and
+bounded typed answer or normalized unknown failure. The invocation receipt retains
+bounded events and a normalized outcome after callback drainage and process reap.
+A completed receipt describes the observed invocation outcome, including an unknown
+provider outcome on failure; it never grants replay. Only the bridge's direct
+pre-admission account-busy sentinel translates to published `adapter.ErrBusy`.
+The published adapter owns its two bounded admission retries; admitted failures,
+authorization failures and busy-shaped callback failures never restart work. Invocation receipts use the existing model operation kind and adapter callbacks use callback; the canonical usage unit remains provider-managed. Only a typed canonical delegation, question or approval event observed inside the matching callback can mark an intentional stop. Its callback result must be retained, its outer invocation and root ownership must remain live, and the actual Manager must finish/drain/reap before continuation. A private adapter wrapper observes these events before coordinator filtering; native provider text cannot construct the marker. Canceled or unknown work without that acknowledgement closes root dispatch.
+
+Hand-authored local protocol processes exercise parent handoff, child, and parent
+continuation through the actual Manager and rooted Runtime gate. Every new peer
+refuses to start while the preceding peer PID exists, so a mere unlocked account
+cannot satisfy the fixture. Published provider-managed accounting retains checkpoint Used at zero and reports
+parent/child AgentRuns figures under the coordinator's shared invocation ceiling;
+no model-request count or allowance grant is invented. A subscription budget
+request remains unavailable under the published policy. Separate
+fixtures cover changed authority during discovery, malformed/unoffered/duplicate
+callbacks, exact typed receipts, cancellation drainage, question pause, unchanged allowance policy and retained
+root/test identity on capability reconstruction. These are bounded binding checks,
+not complete certification or production migration. Positive critic/test execution
+still needs its served tool ceiling and workflow migration. No production executor,
+domain action, final chat journal projection or browser path is activated here.

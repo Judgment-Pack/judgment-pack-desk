@@ -28,7 +28,7 @@
   },
   "strictAcceptanceDependency": {
     "id": "provider-managed-desk-binding",
-    "proof": "Agent #67 is resolved in the published dependency; actual Desk exclusive-account/bridge parent-child-parent binding and certification remain required",
+    "proof": "Agent #67 is resolved in the published dependency; a private actual Desk exclusive-account/bridge parent-child-parent fixture is implemented; complete binding certification remains required",
     "blockedSlices": [
       "complete no-regression cutover release until actual binding is verified"
     ],
@@ -823,11 +823,13 @@
       "scripted actual relay checks for OpenAI-compatible, Anthropic and Gemini",
       "persisted-run operation/event identities across reconstructed capabilities and concurrent child calls",
       "canceled unread/partial response Close retains unknown outcome and closes root admission",
-      "canonical root budget-pause acknowledgement with shared test count and real Eino allowance exhaustion"
+      "canonical root budget-pause acknowledgement with shared test count and real Eino allowance exhaustion",
+      "actual private Codex Manager/LazyManager capability through published Agent/delegate with retained account/session/Policy and Go-only physical admission/generation fences",
+      "hand-authored actual private Codex subprocess parent-child-parent, account reaping, exact invocation/tool receipts, current-authority refusal, bounded admission retries, cancellation, canonical interaction stops and unchanged provider-managed allowance policy"
     ],
     "pending": [
-      "Codex bridge/account binding and provider-managed delegation certification",
-      "positive delegation/critic execution and test-tool registry migration",
+      "complete provider-managed Desk binding certification",
+      "positive critic execution and test-tool registry migration",
       "domain tools/actions, final journal CAS and browser migration"
     ],
     "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",
