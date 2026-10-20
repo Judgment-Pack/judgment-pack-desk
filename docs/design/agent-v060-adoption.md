@@ -52,6 +52,30 @@ keep their documented empty defaults. Required host hooks remain supplied and
 checked; wiring browser prompt parts remains Desk #546. Existing server-owned Host
 parts are unchanged.
 
+## Certification inputs
+
+ADR-0005 intentionally removed `budget.json#/$defs/recallQuery`,
+`contract/vectors/recall` and the old per-wire prompt-reading rule. The release
+keeps the provider wire shapes, but asks `memoryFor(query)` once per run and
+places the host parts in the stable prefix. This is a contract change, not a
+vector-directory move.
+
+The certification gate compares the current approval grant-state, host-parts
+and state-placement fixtures byte for byte with Agent revision
+`3f308215afadd9d72ae963ebea1062247d1963ba`, selected by the component lock.
+The five legacy recall fixtures are unchanged and checked separately against
+their original Agent v0.3.0 revision
+`82235e1d180fbec4634e19c43ea80f06280b298c`. This historical input is not a
+component or engine pin: no old adapter or dependency is loaded. Those fixtures
+still test the legacy server relay until its prompt-ownership migration.
+
+All three adapters run the published certification suite at the current lock,
+on the Desk's actual host wiring. The suite's host-part placement, stable-prefix,
+once-per-run memory and approval-pause checks remain selected; adapter-specific
+checks must run and pass. Vector comparison does not install dependencies.
+This proves adapter compatibility; it does not complete Desk's optional
+`memoryFor` integration or the server relay migration under #546 and #537.
+
 ## Limits
 
 This update declares no skill, adds no load/unload UI or approval workflow, and

@@ -141,9 +141,10 @@ func TestResearchContextCompactionPreservesAuthorityAndOriginals(t *testing.T) {
 // The contract's recall rule (budget.json#/$defs/recallQuery of
 // @judgment-pack/harness): the request text is the first user turn's first
 // text part that does not start with the state header. The vectors under
-// testdata/harness-recall are the package's recall/*.json at the locked
-// revision, byte for byte (the certification job in CI compares them with the
-// package's); each holds a body as the harness sent it, the pointer to the
+// testdata/harness-recall are the package's recall/*.json at its historical
+// v0.3.0 revision, byte for byte (the certification job checks that exact source).
+// ADR-0005 removed this rule in the current package; the legacy relay retains it
+// until the server prompt-ownership migration. Each holds a body, the pointer to the
 // request text and the text.
 func TestMemoryRecallQueryFollowsThePackagesVectors(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("testdata", "harness-recall", "*.json"))
