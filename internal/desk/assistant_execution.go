@@ -75,6 +75,13 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if err != nil {
 		return nil, err
 	}
+	var critic *assistantCriticSnapshot
+	if assistantCriticEnabled(chat, e.record.Binding.Phase) {
+		critic, err = e.holdAssistantCritic(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	host, err := e.service.server.assistantPromptHost(ctx)
 	if err != nil {
 		return nil, err
@@ -98,6 +105,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 			count := int64(g.TestCalls())
 			cp.TestCalls = &count
 		}
+		cp = assistantCriticCheckpoint(cp, critic)
 		return e.Checkpoint(ctx, cp)
 	}
 	emit := func(event contract.RunEvent) {
@@ -152,6 +160,10 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		return nil, err
 	}
 	input := &runcontext.Input{Phase: e.record.Binding.Phase, Connection: e.record.Binding.ConnectionID, Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: e.record.Checkpoint, Approval: e.decision, CurrentRequest: &chat.Request, Documents: chat.Documents, CurrentState: chat.State, Memory: memory}
+	if critic != nil {
+		checkpoint := assistantCriticCheckpoint(*input.Execution, critic)
+		input.Execution = &checkpoint
+	}
 	if e.source.Profile.Context != nil {
 		raw, marshalErr := json.Marshal(e.source.Profile.Context)
 		if marshalErr != nil {
@@ -168,6 +180,15 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	}
 	promptText += "\n\n" + chat.Transcript + "\n\nTHE PERSON'S MESSAGE\n" + chat.Request.Input
 	run := &adapter.Run{Purpose: e.source.Start.Purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Review: chat.Review, Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
+	if critic != nil {
+		run.TestPrompt, err = runtime.criticPrompt(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range critic.cases {
+			run.Cases = append(run.Cases, append(json.RawMessage(nil), row...))
+		}
+	}
 	var base adapter.Adapter = eino.New()
 	if e.source.Connection.Assistant.Engine == "codex" {
 		run.Agent, err = e.assistantAgent()
