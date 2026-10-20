@@ -29,6 +29,18 @@ writer. Native callbacks additionally carry the existing durable callback
 operation identity, whose intent binds the actual mapped tool offer and model
 invocation. The private Codex bridge already replaces provider ids with opaque
 host ids, so equal provider ids in different invocations remain distinct.
+Host intents retain original argument bytes. Callback and semantic-event JSON
+applies `encoding/json` RawMessage compaction and HTML escaping; custody compares
+that same journal encoding on both sides. It does not decode facts into maps,
+normalize Unicode, reorder object members or change number spellings. Missing,
+null, false, zero and literal strings remain distinct. Exact callback identity,
+owning invocation, mapped tool offer and the single matching parent event remain
+required; repeated native provider ids need no new association format. A callback
+must name the model operation immediately preceding it in the durable operation
+order. The native account and delegation coordinator join each callback and release
+the invocation before the next author, child or critic starts. Import cannot
+reassign a callback to an earlier or later invocation with the same tool offer;
+an unprovable association is refused.
 An ephemeral adapter scope marker checks the exact held CurrentRequest value and
 Execution.RequestKey. The coordinator's copied root input passes; child inputs do
 not. This metadata supplements canonical gates and recorded parent ToolCalls;

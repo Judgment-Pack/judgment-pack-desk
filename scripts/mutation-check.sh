@@ -15064,6 +15064,28 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if err := error(nil); err != nil {'
 fi
 
+# Journal JSON serialization preserves argument custody without changing facts.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant native: parent argument journal encoding omitted' internal/desk/assistant_domain_output.go \
+    '!assistantHostArgumentsMatch(c.Args, intent.Arguments)' \
+    '!bytes.Equal(c.Args, intent.Arguments)'
+  mutate go 'assistant native: callback argument journal encoding omitted' internal/desk/assistant_domain_output.go \
+    '!assistantHostArgumentsMatch(v.Call.Arguments, intent.Arguments)' \
+    '!bytes.Equal(v.Call.Arguments, intent.Arguments)'
+  mutate go 'assistant native: changed parent arguments accepted' internal/desk/assistant_domain_output.go \
+    '!assistantHostArgumentsMatch(c.Args, intent.Arguments)' \
+    'false'
+  mutate go 'assistant native: changed callback arguments accepted' internal/desk/assistant_domain_output.go \
+    '!assistantHostArgumentsMatch(v.Call.Arguments, intent.Arguments)' \
+    'false'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant native: callback owning invocation order ignored' internal/desk/assistant_domain_output.go \
+    'v.Invocation != invocation ||' \
+    'false ||'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

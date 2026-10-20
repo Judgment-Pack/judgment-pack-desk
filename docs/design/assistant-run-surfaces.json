@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph host foundations implemented; production activation pending",
+  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph/Policy host foundations implemented; production activation pending",
   "deskEvidence": "reviewed private foundations and focused actual API/native execution proofs; existing browser features remain on current engines pending full migration/certification",
   "agentEvidence": {
     "version": "v0.6.0",
@@ -569,8 +569,9 @@
       "verification": [
         "actual API six-tool producer, Plan/child/current-access/stale request, retained comparison and exact coverage fixtures",
         "durable Policy output import/projection and existing ChatStore update/interpretation readers in the standard projection CI path",
-        "native parent-child-parent exact argument association awaits the separately tracked shared callback repair; browser migration and typed acceptance actions remain pending"
-      ]
+        "actual native parent-child-parent fixtures pass with repeated provider IDs, exact HTML/Unicode arguments and distinct callback receipts; browser migration and typed acceptance actions remain pending"
+      ],
+      "status": "private-implemented; production/browser migration and typed acceptance pending"
     },
     {
       "id": "dialect-recipe-host",
@@ -838,11 +839,12 @@
       "server verified submitted document selections with signed receipt/digest/readable-page/partial-consent custody, distinct selection identities and rechecks at physical API/Codex dispatch including waits and child/parent continuation (Desk #566)",
       "completed private foundations from Desk #564/#570/#573/#574: published provider-managed binding, final journal prepare/CAS/readback/ack and positive critic/test-tool custody; these do not activate browser features",
       "private finite Graph host registry, seven concrete tools, canonical producer-bound draft/read receipts and GraphDraft terminal projection; focused actual API/native and existing browser reader evidence",
+      "private finite Policy host registry, six authenticated read/proposal tools, exact retained comparison/coverage, durable update/interpretation cards and actual API/native/shared browser reader evidence",
       "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures"
     ],
     "pending": [
       "complete provider-managed Desk binding and feature certification",
-      "remaining Policy/Dialect/tests/sources/attachments/action/workflow migrations",
+      "remaining Dialect/tests/sources/attachments host tools, typed actions and Policy/workflow migrations",
       "browser cutover and production executor registration after complete migration/review"
     ],
     "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",
