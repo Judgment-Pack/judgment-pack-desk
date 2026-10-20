@@ -237,7 +237,7 @@ gzip size of the built page's JS for P1; the judges compute the delta over `none
 
 ## 12. Environment and rules for every agent
 
-- Paths: `EXP=/tmp/claude-1000/-home-onword-repo-judgment-pack-judgment-pack-runtime/15ed4d97-e994-48e9-8caa-1ee99b131535/scratchpad/exp`;
+- Paths: `EXP=<scratch>`;
   runtime binary `$EXP/bin/jpack` (built from runtime main 5332814 = v0.19.0; reports
   `0.0.0-dev`); pristine project `$EXP/project` (quickstart copy, configVersion 3, audit
   declared — **never run anything in it; `start.sh` copies it per candidate**); desk source
