@@ -14936,6 +14936,49 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if false && (digestOf(raw) != held.attachmentDigest || !reflect.DeepEqual(pin, held.gateway)) {'
 fi
 
+# Saved-chat critic input custody and the published critic binding.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant critic: Runtime testing guidance omitted' internal/desk/assistant_execution.go \
+    'run.TestPrompt, err = runtime.criticPrompt(ctx)' \
+    'run.TestPrompt, err = "", nil'
+  mutate go 'assistant critic: admitted declared cases omitted' internal/desk/assistant_execution.go \
+    'run.Cases = append(run.Cases, append(json.RawMessage(nil), row...))' \
+    'run.Cases = append(run.Cases, append(json.RawMessage(nil), row...))[:0]'
+  mutate go 'assistant critic: duplicate case id admitted' internal/desk/assistant_critic.go \
+    'len(parsed) != 1 || seen[parsed[0].ID] || len(out) >= 200' \
+    'len(parsed) != 1 || false || len(out) >= 200'
+  mutate go 'assistant critic: published case limit omitted' internal/desk/assistant_critic.go \
+    'len(out) >= 200' \
+    'len(out) >= 2000'
+  mutate go 'assistant critic: changed target bytes accepted' internal/desk/assistant_critic.go \
+    'return a.path == b.path && a.packDigest == b.packDigest && a.suiteDigest == b.suiteDigest' \
+    'return a.path == b.path && a.suiteDigest == b.suiteDigest'
+  mutate go 'assistant critic: changed saved suite accepted' internal/desk/assistant_critic.go \
+    'return a.path == b.path && a.packDigest == b.packDigest && a.suiteDigest == b.suiteDigest' \
+    'return a.path == b.path && a.packDigest == b.packDigest'
+  mutate go 'assistant critic: physical model custody recheck omitted' internal/desk/assistant_chat_input.go \
+    'if err := e.recheckAssistantCritic(ctx); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant critic: gated Runtime custody recheck omitted' internal/desk/assistant_execution_runtime.go \
+    'if err := r.execution.recheckAssistantCritic(ctx); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant critic: linked target identity ignored' internal/desk/assistant_critic.go \
+    '|| packID != current.Pack.ID' \
+    '|| false'
+  mutate go 'assistant critic: saved review and Plan controls ignored' internal/desk/assistant_critic.go \
+    'return phase != "plan" && turn.CriticRuns(chat.Review, runcontext.Defaults.AdversarialReview)' \
+    'return true'
+  mutate go 'assistant critic: durable checkpoint binding ignored' internal/desk/assistant_critic.go \
+    '|| stored != held.fingerprint' \
+    '|| false'
+  mutate go 'assistant critic: missing resumed custody is recaptured' internal/desk/assistant_critic.go \
+    'if len(run.Operations) != 0 || len(run.Actions) != 0 || len(run.Checkpoint.Prompts) != 0 || run.Checkpoint.Used != 0 {' \
+    'if false {'
+  mutate go 'assistant critic: canonical snapshot loses private custody' internal/desk/assistant_execution.go \
+    'cp = assistantCriticCheckpoint(cp, critic)' \
+    '_ = cp'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

@@ -43,6 +43,7 @@ type assistantChatCustody struct {
 	mu        sync.Mutex
 	ready     bool
 	documents []assistantVerifiedDocument
+	critic    *assistantCriticSnapshot
 }
 
 func assistantChatReferenceKey(ref assistantDocumentReference) string {
@@ -127,6 +128,9 @@ func (e *assistantRunExecution) recheckAssistantInput(ctx context.Context) error
 			e.cancel()
 			return err
 		}
+	}
+	if err := e.recheckAssistantCritic(ctx); err != nil {
+		return err
 	}
 	return ctx.Err()
 }
