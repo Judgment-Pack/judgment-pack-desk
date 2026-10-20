@@ -3,6 +3,7 @@ module github.com/Judgment-Pack/judgment-pack-desk
 go 1.26.0
 
 require (
+	github.com/Judgment-Pack/judgment-pack-agent/go v0.3.0
 	github.com/coder/websocket v1.8.15
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/fsnotify/fsnotify v1.10.1

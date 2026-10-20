@@ -1,0 +1,819 @@
+{
+  "version": 1,
+  "status": "accepted architecture; slice 1 internal ledger only; production migration pending",
+  "deskEvidence": "reviewed v0.3.0 prerequisite (PR 544); existing production surfaces unchanged in ledger slice",
+  "agentEvidence": {
+    "version": "v0.3.0",
+    "revision": "82235e1d180fbec4634e19c43ea80f06280b298c"
+  },
+  "adr": "../adr/0014-server-owned-assistant-runs.md",
+  "scope": "All actual model dispatch callsites found by runAssistantSession/loadEngine/bindModelCall/bindAgentRun/runBackgroundModel scans; host subrows are feature capabilities, not independent provider loops.",
+  "policy": {
+    "serverOwns": [
+      "principal/session/Policy epoch",
+      "selected Desk/project descriptor",
+      "owner/current request/phase/Plan",
+      "connection revision/model/profile",
+      "tool offers/classifications",
+      "context/checkpoint/operation accounting",
+      "question/compute grant/recovery",
+      "all action/write admission"
+    ],
+    "browserKeeps": [
+      "UI/stream rendering",
+      "user editing and explicit actions",
+      "pure contract data/readers",
+      "narrow pending client-only callbacks"
+    ]
+  },
+  "strictAcceptanceDependency": {
+    "id": "provider-managed-generic-delegation",
+    "proof": "ADR Codex section; synchronous With has no exported release-parent/batch/continue-agent capability and actual bridge has one active account invocation",
+    "blockedSlices": [
+      "subscription-generic-delegation",
+      "complete no-regression cutover release"
+    ],
+    "validIndependentSlices": [
+      "durable protocol/admission/store",
+      "real Desk relay/Runtime/gate binding",
+      "API/Eino feature migration",
+      "basic nondelegating Codex transport adapter",
+      "diagnostics/structured-step boundary migration"
+    ],
+    "requiredDecision": "released canonical seam tracked in Agent #67, or explicit user acceptance change; issue-only authorization does not authorize Agent implementation",
+    "upstreamIssue": "https://github.com/Judgment-Pack/judgment-pack-agent/issues/67"
+  },
+  "surfaces": [
+    {
+      "id": "main-chat-and-right-pane",
+      "category": "conversation",
+      "currentOwner": "ChatProvider \u2192 useResearchRun \u2192 AuthoringRun.turn \u2192 browser engine",
+      "targetOwner": "Go durable run + server domain workflow; browser renders shared events and submits explicit actions",
+      "entrypoints": [
+        "web/src/chat/ChatProvider.tsx",
+        "web/src/chat/ChatPanel.tsx",
+        "web/src/research/useResearchRun.ts:useResearchRun",
+        "web/src/research/run.ts:AuthoringRun"
+      ],
+      "preserve": [
+        "selected connection/revision/model and per-chat reasoning",
+        "original turns/attachments/current request, Plan/Ask me/Auto, source-choice pause",
+        "ordered response history/proposals/questions/budget/task progress and reload"
+      ],
+      "verification": [
+        "web/src/research/useResearchRun.web.test.tsx",
+        "web/src/research/run.test.ts",
+        "web/src/chat/store.test.ts",
+        "existing AI browser recovery fixtures; new SSE reconnect/lost-ack coverage"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "pack-authoring-pane",
+      "category": "conversation",
+      "currentOwner": "AssistantPane \u2192 useAssistantRun; one gated socket per run",
+      "targetOwner": "same Go run service, purpose authoring; pane owns immutable capture and view lease",
+      "entrypoints": [
+        "web/src/assistant/AssistantPane.tsx",
+        "web/src/assistant/useAssistantRun.ts:useAssistantRun",
+        "web/src/chat/PackAssistant.tsx"
+      ],
+      "preserve": [
+        "request-time unsaved/saved document basis and exact proposal",
+        "critic cases and current saved-suite checks",
+        "retained pane context, host Runtime identity outside model gate, memory flag; no spontaneous guardrail"
+      ],
+      "verification": [
+        "web/src/assistant/useAssistantRun.test.tsx",
+        "web/src/assistant/AssistantPane.test.tsx",
+        "web/src/assistant/runContext.test.ts"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "describe-it",
+      "category": "conversation",
+      "currentOwner": "useDescribeIt \u2192 useAssistantRun \u2192 useProposalGenerator",
+      "targetOwner": "Go authoring run on exact captured source; existing review/apply UI",
+      "entrypoints": [
+        "web/src/shell/DescribeIt.tsx:useDescribeIt",
+        "web/src/assistant/useProposalGenerator.ts"
+      ],
+      "preserve": [
+        "single terminal state, stream/report, unknowns",
+        "dirty guards, one undo application, generation vs accepted document"
+      ],
+      "verification": [
+        "web/src/shell/DescribeIt.test.tsx",
+        "web/src/assistant/useAssistantRun.test.tsx",
+        "existing proposal/recovery browser fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "graph-authoring-pane",
+      "category": "conversation",
+      "currentOwner": "GraphAuthor \u2192 useAssistantRun(purpose graph) with graphHostTools",
+      "targetOwner": "Go graph purpose and server-owned graph validation/explain handlers",
+      "entrypoints": [
+        "web/src/graphs/GraphAuthor.tsx",
+        "web/src/graphs/author.ts:graphHostTools",
+        "internal/desk/graph_author.go"
+      ],
+      "preserve": [
+        "exact graph JSON/stdin, validate/explain findings; no operational audit",
+        "reviewed config/lock/write nonce and storage CAS remain separate human action"
+      ],
+      "verification": [
+        "web/src/graphs/author.test.tsx",
+        "internal/desk/graph_author_test.go",
+        "web/src/graphs/assistant.test.tsx"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "legacy-research-authoring-and-draft-view",
+      "category": "domain-workflow",
+      "currentOwner": "ResearchAuthoringPage/DraftPackView \u2192 useResearchRun \u2192 AuthoringRun; browser sequences source/review/repair turns",
+      "targetOwner": "Go feature workflow using shared adapter turns and context.CorrectArtifact; UI projection only",
+      "entrypoints": [
+        "web/src/routes/ResearchAuthoringPage.tsx",
+        "web/src/routes/DraftPackView.tsx",
+        "web/src/research/useResearchRun.ts",
+        "web/src/research/run.ts"
+      ],
+      "preserve": [
+        "Gateway acquisition/session/seal verification and retained source ledger",
+        "MAX_REVISIONS/candidate fingerprints and exact expected outcomes",
+        "question/failed/stopped/budget restore and explicit retry; no nested browser model loop"
+      ],
+      "verification": [
+        "web/src/research/run.test.ts",
+        "web/src/research/retainedCheck.test.ts",
+        "web/src/research/tools.test.ts",
+        "internal/desk/ai_execution_browser_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "independent-authoring-review-turn",
+      "category": "conversation-subphase",
+      "currentOwner": "AuthoringRun calls TurnRequest.reviewer through useResearchRun",
+      "targetOwner": "Go workflow invokes isolated adapter turn using canonical context/phase",
+      "entrypoints": [
+        "web/src/research/run.ts:ports.turn reviewer",
+        "web/src/research/useResearchRun.ts:turn"
+      ],
+      "preserve": [
+        "no parent chat transcript/context index; explicit scoped source/candidate/check inputs",
+        "no interaction/propose_pack tools, original expectations preserved",
+        "review cost belongs to existing approved operation"
+      ],
+      "verification": [
+        "web/src/research/run.test.ts",
+        "web/src/research/useResearchRun.web.test.tsx",
+        "published six-scenario isolation fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "saved-pack-proposal-check-correct-save",
+      "category": "domain-workflow",
+      "currentOwner": "AuthoringRun + ChatProvider savedPackReview + usePackAutoSave",
+      "targetOwner": "Go owning artifact workflow/check ports; existing approval dispatcher for writes",
+      "entrypoints": [
+        "web/src/research/run.ts:review/update/check/correction methods",
+        "web/src/chat/packProposal.ts",
+        "web/src/chat/usePackAutoSave.ts",
+        "web/src/chat/usePackProposalSave.ts",
+        "internal/desk/assistant_approval.go",
+        "internal/desk/assistant_approval_pack.go"
+      ],
+      "preserve": [
+        "exact request-time saved target/text and saved suite (not creation draft cases)",
+        "proposed/buffer applied/saved states distinct; checks never grant save",
+        "consume scoped session grant before commit, dirty/CAS guards/readback, no replay"
+      ],
+      "verification": [
+        "internal/desk/assistant_approval_contract_test.go",
+        "internal/desk/assistant_approval_test.go",
+        "existing saved-pack proposal browser fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "brief-summaries-all-subjects",
+      "category": "tool-free-generation",
+      "currentOwner": "BriefPane reservation \u2192 useAssistantRun(purpose brief) \u2192 useProposalGenerator",
+      "targetOwner": "Go run on server-verified frozen brief reservation; no tools, browser rendering/print remain",
+      "entrypoints": [
+        "web/src/briefs/BriefPane.tsx:start",
+        "web/src/briefs/context.ts",
+        "web/src/briefs/model.ts:briefText",
+        "internal/desk/briefs.go",
+        "internal/desk/brief_definition.go",
+        "internal/desk/brief_state.go"
+      ],
+      "preserve": [
+        "definition vs case/job/run source identity and current selected model",
+        "one bounded frozen snapshot, four validated sections, reservation token",
+        "no external fetching/evaluation/write authority; stale-source state and cancellation"
+      ],
+      "verification": [
+        "web/src/briefs/BriefPane.test.tsx",
+        "internal/desk/briefs_test.go",
+        "internal/desk/brief_definition_test.go",
+        "internal/desk/brief_state_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "canonical-critic",
+      "category": "conversation-subphase",
+      "currentOwner": "package browser API/Codex adapter critic; host supplies cases/model",
+      "targetOwner": "Eino canonical critic; Desk Codex transport uses published turn critique helpers when requested",
+      "entrypoints": [
+        "web/src/assistant/criticCases.ts",
+        "web/src/assistant/critic.ts",
+        "web/src/assistant/ProposalReport.tsx",
+        "web/src/chat/responseHistory.ts",
+        "Agent go/adapter/eino/critic.go",
+        "Agent go/adapter/turn/refutation.go"
+      ],
+      "preserve": [
+        "separate critic phase/tools; incomplete IDs/typed facts/outcomes",
+        "enabled critic model only; known request/token/invocation figures",
+        "no silent extra review on default Codex pane; preserve current explicit chat review settings"
+      ],
+      "verification": [
+        "web/src/assistant/criticCases.test.ts",
+        "web/src/assistant/critic.test.ts",
+        "canonical critic vectors/scenarios, separate bridge fixture"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "api-generic-delegation",
+      "category": "conversation-subphase",
+      "currentOwner": "withDelegation(browser API engine)",
+      "targetOwner": "published delegate.With(eino.New(), Options) and host Children gate factory",
+      "entrypoints": [
+        "web/src/research/useResearchRun.ts:withDelegation",
+        "Agent go/adapter/delegate",
+        "Agent go/gate/phase.go:ChildPhase"
+      ],
+      "preserve": [
+        "profile/brief/reference isolation, parent phase intersection",
+        "shared response/test/tool limits and connection capacity; task-keyed progress",
+        "reports/reuse/retry-before-first-byte and parent synthesis reserve; fresh Retry disables reuse"
+      ],
+      "verification": [
+        "published Go delegation/scenario vectors",
+        "web/src/chat/DelegatedTaskDetails.test.tsx",
+        "web/src/assistant/execution/ExecutionProgress.test.tsx",
+        "new bound parent/child gate/allowance race fixtures"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "subscription-generic-delegation",
+      "category": "conversation-subphase",
+      "currentOwner": "canonical TS withDelegation + runCodex delegation_requested/release/batch/parent continuation",
+      "targetOwner": "canonical provider-managed Go coordinator seam not published at v0.3.0; actual Desk bridge remains transport",
+      "entrypoints": [
+        "Agent packages/harness/engines/codex/index.ts:145-151",
+        "Agent packages/harness/delegation.ts:844-864",
+        "Agent go/adapter/delegate/coordinator.go:24-26",
+        "internal/codexbridge/run.go:admitRun"
+      ],
+      "preserve": [
+        "one active invocation per subscription; release parent before child",
+        "actual agentRuns and provider-managed checkpoint, unknown model request counts",
+        "retain child reports/scopes/receipts and explicit recovery; do not silently remove feature"
+      ],
+      "verification": [
+        "read-only consumer proof in ADR; canonical upstream seam required before this slice",
+        "new actual-bridge parent handoff/child/parent continuation certification"
+      ],
+      "blockedByProviderManagedCoordinator": true
+    },
+    {
+      "id": "input-research-single-step",
+      "category": "bounded-structured-step",
+      "currentOwner": "inputResearchModel \u2192 runBackgroundModel; durable worker owns phase/budget",
+      "targetOwner": "same explicit workflow, unified bound dispatch authorization/context/capacity and one reservation per model action",
+      "entrypoints": [
+        "internal/desk/input_research_worker.go",
+        "internal/desk/input_research_model.go:inputResearchModel",
+        "internal/desk/background_model.go:runBackgroundModel",
+        "internal/desk/input_research_context.go"
+      ],
+      "preserve": [
+        "host-authored tool/JSON response schema + validation and typed fields",
+        "fitResearchContext/read_context; exact source/result receipts and budget reservations",
+        "one response per step, no generic browser loop; no uncertain-call replay"
+      ],
+      "verification": [
+        "internal/desk/input_research_model_test.go",
+        "internal/desk/input_research_completion_test.go",
+        "internal/desk/background_model_test.go",
+        "internal/desk/background_completion_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "input-research-domain-parent-child",
+      "category": "domain-workflow",
+      "currentOwner": "journaled input research worker selects sequential/delegated host phases and admitted steps",
+      "targetOwner": "retain domain workflow on server; route each step via same one-use bound dispatch reservation",
+      "entrypoints": [
+        "internal/desk/input_research_delegation.go",
+        "internal/desk/input_research_phases.go",
+        "internal/desk/input_research_budget.go",
+        "internal/desk/input_research_http.go",
+        "internal/desk/input_research_journal.go"
+      ],
+      "preserve": [
+        "reviewed recipe/profiles/record goal and aggregate approved source/model budgets",
+        "domain child assignments and acquisition receipts, retained typed record values",
+        "not generic assistant delegate_tasks and not blocked by absent generic provider coordinator"
+      ],
+      "verification": [
+        "internal/desk/input_research_delegation_test.go",
+        "internal/desk/input_research_budget_test.go",
+        "internal/desk/input_research_parent_identity_test.go",
+        "internal/desk/input_research_recovery_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "portable-research-and-model-acquisition",
+      "category": "bounded-structured-step",
+      "currentOwner": "portableResearchWorker \u2192 acquirePortableResearchModel \u2192 model broker \u2192 runBackgroundModel",
+      "targetOwner": "retain reviewed portable workflow and nonce-bound model-source acquisition; shared bound dispatch",
+      "entrypoints": [
+        "internal/desk/portable_research_worker.go",
+        "internal/desk/model_source.go",
+        "internal/desk/portable_research_journal.go",
+        "internal/desk/portable_research_budget.go",
+        "internal/desk/input_research_reservations.go"
+      ],
+      "preserve": [
+        "frozen Plan/choice/profile/limits, action schema answer/search/page/read_context",
+        "one admitted acquisition/response with durable exact operation ID",
+        "no arbitrary prompt/model browser endpoint; original transport uncertainty cannot replay"
+      ],
+      "verification": [
+        "internal/desk/portable_research_test.go",
+        "internal/desk/model_source_test.go",
+        "internal/desk/portable_research_acceptance_test.go",
+        "internal/desk/input_research_journal_workflows_test.go"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "model-list-discovery",
+      "category": "non-generative-diagnostic",
+      "currentOwner": "provider forms listModels via browser bindModelCall GET; Codex account model discovery",
+      "targetOwner": "fixed server diagnostic/listing capability with same session/Desk/connection binding; no browser relay capability",
+      "entrypoints": [
+        "web/src/assistant/DeskAISettings.tsx:listedModels",
+        "web/src/assistant/endpointCheck.ts",
+        "web/src/assistant/modelListing.ts",
+        "web/src/assistant/SubscriptionModels.tsx",
+        "internal/desk/assistant.go",
+        "internal/codexbridge/models.go"
+      ],
+      "preserve": [
+        "bounded list pages/result fields and exact configured family/key custody",
+        "GET does not spend generative allowance; no fallback/default model fabrication"
+      ],
+      "verification": [
+        "web/src/assistant/modelListing.test.ts",
+        "web/src/assistant/endpointCheck.test.ts",
+        "existing connection/provider/model admission tests"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "capability-probe",
+      "category": "bounded-generative-diagnostic",
+      "currentOwner": "EndpointCapabilitiesSection \u2192 capabilityProbe: one chat request plus model-list GET",
+      "targetOwner": "fixed host-authored one-request diagnostic; same bound relay/context/accounting; no tool execution",
+      "entrypoints": [
+        "web/src/assistant/EndpointCapabilitiesSection.tsx",
+        "web/src/assistant/capabilityProbe.ts",
+        "web/src/assistant/endpointCapabilities.ts"
+      ],
+      "preserve": [
+        "probe_echo calls counted but never executed; no model-written instructions retained",
+        "counts/numbers/facts only, owner overrides retained, timestamp/probe source explicit",
+        "output/time/body bounds, diagnostic reservation and no hidden retry loop"
+      ],
+      "verification": [
+        "web/src/assistant/capabilityProbe.test.ts",
+        "web/src/assistant/endpointCapabilities.test.ts",
+        "new server diagnostic request/accounting fixture"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "endpoint-connection-probe",
+      "category": "bounded-diagnostic-mixed",
+      "currentOwner": "handleAssistantProbe \u2192 probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
+      "targetOwner": "same fixed diagnostic owner; generative ping reserved/accounted, shared auth/context/custody path",
+      "entrypoints": [
+        "internal/desk/assistant.go:handleAssistantProbe/probeEndpoint",
+        "web/src/assistant/endpointCheck.ts"
+      ],
+      "preserve": [
+        "do not misclassify Anthropic ping as free model discovery",
+        "saved endpoint/revision/key bound before dispatch, one short response; no free text command"
+      ],
+      "verification": [
+        "internal/desk/assistant_test.go",
+        "web/src/assistant/endpointCheck.test.ts"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "codex-connection-test",
+      "category": "bounded-generative-diagnostic",
+      "currentOwner": "AssistantSettings \u2192 useAssistantRun(codex,purpose test-design, optional get_schema)",
+      "targetOwner": "fixed server diagnostic run on actual bridge and narrow saved get_schema grant",
+      "entrypoints": [
+        "web/src/assistant/AssistantSettings.tsx",
+        "web/src/assistant/useAssistantRun.ts",
+        "internal/desk/agent_run.go",
+        "internal/codexbridge/run.go"
+      ],
+      "preserve": [
+        "actual subscription auth/native model admission; no API fallback",
+        "provider-managed invocation accounting, optional schema read remains gated"
+      ],
+      "verification": [
+        "web/src/assistant/AssistantSettings.test.tsx",
+        "internal/desk/agent_run_test.go",
+        "new shared diagnostic bridge fixture"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "context-maintenance",
+      "category": "model-free-canonical",
+      "currentOwner": "browser managedContext ledger/cache/compaction, connection/runtime/memory host injection",
+      "targetOwner": "published Go context plus server-owned ChatContext per authorized owner; no model summarizer",
+      "entrypoints": [
+        "web/src/assistant/chatContexts.ts",
+        "web/src/assistant/runContext.ts",
+        "web/src/research/retainedCheck.ts",
+        "Agent go/context/chat.go",
+        "Agent go/context/session.go"
+      ],
+      "preserve": [
+        "immutable Runtime reads keyed by identity/version, development build run-only",
+        "child visible-reference scopes; dispose owner context on authorized delete",
+        "no reuse of mutable evaluation/workspace reads; preserve exact originals"
+      ],
+      "verification": [
+        "web/src/assistant/context/coverage.test.ts",
+        "web/src/assistant/runContext.test.ts",
+        "published context vectors; host descriptor/model gate integration fixture"
+      ],
+      "blockedByProviderManagedCoordinator": false
+    },
+    {
+      "id": "runtime-model-ceiling",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "get_schema",
+        "list_examples",
+        "get_example",
+        "validate",
+        "experimental_evaluate",
+        "experimental_test_cases"
+      ],
+      "entrypoints": [
+        "Agent go/gate",
+        "internal/desk/relay.go",
+        "internal/desk/policy_execution_relay.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Calls only; rehearsal rewrite and test cap; host metadata describe_runtime never in this ceiling",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "graph-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "list_decisions",
+        "read_decision",
+        "get_graph_authoring_instructions",
+        "propose_graph",
+        "graph_rehearse",
+        "graph_validate",
+        "graph_explain"
+      ],
+      "entrypoints": [
+        "web/src/graphs/chatTools.ts",
+        "web/src/graphs/author.ts",
+        "internal/desk/graphs.go",
+        "internal/desk/graph_author.go",
+        "internal/desk/graph_drafts.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go current handlers + retained draft proposal; saved rehearsal only; no operational audit/save inferred",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "policy-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_policy",
+        "propose_policy_update",
+        "read_policy_comparison",
+        "read_policy_coverage",
+        "propose_policy_pack_interpretation",
+        "propose_policy_graph_interpretation"
+      ],
+      "entrypoints": [
+        "web/src/policies/chatTools.ts",
+        "internal/desk/policy_assistant.go",
+        "internal/desk/assistant_approval.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go authenticated reads/retained proposal; exact Policy revision and retained source selectors; interpretations only open reviewable ordinary authoring",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "dialect-recipe-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "get_dialect_recipe_instructions",
+        "list_dialects",
+        "read_dialect_recipe",
+        "propose_dialect_recipe"
+      ],
+      "entrypoints": [
+        "web/src/dialects/chatTools.ts",
+        "web/src/dialects/drafts.ts"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go recipe contract + independent retained draft; no record fabrication or source execution",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "dialect-mapping-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_dialect",
+        "propose_dialect"
+      ],
+      "entrypoints": [
+        "web/src/dialects/dialectChatTools.ts",
+        "internal/desk/input_typed_research.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go fresh revision/pack-digest read and complete mapping proposal; preserve omitted/typed fields, no automatic save",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "dialect-actions-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "request_dialect_research",
+        "read_dialect_records",
+        "read_dialect_activity",
+        "propose_dialect_action"
+      ],
+      "entrypoints": [
+        "web/src/dialects/chatActionTools.ts",
+        "internal/desk/input_research_approval.go",
+        "internal/desk/input_research_http.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go existing research allowance/recipe/record review admission; proposals and source-start receipts remain different",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "dialect-publication-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_dialect_publication",
+        "propose_dialect_publication"
+      ],
+      "entrypoints": [
+        "web/src/dialects/publicationChatTools.ts",
+        "internal/desk/assistant_approval_dialect.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go exact saved mapping publication check/proposal, separate explicit one-publication grant, active jobs retain pins",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "test-workspace-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_pack_tests",
+        "propose_test_cases"
+      ],
+      "entrypoints": [
+        "web/src/packs/test-workspace/chatTools.ts",
+        "web/src/packs/test-workspace/store.ts",
+        "internal/desk/conversations.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go read/retain proposal with exact target/suite/coverage/source inputs; human owns expectations and accepts case edits",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "chat-web-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "read_link",
+        "search_sources",
+        "explore_website"
+      ],
+      "entrypoints": [
+        "web/src/chat/linkTools.ts",
+        "web/src/search/tools.ts",
+        "web/src/chat/researchChoice.ts",
+        "internal/desk/researchrelay.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go bounded Gateway/document acquisition using saved current research choice and verified receipts; absent research choice pauses before acquisition",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "research-source-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "search_sources",
+        "read_source",
+        "cite_excerpt"
+      ],
+      "entrypoints": [
+        "web/src/research/tools.ts",
+        "web/src/research/ledger.ts",
+        "web/src/research/gatewayClient.ts"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go feature ledger/acquisition/seal/typed reference handling; source text framed as data and window bounded",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "plan-and-memory-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "propose_plan",
+        "recall_memory",
+        "remember_memory"
+      ],
+      "entrypoints": [
+        "web/src/chat/ChatProvider.tsx",
+        "Agent packages/harness/planning/tools.ts",
+        "Agent packages/harness/memory/tools.ts",
+        "internal/desk/ai_memory.go"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Go Plan record/references and existing private memory handlers; latest saved user message binding, separate human Start work, no remembered permissions/evidence",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "canonical-interaction-proposal-execution",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "ask_user",
+        "propose_pack",
+        "read_context",
+        "list_context",
+        "read_window",
+        "search",
+        "update_plan",
+        "request_budget_increase",
+        "delegate_tasks"
+      ],
+      "entrypoints": [
+        "Agent go/context",
+        "Agent go/adapter/turn",
+        "web/src/assistant/proposePack.ts",
+        "web/src/chat/ChatProvider.tsx"
+      ],
+      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "preserve": [
+        "Use exact published constants/schemas/readers rather than spelling new aliases; question pauses, proposal is event not write, budget is request not grant, delegation subject to explicit dependency gate",
+        "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
+      ],
+      "verification": [
+        "existing factory behavior fixtures reused for feature migration",
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+      ]
+    },
+    {
+      "id": "client-only-editor-interaction",
+      "category": "client-callback",
+      "modelEntrypoint": false,
+      "entrypoints": [
+        "web/src/packs/edit/editingContext.ts",
+        "web/src/assistant/acceptProposal.ts",
+        "web/src/shell/UnsavedChanges.tsx",
+        "web/src/chat/ChatProvider.tsx"
+      ],
+      "targetOwner": "server pending intent/operation; browser local buffer/dirty veto and reviewed apply",
+      "preserve": [
+        "only typed server-selected callback under authenticated owner lease",
+        "cannot authorize write, declare tool/phase, expand runtime, mint grant or run model",
+        "persist intent/result IDs; exact local buffer revision and one undo action; lost ack uncertain/no automatic replay",
+        "absent UI pauses before dispatch; rendering/invalidation/navigation are notifications"
+      ],
+      "verification": [
+        "existing buffer/unsaved/application behavior tests",
+        "new callback duplicate/wrong owner/revision/lost-ack/reload fixture"
+      ]
+    }
+  ],
+  "unknowns": [
+    "No live-provider performance/quality evidence was collected; fixtures are protocol/ownership evidence only.",
+    "Current terminal-run registry retention  need parent confirmation during architecture checkpoint; proposal uses existing record bounds and never deletes originals automatically.",
+    "Exact pure-TS import closure must be proven by emitted bundle dependency graph during implementation; source inventory alone cannot guarantee bundle removal."
+  ],
+  "preparationVerification": "Published Go API/source and actual Desk callsite inventory; each production migration requires the listed focused evidence. Internal ledger tests do not certify the pending cutover."
+}
