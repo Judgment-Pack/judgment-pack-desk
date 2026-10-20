@@ -23,9 +23,6 @@ PY
   repository=${line% *}
   revision=${line#* }
   checkout_at "$tmp/harness-source" "${repository#Judgment-Pack/}" "$revision"
-  # Source imports resolve dependencies from this checkout, not web/node_modules. Its committed
-  # workspace lock is at the same attested revision as the tests.
-  [ -d "$tmp/harness-source/node_modules" ] || (cd "$tmp/harness-source" && npm ci)
 }
 
 step=${1:?usage: web-fixtures.sh STEP}
@@ -47,16 +44,23 @@ case "$step" in
 
   harness-vectors)
     harness_source
-    # The Go tests read copies of the package's recall vectors, which must be the package's own
-    # at this revision.
-    diff -r internal/desk/testdata/harness-recall "$tmp/harness-source/contract/vectors/recall"
+    # ADR-0005 removed recallQuery and its vectors, not merely their old path. The legacy
+    # relay still uses these five fixtures: hold them to their original published revision,
+    # separately from the current component pin. No old engine or dependency is loaded.
+    checkout_at "$tmp/harness-recall-source" judgment-pack-agent 82235e1d180fbec4634e19c43ea80f06280b298c
+    diff -r internal/desk/testdata/harness-recall "$tmp/harness-recall-source/contract/vectors/recall"
+    diff internal/desk/testdata/harness-prompt/host-parts.json "$tmp/harness-source/contract/vectors/budget/host-parts.json"
+    diff internal/desk/testdata/harness-prompt/state-placement.json "$tmp/harness-source/contract/vectors/budget/state-placement.json"
     diff internal/desk/testdata/harness-approval/grant-states.json "$tmp/harness-source/contract/vectors/approval/grant-states.json"
-    echo "harness-vectors: the recall and approval vectors are the package's"
+    echo "harness-vectors: current host-parts, state-placement and approval vectors, and historical recall vectors, match their published revisions"
     ;;
 
   certify)
     adapter=${2:?usage: web-fixtures.sh certify ADAPTER}
     harness_source
+    # Source imports resolve dependencies from this checkout, not web/node_modules. Its committed
+    # workspace lock is at the same attested revision as the tests. Vector comparison needs none.
+    [ -d "$tmp/harness-source/node_modules" ] || (cd "$tmp/harness-source" && npm ci)
     cd web
     HARNESS_SOURCE="$tmp/harness-source/packages/harness" node scripts/certify-harness.mjs --adapter "$adapter"
     ;;
