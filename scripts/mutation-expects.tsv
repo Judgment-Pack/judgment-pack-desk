@@ -2650,6 +2650,16 @@ go	assistant chat projection: saved conversation refusal is hidden	TestAssistant
 go	assistant chat projection: unsupported Unicode reaches prepared output	TestAssistantChatProjectionUnicodeRefusal
 go	assistant chat projection: checkpoint raw Unicode is not validated	TestAssistantChatProjectionUnicodeRefusal
 go	assistant chat projection: serialized candidate Unicode is not validated	TestAssistantChatProjectionUnicodeRefusal
+go	case-sensitive history: workspace data is folded again	TestAssistantChatProjectionCaseSensitiveDataRecoveryImport
+go	case-sensitive history: opaque data keys are folded	TestWorkspaceJSONDataAndControls
+go	case-sensitive history: decoded duplicates are admitted	TestWorkspaceJSONDataAndControls,TestCaseSensitiveHistoryExpectationIssues
+go	case-sensitive history: reserved aliases are admitted	TestWorkspaceJSONDataAndControls,TestCaseSensitiveHistoryExpectationIssues
+go	case-sensitive history: nesting bound is removed	TestWorkspaceJSONDataAndControls
+go	case-sensitive history: unpaired Unicode is admitted	TestWorkspaceJSONDataAndControls
+go	case-sensitive history: canonical keys are folded again	TestCaseSensitiveJSONCanonicalComparison
+go	case-sensitive history: Dialect keys are folded again	TestCaseSensitiveJSONCanonicalComparison
+go	case-sensitive history: original case schema is lost	TestCaseSensitiveHistoryExpectationIssues
+go	case-sensitive history: replacement case schema is lost	TestCaseSensitiveHistoryExpectationIssues
 go	assistant critic: Runtime testing guidance omitted	TestAssistantCriticActualAPI
 go	assistant critic: admitted declared cases omitted	TestAssistantCriticActualAPI
 go	assistant critic: duplicate case id admitted	TestAssistantCriticCases

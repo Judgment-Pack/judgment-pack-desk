@@ -56,3 +56,27 @@ grep -Fxq 'Shared chat readers: 6 completed, work/failure, create and pinned-pau
   --outfile="$tmp/unicode-reference.mjs"
 "$node_bin" "$tmp/unicode-reference.mjs" "$unicode_outputs" | tee "$tmp/unicode-reader.log"
 grep -Fxq 'Unicode positive: 6 actual reader observations passed.' "$tmp/unicode-reader.log"
+
+# Case-sensitive history has its own fresh observations; do not mix the two
+# original export sets with workspace issue-case and backup/recovery coverage.
+history_outputs="$tmp/case-sensitive-history"
+mkdir -m 700 "$history_outputs"
+history_log="$tmp/case-sensitive-history-producers.log"
+(
+  cd "$root"
+  env "${go_env[@]}" JPS_TEST_CASE_SENSITIVE_HISTORY_OUTPUTS="$history_outputs" \
+    go test ./internal/desk -run '^(TestAssistantChatProjectionCaseSensitiveDataRecoveryImport|TestCaseSensitiveHistoryExpectationIssues)$' -count=1 -v
+) | tee "$history_log"
+for producer in TestAssistantChatProjectionCaseSensitiveDataRecoveryImport TestCaseSensitiveHistoryExpectationIssues; do
+  awk -v want="--- PASS: $producer (" '{ sub(/^[ \t]+/, ""); if (index($0, want) == 1) found=1 } END { exit !found }' "$history_log" || {
+    echo "$producer did not run and pass" >&2
+    exit 1
+  }
+done
+"$esbuild" "$root/scripts/case-sensitive-history-reference.mjs" \
+  --bundle --platform=node --format=esm \
+  --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+  --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$tmp/case-sensitive-history-reference.mjs"
+"$node_bin" "$tmp/case-sensitive-history-reference.mjs" "$history_outputs" | tee "$tmp/case-sensitive-history-reader.log"
+grep -Fxq 'Case-sensitive history: 4 actual reader observations passed.' "$tmp/case-sensitive-history-reader.log"

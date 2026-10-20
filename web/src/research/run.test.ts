@@ -2816,15 +2816,18 @@ describe('bounded conversation context',()=>{
  })
  it('sends attachments once and leaves oversized projection to the shared engine boundary',async()=>{
   const h=harness([async(_r,_s,emit)=>emit({type:'message',text:'Noted'})],{mode:'draft'})
+  const attached='Attached material '+'x'.repeat(110000),oversized='x'.repeat(200001)
   await h.run.restore({...INITIAL_STATE,turns:[{role:'user',kind:'message',text:'Begin',at:''}]})
-  h.run.send('Attached material '+ 'x'.repeat(110000))
+  h.run.send(attached)
   expect((await settled(h.run)).status).toBe('complete')
   expect(h.requests[0]!.prompt.length).toBeLessThan(120000)
-  h.run.send('x'.repeat(200001))
+  h.run.send(oversized)
   await settled(h.run)
   expect(h.requests).toHaveLength(2)
   expect(h.requests[1]!.context?.documents?.[0]?.kind).toBe('history')
-  expect(h.requests[1]!.prompt).toContain('x'.repeat(200001))
+  // The current message is the final prompt block. Searching for this entire
+  // repetitive payload also scans the earlier long partial match in history.
+  expect(h.requests[1]!.prompt.endsWith(oversized)).toBe(true)
  })
  it('keeps legacy mixed inputs intact rather than guessing away supplied material',async()=>{
   const h=harness([async(_r,_s,emit)=>emit({type:'message',text:'Noted'})],{mode:'draft'})

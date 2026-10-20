@@ -14849,6 +14849,38 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant chat projection: display normalization mutates original checkpoint' internal/desk/assistant_chat_projection.go \
     'cp.Operations = append([]contract.CheckpointOperation{}, run.Checkpoint.Operations...)' \
     'cp.Operations = run.Checkpoint.Operations'
+  mutate go 'case-sensitive history: original case schema is lost' internal/desk/json_members.go \
+    '	Original workspaceJSONCase                   `json:"original"`' \
+    '	Original struct{}                   `json:"original"`'
+  mutate go 'case-sensitive history: replacement case schema is lost' internal/desk/json_members.go \
+    '	Replacement workspaceJSONCase `json:"replacement"`' \
+    '	Replacement struct{} `json:"replacement"`'
+  mutate go 'case-sensitive history: workspace data is folded again' internal/desk/policy_authoring_source.go \
+    'checkJSONMembers(raw, reflect.TypeOf(workspaceJSONHistory{}))' \
+    'checkJSONMembers(raw, reflect.TypeOf(struct{}{}))'
+  mutate go 'case-sensitive history: opaque data keys are folded' internal/desk/json_members.go \
+    'case opaque:
+					identity = key' \
+    'case opaque:
+					identity = strings.ToLower(key)'
+  mutate go 'case-sensitive history: decoded duplicates are admitted' internal/desk/json_members.go \
+    'if seen[identity] {' \
+    'if false && seen[identity] {'
+  mutate go 'case-sensitive history: reserved aliases are admitted' internal/desk/json_members.go \
+    'strings.EqualFold(key, name) {' \
+    'false && strings.EqualFold(key, name) {'
+  mutate go 'case-sensitive history: nesting bound is removed' internal/desk/json_members.go \
+    'if depth > 64 {' \
+    'if depth > 128 {'
+  mutate go 'case-sensitive history: unpaired Unicode is admitted' internal/desk/json_members.go \
+    '!utf8.Valid(raw) || jsonscalar.ValidateEscapes(raw) != nil' \
+    '!utf8.Valid(raw) || (false && jsonscalar.ValidateEscapes(raw) != nil)'
+  mutate go 'case-sensitive history: canonical keys are folded again' internal/desk/gateway_canonical.go \
+    'checkJSONMembers(raw, opaqueJSONMembers)' \
+    'checkJSONMembers(raw, nil)'
+  mutate go 'case-sensitive history: Dialect keys are folded again' internal/desk/dialect_publications.go \
+    'checkJSONMembers(a, opaqueJSONMembers) != nil || checkJSONMembers(b, opaqueJSONMembers) != nil' \
+    'checkJSONMembers(a, nil) != nil || checkJSONMembers(b, nil) != nil'
   mutate go 'assistant chat projection: saved conversation refusal is hidden' internal/desk/assistant_chat_projection_store.go \
     'if len(candidate) > maxConversationBytes || validateConversations(candidate) != nil {' \
     'if len(candidate) > maxConversationBytes {'

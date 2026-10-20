@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -141,7 +142,7 @@ func policySourceKey(source policyAuthoringSource) string {
 // Validate the source envelope in every workspace/file/backup path. Unknown
 // fields inside a source are refused so callers cannot persist a second basis.
 func policyWorkspaceEntries(raw []byte, drafts bool) ([]policyWorkspaceEntry, error) {
-	if err := rejectDuplicateMembers(raw); err != nil {
+	if err := checkJSONMembers(raw, reflect.TypeOf(workspaceJSONHistory{})); err != nil {
 		return nil, errors.New("Workspace history has duplicate fields.")
 	}
 	var documentFields map[string]json.RawMessage
