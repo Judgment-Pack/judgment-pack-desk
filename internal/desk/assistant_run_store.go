@@ -82,6 +82,7 @@ type assistantRunRecord struct {
 	AdmissionID string                  `json:"admissionId"`
 	BodyDigest  string                  `json:"bodyDigest"`
 	State       string                  `json:"state"`
+	Historical  bool                    `json:"historical,omitempty"`
 	Checkpoint  *contract.Checkpoint    `json:"checkpoint,omitempty"`
 	Operations  []assistantRunOperation `json:"operations"`
 	Events      []assistantRunEvent     `json:"events"`
@@ -95,18 +96,36 @@ type assistantRunLedger struct {
 type assistantRunStore struct {
 	server        *Server
 	project, name string
+	problem       error
 }
 
 func (s *Server) assistantRuns() assistantRunStore {
-	project := digestOf([]byte(s.conversationIdentity()))
-	return assistantRunStore{server: s, project: project, name: "assistant-runs-" + project + ".json"}
+	held := assistantRunStore{server: s}
+	lock, err := s.privateDataLockContext(context.Background(), true)
+	if err != nil {
+		held.problem = err
+		return held
+	}
+	defer lock.Close()
+	store, err := s.openChatData()
+	if err != nil {
+		held.problem = err
+		return held
+	}
+	defer store.root.Close()
+	held.project, held.problem = assistantRunNamespace(store.root, s.conversationIdentity())
+	held.name = "assistant-runs-" + held.project + ".json"
+	return held
 }
 
 // transaction never retries its callback. The per-project file contains both
 // records and their idempotency keys, so admission needs no multi-file commit.
 func (s assistantRunStore) transaction(ctx context.Context, change func(*assistantRunLedger) (bool, error)) (assistantRunLedger, error) {
 	var empty assistantRunLedger
-	if s.server == nil || s.project != digestOf([]byte(s.server.conversationIdentity())) || s.name != "assistant-runs-"+s.project+".json" {
+	if s.problem != nil {
+		return empty, s.problem
+	}
+	if s.server == nil {
 		return empty, errAssistantRunScope
 	}
 	lock, err := s.server.privateDataLockContext(ctx, true)
@@ -122,10 +141,13 @@ func (s assistantRunStore) transaction(ctx context.Context, change func(*assista
 	if err = checkPrivateDataPath(store); err != nil {
 		return empty, err
 	}
+	if err = s.checkScope(store.root); err != nil {
+		return empty, err
+	}
 	raw, err := readPrivateData(store.root, s.name, assistantRunRecordLimit)
 	ledger := assistantRunLedger{Version: 1, Project: s.project, Runs: []assistantRunRecord{}}
 	if err == nil {
-		if err = decodeDataJSON(raw, &ledger); err != nil {
+		if ledger, err = decodeAssistantRunStorage(s.name, raw); err != nil {
 			return empty, err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -154,6 +176,9 @@ func (s assistantRunStore) transaction(ctx context.Context, change func(*assista
 	if len(raw) > assistantRunRecordLimit {
 		return empty, withCode(CodeTooLarge, errors.New("Assistant run storage limit reached; retained work was not discarded."))
 	}
+	if err = assistantRunJSONMembers(raw); err != nil {
+		return empty, err
+	}
 	if err = ctx.Err(); err != nil {
 		return empty, err
 	}
@@ -177,8 +202,20 @@ func (s assistantRunStore) transaction(ctx context.Context, change func(*assista
 // than accidentally starting a second operation. Fresh attempts need fresh IDs.
 // freshCAS runs only for new admission, under the same private-data lock as the
 // saved owner. It must only read/validate current state; no dispatch or writes.
-func (s assistantRunStore) Admit(ctx context.Context, binding assistantRunBinding, admissionID, bodyDigest string, freshCAS func() error) (assistantRunRecord, bool, error) {
+func (l *assistantRunLease) Admit(ctx context.Context, binding assistantRunBinding, admissionID, bodyDigest string, freshCAS func() error) (assistantRunRecord, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil || l.recoveryErr != nil {
+		return assistantRunRecord{}, false, errAssistantRunRecovery
+	}
+	s := l.store
 	var out assistantRunRecord
+	if s.problem != nil {
+		return out, false, s.problem
+	}
+	if s.server.assistantRunRecoveryFailure() != nil {
+		return out, false, errAssistantRunRecovery
+	}
 	if err := validateAssistantRunBinding(binding, s.project); err != nil {
 		return out, false, err
 	}
@@ -258,21 +295,37 @@ func assistantRunBound(ledger *assistantRunLedger, binding assistantRunBinding, 
 // recover/dispatch this project's assistant runs. Losing this lease never
 // authorizes a replacement invocation or automatic replay.
 type assistantRunLease struct {
-	mu    sync.Mutex
-	store assistantRunStore
-	file  *os.File
+	mu          sync.Mutex
+	store       assistantRunStore
+	file        *os.File
+	work        *os.File
+	recoveryErr error
 }
 
 func (s assistantRunStore) Acquire(ctx context.Context) (*assistantRunLease, error) {
-	if s.server == nil || s.project != digestOf([]byte(s.server.conversationIdentity())) || s.name != "assistant-runs-"+s.project+".json" {
+	if s.problem != nil {
+		return nil, s.problem
+	}
+	if s.server == nil || !assistantRunFileName.MatchString(s.name) || s.name != "assistant-runs-"+s.project+".json" {
 		return nil, errAssistantRunScope
 	}
-	file, err := s.server.openPrivateDataFileLock(ctx, "assistant-run-executor-"+s.project+".lock", true, false)
+	work, err := s.server.openPrivateDataFileLock(ctx, ".data-work.lock", false, false)
 	if err != nil {
 		return nil, err
 	}
-	return &assistantRunLease{store: s, file: file}, nil
+	file, err := s.server.openPrivateDataFileLock(ctx, "assistant-run-executor-"+s.project+".lock", true, false)
+	if err != nil {
+		work.Close()
+		return nil, err
+	}
+	lease := &assistantRunLease{store: s, file: file, work: work}
+	if err = lease.Recover(ctx); err != nil {
+		lease.Close()
+		return nil, err
+	}
+	return lease, nil
 }
+
 func (l *assistantRunLease) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -281,6 +334,10 @@ func (l *assistantRunLease) Close() error {
 	}
 	err := l.file.Close()
 	l.file = nil
+	if l.work != nil {
+		err = errors.Join(err, l.work.Close())
+		l.work = nil
+	}
 	return err
 }
 func (l *assistantRunLease) Recover(ctx context.Context) error {
@@ -289,40 +346,9 @@ func (l *assistantRunLease) Recover(ctx context.Context) error {
 	if l.file == nil {
 		return errAssistantRunScope
 	}
-	_, err := l.store.transaction(ctx, func(ledger *assistantRunLedger) (bool, error) {
-		changed := false
-		for i := range ledger.Runs {
-			run := &ledger.Runs[i]
-			if assistantRunTerminal(run.State) {
-				continue
-			}
-			runChanged := false
-			if run.State == "admitted" || run.State == "running" {
-				run.State = "interrupted"
-				runChanged = true
-			}
-			for j := range run.Operations {
-				if run.Operations[j].State == "dispatched" {
-					run.Operations[j].State = "uncertain"
-					runChanged = true
-				}
-			}
-			if run.Checkpoint != nil && run.Checkpoint.Status == "running" {
-				run.Checkpoint.Status = "stopped"
-				for j := range run.Checkpoint.Operations {
-					if run.Checkpoint.Operations[j].Status == "running" {
-						run.Checkpoint.Operations[j].Status = "interrupted"
-					}
-				}
-				runChanged = true
-			}
-			if runChanged {
-				run.Revision++
-				changed = true
-			}
-		}
-		return changed, nil
-	})
+	_, err := l.store.transaction(ctx, func(ledger *assistantRunLedger) (bool, error) { return interruptAssistantRuns(ledger, false), nil })
+	l.recoveryErr = err
+	l.store.server.setAssistantRunRecoveryFailure(err)
 	return err
 }
 
@@ -414,6 +440,7 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 		return errAssistantRunInvalid
 	}
 	ids := map[string]bool{}
+	active := map[string]bool{}
 	keys := map[string]bool{}
 	for _, run := range ledger.Runs {
 		if !strings.HasPrefix(run.ID, "arun_") || len(run.ID) != 37 || !assistantRunDigest(run.BodyDigest) || run.Revision == 0 || !assistantRunText(run.AdmissionID, 128) {
@@ -433,6 +460,16 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 		}
 		if !contains([]string{"admitted", "running", "awaiting-input", "awaiting-client", "paused-budget", "stopped", "interrupted", "complete", "failed"}, run.State) || len(run.Operations) > assistantRunOperationLimit || len(run.Events) > assistantRunEventLimit {
 			return errAssistantRunInvalid
+		}
+		if run.Historical && !assistantRunTerminal(run.State) {
+			return errAssistantRunInvalid
+		}
+		if !assistantRunTerminal(run.State) {
+			owner := run.Binding.Owner.Kind + ":" + run.Binding.Owner.ID
+			if active[owner] {
+				return errAssistantRunInvalid
+			}
+			active[owner] = true
 		}
 		if run.Checkpoint != nil {
 			if _, err := readAssistantRunCheckpoint(*run.Checkpoint, run.Binding); err != nil {

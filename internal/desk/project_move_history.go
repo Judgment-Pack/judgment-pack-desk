@@ -15,7 +15,7 @@ func historyMember(name, conversation string) bool {
 	if name == conversation || name == draftPackName(conversation) {
 		return true
 	}
-	for _, prefix := range []string{"ai-memory-", "briefs-", "pack-tests-", "source-reviews-"} {
+	for _, prefix := range []string{"assistant-runs-", "ai-memory-", "briefs-", "pack-tests-", "source-reviews-"} {
 		if name == strings.Replace(conversation, "conversations-", prefix, 1) {
 			return true
 		}
@@ -64,6 +64,15 @@ func movedHistoryBinding(root *os.Root, previous, next string) (projectBindings,
 			}
 			if err != nil {
 				return bindings, "", false, err
+			}
+			if assistantRunFileName.MatchString(name) {
+				raw, err := readPrivateData(root, name, assistantRunRecordLimit)
+				if err == nil {
+					err = validateStorageFile(name, raw)
+				}
+				if err != nil {
+					return bindings, "", false, err
+				}
 			}
 			found = true
 		}

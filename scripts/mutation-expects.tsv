@@ -2580,3 +2580,6 @@ go	relay queue: more than sixteen requests may wait	TestRelayAnswers429WithRetry
 web	harness credentials: Desk headers omitted	web/src/assistant/harnessCredentialsCertification.test.ts
 web	harness credentials: AI headers omitted	web/src/assistant/harnessCredentialsCertification.test.ts
 web	harness credentials: session bearer omitted	web/src/assistant/harnessCredentialsCertification.test.ts
+go	assistant runs: restore retains live authority	TestAssistantRunStoragePendingRestoreAndCustody
+go	assistant runs: archive trusts its content namespace	TestAssistantRunStorageArchiveRefusalRollback
+go	assistant runs: executor does not block storage transfer	TestAssistantRunStorageActiveMoveRestoreAndRelease

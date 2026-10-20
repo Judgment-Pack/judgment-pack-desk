@@ -50,15 +50,15 @@ func assistantRunFixture(t *testing.T) (assistantRunStore, assistantRunBinding, 
 func assistantRunAdmitted(t *testing.T) (assistantRunStore, assistantRunBinding, contract.Checkpoint, assistantRunRecord, *assistantRunLease, *assistantRunWriter) {
 	t.Helper()
 	store, binding, cp := assistantRunFixture(t)
-	record, created, err := store.Admit(context.Background(), binding, "admission", digestOf([]byte("body")), func() error { return nil })
-	if err != nil || !created {
-		t.Fatalf("admit %v %v", created, err)
-	}
 	lease, err := store.Acquire(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { lease.Close() })
+	record, created, err := lease.Admit(context.Background(), binding, "admission", digestOf([]byte("body")), func() error { return nil })
+	if err != nil || !created {
+		t.Fatalf("admit %v %v", created, err)
+	}
 	writer, err := lease.Writer(context.Background(), binding, record.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -80,6 +80,9 @@ func assistantRunMust(t *testing.T, err error) {
 
 func TestAssistantRunConcurrentAdmissionAndLostResponse(t *testing.T) {
 	store, binding, _ := assistantRunFixture(t)
+	lease, err := store.Acquire(context.Background())
+	assistantRunMust(t, err)
+	defer lease.Close()
 	ctx := context.Background()
 	var checks, created atomic.Int32
 	ids := make(chan string, 24)
@@ -89,7 +92,7 @@ func TestAssistantRunConcurrentAdmissionAndLostResponse(t *testing.T) {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			record, newRun, err := store.Admit(ctx, binding, "stable-key", digestOf([]byte("body")), func() error { checks.Add(1); return nil })
+			record, newRun, err := lease.Admit(ctx, binding, "stable-key", digestOf([]byte("body")), func() error { checks.Add(1); return nil })
 			if newRun {
 				created.Add(1)
 			}
@@ -115,7 +118,7 @@ func TestAssistantRunConcurrentAdmissionAndLostResponse(t *testing.T) {
 	if checks.Load() != 1 || created.Load() != 1 {
 		t.Fatalf("fresh CAS/admissions %d/%d", checks.Load(), created.Load())
 	}
-	held, newRun, err := store.Admit(ctx, binding, "stable-key", digestOf([]byte("body")), func() error {
+	held, newRun, err := lease.Admit(ctx, binding, "stable-key", digestOf([]byte("body")), func() error {
 		t.Error("stale owner CAS must not run for lost-response retry")
 		return errAssistantRunConflict
 	})
@@ -126,14 +129,14 @@ func TestAssistantRunConcurrentAdmissionAndLostResponse(t *testing.T) {
 	for _, mutate := range []func(*assistantRunBinding){func(b *assistantRunBinding) { b.Session = digestOf([]byte("other")) }, func(b *assistantRunBinding) { b.Owner.Revision = digestOf([]byte("v2")) }, func(b *assistantRunBinding) { b.RequestDigest = digestOf([]byte("changed")) }, func(b *assistantRunBinding) { b.Model = "different" }, func(b *assistantRunBinding) { b.ConnectionRevision = digestOf([]byte("connection-v2")) }} {
 		changed := binding
 		mutate(&changed)
-		if _, _, err = store.Admit(ctx, changed, "stable-key", digestOf([]byte("body")), func() error { t.Error("mismatch reached CAS"); return nil }); !errors.Is(err, errAssistantRunConflict) {
+		if _, _, err = lease.Admit(ctx, changed, "stable-key", digestOf([]byte("body")), func() error { t.Error("mismatch reached CAS"); return nil }); !errors.Is(err, errAssistantRunConflict) {
 			t.Fatalf("binding mismatch accepted: %v", err)
 		}
 		if _, err = store.Read(ctx, changed, id); !errors.Is(err, errAssistantRunScope) {
 			t.Fatalf("changed reader accepted: %v", err)
 		}
 	}
-	if _, _, err = store.Admit(ctx, binding, "stable-key", digestOf([]byte("different body")), func() error { return nil }); !errors.Is(err, errAssistantRunConflict) {
+	if _, _, err = lease.Admit(ctx, binding, "stable-key", digestOf([]byte("different body")), func() error { return nil }); !errors.Is(err, errAssistantRunConflict) {
 		t.Fatal("body conflict accepted")
 	}
 	changed := binding
@@ -146,7 +149,7 @@ func TestAssistantRunConcurrentAdmissionAndLostResponse(t *testing.T) {
 	if _, err = store.Read(ctx, changed, id); !errors.Is(err, errAssistantRunScope) {
 		t.Fatal("cross-project read")
 	}
-	if _, _, err = store.Admit(ctx, binding, "new-key", digestOf([]byte("body")), func() error { t.Error("active owner must refuse before CAS"); return nil }); !errors.Is(err, errAssistantRunConflict) {
+	if _, _, err = lease.Admit(ctx, binding, "new-key", digestOf([]byte("body")), func() error { t.Error("active owner must refuse before CAS"); return nil }); !errors.Is(err, errAssistantRunConflict) {
 		t.Fatal("two active owner runs")
 	}
 }
@@ -397,7 +400,7 @@ func TestAssistantRunTerminalRetentionAndRecoveryRevision(t *testing.T) {
 	// of a different active run must not change this record's revision.
 	other := binding
 	other.Owner.ID = "second-chat"
-	second, _, err := store.Admit(ctx, other, "second-admission", digestOf([]byte("second body")), func() error { return nil })
+	second, _, err := lease.Admit(ctx, other, "second-admission", digestOf([]byte("second body")), func() error { return nil })
 	assistantRunMust(t, err)
 	secondWriter, err := lease.Writer(ctx, other, second.ID)
 	assistantRunMust(t, err)
@@ -425,7 +428,7 @@ func TestAssistantRunTerminalRetentionAndRecoveryRevision(t *testing.T) {
 	// deleting the old run or its idempotency key.
 	terminalBinding := binding
 	terminalBinding.Owner.ID = "terminal-chat"
-	terminal, _, err := store.Admit(ctx, terminalBinding, "terminal", digestOf([]byte("terminal body")), func() error { return nil })
+	terminal, _, err := lease.Admit(ctx, terminalBinding, "terminal", digestOf([]byte("terminal body")), func() error { return nil })
 	assistantRunMust(t, err)
 	terminalWriter, err := lease.Writer(ctx, terminalBinding, terminal.ID)
 	assistantRunMust(t, err)
@@ -433,7 +436,7 @@ func TestAssistantRunTerminalRetentionAndRecoveryRevision(t *testing.T) {
 	complete.Status = "complete"
 	assistantRunMust(t, terminalWriter.Checkpoint(ctx, complete))
 	assistantRunMust(t, terminalWriter.State(ctx, "complete"))
-	_, created, err := store.Admit(ctx, terminalBinding, "next", digestOf([]byte("next body")), func() error { return nil })
+	_, created, err := lease.Admit(ctx, terminalBinding, "next", digestOf([]byte("next body")), func() error { return nil })
 	assistantRunMust(t, err)
 	if !created {
 		t.Fatal("terminal owner blocked new request")
@@ -443,7 +446,7 @@ func TestAssistantRunTerminalRetentionAndRecoveryRevision(t *testing.T) {
 	if retained.State != "complete" {
 		t.Fatal("terminal run lost")
 	}
-	retry, created, err := store.Admit(ctx, terminalBinding, "terminal", digestOf([]byte("terminal body")), func() error { t.Error("retained retry reached fresh CAS"); return nil })
+	retry, created, err := lease.Admit(ctx, terminalBinding, "terminal", digestOf([]byte("terminal body")), func() error { t.Error("retained retry reached fresh CAS"); return nil })
 	assistantRunMust(t, err)
 	if created || retry.ID != terminal.ID {
 		t.Fatal("terminal admission lost")

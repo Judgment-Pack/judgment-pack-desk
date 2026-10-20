@@ -179,6 +179,10 @@ type Server struct {
 	policySourceDone      chan struct{}
 	policySourceCall      func(context.Context, string, any) (json.RawMessage, error)
 	policySourceCanon     func(context.Context, []byte) ([]byte, error)
+
+	assistantRunRecoveryMu  sync.Mutex
+	assistantRunRecoveryErr error
+
 	// startup is the identity of the project Desk was started on, which
 	// names what Desk keeps for it (startup_identity.go); unused on a desk
 	// Desk made.
@@ -809,6 +813,7 @@ func New(cfg Config) (*Server, error) {
 	// kept, stamped or recovered under its name (startup_identity.go).
 	s.resolveStartupIdentity()
 	s.recoverProjectMove()
+	s.recoverAssistantRuns()
 	s.initJobs()
 	s.startInputEvaluations()
 	s.initModelProviders()

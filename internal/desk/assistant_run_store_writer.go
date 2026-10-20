@@ -28,6 +28,9 @@ func (l *assistantRunLease) Writer(ctx context.Context, binding assistantRunBind
 	if l.file == nil {
 		return nil, errAssistantRunScope
 	}
+	if l.recoveryErr != nil {
+		return nil, errAssistantRunRecovery
+	}
 	run, err := l.store.Read(ctx, binding, id)
 	if err != nil {
 		return nil, err
@@ -50,6 +53,9 @@ func (w *assistantRunWriter) change(ctx context.Context, result bool, fn func(*a
 		defer w.lease.mu.Unlock()
 		if w.lease.file == nil {
 			return w.fail(errAssistantRunScope)
+		}
+		if w.lease.recoveryErr != nil {
+			return w.fail(errAssistantRunRecovery)
 		}
 	}
 	ledger, err := w.lease.store.transaction(ctx, func(ledger *assistantRunLedger) (bool, error) {

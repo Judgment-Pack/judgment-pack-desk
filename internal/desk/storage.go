@@ -126,7 +126,7 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 		}
 		path := s.defaultChatDataPath()
 		for _, entry := range entries {
-			if conversationFileName.MatchString(entry.Name()) {
+			if conversationFileName.MatchString(entry.Name()) || assistantRunFileName.MatchString(entry.Name()) {
 				if !s.containedDeskData() {
 					path = s.configDir
 				}
@@ -234,6 +234,9 @@ func pathContains(parent, child string) bool {
 func (s *Server) describeStorage(store *chatDataStore) (storageStatus, error) {
 	status := storageStatus{Path: store.location.Path, RecommendedPath: s.defaultChatDataPath(), Revision: store.revision,
 		Legacy: store.legacy, PreviousPath: store.location.Previous, Scope: "personal", MaxMoveBytes: maxMoveBytes, MaxBackupBytes: maxBackupData}
+	if s.assistantRunRecoveryFailure() != nil {
+		status.Problem = errAssistantRunRecovery.Error()
+	}
 	entries, err := storageEntries(store.root)
 	if err != nil {
 		return status, err
@@ -262,7 +265,7 @@ func (s *Server) describeStorage(store *chatDataStore) (storageStatus, error) {
 			status.ProjectCount++
 		}
 		status.Bytes += info.Size()
-		if entry.Name() == strings.Replace(recordName, "conversations-", "briefs-", 1) || entry.Name() == strings.Replace(recordName, "conversations-", "source-reviews-", 1) || entry.Name() == recordName || entry.Name() == draftPackName(recordName) || entry.Name() == strings.Replace(recordName, "conversations-", "pack-tests-", 1) || attachmentFileName.MatchString(entry.Name()) && strings.HasPrefix(entry.Name(), attachmentProjectPrefix(recordName)) {
+		if entry.Name() == strings.Replace(recordName, "conversations-", "assistant-runs-", 1) || entry.Name() == strings.Replace(recordName, "conversations-", "briefs-", 1) || entry.Name() == strings.Replace(recordName, "conversations-", "source-reviews-", 1) || entry.Name() == recordName || entry.Name() == draftPackName(recordName) || entry.Name() == strings.Replace(recordName, "conversations-", "pack-tests-", 1) || attachmentFileName.MatchString(entry.Name()) && strings.HasPrefix(entry.Name(), attachmentProjectPrefix(recordName)) {
 			status.ProjectBytes += info.Size()
 		}
 	}
