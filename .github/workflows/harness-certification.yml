@@ -22,11 +22,13 @@ on:
       - 'web/vitest.certification.config.mts'
       - 'web/vitest.certification.setup.ts'
       - 'web/scripts/certify-harness.mjs'
+      - 'scripts/dev/web-fixtures.sh'
       - 'web/package.json'
       - 'web/package-lock.json'
       - 'internal/releaseplan/components.json'
       - 'internal/desk/testdata/harness-recall/**'
       - 'internal/desk/testdata/harness-approval/**'
+      - 'internal/desk/testdata/harness-prompt/**'
       - 'internal/desk/assistant_approval*.go'
       - '.github/workflows/harness-certification.yml'
   push:
@@ -52,7 +54,8 @@ jobs:
       # The package is checked out at the revision and from the repository the component lock
       # names, never written here, as read-only test input outside the Desk checkout
       # (scripts/dev/web-fixtures.sh). harness-vectors holds the Go tests' copies of the
-      # package's recall and approval vectors to the package's own at this revision, and
+      # current host-parts/approval vectors to the locked source and the legacy recall
+      # vectors to their historical v0.3.0 source (ADR-0005 removed them), and
       # certify-ADAPTER certifies the adapter on the Desk's wiring.
       - name: Certify the ${{ matrix.adapter }} adapter on the Desk's wiring
         run: scripts/dev/check.sh --only harness-vectors,certify-${{ matrix.adapter }}

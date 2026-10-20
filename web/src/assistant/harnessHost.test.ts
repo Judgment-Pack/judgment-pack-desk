@@ -15,8 +15,8 @@ import { IMAGES_NOT_RENDERED } from './endpointCapabilities'
  * package's own stand-in, which throws naming itself.
  */
 describe('the Desk as the harness host', () => {
-  it('supplies every injection point the package declares', () => {
-    const notInjected = new Set(['ASSISTANT_TOOLS', 'ASSISTANT_ENGINES', 'NO_SESSION_MESSAGE', 'configureHarness', 'sourceMessage', 'runModels'])
+  it('supplies every required injection point the package declares', () => {
+    const notInjected = new Set(['ASSISTANT_TOOLS', 'ASSISTANT_ENGINES', 'NO_SESSION_MESSAGE', 'configureHarness', 'sourceMessage', 'runModels', 'brief', 'memoryFor', 'projectInstructions'])
     const points = Object.entries(host).filter(([name]) => !notInjected.has(name))
     // Written out, so a release that adds an injection point fails here until the Desk wires it.
     expect(points.map(([name]) => name).sort()).toEqual([
@@ -35,6 +35,14 @@ describe('the Desk as the harness host', () => {
     expect(answered).toHaveBeenCalledWith({ family: 'gemini', model: 'any-model' })
     answered.mockRestore()
     expect(host.NO_SESSION_MESSAGE).not.toBe('no session')
+  })
+
+  it('leaves the released optional prompt parts absent until their Desk workflow is adopted', async () => {
+    // ADR-0005 gives these optional hooks an empty default. Wiring the browser
+    // prompt parts remains Desk #546; dependency adoption adds no second host reader.
+    expect(await host.brief()).toBeUndefined()
+    expect(await host.memoryFor('fixture query')).toBeUndefined()
+    expect(await host.projectInstructions()).toBeUndefined()
   })
 
   it('answers nothing beyond the family, so every endpoint runs on its family default record', () => {

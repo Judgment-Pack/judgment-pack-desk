@@ -737,6 +737,7 @@ const SESSION_KEYS = [
   'tools',
   'callTool',
   'hostTools',
+  'skills',
   'model',
   'thinking',
   'signal'
