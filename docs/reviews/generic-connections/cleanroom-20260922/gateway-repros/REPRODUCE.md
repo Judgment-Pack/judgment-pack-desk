@@ -17,8 +17,8 @@ The full adapter suite requires permission to open local loopback listeners.
 Run from this directory:
 
 ```sh
-/home/onword/.nvm/versions/node/v22.23.1/bin/node --import /tmp/jp-foundation-cleanroom-20260922/desk/web/node_modules/tsx/dist/loader.mjs /tmp/jp-foundation-cleanroom-20260922/gateway-repros/consumer_probe.mts
-/home/onword/.nvm/versions/node/v22.23.1/bin/node /tmp/jp-foundation-cleanroom-20260922/desk/web/node_modules/vitest/vitest.mjs run --config /tmp/jp-foundation-cleanroom-20260922/gateway-repros/vitest.config.mjs
+$HOME/.nvm/versions/node/v22.23.1/bin/node --import /tmp/jp-foundation-cleanroom-20260922/desk/web/node_modules/tsx/dist/loader.mjs /tmp/jp-foundation-cleanroom-20260922/gateway-repros/consumer_probe.mts
+$HOME/.nvm/versions/node/v22.23.1/bin/node /tmp/jp-foundation-cleanroom-20260922/desk/web/node_modules/vitest/vitest.mjs run --config /tmp/jp-foundation-cleanroom-20260922/gateway-repros/vitest.config.mjs
 python - <<'PY'
 import json
 from pathlib import Path

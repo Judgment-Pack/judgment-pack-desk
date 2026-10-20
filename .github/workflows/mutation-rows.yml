@@ -34,65 +34,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Find the PR's rows
-        id: rows
+      - uses: ./.github/actions/toolchains
+
+      # scripts/dev/mutation-rows.sh finds the PR's rows (against the merge base with the PR's
+      # base), runs the go and web halves, and adds the tables to the job summary. It ends in
+      # seconds when the PR adds or changes no row.
+      - name: Run the PR's rows
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          base="$(git merge-base "$BASE" HEAD)"
-          bash scripts/mutation-rows-changed.sh "$base" "$RUNNER_TEMP/rows" | tee -a "$GITHUB_STEP_SUMMARY"
-          for half in go web; do
-            echo "$half=$(wc -l < "$RUNNER_TEMP/rows/$half")" >> "$GITHUB_OUTPUT"
-          done
-
-      - uses: actions/setup-go@v7
-        if: steps.rows.outputs.go != '0'
-        with:
-          go-version-file: go.mod
-
-      - uses: actions/setup-node@v7
-        if: steps.rows.outputs.web != '0'
-        with:
-          node-version: 22
-
-      # As the nightly: the web suite reads the bundle (src/testing/bundle.test.ts).
-      - name: npm ci and vite build
-        if: steps.rows.outputs.web != '0'
-        run: |
-          npm --prefix web ci
-          (cd web && npx vite build)
-
-      # Both halves run whatever the first found; the step fails after them
-      # if either had a row not caught. Progress goes to the log as it comes.
-      - name: Run the rows
-        if: steps.rows.outputs.go != '0' || steps.rows.outputs.web != '0'
-        timeout-minutes: 230
-        env:
-          GO_ROWS: ${{ steps.rows.outputs.go }}
-          WEB_ROWS: ${{ steps.rows.outputs.web }}
-        run: |
-          set -o pipefail
-          out="$RUNNER_TEMP/out"
-          mkdir -p "$out"
-          status=0
-          for half in go web; do
-            [ -s "$RUNNER_TEMP/rows/$half" ] || continue
-            { bash scripts/mutation-check.sh "$half" --rows "$RUNNER_TEMP/rows/$half" --record 2>&1 1>&3 3>&- \
-                | tee "$out/progress-$half.log" >&2; } 3> "$out/table-$half.md" || status=1
-            {
-              echo "### $half rows"
-              echo
-              grep '^|' "$out/table-$half.md" || echo "(no table: see the job's log)"
-              echo
-              grep '^discriminating:' "$out/table-$half.md" || true
-              echo
-            } >> "$GITHUB_STEP_SUMMARY"
-          done
-          cp scripts/mutation-expects.tsv "$out/"
-          exit "$status"
+          DESK_MUTATION_BASE: ${{ github.event.pull_request.base.sha }}
+          JPDEV_LOGDIR: ${{ runner.temp }}/out/logs
+        run: scripts/dev/check.sh --only mutation-rows
 
       - uses: actions/upload-artifact@v7
-        if: always() && (steps.rows.outputs.go != '0' || steps.rows.outputs.web != '0')
+        if: always()
         with:
           name: mutation-rows
           path: ${{ runner.temp }}/out/

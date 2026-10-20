@@ -232,7 +232,7 @@ func reviewedInputRealGatewayRunner(t *testing.T, published bool) {
 	if script := os.Getenv("JPS_INPUT_REVIEW_BROWSER"); script != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "/home/onword/.nvm/versions/node/v22.23.1/bin/node", script, ts.URL, saved.Document.ID, testToken)
+		cmd := exec.CommandContext(ctx, "node", script, ts.URL, saved.Document.ID, testToken)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("browser: %s %v", out, err)
 		} else {
