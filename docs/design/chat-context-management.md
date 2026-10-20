@@ -38,7 +38,7 @@ The immediate regression was a 138-turn chat with approximately 35,000 visible c
 | Optional project guidance | Explicit relative file named by `context.projectBrief` in the project’s `jpack-assistant.json`; read freshly by the server |
 | Context policy defaults | Shared application configuration in `internal/aicontext/policy.json` |
 
-For the current local GTM Desk, durable Desk-owned data is under `/home/onword/.local/share/jpack-desk/gtm-desk/.desk-private/`. The private data location is installation/project scoped, not a public project memory folder. No new permanent summary directory is created. A browser refresh loses active in-memory execution; existing saved history is used for an explicit new turn/retry, without automatically replaying work.
+For the current local GTM Desk, durable Desk-owned data is under `$HOME/.local/share/jpack-desk/gtm-desk/.desk-private/`. The private data location is installation/project scoped, not a public project memory folder. No new permanent summary directory is created. A browser refresh loses active in-memory execution; existing saved history is used for an explicit new turn/retry, without automatically replaying work.
 
 ## Optional project context
 

@@ -22,8 +22,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # The token only raises the API rate limit for public release metadata.
+      # The token only raises the API rate limit for public release metadata. The step is
+      # skipped unless DESK_CHECK_FRESHNESS is set, because its result depends on what has been
+      # released since, not on the change under test.
       - name: Report unadopted component releases
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/component-releases.py status
+          DESK_CHECK_FRESHNESS: '1'
+        run: scripts/dev/check.sh --only component-freshness

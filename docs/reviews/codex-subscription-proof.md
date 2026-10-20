@@ -50,7 +50,7 @@ back into the live tree.
 ## Local source merge
 
 On 2026-09-25, at the user's request, the eleven-file milestone patch was
-applied to `/home/onword/repo/judgment-pack/judgment-pack-desk` as working-tree
+applied to `$HOME/repo/judgment-pack/judgment-pack-desk` as working-tree
 changes. It applied without conflicts. The other existing source files were
 verified unchanged, and both pre-existing Desk processes retained their process
 IDs and start times. No running server was rebuilt or restarted.

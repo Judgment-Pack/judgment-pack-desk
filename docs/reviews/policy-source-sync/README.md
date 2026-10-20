@@ -46,7 +46,7 @@ JPACK_POLICY_SOURCE_BROWSER_ISOLATED=1 \
 ```
 
 `CHROMIUM_BIN` optionally selects the local Chrome executable. In the current
-workspace Node 22 is `/home/onword/.nvm/versions/node/v22.23.1/bin/node` and Chrome
+workspace Node 22 is `$HOME/.nvm/versions/node/v22.23.1/bin/node` and Chrome
 is `/usr/bin/google-chrome`. The parent runs listeners/browser outside the
 restricted sandbox, inspects the evidence and stops the isolated listener.
 

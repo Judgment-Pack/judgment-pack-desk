@@ -24,7 +24,7 @@ Trigger: choose Japanese, open Add link, and have link acquisition return the no
 Reproduction retained at `web/src/connections/review-public-links.test.tsx`, test `review: localizes link acquisition errors in Japanese`; a second test now checks progress explicitly. The original-head failure is retained in the final-tests log below. Run the regression tests from the isolated clone (the current copy includes the fix and passes):
 
 ```sh
-PATH=/home/onword/.nvm/versions/node/v22.23.1/bin:$PATH npm --prefix web test -- src/connections/review-public-links.test.tsx
+PATH=$HOME/.nvm/versions/node/v22.23.1/bin:$PATH npm --prefix web test -- src/connections/review-public-links.test.tsx
 ```
 
 Expected localized alert: `このリンクを読み取れませんでした。4 MiB 未満の公開 HTTPS ページ、PDF、テキストファイルを使用してください。`
