@@ -14596,6 +14596,16 @@ fi
 
 # Desk-owned v0.3.0 admission and credential safeguards (#529, #533).
 if [ "$which" = all ] || [ "$which" = go ]; then
+  # Durable host ledger guards: these rows exercise real restore/work-lock paths.
+  mutate go 'assistant runs: restore retains live authority' internal/desk/assistant_run_store_storage.go \
+    'if !interruptAssistantRuns(&ledger, true)' \
+    'if !interruptAssistantRuns(&ledger, false)'
+  mutate go 'assistant runs: archive trusts its content namespace' internal/desk/assistant_run_store_storage.go \
+    'project := strings.TrimSuffix(strings.TrimPrefix(name, "assistant-runs-"), ".json")' \
+    'project := ledger.Project'
+  mutate go 'assistant runs: executor does not block storage transfer' internal/desk/assistant_run_store.go \
+    's.server.openPrivateDataFileLock(ctx, ".data-work.lock", false, false)' \
+    's.server.openPrivateDataFileLock(ctx, ".assistant-run-work.lock", false, false)'
   mutate go 'harness approval: a ready grant admits another id' internal/desk/assistant_approval.go \
     'grant.ID != req.ID || grant.Action != req.Action' \
     'false || grant.Action != req.Action'

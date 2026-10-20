@@ -140,6 +140,17 @@ func (s *Server) handleProjectHistory(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 409, CodeStale, "This project already has saved history; it cannot be combined automatically.")
 		return
 	}
+	entries, err := storageEntries(store.root)
+	if err != nil {
+		storageFailure(w, err)
+		return
+	}
+	for _, entry := range entries {
+		if historyMember(entry.Name(), s.conversationName()) {
+			writeJSONCoded(w, 409, CodeStale, historyMoveConflict)
+			return
+		}
+	}
 	source, err := resolveConversationName(store.root, request.PreviousProject)
 	if err != nil {
 		storageFailure(w, err)
@@ -150,9 +161,17 @@ func (s *Server) handleProjectHistory(w http.ResponseWriter, r *http.Request) {
 		storageFailure(w, err)
 		return
 	}
-	if history.SHA256 == "absent" {
-		writeJSONCoded(w, 404, CodeNotFound, "No saved chats were found for that previous project folder.")
+	_, _, found, err := movedHistoryBinding(store.root, request.PreviousProject, s.projectDir)
+	if err != nil {
+		storageFailure(w, err)
 		return
+	}
+	if history.SHA256 == "absent" {
+		if !found {
+			writeJSONCoded(w, 404, CodeNotFound, "No saved history was found for that previous project folder.")
+			return
+		}
+		history.Content = json.RawMessage(`{"version":1,"chats":[]}`)
 	}
 	var doc conversationDocument
 	_ = json.Unmarshal(history.Content, &doc)
@@ -164,6 +183,12 @@ func (s *Server) handleProjectHistory(w http.ResponseWriter, r *http.Request) {
 	if request.SourceRevision != history.SHA256 || request.BindingsRevision != revision {
 		writeJSONCoded(w, 409, CodeStale, "Project history changed. Preview it again before linking.")
 		return
+	}
+	if history.SHA256 == "absent" {
+		if err = claimPrivateData(store.root, source, []byte(`{"version":1,"chats":[]}`)); err != nil {
+			storageFailure(w, err)
+			return
+		}
 	}
 	bindings.Projects[s.projectDir] = source
 	data, _ = json.Marshal(bindings)

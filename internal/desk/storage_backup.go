@@ -33,11 +33,15 @@ type backupManifest struct {
 // Only recognized chat records enter a backup. Credentials, server preferences,
 // temporary files and project artifacts cannot be selected by the caller.
 func chatStorageFile(name string) bool {
-	return graphDraftFileName.MatchString(name) || memoryFileName.MatchString(name) || briefFileName.MatchString(name) || sourceReviewsFileName.MatchString(name) || packTestsFileName.MatchString(name) || draftPackFileName.MatchString(name) || conversationFileName.MatchString(name) || attachmentFileName.MatchString(name) || name == projectBindingsName
+	return assistantRunFileName.MatchString(name) || graphDraftFileName.MatchString(name) || memoryFileName.MatchString(name) || briefFileName.MatchString(name) || sourceReviewsFileName.MatchString(name) || packTestsFileName.MatchString(name) || draftPackFileName.MatchString(name) || conversationFileName.MatchString(name) || attachmentFileName.MatchString(name) || name == projectBindingsName
 }
 func validateStorageFile(name string, data []byte) error {
 	if !chatStorageFile(name) {
 		return fmt.Errorf("unsupported chat data file %q", name)
+	}
+	if assistantRunFileName.MatchString(name) {
+		_, err := decodeAssistantRunStorage(name, data)
+		return err
 	}
 	if graphDraftFileName.MatchString(name) {
 		return validateGraphDrafts(data)
@@ -78,6 +82,12 @@ func (s *Server) handleStorageBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer transfer.Close()
+	work, err := s.privateDataFileLock(".data-work.lock", true)
+	if err != nil {
+		storageFailure(w, err)
+		return
+	}
+	defer work.Close()
 	file, name, err := newDataStage(s.assistant.root)
 	if err != nil {
 		storageFailure(w, err)
@@ -101,6 +111,9 @@ func (s *Server) handleStorageBackup(w http.ResponseWriter, r *http.Request) {
 		}
 		defer store.root.Close()
 		return buildChatBackup(r.Context(), store, file, func(name string, data []byte) error {
+			if assistantRunFileName.MatchString(name) {
+				return s.authorizeAssistantRunStorage(r)
+			}
 			if privateWorkspaceStorageFile(name) {
 				return s.authorizePrivateWorkspace(r)
 			}
@@ -294,6 +307,12 @@ func copyChatBackup(ctx context.Context, file *os.File, target *chatDataStore, c
 				return err
 			}
 		}
+		if assistantRunFileName.MatchString(entry.Name) {
+			data, err = historicalAssistantRunStorage(entry.Name, data)
+			if err != nil {
+				return err
+			}
+		}
 		*copied = append(*copied, entry.Name)
 		if err = writePrivateData(target.root, entry.Name, data); err != nil {
 			return err
@@ -359,6 +378,9 @@ func (s *Server) handleStorageRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	s.changeChatStorage(w, r, request, func(ctx context.Context, source, target *chatDataStore, copied *[]string) error {
 		return copyChatBackup(ctx, file, target, copied, func(name string, data []byte) error {
+			if assistantRunFileName.MatchString(name) {
+				return s.authorizeAssistantRunStorage(r)
+			}
 			if privateWorkspaceStorageFile(name) {
 				if err := s.authorizePrivateWorkspace(r); err != nil {
 					return err

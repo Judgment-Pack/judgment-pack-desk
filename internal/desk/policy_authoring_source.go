@@ -292,6 +292,12 @@ func (s *Server) authorizeStoredPolicyWorkspace(r *http.Request, root *os.Root) 
 	}
 	for _, entry := range entries {
 		name := entry.Name()
+		if assistantRunFileName.MatchString(name) {
+			if err = s.authorizeAssistantRunStorage(r); err != nil {
+				return err
+			}
+			continue
+		}
 		if privateWorkspaceStorageFile(name) {
 			if err = s.authorizePrivateWorkspace(r); err != nil {
 				return err
