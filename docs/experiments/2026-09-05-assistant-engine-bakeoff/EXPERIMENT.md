@@ -237,17 +237,17 @@ gzip size of the built page's JS for P1; the judges compute the delta over `none
 
 ## 12. Environment and rules for every agent
 
-- Paths: `EXP=/tmp/claude-1000/-home-onword-repo-judgment-pack-judgment-pack-runtime/15ed4d97-e994-48e9-8caa-1ee99b131535/scratchpad/exp`;
+- Paths: `EXP=<scratch>`;
   runtime binary `$EXP/bin/jpack` (built from runtime main 5332814 = v0.19.0; reports
   `0.0.0-dev`); pristine project `$EXP/project` (quickstart copy, configVersion 3, audit
   declared — **never run anything in it; `start.sh` copies it per candidate**); desk source
   `$EXP/desk-src` (read-only reference); runtime source
-  `/home/onword/repo/judgment-pack/judgment-pack-runtime` (read-only; `internal/mcp/tools.go`
+  `$HOME/repo/judgment-pack/judgment-pack-runtime` (read-only; `internal/mcp/tools.go`
   and `prompts.go` are the tool and prompt definitions).
-- Toolchains: Node 22 at `/home/onword/.nvm/versions/node/v22.23.1/bin` (prepend to PATH;
+- Toolchains: Node 22 at `$HOME/.nvm/versions/node/v22.23.1/bin` (prepend to PATH;
   `pnpm` is there — use `pnpm install` with `--store-dir $EXP/.pnpm-store` to share the
   store; the disk has ~16 GB free), Python 3.12 at
-  `/home/onword/.pyenv/versions/3.12.11/bin/python3` (make a venv under your candidate dir),
+  `$HOME/.pyenv/versions/3.12.11/bin/python3` (make a venv under your candidate dir),
   Go 1.26.5 on PATH, headless Chrome at
   `~/.cache/puppeteer/chrome/linux-145.0.7632.77/chrome-linux64/chrome` (use `puppeteer-core`
   with `executablePath`) or Playwright's `~/.cache/ms-playwright/chromium-1228`.

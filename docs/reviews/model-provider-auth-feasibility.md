@@ -22,7 +22,7 @@ backend or use another checkout that already integrates OpenHands.
 ## Checkout and actual architecture
 
 - Active workspace: `judgment-pack-runtime`, the independent Go runtime.
-- Desk checkout inspected: `/home/onword/repo/judgment-pack/judgment-pack-desk`.
+- Desk checkout inspected: `$HOME/repo/judgment-pack/judgment-pack-desk`.
 - Desk HEAD: `9c9e92d59ba2c572acb049b6fa3961f7daea058b`, plus substantial existing
   working-tree changes. Those changes were included in the inspection and preserved.
 - No OpenHands, Agent Canvas, or ACP dependency or implementation was found in

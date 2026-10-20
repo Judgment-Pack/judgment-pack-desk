@@ -46,54 +46,13 @@ jobs:
         adapter: [vercel, codex, deepagents]
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchains
+      - run: scripts/dev/check.sh --setup --only npm-ci
 
-      # The revision and the repository are the lock's own, never written here.
-      - id: lock
-        run: |
-          python3 - >> "$GITHUB_OUTPUT" <<'PY'
-          import json
-          entry = json.load(open('internal/releaseplan/components.json'))['web-packages']['harness']
-          print('repository=' + entry['repository'])
-          print('revision=' + entry['revision'])
-          PY
-
-      # Read-only test input, excluded from the Desk checkout and never committed.
-      - name: Check out the package at the locked revision
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ steps.lock.outputs.repository }}
-          ref: ${{ steps.lock.outputs.revision }}
-          path: .harness-source
-          persist-credentials: false
-
-      - run: printf '/.harness-source/\n' >> .git/info/exclude
-
-      # The Go tests read copies of the package's recall vectors, which must be
-      # the package's own at this revision.
-      - name: The recall vectors are the package's
-        run: diff -r internal/desk/testdata/harness-recall .harness-source/contract/vectors/recall
-
-      - name: The approval vector is the package's
-        run: diff internal/desk/testdata/harness-approval/grant-states.json .harness-source/contract/vectors/approval/grant-states.json
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: npm ci
-        working-directory: web
-        run: npm ci
-
-      # Source imports resolve dependencies from this checkout, not web/node_modules.
-      # Its committed workspace lock is at the same attested revision as the tests.
-      - name: Install the locked certification source dependencies
-        working-directory: .harness-source
-        run: npm ci
-
+      # The package is checked out at the revision and from the repository the component lock
+      # names, never written here, as read-only test input outside the Desk checkout
+      # (scripts/dev/web-fixtures.sh). harness-vectors holds the Go tests' copies of the
+      # package's recall and approval vectors to the package's own at this revision, and
+      # certify-ADAPTER certifies the adapter on the Desk's wiring.
       - name: Certify the ${{ matrix.adapter }} adapter on the Desk's wiring
-        working-directory: web
-        env:
-          HARNESS_SOURCE: ../.harness-source/packages/harness
-        run: node scripts/certify-harness.mjs --adapter ${{ matrix.adapter }}
+        run: scripts/dev/check.sh --only harness-vectors,certify-${{ matrix.adapter }}

@@ -1,5 +1,13 @@
 name: CI
 
+# The checks are the steps of dev.json, run by scripts/dev/check.sh. A job sets up the toolchains
+# dev.json names (.github/actions/toolchains) and runs the steps it owns with --only, so a
+# check is defined once, in dev.json, and runs the same way on a contributor's machine.
+#
+# The jobs named Go and Web are the status checks branch protection on main requires (with
+# DCO); keep their names. The job named check runs the whole list, so that nothing in dev.json
+# is left to a job that does not exist.
+
 on:
   push:
     branches: [main]
@@ -19,7 +27,7 @@ jobs:
       - uses: actions/checkout@v7
       - id: lock
         run: |
-          python3 scripts/component-releases.py check
+          scripts/dev/check.sh --only component-policy
           python3 -c 'import json; p=json.load(open("internal/releaseplan/components.json")); print("development="+str(any(c["channel"]=="development" for c in p["components"].values())).lower())' >> "$GITHUB_OUTPUT"
 
   development-bundle:
@@ -32,151 +40,46 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-15, macos-15-intel]
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.26.x'
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - run: npm --prefix web ci
-      - run: npm --prefix web run build
-      - name: Build and verify exact development companions
-        run: |
-          set -o pipefail
-          python3 scripts/dev-components.py | tee "$RUNNER_TEMP/development-companions.log"
-          companions=$(tail -n 1 "$RUNNER_TEMP/development-companions.log")
-          test -d "$companions"
-          cp -a "$companions" "$RUNNER_TEMP/desk-development"
-          go build -trimpath -o "$RUNNER_TEMP/desk-development/jpack-desk" .
-          "$RUNNER_TEMP/desk-development/jpack-desk" --desk-home-layout-version
-          "$RUNNER_TEMP/desk-development/jpack-runner" relocate-workspace --capabilities
-      - name: Stable publication still refuses development pins
-        run: python3 scripts/package-release_test.py
+      - uses: ./.github/actions/toolchains
+      # Builds and verifies the exact development companions and starts their programs. The
+      # step passes with nothing to build when the lock has no development pin.
+      - run: scripts/dev/check.sh --only development-build
 
   go:
     name: Go
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      # gofmt writes in place, so the diff is the report: a clean tree means
-      # every file was already formatted.
-      - name: gofmt
-        run: |
-          gofmt -w .
-          git diff --exit-code
-
-      # These check the mutation harness itself, not the test suite: every
-      # row's needle matches its file once, and the harness's own logic holds
-      # against stand-in suites. No mutation row runs here. The rows run in
-      # mutation-nightly.yml, which blocks nothing (see its header).
-      - name: mutation needle guards
-        run: |
-          python3 scripts/component-releases.py check
-          python3 scripts/component-releases_test.py
-          python3 scripts/dev-components_test.py
-          python3 scripts/desk-dev_test.py
-          python3 scripts/desk-update_test.py
-          python3 scripts/package-release_test.py
-          python3 scripts/published-components_test.py
-          python3 scripts/assemble-release_test.py
-          python3 scripts/build-bundle_test.py
-          python3 scripts/needle-check_test.py
-          python3 scripts/mutation-check_test.py
-          python3 scripts/mutation-nightly-table_test.py
-          python3 scripts/mutation-rows-changed_test.py
-          scripts/needle-check.sh .
-
-      - name: Verify published component identities
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/component-releases.py verify
-
-      - name: go vet
-        run: go vet ./...
-
-      # The relay's end-to-end tests need a runtime binary and a Judgment Pack
-      # project. CI supplies neither, so they skip themselves — see
-      # requireBinary and e2eFixtures in internal/desk/server_test.go. What runs
-      # here is the token, origin, and SPA-fallback coverage, which needs
-      # nothing external. `-v` keeps the skips visible rather than silent.
-      - name: go test
-        run: go test -v ./...
+      - uses: ./.github/actions/toolchains
+      # gofmt is checked, not applied: a file that is not formatted fails the step. The
+      # mutation needle guards (python-tests, needle-check) check the mutation harness itself,
+      # not the test suite: every row's needle matches its file once, and the harness's own
+      # logic holds against stand-in suites. No mutation row runs here. The rows run in
+      # mutation-rows.yml (a pull request's own) and mutation-nightly.yml, which block nothing.
+      # The relay's end-to-end tests need a runtime binary and a Judgment Pack project. This job
+      # supplies neither, so they skip themselves (requireBinary and e2eFixtures in
+      # internal/desk/server_test.go); go-test runs with -v so that the skips stay visible.
+      # What runs with the real companions is in the check job.
+      - run: scripts/dev/check.sh --only gofmt,component-policy,python-tests,needle-check,component-identities,go-vet,go-test
 
   web:
     name: Web
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
     steps:
       - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: npm ci
-        run: npm ci
-
-      - name: localization coverage and source guard
-        run: |
-          npm run i18n:check
-          node --test scripts/ui-message-audit.test.mjs
-
-      - name: tsc
-        run: npm run typecheck
-
-      # **Built before the tests, not after.** One test greps the emitted
-      # bundle for a credential on a URL — `?token=`, `secret=`, `/ws?` — which
-      # is the only place that claim can be checked over the code that actually
-      # ships rather than over the sources it was compiled from. With the build
-      # after, that test had no bundle to read.
-      - name: vite build
-        run: npx vite build
-
-      - name: component tests
-        run: npm test
-
-      # Read-only test input, excluded from the Desk checkout and never committed.
-      - name: Check out the pinned dialect specification
-        uses: actions/checkout@v7
-        with:
-          repository: Judgment-Pack/judgment-pack-spec
-          ref: a550d414b5a3159fe3526a93f6f56b8c0ccdb76d
-          path: .spec
-          persist-credentials: false
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-
-      - name: Read a Desk-produced dialect preparation
-        working-directory: .
-        run: |
-          printf '/.spec/\n' >> .git/info/exclude
-          python3 -m pip install -r .spec/requirements-dev.txt
-          vector=$(cd web && node --import tsx scripts/dialect-roundtrip.mjs)
-          trap 'rm -rf "$vector"' EXIT
-          python3 .spec/tools/dialect_verify.py \
-            --dialect "$vector/mapping.json" --case "$vector/case.json" \
-            --acquisitions "$vector/sources.json" --profiles "$vector/profiles.json" \
-            --preparation "$vector/preparation.json" --record "$vector/record.json" \
-            --require-binding > "$vector/report.json"
-          python3 -c 'import json, sys; report = json.load(open(sys.argv[1])); print(json.dumps(report)); assert report["result"] == "reading"' "$vector/report.json"
+      - uses: ./.github/actions/toolchains
+      - run: scripts/dev/check.sh --setup --only npm-ci
+      # The build comes before the tests, not after: one test greps the emitted bundle for a
+      # credential on a URL, which is the only place that claim can be checked over the code
+      # that actually ships. dialect-read reads a Desk-produced dialect preparation with the
+      # pinned dialect specification (read-only test input, never committed).
+      - run: scripts/dev/check.sh --only i18n-check,ui-message-audit,typecheck,vite-build,web-tests,dialect-read
 
   local-gateway:
     name: Local gateway (${{ matrix.os }})
@@ -187,274 +90,42 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.26.x'
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - name: Build pinned local companions and Desk
-        run: python3 scripts/build-bundle.py --skip-web --output "$RUNNER_TEMP/Desk bundle"
-      - name: Real gateway lifecycle and PDF extraction
-        run: python3 scripts/local-gateway-check.py "$RUNNER_TEMP/Desk bundle" "$(command -v true)"
+      - uses: ./.github/actions/toolchains
+      - run: scripts/dev/check.sh --only local-gateway
 
-  jobs-companion:
-    name: Jobs companion
+  # The whole list of dev.json. The first step stops a broken manifest or agent doc pair before
+  # the long steps; the rest run with --all, so that one failure does not hide another. The
+  # steps that need the official companions, the Exchange and the Gateway fixtures run here
+  # (they were the Jobs companion and Signed Exchange acquisition acceptance jobs). A step whose
+  # environment variable is empty is skipped and said to be; component-freshness and
+  # mutation-rows are optional because their own workflows set theirs.
+  check:
+    name: check
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 150
     env:
       GH_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.26.x'
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - name: Check out the signed Exchange acceptance release
-        uses: actions/checkout@v7
-        with:
-          repository: Judgment-Pack/judgment-pack-exchange
-          ref: 565ddf477c7ed986906409f19bcf8fccfaafa8a5
-          fetch-depth: 0
-          path: .ci-exchange
-          persist-credentials: false
-      - name: Install attested official companion archives
-        run: |
-          python3 - <<'PYTHON'
-          import importlib.util
-          import os
-          from pathlib import Path
-          def load(name, path):
-              spec = importlib.util.spec_from_file_location(name, path)
-              module = importlib.util.module_from_spec(spec)
-              spec.loader.exec_module(module)
-              return module
-          components = load('components', Path('scripts/component-releases.py'))
-          published = load('published', Path('scripts/published-components.py'))
-          plan = components.read_plan()
-          components.verify_plan(plan)
-          temporary = Path(os.environ['RUNNER_TEMP'])
-          bundle = temporary / 'jobs-official'
-          bundle.mkdir()
-          published.install(plan, 'linux/amd64', bundle, temporary / 'jobs-downloads')
-          PYTHON
-          cat "$RUNNER_TEMP/jobs-official/component-artifacts.json"
-      - name: Real Jobs boot, recovery, profiles, planning and signing
-        run: |
-          JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" \
-            go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1
-      - name: Real Jobs run signer and retained export verification
-        run: |
-          set -o pipefail
-          JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" \
-            go test -race ./internal/desk -run '^TestJobsRealCompanionHoldsEachRunsSignerToTheList$' -count=1 -v | tee "$RUNNER_TEMP/jobs-signer.log"
-          grep -Eq -- '^--- PASS: TestJobsRealCompanionHoldsEachRunsSignerToTheList \(' "$RUNNER_TEMP/jobs-signer.log" || { echo 'Jobs run signer integration did not run and pass'; exit 1; }
-      # Ownership and manual admission use the exact attested locked companions,
-      # with no candidate source rebuild. Their required capabilities must be
-      # supplied by the reviewed published component pins.
-      - name: Real enrolled Desk executor ownership
-        run: |
-          set -o pipefail
-          JPACK_EXECUTOR_RUNNER_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" \
-            go test -race ./internal/desk -run '^TestJobsExecutorRealEnrolledDeskRunnerRuntime$' -count=1 -v | tee "$RUNNER_TEMP/executor-ownership.log"
-          grep -Fq -- '--- PASS: TestJobsExecutorRealEnrolledDeskRunnerRuntime (' "$RUNNER_TEMP/executor-ownership.log" || { echo 'Executor ownership integration did not run and pass'; exit 1; }
-      - name: Check out ownership-era Desk for rollback refusal (test-only)
-        uses: actions/checkout@v7
-        with:
-          repository: Judgment-Pack/judgment-pack-desk
-          ref: ef1110a8ad618506012cca3b367f2b49a9ae3766
-          path: .ci-policy-old-desk
-          persist-credentials: false
-      - name: Build historical Desk rollback CLI fixture
-        run: |
-          # Only the historical CLI is exercised. This inert embed is not a
-          # reconstructed UI, application bundle, installed binary or release.
-          mkdir -p .ci-policy-old-desk/web/dist
-          printf '<!doctype html><title>CLI fixture only</title>\n' > .ci-policy-old-desk/web/dist/index.html
-          go -C .ci-policy-old-desk build -trimpath -o "$RUNNER_TEMP/jpack-policy-old-desk" .
-      - name: Official Policy draft and legacy coverage with the published Runtime
-        run: |
-          set -o pipefail
-          JPACK_POLICY_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack" \
-            go test -race ./internal/desk -run '^TestPolicy(AdoptionRealRuntime(RawNumbersAndMaterialCaps|ArchiveResolvesExactPolicyRole)|CoverageRealRuntimeExactMaterialAndRefusal)$' -count=1 -v | tee "$RUNNER_TEMP/policy-official-draft.log"
-          for name in TestPolicyAdoptionRealRuntimeRawNumbersAndMaterialCaps TestPolicyAdoptionRealRuntimeArchiveResolvesExactPolicyRole TestPolicyCoverageRealRuntimeExactMaterialAndRefusal; do
-            grep -Eq -- "^--- PASS: $name \(" "$RUNNER_TEMP/policy-official-draft.log" || { echo "$name did not run and pass"; exit 1; }
-          done
-      - name: Real manual Policy admission, MCP guard and old Desk rollback
-        run: |
-          set -o pipefail
-          # The SAME Runtime checks authoring/adoption material and executes
-          # the real run. Old Runner/helper evidence belongs to Runner's CI.
-          JPACK_MANUAL_RUNNER_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack-runner" \
-          JPACK_MANUAL_OLD_DESK_TEST_BIN="$RUNNER_TEMP/jpack-policy-old-desk" \
-          JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" \
-            go test -race ./internal/desk -run '^TestPolicyManual(RealDeskRunnerRuntime|RealMCPRefusesOperationWithJobsUnavailable|ActualOldDeskRegistryRollbackFence)$' -count=1 -v | tee "$RUNNER_TEMP/policy-manual-admission.log"
-          for name in TestPolicyManualRealDeskRunnerRuntime TestPolicyManualRealDeskRunnerRuntime/registered-exact-input-and-withdrawal-first TestPolicyManualRealDeskRunnerRuntime/commit-before-withdrawal TestPolicyManualRealDeskRunnerRuntime/lost-start-reply TestPolicyManualRealDeskRunnerRuntime/lost-reserve-reply TestPolicyManualRealMCPRefusesOperationWithJobsUnavailable TestPolicyManualActualOldDeskRegistryRollbackFence; do
-            grep -Eq -- "^[[:space:]]*--- PASS: $name \(" "$RUNNER_TEMP/policy-manual-admission.log" || { echo "$name did not run and pass"; exit 1; }
-          done
-      # The witness (ADR-0012): the gateway's own reference, run on loopback as
-      # a witness, with the pinned runtime reading its chain.
-      - name: A witness from the pinned gateway, read by the pinned runtime
-        run: |
-          set -o pipefail
-          JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" JPACK_GATEWAY_TEST_BIN="$RUNNER_TEMP/jobs-official/gateway" \
-            go test ./internal/desk -run '^TestWitnessWithThePublishedRuntimeAndGateway$' -count=1 -v | tee "$RUNNER_TEMP/witness-companions.log"
-          grep -Eq -- '^--- PASS: TestWitnessWithThePublishedRuntimeAndGateway \(' "$RUNNER_TEMP/witness-companions.log" || { echo 'Witness companion integration did not run and pass'; exit 1; }
-      # The Go job has no runtime, so these skip there. Here they create a desk
-      # with the pinned runtime, check its lock, and drive its relay: a deciding
-      # run of a draft refused, a locked pack recorded, rehearsals unaffected.
-      # The review step then reviews and locks a pack with the same runtime,
-      # and the upgrade offer turns an existing project's gates on.
-      - name: New desks, the review step and the upgrade under the pinned runtime
-        run: |
-          JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" JPACK_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack" go test ./internal/desk -run 'TestNewDeskWithTheRuntime|TestInputRecipeRetainsBoundPackAndMappingsAcrossEdits|TestDialectAuthoring|TestReviewAndLockWithTheRuntime|TestArtifactPublication|TestArtifactVersionHistory|TestDialectPublication|TestPublishedRelease|TestPolicyRealRuntimeVersionDelegation|TestFailedCreationNeverCleansThroughSubstitutedReviewedSymlink|TestUpgradeWithTheRuntime|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1 -v
-
-      - name: Exchange preset integrity and retained import lifecycle
-        run: |
-          set -o pipefail
-          JPACK_EXCHANGE_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack" go test ./internal/exchange ./internal/desk -run 'TestPreset|TestManifest|TestReleaseUpdate|TestGitRelease|TestClosedMetadata|TestLocalGit|TestExchange' -count=1 -v | tee "$RUNNER_TEMP/exchange-import.log"
-          for name in TestPresetUsesRuntimeOnTwoInstallations TestExchangeReviewImportAndWithdrawal; do
-            grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/exchange-import.log" || { echo "$name did not run and pass"; exit 1; }
-          done
-
-      - name: Build Gateway for named Dialect journeys
-        run: python3 scripts/build-bundle.py --gateway-only --output "$RUNNER_TEMP/dialect-gateway"
-      - name: Named publication, subscriptions and company-to-person jobs
-        run: |
-          set -o pipefail
-          JPS_TEST_GATEWAY_BUNDLE="$RUNNER_TEMP/dialect-gateway" \
-          JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jobs-official/jpack" \
-            go test -race ./internal/desk -run 'TestDialectPublication|TestPublishedRelease|TestInputSubscriptionRealRunnerOutbox|TestDialectCompanyPeopleTestedJobJourney|TestDialectProcurementTestedJobJourney|TestPublishedReviewedInputRealGatewayRunner|TestPortableResearch|TestPortableSearchBinding|TestPortablePageBinding|TestPortableScopedPage' -count=1 -v | tee "$RUNNER_TEMP/dialect-journey.log"
-          for name in TestDialectCompanyPeopleTestedJobJourney/file TestDialectCompanyPeopleTestedJobJourney/memory TestDialectProcurementTestedJobJourney/file TestDialectProcurementTestedJobJourney/memory TestPublishedReviewedInputRealGatewayRunner TestPortableResearchUsesSharedJournalAndRealReceipts/file TestPortableResearchUsesSharedJournalAndRealReceipts/memory TestPortableResearchHTTPAndSharedChatApproval TestPortableResearchImportOnTwoInstallations/first TestPortableResearchImportOnTwoInstallations/second TestPortableResearchCompanyPersonImportOnTwoInstallations/first TestPortableResearchCompanyPersonImportOnTwoInstallations/second TestPortableResearchAcrossAPIFamiliesWithRealReceipts/openai-compatible TestPortableResearchAcrossAPIFamiliesWithRealReceipts/anthropic TestPortableResearchAcrossAPIFamiliesWithRealReceipts/gemini TestPortableResearchStaleConnectionBindingRefusedBeforeAcquisition TestPortableResearchInterruptedCallKeepsCompletedAndNeverReplays/worker_cancelled TestPortableResearchInterruptedCallKeepsCompletedAndNeverReplays/stop_saved TestPortableResearchContextIsFittedAndReadFromRetainedSource TestPortableSearchBindingReviewAndImmutableRegistration TestPortablePageBindingActualCompanionReviewAndRegistration TestPortablePageBindingActualCompanionPlanAndCapacity TestPortablePageBindingActualCompanionRejectsStaleAdapterBeforeAcquisition TestPortableScopedPageRefusedBeforeAnyAcquisition TestPortableScopedPageRefusedAtItsReceiptIsNotRequestedAgain TestPortableScopedPageRefusalSurvivesRestartAndResume; do
-            grep -q -- "^[[:space:]]*--- PASS: $name " "$RUNNER_TEMP/dialect-journey.log" || { echo "$name did not run and pass"; exit 1; }
-          done
-
-      - name: Signed Exchange release import and research preparation
-        run: |
-          set -o pipefail
-          # This fixture trust applies only to the checked-out release, never to
-          # application imports, installed profiles or global Git configuration.
-          git -C .ci-exchange config gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/.github/testdata/exchange-release-allowed-signers"
-          JPACK_EXCHANGE_RESEARCH_ACCEPTANCE=1 \
-          JPACK_EXCHANGE_ACCEPTANCE_CATALOG="$GITHUB_WORKSPACE/.ci-exchange" \
-          JPACK_EXCHANGE_ACCEPTANCE_TAG=v0.2.0 \
-          JPACK_EXCHANGE_ACCEPTANCE_COMMIT=565ddf477c7ed986906409f19bcf8fccfaafa8a5 \
-          JPACK_EXCHANGE_TEST_BIN="$RUNNER_TEMP/jobs-official/jpack" \
-          JPACK_EXCHANGE_TEST_RUNNER="$RUNNER_TEMP/jobs-official/jpack-runner" \
-          JPS_TEST_GATEWAY_BUNDLE="$RUNNER_TEMP/dialect-gateway" \
-            go test -race ./internal/desk -run '^TestExchangeSignedRelease(Import|ResearchPreparation)OnTwoInstallations$' -count=1 -v | tee "$RUNNER_TEMP/signed-exchange.log"
-          for name in TestExchangeSignedReleaseImportOnTwoInstallations TestExchangeSignedReleaseResearchPreparationOnTwoInstallations; do
-            grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/signed-exchange.log" || { echo "$name did not run and pass"; exit 1; }
-          done
-
-  exchange-acquisition:
-    name: Signed Exchange acquisition acceptance
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
       PYTHONDONTWRITEBYTECODE: '1'
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: ./.github/actions/toolchains
+      - name: The agent docs and the manifest
+        run: scripts/dev/check.sh --only agent-docs
+      - name: Setup steps
+        run: scripts/dev/check.sh --setup
+      - name: Checks
+        env:
+          JPDEV_LOGDIR: ${{ runner.temp }}/check-logs
+        run: scripts/dev/check.sh --all
+      # The full output of every step, which the summary block shortens.
+      - name: Upload the step logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          go-version: '1.26.x'
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - name: Check out exact signed Exchange presets
-        uses: actions/checkout@v7
-        with:
-          repository: Judgment-Pack/judgment-pack-exchange
-          ref: 565ddf477c7ed986906409f19bcf8fccfaafa8a5
-          fetch-depth: 0
-          path: .ci-acquisition-exchange
-          persist-credentials: false
-      # This source pin is a test transport, separate from the official component
-      # lock. Its fixture binary is explicitly identified as a nonrelease program.
-      - name: Check out reviewed Gateway acquisition fixture
-        uses: actions/checkout@v7
-        with:
-          repository: Judgment-Pack/judgment-pack-gateway
-          ref: 4b9fa82ddeae772654d8f8bcf7b33d47ac65a512
-          fetch-depth: 0
-          path: .ci-acquisition-gateway
-          persist-credentials: false
-      - name: Install attested official companion archives
-        run: |
-          python3 - <<'PYTHON'
-          import importlib.util
-          import os
-          from pathlib import Path
-          def load(name, path):
-              spec = importlib.util.spec_from_file_location(name, path)
-              module = importlib.util.module_from_spec(spec)
-              spec.loader.exec_module(module)
-              return module
-          components = load('components', Path('scripts/component-releases.py'))
-          published = load('published', Path('scripts/published-components.py'))
-          plan = components.read_plan()
-          components.verify_plan(plan)
-          temporary = Path(os.environ['RUNNER_TEMP'])
-          bundle = temporary / 'acquisition-official'
-          bundle.mkdir()
-          published.install(plan, 'linux/amd64', bundle, temporary / 'acquisition-downloads')
-          PYTHON
-      - name: Build isolated acquisition transport with true fixture provenance
-        run: |
-          git -C .ci-acquisition-exchange config gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/.github/testdata/exchange-release-allowed-signers"
-          git -C .ci-acquisition-gateway config gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/.github/testdata/gateway-release-allowed-signers"
-          GOWORK=off go -C .ci-acquisition-gateway/adapters mod download
-          python3 - <<'PYTHON'
-          import importlib.util
-          import os
-          from pathlib import Path
-          import subprocess
-          import sys
-          spec = importlib.util.spec_from_file_location('components', 'scripts/component-releases.py')
-          components = importlib.util.module_from_spec(spec)
-          spec.loader.exec_module(components)
-          gateway = components.read_plan()['components']['gateway']
-          temporary = Path(os.environ['RUNNER_TEMP'])
-          downloads = temporary / 'acquisition-downloads' / 'gateway'
-          archive = 'judgment-pack-gateway_' + gateway['version'][1:] + '_linux_amd64.tar.gz'
-          subprocess.run([
-              sys.executable, '.ci-acquisition-gateway/adapters/testdata/acquisition-fixture/build.py',
-              '--base-archive', str(downloads / archive),
-              '--base-checksums', str(downloads / 'checksums.txt'),
-              '--base-provenance', str(temporary / 'acquisition-official' / 'component-artifacts.json'),
-              '--base-tag', gateway['version'], '--base-commit', gateway['revision'],
-              '--output', str(temporary / 'acquisition-fixture'),
-          ], check=True)
-          PYTHON
-          python3 .ci-acquisition-gateway/adapters/testdata/acquisition-fixture/smoke.py --bundle "$RUNNER_TEMP/acquisition-fixture"
-
-      - name: Signed presets acquire and replay found and uncertain values
-        run: |
-          set -o pipefail
-          JPACK_EXCHANGE_ACQUISITION_ACCEPTANCE=1 \
-          JPACK_EXCHANGE_ACCEPTANCE_CATALOG="$GITHUB_WORKSPACE/.ci-acquisition-exchange" \
-          JPACK_EXCHANGE_ACCEPTANCE_TAG=v0.2.0 \
-          JPACK_EXCHANGE_ACCEPTANCE_COMMIT=565ddf477c7ed986906409f19bcf8fccfaafa8a5 \
-          JPACK_EXCHANGE_TEST_BIN="$RUNNER_TEMP/acquisition-official/jpack" \
-          JPACK_EXCHANGE_TEST_RUNNER="$RUNNER_TEMP/acquisition-official/jpack-runner" \
-          JPACK_EXCHANGE_COMPONENT_PROVENANCE="$RUNNER_TEMP/acquisition-official/component-artifacts.json" \
-          JPS_TEST_GATEWAY_BUNDLE="$RUNNER_TEMP/acquisition-fixture" \
-            go test -race ./internal/desk -run '^TestExchange(SignedReleaseAcquisitionsOnTwoInstallations|AcquisitionScopeAndRedirectRefusals)$' -count=1 -v | tee "$RUNNER_TEMP/exchange-acquisition.log"
-          for name in TestExchangeSignedReleaseAcquisitionsOnTwoInstallations TestExchangeAcquisitionScopeAndRedirectRefusals; do
-            grep -Fq -- "--- PASS: $name " "$RUNNER_TEMP/exchange-acquisition.log" || { echo "$name did not run and pass"; exit 1; }
-          done
-          for name in TestExchangeAcquisitionScopeAndRedirectRefusals/before_acquisition TestExchangeAcquisitionScopeAndRedirectRefusals/final_redirect; do
-            grep -Fq -- "--- PASS: $name " "$RUNNER_TEMP/exchange-acquisition.log" || { echo "$name did not run and pass"; exit 1; }
-          done
-          for installation in first second; do
-            for preset in judgmentpack.company-research judgmentpack.people-at-company judgmentpack.procurement-opportunity; do
-              name="TestExchangeSignedReleaseAcquisitionsOnTwoInstallations/$installation/$preset"
-              grep -Fq -- "--- PASS: $name " "$RUNNER_TEMP/exchange-acquisition.log" || { echo "$name did not run and pass"; exit 1; }
-            done
-          done
+          name: check-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/check-logs/
+          if-no-files-found: ignore
+          retention-days: 7
 
   release-archives:
     needs: component-policy
