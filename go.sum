@@ -1,3 +1,5 @@
+github.com/Judgment-Pack/judgment-pack-agent/go v0.3.0 h1:GGOaiW/reLS8lvxQJ1rzXcX4VA/yANKKsndfJ3JfKyU=
+github.com/Judgment-Pack/judgment-pack-agent/go v0.3.0/go.mod h1:AVl+6oeQwnOgRb5tNeNV9oLR1u7ZqneRKvqr+lVPthg=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/coreos/go-oidc/v3 v3.21.0 h1:wZo4Q9Pum8dYEj0eMUPrqR+kvuGkeUplbLpNCkBqoWM=
