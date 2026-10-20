@@ -18,13 +18,19 @@ func policyActorOf(held session) policyActor {
 }
 
 func (s *Server) localPolicyService(r *http.Request, actor policyActor) policyService {
+	return s.policyServiceWithAuthority(func() bool {
+		held, ok := s.sessionOf(r)
+		return ok && policyActorOf(held) == actor && r.Context().Err() == nil
+	})
+}
+
+// HTTP handlers and admitted assistant tools use the same service. The caller
+// supplies current authority, never a reconstructed request or model identity.
+func (s *Server) policyServiceWithAuthority(authorize func() bool) policyService {
 	return policyService{
 		repository: s.policyRepository(), history: s.policyHistoryReader(), artifacts: s.artifactRepository(),
 		coveragePack: s.resolveCoveragePack, checkCoverage: s.checkPolicyCoverage, checkAdoption: s.checkPolicyAdoption,
-		authorize: func() bool {
-			held, ok := s.sessionOf(r)
-			return ok && policyActorOf(held) == actor && r.Context().Err() == nil
-		},
+		authorize: authorize,
 		validateVersion: func(ctx context.Context, base, version string) error {
 			dir, _, ok := s.projectRuntime()
 			if !ok {

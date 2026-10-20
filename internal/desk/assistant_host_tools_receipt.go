@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// Operation arguments/results are normally opaque exact bytes. These two
-// Graph receipt DTOs are consumed as host custody, so their finite object
+// Operation arguments/results are normally opaque exact bytes. The finite
+// Graph and Policy receipt DTOs are consumed as host custody, so their finite object
 // members must be exact before encoding/json can apply case aliases/defaults.
 // Opaque tool-result JSON and Graph/pack content remain encoded byte strings.
 func readAssistantHostReceipt(raw []byte, into any) error {
@@ -41,6 +41,11 @@ func readAssistantHostReceipt(raw []byte, into any) error {
 		delete(required, member.name)
 		if field.Kind() == reflect.Pointer && field.Elem().Kind() == reflect.Struct {
 			if err := readAssistantHostReceipt(value, reflect.New(field.Elem()).Interface()); err != nil {
+				return err
+			}
+		}
+		if field.Kind() == reflect.Struct {
+			if err := readAssistantHostReceipt(value, reflect.New(field).Interface()); err != nil {
 				return err
 			}
 		}

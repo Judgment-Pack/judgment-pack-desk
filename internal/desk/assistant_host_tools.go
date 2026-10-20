@@ -100,7 +100,7 @@ func assistantHostJSON(value any) (runcontext.ToolResult, error) {
 func assistantHostFailure(err error) runcontext.ToolResult {
 	// Internal process/storage details are never model-facing failure prose.
 	if _, ok := err.(*failure.Error); !ok {
-		err = failure.Authored("configuration", "The Graph tool could not complete. Inspect retained work before trying another operation.", "desk")
+		err = failure.Authored("configuration", "The assistant tool could not complete. Inspect retained work before trying another operation.", "desk")
 	}
 	text, raw := failure.ToolFailure(err)
 	structured, _ := runcontext.ParseJSON(raw)

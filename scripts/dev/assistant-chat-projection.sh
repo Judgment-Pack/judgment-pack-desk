@@ -12,7 +12,8 @@ trap 'rm -rf "$tmp"' EXIT
 chat_outputs="$tmp/chat"
 unicode_outputs="$tmp/unicode"
 graph_outputs="$tmp/graph"
-mkdir -m 700 "$chat_outputs" "$unicode_outputs" "$graph_outputs"
+policy_outputs="$tmp/policy"
+mkdir -m 700 "$chat_outputs" "$unicode_outputs" "$graph_outputs" "$policy_outputs"
 chat_log="$tmp/chat-producers.log"
 unicode_log="$tmp/unicode-producers.log"
 go_env=()
@@ -100,3 +101,25 @@ grep -Fxq 'Case-sensitive history: 4 actual reader observations passed.' "$tmp/c
   --outfile="$tmp/graph-reference.mjs"
 "$node_bin" "$tmp/graph-reference.mjs" "$graph_outputs/chat.json" "$graph_outputs/detached.json" | tee "$tmp/graph-reader.log"
 grep -Fxq 'Graph shared readers: exact producer draft and detached deletion retention passed.' "$tmp/graph-reader.log"
+
+# Policy cards use actual six-tool API production plus a retained stale update.
+# Fresh files and named producers prevent a skipped/empty run passing readback.
+(
+  cd "$root"
+  env "${go_env[@]}" DESK_POLICY_READER_OUTPUT="$policy_outputs/passed.json" \
+    DESK_POLICY_STALE_READER_OUTPUT="$policy_outputs/stale.json" \
+    go test ./internal/desk -run '^TestAssistantPolicy(ActualAPIProducerAndProjection|PlanChildAndStaleBasis)$' -count=1 -v
+) | tee "$tmp/policy-producer.log"
+for producer in TestAssistantPolicyActualAPIProducerAndProjection TestAssistantPolicyPlanChildAndStaleBasis; do
+  grep -Eq "^--- PASS: $producer \\(" "$tmp/policy-producer.log" || {
+    echo "$producer did not run and pass" >&2
+    exit 1
+  }
+done
+"$esbuild" "$root/scripts/assistant-policy-projection-reference.mjs" \
+  --bundle --platform=node --format=esm \
+  --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+  --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$tmp/policy-reference.mjs"
+"$node_bin" "$tmp/policy-reference.mjs" "$policy_outputs/passed.json" "$policy_outputs/stale.json" | tee "$tmp/policy-reader.log"
+grep -Fxq 'Policy shared readers: exact passed/stale update and pack/graph handoff cards passed.' "$tmp/policy-reader.log"

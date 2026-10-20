@@ -15032,8 +15032,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'return count == 1' \
     'return count <= 1'
   mutate go 'assistant graph: foreign output run accepted' internal/desk/assistant_domain_output.go \
-    'out.RunID != run.ID' \
-    false
+    'out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || seen[out.OperationID]' \
+    'false || out.RequestKey != run.Binding.ExecutionKey || seen[out.OperationID]'
   mutate go 'assistant graph: custody receipt aliases accepted' internal/desk/assistant_host_tools_receipt.go \
     'members, err := configMembers(raw)' \
     'if true { return json.Unmarshal(raw,into) }; members, err := configMembers(raw)'
@@ -15048,6 +15048,20 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'held.State != "dispatched" && held.State != "uncertain"' \
     'held.State != "dispatched"'
 
+fi
+
+
+# Private Policy host arguments, verified retained sources and review cards.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant policy: argument aliases accepted' internal/desk/assistant_policy_tools.go \
+    '!ok || bytes.Equal(bytes.TrimSpace(raw[m.start:m.end]), []byte("null"))' \
+    'false && (!ok || bytes.Equal(bytes.TrimSpace(raw[m.start:m.end]), []byte("null")))'
+  mutate go 'assistant policy: request before fields substituted' internal/desk/assistant_policy_tools_output.go \
+    'p.Before != scope.Request.Candidate' \
+    false
+  mutate go 'assistant policy: retained observation verification omitted' internal/desk/assistant_policy_tools_comparison.go \
+    'if err := validateArchivedPolicyObservation(ctx, s.artifacts, *held); err != nil {' \
+    'if err := error(nil); err != nil {'
 fi
 
 restore

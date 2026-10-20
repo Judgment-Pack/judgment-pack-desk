@@ -557,16 +557,19 @@
       "entrypoints": [
         "web/src/policies/chatTools.ts",
         "internal/desk/policy_assistant.go",
+        "internal/desk/assistant_policy_tools.go",
+        "internal/desk/assistant_policy_tools_output.go",
         "internal/desk/assistant_approval.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "private finite Go host registry with authenticated Policy services and durable typed review cards; production activation pending",
       "preserve": [
         "Go authenticated reads/retained proposal; exact Policy revision and retained source selectors; interpretations only open reviewable ordinary authoring",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
-        "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+        "actual API six-tool producer, Plan/child/current-access/stale request, retained comparison and exact coverage fixtures",
+        "durable Policy output import/projection and existing ChatStore update/interpretation readers in the standard projection CI path",
+        "native parent-child-parent exact argument association awaits the separately tracked shared callback repair; browser migration and typed acceptance actions remain pending"
       ]
     },
     {
