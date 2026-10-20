@@ -267,9 +267,9 @@
       "codex": {
         "inherit": false,
         "models": [
-          "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+          "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
         ],
-        "model": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+        "model": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
       }
     },
     "accepted": false
@@ -755,6 +755,58 @@
       "context": {
         "version": 1,
         "projectBrief": ""
+      }
+    }
+  },
+  {
+    "name": "project instructions at the project profile root",
+    "accepted": true,
+    "value": {
+      "profileVersion": 1,
+      "projectInstructions": "Keep missing facts explicit. 😀\n"
+    }
+  },
+  {
+    "name": "empty project instructions retain explicit source",
+    "accepted": true,
+    "value": {
+      "profileVersion": 1,
+      "projectInstructions": ""
+    }
+  },
+  {
+    "name": "project instructions with registry inheritance",
+    "accepted": true,
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "projectInstructions": "Use concise answers."
+    }
+  },
+  {
+    "name": "project instructions must be text",
+    "accepted": false,
+    "value": {
+      "profileVersion": 1,
+      "projectInstructions": 7
+    }
+  },
+  {
+    "name": "null project instructions refused",
+    "accepted": false,
+    "value": {
+      "profileVersion": 1,
+      "projectInstructions": null
+    }
+  },
+  {
+    "name": "project instructions may not enter shared model preferences",
+    "accepted": false,
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": true,
+        "projectInstructions": "Do something"
       }
     }
   }

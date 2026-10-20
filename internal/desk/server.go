@@ -182,6 +182,10 @@ type Server struct {
 
 	assistantRunRecoveryMu  sync.Mutex
 	assistantRunRecoveryErr error
+	assistantRunServiceMu   sync.Mutex
+	assistantRunHost        *assistantRunService
+	// Bound by the host before serving; nil refuses new server-owned purposes.
+	assistantRunExecutor assistantRunExecutor
 
 	// startup is the identity of the project Desk was started on, which
 	// names what Desk keeps for it (startup_identity.go); unused on a desk
@@ -676,6 +680,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research/{research}/confirm", s.handleInputResearch)
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research/{research}/authorize", s.handleInputResearch)
 	s.mux.HandleFunc("GET /api/assistant-approvals/{chat}", s.handleAssistantApproval)
+	s.registerAssistantRuns()
 	s.mux.HandleFunc("POST /api/assistant-approvals/{chat}/{operation}", s.handleAssistantApproval)
 	s.mux.HandleFunc("GET /api/input-research-approvals/{chat}", s.handleResearchApprovals)
 	s.mux.HandleFunc("POST /api/input-research-approvals/{chat}/request", s.handleResearchApprovals)
@@ -856,6 +861,7 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) closeAll() error {
+	s.assistantRunService().close()
 	s.policyAuthorityMachine.stopAdmission()
 	s.closeDesks()
 	if s.policySourceCancel != nil {

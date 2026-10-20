@@ -14,3 +14,5 @@ golang.org/x/oauth2 v0.37.0 h1:JUlcxA8oAtauLfiH8FX2/FkAWHAdi0QtGCGc+hofE98=
 golang.org/x/oauth2 v0.37.0/go.mod h1:IxwZNxUULJmpBFf9K/9NTMSIfZZuvuTy1gGxhigP/58=
 golang.org/x/sys v0.49.0 h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=
 golang.org/x/sys v0.49.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
+github.com/Judgment-Pack/judgment-pack-agent/go v0.5.0 h1:eFrKRzkO3unqv7mkEKXzVI1KZk5D06FZ9310PxzM7fU=
+github.com/Judgment-Pack/judgment-pack-agent/go v0.5.0/go.mod h1:AVl+6oeQwnOgRb5tNeNV9oLR1u7ZqneRKvqr+lVPthg=

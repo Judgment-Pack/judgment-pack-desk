@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/Judgment-Pack/judgment-pack-desk/internal/aicontext"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+
+	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/aicontext"
 )
 
 const assistantProfilePath = "jpack-assistant.json"
@@ -22,14 +25,15 @@ type modelPreferences struct {
 	Thinking string   `json:"thinking,omitempty"`
 }
 type assistantProfile struct {
-	Context           *aicontext.Configuration     `json:"context,omitempty"`
-	Version           int                          `json:"profileVersion"`
-	Codex             *modelPreferences            `json:"codex,omitempty"`
-	API               *modelPreferences            `json:"api,omitempty"`
-	Inherit           *bool                        `json:"inherit,omitempty"`
-	Connections       []string                     `json:"connections,omitempty"`
-	DefaultConnection *string                      `json:"defaultConnection,omitempty"`
-	Models            map[string]*modelPreferences `json:"models,omitempty"`
+	ProjectInstructions string                       `json:"projectInstructions,omitempty"`
+	Context             *aicontext.Configuration     `json:"context,omitempty"`
+	Version             int                          `json:"profileVersion"`
+	Codex               *modelPreferences            `json:"codex,omitempty"`
+	API                 *modelPreferences            `json:"api,omitempty"`
+	Inherit             *bool                        `json:"inherit,omitempty"`
+	Connections         []string                     `json:"connections,omitempty"`
+	DefaultConnection   *string                      `json:"defaultConnection,omitempty"`
+	Models              map[string]*modelPreferences `json:"models,omitempty"`
 }
 
 func decodeAssistantProfile(data []byte) (*assistantProfile, error) {
@@ -47,6 +51,12 @@ func decodeAssistantProfile(data []byte) (*assistantProfile, error) {
 			return fail()
 		}
 	}
+	if raw, present := fields["projectInstructions"]; present {
+		var text string
+		if string(raw) == "null" || json.Unmarshal(raw, &text) != nil || len(text) > runcontext.Defaults.ProjectInstructionsBytes || !validJSONString(raw) {
+			return fail()
+		}
+	}
 	if json.Unmarshal(data, &value) == nil && value != nil && value["profileVersion"] == float64(2) {
 		return decodeAssistantProfileV2(data, value)
 	}
@@ -54,7 +64,7 @@ func decodeAssistantProfile(data []byte) (*assistantProfile, error) {
 		return fail()
 	}
 	for key := range value {
-		if !contains([]string{"profileVersion", "codex", "api", "context"}, key) {
+		if !contains([]string{"profileVersion", "codex", "api", "context", "projectInstructions"}, key) {
 			return fail()
 		}
 	}
@@ -218,7 +228,7 @@ func decodeAssistantProfileV2(data []byte, value map[string]any) (*assistantProf
 	if !ok {
 		return fail()
 	}
-	keys := []string{"profileVersion", "inherit", "context"}
+	keys := []string{"profileVersion", "inherit", "context", "projectInstructions"}
 	if !inherit {
 		keys = append(keys, "connections", "defaultConnection", "models")
 	}
@@ -281,4 +291,38 @@ func decodeAssistantProfileV2(data []byte, value map[string]any) (*assistantProf
 		}
 	}
 	return &p, nil
+}
+
+// encoding/json replaces unpaired surrogate escapes with U+FFFD. Refuse those
+// inputs instead of silently changing the person's instruction text.
+func validJSONString(raw []byte) bool {
+	for i := 1; i < len(raw)-1; i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		i++
+		if raw[i] != 'u' {
+			continue
+		}
+		n, err := strconv.ParseUint(string(raw[i+1:i+5]), 16, 16)
+		if err != nil {
+			return false
+		}
+		i += 4
+		if n >= 0xdc00 && n <= 0xdfff {
+			return false
+		}
+		if n < 0xd800 || n > 0xdbff {
+			continue
+		}
+		if i+6 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
+			return false
+		}
+		low, err := strconv.ParseUint(string(raw[i+3:i+7]), 16, 16)
+		if err != nil || low < 0xdc00 || low > 0xdfff {
+			return false
+		}
+		i += 6
+	}
+	return true
 }

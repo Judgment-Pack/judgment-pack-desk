@@ -25,3 +25,20 @@ it('reads a profile up to the desk\'s 64 KiB bound and refuses one byte more, in
   expect(()=>decodeAssistantProfile(at+' ')).toThrow()
  }
 })
+
+it('checks project instructions in UTF-8 bytes using the server policy, without changing source',()=>{
+ const limit=4000 // Hand-authored GET /api/desk-config promptPolicy fixture.
+ for(const profile of [{profileVersion:1},{profileVersion:2,inherit:true}]){
+  const exact={...profile,projectInstructions:'😀'.repeat(limit/4)}
+  expect(decodeAssistantProfile(JSON.stringify(exact),limit)).toEqual(exact)
+  const tooLong=JSON.stringify({...exact,projectInstructions:exact.projectInstructions+'x'})
+  expect(()=>decodeAssistantProfile(tooLong,limit)).toThrow()
+  expect(JSON.parse(tooLong).projectInstructions).toBe(exact.projectInstructions+'x')
+ }
+ for(const projectInstructions of ['\ud800','\udc00','x\ud800y'])expect(()=>decodeAssistantProfile(JSON.stringify({profileVersion:1,projectInstructions}),limit)).toThrow()
+ expect(decodeAssistantProfile(JSON.stringify({profileVersion:1,projectInstructions:'replacement \ufffd is valid text'}),limit).projectInstructions).toContain('\ufffd')
+})
+it('preserves instructions when policy metadata is temporarily unavailable',()=>{
+ const value={profileVersion:2,inherit:true,projectInstructions:'Keep the exact saved guidance.\n'}
+ expect(decodeAssistantProfile(JSON.stringify(value))).toEqual(value)
+})
