@@ -2630,3 +2630,23 @@ go	assistant documents: changed attachment or trust survives recheck	TestAssista
 go	assistant saved context: physical dispatch omits document recheck	TestAssistantChatDocumentQueuedDispatch,TestAssistantChatDocumentContinuation
 go	assistant saved context: different selections share context identity	TestAssistantChatDocumentSelectionsAndConsent
 go	assistant chat input: explicit invalid interaction becomes work	TestAssistantChatInputInteraction,TestAssistantChatInputInteractionAdmission
+go	assistant chat projection: current session is not checked	TestAssistantChatProjectionOwnerGuards
+go	assistant chat projection: restored record may write	TestAssistantChatProjectionCASAndAuthorization,TestAssistantChatProjectionOwnerGuards
+go	assistant chat projection: pending record may project	TestAssistantChatProjectionOwnerGuards
+go	assistant chat projection: selected request digest is ignored	TestAssistantChatProjectionOwnerGuards
+go	assistant chat projection: changed selected chat overwrites newer work	TestAssistantChatProjectionCASAndAuthorization
+go	assistant chat projection: unwritten prepared output is acknowledged	TestAssistantChatProjectionPrematureAckAndMalformedAssociations
+go	assistant chat projection: prepared semantic identity changes	TestAssistantChatProjectionCASAndAuthorization
+go	assistant chat projection: unrelated raw chat bytes are compacted	TestAssistantChatProjectionPrepareWriteReadbackAck,TestAssistantChatProjectionConcurrentChatsAndDiscovery
+go	assistant chat projection: another principal is discoverable	TestAssistantChatProjectionConcurrentChatsAndDiscovery
+go	assistant chat projection: changed request inherits retained response	TestAssistantChatProjectionDiscoveryBindsExactRequest
+go	assistant chat projection: saved proposal target is guessed	TestAssistantChatProjectionWorkFailureAndCreate
+go	assistant chat projection: tool results lose call identity	TestAssistantChatProjectionPrematureAckAndMalformedAssociations
+go	assistant chat projection: invalid typed failure becomes display data	TestAssistantChatProjectionRejectsUnreadableDomainPayloads
+go	assistant chat projection: critic bounds are skipped	TestAssistantChatProjectionRejectsUnreadableDomainPayloads
+go	assistant chat projection: recovery changes prepared checkpoint identity	TestAssistantChatProjectionRecoveryNormalizesCheckpointDisplay
+go	assistant chat projection: display normalization mutates original checkpoint	TestAssistantChatProjectionRecoveryNormalizesCheckpointDisplay
+go	assistant chat projection: saved conversation refusal is hidden	TestAssistantChatProjectionRetainsUnrepresentableCheckpointOriginals
+go	assistant chat projection: unsupported Unicode reaches prepared output	TestAssistantChatProjectionUnicodeRefusal
+go	assistant chat projection: checkpoint raw Unicode is not validated	TestAssistantChatProjectionUnicodeRefusal
+go	assistant chat projection: serialized candidate Unicode is not validated	TestAssistantChatProjectionUnicodeRefusal

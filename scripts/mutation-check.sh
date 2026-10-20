@@ -14800,6 +14800,67 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant runs: executor does not block storage transfer' internal/desk/assistant_run_store.go \
     's.server.openPrivateDataFileLock(ctx, ".data-work.lock", false, false)' \
     's.server.openPrivateDataFileLock(ctx, ".assistant-run-work.lock", false, false)'
+  # Terminal chat projection guards; paused runs remain in their private ledger.
+  mutate go 'assistant chat projection: current session is not checked' internal/desk/assistant_chat_projection_store.go \
+    '!assistantRunIdentityMatches(identity, run.Binding)' \
+    'false && !assistantRunIdentityMatches(identity, run.Binding)'
+  mutate go 'assistant chat projection: restored record may write' internal/desk/assistant_chat_projection_store.go \
+    'run.Historical ||' \
+    'false ||'
+  mutate go 'assistant chat projection: pending record may project' internal/desk/assistant_chat_projection_store.go \
+    '!assistantRunTerminal(run.State)' \
+    false
+  mutate go 'assistant chat projection: selected request digest is ignored' internal/desk/assistant_chat_projection_store.go \
+    'if !assistantChatRequest(selected, run.Binding.RequestID, run.Binding.RequestDigest) {' \
+    'if len(selected) < 0 {'
+  mutate go 'assistant chat projection: changed selected chat overwrites newer work' internal/desk/assistant_chat_projection_store.go \
+    'return digest == run.Binding.Owner.Revision || run.ChatProjection != nil && digest == run.ChatProjection.Digest' \
+    'return true || digest == run.Binding.Owner.Revision || run.ChatProjection != nil && digest == run.ChatProjection.Digest'
+  mutate go 'assistant chat projection: unwritten prepared output is acknowledged' internal/desk/assistant_chat_projection_store.go \
+    'if p == nil || digestOf(selected) != p.Digest || !bytes.Equal(selected, p.Output) {' \
+    'if p == nil || len(selected) < 0 {'
+  mutate go 'assistant chat projection: prepared semantic identity changes' internal/desk/assistant_chat_projection.go \
+    'p.EventDigest != assistantChatEventDigest(run)' \
+    false
+  mutate go 'assistant chat projection: unrelated raw chat bytes are compacted' internal/desk/assistant_chat_projection.go \
+    'out.Write(item)' \
+    'var compact bytes.Buffer; _ = json.Compact(&compact, item); out.Write(compact.Bytes())'
+  mutate go 'assistant chat projection: another principal is discoverable' internal/desk/assistant_chat_projection_http.go \
+    'run.Binding.Principal != identity.Principal || ' \
+    ''
+  mutate go 'assistant chat projection: changed request inherits retained response' internal/desk/assistant_chat_projection_http.go \
+    'if !assistantChatRequest(rows[index], request, run.Binding.RequestDigest) {' \
+    'if len(rows[index]) < 0 {'
+  mutate go 'assistant chat projection: saved proposal target is guessed' internal/desk/assistant_chat_projection.go \
+    'ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))' \
+    'ok && bytes.Equal(bytes.TrimSpace(raw), []byte("null"))'
+  mutate go 'assistant chat projection: tool results lose call identity' internal/desk/assistant_chat_projection.go \
+    'if !ok || completed[*result.CallID] || items[index]["name"] != result.Name {' \
+    'if false && (!ok || completed[*result.CallID] || items[index]["name"] != result.Name) {'
+  mutate go 'assistant chat projection: invalid typed failure becomes display data' internal/desk/assistant_chat_projection.go \
+    'held, ok := failure.Read(*event.Error.Failure)' \
+    'held, ok := failure.Read(failure.New("unknown", "desk", "unknown"))'
+  mutate go 'assistant chat projection: critic bounds are skipped' internal/desk/assistant_chat_projection.go \
+    'len(c.Cases) > 200 || len(c.Incomplete) > 64' \
+    false
+  mutate go 'assistant chat projection: recovery changes prepared checkpoint identity' internal/desk/assistant_chat_projection.go \
+    'if cp.Operations[i].Status == "running" {' \
+    'if false && cp.Operations[i].Status == "running" {'
+  mutate go 'assistant chat projection: display normalization mutates original checkpoint' internal/desk/assistant_chat_projection.go \
+    'cp.Operations = append([]contract.CheckpointOperation{}, run.Checkpoint.Operations...)' \
+    'cp.Operations = run.Checkpoint.Operations'
+  mutate go 'assistant chat projection: saved conversation refusal is hidden' internal/desk/assistant_chat_projection_store.go \
+    'if len(candidate) > maxConversationBytes || validateConversations(candidate) != nil {' \
+    'if len(candidate) > maxConversationBytes {'
+  mutate go 'assistant chat projection: unsupported Unicode reaches prepared output' internal/desk/assistant_chat_projection_store.go \
+    'if !assistantChatProjectionUnicode(output) {' \
+    'if false && !assistantChatProjectionUnicode(output) {'
+  mutate go 'assistant chat projection: checkpoint raw Unicode is not validated' internal/desk/assistant_chat_projection.go \
+    'jsonscalar.ValidateEscapes(output) != nil' \
+    false
+  mutate go 'assistant chat projection: serialized candidate Unicode is not validated' internal/desk/assistant_chat_projection.go \
+    'jsonscalar.ValidateEscapes([]byte(text)) != nil' \
+    false
   mutate go 'harness approval: a ready grant admits another id' internal/desk/assistant_approval.go \
     'grant.ID != req.ID || grant.Action != req.Action' \
     'false || grant.Action != req.Action'
