@@ -14,7 +14,7 @@ import { AssistantPane, DRAFT_SENTENCE, withDraft } from './AssistantPane'
 import { EditingContext, type EditingSession } from '../packs/edit/editingContext'
 import { useDocumentBuffer, type DocumentBuffer } from '../packs/edit/useDocumentBuffer'
 import { buffered, bytesAt } from '../packs/edit/writes'
-import type { AssistantEvent, Engine } from '@judgment-pack/harness/engine'
+import type { AssistantEvent, AssistantSession, Engine } from '@judgment-pack/harness/engine'
 
 /**
  * An engine this suite puts in the registry's place, where a case needs one.
@@ -912,6 +912,23 @@ describe('the draft the session is given', () => {
     const body = JSON.parse(relayed[0]!.body) as { tools?: { type?: string; function?: { name: string; parameters: unknown }; name?: string; input_schema?: unknown }[] }
     const offered = (body.tools ?? []).map((tool) => tool.function ? { name: tool.function.name, schema: tool.function.parameters } : { name: tool.name, schema: tool.input_schema })
     expect(offered.find((tool) => tool.name === PROPOSE_PACK_TOOL)?.schema).toMatchObject(PROPOSE_PACK_SCHEMA)
+  })
+
+  it('declares no skills in the actual Desk-constructed session', async () => {
+    let observed: AssistantSession | undefined
+    injected = {
+      id:'vercel',
+      async *start(input) {
+        if ('agent' in input) throw new Error('Unexpected agent session')
+        observed=input
+        yield {type:'proposal',document:scenario.documents.DRAFT_V2,unknowns:[]}
+        yield {type:'end'}
+      }
+    }
+    await runOver()
+    expect(observed).toBeDefined()
+    expect(observed).not.toHaveProperty('skills')
+    expect(observed?.hostTools.some(tool=>tool.name===PROPOSE_PACK_TOOL)).toBe(true)
   })
 
   it('calls the proposal an update where a draft was sent', async () => {

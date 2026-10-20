@@ -3,8 +3,8 @@
   "status": "accepted architecture; private Go binding, critic, terminal projection and Graph host foundations implemented; production activation pending",
   "deskEvidence": "reviewed private foundations and focused actual API/native execution proofs; existing browser features remain on current engines pending full migration/certification",
   "agentEvidence": {
-    "version": "v0.5.0",
-    "revision": "61b1331b907ac2f652d1ff33d3dffe7c29423704"
+    "version": "v0.6.0",
+    "revision": "3f308215afadd9d72ae963ebea1062247d1963ba"
   },
   "adr": "../adr/0014-server-owned-assistant-runs.md",
   "scope": "All actual model dispatch callsites found by runAssistantSession/loadEngine/bindModelCall/bindAgentRun/runBackgroundModel scans; host subrows are feature capabilities, not independent provider loops.",
@@ -277,7 +277,7 @@
       "id": "subscription-generic-delegation",
       "category": "conversation-subphase",
       "currentOwner": "canonical TS withDelegation + runCodex delegation_requested/release/batch/parent continuation",
-      "targetOwner": "published Go Agent v0.5.0 coordinator and actual private Desk Codex transport foundations; full browser cutover/certification pending",
+      "targetOwner": "published Go Agent v0.6.0 coordinator and actual private Desk Codex transport foundations; full browser cutover/certification pending",
       "entrypoints": [
         "Agent packages/harness/engines/codex/index.ts:145-151",
         "Agent packages/harness/delegation.ts:844-864",
@@ -834,7 +834,8 @@
       "private saved-chat canonical input: exact statement/input, retained typed history/questions/attachments, transcript projection and validated chat preference precedence through actual API/Codex factories",
       "server verified submitted document selections with signed receipt/digest/readable-page/partial-consent custody, distinct selection identities and rechecks at physical API/Codex dispatch including waits and child/parent continuation (Desk #566)",
       "completed private foundations from Desk #564/#570/#573/#574: published provider-managed binding, final journal prepare/CAS/readback/ack and positive critic/test-tool custody; these do not activate browser features",
-      "private finite Graph host registry, seven concrete tools, canonical producer-bound draft/read receipts and GraphDraft terminal projection; focused actual API/native and existing browser reader evidence"
+      "private finite Graph host registry, seven concrete tools, canonical producer-bound draft/read receipts and GraphDraft terminal projection; focused actual API/native and existing browser reader evidence",
+      "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures"
     ],
     "pending": [
       "complete provider-managed Desk binding and feature certification",

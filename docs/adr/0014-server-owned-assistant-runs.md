@@ -4,7 +4,7 @@ Status: **accepted architecture; implementation in bounded slices**. This record
 
 Scope: [Desk #537](https://github.com/Judgment-Pack/judgment-pack-desk/issues/537), following the reviewed v0.3.0 prerequisite. The [32-row ownership matrix](../design/assistant-run-surfaces.json) records migration points and verification obligations, not already delivered behavior.
 
-Published Go dependency: `github.com/Judgment-Pack/judgment-pack-agent/go v0.5.0`, a normal tagged module with no replace/vendor. Root and `go/v0.5.0` tags resolve to `61b1331b907ac2f652d1ff33d3dffe7c29423704`. The published archive SHA-256 is `8f6e0d61d17f21afe4427eb529fe3d1b32ea29e7d0a77e6d8cd383768b21f53c`; its release-workflow attestation and the Go module origin/checksums were verified during adoption. Go module sums are retained in [go.sum](../../go.sum). The browser still pins its earlier package until its own cutover. Merged post-v0.5.0 changes are not part of this pin: in particular, the approval cache-marker correction must arrive through a later verified release.
+Published Go dependency: `github.com/Judgment-Pack/judgment-pack-agent/go v0.6.0`, a normal tagged module with no replace/vendor. The browser package also pins the attested `@judgment-pack/harness` v0.6.0 release asset through the component lock. Root and `go/v0.6.0` tags resolve to `3f308215afadd9d72ae963ebea1062247d1963ba`; the archive SHA-256 is `5bc4e0314d79b2f5c68296b0ebd0e0f8044444d4a9f50d68b6c0712c40b5c2b0`. Release-workflow asset attestations, tag/source identity and module origin/checksums are verified during adoption. This does not assert Git tag-signature verification. The approval framing-marker correction is included in this released pin. Optional skills are not declared or enabled by this component update; their Desk workflow remains separate. See the [v0.6.0 adoption note](../design/agent-v060-adoption.md) for compatibility evidence and limits. Browser/server production cutover remains pending.
 
 ## Decision
 
@@ -16,7 +16,7 @@ Preserve original conversations, draft/check journals, retained exact document b
 
 ## Verified published seams
 
-The foundational context/gate exports below remain available in v0.5.0. Approval continuation and the provider-managed capability use the released additions described below.
+The foundational context/gate exports below remain available in v0.6.0. Approval continuation and the provider-managed capability use the released additions described below.
 
 | Purpose | Export verified in source | Desk use |
 |---|---|---|
@@ -29,7 +29,7 @@ The foundational context/gate exports below remain available in v0.5.0. Approval
 | Domain corrections | `CorrectArtifact`, `CheckArtifact`, typed ports | Move existing feature correction orchestration using these helpers; keep exact candidates/findings and workflow ownership. |
 | Contract parsing | `turn` proposal/fence/question/critic/delegation readers, `failure` normalization/completion helpers, `contract` generated types | Reuse these for transport conversion, not a new private wire dialect. Generated contract structs preserve shapes but are **not schema validators** (`contract/support.go`). |
 
-Important limits: released v0.5.0 `adapter.Run` exposes `Model relay.Call` and the alternative `Agent *adapter.Agent`; the latter is set instead of `Model` for provider-managed invocations through the host-bound bridge. `Input.Connection` is a string, not the TS AITarget object; the Desk run binding must retain ID **and revision** separately and its models callback must resolve that frozen binding. `Emit func(contract.RunEvent)` cannot return persistence errors. Host emission must synchronously persist required records and latch/cancel on failure; every capability rechecks that latch. Never mistake a void Emit for an acknowledged durable save.
+Important limits: released v0.6.0 `adapter.Run` exposes `Model relay.Call` and the alternative `Agent *adapter.Agent`; the latter is set instead of `Model` for provider-managed invocations through the host-bound bridge. `Input.Connection` is a string, not the TS AITarget object; the Desk run binding must retain ID **and revision** separately and its models callback must resolve that frozen binding. `Emit func(contract.RunEvent)` cannot return persistence errors. Host emission must synchronously persist required records and latch/cancel on failure; every capability rechecks that latch. Never mistake a void Emit for an acknowledged durable save.
 
 ## Proposed Desk protocol v1
 
@@ -147,7 +147,7 @@ The saved-chat source pin covers the exact selected chat bytes. The later thin c
 
 The private execution factory now binds published Eino and the delegation coordinator to the actual Desk relay and a rooted Runtime stdio child. Session, selected connection/revision and exact saved sources are retained by the host; admission is checked again after the real relay queue, with durable intent/dispatch before external I/O and exact transport receipts afterward. Interrupted provider bodies close admission and retain uncertainty even when the in-process reverse proxy suppresses a copy error. OpenAI-compatible, Anthropic and Gemini paths use the existing family-specific relay rules; Gemini stream query admission uses the path's method separately from its permitted query. Completed HTTP receipts establish transport completion only. Host operation and semantic event identities are allocated with their append in the existing persisted-run transaction, so rebuilt capabilities and concurrent child requests cannot reset a local counter or overwrite earlier receipts. Explicit-ID receipt deduplication and replay refusal retain their existing semantics. Closing a canceled or incomplete admitted response closes root dispatch unless its exact EOF receipt was successfully retained; closing a durably completed response remains healthy. Canonical budget pauses use the same root-identity-validated checkpoint acknowledgement as execution checkpoints, preserving the shared test count and the owning service's paused-budget state without granting allowance.
 
-The Runtime binding uses existing command/environment custody and project/Policy frame guards, serializes host-generated request IDs across parent and child gates, bounds frames and cancels/reaps its child. Served prompt arguments and text come from prompts/list and prompts/get; canonical Host parts, Input, checkpoint acknowledgement and prompt digests stay in the published adapter/context boundary. The trusted assembled-prompt marker is private Go context, with legacy consumers retaining their context injection. Plan/child offers intersect existing grants. Desk's current configuration ceiling still excludes experimental_test_cases; fixtures verify refusal and the published shared count for refused child attempts. Positive test execution and critic prompt/domain readiness remain pending; the following private subscription fixture covers actual delegation transport completion.
+The Runtime binding uses existing command/environment custody and project/Policy frame guards, serializes host-generated request IDs across parent and child gates, bounds frames and cancels/reaps its child. Served prompt arguments and text come from prompts/list and prompts/get; canonical Host parts, Input, checkpoint acknowledgement and prompt digests stay in the published adapter/context boundary. The trusted assembled-prompt marker is private Go context, with legacy consumers retaining their context injection. Plan/child offers intersect existing grants. Desk's current configuration ceiling still excludes experimental_test_cases; fixtures verify refusal and the published shared count for refused child attempts. The merged private critic binding obtains Runtime guidance and cases and covers actual API/native critic execution. Complete production test-tool registry and domain readiness remain pending; the following private subscription fixture covers actual delegation transport completion.
 
 The factory is unregistered and production starts still fail closed. Remaining gates include complete provider-managed binding certification, all feature owners and domain actions, final journal CAS, browser migration/removal, actual Desk binding certification, required CI and independent security/release review. Focused binding fixtures do not certify the complete cutover.
 
@@ -190,8 +190,8 @@ request remains unavailable under the published policy. Separate
 fixtures cover changed authority during discovery, malformed/unoffered/duplicate
 callbacks, exact typed receipts, cancellation drainage, question pause, unchanged allowance policy and retained
 root/test identity on capability reconstruction. These are bounded binding checks,
-not complete certification or production migration. Positive critic/test execution
-still needs its served tool ceiling and workflow migration. No production executor,
+not complete certification or production migration. Complete test-tool registry and workflow migration
+still need their owning domain readiness; private critic fixtures do not certify a production test workflow. No production executor,
 domain action, final chat journal projection or browser path is activated here.
 
 ### Private saved-chat input projection

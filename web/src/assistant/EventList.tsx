@@ -38,6 +38,7 @@ const COMPACT: ReadonlySet<AssistantEvent['type']> = new Set([
   'message',
   'tool_call',
   'tool_result',
+  'approval_requested',
   'guardrail',
   'thinking_unavailable',
   'proposal',
@@ -56,6 +57,12 @@ export function describeEvent(event: AssistantEvent, msg: typeof uiMessage = uiM
   switch (event.type) {
     case 'execution_checkpoint': return msg('Task progress saved')
     case 'budget_paused': return msg('Paused · Request limit reached')
+    case 'approval_requested':
+      return msg('Waiting for your approval: {{tool}}', {tool:event.tool})
+    case 'skill_loaded':
+      return msg('Loaded skill {{name}} · {{bytes}} bytes', {name:event.skill.name,bytes:event.bytes})
+    case 'skill_unloaded':
+      return msg('Unloaded skill {{id}}', {id:event.id})
     case 'delegation_requested':
       return msg('Delegating tasks')
     case 'delegated_task':
