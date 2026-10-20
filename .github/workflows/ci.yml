@@ -54,7 +54,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      JPDEV_LOGDIR: ${{ runner.temp }}/go-check-logs
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/toolchains
@@ -68,6 +67,8 @@ jobs:
       # internal/desk/server_test.go); go-test runs with -v so that the skips stay visible.
       # What runs with the real companions is in the check job.
       - run: scripts/dev/check.sh --only gofmt,component-policy,python-tests,needle-check,component-identities,go-vet,go-test
+        env:
+          JPDEV_LOGDIR: ${{ runner.temp }}/go-check-logs
       # Only per-step command output, not workspace, credentials or caches.
       - name: Upload the go step logs
         if: always()
@@ -81,17 +82,19 @@ jobs:
   web:
     name: Web
     runs-on: ubuntu-latest
-    env:
-      JPDEV_LOGDIR: ${{ runner.temp }}/web-check-logs
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/toolchains
       - run: scripts/dev/check.sh --setup --only npm-ci
+        env:
+          JPDEV_LOGDIR: ${{ runner.temp }}/web-check-logs
       # The build comes before the tests, not after: one test greps the emitted bundle for a
       # credential on a URL, which is the only place that claim can be checked over the code
       # that actually ships. dialect-read reads a Desk-produced dialect preparation with the
       # pinned dialect specification (read-only test input, never committed).
       - run: scripts/dev/check.sh --only i18n-check,ui-message-audit,typecheck,vite-build,web-tests,dialect-read
+        env:
+          JPDEV_LOGDIR: ${{ runner.temp }}/web-check-logs
       # Only per-step command output, not workspace, credentials or caches.
       - name: Upload the web step logs
         if: always()

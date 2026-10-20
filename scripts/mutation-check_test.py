@@ -512,9 +512,25 @@ class DiagnosticLogsTests(unittest.TestCase):
 
     def test_split_jobs_upload_only_their_logs_on_all_outcomes_with_distinct_attempt_names(self):
         workflow=(ROOT/".github/workflows/ci.yml").read_text()
+        commands={
+            "go":["scripts/dev/check.sh --only gofmt,component-policy,python-tests,needle-check,component-identities,go-vet,go-test"],
+            "web":["scripts/dev/check.sh --setup --only npm-ci",
+                   "scripts/dev/check.sh --only i18n-check,ui-message-audit,typecheck,vite-build,web-tests,dialect-read"],
+        }
         for job,next_job in [("go","web"),("web","local-gateway")]:
             block=workflow.split("\n  "+job+":",1)[1].split("\n  "+next_job+":",1)[0]
-            self.assertIn("JPDEV_LOGDIR: ${{ runner.temp }}/"+job+"-check-logs",block)
+            header,steps=block.split("\n    steps:",1)
+            # runner context is unavailable in job.env; every command producing logs
+            # must set its own step.env, including Web's separate setup command.
+            self.assertNotIn("runner.temp",header)
+            self.assertNotIn("JPDEV_LOGDIR",header)
+            run_steps=[step for step in steps.split("\n      - ")[1:] if step.startswith("run:")]
+            self.assertEqual([step.splitlines()[0] for step in run_steps],
+                             ["run: "+command for command in commands[job]])
+            for step in run_steps:
+                self.assertEqual(step.count("JPDEV_LOGDIR:"),1,step)
+                self.assertIn("\n        env:\n          JPDEV_LOGDIR: ${{ runner.temp }}/"+job+"-check-logs\n",step)
+            self.assertEqual(block.count("JPDEV_LOGDIR:"),len(commands[job]))
             upload=block.split("- name: Upload the "+job+" step logs",1)[1]
             self.assertIn("if: always()",upload)
             self.assertIn("name: "+job+"-check-logs-${{ github.run_id }}-${{ github.run_attempt }}",upload)
