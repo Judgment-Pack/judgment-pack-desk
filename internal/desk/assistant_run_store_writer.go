@@ -115,58 +115,64 @@ func (w *assistantRunWriter) Checkpoint(ctx context.Context, state contract.Chec
 }
 func (w *assistantRunWriter) Event(ctx context.Context, id string, event contract.RunEvent) error {
 	return w.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
-		raw, err := assistantRunEventBytes(event)
-		if err != nil {
-			return false, err
-		}
-		if !assistantRunText(id, 128) {
-			return false, errAssistantRunInvalid
-		}
-		for _, held := range run.Events {
-			if held.ID == id {
-				saved, _ := assistantRunEventBytes(held.Event)
-				if bytes.Equal(saved, raw) {
-					return false, nil
-				}
-				return false, errAssistantRunConflict
-			}
-		}
-		if assistantRunTerminal(run.State) {
-			return false, errAssistantRunDispatch
-		}
-		if len(run.Events) >= assistantRunEventLimit {
-			return false, withCode(CodeTooLarge, errAssistantRunInvalid)
-		}
-		run.Events = append(run.Events, assistantRunEvent{ID: id, Event: event})
-		return true, nil
+		return appendAssistantRunEvent(run, id, event)
 	})
+}
+func appendAssistantRunEvent(run *assistantRunRecord, id string, event contract.RunEvent) (bool, error) {
+	raw, err := assistantRunEventBytes(event)
+	if err != nil {
+		return false, err
+	}
+	if !assistantRunText(id, 128) {
+		return false, errAssistantRunInvalid
+	}
+	for _, held := range run.Events {
+		if held.ID == id {
+			saved, _ := assistantRunEventBytes(held.Event)
+			if bytes.Equal(saved, raw) {
+				return false, nil
+			}
+			return false, errAssistantRunConflict
+		}
+	}
+	if assistantRunTerminal(run.State) {
+		return false, errAssistantRunDispatch
+	}
+	if len(run.Events) >= assistantRunEventLimit {
+		return false, withCode(CodeTooLarge, errAssistantRunInvalid)
+	}
+	run.Events = append(run.Events, assistantRunEvent{ID: id, Event: event})
+	return true, nil
 }
 func (w *assistantRunWriter) Intent(ctx context.Context, operation assistantRunOperation) error {
 	return w.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
-		if operation.State != "" && operation.State != "not-started" || operation.Result != nil {
-			return false, errAssistantRunInvalid
-		}
-		for _, held := range run.Operations {
-			if held.ID == operation.ID {
-				if held.CallID == operation.CallID && held.Kind == operation.Kind && held.Name == operation.Name && bytes.Equal(held.Intent, operation.Intent) {
-					return false, nil
-				}
-				return false, errAssistantRunConflict
-			}
-			if held.CallID == operation.CallID {
-				return false, errAssistantRunConflict
-			}
-		}
-		if assistantRunTerminal(run.State) || run.Checkpoint == nil {
-			return false, errAssistantRunDispatch
-		}
-		if len(run.Operations) >= assistantRunOperationLimit {
-			return false, withCode(CodeTooLarge, errAssistantRunInvalid)
-		}
-		operation.State = "not-started"
-		run.Operations = append(run.Operations, operation)
-		return true, nil
+		return appendAssistantRunIntent(run, operation)
 	})
+}
+func appendAssistantRunIntent(run *assistantRunRecord, operation assistantRunOperation) (bool, error) {
+	if operation.State != "" && operation.State != "not-started" || operation.Result != nil {
+		return false, errAssistantRunInvalid
+	}
+	for _, held := range run.Operations {
+		if held.ID == operation.ID {
+			if held.CallID == operation.CallID && held.Kind == operation.Kind && held.Name == operation.Name && bytes.Equal(held.Intent, operation.Intent) {
+				return false, nil
+			}
+			return false, errAssistantRunConflict
+		}
+		if held.CallID == operation.CallID {
+			return false, errAssistantRunConflict
+		}
+	}
+	if assistantRunTerminal(run.State) || run.Checkpoint == nil {
+		return false, errAssistantRunDispatch
+	}
+	if len(run.Operations) >= assistantRunOperationLimit {
+		return false, withCode(CodeTooLarge, errAssistantRunInvalid)
+	}
+	operation.State = "not-started"
+	run.Operations = append(run.Operations, operation)
+	return true, nil
 }
 
 // Dispatch returns success once only, after verified durable receipt. If the
@@ -287,5 +293,46 @@ func (w *assistantRunWriter) Stop(ctx context.Context) error {
 		}
 		stopAssistantRun(run)
 		return true, nil
+	})
+}
+
+// Allocate and append under the same persisted-run transaction. No factory or
+// transport-local counter can reuse an identity after an explicit continuation.
+func nextAssistantRunIdentity(run *assistantRunRecord, kind string) string {
+	for n := uint64(len(run.Operations) + len(run.Events) + 1); ; n++ {
+		id := assistantExecutionID(kind, n)
+		occupied := false
+		for _, op := range run.Operations {
+			if op.ID == id || op.CallID == id {
+				occupied = true
+				break
+			}
+		}
+		for _, event := range run.Events {
+			if event.ID == id {
+				occupied = true
+				break
+			}
+		}
+		if !occupied {
+			return id
+		}
+	}
+}
+func (w *assistantRunWriter) boundIntent(ctx context.Context, kind, name string, intent func(string) ([]byte, error)) (operation assistantRunOperation, err error) {
+	err = w.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
+		id := nextAssistantRunIdentity(run, kind)
+		raw, err := intent(id)
+		if err != nil {
+			return false, err
+		}
+		operation = assistantRunOperation{ID: id, CallID: id, Kind: kind, Name: name, Intent: raw}
+		return appendAssistantRunIntent(run, operation)
+	})
+	return operation, err
+}
+func (w *assistantRunWriter) boundEvent(ctx context.Context, event contract.RunEvent) error {
+	return w.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
+		return appendAssistantRunEvent(run, nextAssistantRunIdentity(run, "event"), event)
 	})
 }

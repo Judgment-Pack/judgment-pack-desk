@@ -813,5 +813,24 @@
     "Current terminal-run registry retention  need parent confirmation during architecture checkpoint; proposal uses existing record bounds and never deletes originals automatically.",
     "Exact pure-TS import closure must be proven by emitted bundle dependency graph during implementation; source inventory alone cannot guarantee bundle removal."
   ],
-  "preparationVerification": "Published Go API/source and actual Desk callsite inventory; each production migration requires the listed focused evidence. Internal ledger tests do not certify the pending cutover."
+  "preparationVerification": "Published Go API/source and actual Desk callsite inventory; each production migration requires the listed focused evidence. Internal ledger tests do not certify the pending cutover.",
+  "bindingPreparation": {
+    "status": "private-unregistered",
+    "delivered": [
+      "actual Desk model relay with immutable session/connection/revision and post-queue admission",
+      "rooted Runtime stdio with existing project/Policy frame guards and bounded paired receipts",
+      "published Eino/delegate composition with canonical Host/Input/checkpoint/prompt provenance",
+      "scripted actual relay checks for OpenAI-compatible, Anthropic and Gemini",
+      "persisted-run operation/event identities across reconstructed capabilities and concurrent child calls",
+      "canceled unread/partial response Close retains unknown outcome and closes root admission",
+      "canonical root budget-pause acknowledgement with shared test count and real Eino allowance exhaustion"
+    ],
+    "pending": [
+      "Codex bridge/account binding and provider-managed delegation certification",
+      "positive delegation/critic execution and test-tool registry migration",
+      "domain tools/actions, final journal CAS and browser migration"
+    ],
+    "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",
+    "activation": "production executor remains unregistered"
+  }
 }

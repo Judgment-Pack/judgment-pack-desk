@@ -2589,3 +2589,18 @@ go	assistant runs: heartbeat skips deadline renewal	TestAssistantRunProtocolSSEH
 go	assistant runs: abandonment ignores active execution	TestAssistantRunProtocolAbandonAuthorityAndLease
 go	assistant runs: replacement session inherits approval	TestAssistantRunProtocolAbandonPausedOwner
 go	assistant runs: approval note exceeds canonical UTF-16 bound	TestAssistantRunProtocolApprovalNoteUTF16Bound
+go	assistant execution: model skips durable outbound dispatch	TestAssistantExecutionModelActualRelayReceipts
+go	assistant execution: held session bearer omitted	TestAssistantExecutionModelActualRelayReceipts
+go	assistant execution: selected connection omitted	TestAssistantExecutionModelActualRelayReceipts
+go	assistant execution: selected revision omitted	TestAssistantExecutionModelActualRelayReceipts
+go	assistant execution: actual provider body uncertainty unobserved	TestAssistantExecutionModelInterruptedBody
+go	assistant execution: Gemini admission reads query as method	TestAssistantExecutionModelFamilies
+go	assistant execution: Plan enters unrestricted loop	TestAssistantExecutionPlanAndChildIntersection
+go	assistant execution: child profile widens to parent offer	TestAssistantExecutionPlanAndChildIntersection
+go	assistant execution: Runtime skips project admission fence	TestAssistantExecutionRuntimePromptAndProjectRefusal
+go	assistant execution: independent Runtime IDs alias	TestAssistantExecutionRuntimeRootIDsAndReceipts
+go	assistant execution: canonical prompt receives legacy injection	TestAssistantExecutionModelActualRelayReceipts
+go	assistant execution: reconstructed operation identities restart	TestAssistantExecutionReconstructedIdentities
+go	assistant execution: reconstructed event identities restart	TestAssistantExecutionReconstructedIdentities
+go	assistant execution: canceled unread close leaves root admission open	TestAssistantExecutionCanceledResponseClose
+go	assistant execution: budget pause reaches semantic event sink	TestAssistantExecutionEinoBudgetPause
