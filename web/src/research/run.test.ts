@@ -1707,6 +1707,62 @@ describe('conversation-first task lifecycle', () => {
     expect(interrupted.requests).toEqual([])
   })
 
+  it('keeps the harness\'s figures with the response, so a delegating turn reports each child beside the parent', async () => {
+    const execution = { version: 1 as const, id: 'execution-1', requestKey: 'a'.repeat(64), phase: 'work' as const, status: 'complete' as const, unit: 'model-requests' as const, used: 4, limit: 20, grants: [], plan: [], explanation: '', operations: [], context: { scope: 'scope', entries: [] }, delegation: { batches: [], parent: { model: 'a-model', modelRequests: 4 } } }
+    const h = harness([async (_request, _signal, emit) => {
+      emit({ type: 'execution_checkpoint', checkpoint: execution, durable: false } as never)
+      emit({ type: 'message', text: 'Done.' })
+    }], { mode: 'draft' })
+    h.run.start('Delegate', [])
+    const done = await settled(h.run)
+    expect(done.responses?.at(-1)?.work.report).toEqual({ requests: 4, unit: 'model-requests', delegation: execution.delegation })
+    expect(done.execution).toMatchObject({ used: 4 })
+  })
+
+  it('keeps what the Desk measured on the connection with the response, joined across its turns', async () => {
+    const step = (durationMs: number) => ({ model: 'a-model', requestBytes: 2048, firstByteMs: 100, durationMs, outcome: 'complete' as const, status: 200, tools: [{ name: 'validate', ms: 40 }] })
+    const h = harness([async (request, _signal, emit) => {
+      request.onTiming?.({ steps: [step(900), step(1100)], omitted: 0 })
+      emit({ type: 'message', text: 'Done.' })
+    }], { mode: 'draft' })
+    h.run.start('Check it', [])
+    const done = await settled(h.run)
+    expect(done.responses?.at(-1)?.work.report).toMatchObject({ requests: 2, unit: 'model-requests', timing: { omitted: 0, steps: [{ durationMs: 900 }, { durationMs: 1100 }] } })
+    // The next response starts with none of the last one's.
+    h.run.send('And again?')
+    const second = await settled(h.run)
+    expect(second.responses?.at(-1)?.work.report).toMatchObject({ timing: { steps: [{ durationMs: 900 }, { durationMs: 1100 }] } })
+    expect(second.responses?.at(-2)?.work.report?.timing?.steps).toHaveLength(2)
+  })
+
+  it('routes a delegated task\'s streamed prose under its task, and never into the response\'s own', async () => {
+    const taskId = crypto.randomUUID()
+    const task = { id: taskId, parentRunId: crypto.randomUUID(), title: 'Review', objective: 'Review it', profile: 'review', state: 'running' as const, createdAt: new Date().toISOString(), modelRequests: 1, toolCalls: 0, attempts: 1, steps: [] }
+    const seen: unknown[] = []
+    const h = harness([async (_request, _signal, emit) => {
+      emit({ type: 'delegated_task', task })
+      emit({ type: 'message_progress', text: 'The child is reading', taskId })
+      seen.push(h.run.getSnapshot().streaming, h.run.getSnapshot().taskProgress, h.run.getSnapshot().responses?.at(-1)?.work.items[0]?.progress)
+      emit({ type: 'message_progress', text: 'The parent is answering' })
+      seen.push(h.run.getSnapshot().streaming, h.run.getSnapshot().taskProgress)
+      emit({ type: 'delegated_task', task: { ...task, state: 'complete', result: 'Findings.' } })
+      seen.push(h.run.getSnapshot().responses?.at(-1)?.work.items[0]?.progress)
+      emit({ type: 'message', text: 'Done.' })
+    }], { mode: 'draft' })
+    h.run.start('Delegate', [])
+    const done = await settled(h.run)
+    // The child's prose is under its task; the response's own streaming is untouched by it.
+    expect(seen[0]).toBe('')
+    expect(seen[1]).toEqual({ [taskId]: 'The child is reading' })
+    expect(seen[2]).toBe('The child is reading')
+    expect(seen[3]).toBe('The parent is answering')
+    expect(seen[4]).toEqual({ [taskId]: 'The child is reading' })
+    // A task that has ended carries no streamed prose, and none is kept with the finished response.
+    expect(seen[5]).toBeUndefined()
+    expect(done.taskProgress).toEqual({})
+    expect(JSON.stringify(done.responses)).not.toContain('The child is reading')
+  })
+
   it('keeps progress ephemeral, clears prior work, and retries only on explicit request', async () => {
     let attempt = 0
     const h = harness([async (_request, _signal, emit) => {
@@ -1726,6 +1782,23 @@ describe('conversation-first task lifecycle', () => {
     expect(retried.turns.filter(turn => turn.role === 'user')).toHaveLength(1)
     expect(h.requests).toHaveLength(2)
   })
+})
+it('runs a Retry\'s delegated tasks afresh, and a follow-up message keeps the harness\'s reuse', async () => {
+  let attempt = 0
+  const h = harness([async (_request, _signal, emit) => {
+    if (attempt++ === 0) throw new Error('Connection lost')
+    emit({ type: 'message', text: 'An answer.' })
+  }], { mode: 'draft' })
+  h.run.start('Delegate the review', [])
+  expect((await settled(h.run)).status).toBe('failed')
+  expect(h.requests[0]!.context).not.toHaveProperty('delegationReuse')
+  h.run.retryResponse()
+  expect((await settled(h.run)).status).toBe('complete')
+  expect(h.requests[1]!.context).toMatchObject({ delegationReuse: false })
+  // A new message asks something new: an identical task may be answered from the chat.
+  h.run.send('And the same review of the second pack?')
+  await settled(h.run)
+  expect(h.requests[2]!.context).not.toHaveProperty('delegationReuse')
 })
 it('retains attachment and pack context for follow-up questions and restores it without cluttering display text', async () => {
   const h = harness([async (_request, _signal, emit) => emit({ type: 'message', text: 'Read it.' })], { mode: 'draft' })

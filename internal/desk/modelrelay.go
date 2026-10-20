@@ -95,12 +95,14 @@ const (
 	// maxRelayInFlight is how many relayed requests this desk will carry at
 	// once.
 	//
-	// **A bound, and deliberately not a queue.** A queue would turn a page
-	// that fires a hundred requests into a desk holding a hundred sockets and
-	// a hundred deadlines, and would report the wait as latency. Four is more
-	// than one authoring session's own parallelism — a loop is a loop, plus a
-	// critic — and past it the answer is an immediate, named refusal that a
-	// caller can act on.
+	// **A bound, with a bounded queue behind it** (`relay_queue.go`). The four
+	// stay: they are the sockets and deadlines one desk is willing to hold. A
+	// request past them used to be refused at once, which was right while a
+	// session's parallelism was a loop and a critic; a delegating session runs
+	// its children beside the parent, a fifth request is the ordinary case,
+	// and it waits for a turn instead, up to `maxRelayQueued` of them and
+	// `relayQueueWait` each. Past those the answer is a refusal a caller can act
+	// on.
 	maxRelayInFlight = 4
 
 	// maxListingBody bounds the one relayed answer this desk reads.
@@ -398,9 +400,15 @@ var reflectedCredentialHeaders = []string{
 // line this route writes — and the configuration decoder already refuses a URL
 // carrying userinfo for the same reason. The header is the only place a key
 // goes.
-func credentialHeader(kind, key string) (name, value string, ok bool) {
+func credentialHeader(kind, auth, key string) (name, value string, ok bool) {
 	switch kind {
 	case "openai-compatible":
+		// Azure's OpenAI service takes the key in an `api-key` header and not as
+		// a bearer; an endpoint whose owner has said so (`auth: "api-key"`) is
+		// sent it there and nowhere else, and any other is sent the bearer.
+		if auth == "api-key" {
+			return "api-key", key, true
+		}
 		return "Authorization", "Bearer " + key, true
 	case "anthropic":
 		return "x-api-key", key, true
@@ -757,7 +765,12 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		s.refuseKeyRead(w, err)
 		return
 	}
-	if !stored.present {
+	// **An endpoint on this computer needs no key**, and where none is stored
+	// the request goes out with no credential. Nothing else changes: a key that
+	// is stored is bound and presented to such an endpoint like any other, and
+	// every other endpoint is refused with no key as it always was.
+	keyless := !stored.present && endpoint.keyless()
+	if !stored.present && !keyless {
 		// The same state the probe names, and the same repair: store a key on
 		// Admin. A second code for one state would be two answers to one
 		// question.
@@ -772,12 +785,14 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	// refused here, before a socket is opened, and the repair is a person
 	// entering the key again — which page code cannot do, because it has never
 	// held it.
-	if reason := bindingProblem(stored, endpoint); reason != "" {
-		writeJSONCoded(w, http.StatusConflict, CodeAssistantKeyUnbound, reason)
-		return
+	if !keyless {
+		if reason := bindingProblem(stored, endpoint); reason != "" {
+			writeJSONCoded(w, http.StatusConflict, CodeAssistantKeyUnbound, reason)
+			return
+		}
 	}
 	key := stored.key
-	name, value, ok := credentialHeader(endpoint.kind, key)
+	name, value, ok := credentialHeader(endpoint.kind, endpoint.auth, key)
 	if !ok {
 		// Unreachable: `decodeDeskFile` refuses every other kind by name.
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured,
@@ -806,25 +821,16 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	defer work.Close()
 
-	// A bound, not a queue: taken without waiting, and refused where there is
-	// nothing to take.
-	select {
-	case s.relaySlots <- struct{}{}:
-		defer func() { <-s.relaySlots }()
-	default:
-		writeJSONCoded(w, http.StatusServiceUnavailable, CodeAssistantRelayBusy,
-			fmt.Sprintf("this desk is already carrying %d requests to the endpoint; "+
-				"nothing was sent", maxRelayInFlight))
-		return
-	}
-
+	// A slot, waited for in a bounded queue where none is free: see
+	// `admitRelay`. The connection's room is taken with it, the same
+	// per-connection limit the background workers share.
 	capacityKey := s.modelCapacityKey(endpoint.url, keyName)
-	releaseCapacity, admitted := modelCapacity.Try(capacityKey)
-	if !admitted {
-		writeJSONCoded(w, http.StatusServiceUnavailable, CodeAssistantRelayBusy, "This AI connection is busy. Nothing was sent.")
+	admission, refusal := s.admitRelay(r.Context(), capacityKey)
+	if refusal != nil {
+		refusal.write(w)
 		return
 	}
-	defer releaseCapacity()
+	defer admission.release()
 
 	ctx, cancel := context.WithTimeout(r.Context(), relayDeadline)
 	defer cancel()
@@ -913,8 +919,11 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 				}
 				carried[header] = values
 			}
-			// The one thing this relay adds.
-			carried.Set(name, value)
+			// The one thing this relay adds, and nothing where the endpoint is
+			// one on this computer and no key is kept for it.
+			if !keyless {
+				carried.Set(name, value)
+			}
 			// **A listing is asked for uncompressed**, because a scan of
 			// compressed bytes is not a scan. Deleting the page's own
 			// `Accept-Encoding` lets Go's transport add and transparently undo
@@ -933,6 +942,9 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 				modelCapacity.Throttle(capacityKey)
 			}
 			status = response.StatusCode
+			// **The wait goes back with the answer**, set after the filter below so an
+			// endpoint cannot say it for us and cannot take it out.
+			defer admission.markQueued(response.Header)
 			// **The answer's headers are filtered too**, and the reason is the
 			// key: an endpoint that echoes what it was sent would otherwise
 			// hand the machine-held credential to the page. `Set-Cookie` is on
@@ -1056,8 +1068,8 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	// that has stopped reading, and the outer server has no `WriteTimeout` by
 	// design — `/ws` is a socket it holds open for a session. So four clients
 	// that authenticate and then stop reading could hold all four slots for
-	// ever, and every later request would answer `assistant-relay-busy` about
-	// a desk that was not carrying anything. The connection's write deadline is
+	// ever, and every later request would wait out its turn behind slots that
+	// were carrying nothing. The connection's write deadline is
 	// extended by the idle bound before each write and never past the overall
 	// one, so a page that stops reading loses its answer and gives back the
 	// slot.

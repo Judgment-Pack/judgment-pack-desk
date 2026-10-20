@@ -1,0 +1,17 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "http://llm.local/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "models": [
+        "a-model"
+      ],
+      "tools": [
+        "validate"
+      ],
+      "lan": true
+    }
+  }
+}

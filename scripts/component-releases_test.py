@@ -157,7 +157,7 @@ class WebPackagesTest(unittest.TestCase):
         pins.check_web_packages(self.plan, pins.WEB)
 
     def test_check_refuses_another_install_source(self):
-        for wanted, resolved, version in ((self.url.replace('v0.1.0', 'v0.0.9'), self.url, None), ('file:../.harness/package.tgz', 'file:../.harness/package.tgz', None),
+        for wanted, resolved, version in ((self.url.replace(self.package['version'], 'v0.0.9'), self.url, None), ('file:../.harness/package.tgz', 'file:../.harness/package.tgz', None),
                                           (self.url, self.url.replace('agent', 'other'), None), (self.url, self.url, '0.1.0-dev')):
             with self.subTest(wanted=wanted, resolved=resolved, version=version):
                 self.write(wanted, resolved, pins.npm_integrity(self.ASSET), version)

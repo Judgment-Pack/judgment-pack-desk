@@ -64,11 +64,23 @@ func (c *Capacity) Try(key string) (func(), bool) {
 	return release, release != nil
 }
 func (c *Capacity) Acquire(ctx context.Context, key string) (func(), error) {
+	return c.wait(ctx, key, true)
+}
+
+// Wait is Try that waits its turn: it returns once the key has room, as an
+// interactive request counts (not as background work does), or with the
+// context's error. Whoever takes the room first when it appears has it; there
+// is no order among waiters.
+func (c *Capacity) Wait(ctx context.Context, key string) (func(), error) {
+	return c.wait(ctx, key, false)
+}
+
+func (c *Capacity) wait(ctx context.Context, key string, background bool) (func(), error) {
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		release, changed := c.take(key, true)
+		release, changed := c.take(key, background)
 		if release != nil {
 			return release, nil
 		}

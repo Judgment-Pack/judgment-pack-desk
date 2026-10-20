@@ -328,3 +328,65 @@ func TestAgentModelPolicyRereadsDiskAndFailsClosed(t *testing.T) {
 		t.Fatal("missing policy authorized")
 	}
 }
+
+// All run phases use the connection's enabled-model allowlist. Review and
+// helper preferences select models; the wire carries no child-only permission.
+func TestAgentSocketAdmitsTheModelsAConnectionNamesForReviewAndChildren(t *testing.T) {
+	const agent = `{"provider":"openai","authMethod":"subscription","model":"model","models":["model","small"],"tools":[],"criticModel":"small","childModel":"small"}`
+	for _, tc := range []struct {
+		name, phase, model string
+		allowed            bool
+	}{
+		{"a critic run on the review model", "critic", "small", true},
+		{"a child run on the helper model", "author", "small", true},
+		{"a main run on another enabled model", "", "small", true},
+		{"the run's own model", "author", "model", true},
+		{"a critic run on a model the connection does not allow", "critic", "large", false},
+		{"a child run on a model the connection does not allow", "author", "large", false},
+		{"a main run on a model the connection does not allow", "", "large", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := make(chan codexbridge.RunRequest, 1)
+			stub := &agentStub{run: func(_ context.Context, _ codexbridge.Owner, r codexbridge.RunRequest, _ func(codexbridge.RunEvent) error, _ codexbridge.ToolHandler) error {
+				called <- r
+				return nil
+			}}
+			s, server, token := agentServer(t, stub)
+			config := `{"deskConfigVersion":1,"assistant":{"engine":"codex","agent":` + agent + `}}`
+			if decoded := decodeDeskFile([]byte(config)); decoded.refused() {
+				t.Fatalf("the connection was refused: %v", decoded.Problems)
+			}
+			if err := os.WriteFile(s.deskConfigPath(), []byte(config), 0600); err != nil {
+				t.Fatal(err)
+			}
+			ws := agentSocket(t, server, token)
+			writeAgent(t, ws, map[string]any{"type": "start", "request": map[string]any{"model": tc.model, "prompt": "test", "instructions": "test", "tools": []any{}, "phase": tc.phase}})
+			if got := readAgent(t, ws); got["type"] != "started" {
+				t.Fatal(got)
+			}
+			end := readAgent(t, ws)
+			if tc.allowed {
+				if end["type"] != "end" || end["error"] != "" {
+					t.Fatal(end)
+				}
+				select {
+				case request := <-called:
+					if request.Model != tc.model || request.Phase != tc.phase {
+						t.Fatalf("ran %q in phase %q", request.Model, request.Phase)
+					}
+				default:
+					t.Fatal("the run did not start")
+				}
+				return
+			}
+			if end["error"] != "model-not-allowed" {
+				t.Fatal(end)
+			}
+			select {
+			case <-called:
+				t.Fatal("a model the connection does not allow ran")
+			default:
+			}
+		})
+	}
+}

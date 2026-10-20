@@ -14,6 +14,9 @@ import { sourceMessage } from '../i18n/source'
  * no shape here the schema does not already have.
  */
 import {
+  ENDPOINT_CAPACITY,
+  endpointUrlProblem,
+  type CapabilityFacts,
   ASSISTANT_KINDS,
   ASSISTANT_THINKING,
   ASSISTANT_TOOLS,
@@ -47,6 +50,42 @@ export interface EndpointDraft {
   models: string[]
   tools: AssistantTool[]
   thinking: ThinkingTier
+  /**
+   * The models the connection runs its critic and its delegated children on,
+   * each one of `models`, and `''` where it names none: the run's own model.
+   */
+  criticModel: string
+  childModel: string
+  /** How many requests the connection carries at once, as typed; `''` where it states none. */
+  capacity: string
+  /** How the key is presented to an OpenAI-compatible endpoint: the protocol's own bearer, or Azure's `api-key` header. */
+  auth: 'bearer' | 'api-key'
+  /** The owner accepts a plain `http:` address on this network, and knows a key sent to it is in clear text there. */
+  lan: boolean
+  /** What the last probe of this endpoint found, and which endpoint and model it was of (`probeOf`); `null` before one. */
+  probe: { at: string; facts: CapabilityFacts; of: string } | null
+  /** The owner's overrides as typed: a whole number or `''` for the window and the reserve, and a yes, a no or `''` (the probe's finding, or the family's default) for each flag. */
+  override: CapabilityFields
+  /** Override members the form has no field for, carried through a save untouched. */
+  overrideHeld: CapabilityFacts
+}
+
+/** A choice the owner may leave to the probe: yes, no, or nothing said. */
+export type Tri = '' | 'yes' | 'no'
+export interface CapabilityFields {
+  contextWindow: string
+  outputReserve: string
+  nativeToolCalls: Tri
+  parallelToolCalls: Tri
+  vision: Tri
+  strictAlternation: Tri
+}
+export const OVERRIDE_FLAGS = ['nativeToolCalls', 'parallelToolCalls', 'vision', 'strictAlternation'] as const
+const FORM_MEMBERS = ['contextWindow', 'outputReserve', ...OVERRIDE_FLAGS] as const
+
+/** Which endpoint and model a probe is of: its protocol, its address and the default model it was asked with. */
+export function probeOf(draft: Pick<EndpointDraft, 'kind' | 'url' | 'model'>): string {
+  return JSON.stringify([draft.kind, draft.url.trim(), draft.model.trim()])
 }
 
 /**
@@ -114,8 +153,61 @@ export function draftFrom(config: AssistantConfig): EndpointDraft {
       endpoint === null
         ? [...ASSISTANT_TOOLS]
         : ASSISTANT_TOOLS.filter((tool) => endpoint.tools.includes(tool)),
-    thinking: config.thinking
+    thinking: config.thinking,
+    criticModel: endpoint?.criticModel ?? '',
+    childModel: endpoint?.childModel ?? '',
+    capacity: endpoint?.capacity === undefined ? '' : String(endpoint.capacity),
+    auth: endpoint?.auth ?? 'bearer',
+    lan: endpoint?.lan === true,
+    probe: endpoint?.capabilities?.probe === undefined
+      ? null
+      : { at: endpoint.capabilities.probe.at, facts: factsOf(endpoint.capabilities.probe), of: probeOf({ kind: endpoint.kind, url: endpoint.url, model: endpoint.model ?? '' }) },
+    override: fieldsOf(endpoint?.capabilities?.override),
+    overrideHeld: Object.fromEntries(Object.entries(endpoint?.capabilities?.override ?? {}).filter(([name]) => !(FORM_MEMBERS as readonly string[]).includes(name))) as CapabilityFacts
   }
+}
+
+const tri = (value: boolean | undefined): Tri => (value === undefined ? '' : value ? 'yes' : 'no')
+function factsOf(record: CapabilityFacts & { at?: string }): CapabilityFacts {
+  const { at: _at, ...facts } = record
+  return facts
+}
+function fieldsOf(override: CapabilityFacts | undefined): CapabilityFields {
+  return {
+    contextWindow: override?.contextWindow === undefined ? '' : String(override.contextWindow),
+    outputReserve: override?.outputReserve === undefined ? '' : String(override.outputReserve),
+    nativeToolCalls: tri(override?.nativeToolCalls),
+    parallelToolCalls: tri(override?.parallelToolCalls),
+    vision: tri(override?.vision),
+    strictAlternation: tri(override?.strictAlternation)
+  }
+}
+
+/**
+ * What a typed whole number is for the window or the reserve: the number, or
+ * nothing for a blank field, or `NaN` for anything else (so a draft carrying
+ * one is refused here and by the decoder, never quietly written as something
+ * else).
+ */
+function wholeOf(typed: string): number | undefined {
+  const text = typed.trim()
+  if (text === '') return undefined
+  return /^\d+$/.test(text) ? Number(text) : Number.NaN
+}
+
+/** Why the typed window and reserve cannot be written, or nothing: the decoder's own bounds and the harness's. */
+export function overrideProblem(fields: CapabilityFields): { contextWindow?: string; outputReserve?: string } {
+  const window = wholeOf(fields.contextWindow), reserve = wholeOf(fields.outputReserve)
+  const problems: { contextWindow?: string; outputReserve?: string } = {}
+  if (window !== undefined && !(Number.isInteger(window) && window >= 4096 && window <= 2_000_000)) {
+    problems.contextWindow = sourceMessage('must be an integer from {{value0}} to {{value1}}; found {{value2}}', { value0: 4096, value1: 2_000_000, value2: JSON.stringify(fields.contextWindow.trim()) })
+  }
+  if (reserve !== undefined && !(Number.isInteger(reserve) && reserve >= 1024 && reserve <= 1_000_000)) {
+    problems.outputReserve = sourceMessage('must be an integer from {{value0}} to {{value1}}; found {{value2}}', { value0: 1024, value1: 1_000_000, value2: JSON.stringify(fields.outputReserve.trim()) })
+  } else if (reserve !== undefined && window !== undefined && Number.isInteger(window) && reserve > Math.floor(window / 2)) {
+    problems.outputReserve = sourceMessage('must be at most half the context window')
+  }
+  return problems
 }
 
 /**
@@ -165,7 +257,79 @@ export function withModel(draft: EndpointDraft, id: string, enabled: boolean): E
       : [...draft.models, id]
     : draft.models.filter((each) => each !== id)
   const model = models.includes(draft.model) ? draft.model : (models[0] ?? '')
-  return { ...draft, models, model }
+  // A model the set no longer holds cannot be the critic's or the children's: the relay admits only the set.
+  return {
+    ...draft,
+    models,
+    model,
+    criticModel: models.includes(draft.criticModel) ? draft.criticModel : '',
+    childModel: models.includes(draft.childModel) ? draft.childModel : ''
+  }
+}
+
+/**
+ * The capacity a typed value states: the whole number it spells, or nothing for
+ * a blank field. A value that is not a whole number in the schema's range is
+ * returned as `NaN`, so a draft carrying one is refused by the form and by the
+ * decoder rather than quietly written as something else.
+ */
+export function capacityOf(typed: string): number | undefined {
+  const text = typed.trim()
+  if (text === '') return undefined
+  return /^\d+$/.test(text) ? Number(text) : Number.NaN
+}
+
+/** Why a typed capacity cannot be written, or nothing: the decoder's own bounds. */
+export function capacityProblem(typed: string): string | undefined {
+  const value = capacityOf(typed)
+  if (value === undefined) return undefined
+  const [low, high] = ENDPOINT_CAPACITY
+  return Number.isInteger(value) && value >= low && value <= high ? undefined : sourceMessage('must be an integer from {{value0}} to {{value1}}; found {{value2}}', { value0: low, value1: high, value2: JSON.stringify(typed.trim()) })
+}
+
+/**
+ * The `capabilities` member a draft writes: the probe's finding, kept only while
+ * the endpoint and model it was of are the ones the draft names (a finding about
+ * another endpoint is not a finding about this one), and the owner's overrides,
+ * each member named by name. Nothing where neither holds a member.
+ */
+function capabilitiesWrite(draft: EndpointDraft): { capabilities?: unknown } {
+  const probe = draft.probe !== null && draft.probe.of === probeOf(draft) ? { at: draft.probe.at, ...draft.probe.facts } : undefined
+  const window = wholeOf(draft.override.contextWindow), reserve = wholeOf(draft.override.outputReserve)
+  const flags = Object.fromEntries(OVERRIDE_FLAGS.flatMap((name) => (draft.override[name] === '' ? [] : [[name, draft.override[name] === 'yes']])))
+  const override = {
+    ...draft.overrideHeld,
+    ...(window === undefined ? {} : { contextWindow: window }),
+    ...(reserve === undefined ? {} : { outputReserve: reserve }),
+    ...flags
+  }
+  const held = Object.keys(override).length > 0
+  return probe === undefined && !held ? {} : { capabilities: { ...(probe === undefined ? {} : { probe }), ...(held ? { override } : {}) } }
+}
+
+/** Name the model the connection runs its critic or its delegated children on, or `''` for the run's own. */
+/**
+ * How the model pickers for the review and the helper tasks spell "the model of
+ * the run". The member is the empty string where nothing is named, but a
+ * select's option is never spelled `""` (see `ui/Select`), so the picker
+ * offers this value for it and the form turns it back on the way in and out.
+ */
+export const RUN_MODEL = '*'
+
+/** What a subordinate model picker shows for a stored member. */
+export const subordinateChoice = (stored: string): string => (stored === '' ? RUN_MODEL : stored)
+
+/** The stored member for what the picker reported. */
+export const subordinateStored = (choice: string): string => (choice === RUN_MODEL ? '' : choice)
+
+/** The decoder's own rule for the address, with the plain-address opt-in the draft carries. */
+export function draftUrlProblem(draft: EndpointDraft): string | undefined {
+  return draft.url.trim() === '' ? undefined : endpointUrlProblem(draft.url.trim(), draft.lan)
+}
+
+export function withSubordinateModel(draft: EndpointDraft, member: 'criticModel' | 'childModel', id: string): EndpointDraft {
+  if (id !== '' && !draft.models.includes(id)) return draft
+  return { ...draft, [member]: id }
 }
 
 /**
@@ -224,7 +388,16 @@ export function assistantWrite(draft: EndpointDraft): unknown {
       // What the decoder accepts is the trimmed id, so a set written untrimmed
       // would be a form showing one string and writing another.
       models: draft.models.map((id) => id.trim()),
-      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool))
+      tools: ASSISTANT_TOOLS.filter((tool) => draft.tools.includes(tool)),
+      // Named only where the set holds the model, so the form cannot compose a file its own reader refuses.
+      ...(draft.criticModel !== '' && draft.models.includes(draft.criticModel) ? { criticModel: draft.criticModel.trim() } : {}),
+      ...(draft.childModel !== '' && draft.models.includes(draft.childModel) ? { childModel: draft.childModel.trim() } : {}),
+      // Written as the number the schema has, or not at all: a field left blank states no capacity.
+      ...(capacityOf(draft.capacity) === undefined ? {} : { capacity: capacityOf(draft.capacity) }),
+      // The header form, and only for the protocol that has one.
+      ...(draft.auth === 'api-key' && draft.kind === 'openai-compatible' ? { auth: 'api-key' } : {}),
+      ...(draft.lan ? { lan: true } : {}),
+      ...capabilitiesWrite(draft)
     },
     thinking: draft.thinking
   }

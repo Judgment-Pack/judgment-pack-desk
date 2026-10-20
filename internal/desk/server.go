@@ -287,9 +287,14 @@ type Server struct {
 	assistant *assistantStore
 	// relaySlots bounds how many model-relay requests are in flight at once.
 	// A buffered channel rather than a semaphore type: taking a slot without
-	// waiting is one `select` with a `default`, which is exactly the "a bound,
-	// not a queue" the relay promises. See modelrelay.go.
+	// waiting is one `select` with a `default`, and a send that waits is served
+	// in the order the senders arrived. See modelrelay.go and relay_queue.go.
 	relaySlots chan struct{}
+	// relayQueue holds one token for each model-relay request waiting for a
+	// slot, so the number waiting is bounded; see relay_queue.go.
+	relayQueue chan struct{}
+	// relayLine orders the requests that wait; see relay_queue.go.
+	relayLine relayLine
 	// researchSlots bounds the research relay the same way. Its own channel,
 	// because a research run holding both of these must not starve the model
 	// relay the same run is talking to. See researchrelay.go.
@@ -456,6 +461,7 @@ func New(cfg Config) (*Server, error) {
 		configDir:              configPath,
 		home:                   home,
 		relaySlots:             make(chan struct{}, maxRelayInFlight),
+		relayQueue:             make(chan struct{}, maxRelayQueued),
 		researchSlots:          make(chan struct{}, maxResearchInFlight),
 		sessions:               sessions,
 		launches:               launches,

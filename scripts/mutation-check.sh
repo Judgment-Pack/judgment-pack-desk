@@ -1049,9 +1049,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request) {
 '
   mutate go "a probe runs with no key to present" "$A" \
-    '	if !stored.present {
+    '	if !stored.present && !keyless {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,' \
-    '	if false {
+    '	if false && !stored.present && !keyless {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,'
   mutate go "any object takes any member at all" "$DF" \
     '		if !contains(allowed, member) {' \
@@ -1115,13 +1115,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     ''
   # A bearer credential in clear text over a network is a credential given away.
   mutate go "http is accepted off loopback" internal/desk/deskfile.go \
-    '	if parsed.Scheme == "http" &&
-		(strings.EqualFold(parsed.Hostname(), "localhost") || parsed.Hostname() == "127.0.0.1") {
+    '	if parsed.Scheme == "http" && loopbackHost(parsed.Hostname()) {
 		return ""
 	}' \
     '	if parsed.Scheme == "http" {
 		return ""
 	}'
+  mutate go "http is accepted on the LAN without the opt-in" internal/desk/deskfile.go \
+    '	if parsed.Scheme == "http" && lan && lanHost(parsed.Hostname()) {' \
+    '	if parsed.Scheme == "http" && lanHost(parsed.Hostname()) {'
+  mutate go "http is accepted past the LAN with the opt-in" internal/desk/deskfile.go \
+    '	if parsed.Scheme == "http" && lan && lanHost(parsed.Hostname()) {' \
+    '	if parsed.Scheme == "http" && lan {'
   # Go strips Authorization across hosts and knows nothing about x-api-key.
   # **The binding, and the three ways it could stop holding.** Round 1: the
   # page can write the desk-level file, so it can name any endpoint it likes —
@@ -1629,17 +1634,6 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the endpoint may set a cookie on the desk's origin" "$MR" \
     '"X-Api-Key", "Api-Key", "X-Goog-Api-Key", "Set-Cookie",' \
     '"X-Api-Key", "Api-Key", "X-Goog-Api-Key",'
-  # A queue rather than a bound: the request past the fourth waits instead of
-  # being told. The test uses a client with a timeout for exactly this row, so
-  # a queued request fails the suite rather than hanging it.
-  mutate go "the relay queues rather than bounds" "$MR" \
-    '	select {
-	case s.relaySlots <- struct{}{}:
-		defer func() { <-s.relaySlots }()
-	default:' \
-    '	s.relaySlots <- struct{}{}
-	defer func() { <-s.relaySlots }()
-	if false {'
   # **Held by the declared-length test and not by the SSE one.**
   # `httputil.ReverseProxy` flushes immediately on its own for a
   # `text/event-stream` body and for one of unknown length, whatever
@@ -10069,8 +10063,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # a row of facts the card no longer carries, and the claim moved with the
   # words — `keySays` reads `present` and nothing about the endpoint beside it.
   mutate web 'no endpoint is reported as no key' web/src/assistant/KeyField.tsx \
-    '  if (!state.present) return msg("No key stored")' \
-    '  if (!state.present || state.configuredOrigin === '"'"''"'"') return msg("No key stored")'
+    '  if (!state.present) return state.keyless === true ? msg("No key is needed for an endpoint on this computer") : msg("No key stored")' \
+    '  if (!state.present || state.configuredOrigin === '"'"''"'"') return state.keyless === true ? msg("No key is needed for an endpoint on this computer") : msg("No key stored")'
   mutate web "a diagnostic is rendered as the bare word" "$ECK" \
     '        : msg('"'"'Not connected · {{answered}} · {{diagnostic}}'"'"', { answered, diagnostic: DIAGNOSTIC_SAYS[probe.diagnostic] ? msg(DIAGNOSTIC_SAYS[probe.diagnostic]!) : probe.diagnostic })' \
     '        : `Not connected · ${answered} · ${probe.diagnostic}`'
@@ -10107,7 +10101,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     check.reset()
     const value = takeKey()'
   mutate web 'assistant setup: stored key is assumed bound' 'web/src/assistant/EndpointForm.tsx' \
-    'configured !== null && binding === '\''bound'\'' && key.isSuccess' \
+    'configured !== null && (binding === '\''bound'\'' || binding === '\''keyless'\'') && key.isSuccess' \
     'configured !== null && (key.data?.present ?? false) && key.isSuccess'
   mutate web 'assistant setup: test finishes after only one answer' 'web/src/assistant/endpointCheck.ts' \
     '    let outstanding = 2' \
@@ -10217,7 +10211,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # opens a socket, and the probe refuses with no key at all — so a button
   # offered here could only produce those refusals.
   mutate web "the listing is asked for with no key bound to the endpoint" "$EF" \
-    "  const connected = configured !== null && binding === 'bound' && key.isSuccess" \
+    "  const connected = configured !== null && (binding === 'bound' || binding === 'keyless') && key.isSuccess" \
     '  const connected = configured !== null'
   # **The gate came off the saved endpoint and the request came off the draft**,
   # so choosing Gemini without saving sent `v1beta/models` to a still-saved
@@ -10422,8 +10416,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # picker and a standing line both showing something else.
   # Repaired: the run carries the AI connection it was started on.
   mutate web 'the run ignores the model that was picked' web/src/assistant/useAssistantRun.ts \
-    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, modelOf(model), thinking),' \
-    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking),'
+    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, modelOf(model), thinking, run.meter),' \
+    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking, run.meter),'
   mutate web "Stop writes no terminal event" "$AR" \
     '    finish(run)
     release(run)
@@ -14449,26 +14443,54 @@ fi
 # ledger, the current state, propose_pack's offer, framing and the host wiring.
 if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'harness swap: recall reads the execution state part' internal/desk/ai_context.go \
-    'if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {' \
-    'if t, ok := p["text"].(string); ok {'
+    '					continue
+				}
+				if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {' \
+    '					continue
+				}
+				if t, ok := p["text"].(string); ok {'
+  mutate go 'harness swap: recall reads the execution state in a content list' internal/desk/ai_context.go \
+    '			if p, ok := part.(map[string]any); ok && p["type"] == "text" {
+				if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {' \
+    '			if p, ok := part.(map[string]any); ok && p["type"] == "text" {
+				if t, ok := p["text"].(string); ok {'
   mutate go 'harness swap: recall reads the execution state message' internal/desk/ai_context.go \
     'return text, !strings.HasPrefix(text, executionStateHeader)' \
     'return text, true'
-  mutate go 'harness swap: recall reads a tool-only turn' internal/desk/ai_context.go \
-    '				if !ok {
-					continue
-				}
-				if strings.Contains(text, personMessageMarker) {' \
-    '				if false && !ok {
-					continue
-				}
-				if strings.Contains(text, personMessageMarker) {'
-  mutate go 'harness swap: recall reads the harness'"'"'s own request' internal/desk/ai_context.go \
-    '				if strings.Contains(text, personMessageMarker) {' \
-    '				if false && strings.Contains(text, personMessageMarker) {'
-  mutate go 'harness swap: codex recall ignores the person'"'"'s message' internal/desk/ai_context.go \
-    '	if request.PersonMessage != "" {' \
-    '	if false && request.PersonMessage != "" {'
+  mutate go 'harness swap: recall skips no thought part' internal/desk/ai_context.go \
+    '				if thought, _ := p["thought"].(bool); thought {' \
+    '				if false {'
+  mutate go 'harness swap: recall reads a later user turn' internal/desk/ai_context.go \
+    '				return memoryQueryTail(text)
+			}
+			return ""' \
+    '				return memoryQueryTail(text)
+			}
+			continue'
+  mutate go 'harness swap: recall reads a part that is not text' internal/desk/ai_context.go \
+    '			if p, ok := part.(map[string]any); ok && p["type"] == "text" {' \
+    '			if p, ok := part.(map[string]any); ok {'
+  mutate go 'harness swap: codex recall reads the execution state' internal/desk/ai_context.go \
+    '	if strings.HasPrefix(request.Prompt, executionStateHeader) {' \
+    '	if false {'
+  mutate go 'harness swap: codex recall reads past the state header' internal/desk/ai_context.go \
+    '		text = text[:at]' \
+    '		_ = at'
+  mutate go 'queue: a request passes those waiting' internal/desk/relay_queue.go \
+    'ok && s.relayLine.empty() {' \
+    'ok {'
+  mutate go 'queue: the bound holds more than it says' internal/desk/server.go \
+    'relayQueue:             make(chan struct{}, maxRelayQueued),' \
+    'relayQueue:             make(chan struct{}, maxRelayQueued*4),'
+  mutate go 'queue: the refusal tells the page when to come back' internal/desk/relay_queue.go \
+    'code: CodeAssistantRelayQueueFull, retryAfter: "1",' \
+    'code: CodeAssistantRelayQueueFull,'
+  mutate go 'queue: the wait has no bound' internal/desk/relay_queue.go \
+    '	waiting, cancel := context.WithTimeout(ctx, relayQueueWait)' \
+    '	waiting, cancel := context.WithCancel(ctx)'
+  mutate go 'queue: the wait is not reported to the page' internal/desk/relay_queue.go \
+    '	header.Set(relayQueueWaitHeader, strconv.FormatInt(a.waited.Milliseconds(), 10))' \
+    '	_ = strconv.FormatInt'
   mutate go 'harness swap: anthropic cache read dropped' internal/desk/background_completion.go \
     '		result.CacheReadTokens = backgroundTokenCount(wire.Usage.CacheRead)
 ' \
@@ -14533,11 +14555,6 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'harness swap: propose_pack offered to the reviewer' web/src/research/useResearchRun.ts \
     'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
     'hostTools: executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),'
-  mutate web 'harness swap: the pack pane offers no propose_pack' web/src/assistant/AssistantPane.tsx \
-    '    hostTools: PANE_HOST_TOOLS
-' \
-    '    hostTools: []
-'
   mutate web 'harness swap: read_source is not framed as retrieved data' web/src/research/tools.ts \
     '    name: '"'"'read_source'"'"',
     effect: '"'"'read'"'"',
@@ -14548,16 +14565,54 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  endpointCapabilities: (endpoint) => capabilities.endpointCapabilities(endpoint),
 ' \
     ''
-  mutate web 'harness swap: renderImageToText left unwired' web/src/assistant/harnessHost.ts \
-    '  renderImageToText: () => capabilities.renderImageToText()
-' \
-    ''
   mutate web 'harness swap: the Go state header drifts from the package'"'"'s' internal/desk/ai_context.go \
     'const executionStateHeader = "EXECUTION STATE (from the host,' \
     'const executionStateHeader = "EXECUTION STATE (from the desk,'
-  mutate web 'harness swap: a Codex run sends no person'"'"'s message' web/src/research/useResearchRun.ts \
-    '            ...withPersonMessage(bindExecution(' \
-    '            ...((bound:ReturnType<typeof bindExecution>,_message?:string)=>bound)(bindExecution('
+  mutate web 'harness swap: the pack pane offers no propose_pack' web/src/assistant/AssistantPane.tsx \
+    '    hostTools: PANE_HOST_TOOLS,' \
+    '    hostTools: [],'
+  mutate web 'harness swap: renderImageToText left unwired' web/src/assistant/harnessHost.ts \
+    '  renderImageToText: () => capabilities.renderImageToText(),
+' \
+    ''
+  mutate web 'harness swap: modelsFor left unwired' web/src/assistant/harnessHost.ts \
+    '  modelsFor: (run) => connectionModels.modelsFor(run)
+' \
+    ''
+  mutate web 'critic: the pack pane does not ask for the critic' web/src/assistant/useAssistantRun.ts \
+    "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
+    'adversarialReview: false,'
+  mutate web 'critic: the Codex engine is asked for the critic' web/src/assistant/useAssistantRun.ts \
+    "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
+    "adversarialReview: purpose === undefined && thinking !== 'off',"
+  mutate web 'critic: the critic is asked for with thinking off' web/src/assistant/useAssistantRun.ts \
+    "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
+    "adversarialReview: purpose === undefined && engine === 'vercel',"
+  mutate web 'probe: the probe overrides what the owner set' web/src/assistant/endpointCapabilities.ts \
+    '  return { ...found, ...(record.override ?? {}) }' \
+    '  return { ...(record.override ?? {}), ...found }'
+fi
+
+
+# Desk-owned v0.3.0 admission and credential safeguards (#529, #533).
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'harness approval: a ready grant admits another id' internal/desk/assistant_approval.go \
+    'grant.ID != req.ID || grant.Action != req.Action' \
+    'false || grant.Action != req.Action'
+  mutate go 'relay queue: more than sixteen requests may wait' internal/desk/relay_queue.go \
+    'maxRelayQueued = 16' \
+    'maxRelayQueued = 1000'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'harness credentials: Desk headers omitted' web/src/assistant/harnessHost.ts \
+    'deskHeaders: () => scope.deskHeaders(),' \
+    'deskHeaders: () => ({}),'
+  mutate web 'harness credentials: AI headers omitted' web/src/assistant/harnessHost.ts \
+    'aiHeaders: (id, revision) => connections.aiHeaders(id, revision),' \
+    'aiHeaders: () => ({}),'
+  mutate web 'harness credentials: session bearer omitted' web/src/assistant/harnessHost.ts \
+    'sessionBearer: () => session.sessionBearer(),' \
+    'sessionBearer: () => Promise.resolve(""),'
 fi
 
 restore

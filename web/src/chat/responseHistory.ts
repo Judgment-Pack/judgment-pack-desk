@@ -8,16 +8,20 @@ import { validSearchStep, type SearchStep } from '../search/step'
 import { searchFailureMessage, type SearchFailureCode } from '../search/failures'
 import { validSearchReference, type SearchReference } from '../search/results'
 import type { AssistantEvent } from '@judgment-pack/harness/engine'
+import { criticRecord, validCriticRecord, type CriticRecord } from '../assistant/critic'
+import { reportFromExecution, validRunReport, type RunReport } from '../assistant/report'
+import type { ExecutionCheckpoint } from '@judgment-pack/harness/execution/state'
+import type { RunTiming } from '../assistant/runMeter'
 import type { ChatAttachment } from './store'
 import { validWebURL } from '../documents/record'
 import { validWebsiteReference, type WebsiteReference } from '../documents/website'
 
-export interface WorkItem { questionFailure?: QuestionFailureCode; questionRecovered?: true; task?: DelegatedTask; inputRecipeFailure?: DialectRecipeFailureCode; redirectPolicy?: 'google-grounding'; linkFailure?: LinkFailureCode; researchSuggestion?: true; graph?: GraphWork; id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted'; failure?: SearchFailureCode; search?: SearchStep; link?: LinkStep }
+export interface WorkItem { /** A running delegated task's prose so far, streamed under its task by id; never saved. */ progress?: string; questionFailure?: QuestionFailureCode; questionRecovered?: true; task?: DelegatedTask; inputRecipeFailure?: DialectRecipeFailureCode; redirectPolicy?: 'google-grounding'; linkFailure?: LinkFailureCode; researchSuggestion?: true; graph?: GraphWork; id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted'; failure?: SearchFailureCode; search?: SearchStep; link?: LinkStep }
 // Saved work keeps the tool name used at execution, including names before the Dialects rename.
 const isRecipeProposalTool = (name: unknown) => name === 'propose_dialect_recipe' || name === 'propose_input_recipe'
 
 /** Pair by invocation identity, never by a tool name (parallel calls may repeat). */
-export function workItems(events: readonly AssistantEvent[], running: boolean): WorkItem[] {
+export function workItems(events: readonly AssistantEvent[], running: boolean, progress?: Readonly<Record<string, string>>): WorkItem[] {
   const rows: WorkItem[] = []
   const pending = new Map<string, WorkItem>()
   events.forEach((event, index) => {
@@ -32,8 +36,10 @@ export function workItems(events: readonly AssistantEvent[], running: boolean): 
       }
       const status=task.state==='queued'||task.state==='running'?'working':task.state
       const existing=rows.find(row=>row.id===task.id)
-      if(existing)Object.assign(existing,{task,status})
-      else rows.push({id:task.id,name:'delegate_task',task,status})
+      // A running task's streamed prose (`message_progress` with its task id) goes under it, until it ends.
+      const streamed=running&&(task.state==='running'||task.state==='queued')&&progress?.[task.id]?{progress:progress[task.id]!}:{}
+      if(existing){Object.assign(existing,{task,status});delete existing.progress;Object.assign(existing,streamed)}
+      else rows.push({id:task.id,name:'delegate_task',task,status,...streamed})
     } else if (event.type === 'tool_call' && event.callId) {
       const row: WorkItem = { id: event.callId, name: event.name, status: running ? 'working' : 'interrupted' }
       const query=(event.args as {query?:unknown}|undefined)?.query
@@ -71,7 +77,7 @@ export function workItems(events: readonly AssistantEvent[], running: boolean): 
 }
 
 
-export interface WorkRecord { items: WorkItem[]; notices: string[]; critique?: string }
+export interface WorkRecord { items: WorkItem[]; notices: string[]; critique?: string; critic?: CriticRecord; report?: RunReport }
 export interface ResponseHistory {
   id: string
   /** The final prose message of this engine response, or its preceding turn if interrupted before prose. */
@@ -83,13 +89,19 @@ export interface ResponseHistory {
   sourceIds: string[]
   work: WorkRecord
 }
-export function summarizeWork(events: readonly AssistantEvent[], running: boolean): WorkRecord {
-  return { items: workItems(events, running), notices: [...new Set(events.flatMap(event =>
+/** What a summary is made of beyond the events: the model the run used, running tasks' streamed prose, and the execution checkpoint. */
+export interface WorkContext { runModel?: string; progress?: Readonly<Record<string, string>>; execution?: ExecutionCheckpoint; timing?: RunTiming }
+export function summarizeWork(events: readonly AssistantEvent[], running: boolean, context: WorkContext = {}): WorkRecord {
+  const { runModel, progress, execution, timing } = context
+  const report = reportFromExecution(execution, timing)
+  const critique = [...events].reverse().find((event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique')
+  const critic = critique && criticRecord(critique, runModel)
+  return { items: workItems(events, running, progress), notices: [...new Set(events.flatMap(event =>
     event.type === 'guardrail' && event.action !== 'narrowed' ? [event.detail]
     : event.type === 'thinking_unavailable' ? [event.detail]
     : event.type === 'tool_result' && event.name === 'search_sources' && event.isError
       ? [searchFailureMessage((event.structured as {searchFailure?:unknown}|undefined)?.searchFailure)].filter((text):text is string=>!!text) : []))],
-    critique: [...events].reverse().find(event => event.type === 'critique')?.text }
+    critique: critique?.text, ...(critic ? { critic } : {}), ...(report ? { report } : {}) }
 }
 export const attachmentKey = (file: ChatAttachment) => `${file.id}/${file.document?.digest ?? ''}`
 export function mergeReferences(previous: ChatAttachment[], next: ChatAttachment[]): ChatAttachment[] {
@@ -124,10 +136,12 @@ export function readResponseHistory(value: unknown): ResponseHistory[] {
     if (!object(row) || row.searches!==undefined && (!Array.isArray(row.searches)||row.searches.length>64||!row.searches.every(validSearchReference)) || !id(row.id) || !Array.isArray(row.websites) || row.websites.length > 16 || !row.websites.every(validWebsiteReference)
       || !Array.isArray(row.sourceIds) || row.sourceIds.some(s => typeof s !== 'string' || !/^src-\d+$/.test(s)) || !object(row.work)
       || !Array.isArray(row.work.items) || !Array.isArray(row.work.notices) || row.work.notices.some(n => typeof n !== 'string')
-      || row.work.critique !== undefined && typeof row.work.critique !== 'string') return invalid()
+      || row.work.critique !== undefined && typeof row.work.critique !== 'string'
+      || row.work.critic !== undefined && !validCriticRecord(row.work.critic)
+      || row.work.report !== undefined && !validRunReport(row.work.report)) return invalid()
     for (const item of row.work.items) if (!object(item) || item.questionRecovered!==undefined&&(item.questionRecovered!==true||item.name!=='ask_user'||item.status!=='complete') || item.questionFailure!==undefined&&(!questionFailureMessage(item.questionFailure)||item.name!=='ask_user'||(item.status!=='failed'&&!item.questionRecovered)) || item.task!==undefined&&(item.name!=='delegate_task'||!validDelegatedTask(item.task)||item.task.id!==item.id) || item.inputRecipeFailure!==undefined&&(!dialectRecipeFailureMessage(item.inputRecipeFailure)||!isRecipeProposalTool(item.name)||item.status!=='failed') || item.redirectPolicy!==undefined&&(item.redirectPolicy!=='google-grounding'||item.linkFailure!=='web-redirect-origin'||item.status!=='failed'||item.name!=='read_link') || item.linkFailure!==undefined&&(item.name!=='read_link'||item.status!=='failed'||!validLinkFailure(item.linkFailure)) || item.researchSuggestion!==undefined&&(item.researchSuggestion!==true||!['search_sources','explore_website'].includes(String(item.name))) || item.graph!==undefined&&(!GRAPH_TOOLS.has(String(item.name))||!validGraphWork(item.graph)) || typeof item.id !== 'string' || typeof item.name !== 'string' || !['working','complete','failed','interrupted'].includes(String(item.status)) || item.failure!==undefined&&(!searchFailureMessage(item.failure)||item.status!=='failed'||item.name!=='search_sources') || item.search!==undefined&&(item.name!=='search_sources'||!validSearchStep(item.search)) || item.link!==undefined&&(item.name!=='read_link'||!validLinkStep(item.link))) return invalid()
     return {id: row.id, messageId: readMessageId(row.messageId), afterTurnId: readMessageId(row.afterTurnId), documents: readAttachments(row.documents),
-      ...(row.searches ? {searches:structuredClone(row.searches) as SearchReference[]} : {}), websites: structuredClone(row.websites), sourceIds: [...row.sourceIds], work: {items: (structuredClone(row.work.items) as WorkItem[]).map((item):WorkItem=>item.task && (item.task.state==='queued'||item.task.state==='running') ? {...item,status:'interrupted',task:{...item.task,state:'interrupted',problem:'This task was interrupted. Nothing restarted automatically.',steps:item.task.steps.map(step=>step.state==='running'?{...step,state:'interrupted'}:step)}} : item), notices: [...row.work.notices] as string[], ...(typeof row.work.critique === 'string' ? {critique: row.work.critique} : {})}}
+      ...(row.searches ? {searches:structuredClone(row.searches) as SearchReference[]} : {}), websites: structuredClone(row.websites), sourceIds: [...row.sourceIds], work: {items: (structuredClone(row.work.items) as WorkItem[]).map(({progress:_streamed,...kept}):WorkItem=>kept).map((item):WorkItem=>item.task && (item.task.state==='queued'||item.task.state==='running') ? {...item,status:'interrupted',task:{...item.task,state:'interrupted',problem:'This task was interrupted. Nothing restarted automatically.',steps:item.task.steps.map(step=>step.state==='running'?{...step,state:'interrupted'}:step)}} : item), notices: [...row.work.notices] as string[], ...(typeof row.work.critique === 'string' ? {critique: row.work.critique} : {}), ...(row.work.critic !== undefined ? {critic: structuredClone(row.work.critic) as CriticRecord} : {}), ...(row.work.report !== undefined ? {report: structuredClone(row.work.report) as RunReport} : {})}}
   })
   if (new Set(records.map(r => r.id)).size !== records.length) return invalid()
   return records

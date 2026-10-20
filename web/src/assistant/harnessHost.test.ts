@@ -16,14 +16,14 @@ import { IMAGES_NOT_RENDERED } from './endpointCapabilities'
  */
 describe('the Desk as the harness host', () => {
   it('supplies every injection point the package declares', () => {
-    const notInjected = new Set(['ASSISTANT_TOOLS', 'ASSISTANT_ENGINES', 'NO_SESSION_MESSAGE', 'configureHarness', 'sourceMessage'])
+    const notInjected = new Set(['ASSISTANT_TOOLS', 'ASSISTANT_ENGINES', 'NO_SESSION_MESSAGE', 'configureHarness', 'sourceMessage', 'runModels'])
     const points = Object.entries(host).filter(([name]) => !notInjected.has(name))
     // Written out, so a release that adds an injection point fails here until the Desk wires it.
     expect(points.map(([name]) => name).sort()).toEqual([
       'assistantLanguageInstructions', 'currentLanguage', 'sessionBearer', 'sessionEnded', 'whenSessionEnds',
       'forgetSession', 'refusalCode', 'discardBody', 'NoSession', 'chassisUrl', 'deskHeaders', 'deskSocketURL',
       'aiHeaders', 'socketURL', 'socketProtocols', 'DeskWebSocketTransport', 'deskFetch', 'answer', 'readFile',
-      'dialectAPI', 'endpointCapabilities', 'renderImageToText'
+      'dialectAPI', 'endpointCapabilities', 'renderImageToText', 'modelsFor'
     ].sort())
     for (const [name, value] of points) {
       expect(typeof value, name).toBe('function')

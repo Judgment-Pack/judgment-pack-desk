@@ -1,0 +1,99 @@
+name: Harness certification
+
+# The certification suite of @judgment-pack/harness, run on the Desk's own wiring.
+#
+# The package certifies its adapters in its own repository, against a stand-in
+# host. It ships no test files, so a Desk-side change to an injection point
+# (web/src/assistant/harnessHost.ts: headers, bearer, transport,
+# endpointCapabilities, modelsFor) or a bump of the pin was never certified
+# against the Desk's wiring. This runs the suite's test files, from the revision
+# the component lock pins, on the Desk's test ground (web/vitest.certification.
+# config.mts), for each adapter the package has, and fails the pull request on
+# any check. It runs on every pull request that touches the assistant, the
+# test ground it runs on, the package's pin or this job.
+on:
+  pull_request:
+    paths:
+      - 'web/src/assistant/**'
+      - 'web/src/testing/**'
+      - 'web/src/desks/scope.ts'
+      - 'web/src/mcp/session.ts'
+      - 'web/src/files/client.ts'
+      - 'web/vitest.certification.config.mts'
+      - 'web/vitest.certification.setup.ts'
+      - 'web/scripts/certify-harness.mjs'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - 'internal/releaseplan/components.json'
+      - 'internal/desk/testdata/harness-recall/**'
+      - 'internal/desk/testdata/harness-approval/**'
+      - 'internal/desk/assistant_approval*.go'
+      - '.github/workflows/harness-certification.yml'
+  push:
+    branches: [main, 'integration/**']
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    name: Harness certification (${{ matrix.adapter }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        adapter: [vercel, codex, deepagents]
+    steps:
+      - uses: actions/checkout@v7
+
+      # The revision and the repository are the lock's own, never written here.
+      - id: lock
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json
+          entry = json.load(open('internal/releaseplan/components.json'))['web-packages']['harness']
+          print('repository=' + entry['repository'])
+          print('revision=' + entry['revision'])
+          PY
+
+      # Read-only test input, excluded from the Desk checkout and never committed.
+      - name: Check out the package at the locked revision
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.lock.outputs.repository }}
+          ref: ${{ steps.lock.outputs.revision }}
+          path: .harness-source
+          persist-credentials: false
+
+      - run: printf '/.harness-source/\n' >> .git/info/exclude
+
+      # The Go tests read copies of the package's recall vectors, which must be
+      # the package's own at this revision.
+      - name: The recall vectors are the package's
+        run: diff -r internal/desk/testdata/harness-recall .harness-source/contract/vectors/recall
+
+      - name: The approval vector is the package's
+        run: diff internal/desk/testdata/harness-approval/grant-states.json .harness-source/contract/vectors/approval/grant-states.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm ci
+        working-directory: web
+        run: npm ci
+
+      # Source imports resolve dependencies from this checkout, not web/node_modules.
+      # Its committed workspace lock is at the same attested revision as the tests.
+      - name: Install the locked certification source dependencies
+        working-directory: .harness-source
+        run: npm ci
+
+      - name: Certify the ${{ matrix.adapter }} adapter on the Desk's wiring
+        working-directory: web
+        env:
+          HARNESS_SOURCE: ../.harness-source/packages/harness
+        run: node scripts/certify-harness.mjs --adapter ${{ matrix.adapter }}

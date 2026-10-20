@@ -1,5 +1,5 @@
 import {questionFailureMessage} from '@judgment-pack/harness/questionFailure'
-import { DelegatedTaskDetails } from './DelegatedTaskDetails'
+import { DelegatedTaskDetails, profileLabel } from './DelegatedTaskDetails'
 import {dialectRecipeFailureMessage} from '../dialects/proposalFailure'
 import { GraphStepDetails } from '../graphs/GraphStepDetails'
 import { GRAPH_TOOLS } from '../graphs/work'
@@ -23,6 +23,8 @@ import styles from './ChatWorkspace.module.css'
 import { Disclosure } from '../ui/Disclosure'
 import { RunStatus } from '../ui/RunStatus'
 import { Spinner } from '../ui/Spinner'
+import { CriticDetails } from '../assistant/CriticDetails'
+import { RunReportLines } from '../assistant/RunReportLines'
 
 export { workItems } from './responseHistory'
 /** Clear selection only when this inspection actually closes, including StrictMode replay. */
@@ -45,25 +47,29 @@ export function WorkSummary({ state, work, documents=[], onRead }: { state?: Run
    if(!selected || !selectedJSON || !onRead)return
    const token=++inspection.current
    const {row,document}=JSON.parse(selectedJSON) as {row:WorkItem;document?:ChatAttachment}
-   onRead(<Inspection key={token} onClose={()=>{if(inspection.current===token)setSelected(null)}}>{row.task?<DelegatedTaskDetails task={row.task}/>:GRAPH_TOOLS.has(row.name)?<GraphStepDetails row={row}/>:row.name==='read_link'?<LinkStepDetails row={row} document={document}/>:<SearchStepDetails row={row}/>}</Inspection>,selected.opener)
+   onRead(<Inspection key={token} onClose={()=>{if(inspection.current===token)setSelected(null)}}>{row.task?<DelegatedTaskDetails task={row.task} progress={row.progress}/>:GRAPH_TOOLS.has(row.name)?<GraphStepDetails row={row}/>:row.name==='read_link'?<LinkStepDetails row={row} document={document}/>:<SearchStepDetails row={row}/>}</Inspection>,selected.opener)
   },[selected,selectedJSON,onRead])
-  if (!rows.length && !notices.length && !critique) return null
+  // A reply that did no work has no report to show unless something happened worth saying: delegation, or a request sent again.
+  const reported = saved.report !== undefined && (saved.report.delegation !== undefined || saved.report.retries !== undefined)
+  if (!rows.length && !notices.length && !critique && !reported) return null
   const failures = rows.filter(row => row.status === 'failed').length
   return <div className={styles.workGroup}>
-   {(rows.length>0||notices.length>0||critique)&&<Disclosure className={styles.work} indicator={rows.some(row=>row.status==='working')?<Spinner/>:undefined} title={<span className={styles.workTitle}>{rows.length ? msg('Work · {{count}} steps', {count:rows.length}) : msg('Assistant notice')}{failures>0&&<span className={styles.workWarning}>{msg(' · {{count}} failed',{count:failures})}</span>}</span>}>
+   {(rows.length>0||notices.length>0||critique||reported)&&<Disclosure className={styles.work} indicator={rows.some(row=>row.status==='working')?<Spinner/>:undefined} title={<span className={styles.workTitle}>{rows.length ? msg('Work · {{count}} steps', {count:rows.length}) : notices.length||critique ? msg('Assistant notice') : msg('Run report')}{failures>0&&<span className={styles.workWarning}>{msg(' · {{count}} failed',{count:failures})}</span>}</span>}>
     {rows.length > 0 && <ol>{rows.map(row => {
      const search=row.name==='search_sources', link=row.name==='read_link', graph=GRAPH_TOOLS.has(row.name), interactive=(search||link||graph||!!row.task)&&!!onRead
-     const status=row.questionRecovered?msg('Corrected'):row.task?.state==='queued'?msg('Queued'):row.researchSuggestion ? msg('Research suggested') : row.status === 'complete' ? msg('Done') : row.status === 'failed' ? msg('Failed') : row.status === 'interrupted' ? msg('Interrupted') : msg('Working…')
+     const status=row.questionRecovered?msg('Corrected'):row.task?.state==='queued'?msg('Queued'):row.task?.partial?msg('Partial'):row.task?.reused?msg('Reused'):row.researchSuggestion ? msg('Research suggested') : row.status === 'complete' ? msg('Done') : row.status === 'failed' ? msg('Failed') : row.status === 'interrupted' ? msg('Interrupted') : msg('Working…')
      const label=row.task?.title ?? TOOL_LABELS[row.name] ?? row.name
      // Saved steps retain the supplied spelling, including bare domains. Parse
      // the normalized address for labels, and keep invalid steps inspectable.
      const parsedLink=row.link&&normalizeLink(row.link.url)
      const linkHost=parsedLink&&!('refused' in parsedLink)?new URL(parsedLink.fetchUrl).hostname:msg('Link')
-     const contents=<><span className={styles.workIcon}>{row.researchSuggestion?<IconInfo/>:search?<ProviderIcon provider={row.search?.provider}/>:link?<IconLink/>:row.status==='complete'?<IconCheck/>:row.status==='failed'?<IconException/>:<IconHistory/>}</span><div className={styles.workStep}><span>{label}</span>{row.questionFailure&&!row.questionRecovered&&<small>{systemMessage(questionFailureMessage(row.questionFailure)!)}</small>}{row.inputRecipeFailure&&<small>{systemMessage(dialectRecipeFailureMessage(row.inputRecipeFailure)!)}</small>}{!interactive&&row.failure&&<small>{systemMessage(searchFailureMessage(row.failure)!)}</small>}</div><span className={styles.workState}>{status}</span><span className={styles.workIndicator}>{row.status==='working'?<Spinner/>:interactive?<IconChevronRight/>:null}</span></>
+     const contents=<><span className={styles.workIcon}>{row.researchSuggestion?<IconInfo/>:search?<ProviderIcon provider={row.search?.provider}/>:link?<IconLink/>:row.status==='complete'?<IconCheck/>:row.status==='failed'?<IconException/>:<IconHistory/>}</span><div className={styles.workStep}><span>{label}</span>{row.task?.model&&<small>{profileLabel(row.task.profile)} · {row.task.model}</small>}{row.questionFailure&&!row.questionRecovered&&<small>{systemMessage(questionFailureMessage(row.questionFailure)!)}</small>}{row.inputRecipeFailure&&<small>{systemMessage(dialectRecipeFailureMessage(row.inputRecipeFailure)!)}</small>}{!interactive&&row.failure&&<small>{systemMessage(searchFailureMessage(row.failure)!)}</small>}</div><span className={styles.workState}>{status}</span><span className={styles.workIndicator}>{row.status==='working'?<Spinner/>:interactive?<IconChevronRight/>:null}</span></>
      return <li key={row.id} data-status={row.status}>{interactive?<Tooltip side="right" openOnFocus={false} content={row.task?msg('View task details'):graph?msg('View decision step'):link?msg('View link details'):row.search?.provider?msg('View {{provider}} details',{provider:providerName(row.search.provider)!}):msg('View search details')}><button type="button" className={styles.workRow} aria-label={`${label} · ${row.task?msg('Delegated task'):graph?msg('Decision'):link?linkHost:providerName(row.search?.provider)??msg('Web search')} · ${status}`} aria-pressed={selected?.id===row.id} onClick={event=>setSelected({id:row.id,opener:event.currentTarget})}>{contents}</button></Tooltip>:<div className={styles.workRow}>{contents}</div>}</li>
     })}</ol>}
     {notices.map(notice => <p key={notice}>{systemMessage(notice)}</p>)}
     {critique && <p><Message text={"Adversarial review: <0/>"} slots={[critique]} /></p>}
+    {saved.critic && <CriticDetails record={saved.critic}/>}
+    {saved.report && <RunReportLines report={saved.report} titles={Object.fromEntries(rows.flatMap(row=>row.task?[[row.task.id,row.task.title]]:[]))}/>}
    </Disclosure>}
   </div>
 }

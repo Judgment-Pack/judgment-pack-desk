@@ -1,0 +1,17 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid",
+      "kind": "anthropic",
+      "model": "a-model",
+      "models": [
+        "a-model"
+      ],
+      "tools": [
+        "validate"
+      ],
+      "auth": "api-key"
+    }
+  }
+}

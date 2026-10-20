@@ -1,0 +1,32 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "endpoint": {
+      "url": "https://api.example.invalid/v1",
+      "kind": "openai-compatible",
+      "model": "a-model",
+      "models": [
+        "a-model"
+      ],
+      "tools": [
+        "validate"
+      ],
+      "capabilities": {
+        "probe": {
+          "at": "2026-10-19T12:00:00Z",
+          "contextWindow": 32768,
+          "outputReserve": 4096,
+          "nativeToolCalls": false,
+          "parallelToolCalls": false,
+          "reasoningField": "reasoning_content"
+        },
+        "override": {
+          "vision": true,
+          "nativeToolCalls": true,
+          "contextWindow": 65536,
+          "outputReserve": 8192
+        }
+      }
+    }
+  }
+}
