@@ -76,16 +76,17 @@ type assistantRunEvent struct {
 	Event contract.RunEvent `json:"event"`
 }
 type assistantRunRecord struct {
-	ID          string                  `json:"id"`
-	Revision    uint64                  `json:"revision"`
-	Binding     assistantRunBinding     `json:"binding"`
-	AdmissionID string                  `json:"admissionId"`
-	BodyDigest  string                  `json:"bodyDigest"`
-	State       string                  `json:"state"`
-	Historical  bool                    `json:"historical,omitempty"`
-	Checkpoint  *contract.Checkpoint    `json:"checkpoint,omitempty"`
-	Operations  []assistantRunOperation `json:"operations"`
-	Events      []assistantRunEvent     `json:"events"`
+	ID          string                      `json:"id"`
+	Revision    uint64                      `json:"revision"`
+	Binding     assistantRunBinding         `json:"binding"`
+	AdmissionID string                      `json:"admissionId"`
+	BodyDigest  string                      `json:"bodyDigest"`
+	State       string                      `json:"state"`
+	Historical  bool                        `json:"historical,omitempty"`
+	Checkpoint  *contract.Checkpoint        `json:"checkpoint,omitempty"`
+	Operations  []assistantRunOperation     `json:"operations"`
+	Events      []assistantRunEvent         `json:"events"`
+	Actions     []assistantRunActionReceipt `json:"actions,omitempty"`
 }
 type assistantRunLedger struct {
 	Version int                  `json:"version"`
@@ -463,6 +464,9 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 		}
 		if run.Historical && !assistantRunTerminal(run.State) {
 			return errAssistantRunInvalid
+		}
+		if err := validateAssistantRunActionReceipts(run); err != nil {
+			return err
 		}
 		if !assistantRunTerminal(run.State) {
 			owner := run.Binding.Owner.Kind + ":" + run.Binding.Owner.ID

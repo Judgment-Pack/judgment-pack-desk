@@ -2583,3 +2583,9 @@ web	harness credentials: session bearer omitted	web/src/assistant/harnessCredent
 go	assistant runs: restore retains live authority	TestAssistantRunStoragePendingRestoreAndCustody
 go	assistant runs: archive trusts its content namespace	TestAssistantRunStorageArchiveRefusalRollback
 go	assistant runs: executor does not block storage transfer	TestAssistantRunStorageActiveMoveRestoreAndRelease
+go	assistant runs: current event cursor suppresses replay suffix	TestAssistantRunProtocolSSECurrentCursorReconciliation
+go	assistant runs: current full cursor suppresses first snapshot	TestAssistantRunProtocolSSECurrentCursorReconciliation
+go	assistant runs: heartbeat skips deadline renewal	TestAssistantRunProtocolSSEHeartbeatRenewsDeadline
+go	assistant runs: abandonment ignores active execution	TestAssistantRunProtocolAbandonAuthorityAndLease
+go	assistant runs: replacement session inherits approval	TestAssistantRunProtocolAbandonPausedOwner
+go	assistant runs: approval note exceeds canonical UTF-16 bound	TestAssistantRunProtocolApprovalNoteUTF16Bound

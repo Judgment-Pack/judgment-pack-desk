@@ -462,14 +462,18 @@ func (s *Server) recallMemory(d memoryDocument, query string) []memoryEntry {
 		}
 		return rows[i].score > rows[j].score
 	})
-	bytes := 0
+	bytes := 2 // The JSON array brackets are part of the raw recalled part.
 	for _, row := range rows {
 		b, _ := json.Marshal(row.entry)
-		if bytes+len(b) > aicontext.Defaults().MemoryBytes {
+		cost := len(b)
+		if len(out) > 0 {
+			cost++ // comma between entries
+		}
+		if bytes+cost > aicontext.Defaults().MemoryBytes {
 			continue
 		}
 		out = append(out, row.entry)
-		bytes += len(b)
+		bytes += cost
 		if len(out) == 5 {
 			break
 		}

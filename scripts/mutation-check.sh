@@ -1188,7 +1188,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "an absent desk-level file is a refusal" "$A" \
     '	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{
-			Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})
+			PromptPolicy: currentAssistantPromptPolicy(), Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})
 		return
 	}' \
     '	if !present {
@@ -14597,6 +14597,24 @@ fi
 # Desk-owned v0.3.0 admission and credential safeguards (#529, #533).
 if [ "$which" = all ] || [ "$which" = go ]; then
   # Durable host ledger guards: these rows exercise real restore/work-lock paths.
+  mutate go 'assistant runs: current event cursor suppresses replay suffix' internal/desk/assistant_run_http.go \
+    'if known {' \
+    'if known && revision != run.Revision {'
+  mutate go 'assistant runs: current full cursor suppresses first snapshot' internal/desk/assistant_run_http.go \
+    'if first || !known || revision != run.Revision || count != len(run.Events) {' \
+    'if first && revision != run.Revision || !known || revision != run.Revision || count != len(run.Events) {'
+  mutate go 'assistant runs: heartbeat skips deadline renewal' internal/desk/assistant_run_http.go \
+    'if err := controller.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {' \
+    'if err := error(nil); err != nil && !errors.Is(err, http.ErrNotSupported) {'
+  mutate go 'assistant runs: abandonment ignores active execution' internal/desk/assistant_run_service.go \
+    'record.Revision != action.Revision || h.active[record.ID] != nil' \
+    'record.Revision != action.Revision'
+  mutate go 'assistant runs: replacement session inherits approval' internal/desk/assistant_run_service.go \
+    'if err = h.server.authorizeAssistantRun(r, record); err != nil {' \
+    'if err = h.server.authorizeAssistantRun(r, record); false {'
+  mutate go 'assistant runs: approval note exceeds canonical UTF-16 bound' internal/desk/assistant_run_service.go \
+    'runcontext.U16Length(*action.Note) > 2000' \
+    'runcontext.U16Length(*action.Note) > 4000'
   mutate go 'assistant runs: restore retains live authority' internal/desk/assistant_run_store_storage.go \
     'if !interruptAssistantRuns(&ledger, true)' \
     'if !interruptAssistantRuns(&ledger, false)'

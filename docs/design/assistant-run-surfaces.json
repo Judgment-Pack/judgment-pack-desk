@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "status": "accepted architecture; slice 1 internal ledger only; production migration pending",
-  "deskEvidence": "reviewed v0.3.0 prerequisite (PR 544); existing production surfaces unchanged in ledger slice",
+  "status": "accepted architecture; durable ledger/storage/recovery and authenticated protocol implemented; production activation pending",
+  "deskEvidence": "reviewed ledger/storage foundations; server run protocol with inert host-executor fixtures; browser/provider migration pending",
   "agentEvidence": {
-    "version": "v0.3.0",
-    "revision": "82235e1d180fbec4634e19c43ea80f06280b298c"
+    "version": "v0.5.0",
+    "revision": "61b1331b907ac2f652d1ff33d3dffe7c29423704"
   },
   "adr": "../adr/0014-server-owned-assistant-runs.md",
   "scope": "All actual model dispatch callsites found by runAssistantSession/loadEngine/bindModelCall/bindAgentRun/runBackgroundModel scans; host subrows are feature capabilities, not independent provider loops.",
@@ -27,27 +27,25 @@
     ]
   },
   "strictAcceptanceDependency": {
-    "id": "provider-managed-generic-delegation",
-    "proof": "ADR Codex section; synchronous With has no exported release-parent/batch/continue-agent capability and actual bridge has one active account invocation",
+    "id": "provider-managed-desk-binding",
+    "proof": "Agent #67 is resolved in the published dependency; actual Desk exclusive-account/bridge parent-child-parent binding and certification remain required",
     "blockedSlices": [
-      "subscription-generic-delegation",
-      "complete no-regression cutover release"
+      "complete no-regression cutover release until actual binding is verified"
     ],
     "validIndependentSlices": [
       "durable protocol/admission/store",
       "real Desk relay/Runtime/gate binding",
       "API/Eino feature migration",
-      "basic nondelegating Codex transport adapter",
       "diagnostics/structured-step boundary migration"
     ],
-    "requiredDecision": "released canonical seam tracked in Agent #67, or explicit user acceptance change; issue-only authorization does not authorize Agent implementation",
+    "requiredDecision": "Use released adapter.Agent and adapter/agent through delegate.With; no copied coordinator or provider loop",
     "upstreamIssue": "https://github.com/Judgment-Pack/judgment-pack-agent/issues/67"
   },
   "surfaces": [
     {
       "id": "main-chat-and-right-pane",
       "category": "conversation",
-      "currentOwner": "ChatProvider \u2192 useResearchRun \u2192 AuthoringRun.turn \u2192 browser engine",
+      "currentOwner": "ChatProvider → useResearchRun → AuthoringRun.turn → browser engine",
       "targetOwner": "Go durable run + server domain workflow; browser renders shared events and submits explicit actions",
       "entrypoints": [
         "web/src/chat/ChatProvider.tsx",
@@ -71,7 +69,7 @@
     {
       "id": "pack-authoring-pane",
       "category": "conversation",
-      "currentOwner": "AssistantPane \u2192 useAssistantRun; one gated socket per run",
+      "currentOwner": "AssistantPane → useAssistantRun; one gated socket per run",
       "targetOwner": "same Go run service, purpose authoring; pane owns immutable capture and view lease",
       "entrypoints": [
         "web/src/assistant/AssistantPane.tsx",
@@ -93,7 +91,7 @@
     {
       "id": "describe-it",
       "category": "conversation",
-      "currentOwner": "useDescribeIt \u2192 useAssistantRun \u2192 useProposalGenerator",
+      "currentOwner": "useDescribeIt → useAssistantRun → useProposalGenerator",
       "targetOwner": "Go authoring run on exact captured source; existing review/apply UI",
       "entrypoints": [
         "web/src/shell/DescribeIt.tsx:useDescribeIt",
@@ -113,7 +111,7 @@
     {
       "id": "graph-authoring-pane",
       "category": "conversation",
-      "currentOwner": "GraphAuthor \u2192 useAssistantRun(purpose graph) with graphHostTools",
+      "currentOwner": "GraphAuthor → useAssistantRun(purpose graph) with graphHostTools",
       "targetOwner": "Go graph purpose and server-owned graph validation/explain handlers",
       "entrypoints": [
         "web/src/graphs/GraphAuthor.tsx",
@@ -134,7 +132,7 @@
     {
       "id": "legacy-research-authoring-and-draft-view",
       "category": "domain-workflow",
-      "currentOwner": "ResearchAuthoringPage/DraftPackView \u2192 useResearchRun \u2192 AuthoringRun; browser sequences source/review/repair turns",
+      "currentOwner": "ResearchAuthoringPage/DraftPackView → useResearchRun → AuthoringRun; browser sequences source/review/repair turns",
       "targetOwner": "Go feature workflow using shared adapter turns and context.CorrectArtifact; UI projection only",
       "entrypoints": [
         "web/src/routes/ResearchAuthoringPage.tsx",
@@ -204,7 +202,7 @@
     {
       "id": "brief-summaries-all-subjects",
       "category": "tool-free-generation",
-      "currentOwner": "BriefPane reservation \u2192 useAssistantRun(purpose brief) \u2192 useProposalGenerator",
+      "currentOwner": "BriefPane reservation → useAssistantRun(purpose brief) → useProposalGenerator",
       "targetOwner": "Go run on server-verified frozen brief reservation; no tools, browser rendering/print remain",
       "entrypoints": [
         "web/src/briefs/BriefPane.tsx:start",
@@ -300,7 +298,7 @@
     {
       "id": "input-research-single-step",
       "category": "bounded-structured-step",
-      "currentOwner": "inputResearchModel \u2192 runBackgroundModel; durable worker owns phase/budget",
+      "currentOwner": "inputResearchModel → runBackgroundModel; durable worker owns phase/budget",
       "targetOwner": "same explicit workflow, unified bound dispatch authorization/context/capacity and one reservation per model action",
       "entrypoints": [
         "internal/desk/input_research_worker.go",
@@ -349,7 +347,7 @@
     {
       "id": "portable-research-and-model-acquisition",
       "category": "bounded-structured-step",
-      "currentOwner": "portableResearchWorker \u2192 acquirePortableResearchModel \u2192 model broker \u2192 runBackgroundModel",
+      "currentOwner": "portableResearchWorker → acquirePortableResearchModel → model broker → runBackgroundModel",
       "targetOwner": "retain reviewed portable workflow and nonce-bound model-source acquisition; shared bound dispatch",
       "entrypoints": [
         "internal/desk/portable_research_worker.go",
@@ -398,7 +396,7 @@
     {
       "id": "capability-probe",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "EndpointCapabilitiesSection \u2192 capabilityProbe: one chat request plus model-list GET",
+      "currentOwner": "EndpointCapabilitiesSection → capabilityProbe: one chat request plus model-list GET",
       "targetOwner": "fixed host-authored one-request diagnostic; same bound relay/context/accounting; no tool execution",
       "entrypoints": [
         "web/src/assistant/EndpointCapabilitiesSection.tsx",
@@ -420,7 +418,7 @@
     {
       "id": "endpoint-connection-probe",
       "category": "bounded-diagnostic-mixed",
-      "currentOwner": "handleAssistantProbe \u2192 probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
+      "currentOwner": "handleAssistantProbe → probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
       "targetOwner": "same fixed diagnostic owner; generative ping reserved/accounted, shared auth/context/custody path",
       "entrypoints": [
         "internal/desk/assistant.go:handleAssistantProbe/probeEndpoint",
@@ -439,7 +437,7 @@
     {
       "id": "codex-connection-test",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "AssistantSettings \u2192 useAssistantRun(codex,purpose test-design, optional get_schema)",
+      "currentOwner": "AssistantSettings → useAssistantRun(codex,purpose test-design, optional get_schema)",
       "targetOwner": "fixed server diagnostic run on actual bridge and narrow saved get_schema grant",
       "entrypoints": [
         "web/src/assistant/AssistantSettings.tsx",

@@ -8,17 +8,21 @@ export type ModelPreferences = { inherit: true } | {
   inherit: false; models: string[]; model: string | null
   effort?: AssistantAgentConfig['effort']; thinking?: ThinkingTier
 }
-export interface AssistantProfile { profileVersion: 1 | 2; context?:ContextConfiguration; codex?: ModelPreferences; api?: ModelPreferences; inherit?:boolean; connections?:string[]; defaultConnection?:string|null; models?:Record<string,ModelPreferences> }
+export interface AssistantProfile { profileVersion: 1 | 2; context?:ContextConfiguration; projectInstructions?:string; codex?: ModelPreferences; api?: ModelPreferences; inherit?:boolean; connections?:string[]; defaultConnection?:string|null; models?:Record<string,ModelPreferences> }
 export interface AssistantProfileRead {
   present: boolean; sha256?: string; text?: string; value?: AssistantProfile; problem?: string
 }
 export const INHERITED_PROFILE: AssistantProfile = { profileVersion: 1, codex: { inherit: true }, api: { inherit: true } }
 const object = (value: unknown): value is Record<string,unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
-export function decodeAssistantProfile(text: string): AssistantProfile {
+export function decodeAssistantProfile(text: string, projectInstructionsBytes?: number): AssistantProfile {
   const value:unknown=JSON.parse(text)
+  if(object(value)&&value.projectInstructions!==undefined){
+    const instructions=value.projectInstructions
+    if(typeof instructions!=='string'||!wellFormedText(instructions)||(projectInstructionsBytes!==undefined&&new TextEncoder().encode(instructions).byteLength>projectInstructionsBytes))throw new Error(PROFILE_PROBLEM)
+  }
   if(object(value)&&value.context!==undefined)contextConfiguration(value.context)
   if(object(value)&&value.profileVersion===2)return decodeProfileV2(value,text)
-  if(new TextEncoder().encode(text).byteLength>65536 || !object(value) || value.profileVersion!==1 || Object.keys(value).some(key=>!['profileVersion','codex','api','context'].includes(key))) throw new Error(PROFILE_PROBLEM)
+  if(new TextEncoder().encode(text).byteLength>65536 || !object(value) || value.profileVersion!==1 || Object.keys(value).some(key=>!['profileVersion','codex','api','context','projectInstructions'].includes(key))) throw new Error(PROFILE_PROBLEM)
   for(const key of ['codex','api'] as const){
     const row=value[key];if(row===undefined)continue
     if(!object(row)||typeof row.inherit!=='boolean')throw new Error(PROFILE_PROBLEM)
@@ -44,7 +48,7 @@ export function applyAssistantProfile(machine: AssistantConfig, read?: Assistant
 function decodeProfileV2(value:Record<string,unknown>,text:string):AssistantProfile {
  const fail=()=>{throw new Error(PROFILE_PROBLEM)}
  if(new TextEncoder().encode(text).byteLength>65536||typeof value.inherit!=='boolean')return fail()
- const keys=value.inherit?['profileVersion','inherit','context']:['profileVersion','inherit','connections','defaultConnection','models','context']
+ const keys=value.inherit?['profileVersion','inherit','context','projectInstructions']:['profileVersion','inherit','connections','defaultConnection','models','context','projectInstructions']
  if(Object.keys(value).some(k=>!keys.includes(k)))return fail()
  if(!value.inherit){
   if(!Array.isArray(value.connections)||value.connections.length>32||value.connections.some(id=>typeof id!=='string'||!/^(legacy-api|legacy-codex|ai-[a-f0-9]{24})$/.test(id))||new Set(value.connections).size!==value.connections.length)return fail()
@@ -52,4 +56,14 @@ function decodeProfileV2(value:Record<string,unknown>,text:string):AssistantProf
   if(value.models!==undefined){if(!object(value.models)||Object.keys(value.models).length>32)return fail();for(const [id,row] of Object.entries(value.models)){if(!value.connections.includes(id)||!object(row))return fail();decodeAssistantProfile(JSON.stringify({profileVersion:1,[row.effort!==undefined?'codex':'api']:row}))}}
  }
  return value as unknown as AssistantProfile
+}
+
+/** TextEncoder replaces lone UTF-16 surrogates; refuse rather than alter source. */
+export function wellFormedText(text:string):boolean {
+ for(let i=0;i<text.length;i++){
+  const unit=text.charCodeAt(i)
+  if(unit>=0xdc00&&unit<=0xdfff)return false
+  if(unit>=0xd800&&unit<=0xdbff){const next=text.charCodeAt(++i);if(!(next>=0xdc00&&next<=0xdfff))return false}
+ }
+ return true
 }

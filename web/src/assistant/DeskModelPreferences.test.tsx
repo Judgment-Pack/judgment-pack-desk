@@ -10,7 +10,7 @@ import { DeskModelPreferences } from './DeskModelPreferences'
 vi.mock('./providers',()=>({useProviderStatus:()=>({data:{account:'connected'}}),useProviderModels:()=>({data:{models:[{id:'machine',name:'Machine',efforts:['low','high'],defaultEffort:'low'},{id:'local',name:'Local',efforts:['low','high'],defaultEffort:'low'}]}})}))
 afterEach(()=>{cleanup();vi.unstubAllGlobals()})
 const machine={engine:'codex',thinking:'off',agent:{provider:'openai',authMethod:'subscription',model:'machine',models:['machine'],tools:[],effort:'high'}}
-function setup(profile:AssistantProfileRead={present:true,sha256:'a'.repeat(64),value:{profileVersion:1,codex:{inherit:true}}},fail=false){
+function setup(profile:AssistantProfileRead={present:true,sha256:'a'.repeat(64),value:{profileVersion:1,codex:{inherit:true}}},fail=false,withPolicy=true){
  const writes:any[]=[]
  vi.stubGlobal('fetch',async(_url:string,init:RequestInit={})=>{
   const body=typeof init.body==='string'?JSON.parse(init.body):null
@@ -18,7 +18,7 @@ function setup(profile:AssistantProfileRead={present:true,sha256:'a'.repeat(64),
   return new Response('{}',{status:404})
  })
  const client=testQueryClient()
- const config=(read:AssistantProfileRead)=>effectiveConfig(undefined,undefined,undefined,{path:'/machine/desk.json',present:true,sha256:'m'.repeat(64),decoded:decodeDeskConfig(JSON.stringify({deskConfigVersion:1,assistant:machine}),'desk')},undefined,undefined,read)
+ const config=(read:AssistantProfileRead)=>effectiveConfig(undefined,undefined,undefined,{promptPolicy:withPolicy?{projectInstructionsBytes:4000}:undefined,path:'/machine/desk.json',present:true,sha256:'m'.repeat(64),decoded:decodeDeskConfig(JSON.stringify({deskConfigVersion:1,assistant:machine}),'desk')},undefined,undefined,read)
  const tree=(read:AssistantProfileRead)=><QueryClientProvider client={client}><MemoryRouter><DeskConfigFixture value={config(read)}><DeskModelPreferences unavailable={false}/></DeskConfigFixture></MemoryRouter></QueryClientProvider>
  const view=render(tree(profile))
  return {writes,rerender:(read:AssistantProfileRead)=>view.rerender(tree(read))}
@@ -53,4 +53,50 @@ it('blocks invalid profiles while keeping the file link available for repair',()
  const state=setup({present:true,sha256:'a'.repeat(64),problem:'Profile is invalid'})
  expect((screen.getByRole('button',{name:'Save preferences'}) as HTMLButtonElement).disabled).toBe(true)
  expect(screen.getByRole('link',{name:'jpack-assistant.json'})).toBeTruthy();expect(state.writes).toHaveLength(0)
+})
+
+it('edits project instructions and retains original revision and inactive preferences',async()=>{
+ const original={profileVersion:1 as const,codex:{inherit:true as const},api:{inherit:true as const},context:{version:1 as const,projectBrief:'brief.md'},projectInstructions:'Original guidance.\n'}
+ const state=setup({present:true,sha256:'a'.repeat(64),value:original})
+ const field=screen.getByRole('textbox',{name:'Project instructions'}) as HTMLTextAreaElement
+ expect(field.value).toBe('Original guidance.\n')
+ const text='Keep missing facts explicit. 😀\n'
+ fireEvent.change(field,{target:{value:text}})
+ expect(screen.getByText('Unsaved changes')).toBeTruthy()
+ state.rerender({present:true,sha256:'c'.repeat(64),value:{...original,projectInstructions:'Another editor'}})
+ expect(field.value).toBe(text)
+ fireEvent.click(screen.getByRole('button',{name:'Save preferences'}))
+ await waitFor(()=>expect(state.writes).toHaveLength(1))
+ expect(state.writes[0].baseSha256).toBe('a'.repeat(64))
+ expect(JSON.parse(state.writes[0].content)).toEqual({...original,projectInstructions:text})
+ await screen.findByText('Desk model preferences saved.')
+})
+it('refuses multibyte instructions over the byte bound and cancels without losing source',()=>{
+ const state=setup({present:true,sha256:'a'.repeat(64),value:{profileVersion:1,projectInstructions:'Original'}})
+ const field=screen.getByRole('textbox',{name:'Project instructions'}) as HTMLTextAreaElement
+ fireEvent.change(field,{target:{value:'😀'.repeat(1000)+'x'}})
+ expect(field.getAttribute('aria-invalid')).toBe('true')
+ expect((screen.getByRole('button',{name:'Save preferences'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(state.writes).toHaveLength(0)
+ fireEvent.click(screen.getByRole('button',{name:'Cancel'}))
+ expect(field.value).toBe('Original')
+})
+it('saves instructions in registry profiles without introducing legacy selectors',async()=>{
+ const original={profileVersion:2 as const,inherit:true,projectInstructions:'Old'}
+ const state=setup({present:true,sha256:'a'.repeat(64),value:original})
+ fireEvent.change(screen.getByRole('textbox',{name:'Project instructions'}),{target:{value:'New'}})
+ fireEvent.click(screen.getByRole('button',{name:'Save preferences'}))
+ await waitFor(()=>expect(state.writes).toHaveLength(1))
+ expect(JSON.parse(state.writes[0].content)).toEqual({...original,projectInstructions:'New'})
+})
+
+it('preserves instructions and allows model preference saves while policy metadata is unavailable',async()=>{
+ const original={profileVersion:1 as const,codex:{inherit:true as const},projectInstructions:'Saved guidance.\n'}
+ const state=setup({present:true,sha256:'a'.repeat(64),value:original},false,false)
+ const field=screen.getByRole('textbox',{name:'Project instructions'}) as HTMLTextAreaElement
+ expect(field.disabled).toBe(true);expect(field.value).toBe(original.projectInstructions)
+ fireEvent.click(screen.getByRole('checkbox',{name:'Use shared defaults'}))
+ fireEvent.click(screen.getByRole('button',{name:'Save preferences'}))
+ await waitFor(()=>expect(state.writes).toHaveLength(1))
+ expect(JSON.parse(state.writes[0].content).projectInstructions).toBe(original.projectInstructions)
 })

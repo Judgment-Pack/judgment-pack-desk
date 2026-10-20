@@ -258,3 +258,34 @@ func (w *assistantRunWriter) State(ctx context.Context, state string) error {
 		return true, nil
 	})
 }
+
+// Stop closes even an admission whose initial checkpoint could not be written.
+// It never erases observed results or changes a terminal run into fresh work.
+func stopAssistantRun(run *assistantRunRecord) {
+	if assistantRunTerminal(run.State) {
+		return
+	}
+	run.State = "stopped"
+	if run.Checkpoint != nil {
+		run.Checkpoint.Status = "stopped"
+		for i := range run.Checkpoint.Operations {
+			if run.Checkpoint.Operations[i].Status == "running" {
+				run.Checkpoint.Operations[i].Status = "interrupted"
+			}
+		}
+	}
+	for i := range run.Operations {
+		if run.Operations[i].State == "dispatched" {
+			run.Operations[i].State = "uncertain"
+		}
+	}
+}
+func (w *assistantRunWriter) Stop(ctx context.Context) error {
+	return w.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
+		if assistantRunTerminal(run.State) {
+			return false, nil
+		}
+		stopAssistantRun(run)
+		return true, nil
+	})
+}
