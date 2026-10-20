@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -121,31 +122,60 @@ func TestAssistantGraphMalformedScopeAndRegistry(t *testing.T) {
 	}
 }
 func TestAssistantGraphPersistenceBeforeSuccess(t *testing.T) {
-	s, _, e := assistantExecutionFixture(t, "http://127.0.0.1:1", "work")
+	var e *assistantRunExecution
+	var faultMu sync.Mutex
+	var storeName string
+	reads := 0
+	fault := errors.New("fixture producer persistence unavailable")
+	faultWhileActive := false
+	// Install before admission starts. The monitor and failure cleanup also read
+	// private files, so arm only this ledger after the tool call is persisted.
+	testHookPrivateRead = func(name string) error {
+		faultMu.Lock()
+		defer faultMu.Unlock()
+		if name == storeName {
+			reads++
+			if reads == 6 {
+				faultWhileActive = e.ctx.Err() == nil
+				return fault
+			}
+		}
+		return nil
+	}
+	// Registered first: the fixture's later cleanup cancels and joins the
+	// service (including its monitor and final ledger read) before this reset.
+	t.Cleanup(func() {
+		if e != nil {
+			select {
+			case <-e.done:
+			default:
+				t.Error("execution still reads private storage; fault hook retained")
+				return
+			}
+		}
+		testHookPrivateRead = nil
+	})
+	s, _, execution := assistantExecutionFixture(t, "http://127.0.0.1:1", "work")
+	e = execution
 	x := assistantGraphSetup(t, s, e)
 	name := "propose_graph"
 	id := "new-graph"
 	args, _ := json.Marshal(map[string]string{"id": "new-flow", "content": assistantGraphCandidate})
 	assistantRunMust(t, e.writer.boundEvent(t.Context(), contract.RunEvent{ToolCall: &contract.ToolCall{Type: "tool_call", CallID: &id, Name: name, Args: args}}))
-	reads := 0
-	testHookPrivateRead = func(name string) error {
-		if name == e.writer.lease.store.name {
-			reads++
-			if reads == 6 {
-				return errors.New("fixture producer persistence unavailable")
-			}
-		}
-		return nil
-	}
-	t.Cleanup(func() { testHookPrivateRead = nil })
+	faultMu.Lock()
+	storeName = e.writer.lease.store.name
+	faultMu.Unlock()
 	ctx := context.WithValue(runcontext.WithCallID(t.Context(), id), assistantHostRootKey{}, true)
 	result, err := assistantGraphFind(t, x.Run.HostTools, name).Execute(ctx, args)
-	testHookPrivateRead = nil
 	assistantRunMust(t, err)
-	if !result.Err() || e.writer.Err() == nil {
-		t.Fatal("failed persistence exposed producer success", reads, result.Value().Text())
+	faultMu.Lock()
+	observedReads, activeFailure := reads, faultWhileActive
+	faultMu.Unlock()
+	if !result.Err() || !errors.Is(e.writer.Err(), fault) || !activeFailure {
+		t.Fatal("failed producer persistence exposed success or fault missed the active call", observedReads, result.Value().Text())
 	}
 }
+
 func TestAssistantGraphQueuedGuidanceFreshness(t *testing.T) {
 	for _, mode := range []string{"pack", "declaration"} {
 		t.Run(mode, func(t *testing.T) {
