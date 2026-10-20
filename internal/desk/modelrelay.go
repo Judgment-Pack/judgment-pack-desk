@@ -874,7 +874,8 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusForbidden, CodeForbidden, "Choose a model enabled for this AI connection and desk.")
 		return
 	}
-	if !listing {
+	assembled, canonical := r.Context().Value(assistantAssembledPromptKey{}).(*assistantModelDispatch)
+	if !listing && !canonical {
 		body, err = s.prepareModelContext(endpoint.kind, suffix, body)
 		if err != nil {
 			writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge, err.Error())
@@ -892,6 +893,10 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	r.ContentLength = int64(len(body))
 	r.TransferEncoding = nil
 
+	transport := http.RoundTripper(beforeTheFirstByte{inner: relayTransport, cancel: cancel})
+	if canonical {
+		transport = assistantModelTransport{inner: transport, bound: assembled}
+	}
 	status := 0
 	proxy := &httputil.ReverseProxy{
 		// `Rewrite` rather than `Director`, and the difference is a header
@@ -935,7 +940,7 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 			}
 			out.Header = carried
 		},
-		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel},
+		Transport:     transport,
 		FlushInterval: -1,
 		ModifyResponse: func(response *http.Response) error {
 			if response.StatusCode == http.StatusTooManyRequests {

@@ -463,6 +463,9 @@ func (e *assistantRunExecution) Authorize(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if err := e.ctx.Err(); err != nil {
+		return err
+	}
 	if err := e.writer.Err(); err != nil {
 		return err
 	}

@@ -1794,8 +1794,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # and then sent nothing at all — not a header, not a byte — was held by the
   # overall deadline, and four of them exhausted every slot for ten minutes.
   mutate go "the wait for the first byte is bounded by nothing but the overall deadline" "$MR" \
-    '		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel},' \
-    '		Transport:     relayTransport,'
+    'transport := http.RoundTripper(beforeTheFirstByte{inner: relayTransport, cancel: cancel})' \
+    'transport := http.RoundTripper(relayTransport)'
   # A number outside float64 is a valid JSON document, and whether Go can hold
   # it is not a fact about the endpoint's listing.
   mutate go "a listing is refused for a number Go cannot hold" "$MR" \
@@ -14596,6 +14596,52 @@ fi
 
 # Desk-owned v0.3.0 admission and credential safeguards (#529, #533).
 if [ "$which" = all ] || [ "$which" = go ]; then
+  # Actual private execution bindings; production activation remains separate.
+  mutate go 'assistant execution: reconstructed operation identities restart' internal/desk/assistant_run_store_writer.go \
+    'id := nextAssistantRunIdentity(run, kind)' \
+    'id := assistantExecutionID(kind, 1)'
+  mutate go 'assistant execution: reconstructed event identities restart' internal/desk/assistant_run_store_writer.go \
+    'return appendAssistantRunEvent(run, nextAssistantRunIdentity(run, "event"), event)' \
+    'return appendAssistantRunEvent(run, assistantExecutionID("event", 1), event)'
+  mutate go 'assistant execution: canceled unread close leaves root admission open' internal/desk/assistant_execution_model.go \
+    'if b.dispatch.admitted.Load() && !b.retained.Load() {' \
+    'if false {'
+  mutate go 'assistant execution: budget pause reaches semantic event sink' internal/desk/assistant_execution.go \
+    'if event.BudgetPaused != nil {' \
+    'if false {'
+  mutate go 'assistant execution: model skips durable outbound dispatch' internal/desk/assistant_execution_model.go \
+    'if err := t.bound.dispatch(r.Context()); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant execution: held session bearer omitted' internal/desk/assistant_execution_model.go \
+    'Bearer: bearerOf(e.request)' \
+    'Bearer: ""'
+  mutate go 'assistant execution: selected connection omitted' internal/desk/assistant_execution_model.go \
+    'r.Header.Set(aiConnectionHeader, e.record.Binding.ConnectionID)' \
+    'r.Header.Del(aiConnectionHeader)'
+  mutate go 'assistant execution: selected revision omitted' internal/desk/assistant_execution_model.go \
+    'r.Header.Set(aiRevisionHeader, e.record.Binding.ConnectionRevision)' \
+    'r.Header.Del(aiRevisionHeader)'
+  mutate go 'assistant execution: actual provider body uncertainty unobserved' internal/desk/assistant_execution_model.go \
+    'response.Body = &assistantModelResponse{ReadCloser: response.Body, bound: t.bound}' \
+    'response.Body = response.Body'
+  mutate go 'assistant execution: Gemini admission reads query as method' internal/desk/assistant_execution_model.go \
+    'profileAPIModelAllowed(family, path, request.Body' \
+    'profileAPIModelAllowed(family, suffix+path[len(path):], request.Body'
+  mutate go 'assistant execution: Plan enters unrestricted loop' internal/desk/assistant_execution.go \
+    'phase = gate.PlanPhase(offer)' \
+    'phase = gate.LoopPhase(offer)'
+  mutate go 'assistant execution: child profile widens to parent offer' internal/desk/assistant_execution.go \
+    'childPhase := gate.ChildPhase(profile, offer, phase)' \
+    'childPhase := phase'
+  mutate go 'assistant execution: Runtime skips project admission fence' internal/desk/assistant_execution_runtime.go \
+    'if !s.beginProjectRequest(r.conn, outbound) {' \
+    'if false {'
+  mutate go 'assistant execution: independent Runtime IDs alias' internal/desk/assistant_execution_runtime.go \
+    'hostID, _ := json.Marshal(id)' \
+    'hostID, _ := json.Marshal("aliased-id")'
+  mutate go 'assistant execution: canonical prompt receives legacy injection' internal/desk/modelrelay.go \
+    'if !listing && !canonical {' \
+    'if !listing {'
   # Durable host ledger guards: these rows exercise real restore/work-lock paths.
   mutate go 'assistant runs: current event cursor suppresses replay suffix' internal/desk/assistant_run_http.go \
     'if known {' \
