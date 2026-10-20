@@ -63,12 +63,12 @@ bytes and their original timestamp. The journal bounds and retention apply; a
 full journal refuses without discarding retained work. Before preparing output,
 the existing full conversation validator must also accept it. Otherwise projection
 retains `projectionIssue: "saved-chat-validation"` and leaves the chat and originals
-untouched. In particular, the current Policy workspace validator case-folds all
-nested JSON keys: checkpoint operation arguments containing both `Fact` and `fact`
-are valid retained canonical data but cannot be embedded in saved chat. This
-slice preserves that refusal; it does not rename keys, discard operations or
-weaken Policy validation. Resolving that representational limit requires a
-separately reviewed, path-aware conversation validation contract ([Desk #571](https://github.com/Judgment-Pack/judgment-pack-desk/issues/571)), required before full activation.
+untouched. The shared conversation member validator distinguishes exact reserved
+control names from opaque checkpoint data ([Desk #571](https://github.com/Judgment-Pack/judgment-pack-desk/issues/571)).
+Operation arguments/results containing both `Fact` and `fact` are representable
+without renaming or combining keys. Actual duplicate decoded names and reserved
+control aliases remain refused. See [case-sensitive history](case-sensitive-history.md)
+for the schema boundary and remaining separate authority-record limitations.
 
 Before preparing a receipt, the complete selected output must also pass Unicode
 scalar validation ([Desk #572](https://github.com/Judgment-Pack/judgment-pack-desk/issues/572)).

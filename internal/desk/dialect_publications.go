@@ -449,7 +449,7 @@ type reviewedInputRelease struct {
 }
 
 func sameDialectJSON(a, b []byte) bool {
-	if rejectDuplicateMembers(a) != nil || rejectDuplicateMembers(b) != nil {
+	if checkJSONMembers(a, opaqueJSONMembers) != nil || checkJSONMembers(b, opaqueJSONMembers) != nil {
 		return false
 	}
 	var av, bv any

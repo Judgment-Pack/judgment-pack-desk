@@ -616,26 +616,17 @@ func TestAssistantChatProjectionRecoveryNormalizesCheckpointDisplay(t *testing.T
 
 func TestAssistantChatProjectionRetainsUnrepresentableCheckpointOriginals(t *testing.T) {
 	f := newChatProjectionFixture(t)
-	run := f.admit(t, "chat-one", "message-one", "case-sensitive-originals", "failed", projectionMessage("Retained"))
-	original := json.RawMessage(` {"Fact":false,"fact":null,"zero":0,"literal":"50"} `)
-	_, err := f.store.transaction(t.Context(), func(l *assistantRunLedger) (bool, error) {
-		l.Runs[0].Checkpoint.Operations = append(l.Runs[0].Checkpoint.Operations, contract.CheckpointOperation{ID: "3f71c7b0-7df4-4eb6-96f3-f3a1390dc3a0", Name: "read_exact", Args: original, Status: "running"})
-		l.Runs[0].Revision++
-		return true, nil
-	})
-	assistantRunMust(t, err)
+	run := f.admit(t, "chat-one", "message-one", "invalid-plan-original", "failed", projectionMessage("Retained"))
+	// A concurrent unrelated legacy entry must not make the resulting whole
+	// conversation invalid. The selected admitted source remains unchanged.
+	f.save(t, bytes.Replace(f.read(t), []byte(`"title":"Other pinned chat"`), []byte(`"title":"Other pinned chat","plans":[{}]`), 1))
 	before := f.read(t)
 	if err := f.s.prepareAssistantChatProjection(f.request(), run.ID); !errors.Is(err, errAssistantChatProjectionUnsupported) {
-		t.Fatal("saved-chat validation was bypassed", err)
+		t.Fatal("saved-chat validation bypassed", err)
 	}
 	saved, err := f.store.Read(t.Context(), run.Binding, run.ID)
 	assistantRunMust(t, err)
-	// Canonical checkpoint serialization compacts its RawMessage; the original
-	// exact operation journal remains separate. The typed member distinction
-	// itself must stay intact rather than be folded or renamed for chat storage.
-	var args map[string]json.RawMessage
-	assistantRunMust(t, json.Unmarshal(saved.Checkpoint.Operations[0].Args, &args))
-	if saved.ProjectionIssue != "saved-chat-validation" || saved.ChatProjection != nil || len(args) != 4 || string(args["Fact"]) != "false" || string(args["fact"]) != "null" || saved.Checkpoint.Operations[0].Status != "running" || !bytes.Equal(before, f.read(t)) {
-		t.Fatal("unrepresentable typed original changed")
+	if saved.ProjectionIssue != "saved-chat-validation" || saved.ChatProjection != nil || !bytes.Equal(before, f.read(t)) {
+		t.Fatal("unrepresentable source changed")
 	}
 }
