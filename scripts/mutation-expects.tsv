@@ -2673,3 +2673,22 @@ go	assistant critic: saved review and Plan controls ignored	TestAssistantCriticC
 go	assistant critic: durable checkpoint binding ignored	TestAssistantCriticDurableCustody
 go	assistant critic: missing resumed custody is recaptured	TestAssistantCriticDurableCustody
 go	assistant critic: canonical snapshot loses private custody	TestAssistantCriticCanonicalCustody
+go	assistant graph: duplicate registry name accepted	TestAssistantGraphMalformedScopeAndRegistry
+go	assistant graph: argument aliases accepted	TestAssistantGraphMalformedScopeAndRegistry
+go	assistant graph: excessive check input accepted	TestAssistantGraphMalformedScopeAndRegistry
+go	assistant graph: changed declaration accepted	TestAssistantGraphStaleReadCustody
+go	assistant graph: changed target accepted	TestAssistantGraphStaleReadCustody
+go	assistant graph: deleted declaration recaptured	TestAssistantGraphStaleReadCustody
+go	assistant graph: foreign execution gains root metadata	TestAssistantGraphRootMetadataBinding
+go	assistant graph: native callback identity omitted	TestAssistantGraphActualNativeChildIdentity
+go	assistant graph: native callback association ignored	TestAssistantGraphNativeForeignCallback
+go	assistant graph: queued guidance freshness omitted	TestAssistantGraphQueuedGuidanceFreshness
+go	assistant graph: persistence failure exposes success	TestAssistantGraphPersistenceBeforeSuccess
+go	assistant graph: projection digest drops domain output	TestAssistantGraphActualEinoProducer
+go	assistant graph: domain output omitted from chat	TestAssistantGraphProducerDurableReadAndProjection
+go	assistant graph: unmatched root call accepted	TestAssistantGraphMalformedScopeAndRegistry
+go	assistant graph: foreign output run accepted	TestAssistantGraphOutputImportAssociations
+go	assistant graph: custody receipt aliases accepted	TestAssistantGraphReceiptMembers
+go	assistant graph: producer result status changes	TestAssistantGraphOutputImportAssociations
+go	assistant graph: request cancellation discards observed output	TestAssistantGraphCancellationRetainsObservedOutput
+go	assistant graph: Stop discards uncertain observed output	TestAssistantGraphCancellationRetainsObservedOutput

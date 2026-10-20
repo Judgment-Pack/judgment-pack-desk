@@ -141,7 +141,12 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	// The coordinator supplies the canonical declaration/function; the host
 	// gate permits this interaction without granting any domain action.
 	interaction := "delegation"
-	offer, err := g.Open(ctx, []contract.ToolOfferHostTool{{Name: turn.DelegateTool, Interaction: &interaction}})
+	registry, err := e.assistantGraphTools(runtime)
+	if err != nil {
+		return nil, err
+	}
+	declarations := append(registry.declarations(), contract.ToolOfferHostTool{Name: turn.DelegateTool, Interaction: &interaction})
+	offer, err := g.Open(ctx, declarations)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +184,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		}
 	}
 	promptText += "\n\n" + chat.Transcript + "\n\nTHE PERSON'S MESSAGE\n" + chat.Request.Input
-	run := &adapter.Run{Purpose: e.source.Start.Purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Review: chat.Review, Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
+	run := &adapter.Run{HostTools: registry.offered(gateHostPhase{names: phase.Host}), Purpose: e.source.Start.Purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Review: chat.Review, Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
 	if critic != nil {
 		run.TestPrompt, err = runtime.criticPrompt(ctx)
 		if err != nil {
@@ -228,6 +233,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		child.Enter(childPhase)
 		return child.Calls(), childPhase.Offer(offer).Tools, nil
 	}
+	base = assistantHostAdapter(base, e.record.Binding, chat.Request)
 	return &assistantExecution{Run: run, Adapter: delegate.With(base, delegate.Options{}), runtime: runtime, gate: g}, nil
 }
 

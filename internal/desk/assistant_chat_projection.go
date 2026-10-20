@@ -61,11 +61,21 @@ func assistantChatProjectionCheckpoint(run assistantRunRecord) *contract.Checkpo
 	return &cp
 }
 func assistantChatEventDigest(run assistantRunRecord) string {
+	// Preserve prepared receipts produced before the first domain variant existed.
+	if len(run.DomainOutputs) == 0 {
+		raw, _ := json.Marshal(struct {
+			State      string
+			Checkpoint any
+			Events     []assistantRunEvent
+		}{run.State, assistantChatProjectionCheckpoint(run), run.Events})
+		return digestOf(raw)
+	}
 	raw, _ := json.Marshal(struct {
 		State      string
 		Checkpoint any
 		Events     []assistantRunEvent
-	}{run.State, assistantChatProjectionCheckpoint(run), run.Events})
+		Outputs    []assistantDomainOutput
+	}{run.State, assistantChatProjectionCheckpoint(run), run.Events, run.DomainOutputs})
 	return digestOf(raw)
 }
 func validateAssistantChatProjection(run assistantRunRecord) error {
@@ -300,6 +310,38 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	responses, err := assistantChatArray(state["responses"])
 	if err != nil {
 		return nil, err
+	}
+	if err := validateAssistantDomainOutputs(run); err != nil {
+		return nil, err
+	}
+	if len(run.DomainOutputs) > 0 {
+		existing := chat["graphDrafts"]
+		if existing == nil {
+			existing = []byte("[]")
+		}
+		drafts, err := assistantChatArray(existing)
+		if err != nil {
+			return nil, err
+		}
+		if len(drafts)+len(run.DomainOutputs) > 16 {
+			return nil, errAssistantRunInvalid
+		}
+		seen := map[string]bool{}
+		for _, raw := range drafts {
+			var d graphDraft
+			if json.Unmarshal(raw, &d) != nil {
+				return nil, errAssistantRunInvalid
+			}
+			seen[d.DraftID] = true
+		}
+		for _, out := range run.DomainOutputs {
+			if seen[out.Draft.DraftID] {
+				return nil, errAssistantRunConflict
+			}
+			seen[out.Draft.DraftID] = true
+			drafts = append(drafts, assistantChatJSON(out.Draft))
+		}
+		chat["graphDrafts"] = assistantChatEncodeArray(drafts)
 	}
 	// Validate association identities rather than pairing by tool name or prose.
 	ids := map[string]bool{}
