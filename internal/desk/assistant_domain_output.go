@@ -42,11 +42,27 @@ type assistantHostResult struct {
 func assistantGraphTool(name string) bool {
 	return contains([]string{"list_decisions", "read_decision", "get_graph_authoring_instructions", "graph_validate", "graph_explain", "propose_graph", "graph_rehearse"}, name)
 }
+
+// Arguments remain exact bytes in host intents. Callback/event JSON encodes
+// RawMessage with compaction and HTML escaping; compare that same wire form,
+// without decoding facts into maps or changing number spellings or key order.
+func assistantHostArgumentsMatch(retained, original []byte) bool {
+	if !json.Valid(retained) || !json.Valid(original) {
+		return false
+	}
+	left, err := json.Marshal(json.RawMessage(retained))
+	if err != nil {
+		return false
+	}
+	right, err := json.Marshal(json.RawMessage(original))
+	return err == nil && bytes.Equal(left, right)
+}
+
 func assistantParentHostCall(run assistantRunRecord, name string, intent assistantHostIntent) bool {
 	count := 0
 	for _, event := range run.Events {
 		if c := event.Event.ToolCall; c != nil && c.CallID != nil && *c.CallID == intent.CallID {
-			if c.Name != name || !bytes.Equal(c.Args, intent.Arguments) {
+			if c.Name != name || !assistantHostArgumentsMatch(c.Args, intent.Arguments) {
 				return false
 			}
 			count++
@@ -58,7 +74,14 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 	if intent.CallbackID == "" {
 		return true
 	}
+	// Native account admission serializes author, child and critic invocations.
+	// A callback is appended while its owning model invocation still holds that
+	// account. Later model operations must not rebind an earlier callback.
+	invocation := ""
 	for _, op := range run.Operations {
+		if op.Kind == "model" {
+			invocation = op.ID
+		}
 		if op.ID == intent.CallbackID && op.Kind == "callback" {
 			var v struct {
 				Invocation string `json:"invocation"`
@@ -68,7 +91,7 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 					Arguments json.RawMessage `json:"arguments"`
 				} `json:"call"`
 			}
-			if json.Unmarshal(op.Intent, &v) != nil || v.Call.ID != intent.CallID || v.Call.Name != op.Name || !bytes.Equal(v.Call.Arguments, intent.Arguments) {
+			if json.Unmarshal(op.Intent, &v) != nil || invocation == "" || v.Invocation != invocation || v.Call.ID != intent.CallID || v.Call.Name != op.Name || !assistantHostArgumentsMatch(v.Call.Arguments, intent.Arguments) {
 				return false
 			}
 			for _, inv := range run.Operations {
