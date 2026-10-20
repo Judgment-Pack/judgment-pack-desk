@@ -217,3 +217,28 @@ it('blocks an unbound stored key and recovers after the server confirms its bind
  await client.invalidateQueries({queryKey:['assistant-key']})
  await waitFor(()=>expect(screen.getByRole('status').textContent).toBe('true||'))
 })
+
+describe('an endpoint on this computer', () => {
+  it('is ready with no key where the desk says none is needed, and is not where it says nothing', async () => {
+    function Ready() {
+      const slot = useAssistantSlot()
+      return <output>{String(assistantReady(slot))}|{slot.keyPresent ? 'key' : 'no key'}|{slot.unusable ?? ''}</output>
+    }
+    const answer = (keyless: boolean | undefined) => {
+      vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, statusText: '', text: async () => JSON.stringify({ present: false, bound: false, fingerprint: '', ...(keyless === undefined ? {} : { keyless }) }) }))
+      return render(
+        <QueryClientProvider client={testQueryClient()}>
+          <DeskConfigFixture value={withEndpoint({ ...ENDPOINT, url: 'http://127.0.0.1:11434/v1', models: ['a-model'] })}><Ready /></DeskConfigFixture>
+        </QueryClientProvider>
+      )
+    }
+    answer(true)
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('true|key|'))
+    cleanup()
+    answer(false)
+    await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/^false\|no key\|/))
+    cleanup()
+    answer(undefined)
+    await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/^false\|no key\|/))
+  })
+})

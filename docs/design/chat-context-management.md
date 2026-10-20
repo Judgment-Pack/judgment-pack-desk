@@ -184,3 +184,12 @@ are immutable installation records; registration neither authorizes nor invokes
 research. The trusted host helper is not available through the browser's generic
 Runner proxy. This boundary alone does not implement portable research review or
 execution.
+
+
+The standalone authoring pane owns an in-memory `ChatContext` for its mounted
+`useAssistantRun` hook. It passes that context, the connected Runtime identity
+(where a release version is known), and the current project memory setting on
+each run. Retained Runtime reads are keyed by Runtime identity; builds without a
+release identity keep reads scoped to the run. The hook disposes its context on
+unmount, and a newly mounted pane starts with a fresh context. It does not borrow
+a saved conversation's context.

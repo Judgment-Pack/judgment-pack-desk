@@ -144,89 +144,99 @@ func (s *Server) prepareModelContext(kind, suffix string, raw []byte) ([]byte, e
 // writes for a chat turn; recall reads from it.
 const personMessageMarker = "THE PERSON'S MESSAGE\n"
 
-// agentRecallQuery is the recall query for a Codex run. The codex engine
-// appends the execution state (the chat's draft snapshot among it) and its
-// guidance after the person's message, so where the page sends the person's
-// message beside the prompt the query is taken from that alone; a request
-// without it (server-owned research, a pane run) is read as before.
-func agentRecallQuery(request codexbridge.RunRequest) string {
-	if request.PersonMessage != "" {
-		return memoryQueryTail(personMessageMarker + request.PersonMessage)
-	}
-	return memoryQueryTail(request.Prompt)
-}
-
 // executionStateHeader opens the text the assistant harness sends as the
-// execution state (@judgment-pack/harness v0.1.0, STATE_HEADER; the contract
-// vector budget/state-placement.json). The state is a user text on every wire:
-// a second part of the person's message on the first request, and, under the
+// execution state (@judgment-pack/harness, STATE_HEADER; the contract vector
+// budget/state-placement.json). The state is a user text on every wire: a
+// later part of the person's message on the first request, and, under the
 // trailing-user placement, a user message of its own after that. It is the
 // harness's working state, not a message from the person, so recall never
 // reads it.
 const executionStateHeader = "EXECUTION STATE (from the host, current for this request and replaced on the next; working state, not a message from the person and never approval)"
 
-// Recall uses only the latest user content, never the complete provider body,
-// credentials, tool schemas, or model-generated tool output. Text parts that
-// carry the execution state are dropped, and a user turn left with no text
-// (one that holds only tool results, as an Anthropic or Gemini tool answer
-// does, or only the state) is skipped for the newest one with the person's
-// own text.
-//
-// The newest user text that carries the person's-message marker is preferred:
-// the harness also sends texts of its own as user turns, the finishing request
-// of a synthesis and the reformat request, and those are not the person's.
-// Where no user text carries the marker (a pane run), the newest remaining
-// user text is read, as before. desk #517 replaces this rule at the next
-// package pin, with the contract's first-user-turn rule.
+// agentRecallQuery is the recall query for a Codex run, by the contract's rule
+// for the agent wire (budget.json#/$defs/recallQuery): the request text is the
+// prompt's text before the first blank line that is followed by the state
+// header, or the whole prompt where it is absent, and a prompt that starts
+// with the header has none. The codex engine appends the state and its
+// guidance after the person's message, headed by the state header, so the
+// query never reads them.
+func agentRecallQuery(request codexbridge.RunRequest) string {
+	if strings.HasPrefix(request.Prompt, executionStateHeader) {
+		return ""
+	}
+	text := request.Prompt
+	if at := strings.Index(text, "\n\n"+executionStateHeader); at >= 0 {
+		text = text[:at]
+	}
+	return memoryQueryTail(text)
+}
+
+// memoryRequestQuery is the recall query for a relayed model request, by the
+// contract's rule for the model wires (budget.json#/$defs/recallQuery,
+// @judgment-pack/harness): take the request's first user turn, the first
+// message with role user in messages (OpenAI-compatible and Anthropic) or the
+// first content with role user in contents (Gemini), and stop there; its
+// request text is its first text part that does not start with the state
+// header. The harness puts the request text first in the run's first user
+// message and never moves, replaces or drops that message, so the first user
+// turn holds the person's message on every request of a run: the newest user
+// text is often a tool result, the finishing or reformat request, the
+// compaction summary or the state. Where that turn has no such part, the
+// answer is empty and no later turn is read. The parts are not joined: the
+// chat's index of earlier results is a part of its own.
 func memoryRequestQuery(body map[string]any) string {
 	for _, key := range []string{"messages", "contents"} {
-		if messages, ok := body[key].([]any); ok {
-			newest, found := "", false
-			for i := len(messages) - 1; i >= 0; i-- {
-				message, ok := messages[i].(map[string]any)
-				if !ok || message["role"] != "user" {
-					continue
-				}
-				text, ok := userText(message)
-				if !ok {
-					continue
-				}
-				if strings.Contains(text, personMessageMarker) {
-					return memoryQueryTail(text)
-				}
-				if !found {
-					newest, found = text, true
-				}
+		messages, ok := body[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, raw := range messages {
+			message, ok := raw.(map[string]any)
+			if !ok || message["role"] != "user" {
+				continue
 			}
-			if found {
-				return memoryQueryTail(newest)
+			if text, ok := requestText(message); ok {
+				return memoryQueryTail(text)
 			}
+			return ""
 		}
 	}
 	return ""
 }
 
-// userText is one user turn's own text: a string content, or its text parts
-// joined, the execution state left out. False where nothing is left.
-func userText(message map[string]any) (string, bool) {
+// requestText is a user turn's first text part that does not start with the
+// state header: a string content is one part; in a content list only parts of
+// type text count; in Gemini's parts a part is text when it carries text and
+// is not a thought. False where there is none.
+func requestText(message map[string]any) (string, bool) {
 	if text, ok := message["content"].(string); ok {
 		return text, !strings.HasPrefix(text, executionStateHeader)
 	}
-	parts, _ := message["parts"].([]any)
-	if parts == nil {
-		parts, _ = message["content"].([]any)
+	if parts, ok := message["parts"].([]any); ok {
+		for _, part := range parts {
+			if p, ok := part.(map[string]any); ok {
+				if thought, _ := p["thought"].(bool); thought {
+					continue
+				}
+				if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {
+					return t, true
+				}
+			}
+		}
+		return "", false
 	}
-	text, found := "", false
-	for _, part := range parts {
-		if p, ok := part.(map[string]any); ok {
-			if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {
-				text += "\n" + t
-				found = true
+	if parts, ok := message["content"].([]any); ok {
+		for _, part := range parts {
+			if p, ok := part.(map[string]any); ok && p["type"] == "text" {
+				if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {
+					return t, true
+				}
 			}
 		}
 	}
-	return text, found
+	return "", false
 }
+
 func memoryQueryTail(text string) string {
 	if at := strings.LastIndex(text, personMessageMarker); at >= 0 {
 		return aicontext.Prefix(text[at:], 3000)

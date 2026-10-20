@@ -21,6 +21,8 @@ import { systemMessage, msg, useLocale } from '../i18n'
  * are different documents.
  */
 import { CodeArea } from '../ui/CodeArea'
+import { CriticDetails } from './CriticDetails'
+import { criticRecord } from './critic'
 import type { AssistantEvent } from '@judgment-pack/harness/engine'
 import styles from './AssistantPane.module.css'
 
@@ -101,7 +103,7 @@ export function ProposalUnknowns({ unknowns }: { unknowns: readonly string[] }) 
  * ADR-0001's first rule: a non-empty list of checks before "not refuted" is
  * rendered.
  */
-export function RefutationReport({ events }: { events: readonly AssistantEvent[] }) {
+export function RefutationReport({ events, runModel }: { events: readonly AssistantEvent[]; /** The model the run used, so a review on another model is said to be. */ runModel?: string }) {
   useLocale()
   const critique = [...events]
     .reverse()
@@ -109,6 +111,8 @@ export function RefutationReport({ events }: { events: readonly AssistantEvent[]
       (event): event is Extract<AssistantEvent, { type: 'critique' }> => event.type === 'critique'
     )
   if (critique === undefined) return null
+  const record = criticRecord(critique, runModel)
+  const incomplete = (critique.incomplete?.length ?? 0) > 0
   return (
     <div>
       <p className={styles.label}>{msg("The refutation pass")}</p>
@@ -116,10 +120,12 @@ export function RefutationReport({ events }: { events: readonly AssistantEvent[]
         <p className={styles.honesty}>{systemMessage(critique.text)}</p>
       ) : (
         <>
-          <p className={critique.refuted ? styles.notice : styles.honesty}>
-            {critique.refuted
-              ? msg("The runtime refuted this proposal.")
-              : msg("The runtime did not refute this proposal.")}{' '}
+          <p className={critique.refuted || incomplete ? styles.notice : styles.honesty}>
+            {incomplete
+              ? msg("The review is incomplete. Nothing here says this proposal holds.")
+              : critique.refuted
+                ? msg("The runtime refuted this proposal.")
+                : msg("The runtime did not refute this proposal.")}{' '}
             {systemMessage(critique.text)}
           </p>
           <ul className={styles.unknowns}>
@@ -131,6 +137,7 @@ export function RefutationReport({ events }: { events: readonly AssistantEvent[]
           </ul>
         </>
       )}
+      {record && <CriticDetails record={record} className={styles.unknowns} />}
     </div>
   )
 }

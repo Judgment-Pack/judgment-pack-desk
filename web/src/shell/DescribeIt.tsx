@@ -36,6 +36,9 @@ import { msg, useLocale } from '../i18n'
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EventList } from '../assistant/EventList'
+import { StreamingText } from '../assistant/StreamingText'
+import { RunReportLines } from '../assistant/RunReportLines'
+import type { RunReport } from '../assistant/report'
 import {
   ProposalSummaryLine,
   ProposalUnknowns,
@@ -129,6 +132,10 @@ export interface DescribeItState {
   /** The prompt is being read, or the engine is running. */
   running: boolean
   events: readonly AssistantEvent[]
+  /** The prose the assistant has written so far, while it writes it; empty otherwise. */
+  streaming: string
+  /** What the latest submission's run reports about itself once it has ended. */
+  report: RunReport | undefined
   /**
    * What the run failed with after its terminal event, where it did.
    *
@@ -498,6 +505,8 @@ export function useDescribeIt(): DescribeItState {
     blocking,
     running,
     events,
+    streaming: events === EMPTY ? '' : run.streaming,
+    report: events === EMPTY ? undefined : run.report,
     failure: unwound,
     proposal,
     problem,
@@ -560,6 +569,8 @@ function Section({ state, blockingElsewhere }: { state: DescribeItState; blockin
         label={msg("What the assistant did")}
         compact
       />
+      <StreamingText text={state.streaming} />
+      {state.report !== undefined && <RunReportLines report={state.report} />}
       {proposal !== undefined && (
         <section className={styles.proposal} aria-label={msg("The proposal")}>
           <ProposalSummaryLine document={proposal.document} />

@@ -38,3 +38,11 @@ it('runs another enabled subscription model and does not borrow the default mode
  expect(bindExecution(config,'default','off')).toHaveProperty('effort','high')
  expect(()=>bindExecution(config,'disabled','off')).toThrow('Choose a model')
 })
+
+it('carries what the connection states about its endpoint on the session, and nothing where it states none',()=>{
+ const endpoint={url:'https://example.invalid/v1',kind:'openai-compatible' as const,model:'m',models:['m'],tools:[]}
+ const plain=bindExecution({engine:'vercel',endpoint},'m','off')
+ expect((plain as {model:object}).model).not.toHaveProperty('capabilities')
+ const stated=bindExecution({engine:'vercel',endpoint:{...endpoint,capabilities:{probe:{at:'2026-10-19T12:00:00Z',nativeToolCalls:false,parallelToolCalls:false},override:{contextWindow:32768,nativeToolCalls:true}}}},'m','off')
+ expect((stated as {model:{capabilities:unknown}}).model.capabilities).toEqual({contextWindowTokens:32768,outputTokens:4096,nativeToolCalls:true,parallelToolCalls:false})
+})

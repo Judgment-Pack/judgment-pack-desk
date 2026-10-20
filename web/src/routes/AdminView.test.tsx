@@ -1232,11 +1232,34 @@ describe('one section at a time', () => {
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
-    expect(triggers).toEqual(['API key', 'OpenAI-compatible', 'off'])
+    // Beside the three it had: how the key is sent, the review's and the helper tasks' models, and the four
+    // capability flags the owner may state (each reads as unstated until set).
+    expect(triggers).toEqual([
+      'API key',
+      'OpenAI-compatible',
+      'Authorization: Bearer (default)',
+      'The model of the run',
+      'The model of the run',
+      'Use the probe or the provider default',
+      'Use the probe or the provider default',
+      'Use the probe or the provider default',
+      'Use the probe or the provider default',
+      'off'
+    ])
     const offered = Array.from(container.querySelectorAll('select')).map(
       (element) => element.textContent
     )
-    expect(offered).toEqual(['OpenAI-compatibleAnthropicGoogle Gemini', 'offstandarddeep'])
+    expect(offered).toEqual([
+      'OpenAI-compatibleAnthropicGoogle Gemini',
+      'Authorization: Bearer (default)api-key (Azure)',
+      'The model of the run',
+      'The model of the run',
+      'Use the probe or the provider defaultYesNo',
+      'Use the probe or the provider defaultYesNo',
+      'Use the probe or the provider defaultYesNo',
+      'Use the probe or the provider defaultYesNo',
+      'offstandarddeep'
+    ])
     expect(container.querySelectorAll('input[type="password"]')).toHaveLength(1)
     expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull()
   })

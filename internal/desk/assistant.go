@@ -529,6 +529,22 @@ type AssistantEndpointView struct {
 	// the empty set is a state this schema has, and null is not it.
 	Models []string `json:"models"`
 	Tools  []string `json:"tools"`
+	// CriticModel and ChildModel are the models the connection names for the
+	// critic and for delegated children, each one of Models; absent where the
+	// connection names none.
+	CriticModel string `json:"criticModel,omitempty"`
+	ChildModel  string `json:"childModel,omitempty"`
+	// Capacity is how many model requests the connection carries at once, 1 to
+	// 16: how many delegated children run beside the parent. Absent where the
+	// connection states none.
+	Capacity int `json:"capacity,omitempty"`
+	// Auth is "api-key" where the key is presented in that header, absent for
+	// the protocol's own form; Lan is true where the owner accepts a plain
+	// http: address on this network. Capabilities is what the connection
+	// states about its endpoint's behaviour.
+	Auth         string                    `json:"auth,omitempty"`
+	Lan          bool                      `json:"lan,omitempty"`
+	Capabilities *endpointCapabilityRecord `json:"capabilities,omitempty"`
 }
 
 // slotView renders one accepted decode as an answer.
@@ -550,10 +566,16 @@ func slotView(decoded deskDecode) AssistantSlotView {
 		models = []string{}
 	}
 	view.Endpoint = &AssistantEndpointView{
-		URL:    decoded.Endpoint.url,
-		Kind:   decoded.Endpoint.kind,
-		Models: models,
-		Tools:  tools,
+		URL:          decoded.Endpoint.url,
+		Kind:         decoded.Endpoint.kind,
+		Models:       models,
+		Tools:        tools,
+		CriticModel:  decoded.Endpoint.criticModel,
+		ChildModel:   decoded.Endpoint.childModel,
+		Capacity:     decoded.Endpoint.capacity,
+		Auth:         decoded.Endpoint.auth,
+		Lan:          decoded.Endpoint.lan,
+		Capabilities: decoded.Endpoint.capabilities,
 	}
 	if decoded.Endpoint.model != "" {
 		model := decoded.Endpoint.model
@@ -1204,6 +1226,10 @@ type AssistantKeyState struct {
 	// the page may not have been able to read.
 	ConfiguredKind string `json:"configuredKind"`
 	Bound          bool   `json:"bound"`
+	// Keyless is true where no key is stored and none is needed: the endpoint
+	// the desk is configured for is one on this computer, which is sent no
+	// credential. The page reads it as ready, and says why.
+	Keyless bool `json:"keyless"`
 }
 
 // keyState renders one stored key as the answer the page gets, together with
@@ -1219,7 +1245,7 @@ func keyState(stored storedKey, configured assistantEndpoint) AssistantKeyState 
 		origin, kind = "", ""
 	}
 	if !stored.present {
-		return AssistantKeyState{ConfiguredOrigin: origin, ConfiguredKind: kind}
+		return AssistantKeyState{ConfiguredOrigin: origin, ConfiguredKind: kind, Keyless: origin != "" && configured.keyless()}
 	}
 	return AssistantKeyState{
 		Present:          true,
@@ -1563,6 +1589,23 @@ type assistantEndpoint struct {
 	// where there are any, and the empty string where there are none.
 	models []string
 	tools  []string
+	// criticModel and childModel name the models the connection runs its critic
+	// and its delegated children on: one of models, or the empty string for the
+	// run's own.
+	criticModel string
+	childModel  string
+	// capacity is how many model requests the connection carries at once, as
+	// its owner states it (1 to 16); zero where the file states none.
+	capacity int
+	// auth is the header form the key is presented in: empty for the
+	// protocol's own, and "api-key" for an OpenAI-compatible endpoint that
+	// takes it there (Azure's).
+	auth string
+	// lan says the owner accepts a plain http: address on this network.
+	lan bool
+	// capabilities is what the connection states about its endpoint's
+	// behaviour: its probe's finding and its owner's overrides.
+	capabilities *endpointCapabilityRecord
 }
 
 // configuredEndpoint decodes the whole desk-level file and answers the
@@ -1711,7 +1754,8 @@ func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 		s.refuseKeyRead(w, err)
 		return
 	}
-	if !stored.present {
+	keyless := !stored.present && endpoint.keyless()
+	if !stored.present && !keyless {
 		writeJSONCoded(w, http.StatusConflict, CodeAssistantNoKey,
 			"no key is stored on this machine, so there is nothing to present to the endpoint")
 		return
@@ -1720,9 +1764,11 @@ func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 	// machine was entered for one destination; a configuration that now names
 	// another gets no credential at all, and this refusal rather than a
 	// request.
-	if reason := bindingProblem(stored, endpoint); reason != "" {
-		writeJSONCoded(w, http.StatusConflict, CodeAssistantKeyUnbound, reason)
-		return
+	if !keyless {
+		if reason := bindingProblem(stored, endpoint); reason != "" {
+			writeJSONCoded(w, http.StatusConflict, CodeAssistantKeyUnbound, reason)
+			return
+		}
 	}
 	result := probeEndpoint(r.Context(), endpoint, stored.key)
 	// **Scheme and host only.** A configured URL may legitimately carry a
@@ -1998,8 +2044,12 @@ func transportDiagnostic(err error) string {
 // it. A kind neither of them defines attaches nothing at all rather than
 // guessing — `decodeDeskFile` refuses every such kind by name, so reaching
 // here with one is a bug rather than a configuration.
-func attachCredential(header http.Header, kind, key string) {
-	name, value, ok := credentialHeader(kind, key)
+func attachCredential(header http.Header, endpoint assistantEndpoint, key string) {
+	// No key is no credential: an endpoint on this computer is probed bare.
+	if key == "" {
+		return
+	}
+	name, value, ok := credentialHeader(endpoint.kind, endpoint.auth, key)
 	if !ok {
 		return
 	}
@@ -2014,7 +2064,7 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 		if err != nil {
 			return nil, err
 		}
-		attachCredential(request.Header, endpoint.kind, key)
+		attachCredential(request.Header, endpoint, key)
 		return request, nil
 	case "anthropic":
 		payload, err := json.Marshal(map[string]any{
@@ -2030,7 +2080,7 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 		if err != nil {
 			return nil, err
 		}
-		attachCredential(request.Header, endpoint.kind, key)
+		attachCredential(request.Header, endpoint, key)
 		// The version this protocol requires on every request. It is a
 		// property of the wire, not a model or a vendor choice, and an
 		// endpoint speaking this protocol refuses a request without it.
@@ -2051,7 +2101,7 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 		if err != nil {
 			return nil, err
 		}
-		attachCredential(request.Header, endpoint.kind, key)
+		attachCredential(request.Header, endpoint, key)
 		return request, nil
 	default:
 		// Unreachable: `decodeDeskFile` refuses every other kind by name.
