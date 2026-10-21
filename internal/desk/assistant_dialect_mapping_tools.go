@@ -16,7 +16,9 @@ import (
 
 var assistantDialectNames = []string{"read_dialect", "propose_dialect", "read_dialect_publication", "propose_dialect_publication"}
 
-func assistantDialectTool(name string) bool { return contains(assistantDialectNames, name) }
+func assistantDialectTool(name string) bool {
+	return contains(assistantDialectNames, name) || assistantDialectRecordTool(name)
+}
 
 type assistantDialectFact struct {
 	Target     string          `json:"target"`
@@ -55,6 +57,10 @@ func assistantDialectColumn(s string) bool {
 }
 func readAssistantDialectArguments(name string, raw []byte) (assistantDialectArguments, error) {
 	var a assistantDialectArguments
+	if assistantDialectRecordTool(name) {
+		v, err := readAssistantDialectRecordArguments(name, raw)
+		return assistantDialectActionArguments(v), err
+	}
 	bad := func() (assistantDialectArguments, error) {
 		return a, failure.ToolInput("Use the declared Dialect identity, current read revision and explicit review fields only. Nothing was saved or published.")
 	}
@@ -170,17 +176,18 @@ type assistantDialectFactView struct {
 	Type  string `json:"type"`
 }
 type assistantDialectRead struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Revision        string `json:"revision"`
-	RecipeVersion   int    `json:"recipeVersion"`
-	PackKey         string `json:"packKey,omitempty"`
-	PackPath        string `json:"packPath,omitempty"`
-	Declaration     string `json:"declaration,omitempty"`
-	Pack            []byte `json:"pack,omitempty"`
-	Variant         string `json:"variant,omitempty"`
-	BasePublication string `json:"basePublication,omitempty"`
-	View            []byte `json:"view"`
+	Recipe          *assistantDialectActionBasis `json:"recipe,omitempty"`
+	ID              string                       `json:"id"`
+	Name            string                       `json:"name"`
+	Revision        string                       `json:"revision"`
+	RecipeVersion   int                          `json:"recipeVersion"`
+	PackKey         string                       `json:"packKey,omitempty"`
+	PackPath        string                       `json:"packPath,omitempty"`
+	Declaration     string                       `json:"declaration,omitempty"`
+	Pack            []byte                       `json:"pack,omitempty"`
+	Variant         string                       `json:"variant,omitempty"`
+	BasePublication string                       `json:"basePublication,omitempty"`
+	View            []byte                       `json:"view"`
 }
 
 func assistantDialectColumns(doc inputPreparation) []string {

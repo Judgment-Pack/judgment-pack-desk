@@ -3,6 +3,7 @@ package desk
 import (
 	"bytes"
 	"net/http"
+	"reflect"
 )
 
 // Acquire the owning preparation view before entering the private ledger. Never
@@ -68,6 +69,21 @@ func (s *Server) checkAssistantDialectProjection(r *http.Request, run assistantR
 		}
 		if current.SHA256 != p.Read.Revision {
 			return errAssistantRunConflict
+		}
+		if p.Read.Recipe != nil {
+			if !reflect.DeepEqual(assistantDialectRecipeBasis(current), *p.Read.Recipe) {
+				return errAssistantRunConflict
+			}
+			a, err := readAssistantDialectRecordArguments("propose_dialect_action", assistantChatJSON(assistantDialectRecordArguments{ID: p.Action.InputID, Revision: p.Action.Revision, Kind: p.Action.Kind, Patch: p.Action.Patch, Section: p.Action.Section, RecordIDs: p.Action.RecordIDs, RunID: p.Action.RunID}))
+			if err != nil || validateAssistantDialectActionBasis(*p.Read.Recipe, a) != nil {
+				return errAssistantRunInvalid
+			}
+			if a.Kind == "stop-research" {
+				if _, err = s.assistantDialectActiveResearch(r.Context(), a.ID, a.RunID); err != nil {
+					return err
+				}
+			}
+			continue
 		}
 		if p.Action.Kind == "update-dialect" {
 			config, _, err := s.assistantDecisionDeclarations()

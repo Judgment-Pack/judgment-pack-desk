@@ -128,7 +128,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	receipts := map[string]assistantHostResult{}
 	intents := map[string]assistantHostIntent{}
 	for _, op := range run.Operations {
-		if op.Kind == "host" && !assistantDialectTool(op.Name) && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {
+		if op.Kind == "host" && !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {
 			return errAssistantRunInvalid
 		}
 		if op.Kind == "host" && !assistantDialectRecipeTool(op.Name) && assistantDialectRecipeMetadata(op.Intent) {
@@ -344,7 +344,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	}
 	// A successful producer cannot lose its domain payload on import/recovery.
 	for _, op := range run.Operations {
-		if op.Kind == "host" && (op.Name == "propose_dialect" || op.Name == "propose_dialect_publication") && !seen[op.ID] {
+		if op.Kind == "host" && (assistantDialectProposal(op.Name)) && !seen[op.ID] {
 			if op.State == "completed" || assistantDialectResultHasAction(receipts[op.ID].Result) {
 				return errAssistantRunInvalid
 			}
@@ -460,7 +460,7 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		}
 		for _, held := range run.Operations {
 			if held.ID == id {
-				if name == "propose_dialect" || name == "propose_dialect_publication" {
+				if assistantDialectProposal(name) {
 					var original assistantHostIntent
 					if readAssistantHostReceipt(held.Intent, &original) != nil || validateAssistantDialectIntent(*run, held, original) != nil {
 						return false, errAssistantRunConflict
@@ -502,7 +502,7 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 				return false, nil
 			}
 		}
-		if name == "propose_dialect" || name == "propose_dialect_publication" {
+		if assistantDialectProposal(name) {
 			var source struct {
 				Actions []json.RawMessage `json:"inputActions"`
 			}
@@ -655,7 +655,7 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		}
 	}
 	var dialectUnknown *assistantDialectUnknown
-	if (name == "propose_dialect" || name == "propose_dialect_publication") && errors.As(workErr, &dialectUnknown) {
+	if (assistantDialectProposal(name)) && errors.As(workErr, &dialectUnknown) {
 		e.cancel()
 	}
 	var unknown *assistantDialectRecipeUnknown

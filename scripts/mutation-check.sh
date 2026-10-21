@@ -15241,10 +15241,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'repository := s.draftRepositoryWithAuthority(e.authorizeAssistantDialectRecipe)' \
     'repository := fileDialectDraftRepository{open: s.openDialectDrafts, authorize: e.authorizeAssistantDialectRecipe}'
   mutate go 'assistant shared offers: recipe proposal classified as read' internal/desk/assistant_dialect_recipe_tools_store.go \
-    'tool.Effect = "propose"' \
+    'tool.Effect = "proposal"' \
     'tool.Effect = "read"'
   mutate go 'assistant shared offers: test proposal classified as read' internal/desk/assistant_test_tools.go \
-    't.Effect = "propose"' \
+    't.Effect = "proposal"' \
     't.Effect = "read"'
 fi
 
@@ -15287,11 +15287,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if err = s.checkAssistantDialectPublicationEvidence(r.Context(), *p); err != nil {' \
     'if err = error(nil); err != nil {'
   mutate go 'assistant dialect mapping: unknown retention continues model' internal/desk/assistant_domain_output.go \
-    'if (name == "propose_dialect" || name == "propose_dialect_publication") && errors.As(workErr, &dialectUnknown) {' \
-    'if false && (name == "propose_dialect" || name == "propose_dialect_publication") && errors.As(workErr, &dialectUnknown) {'
+    'if (assistantDialectProposal(name)) && errors.As(workErr, &dialectUnknown) {' \
+    'if false && (assistantDialectProposal(name)) && errors.As(workErr, &dialectUnknown) {'
   mutate go 'assistant dialect mapping: unrelated host accepts new custody' internal/desk/assistant_domain_output.go \
-    'if op.Kind == "host" && !assistantDialectTool(op.Name) && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {' \
-    'if false && op.Kind == "host" && !assistantDialectTool(op.Name) && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {'
+    'if op.Kind == "host" && !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {' \
+    'if false && op.Kind == "host" && !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {'
   mutate go 'assistant dialect mapping: owning artifact callback omitted' internal/desk/retained_artifacts_file.go \
     'return f.authorize(ctx)' \
     'return nil'
@@ -15333,6 +15333,87 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if false && (len(read.View) > 2<<20 || !validAssistantDialectRead(read)) {'
 fi
 
+
+# Current records/history and review-only action safeguards.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect records: nested raw member types omitted' internal/desk/assistant_dialect_action_tools.go \
+    'readAssistantDialectCustody(raw, reflect.TypeOf(a)) != nil' \
+    'false && readAssistantDialectCustody(raw, reflect.TypeOf(a)) != nil'
+  mutate go 'assistant dialect records: kind member exclusivity omitted' internal/desk/assistant_dialect_action_tools.go \
+    'if !contains(kindAllowed, key) {' \
+    'if false && !contains(kindAllowed, key) {'
+  mutate go 'assistant dialect records: portable patch validation omitted' internal/desk/assistant_dialect_action_tools.go \
+    '!validAssistantDialectPatch(*a.Patch)' \
+    'false'
+  mutate go 'assistant dialect records: pagination bounds omitted' internal/desk/assistant_dialect_action_tools.go \
+    'if a.Offset != nil && (*a.Offset < 0 || *a.Offset > 1000) || a.Limit != nil && (*a.Limit < 1 || *a.Limit > 10) {' \
+    'if false {'
+  mutate go 'assistant dialect records: field enumeration bound omitted' internal/desk/assistant_dialect_record_tools.go \
+    'if len(out) > 30 {' \
+    'if false && len(out) > 30 {'
+  mutate go 'assistant dialect records: original string bound omitted' internal/desk/assistant_dialect_record_tools.go \
+    'assistantDialectShort(v, 500)' \
+    'v'
+  mutate go 'assistant dialect records: source quote bound omitted' internal/desk/assistant_dialect_record_tools.go \
+    'assistantDialectShort(s.Quote, 200)' \
+    's.Quote'
+  mutate go 'assistant dialect records: records postqueue authority omitted' internal/desk/assistant_dialect_record_tools.go \
+    'if err = e.Authorize(ctx); err != nil {
+		return runcontext.ToolResult{}, err
+	}
+	return assistantHostJSON(map[string]any{"id": a.ID, "revision": saved.SHA256, "recipeVersion"' \
+    'if err = e.Authorize(ctx); false {
+		return runcontext.ToolResult{}, err
+	}
+	return assistantHostJSON(map[string]any{"id": a.ID, "revision": saved.SHA256, "recipeVersion"'
+  mutate go 'assistant dialect records: activity postqueue authority omitted' internal/desk/assistant_dialect_record_tools.go \
+    'if err = e.Authorize(ctx); err != nil {
+		return runcontext.ToolResult{}, err
+	}
+	return assistantHostJSON(map[string]any{"id": a.ID, "revision": saved.SHA256, "events"' \
+    'if err = e.Authorize(ctx); false {
+		return runcontext.ToolResult{}, err
+	}
+	return assistantHostJSON(map[string]any{"id": a.ID, "revision": saved.SHA256, "events"'
+  mutate go 'assistant dialect records: current preparation basis omitted' internal/desk/assistant_dialect_action_output.go \
+    'saved.SHA256 != read.Revision || !reflect.DeepEqual(assistantDialectRecipeBasis(saved), *read.Recipe)' \
+    'false && (saved.SHA256 != read.Revision || !reflect.DeepEqual(assistantDialectRecipeBasis(saved), *read.Recipe))'
+  mutate go 'assistant dialect records: generated current human review omitted' internal/desk/assistant_dialect_action_output.go \
+    'a.Kind == "evaluate" && (row.ReviewDecision != "accepted" || row.ReviewVersion != b.Recipe.Version)' \
+    'false'
+  mutate go 'assistant dialect records: evaluation source separation omitted' internal/desk/assistant_dialect_action_output.go \
+    'if a.Kind == "evaluate" && generated && supplied {' \
+    'if false && a.Kind == "evaluate" && generated && supplied {'
+  mutate go 'assistant dialect records: reprocess saved record limit omitted' internal/desk/assistant_dialect_action_output.go \
+    'if a.Kind == "reprocess" && len(a.RecordIDs) > b.Recipe.Research.Limits.Records {' \
+    'if false && a.Kind == "reprocess" && len(a.RecordIDs) > b.Recipe.Research.Limits.Records {'
+  mutate go 'assistant dialect records: exact retained action omitted' internal/desk/assistant_dialect_action_output.go \
+    '!reflect.DeepEqual(p.Action, assistantDialectActionFrom(*in.DialectAction, p.Read, a))' \
+    'false'
+  mutate go 'assistant dialect records: child read establishes root proposal' internal/desk/assistant_dialect_mapping_output.go \
+    'readAssistantHostReceipt(op.Intent, &in) != nil || !in.Root || readAssistantHostReceipt(op.Result, &result) != nil' \
+    'readAssistantHostReceipt(op.Intent, &in) != nil || readAssistantHostReceipt(op.Result, &result) != nil'
+  mutate go 'assistant dialect records: raw recipe eligibility null accepted' internal/desk/assistant_dialect_mapping_output.go \
+    'if rawErr != nil || readAssistantDialectCustody(rawFields["dialectRead"], reflect.TypeOf(read)) != nil {
+		return errAssistantRunInvalid
+	}' \
+    'if rawErr != nil || len(rawFields)==0 { return errAssistantRunInvalid }'
+  mutate go 'assistant dialect records: fresh stop projection ignores active run' internal/desk/assistant_dialect_mapping_projection.go \
+    'if a.Kind == "stop-research" {' \
+    'if false && a.Kind == "stop-research" {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant host effects: unsupported alias admitted' internal/desk/assistant_host_tools.go \
+    '!contains([]string{"read", "proposal"}, t.Effect)' \
+    'false'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect records: same-ID replay collapses optional null' internal/desk/assistant_dialect_mapping_output.go \
+    'if out.DialectAction.Read.Recipe != nil {' \
+    'if false && out.DialectAction.Read.Recipe != nil {'
+fi
 
 restore
 echo

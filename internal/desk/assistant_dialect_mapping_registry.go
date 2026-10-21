@@ -44,7 +44,7 @@ func (e *assistantRunExecution) assistantDialectTools() (*assistantHostRegistry,
 		name := name
 		tool := runcontext.HostTool{Name: name, Description: descriptions[name], InputSchema: schemas[name], Effect: "read", Delegation: "read", ContextPolicy: &runcontext.ToolContextPolicy{Reference: true}}
 		if name == "propose_dialect" || name == "propose_dialect_publication" {
-			tool.Effect = "propose"
+			tool.Effect = "proposal"
 			tool.Delegation = ""
 			tool.ContextPolicy = nil
 		}

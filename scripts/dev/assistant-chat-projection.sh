@@ -200,3 +200,27 @@ grep -Eq '^--- PASS: TestAssistantDialectMappingActualAPIProducer \(' "$tmp/dial
 "$node_bin" "$tmp/dialect-mapping-reference.mjs" "$dialect_outputs/chat.json" \
   "$dialect_outputs/source.json" "$dialect_outputs/review.json" | tee "$tmp/dialect-mapping-reader.log"
 grep -Fxq 'Dialect mapping/publication shared readers: 2 exact checked review actions passed.' "$tmp/dialect-mapping-reader.log"
+
+# Records/activity and six finite action kinds are review-only observations.
+record_outputs="$tmp/dialect-record-actions"
+mkdir -m 700 "$record_outputs"
+(
+  cd "$root"
+  env "${go_env[@]}" DESK_DIALECT_RECORD_READER_CHAT="$record_outputs/chat.json" \
+    DESK_DIALECT_RECORD_READER_SOURCE="$record_outputs/source.json" \
+    DESK_DIALECT_RECORD_READER_RECORDS="$record_outputs/records.json" \
+    DESK_DIALECT_RECORD_READER_ACTIVITY="$record_outputs/activity.json" \
+    go test ./internal/desk -run '^TestAssistantDialectRecordActualAPIProducer$' -count=1 -v
+) | tee "$tmp/dialect-record-producer.log"
+grep -Eq '^--- PASS: TestAssistantDialectRecordActualAPIProducer \(' "$tmp/dialect-record-producer.log" || {
+  echo 'Dialect records/actions producer did not run and pass' >&2
+  exit 1
+}
+"$esbuild" "$root/scripts/assistant-dialect-record-reference.mjs" \
+  --bundle --platform=node --format=esm \
+  --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+  --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$tmp/dialect-record-reference.mjs"
+"$node_bin" "$tmp/dialect-record-reference.mjs" "$record_outputs/chat.json" \
+  "$record_outputs/source.json" "$record_outputs/records.json" "$record_outputs/activity.json" | tee "$tmp/dialect-record-reader.log"
+grep -Fxq 'Dialect records/actions shared readers: bounded original values, real activity and 6 exact review-only actions passed.' "$tmp/dialect-record-reader.log"

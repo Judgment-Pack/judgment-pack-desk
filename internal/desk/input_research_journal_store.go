@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sort"
 	"time"
 )
 
@@ -151,4 +152,60 @@ func changeResearchJournal(raw []byte, id string, change func(*inputResearchRun)
 	}
 	next.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	return encodeResearchJournal(next, id)
+}
+
+// readInputResearchSummaries is observation only: it never recovers or advances
+// a worker. An injected content owner must also supply its discovery contract.
+func (s *Server) readInputResearchSummaries(ctx context.Context, preparation string) ([]inputResearchSummary, error) {
+	if s.researchJournals != nil {
+		owner, ok := s.researchJournals.(interface {
+			Summaries(context.Context, string) ([]inputResearchSummary, error)
+		})
+		if !ok {
+			return nil, errors.New("Research history discovery is unavailable.")
+		}
+		return owner.Summaries(ctx, preparation)
+	}
+	root, err := s.inputResearchRoot(false)
+	if errors.Is(err, os.ErrNotExist) {
+		return []inputResearchSummary{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	dir, err := root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+	out := []inputResearchSummary{}
+	for _, entry := range entries {
+		if !inputResearchID.MatchString(entry.Name()) {
+			continue
+		}
+		rr, err := openInputResearch(root, entry.Name(), false)
+		if err != nil {
+			return nil, err
+		}
+		run, err := s.researchJournal(rr, entry.Name()).Read(ctx)
+		rr.Close()
+		if err != nil {
+			return nil, err
+		}
+		if run.PreparationID == preparation {
+			out = append(out, researchSummary(run))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt == out[j].CreatedAt {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt > out[j].CreatedAt
+	})
+	return out, ctx.Err()
 }

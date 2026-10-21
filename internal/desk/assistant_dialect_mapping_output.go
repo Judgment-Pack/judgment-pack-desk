@@ -21,6 +21,10 @@ type assistantDialectCheckpoint struct {
 	Report   json.RawMessage `json:"report"`
 }
 type assistantDialectAction struct {
+	Patch         *assistantDialectRecipePatch  `json:"patch,omitempty"`
+	Section       string                        `json:"section,omitempty"`
+	RecordIDs     []string                      `json:"recordIds,omitempty"`
+	RunID         string                        `json:"runId,omitempty"`
 	Version       int                           `json:"version"`
 	ID            string                        `json:"id"`
 	CreatedAt     string                        `json:"createdAt"`
@@ -45,13 +49,14 @@ type assistantDialectPreview struct {
 	Issues            []assistantDialectPreviewIssue `json:"issues"`
 }
 type assistantDialectActionOutput struct {
-	Read           assistantDialectRead      `json:"read"`
-	CheckID        string                    `json:"checkId"`
-	MappingCheckID string                    `json:"mappingCheckId,omitempty"`
-	Action         *assistantDialectAction   `json:"action,omitempty"`
-	Published      *dialectPublicationAnswer `json:"published,omitempty"`
-	Preview        *assistantDialectPreview  `json:"preview,omitempty"`
-	Ready          bool                      `json:"ready"`
+	ActiveResearch *assistantDialectResearchSummary `json:"activeResearch,omitempty"`
+	Read           assistantDialectRead             `json:"read"`
+	CheckID        string                           `json:"checkId"`
+	MappingCheckID string                           `json:"mappingCheckId,omitempty"`
+	Action         *assistantDialectAction          `json:"action,omitempty"`
+	Published      *dialectPublicationAnswer        `json:"published,omitempty"`
+	Preview        *assistantDialectPreview         `json:"preview,omitempty"`
+	Ready          bool                             `json:"ready"`
 }
 type assistantDialectPreparedKey struct{}
 
@@ -65,6 +70,9 @@ func assistantDialectOperationID(in assistantHostIntent) string {
 }
 func assistantDialectReadOperation(run assistantRunRecord, name string, a assistantDialectArguments) (assistantRunOperation, assistantDialectRead, error) {
 	readName := "read_dialect"
+	if name == "propose_dialect_action" {
+		readName = "read_dialect_recipe"
+	}
 	if name == "propose_dialect_publication" {
 		readName = "read_dialect_publication"
 	}
@@ -79,6 +87,10 @@ func assistantDialectReadOperation(run assistantRunRecord, name string, a assist
 			continue
 		}
 		read := *result.DialectRead
+		rawFields, rawErr := assistantTestObject(op.Result)
+		if rawErr != nil || readAssistantDialectCustody(rawFields["dialectRead"], reflect.TypeOf(read)) != nil {
+			return assistantRunOperation{}, assistantDialectRead{}, errAssistantRunInvalid
+		}
 		if read.ID == a.ID && read.PackKey == a.PackKey && read.Variant == a.Variant {
 			return op, read, nil
 		}
@@ -95,7 +107,7 @@ func prepareAssistantDialectAction(run assistantRunRecord, name string, in *assi
 	}
 	count := 0
 	for _, op := range run.Operations {
-		if op.Kind == "host" && (op.Name == "propose_dialect" || op.Name == "propose_dialect_publication") {
+		if op.Kind == "host" && (assistantDialectProposal(op.Name)) {
 			count++
 		}
 	}
@@ -120,7 +132,7 @@ func validateAssistantDialectIntent(run assistantRunRecord, op assistantRunOpera
 	if op.ID != assistantDialectOperationID(in) {
 		return errAssistantRunInvalid
 	}
-	if op.Name == "read_dialect" || op.Name == "read_dialect_publication" {
+	if !assistantDialectProposal(op.Name) {
 		if in.DialectAction != nil {
 			return errAssistantRunInvalid
 		}
@@ -159,6 +171,9 @@ func assistantDialectReserved(raw []byte, key string) bool {
 	return false
 }
 func validAssistantDialectRead(read assistantDialectRead) bool {
+	if read.Recipe != nil {
+		return validAssistantDialectActionRead(read)
+	}
 	if !inputPreparationID.MatchString(read.ID) || !assistantDialectRecipeText(read.Name, 160) || !assistantRunDigest(read.Revision) || read.RecipeVersion < 1 || (!validUTF8(read.View) || jsonscalar.ValidateEscapes(read.View) != nil) {
 		return false
 	}
@@ -198,10 +213,28 @@ func validateAssistantDialectReadReceipt(op assistantRunOperation, in assistantH
 		return nil
 	}
 	read := *result.DialectRead
-	if op.State != "completed" || !assistantDialectTool(op.Name) || op.Name != "read_dialect" && op.Name != "read_dialect_publication" || !validAssistantDialectRead(read) || result.Tests != nil || result.Read != nil || result.PolicySource != nil {
+	rawFields, rawErr := assistantTestObject(op.Result)
+	if rawErr != nil || readAssistantDialectCustody(rawFields["dialectRead"], reflect.TypeOf(read)) != nil {
 		return errAssistantRunInvalid
 	}
-	a, err := readAssistantDialectArguments(op.Name, in.Arguments)
+	if op.State != "completed" || !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" || op.Name != "read_dialect" && op.Name != "read_dialect_publication" && op.Name != "read_dialect_recipe" || !validAssistantDialectRead(read) || result.Tests != nil || result.Read != nil || result.PolicySource != nil {
+		return errAssistantRunInvalid
+	}
+	var a assistantDialectArguments
+	var err error
+	if op.Name == "read_dialect_recipe" {
+		var v assistantDialectRecipeArguments
+		v, err = readAssistantDialectRecipeArguments(op.Name, in.Arguments)
+		a.ID = v.ID
+		if read.Recipe == nil {
+			return errAssistantRunInvalid
+		}
+	} else {
+		a, err = readAssistantDialectArguments(op.Name, in.Arguments)
+		if read.Recipe != nil {
+			return errAssistantRunInvalid
+		}
+	}
 	if err != nil || a.ID != read.ID || a.PackKey != read.PackKey || a.Variant != read.Variant {
 		return errAssistantRunInvalid
 	}
@@ -256,7 +289,14 @@ func appendAssistantDialectActions(chat map[string]json.RawMessage, outputs []as
 				return err
 			}
 			delete(fields, "applied")
-			if _, err = assistantTestControls(assistantChatEncodeObject(fields), "version", "id", "createdAt", "afterTurnId", "inputId", "name", "revision", "recipeVersion", "kind", "dialect", "dialectCheck", "publication"); err != nil {
+			// A typed zero cannot turn an explicit null into an omitted
+			// optional member of the new review-only action variants.
+			if out.DialectAction.Read.Recipe != nil {
+				if err = readAssistantDialectCustody(assistantChatEncodeObject(fields), reflect.TypeOf(*action)); err != nil {
+					return err
+				}
+			}
+			if _, err = assistantTestControls(assistantChatEncodeObject(fields), "version", "id", "createdAt", "afterTurnId", "inputId", "name", "revision", "recipeVersion", "kind", "dialect", "dialectCheck", "publication", "patch", "section", "recordIds", "runId"); err != nil {
 				return err
 			}
 			if !assistantHostArgumentsMatch(assistantChatEncodeObject(fields), raw) {
@@ -307,7 +347,7 @@ func validateAssistantDialectOutput(run assistantRunRecord, out assistantDomainO
 		return errAssistantRunInvalid
 	}
 	producer := assistantDialectOperation(run, out.OperationID)
-	if producer == nil || producer.Kind != "host" || producer.Name != "propose_dialect" && producer.Name != "propose_dialect_publication" || producer.State != "completed" && producer.State != "refused" {
+	if producer == nil || producer.Kind != "host" || !assistantDialectProposal(producer.Name) || producer.State != "completed" && producer.State != "refused" {
 		return errAssistantRunInvalid
 	}
 	var in assistantHostIntent
@@ -320,6 +360,12 @@ func validateAssistantDialectOutput(run assistantRunRecord, out assistantDomainO
 	}
 	readReceipt, ok := receipts[in.DialectAction.ReadOperationID]
 	if !ok || readReceipt.DialectRead == nil || !reflect.DeepEqual(*readReceipt.DialectRead, p.Read) {
+		return errAssistantRunInvalid
+	}
+	if producer.Name == "propose_dialect_action" {
+		return validateAssistantDialectReviewOutput(run, out, receipts, *producer, in)
+	}
+	if p.Read.Recipe != nil || p.ActiveResearch != nil || p.Action != nil && (p.Action.Patch != nil || p.Action.Section != "" || p.Action.RecordIDs != nil || p.Action.RunID != "") {
 		return errAssistantRunInvalid
 	}
 	if p.Action != nil {

@@ -91,7 +91,7 @@ func (e *assistantRunExecution) assistantTestTools(runtime *assistantRuntime) ([
 		t := runcontext.HostTool{Name: name, Description: description, InputSchema: assistantTestSchemas()[name], Effect: "read", Delegation: "read", ContextPolicy: &runcontext.ToolContextPolicy{Reference: true}}
 		if name == "propose_test_cases" {
 			t.Description = "Retain a Runtime-validated test proposal in the exact owner's test suite for human review. Read current tests first. No cases, pack, thresholds or expected outcomes are saved or changed. Requires compatible Runtime fact-type validation."
-			t.Effect = "propose"
+			t.Effect = "proposal"
 			t.Delegation = ""
 		}
 		t.Execute = func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {

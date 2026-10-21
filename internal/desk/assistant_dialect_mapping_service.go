@@ -272,7 +272,10 @@ func assistantDialectActionResult(out *assistantDialectActionOutput) (runcontext
 		status = "check-refused"
 	}
 	value := map[string]any{"status": status, "actionId": out.Action.ID, "message": "Review this exact proposal and its checks in chat. No recipe, records, publication, allowance or job pin was changed."}
-	if out.Action.Dialect != nil {
+	if out.Read.Recipe != nil {
+		value["inputId"] = out.Action.InputID
+		value["kind"] = out.Action.Kind
+	} else if out.Action.Dialect != nil {
 		value["preview"] = out.Preview
 		fields, err := assistantTestObject(out.Action.DialectCheck.Report)
 		if err != nil {

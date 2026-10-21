@@ -55,13 +55,18 @@ func (e *assistantRunExecution) assistantDialectRecipeTools() (*assistantHostReg
 			tool.ContextPolicy = &runcontext.ToolContextPolicy{Immutable: true, Reference: true}
 		}
 		if name == "propose_dialect_recipe" {
-			tool.Effect = "propose"
+			tool.Effect = "proposal"
 			tool.Delegation = ""
 		}
 		tool.Execute = func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
 			a, err := readAssistantDialectRecipeArguments(name, raw)
 			if err != nil {
 				return assistantDialectRecipeFailure(err), nil
+			}
+			if name == "read_dialect_recipe" {
+				return e.invokeObservedHost(ctx, name, raw, func(ctx context.Context, root bool) (assistantHostObservation, error) {
+					return e.readAssistantDialectActionRecipe(ctx, a.ID)
+				})
 			}
 			return e.invokeDomainHost(ctx, name, raw, func(ctx context.Context, root bool) (runcontext.ToolResult, *assistantGraphRead, *assistantDomainOutput, error) {
 				if name != "propose_dialect_recipe" {

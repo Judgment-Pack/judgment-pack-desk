@@ -155,12 +155,13 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 			effects := map[string]string{
 				"list_decisions": "read", "read_decision": "read",
 				"get_graph_authoring_instructions": "read", "graph_validate": "read",
-				"graph_explain": "read", "graph_rehearse": "read", "propose_graph": "propose",
-				"read_pack_tests": "read", "propose_test_cases": "propose",
+				"graph_explain": "read", "graph_rehearse": "read", "propose_graph": "proposal",
+				"read_pack_tests": "read", "propose_test_cases": "proposal",
 				"get_dialect_recipe_instructions": "read", "list_dialects": "read",
-				"read_dialect_recipe": "read", "propose_dialect_recipe": "propose",
-				"read_dialect": "read", "propose_dialect": "propose",
-				"read_dialect_publication": "read", "propose_dialect_publication": "propose",
+				"read_dialect_recipe": "read", "propose_dialect_recipe": "proposal",
+				"read_dialect": "read", "propose_dialect": "proposal",
+				"read_dialect_publication": "read", "propose_dialect_publication": "proposal",
+				"read_dialect_records": "read", "read_dialect_activity": "read", "propose_dialect_action": "proposal",
 			}
 			names := []string{}
 			for _, tool := range x.Run.HostTools {
@@ -169,8 +170,8 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 					t.Fatal("unknown or duplicate shared offer", tool.Name)
 				}
 				names = append(names, tool.Name)
-				if effect == "propose" {
-					if tool.Effect != "propose" || tool.Delegation != "" {
+				if effect == "proposal" {
+					if tool.Effect != "proposal" || tool.Delegation != "" {
 						t.Fatal("proposal grants", tool.Name)
 					}
 				} else if tool.Effect != "read" || tool.Delegation != "read" {

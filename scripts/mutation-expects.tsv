@@ -2769,3 +2769,22 @@ go	assistant dialect mapping: recipe receipt accepts new custody	TestAssistantDo
 go	assistant dialect mapping: Policy output accepts new variant	TestAssistantDomainHostVariantBoundaries
 go	assistant dialect mapping: Policy receipt accepts new custody	TestAssistantDomainHostVariantBoundaries
 go	assistant dialect mapping: unsupported live read corrupts custody	TestAssistantDialectMappingBoundedRead
+go	assistant dialect records: nested raw member types omitted	TestAssistantDialectRecordFiniteArguments
+go	assistant dialect records: kind member exclusivity omitted	TestAssistantDialectRecordFiniteArguments
+go	assistant dialect records: portable patch validation omitted	TestAssistantDialectRecordFiniteArguments
+go	assistant dialect records: pagination bounds omitted	TestAssistantDialectRecordFiniteArguments
+go	assistant dialect records: field enumeration bound omitted	TestAssistantDialectRecordFieldBounds
+go	assistant dialect records: original string bound omitted	TestAssistantDialectRecordFieldBounds
+go	assistant dialect records: source quote bound omitted	TestAssistantDialectRecordFieldBounds
+go	assistant dialect records: records postqueue authority omitted	TestAssistantDialectRecordQueuedAuthority
+go	assistant dialect records: activity postqueue authority omitted	TestAssistantDialectRecordQueuedAuthority
+go	assistant dialect records: current preparation basis omitted	TestAssistantDialectRecordActionGuards
+go	assistant dialect records: generated current human review omitted	TestAssistantDialectRecordActionGuards
+go	assistant dialect records: evaluation source separation omitted	TestAssistantDialectRecordActionGuards
+go	assistant dialect records: reprocess saved record limit omitted	TestAssistantDialectRecordDependencyLimits
+go	assistant dialect records: exact retained action omitted	TestAssistantDialectRecordActualAPIProducer
+go	assistant dialect records: child read establishes root proposal	TestAssistantDialectRecordActionGuards
+go	assistant dialect records: raw recipe eligibility null accepted	TestAssistantDialectRecordRawReadCustody
+go	assistant dialect records: fresh stop projection ignores active run	TestAssistantDialectRecordProjectionCurrentAndHistory
+go	assistant host effects: unsupported alias admitted	TestAssistantHostCanonicalEffects
+go	assistant dialect records: same-ID replay collapses optional null	TestAssistantDialectRecordActualAPIProducer
