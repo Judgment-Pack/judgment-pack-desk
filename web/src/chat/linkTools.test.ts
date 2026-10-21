@@ -478,6 +478,26 @@ describe('website exploration in chat',()=>{
   }
   expect(h.ingestSite).toHaveBeenCalledTimes(10)
  })
+ it('shares ordinary and discovered thresholds in one ten-total counter',async()=>{
+  const h=websiteHarness()
+  h.context.turns=()=>[user(`${FETCHED} https://ordinary.example/0 https://ordinary.example/1 https://ordinary.example/2 https://ordinary.example/3`)]
+  h.deps.ingest=vi.fn(async({url})=>webDocument(PAGE,url))
+  await h.explore.execute({url:FETCHED},signal)
+  for(let i=0;i<3;i++)expect((await h.read.execute({url:`https://ordinary.example/${i}`},signal)).isError).toBeUndefined()
+  expect((await h.read.execute({url:'https://ordinary.example/3'},signal)).isError).toBe(true)
+  for(let i=0;i<7;i++)expect((await h.read.execute({url:h.found.discovery.pages[i+1]!.url},signal)).isError).toBeUndefined()
+  expect((await h.read.execute({url:h.found.discovery.pages[8]!.url},signal)).isError).toBe(true)
+  expect(h.ingestSite).toHaveBeenCalledTimes(7)
+ })
+ it('limits sixteen distinct website seeds while allowing same-seed replacement',async()=>{
+  const h=websiteHarness()
+  for(let i=0;i<16;i++)h.websites.push({...h.ref,id:`12345678-1234-1234-1234-${String(i).padStart(12,'0')}`,seed:`https://site${i}.example/`})
+  expect((await h.explore.execute({url:FETCHED},signal)).isError).toBe(true)
+  expect(h.discover).not.toHaveBeenCalled()
+  h.websites[0]=h.ref
+  expect((await h.explore.execute({url:FETCHED},signal)).isError).toBeUndefined()
+  expect(h.discover).toHaveBeenCalledTimes(1)
+ })
 })
 
 

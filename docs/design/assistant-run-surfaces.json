@@ -744,7 +744,12 @@
         "internal/desk/assistant_link_recovery.go",
         "internal/desk/assistant_link_output.go",
         "internal/desk/assistant_link_window.go",
-        "scripts/assistant-link-reference.mjs"
+        "scripts/assistant-link-reference.mjs",
+        "internal/desk/assistant_website_tools.go",
+        "internal/desk/assistant_website_record.go",
+        "internal/desk/assistant_website_read.go",
+        "internal/desk/assistant_website_output.go",
+        "scripts/assistant-website-reference.mjs"
       ],
       "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
       "preserve": [
@@ -757,9 +762,10 @@
         "actual Go-emitted SearchReference/SearchStep through existing ChatStore and verifySearch browser readers",
         "historical URL vectors retain original host/browser expectations; current shared standards-backed reader plus additive Go/browser normalization/extraction and actual Unicode/punycode producer parity address Desk #590",
         "private read_link actual API/native/read-child documents and windows; saved-user/current-verified-search authority, durable ordinary shared3/retained256 budgets, separate current-run custody, partial/selected pages, exact citations and terminal receipt-only recovery",
-        "shared browser/private UTF16 safe-start correction returns an intact surrogate pair and actual offset; canonical encoded-prefix end bound and continuation, BMP/combining/page-span and ECMAScript whitespace/folding vectors"
+        "shared browser/private UTF16 safe-start correction returns an intact surrogate pair and actual offset; canonical encoded-prefix end bound and continuation, BMP/combining/page-span and ECMAScript whitespace/folding vectors",
+        "private explore_website API/native/research-child maps and site-bound pages consumed by real browser verifiers; latest per-seed authority, one exploration/16 distinct seeds and shared ordinary3/discovered10, queued exact map/seed receipts and receipt-only recovery"
       ],
-      "status": "private conversational search_sources/read_link implemented; explore_website, finite choice continuation and production/browser activation pending"
+      "status": "private conversational search_sources/read_link/explore_website implemented; finite choice continuation and production/browser activation pending"
     },
     {
       "id": "research-source-host",

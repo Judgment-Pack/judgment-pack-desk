@@ -112,6 +112,7 @@ func (e *assistantRunExecution) assistantLinkPacket(ctx context.Context, id stri
 	return readPrivateData(store.root, attachmentProjectPrefix(name)+id+".json", maxAttachmentObjectBytes)
 }
 func (e *assistantRunExecution) assistantLinkAllowed(ctx context.Context, url string, c *assistantLinkConfiguration) (bool, error) {
+
 	if assistantLinkGiven(e.source.Original, url) {
 		return true, nil
 	}
@@ -265,6 +266,19 @@ func (e *assistantRunExecution) readAssistantAcquiredLink(ctx context.Context, h
 	if err != nil {
 		return zero, file, err
 	}
+	if held.Request.Site != "" {
+		authority, err := e.assistantLinkPacket(ctx, held.AuthorityPacket.ID)
+		if err != nil {
+			return zero, file, err
+		}
+		run, err := e.writer.lease.store.Read(ctx, e.record.Binding, e.record.ID)
+		if err != nil {
+			return zero, file, err
+		}
+		if err = verifyAssistantWebsitePageAuthority(ctx, program, authority, run, e.source, held); err != nil {
+			return zero, file, err
+		}
+	}
 	again, err := e.assistantLinkPacket(ctx, held.FinalID)
 	if err != nil || !bytes.Equal(again, raw) {
 		return zero, file, errAssistantDocument
@@ -285,7 +299,7 @@ func verifyAssistantLinkObject(ctx context.Context, program string, raw []byte, 
 		return zero, file, errAssistantDocument
 	}
 	p := object.Proof
-	if p.Source != "web" || p.Session != held.Session || p.Web == nil || p.Web.URL != held.Request.URL || p.Web.Site != "" || p.Authority != held.Gateway.Authority || p.PublicKey != held.Gateway.Public {
+	if p.Source != "web" || p.Session != held.Session || p.Web == nil || p.Web.URL != held.Request.URL || p.Web.Site != held.Request.Site || p.Authority != held.Gateway.Authority || p.PublicKey != held.Gateway.Public {
 		return zero, file, errAssistantDocument
 	}
 	var envelope struct {
@@ -332,7 +346,10 @@ func (e *assistantRunExecution) executeAssistantLink(ctx context.Context, args a
 	if err = e.recheckAssistantLink(ctx, c); err != nil {
 		return fail(err)
 	}
-	allowed, err := e.assistantLinkAllowed(ctx, args.Link.FetchURL, &c)
+	allowed, err := e.assistantWebsiteAuthority(ctx, args.Link.FetchURL, &c)
+	if err == nil && !allowed {
+		allowed, err = e.assistantLinkAllowed(ctx, args.Link.FetchURL, &c)
+	}
 	if err != nil {
 		return fail(err)
 	}
@@ -362,7 +379,11 @@ func (e *assistantRunExecution) executeAssistantLink(ctx context.Context, args a
 	}
 	for _, held := range run.Links {
 		if held.Request.URL == args.Link.FetchURL && held.Final.Receipt != nil {
-			doc, _, err := e.readAssistantAcquiredLink(ctx, held, c)
+			retainedConfig, err := e.service.server.currentAssistantLinkConfiguration(ctx, e.source, held)
+			if err != nil {
+				return fail(err)
+			}
+			doc, _, err := e.readAssistantAcquiredLink(ctx, held, retainedConfig)
 			if err != nil {
 				return fail(err)
 			}
@@ -376,7 +397,7 @@ func (e *assistantRunExecution) executeAssistantLink(ctx context.Context, args a
 	return e.acquireAssistantLink(ctx, args, c)
 }
 func errorsNewAssistantLinkAuthority() error {
-	return failure.ToolInput("That link was not supplied or authorized by a currently verified search. Discovery-only URLs are not available here. Use a supplied URL or search_sources with the person's saved research choice.")
+	return failure.ToolInput("That link was not supplied or authorized by a currently verified search or website map. Use a supplied URL, a current verified search result, or the exact discovered URL with the person's saved research choice.")
 }
 func reverseAssistantLinkFiles(files []assistantLinkAttachment) []assistantLinkAttachment {
 	for i, j := 0, len(files)-1; i < j; i, j = i+1, j-1 {

@@ -153,7 +153,7 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 			// Ordinary chats share Graph, Test and Recipe offers. Keep every tool's
 			// explicit classification; an unknown addition needs a reviewed fixture.
 			effects := map[string]string{
-				"search_sources": "read", "read_link": "read",
+				"search_sources": "read", "read_link": "read", assistantWebsiteTool: "read",
 				"list_decisions": "read", "read_decision": "read",
 				"get_graph_authoring_instructions": "read", "graph_validate": "read",
 				"graph_explain": "read", "graph_rehearse": "read", "propose_graph": "proposal",
@@ -175,7 +175,7 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 					if tool.Effect != effect || tool.Delegation != "" {
 						t.Fatal("proposal grants", tool.Name)
 					}
-				} else if tool.Name == "search_sources" {
+				} else if tool.Name == "search_sources" || tool.Name == assistantWebsiteTool {
 					if tool.Effect != "read" || tool.Delegation != "research" {
 						t.Fatal("search classification", tool.Name)
 					}
@@ -194,7 +194,7 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 			offered := x.gate.Offer()
 			child := gate.ChildPhase(profile, offered, gate.PlanPhase(offered))
 			for name, effect := range effects {
-				if contains(child.Host, name) != (effect == "read" && name != "search_sources") {
+				if contains(child.Host, name) != (effect == "read" && name != "search_sources" && name != assistantWebsiteTool) {
 					t.Fatal("child shared offer", name, child.Host)
 				}
 			}

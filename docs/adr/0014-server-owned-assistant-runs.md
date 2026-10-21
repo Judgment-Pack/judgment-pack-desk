@@ -384,7 +384,7 @@ redirect strings grant nothing. Other links require the saved Research choice
 and a currently verified search receipt; normalization creates the explicit fetch
 request while its authority remains bound to that verified original URL. Retained
 redirect authorization verifies requested and resolved URLs together. Discovery
-is not offered and a discovery-only URL is refused.
+is available through the bounded private website slice below; arbitrary same-origin guesses still grant nothing.
 
 The link preparer accepts public HTTPS spelling and unambiguous bare ASCII or
 punycode website names, keeps the trimmed display spelling and records fragments
@@ -409,9 +409,8 @@ replayed.
 
 Ordinary new reads reserve one durable counter per saved user turn across roots,
 children, retries and fresh admissions; the limit is three. Retained verified
-windows do not reserve again. The same counter must support the browser's future
-discovered-page threshold of ten; no second additive pool or unused discovery
-authorization is introduced. The existing 256 retained-document limit applies.
+windows do not reserve again. Verified-discovery reads use the same counter with a threshold of ten total;
+ordinary reads still stop at three. No second additive pool is introduced. The existing 256 retained-document limit applies.
 Verified search/redirect authority also retains the exact attachment receipt in
 link custody and compares its bytes after queue and storage waits; removing or
 substituting that object cannot preserve permission. Current configuration,
@@ -441,3 +440,67 @@ remains attached for selecting fewer pages. Handwritten vectors cover explicit
 and find-based starts,
 BMP/combining text, page spans, non-ASCII whitespace/folding and byte-cutoff
 continuation. Existing composer/UI and manual/background authorization are kept.
+
+
+### Private conversational website discovery (#595)
+
+`explore_website` is a fixed read/research offer in ordinary conversation and
+research descendants, including Plan; Policy's early return is preserved. The
+saved Research choice and current document/discovery capability must permit it.
+The seed must be supplied or authorized by a current verified search or the
+existing exact verified retained-redirect path. A redirect string alone grants
+nothing: requested/resolved URLs must share the verified retained proof.
+Assistant prose, attachment IDs and navigation maps cannot nominate another seed.
+
+The reader validates the browser discovery contract: ten discovered pages, depth
+two, one hundred listed links, eight MiB and forty-five seconds. It checks all
+counters, statuses and stop reasons, the exact seed/origin, unique ordered URLs
+and each previously listed parent at the next depth. Depth-three entries must be
+skipped. A discovery is navigation data, never page evidence. The canonical
+original is at most one MiB; exact response, seal and original/final packets remain
+in attachments. Existing canonical Gateway verification owns signatures and
+argument commitments; no new verifier, JavaScript runtime or dependency is added.
+
+Website custody is a separate typed ledger collection using the existing finite
+link effect/receipt dialect and shared acquisition/seal/storage pipeline. One
+exploration is reserved per stable saved user turn across roots, children and
+fresh admissions. Sixteen distinct retained seeds include immutable run history
+and current entries; replacing a seed does not consume another distinct slot.
+Terminal chat projection retains the latest reference per seed, while historical
+response references and exact attachment packets remain unchanged.
+
+Only the latest saved/current-run map for a seed authorizes new page acquisition.
+Each seed is reauthorized against current supplied/search/verified-redirect facts;
+historical response maps do not supply seeds or pages. An exact `discovered`
+entry and the current same-origin/discovery settings authorize a site-bound web
+request. Blocked/failed/skipped entries and same-origin guesses grant nothing.
+The Gateway request and signed page proof bind both URL and site seed. Shared
+standards-backed origin comparison handles Unicode/punycode/default-port spellings
+without rewriting signed bytes. Saved document acceptance is not broadened.
+
+New-page reads share one attempts counter: ordinary three, verified-discovery ten
+total, including ordinary reads already spent. Retained verified pages cost no new
+reservation; the existing 256-document, selected-page/partial-consent and citation
+window rules remain. Current-run references are separately typed; the pinned saved
+chat is not rewritten after every tool call.
+
+Current configuration, source, saved choice, session, Policy, profile and critic
+fences are rechecked after waits. The managed local source capability comes from
+the verified companion catalog; its pinned bundle is revalidated at commit without
+executing a companion under a private lock. External sources require the declared
+discovery capability. Exact map and any seed-search/redirect authority packet bytes
+are bound in custody and rechecked after queues and at storage commit. Retained
+page/recovery readers verify map ownership and exact discovered membership again.
+
+Cancelled or unknown effects never replay. Only completed stage/seal custody may
+finish its exact predeclared packet despite cancellation. Explicit terminal
+projection can reconcile exact known owned receipts and recover a completed final
+map while retaining the original refused result. GET/list/SSE/Stop stay
+observational; no storage lock spans outbound work or proof verification.
+
+Actual API/native roots and a research child project website/document references
+through existing ChatStore, verifyWebsite, verifyDocument, selected-page and link
+window consumers. This completes private conversational discovery and discovered
+page reads only. Finite source-choice continuation, workflow read/citation tools,
+Plan/memory migration and production activation remain separate; the executor
+stays unregistered and component pins/canonical Agent schemas are unchanged.
