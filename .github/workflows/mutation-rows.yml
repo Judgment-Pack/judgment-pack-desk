@@ -41,6 +41,7 @@ jobs:
       # seconds when the PR adds or changes no row.
       - name: Run the PR's rows
         env:
+          GH_TOKEN: ${{ github.token }}
           DESK_MUTATION_BASE: ${{ github.event.pull_request.base.sha }}
           JPDEV_LOGDIR: ${{ runner.temp }}/out/logs
         run: scripts/dev/check.sh --only mutation-rows

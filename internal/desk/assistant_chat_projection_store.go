@@ -69,10 +69,18 @@ func assistantChatProjectionMatches(run *assistantRunRecord, selected []byte) bo
 
 // Prepare persists immutable output before any conversation write. Repeated
 // preparation never rebuilds a timestamp, candidate or response identity.
+
 func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) error {
+	view, err := s.assistantDialectProjectionView(r, id, false)
+	if err != nil {
+		return err
+	}
+	if view != nil {
+		defer view.Close()
+	}
 	store := s.assistantRuns()
 	issue := false
-	_, err := store.transaction(r.Context(), func(ledger *assistantRunLedger) (bool, error) {
+	_, err = store.transaction(r.Context(), func(ledger *assistantRunLedger) (bool, error) {
 		run, err := assistantChatProjectionRun(ledger, id)
 		if err != nil {
 			return false, err
@@ -90,6 +98,9 @@ func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) erro
 		}
 		// A terminal link is prepared only after its exact suite proposal exists.
 		if err := validateAssistantDomainOutputs(*run); err != nil {
+			return false, err
+		}
+		if err := s.checkAssistantDialectProjection(r, *run, view); err != nil {
 			return false, err
 		}
 		if err := validateAssistantTestProjectionSource(selected, *run); err != nil {
@@ -154,8 +165,15 @@ func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) erro
 func (s *Server) writeAssistantChatProjection(r *http.Request, id string) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
+	view, err := s.assistantDialectProjectionView(r, id, true)
+	if err != nil {
+		return err
+	}
+	if view != nil {
+		defer view.Close()
+	}
 	store := s.assistantRuns()
-	_, err := store.transaction(r.Context(), func(ledger *assistantRunLedger) (bool, error) {
+	_, err = store.transaction(r.Context(), func(ledger *assistantRunLedger) (bool, error) {
 		run, err := assistantChatProjectionRun(ledger, id)
 		if err != nil {
 			return false, err
@@ -180,6 +198,9 @@ func (s *Server) writeAssistantChatProjection(r *http.Request, id string) error 
 		}
 		if digestOf(selected) == projection.Digest {
 			return false, nil
+		}
+		if err := s.checkAssistantDialectProjection(r, *run, view); err != nil {
+			return false, err
 		}
 		fields, rows, err := assistantChatRows(full)
 		if err != nil {
@@ -225,6 +246,9 @@ func (s *Server) writeAssistantChatProjection(r *http.Request, id string) error 
 				return false, err
 			}
 		} else if err = s.retainConversationDialectDrafts(r.Context(), full, next); err != nil {
+			return false, err
+		}
+		if err := s.checkAssistantDialectProjection(r, *run, view); err != nil {
 			return false, err
 		}
 		// Recheck current authentication immediately before the bounded private write.

@@ -46,7 +46,7 @@ with repeated provider IDs. Dedicated tests hold typed fields, current authority
 Plan/child refusal, exact metadata/import binding, capacity and lost-ack behavior.
 
 This remains an unregistered private foundation. Existing browser execution is
-unchanged. Mapping/publication proposals, record/activity/action capabilities,
+unchanged. Record/activity/action capabilities,
 separately approved research starts, background/action/CAS migration and full
 production cutover remain pending. Runtime test-proposal compatibility under
 Desk #582 is separate from this four-tool recipe slice.
@@ -57,3 +57,5 @@ draft directories or construct file adapters. The owner binds authorization
 after queued file locks and before writes, and fences injected adapter results
 with the same current-authority checks. Ordinary repository callers keep their
 existing binding and create-only behavior.
+
+Private mapping/publication checks are described in [their host foundation](assistant-dialect-mapping-host.md). They do not activate production or actual publication.

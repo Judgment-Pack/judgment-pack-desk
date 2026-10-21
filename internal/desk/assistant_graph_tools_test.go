@@ -159,6 +159,8 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 				"read_pack_tests": "read", "propose_test_cases": "propose",
 				"get_dialect_recipe_instructions": "read", "list_dialects": "read",
 				"read_dialect_recipe": "read", "propose_dialect_recipe": "propose",
+				"read_dialect": "read", "propose_dialect": "propose",
+				"read_dialect_publication": "read", "propose_dialect_publication": "propose",
 			}
 			names := []string{}
 			for _, tool := range x.Run.HostTools {

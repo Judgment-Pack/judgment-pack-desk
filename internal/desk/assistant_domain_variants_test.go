@@ -69,6 +69,21 @@ func TestAssistantDomainHostVariantBoundaries(t *testing.T) {
 	}
 	assistantRunMust(t, validateAssistantDialectRecipeOutput(record, recipe, receipts))
 	assistantRunMust(t, validateAssistantTestOutput(record, test, receipts))
+	for _, original := range []assistantDomainOutput{recipe, test} {
+		t.Run(original.Kind+"-with-dialect-action", func(t *testing.T) {
+			changed := original
+			changed.DialectAction = &assistantDialectActionOutput{}
+			var err error
+			if original.Kind == "dialect-recipe" {
+				err = validateAssistantDialectRecipeOutput(record, changed, receipts)
+			} else {
+				err = validateAssistantTestOutput(record, changed, receipts)
+			}
+			if err == nil {
+				t.Fatal("foreign Dialect action accepted")
+			}
+		})
+	}
 	t.Run("recipe-output-with-tests", func(t *testing.T) {
 		changed := recipe
 		changed.TestProposal = test.TestProposal
@@ -83,6 +98,23 @@ func TestAssistantDomainHostVariantBoundaries(t *testing.T) {
 			t.Fatal("test accepted recipe output")
 		}
 	})
+	for _, original := range []assistantDomainOutput{recipe, test} {
+		t.Run(original.Kind+"-receipt-with-dialect", func(t *testing.T) {
+			copy := assistantVariantReceipts(t, record)
+			held := copy[original.OperationID]
+			held.DialectRead = &assistantDialectRead{}
+			copy[original.OperationID] = held
+			var err error
+			if original.Kind == "dialect-recipe" {
+				err = validateAssistantDialectRecipeOutput(record, original, copy)
+			} else {
+				err = validateAssistantTestOutput(record, original, copy)
+			}
+			if err == nil {
+				t.Fatal("foreign Dialect custody accepted")
+			}
+		})
+	}
 	t.Run("recipe-receipt-with-tests", func(t *testing.T) {
 		held := receipts[recipe.OperationID]
 		held.Tests = &testRead
@@ -110,7 +142,7 @@ func TestAssistantDomainHostVariantBoundaries(t *testing.T) {
 			t.Fatal("mixed test intent imported")
 		}
 	})
-	for _, mode := range []string{"recipe", "policy"} {
+	for _, mode := range []string{"recipe", "policy", "dialect"} {
 		t.Run("test-read-with-"+mode, func(t *testing.T) {
 			for _, op := range record.Operations {
 				if op.Name != "read_pack_tests" || op.Kind != "host" {
@@ -120,8 +152,10 @@ func TestAssistantDomainHostVariantBoundaries(t *testing.T) {
 				assistantRunMust(t, readAssistantHostReceipt(op.Intent, &in))
 				if mode == "recipe" {
 					in.RecipeProposal = recipeIntent.RecipeProposal
-				} else {
+				} else if mode == "policy" {
 					in.Policy = &assistantPolicyHostBinding{}
+				} else {
+					in.DialectAction = &assistantDialectActionMetadata{}
 				}
 				if validateAssistantTestReadReceipt(op, in, receipts[op.ID]) == nil {
 					t.Fatal("test read accepted foreign intent metadata")
@@ -152,12 +186,14 @@ func TestAssistantDomainHostVariantBoundaries(t *testing.T) {
 	}
 	graph := assistantExecutionRecord(t, ge)
 	assistantRunMust(t, validateAssistantDomainOutputs(graph))
-	for _, mode := range []string{"recipe", "test"} {
+	for _, mode := range []string{"recipe", "test", "dialect"} {
 		changed := assistantVariantClone(t, graph)
 		if mode == "recipe" {
 			changed.DomainOutputs[0].Recipe = recipe.Recipe
-		} else {
+		} else if mode == "test" {
 			changed.DomainOutputs[0].TestProposal = test.TestProposal
+		} else {
+			changed.DomainOutputs[0].DialectAction = &assistantDialectActionOutput{}
 		}
 		if validateAssistantDomainOutputs(changed) == nil {
 			t.Fatal("Graph accepted foreign variant", mode)
@@ -172,11 +208,27 @@ func TestAssistantDomainHostVariantBoundaries(t *testing.T) {
 	pr := assistantVariantReceipts(t, policy)
 	pout := policy.DomainOutputs[0]
 	assistantRunMust(t, validateAssistantPolicyOutput(policy, pout, pr))
-	for _, mode := range []string{"recipe-output", "test-output", "test-receipt", "recipe-intent"} {
+	for _, mode := range []string{"recipe-output", "test-output", "test-receipt", "recipe-intent", "dialect-output", "dialect-receipt", "dialect-intent"} {
 		changed := assistantVariantClone(t, policy)
 		out := pout
 		copy := assistantVariantReceipts(t, policy)
 		switch mode {
+		case "dialect-output":
+			out.DialectAction = &assistantDialectActionOutput{}
+		case "dialect-receipt":
+			held := copy[out.OperationID]
+			held.DialectRead = &assistantDialectRead{}
+			copy[out.OperationID] = held
+		case "dialect-intent":
+			for i := range changed.Operations {
+				op := &changed.Operations[i]
+				if op.ID == out.OperationID {
+					var in assistantHostIntent
+					assistantRunMust(t, readAssistantHostReceipt(op.Intent, &in))
+					in.DialectAction = &assistantDialectActionMetadata{}
+					op.Intent, _ = json.Marshal(in)
+				}
+			}
 		case "recipe-output":
 			out.Recipe = recipe.Recipe
 		case "test-output":

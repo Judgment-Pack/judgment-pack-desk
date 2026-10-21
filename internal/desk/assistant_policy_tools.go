@@ -172,14 +172,18 @@ func (e *assistantRunExecution) assistantConversationTools(runtime *assistantRun
 	if err != nil {
 		return nil, err
 	}
-	return newAssistantHostRegistry(append(append(graph.tools, tests...), recipes.tools...))
+	dialects, err := e.assistantDialectTools()
+	if err != nil {
+		return nil, err
+	}
+	return newAssistantHostRegistry(append(append(append(graph.tools, tests...), recipes.tools...), dialects.tools...))
 }
 
 var assistantPolicyNames = []string{"read_policy", "propose_policy_update", "read_policy_comparison", "read_policy_coverage", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}
 
 func assistantPolicyTool(name string) bool { return contains(assistantPolicyNames, name) }
 func assistantHostProposal(name string) bool {
-	return name == "propose_graph" || name == "propose_test_cases" || name == "propose_dialect_recipe" || contains([]string{"propose_policy_update", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}, name)
+	return name == "propose_dialect" || name == "propose_dialect_publication" || name == "propose_graph" || name == "propose_test_cases" || name == "propose_dialect_recipe" || contains([]string{"propose_policy_update", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}, name)
 }
 func assistantPolicySchemas() map[string]json.RawMessage {
 	text := func(n int) any { return map[string]any{"type": "string", "maxLength": n} }

@@ -10,7 +10,25 @@ import (
 
 const retainedArtifactDirectory = ".desk-private/retained-artifacts"
 
-type fileRetainedArtifactRepository struct{ open func(bool) (*os.Root, error) }
+type fileRetainedArtifactRepository struct {
+	open      func(bool) (*os.Root, error)
+	authorize func(context.Context) error
+}
+
+func (f fileRetainedArtifactRepository) WithAuthority(authorize func(context.Context) error) retainedArtifactRepository {
+	f.authorize = authorize
+	return f
+}
+
+func (f fileRetainedArtifactRepository) current(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if f.authorize != nil {
+		return f.authorize(ctx)
+	}
+	return nil
+}
 
 // The caller retains the pinned project's lifetime. Features receive the same
 // repository boundary without reconstructing artifact storage paths themselves.
@@ -31,7 +49,7 @@ func openRetainedArtifactsWithin(project *os.Root, create bool) (*os.Root, error
 	return root, err
 }
 func (f fileRetainedArtifactRepository) Get(ctx context.Context, ref retainedArtifactRef) ([]byte, error) {
-	if err := ctx.Err(); err != nil {
+	if err := f.current(ctx); err != nil {
 		return nil, err
 	}
 	if !ref.valid() {
@@ -47,7 +65,7 @@ func (f fileRetainedArtifactRepository) Get(ctx context.Context, ref retainedArt
 		err = verifyRetainedArtifact(ref, raw)
 	}
 	if err == nil {
-		err = ctx.Err()
+		err = f.current(ctx)
 	}
 	if err != nil {
 		return nil, err
@@ -55,7 +73,7 @@ func (f fileRetainedArtifactRepository) Get(ctx context.Context, ref retainedArt
 	return raw, nil
 }
 func (f fileRetainedArtifactRepository) Put(ctx context.Context, raw []byte) (retainedArtifactRef, error) {
-	if err := ctx.Err(); err != nil {
+	if err := f.current(ctx); err != nil {
 		return retainedArtifactRef{}, err
 	}
 	if len(raw) > retainedArtifactByteLimit {
@@ -75,23 +93,38 @@ func (f fileRetainedArtifactRepository) Put(ctx context.Context, raw []byte) (re
 	if err = waitPrivateDataLock(ctx, lock, true); err != nil {
 		return retainedArtifactRef{}, err
 	}
+	if f.authorize != nil {
+		if err = f.current(ctx); err != nil {
+			return retainedArtifactRef{}, err
+		}
+	}
 	prior, err := readPrivateData(root, ref.SHA256, retainedArtifactByteLimit)
 	if err == nil {
 		if !bytes.Equal(raw, prior) {
 			return retainedArtifactRef{}, errRetainedArtifactChanged
+		}
+		if f.authorize != nil {
+			if err = f.current(ctx); err != nil {
+				return retainedArtifactRef{}, err
+			}
 		}
 		return ref, nil // exact repeated content needs no write
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return retainedArtifactRef{}, err
 	}
-	if err = ctx.Err(); err != nil {
+	if err = f.current(ctx); err != nil {
 		return retainedArtifactRef{}, err
 	}
 	// Directory exclusion covers the absence check and staged publication. The
 	// shared primitive syncs and reads back the file before acknowledging it.
 	if err = writePrivateData(root, ref.SHA256, raw); err != nil {
 		return retainedArtifactRef{}, err
+	}
+	if f.authorize != nil {
+		if err = f.current(ctx); err != nil {
+			return retainedArtifactRef{}, err
+		}
 	}
 	return ref, nil
 }

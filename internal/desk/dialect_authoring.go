@@ -123,9 +123,27 @@ func (s *Server) checkDialectAuthoring(ctx context.Context, document []byte, pac
 	if err != nil {
 		return nil, report, err
 	}
+	validated, err := readDialectAuthoringReport(document, pack, raw)
+	if err != nil {
+		return nil, empty, err
+	}
+	return raw, validated, nil
+}
+
+// The same exact check envelope is read from live Runtime output and retained
+// private host receipts. This validates custody, never repeats evaluation.
+func readDialectAuthoringReport(document []byte, pack string, raw []byte) (dialectAuthoringReport, error) {
+	var report, empty dialectAuthoringReport
+	operation := "dialect validate"
+	if pack != "" {
+		operation = "dialect check"
+	}
+	if rejectDuplicateMembers(raw) != nil || json.Unmarshal(raw, &report) != nil || report.OutputVersion != "2" || report.ContractVersion != "1" || report.Command != operation || report.Status == "" {
+		return empty, errDialectChecksUnavailable
+	}
 	if report.Document != "" {
 		if report.Digest != "sha256:"+digestOf([]byte(report.Document)) {
-			return nil, empty, errDialectChecksUnavailable
+			return empty, errDialectChecksUnavailable
 		}
 		// Compare values without converting JSON numbers to floating point. Runtime
 		// may canonicalize spelling, but may not replace the supplied document.
@@ -137,18 +155,18 @@ func (s *Server) checkDialectAuthoring(ctx context.Context, document []byte, pac
 			return d.Decode(v)
 		}
 		if decode(document, &given) != nil || decode([]byte(report.Document), &returned) != nil {
-			return nil, empty, errDialectChecksUnavailable
+			return empty, errDialectChecksUnavailable
 		}
 		a, _ := json.Marshal(dialectComparable(given))
 		b, _ := json.Marshal(dialectComparable(returned))
 		if !bytes.Equal(a, b) {
-			return nil, empty, errDialectChecksUnavailable
+			return empty, errDialectChecksUnavailable
 		}
 	}
 	if report.Compatibility != nil && (report.Compatibility.Scope != "declared-inventory-coverage" || report.Compatibility.Pack.SHA256 != digestOf([]byte(pack))) {
-		return nil, empty, errDialectChecksUnavailable
+		return empty, errDialectChecksUnavailable
 	}
-	return raw, report, nil
+	return report, nil
 }
 
 func (r dialectAuthoringReport) accepted(pack bool) bool {

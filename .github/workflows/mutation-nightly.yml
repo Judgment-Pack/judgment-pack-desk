@@ -129,6 +129,7 @@ jobs:
       - name: Run the shard's rows
         timeout-minutes: 330
         env:
+          GH_TOKEN: ${{ github.token }}
           HALF: ${{ matrix.half }}
           SHARD: ${{ matrix.k }}/${{ matrix.half == 'go' && '4' || '6' }}
         run: |
@@ -141,6 +142,8 @@ jobs:
             . scripts/dev/lib.sh
             . scripts/dev/gateway-fixture.sh
             prepare_gateway_fixture
+            . scripts/dev/dialect-mapping-fixture.sh
+            prepare_dialect_mapping_fixture
           fi
           { bash scripts/mutation-check.sh "$HALF" --shard "$SHARD" --record 2>&1 1>&3 3>&- | tee "$out/progress.log" >&2; } 3> "$out/table.md"
 

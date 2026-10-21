@@ -2743,3 +2743,29 @@ go	assistant recipe: injected authority binding omitted	TestDialectDraftReposito
 go	assistant recipe: concrete draft adapter bypasses owner	TestDialectDraftsUseRepository
 go	assistant shared offers: recipe proposal classified as read	TestAssistantGraphToolsRealServicesAndOffers
 go	assistant shared offers: test proposal classified as read	TestAssistantGraphToolsRealServicesAndOffers
+go	assistant dialect mapping: finite argument admission omitted	TestAssistantDialectMappingArguments
+go	assistant dialect mapping: stale read equality omitted	TestAssistantDialectMappingPlanStaleAndNoRead,TestAssistantDialectMappingQueuedSourceAndCancel
+go	assistant dialect mapping: action identity derivation omitted	TestAssistantDialectMappingRawCustody
+go	assistant dialect mapping: attempted producer capacity omitted	TestAssistantDialectMappingRawCustody
+go	assistant dialect mapping: raw custody type guard omitted	TestAssistantDialectMappingRawCustody
+go	assistant dialect mapping: report raw member validation omitted	TestAssistantDialectMappingArguments
+go	assistant dialect mapping: check producer association omitted	TestAssistantDialectMappingRawCustody
+go	assistant dialect mapping: check chronological association omitted	TestAssistantDialectMappingRawCustody
+go	assistant dialect mapping: current preparation projection omitted	TestAssistantDialectMappingProjectionFreshness
+go	assistant dialect mapping: current pack projection omitted	TestAssistantDialectMappingProjectionFreshness
+go	assistant dialect mapping: current publication base projection omitted	TestAssistantDialectMappingProjectionFreshness
+go	assistant dialect mapping: physical review projection omitted	TestAssistantDialectMappingProjectionFreshness
+go	assistant dialect mapping: unknown retention continues model	TestAssistantDialectMappingPublicationUncertaintyStops
+go	assistant dialect mapping: unrelated host accepts new custody	TestAssistantDialectMappingRawCustody
+go	assistant dialect mapping: owning artifact callback omitted	TestAssistantDialectMappingOwnerQueuedAuthority,TestAssistantDialectMappingQueuedSourceAndCancel
+go	assistant dialect mapping: injected owner authority binding omitted	TestAssistantDialectMappingOwnerQueuedAuthority
+go	assistant dialect mapping: unsupported owner admitted	TestAssistantDialectMappingUnsupportedOwner
+go	assistant dialect mapping: owning review callback omitted	TestAssistantDialectMappingOwnerQueuedAuthority
+go	assistant dialect mapping: owning receipt callback omitted	TestAssistantDialectMappingOwnerQueuedAuthority
+go	assistant dialect mapping: test output accepts new variant	TestAssistantDomainHostVariantBoundaries
+go	assistant dialect mapping: test receipt accepts new custody	TestAssistantDomainHostVariantBoundaries
+go	assistant dialect mapping: recipe output accepts new variant	TestAssistantDomainHostVariantBoundaries
+go	assistant dialect mapping: recipe receipt accepts new custody	TestAssistantDomainHostVariantBoundaries
+go	assistant dialect mapping: Policy output accepts new variant	TestAssistantDomainHostVariantBoundaries
+go	assistant dialect mapping: Policy receipt accepts new custody	TestAssistantDomainHostVariantBoundaries
+go	assistant dialect mapping: unsupported live read corrupts custody	TestAssistantDialectMappingBoundedRead

@@ -40,14 +40,26 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 	// missing fields or apply their JSON decoding behavior.
 	var wire struct {
 		Runs []struct {
-			Binding    assistantRunBinding `json:"binding"`
-			Checkpoint json.RawMessage     `json:"checkpoint"`
+			Binding       assistantRunBinding `json:"binding"`
+			Checkpoint    json.RawMessage     `json:"checkpoint"`
+			DomainOutputs []json.RawMessage   `json:"domainOutputs"`
 		} `json:"runs"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return ledger, err
 	}
 	for _, run := range wire.Runs {
+		for _, raw := range run.DomainOutputs {
+			fields, err := assistantTestObject(raw)
+			if err != nil {
+				return ledger, err
+			}
+			if fields["dialectAction"] != nil {
+				if err = readAssistantDialectCustody(fields["dialectAction"], reflect.TypeOf(assistantDialectActionOutput{})); err != nil {
+					return ledger, err
+				}
+			}
+		}
 		if len(run.Checkpoint) > 0 && !bytes.Equal(bytes.TrimSpace(run.Checkpoint), []byte("null")) {
 			value, err := runcontext.ParseJSON(run.Checkpoint)
 			if err != nil {
