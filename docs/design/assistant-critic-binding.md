@@ -1,7 +1,7 @@
 # Saved-chat critic inputs
 
 The private server factory binds the published Agent's critic inputs. Agent
-v0.5.0 owns proposal detection, critic orchestration, named model selection,
+v0.6.0 owns proposal detection, critic orchestration, named model selection,
 context isolation, comparison, events, checkpoints and request accounting. Desk
 adds neither a critic loop nor a provider-specific context policy.
 
@@ -29,22 +29,26 @@ The saved link's digest is historical navigation context; it does not identify
 the current file revision. Desk captures the current target's exact byte digest
 and the selected suite snapshot once in the run's existing shared input custody.
 Absence of a suite differs from an empty suite. The suite snapshot includes
-revision, deletions and other saved metadata, so even an otherwise harmless
-suite edit conservatively requires a fresh run. Unrelated suites are outside
+the complete typed case envelopes/rows and optional deletions, including skipped
+or uncomparable rows. Missing deletions differ from an empty deletion list.
+Review-only proposals, suite revision and historical run records are not consumed
+critic inputs and do not invalidate unchanged cases. Unrelated suites are outside
 this snapshot. Reconstruction shares the same held snapshot and never refreshes
 it into a newly reviewed target. The shared physical API/native model dispatch
 fence and the gated Runtime transport recheck current custody. Short private
 store reads and the input mutex are released before Runtime or model work.
 
-A bounded host-authored `deskCriticInputV1` checkpoint extension fingerprints the
+A bounded host-authored `deskCriticInputV2` checkpoint extension fingerprints the
 run, execution key, exact saved request/source, target, suite and accepted cases.
 Its first capture and comparison use the existing private writer transaction
 before any Runtime or model request. Canonical checkpoint callbacks reattach
 that record; the published open checkpoint reader and snapshots preserve it.
 Fresh custody on durable continuation must match the original fingerprint.
 Missing evidence after work or an explicit continuation, malformed metadata or
-a conflict refuses. Saved-chat fields bearing the same name remain historical
-data and never seed this record. The extension grants no permissions and does
+a conflict refuses. A retained `deskCriticInputV1` whole-suite binding is refused
+without changing its original run/checkpoint; start a fresh run instead of
+reinterpreting or recapturing the old binding. Saved-chat fields bearing the same
+name remain historical data and never seed this record. The extension grants no permissions and does
 not alter allowance, approvals, tools or model context.
 
 The row projection matches `criticCases.ts`: deleted and exploratory rows are

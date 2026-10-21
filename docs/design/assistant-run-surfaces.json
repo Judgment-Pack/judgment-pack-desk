@@ -677,17 +677,23 @@
       "entrypoints": [
         "web/src/packs/test-workspace/chatTools.ts",
         "web/src/packs/test-workspace/store.ts",
-        "internal/desk/conversations.go"
+        "internal/desk/conversations.go",
+        "internal/desk/assistant_test_tools.go",
+        "internal/desk/assistant_test_tools_output.go",
+        "internal/desk/assistant_test_tools_storage.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "private finite Go registry and exact-owner review-only suite proposals; production/browser migration pending",
       "preserve": [
         "Go read/retain proposal with exact target/suite/coverage/source inputs; human owns expectations and accepts case edits",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
-        "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
-      ]
+        "actual API and native parent-child-parent with distinct canonical calls; saved/unfinalized draft, Plan/child/current-access and exact pack/case/coverage safeguards",
+        "producer-bound prepared output, completed-result recovery, suite append/readback and terminal chat link; cancellation/Stop and contradictory imports refuse replay or dangling links",
+        "standard projection CI uses actual ChatStore, suite/proposal, reviewed replacement/stale and review-link browser consumers",
+        "scripted Runtime fixtures prove the existing Desk consumer contract; pinned Runtime v0.37.0 lacks pack/fact-check matrix support, so released positive proposal acceptance remains blocked by Desk #582 (Runtime #274)"
+      ],
+      "status": "private-implemented with scripted contract evidence; released Runtime proposal compatibility #582 and production/browser activation pending"
     },
     {
       "id": "chat-web-host",
@@ -840,11 +846,12 @@
       "completed private foundations from Desk #564/#570/#573/#574: published provider-managed binding, final journal prepare/CAS/readback/ack and positive critic/test-tool custody; these do not activate browser features",
       "private finite Graph host registry, seven concrete tools, canonical producer-bound draft/read receipts and GraphDraft terminal projection; focused actual API/native and existing browser reader evidence",
       "private finite Policy host registry, six authenticated read/proposal tools, exact retained comparison/coverage, durable update/interpretation cards and actual API/native/shared browser reader evidence",
-      "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures"
+      "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures",
+      "private finite test-design read/propose host tools, exact saved/draft review-only proposal persistence and actual API/native/shared browser reader evidence; scripted Runtime contract only, released support blocked by #582"
     ],
     "pending": [
       "complete provider-managed Desk binding and feature certification",
-      "remaining Dialect/tests/sources/attachments host tools, typed actions and Policy/workflow migrations",
+      "remaining Dialect/sources/attachments host tools; released Runtime test-proposal compatibility #582, typed actions and Policy/workflow migrations",
       "browser cutover and production executor registration after complete migration/review"
     ],
     "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",

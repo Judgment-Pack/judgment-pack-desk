@@ -182,6 +182,11 @@ func (r *assistantRuntime) Call(ctx context.Context, message json.RawMessage) (j
 	if err != nil {
 		return nil, err
 	}
+	// The fixed test-design host call may retain this existing journal receipt.
+	// It cannot choose or replace the physical operation identity.
+	if receipt, ok := ctx.Value(assistantTestRuntimeReceiptKey{}).(*assistantTestRuntimeReceipt); ok {
+		receipt.ID = op.ID
+	}
 	outbound := op.Intent
 	hostID, _ := json.Marshal(op.ID)
 	s := r.execution.service.server

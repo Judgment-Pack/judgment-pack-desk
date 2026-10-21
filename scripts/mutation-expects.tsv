@@ -2700,3 +2700,14 @@ go	assistant native: callback argument journal encoding omitted	TestAssistantNat
 go	assistant native: changed parent arguments accepted	TestAssistantParentHostArgumentWireEncoding
 go	assistant native: changed callback arguments accepted	TestAssistantNativeHostArgumentWireEncoding
 go	assistant native: callback owning invocation order ignored	TestAssistantNativeInvocationAssociation
+go	assistant tests: root read custody omitted	TestAssistantTestHostImportAssociations
+go	assistant tests: validation operation receipt omitted	TestAssistantTestHostImportAssociations
+go	assistant tests: Runtime row identity ignored	TestAssistantTestHostTypedAndRuntimeRefusals
+go	assistant tests: incomplete fact advice accepted	TestAssistantTestHostTypedAndRuntimeRefusals
+go	assistant tests: foreign source mapping accepted	TestAssistantTestHostTypedAndRuntimeRefusals
+go	assistant tests: conflicting proposal identity accepted	TestAssistantTestHostLostReadbackAndCancellation
+go	assistant tests: changed source appended after observation	TestAssistantTestHostObservationSourceCustody
+go	assistant tests: suite materialization omitted before success	TestAssistantTestHostSavedAndDraftCustody
+go	assistant critic V2: complete consumed rows ignored	TestAssistantTestHostCriticConsumedInputs
+go	assistant critic V2: legacy custody accepted	TestAssistantTestHostCriticConsumedInputs
+go	assistant tests: final projection suite custody omitted	TestAssistantTestHostProjectionSuiteCustody

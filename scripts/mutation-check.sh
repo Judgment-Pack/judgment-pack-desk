@@ -15016,12 +15016,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	if err != nil {
 		return refuse(err)
 	}
-	return result, nil' \
+	if name == "propose_test_cases"' \
     'e.changed(err)
 	if false && err != nil {
 		return refuse(err)
 	}
-	return result, nil'
+	if name == "propose_test_cases"'
   mutate go 'assistant graph: projection digest drops domain output' internal/desk/assistant_chat_projection.go \
     'run.Events, run.DomainOutputs' \
     'run.Events, nil'
@@ -15084,6 +15084,46 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant native: callback owning invocation order ignored' internal/desk/assistant_domain_output.go \
     'v.Invocation != invocation ||' \
     'false ||'
+fi
+
+# Private test-design custody and consumed critic inputs.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant tests: root read custody omitted' internal/desk/assistant_test_tools_output.go \
+    'if !before {' \
+    'if false && !before {'
+  mutate go 'assistant tests: validation operation receipt omitted' internal/desk/assistant_test_tools_output.go \
+    'if !validated {' \
+    'if false && !validated {'
+  mutate go 'assistant tests: Runtime row identity ignored' internal/desk/assistant_test_tools_validation.go \
+    'return id != m.IDs[i]' \
+    'return false && id != m.IDs[i]'
+  mutate go 'assistant tests: incomplete fact advice accepted' internal/desk/assistant_test_tools_validation.go \
+    'if row.Status != "complete" {' \
+    'if false && row.Status != "complete" {'
+  mutate go 'assistant tests: foreign source mapping accepted' internal/desk/assistant_test_tools_validation.go \
+    '|| !ids[source] {' \
+    '|| false && !ids[source] {'
+  mutate go 'assistant tests: conflicting proposal identity accepted' internal/desk/assistant_test_tools_storage.go \
+    'if !bytes.Equal(p, output.Proposal) {' \
+    'if false && !bytes.Equal(p, output.Proposal) {'
+  mutate go 'assistant tests: changed source appended after observation' internal/desk/assistant_test_tools_storage.go \
+    'if err != nil || !assistantTestSame(output.Read, current) {' \
+    'if err != nil || !assistantTestSame(current, current) {'
+  mutate go 'assistant tests: suite materialization omitted before success' internal/desk/assistant_domain_output.go \
+    'if name == "propose_test_cases" && !result.Err() {' \
+    'if false && name == "propose_test_cases" && !result.Err() {'
+  mutate go 'assistant critic V2: complete consumed rows ignored' internal/desk/assistant_critic.go \
+    'held.suiteDigest = digestOf(inputs.JSON())' \
+    'held.suiteDigest = digestOf([]byte("consumed-input-ignored"))'
+  mutate go 'assistant critic V2: legacy custody accepted' internal/desk/assistant_critic.go \
+    'run.Checkpoint.AdditionalMembers[assistantCriticLegacyCheckpointMember]; legacy {' \
+    'run.Checkpoint.AdditionalMembers[assistantCriticLegacyCheckpointMember]; false && legacy {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant tests: final projection suite custody omitted' internal/desk/assistant_chat_projection_store.go \
+    'if err := s.materializeAssistantTestOutputsLocked(r, root, name, *run); err != nil {' \
+    'if err := error(nil); err != nil {'
 fi
 
 restore

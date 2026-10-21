@@ -77,7 +77,7 @@ func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) erro
 		if err != nil {
 			return false, err
 		}
-		root, _, full, selected, err := s.assistantChatProjectionOwner(r, store, run)
+		root, conversation, full, selected, err := s.assistantChatProjectionOwner(r, store, run)
 		if err != nil {
 			return false, err
 		}
@@ -87,6 +87,16 @@ func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) erro
 		}
 		if run.ChatProjection != nil {
 			return false, nil
+		}
+		// A terminal link is prepared only after its exact suite proposal exists.
+		if err := validateAssistantDomainOutputs(*run); err != nil {
+			return false, err
+		}
+		if err := validateAssistantTestProjectionSource(selected, *run); err != nil {
+			return false, err
+		}
+		if err := s.materializeAssistantTestOutputsLocked(r, root, conversation, *run); err != nil {
+			return false, err
 		}
 		output, err := compileAssistantChatProjection(selected, *run, assistantChatProjectionTime())
 		code := ""
@@ -161,6 +171,12 @@ func (s *Server) writeAssistantChatProjection(r *http.Request, id string) error 
 		}
 		if !assistantChatProjectionMatches(run, selected) {
 			return false, errAssistantRunConflict
+		}
+		// Preparation and write are separate recoverable transactions. Verify
+		// suite custody again under this final write/readback lock so a removed
+		// or conflicting proposal cannot leave a newly persisted dangling link.
+		if err := s.materializeAssistantTestOutputsLocked(r, root, name, *run); err != nil {
+			return false, err
 		}
 		if digestOf(selected) == projection.Digest {
 			return false, nil
