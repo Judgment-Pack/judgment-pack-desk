@@ -601,7 +601,7 @@
         "durable pre-create metadata, actual independent draft readback, queued revocation/cancellation, uncertain-write/replay and import refusals",
         "existing ChatStore proposal reader and actual dialectDraftQuery readback in the standard projection CI path"
       ],
-      "status": "private-implemented; production/browser migration and mapping/publication/actions/research slices pending"
+      "status": "private-implemented; production/browser migration and actual research admission pending"
     },
     {
       "id": "dialect-mapping-host",
@@ -642,16 +642,20 @@
       "entrypoints": [
         "web/src/dialects/chatActionTools.ts",
         "internal/desk/input_research_approval.go",
-        "internal/desk/input_research_http.go"
+        "internal/desk/input_research_http.go",
+        "internal/desk/assistant_dialect_record_tools.go",
+        "internal/desk/assistant_dialect_action_registry.go",
+        "internal/desk/assistant_dialect_action_output.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "private Go finite records/activity and review-only action registry implemented; actual request_dialect_research admission, production registration and browser migration pending",
       "preserve": [
         "Go existing research allowance/recipe/record review admission; proposals and source-start receipts remain different",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
-        "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+        "actual API/native producers and existing ChatStore/validDialectChatAction/applyDialectRecipeAction readers in standard CI",
+        "bounded supplied strings versus typed research, local human review currency, real owner history, queued authority/source and finite import/projection witnesses",
+        "request_dialect_research remains deferred: current real allowance, exact turn/revision admission, independent worker and lost-ack recovery required"
       ]
     },
     {
@@ -861,11 +865,15 @@
       "private finite Graph host registry, seven concrete tools, canonical producer-bound draft/read receipts and GraphDraft terminal projection; focused actual API/native and existing browser reader evidence",
       "private finite Policy host registry, six authenticated read/proposal tools, exact retained comparison/coverage, durable update/interpretation cards and actual API/native/shared browser reader evidence",
       "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures",
-      "private finite test-design read/propose host tools, exact saved/draft review-only proposal persistence and actual API/native/shared browser reader evidence; scripted Runtime contract only, released support blocked by #582"
+      "private finite test-design read/propose host tools, exact saved/draft review-only proposal persistence and actual API/native/shared browser reader evidence; scripted Runtime contract only, released support blocked by #582",
+      "private portable Dialect recipe contract/read/proposal tools with durable independent draft identity/readback, current authority and actual API/native/browser reader fixtures",
+      "private Dialect mapping/publication tools with exact read basis, pinned Runtime checks, finite retained review evidence and current-versus-historical projection; no publication grant or write",
+      "private Dialect records/activity and six-kind review-only action proposals bound to exact root recipe reads; typed originals, human review currency, owner history and shared action/browser readers"
     ],
     "pending": [
       "complete provider-managed Desk binding and feature certification",
-      "remaining Dialect/sources/attachments host tools; released Runtime test-proposal compatibility #582, typed actions and Policy/workflow migrations",
+      "actual request_dialect_research with real grant/admission/independent-worker recovery; remaining source/attachment host tools",
+      "Plan/memory and remaining continuation/workflow feature migrations; released Runtime test-proposal compatibility #582",
       "browser cutover and production executor registration after complete migration/review"
     ],
     "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",

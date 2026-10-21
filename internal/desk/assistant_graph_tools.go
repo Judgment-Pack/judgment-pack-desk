@@ -153,7 +153,7 @@ func (e *assistantRunExecution) assistantGraphTools(runtime *assistantRuntime) (
 		name := name
 		t := runcontext.HostTool{Name: name, Description: descriptions[name], InputSchema: schemas[name], Effect: "read"}
 		if name == "propose_graph" {
-			t.Effect = "propose"
+			t.Effect = "proposal"
 		} else {
 			t.Delegation = "read"
 		}
