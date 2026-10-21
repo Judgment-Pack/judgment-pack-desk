@@ -40,7 +40,7 @@ func validateAssistantTestReadReceipt(op assistantRunOperation, in assistantHost
 	if result.Tests == nil {
 		return nil
 	}
-	if op.Name != "read_pack_tests" || op.State != "completed" || result.Read != nil || result.PolicySource != nil || !validAssistantTestRead(*result.Tests) {
+	if in.RecipeProposal != nil || in.Policy != nil || op.Name != "read_pack_tests" || op.State != "completed" || result.Read != nil || result.PolicySource != nil || !validAssistantTestRead(*result.Tests) {
 		return errAssistantRunInvalid
 	}
 	args, err := readAssistantTestArguments(op.Name, in.Arguments)
@@ -71,7 +71,7 @@ func validateAssistantTestReadReceipt(op assistantRunOperation, in assistantHost
 }
 func validateAssistantTestOutput(run assistantRunRecord, out assistantDomainOutput, receipts map[string]assistantHostResult) error {
 	p := out.TestProposal
-	if out.Kind != "test-proposal" || p == nil || out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil || !reflect.DeepEqual(out.Draft, graphDraft{}) || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || run.Binding.Phase == "plan" || !validAssistantTestRead(p.Read) {
+	if out.Kind != "test-proposal" || p == nil || out.Recipe != nil || out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil || !reflect.DeepEqual(out.Draft, graphDraft{}) || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || run.Binding.Phase == "plan" || !validAssistantTestRead(p.Read) {
 		return errAssistantRunInvalid
 	}
 	var producer *assistantRunOperation
@@ -86,7 +86,7 @@ func validateAssistantTestOutput(run assistantRunRecord, out assistantDomainOutp
 		return errAssistantRunInvalid
 	}
 	var in assistantHostIntent
-	if readAssistantHostReceipt(producer.Intent, &in) != nil || !in.Root || in.CallID != out.CallID || in.Policy != nil {
+	if readAssistantHostReceipt(producer.Intent, &in) != nil || !in.Root || in.CallID != out.CallID || in.Policy != nil || in.RecipeProposal != nil {
 		return errAssistantRunInvalid
 	}
 	args, err := readAssistantTestArguments(producer.Name, in.Arguments)
@@ -301,4 +301,19 @@ func appendAssistantTestLinks(turns []json.RawMessage, run assistantRunRecord, a
 		turns = append(turns, assistantChatJSON(map[string]any{"id": assistantChatResponseID(run.ID) + "-test-" + digestOf([]byte(out.OperationID))[:16], "role": "assistant", "kind": "message", "text": "Test cases proposed for review. No cases have been saved.", "at": at, "testDesign": link}))
 	}
 	return turns, nil
+}
+
+// The finite test-read custody member cannot be attached to unrelated host
+// receipts, including opaque unknown historical tool names.
+func assistantTestReceiptMetadata(raw []byte) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return false
+	}
+	for key := range fields {
+		if strings.EqualFold(key, "tests") {
+			return true
+		}
+	}
+	return false
 }

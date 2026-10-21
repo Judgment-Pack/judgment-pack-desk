@@ -355,6 +355,9 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 		}
 		chat["graphDrafts"] = assistantChatEncodeArray(drafts)
 	}
+	if err := appendAssistantDialectRecipeOutputs(chat, run.DomainOutputs); err != nil {
+		return nil, err
+	}
 	if err := appendAssistantPolicyOutputs(chat, run.DomainOutputs); err != nil {
 		return nil, err
 	}

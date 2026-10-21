@@ -15126,6 +15126,92 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if err := error(nil); err != nil {'
 fi
 
+# Finite recipe production, independent storage and exact recovery custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: argument member guard omitted' internal/desk/assistant_dialect_recipe_tools.go \
+    'readAssistantHostReceipt(raw, &a.Content) != nil' \
+    'json.Unmarshal(raw, &a.Content) != nil'
+  mutate go 'assistant recipe: proposal identity derivation omitted' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'p.DraftID == assistantDialectRecipeProposalID(binding, in)' \
+    'true'
+  mutate go 'assistant recipe: retained creation time not reused' internal/desk/assistant_dialect_recipe_tools_store.go \
+    '}, p.CreatedAt)' \
+    '}, "")'
+  mutate go 'assistant recipe: independent readback guard omitted' internal/desk/assistant_dialect_recipe_tools_store.go \
+    'if observed.SHA256 != saved.SHA256 || !validAssistantDialectRecipeRetained(e.record.Binding, *p, observed) {' \
+    'if false {'
+  mutate go 'assistant recipe: stale independent projection admitted' internal/desk/assistant_chat_projection_store.go \
+    'if err = s.checkAssistantDialectRecipeDrafts(r, *run); err != nil {' \
+    'if err = error(nil); err != nil {'
+  mutate go 'assistant recipe: uncertain intents bypass capacity' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'sourceCount+count >= 16' \
+    'false'
+  mutate go 'assistant recipe: read variant accepts producer metadata' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'if in.RecipeProposal != nil {' \
+    'if false {'
+  mutate go 'assistant recipe: completed redelivery result omitted' internal/desk/assistant_domain_output.go \
+    'if replay != nil {' \
+    'if false && replay != nil {'
+  mutate go 'assistant recipe: uncertain create reopens as success' internal/desk/dialect_drafts.go \
+    'saved, err := repository.CompareAndSwap(ctx, doc, "")
+	if errors.Is(err, errDialectDraftConflict) {' \
+    'saved, err := repository.CompareAndSwap(ctx, doc, "")
+	if err != nil {'
+  mutate go 'assistant recipe: pre-write current authority omitted' internal/desk/dialect_draft_file.go \
+    'if e = f.authorize(ctx); e != nil {' \
+    'if e = error(nil); e != nil {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: uncertainty permits another model request' internal/desk/assistant_domain_output.go \
+    'if name == "propose_dialect_recipe" && errors.As(workErr, &unknown) {' \
+    'if false && name == "propose_dialect_recipe" && errors.As(workErr, &unknown) {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: browser-blank text accepted' internal/desk/assistant_dialect_recipe_tools.go \
+    'strings.Trim(value, assistantDialectRecipeWhitespace) != ""' \
+    'strings.TrimSpace(value) != ""'
+fi
+
+
+# The merged finite host variants never exchange intent, receipt or output custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant variants: test output accepts recipe variant' internal/desk/assistant_test_tools_output.go \
+    'p == nil || out.Recipe != nil || out.PolicyUpdate != nil' \
+    'p == nil || out.PolicyUpdate != nil'
+  mutate go 'assistant variants: recipe output accepts test variant' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'out.Recipe == nil || out.TestProposal != nil || out.PolicyUpdate != nil' \
+    'out.Recipe == nil || out.PolicyUpdate != nil'
+  mutate go 'assistant variants: test producer accepts recipe intent metadata' internal/desk/assistant_test_tools_output.go \
+    'in.CallID != out.CallID || in.Policy != nil || in.RecipeProposal != nil' \
+    'in.CallID != out.CallID || in.Policy != nil'
+  mutate go 'assistant variants: test read accepts foreign intent metadata' internal/desk/assistant_test_tools_output.go \
+    'in.RecipeProposal != nil || in.Policy != nil || op.Name != "read_pack_tests"' \
+    'op.Name != "read_pack_tests"'
+  mutate go 'assistant variants: recipe read accepts Policy intent metadata' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'if in.Policy != nil {' \
+    'if false && in.Policy != nil {'
+  mutate go 'assistant variants: recipe producer accepts test read custody' internal/desk/assistant_dialect_recipe_tools_output.go \
+    '!ok || held.Tests != nil || held.Read != nil' \
+    '!ok || held.Read != nil'
+  mutate go 'assistant variants: Policy output accepts foreign variants' internal/desk/assistant_policy_tools_output.go \
+    'out.TestProposal != nil || out.Recipe != nil ||' \
+    'false ||'
+  mutate go 'assistant variants: Policy producer accepts recipe intent metadata' internal/desk/assistant_policy_tools_output.go \
+    'if in.RecipeProposal != nil || in.Policy == nil' \
+    'if in.Policy == nil'
+  mutate go 'assistant variants: Policy producer accepts test read custody' internal/desk/assistant_policy_tools_output.go \
+    '!ok || receipt.Read != nil || receipt.Tests != nil' \
+    '!ok || receipt.Read != nil'
+  mutate go 'assistant variants: unrelated host accepts test custody member' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {' \
+    'if false && op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {'
+  mutate go 'assistant variants: Graph output accepts recipe variant' internal/desk/assistant_domain_output.go \
+    'if out.Recipe != nil {' \
+    'if false && out.Recipe != nil {'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
