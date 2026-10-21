@@ -65,7 +65,7 @@ if args[:2] == ["test", "-c"]:
     # A binary of the tree as it is now: what fails is fixed at build time.
     snapshot = open(source_path).read()
     with open(out, "w") as f:
-        f.write("#!PYTHON\nimport re, sys\n")
+        f.write("#!PYTHON\nimport os, re, sys\n")
         f.write("TESTS = %r\nSOURCE = %r\n" % (TESTS, snapshot))
         f.write(
             "argv = sys.argv[1:]\n"
@@ -73,6 +73,8 @@ if args[:2] == ["test", "-c"]:
             "    pattern = argv[argv.index('-test.list') + 1]\n"
             "    [print(t) for t in TESTS if re.search(pattern,t)]\n"
             "    sys.exit(0)\n"
+            "with open(os.environ['FAKE_LOG'], 'a') as log:\n"
+            "    log.write('go-test-binary ' + ' '.join(argv) + '\\n')\n"
             "pattern = argv[argv.index('-test.run') + 1]\n"
             "selected = [t for t in TESTS if re.search(pattern, t)]\n"
             "if not selected: print('testing: warning: no tests to run')\n"
@@ -413,6 +415,34 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn("./internal/desk", calls)
         self.assertEqual(calls.count("go test -c"), 1, calls)
 
+    def test_go_baseline_selected_and_full_runs_share_ordered_timeout_budgets(self):
+        rows = [
+            ("go", "bridge selected budget", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge"),
+            ("go", "bridge full budget", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge"),
+        ]
+        self.package_fixture(rows, {
+            "bridge selected budget": "TestBridge",
+            "bridge full budget": "TestOther",
+        }, {"./internal/bridge": {"TestBridge": ["broken bridge"], "TestOther": []}})
+
+        source = HARNESS.read_text()
+        self.assertIn("GO_TEST_WATCHDOG=480", source)
+        self.assertIn("GO_TEST_BACKSTOP=540s", source)
+        self.assertLess(480, 540, "the process-tree watchdog must fire before Go's panic timeout")
+        self.assertIn('bounded 1800 "$log" go test -c', source, "build timeout must remain independent")
+        self.assertIn('bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP" -run "$1"', source)
+        self.assertIn('bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP"', source)
+        self.assertIn('bounded "$GO_TEST_WATCHDOG" "$log" bash -c', source)
+
+        result = self.harness("go")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.log.read_text().splitlines()
+        executions = [line for line in calls if line.startswith("go test ./internal/bridge -count=1")]
+        self.assertTrue(any("-timeout 540s -run ^(TestBridge)$" in line for line in executions), calls)
+        self.assertTrue(any("-timeout 540s" in line and "-run" not in line for line in executions), calls)
+        self.assertTrue(any(line.startswith("go-test-binary ") and "-test.timeout=540s" in line for line in calls), calls)
+        self.assertEqual(self.how(result), {"bridge selected budget": "selected", "bridge full budget": "fallback"})
+
     def test_clean_listing_uses_package_directory_for_initialization(self):
         row = ("go", "package-relative initialization", "internal/bridge/a.go",
                "guard bridge", "broken bridge", "./internal/bridge")
@@ -422,7 +452,7 @@ class SelectionTests(unittest.TestCase):
         # Require the package-local fixture in the actual generated clean binary.
         fake_go = self.dir / "bin/go"
         source = fake_go.read_text()
-        needle = "import re, sys\\n"
+        needle = "import os, re, sys\\n"
         self.assertEqual(source.count(needle), 1, "initialization guard must be injected exactly once")
         source = source.replace(
             needle, "import re, sys, os\\nif not os.path.isfile('a.go'): sys.exit(91)\\n")

@@ -18,7 +18,8 @@ type assistantCriticSnapshot struct {
 	fingerprint                   string
 }
 
-const assistantCriticCheckpointMember = "deskCriticInputV1"
+const assistantCriticCheckpointMember = "deskCriticInputV2"
+const assistantCriticLegacyCheckpointMember = "deskCriticInputV1"
 
 var assistantCriticMembers = []string{"id", "facts", "evidenceAvailability", "supportedExtensions", "expectedDisposition", "expectedErrorClass", "expectedErrorPhase", "expectedHandoffTarget", "origin", "focus", "specSection", "cites"}
 
@@ -152,7 +153,14 @@ func (e *assistantRunExecution) readAssistantCriticSnapshot(ctx context.Context)
 		if suite == nil {
 			held.suiteDigest = "absent"
 		} else {
-			held.suiteDigest = digestOf(suite.JSON())
+			// Bind every consumed envelope/row, including rows the published
+			// critic skips. Review-only proposals and run/revision metadata are
+			// not critic inputs. Missing deleted differs from an empty list.
+			inputs := runcontext.ObjectOf("cases", suite.Get("cases").Clone())
+			if suite.Has("deleted") {
+				inputs.Set("deleted", suite.Get("deleted").Clone())
+			}
+			held.suiteDigest = digestOf(inputs.JSON())
 		}
 	}
 	held.cases, err = assistantCriticCases(chat.Get("checkpoint").Get("state").Get("cases"), suite)
@@ -185,6 +193,11 @@ func (e *assistantRunExecution) bindAssistantCriticCheckpoint(ctx context.Contex
 	// concurrent constructors cannot replace each other's held target.
 	err := e.writer.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
 		if run.Checkpoint == nil || assistantRunTerminal(run.State) {
+			return false, errAssistantRunScope
+		}
+		// V1 bound the whole suite. Its interpretation cannot be upgraded by
+		// capturing current input; keep the old checkpoint and require a new run.
+		if _, legacy := run.Checkpoint.AdditionalMembers[assistantCriticLegacyCheckpointMember]; legacy {
 			return false, errAssistantRunScope
 		}
 		if raw, present := run.Checkpoint.AdditionalMembers[assistantCriticCheckpointMember]; present {

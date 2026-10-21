@@ -314,6 +314,9 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	if err := validateAssistantDomainOutputs(run); err != nil {
 		return nil, err
 	}
+	if err := validateAssistantTestProjectionSource(source, run); err != nil {
+		return nil, err
+	}
 	if err := validateAssistantPolicyProjectionSource(source, run); err != nil {
 		return nil, err
 	}
@@ -351,6 +354,9 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 			drafts = append(drafts, assistantChatJSON(out.Draft))
 		}
 		chat["graphDrafts"] = assistantChatEncodeArray(drafts)
+	}
+	if err := appendAssistantDialectRecipeOutputs(chat, run.DomainOutputs); err != nil {
+		return nil, err
 	}
 	if err := appendAssistantPolicyOutputs(chat, run.DomainOutputs); err != nil {
 		return nil, err
@@ -514,6 +520,10 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 		delete(response, "afterTurnId")
 	}
 	responses = append(responses, assistantChatJSON(response))
+	turns, err = appendAssistantTestLinks(turns, run, at)
+	if err != nil {
+		return nil, err
+	}
 	state["turns"] = assistantChatEncodeArray(turns)
 	state["candidates"] = assistantChatEncodeArray(candidates)
 	state["responses"] = assistantChatEncodeArray(responses)

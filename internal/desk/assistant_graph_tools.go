@@ -33,7 +33,12 @@ func (e *assistantRunExecution) graphDeclarations(ctx context.Context) (assistan
 	if err := e.Authorize(ctx); err != nil {
 		return assistantDecisions{}, nil, err
 	}
-	s := e.service.server
+	return e.service.server.assistantDecisionDeclarations()
+}
+
+// Shared authenticated callers own authorization; declaration parsing stays the
+// same for dispatch and locked reconciliation of already observed proposals.
+func (s *Server) assistantDecisionDeclarations() (assistantDecisions, []byte, error) {
 	if _, refusal := s.graphRuntime(); refusal != "" {
 		return assistantDecisions{}, nil, failure.ToolInput(refusal)
 	}

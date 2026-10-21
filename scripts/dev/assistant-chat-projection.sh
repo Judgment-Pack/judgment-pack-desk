@@ -123,3 +123,52 @@ done
   --outfile="$tmp/policy-reference.mjs"
 "$node_bin" "$tmp/policy-reference.mjs" "$policy_outputs/passed.json" "$policy_outputs/stale.json" | tee "$tmp/policy-reader.log"
 grep -Fxq 'Policy shared readers: exact passed/stale update and pack/graph handoff cards passed.' "$tmp/policy-reader.log"
+
+# Test-design output is a review-only suite record plus a verified chat link.
+# Scripted Runtime fixtures prove Desk custody; released Runtime support is #582.
+test_outputs="$tmp/test-design"
+mkdir -m 700 "$test_outputs"
+(
+  cd "$root"
+  env "${go_env[@]}" DESK_TEST_HOST_CHAT_OUTPUT="$test_outputs/chat.json" \
+    DESK_TEST_HOST_SUITE_OUTPUT="$test_outputs/tests.json" \
+    DESK_TEST_HOST_DRAFT_CHAT_OUTPUT="$test_outputs/draft-chat.json" \
+    DESK_TEST_HOST_DRAFT_SUITE_OUTPUT="$test_outputs/draft-tests.json" \
+    DESK_TEST_HOST_DRAFTS_OUTPUT="$test_outputs/drafts.json" \
+    go test ./internal/desk -run '^TestAssistantTestHost(ActualAPIAndReaders|SavedAndDraftCustody)$' -count=1 -v
+) | tee "$tmp/test-design-producers.log"
+for producer in TestAssistantTestHostActualAPIAndReaders TestAssistantTestHostSavedAndDraftCustody; do
+  grep -Eq "^--- PASS: $producer \\(" "$tmp/test-design-producers.log" || {
+    echo "$producer did not run and pass" >&2
+    exit 1
+  }
+done
+NODE_PATH="$root/web/node_modules" "$esbuild" "$root/scripts/assistant-test-projection-reference.mjs" \
+  --bundle --platform=node --format=esm --jsx=automatic \
+  --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+  --define:import.meta.glob=offlineLocaleCatalogues \
+  --banner:js='import {createRequire} from "node:module"; const require=createRequire(import.meta.url);' \
+  --outfile="$tmp/test-design-reference.mjs"
+"$node_bin" "$tmp/test-design-reference.mjs" "$test_outputs/chat.json" "$test_outputs/tests.json" \
+  "$test_outputs/draft-chat.json" "$test_outputs/draft-tests.json" "$test_outputs/drafts.json" | tee "$tmp/test-design-reader.log"
+grep -Fxq 'Test design shared readers: exact saved/draft proposals, existing-case review/stale guards and linked review actions passed (scripted Runtime; #582 remains blocked).' "$tmp/test-design-reader.log"
+# Recipe proposals retain a real independent draft before the shared chat write.
+recipe_outputs="$tmp/dialect-recipe"
+mkdir -m 700 "$recipe_outputs"
+(
+  cd "$root"
+  env "${go_env[@]}" DESK_DIALECT_RECIPE_READER_CHAT="$recipe_outputs/chat.json" \
+    DESK_DIALECT_RECIPE_READER_DRAFT="$recipe_outputs/draft.json" \
+    go test ./internal/desk -run '^TestAssistantDialectRecipeActualAPIProducer$' -count=1 -v
+) | tee "$tmp/recipe-producer.log"
+grep -Eq '^--- PASS: TestAssistantDialectRecipeActualAPIProducer \(' "$tmp/recipe-producer.log" || {
+  echo 'Dialect recipe producer test did not run and pass' >&2
+  exit 1
+}
+"$esbuild" "$root/scripts/assistant-dialect-recipe-reference.mjs" \
+  --bundle --platform=node --format=esm \
+  --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+  --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$tmp/recipe-reference.mjs"
+"$node_bin" "$tmp/recipe-reference.mjs" "$recipe_outputs/chat.json" "$recipe_outputs/draft.json" | tee "$tmp/recipe-reader.log"
+grep -Fxq 'Dialect recipe shared readers: exact typed proposal and independent draft readback passed.' "$tmp/recipe-reader.log"

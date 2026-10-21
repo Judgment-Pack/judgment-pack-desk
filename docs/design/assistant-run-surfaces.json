@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph/Policy host foundations implemented; production activation pending",
+  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph/Policy/recipe host foundations implemented; production activation pending",
   "deskEvidence": "reviewed private foundations and focused actual API/native execution proofs; existing browser features remain on current engines pending full migration/certification",
   "agentEvidence": {
     "version": "v0.6.0",
@@ -45,7 +45,7 @@
     {
       "id": "main-chat-and-right-pane",
       "category": "conversation",
-      "currentOwner": "ChatProvider → useResearchRun → AuthoringRun.turn → browser engine",
+      "currentOwner": "ChatProvider \u2192 useResearchRun \u2192 AuthoringRun.turn \u2192 browser engine",
       "targetOwner": "Go durable run + server domain workflow; browser renders shared events and submits explicit actions",
       "entrypoints": [
         "web/src/chat/ChatProvider.tsx",
@@ -69,7 +69,7 @@
     {
       "id": "pack-authoring-pane",
       "category": "conversation",
-      "currentOwner": "AssistantPane → useAssistantRun; one gated socket per run",
+      "currentOwner": "AssistantPane \u2192 useAssistantRun; one gated socket per run",
       "targetOwner": "same Go run service, purpose authoring; pane owns immutable capture and view lease",
       "entrypoints": [
         "web/src/assistant/AssistantPane.tsx",
@@ -91,7 +91,7 @@
     {
       "id": "describe-it",
       "category": "conversation",
-      "currentOwner": "useDescribeIt → useAssistantRun → useProposalGenerator",
+      "currentOwner": "useDescribeIt \u2192 useAssistantRun \u2192 useProposalGenerator",
       "targetOwner": "Go authoring run on exact captured source; existing review/apply UI",
       "entrypoints": [
         "web/src/shell/DescribeIt.tsx:useDescribeIt",
@@ -111,7 +111,7 @@
     {
       "id": "graph-authoring-pane",
       "category": "conversation",
-      "currentOwner": "GraphAuthor → useAssistantRun(purpose graph) with graphHostTools",
+      "currentOwner": "GraphAuthor \u2192 useAssistantRun(purpose graph) with graphHostTools",
       "targetOwner": "Go graph purpose and server-owned graph validation/explain handlers",
       "entrypoints": [
         "web/src/graphs/GraphAuthor.tsx",
@@ -132,7 +132,7 @@
     {
       "id": "legacy-research-authoring-and-draft-view",
       "category": "domain-workflow",
-      "currentOwner": "ResearchAuthoringPage/DraftPackView → useResearchRun → AuthoringRun; browser sequences source/review/repair turns",
+      "currentOwner": "ResearchAuthoringPage/DraftPackView \u2192 useResearchRun \u2192 AuthoringRun; browser sequences source/review/repair turns",
       "targetOwner": "Go feature workflow using shared adapter turns and context.CorrectArtifact; UI projection only",
       "entrypoints": [
         "web/src/routes/ResearchAuthoringPage.tsx",
@@ -202,7 +202,7 @@
     {
       "id": "brief-summaries-all-subjects",
       "category": "tool-free-generation",
-      "currentOwner": "BriefPane reservation → useAssistantRun(purpose brief) → useProposalGenerator",
+      "currentOwner": "BriefPane reservation \u2192 useAssistantRun(purpose brief) \u2192 useProposalGenerator",
       "targetOwner": "Go run on server-verified frozen brief reservation; no tools, browser rendering/print remain",
       "entrypoints": [
         "web/src/briefs/BriefPane.tsx:start",
@@ -298,7 +298,7 @@
     {
       "id": "input-research-single-step",
       "category": "bounded-structured-step",
-      "currentOwner": "inputResearchModel → runBackgroundModel; durable worker owns phase/budget",
+      "currentOwner": "inputResearchModel \u2192 runBackgroundModel; durable worker owns phase/budget",
       "targetOwner": "same explicit workflow, unified bound dispatch authorization/context/capacity and one reservation per model action",
       "entrypoints": [
         "internal/desk/input_research_worker.go",
@@ -347,7 +347,7 @@
     {
       "id": "portable-research-and-model-acquisition",
       "category": "bounded-structured-step",
-      "currentOwner": "portableResearchWorker → acquirePortableResearchModel → model broker → runBackgroundModel",
+      "currentOwner": "portableResearchWorker \u2192 acquirePortableResearchModel \u2192 model broker \u2192 runBackgroundModel",
       "targetOwner": "retain reviewed portable workflow and nonce-bound model-source acquisition; shared bound dispatch",
       "entrypoints": [
         "internal/desk/portable_research_worker.go",
@@ -396,7 +396,7 @@
     {
       "id": "capability-probe",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "EndpointCapabilitiesSection → capabilityProbe: one chat request plus model-list GET",
+      "currentOwner": "EndpointCapabilitiesSection \u2192 capabilityProbe: one chat request plus model-list GET",
       "targetOwner": "fixed host-authored one-request diagnostic; same bound relay/context/accounting; no tool execution",
       "entrypoints": [
         "web/src/assistant/EndpointCapabilitiesSection.tsx",
@@ -418,7 +418,7 @@
     {
       "id": "endpoint-connection-probe",
       "category": "bounded-diagnostic-mixed",
-      "currentOwner": "handleAssistantProbe → probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
+      "currentOwner": "handleAssistantProbe \u2192 probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
       "targetOwner": "same fixed diagnostic owner; generative ping reserved/accounted, shared auth/context/custody path",
       "entrypoints": [
         "internal/desk/assistant.go:handleAssistantProbe/probeEndpoint",
@@ -437,7 +437,7 @@
     {
       "id": "codex-connection-test",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "AssistantSettings → useAssistantRun(codex,purpose test-design, optional get_schema)",
+      "currentOwner": "AssistantSettings \u2192 useAssistantRun(codex,purpose test-design, optional get_schema)",
       "targetOwner": "fixed server diagnostic run on actual bridge and narrow saved get_schema grant",
       "entrypoints": [
         "web/src/assistant/AssistantSettings.tsx",
@@ -585,17 +585,23 @@
       ],
       "entrypoints": [
         "web/src/dialects/chatTools.ts",
-        "web/src/dialects/drafts.ts"
+        "web/src/dialects/drafts.ts",
+        "internal/desk/assistant_dialect_recipe_tools.go",
+        "internal/desk/assistant_dialect_recipe_tools_store.go",
+        "internal/desk/assistant_dialect_recipe_tools_output.go",
+        "internal/desk/dialect_drafts.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "private finite Go HostTool registry, current preparation reads and independent retained recipe draft; production activation pending",
       "preserve": [
         "Go recipe contract + independent retained draft; no record fabrication or source execution",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
-        "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
-      ]
+        "actual API four-tool and native parent-child-parent producers with exact portable field types and current read authority",
+        "durable pre-create metadata, actual independent draft readback, queued revocation/cancellation, uncertain-write/replay and import refusals",
+        "existing ChatStore proposal reader and actual dialectDraftQuery readback in the standard projection CI path"
+      ],
+      "status": "private-implemented; production/browser migration and mapping/publication/actions/research slices pending"
     },
     {
       "id": "dialect-mapping-host",
@@ -677,17 +683,23 @@
       "entrypoints": [
         "web/src/packs/test-workspace/chatTools.ts",
         "web/src/packs/test-workspace/store.ts",
-        "internal/desk/conversations.go"
+        "internal/desk/conversations.go",
+        "internal/desk/assistant_test_tools.go",
+        "internal/desk/assistant_test_tools_output.go",
+        "internal/desk/assistant_test_tools_storage.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "private finite Go registry and exact-owner review-only suite proposals; production/browser migration pending",
       "preserve": [
         "Go read/retain proposal with exact target/suite/coverage/source inputs; human owns expectations and accepts case edits",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
-        "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
-      ]
+        "actual API and native parent-child-parent with distinct canonical calls; saved/unfinalized draft, Plan/child/current-access and exact pack/case/coverage safeguards",
+        "producer-bound prepared output, completed-result recovery, suite append/readback and terminal chat link; cancellation/Stop and contradictory imports refuse replay or dangling links",
+        "standard projection CI uses actual ChatStore, suite/proposal, reviewed replacement/stale and review-link browser consumers",
+        "scripted Runtime fixtures prove the existing Desk consumer contract; pinned Runtime v0.37.0 lacks pack/fact-check matrix support, so released positive proposal acceptance remains blocked by Desk #582 (Runtime #274)"
+      ],
+      "status": "private-implemented with scripted contract evidence; released Runtime proposal compatibility #582 and production/browser activation pending"
     },
     {
       "id": "chat-web-host",
@@ -840,11 +852,12 @@
       "completed private foundations from Desk #564/#570/#573/#574: published provider-managed binding, final journal prepare/CAS/readback/ack and positive critic/test-tool custody; these do not activate browser features",
       "private finite Graph host registry, seven concrete tools, canonical producer-bound draft/read receipts and GraphDraft terminal projection; focused actual API/native and existing browser reader evidence",
       "private finite Policy host registry, six authenticated read/proposal tools, exact retained comparison/coverage, durable update/interpretation cards and actual API/native/shared browser reader evidence",
-      "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures"
+      "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures",
+      "private finite test-design read/propose host tools, exact saved/draft review-only proposal persistence and actual API/native/shared browser reader evidence; scripted Runtime contract only, released support blocked by #582"
     ],
     "pending": [
       "complete provider-managed Desk binding and feature certification",
-      "remaining Dialect/tests/sources/attachments host tools, typed actions and Policy/workflow migrations",
+      "remaining Dialect/sources/attachments host tools; released Runtime test-proposal compatibility #582, typed actions and Policy/workflow migrations",
       "browser cutover and production executor registration after complete migration/review"
     ],
     "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",

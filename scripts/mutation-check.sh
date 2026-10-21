@@ -331,28 +331,20 @@ bounded() {
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
 #
+# A clean Desk Go suite took 236.653s in PR #583's Go CI while the mutation
+# baseline hit the old 240s watchdog before any mutant ran. Give deliberate
+# test waits roughly twice that runtime: 480s leaves about 243s for load and
+# scheduling variation. Go's own timeout follows 60s later as a backstop. Both
+# selected and whole-package runs, plus the clean baseline binary, share these
+# bounds so their verdicts stay aligned.
+GO_TEST_WATCHDOG=480
+GO_TEST_BACKSTOP=540s
+
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
-  # **240s, and the number is not arbitrary.** The bound exists to turn a
-  # mutation that hangs a handler into a reported hang rather than a stalled
-  # table. It was 45s, which was already marginal: two relay rows remove an
-  # *idle* deadline and their tests then wait out a deliberate twenty-second
-  # stall, so the mutated suite runs about fifty seconds — and this branch's
-  # forty new session tests pushed both rows over the line and reported
-  # INCONCLUSIVE for a suite that was working. It was then 120s, until the
-  # key-custody tests (ADR-0010 PR 3a) brought the clean suite to about 103s
-  # on an idle machine, mostly waiting rather than computing: any load then
-  # pushed a working suite past the bound. A deliberate wait inside a test is
-  # not a hang; a real one is minutes, and 240s still catches it. A selection
-  # keeps the same bound: one that ran out is run again whole (`mutate`), so a
-  # shorter one could only cost a second run, never a verdict.
-  #
-  # **Now the harness's own bound** (issue #237). When `go test -timeout`
-  # fires, the test binary panics and exits, and what its tests started runs
-  # on (measured), so the harness's bound must fire first and end the whole
-  # tree: `-timeout` is set past it, as a backstop only. The build comes
-  # first, apart, with a bound of its own (a cold cache can take minutes, and
-  # a build is not a hang), so that the 240s is the run's, and the link's.
+  # Keep compilation on its independent bound: a cold build is not a hang.
+  # The run watchdog is the first timeout and kills the whole process tree;
+  # Go's later timeout is only a backstop because its panic can leave children.
   local log code
   log="$(mktemp)"
   local package="$1"
@@ -365,9 +357,9 @@ run_go() {
     return
   fi
   if [ -n "${1:-}" ]; then
-    bounded 240 "$log" go test "$package" -count=1 -timeout 300s -run "$1"
+    bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP" -run "$1"
   else
-    bounded 240 "$log" go test "$package" -count=1 -timeout 300s
+    bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP"
   fi
   code=$?
   go_verdict "$code" "$log"
@@ -419,8 +411,8 @@ run_go_unmutated() {
   local package="$1" key log code
   key=$(go_package_key "$package")
   log="$work/package-$key.baseline.log"
-  bounded 240 "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout=300s -test.run "$3"' \
-    _ "$package" "$work/package-$key.test" "$2"
+  bounded "$GO_TEST_WATCHDOG" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
+    _ "$package" "$work/package-$key.test" "$2" "$GO_TEST_BACKSTOP"
   code=$?
   go_verdict "$code" "$log"
 }
@@ -15016,12 +15008,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	if err != nil {
 		return refuse(err)
 	}
-	return result, nil' \
+	if name == "propose_test_cases"' \
     'e.changed(err)
 	if false && err != nil {
 		return refuse(err)
 	}
-	return result, nil'
+	if name == "propose_test_cases"'
   mutate go 'assistant graph: projection digest drops domain output' internal/desk/assistant_chat_projection.go \
     'run.Events, run.DomainOutputs' \
     'run.Events, nil'
@@ -15084,6 +15076,167 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant native: callback owning invocation order ignored' internal/desk/assistant_domain_output.go \
     'v.Invocation != invocation ||' \
     'false ||'
+fi
+
+# Private test-design custody and consumed critic inputs.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant tests: root read custody omitted' internal/desk/assistant_test_tools_output.go \
+    'if !before {' \
+    'if false && !before {'
+  mutate go 'assistant tests: validation operation receipt omitted' internal/desk/assistant_test_tools_output.go \
+    'if !validated {' \
+    'if false && !validated {'
+  mutate go 'assistant tests: Runtime row identity ignored' internal/desk/assistant_test_tools_validation.go \
+    'return id != m.IDs[i]' \
+    'return false && id != m.IDs[i]'
+  mutate go 'assistant tests: incomplete fact advice accepted' internal/desk/assistant_test_tools_validation.go \
+    'if row.Status != "complete" {' \
+    'if false && row.Status != "complete" {'
+  mutate go 'assistant tests: foreign source mapping accepted' internal/desk/assistant_test_tools_validation.go \
+    '|| !ids[source] {' \
+    '|| false && !ids[source] {'
+  mutate go 'assistant tests: conflicting proposal identity accepted' internal/desk/assistant_test_tools_storage.go \
+    'if !bytes.Equal(p, output.Proposal) {' \
+    'if false && !bytes.Equal(p, output.Proposal) {'
+  mutate go 'assistant tests: changed source appended after observation' internal/desk/assistant_test_tools_storage.go \
+    'if err != nil || !assistantTestSame(output.Read, current) || !assistantTestCoverageSame(output.Read, current) {' \
+    'if err != nil || !assistantTestSame(current, current) || !assistantTestCoverageSame(output.Read, current) {'
+  mutate go 'assistant tests: suite materialization omitted before success' internal/desk/assistant_domain_output.go \
+    'if name == "propose_test_cases" && !result.Err() {' \
+    'if false && name == "propose_test_cases" && !result.Err() {'
+  mutate go 'assistant critic V2: complete consumed rows ignored' internal/desk/assistant_critic.go \
+    'held.suiteDigest = digestOf(inputs.JSON())' \
+    'held.suiteDigest = digestOf([]byte("consumed-input-ignored"))'
+  mutate go 'assistant critic V2: legacy custody accepted' internal/desk/assistant_critic.go \
+    'run.Checkpoint.AdditionalMembers[assistantCriticLegacyCheckpointMember]; legacy {' \
+    'run.Checkpoint.AdditionalMembers[assistantCriticLegacyCheckpointMember]; false && legacy {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant tests: final projection suite custody omitted' internal/desk/assistant_chat_projection_store.go \
+    'if err := s.materializeAssistantTestOutputsLocked(r, root, name, *run); err != nil {' \
+    'if err := error(nil); err != nil {'
+fi
+
+# Finite recipe production, independent storage and exact recovery custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: argument member guard omitted' internal/desk/assistant_dialect_recipe_tools.go \
+    'readAssistantHostReceipt(raw, &a.Content) != nil' \
+    'json.Unmarshal(raw, &a.Content) != nil'
+  mutate go 'assistant recipe: proposal identity derivation omitted' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'p.DraftID == assistantDialectRecipeProposalID(binding, in)' \
+    'true'
+  mutate go 'assistant recipe: retained creation time not reused' internal/desk/assistant_dialect_recipe_tools_store.go \
+    '}, p.CreatedAt)' \
+    '}, "")'
+  mutate go 'assistant recipe: independent readback guard omitted' internal/desk/assistant_dialect_recipe_tools_store.go \
+    'if observed.SHA256 != saved.SHA256 || !validAssistantDialectRecipeRetained(e.record.Binding, *p, observed) {' \
+    'if false {'
+  mutate go 'assistant recipe: stale independent projection admitted' internal/desk/assistant_chat_projection_store.go \
+    'if err = s.checkAssistantDialectRecipeDrafts(r, *run); err != nil {' \
+    'if err = error(nil); err != nil {'
+  mutate go 'assistant recipe: uncertain intents bypass capacity' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'sourceCount+count >= 16' \
+    'false'
+  mutate go 'assistant recipe: read variant accepts producer metadata' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'if in.RecipeProposal != nil {' \
+    'if false {'
+  mutate go 'assistant recipe: completed redelivery result omitted' internal/desk/assistant_domain_output.go \
+    'if replay != nil {' \
+    'if false && replay != nil {'
+  mutate go 'assistant recipe: uncertain create reopens as success' internal/desk/dialect_drafts.go \
+    'saved, err := repository.CompareAndSwap(ctx, doc, "")
+	if errors.Is(err, errDialectDraftConflict) {' \
+    'saved, err := repository.CompareAndSwap(ctx, doc, "")
+	if err != nil {'
+  mutate go 'assistant recipe: pre-write current authority omitted' internal/desk/dialect_draft_file.go \
+    'if e = f.authorize(ctx); e != nil {' \
+    'if e = error(nil); e != nil {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: uncertainty permits another model request' internal/desk/assistant_domain_output.go \
+    'if name == "propose_dialect_recipe" && errors.As(workErr, &unknown) {' \
+    'if false && name == "propose_dialect_recipe" && errors.As(workErr, &unknown) {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: browser-blank text accepted' internal/desk/assistant_dialect_recipe_tools.go \
+    'strings.Trim(value, assistantDialectRecipeWhitespace) != ""' \
+    'strings.TrimSpace(value) != ""'
+fi
+
+
+# The merged finite host variants never exchange intent, receipt or output custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant variants: test output accepts recipe variant' internal/desk/assistant_test_tools_output.go \
+    'p == nil || out.Recipe != nil || out.PolicyUpdate != nil' \
+    'p == nil || out.PolicyUpdate != nil'
+  mutate go 'assistant variants: recipe output accepts test variant' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'out.Recipe == nil || out.TestProposal != nil || out.PolicyUpdate != nil' \
+    'out.Recipe == nil || out.PolicyUpdate != nil'
+  mutate go 'assistant variants: test producer accepts recipe intent metadata' internal/desk/assistant_test_tools_output.go \
+    'in.CallID != out.CallID || in.Policy != nil || in.RecipeProposal != nil' \
+    'in.CallID != out.CallID || in.Policy != nil'
+  mutate go 'assistant variants: test read accepts foreign intent metadata' internal/desk/assistant_test_tools_output.go \
+    'in.RecipeProposal != nil || in.Policy != nil || op.Name != "read_pack_tests"' \
+    'op.Name != "read_pack_tests"'
+  mutate go 'assistant variants: recipe read accepts Policy intent metadata' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'if in.Policy != nil {' \
+    'if false && in.Policy != nil {'
+  mutate go 'assistant variants: recipe producer accepts test read custody' internal/desk/assistant_dialect_recipe_tools_output.go \
+    '!ok || held.Tests != nil || held.Read != nil' \
+    '!ok || held.Read != nil'
+  mutate go 'assistant variants: Policy output accepts foreign variants' internal/desk/assistant_policy_tools_output.go \
+    'out.TestProposal != nil || out.Recipe != nil ||' \
+    'false ||'
+  mutate go 'assistant variants: Policy producer accepts recipe intent metadata' internal/desk/assistant_policy_tools_output.go \
+    'if in.RecipeProposal != nil || in.Policy == nil' \
+    'if in.Policy == nil'
+  mutate go 'assistant variants: Policy producer accepts test read custody' internal/desk/assistant_policy_tools_output.go \
+    '!ok || receipt.Read != nil || receipt.Tests != nil' \
+    '!ok || receipt.Read != nil'
+  mutate go 'assistant variants: unrelated host accepts test custody member' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {' \
+    'if false && op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {'
+  mutate go 'assistant variants: Graph output accepts recipe variant' internal/desk/assistant_domain_output.go \
+    'if out.Recipe != nil {' \
+    'if false && out.Recipe != nil {'
+fi
+
+# Finding-only selected coverage and raw fact-advice safeguards.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant tests: selected coverage equality omitted' internal/desk/assistant_test_tools.go \
+    'beforeErr == nil && afterErr == nil && bytes.Equal(before, after)' \
+    'beforeErr == nil && afterErr == nil && (bytes.Equal(before, after) || true)'
+  mutate go 'assistant tests: changed selected coverage passes dispatch recheck' internal/desk/assistant_test_tools.go \
+    'if err == nil && !assistantTestCoverageSame(held, current) {' \
+    'if false && err == nil && !assistantTestCoverageSame(held, current) {'
+  mutate go 'assistant tests: changed selected coverage materializes new proposal' internal/desk/assistant_test_tools_storage.go \
+    '!assistantTestSame(output.Read, current) || !assistantTestCoverageSame(output.Read, current)' \
+    '!assistantTestSame(output.Read, current)'
+  mutate go 'assistant tests: null expected type advice accepted' internal/desk/assistant_test_tools_validation.go \
+    'if _, err := assistantTestString(rawType); err != nil {' \
+    'if _, err := assistantTestString(rawType); false && err != nil {'
+fi
+
+# Shared offers and current-authorized storage remain inside their owners.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: owning file authority binding omitted' internal/desk/dialect_draft_repository.go \
+    'return fileDialectDraftRepository{open: s.openDialectDrafts, authorize: authorize}' \
+    'return fileDialectDraftRepository{open: s.openDialectDrafts}'
+  mutate go 'assistant recipe: injected authority binding omitted' internal/desk/dialect_draft_repository.go \
+    'return authorizedDialectDraftRepository{s.dialectDrafts, authorize}' \
+    'return s.dialectDrafts'
+  mutate go 'assistant recipe: concrete draft adapter bypasses owner' internal/desk/assistant_dialect_recipe_tools_store.go \
+    'repository := s.draftRepositoryWithAuthority(e.authorizeAssistantDialectRecipe)' \
+    'repository := fileDialectDraftRepository{open: s.openDialectDrafts, authorize: e.authorizeAssistantDialectRecipe}'
+  mutate go 'assistant shared offers: recipe proposal classified as read' internal/desk/assistant_dialect_recipe_tools_store.go \
+    'tool.Effect = "propose"' \
+    'tool.Effect = "read"'
+  mutate go 'assistant shared offers: test proposal classified as read' internal/desk/assistant_test_tools.go \
+    't.Effect = "propose"' \
+    't.Effect = "read"'
 fi
 
 restore

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -13,8 +14,10 @@ import (
 )
 
 // Only this finite domain payload is absent from canonical Agent events. It is
-// authored by the Graph or Policy producer with its exact retained result.
+// authored by a finite domain producer with its exact retained result.
 type assistantDomainOutput struct {
+	TestProposal         *assistantTestProposalOutput  `json:"testProposal,omitempty"`
+	Recipe               *assistantDialectRecipeOutput `json:"dialectRecipe,omitempty"`
 	Kind                 string                        `json:"kind"`
 	RunID                string                        `json:"runId"`
 	RequestKey           string                        `json:"requestKey"`
@@ -32,13 +35,15 @@ type assistantGraphRead struct {
 	Declaration string `json:"declaration"`
 }
 type assistantHostIntent struct {
-	CallID     string                      `json:"callId"`
-	CallbackID string                      `json:"callbackId,omitempty"`
-	Root       bool                        `json:"root"`
-	Arguments  []byte                      `json:"arguments"`
-	Policy     *assistantPolicyHostBinding `json:"policy,omitempty"`
+	RecipeProposal *assistantDialectRecipeProposal `json:"recipeProposal,omitempty"`
+	CallID         string                          `json:"callId"`
+	CallbackID     string                          `json:"callbackId,omitempty"`
+	Root           bool                            `json:"root"`
+	Arguments      []byte                          `json:"arguments"`
+	Policy         *assistantPolicyHostBinding     `json:"policy,omitempty"`
 }
 type assistantHostResult struct {
+	Tests        *assistantTestRead     `json:"tests,omitempty"`
 	Result       []byte                 `json:"result"`
 	Read         *assistantGraphRead    `json:"read,omitempty"`
 	PolicySource *policyAuthoringSource `json:"policySource,omitempty"`
@@ -120,11 +125,24 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	receipts := map[string]assistantHostResult{}
 	intents := map[string]assistantHostIntent{}
 	for _, op := range run.Operations {
-		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) {
+		if op.Kind == "host" && !assistantDialectRecipeTool(op.Name) && assistantDialectRecipeMetadata(op.Intent) {
+			return errAssistantRunInvalid
+		}
+		if op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {
+			return errAssistantRunInvalid
+		}
+		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) {
 			continue
 		}
 		var in assistantHostIntent
 		if readAssistantHostReceipt(op.Intent, &in) != nil || !assistantRunText(in.CallID, 256) || !json.Valid(in.Arguments) || !assistantNativeHostCall(run, op.Name, in) || in.Root && !assistantParentHostCall(run, op.Name, in) || assistantHostProposal(op.Name) && !in.Root {
+			return errAssistantRunInvalid
+		}
+		if assistantDialectRecipeTool(op.Name) {
+			if validateAssistantDialectRecipeIntent(run, op, in) != nil || in.Policy != nil {
+				return errAssistantRunInvalid
+			}
+		} else if in.RecipeProposal != nil {
 			return errAssistantRunInvalid
 		}
 		if assistantPolicyTool(op.Name) {
@@ -137,6 +155,10 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		var argumentErr error
 		if assistantPolicyTool(op.Name) {
 			_, argumentErr = readAssistantPolicyArguments(op.Name, in.Arguments)
+		} else if assistantTestTool(op.Name) {
+			_, argumentErr = readAssistantTestArguments(op.Name, in.Arguments)
+		} else if assistantDialectRecipeTool(op.Name) {
+			_, argumentErr = readAssistantDialectRecipeArguments(op.Name, in.Arguments)
 		} else {
 			_, argumentErr = readAssistantGraphArguments(op.Name, in.Arguments)
 		}
@@ -161,6 +183,12 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			return errAssistantRunInvalid
 		}
 		tool := runcontext.ReadToolResult(value)
+		if err := validateAssistantTestReadReceipt(op, in, result); err != nil {
+			return err
+		}
+		if op.Name == "read_pack_tests" && op.State == "completed" && !tool.Err() && result.Tests == nil {
+			return errAssistantRunInvalid
+		}
 		if result.PolicySource != nil && (!contains([]string{"propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}, op.Name) || tool.Err() || !validAssistantPolicySource(*result.PolicySource)) {
 			return errAssistantRunInvalid
 		}
@@ -184,6 +212,23 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	seen := map[string]bool{}
 	draftIDs := map[string]bool{}
 	for _, out := range run.DomainOutputs {
+		if out.Kind == "test-proposal" {
+			if seen[out.OperationID] || validateAssistantTestOutput(run, out, receipts) != nil {
+				return errAssistantRunInvalid
+			}
+			seen[out.OperationID] = true
+			continue
+		}
+		if out.Kind == "dialect-recipe" {
+			if seen[out.OperationID] || validateAssistantDialectRecipeOutput(run, out, receipts) != nil {
+				return errAssistantRunInvalid
+			}
+			seen[out.OperationID] = true
+			continue
+		}
+		if out.Recipe != nil {
+			return errAssistantRunInvalid
+		}
 		if out.Kind != "graph" {
 			if seen[out.OperationID] || validateAssistantPolicyOutput(run, out, receipts) != nil {
 				return errAssistantRunInvalid
@@ -191,7 +236,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			seen[out.OperationID] = true
 			continue
 		}
-		if out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil {
+		if out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil || out.TestProposal != nil {
 			return errAssistantRunInvalid
 		}
 		if out.Kind != "graph" || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || seen[out.OperationID] || draftIDs[out.Draft.DraftID] || out.Draft.OriginChatID != "" || out.Draft.PolicySources != nil || out.Draft.Saved || out.Draft.WritePending {
@@ -263,12 +308,18 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			return errAssistantRunInvalid
 		}
 	}
-	if len(run.DomainOutputs) > 48 {
+	if len(run.DomainOutputs) > 64 {
 		return errAssistantRunInvalid
 	}
 	// A successful producer cannot lose its domain payload on import/recovery.
 	for _, op := range run.Operations {
+		if op.Kind == "host" && op.Name == "propose_dialect_recipe" && op.State == "completed" && !seen[op.ID] {
+			return errAssistantRunInvalid
+		}
 		if op.Kind == "host" && op.Name == "propose_graph" && op.State == "completed" && !seen[op.ID] {
+			return errAssistantRunInvalid
+		}
+		if op.Kind == "host" && op.Name == "propose_test_cases" && op.State == "completed" && !seen[op.ID] {
 			return errAssistantRunInvalid
 		}
 		if op.Kind == "host" && assistantPolicyTool(op.Name) && assistantHostProposal(op.Name) && !seen[op.ID] {
@@ -293,6 +344,9 @@ var testHookAssistantGraphObserved func(runcontext.ToolResult, graphDraft)
 // It supplies no result, source, identity or authority to the producer.
 var testHookAssistantPolicyObserved func()
 
+// Notification only, after actual test validation and before durable retention.
+var testHookAssistantTestsObserved func()
+
 func (e *assistantRunExecution) invokeHost(ctx context.Context, name string, args json.RawMessage, work func(context.Context, bool) (runcontext.ToolResult, *assistantGraphRead, *graphDraft, error)) (runcontext.ToolResult, error) {
 	return e.invokeDomainHost(ctx, name, args, func(ctx context.Context, root bool) (runcontext.ToolResult, *assistantGraphRead, *assistantDomainOutput, error) {
 		result, read, draft, err := work(ctx, root)
@@ -303,8 +357,27 @@ func (e *assistantRunExecution) invokeHost(ctx context.Context, name string, arg
 	})
 }
 
+type assistantHostObservation struct {
+	Result    runcontext.ToolResult
+	GraphRead *assistantGraphRead
+	TestsRead *assistantTestRead
+	Output    *assistantDomainOutput
+}
+
 func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name string, args json.RawMessage, work func(context.Context, bool) (runcontext.ToolResult, *assistantGraphRead, *assistantDomainOutput, error)) (runcontext.ToolResult, error) {
-	refuse := func(err error) (runcontext.ToolResult, error) { return assistantHostFailure(err), nil }
+	return e.invokeObservedHost(ctx, name, args, func(ctx context.Context, root bool) (assistantHostObservation, error) {
+		result, read, output, err := work(ctx, root)
+		return assistantHostObservation{Result: result, GraphRead: read, Output: output}, err
+	})
+}
+
+func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name string, args json.RawMessage, work func(context.Context, bool) (assistantHostObservation, error)) (runcontext.ToolResult, error) {
+	refuse := func(err error) (runcontext.ToolResult, error) {
+		if assistantDialectRecipeTool(name) {
+			return assistantDialectRecipeFailure(err), nil
+		}
+		return assistantHostFailure(err), nil
+	}
 	if err := e.Authorize(ctx); err != nil {
 		return refuse(err)
 	}
@@ -322,12 +395,18 @@ func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name strin
 		in.Policy = &assistantPolicyHostBinding{ID: scope.ID, Request: scope.Request}
 	}
 	if !assistantRunText(in.CallID, 256) || assistantHostProposal(name) && (!root || e.record.Binding.Phase == "plan") {
-		return refuse(failure.ToolInput("This Graph operation is not available in this scope."))
+		return refuse(failure.ToolInput("This host proposal is not available in this scope."))
 	}
 	raw, _ := json.Marshal(in)
 	id := "graph-host-" + digestOf(raw)[:32]
+	if assistantTestTool(name) {
+		id = "test-host-" + digestOf(raw)[:32]
+	}
 	if assistantPolicyTool(name) {
 		id = "policy-host-" + digestOf(raw)[:32]
+	}
+	if assistantDialectRecipeTool(name) {
+		id = assistantDialectRecipeOperationID(in)
 	}
 	op := assistantRunOperation{ID: id, CallID: id, Kind: "host", Name: name, Intent: raw}
 	// Scope checks and intent creation are one short transaction. No lock spans work.
@@ -338,6 +417,20 @@ func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name strin
 		}
 		for _, held := range run.Operations {
 			if held.ID == id {
+				if name == "propose_dialect_recipe" {
+					var original assistantHostIntent
+					if readAssistantHostReceipt(held.Intent, &original) != nil || validateAssistantDialectRecipeIntent(*run, held, original) != nil {
+						return false, errAssistantRunConflict
+					}
+					base := original
+					base.RecipeProposal = nil
+					encoded, _ := json.Marshal(base)
+					if !bytes.Equal(encoded, raw) {
+						return false, errAssistantRunConflict
+					}
+					in = original
+					raw = held.Intent
+				}
 				if held.Name != name || !bytes.Equal(held.Intent, raw) {
 					return false, errAssistantRunConflict
 				}
@@ -352,6 +445,18 @@ func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name strin
 				return false, nil
 			}
 		}
+		if name == "propose_dialect_recipe" {
+			var source struct {
+				Drafts []json.RawMessage `json:"inputDrafts"`
+			}
+			if json.Unmarshal(e.source.Original, &source) != nil {
+				return false, errAssistantRunInvalid
+			}
+			if err := prepareAssistantDialectRecipeIntent(*run, &in, len(source.Drafts)); err != nil {
+				return false, err
+			}
+			op.Intent, _ = json.Marshal(in)
+		}
 		return appendAssistantRunIntent(run, op)
 	})
 	e.changed(err)
@@ -362,6 +467,11 @@ func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name strin
 		value, err := runcontext.ParseJSON(replay.Result)
 		if err != nil {
 			return refuse(err)
+		}
+		if name == "propose_test_cases" {
+			if err := e.service.server.materializeAssistantTests(e.request.WithContext(ctx), e.record.ID); err != nil {
+				return refuse(err)
+			}
 		}
 		return runcontext.ReadToolResult(value), nil
 	}
@@ -380,10 +490,16 @@ func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name strin
 	}
 	var result runcontext.ToolResult
 	var read *assistantGraphRead
+	var testsRead *assistantTestRead
 	var output *assistantDomainOutput
 	workErr := lockErr
 	if workErr == nil {
-		result, read, output, workErr = work(ctx, root)
+		if in.RecipeProposal != nil {
+			ctx = context.WithValue(ctx, assistantDialectRecipePreparedKey{}, in.RecipeProposal)
+		}
+		var observation assistantHostObservation
+		observation, workErr = work(ctx, root)
+		result, read, testsRead, output = observation.Result, observation.GraphRead, observation.TestsRead, observation.Output
 	}
 	if workErr == nil && output != nil && output.Kind == "graph" && !result.Err() && testHookAssistantGraphObserved != nil {
 		testHookAssistantGraphObserved(result.Clone(), output.Draft)
@@ -391,21 +507,29 @@ func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name strin
 	if workErr == nil && output != nil && assistantPolicyTool(name) && testHookAssistantPolicyObserved != nil {
 		testHookAssistantPolicyObserved()
 	}
+	if workErr == nil && output != nil && output.Kind == "test-proposal" && testHookAssistantTestsObserved != nil {
+		testHookAssistantTestsObserved()
+	}
 	state := "completed"
 	if workErr != nil {
+		testsRead = nil
 		result = assistantHostFailure(workErr)
+		if assistantDialectRecipeTool(name) {
+			result = assistantDialectRecipeFailure(workErr)
+		}
 		read = nil
 		output = nil
 		state = "refused"
 	}
 	if result.Err() {
+		testsRead = nil
 		state = "refused"
 		read = nil
 		if output == nil || output.Kind != "policy-update" || output.PolicyUpdate == nil || output.PolicyUpdate.Check == nil || output.PolicyUpdate.Check.Status != "stale" {
 			output = nil
 		}
 	}
-	retained := assistantHostResult{Result: result.Value().JSON(), Read: read}
+	retained := assistantHostResult{Result: result.Value().JSON(), Read: read, Tests: testsRead}
 	if output != nil {
 		retained.PolicySource = output.PolicySource
 	}
@@ -436,6 +560,17 @@ func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name strin
 	e.changed(err)
 	if err != nil {
 		return refuse(err)
+	}
+	if name == "propose_test_cases" && !result.Err() {
+		if err := e.service.server.materializeAssistantTests(e.request.WithContext(observed), e.record.ID); err != nil {
+			return refuse(err)
+		}
+	}
+	var unknown *assistantDialectRecipeUnknown
+	if name == "propose_dialect_recipe" && errors.As(workErr, &unknown) {
+		// Stop only after preserving the exact failure and deterministic
+		// metadata. Existing read/history/cancel APIs remain available.
+		e.cancel()
 	}
 	return result, nil
 }

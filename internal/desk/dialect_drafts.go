@@ -131,7 +131,12 @@ func validateDialectDraft(name string, recipe inputRecipe) error {
 	return validateInputQualification(recipe.Qualification)
 }
 func (s *Server) ensureDialectDraft(ctx context.Context, request dialectDraftRequest) (dialectDraftReply, error) {
-	repository := s.draftRepository()
+	return s.ensureDialectDraftUsing(ctx, s.draftRepository(), request, "")
+}
+
+// The private host producer supplies its already journaled creation time and
+// current-authorized repository. Ordinary callers keep the existing defaults.
+func (s *Server) ensureDialectDraftUsing(ctx context.Context, repository dialectDraftRepository, request dialectDraftRequest, createdAt string) (dialectDraftReply, error) {
 	id := dialectDraftIdentity(request.Key, request.Origin)
 	prior, err := repository.Get(ctx, id)
 	if err == nil {
@@ -140,7 +145,13 @@ func (s *Server) ensureDialectDraft(ctx context.Context, request dialectDraftReq
 	if !errors.Is(err, os.ErrNotExist) {
 		return prior, err
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	now := createdAt
+	if now == "" {
+		now = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, now); err != nil {
+		return prior, err
+	}
 	doc := dialectDraftDocument{Version: 1, ID: id, Name: request.Name, Recipe: request.Recipe, Origin: request.Origin, CreatedAt: now, UpdatedAt: now}
 	// Recover a legacy Save-to-Dialects whose chat receipt was interrupted.
 	if origin := request.Origin; origin != nil {
@@ -353,6 +364,33 @@ func (s *Server) publishDialectDraft(ctx context.Context, d dialectDraftDocument
 // Migrate old chat-only proposals before a chat can be deleted, and retain new
 // proposals from every conversation writer. Existing drafts are never replaced.
 func (s *Server) retainConversationDialectDrafts(ctx context.Context, documents ...[]byte) error {
+	requests, err := conversationDialectDraftRequests(documents...)
+	if err != nil || len(requests) == 0 {
+		return err
+	}
+	unlock, err := s.lockDialectDraftWorkflow(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return s.retainDialectDraftRequests(ctx, requests)
+}
+func (s *Server) retainConversationDialectDraftsLocked(ctx context.Context, documents ...[]byte) error {
+	requests, err := conversationDialectDraftRequests(documents...)
+	if err != nil {
+		return err
+	}
+	return s.retainDialectDraftRequests(ctx, requests)
+}
+func (s *Server) retainDialectDraftRequests(ctx context.Context, requests []dialectDraftRequest) error {
+	for _, request := range requests {
+		if _, err := s.ensureDialectDraft(ctx, request); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func conversationDialectDraftRequests(documents ...[]byte) ([]dialectDraftRequest, error) {
 	requests := []dialectDraftRequest{}
 	for _, raw := range documents {
 		var doc struct {
@@ -368,7 +406,7 @@ func (s *Server) retainConversationDialectDrafts(ctx context.Context, documents 
 			} `json:"chats"`
 		}
 		if err := json.Unmarshal(raw, &doc); err != nil {
-			return err
+			return nil, err
 		}
 		for _, chat := range doc.Chats {
 			for _, p := range chat.Drafts {
@@ -376,7 +414,7 @@ func (s *Server) retainConversationDialectDrafts(ctx context.Context, documents 
 					continue
 				}
 				if !dialectDraftKey.MatchString(chat.ID) || !dialectDraftKey.MatchString(p.DraftID) {
-					return errors.New("Invalid dialect proposal reference.")
+					return nil, errors.New("Invalid dialect proposal reference.")
 				}
 				research := p.inputResearchRecipe
 				research.Version = 1
@@ -385,24 +423,11 @@ func (s *Server) retainConversationDialectDrafts(ctx context.Context, documents 
 				research.Limits.Searches = 0
 				recipe := inputRecipe{Intent: p.Intent, Research: &research}
 				if err := validateDialectDraft(p.Name, recipe); err != nil {
-					return err
+					return nil, err
 				}
 				requests = append(requests, dialectDraftRequest{Name: p.Name, Recipe: recipe, Origin: &dialectDraftOrigin{ChatID: chat.ID, DraftID: p.DraftID}})
 			}
 		}
 	}
-	if len(requests) == 0 {
-		return nil
-	}
-	unlock, err := s.lockDialectDraftWorkflow(ctx)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	for _, request := range requests {
-		if _, err = s.ensureDialectDraft(ctx, request); err != nil {
-			return err
-		}
-	}
-	return nil
+	return requests, nil
 }

@@ -150,27 +150,45 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			s, _, e := assistantExecutionFixture(t, "http://127.0.0.1:1", phase)
 			x := assistantGraphSetup(t, s, e)
+			// Ordinary chats share Graph, Test and Recipe offers. Keep every tool's
+			// explicit classification; an unknown addition needs a reviewed fixture.
+			effects := map[string]string{
+				"list_decisions": "read", "read_decision": "read",
+				"get_graph_authoring_instructions": "read", "graph_validate": "read",
+				"graph_explain": "read", "graph_rehearse": "read", "propose_graph": "propose",
+				"read_pack_tests": "read", "propose_test_cases": "propose",
+				"get_dialect_recipe_instructions": "read", "list_dialects": "read",
+				"read_dialect_recipe": "read", "propose_dialect_recipe": "propose",
+			}
 			names := []string{}
 			for _, tool := range x.Run.HostTools {
+				effect, known := effects[tool.Name]
+				if !known || contains(names, tool.Name) {
+					t.Fatal("unknown or duplicate shared offer", tool.Name)
+				}
 				names = append(names, tool.Name)
-				if tool.Name == "propose_graph" {
+				if effect == "propose" {
 					if tool.Effect != "propose" || tool.Delegation != "" {
-						t.Fatal("proposal grants")
+						t.Fatal("proposal grants", tool.Name)
 					}
 				} else if tool.Effect != "read" || tool.Delegation != "read" {
-					t.Fatal("read classification")
+					t.Fatal("read classification", tool.Name)
 				}
 			}
-			if contains(names, "propose_graph") != (phase == "work") {
-				t.Fatal("Plan proposal offer", names)
+			for name, effect := range effects {
+				if contains(names, name) != (effect == "read" || phase == "work") {
+					t.Fatal("Work/Plan shared offer", name, names)
+				}
 			}
 			profile := contract.DelegatedTaskProfile{ID: "reader", Capabilities: []string{"read"}}
 			_, _, err := x.Run.Children(t.Context(), profile, func(contract.RunEvent) {})
 			assistantRunMust(t, err)
 			offered := x.gate.Offer()
 			child := gate.ChildPhase(profile, offered, gate.PlanPhase(offered))
-			if contains(child.Host, "propose_graph") || !contains(child.Host, "read_decision") {
-				t.Fatal("child offer", child.Host)
+			for name, effect := range effects {
+				if contains(child.Host, name) != (effect == "read") {
+					t.Fatal("child shared offer", name, child.Host)
+				}
 			}
 			for _, row := range []struct {
 				name string

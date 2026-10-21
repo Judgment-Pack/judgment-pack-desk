@@ -2700,3 +2700,46 @@ go	assistant native: callback argument journal encoding omitted	TestAssistantNat
 go	assistant native: changed parent arguments accepted	TestAssistantParentHostArgumentWireEncoding
 go	assistant native: changed callback arguments accepted	TestAssistantNativeHostArgumentWireEncoding
 go	assistant native: callback owning invocation order ignored	TestAssistantNativeInvocationAssociation
+go	assistant tests: root read custody omitted	TestAssistantTestHostImportAssociations
+go	assistant tests: validation operation receipt omitted	TestAssistantTestHostImportAssociations
+go	assistant tests: Runtime row identity ignored	TestAssistantTestHostTypedAndRuntimeRefusals
+go	assistant tests: incomplete fact advice accepted	TestAssistantTestHostTypedAndRuntimeRefusals
+go	assistant tests: foreign source mapping accepted	TestAssistantTestHostTypedAndRuntimeRefusals
+go	assistant tests: conflicting proposal identity accepted	TestAssistantTestHostLostReadbackAndCancellation
+go	assistant tests: changed source appended after observation	TestAssistantTestHostObservationSourceCustody
+go	assistant tests: suite materialization omitted before success	TestAssistantTestHostSavedAndDraftCustody
+go	assistant critic V2: complete consumed rows ignored	TestAssistantTestHostCriticConsumedInputs
+go	assistant critic V2: legacy custody accepted	TestAssistantTestHostCriticConsumedInputs
+go	assistant tests: final projection suite custody omitted	TestAssistantTestHostProjectionSuiteCustody
+go	assistant recipe: argument member guard omitted	TestAssistantDialectRecipeFiniteArguments
+go	assistant recipe: proposal identity derivation omitted	TestAssistantDialectRecipeMetadataAndCapacity
+go	assistant recipe: retained creation time not reused	TestAssistantDialectRecipeActualAPIProducer
+go	assistant recipe: independent readback guard omitted	TestAssistantDialectRecipeReadbackBeforeSuccess
+go	assistant recipe: stale independent projection admitted	TestAssistantDialectRecipeObservedCancellationAndStaleProjection
+go	assistant recipe: uncertain intents bypass capacity	TestAssistantDialectRecipeMetadataAndCapacity
+go	assistant recipe: read variant accepts producer metadata	TestAssistantDialectRecipeMetadataAndCapacity
+go	assistant recipe: completed redelivery result omitted	TestAssistantDialectRecipeImportAndReplay
+go	assistant recipe: uncertain create reopens as success	TestAssistantDialectRecipeUncertainWrite
+go	assistant recipe: pre-write current authority omitted	TestAssistantDialectRecipeFileAuthorityBeforeWrite
+go	assistant recipe: uncertainty permits another model request	TestAssistantDialectRecipeActualAPIUncertaintyStops
+go	assistant recipe: browser-blank text accepted	TestAssistantDialectRecipeFiniteArguments
+go	assistant variants: test output accepts recipe variant	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: recipe output accepts test variant	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: test producer accepts recipe intent metadata	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: test read accepts foreign intent metadata	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: recipe read accepts Policy intent metadata	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: recipe producer accepts test read custody	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: Policy output accepts foreign variants	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: Policy producer accepts recipe intent metadata	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: Policy producer accepts test read custody	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: unrelated host accepts test custody member	TestAssistantDomainHostVariantBoundaries
+go	assistant variants: Graph output accepts recipe variant	TestAssistantDomainHostVariantBoundaries
+go	assistant tests: changed selected coverage passes dispatch recheck	TestAssistantTestHostReviewProducerRefusals
+go	assistant tests: changed selected coverage materializes new proposal	TestAssistantTestHostSelectedCoverageCustody
+go	assistant tests: null expected type advice accepted	TestAssistantTestHostMalformedAdviceImport
+go	assistant tests: selected coverage equality omitted	TestAssistantTestHostSelectedCoverageCustody
+go	assistant recipe: owning file authority binding omitted	TestAssistantDialectRecipeFileAuthorityBeforeWrite
+go	assistant recipe: injected authority binding omitted	TestDialectDraftRepositoryCurrentAuthority
+go	assistant recipe: concrete draft adapter bypasses owner	TestDialectDraftsUseRepository
+go	assistant shared offers: recipe proposal classified as read	TestAssistantGraphToolsRealServicesAndOffers
+go	assistant shared offers: test proposal classified as read	TestAssistantGraphToolsRealServicesAndOffers
