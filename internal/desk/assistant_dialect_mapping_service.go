@@ -36,6 +36,10 @@ func (*assistantDialectUnknown) Error() string {
 	return "The Dialect check persistence outcome is unknown."
 }
 func assistantDialectFailure(err error) runcontext.ToolResult {
+	var researchUnknown *inputResearchRequestUnknown
+	if errors.As(err, &researchUnknown) {
+		return assistantHostFailure(failure.Authored("storage", "The research request outcome is unknown. Inspect the retained receipt; no automatic research request or model retry is allowed.", "storage"))
+	}
 	var unknown *assistantDialectUnknown
 	if errors.As(err, &unknown) {
 		return assistantHostFailure(failure.Authored("storage", "The Dialect check outcome is unknown. Inspect retained evidence; no automatic check, model or persistence retry is allowed.", "storage"))
@@ -260,6 +264,9 @@ func (e *assistantRunExecution) checkAssistantDialectPublication(ctx context.Con
 	return assistantHostObservation{Result: result, Output: &assistantDomainOutput{Kind: "dialect-action", DialectAction: out}}, nil
 }
 func assistantDialectActionResult(out *assistantDialectActionOutput) (runcontext.ToolResult, error) {
+	if out.Research != nil {
+		return assistantResearchResult(out)
+	}
 	if out.Published != nil {
 		p := out.Published
 		return assistantHostJSON(map[string]any{"status": "already-published", "version": p.Publication.Documents[0].Version, "digest": p.Digest, "message": "The existing immutable publication receipt was observed. No new version or job change was made."})

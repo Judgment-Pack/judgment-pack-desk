@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"sort"
 	"time"
 )
@@ -138,6 +139,9 @@ func changeResearchJournal(raw []byte, id string, change func(*inputResearchRun)
 	}
 	if next.ID != before.ID || next.Version != before.Version || next.PreparationID != before.PreparationID || next.CreatedAt != before.CreatedAt || len(next.Attempts) < len(before.Attempts) {
 		return nil, errors.New("Research history cannot be replaced.")
+	}
+	if before.Approval != nil && before.Approval.UsedAt != "" && (!reflect.DeepEqual(before.Approval, next.Approval) || next.Revision != before.Revision) {
+		return nil, errors.New("The consumed research allowance receipt cannot change.")
 	}
 	if before.Portable != nil {
 		if next.Portable == nil || next.Revision != before.Revision || next.Gateway != before.Gateway || portableResearchRevision(next.Portable.Frozen) != portableResearchRevision(before.Portable.Frozen) || len(before.Portable.Response) > 0 && !bytes.Equal(before.Portable.Response, next.Portable.Response) {

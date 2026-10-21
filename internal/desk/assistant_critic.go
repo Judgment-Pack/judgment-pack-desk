@@ -101,6 +101,12 @@ func (e *assistantRunExecution) readAssistantCriticSnapshot(ctx context.Context)
 	if err := e.Authorize(ctx); err != nil {
 		return nil, err
 	}
+	return e.readAssistantCriticSnapshotOwned(ctx, false)
+}
+
+// owned is true only when the caller already holds the private-data lock and
+// has resolved the complete current assistant source under that same lock.
+func (e *assistantRunExecution) readAssistantCriticSnapshotOwned(ctx context.Context, owned bool) (*assistantCriticSnapshot, error) {
 	chat, err := assistantChatValue(e.source.Original)
 	if err != nil {
 		return nil, err
@@ -119,11 +125,13 @@ func (e *assistantRunExecution) readAssistantCriticSnapshot(ctx context.Context)
 		s := e.service.server
 		// Take the same short private-data lock as admission; no model or
 		// Runtime work occurs under it, or under the input mutex.
-		lock, err := s.privateDataLockContext(ctx, true)
-		if err != nil {
-			return nil, err
+		if !owned {
+			lock, err := s.privateDataLockContext(ctx, true)
+			if err != nil {
+				return nil, err
+			}
+			defer lock.Close()
 		}
-		defer lock.Close()
 		current, tests, err := s.approvalChat(e.source.Start.OwnerID)
 		if err != nil || current.Pack == nil || current.Pack.ID != link.Get("id").Str() || current.Pack.Path != path {
 			return nil, errAssistantRunScope

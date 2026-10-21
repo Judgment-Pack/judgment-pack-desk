@@ -17,7 +17,7 @@ import (
 var assistantDialectNames = []string{"read_dialect", "propose_dialect", "read_dialect_publication", "propose_dialect_publication"}
 
 func assistantDialectTool(name string) bool {
-	return contains(assistantDialectNames, name) || assistantDialectRecordTool(name)
+	return contains(assistantDialectNames, name) || assistantDialectRecordTool(name) || name == "request_dialect_research"
 }
 
 type assistantDialectFact struct {
@@ -57,6 +57,9 @@ func assistantDialectColumn(s string) bool {
 }
 func readAssistantDialectArguments(name string, raw []byte) (assistantDialectArguments, error) {
 	var a assistantDialectArguments
+	if name == "request_dialect_research" {
+		return readAssistantDialectResearchArguments(raw)
+	}
 	if assistantDialectRecordTool(name) {
 		v, err := readAssistantDialectRecordArguments(name, raw)
 		return assistantDialectActionArguments(v), err

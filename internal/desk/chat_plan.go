@@ -83,6 +83,11 @@ func (s *Server) checkChatExecution(chat string) error {
 		return e
 	}
 	defer lock.Close()
+	return s.checkChatExecutionLocked(chat)
+}
+
+// Caller holds the conversation/private-data lock through its admission commit.
+func (s *Server) checkChatExecutionLocked(chat string) error {
 	store, e := s.openChatData()
 	if e != nil {
 		return e

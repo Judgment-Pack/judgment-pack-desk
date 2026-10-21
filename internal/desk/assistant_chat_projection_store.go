@@ -298,6 +298,9 @@ func (s *Server) acknowledgeAssistantChatProjection(r *http.Request, id string) 
 // An explicit model-free recovery repeats only the saved bytes/readback/ack.
 // It never starts an executor, continues a checkpoint or dispatches an operation.
 func (s *Server) reconcileAssistantChatProjection(r *http.Request, id string) error {
+	if err := s.reconcileAssistantResearchRequests(r, id); err != nil {
+		return err
+	}
 	if err := s.prepareAssistantChatProjection(r, id); err != nil {
 		return err
 	}

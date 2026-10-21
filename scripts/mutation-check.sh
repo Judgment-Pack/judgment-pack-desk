@@ -15415,6 +15415,93 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if false && out.DialectAction.Read.Recipe != nil {'
 fi
 
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect research: foreign argument refusal omitted' internal/desk/assistant_dialect_research_tools.go \
+    '	if len(raw) > 4096 || !validUTF8(raw) || readAssistantDialectCustody(raw, reflect.TypeOf(struct {
+		ID       string `json:"id"`
+		Revision string `json:"revision"`
+	}{})) != nil || err != nil || len(fields) != 2 || json.Unmarshal(raw, &a) != nil || !inputPreparationID.MatchString(a.ID) || !assistantRunDigest(a.Revision) {' \
+    '	if false && (len(raw) > 4096 || !validUTF8(raw) || readAssistantDialectCustody(raw, reflect.TypeOf(struct {
+		ID       string `json:"id"`
+		Revision string `json:"revision"`
+	}{})) != nil || err != nil || len(fields) != 2 || json.Unmarshal(raw, &a) != nil || !inputPreparationID.MatchString(a.ID) || !assistantRunDigest(a.Revision)) {'
+  mutate go 'assistant dialect research: unimplemented workflow admitted' internal/desk/assistant_host_tools.go \
+    't.Name == "request_dialect_research" && t.Effect == "workflow"' \
+    't.Effect == "workflow"'
+  mutate go 'assistant dialect research: queued complete source comparison omitted' internal/desk/assistant_dialect_research_tools.go \
+    'if !assistantRunFreshSourceEqual(e.source, fresh) {' \
+    'if false && !assistantRunFreshSourceEqual(e.source, fresh) {'
+  mutate go 'assistant dialect research: queued critic custody comparison omitted' internal/desk/assistant_dialect_research_tools.go \
+    'if !assistantCriticSame(held, current) {' \
+    'if false && !assistantCriticSame(held, current) {'
+  mutate go 'assistant dialect research: owner postqueue authority omitted' internal/desk/input_research_request.go \
+    'if err := authorize(); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant dialect research: validation-to-commit preparation guard released' internal/desk/input_research_request.go \
+    '			if err := s.researchInputAvailable(r.Context(), root, current.PreparationID, current.ID); err != nil {' \
+    '			preparation.Close()
+			if err := s.researchInputAvailable(r.Context(), root, current.PreparationID, current.ID); err != nil {'
+  mutate go 'assistant dialect research: expiry after validation ignored' internal/desk/input_research_request.go \
+    'if researchApprovalState(*current, now) != "ready" {' \
+    'if false && researchApprovalState(*current, now) != "ready" {'
+  mutate go 'assistant dialect research: current saved preparation revision ignored' internal/desk/input_research_approval.go \
+    'if saved.SHA256 != run.Revision {' \
+    'if false && saved.SHA256 != run.Revision {'
+  mutate go 'assistant dialect research: used receipt assigned to another turn' internal/desk/input_research_request.go \
+    ' && run.Approval.TurnID == q.TurnID' \
+    ''
+  mutate go 'assistant dialect research: used allowance provenance replaceable' internal/desk/input_research_journal_store.go \
+    'if before.Approval != nil && before.Approval.UsedAt != "" &&' \
+    'if false && before.Approval != nil && before.Approval.UsedAt != "" &&'
+  mutate go 'assistant dialect research: unknown attempted request keeps dispatch open' internal/desk/assistant_domain_output.go \
+    'if name == "request_dialect_research" && errors.As(workErr, &researchUnknown) {' \
+    'if false && name == "request_dialect_research" && errors.As(workErr, &researchUnknown) {'
+  mutate go 'assistant dialect research: import loses owning chat and turn' internal/desk/assistant_dialect_research_tools.go \
+    ' || q.ChatID != run.Binding.Owner.ID || q.TurnID != run.Binding.RequestID' \
+    ''
+  mutate go 'assistant dialect research: import loses request provenance' internal/desk/assistant_dialect_research_tools.go \
+    ' || q.RequestKey != assistantResearchRequestKey(run, host.ID)' \
+    ''
+  mutate go 'assistant dialect research: raw receipt null collapsed on import' internal/desk/assistant_dialect_research_tools.go \
+    'readAssistantHostReceipt(op.Result, &result) != nil' \
+    'json.Unmarshal(op.Result, &result) != nil'
+  mutate go 'assistant dialect research: applied action no longer equals exact receipt' internal/desk/assistant_dialect_research_tools.go \
+    'if !reflect.DeepEqual(p, expected) {' \
+    'if false && !reflect.DeepEqual(p, expected) {'
+  mutate go 'assistant dialect research: retained tool result no longer bound' internal/desk/assistant_dialect_research_tools.go \
+    ' || !bytes.Equal(receipt.Result, result.Value().JSON())' \
+    ' || false && !bytes.Equal(receipt.Result, result.Value().JSON())'
+  mutate go 'assistant dialect research: completed workflow can lose domain output' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && (assistantDialectActionProducer(op.Name)) && !seen[op.ID] {' \
+    'if false && op.Kind == "host" && (assistantDialectActionProducer(op.Name)) && !seen[op.ID] {'
+  mutate go 'assistant dialect research: projection skips physical owner receipt' internal/desk/assistant_dialect_mapping_projection.go \
+    'if err := s.checkAssistantResearchEvidence(r, run, p); err != nil {' \
+    'if err := s.checkAssistantResearchEvidence(r, run, p); false {'
+  mutate go 'assistant dialect research: pending request projects without reconciliation' internal/desk/assistant_dialect_mapping_projection.go \
+    'if assistantResearchUnobserved(run) {' \
+    'if false && assistantResearchUnobserved(run) {'
+  mutate go 'assistant dialect research: explicit finalization omits receipt reconciliation' internal/desk/assistant_chat_projection_store.go \
+    '	if err := s.reconcileAssistantResearchRequests(r, id); err != nil {
+		return err
+	}' \
+    '	// Receipt reconciliation omitted.'
+  mutate go 'assistant dialect research: historical admitted card requires new readiness' internal/desk/assistant_dialect_mapping_projection.go \
+    'if p.Research != nil && p.Research.Receipt.Status == "started" {' \
+    'if false && p.Research != nil && p.Research.Receipt.Status == "started" {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect research: stale unadmitted review card retained' internal/desk/assistant_dialect_research_tools.go \
+    'requestErr = e.recheckAssistantDialectAction(ctx, read)' \
+    'requestErr = nil'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect research: preparation waits while private is held' internal/desk/input_research_request.go \
+    'preparation, err = s.preparationRepository().TryRead(r.Context())' \
+    'preparation, err = s.preparationRepository().Read(r.Context())'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

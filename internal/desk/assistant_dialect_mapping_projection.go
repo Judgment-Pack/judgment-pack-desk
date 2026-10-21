@@ -34,7 +34,7 @@ func (s *Server) assistantDialectProjectionView(r *http.Request, id string, writ
 			}
 		}
 		for _, out := range run.DomainOutputs {
-			if out.Kind == "dialect-action" && out.DialectAction != nil && out.DialectAction.Action != nil {
+			if out.Kind == "dialect-action" && out.DialectAction != nil && out.DialectAction.Action != nil && !(out.DialectAction.Research != nil && out.DialectAction.Research.Receipt.Status == "started") {
 				need = true
 			}
 		}
@@ -46,6 +46,9 @@ func (s *Server) assistantDialectProjectionView(r *http.Request, id string, writ
 	return s.preparationRepository().TryRead(r.Context())
 }
 func (s *Server) checkAssistantDialectProjection(r *http.Request, run assistantRunRecord, view inputPreparationReader) error {
+	if assistantResearchUnobserved(run) {
+		return &inputResearchRequestUnknown{}
+	}
 	for _, out := range run.DomainOutputs {
 		if out.Kind != "dialect-action" {
 			continue
@@ -53,6 +56,12 @@ func (s *Server) checkAssistantDialectProjection(r *http.Request, run assistantR
 		p := out.DialectAction
 		if p == nil {
 			return errAssistantRunInvalid
+		}
+		if p.Research != nil && p.Research.Receipt.Status == "started" {
+			if err := s.checkAssistantResearchEvidence(r, run, p); err != nil {
+				return err
+			}
+			continue
 		}
 		if p.Published != nil {
 			if err := s.checkAssistantDialectPublicationEvidence(r.Context(), *p); err != nil {

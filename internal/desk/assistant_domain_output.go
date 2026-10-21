@@ -125,6 +125,9 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 	return false
 }
 func validateAssistantDomainOutputs(run assistantRunRecord) error {
+	if err := validateAssistantResearchOperations(run); err != nil {
+		return err
+	}
 	receipts := map[string]assistantHostResult{}
 	intents := map[string]assistantHostIntent{}
 	for _, op := range run.Operations {
@@ -141,7 +144,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			continue
 		}
 		var in assistantHostIntent
-		if readAssistantHostReceipt(op.Intent, &in) != nil || !assistantRunText(in.CallID, 256) || !json.Valid(in.Arguments) || !assistantNativeHostCall(run, op.Name, in) || in.Root && !assistantParentHostCall(run, op.Name, in) || assistantHostProposal(op.Name) && !in.Root {
+		if readAssistantHostReceipt(op.Intent, &in) != nil || !assistantRunText(in.CallID, 256) || !json.Valid(in.Arguments) || !assistantNativeHostCall(run, op.Name, in) || in.Root && !assistantParentHostCall(run, op.Name, in) || (assistantHostProposal(op.Name) || op.Name == "request_dialect_research") && !in.Root {
 			return errAssistantRunInvalid
 		}
 		if assistantDialectTool(op.Name) {
@@ -344,7 +347,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	}
 	// A successful producer cannot lose its domain payload on import/recovery.
 	for _, op := range run.Operations {
-		if op.Kind == "host" && (assistantDialectProposal(op.Name)) && !seen[op.ID] {
+		if op.Kind == "host" && (assistantDialectActionProducer(op.Name)) && !seen[op.ID] {
 			if op.State == "completed" || assistantDialectResultHasAction(receipts[op.ID].Result) {
 				return errAssistantRunInvalid
 			}
@@ -434,7 +437,7 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		}
 		in.Policy = &assistantPolicyHostBinding{ID: scope.ID, Request: scope.Request}
 	}
-	if !assistantRunText(in.CallID, 256) || assistantHostProposal(name) && (!root || e.record.Binding.Phase == "plan") {
+	if !assistantRunText(in.CallID, 256) || (assistantHostProposal(name) || name == "request_dialect_research") && (!root || e.record.Binding.Phase != "work") {
 		return refuse(failure.ToolInput("This host proposal is not available in this scope."))
 	}
 	raw, _ := json.Marshal(in)
@@ -460,7 +463,7 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		}
 		for _, held := range run.Operations {
 			if held.ID == id {
-				if assistantDialectProposal(name) {
+				if assistantDialectActionProducer(name) {
 					var original assistantHostIntent
 					if readAssistantHostReceipt(held.Intent, &original) != nil || validateAssistantDialectIntent(*run, held, original) != nil {
 						return false, errAssistantRunConflict
@@ -502,7 +505,7 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 				return false, nil
 			}
 		}
-		if assistantDialectProposal(name) {
+		if assistantDialectActionProducer(name) {
 			var source struct {
 				Actions []json.RawMessage `json:"inputActions"`
 			}
@@ -653,6 +656,10 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		if err := e.service.server.materializeAssistantTests(e.request.WithContext(observed), e.record.ID); err != nil {
 			return refuse(err)
 		}
+	}
+	var researchUnknown *inputResearchRequestUnknown
+	if name == "request_dialect_research" && errors.As(workErr, &researchUnknown) {
+		e.cancel()
 	}
 	var dialectUnknown *assistantDialectUnknown
 	if (assistantDialectProposal(name)) && errors.As(workErr, &dialectUnknown) {
