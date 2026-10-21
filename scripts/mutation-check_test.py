@@ -112,6 +112,8 @@ source = "".join(
     open(os.path.join(d, n)).read()
     for d, _, names in os.walk(os.path.join(root, "web/src")) for n in names if not n.endswith(".test.ts")
 )
+if os.environ.get("FAKE_NPM_SURVIVE"):
+    source = ""
 bad = []
 for f in files:
     marker = open(os.path.join(root, "web", f)).readline().split("fails-on:")[1].strip()
@@ -380,16 +382,78 @@ class SelectionTests(unittest.TestCase):
                         self.assertIn("BASELINE NOT GREEN", self.table(result)[name])
                         self.assertIn("discriminating: 0    not discriminating: 1", result.stdout)
 
-    def test_mapping_rows_precede_terminal_restore_and_no_rows_follow_final_reporting(self):
+    def test_rows_precede_terminal_restore_and_no_rows_follow_final_reporting(self):
         source = HARNESS.read_text()
         terminal = source.rindex("\nrestore\necho\n")
         mapping = list(re.finditer(r"(?m)^  mutate go 'assistant dialect mapping: [^']+'", source))
         self.assertEqual(len(mapping), 26, "every new mapping/publication safeguard needs a live row")
         self.assertTrue(all(row.start() < terminal for row in mapping),
                         "mapping/publication rows must execute before terminal restore and selection reporting")
+        declarations = list(re.finditer(r"(?m)^[ \t]*mutate (?:go|web) ", source))
+        self.assertTrue(all(row.start() < terminal for row in declarations),
+                        "no mutation row may be declared inside or after terminal restore/refusal/reporting")
         closing = source.rindex("\nselection_report\n")
         self.assertNotRegex(source[closing:], r"(?m)^\s*mutate (?:go|web) ",
                             "rows appended after the final report cannot affect its verdict")
+
+    def test_graph_row_three_web_rows_reach_real_driver_and_keep_final_verdicts(self):
+        names = [
+            "graph row 3: partial writes leave queries stale",
+            "graph row 3: a write without a lock describes a reviewed set",
+            "graph row 3: edit provider disclosure omits current graph",
+        ]
+        source = HARNESS.read_text()
+        (self.root / "scripts/mutation-check.sh").write_text(source)
+        graph_author = self.root / "web/src/graphs/GraphAuthor.tsx"
+        graph_author.parent.mkdir(parents=True, exist_ok=True)
+        graph_author.write_text(
+            "await queries.invalidateQueries()\n"
+            "setSaved(accepted.hasLock)\n"
+            "<p>{graphId ? msg('current graph document') : msg('prompt and tool answers')}</p>\n"
+        )
+        tests = {
+            "partial.test.ts": "if (false) await queries.invalidateQueries()",
+            "unlocked.test.ts": "setSaved(true)",
+            "disclosure.test.ts": "<p>{false ? msg(",
+        }
+        for filename, marker in tests.items():
+            path = self.root / "web/src/graphs" / filename
+            path.write_text("// fails-on: %s\nimport './GraphAuthor'\n" % marker)
+        rows = self._rows(*names)
+        self.git("add", "-A")
+        self.git("-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                 "commit", "-qsm", "graph row three real driver fixture")
+
+        self.env.pop("FAKE_NPM_SURVIVE", None)
+        caught = self.harness("web", "--rows", str(rows))
+        table = self.table(caught)
+        self.assertEqual(caught.returncode, 0, caught.stdout + caught.stderr)
+        self.assertEqual(set(table), set(names), caught.stdout + caught.stderr)
+        self.assertEqual(table, {
+            names[0]: "src/graphs/partial.test.ts holds",
+            names[1]: "src/graphs/unlocked.test.ts holds",
+            names[2]: "src/graphs/disclosure.test.ts holds",
+        })
+        self.assertEqual(self.how(caught), {name: "selected" for name in names})
+        self.assertIn("discriminating: 3    not discriminating: 0", caught.stdout)
+        calls = self.log.read_text().splitlines()
+        for filename in tests:
+            self.assertTrue(any(filename in call for call in calls), calls)
+
+        self.env["FAKE_NPM_SURVIVE"] = "1"
+        survived = self.harness("web", "--rows", str(rows))
+        self.assertEqual(survived.returncode, 1, survived.stdout + survived.stderr)
+        self.assertEqual(self.table(survived), {
+            name: "**NOT DISCRIMINATING — nothing failed**" for name in names
+        })
+        self.assertEqual(self.how(survived), {name: "fallback" for name in names})
+        self.assertIn("discriminating: 0    not discriminating: 3", survived.stdout)
+
+        missing = self._rows("graph row 3: absent row")
+        refused = self.harness("web", "--rows", str(missing))
+        self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+        self.assertIn("matching no row", refused.stderr)
+        self.assertEqual(self.table(refused), {})
 
     def test_without_record_the_file_is_untouched(self):
         before = (self.root / "scripts/mutation-expects.tsv").read_text()

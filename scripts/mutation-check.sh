@@ -14902,6 +14902,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'harness credentials: session bearer omitted' web/src/assistant/harnessHost.ts \
     'sessionBearer: () => session.sessionBearer(),' \
     'sessionBearer: () => Promise.resolve(""),'
+  mutate web 'graph row 3: partial writes leave queries stale' web/src/graphs/GraphAuthor.tsx \
+    'await queries.invalidateQueries()' \
+    'if (false) await queries.invalidateQueries()'
+  mutate web 'graph row 3: a write without a lock describes a reviewed set' web/src/graphs/GraphAuthor.tsx \
+    'setSaved(accepted.hasLock)' \
+    'setSaved(true)'
+  mutate web 'graph row 3: edit provider disclosure omits current graph' web/src/graphs/GraphAuthor.tsx \
+    '<p>{graphId ? msg(' \
+    '<p>{false ? msg('
 fi
 
 # Private saved-document consumer; offline Gateway fixtures are required for
@@ -15333,16 +15342,6 @@ echo
 if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
   echo "no row matched \"$only\" — nothing was checked" >&2
   exit 2
-  mutate web 'graph row 3: partial writes leave queries stale' web/src/graphs/GraphAuthor.tsx \
-    'await queries.invalidateQueries()' \
-    'if (false) await queries.invalidateQueries()'
-  mutate web 'graph row 3: a write without a lock describes a reviewed set' web/src/graphs/GraphAuthor.tsx \
-    'setSaved(accepted.hasLock)' \
-    'setSaved(true)'
-  mutate web 'graph row 3: edit provider disclosure omits current graph' web/src/graphs/GraphAuthor.tsx \
-    '<p>{graphId ? msg(' \
-    '<p>{false ? msg('
-
 fi
 selection_report
 all_named=$?
