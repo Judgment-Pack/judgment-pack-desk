@@ -2811,3 +2811,6 @@ go	assistant dialect research: explicit finalization omits receipt reconciliatio
 go	assistant dialect research: historical admitted card requires new readiness	TestAssistantDialectResearchUnknownRecovery
 go	assistant dialect research: stale unadmitted review card retained	TestAssistantDialectResearchStaleReviewCompletion
 go	assistant dialect research: preparation waits while private is held	TestAssistantDialectResearchReadViewBusy
+go	assistant dialect research: manual local bearer incorrectly requires session	TestResearchRequestAuthorizationModes
+go	assistant dialect research: current shared request guard omitted	TestResearchRequestCurrentAuthorization
+go	assistant dialect research: private host accepts local bearer	TestResearchRequestCurrentAuthorization

@@ -116,11 +116,16 @@ func (s *Server) requestResearch(r *http.Request, q inputResearchRequest, author
 		}
 	}
 	authorize := func() error {
-		if _, ok := s.sessionOf(r); !ok {
+		// Manual HTTP requests retain the shared guard's local-access door.
+		// Private Agent invocations additionally require a real session and
+		// their complete current binding callback, never just the launch bearer.
+		if !s.authorized(r) || !s.originAllowed(r) {
 			return errAssistantRunScope
 		}
-		if err := s.authorizePrivateWorkspace(r); err != nil {
-			return err
+		if authority != nil {
+			if err := s.authorizePrivateWorkspace(r); err != nil {
+				return err
+			}
 		}
 		if err := r.Context().Err(); err != nil {
 			return err

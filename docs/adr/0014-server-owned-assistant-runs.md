@@ -254,7 +254,10 @@ remains the only permission; Plan and delegated children cannot request it. Mode
 arguments contain only saved Dialect identity/revision. An earlier root recipe
 read and a durable finite action operation fix chat, current user turn and request
 association before the shared owning request service can consume an allowance.
-The manual request endpoint uses that same service.
+The manual request endpoint uses that same service, retaining its existing
+session or local launch-bearer guard, origin checks and sign-in policy. Private
+host calls additionally require a real session and their full current authority
+callback. The shared guard is rechecked immediately before allowance consumption.
 
 Admission holds conversation/private, research admission, run and preparation
 locks in that order. Preparation view acquisition uses the existing nonblocking

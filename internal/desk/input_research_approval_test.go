@@ -3,6 +3,7 @@ package desk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -125,6 +126,123 @@ func TestResearchApprovalManualAndAutoShareAdmission(t *testing.T) {
 			}
 			if mode == "auto" && (got.Approval.UsedAt == "" || got.Approval.TurnID != "turn-1") {
 				t.Fatal("approval consumption not retained")
+			}
+		})
+	}
+}
+
+// The manual route accepts both existing credential modes. It must not inherit
+// the private Agent host's session-only requirement from their shared owner.
+func TestResearchRequestAuthorizationModes(t *testing.T) {
+	for _, credential := range []string{"local-access", "session"} {
+		for _, mode := range []string{"manual", "auto"} {
+			t.Run(credential+"/"+mode, func(t *testing.T) {
+				s, rr, run, _ := approvalFixture(t)
+				token := testToken
+				if credential == "session" {
+					var err error
+					token, err = s.sessions.create("local user", nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				call := func(path, revision, body string) *httptest.ResponseRecorder {
+					r := httptest.NewRequest("POST", path, strings.NewReader(body))
+					r.Header.Set("Authorization", "Bearer "+token)
+					r.Header.Set("Content-Type", "application/json")
+					r.Header.Set("If-Match", revision)
+					w := httptest.NewRecorder()
+					s.ServeHTTP(w, r)
+					return w
+				}
+				if mode == "auto" {
+					w := call("/api/input-preparations/"+run.PreparationID+"/research/"+run.ID+"/authorize", run.Revision, `{"chatId":"chat-1","minutes":60}`)
+					if w.Code != 200 {
+						t.Fatal("reviewed allowance refused", w.Code, w.Body.String())
+					}
+				}
+				request := fmt.Sprintf(`{"preparationId":%q,"revision":%q,"turnId":"turn-1"}`, run.PreparationID, run.Revision)
+				first := call("/api/input-research-approvals/chat-1/request", "", request)
+				if first.Code != 200 {
+					t.Fatal("supported manual credential refused", first.Code, first.Body.String())
+				}
+				got, err := readInputResearch(rr)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if mode == "manual" {
+					if !strings.Contains(first.Body.String(), `"status":"review-required"`) || got.State != "review" || got.Approval != nil {
+						t.Fatal("request without grant changed admission", first.Body.String(), got.State)
+					}
+					return
+				}
+				if !strings.Contains(first.Body.String(), `"status":"started"`) || got.State != "queued" || got.Approval == nil || got.Approval.UsedAt == "" || got.Approval.TurnID != "turn-1" || got.Approval.RequestKey != "" || got.Approval.Reviewer.Kind != credential || len(got.Attempts) != 0 {
+					t.Fatal("reviewed manual request lost its exact admission", first.Body.String(), got)
+				}
+				again := call("/api/input-research-approvals/chat-1/request", "", request)
+				if again.Code != 200 || again.Body.String() != first.Body.String() {
+					t.Fatal("same-turn receipt changed", again.Code, again.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestResearchRequestCurrentAuthorization(t *testing.T) {
+	for _, mode := range []string{"local-policy", "session-revoked", "origin-changed", "host-local-access"} {
+		t.Run(mode, func(t *testing.T) {
+			s, rr, run, _ := approvalFixture(t)
+			token := testToken
+			if mode == "session-revoked" {
+				var err error
+				token, err = s.sessions.create("local user", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			r := httptest.NewRequest("POST", "/api/input-preparations/"+run.PreparationID+"/research/"+run.ID+"/authorize", strings.NewReader(`{"chatId":"chat-1","minutes":60}`))
+			r.Header.Set("Authorization", "Bearer "+token)
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("If-Match", run.Revision)
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, r)
+			if w.Code != 200 {
+				t.Fatal("grant refused before authority change", w.Code, w.Body.String())
+			}
+			q := inputResearchRequest{ChatID: "chat-1", PreparationID: run.PreparationID, Revision: run.Revision, TurnID: "turn-1"}
+			request := httptest.NewRequest("POST", "/api/input-research-approvals/chat-1/request", nil)
+			request.Header.Set("Authorization", "Bearer "+token)
+			owner := &assistantResearchTestOwner{journal: s.researchJournal(rr, run.ID)}
+			owner.before = func(context.Context, *inputResearchRun) error {
+				switch mode {
+				case "local-policy":
+					s.signIn.mu.Lock()
+					s.signIn.problem = true
+					s.signIn.mu.Unlock()
+				case "session-revoked":
+					s.sessions.revoke(token)
+				case "origin-changed":
+					request.Header.Set("Origin", "https://foreign.invalid")
+				}
+				return nil
+			}
+			s.researchJournals = owner
+			callbackCalled := false
+			var authority func(context.Context) error
+			if mode == "host-local-access" {
+				authority = func(context.Context) error { callbackCalled = true; return nil }
+			}
+			_, err := s.requestResearch(request, q, authority)
+			var unknown *inputResearchRequestUnknown
+			if err == nil || errors.As(err, &unknown) || callbackCalled || owner.queued.Load() != 0 {
+				t.Fatal("invalid current authority admitted or misclassified", err, callbackCalled, owner.queued.Load())
+			}
+			if mode != "host-local-access" && owner.calls.Load() != 1 {
+				t.Fatal("fixture did not reach owning queue", owner.calls.Load())
+			}
+			got, err := owner.Read(t.Context())
+			if err != nil || got.State != "review" || got.Approval == nil || got.Approval.UsedAt != "" || got.Approval.TurnID != "" || len(got.Attempts) != 0 {
+				t.Fatal("refused authority consumed allowance", err, got)
 			}
 		})
 	}

@@ -15500,6 +15500,17 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant dialect research: preparation waits while private is held' internal/desk/input_research_request.go \
     'preparation, err = s.preparationRepository().TryRead(r.Context())' \
     'preparation, err = s.preparationRepository().Read(r.Context())'
+  mutate go 'assistant dialect research: manual local bearer incorrectly requires session' internal/desk/input_research_request.go \
+    'if !s.authorized(r) || !s.originAllowed(r) {' \
+    'if _, ok := s.sessionOf(r); !ok {'
+  mutate go 'assistant dialect research: current shared request guard omitted' internal/desk/input_research_request.go \
+    'if !s.authorized(r) || !s.originAllowed(r) {' \
+    'if false && (!s.authorized(r) || !s.originAllowed(r)) {'
+  mutate go 'assistant dialect research: private host accepts local bearer' internal/desk/input_research_request.go \
+    'if authority != nil {
+			if err := s.authorizePrivateWorkspace(r); err != nil {' \
+    'if false && authority != nil {
+			if err := s.authorizePrivateWorkspace(r); err != nil {'
 fi
 
 restore
