@@ -15565,6 +15565,35 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     'if (false && start > 0 &&'
 fi
 
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant website: exploration reservation omitted' internal/desk/assistant_link_store.go \
+    'if explorations >= 1 {' \
+    'if false && explorations >= 1 {'
+  mutate go 'assistant website: distinct seed limit omitted' internal/desk/assistant_link_store.go \
+    'if !seeds[request.URL] && len(seeds) >= 16 {' \
+    'if false && !seeds[request.URL] && len(seeds) >= 16 {'
+  mutate go 'assistant website: discovered status omitted' internal/desk/assistant_website_read.go \
+    'if page.URL == url && page.Status == "discovered" {' \
+    'if page.URL == url {'
+  mutate go 'assistant website: shared ten total omitted' internal/desk/assistant_link_store.go \
+    'request.Site == "" || attempts >= 10' \
+    'request.Site == ""'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant website: browser exploration reservation omitted' web/src/chat/linkTools.ts \
+    'if(spent.explored)return' \
+    'if(false&&spent.explored)return'
+  mutate web 'assistant website: browser distinct seed limit omitted' web/src/chat/linkTools.ts \
+    'if((deps.websites?.().length??0)>=16' \
+    'if(false&&(deps.websites?.().length??0)>=16'
+  mutate web 'assistant website: browser discovered status omitted' web/src/chat/linkTools.ts \
+    'p.url===link.fetchUrl&&p.status==='"'"'discovered'"'"'' \
+    p.url===link.fetchUrl
+  mutate web 'assistant website: browser shared ten total omitted' web/src/chat/linkTools.ts \
+    'site ? 10 : MAX_LINK_READS_PER_TURN' \
+    'site ? 13 : MAX_LINK_READS_PER_TURN'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

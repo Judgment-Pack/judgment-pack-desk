@@ -138,7 +138,11 @@ func newAssistantLinkFixture(t *testing.T, engine, choice, phase, upstream strin
 		if path == "acquire" {
 			f.acquisitions.Add(1)
 			var response, seal []byte
-			if in.Source == "web-search" {
+			if in.Source == assistantWebsiteSource {
+				var q assistantLinkRequest
+				assistantRunMust(t, json.Unmarshal(in.Arguments, &q))
+				response, seal = assistantWebsiteSigned(t, in.Session, q, change)
+			} else if in.Source == "web-search" {
 				var q assistantSearchRequest
 				assistantRunMust(t, json.Unmarshal(in.Arguments, &q))
 				response, seal = assistantSearchSigned(t, in.Session, q, change)

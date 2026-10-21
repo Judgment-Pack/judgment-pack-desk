@@ -2828,3 +2828,11 @@ go	assistant link: original storage identity omitted	TestAssistantLinkExactProof
 go	assistant link: queued verified authority bytes omitted	TestAssistantLinkQueuedVerifiedSearchAuthority
 go	assistant link: Unicode safe start omitted	TestAssistantLinkSharedWindowVectors
 web	assistant link: browser Unicode safe start omitted	shared private/browser link window vectors
+go	assistant website: exploration reservation omitted	TestAssistantWebsiteCustodyAndAuthority
+go	assistant website: distinct seed limit omitted	TestAssistantWebsiteDistinctLimit
+go	assistant website: discovered status omitted	TestAssistantWebsiteCustodyAndAuthority
+go	assistant website: shared ten total omitted	TestAssistantWebsiteMixedLimits
+web	assistant website: browser exploration reservation omitted	src/chat/linkTools.test.ts
+web	assistant website: browser distinct seed limit omitted	src/chat/linkTools.test.ts
+web	assistant website: browser discovered status omitted	src/chat/linkTools.test.ts
+web	assistant website: browser shared ten total omitted	src/chat/linkTools.test.ts

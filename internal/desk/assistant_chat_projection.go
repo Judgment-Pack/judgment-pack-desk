@@ -389,6 +389,10 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	if err != nil {
 		return nil, err
 	}
+	websites, err := appendAssistantWebsiteOutputs(chat, run)
+	if err != nil {
+		return nil, err
+	}
 	documents, err := appendAssistantLinkOutputs(chat, run)
 	if err != nil {
 		return nil, err
@@ -525,6 +529,24 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 		}
 	}
 	for _, out := range run.DomainOutputs {
+		if out.Kind != "website" {
+			continue
+		}
+		exists := false
+		for _, item := range items {
+			if item["id"] == out.CallID && item["name"] == assistantWebsiteTool {
+				exists = true
+			}
+		}
+		if !exists {
+			status := "complete"
+			if op := assistantDialectOperation(run, out.OperationID); op != nil && op.State == "refused" {
+				status = "failed"
+			}
+			items = append(items, map[string]any{"id": out.OperationID, "name": assistantWebsiteTool, "status": status, "summary": "Website navigation map retained; page evidence requires read_link."})
+		}
+	}
+	for _, out := range run.DomainOutputs {
 		if out.Kind != "link-document" {
 			continue
 		}
@@ -577,7 +599,7 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 		display.Handoff = nil
 		state["execution"] = assistantChatJSON(display)
 	}
-	response := map[string]any{"searches": searches, "id": responseID, "afterTurnId": run.Binding.RequestID, "documents": documents, "websites": []any{}, "sourceIds": []string{}, "work": work}
+	response := map[string]any{"searches": searches, "id": responseID, "afterTurnId": run.Binding.RequestID, "documents": documents, "websites": websites, "sourceIds": []string{}, "work": work}
 	if messageID != "" {
 		response["messageId"] = messageID
 		delete(response, "afterTurnId")

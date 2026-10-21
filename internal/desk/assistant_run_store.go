@@ -76,6 +76,7 @@ type assistantRunEvent struct {
 	Event contract.RunEvent `json:"event"`
 }
 type assistantRunRecord struct {
+	Websites        []assistantWebsiteCustody   `json:"websites,omitempty"`
 	Links           []assistantLinkCustody      `json:"links,omitempty"`
 	Searches        []assistantSearchCustody    `json:"searches,omitempty"`
 	DomainOutputs   []assistantDomainOutput     `json:"domainOutputs,omitempty"`

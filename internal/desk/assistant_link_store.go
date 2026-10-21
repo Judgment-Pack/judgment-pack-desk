@@ -11,6 +11,8 @@ import (
 // These records contain only finite identities and exact byte receipts. Raw
 // response, seal, original and proof bodies belong exclusively to attachments.
 type assistantLinkCustody struct {
+	Discovery                 bool                   `json:"discovery,omitempty"`
+	SeedAuthorityPacket       *attachmentReceipt     `json:"seedAuthorityPacket,omitempty"`
 	AuthorityPacket           *attachmentReceipt     `json:"authorityPacket,omitempty"`
 	SearchConfigurationDigest string                 `json:"searchConfigurationDigest,omitempty"`
 	SearchPreferenceDigest    string                 `json:"searchPreferenceDigest,omitempty"`
@@ -39,6 +41,9 @@ func assistantLinkConfigurationDigest(c assistantLinkConfiguration) string {
 }
 
 func (e *assistantRunExecution) reserveAssistantLink(ctx context.Context, host string, request assistantLinkRequest, c assistantLinkConfiguration) (assistantLinkCustody, error) {
+	return e.reserveAssistantMaterial(ctx, host, request, c, false)
+}
+func (e *assistantRunExecution) reserveAssistantMaterial(ctx context.Context, host string, request assistantLinkRequest, c assistantLinkConfiguration, discovery bool) (assistantLinkCustody, error) {
 	var held assistantLinkCustody
 	ids := make([]string, 4)
 	for i := range ids {
@@ -48,7 +53,7 @@ func (e *assistantRunExecution) reserveAssistantLink(ctx context.Context, host s
 			return held, err
 		}
 	}
-	held = assistantLinkCustody{AuthorityPacket: c.AuthorityPacket, SearchConfigurationDigest: c.SearchConfigurationDigest, SearchPreferenceDigest: c.SearchPreferenceDigest, ConfigurationDigest: assistantLinkConfigurationDigest(c), HostOperationID: host, TurnID: e.record.Binding.RequestID, RequestDigest: e.record.Binding.RequestDigest, Request: request, Gateway: assistantSearchGatewaySnapshot(c.Gateway), Session: "chat-link-" + ids[0], StageID: ids[1], SealID: ids[2], FinalID: ids[3], Acquire: "reserved", Seal: "not-started"}
+	held = assistantLinkCustody{Discovery: discovery, SeedAuthorityPacket: c.SeedAuthorityPacket, AuthorityPacket: c.AuthorityPacket, SearchConfigurationDigest: c.SearchConfigurationDigest, SearchPreferenceDigest: c.SearchPreferenceDigest, ConfigurationDigest: assistantLinkConfigurationDigest(c), HostOperationID: host, TurnID: e.record.Binding.RequestID, RequestDigest: e.record.Binding.RequestDigest, Request: request, Gateway: assistantSearchGatewaySnapshot(c.Gateway), Session: "chat-link-" + ids[0], StageID: ids[1], SealID: ids[2], FinalID: ids[3], Acquire: "reserved", Seal: "not-started"}
 	// Writer revision, live lease, global reservation count and append share one
 	// private ledger transaction. Root/children/retries cannot race this budget.
 	w := e.writer
@@ -70,14 +75,26 @@ func (e *assistantRunExecution) reserveAssistantLink(ctx context.Context, host s
 		if run.Revision != w.revision || assistantRunTerminal(run.State) {
 			return false, errAssistantRunConflict
 		}
+		tool := assistantLinkTool
+		if discovery {
+			tool = assistantWebsiteTool
+		}
 		hostOp := assistantDialectOperation(*run, host)
-		if hostOp == nil || hostOp.Kind != "host" || hostOp.Name != assistantLinkTool || hostOp.State != "dispatched" {
+		if hostOp == nil || hostOp.Kind != "host" || hostOp.Name != tool || hostOp.State != "dispatched" {
 			return false, errAssistantRunScope
 		}
 		attempts, retained := 0, map[string]bool{}
+		seeds := map[string]bool{}
+		explorations := 0
 		for _, other := range ledger.Runs {
 			if other.Binding.Owner.Kind != run.Binding.Owner.Kind || other.Binding.Owner.ID != run.Binding.Owner.ID {
 				continue
+			}
+			for _, website := range other.Websites {
+				seeds[website.Request.URL] = true
+				if website.TurnID == run.Binding.RequestID {
+					explorations++
+				}
 			}
 			for _, search := range other.Links {
 				if other.ID == run.ID && search.HostOperationID == host {
@@ -104,8 +121,27 @@ func (e *assistantRunExecution) reserveAssistantLink(ctx context.Context, host s
 		for _, ref := range assistantSavedLinkAttachments(e.source.Original) {
 			retained[ref.ID] = true
 		}
+		if discovery {
+			for _, ref := range assistantSavedWebsites(e.source.Original) {
+				if !validAssistantWebsiteReference(ref) {
+					return false, errAssistantRunInvalid
+				}
+				seeds[ref.Seed] = true
+			}
+			if explorations >= 1 {
+				return false, &assistantLinkLimitError{"One website exploration per saved message; use its map or send another message."}
+			}
+			if !seeds[request.URL] && len(seeds) >= 16 {
+				return false, &assistantLinkLimitError{"This chat holds sixteen distinct website seeds. Start another chat."}
+			}
+			run.Websites = append(run.Websites, assistantWebsiteCustody(held))
+			run.Revision++
+			return true, nil
+		}
 		if attempts >= 3 {
-			return false, &assistantLinkLimitError{"The budget of three new links for this saved message is spent. Use retained pages or send another message."}
+			if request.Site == "" || attempts >= 10 {
+				return false, &assistantLinkLimitError{"The shared new-link budget is spent (ordinary three, verified discovery ten total). Use retained pages or send another message."}
+			}
 		}
 		if len(retained) >= 256 {
 			return false, &assistantLinkLimitError{"This chat holds 256 documents. Start a new chat to read more links."}
@@ -145,17 +181,34 @@ func (e *assistantRunExecution) changeAssistantLink(ctx context.Context, host st
 				return !bytes.Equal(before, assistantChatJSON(run.Links[i])), nil
 			}
 		}
+		for i := range run.Websites {
+			if run.Websites[i].HostOperationID == host {
+				held := assistantLinkCustody(run.Websites[i])
+				before := assistantChatJSON(held)
+				if err := change(&held); err != nil {
+					return false, err
+				}
+				run.Websites[i] = assistantWebsiteCustody(held)
+				return !bytes.Equal(before, assistantChatJSON(held)), nil
+			}
+		}
 		return false, errAssistantRunInvalid
 	})
 	e.changed(err)
 	return err
 }
 func validateAssistantLinkCustody(run assistantRunRecord) error {
-	if len(run.Links) > 256 {
+	return validateAssistantMaterialCustody(run, run.Links, assistantLinkTool)
+}
+func validateAssistantMaterialCustody(run assistantRunRecord, materials []assistantLinkCustody, tool string) error {
+	if len(materials) > 256 {
 		return errAssistantRunInvalid
 	}
 	ids, hosts := map[string]bool{}, map[string]bool{}
-	for _, held := range run.Links {
+	for _, held := range materials {
+		if held.SeedAuthorityPacket != nil && (!attachmentID.MatchString(held.SeedAuthorityPacket.ID) || !assistantRunDigest(held.SeedAuthorityPacket.SHA256)) {
+			return errAssistantRunInvalid
+		}
 		if held.AuthorityPacket != nil && (!attachmentID.MatchString(held.AuthorityPacket.ID) || !assistantRunDigest(held.AuthorityPacket.SHA256)) {
 			return errAssistantRunInvalid
 		}
@@ -166,7 +219,13 @@ func validateAssistantLinkCustody(run assistantRunRecord) error {
 			_ = readAssistantHostReceipt(host.Intent, &intent)
 			args, err = readAssistantLinkArguments(intent.Arguments)
 		}
-		if !assistantRunDigest(held.ConfigurationDigest) || host == nil || host.Kind != "host" || host.Name != assistantLinkTool || err != nil || args.Link.FetchURL != held.Request.URL || hosts[held.HostOperationID] || held.TurnID != run.Binding.RequestID || held.RequestDigest != run.Binding.RequestDigest || !adWebURL(held.Request.URL) || held.Gateway.URL == "" || held.Gateway.Authority == "" || !researchConnectionRevision.MatchString(held.Gateway.Public) || !assistantRunText(held.Session, 100) {
+		if !assistantRunDigest(held.ConfigurationDigest) || host == nil || host.Kind != "host" || host.Name != tool || err != nil || args.Link.FetchURL != held.Request.URL || hosts[held.HostOperationID] || held.TurnID != run.Binding.RequestID || held.RequestDigest != run.Binding.RequestDigest || !adWebURL(held.Request.URL) || held.Gateway.URL == "" || held.Gateway.Authority == "" || !researchConnectionRevision.MatchString(held.Gateway.Public) || !assistantRunText(held.Session, 100) {
+			return errAssistantRunInvalid
+		}
+		if held.Request.Site != "" && (tool != assistantLinkTool || !assistantSameOrigin(held.Request.URL, held.Request.Site) || held.AuthorityPacket == nil || held.SearchPreferenceDigest == "") {
+			return errAssistantRunInvalid
+		}
+		if held.Discovery != (tool == assistantWebsiteTool) {
 			return errAssistantRunInvalid
 		}
 		hosts[held.HostOperationID] = true
@@ -263,6 +322,11 @@ func assistantLinkCustodyOf(run assistantRunRecord, host string) (assistantLinkC
 	for _, held := range run.Links {
 		if held.HostOperationID == host {
 			return held, nil
+		}
+	}
+	for _, held := range run.Websites {
+		if held.HostOperationID == host {
+			return assistantLinkCustody(held), nil
 		}
 	}
 	return assistantLinkCustody{}, errAssistantRunInvalid

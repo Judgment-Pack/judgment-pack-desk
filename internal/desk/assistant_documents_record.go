@@ -348,10 +348,7 @@ func assistantDocumentOriginalBinding(record assistantDocumentRecord, object att
 			if !adWebURL(p.Web.Site) {
 				return false
 			}
-			site, _ := url.Parse(p.Web.Site)
-			requested, _ := url.Parse(p.Web.URL)
-			found, _ := url.Parse(adString(source["url"]))
-			if requested == nil || found == nil || requested.Host != site.Host || found.Host != site.Host || requested.Scheme != site.Scheme || found.Scheme != site.Scheme {
+			if !assistantSameOrigin(p.Web.URL, p.Web.Site) || !assistantSameOrigin(adString(source["url"]), p.Web.Site) {
 				return false
 			}
 		}

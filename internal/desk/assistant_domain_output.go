@@ -16,6 +16,7 @@ import (
 // Only this finite domain payload is absent from canonical Agent events. It is
 // authored by a finite domain producer with its exact retained result.
 type assistantDomainOutput struct {
+	Website              *assistantWebsiteOutput       `json:"website,omitempty"`
 	Link                 *assistantLinkOutput          `json:"link,omitempty"`
 	Search               *assistantSearchOutput        `json:"search,omitempty"`
 	DialectAction        *assistantDialectActionOutput `json:"dialectAction,omitempty"`
@@ -127,6 +128,9 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 	return false
 }
 func validateAssistantDomainOutputs(run assistantRunRecord) error {
+	if err := validateAssistantWebsiteCustody(run); err != nil {
+		return err
+	}
 	if err := validateAssistantLinkCustody(run); err != nil {
 		return err
 	}
@@ -148,7 +152,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		if op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {
 			return errAssistantRunInvalid
 		}
-		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) && op.Name != assistantSearchTool && op.Name != assistantLinkTool {
+		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) && op.Name != assistantSearchTool && op.Name != assistantLinkTool && op.Name != assistantWebsiteTool {
 			continue
 		}
 		var in assistantHostIntent
@@ -177,7 +181,9 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			return errAssistantRunInvalid
 		}
 		var argumentErr error
-		if op.Name == assistantLinkTool {
+		if op.Name == assistantWebsiteTool {
+			_, argumentErr = readAssistantWebsiteArguments(in.Arguments)
+		} else if op.Name == assistantLinkTool {
 			_, argumentErr = readAssistantLinkArguments(in.Arguments)
 		} else if op.Name == assistantSearchTool {
 			_, argumentErr = readAssistantSearchQuery(in.Arguments)
@@ -248,6 +254,16 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	seen := map[string]bool{}
 	draftIDs := map[string]bool{}
 	for _, out := range run.DomainOutputs {
+		if out.Kind == "website" {
+			if seen[out.OperationID] || validateAssistantWebsiteOutput(run, out, receipts) != nil {
+				return errAssistantRunInvalid
+			}
+			seen[out.OperationID] = true
+			continue
+		}
+		if out.Website != nil {
+			return errAssistantRunInvalid
+		}
 		if out.Kind == "link-document" {
 			if seen[out.OperationID] || validateAssistantLinkOutput(run, out, receipts) != nil {
 				return errAssistantRunInvalid
@@ -378,6 +394,12 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		return errAssistantRunInvalid
 	}
 	// A successful producer cannot lose its domain payload on import/recovery.
+	for _, held := range run.Websites {
+		op := assistantDialectOperation(run, held.HostOperationID)
+		if held.Final.Receipt != nil && op != nil && op.State == "completed" && !seen[held.HostOperationID] {
+			return errAssistantRunInvalid
+		}
+	}
 	for _, held := range run.Links {
 		op := assistantDialectOperation(run, held.HostOperationID)
 		if held.Final.Receipt != nil && op != nil && (op.State == "completed" || op.State == "refused" && !held.DispatchClosed) && !seen[held.HostOperationID] {

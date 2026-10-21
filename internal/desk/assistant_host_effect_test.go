@@ -27,6 +27,7 @@ func TestAssistantHostCanonicalEffects(t *testing.T) {
 			} else {
 				expected["search_sources"] = "read"
 				expected["read_link"] = "read"
+				expected[assistantWebsiteTool] = "read"
 			}
 			registry, err := newAssistantHostRegistry(x.Run.HostTools)
 			assistantRunMust(t, err)

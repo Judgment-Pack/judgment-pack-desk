@@ -21,18 +21,25 @@ func assistantLinkPacket(name string, raw []byte) ([]byte, error) {
 }
 
 func (e *assistantRunExecution) acquireAssistantLink(ctx context.Context, args assistantLinkArguments, configuration assistantLinkConfiguration) (assistantHostObservation, error) {
+	return e.acquireAssistantMaterial(ctx, args, configuration, false)
+}
+func (e *assistantRunExecution) acquireAssistantMaterial(ctx context.Context, args assistantLinkArguments, configuration assistantLinkConfiguration, website bool) (assistantHostObservation, error) {
 	empty := assistantHostObservation{}
+	source, toolName, packetName := "web", assistantLinkTool, "chat-link"
+	if website {
+		source, toolName, packetName = assistantWebsiteSource, assistantWebsiteTool, "chat-website"
+	}
 	s := e.service.server
 	program, err := s.researchVerifier()
 	if err != nil {
 		return empty, err
 	}
-	host, err := e.assistantLinkHost(ctx, args)
+	host, err := e.assistantMaterialHost(ctx, args, toolName)
 	if err != nil {
 		return empty, err
 	}
-	request := assistantLinkRequest{URL: args.Link.FetchURL}
-	held, err := e.reserveAssistantLink(ctx, host, request, configuration)
+	request := assistantLinkRequest{URL: args.Link.FetchURL, Site: configuration.Site}
+	held, err := e.reserveAssistantMaterial(ctx, host, request, configuration, website)
 	if err != nil {
 		return assistantHostObservation{Result: assistantHostFailure(err)}, nil
 	}
@@ -58,7 +65,7 @@ func (e *assistantRunExecution) acquireAssistantLink(ctx context.Context, args a
 		return fail(err)
 	}
 
-	response, acquireErr := s.researchSourceCallWithAdmission(ctx, inputResearchPin{configuration.Gateway.authority, configuration.Gateway.signerPublic}, "acquire", map[string]any{"session": held.Session, "source": "web", "arguments": request}, admission)
+	response, acquireErr := s.researchSourceCallWithAdmission(ctx, inputResearchPin{configuration.Gateway.authority, configuration.Gateway.signerPublic}, "acquire", map[string]any{"session": held.Session, "source": source, "arguments": request}, admission)
 	// Complete raw response bytes must be retained even if a post-response pin
 	// check or cancellation closes dispatch. No later network call is admitted by
 	// this bounded custody completion.
@@ -82,7 +89,7 @@ func (e *assistantRunExecution) acquireAssistantLink(ctx context.Context, args a
 	}); err != nil {
 		return fail(err)
 	}
-	stage, err := assistantLinkPacket("chat-link-acquisition.json", response)
+	stage, err := assistantLinkPacket(packetName+"-acquisition.json", response)
 	if err != nil {
 		return fail(err)
 	}
@@ -105,12 +112,20 @@ func (e *assistantRunExecution) acquireAssistantLink(ctx context.Context, args a
 	if err != nil {
 		return fail(errAssistantDocument)
 	}
-	record, err := readAssistantDocumentRecord(result)
-	if err != nil || assistantLinkRecordSource(record)["kind"] != "web" || assistantLinkRecordSource(record)["requestedUrl"] != request.URL || record.size > min(int(configuration.Gateway.maxFileBytes), 4<<20) {
-		return fail(errAssistantDocument)
+	var original []byte
+	if website {
+		if _, err = readAssistantWebsiteDiscovery(result, request.URL); err != nil {
+			return fail(err)
+		}
+		original, err = assistantWebsiteOriginal(result)
+	} else {
+		record, readErr := readAssistantDocumentRecord(result)
+		if readErr != nil || assistantLinkRecordSource(record)["kind"] != "web" || assistantLinkRecordSource(record)["requestedUrl"] != request.URL || record.size > min(int(configuration.Gateway.maxFileBytes), 4<<20) {
+			return fail(errAssistantDocument)
+		}
+		originalRecord := adObject(record.raw["original"])
+		original, err = json.Marshal(attachmentObject{Version: 1, Original: attachmentOriginal{Name: record.name, MediaType: record.mediaType, Bytes: adString(originalRecord["bytes"]), SHA256: record.id}})
 	}
-	originalRecord := adObject(record.raw["original"])
-	original, err := json.Marshal(attachmentObject{Version: 1, Original: attachmentOriginal{Name: record.name, MediaType: record.mediaType, Bytes: adString(originalRecord["bytes"]), SHA256: record.id}})
 	if err != nil || validateAttachmentObject(original) != nil {
 		return fail(errAssistantDocument)
 	}
@@ -152,7 +167,7 @@ func (e *assistantRunExecution) acquireAssistantLink(ctx context.Context, args a
 	}); err != nil {
 		return fail(err)
 	}
-	sealPacket, err := assistantLinkPacket("chat-link-seal.json", seal)
+	sealPacket, err := assistantLinkPacket(packetName+"-seal.json", seal)
 	if err != nil {
 		return fail(err)
 	}
@@ -166,7 +181,7 @@ func (e *assistantRunExecution) acquireAssistantLink(ctx context.Context, args a
 		return fail(err)
 	}
 	canonicalArgs := assistantChatJSON(request)
-	verified, digest, err := verifyResearchProof(ctx, program, inputResearchProof{Session: held.Session, Source: "web", Arguments: canonicalArgs, Pin: inputResearchPin{configuration.Gateway.authority, configuration.Gateway.signerPublic}, Response: response, Seal: seal})
+	verified, digest, err := verifyResearchProof(ctx, program, inputResearchProof{Session: held.Session, Source: source, Arguments: canonicalArgs, Pin: inputResearchPin{configuration.Gateway.authority, configuration.Gateway.signerPublic}, Response: response, Seal: seal})
 	if err != nil || !bytes.Equal(verified, result) || digest != "sha256:"+digestOf(result) {
 		return fail(errAssistantDocument)
 	}
@@ -174,10 +189,13 @@ func (e *assistantRunExecution) acquireAssistantLink(ctx context.Context, args a
 	if json.Unmarshal(original, &object) != nil {
 		return fail(errAssistantDocument)
 	}
-	object.Proof = &attachmentProof{Session: held.Session, Source: "web", Authority: configuration.Gateway.authority, PublicKey: configuration.Gateway.signerPublic, Response: string(response), Registry: string(seal) + "\n", Web: &struct {
+	object.Proof = &attachmentProof{Session: held.Session, Source: source, Authority: configuration.Gateway.authority, PublicKey: configuration.Gateway.signerPublic, Response: string(response), Registry: string(seal) + "\n", Web: &struct {
 		URL  string `json:"url"`
 		Site string `json:"site,omitempty"`
-	}{URL: request.URL}}
+	}{URL: request.URL, Site: request.Site}}
+	if website {
+		object.Proof.Web = nil
+	}
 	final, err := json.Marshal(object)
 	if err != nil {
 		return fail(err)
@@ -203,6 +221,13 @@ func (e *assistantRunExecution) acquireAssistantLink(ctx context.Context, args a
 	held, err = e.currentAssistantLink(ctx, host)
 	if err != nil {
 		return fail(err)
+	}
+	if website {
+		found, err := verifyAssistantWebsiteObject(ctx, program, final, held)
+		if err != nil {
+			return fail(err)
+		}
+		return assistantHostObservation{Result: assistantWebsiteReply(found.Discovery), Output: &assistantDomainOutput{Kind: "website", Website: &assistantWebsiteOutput{Reference: found.Reference, Stored: receipt, AcquisitionID: host}}}, nil
 	}
 	doc, file, err := e.readAssistantAcquiredLink(ctx, held, configuration)
 	if err != nil {

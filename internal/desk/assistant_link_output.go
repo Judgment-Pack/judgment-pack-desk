@@ -27,7 +27,7 @@ func validAssistantLinkOutputReference(file assistantLinkAttachment) bool {
 }
 func validateAssistantLinkOutput(run assistantRunRecord, out assistantDomainOutput, receipts map[string]assistantHostResult) error {
 	link := out.Link
-	if link == nil || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || out.Search != nil || out.DialectAction != nil || out.Recipe != nil || out.TestProposal != nil || out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil || !reflect.DeepEqual(out.Draft, graphDraft{}) || link.AcquisitionID != out.OperationID || !validAssistantLinkOutputReference(link.Attachment) || link.Stored.ID != link.Attachment.ID || !assistantRunDigest(link.Stored.SHA256) {
+	if out.Website != nil || link == nil || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || out.Search != nil || out.DialectAction != nil || out.Recipe != nil || out.TestProposal != nil || out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil || !reflect.DeepEqual(out.Draft, graphDraft{}) || link.AcquisitionID != out.OperationID || !validAssistantLinkOutputReference(link.Attachment) || link.Stored.ID != link.Attachment.ID || !assistantRunDigest(link.Stored.SHA256) {
 		return errAssistantRunInvalid
 	}
 	producer := assistantDialectOperation(run, out.OperationID)

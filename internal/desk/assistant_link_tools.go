@@ -13,7 +13,8 @@ import (
 const assistantLinkTool = "read_link"
 
 type assistantLinkRequest struct {
-	URL string `json:"url"`
+	URL  string `json:"url"`
+	Site string `json:"site,omitempty"`
 }
 type assistantLinkArguments struct {
 	Link   assistantNormalizedLink
@@ -21,11 +22,15 @@ type assistantLinkArguments struct {
 	Find   string
 }
 type assistantLinkConfiguration struct {
+	Discovery                 bool   `json:",omitempty"`
+	Site                      string `json:",omitempty"`
+	CatalogDigest             string `json:",omitempty"`
 	Gateway                   researchGateway
 	Snapshot                  assistantSearchGateway
 	DeskDigest                string
 	SearchConfigurationDigest string
 	SearchPreferenceDigest    string
+	SeedAuthorityPacket       *attachmentReceipt `json:",omitempty"`
 	AuthorityPacket           *attachmentReceipt
 }
 
@@ -93,6 +98,13 @@ func (e *assistantRunExecution) recheckAssistantLink(ctx context.Context, held a
 	now, err := e.service.server.assistantLinkConfiguration(false)
 	now.SearchConfigurationDigest, now.SearchPreferenceDigest = held.SearchConfigurationDigest, held.SearchPreferenceDigest
 	now.AuthorityPacket = held.AuthorityPacket
+	now.SeedAuthorityPacket = held.SeedAuthorityPacket
+	now.Discovery, now.Site = held.Discovery, held.Site
+	if held.Discovery || held.Site != "" {
+		if err := e.service.server.assistantWebsiteCapability(ctx, &now, false); err != nil {
+			return err
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -117,6 +129,12 @@ func (e *assistantRunExecution) recheckAssistantLink(ctx context.Context, held a
 			return errAssistantRunScope
 		}
 	}
+	if held.SeedAuthorityPacket != nil {
+		raw, err := e.assistantLinkPacket(ctx, held.SeedAuthorityPacket.ID)
+		if err != nil || digestOf(raw) != held.SeedAuthorityPacket.SHA256 {
+			return errAssistantRunScope
+		}
+	}
 	return ctx.Err()
 }
 func (e *assistantRunExecution) recheckAssistantLinkLocked(ctx context.Context, held assistantLinkConfiguration) error {
@@ -126,6 +144,13 @@ func (e *assistantRunExecution) recheckAssistantLinkLocked(ctx context.Context, 
 	now, err := e.service.server.assistantLinkConfiguration(false)
 	now.SearchConfigurationDigest, now.SearchPreferenceDigest = held.SearchConfigurationDigest, held.SearchPreferenceDigest
 	now.AuthorityPacket = held.AuthorityPacket
+	now.SeedAuthorityPacket = held.SeedAuthorityPacket
+	now.Discovery, now.Site, now.CatalogDigest = held.Discovery, held.Site, held.CatalogDigest
+	if held.Discovery || held.Site != "" {
+		if err := e.service.server.assistantWebsiteCapability(ctx, &now, true); err != nil {
+			return err
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -139,9 +164,11 @@ func (e *assistantRunExecution) recheckAssistantLinkLocked(ctx context.Context, 
 		}
 	}
 	if held.AuthorityPacket != nil {
-		return e.recheckAssistantLinkAuthorityLocked(held.AuthorityPacket)
+		if err := e.recheckAssistantLinkAuthorityLocked(held.AuthorityPacket); err != nil {
+			return err
+		}
 	}
-	return nil
+	return e.recheckAssistantLinkAuthorityLocked(held.SeedAuthorityPacket)
 }
 func (e *assistantRunExecution) recheckAssistantLinkAuthorityLocked(expected *attachmentReceipt) error {
 	if expected == nil {
@@ -171,7 +198,7 @@ func (e *assistantRunExecution) recheckAssistantLinkAuthorityLocked(expected *at
 }
 func (e *assistantRunExecution) assistantLinkTools() (*assistantHostRegistry, error) {
 	schema := json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","maxLength":4096},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"find":{"type":"string","maxLength":200}},"required":["url"],"additionalProperties":false}`)
-	tool := runcontext.HostTool{Name: assistantLinkTool, Effect: "read", Delegation: "read", InputSchema: schema, Description: "Read a public HTTPS page actually supplied by the person or authorized by a currently verified search. Bare website domains assume HTTPS. Read one bounded window; offset uses UTF-16 units. Cite exact quotes using the given attachment page citations. Section anchors are reported as text matches, never fetched sections. Three new page reads per saved user turn, shared across delegates and retries. Discovery-only URLs are not available in this private executor. Never repeat uncertain effects."}
+	tool := runcontext.HostTool{Name: assistantLinkTool, Effect: "read", Delegation: "read", InputSchema: schema, Description: "Read a public HTTPS page actually supplied by the person or authorized by a currently verified search. Bare website domains assume HTTPS. Read one bounded window; offset uses UTF-16 units. Cite exact quotes using the given attachment page citations. Section anchors are reported as text matches, never fetched sections. Three new page reads per saved user turn, shared across delegates and retries. Verified discovered pages share a total threshold of ten; ordinary reads stop at three. Never repeat uncertain effects."}
 	tool.Execute = func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
 		args, err := readAssistantLinkArguments(raw)
 		if err != nil {
@@ -184,6 +211,9 @@ func (e *assistantRunExecution) assistantLinkTools() (*assistantHostRegistry, er
 	return newAssistantHostRegistry([]runcontext.HostTool{tool})
 }
 func (e *assistantRunExecution) assistantLinkHost(ctx context.Context, args assistantLinkArguments) (string, error) {
+	return e.assistantMaterialHost(ctx, args, assistantLinkTool)
+}
+func (e *assistantRunExecution) assistantMaterialHost(ctx context.Context, args assistantLinkArguments, name string) (string, error) {
 	run, err := e.writer.lease.store.Read(ctx, e.record.Binding, e.record.ID)
 	if err != nil {
 		return "", err
@@ -191,7 +221,7 @@ func (e *assistantRunExecution) assistantLinkHost(ctx context.Context, args assi
 	callback, _ := ctx.Value(assistantHostCallbackKey{}).(string)
 	for _, op := range run.Operations {
 		var in assistantHostIntent
-		if op.Kind == "host" && op.Name == assistantLinkTool && op.State == "dispatched" && readAssistantHostReceipt(op.Intent, &in) == nil && in.CallID == runcontext.CallIDOf(ctx) && in.CallbackID == callback {
+		if op.Kind == "host" && op.Name == name && op.State == "dispatched" && readAssistantHostReceipt(op.Intent, &in) == nil && in.CallID == runcontext.CallIDOf(ctx) && in.CallbackID == callback {
 			a, err := readAssistantLinkArguments(in.Arguments)
 			if err == nil && reflect.DeepEqual(a, args) {
 				return op.ID, nil
