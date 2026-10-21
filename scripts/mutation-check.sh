@@ -15107,8 +15107,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if !bytes.Equal(p, output.Proposal) {' \
     'if false && !bytes.Equal(p, output.Proposal) {'
   mutate go 'assistant tests: changed source appended after observation' internal/desk/assistant_test_tools_storage.go \
-    'if err != nil || !assistantTestSame(output.Read, current) {' \
-    'if err != nil || !assistantTestSame(current, current) {'
+    'if err != nil || !assistantTestSame(output.Read, current) || !assistantTestCoverageSame(output.Read, current) {' \
+    'if err != nil || !assistantTestSame(current, current) || !assistantTestCoverageSame(output.Read, current) {'
   mutate go 'assistant tests: suite materialization omitted before success' internal/desk/assistant_domain_output.go \
     'if name == "propose_test_cases" && !result.Err() {' \
     'if false && name == "propose_test_cases" && !result.Err() {'
@@ -15210,6 +15210,22 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant variants: Graph output accepts recipe variant' internal/desk/assistant_domain_output.go \
     'if out.Recipe != nil {' \
     'if false && out.Recipe != nil {'
+fi
+
+# Finding-only selected coverage and raw fact-advice safeguards.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant tests: selected coverage equality omitted' internal/desk/assistant_test_tools.go \
+    'beforeErr == nil && afterErr == nil && bytes.Equal(before, after)' \
+    'beforeErr == nil && afterErr == nil && (bytes.Equal(before, after) || true)'
+  mutate go 'assistant tests: changed selected coverage passes dispatch recheck' internal/desk/assistant_test_tools.go \
+    'if err == nil && !assistantTestCoverageSame(held, current) {' \
+    'if false && err == nil && !assistantTestCoverageSame(held, current) {'
+  mutate go 'assistant tests: changed selected coverage materializes new proposal' internal/desk/assistant_test_tools_storage.go \
+    '!assistantTestSame(output.Read, current) || !assistantTestCoverageSame(output.Read, current)' \
+    '!assistantTestSame(output.Read, current)'
+  mutate go 'assistant tests: null expected type advice accepted' internal/desk/assistant_test_tools_validation.go \
+    'if _, err := assistantTestString(rawType); err != nil {' \
+    'if _, err := assistantTestString(rawType); false && err != nil {'
 fi
 
 restore

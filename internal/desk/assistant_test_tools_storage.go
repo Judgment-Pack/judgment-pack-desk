@@ -138,7 +138,7 @@ func (s *Server) materializeAssistantTestOutputsLocked(r *http.Request, root *os
 			return err
 		}
 		current, err := s.readAssistantTestTargetLocked(root, conversation, config, output.Read.Owner)
-		if err != nil || !assistantTestSame(output.Read, current) {
+		if err != nil || !assistantTestSame(output.Read, current) || !assistantTestCoverageSame(output.Read, current) {
 			return errAssistantRunConflict
 		}
 		before, err := assistantTestSuite(output.Read.Suite)

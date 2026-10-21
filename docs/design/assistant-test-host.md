@@ -50,3 +50,16 @@ Enabled critic input uses the V2 consumed-input binding described in
 [Saved-chat critic inputs](assistant-critic-binding.md). Retaining a review-only
 proposal leaves unchanged case custody valid; changed full case/deletion inputs
 still refuse, and V1 checkpoints require a fresh run.
+
+Selected gap-filling coverage is the exact retained run record, not just its ID or
+pack/case validity. Required-read and Runtime dispatch rechecks compare that
+selected record again; a new proposal append repeats the same check. Unrelated
+runs and review-only proposal metadata stay outside this basis. Already retained
+exact proposals remain historical observations when coverage later changes, with
+no model or Runtime replay. Missing proposals cannot be recreated under changed
+selected coverage.
+
+Fact advice validates raw `expectedTypes` members as JSON strings before relying
+on decoded string slices. Null and other nonstring members make live validation,
+retained validation receipts and imports unavailable; authored wrong-type facts,
+their explanations and expected outcomes remain unchanged.

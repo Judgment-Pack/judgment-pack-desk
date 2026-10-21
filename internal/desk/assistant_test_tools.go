@@ -318,13 +318,24 @@ func assistantTestSame(a, b assistantTestRead) bool {
 	bf, _ := assistantTestSuite(b.Suite)
 	return a.Owner == b.Owner && a.Draft == b.Draft && a.Path == b.Path && a.Declaration == b.Declaration && bytes.Equal(a.Pack, b.Pack) && a.PackDigest == b.PackDigest && a.SuitePresent == b.SuitePresent && bytes.Equal(af["cases"], bf["cases"])
 }
+
+// Only an explicitly selected coverage record is part of this proposal's basis.
+// Unrelated runs and review-only proposal changes do not invalidate that read.
+func assistantTestCoverageSame(held, current assistantTestRead) bool {
+	if held.CoverageRunID == "" {
+		return true
+	}
+	before, beforeErr := assistantTestCoverage(held, held.CoverageRunID)
+	after, afterErr := assistantTestCoverage(current, held.CoverageRunID)
+	return beforeErr == nil && afterErr == nil && bytes.Equal(before, after)
+}
 func (e *assistantRunExecution) recheckAssistantTestRead(ctx context.Context, held assistantTestRead) error {
 	current, err := e.readAssistantTestTarget(ctx, held.Owner)
 	if err == nil && !assistantTestSame(held, current) {
 		err = failure.ToolInput("The pack or test cases changed. Read the current pack and suite before proposing cases.")
 	}
-	if err == nil && held.CoverageRunID != "" {
-		_, err = assistantTestCoverage(current, held.CoverageRunID)
+	if err == nil && !assistantTestCoverageSame(held, current) {
+		err = failure.ToolInput("Selected coverage changed. Read the current pack and suite before proposing cases.")
 	}
 	return err
 }

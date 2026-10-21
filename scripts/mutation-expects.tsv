@@ -2734,3 +2734,7 @@ go	assistant variants: Policy producer accepts recipe intent metadata	TestAssist
 go	assistant variants: Policy producer accepts test read custody	TestAssistantDomainHostVariantBoundaries
 go	assistant variants: unrelated host accepts test custody member	TestAssistantDomainHostVariantBoundaries
 go	assistant variants: Graph output accepts recipe variant	TestAssistantDomainHostVariantBoundaries
+go	assistant tests: changed selected coverage passes dispatch recheck	TestAssistantTestHostReviewProducerRefusals
+go	assistant tests: changed selected coverage materializes new proposal	TestAssistantTestHostSelectedCoverageCustody
+go	assistant tests: null expected type advice accepted	TestAssistantTestHostMalformedAdviceImport
+go	assistant tests: selected coverage equality omitted	TestAssistantTestHostSelectedCoverageCustody

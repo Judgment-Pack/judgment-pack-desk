@@ -47,6 +47,9 @@ const assistantTestRuntimeBranch = `
    elif mode=='unordered': report['results'][0]['index']=2
    elif mode=='incomplete': report['results'][0].pop('findings')
    elif mode=='unavailable': report['factChecks'][0]['status']='unavailable';report['factChecks'][0]['message']='No advice available'
+   elif mode=='null-expected-type':
+    for row in report['factChecks']:
+     for finding in row['findings']: finding['expectedTypes']=[None]
   result={'content':[],'structuredContent':report}
 `
 

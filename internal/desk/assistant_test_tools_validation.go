@@ -283,6 +283,20 @@ func assistantTestValidationReport(report map[string]json.RawMessage, m assistan
 			if readAssistantHostReceipt(finding, &exact) != nil {
 				return nil, nil, assistantTestUnavailable()
 			}
+			// Keep raw member types: []string decoding turns null into "".
+			advice, err := assistantTestObject(finding)
+			if err != nil {
+				return nil, nil, assistantTestUnavailable()
+			}
+			types, err := assistantChatArray(advice["expectedTypes"])
+			if err != nil {
+				return nil, nil, assistantTestUnavailable()
+			}
+			for _, rawType := range types {
+				if _, err := assistantTestString(rawType); err != nil {
+					return nil, nil, assistantTestUnavailable()
+				}
+			}
 		}
 		for _, f := range row.Findings {
 			if f.Code != "FACT-NOT-COMPARABLE" || len(f.ExpectedTypes) == 0 {
