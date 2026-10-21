@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -87,7 +88,25 @@ func TestAssistantTestHostPlanChildAndFreshness(t *testing.T) {
 				fields["drafts"] = assistantChatEncodeArray(drafts)
 				policyWorkspaceSave(t, s, token, "/api/draft-packs", json.RawMessage(assistantChatEncodeObject(fields)))
 			case "revoked":
+				// Bind a real root call while authorized. The normal invoke helper
+				// appends this event first, so calling it after revocation would
+				// test event admission instead of the tool's dispatch boundary.
+				id := "revoked-proposal"
+				raw, err := json.Marshal(assistantTestHostProposalArgs())
+				assistantRunMust(t, err)
+				assistantPolicyEvent(t, e, id, "propose_test_cases", raw)
+				before := assistantExecutionRecord(t, e)
+				count := len(assistantExecutionRuntimeLog(t, s))
+				suite := assistantTestHostSuite(t, s, token, "one")
 				s.sessions.revoke(token)
+				ctx := context.WithValue(runcontext.WithCallID(t.Context(), id), assistantHostRootKey{}, true)
+				no, err := assistantGraphFind(t, x.Run.HostTools, "propose_test_cases").Execute(ctx, raw)
+				assistantRunMust(t, err)
+				after := assistantExecutionRecord(t, e)
+				if !no.Err() || !reflect.DeepEqual(before.Operations, after.Operations) || !reflect.DeepEqual(before.Events, after.Events) || len(after.DomainOutputs) != 0 || len(assistantExecutionRuntimeLog(t, s)) != count || !reflect.DeepEqual(suite, assistantTestHostSuite(t, s, token, "one")) {
+					t.Fatal("revoked dispatch did work, changed the suite or retained a proposal/result", no.Value().Text())
+				}
+				return
 			}
 			count := len(assistantExecutionRuntimeLog(t, s))
 			no := assistantTestHostInvoke(t, e, x, "propose", "propose_test_cases", assistantTestHostProposalArgs())

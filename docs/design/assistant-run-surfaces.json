@@ -613,16 +613,20 @@
       ],
       "entrypoints": [
         "web/src/dialects/dialectChatTools.ts",
-        "internal/desk/input_typed_research.go"
+        "internal/desk/input_typed_research.go",
+        "internal/desk/assistant_dialect_mapping_tools.go",
+        "internal/desk/assistant_dialect_mapping_service.go",
+        "internal/desk/assistant_dialect_mapping_output.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "private Go fixed registry and finite check receipts implemented; production registration/browser migration pending",
       "preserve": [
         "Go fresh revision/pack-digest read and complete mapping proposal; preserve omitted/typed fields, no automatic save",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
-        "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+        "actual four-tool API and native parent/child producers against pinned offline Runtime",
+        "finite import, typed preview, freshness, owner queued revocation, unknown retention and completed observation fixtures",
+        "existing ChatStore/action/check/publication/review readers in the standard projection CI command"
       ]
     },
     {
@@ -660,16 +664,20 @@
       ],
       "entrypoints": [
         "web/src/dialects/publicationChatTools.ts",
-        "internal/desk/assistant_approval_dialect.go"
+        "internal/desk/assistant_approval_dialect.go",
+        "internal/desk/assistant_dialect_mapping_tools.go",
+        "internal/desk/assistant_dialect_mapping_service.go",
+        "internal/desk/assistant_dialect_mapping_output.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "private Go fixed registry and finite check receipts implemented; production registration/browser migration pending",
       "preserve": [
         "Go exact saved mapping publication check/proposal, separate explicit one-publication grant, active jobs retain pins",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
-        "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+        "actual four-tool API and native parent/child producers against pinned offline Runtime",
+        "finite import, typed preview, freshness, owner queued revocation, unknown retention and completed observation fixtures",
+        "existing ChatStore/action/check/publication/review readers in the standard projection CI command"
       ]
     },
     {

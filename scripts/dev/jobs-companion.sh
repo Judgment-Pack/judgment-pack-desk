@@ -78,6 +78,17 @@ case "$step" in
     install_official
     ;;
 
+  dialect-mapping-runtime)
+    install_official > /dev/null
+    printf '%s\n' "$official/jpack"
+    ;;
+
+  dialect-mapping-host)
+    . "$root/scripts/dev/dialect-mapping-fixture.sh"
+    prepare_dialect_mapping_fixture
+    go test ./internal/desk -run '^TestAssistantDialectMappingActualAPIProducer$' -count=1 -v
+    ;;
+
   runtime-jobs)
     install_official
     JPACK_RUNNER_TEST_BIN="$official/jpack-runner" JPACK_BIN="$official/jpack" \

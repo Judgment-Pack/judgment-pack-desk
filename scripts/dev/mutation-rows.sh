@@ -34,6 +34,8 @@ fi
 if [ "$go_rows" -ne 0 ]; then
   . "$root/scripts/dev/gateway-fixture.sh"
   prepare_gateway_fixture
+  . "$root/scripts/dev/dialect-mapping-fixture.sh"
+  prepare_dialect_mapping_fixture
 fi
 
 # As the nightly: the web suite reads the bundle (src/testing/bundle.test.ts).

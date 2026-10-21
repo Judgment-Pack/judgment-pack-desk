@@ -39,8 +39,34 @@ func verifyRetainedArtifact(ref retainedArtifactRef, raw []byte) error {
 	return nil
 }
 func (s *Server) artifactRepository() retainedArtifactRepository {
+	return s.artifactRepositoryWithAuthority(nil)
+}
+
+// Bind only current authority, never a source lookup that reenters private data.
+// Owning adapters enforce this callback after storage waits and before writes.
+func (s *Server) artifactRepositoryWithAuthority(authorize func(context.Context) error) retainedArtifactRepository {
 	if s.retainedArtifacts != nil {
-		return s.retainedArtifacts
+		if authorize == nil {
+			return s.retainedArtifacts
+		}
+		if owner, ok := s.retainedArtifacts.(authorityRetainedArtifactRepository); ok {
+			return owner.WithAuthority(authorize)
+		}
+		return unavailableAuthorityArtifactRepository{}
 	}
-	return fileRetainedArtifactRepository{open: s.openRetainedArtifacts}
+	return fileRetainedArtifactRepository{open: s.openRetainedArtifacts, authorize: authorize}
+}
+
+// A custom owner must bind authority inside its own queued mutation boundary.
+// Wrapping Put before/after is insufficient when that implementation can wait.
+type authorityRetainedArtifactRepository interface {
+	WithAuthority(func(context.Context) error) retainedArtifactRepository
+}
+type unavailableAuthorityArtifactRepository struct{}
+
+func (unavailableAuthorityArtifactRepository) Get(context.Context, retainedArtifactRef) ([]byte, error) {
+	return nil, errRetainedArtifactChanged
+}
+func (unavailableAuthorityArtifactRepository) Put(context.Context, []byte) (retainedArtifactRef, error) {
+	return retainedArtifactRef{}, errRetainedArtifactChanged
 }

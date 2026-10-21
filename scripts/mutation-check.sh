@@ -14902,6 +14902,15 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'harness credentials: session bearer omitted' web/src/assistant/harnessHost.ts \
     'sessionBearer: () => session.sessionBearer(),' \
     'sessionBearer: () => Promise.resolve(""),'
+  mutate web 'graph row 3: partial writes leave queries stale' web/src/graphs/GraphAuthor.tsx \
+    'await queries.invalidateQueries()' \
+    'if (false) await queries.invalidateQueries()'
+  mutate web 'graph row 3: a write without a lock describes a reviewed set' web/src/graphs/GraphAuthor.tsx \
+    'setSaved(accepted.hasLock)' \
+    'setSaved(true)'
+  mutate web 'graph row 3: edit provider disclosure omits current graph' web/src/graphs/GraphAuthor.tsx \
+    '<p>{graphId ? msg(' \
+    '<p>{false ? msg('
 fi
 
 # Private saved-document consumer; offline Gateway fixtures are required for
@@ -15239,6 +15248,92 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     't.Effect = "read"'
 fi
 
+# Finite Dialect mapping/publication custody and current-authorized check effects.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect mapping: finite argument admission omitted' internal/desk/assistant_dialect_mapping_tools.go \
+    'if len(raw) > 1<<20 ||' \
+    'if true { _ = json.Unmarshal(raw, &a); return a, nil }; if len(raw) > 1<<20 ||'
+  mutate go 'assistant dialect mapping: stale read equality omitted' internal/desk/assistant_dialect_mapping_tools.go \
+    'if !sameDraftValue(current, held) {' \
+    'if false && !sameDraftValue(current, held) {'
+  mutate go 'assistant dialect mapping: action identity derivation omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'meta.ID != assistantDialectActionID(run.Binding, in) ||' \
+    'false ||'
+  mutate go 'assistant dialect mapping: attempted producer capacity omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'if count >= 16 || sourceCount+count >= 32 {' \
+    'if false && (count >= 16 || sourceCount+count >= 32) {'
+  mutate go 'assistant dialect mapping: raw custody type guard omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {' \
+    'if false && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {'
+  mutate go 'assistant dialect mapping: report raw member validation omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'func validAssistantDialectReport(raw []byte) bool {' \
+    'func validAssistantDialectReport(raw []byte) bool { if true {return true}'
+  mutate go 'assistant dialect mapping: check producer association omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'in.HostOperationID != host ||' \
+    'false ||'
+  mutate go 'assistant dialect mapping: check chronological association omitted' internal/desk/assistant_dialect_mapping_output.go \
+    '!assistantDialectAfter(run, id, host) ||' \
+    'false ||'
+  mutate go 'assistant dialect mapping: current preparation projection omitted' internal/desk/assistant_dialect_mapping_projection.go \
+    'if current.SHA256 != p.Read.Revision {' \
+    'if false && current.SHA256 != p.Read.Revision {'
+  mutate go 'assistant dialect mapping: current pack projection omitted' internal/desk/assistant_dialect_mapping_projection.go \
+    'file.err != nil || !file.present || !bytes.Equal(file.data, p.Read.Pack)' \
+    'file.err != nil || !file.present || !bytes.Equal(file.data, file.data)'
+  mutate go 'assistant dialect mapping: current publication base projection omitted' internal/desk/assistant_dialect_mapping_projection.go \
+    'if latestDialectPublication(ledger, p.Read.ID, p.Read.Variant) != p.Read.BasePublication {' \
+    'if false && latestDialectPublication(ledger, p.Read.ID, p.Read.Variant) != p.Read.BasePublication {'
+  mutate go 'assistant dialect mapping: physical review projection omitted' internal/desk/assistant_dialect_mapping_projection.go \
+    'if err = s.checkAssistantDialectPublicationEvidence(r.Context(), *p); err != nil {' \
+    'if err = error(nil); err != nil {'
+  mutate go 'assistant dialect mapping: unknown retention continues model' internal/desk/assistant_domain_output.go \
+    'if (name == "propose_dialect" || name == "propose_dialect_publication") && errors.As(workErr, &dialectUnknown) {' \
+    'if false && (name == "propose_dialect" || name == "propose_dialect_publication") && errors.As(workErr, &dialectUnknown) {'
+  mutate go 'assistant dialect mapping: unrelated host accepts new custody' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && !assistantDialectTool(op.Name) && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {' \
+    'if false && op.Kind == "host" && !assistantDialectTool(op.Name) && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {'
+  mutate go 'assistant dialect mapping: owning artifact callback omitted' internal/desk/retained_artifacts_file.go \
+    'return f.authorize(ctx)' \
+    'return nil'
+  mutate go 'assistant dialect mapping: injected owner authority binding omitted' internal/desk/retained_artifacts.go \
+    'return owner.WithAuthority(authorize)' \
+    'return owner.WithAuthority(nil)'
+  mutate go 'assistant dialect mapping: unsupported owner admitted' internal/desk/retained_artifacts.go \
+    'return unavailableAuthorityArtifactRepository{}' \
+    'return s.retainedArtifacts'
+  mutate go 'assistant dialect mapping: owning review callback omitted' internal/desk/artifact_review.go \
+    'return authorize(ctx)' \
+    'return nil'
+  mutate go 'assistant dialect mapping: owning receipt callback omitted' internal/desk/dialect_publications.go \
+    'return authorize(ctx)' \
+    'return nil'
+  mutate go 'assistant dialect mapping: test output accepts new variant' internal/desk/assistant_test_tools_output.go \
+    ' || out.DialectAction != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: test receipt accepts new custody' internal/desk/assistant_test_tools_output.go \
+    ' || receipt.DialectRead != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: recipe output accepts new variant' internal/desk/assistant_dialect_recipe_tools_output.go \
+    ' || out.DialectAction != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: recipe receipt accepts new custody' internal/desk/assistant_dialect_recipe_tools_output.go \
+    ' || held.DialectRead != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: Policy output accepts new variant' internal/desk/assistant_policy_tools_output.go \
+    ' || out.DialectAction != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: Policy receipt accepts new custody' internal/desk/assistant_policy_tools_output.go \
+    ' || receipt.DialectRead != nil {' \
+    ' {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect mapping: unsupported live read corrupts custody' internal/desk/assistant_dialect_mapping_tools.go \
+    'if len(read.View) > 2<<20 || !validAssistantDialectRead(read) {' \
+    'if false && (len(read.View) > 2<<20 || !validAssistantDialectRead(read)) {'
+fi
+
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
@@ -15247,16 +15342,6 @@ echo
 if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
   echo "no row matched \"$only\" — nothing was checked" >&2
   exit 2
-  mutate web 'graph row 3: partial writes leave queries stale' web/src/graphs/GraphAuthor.tsx \
-    'await queries.invalidateQueries()' \
-    'if (false) await queries.invalidateQueries()'
-  mutate web 'graph row 3: a write without a lock describes a reviewed set' web/src/graphs/GraphAuthor.tsx \
-    'setSaved(accepted.hasLock)' \
-    'setSaved(true)'
-  mutate web 'graph row 3: edit provider disclosure omits current graph' web/src/graphs/GraphAuthor.tsx \
-    '<p>{graphId ? msg(' \
-    '<p>{false ? msg('
-
 fi
 selection_report
 all_named=$?

@@ -361,6 +361,9 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	if err := appendAssistantPolicyOutputs(chat, run.DomainOutputs); err != nil {
 		return nil, err
 	}
+	if err := appendAssistantDialectActions(chat, run.DomainOutputs); err != nil {
+		return nil, err
+	}
 	// Validate association identities rather than pairing by tool name or prose.
 	ids := map[string]bool{}
 	for _, raw := range turns {

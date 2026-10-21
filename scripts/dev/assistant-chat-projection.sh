@@ -172,3 +172,31 @@ grep -Eq '^--- PASS: TestAssistantDialectRecipeActualAPIProducer \(' "$tmp/recip
   --outfile="$tmp/recipe-reference.mjs"
 "$node_bin" "$tmp/recipe-reference.mjs" "$recipe_outputs/chat.json" "$recipe_outputs/draft.json" | tee "$tmp/recipe-reader.log"
 grep -Fxq 'Dialect recipe shared readers: exact typed proposal and independent draft readback passed.' "$tmp/recipe-reader.log"
+
+# Mapping/publication output is check evidence only. Actual publication remains
+# a separate reviewed write; the producer uses the pinned offline Runtime.
+dialect_outputs="$tmp/dialect-mapping-publication"
+mkdir -m 700 "$dialect_outputs"
+(
+  cd "$root"
+  producer=(scripts/dev/jobs-companion.sh dialect-mapping-host)
+  if [ "${DESK_DIALECT_MAPPING_RUNTIME+x}" = x ] || [ -n "${JPACK_BIN:-}" ]; then
+    producer=(go test ./internal/desk -run '^TestAssistantDialectMappingActualAPIProducer$' -count=1 -v)
+  fi
+  env "${go_env[@]}" DESK_DIALECT_MAPPING_READER_CHAT="$dialect_outputs/chat.json" \
+    DESK_DIALECT_MAPPING_READER_SOURCE="$dialect_outputs/source.json" \
+    DESK_DIALECT_MAPPING_READER_REVIEW="$dialect_outputs/review.json" \
+    "${producer[@]}"
+) | tee "$tmp/dialect-mapping-producer.log"
+grep -Eq '^--- PASS: TestAssistantDialectMappingActualAPIProducer \(' "$tmp/dialect-mapping-producer.log" || {
+  echo 'Dialect mapping/publication producer did not run and pass' >&2
+  exit 1
+}
+"$esbuild" "$root/scripts/assistant-dialect-mapping-reference.mjs" \
+  --bundle --platform=node --format=esm \
+  --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+  --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$tmp/dialect-mapping-reference.mjs"
+"$node_bin" "$tmp/dialect-mapping-reference.mjs" "$dialect_outputs/chat.json" \
+  "$dialect_outputs/source.json" "$dialect_outputs/review.json" | tee "$tmp/dialect-mapping-reader.log"
+grep -Fxq 'Dialect mapping/publication shared readers: 2 exact checked review actions passed.' "$tmp/dialect-mapping-reader.log"

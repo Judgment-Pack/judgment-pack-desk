@@ -222,8 +222,57 @@ func (s *Server) handleDialectPublications(w http.ResponseWriter, r *http.Reques
 
 // Manual and chat publication use this exact admission, immutable ledger and
 // receipt reconciliation boundary. A supplied view remains held by its caller.
+
+// Optional private-host admission is fixed before check effects. It cannot
+// broaden a check into Publish; ordinary/manual callers keep the same defaults.
+type dialectPublicationCheckAdmission struct {
+	At              string
+	BasePublication string
+	Authorize       func(context.Context) error
+	Recheck         func(context.Context) error
+	Check           func(context.Context, []byte, string) (dialectAuthoringReport, error)
+}
+
 func (s *Server) publishCheckedDialect(ctx context.Context, id string, req dialectPublicationRequest, reader inputPreparationReader) (int, any) {
+	return s.publishCheckedDialectUsing(ctx, id, req, reader, nil)
+}
+func (s *Server) publishCheckedDialectUsing(ctx context.Context, id string, req dialectPublicationRequest, reader inputPreparationReader, admission *dialectPublicationCheckAdmission) (int, any) {
 	fail := func(status int, err error) (int, any) { return status, codedBody(CodeBadRequest, err.Error()) }
+	var authorize func(context.Context) error
+	if admission != nil {
+		if req.Action != "check" || admission.Authorize == nil || admission.Check == nil || admission.Recheck == nil {
+			return fail(400, errors.New("Host publication admission is check-only."))
+		}
+		if _, err := time.Parse(time.RFC3339Nano, admission.At); err != nil {
+			return fail(400, err)
+		}
+		authorize = admission.Authorize
+		if err := authorize(ctx); err != nil {
+			return fail(403, err)
+		}
+	}
+	currentBase := func() error {
+		if admission == nil {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := authorize(ctx); err != nil {
+			return err
+		}
+		if err := admission.Recheck(ctx); err != nil {
+			return err
+		}
+		latest, err := s.readDialectPublicationLedger()
+		if err != nil {
+			return err
+		}
+		if latestDialectPublication(latest, id, req.Variant) != admission.BasePublication {
+			return errors.New("The selected publication base changed. Read it again.")
+		}
+		return nil
+	}
 	ledger, err := s.readDialectPublicationLedger()
 	if err != nil {
 		return fail(503, err)
@@ -236,6 +285,11 @@ func (s *Server) publishCheckedDialect(ctx context.Context, id string, req diale
 			if e != nil {
 				return fail(503, e)
 			} else {
+				if authorize != nil {
+					if err := authorize(ctx); err != nil {
+						return fail(403, err)
+					}
+				}
 				return 200, answer
 			}
 		}
@@ -244,18 +298,34 @@ func (s *Server) publishCheckedDialect(ctx context.Context, id string, req diale
 		return fail(400, errors.New("Check and review this exact version before publishing."))
 	}
 	base := latestDialectPublication(ledger, id, req.Variant)
+	if err := currentBase(); err != nil {
+		return fail(409, err)
+	}
+	if admission != nil {
+		if _, unsupported := s.artifactRepositoryWithAuthority(authorize).(unavailableAuthorityArtifactRepository); unsupported {
+			return fail(422, errors.New("The artifact owner cannot admit a current-authorized check."))
+		}
+	}
 	if !req.Impact.valid() {
 		return fail(400, errors.New("Describe the compatibility impact before checking this version."))
 	}
-	if reader == nil {
-		view, e := s.preparationRepository().TryRead(ctx)
-		if e != nil {
-			return fail(409, e)
+	// The host journals its check separately, outside any preparation view.
+	// A snapshot plus explicit pre/post source rechecks prevents reversing
+	// preparation/private journal locks. Manual publication keeps its held view.
+	var saved inputPreparationReply
+	if reader == nil && admission != nil {
+		saved, err = s.preparationRepository().Get(ctx, id)
+	} else {
+		if reader == nil {
+			view, e := s.preparationRepository().TryRead(ctx)
+			if e != nil {
+				return fail(409, e)
+			}
+			defer view.Close()
+			reader = view
 		}
-		defer view.Close()
-		reader = view
+		saved, err = reader.Get(id)
 	}
-	saved, err := reader.Get(id)
 	if err != nil {
 		return fail(404, err)
 	}
@@ -267,16 +337,26 @@ func (s *Server) publishCheckedDialect(ctx context.Context, id string, req diale
 	if err != nil {
 		return fail(422, err)
 	}
-	checked, err := s.checkedDialectMapping(ctx, raw, doc.Recipe.Qualification.Pack)
+	check := s.checkedDialectMapping
+	if admission != nil {
+		check = admission.Check
+	}
+	checked, err := check(ctx, raw, doc.Recipe.Qualification.Pack)
 	if err != nil {
 		return fail(422, err)
 	}
 	if checked.ArtifactID != dialectArtifactID(id, req.Variant) || checked.ArtifactVersion != req.Version {
 		return fail(502, errDialectChecksUnavailable)
 	}
+	if err := currentBase(); err != nil {
+		return fail(409, err)
+	}
 	recipe := dialectRecipeBytes(doc)
 	pack := []byte(doc.Recipe.Qualification.Pack)
 	candidate := artifactPublication{At: time.Now().UTC().Format(time.RFC3339Nano), Dialect: &dialectPublicationContext{id, saved.SHA256, req.Variant, artifactReference(recipe), artifactReference(pack), request}, Documents: []publishedDocument{{Kind: "dialect", Alias: req.Variant, ID: checked.ArtifactID, Version: req.Version, Content: artifactReference([]byte(checked.Document))}}}
+	if admission != nil {
+		candidate.At = admission.At
+	}
 	candidate.ID = publicationID(candidate)
 	if err = admitPublication(ledger, candidate); err != nil {
 		return fail(409, err)
@@ -289,13 +369,18 @@ func (s *Server) publishCheckedDialect(ctx context.Context, id string, req diale
 			continue
 		}
 		if prior.Dialect.Recipe == candidate.Dialect.Recipe && prior.Documents[0] == candidate.Documents[0] {
-			if err = s.retainPublicationReceipt(ctx, request, prior.ID); err != nil {
+			if err = s.retainPublicationReceiptWithAuthority(ctx, request, prior.ID, authorize); err != nil {
 				return fail(503, err)
 			}
 			answer, err := s.publicationAnswer(ctx, prior)
 			if err != nil {
 				return fail(503, err)
 			} else {
+				if authorize != nil {
+					if err := authorize(ctx); err != nil {
+						return fail(403, err)
+					}
+				}
 				return 200, answer
 			}
 		}
@@ -326,16 +411,22 @@ func (s *Server) publishCheckedDialect(ctx context.Context, id string, req diale
 	preview, _ := json.Marshal(answer)
 	review := artifactReview{Version: 1, Target: dialectArtifactID(id, req.Variant), BasePublication: base, StorageRevision: saved.SHA256, Candidate: candidate.Documents[0].Content, ProposedVersion: req.Version, Impact: req.Impact, Dependencies: []retainedArtifactRef{candidate.Dialect.Recipe, candidate.Dialect.Pack}, Preview: preview}
 	if req.Action == "check" {
+		if err := currentBase(); err != nil {
+			return fail(409, err)
+		}
 		for _, data := range [][]byte{[]byte(checked.Document), recipe, pack} {
-			if _, err = s.artifactRepository().Put(ctx, data); err != nil {
+			if _, err = s.artifactRepositoryWithAuthority(authorize).Put(ctx, data); err != nil {
 				return fail(503, err)
 			}
 		}
-		retained, e := s.retainArtifactReview(ctx, review)
+		retained, e := s.retainArtifactReviewWithAuthority(ctx, review, authorize)
 		if e != nil {
 			return fail(503, e)
 		}
 		answer.Review = &retained.Reference
+		if err := currentBase(); err != nil {
+			return fail(409, err)
+		}
 		return 200, answer
 	}
 	if req.CheckDigest != checked.Digest {
@@ -381,7 +472,7 @@ func (s *Server) publishCheckedDialect(ctx context.Context, id string, req diale
 	}
 	// Retain all inputs before a single durable ledger commit. No second recipe write.
 	for _, data := range [][]byte{[]byte(checked.Document), recipe, pack} {
-		if _, err = s.artifactRepository().Put(ctx, data); err != nil {
+		if _, err = s.artifactRepositoryWithAuthority(authorize).Put(ctx, data); err != nil {
 			return fail(503, err)
 		}
 	}
@@ -530,12 +621,34 @@ func latestDialectPublication(ledger publicationLedger, id, variant string) stri
 
 // Record a no-op's completed request without publishing another version. This
 // makes recovery independent of later recipe edits and Runtime availability.
+
 func (s *Server) retainPublicationReceipt(ctx context.Context, request, id string) error {
+	return s.retainPublicationReceiptWithAuthority(ctx, request, id, nil)
+}
+func (s *Server) retainPublicationReceiptWithAuthority(ctx context.Context, request, id string, authorize func(context.Context) error) error {
+	current := func() error {
+		if authorize == nil {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if authorize != nil {
+			return authorize(ctx)
+		}
+		return nil
+	}
+	if err := current(); err != nil {
+		return err
+	}
 	tx, err := s.openPublicationTransaction(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.close()
+	if err = current(); err != nil {
+		return err
+	}
 	if existing, ok := tx.ledger.Receipts[request]; ok {
 		if existing != id {
 			return errors.New("Publication request already has another receipt.")
@@ -559,5 +672,11 @@ func (s *Server) retainPublicationReceipt(ctx context.Context, request, id strin
 		tx.ledger.Receipts = map[string]string{}
 	}
 	tx.ledger.Receipts[request] = id
-	return writePublicationLedger(tx.root, tx.ledger)
+	if err = current(); err != nil {
+		return err
+	}
+	if err = writePublicationLedger(tx.root, tx.ledger); err != nil {
+		return err
+	}
+	return current()
 }

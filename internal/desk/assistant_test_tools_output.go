@@ -40,7 +40,7 @@ func validateAssistantTestReadReceipt(op assistantRunOperation, in assistantHost
 	if result.Tests == nil {
 		return nil
 	}
-	if in.RecipeProposal != nil || in.Policy != nil || op.Name != "read_pack_tests" || op.State != "completed" || result.Read != nil || result.PolicySource != nil || !validAssistantTestRead(*result.Tests) {
+	if in.RecipeProposal != nil || in.Policy != nil || op.Name != "read_pack_tests" || op.State != "completed" || result.DialectRead != nil || result.Read != nil || result.PolicySource != nil || !validAssistantTestRead(*result.Tests) || in.DialectAction != nil {
 		return errAssistantRunInvalid
 	}
 	args, err := readAssistantTestArguments(op.Name, in.Arguments)
@@ -71,7 +71,7 @@ func validateAssistantTestReadReceipt(op assistantRunOperation, in assistantHost
 }
 func validateAssistantTestOutput(run assistantRunRecord, out assistantDomainOutput, receipts map[string]assistantHostResult) error {
 	p := out.TestProposal
-	if out.Kind != "test-proposal" || p == nil || out.Recipe != nil || out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil || !reflect.DeepEqual(out.Draft, graphDraft{}) || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || run.Binding.Phase == "plan" || !validAssistantTestRead(p.Read) {
+	if out.Kind != "test-proposal" || p == nil || out.Recipe != nil || out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil || !reflect.DeepEqual(out.Draft, graphDraft{}) || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || run.Binding.Phase == "plan" || !validAssistantTestRead(p.Read) || out.DialectAction != nil {
 		return errAssistantRunInvalid
 	}
 	var producer *assistantRunOperation
@@ -86,7 +86,7 @@ func validateAssistantTestOutput(run assistantRunRecord, out assistantDomainOutp
 		return errAssistantRunInvalid
 	}
 	var in assistantHostIntent
-	if readAssistantHostReceipt(producer.Intent, &in) != nil || !in.Root || in.CallID != out.CallID || in.Policy != nil || in.RecipeProposal != nil {
+	if readAssistantHostReceipt(producer.Intent, &in) != nil || !in.Root || in.CallID != out.CallID || in.Policy != nil || in.RecipeProposal != nil || in.DialectAction != nil {
 		return errAssistantRunInvalid
 	}
 	args, err := readAssistantTestArguments(producer.Name, in.Arguments)
@@ -218,7 +218,7 @@ func validateAssistantTestOutput(run assistantRunRecord, out assistantDomainOutp
 		return errAssistantRunInvalid
 	}
 	receipt, ok := receipts[producer.ID]
-	if !ok || receipt.Tests != nil || receipt.Read != nil || receipt.PolicySource != nil {
+	if !ok || receipt.Tests != nil || receipt.Read != nil || receipt.PolicySource != nil || receipt.DialectRead != nil {
 		return errAssistantRunInvalid
 	}
 	result, err := assistantTestProposalResult(p, run.Binding.Owner.ID)

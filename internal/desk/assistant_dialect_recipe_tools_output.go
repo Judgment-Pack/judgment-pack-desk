@@ -76,6 +76,9 @@ func prepareAssistantDialectRecipeIntent(run assistantRunRecord, in *assistantHo
 	return nil
 }
 func validateAssistantDialectRecipeIntent(run assistantRunRecord, op assistantRunOperation, in assistantHostIntent) error {
+	if in.DialectAction != nil {
+		return errAssistantRunInvalid
+	}
 	if in.Policy != nil {
 		return errAssistantRunInvalid
 	}
@@ -142,7 +145,7 @@ func validAssistantDialectRecipeRetention(binding assistantRunBinding, p assista
 	return err == nil && saved.ID == doc.ID && snapshot.SHA256 == saved.SHA256
 }
 func validateAssistantDialectRecipeOutput(run assistantRunRecord, out assistantDomainOutput, receipts map[string]assistantHostResult) error {
-	if out.Kind != "dialect-recipe" || out.Recipe == nil || out.TestProposal != nil || out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil || !reflect.DeepEqual(out.Draft, graphDraft{}) || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey {
+	if out.Kind != "dialect-recipe" || out.Recipe == nil || out.TestProposal != nil || out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil || !reflect.DeepEqual(out.Draft, graphDraft{}) || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || out.DialectAction != nil {
 		return errAssistantRunInvalid
 	}
 	for _, op := range run.Operations {
@@ -154,7 +157,7 @@ func validateAssistantDialectRecipeOutput(run assistantRunRecord, out assistantD
 			return errAssistantRunInvalid
 		}
 		held, ok := receipts[op.ID]
-		if !ok || held.Tests != nil || held.Read != nil || held.PolicySource != nil {
+		if !ok || held.Tests != nil || held.Read != nil || held.PolicySource != nil || held.DialectRead != nil {
 			return errAssistantRunInvalid
 		}
 		expected, err := assistantDialectRecipeResult(out.Recipe.Proposal, out.Recipe.Retained.ID)
