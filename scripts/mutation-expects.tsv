@@ -2700,3 +2700,15 @@ go	assistant native: callback argument journal encoding omitted	TestAssistantNat
 go	assistant native: changed parent arguments accepted	TestAssistantParentHostArgumentWireEncoding
 go	assistant native: changed callback arguments accepted	TestAssistantNativeHostArgumentWireEncoding
 go	assistant native: callback owning invocation order ignored	TestAssistantNativeInvocationAssociation
+go	assistant recipe: argument member guard omitted	TestAssistantDialectRecipeFiniteArguments
+go	assistant recipe: proposal identity derivation omitted	TestAssistantDialectRecipeMetadataAndCapacity
+go	assistant recipe: retained creation time not reused	TestAssistantDialectRecipeActualAPIProducer
+go	assistant recipe: independent readback guard omitted	TestAssistantDialectRecipeReadbackBeforeSuccess
+go	assistant recipe: stale independent projection admitted	TestAssistantDialectRecipeObservedCancellationAndStaleProjection
+go	assistant recipe: uncertain intents bypass capacity	TestAssistantDialectRecipeMetadataAndCapacity
+go	assistant recipe: read variant accepts producer metadata	TestAssistantDialectRecipeMetadataAndCapacity
+go	assistant recipe: completed redelivery result omitted	TestAssistantDialectRecipeImportAndReplay
+go	assistant recipe: uncertain create reopens as success	TestAssistantDialectRecipeUncertainWrite
+go	assistant recipe: pre-write current authority omitted	TestAssistantDialectRecipeFileAuthorityBeforeWrite
+go	assistant recipe: uncertainty permits another model request	TestAssistantDialectRecipeActualAPIUncertaintyStops
+go	assistant recipe: browser-blank text accepted	TestAssistantDialectRecipeFiniteArguments

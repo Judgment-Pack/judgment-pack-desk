@@ -16,7 +16,7 @@ func assistantPolicyStaleResult(raw []byte) bool {
 	return bytes.Equal(raw, result.Value().JSON())
 }
 func validateAssistantPolicyOutput(run assistantRunRecord, out assistantDomainOutput, receipts map[string]assistantHostResult) error {
-	if !contains([]string{"policy-update", "policy-interpretation"}, out.Kind) || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || !reflect.DeepEqual(out.Draft, graphDraft{}) {
+	if !contains([]string{"policy-update", "policy-interpretation"}, out.Kind) || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || out.Recipe != nil || !reflect.DeepEqual(out.Draft, graphDraft{}) {
 		return errAssistantRunInvalid
 	}
 	if run.Binding.Phase == "plan" {
@@ -101,7 +101,7 @@ func validateAssistantPolicyOutput(run assistantRunRecord, out assistantDomainOu
 
 func validateAssistantPolicyProjectionSource(source []byte, run assistantRunRecord) error {
 	for _, out := range run.DomainOutputs {
-		if out.Kind == "graph" {
+		if out.Kind != "policy-update" && out.Kind != "policy-interpretation" {
 			continue
 		}
 		scope, err := readAssistantPolicyScope(assistantRunSource{Original: source})

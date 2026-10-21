@@ -188,7 +188,27 @@ func (s *Server) writeAssistantChatProjection(r *http.Request, id string) error 
 		if err = s.retainConversationGraphDrafts(r, root, name, full, next); err != nil {
 			return false, err
 		}
-		if err = s.retainConversationDialectDrafts(r.Context(), full, next); err != nil {
+		needsRecipeGuard := false
+		for _, out := range run.DomainOutputs {
+			if out.Kind == "dialect-recipe" {
+				needsRecipeGuard = true
+			}
+		}
+		if needsRecipeGuard {
+			// Hold the normal workflow through conversation write/readback; a
+			// queued edit/discard cannot race the independent draft observation.
+			unlockDrafts, err := s.lockDialectDraftWorkflow(r.Context())
+			if err != nil {
+				return false, err
+			}
+			defer unlockDrafts()
+			if err = s.checkAssistantDialectRecipeDrafts(r, *run); err != nil {
+				return false, err
+			}
+			if err = s.retainConversationDialectDraftsLocked(r.Context(), full, next); err != nil {
+				return false, err
+			}
+		} else if err = s.retainConversationDialectDrafts(r.Context(), full, next); err != nil {
 			return false, err
 		}
 		// Recheck current authentication immediately before the bounded private write.

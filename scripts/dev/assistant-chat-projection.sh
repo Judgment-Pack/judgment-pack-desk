@@ -123,3 +123,24 @@ done
   --outfile="$tmp/policy-reference.mjs"
 "$node_bin" "$tmp/policy-reference.mjs" "$policy_outputs/passed.json" "$policy_outputs/stale.json" | tee "$tmp/policy-reader.log"
 grep -Fxq 'Policy shared readers: exact passed/stale update and pack/graph handoff cards passed.' "$tmp/policy-reader.log"
+
+# Recipe proposals retain a real independent draft before the shared chat write.
+recipe_outputs="$tmp/dialect-recipe"
+mkdir -m 700 "$recipe_outputs"
+(
+  cd "$root"
+  env "${go_env[@]}" DESK_DIALECT_RECIPE_READER_CHAT="$recipe_outputs/chat.json" \
+    DESK_DIALECT_RECIPE_READER_DRAFT="$recipe_outputs/draft.json" \
+    go test ./internal/desk -run '^TestAssistantDialectRecipeActualAPIProducer$' -count=1 -v
+) | tee "$tmp/recipe-producer.log"
+grep -Eq '^--- PASS: TestAssistantDialectRecipeActualAPIProducer \(' "$tmp/recipe-producer.log" || {
+  echo 'Dialect recipe producer test did not run and pass' >&2
+  exit 1
+}
+"$esbuild" "$root/scripts/assistant-dialect-recipe-reference.mjs" \
+  --bundle --platform=node --format=esm \
+  --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+  --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$tmp/recipe-reference.mjs"
+"$node_bin" "$tmp/recipe-reference.mjs" "$recipe_outputs/chat.json" "$recipe_outputs/draft.json" | tee "$tmp/recipe-reader.log"
+grep -Fxq 'Dialect recipe shared readers: exact typed proposal and independent draft readback passed.' "$tmp/recipe-reader.log"

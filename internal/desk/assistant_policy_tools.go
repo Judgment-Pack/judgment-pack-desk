@@ -160,14 +160,22 @@ func (e *assistantRunExecution) assistantConversationTools(runtime *assistantRun
 	if p != nil && p.ID != "" {
 		return e.assistantPolicyTools(p)
 	}
-	return e.assistantGraphTools(runtime)
+	base, err := e.assistantGraphTools(runtime)
+	if err != nil {
+		return nil, err
+	}
+	recipes, err := e.assistantDialectRecipeTools()
+	if err != nil {
+		return nil, err
+	}
+	return newAssistantHostRegistry(append(base.tools, recipes.tools...))
 }
 
 var assistantPolicyNames = []string{"read_policy", "propose_policy_update", "read_policy_comparison", "read_policy_coverage", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}
 
 func assistantPolicyTool(name string) bool { return contains(assistantPolicyNames, name) }
 func assistantHostProposal(name string) bool {
-	return name == "propose_graph" || contains([]string{"propose_policy_update", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}, name)
+	return name == "propose_graph" || name == "propose_dialect_recipe" || contains([]string{"propose_policy_update", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}, name)
 }
 func assistantPolicySchemas() map[string]json.RawMessage {
 	text := func(n int) any { return map[string]any{"type": "string", "maxLength": n} }
