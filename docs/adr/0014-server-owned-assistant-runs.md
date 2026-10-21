@@ -335,16 +335,20 @@ session, source, call index, finalCount, salted request commitment, result diges
 and signer. The final original must exactly equal the canonical verified result.
 Search shape validation preserves signed extension members, provider/kind/time,
 duplicate-hit checks and UTF-16 text limits, including grounded extras.
-URL admission is an explicitly conservative intersection with the pinned Gateway
-and browser, rather than full WHATWG parity: ordinary ASCII DNS labels, standard
-IPv4/IPv6, default HTTPS port 443, and Unicode path/query remain supported.
-Invalid/forbidden bracket hosts, scope zones and ambiguous numeric spellings
-refuse. Raw Unicode and punycode hostnames, empty DNS labels and browser-only
-raw percent paths also refuse in this private slice. The complete signed result
-refuses; hits are never truncated or normalized. Handwritten shared URL vectors
-record both private-host and actual browser verdicts. Unicode/IDNA hostname parity
-must be completed with the shared link URL normalization work before production
-activation (Desk #590). The private host requires RFC3339 timestamps; the pinned search producer
+URL spelling is now shared with the private link reader through the pure-Go
+`github.com/nlnwa/whatwg-url` v0.6.2 parser (Apache-2.0; Go 1.16 module;
+no CGO/native runtime requirement). The shared spelling guard mirrors the
+browser's HTTPS, credentials, fragment, port and byte-bound checks. Unicode and
+punycode hostnames, browser numeric-host spellings, empty labels and raw-percent
+paths are parsed by that standards-backed owner instead of the earlier ASCII
+intersection. Historical URL vectors retain their original host/browser columns;
+the current Go reader checks the existing browser expectations, and additive
+normalization/extraction vectors cover explicit fetch preparation. This proves
+these shared consumers and vectors, not comprehensive WHATWG conformance.
+Gateway remains the owner of actual DNS, public-network and redirect admission.
+Signed result strings and extension members are never normalized or rewritten;
+an invalid hit refuses the entire result.
+The private host requires RFC3339 timestamps; the pinned search producer
 writes UTC RFC3339. Legacy browser Date.parse strings such as `2026-10-21` remain
 readable in old browser history but are refused by this private producer. No
 signed bytes are normalized to obtain acceptance. Explicit default HTTPS port
@@ -363,6 +367,77 @@ verified historical output while preserving the original unknown tool result;
 it never reacquires, reseals, rewrites an attachment or restores current source
 permission from history.
 
-This slice delivers only conversational `search_sources`. Link reading, website
-exploration, research workflow read/citation tools, choice continuation,
-Plan/memory migration and production/browser activation remain separate work.
+The search slice delivers conversational `search_sources`. The private link
+reader below reuses its current verified receipts. Website exploration, research
+workflow read/citation tools, choice continuation, Plan/memory migration and
+production/browser activation remain separate work.
+
+
+### Private conversational link reader (#593)
+
+`read_link` is a fixed read/read offer in ordinary conversation and read children,
+including Plan. The existing Policy-specific early return remains unchanged. A
+supplied URL is available with broader research disabled: nomination is limited
+to link extraction from saved user text and exact `document` attachment `link.url`
+fields. Assistant text, arbitrary nested fields, an attachment ID and unverified
+redirect strings grant nothing. Other links require the saved Research choice
+and a currently verified search receipt; normalization creates the explicit fetch
+request while its authority remains bound to that verified original URL. Retained
+redirect authorization verifies requested and resolved URLs together. Discovery
+is not offered and a discovery-only URL is refused.
+
+The link preparer accepts public HTTPS spelling and unambiguous bare ASCII or
+punycode website names, keeps the trimmed display spelling and records fragments
+as section/route anchors beside the fragment-free fetch request. It uses the same
+standards-backed spelling owner as search. No JavaScript runtime, CGO, component
+pin or production registration is added.
+
+A separate typed link-custody record retains exact operation/turn/request identity,
+Gateway/configuration commitments, random one-result session and immutable
+stage/seal/original/final attachment receipts. The existing outbound source,
+attachment CAS/quota/namespace/backup and canonical offline-verifier owners perform
+effects. The web response/proof bound is 16 MiB, and the retained original is
+bounded at the smaller of the configured file limit and 4 MiB; complete packets
+remain outside the run journal and under the attachment object quota. Every effect
+has durable intent. Completed stage/seal custody may finish after cancellation,
+but permits no next effect. Pending durable external/storage intents close fresh
+acquisition even if a process died before recording an explicit unknown flag.
+Generic GET/list/SSE/Stop remain observational. Only explicit terminal projection
+may attach exact existing receipts and recover an already completed final packet,
+keeping the original refused result; no acquisition, seal or attachment write is
+replayed.
+
+Ordinary new reads reserve one durable counter per saved user turn across roots,
+children, retries and fresh admissions; the limit is three. Retained verified
+windows do not reserve again. The same counter must support the browser's future
+discovered-page threshold of ten; no second additive pool or unused discovery
+authorization is introduced. The existing 256 retained-document limit applies.
+Verified search/redirect authority also retains the exact attachment receipt in
+link custody and compares its bytes after queue and storage waits; removing or
+substituting that object cannot preserve permission. Current configuration,
+source/session, Policy, profile and critic fences are
+rechecked after waits; no private storage lock spans verification or external IO.
+
+New acquisitions use a separate current-run custody reader. Saved-reference
+checks are not relaxed to arbitrary IDs, and the pinned saved chat is not rewritten
+after each call. The full proof, original digest and document shape are verified
+before exposure. New partial/unreadable documents are retained for review and yield
+no page text. Saved explicit partial consent and selected readable pages remain
+required. Finite producer-bound output projects through the shared terminal chat
+owner into existing attachment and link-work shapes, including read-child output.
+
+The window uses the canonical context result/read-window byte policy, selected
+pages joined by two newlines, UTF-16 find/range offsets and exact page citations.
+Find is literal, case-insensitive ECMAScript non-Unicode matching with ECMAScript
+whitespace, at most 200 units and three matches. A narrow browser correction is
+shared by both engines: after explicit/default-find clamping, a start between a
+valid high/low surrogate pair backs up one UTF-16 unit and reports that actual
+offset. The old browser could emit half an emoji, which Agent's UTF-8 result value
+would replace with U+FFFD. The new contract returns the intact character; the
+shared encoded-prefix policy already keeps the end safe and continuation advances
+from the actual end. If bounded page-span metadata alone would exceed the shared
+result limit, both readers return a bounded review refusal; newly acquired data
+remains attached for selecting fewer pages. Handwritten vectors cover explicit
+and find-based starts,
+BMP/combining text, page spans, non-ASCII whitespace/folding and byte-cutoff
+continuation. Existing composer/UI and manual/background authorization are kept.

@@ -15534,6 +15534,37 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if err != nil || (false && (!bytes.Equal(result, original) || object.Original.SHA256 != digest)) {'
 fi
 
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant link: supplied user role guard omitted' internal/desk/assistant_link_read.go \
+    'if turn.Role != "user" {' \
+    'if false && turn.Role != "user" {'
+  mutate go 'assistant link: ordinary saved-turn limit omitted' internal/desk/assistant_link_store.go \
+    'if attempts >= 3 {' \
+    'if false && attempts >= 3 {'
+  mutate go 'assistant link: retained document limit omitted' internal/desk/assistant_link_store.go \
+    'if len(retained) >= 256 {' \
+    'if false && len(retained) >= 256 {'
+  mutate go 'assistant link: pending crash intent ignored' internal/desk/assistant_link_store.go \
+    'search.DispatchClosed || assistantLinkPending(search)' \
+    search.DispatchClosed
+  mutate go 'assistant link: original storage identity omitted' internal/desk/assistant_link_read.go \
+    ' || held.Original.Receipt.ID != held.FinalID' \
+    ''
+  mutate go 'assistant link: queued verified authority bytes omitted' internal/desk/assistant_link_tools.go \
+    'if held.AuthorityPacket != nil {
+		raw, err := e.assistantLinkPacket(ctx, held.AuthorityPacket.ID)' \
+    'if false && held.AuthorityPacket != nil {
+		raw, err := e.assistantLinkPacket(ctx, held.AuthorityPacket.ID)'
+  mutate go 'assistant link: Unicode safe start omitted' internal/desk/assistant_link_window.go \
+    'start = assistantLinkSafeStart(joined, min(chars, start))' \
+    'start = min(chars, start)'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant link: browser Unicode safe start omitted' web/src/chat/linkTools.ts \
+    'if (start > 0 &&' \
+    'if (false && start > 0 &&'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

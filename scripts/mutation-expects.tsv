@@ -2820,3 +2820,11 @@ go	assistant search: shared saved-turn limit omitted	TestAssistantSearchSharedTu
 go	assistant search: retained chat limit omitted	TestAssistantSearchRetainedChatLimit
 go	assistant search: queued source admission omitted	TestAssistantSearchQueuedConfiguration
 go	assistant search: canonical original association omitted	TestAssistantSearchExactProofAssociation
+go	assistant link: supplied user role guard omitted	TestAssistantLinkSavedNominationOnly
+go	assistant link: ordinary saved-turn limit omitted	TestAssistantLinkFreshAdmissionBudget
+go	assistant link: retained document limit omitted	TestAssistantLinkRetainedLimit
+go	assistant link: pending crash intent ignored	TestAssistantLinkUnknownExternalOutcome
+go	assistant link: original storage identity omitted	TestAssistantLinkExactProofAssociation
+go	assistant link: queued verified authority bytes omitted	TestAssistantLinkQueuedVerifiedSearchAuthority
+go	assistant link: Unicode safe start omitted	TestAssistantLinkSharedWindowVectors
+web	assistant link: browser Unicode safe start omitted	shared private/browser link window vectors

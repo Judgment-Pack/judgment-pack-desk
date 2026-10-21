@@ -1,0 +1,19 @@
+[
+ {"name":"HTTPS host case and anchor","input":" HTTPS://EXAMPLE.ORG:443/a#brief-human-review ","fetchUrl":"https://example.org/a","displayUrl":"HTTPS://EXAMPLE.ORG:443/a#brief-human-review","anchor":"brief-human-review","anchorKind":"section"},
+ {"name":"bare domain","input":"example.org/news?q=public","fetchUrl":"https://example.org/news?q=public","displayUrl":"example.org/news?q=public","anchor":"","anchorKind":"none"},
+ {"name":"Unicode host path","input":"https://éxample.org/über#café","fetchUrl":"https://xn--xample-9ua.org/%C3%BCber","displayUrl":"https://éxample.org/über#café","anchor":"caf%C3%A9","anchorKind":"section"},
+ {"name":"punycode bare","input":"xn--xample-9ua.org/","fetchUrl":"https://xn--xample-9ua.org/","displayUrl":"xn--xample-9ua.org/","anchor":"","anchorKind":"none"},
+ {"name":"client route","input":"https://example.org/#!/inbox","fetchUrl":"https://example.org/","displayUrl":"https://example.org/#!/inbox","anchor":"!/inbox","anchorKind":"route"},
+ {"name":"numeric host normalization","input":"https://127.1/","fetchUrl":"https://127.0.0.1/","displayUrl":"https://127.1/","anchor":"","anchorKind":"none"},
+ {"name":"empty query markers","input":"https://example.org/?#","fetchUrl":"https://example.org/","displayUrl":"https://example.org/?#","anchor":"","anchorKind":"none"},
+ {"name":"BOM trimming","input":"﻿example.org ","fetchUrl":"https://example.org/","displayUrl":"example.org","anchor":"","anchorKind":"none"},
+ {"name":"credentials","input":"https://user:secret@example.org/","refused":true},
+ {"name":"empty credentials","input":"https://@example.org/","refused":true},
+ {"name":"nondefault port","input":"https://example.org:444/","refused":true},
+ {"name":"HTTP","input":"http://example.org/","refused":true},
+ {"name":"backslash","input":"https://example.org\\other/","refused":true},
+ {"name":"invalid IDNA","input":"https://xn--example/","refused":true},
+ {"name":"Unicode bare is ambiguous","input":"éxample.org/","refused":true},
+ {"name":"filename","input":"notes.md","refused":true},
+ {"name":"empty","input":"","refused":true}
+]

@@ -153,7 +153,7 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 			// Ordinary chats share Graph, Test and Recipe offers. Keep every tool's
 			// explicit classification; an unknown addition needs a reviewed fixture.
 			effects := map[string]string{
-				"search_sources": "read",
+				"search_sources": "read", "read_link": "read",
 				"list_decisions": "read", "read_decision": "read",
 				"get_graph_authoring_instructions": "read", "graph_validate": "read",
 				"graph_explain": "read", "graph_rehearse": "read", "propose_graph": "proposal",

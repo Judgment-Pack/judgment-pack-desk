@@ -26,6 +26,7 @@ func TestAssistantHostCanonicalEffects(t *testing.T) {
 				expected = map[string]string{"read_policy": "read", "propose_policy_update": "proposal", "read_policy_comparison": "read", "read_policy_coverage": "read", "propose_policy_pack_interpretation": "proposal", "propose_policy_graph_interpretation": "proposal"}
 			} else {
 				expected["search_sources"] = "read"
+				expected["read_link"] = "read"
 			}
 			registry, err := newAssistantHostRegistry(x.Run.HostTools)
 			assistantRunMust(t, err)
