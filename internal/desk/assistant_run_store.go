@@ -76,6 +76,7 @@ type assistantRunEvent struct {
 	Event contract.RunEvent `json:"event"`
 }
 type assistantRunRecord struct {
+	Searches        []assistantSearchCustody    `json:"searches,omitempty"`
 	DomainOutputs   []assistantDomainOutput     `json:"domainOutputs,omitempty"`
 	ChatProjection  *assistantChatProjection    `json:"chatProjection,omitempty"`
 	ProjectionIssue string                      `json:"projectionIssue,omitempty"`

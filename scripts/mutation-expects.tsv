@@ -2814,3 +2814,9 @@ go	assistant dialect research: preparation waits while private is held	TestAssis
 go	assistant dialect research: manual local bearer incorrectly requires session	TestResearchRequestAuthorizationModes
 go	assistant dialect research: current shared request guard omitted	TestResearchRequestCurrentAuthorization
 go	assistant dialect research: private host accepts local bearer	TestResearchRequestCurrentAuthorization
+go	assistant search: UTF16 query bound omitted	TestAssistantSearchArgumentsAndShape
+go	assistant search: saved research choice omitted	TestAssistantSearchConsentZeroAcquisition
+go	assistant search: shared saved-turn limit omitted	TestAssistantSearchSharedTurnLimit
+go	assistant search: retained chat limit omitted	TestAssistantSearchRetainedChatLimit
+go	assistant search: queued source admission omitted	TestAssistantSearchQueuedConfiguration
+go	assistant search: canonical original association omitted	TestAssistantSearchExactProofAssociation

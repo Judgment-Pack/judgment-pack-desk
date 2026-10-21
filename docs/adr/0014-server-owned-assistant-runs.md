@@ -286,3 +286,83 @@ This private delivery does not activate an executor, migrate browser dispatch,
 replace background research model adapters, or implement source/Plan/memory/
 continuation workflows. Runtime #274 / Desk #582 and complete certification
 remain separate gates.
+
+### Private conversational search custody
+
+The private server-owned `search_sources` tool is a Desk-authored read with
+`research` delegation. It declares no external Source, SourceTool, EffectClass,
+approval or immutable cache policy. Plan and research children retain the current
+saved user request's consent. Only that exact request's recorded Research choice,
+or its established web-research mode under enabled project settings, permits
+acquisition. Ask retains a finite suggestion without acquisition; provided-only
+refuses. Historical choices and model text grant no permission. The finite choice
+continuation remains outside this slice and must preserve the original saved
+TurnID as the source-reservation identity before activation.
+
+The existing project run ledger atomically reserves three searches per saved
+user TurnID across root, children, reconstruction and retries, and sixty-four
+searches per chat, including retained and uncertain reservations. The identity
+excludes an execution nonce and changing choice bytes. The ledger stays at its
+existing 16 MiB limit and retains only finite producer/request/configuration,
+Gateway session, storage IDs, effect state and exact storage receipts. Unknown
+external or storage outcomes close dispatch; reads and reload do not repeat them.
+
+`researchSourceCallWithAdmission` remains the sole acquisition/seal owner. Full
+current Gateway, selected connection/revision and project preference are compared
+after capacity admission and before further IO, alongside session, Policy,
+profile, exact saved source and critic checks. Storage callbacks perform trusted
+local inspection only. The canonical research resolver now has a no-start
+snapshot mode for those callbacks: unavailable or changed local process facts
+refuse without spawning or waiting for a companion. Existing manual and
+background paths retain start-enabled resolution.
+
+Completed response bytes are retained as a distinct host-generated attachment
+original named `chat-search-acquisition.json`; a completed seal has its own
+`chat-search-seal.json` packet. Neither is a user reference or source authority.
+Both are immutable original bytes under the existing attachment CAS, namespace,
+quota and backup owner. Their precise retention intent may finish despite chat
+Stop within a bounded local write; it permits no next acquisition, seal or final
+object write. The final `web-search.json` attachment retains its canonical result
+original first and the complete exact proof second. No provisional Proof is
+written and attachment proof immutability is unchanged. The result limit is one
+MiB; the declared acquisition packet bound is six times that result bound plus
+the existing 64 KiB receipt envelope bound, and the seal bound is 64 KiB. Excess
+refuses without truncation; configured upload and aggregate storage limits still
+apply.
+
+The installed integrity-checked Gateway canonicalizer and offline verifier bind
+session, source, call index, finalCount, salted request commitment, result digest
+and signer. The final original must exactly equal the canonical verified result.
+Search shape validation preserves signed extension members, provider/kind/time,
+duplicate-hit checks and UTF-16 text limits, including grounded extras.
+URL admission is an explicitly conservative intersection with the pinned Gateway
+and browser, rather than full WHATWG parity: ordinary ASCII DNS labels, standard
+IPv4/IPv6, default HTTPS port 443, and Unicode path/query remain supported.
+Invalid/forbidden bracket hosts, scope zones and ambiguous numeric spellings
+refuse. Raw Unicode and punycode hostnames, empty DNS labels and browser-only
+raw percent paths also refuse in this private slice. The complete signed result
+refuses; hits are never truncated or normalized. Handwritten shared URL vectors
+record both private-host and actual browser verdicts. Unicode/IDNA hostname parity
+must be completed with the shared link URL normalization work before production
+activation (Desk #590). The private host requires RFC3339 timestamps; the pinned search producer
+writes UTC RFC3339. Legacy browser Date.parse strings such as `2026-10-21` remain
+readable in old browser history but are refused by this private producer. No
+signed bytes are normalized to obtain acceptance. Explicit default HTTPS port
+443 remains allowed as in the browser.
+
+A finite search output binds the actual host/run/call, exact request/reference,
+verified digest and exact stored final object. Current-run custody does not
+weaken saved-document reference checks or admit arbitrary attachment IDs.
+Explicit terminal projection verifies physical stage/final custody offline,
+rechecks current configuration, then appends and deduplicates the existing
+SearchReference/SearchStep browser shape. GET/SSE/reload leave ledger bytes and
+revision unchanged. Only explicit terminal projection/recovery reconciles exact
+already-declared storage receipts, using current-only configuration without
+starting local processing. An explicitly recovered completed final write can retain
+verified historical output while preserving the original unknown tool result;
+it never reacquires, reseals, rewrites an attachment or restores current source
+permission from history.
+
+This slice delivers only conversational `search_sources`. Link reading, website
+exploration, research workflow read/citation tools, choice continuation,
+Plan/memory migration and production/browser activation remain separate work.

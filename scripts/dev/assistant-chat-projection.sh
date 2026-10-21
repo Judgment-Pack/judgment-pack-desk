@@ -250,3 +250,27 @@ grep -Eq '^--- PASS: TestAssistantDialectResearchActualAPIProducer \(' "$tmp/dia
   "$research_outputs/source.json" \
   "$research_outputs/review.json" "$research_outputs/started.json" "$research_outputs/activity.json" | tee "$tmp/dialect-research-reader.log"
 grep -Fxq 'Dialect research shared readers: exact review/admitted cards and independent queued activity passed (5 observations).' "$tmp/dialect-research-reader.log"
+
+# Search uses the same pinned offline proof fixture as the mutation lane.
+. "$root/scripts/dev/gateway-fixture.sh"
+prepare_gateway_fixture
+search_outputs="$tmp/source-search"
+mkdir -m 700 "$search_outputs"
+(
+ cd "$root"
+ env "${go_env[@]}" DESK_SEARCH_READER_OUTPUTS="$search_outputs" \
+  go test ./internal/desk -run '^TestAssistantSearchActualProducersAndProjection$' -count=1 -v
+) | tee "$tmp/search-producers.log"
+for producer in api codex research-child; do
+ grep -Eq -- "--- PASS: TestAssistantSearchActualProducersAndProjection/$producer \\(" "$tmp/search-producers.log" || {
+  echo "Search $producer producer did not run and pass" >&2
+  exit 1
+ }
+done
+"$esbuild" "$root/scripts/assistant-search-projection-reference.mjs" \
+ --bundle --platform=node --format=esm \
+ --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+ --define:import.meta.glob=offlineLocaleCatalogues \
+ --outfile="$tmp/search-reference.mjs"
+"$node_bin" "$tmp/search-reference.mjs" "$search_outputs" | tee "$tmp/search-reader.log"
+grep -Fxq 'Search shared readers: 3 actual API/native/research-child projections and exact sealed originals passed.' "$tmp/search-reader.log"

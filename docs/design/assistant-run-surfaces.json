@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph/Policy/recipe/mapping/records/research-admission host foundations implemented; production activation pending",
+  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph/Policy/recipe/mapping/records/research-admission/search host foundations implemented; production activation pending",
   "deskEvidence": "reviewed private foundations and focused actual API/native execution proofs; existing browser features remain on current engines pending full migration/certification",
   "agentEvidence": {
     "version": "v0.6.0",
@@ -729,7 +729,13 @@
         "web/src/chat/linkTools.ts",
         "web/src/search/tools.ts",
         "web/src/chat/researchChoice.ts",
-        "internal/desk/researchrelay.go"
+        "internal/desk/researchrelay.go",
+        "internal/desk/assistant_search_tools.go",
+        "internal/desk/assistant_search_acquire.go",
+        "internal/desk/assistant_search_store.go",
+        "internal/desk/assistant_search_recovery.go",
+        "internal/desk/assistant_search_output.go",
+        "scripts/assistant-search-projection-reference.mjs"
       ],
       "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
       "preserve": [
@@ -737,9 +743,12 @@
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
-        "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
-      ]
+        "actual API/native root and research-child producers; current saved choice, durable shared3/retained64 limits, exact signed proof and UTF16 boundaries",
+        "queued current Gateway/connection/session/profile/source admission, cancellation, uncertain acquire/seal/storage outcomes and observational GET and explicit offline exact-receipt recovery",
+        "actual Go-emitted SearchReference/SearchStep through existing ChatStore and verifySearch browser readers",
+        "handwritten Go/browser URL intersection vectors; raw Unicode/punycode hostname parity remains a production-activation dependency in Desk #590"
+      ],
+      "status": "private conversational search_sources implemented; read_link/explore_website, finite choice continuation and production/browser activation pending"
     },
     {
       "id": "research-source-host",
@@ -875,7 +884,7 @@
     ],
     "pending": [
       "complete provider-managed Desk binding and feature certification",
-      "actual request_dialect_research with real grant/admission/independent-worker recovery; remaining source/attachment host tools",
+      "remaining conversational link/exploration and research source/citation host tools; finite research-choice continuation",
       "Plan/memory and remaining continuation/workflow feature migrations; released Runtime test-proposal compatibility #582",
       "browser cutover and production executor registration after complete migration/review"
     ],

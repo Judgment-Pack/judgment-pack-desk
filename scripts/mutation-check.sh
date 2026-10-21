@@ -15513,6 +15513,27 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 			if err := s.authorizePrivateWorkspace(r); err != nil {'
 fi
 
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant search: UTF16 query bound omitted' internal/desk/assistant_search_record.go \
+    'query == "" || runcontext.U16Length(query) > 2000' \
+    'query == ""'
+  mutate go 'assistant search: saved research choice omitted' internal/desk/assistant_search_acquire.go \
+    'if choice != "research" {' \
+    'if false && choice != "research" {'
+  mutate go 'assistant search: shared saved-turn limit omitted' internal/desk/assistant_search_store.go \
+    'if attempts >= 3 {' \
+    'if false && attempts >= 3 {'
+  mutate go 'assistant search: retained chat limit omitted' internal/desk/assistant_search_store.go \
+    'if len(retained) >= 64 {' \
+    'if false && len(retained) >= 64 {'
+  mutate go 'assistant search: queued source admission omitted' internal/desk/input_research_source.go \
+    'if admission != nil {' \
+    'if false && admission != nil {'
+  mutate go 'assistant search: canonical original association omitted' internal/desk/assistant_search_recovery.go \
+    'if err != nil || !bytes.Equal(result, original) || object.Original.SHA256 != digest {' \
+    'if err != nil || (false && (!bytes.Equal(result, original) || object.Original.SHA256 != digest)) {'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
