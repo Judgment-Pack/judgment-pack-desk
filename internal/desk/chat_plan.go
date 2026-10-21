@@ -3,8 +3,12 @@ package desk
 import (
 	"encoding/json"
 	"errors"
+	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/jsonscalar"
 	"os"
+	"reflect"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -27,7 +31,11 @@ type chatPlan struct {
 
 var planDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-func validPlanText(s string, n int) bool { return len(s) > 0 && len([]rune(s)) <= n }
+func validPlanText(s string, n int) bool {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return r >= 9 && r <= 13 || r == 32 || r == 0xA0 || r == 0x1680 || r >= 0x2000 && r <= 0x200A || r == 0x2028 || r == 0x2029 || r == 0x202F || r == 0x205F || r == 0x3000 || r == 0xFEFF
+	}) != "" && runcontext.U16Length(s) <= n
+}
 func validateChatPlan(data json.RawMessage) error {
 	var c struct {
 		Interaction string     `json:"interaction"`
@@ -35,6 +43,31 @@ func validateChatPlan(data json.RawMessage) error {
 	}
 	if err := json.Unmarshal(data, &c); err != nil {
 		return errors.New("Invalid saved plan.")
+	}
+	fields, fieldErr := assistantTestObject(data)
+	if fieldErr != nil {
+		return fieldErr
+	}
+	for key := range fields {
+		if (strings.EqualFold(key, "interaction") && key != "interaction") || (strings.EqualFold(key, "plans") && key != "plans") {
+			return errAssistantRunInvalid
+		}
+	}
+	if _, err := assistantChatPhase(fields["interaction"]); err != nil {
+		return err
+	}
+	var planRows []json.RawMessage
+	if raw, ok := fields["plans"]; ok {
+		if jsonscalar.ValidateEscapes(raw) != nil {
+			return errAssistantRunInvalid
+		}
+		if err := readAssistantDialectCustody(raw, reflect.TypeOf([]chatPlan{})); err != nil {
+			return err
+		}
+		planRows, fieldErr = assistantChatArray(raw)
+		if fieldErr != nil {
+			return fieldErr
+		}
 	}
 	if c.Interaction != "" && c.Interaction != "plan" && c.Interaction != "work" {
 		return errors.New("Invalid planning phase.")
@@ -54,7 +87,11 @@ func validateChatPlan(data json.RawMessage) error {
 		if _, e := time.Parse(time.RFC3339Nano, p.CreatedAt); e != nil {
 			return errors.New("Invalid plan timestamp.")
 		}
-		if p.Status == "started" || p.Status == "accepted" || p.AcceptedAt != "" {
+		planFields, err := assistantTestObject(planRows[i])
+		if err != nil {
+			return err
+		}
+		if p.Status == "started" || p.Status == "accepted" || planFields["acceptedAt"] != nil {
 			if _, e := time.Parse(time.RFC3339Nano, p.AcceptedAt); e != nil {
 				return errors.New("Invalid plan acceptance.")
 			}
@@ -108,16 +145,32 @@ func (s *Server) checkChatExecutionLocked(chat string) error {
 		return e
 	}
 	var doc struct {
-		Chats []struct {
-			ID          string `json:"id"`
-			Interaction string `json:"interaction"`
-		} `json:"chats"`
+		Chats []json.RawMessage `json:"chats"`
 	}
 	if e = json.Unmarshal(b, &doc); e != nil {
 		return e
 	}
-	for _, c := range doc.Chats {
-		if c.ID == chat && c.Interaction == "plan" {
+	for _, raw := range doc.Chats {
+		var c struct {
+			ID          string     `json:"id"`
+			Interaction string     `json:"interaction"`
+			Plans       []chatPlan `json:"plans"`
+		}
+		if json.Unmarshal(raw, &c) != nil {
+			return errAssistantRunInvalid
+		}
+		if c.ID != chat {
+			continue
+		}
+		if len(c.Plans) > 0 {
+			plan := c.Plans[len(c.Plans)-1]
+			if plan.Status == "accepted" || plan.Status == "started" {
+				if err := s.checkCurrentAssistantPlan(raw, plan); err != nil {
+					return err
+				}
+			}
+		}
+		if c.Interaction == "plan" {
 			return errors.New("This chat is in Plan mode. Review its plan and choose Start work before requesting an operation.")
 		}
 	}

@@ -164,6 +164,9 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 				"read_dialect_publication": "read", "propose_dialect_publication": "proposal",
 				"read_dialect_records": "read", "read_dialect_activity": "read", "propose_dialect_action": "proposal", "request_dialect_research": "workflow",
 			}
+			if phase == "plan" {
+				effects[assistantPlanTool] = "plan"
+			}
 			names := []string{}
 			for _, tool := range x.Run.HostTools {
 				effect, known := effects[tool.Name]
@@ -171,7 +174,7 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 					t.Fatal("unknown or duplicate shared offer", tool.Name)
 				}
 				names = append(names, tool.Name)
-				if effect == "proposal" || effect == "workflow" {
+				if effect == "proposal" || effect == "workflow" || effect == "plan" {
 					if tool.Effect != effect || tool.Delegation != "" {
 						t.Fatal("proposal grants", tool.Name)
 					}
@@ -184,7 +187,7 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 				}
 			}
 			for name, effect := range effects {
-				if contains(names, name) != (effect == "read" || phase == "work") {
+				if contains(names, name) != (effect == "read" || phase == "work" || effect == "plan" && phase == "plan") {
 					t.Fatal("Work/Plan shared offer", name, names)
 				}
 			}

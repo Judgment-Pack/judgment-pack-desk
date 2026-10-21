@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "plans": [
+    {"id":"plan-vector-one","revision":1,"objective":"Review the exact saved pack 💡","steps":["Read the pack","Review the mapping"],"questions":["Which publication applies?"],"references":[{"kind":"file","id":"packs/one.json","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"status":"superseded","createdAt":"2026-10-21T10:00:00Z"},
+    {"id":"plan-vector-two","revision":2,"objective":"Review the saved Dialect","steps":["Read the recipe","Resolve remaining questions"],"questions":[],"references":[{"kind":"dialect","id":"prep_00000000000000000000000000000001","revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"status":"proposed","createdAt":"2026-10-21T10:01:00Z"}
+  ],
+  "accepted": [{"id":"plan-vector-accepted","revision":1,"objective":"Explicit human acceptance","steps":["Inspect the approved scope"],"questions":[],"references":[],"status":"accepted","createdAt":"2026-10-21T10:02:00Z","acceptedAt":"2026-10-21T10:03:00Z"}],
+  "started": [{"id":"plan-vector-started","revision":1,"objective":"Explicit human start","steps":["Preserve normal action approvals"],"questions":[],"references":[],"status":"started","createdAt":"2026-10-21T10:04:00Z","acceptedAt":"2026-10-21T10:05:00Z"}],
+  "arguments":{"objective":"Review the exact saved pack 💡","steps":["Read the pack","Review the mapping"],"questions":["Which publication applies?"],"references":[{"kind":"file","id":"packs/one.json"},{"kind":"dialect","id":"prep_00000000000000000000000000000001"}]}
+}

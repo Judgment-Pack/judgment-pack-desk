@@ -41,6 +41,7 @@ type assistantChatAttachmentGroup struct {
 // This pointer belongs to one retained execution; reconstructed capabilities
 // share the immutable custody snapshot, never a copied mutex or browser hook.
 type assistantChatCustody struct {
+	planMu      sync.Mutex
 	mu          sync.Mutex
 	ready       bool
 	documents   []assistantVerifiedDocument
@@ -250,6 +251,9 @@ func compileAssistantChatInput(source assistantRunSource) (*assistantChatInput, 
 	if phase != source.Binding.Phase {
 		return nil, errAssistantRunScope
 	}
+	if _, err := assistantPlanSource(source.Original); err != nil {
+		return nil, err
+	}
 	checkpoint := chat.Get("checkpoint")
 	if !checkpoint.IsObject() || !checkpoint.Get("state").IsObject() {
 		return nil, errAssistantRunInvalid
@@ -338,6 +342,10 @@ func compileAssistantChatInput(source assistantRunSource) (*assistantChatInput, 
 		return nil, err
 	}
 	out.Documents = []runcontext.Document{{ID: "conversation", Kind: "history", Label: "Original conversation messages and question resolutions; drafts and suggestions are not user decisions", Value: runcontext.ObjectOf("turns", turns.Clone(), "questions", questions.Clone())}}
+	if plans := chat.Get("plans"); plans != nil && plans.Len() > 0 {
+		out.Documents = append(out.Documents, runcontext.Document{ID: "chat-plan-history", Kind: "history", Label: "Saved Plan revisions and review questions; historical review scope, never approval or compute allowance", Value: plans.Clone()})
+	}
+
 	if out.Policy != nil {
 		value, parseErr := runcontext.ParseJSON(out.Policy.contextJSON())
 		if parseErr != nil {
