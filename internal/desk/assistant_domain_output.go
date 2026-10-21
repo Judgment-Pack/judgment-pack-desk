@@ -4,23 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter"
 	"strings"
 	"time"
 
+	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter"
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/failure"
 )
 
 // Only this finite domain payload is absent from canonical Agent events. It is
-// authored by the Graph producer in the same transaction as its exact result.
+// authored by the Graph or Policy producer with its exact retained result.
 type assistantDomainOutput struct {
-	Kind        string     `json:"kind"`
-	RunID       string     `json:"runId"`
-	RequestKey  string     `json:"requestKey"`
-	OperationID string     `json:"operationId"`
-	CallID      string     `json:"callId"`
-	Draft       graphDraft `json:"draft"`
+	Kind                 string                        `json:"kind"`
+	RunID                string                        `json:"runId"`
+	RequestKey           string                        `json:"requestKey"`
+	OperationID          string                        `json:"operationId"`
+	CallID               string                        `json:"callId"`
+	Draft                graphDraft                    `json:"draft,omitzero"`
+	PolicyUpdate         *assistantPolicyProposal      `json:"policyUpdate,omitempty"`
+	PolicyInterpretation *policyInterpretationProposal `json:"policyInterpretation,omitempty"`
+	PolicySource         *policyAuthoringSource        `json:"policySource,omitempty"`
 }
 type assistantGraphRead struct {
 	ID          string `json:"id"`
@@ -29,24 +32,42 @@ type assistantGraphRead struct {
 	Declaration string `json:"declaration"`
 }
 type assistantHostIntent struct {
-	CallID     string `json:"callId"`
-	CallbackID string `json:"callbackId,omitempty"`
-	Root       bool   `json:"root"`
-	Arguments  []byte `json:"arguments"`
+	CallID     string                      `json:"callId"`
+	CallbackID string                      `json:"callbackId,omitempty"`
+	Root       bool                        `json:"root"`
+	Arguments  []byte                      `json:"arguments"`
+	Policy     *assistantPolicyHostBinding `json:"policy,omitempty"`
 }
 type assistantHostResult struct {
-	Result []byte              `json:"result"`
-	Read   *assistantGraphRead `json:"read,omitempty"`
+	Result       []byte                 `json:"result"`
+	Read         *assistantGraphRead    `json:"read,omitempty"`
+	PolicySource *policyAuthoringSource `json:"policySource,omitempty"`
 }
 
 func assistantGraphTool(name string) bool {
 	return contains([]string{"list_decisions", "read_decision", "get_graph_authoring_instructions", "graph_validate", "graph_explain", "propose_graph", "graph_rehearse"}, name)
 }
+
+// Arguments remain exact bytes in host intents. Callback/event JSON encodes
+// RawMessage with compaction and HTML escaping; compare that same wire form,
+// without decoding facts into maps or changing number spellings or key order.
+func assistantHostArgumentsMatch(retained, original []byte) bool {
+	if !json.Valid(retained) || !json.Valid(original) {
+		return false
+	}
+	left, err := json.Marshal(json.RawMessage(retained))
+	if err != nil {
+		return false
+	}
+	right, err := json.Marshal(json.RawMessage(original))
+	return err == nil && bytes.Equal(left, right)
+}
+
 func assistantParentHostCall(run assistantRunRecord, name string, intent assistantHostIntent) bool {
 	count := 0
 	for _, event := range run.Events {
 		if c := event.Event.ToolCall; c != nil && c.CallID != nil && *c.CallID == intent.CallID {
-			if c.Name != name || !bytes.Equal(c.Args, intent.Arguments) {
+			if c.Name != name || !assistantHostArgumentsMatch(c.Args, intent.Arguments) {
 				return false
 			}
 			count++
@@ -58,7 +79,14 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 	if intent.CallbackID == "" {
 		return true
 	}
+	// Native account admission serializes author, child and critic invocations.
+	// A callback is appended while its owning model invocation still holds that
+	// account. Later model operations must not rebind an earlier callback.
+	invocation := ""
 	for _, op := range run.Operations {
+		if op.Kind == "model" {
+			invocation = op.ID
+		}
 		if op.ID == intent.CallbackID && op.Kind == "callback" {
 			var v struct {
 				Invocation string `json:"invocation"`
@@ -68,7 +96,7 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 					Arguments json.RawMessage `json:"arguments"`
 				} `json:"call"`
 			}
-			if json.Unmarshal(op.Intent, &v) != nil || v.Call.ID != intent.CallID || v.Call.Name != op.Name || !bytes.Equal(v.Call.Arguments, intent.Arguments) {
+			if json.Unmarshal(op.Intent, &v) != nil || invocation == "" || v.Invocation != invocation || v.Call.ID != intent.CallID || v.Call.Name != op.Name || !assistantHostArgumentsMatch(v.Call.Arguments, intent.Arguments) {
 				return false
 			}
 			for _, inv := range run.Operations {
@@ -92,14 +120,27 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	receipts := map[string]assistantHostResult{}
 	intents := map[string]assistantHostIntent{}
 	for _, op := range run.Operations {
-		if op.Kind != "host" || !assistantGraphTool(op.Name) {
+		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) {
 			continue
 		}
 		var in assistantHostIntent
-		if readAssistantHostReceipt(op.Intent, &in) != nil || !assistantRunText(in.CallID, 256) || !json.Valid(in.Arguments) || !assistantNativeHostCall(run, op.Name, in) || in.Root && !assistantParentHostCall(run, op.Name, in) || op.Name == "propose_graph" && !in.Root {
+		if readAssistantHostReceipt(op.Intent, &in) != nil || !assistantRunText(in.CallID, 256) || !json.Valid(in.Arguments) || !assistantNativeHostCall(run, op.Name, in) || in.Root && !assistantParentHostCall(run, op.Name, in) || assistantHostProposal(op.Name) && !in.Root {
 			return errAssistantRunInvalid
 		}
-		if _, err := readAssistantGraphArguments(op.Name, in.Arguments); err != nil {
+		if assistantPolicyTool(op.Name) {
+			if in.Policy == nil || !validAssistantPolicyHostBinding(*in.Policy) {
+				return errAssistantRunInvalid
+			}
+		} else if in.Policy != nil {
+			return errAssistantRunInvalid
+		}
+		var argumentErr error
+		if assistantPolicyTool(op.Name) {
+			_, argumentErr = readAssistantPolicyArguments(op.Name, in.Arguments)
+		} else {
+			_, argumentErr = readAssistantGraphArguments(op.Name, in.Arguments)
+		}
+		if argumentErr != nil {
 			return errAssistantRunInvalid
 		}
 		// An invocation/call is one immutable operation, even across reconstruction.
@@ -120,6 +161,9 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			return errAssistantRunInvalid
 		}
 		tool := runcontext.ReadToolResult(value)
+		if result.PolicySource != nil && (!contains([]string{"propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}, op.Name) || tool.Err() || !validAssistantPolicySource(*result.PolicySource)) {
+			return errAssistantRunInvalid
+		}
 		if result.Read != nil {
 			var args struct {
 				Type string `json:"type"`
@@ -140,6 +184,16 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	seen := map[string]bool{}
 	draftIDs := map[string]bool{}
 	for _, out := range run.DomainOutputs {
+		if out.Kind != "graph" {
+			if seen[out.OperationID] || validateAssistantPolicyOutput(run, out, receipts) != nil {
+				return errAssistantRunInvalid
+			}
+			seen[out.OperationID] = true
+			continue
+		}
+		if out.PolicyUpdate != nil || out.PolicyInterpretation != nil || out.PolicySource != nil {
+			return errAssistantRunInvalid
+		}
 		if out.Kind != "graph" || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || seen[out.OperationID] || draftIDs[out.Draft.DraftID] || out.Draft.OriginChatID != "" || out.Draft.PolicySources != nil || out.Draft.Saved || out.Draft.WritePending {
 			return errAssistantRunInvalid
 		}
@@ -202,13 +256,28 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			return errAssistantRunInvalid
 		}
 	}
-	if len(run.DomainOutputs) > 16 {
+	counts := map[string]int{}
+	for _, out := range run.DomainOutputs {
+		counts[out.Kind]++
+		if counts[out.Kind] > 16 {
+			return errAssistantRunInvalid
+		}
+	}
+	if len(run.DomainOutputs) > 48 {
 		return errAssistantRunInvalid
 	}
 	// A successful producer cannot lose its domain payload on import/recovery.
 	for _, op := range run.Operations {
 		if op.Kind == "host" && op.Name == "propose_graph" && op.State == "completed" && !seen[op.ID] {
 			return errAssistantRunInvalid
+		}
+		if op.Kind == "host" && assistantPolicyTool(op.Name) && assistantHostProposal(op.Name) && !seen[op.ID] {
+			if op.State == "completed" {
+				return errAssistantRunInvalid
+			}
+			if receipt, ok := receipts[op.ID]; ok && assistantPolicyStaleResult(receipt.Result) {
+				return errAssistantRunInvalid
+			}
 		}
 	}
 	return nil
@@ -220,7 +289,21 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 // replace the producer result or establish authority.
 var testHookAssistantGraphObserved func(runcontext.ToolResult, graphDraft)
 
+// Notification only: tests can cancel/fail persistence after actual Policy work.
+// It supplies no result, source, identity or authority to the producer.
+var testHookAssistantPolicyObserved func()
+
 func (e *assistantRunExecution) invokeHost(ctx context.Context, name string, args json.RawMessage, work func(context.Context, bool) (runcontext.ToolResult, *assistantGraphRead, *graphDraft, error)) (runcontext.ToolResult, error) {
+	return e.invokeDomainHost(ctx, name, args, func(ctx context.Context, root bool) (runcontext.ToolResult, *assistantGraphRead, *assistantDomainOutput, error) {
+		result, read, draft, err := work(ctx, root)
+		if draft == nil {
+			return result, read, nil, err
+		}
+		return result, read, &assistantDomainOutput{Kind: "graph", Draft: *draft}, err
+	})
+}
+
+func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name string, args json.RawMessage, work func(context.Context, bool) (runcontext.ToolResult, *assistantGraphRead, *assistantDomainOutput, error)) (runcontext.ToolResult, error) {
 	refuse := func(err error) (runcontext.ToolResult, error) { return assistantHostFailure(err), nil }
 	if err := e.Authorize(ctx); err != nil {
 		return refuse(err)
@@ -231,11 +314,21 @@ func (e *assistantRunExecution) invokeHost(ctx context.Context, name string, arg
 		return refuse(errAssistantRunScope)
 	}
 	in := assistantHostIntent{CallID: runcontext.CallIDOf(ctx), CallbackID: callback, Root: root, Arguments: bytes.Clone(args)}
-	if !assistantRunText(in.CallID, 256) || name == "propose_graph" && (!root || e.record.Binding.Phase == "plan") {
+	if assistantPolicyTool(name) {
+		scope, err := readAssistantPolicyScope(e.source)
+		if err != nil || scope == nil || scope.ID == "" {
+			return refuse(errAssistantRunScope)
+		}
+		in.Policy = &assistantPolicyHostBinding{ID: scope.ID, Request: scope.Request}
+	}
+	if !assistantRunText(in.CallID, 256) || assistantHostProposal(name) && (!root || e.record.Binding.Phase == "plan") {
 		return refuse(failure.ToolInput("This Graph operation is not available in this scope."))
 	}
 	raw, _ := json.Marshal(in)
 	id := "graph-host-" + digestOf(raw)[:32]
+	if assistantPolicyTool(name) {
+		id = "policy-host-" + digestOf(raw)[:32]
+	}
 	op := assistantRunOperation{ID: id, CallID: id, Kind: "host", Name: name, Intent: raw}
 	// Scope checks and intent creation are one short transaction. No lock spans work.
 	var replay *assistantHostResult
@@ -287,27 +380,36 @@ func (e *assistantRunExecution) invokeHost(ctx context.Context, name string, arg
 	}
 	var result runcontext.ToolResult
 	var read *assistantGraphRead
-	var draft *graphDraft
+	var output *assistantDomainOutput
 	workErr := lockErr
 	if workErr == nil {
-		result, read, draft, workErr = work(ctx, root)
+		result, read, output, workErr = work(ctx, root)
 	}
-	if workErr == nil && draft != nil && !result.Err() && testHookAssistantGraphObserved != nil {
-		testHookAssistantGraphObserved(result.Clone(), *draft)
+	if workErr == nil && output != nil && output.Kind == "graph" && !result.Err() && testHookAssistantGraphObserved != nil {
+		testHookAssistantGraphObserved(result.Clone(), output.Draft)
+	}
+	if workErr == nil && output != nil && assistantPolicyTool(name) && testHookAssistantPolicyObserved != nil {
+		testHookAssistantPolicyObserved()
 	}
 	state := "completed"
 	if workErr != nil {
 		result = assistantHostFailure(workErr)
 		read = nil
-		draft = nil
+		output = nil
 		state = "refused"
 	}
 	if result.Err() {
 		state = "refused"
 		read = nil
-		draft = nil
+		if output == nil || output.Kind != "policy-update" || output.PolicyUpdate == nil || output.PolicyUpdate.Check == nil || output.PolicyUpdate.Check.Status != "stale" {
+			output = nil
+		}
 	}
-	receipt, _ := json.Marshal(assistantHostResult{Result: result.Value().JSON(), Read: read})
+	retained := assistantHostResult{Result: result.Value().JSON(), Read: read}
+	if output != nil {
+		retained.PolicySource = output.PolicySource
+	}
+	receipt, _ := json.Marshal(retained)
 	// Only the observed result/output outlives cancellation. Authorization,
 	// dispatch, lock acquisition and producer work above keep the caller context.
 	observed, finish := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -321,8 +423,9 @@ func (e *assistantRunExecution) invokeHost(ctx context.Context, name string, arg
 			if held.State != "dispatched" && held.State != "uncertain" {
 				return false, errAssistantRunConflict
 			}
-			if draft != nil {
-				run.DomainOutputs = append(run.DomainOutputs, assistantDomainOutput{Kind: "graph", RunID: run.ID, RequestKey: run.Binding.ExecutionKey, OperationID: id, CallID: in.CallID, Draft: *draft})
+			if output != nil {
+				output.RunID, output.RequestKey, output.OperationID, output.CallID = run.ID, run.Binding.ExecutionKey, id, in.CallID
+				run.DomainOutputs = append(run.DomainOutputs, *output)
 			}
 			held.State = state
 			held.Result = receipt

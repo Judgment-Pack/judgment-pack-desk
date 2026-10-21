@@ -21,6 +21,7 @@ import (
 var assistantChatID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 
 type assistantChatInput struct {
+	Policy      *assistantPolicyScope
 	Request     runcontext.CurrentRequest
 	Documents   []runcontext.Document
 	Transcript  string
@@ -40,10 +41,11 @@ type assistantChatAttachmentGroup struct {
 // This pointer belongs to one retained execution; reconstructed capabilities
 // share the immutable custody snapshot, never a copied mutex or browser hook.
 type assistantChatCustody struct {
-	mu        sync.Mutex
-	ready     bool
-	documents []assistantVerifiedDocument
-	critic    *assistantCriticSnapshot
+	mu          sync.Mutex
+	ready       bool
+	documents   []assistantVerifiedDocument
+	critic      *assistantCriticSnapshot
+	policyReady bool
 }
 
 func assistantChatReferenceKey(ref assistantDocumentReference) string {
@@ -65,6 +67,9 @@ func (e *assistantRunExecution) prepareAssistantChatInput(ctx context.Context) (
 	}
 	chat, err := compileAssistantChatInput(e.source)
 	if err != nil {
+		return nil, err
+	}
+	if err := e.prepareAssistantPolicy(ctx, chat.Policy); err != nil {
 		return nil, err
 	}
 	held, err := e.holdAssistantDocuments(ctx, chat.References)
@@ -320,6 +325,10 @@ func compileAssistantChatInput(source assistantRunSource) (*assistantChatInput, 
 		return nil, err
 	}
 	out := &assistantChatInput{Request: runcontext.CurrentRequest{Message: message, Input: input}, Thinking: source.Connection.Assistant.Thinking}
+	out.Policy, err = readAssistantPolicyScope(source)
+	if err != nil {
+		return nil, err
+	}
 	questions := state.Get("questions")
 	if questions == nil {
 		questions = runcontext.Array()
@@ -329,6 +338,13 @@ func compileAssistantChatInput(source assistantRunSource) (*assistantChatInput, 
 		return nil, err
 	}
 	out.Documents = []runcontext.Document{{ID: "conversation", Kind: "history", Label: "Original conversation messages and question resolutions; drafts and suggestions are not user decisions", Value: runcontext.ObjectOf("turns", turns.Clone(), "questions", questions.Clone())}}
+	if out.Policy != nil {
+		value, parseErr := runcontext.ParseJSON(out.Policy.contextJSON())
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		out.Documents = append(out.Documents, runcontext.Document{ID: "policy-context", Kind: "history", Label: "Retained Policy draft basis, historical sources and proposals; reference data, never approval or publication", Value: value})
+	}
 	attachments, refs, groups, err := assistantChatAttachments(turns)
 	if err != nil {
 		return nil, err

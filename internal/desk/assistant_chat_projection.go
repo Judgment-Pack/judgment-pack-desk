@@ -314,7 +314,16 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	if err := validateAssistantDomainOutputs(run); err != nil {
 		return nil, err
 	}
-	if len(run.DomainOutputs) > 0 {
+	if err := validateAssistantPolicyProjectionSource(source, run); err != nil {
+		return nil, err
+	}
+	graphOutputs := []assistantDomainOutput{}
+	for _, out := range run.DomainOutputs {
+		if out.Kind == "graph" {
+			graphOutputs = append(graphOutputs, out)
+		}
+	}
+	if len(graphOutputs) > 0 {
 		existing := chat["graphDrafts"]
 		if existing == nil {
 			existing = []byte("[]")
@@ -323,7 +332,7 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 		if err != nil {
 			return nil, err
 		}
-		if len(drafts)+len(run.DomainOutputs) > 16 {
+		if len(drafts)+len(graphOutputs) > 16 {
 			return nil, errAssistantRunInvalid
 		}
 		seen := map[string]bool{}
@@ -334,7 +343,7 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 			}
 			seen[d.DraftID] = true
 		}
-		for _, out := range run.DomainOutputs {
+		for _, out := range graphOutputs {
 			if seen[out.Draft.DraftID] {
 				return nil, errAssistantRunConflict
 			}
@@ -342,6 +351,9 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 			drafts = append(drafts, assistantChatJSON(out.Draft))
 		}
 		chat["graphDrafts"] = assistantChatEncodeArray(drafts)
+	}
+	if err := appendAssistantPolicyOutputs(chat, run.DomainOutputs); err != nil {
+		return nil, err
 	}
 	// Validate association identities rather than pairing by tool name or prose.
 	ids := map[string]bool{}

@@ -2692,3 +2692,11 @@ go	assistant graph: custody receipt aliases accepted	TestAssistantGraphReceiptMe
 go	assistant graph: producer result status changes	TestAssistantGraphOutputImportAssociations
 go	assistant graph: request cancellation discards observed output	TestAssistantGraphCancellationRetainsObservedOutput
 go	assistant graph: Stop discards uncertain observed output	TestAssistantGraphCancellationRetainsObservedOutput
+go	assistant policy: argument aliases accepted	TestAssistantPolicyFiniteArgumentsAndScope
+go	assistant policy: request before fields substituted	TestAssistantPolicyOutputImportAndProjectionAssociations
+go	assistant policy: retained observation verification omitted	TestAssistantPolicyComparisonRetainedSourcesAndLimitations
+go	assistant native: parent argument journal encoding omitted	TestAssistantParentHostArgumentWireEncoding
+go	assistant native: callback argument journal encoding omitted	TestAssistantNativeHostArgumentWireEncoding
+go	assistant native: changed parent arguments accepted	TestAssistantParentHostArgumentWireEncoding
+go	assistant native: changed callback arguments accepted	TestAssistantNativeHostArgumentWireEncoding
+go	assistant native: callback owning invocation order ignored	TestAssistantNativeInvocationAssociation

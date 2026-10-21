@@ -234,17 +234,21 @@ func TestAssistantChatDocumentQueuedDispatch(t *testing.T) {
 				x := assistantExecutionOpen(t, s, e)
 				done := make(chan error, 1)
 				ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
-				defer cancel()
-				if engine == "api" {
-					for range maxRelayInFlight {
-						s.relaySlots <- struct{}{}
+				joined := make(chan struct{})
+				releaseSlots := func() {}
+				defer func() {
+					cancel()
+					releaseSlots()
+					select {
+					case <-joined:
+					case <-time.After(5 * time.Second):
+						t.Error("queued fixture worker did not stop during cleanup")
 					}
-					defer func() {
-						for len(s.relaySlots) > 0 {
-							<-s.relaySlots
-						}
-					}()
+				}()
+				if engine == "api" {
+					releaseSlots = assistantFixtureRelayReservations(s.relaySlots)
 					go func() {
+						defer close(joined)
 						r, err := x.Run.Model(ctx, "chat/completions", assistantExecutionRequest())
 						if r != nil {
 							_, _ = io.Copy(io.Discard, r.Body)
@@ -261,6 +265,7 @@ func TestAssistantChatDocumentQueuedDispatch(t *testing.T) {
 					}
 				} else {
 					go func() {
+						defer close(joined)
 						done <- x.Run.Agent.Run(ctx, assistantCodexRequest(), adapter.AgentCallbacks{Event: func(context.Context, adapter.AgentEvent) error { return nil }, Tool: func(context.Context, adapter.AgentToolCall) (adapter.AgentToolAnswer, error) {
 							return adapter.AgentToolAnswer{}, nil
 						}})
@@ -269,9 +274,7 @@ func TestAssistantChatDocumentQueuedDispatch(t *testing.T) {
 				}
 				assistantChatChangeDocument(t, mode, s, token, raw, ref)
 				if engine == "api" {
-					for range maxRelayInFlight {
-						<-s.relaySlots
-					}
+					releaseSlots()
 				} else {
 					assistantRunMust(t, os.WriteFile(trace+".release", []byte("release"), 0600))
 				}

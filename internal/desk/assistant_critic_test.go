@@ -485,18 +485,22 @@ func TestAssistantCriticQueuedSnapshot(t *testing.T) {
 			e := assistantCriticResave(t, s, token, old, "true", "work", true)
 			x := assistantCriticOpen(t, s, e, "served")
 			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-			defer cancel()
+			joined := make(chan struct{})
+			releaseSlots := func() {}
+			defer func() {
+				cancel()
+				releaseSlots()
+				select {
+				case <-joined:
+				case <-time.After(5 * time.Second):
+					t.Error("queued fixture worker did not stop during cleanup")
+				}
+			}()
 			done := make(chan error, 1)
 			if engine == "api" {
-				for range maxRelayInFlight {
-					s.relaySlots <- struct{}{}
-				}
-				defer func() {
-					for len(s.relaySlots) > 0 {
-						<-s.relaySlots
-					}
-				}()
+				releaseSlots = assistantFixtureRelayReservations(s.relaySlots)
 				go func() {
+					defer close(joined)
 					response, err := x.Run.Model(ctx, "chat/completions", assistantExecutionRequest())
 					if response != nil {
 						_, _ = io.Copy(io.Discard, response.Body)
@@ -513,6 +517,7 @@ func TestAssistantCriticQueuedSnapshot(t *testing.T) {
 				}
 			} else {
 				go func() {
+					defer close(joined)
 					done <- x.Run.Agent.Run(ctx, assistantCodexRequest(), adapter.AgentCallbacks{Event: func(context.Context, adapter.AgentEvent) error { return nil }, Tool: func(context.Context, adapter.AgentToolCall) (adapter.AgentToolAnswer, error) {
 						return adapter.AgentToolAnswer{}, nil
 					}})
@@ -521,9 +526,7 @@ func TestAssistantCriticQueuedSnapshot(t *testing.T) {
 			}
 			assistantCriticChangeSuite(t, s, token)
 			if engine == "api" {
-				for range maxRelayInFlight {
-					<-s.relaySlots
-				}
+				releaseSlots()
 			} else {
 				assistantRunMust(t, os.WriteFile(trace+".release", []byte("release"), 0600))
 			}

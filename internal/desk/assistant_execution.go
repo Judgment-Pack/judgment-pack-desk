@@ -141,7 +141,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	// The coordinator supplies the canonical declaration/function; the host
 	// gate permits this interaction without granting any domain action.
 	interaction := "delegation"
-	registry, err := e.assistantGraphTools(runtime)
+	registry, err := e.assistantConversationTools(runtime, chat.Policy)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +165,10 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		return nil, err
 	}
 	input := &runcontext.Input{Phase: e.record.Binding.Phase, Connection: e.record.Binding.ConnectionID, Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: e.record.Checkpoint, Approval: e.decision, CurrentRequest: &chat.Request, Documents: chat.Documents, CurrentState: chat.State, Memory: memory}
+	if chat.Policy != nil && chat.Policy.ID != "" {
+		off := false
+		input.ArtifactProposals = &off
+	}
 	if critic != nil {
 		checkpoint := assistantCriticCheckpoint(*input.Execution, critic)
 		input.Execution = &checkpoint

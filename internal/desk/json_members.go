@@ -164,6 +164,8 @@ type workspaceJSONHistory struct {
 }
 type workspaceJSONEntry struct {
 	policyWorkspaceEntry
+	PolicyRequest         *assistantPolicyBasis          `json:"policyRequest"`
+	PolicyProposals       []assistantPolicyProposal      `json:"policyProposals"`
 	PolicyInterpretations []policyInterpretationProposal `json:"policyInterpretations"`
 	Interaction           string                         `json:"interaction"`
 	AIConnection          string                         `json:"aiConnection"`

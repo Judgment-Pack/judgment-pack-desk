@@ -223,13 +223,18 @@ func TestAssistantGraphQueuedGuidanceFreshness(t *testing.T) {
 	}
 }
 func TestAssistantGraphActualNativeChildIdentity(t *testing.T) {
+	assistantGraphActualNativeIdentity(t, assistantGraphCandidate)
+}
+
+func assistantGraphActualNativeIdentity(t *testing.T, candidate string) (*assistantRunExecution, assistantRunRecord) {
+	t.Helper()
 	s, _, e, _, trace := assistantCodexFixture(t, "delegate", "work")
 	peerPath := filepath.Join(filepath.Dir(trace), "peer.py")
 	peer := assistantExecutionCodexPeer
 	peer = strings.Replace(peer, "if mode=='delegate' and index==1:\n   tool(offered('delegate_tasks'),{'tasks':[{'title':'Inspect schema','objective':'Inspect the schema only.','profile':'review'}]})", `if mode=='delegate' and index==1:
-   tool(offered('read_decision'),{'type':'graph','id':'flow'},call='parent-read')
+   tool(offered('read_decision'),{'type':'graph','id':'flow'},call='same-provider-call')
   elif mode=='delegate' and index==2: tool(offered('read_decision'),{'type':'graph','id':'flow'},call='same-provider-call')
-  elif mode=='delegate' and index==3: tool(offered('propose_graph'),{'id':'flow','content':`+fmt.Sprintf("%q", assistantGraphCandidate)+`},call='same-provider-call')`, 1)
+  elif mode=='delegate' and index==3: tool(offered('propose_graph'),{'id':'flow','content':`+fmt.Sprintf("%q", candidate)+`},call='same-provider-call')`, 1)
 	peer = strings.Replace(peer, "if mode=='duplicate': tool(offered('get_schema'),{},rpc='rpc-two')", `if mode=='delegate' and index==1: tool(offered('delegate_tasks'),{'tasks':[{'title':'Read graph','objective':'Inspect the declared graph only.','profile':'review'}]},call='delegate',rpc='rpc-delegate')
   elif mode=='duplicate': tool(offered('get_schema'),{},rpc='rpc-two')`, 1)
 	assistantRunMust(t, os.WriteFile(peerPath, []byte(peer), 0600))
@@ -291,9 +296,10 @@ func TestAssistantGraphActualNativeChildIdentity(t *testing.T) {
 	if _, err := decodeAssistantRunStorage(e.writer.lease.store.name, raw); err != nil {
 		t.Fatal("native receipt reconstruction refused", err)
 	}
-	if !bytes.Equal([]byte(record.DomainOutputs[0].Draft.Content), []byte(assistantGraphCandidate)) {
+	if !bytes.Equal([]byte(record.DomainOutputs[0].Draft.Content), []byte(candidate)) {
 		t.Fatal("native candidate bytes changed")
 	}
+	return e, record
 }
 
 func TestAssistantGraphOutputImportAssociations(t *testing.T) {
