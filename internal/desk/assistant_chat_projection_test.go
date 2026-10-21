@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -268,20 +269,43 @@ func TestAssistantChatProjectionLostReadbackAndCancellation(t *testing.T) {
 	f := newChatProjectionFixture(t)
 	run := f.admit(t, "chat-one", "message-one", "lost-readback", "complete", projectionMessage("Already saved; never rerun"))
 	assistantRunMust(t, f.s.prepareAssistantChatProjection(f.request(), run.ID))
-	reads := 0
+	prepared, err := f.store.Read(t.Context(), run.Binding, run.ID)
+	assistantRunMust(t, err)
+	data, err := f.s.openChatData()
+	assistantRunMust(t, err)
+	defer data.root.Close()
+	conversation, err := resolveConversationName(data.root, f.s.conversationIdentity())
+	assistantRunMust(t, err)
+	failedReadback := false
 	t.Cleanup(func() { testHookPrivateRead = nil })
 	testHookPrivateRead = func(name string) error {
-		if strings.HasPrefix(name, "conversations-") {
-			reads++
-			if reads == 2 {
-				return errors.New("fixture lost write acknowledgement")
-			}
+		if name != conversation {
+			return nil
+		}
+		// Source checks may observe the conversation any number of times.
+		// Fail only once the exact prepared output is actually on disk. Read
+		// through the owned root directly so this probe cannot call itself.
+		raw, err := data.root.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		_, rows, err := assistantChatRows(raw)
+		if err != nil {
+			return err
+		}
+		index, err := assistantChatSelected(rows, run.Binding.Owner.ID)
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(rows[index], prepared.ChatProjection.Output) {
+			failedReadback = true
+			return errors.New("fixture lost write acknowledgement")
 		}
 		return nil
 	}
-	err := f.s.writeAssistantChatProjection(f.request(), run.ID)
+	err = f.s.writeAssistantChatProjection(f.request(), run.ID)
 	testHookPrivateRead = nil
-	if err == nil {
+	if err == nil || !failedReadback {
 		t.Fatal("lost readback reported success")
 	}
 	saved, e := f.store.Read(t.Context(), run.Binding, run.ID)
@@ -300,6 +324,11 @@ func TestAssistantChatProjectionLostReadbackAndCancellation(t *testing.T) {
 		t.Fatal("canceled recovery proceeded", err)
 	}
 	assistantRunMust(t, f.s.reconcileAssistantChatProjection(f.request(), run.ID))
+	recovered, err := f.store.Read(t.Context(), run.Binding, run.ID)
+	assistantRunMust(t, err)
+	if !recovered.ChatProjection.Acknowledged || !bytes.Equal(recovered.ChatProjection.Output, prepared.ChatProjection.Output) || !reflect.DeepEqual(recovered.Operations, prepared.Operations) || !reflect.DeepEqual(recovered.Events, prepared.Events) {
+		t.Fatal("recovery did not acknowledge the exact retained output without replay")
+	}
 }
 func TestAssistantChatProjectionNamespaceChangeRefuses(t *testing.T) {
 	f := newChatProjectionFixture(t)
