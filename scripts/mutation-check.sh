@@ -331,28 +331,20 @@ bounded() {
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
 #
+# A clean Desk Go suite took 236.653s in PR #583's Go CI while the mutation
+# baseline hit the old 240s watchdog before any mutant ran. Give deliberate
+# test waits roughly twice that runtime: 480s leaves about 243s for load and
+# scheduling variation. Go's own timeout follows 60s later as a backstop. Both
+# selected and whole-package runs, plus the clean baseline binary, share these
+# bounds so their verdicts stay aligned.
+GO_TEST_WATCHDOG=480
+GO_TEST_BACKSTOP=540s
+
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
-  # **240s, and the number is not arbitrary.** The bound exists to turn a
-  # mutation that hangs a handler into a reported hang rather than a stalled
-  # table. It was 45s, which was already marginal: two relay rows remove an
-  # *idle* deadline and their tests then wait out a deliberate twenty-second
-  # stall, so the mutated suite runs about fifty seconds — and this branch's
-  # forty new session tests pushed both rows over the line and reported
-  # INCONCLUSIVE for a suite that was working. It was then 120s, until the
-  # key-custody tests (ADR-0010 PR 3a) brought the clean suite to about 103s
-  # on an idle machine, mostly waiting rather than computing: any load then
-  # pushed a working suite past the bound. A deliberate wait inside a test is
-  # not a hang; a real one is minutes, and 240s still catches it. A selection
-  # keeps the same bound: one that ran out is run again whole (`mutate`), so a
-  # shorter one could only cost a second run, never a verdict.
-  #
-  # **Now the harness's own bound** (issue #237). When `go test -timeout`
-  # fires, the test binary panics and exits, and what its tests started runs
-  # on (measured), so the harness's bound must fire first and end the whole
-  # tree: `-timeout` is set past it, as a backstop only. The build comes
-  # first, apart, with a bound of its own (a cold cache can take minutes, and
-  # a build is not a hang), so that the 240s is the run's, and the link's.
+  # Keep compilation on its independent bound: a cold build is not a hang.
+  # The run watchdog is the first timeout and kills the whole process tree;
+  # Go's later timeout is only a backstop because its panic can leave children.
   local log code
   log="$(mktemp)"
   local package="$1"
@@ -365,9 +357,9 @@ run_go() {
     return
   fi
   if [ -n "${1:-}" ]; then
-    bounded 240 "$log" go test "$package" -count=1 -timeout 300s -run "$1"
+    bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP" -run "$1"
   else
-    bounded 240 "$log" go test "$package" -count=1 -timeout 300s
+    bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP"
   fi
   code=$?
   go_verdict "$code" "$log"
@@ -419,8 +411,8 @@ run_go_unmutated() {
   local package="$1" key log code
   key=$(go_package_key "$package")
   log="$work/package-$key.baseline.log"
-  bounded 240 "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout=300s -test.run "$3"' \
-    _ "$package" "$work/package-$key.test" "$2"
+  bounded "$GO_TEST_WATCHDOG" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
+    _ "$package" "$work/package-$key.test" "$2" "$GO_TEST_BACKSTOP"
   code=$?
   go_verdict "$code" "$log"
 }
