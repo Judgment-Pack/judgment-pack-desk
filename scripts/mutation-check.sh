@@ -15239,31 +15239,6 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     't.Effect = "read"'
 fi
 
-restore
-echo
-# A filter that matched nothing is not a clean run: it is a filter naming a row
-# that no longer exists, and exiting 0 on it would report a mutation as verified
-# when none was applied.
-if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
-  echo "no row matched \"$only\" — nothing was checked" >&2
-  exit 2
-  mutate web 'graph row 3: partial writes leave queries stale' web/src/graphs/GraphAuthor.tsx \
-    'await queries.invalidateQueries()' \
-    'if (false) await queries.invalidateQueries()'
-  mutate web 'graph row 3: a write without a lock describes a reviewed set' web/src/graphs/GraphAuthor.tsx \
-    'setSaved(accepted.hasLock)' \
-    'setSaved(true)'
-  mutate web 'graph row 3: edit provider disclosure omits current graph' web/src/graphs/GraphAuthor.tsx \
-    '<p>{graphId ? msg(' \
-    '<p>{false ? msg('
-
-fi
-selection_report
-all_named=$?
-echo "discriminating: $pass    not discriminating: $fail"
-[ "$all_named" -eq 0 ] || exit 2
-[ "$fail" -eq 0 ]
-
 # Finite Dialect mapping/publication custody and current-authorized check effects.
 if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant dialect mapping: finite argument admission omitted' internal/desk/assistant_dialect_mapping_tools.go \
@@ -15348,3 +15323,29 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if len(read.View) > 2<<20 || !validAssistantDialectRead(read) {' \
     'if false && (len(read.View) > 2<<20 || !validAssistantDialectRead(read)) {'
 fi
+
+
+restore
+echo
+# A filter that matched nothing is not a clean run: it is a filter naming a row
+# that no longer exists, and exiting 0 on it would report a mutation as verified
+# when none was applied.
+if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
+  echo "no row matched \"$only\" — nothing was checked" >&2
+  exit 2
+  mutate web 'graph row 3: partial writes leave queries stale' web/src/graphs/GraphAuthor.tsx \
+    'await queries.invalidateQueries()' \
+    'if (false) await queries.invalidateQueries()'
+  mutate web 'graph row 3: a write without a lock describes a reviewed set' web/src/graphs/GraphAuthor.tsx \
+    'setSaved(accepted.hasLock)' \
+    'setSaved(true)'
+  mutate web 'graph row 3: edit provider disclosure omits current graph' web/src/graphs/GraphAuthor.tsx \
+    '<p>{graphId ? msg(' \
+    '<p>{false ? msg('
+
+fi
+selection_report
+all_named=$?
+echo "discriminating: $pass    not discriminating: $fail"
+[ "$all_named" -eq 0 ] || exit 2
+[ "$fail" -eq 0 ]

@@ -8,6 +8,7 @@ test can say which runs a row cost as well as what the table says.
 """
 import json
 import pathlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -39,7 +40,7 @@ TESTS = json.loads(os.environ.get('FAKE_GO_PACKAGES', '{}')).get(package, json.l
 if os.environ.get('FAKE_GO_COMPILE_PACKAGE') == package:
     print('FAIL %s [build failed]' % package)
     sys.exit(1)
-source_path = os.path.join(os.environ["FAKE_ROOT"], package[2:], 'a.go')
+source_path = os.path.join(os.environ["FAKE_ROOT"], os.environ.get("FAKE_GO_SOURCE", package[2:] + "/a.go"))
 with open(os.environ["FAKE_LOG"], "a") as log:
     log.write("go " + " ".join(sys.argv[1:]) + "\n")
 def failing(selected):
@@ -333,6 +334,62 @@ class SelectionTests(unittest.TestCase):
         how = self.how(again)
         self.assertEqual(how["web caught two modules away"], "selected")
         self.assertEqual(how["go entry stale, another test catches"], "selected")
+
+    def test_new_mapping_row_reaches_the_real_driver_and_controls_its_final_exit(self):
+        # Keep the entire real row layout, not harness_around's replacement
+        # block: the selected row must be reachable at its actual location.
+        name = "assistant dialect mapping: finite argument admission omitted"
+        test = "TestAssistantDialectMappingArguments"
+        target = "internal/desk/assistant_dialect_mapping_tools.go"
+        (self.root / "scripts/mutation-check.sh").write_text(HARNESS.read_text())
+        (self.root / target).write_text("if len(raw) > 1<<20 ||\n")
+        (self.root / "scripts/mutation-expects.tsv").write_text("go\t%s\t%s\n" % (name, test))
+        self.env["FAKE_GO_SOURCE"] = target
+        self.git("add", "-A")
+        self.git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+                 "commit", "-qsm", "real driver row fixture")
+
+        for mode in ("caught", "survived", "failed-build", "failed-baseline"):
+            with self.subTest(mode=mode):
+                self.env.pop("FAKE_GO_COMPILE_PACKAGE", None)
+                markers = {"caught": ["if true { _ = json.Unmarshal"],
+                           "survived": [], "failed-build": [],
+                           "failed-baseline": ["if len(raw) > 1<<20 ||"]}[mode]
+                self.env["FAKE_GO_TESTS"] = json.dumps({test: markers})
+                if mode == "failed-build":
+                    self.env["FAKE_GO_COMPILE_PACKAGE"] = "./internal/desk"
+                # Named-list CI and the operator's substring filter must both
+                # encounter this row before reporting or deciding the result.
+                for selection in (("--rows", str(self._rows(name))), (name,)):
+                    result = self.harness("go", *selection)
+                    self.assertEqual(set(self.table(result)), {name}, result.stdout + result.stderr)
+                    self.assertNotIn("matching no row", result.stderr)
+                    self.assertEqual(result.returncode, 0 if mode == "caught" else 1,
+                                     result.stdout + result.stderr)
+                    if mode == "caught":
+                        self.assertEqual(self.table(result)[name], test)
+                        self.assertEqual(self.how(result)[name], "selected")
+                        self.assertIn("-run ^(%s)$" % test, self.log.read_text())
+                        self.assertIn("discriminating: 1    not discriminating: 0", result.stdout)
+                    elif mode == "survived":
+                        self.assertEqual(self.table(result)[name],
+                                         "**NOT DISCRIMINATING — nothing failed**")
+                        self.assertEqual(self.how(result)[name], "fallback")
+                        self.assertIn("discriminating: 0    not discriminating: 1", result.stdout)
+                    else:
+                        self.assertIn("BASELINE NOT GREEN", self.table(result)[name])
+                        self.assertIn("discriminating: 0    not discriminating: 1", result.stdout)
+
+    def test_mapping_rows_precede_terminal_restore_and_no_rows_follow_final_reporting(self):
+        source = HARNESS.read_text()
+        terminal = source.rindex("\nrestore\necho\n")
+        mapping = list(re.finditer(r"(?m)^  mutate go 'assistant dialect mapping: [^']+'", source))
+        self.assertEqual(len(mapping), 26, "every new mapping/publication safeguard needs a live row")
+        self.assertTrue(all(row.start() < terminal for row in mapping),
+                        "mapping/publication rows must execute before terminal restore and selection reporting")
+        closing = source.rindex("\nselection_report\n")
+        self.assertNotRegex(source[closing:], r"(?m)^\s*mutate (?:go|web) ",
+                            "rows appended after the final report cannot affect its verdict")
 
     def test_without_record_the_file_is_untouched(self):
         before = (self.root / "scripts/mutation-expects.tsv").read_text()
