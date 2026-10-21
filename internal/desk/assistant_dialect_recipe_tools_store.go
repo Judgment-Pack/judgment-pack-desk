@@ -89,57 +89,6 @@ func (e *assistantRunExecution) authorizeAssistantDialectRecipe(ctx context.Cont
 	return e.service.server.authorizeAssistantRun(e.request.WithContext(ctx), e.record)
 }
 
-type authorizedAssistantDialectDrafts struct {
-	repository dialectDraftRepository
-	authorize  func(context.Context) error
-}
-
-func (a authorizedAssistantDialectDrafts) List(ctx context.Context) ([]dialectDraftSummary, error) {
-	if err := a.authorize(ctx); err != nil {
-		return nil, err
-	}
-	out, err := a.repository.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err = a.authorize(ctx); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-func (a authorizedAssistantDialectDrafts) Get(ctx context.Context, id string) (dialectDraftReply, error) {
-	if err := a.authorize(ctx); err != nil {
-		return dialectDraftReply{}, err
-	}
-	out, err := a.repository.Get(ctx, id)
-	if err != nil {
-		return dialectDraftReply{}, err
-	}
-	if err = a.authorize(ctx); err != nil {
-		return dialectDraftReply{}, err
-	}
-	return out, nil
-}
-func (a authorizedAssistantDialectDrafts) CompareAndSwap(ctx context.Context, d dialectDraftDocument, revision string) (dialectDraftReply, error) {
-	if err := a.authorize(ctx); err != nil {
-		return dialectDraftReply{}, err
-	}
-	out, err := a.repository.CompareAndSwap(ctx, d, revision)
-	if err != nil {
-		return dialectDraftReply{}, err
-	}
-	if err = a.authorize(ctx); err != nil {
-		return dialectDraftReply{}, err
-	}
-	return out, nil
-}
-func (s *Server) assistantDialectDraftRepository(authorize func(context.Context) error) dialectDraftRepository {
-	if s.dialectDrafts != nil {
-		return authorizedAssistantDialectDrafts{s.dialectDrafts, authorize}
-	}
-	return fileDialectDraftRepository{open: s.openDialectDrafts, authorize: authorize}
-}
-
 // Notification only, after actual independent draft readback. It cannot supply
 // a result, draft, metadata or authority to this producer.
 var testHookAssistantDialectRecipeRetained func()
@@ -172,7 +121,7 @@ func (e *assistantRunExecution) retainAssistantDialectRecipe(ctx context.Context
 	if err = e.authorizeAssistantDialectRecipe(ctx); err != nil {
 		return empty, nil, nil, err
 	}
-	repository := s.assistantDialectDraftRepository(e.authorizeAssistantDialectRecipe)
+	repository := s.draftRepositoryWithAuthority(e.authorizeAssistantDialectRecipe)
 	origin := &dialectDraftOrigin{e.record.Binding.Owner.ID, p.DraftID}
 	creation := &assistantDialectRecipeCreate{dialectDraftRepository: repository}
 	saved, err := s.ensureDialectDraftUsing(ctx, creation, dialectDraftRequest{Origin: origin, Name: p.Name, Recipe: p.content().recipe()}, p.CreatedAt)
@@ -199,7 +148,7 @@ func (e *assistantRunExecution) retainAssistantDialectRecipe(ctx context.Context
 	return result, nil, &assistantDomainOutput{Kind: "dialect-recipe", Recipe: &assistantDialectRecipeOutput{Proposal: *p, Retained: assistantDialectRecipeRetention{observed.Document.ID, observed.SHA256}}}, err
 }
 func (s *Server) checkAssistantDialectRecipeDrafts(r *http.Request, run assistantRunRecord) error {
-	repository := s.assistantDialectDraftRepository(func(ctx context.Context) error { return s.authorizeAssistantRun(r.WithContext(ctx), run) })
+	repository := s.draftRepositoryWithAuthority(func(ctx context.Context) error { return s.authorizeAssistantRun(r.WithContext(ctx), run) })
 	for _, out := range run.DomainOutputs {
 		if out.Kind != "dialect-recipe" {
 			continue

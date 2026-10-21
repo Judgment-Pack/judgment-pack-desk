@@ -50,3 +50,10 @@ unchanged. Mapping/publication proposals, record/activity/action capabilities,
 separately approved research starts, background/action/CAS migration and full
 production cutover remain pending. Runtime test-proposal compatibility under
 Desk #582 is separate from this four-tool recipe slice.
+
+Current-authorized draft storage is bound by the owning draft repository. Host
+features use logical draft identities through that contract; they never open
+draft directories or construct file adapters. The owner binds authorization
+after queued file locks and before writes, and fences injected adapter results
+with the same current-authority checks. Ordinary repository callers keep their
+existing binding and create-only behavior.

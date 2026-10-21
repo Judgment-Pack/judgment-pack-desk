@@ -516,13 +516,13 @@ func TestAssistantDialectRecipeMetadataAndCapacity(t *testing.T) {
 func TestAssistantDialectRecipeFileAuthorityBeforeWrite(t *testing.T) {
 	s, _ := newTestServer(t, false)
 	checks := 0
-	f := fileDialectDraftRepository{open: s.openDialectDrafts, authorize: func(context.Context) error {
+	f := s.draftRepositoryWithAuthority(func(context.Context) error {
 		checks++
 		if checks >= 2 {
 			return errAssistantRunScope
 		}
 		return nil
-	}}
+	})
 	a, err := readAssistantDialectRecipeArguments("propose_dialect_recipe", []byte(assistantRecipeCandidate))
 	assistantRunMust(t, err)
 	d := dialectDraftDocument{Version: 1, ID: dialectDraftIdentity("authority", nil), Name: a.Content.Name, Recipe: a.Content.recipe(), CreatedAt: "2026-10-20T00:00:00Z", UpdatedAt: "2026-10-20T00:00:00Z"}

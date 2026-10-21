@@ -2738,3 +2738,8 @@ go	assistant tests: changed selected coverage passes dispatch recheck	TestAssist
 go	assistant tests: changed selected coverage materializes new proposal	TestAssistantTestHostSelectedCoverageCustody
 go	assistant tests: null expected type advice accepted	TestAssistantTestHostMalformedAdviceImport
 go	assistant tests: selected coverage equality omitted	TestAssistantTestHostSelectedCoverageCustody
+go	assistant recipe: owning file authority binding omitted	TestAssistantDialectRecipeFileAuthorityBeforeWrite
+go	assistant recipe: injected authority binding omitted	TestDialectDraftRepositoryCurrentAuthority
+go	assistant recipe: concrete draft adapter bypasses owner	TestDialectDraftsUseRepository
+go	assistant shared offers: recipe proposal classified as read	TestAssistantGraphToolsRealServicesAndOffers
+go	assistant shared offers: test proposal classified as read	TestAssistantGraphToolsRealServicesAndOffers

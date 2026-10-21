@@ -15228,6 +15228,25 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if _, err := assistantTestString(rawType); false && err != nil {'
 fi
 
+# Shared offers and current-authorized storage remain inside their owners.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: owning file authority binding omitted' internal/desk/dialect_draft_repository.go \
+    'return fileDialectDraftRepository{open: s.openDialectDrafts, authorize: authorize}' \
+    'return fileDialectDraftRepository{open: s.openDialectDrafts}'
+  mutate go 'assistant recipe: injected authority binding omitted' internal/desk/dialect_draft_repository.go \
+    'return authorizedDialectDraftRepository{s.dialectDrafts, authorize}' \
+    'return s.dialectDrafts'
+  mutate go 'assistant recipe: concrete draft adapter bypasses owner' internal/desk/assistant_dialect_recipe_tools_store.go \
+    'repository := s.draftRepositoryWithAuthority(e.authorizeAssistantDialectRecipe)' \
+    'repository := fileDialectDraftRepository{open: s.openDialectDrafts, authorize: e.authorizeAssistantDialectRecipe}'
+  mutate go 'assistant shared offers: recipe proposal classified as read' internal/desk/assistant_dialect_recipe_tools_store.go \
+    'tool.Effect = "propose"' \
+    'tool.Effect = "read"'
+  mutate go 'assistant shared offers: test proposal classified as read' internal/desk/assistant_test_tools.go \
+    't.Effect = "propose"' \
+    't.Effect = "read"'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
