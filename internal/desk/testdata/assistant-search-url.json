@@ -1,0 +1,20 @@
+[
+ {"name":"ordinary DNS path query","url":"https://example.org/policy?q=public","host":true,"browser":true},
+ {"name":"default HTTPS port","url":"https://example.org:443/policy","host":true,"browser":true},
+ {"name":"Unicode path query","url":"https://example.org/ünïcode?q=ä","host":true,"browser":true},
+ {"name":"standard IPv4","url":"https://192.0.2.1/path","host":true,"browser":true},
+ {"name":"standard IPv6 default port","url":"https://[2001:db8::1]:443/path","host":true,"browser":true},
+ {"name":"invalid bracket host","url":"https://[bogus]/","host":false,"browser":false},
+ {"name":"IPv6 scope zone","url":"https://[fe80::1%25en0]/","host":false,"browser":false},
+ {"name":"forbidden caret host","url":"https://a^b/","host":false,"browser":false},
+ {"name":"forbidden pipe host","url":"https://a|b/","host":false,"browser":false},
+ {"name":"ambiguous abbreviated IPv4","url":"https://127.1/","host":false,"browser":true},
+ {"name":"invalid numeric host","url":"https://999.1/","host":false,"browser":false},
+ {"name":"raw Unicode hostname activation dependency","url":"https://éxample.org/","host":false,"browser":true},
+ {"name":"punycode hostname activation dependency","url":"https://xn--xample-9ua.org/","host":false,"browser":true},
+ {"name":"invalid punycode hostname","url":"https://xn--example/","host":false,"browser":false},
+ {"name":"browser-only raw percent path","url":"https://example.org/%","host":false,"browser":true},
+ {"name":"browser-only empty DNS label","url":"https://a..b/","host":false,"browser":true},
+ {"name":"credentials refused","url":"https://user@example.org/","host":false,"browser":false},
+ {"name":"nondefault port refused","url":"https://example.org:444/","host":false,"browser":false}
+]

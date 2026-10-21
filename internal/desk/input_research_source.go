@@ -207,8 +207,12 @@ func (s *Server) researchSourceCallWithAdmission(ctx context.Context, pin inputR
 		}
 		failure := researchSourceFailure(response.StatusCode, detail)
 		var refusal *researchSourceError
-		if path == "acquire" && errors.As(failure, &refusal) {
-			refusal.acquisitionRefusal = true
+		if errors.As(failure, &refusal) {
+			refusal.status = response.StatusCode
+			refusal.header = response.Header.Clone()
+			if path == "acquire" {
+				refusal.acquisitionRefusal = true
+			}
 		}
 		return nil, failure
 	}
@@ -217,8 +221,12 @@ func (s *Server) researchSourceCallWithAdmission(ctx context.Context, pin inputR
 		limit = 64 << 10
 	}
 	raw, e = readBounded(response.Body, limit)
-	if err := currentGateway(); err != nil {
-		return nil, err
+	if e == nil {
+		if err := currentGateway(); err != nil {
+			// Complete response custody survives a changed pin; callers must not
+			// authorize it or dispatch further work when err is non-nil.
+			return raw, err
+		}
 	}
 	if e != nil {
 		var oversized overLimit
@@ -387,10 +395,18 @@ func decodeInputResearchSource(source inputResearchSource, args, result json.Raw
 // stderr, page text, URLs, credentials or instructions from a failed source.
 type researchSourceError struct {
 	code, message, recovery string
+	status                  int
+	header                  http.Header
 	acquisitionRefusal      bool // never authorize replay after a successful acquire or during sealing
 }
 
-func (e *researchSourceError) Error() string { return e.message }
+func (e *researchSourceError) Error() string               { return e.message }
+func (e *researchSourceError) StatusCode() int             { return e.status }
+func (e *researchSourceError) ResponseHeader() http.Header { return e.header }
+func (e *researchSourceError) ResponseBody() string {
+	raw, _ := json.Marshal(map[string]string{"code": e.code})
+	return string(raw)
+}
 
 var searchArgumentRefusal = regexp.MustCompile(`^(search-argument-(?:unsupported|invalid))(?:: [^\n]*)?$`)
 

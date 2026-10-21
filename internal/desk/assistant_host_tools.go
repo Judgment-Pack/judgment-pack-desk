@@ -40,7 +40,10 @@ type assistantHostRegistry struct{ tools []runcontext.HostTool }
 func newAssistantHostRegistry(tools []runcontext.HostTool) (*assistantHostRegistry, error) {
 	seen := map[string]bool{}
 	for _, t := range tools {
-		if t.Name == "" || seen[t.Name] || t.Execute == nil || !json.Valid(t.InputSchema) || (!contains([]string{"read", "proposal"}, t.Effect) && !(t.Name == "request_dialect_research" && t.Effect == "workflow" && t.Delegation == "" && t.Source == nil && t.Approve == nil && t.SourceTool == "" && t.EffectClass == "" && t.Approval == "" && t.ContextPolicy == nil)) || (t.Delegation != "" && (t.Delegation != "read" || t.Effect != "read")) {
+		if t.Name == assistantSearchTool && (t.Effect != "read" || t.Delegation != "research" || t.Source != nil || t.SourceTool != "" || t.EffectClass != "" || t.Approve != nil || t.Approval != "" || t.ContextPolicy != nil) {
+			return nil, errAssistantRunInvalid
+		}
+		if t.Name == "" || seen[t.Name] || t.Execute == nil || !json.Valid(t.InputSchema) || (!contains([]string{"read", "proposal"}, t.Effect) && !(t.Name == "request_dialect_research" && t.Effect == "workflow" && t.Delegation == "" && t.Source == nil && t.Approve == nil && t.SourceTool == "" && t.EffectClass == "" && t.Approval == "" && t.ContextPolicy == nil)) || (t.Delegation != "" && ((t.Delegation != "read" && !(t.Name == assistantSearchTool && t.Delegation == "research" && t.Source == nil && t.SourceTool == "" && t.EffectClass == "" && t.Approve == nil && t.Approval == "" && t.ContextPolicy == nil)) || t.Effect != "read")) {
 			return nil, errAssistantRunInvalid
 		}
 		seen[t.Name] = true

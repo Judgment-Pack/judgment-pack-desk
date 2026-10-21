@@ -16,6 +16,7 @@ import (
 // Only this finite domain payload is absent from canonical Agent events. It is
 // authored by a finite domain producer with its exact retained result.
 type assistantDomainOutput struct {
+	Search               *assistantSearchOutput        `json:"search,omitempty"`
 	DialectAction        *assistantDialectActionOutput `json:"dialectAction,omitempty"`
 	TestProposal         *assistantTestProposalOutput  `json:"testProposal,omitempty"`
 	Recipe               *assistantDialectRecipeOutput `json:"dialectRecipe,omitempty"`
@@ -125,6 +126,9 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 	return false
 }
 func validateAssistantDomainOutputs(run assistantRunRecord) error {
+	if err := validateAssistantSearchCustody(run); err != nil {
+		return err
+	}
 	if err := validateAssistantResearchOperations(run); err != nil {
 		return err
 	}
@@ -140,7 +144,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		if op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {
 			return errAssistantRunInvalid
 		}
-		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) {
+		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) && op.Name != assistantSearchTool {
 			continue
 		}
 		var in assistantHostIntent
@@ -169,7 +173,9 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			return errAssistantRunInvalid
 		}
 		var argumentErr error
-		if assistantDialectTool(op.Name) {
+		if op.Name == assistantSearchTool {
+			_, argumentErr = readAssistantSearchQuery(in.Arguments)
+		} else if assistantDialectTool(op.Name) {
 			_, argumentErr = readAssistantDialectArguments(op.Name, in.Arguments)
 		} else if assistantPolicyTool(op.Name) {
 			_, argumentErr = readAssistantPolicyArguments(op.Name, in.Arguments)
@@ -236,6 +242,16 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	seen := map[string]bool{}
 	draftIDs := map[string]bool{}
 	for _, out := range run.DomainOutputs {
+		if out.Kind == "search" {
+			if seen[out.OperationID] || validateAssistantSearchOutput(run, out, receipts) != nil {
+				return errAssistantRunInvalid
+			}
+			seen[out.OperationID] = true
+			continue
+		}
+		if out.Search != nil {
+			return errAssistantRunInvalid
+		}
 		if out.Kind == "dialect-action" {
 			if seen[out.OperationID] || validateAssistantDialectOutput(run, out, receipts) != nil {
 				return errAssistantRunInvalid
@@ -347,6 +363,16 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	}
 	// A successful producer cannot lose its domain payload on import/recovery.
 	for _, op := range run.Operations {
+		if op.Kind == "host" && op.Name == assistantSearchTool && !seen[op.ID] && op.State == "completed" {
+			var result struct {
+				StructuredContent struct {
+					Step assistantSearchStep `json:"searchStep"`
+				} `json:"structuredContent"`
+			}
+			if json.Unmarshal(receipts[op.ID].Result, &result) != nil || result.StructuredContent.Step.Reference != nil {
+				return errAssistantRunInvalid
+			}
+		}
 		if op.Kind == "host" && (assistantDialectActionProducer(op.Name)) && !seen[op.ID] {
 			if op.State == "completed" || assistantDialectResultHasAction(receipts[op.ID].Result) {
 				return errAssistantRunInvalid

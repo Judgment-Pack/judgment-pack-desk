@@ -466,10 +466,35 @@ func (s *Server) localGatewayStatus(data []byte) *LocalGatewayStatus {
 	return &LocalGatewayStatus{Status: "ready", Gateway: pin, Build: pin.build, DocumentProcessing: &processing}
 }
 func (s *Server) localResearch(documents *documentSourceConfig) (researchGateway, error) {
+	return s.localResearchCurrent(documents, true)
+}
+func (s *Server) localResearchCurrent(documents *documentSourceConfig, start bool) (researchGateway, error) {
 	if s.localGateway == nil {
 		return researchGateway{}, withCode(CodeResearchUnconfigured, errors.New("no research gateway is configured: research.gateway is absent or null"))
 	}
-	pin, err := s.localGateway.ensure(s.assistant)
+	var pin *localGatewayPin
+	var err error
+	if start {
+		pin, err = s.localGateway.ensure(s.assistant)
+	} else {
+		g := s.localGateway
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		policy, _, policyErr := webPolicyValue(s.assistant)
+		currentPolicy := ""
+		if policy != nil {
+			currentPolicy = *policy
+		}
+		if policyErr != nil || g.closed || g.done == nil || g.pin == nil || currentPolicy != g.webPolicy {
+			return researchGateway{}, errAssistantRunScope
+		}
+		select {
+		case <-g.done:
+			return researchGateway{}, errAssistantRunScope
+		default:
+		}
+		pin = g.pin
+	}
 	if err != nil {
 		return researchGateway{}, withCode(CodeResearchUnconfigured, err)
 	}

@@ -8,4 +8,8 @@ prepare_gateway_fixture() {
     python3 "$root/scripts/build-bundle.py" --gateway-only --output "$bundle" || return
   fi
   export JPS_TEST_GATEWAY_BUNDLE="$bundle"
+  # Pass the selected test-toolchain interpreter explicitly to private fixtures.
+  # Tests never resolve a provider program or interpreter by ambient name.
+  export JPS_TEST_PYTHON="${JPS_TEST_PYTHON:-$(command -v python3)}"
+  test -x "$JPS_TEST_PYTHON" || return
 }
