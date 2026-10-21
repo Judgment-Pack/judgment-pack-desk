@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph/Policy/recipe host foundations implemented; production activation pending",
+  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph/Policy/recipe/mapping/records/research-admission host foundations implemented; production activation pending",
   "deskEvidence": "reviewed private foundations and focused actual API/native execution proofs; existing browser features remain on current engines pending full migration/certification",
   "agentEvidence": {
     "version": "v0.6.0",
@@ -601,7 +601,7 @@
         "durable pre-create metadata, actual independent draft readback, queued revocation/cancellation, uncertain-write/replay and import refusals",
         "existing ChatStore proposal reader and actual dialectDraftQuery readback in the standard projection CI path"
       ],
-      "status": "private-implemented; production/browser migration and actual research admission pending"
+      "status": "private-implemented with separate exact-allowance research admission; production/browser migration pending"
     },
     {
       "id": "dialect-mapping-host",
@@ -645,9 +645,12 @@
         "internal/desk/input_research_http.go",
         "internal/desk/assistant_dialect_record_tools.go",
         "internal/desk/assistant_dialect_action_registry.go",
-        "internal/desk/assistant_dialect_action_output.go"
+        "internal/desk/assistant_dialect_action_output.go",
+        "internal/desk/input_research_request.go",
+        "internal/desk/assistant_dialect_research_tools.go",
+        "internal/desk/assistant_dialect_research_projection.go"
       ],
-      "targetOwner": "private Go finite records/activity and review-only action registry implemented; actual request_dialect_research admission, production registration and browser migration pending",
+      "targetOwner": "private Go records/activity/review actions and actual exact-allowance research admission implemented; production registration/browser migration pending",
       "preserve": [
         "Go existing research allowance/recipe/record review admission; proposals and source-start receipts remain different",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
@@ -655,7 +658,7 @@
       "verification": [
         "actual API/native producers and existing ChatStore/validDialectChatAction/applyDialectRecipeAction readers in standard CI",
         "bounded supplied strings versus typed research, local human review currency, real owner history, queued authority/source and finite import/projection witnesses",
-        "request_dialect_research remains deferred: current real allowance, exact turn/revision admission, independent worker and lost-ack recovery required"
+        "actual request_dialect_research API/native workflow producers: exact existing grant and same-turn manual/other-call receipt, held preparation view/current authority/expiry at queue commit, independent worker, typed unknown outcome and explicit model-free ProjectChat reconciliation; real browser review/admitted/activity readers"
       ]
     },
     {

@@ -198,7 +198,7 @@ func (e *assistantRunExecution) recheckAssistantDialectAction(ctx context.Contex
 func validateAssistantDialectReviewOutput(run assistantRunRecord, out assistantDomainOutput, receipts map[string]assistantHostResult, producer assistantRunOperation, in assistantHostIntent) error {
 	p := out.DialectAction
 	a, err := readAssistantDialectRecordArguments(producer.Name, in.Arguments)
-	if err != nil || producer.State != "completed" || !validAssistantDialectActionRead(p.Read) || p.CheckID != "" || p.MappingCheckID != "" || p.Published != nil || p.Preview != nil || !p.Ready || !reflect.DeepEqual(p.Action, assistantDialectActionFrom(*in.DialectAction, p.Read, a)) || validateAssistantDialectActionBasis(*p.Read.Recipe, a) != nil {
+	if err != nil || p.Research != nil || p.Action != nil && p.Action.Applied != nil || producer.State != "completed" || !validAssistantDialectActionRead(p.Read) || p.CheckID != "" || p.MappingCheckID != "" || p.Published != nil || p.Preview != nil || !p.Ready || !reflect.DeepEqual(p.Action, assistantDialectActionFrom(*in.DialectAction, p.Read, a)) || validateAssistantDialectActionBasis(*p.Read.Recipe, a) != nil {
 		return errAssistantRunInvalid
 	}
 	if a.Kind == "stop-research" {

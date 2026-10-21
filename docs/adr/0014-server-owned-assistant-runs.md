@@ -243,3 +243,46 @@ This remains an input-only private slice. Domain-specific authoring targets,
 policy/test expectation workflows and their fresh artifact reads remain with the
 owning later domain migration. No response journal CAS, output write, production
 executor registration, browser removal or complete certification is delivered.
+
+
+### Private Dialect research admission
+
+`request_dialect_research` is the first private host-owned `workflow` tool, with
+no external Source or framework approval. The released host-tool schema keeps
+host-owned approval rules with the host. The existing reviewed research allowance
+remains the only permission; Plan and delegated children cannot request it. Model
+arguments contain only saved Dialect identity/revision. An earlier root recipe
+read and a durable finite action operation fix chat, current user turn and request
+association before the shared owning request service can consume an allowance.
+The manual request endpoint uses that same service, retaining its existing
+session or local launch-bearer guard, origin checks and sign-in policy. Private
+host calls additionally require a real session and their full current authority
+callback. The shared guard is rechecked immediately before allowance consumption.
+
+Admission holds conversation/private, research admission, run and preparation
+locks in that order. Preparation view acquisition uses the existing nonblocking
+TryRead contract: contention refuses before write, so no private/preparation wait
+cycle can form with projection or an injected owner. An acquired view survives
+the queued journal commit.
+Current Work/session/project/Policy/profile/source, critic custody, selected
+recipe and linked companies, budget/slot and expiry are rechecked under their
+owning boundaries. A same-turn used receipt is observed before fresh admission
+checks, including when an earlier manual request or another host call consumed
+it; its original provenance and timestamp cannot be rewritten.
+
+An applied research card means the real owner admitted/queued that exact run,
+not completed research. Chat Stop never stops the independent worker. Unknown
+attempted persistence closes chat dispatch and retains a typed failure; raw run
+GET/SSE/list/Stop remain observational. Explicit terminal `ProjectChat`/server
+reconciliation can inspect the exact used-grant/turn receipt, retain historical
+applied output and repeat only projection/write/readback/ack. It never calls the
+request owner, queues again, acquires fresh permission or continues a model.
+Unavailable receipts retain uncertainty. The original unknown tool result stays
+unchanged even when the later independent receipt is observed. Historical
+admission remains projectable after recipe/budget changes; an unadmitted review
+card still requires its current recipe. Actual API/native, owning-journal and
+existing browser consumer fixtures cover these distinctions in standard CI.
+This private delivery does not activate an executor, migrate browser dispatch,
+replace background research model adapters, or implement source/Plan/memory/
+continuation workflows. Runtime #274 / Desk #582 and complete certification
+remain separate gates.

@@ -21,7 +21,7 @@ func TestAssistantHostCanonicalEffects(t *testing.T) {
 				s, _, e = assistantExecutionFixture(t, "http://127.0.0.1:1", "work")
 			}
 			x := assistantExecutionOpen(t, s, e)
-			expected := map[string]string{"list_decisions": "read", "read_decision": "read", "get_graph_authoring_instructions": "read", "graph_validate": "read", "graph_explain": "read", "graph_rehearse": "read", "propose_graph": "proposal", "read_pack_tests": "read", "propose_test_cases": "proposal", "get_dialect_recipe_instructions": "read", "list_dialects": "read", "read_dialect_recipe": "read", "propose_dialect_recipe": "proposal", "read_dialect": "read", "propose_dialect": "proposal", "read_dialect_publication": "read", "propose_dialect_publication": "proposal", "read_dialect_records": "read", "read_dialect_activity": "read", "propose_dialect_action": "proposal"}
+			expected := map[string]string{"list_decisions": "read", "read_decision": "read", "get_graph_authoring_instructions": "read", "graph_validate": "read", "graph_explain": "read", "graph_rehearse": "read", "propose_graph": "proposal", "read_pack_tests": "read", "propose_test_cases": "proposal", "get_dialect_recipe_instructions": "read", "list_dialects": "read", "read_dialect_recipe": "read", "propose_dialect_recipe": "proposal", "read_dialect": "read", "propose_dialect": "proposal", "read_dialect_publication": "read", "propose_dialect_publication": "proposal", "read_dialect_records": "read", "read_dialect_activity": "read", "propose_dialect_action": "proposal", "request_dialect_research": "workflow"}
 			if policy {
 				expected = map[string]string{"read_policy": "read", "propose_policy_update": "proposal", "read_policy_comparison": "read", "read_policy_coverage": "read", "propose_policy_pack_interpretation": "proposal", "propose_policy_graph_interpretation": "proposal"}
 			}
@@ -39,7 +39,7 @@ func TestAssistantHostCanonicalEffects(t *testing.T) {
 				effect, err := assistantTestString(fields["effect"])
 				assistantRunMust(t, err)
 				want, ok := expected[name]
-				if !ok || effect != want || !contains([]string{"read", "proposal"}, effect) {
+				if !ok || effect != want || !contains([]string{"read", "proposal", "workflow"}, effect) {
 					t.Fatal("noncanonical emitted host effect", name, effect, want)
 				}
 				delete(expected, name)

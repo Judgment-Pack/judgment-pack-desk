@@ -2788,3 +2788,29 @@ go	assistant dialect records: raw recipe eligibility null accepted	TestAssistant
 go	assistant dialect records: fresh stop projection ignores active run	TestAssistantDialectRecordProjectionCurrentAndHistory
 go	assistant host effects: unsupported alias admitted	TestAssistantHostCanonicalEffects
 go	assistant dialect records: same-ID replay collapses optional null	TestAssistantDialectRecordActualAPIProducer
+go	assistant dialect research: foreign argument refusal omitted	TestAssistantDialectResearchFiniteArguments
+go	assistant dialect research: unimplemented workflow admitted	TestAssistantDialectResearchCanonicalWorkflow
+go	assistant dialect research: queued complete source comparison omitted	TestAssistantDialectResearchQueuedAuthority
+go	assistant dialect research: queued critic custody comparison omitted	TestAssistantDialectResearchQueuedAuthority
+go	assistant dialect research: owner postqueue authority omitted	TestAssistantDialectResearchQueuedAuthority
+go	assistant dialect research: validation-to-commit preparation guard released	TestAssistantDialectResearchPreparationCommitGuard
+go	assistant dialect research: expiry after validation ignored	TestAssistantDialectResearchExpiryAfterValidation
+go	assistant dialect research: current saved preparation revision ignored	TestAssistantDialectResearchQueuedAuthority
+go	assistant dialect research: used receipt assigned to another turn	TestAssistantDialectResearchUsedTurn
+go	assistant dialect research: used allowance provenance replaceable	TestAssistantDialectResearchReceiptImport
+go	assistant dialect research: unknown attempted request keeps dispatch open	TestAssistantDialectResearchUnknownRecovery
+go	assistant dialect research: import loses owning chat and turn	TestAssistantDialectResearchReceiptImport
+go	assistant dialect research: import loses request provenance	TestAssistantDialectResearchReceiptImport
+go	assistant dialect research: raw receipt null collapsed on import	TestAssistantDialectResearchReceiptImport
+go	assistant dialect research: applied action no longer equals exact receipt	TestAssistantDialectResearchReceiptImport
+go	assistant dialect research: retained tool result no longer bound	TestAssistantDialectResearchReceiptImport
+go	assistant dialect research: completed workflow can lose domain output	TestAssistantDialectResearchReceiptImport
+go	assistant dialect research: projection skips physical owner receipt	TestAssistantDialectResearchProjectionOwnerProof
+go	assistant dialect research: pending request projects without reconciliation	TestAssistantDialectResearchUnknownRecovery
+go	assistant dialect research: explicit finalization omits receipt reconciliation	TestAssistantDialectResearchUnknownRecovery
+go	assistant dialect research: historical admitted card requires new readiness	TestAssistantDialectResearchUnknownRecovery
+go	assistant dialect research: stale unadmitted review card retained	TestAssistantDialectResearchStaleReviewCompletion
+go	assistant dialect research: preparation waits while private is held	TestAssistantDialectResearchReadViewBusy
+go	assistant dialect research: manual local bearer incorrectly requires session	TestResearchRequestAuthorizationModes
+go	assistant dialect research: current shared request guard omitted	TestResearchRequestCurrentAuthorization
+go	assistant dialect research: private host accepts local bearer	TestResearchRequestCurrentAuthorization

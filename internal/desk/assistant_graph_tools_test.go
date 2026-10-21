@@ -161,7 +161,7 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 				"read_dialect_recipe": "read", "propose_dialect_recipe": "proposal",
 				"read_dialect": "read", "propose_dialect": "proposal",
 				"read_dialect_publication": "read", "propose_dialect_publication": "proposal",
-				"read_dialect_records": "read", "read_dialect_activity": "read", "propose_dialect_action": "proposal",
+				"read_dialect_records": "read", "read_dialect_activity": "read", "propose_dialect_action": "proposal", "request_dialect_research": "workflow",
 			}
 			names := []string{}
 			for _, tool := range x.Run.HostTools {
@@ -170,8 +170,8 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 					t.Fatal("unknown or duplicate shared offer", tool.Name)
 				}
 				names = append(names, tool.Name)
-				if effect == "proposal" {
-					if tool.Effect != "proposal" || tool.Delegation != "" {
+				if effect == "proposal" || effect == "workflow" {
+					if tool.Effect != effect || tool.Delegation != "" {
 						t.Fatal("proposal grants", tool.Name)
 					}
 				} else if tool.Effect != "read" || tool.Delegation != "read" {

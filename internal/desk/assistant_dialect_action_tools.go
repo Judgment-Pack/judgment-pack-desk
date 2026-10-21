@@ -173,3 +173,8 @@ func validAssistantDialectPatch(p assistantDialectRecipePatch) bool {
 func assistantDialectProposal(name string) bool {
 	return contains([]string{"propose_dialect", "propose_dialect_publication", "propose_dialect_action"}, name)
 }
+
+// Shared finite action custody includes the workflow without calling it a proposal.
+func assistantDialectActionProducer(name string) bool {
+	return assistantDialectProposal(name) || name == "request_dialect_research"
+}

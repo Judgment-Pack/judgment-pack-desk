@@ -224,3 +224,29 @@ grep -Eq '^--- PASS: TestAssistantDialectRecordActualAPIProducer \(' "$tmp/diale
 "$node_bin" "$tmp/dialect-record-reference.mjs" "$record_outputs/chat.json" \
   "$record_outputs/source.json" "$record_outputs/records.json" "$record_outputs/activity.json" | tee "$tmp/dialect-record-reader.log"
 grep -Fxq 'Dialect records/actions shared readers: bounded original values, real activity and 6 exact review-only actions passed.' "$tmp/dialect-record-reader.log"
+
+# Actual research admission consumes only the existing exact reviewed allowance.
+research_outputs="$tmp/dialect-research-request"
+mkdir -m 700 "$research_outputs"
+(
+  cd "$root"
+  env "${go_env[@]}" DESK_DIALECT_RESEARCH_READER_REVIEW_SOURCE="$research_outputs/review-source.json" \
+    DESK_DIALECT_RESEARCH_READER_SOURCE="$research_outputs/source.json" \
+    DESK_DIALECT_RESEARCH_READER_REVIEW="$research_outputs/review.json" \
+    DESK_DIALECT_RESEARCH_READER_STARTED="$research_outputs/started.json" \
+    DESK_DIALECT_RESEARCH_READER_ACTIVITY="$research_outputs/activity.json" \
+    go test ./internal/desk -run '^TestAssistantDialectResearchActualAPIProducer$' -count=1 -v
+) | tee "$tmp/dialect-research-producer.log"
+grep -Eq '^--- PASS: TestAssistantDialectResearchActualAPIProducer \(' "$tmp/dialect-research-producer.log" || {
+  echo 'Dialect research producer did not run and pass' >&2
+  exit 1
+}
+"$esbuild" "$root/scripts/assistant-dialect-research-reference.mjs" \
+  --bundle --platform=node --format=esm \
+  --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+  --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$tmp/dialect-research-reference.mjs"
+"$node_bin" "$tmp/dialect-research-reference.mjs" "$research_outputs/review-source.json" \
+  "$research_outputs/source.json" \
+  "$research_outputs/review.json" "$research_outputs/started.json" "$research_outputs/activity.json" | tee "$tmp/dialect-research-reader.log"
+grep -Fxq 'Dialect research shared readers: exact review/admitted cards and independent queued activity passed (5 observations).' "$tmp/dialect-research-reader.log"
