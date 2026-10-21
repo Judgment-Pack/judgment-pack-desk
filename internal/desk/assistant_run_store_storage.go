@@ -43,16 +43,27 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 			Binding       assistantRunBinding `json:"binding"`
 			Checkpoint    json.RawMessage     `json:"checkpoint"`
 			DomainOutputs []json.RawMessage   `json:"domainOutputs"`
+			Links         []json.RawMessage   `json:"links"`
 		} `json:"runs"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return ledger, err
 	}
 	for _, run := range wire.Runs {
+		for _, raw := range run.Links {
+			if err := readAssistantDialectCustody(raw, reflect.TypeOf(assistantLinkCustody{})); err != nil {
+				return ledger, err
+			}
+		}
 		for _, raw := range run.DomainOutputs {
 			fields, err := assistantTestObject(raw)
 			if err != nil {
 				return ledger, err
+			}
+			if fields["link"] != nil {
+				if err = readAssistantDialectCustody(fields["link"], reflect.TypeOf(assistantLinkOutput{})); err != nil {
+					return ledger, err
+				}
 			}
 			if fields["dialectAction"] != nil {
 				if err = readAssistantDialectCustody(fields["dialectAction"], reflect.TypeOf(assistantDialectActionOutput{})); err != nil {

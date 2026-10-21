@@ -321,56 +321,64 @@ function window(attachment: ChatAttachment, document: VerifiedDocument, link: No
   const found = find === '' ? [] : locate(joined, find)
   const phrase = link.anchorKind === 'section' ? anchorWords(link.anchor) : ''
   const anchorFound = phrase === '' ? [] : locate(joined, phrase)
-  const start = Math.min(joined.length, offset ?? (found.length > 0 ? Math.max(0, found[0]!.start - 200) : 0))
+  let start = Math.min(joined.length, offset ?? (found.length > 0 ? Math.max(0, found[0]!.start - 200) : 0))
+  // A UTF-16 cursor may land inside an astral character. Keep the intact
+  // character and report the actual offset, for explicit and find-based starts.
+  if (start > 0 && /[\uDC00-\uDFFF]/.test(joined[start] ?? '') && /[\uD800-\uDBFF]/.test(joined[start - 1] ?? '')) start -= 1
   const citation = (span: Span) => `attachment:${reference.id}/${reference.digest}/page/${span.number}`
   const snapshot = source.format === 'static-text-v1'
-  return heldWindow(joined, start, policy, (end) => {
-    const more = end < joined.length
-    const shown = spans.filter((span) => span.end > start && span.start < end)
-    const lines = [
-      RETRIEVED,
-      '',
-      `link: ${link.displayUrl}`,
-      `fetched: ${source.url ?? link.fetchUrl}` + (source.url !== undefined && source.url !== link.fetchUrl ? ` (the gateway followed a redirect from ${link.fetchUrl})` : ''),
-      `title: ${record.document.name}`,
-      ...(needsPartialConsent(record) ? ['partial extraction: only the confirmed readable pages are shown; missing text is not evidence'] : []),
-      snapshot
-        ? 'what was retained: a static text snapshot of the HTML page; scripts, styles and anything the page draws with JavaScript are not in it'
-        : `what was retained: the original ${source.mediaType ?? record.document.mediaType} file, ${record.content.pageCount} page(s)`,
-      `${joined.length} characters of text` +
-        (spans.length > 1 ? `, in ${spans.length} pages: ${spans.map((span) => `page ${span.number} at ${at(span)}`).join('; ')}` : ''),
-      ...(snapshot && joined.length < SHORT_SNAPSHOT ? ['the static text is very short; the page may need JavaScript to show its content, which this snapshot cannot'] : []),
-      ...anchorLines(link, phrase, anchorFound),
-      ...(find === ''
-        ? []
-        : [
-            found.length > 0
-              ? `find ${JSON.stringify(find)}: ${found.map(at).join(', ')} (a text match; the window starts just before the first)`
-              : `find ${JSON.stringify(find)}: no match in the text`
-          ]),
-      `cite exactly: write a Markdown link whose label is an exact quote from the text shown and whose destination is ${
-        shown.length === 1 ? citation(shown[0]!) : shown.map((span) => `${citation(span)} for page ${span.number}`).join(', ')
-      }`,
-      `showing characters ${start}–${end} of ${joined.length}` + (more ? ` (more: call ${READ_LINK} with the same url and offset ${end})` : ''),
-      '',
-      joined.slice(start, end)
-    ]
-    return text(lines.join('\n'), {
-      documentId: reference.id,
-      pages: shown.map(span => span.number),
-      digest: reference.digest,
-      link: link.displayUrl,
-      url: link.fetchUrl,
-      fetched: source.url ?? link.fetchUrl,
-      anchor: link.anchor,
-      anchorKind: link.anchorKind,
-      anchorMatches: anchorFound,
-      matches: found,
-      chars: joined.length,
-      offset: start,
-      more
+  const renderWindow = () => {
+    return heldWindow(joined, start, policy, (end) => {
+      const more = end < joined.length
+      const shown = spans.filter((span) => span.end > start && span.start < end)
+      const lines = [
+        RETRIEVED,
+        '',
+        `link: ${link.displayUrl}`,
+        `fetched: ${source.url ?? link.fetchUrl}` + (source.url !== undefined && source.url !== link.fetchUrl ? ` (the gateway followed a redirect from ${link.fetchUrl})` : ''),
+        `title: ${record.document.name}`,
+        ...(needsPartialConsent(record) ? ['partial extraction: only the confirmed readable pages are shown; missing text is not evidence'] : []),
+        snapshot
+          ? 'what was retained: a static text snapshot of the HTML page; scripts, styles and anything the page draws with JavaScript are not in it'
+          : `what was retained: the original ${source.mediaType ?? record.document.mediaType} file, ${record.content.pageCount} page(s)`,
+        `${joined.length} characters of text` +
+          (spans.length > 1 ? `, in ${spans.length} pages: ${spans.map((span) => `page ${span.number} at ${at(span)}`).join('; ')}` : ''),
+        ...(snapshot && joined.length < SHORT_SNAPSHOT ? ['the static text is very short; the page may need JavaScript to show its content, which this snapshot cannot'] : []),
+        ...anchorLines(link, phrase, anchorFound),
+        ...(find === ''
+          ? []
+          : [
+              found.length > 0
+                ? `find ${JSON.stringify(find)}: ${found.map(at).join(', ')} (a text match; the window starts just before the first)`
+                : `find ${JSON.stringify(find)}: no match in the text`
+            ]),
+        `cite exactly: write a Markdown link whose label is an exact quote from the text shown and whose destination is ${
+          shown.length === 1 ? citation(shown[0]!) : shown.map((span) => `${citation(span)} for page ${span.number}`).join(', ')
+        }`,
+        `showing characters ${start}–${end} of ${joined.length}` + (more ? ` (more: call ${READ_LINK} with the same url and offset ${end})` : ''),
+        '',
+        joined.slice(start, end)
+      ]
+      return text(lines.join('\n'), {
+        documentId: reference.id,
+        pages: shown.map(span => span.number),
+        digest: reference.digest,
+        link: link.displayUrl,
+        url: link.fetchUrl,
+        fetched: source.url ?? link.fetchUrl,
+        anchor: link.anchor,
+        anchorKind: link.anchorKind,
+        anchorMatches: anchorFound,
+        matches: found,
+        chars: joined.length,
+        offset: start,
+        more
+      })
     })
-  })
+  }
+  const result = renderWindow()
+  if (new TextEncoder().encode(JSON.stringify(result)).length > policy.toolResultBytes) return text('The read window metadata exceeds the current tool result limit. Select fewer readable pages before reading.', {documentId: reference.id, digest: reference.digest, needsReview: true}, true)
+  return result
 }
 
 const websiteKey=(ref:WebsiteReference,config:ResearchConfig)=>`${JSON.stringify(config.gateway)}/${ref.id}/${ref.digest}/${ref.seed}`

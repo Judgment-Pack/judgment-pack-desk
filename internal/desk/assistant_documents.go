@@ -39,6 +39,7 @@ type assistantDocumentPage struct {
 // existing run admission. Neither this object nor a saved ref grants a write.
 type assistantVerifiedDocument struct {
 	Name             string
+	record           assistantDocumentRecord
 	Pages            []assistantDocumentPage
 	Partial          bool
 	owner            assistantDocumentOwner
@@ -250,8 +251,14 @@ func assistantDocumentCanon(ctx context.Context, program string, raw []byte, lim
 }
 
 func verifyAssistantDocument(ctx context.Context, program string, raw []byte, pin inputResearchPin, ref assistantDocumentReference) (assistantVerifiedDocument, error) {
+	return verifyAssistantDocumentPacket(ctx, program, raw, pin, ref, false)
+}
+
+// Review custody verifies the entire packet but never releases unconsented text.
+// Saved-reference readers always use the stricter wrapper above.
+func verifyAssistantDocumentPacket(ctx context.Context, program string, raw []byte, pin inputResearchPin, ref assistantDocumentReference, review bool) (assistantVerifiedDocument, error) {
 	var zero assistantVerifiedDocument
-	if !assistantDocumentReferenceValid(ref) {
+	if !assistantDocumentReferenceValid(ref) && !(review && attachmentID.MatchString(ref.ID) && adDigest(ref.Digest) && len(ref.Pages) == 0) {
 		return zero, errAssistantDocument
 	}
 	// Canonicalize only for validation; never replace the retained original bytes.
@@ -399,10 +406,12 @@ func verifyAssistantDocument(ctx context.Context, program string, raw []byte, pi
 	if !assistantDocumentOriginalBinding(record, object) {
 		return zero, errAssistantDocument
 	}
-	if record.partial && !ref.AllowPartial {
-		return zero, errAssistantDocument
+	if !review {
+		if record.partial && !ref.AllowPartial {
+			return zero, errAssistantDocument
+		}
 	}
-	held := assistantVerifiedDocument{Name: record.name, Partial: record.partial, reference: ref}
+	held := assistantVerifiedDocument{Name: record.name, record: record, Partial: record.partial, reference: ref}
 	held.reference.Pages = append([]int(nil), ref.Pages...)
 	for _, number := range ref.Pages {
 		if number > len(record.pages) {
@@ -411,6 +420,9 @@ func verifyAssistantDocument(ctx context.Context, program string, raw []byte, pi
 		page := record.pages[number-1]
 		if !page.usable {
 			return zero, errAssistantDocument
+		}
+		if review && record.partial && !ref.AllowPartial {
+			continue
 		}
 		held.Pages = append(held.Pages, assistantDocumentPage{Page: number, Citation: fmt.Sprintf("attachment:%s/%s/page/%d", ref.ID, ref.Digest, number), Text: page.text})
 	}

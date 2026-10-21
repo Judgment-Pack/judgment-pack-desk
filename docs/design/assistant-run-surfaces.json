@@ -735,7 +735,16 @@
         "internal/desk/assistant_search_store.go",
         "internal/desk/assistant_search_recovery.go",
         "internal/desk/assistant_search_output.go",
-        "scripts/assistant-search-projection-reference.mjs"
+        "scripts/assistant-search-projection-reference.mjs",
+        "internal/desk/assistant_url.go",
+        "internal/desk/assistant_link_tools.go",
+        "internal/desk/assistant_link_acquire.go",
+        "internal/desk/assistant_link_store.go",
+        "internal/desk/assistant_link_read.go",
+        "internal/desk/assistant_link_recovery.go",
+        "internal/desk/assistant_link_output.go",
+        "internal/desk/assistant_link_window.go",
+        "scripts/assistant-link-reference.mjs"
       ],
       "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
       "preserve": [
@@ -746,9 +755,11 @@
         "actual API/native root and research-child producers; current saved choice, durable shared3/retained64 limits, exact signed proof and UTF16 boundaries",
         "queued current Gateway/connection/session/profile/source admission, cancellation, uncertain acquire/seal/storage outcomes and observational GET and explicit offline exact-receipt recovery",
         "actual Go-emitted SearchReference/SearchStep through existing ChatStore and verifySearch browser readers",
-        "handwritten Go/browser URL intersection vectors; raw Unicode/punycode hostname parity remains a production-activation dependency in Desk #590"
+        "historical URL vectors retain original host/browser expectations; current shared standards-backed reader plus additive Go/browser normalization/extraction and actual Unicode/punycode producer parity address Desk #590",
+        "private read_link actual API/native/read-child documents and windows; saved-user/current-verified-search authority, durable ordinary shared3/retained256 budgets, separate current-run custody, partial/selected pages, exact citations and terminal receipt-only recovery",
+        "shared browser/private UTF16 safe-start correction returns an intact surrogate pair and actual offset; canonical encoded-prefix end bound and continuation, BMP/combining/page-span and ECMAScript whitespace/folding vectors"
       ],
-      "status": "private conversational search_sources implemented; read_link/explore_website, finite choice continuation and production/browser activation pending"
+      "status": "private conversational search_sources/read_link implemented; explore_website, finite choice continuation and production/browser activation pending"
     },
     {
       "id": "research-source-host",
@@ -884,7 +895,7 @@
     ],
     "pending": [
       "complete provider-managed Desk binding and feature certification",
-      "remaining conversational link/exploration and research source/citation host tools; finite research-choice continuation",
+      "remaining conversational exploration and research source/citation host tools; finite research-choice continuation",
       "Plan/memory and remaining continuation/workflow feature migrations; released Runtime test-proposal compatibility #582",
       "browser cutover and production executor registration after complete migration/review"
     ],

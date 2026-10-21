@@ -40,6 +40,9 @@ type assistantHostRegistry struct{ tools []runcontext.HostTool }
 func newAssistantHostRegistry(tools []runcontext.HostTool) (*assistantHostRegistry, error) {
 	seen := map[string]bool{}
 	for _, t := range tools {
+		if t.Name == assistantLinkTool && (t.Effect != "read" || t.Delegation != "read" || t.Source != nil || t.SourceTool != "" || t.EffectClass != "" || t.Approve != nil || t.Approval != "" || t.ContextPolicy != nil) {
+			return nil, errAssistantRunInvalid
+		}
 		if t.Name == assistantSearchTool && (t.Effect != "read" || t.Delegation != "research" || t.Source != nil || t.SourceTool != "" || t.EffectClass != "" || t.Approve != nil || t.Approval != "" || t.ContextPolicy != nil) {
 			return nil, errAssistantRunInvalid
 		}

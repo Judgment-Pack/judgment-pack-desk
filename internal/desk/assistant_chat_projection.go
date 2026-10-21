@@ -389,6 +389,10 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	if err != nil {
 		return nil, err
 	}
+	documents, err := appendAssistantLinkOutputs(chat, run)
+	if err != nil {
+		return nil, err
+	}
 	responseID := assistantChatResponseID(run.ID)
 	items := []map[string]any{}
 	calls := map[string]int{}
@@ -436,6 +440,11 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 				status = "failed"
 			}
 			items[index]["status"] = status
+			if result.Name == assistantLinkTool {
+				if err := assistantLinkProjectionItem(run, *result.CallID, items[index]); err != nil {
+					return nil, err
+				}
+			}
 			if result.Name == assistantSearchTool {
 				if err := assistantSearchProjectionItem(run, *result.CallID, items[index]); err != nil {
 					return nil, err
@@ -516,6 +525,31 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 		}
 	}
 	for _, out := range run.DomainOutputs {
+		if out.Kind != "link-document" {
+			continue
+		}
+		found := false
+		for _, item := range items {
+			if item["id"] == out.CallID && item["name"] == assistantLinkTool {
+				if err := assistantLinkProjectionItem(run, out.CallID, item); err != nil {
+					return nil, err
+				}
+				found = true
+			}
+		}
+		if !found {
+			status := "complete"
+			if op := assistantDialectOperation(run, out.OperationID); op != nil && op.State == "refused" {
+				status = "failed"
+			}
+			item := map[string]any{"id": out.OperationID, "name": assistantLinkTool, "status": status}
+			if err := assistantLinkProjectionItem(run, out.CallID, item); err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+	}
+	for _, out := range run.DomainOutputs {
 		if out.Kind != "search" {
 			continue
 		}
@@ -543,7 +577,7 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 		display.Handoff = nil
 		state["execution"] = assistantChatJSON(display)
 	}
-	response := map[string]any{"searches": searches, "id": responseID, "afterTurnId": run.Binding.RequestID, "documents": []any{}, "websites": []any{}, "sourceIds": []string{}, "work": work}
+	response := map[string]any{"searches": searches, "id": responseID, "afterTurnId": run.Binding.RequestID, "documents": documents, "websites": []any{}, "sourceIds": []string{}, "work": work}
 	if messageID != "" {
 		response["messageId"] = messageID
 		delete(response, "afterTurnId")

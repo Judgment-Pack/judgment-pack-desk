@@ -71,6 +71,13 @@ func assistantChatProjectionMatches(run *assistantRunRecord, selected []byte) bo
 // preparation never rebuilds a timestamp, candidate or response identity.
 
 func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) error {
+	linkSnapshot, err := s.assistantLinkProjectionSnapshot(r, id)
+	if err != nil {
+		return err
+	}
+	if err = s.recoverAssistantLinkOutputs(r, id, linkSnapshot); err != nil {
+		return err
+	}
 	searchSnapshot, err := s.assistantSearchProjectionSnapshot(r, id)
 	if err != nil {
 		return err
@@ -90,6 +97,9 @@ func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) erro
 	_, err = store.transaction(r.Context(), func(ledger *assistantRunLedger) (bool, error) {
 		run, err := assistantChatProjectionRun(ledger, id)
 		if err != nil {
+			return false, err
+		}
+		if err = s.checkAssistantLinkProjectionLocked(r, run, linkSnapshot); err != nil {
 			return false, err
 		}
 		if err = s.checkAssistantSearchProjectionLocked(r, run, searchSnapshot); err != nil {

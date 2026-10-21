@@ -60,22 +60,7 @@ func adNoControls(v string) bool {
 	}
 	return true
 }
-func adWebURL(v any) bool {
-	if !adIsString(v) {
-		return false
-	}
-	raw := adString(v)
-	if len(raw) > 4096 || !strings.HasPrefix(raw, "https://") || strings.ContainsAny(raw, "\\#") {
-		return false
-	}
-	for _, r := range raw {
-		if r <= 32 {
-			return false
-		}
-	}
-	u, e := url.Parse(raw)
-	return e == nil && u.Scheme == "https" && u.Hostname() != "" && u.User == nil && u.Port() == "" && !strings.Contains(u.Host, "@")
-}
+func adWebURL(v any) bool { return assistantSearchURL(v) }
 func adConnected(source map[string]any) bool {
 	id, raw := adString(source["resourceId"]), adString(source["url"])
 	if !adIsString(source["resourceId"]) || !adIsString(source["url"]) || len(raw) > 4096 {

@@ -5,8 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"net/netip"
-	"net/url"
 	"strings"
 	"time"
 
@@ -135,58 +133,8 @@ func assistantSearchURL(value any) bool {
 	if !adIsString(value) {
 		return false
 	}
-	raw := adString(value)
-	if len(raw) > 4096 || !strings.HasPrefix(raw, "https://") || strings.ContainsAny(raw, "\\#") {
-		return false
-	}
-	for _, r := range raw {
-		if r <= 32 {
-			return false
-		}
-	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Hostname() == "" || u.User != nil || strings.Contains(u.Host, "@") {
-		return false
-	}
-	// WHATWG URL normalizes the default HTTPS port to the empty port.
-	if u.Port() != "" && u.Port() != "443" {
-		return false
-	}
-	host := u.Hostname()
-	if strings.HasPrefix(u.Host, "[") {
-		ip, err := netip.ParseAddr(host)
-		return err == nil && ip.Is6() && ip.Zone() == ""
-	}
-	// Keep a conservative, explicit intersection with WHATWG host parsing.
-	// IDNA and legacy numeric host spellings need a separate compatibility slice;
-	// never normalize signed URLs to make them acceptable here.
-	lower := strings.ToLower(strings.TrimSuffix(host, "."))
-	if lower == "" {
-		return false
-	}
-	labels := strings.Split(lower, ".")
-	for _, label := range labels {
-		if label == "" || strings.HasPrefix(label, "xn--") {
-			return false
-		}
-		for _, r := range label {
-			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
-				return false
-			}
-		}
-	}
-	last := labels[len(labels)-1]
-	numeric := true
-	for _, r := range last {
-		if r < '0' || r > '9' {
-			numeric = false
-		}
-	}
-	if numeric || strings.HasPrefix(last, "0x") {
-		ip, err := netip.ParseAddr(host)
-		return err == nil && ip.Is4() && ip.String() == host
-	}
-	return true
+	_, err := assistantPublicURL(adString(value))
+	return err == nil
 }
 
 // The pinned Gateway search producer writes UTC RFC3339 (time.RFC3339).

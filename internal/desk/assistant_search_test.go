@@ -96,6 +96,9 @@ func assistantSearchBundle(t *testing.T) (string, string) {
 	return bundle, status
 }
 func newAssistantSearchFixture(t *testing.T, engine, choice, phase string, upstreamURL string) *assistantSearchFixture {
+	return newAssistantSearchFixtureWithChat(t, engine, choice, phase, upstreamURL, nil)
+}
+func newAssistantSearchFixtureWithChat(t *testing.T, engine, choice, phase string, upstreamURL string, configure func(map[string]any)) *assistantSearchFixture {
 	t.Helper()
 	f := &assistantSearchFixture{responses: map[string][]byte{}}
 	bundle, status := assistantSearchBundle(t)
@@ -179,6 +182,9 @@ func newAssistantSearchFixture(t *testing.T, engine, choice, phase string, upstr
 			}
 		}
 	}
+	if configure != nil {
+		configure(chat)
+	}
 	f.e = assistantChatResave(t, f.s, f.token, old, string(assistantDocumentFixtureJSON(t, chat)), 201)
 	if engine == "codex" {
 		fixture := filepath.Dir(trace)
@@ -224,8 +230,8 @@ func TestAssistantSearchURLIntersection(t *testing.T) {
 	assistantRunMust(t, json.Unmarshal(raw, &vectors))
 	for _, v := range vectors {
 		t.Run(v.Name, func(t *testing.T) {
-			if assistantSearchURL(v.URL) != v.Host {
-				t.Fatal("private host URL subset differs", v.URL)
+			if assistantSearchURL(v.URL) != v.Browser {
+				t.Fatal("current shared URL spelling reader differs from historical browser expectation", v.URL)
 			}
 		})
 	}

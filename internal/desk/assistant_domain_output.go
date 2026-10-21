@@ -16,6 +16,7 @@ import (
 // Only this finite domain payload is absent from canonical Agent events. It is
 // authored by a finite domain producer with its exact retained result.
 type assistantDomainOutput struct {
+	Link                 *assistantLinkOutput          `json:"link,omitempty"`
 	Search               *assistantSearchOutput        `json:"search,omitempty"`
 	DialectAction        *assistantDialectActionOutput `json:"dialectAction,omitempty"`
 	TestProposal         *assistantTestProposalOutput  `json:"testProposal,omitempty"`
@@ -126,6 +127,9 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 	return false
 }
 func validateAssistantDomainOutputs(run assistantRunRecord) error {
+	if err := validateAssistantLinkCustody(run); err != nil {
+		return err
+	}
 	if err := validateAssistantSearchCustody(run); err != nil {
 		return err
 	}
@@ -144,7 +148,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		if op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {
 			return errAssistantRunInvalid
 		}
-		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) && op.Name != assistantSearchTool {
+		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) && op.Name != assistantSearchTool && op.Name != assistantLinkTool {
 			continue
 		}
 		var in assistantHostIntent
@@ -173,7 +177,9 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			return errAssistantRunInvalid
 		}
 		var argumentErr error
-		if op.Name == assistantSearchTool {
+		if op.Name == assistantLinkTool {
+			_, argumentErr = readAssistantLinkArguments(in.Arguments)
+		} else if op.Name == assistantSearchTool {
 			_, argumentErr = readAssistantSearchQuery(in.Arguments)
 		} else if assistantDialectTool(op.Name) {
 			_, argumentErr = readAssistantDialectArguments(op.Name, in.Arguments)
@@ -242,6 +248,16 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	seen := map[string]bool{}
 	draftIDs := map[string]bool{}
 	for _, out := range run.DomainOutputs {
+		if out.Kind == "link-document" {
+			if seen[out.OperationID] || validateAssistantLinkOutput(run, out, receipts) != nil {
+				return errAssistantRunInvalid
+			}
+			seen[out.OperationID] = true
+			continue
+		}
+		if out.Link != nil {
+			return errAssistantRunInvalid
+		}
 		if out.Kind == "search" {
 			if seen[out.OperationID] || validateAssistantSearchOutput(run, out, receipts) != nil {
 				return errAssistantRunInvalid
@@ -362,6 +378,19 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		return errAssistantRunInvalid
 	}
 	// A successful producer cannot lose its domain payload on import/recovery.
+	for _, held := range run.Links {
+		op := assistantDialectOperation(run, held.HostOperationID)
+		if held.Final.Receipt != nil && op != nil && (op.State == "completed" || op.State == "refused" && !held.DispatchClosed) && !seen[held.HostOperationID] {
+			var result struct {
+				StructuredContent struct {
+					DocumentID string `json:"documentId"`
+				} `json:"structuredContent"`
+			}
+			if json.Unmarshal(receipts[op.ID].Result, &result) != nil || result.StructuredContent.DocumentID != "" {
+				return errAssistantRunInvalid
+			}
+		}
+	}
 	for _, op := range run.Operations {
 		if op.Kind == "host" && op.Name == assistantSearchTool && !seen[op.ID] && op.State == "completed" {
 			var result struct {
@@ -642,7 +671,8 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		state = "refused"
 		read = nil
 		dialectDiagnostic := output != nil && output.Kind == "dialect-action" && output.DialectAction != nil && output.DialectAction.Action != nil && output.DialectAction.Action.Kind == "update-dialect" && !output.DialectAction.Ready
-		if !dialectDiagnostic && (output == nil || output.Kind != "policy-update" || output.PolicyUpdate == nil || output.PolicyUpdate.Check == nil || output.PolicyUpdate.Check.Status != "stale") {
+		linkReview := output != nil && output.Kind == "link-document" && output.Link != nil && output.Link.Attachment.Document != nil && (output.Link.Attachment.Document.NeedsReview || len(output.Link.Attachment.Document.Pages) == 0)
+		if !linkReview && !dialectDiagnostic && (output == nil || output.Kind != "policy-update" || output.PolicyUpdate == nil || output.PolicyUpdate.Check == nil || output.PolicyUpdate.Check.Status != "stale") {
 			output = nil
 		}
 	}

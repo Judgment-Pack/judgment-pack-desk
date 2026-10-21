@@ -188,7 +188,11 @@ func (e *assistantRunExecution) assistantConversationTools(runtime *assistantRun
 	if err != nil {
 		return nil, err
 	}
-	return newAssistantHostRegistry(append(append(append(append(append(append(graph.tools, tests...), recipes.tools...), dialects.tools...), records.tools...), research.tools...), search.tools...))
+	links, err := e.assistantLinkTools()
+	if err != nil {
+		return nil, err
+	}
+	return newAssistantHostRegistry(append(append(append(append(append(append(append(graph.tools, tests...), recipes.tools...), dialects.tools...), records.tools...), research.tools...), search.tools...), links.tools...))
 }
 
 var assistantPolicyNames = []string{"read_policy", "propose_policy_update", "read_policy_comparison", "read_policy_coverage", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}
