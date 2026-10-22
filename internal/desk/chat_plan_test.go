@@ -79,3 +79,36 @@ func TestChatPlanCannotConsumeAutoAllowance(t *testing.T) {
 		t.Fatal(response.Code, response.Body.String())
 	}
 }
+
+func TestChatPlanInvalidInteractionCannotConsumeAutoAllowance(t *testing.T) {
+	for _, interaction := range []string{`null`, `""`} {
+		t.Run(interaction, func(t *testing.T) {
+			s, rr, run, _ := approvalFixture(t)
+			authorizeFixture(t, s, run)
+			store, err := s.openChatData()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.root.Close()
+			raw := []byte(`{"version":1,"chats":[{"id":"chat-1","interaction":` + interaction + `}]}`)
+			if err := validateConversations(raw); err != nil {
+				t.Fatal("legacy control cannot be saved", err)
+			}
+			if err := writePrivateData(store.root, s.conversationName(), raw); err != nil {
+				t.Fatal(err)
+			}
+			response := requestApprovalRun(s, run, "chat-1", "turn-1")
+			if response.Code == 200 {
+				t.Fatal("invalid interaction started operation", response.Body.String())
+			}
+			unchanged, err := readInputResearch(rr)
+			if err != nil || unchanged.State != "review" || unchanged.Approval.UsedAt != "" {
+				t.Fatal("invalid interaction consumed Auto", err, unchanged.State)
+			}
+			stored, err := readPrivateData(store.root, s.conversationName(), maxConversationBytes)
+			if err != nil || string(stored) != string(raw) {
+				t.Fatal("refused interaction changed saved conversation", err)
+			}
+		})
+	}
+}

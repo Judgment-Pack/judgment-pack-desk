@@ -53,9 +53,8 @@ func validateChatPlan(data json.RawMessage) error {
 			return errAssistantRunInvalid
 		}
 	}
-	if _, err := assistantChatPhase(fields["interaction"]); err != nil {
-		return err
-	}
+	// Storage retains legacy null/empty controls. Execution readers validate the
+	// original member separately before selecting a phase or consuming authority.
 	var planRows []json.RawMessage
 	if raw, ok := fields["plans"]; ok {
 		if jsonscalar.ValidateEscapes(raw) != nil {
@@ -152,15 +151,19 @@ func (s *Server) checkChatExecutionLocked(chat string) error {
 	}
 	for _, raw := range doc.Chats {
 		var c struct {
-			ID          string     `json:"id"`
-			Interaction string     `json:"interaction"`
-			Plans       []chatPlan `json:"plans"`
+			ID          string          `json:"id"`
+			Interaction json.RawMessage `json:"interaction"`
+			Plans       []chatPlan      `json:"plans"`
 		}
 		if json.Unmarshal(raw, &c) != nil {
 			return errAssistantRunInvalid
 		}
 		if c.ID != chat {
 			continue
+		}
+		phase, err := assistantChatPhase(c.Interaction)
+		if err != nil {
+			return err
 		}
 		if len(c.Plans) > 0 {
 			plan := c.Plans[len(c.Plans)-1]
@@ -170,7 +173,7 @@ func (s *Server) checkChatExecutionLocked(chat string) error {
 				}
 			}
 		}
-		if c.Interaction == "plan" {
+		if phase == "plan" {
 			return errors.New("This chat is in Plan mode. Review its plan and choose Start work before requesting an operation.")
 		}
 	}

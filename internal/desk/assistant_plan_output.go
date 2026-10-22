@@ -119,10 +119,14 @@ func assistantPlanSource(source []byte) ([]chatPlan, error) {
 		return nil, err
 	}
 	var chat struct {
-		Plans []chatPlan `json:"plans"`
+		Interaction json.RawMessage `json:"interaction"`
+		Plans       []chatPlan      `json:"plans"`
 	}
 	if json.Unmarshal(source, &chat) != nil {
 		return nil, errAssistantRunInvalid
+	}
+	if _, err := assistantChatPhase(chat.Interaction); err != nil {
+		return nil, err
 	}
 	return chat.Plans, nil
 }
