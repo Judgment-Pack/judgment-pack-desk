@@ -34,6 +34,13 @@ func (s *Server) assistantDialectProjectionView(r *http.Request, id string, writ
 			}
 		}
 		for _, out := range run.DomainOutputs {
+			if out.Kind == "plan" && out.Plan != nil {
+				for _, ref := range out.Plan.References {
+					if ref.Kind == "dialect" {
+						need = true
+					}
+				}
+			}
 			if out.Kind == "dialect-action" && out.DialectAction != nil && out.DialectAction.Action != nil && !(out.DialectAction.Research != nil && out.DialectAction.Research.Receipt.Status == "started") {
 				need = true
 			}

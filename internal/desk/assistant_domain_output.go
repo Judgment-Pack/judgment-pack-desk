@@ -17,6 +17,7 @@ import (
 // authored by a finite domain producer with its exact retained result.
 type assistantDomainOutput struct {
 	Website              *assistantWebsiteOutput       `json:"website,omitempty"`
+	Plan                 *chatPlan                     `json:"plan,omitempty"`
 	Link                 *assistantLinkOutput          `json:"link,omitempty"`
 	Search               *assistantSearchOutput        `json:"search,omitempty"`
 	DialectAction        *assistantDialectActionOutput `json:"dialectAction,omitempty"`
@@ -39,6 +40,7 @@ type assistantGraphRead struct {
 	Declaration string `json:"declaration"`
 }
 type assistantHostIntent struct {
+	Plan           *assistantPlanMetadata          `json:"plan,omitempty"`
 	DialectAction  *assistantDialectActionMetadata `json:"dialectAction,omitempty"`
 	RecipeProposal *assistantDialectRecipeProposal `json:"recipeProposal,omitempty"`
 	CallID         string                          `json:"callId"`
@@ -143,6 +145,9 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	receipts := map[string]assistantHostResult{}
 	intents := map[string]assistantHostIntent{}
 	for _, op := range run.Operations {
+		if op.Kind == "host" && op.Name != assistantPlanTool && assistantDialectReserved(op.Intent, "plan") {
+			return errAssistantRunInvalid
+		}
 		if op.Kind == "host" && !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {
 			return errAssistantRunInvalid
 		}
@@ -152,11 +157,18 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		if op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {
 			return errAssistantRunInvalid
 		}
-		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) && op.Name != assistantSearchTool && op.Name != assistantLinkTool && op.Name != assistantWebsiteTool {
+		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) && op.Name != assistantSearchTool && op.Name != assistantLinkTool && op.Name != assistantWebsiteTool && op.Name != assistantPlanTool {
 			continue
 		}
 		var in assistantHostIntent
 		if readAssistantHostReceipt(op.Intent, &in) != nil || !assistantRunText(in.CallID, 256) || !json.Valid(in.Arguments) || !assistantNativeHostCall(run, op.Name, in) || in.Root && !assistantParentHostCall(run, op.Name, in) || (assistantHostProposal(op.Name) || op.Name == "request_dialect_research") && !in.Root {
+			return errAssistantRunInvalid
+		}
+		if op.Name == assistantPlanTool {
+			if validateAssistantPlanIntent(run, op, in) != nil {
+				return errAssistantRunInvalid
+			}
+		} else if in.Plan != nil {
 			return errAssistantRunInvalid
 		}
 		if assistantDialectTool(op.Name) {
@@ -183,6 +195,8 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		var argumentErr error
 		if op.Name == assistantWebsiteTool {
 			_, argumentErr = readAssistantWebsiteArguments(in.Arguments)
+		} else if op.Name == assistantPlanTool {
+			_, argumentErr = readAssistantPlanArguments(in.Arguments)
 		} else if op.Name == assistantLinkTool {
 			_, argumentErr = readAssistantLinkArguments(in.Arguments)
 		} else if op.Name == assistantSearchTool {
@@ -254,6 +268,16 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	seen := map[string]bool{}
 	draftIDs := map[string]bool{}
 	for _, out := range run.DomainOutputs {
+		if out.Kind == "plan" {
+			if seen[out.OperationID] || validateAssistantPlanOutput(run, out, receipts) != nil {
+				return errAssistantRunInvalid
+			}
+			seen[out.OperationID] = true
+			continue
+		}
+		if out.Plan != nil {
+			return errAssistantRunInvalid
+		}
 		if out.Kind == "website" {
 			if seen[out.OperationID] || validateAssistantWebsiteOutput(run, out, receipts) != nil {
 				return errAssistantRunInvalid
@@ -386,7 +410,11 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	counts := map[string]int{}
 	for _, out := range run.DomainOutputs {
 		counts[out.Kind]++
-		if counts[out.Kind] > 16 {
+		limit := 16
+		if out.Kind == "plan" {
+			limit = 24
+		}
+		if counts[out.Kind] > limit {
 			return errAssistantRunInvalid
 		}
 	}
@@ -430,6 +458,9 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			}
 		}
 		if op.Kind == "host" && op.Name == "propose_dialect_recipe" && op.State == "completed" && !seen[op.ID] {
+			return errAssistantRunInvalid
+		}
+		if op.Kind == "host" && op.Name == assistantPlanTool && op.State == "completed" && !seen[op.ID] {
 			return errAssistantRunInvalid
 		}
 		if op.Kind == "host" && op.Name == "propose_graph" && op.State == "completed" && !seen[op.ID] {
@@ -517,6 +548,9 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 	if !assistantRunText(in.CallID, 256) || (assistantHostProposal(name) || name == "request_dialect_research") && (!root || e.record.Binding.Phase != "work") {
 		return refuse(failure.ToolInput("This host proposal is not available in this scope."))
 	}
+	if name == assistantPlanTool && (!root || e.record.Binding.Phase != "plan") {
+		return refuse(failure.ToolInput("Only the root Plan execution may propose a Plan."))
+	}
 	raw, _ := json.Marshal(in)
 	id := "graph-host-" + digestOf(raw)[:32]
 	if assistantTestTool(name) {
@@ -531,6 +565,9 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 	if assistantDialectTool(name) {
 		id = assistantDialectOperationID(in)
 	}
+	if name == assistantPlanTool {
+		id = assistantPlanOperationID(in)
+	}
 	op := assistantRunOperation{ID: id, CallID: id, Kind: "host", Name: name, Intent: raw}
 	// Scope checks and intent creation are one short transaction. No lock spans work.
 	var replay *assistantHostResult
@@ -540,6 +577,19 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		}
 		for _, held := range run.Operations {
 			if held.ID == id {
+				if name == assistantPlanTool {
+					var original assistantHostIntent
+					if readAssistantHostReceipt(held.Intent, &original) != nil || validateAssistantPlanIntent(*run, held, original) != nil {
+						return false, errAssistantRunConflict
+					}
+					base := original
+					base.Plan = nil
+					encoded, _ := json.Marshal(base)
+					if !bytes.Equal(encoded, raw) {
+						return false, errAssistantRunConflict
+					}
+					in, raw = original, held.Intent
+				}
 				if assistantDialectActionProducer(name) {
 					var original assistantHostIntent
 					if readAssistantHostReceipt(held.Intent, &original) != nil || validateAssistantDialectIntent(*run, held, original) != nil {
@@ -615,6 +665,12 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 			}
 			op.Intent, _ = json.Marshal(in)
 		}
+		if name == assistantPlanTool {
+			if err := prepareAssistantPlanIntent(*run, e.source.Original, &in); err != nil {
+				return false, err
+			}
+			op.Intent, _ = json.Marshal(in)
+		}
 		return appendAssistantRunIntent(run, op)
 	})
 	e.changed(err)
@@ -659,6 +715,9 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		if in.DialectAction != nil {
 			ctx = context.WithValue(ctx, assistantDialectPreparedKey{}, in.DialectAction)
 		}
+		if in.Plan != nil {
+			ctx = context.WithValue(ctx, assistantPlanPreparedKey{}, in.Plan)
+		}
 		var observation assistantHostObservation
 		observation, workErr = work(ctx, root)
 		result, read, testsRead, dialectRead, output = observation.Result, observation.GraphRead, observation.TestsRead, observation.DialectRead, observation.Output
@@ -671,6 +730,9 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 	}
 	if workErr == nil && output != nil && output.Kind == "test-proposal" && testHookAssistantTestsObserved != nil {
 		testHookAssistantTestsObserved()
+	}
+	if workErr == nil && output != nil && output.Kind == "plan" && testHookAssistantPlanObserved != nil {
+		testHookAssistantPlanObserved()
 	}
 	state := "completed"
 	if workErr != nil {

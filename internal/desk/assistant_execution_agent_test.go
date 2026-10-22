@@ -121,6 +121,9 @@ func assistantCodexFixture(t *testing.T, mode, phase string) (*Server, string, *
 }
 
 func assistantCodexProfileFixture(t *testing.T, mode, phase, connectionID, profile string) (*Server, string, *assistantRunExecution, *codexbridge.Manager, string) {
+	return assistantCodexSourceFixture(t, mode, phase, connectionID, profile, nil)
+}
+func assistantCodexSourceFixture(t *testing.T, mode, phase, connectionID, profile string, prepare func(*Server, string, assistantRunStart) assistantRunStart) (*Server, string, *assistantRunExecution, *codexbridge.Manager, string) {
 	t.Helper()
 	entered := make(chan *assistantRunExecution, 1)
 	s, token, start, executor := assistantProtocolFixture(t, func(ctx context.Context, e *assistantRunExecution) error {
@@ -152,6 +155,9 @@ func assistantCodexProfileFixture(t *testing.T, mode, phase, connectionID, profi
 		saved = policyWorkspaceRead(t, s, token, "/api/conversations")
 		assistantRunMust(t, json.Unmarshal(saved.Content, &doc))
 		start.Revision = digestOf(doc.Chats[0])
+	}
+	if prepare != nil {
+		start = prepare(s, token, start)
 	}
 	// Construct a fresh local bridge profile before the authenticated start; the
 	// exact selected-account map resolves this Manager in the private binding.

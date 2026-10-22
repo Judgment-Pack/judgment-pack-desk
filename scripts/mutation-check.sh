@@ -15595,6 +15595,24 @@ if [ "$which" = all ] || [ "$which" = web ]; then
 fi
 
 if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant plan: restored root custody omitted' internal/desk/assistant_plan_output.go \
+    'if !in.Root {' \
+    'if false && !in.Root {'
+  mutate go 'assistant plan: current projection reference equality omitted' internal/desk/assistant_plan_references.go \
+    'if !reflect.DeepEqual(current, out.Plan.References) {' \
+    'if false && !reflect.DeepEqual(current, out.Plan.References) {'
+  mutate go 'assistant plan: current acceptance reference equality omitted' internal/desk/assistant_plan_references.go \
+    'if !reflect.DeepEqual(current, plan.References) {' \
+    'if false && !reflect.DeepEqual(current, plan.References) {'
+  mutate go 'assistant plan: UTF16 text bound omitted' internal/desk/chat_plan.go \
+    'runcontext.U16Length(s) <= n' \
+    '(runcontext.U16Length(s) <= n || len([]rune(s)) <= n)'
+  mutate go 'assistant plan: completed domain output required guard omitted' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && op.Name == assistantPlanTool && op.State == "completed" && !seen[op.ID] {' \
+    'if false && op.Kind == "host" && op.Name == assistantPlanTool && op.State == "completed" && !seen[op.ID] {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'typed admission: request data keys folded again' internal/desk/input_preparations.go \
     'if err = checkJSONMembers(raw, reflect.TypeOf(target)); err != nil {' \
     'if err = checkJSONMembers(raw, reflect.TypeOf(target)); err != nil || rejectDuplicateMembers(raw) != nil {'
