@@ -754,28 +754,31 @@ class DiagnosticLogsTests(unittest.TestCase):
     def test_split_jobs_upload_only_their_logs_on_all_outcomes_with_distinct_attempt_names(self):
         workflow=(ROOT/".github/workflows/ci.yml").read_text()
         commands={
-            "go":["scripts/dev/check.sh --only gofmt,component-policy,python-tests,needle-check,component-identities,go-vet,go-test"],
-            "web":["scripts/dev/check.sh --setup --only npm-ci",
-                   "scripts/dev/check.sh --only i18n-check,ui-message-audit,typecheck,vite-build,web-tests,dialect-read"],
+            job: ['python3 scripts/dev/ci-ownership.py run --owner '+job+' --evidence "$RUNNER_TEMP/ci-ownership"']
+            for job in ('go','web','integration')
         }
-        for job,next_job in [("go","web"),("web","local-gateway")]:
+        for job,next_job in [("go","web"),("web","local-gateway"),("integration","release-archives")]:
             block=workflow.split("\n  "+job+":",1)[1].split("\n  "+next_job+":",1)[0]
             header,steps=block.split("\n    steps:",1)
-            # runner context is unavailable in job.env; every command producing logs
-            # must set its own step.env, including Web's separate setup command.
+            # runner context is unavailable in job.env; the helper's setup and checks
+            # inherit the log directory from their command step's environment.
             self.assertNotIn("runner.temp",header)
             self.assertNotIn("JPDEV_LOGDIR",header)
-            run_steps=[step for step in steps.split("\n      - ")[1:] if step.startswith("run:")]
-            self.assertEqual([step.splitlines()[0] for step in run_steps],
-                             ["run: "+command for command in commands[job]])
+            run_steps=[step for step in steps.split("\n      - ")[1:]
+                       if step.startswith("run:") or "\n        run:" in step]
+            run_lines=[next(line.strip() for line in step.splitlines() if line.strip().startswith("run:"))
+                       for step in run_steps]
+            self.assertEqual(run_lines,["run: "+command for command in commands[job]])
+            logdir="check-logs" if job=="integration" else job+"-check-logs"
             for step in run_steps:
                 self.assertEqual(step.count("JPDEV_LOGDIR:"),1,step)
-                self.assertIn("\n        env:\n          JPDEV_LOGDIR: ${{ runner.temp }}/"+job+"-check-logs\n",step)
+                self.assertIn("\n        env:\n          JPDEV_LOGDIR: ${{ runner.temp }}/"+logdir+"\n",step)
             self.assertEqual(block.count("JPDEV_LOGDIR:"),len(commands[job]))
-            upload=block.split("- name: Upload the "+job+" step logs",1)[1]
+            label="Upload the step logs" if job=="integration" else "Upload the "+job+" step logs"
+            upload=block.split("- name: "+label,1)[1]
             self.assertIn("if: always()",upload)
-            self.assertIn("name: "+job+"-check-logs-${{ github.run_id }}-${{ github.run_attempt }}",upload)
-            self.assertIn("path: ${{ runner.temp }}/"+job+"-check-logs/",upload)
+            self.assertIn("name: "+logdir+"-${{ github.run_id }}-${{ github.run_attempt }}",upload)
+            self.assertIn("path: ${{ runner.temp }}/"+logdir+"/",upload)
             self.assertIn("retention-days: 7",upload)
             self.assertIn("if-no-files-found: ignore",upload)
             self.assertNotIn("github.workspace",upload)
