@@ -15633,6 +15633,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if false && (err != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID) {'
 fi
 
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant plan: human acceptance stale classification omitted' internal/desk/assistant_plan_references.go \
+    'if errors.Is(err, errAssistantRunConflict) {' \
+    'if false && errors.Is(err, errAssistantRunConflict) {'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
