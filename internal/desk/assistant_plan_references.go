@@ -3,6 +3,8 @@ package desk
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
 
@@ -216,6 +218,9 @@ func (s *Server) holdAssistantPlanAcceptance(r *http.Request, previous, next []b
 	if err = s.checkAssistantPlanAcceptanceUsingView(r, previous, next, view); err != nil {
 		if view != nil {
 			view.Close()
+		}
+		if errors.Is(err, errAssistantRunConflict) {
+			return nil, withCode(CodeStale, fmt.Errorf("Review the current Plan references again before starting work. %w", err))
 		}
 		return nil, err
 	}

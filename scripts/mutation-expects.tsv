@@ -2841,3 +2841,4 @@ go	assistant plan: current projection reference equality omitted	TestAssistantPl
 go	assistant plan: current acceptance reference equality omitted	TestAssistantPlanAcceptanceCurrentState
 go	assistant plan: UTF16 text bound omitted	TestAssistantPlanStrictArgumentsAndSavedState
 go	assistant plan: completed domain output required guard omitted	TestAssistantPlanRecoveryCustodyMembers
+go	assistant plan: human acceptance stale classification omitted	TestAssistantPlanAcceptanceCurrentState

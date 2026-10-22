@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +17,7 @@ import (
 )
 
 func TestAssistantPlanAcceptanceCurrentState(t *testing.T) {
-	for _, mode := range []string{"current", "file", "dialect", "missing", "linked", "questions", "forged", "new-accepted", "prior-edit"} {
+	for _, mode := range []string{"current", "file", "dialect", "missing", "unavailable", "linked", "questions", "forged", "new-accepted", "prior-edit"} {
 		t.Run(mode, func(t *testing.T) {
 			s, token, e := assistantExecutionFixture(t, "http://127.0.0.1:1", "plan")
 			dialect := assistantPlanSeed(t, s)
@@ -40,6 +42,8 @@ func TestAssistantPlanAcceptanceCurrentState(t *testing.T) {
 				assistantRunMust(t, err)
 			case "missing":
 				assistantRunMust(t, os.Remove(filepath.Join(s.cfg.ProjectDir, "one.json")))
+			case "unavailable":
+				assistantRunMust(t, os.WriteFile(filepath.Join(s.cfg.ProjectDir, inputPreparationDir, dialect.Document.ID+".json"), []byte(`{"broken":`), 0600))
 			case "linked":
 				chat["pack"] = assistantChatJSON(map[string]string{"id": "other", "path": "other.json", "digest": strings.Repeat("a", 64)})
 			case "questions":
@@ -57,8 +61,40 @@ func TestAssistantPlanAcceptanceCurrentState(t *testing.T) {
 			chat["interaction"] = assistantChatJSON("work")
 			doc.Chats[0] = assistantChatEncodeObject(chat)
 			w := policyWorkspaceCall(s, token, "PUT", "/api/conversations", saved.SHA256, doc)
-			if (w.Code == 200) != (mode == "current") {
-				t.Fatal("Plan acceptance current-state fence differs", mode, w.Code, w.Body.String())
+			status, code := 409, CodeStale
+			switch mode {
+			case "current":
+				status, code = 200, ""
+			case "missing":
+				status, code = 404, CodeNotFound
+			case "unavailable":
+				status, code = 500, CodeInternal
+			}
+			if w.Code != status {
+				t.Fatal("Plan acceptance classification differs", mode, w.Code, w.Body.String())
+			}
+			if mode != "current" {
+				var failure struct{ Code, Error string }
+				assistantRunMust(t, json.Unmarshal(w.Body.Bytes(), &failure))
+				guidance := strings.Contains(failure.Error, "Review the current Plan references again before starting work.")
+				if failure.Code != code || guidance != (status == 409) {
+					t.Fatal("Plan acceptance code/guidance differs", mode, w.Body.String())
+				}
+				after := policyWorkspaceRead(t, s, token, "/api/conversations")
+				if after.SHA256 != saved.SHA256 || !bytes.Equal(after.Content, saved.Content) {
+					t.Fatal("refused Plan acceptance changed saved conversation", mode)
+				}
+				if mode == "file" || mode == "unavailable" {
+					next, err := json.Marshal(doc)
+					assistantRunMust(t, err)
+					view, err := s.holdAssistantPlanAcceptance(httptest.NewRequest("PUT", "/api/conversations", nil), saved.Content, next)
+					if view != nil {
+						view.Close()
+					}
+					if errors.Is(err, errAssistantRunConflict) != (mode == "file") || codeOf(err) != code {
+						t.Fatal("Plan acceptance lost typed conflict or storage error identity", err)
+					}
+				}
 			}
 			if mode == "current" {
 				assistantRunMust(t, s.checkChatExecution("chat-one"))

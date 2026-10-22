@@ -547,6 +547,9 @@ server conversation owner verifies exact linked identity and current revisions
 under its normal CAS/write locks, and checks again before rename. Accepted to
 started retains the same Plan and acceptance timestamp. Existing chat-triggered
 action admission also refuses changed or missing accepted-Plan references.
+Known stale human acceptance returns the shared `stale` conflict (HTTP 409), with
+guidance to review the current Plan references again. Missing-reference and
+storage failures keep their own classifications; no refusal changes saved state.
 Ordinary saves of an unchanged already accepted snapshot remain ordinary saves;
 these checks never infer an approval, allowance or automatic Start work action.
 
