@@ -13,7 +13,7 @@ Date: 2026-09-22. Reviewer: OpenAI Codex, GPT-6 (the session identifies itself a
 
 Gateway pins inspected for interface compatibility: catalog `f0b469aabc175192f9b29e2c8169006cdb336472`; web `f62de27b82c8f31d90bffc2f11a2be37ee4d9962`. Gateway implementation security is the separately assigned gateway review's scope. This report does not claim a new blanket review of #122 or the generic foundation.
 
-Isolated clone: `/tmp/jp-merge-all-20260922/desk-parent-review` at #124. Exact #123 test worktree: `/tmp/jp-merge-all-20260922/desk-catalog-review`, created from that isolated clone. No integration-checkout source was changed. Reviewer repro/test files were added in the isolated #124 clone; the exact supplemental localization fix was subsequently applied there solely for remediation verification. No repository-local `AGENTS.md` was found. No subagents, live changes, posts, provider accounts, private credentials, or paid APIs were used.
+Isolated clone: `<scratch>/jp-merge-all-20260922/desk-parent-review` at #124. Exact #123 test worktree: `<scratch>/jp-merge-all-20260922/desk-catalog-review`, created from that isolated clone. No integration-checkout source was changed. Reviewer repro/test files were added in the isolated #124 clone; the exact supplemental localization fix was subsequently applied there solely for remediation verification. No repository-local `AGENTS.md` was found. No subagents, live changes, posts, provider accounts, private credentials, or paid APIs were used.
 
 ## Findings
 
@@ -48,21 +48,21 @@ Actual executions:
 3. #124 `go test ./internal/desk -run 'Test(ConnectionCatalog|LocalDocumentConstraint|Attachment|LocalGateway)' -count=1`: **passed**. Initial sandbox attempt could not create a local test listener; rerun with approved loopback-listener escalation passed.
 4. #123 `go test ./internal/desk -run 'TestConnectionCatalog' -count=1`: **passed**, using synthetic local servers with approved escalation.
 5. Reviewer `TestReviewCatalogClosesInheritedStdoutOnCancellation`: **passed** (about 1.17 seconds, including the one-second wait grace).
-6. Original-head reviewer browser suites `review-public-links.test.tsx` and `review-web-proof.test.ts`: **9 passed, 1 intentionally failing regression expectation reproducing P3 above**. Final clean output: `/tmp/jp-merge-all-20260922/desk-parent-review-final-tests.log`.
+6. Original-head reviewer browser suites `review-public-links.test.tsx` and `review-web-proof.test.ts`: **9 passed, 1 intentionally failing regression expectation reproducing P3 above**. Final clean output: `<scratch>/jp-merge-all-20260922/desk-parent-review-final-tests.log`.
 7. #124 TypeScript `typecheck`: **passed**. Locale check: **all 11 non-English catalogs have 2205/2205 entries and zero placeholder errors**; this check does not detect the P3 runtime rendering omission.
 
-Tests used Node 22.23.1, dependencies at `/tmp/jp-chat-workspace/web/node_modules`, `GOCACHE=/tmp/jp-authoring-go-cache`, and `GOFLAGS=-buildvcs=false`. Reviewer test development had harness mistakes (draft reuse, reused Response body, and initially ignoring the documented wait grace); those were corrected, and are not product findings. The final evidence log and retained test sources are the reproducible results.
+Tests used Node 22.23.1, dependencies at `<scratch>/jp-chat-workspace/web/node_modules`, `GOCACHE=<scratch>/jp-authoring-go-cache`, and `GOFLAGS=-buildvcs=false`. Reviewer test development had harness mistakes (draft reuse, reused Response body, and initially ignoring the documented wait grace); those were corrected, and are not product findings. The final evidence log and retained test sources are the reproducible results.
 
 
 ## Supplemental remediation verification
 
 After the independent finding was delivered, the integration agent supplied a minimal `WebSourcePane.tsx` correction: import `systemMessage` and apply it to the error and progress renderings. I inspected the exact diff, copied that diff to the isolated review clone, and independently reran the tests. The remediation introduced no other source changes in that clone.
 
-- Exact patch: `/tmp/jp-merge-all-20260922/desk-parent-localization-fix.patch`, SHA-256 `f667dd1d611295117eac4f392b36ce4defc9682ce6d77c4d045a3f4dfad54451`.
+- Exact patch: `<scratch>/jp-merge-all-20260922/desk-parent-localization-fix.patch`, SHA-256 `f667dd1d611295117eac4f392b36ce4defc9682ce6d77c4d045a3f4dfad54451`.
 - Corrected `WebSourcePane.tsx`: SHA-256 `38ae4019b226deebb2c53489331844e83bdd8fc341f985aa342a4e7f79e56822`, identical in the integration and isolated review copies at verification time.
 - Japanese failure and progress probes, independent lifecycle/proof tests, and shipped WebSourcePane tests: **3 files, 18/18 tests passed**.
 - Corrected-tree TypeScript `typecheck`: **passed**.
-- Output: `/tmp/jp-merge-all-20260922/desk-parent-remediation-tests.log`.
+- Output: `<scratch>/jp-merge-all-20260922/desk-parent-remediation-tests.log`.
 
 The fix was a supplemental working-tree diff at verification time, not a newly supplied commit head. Thus the exact-head findings above remain attributable to their listed original heads; remediation acceptance covers the exact patch/file hashes recorded here. **No unresolved findings remain in the reviewed content plus this patch.**
 

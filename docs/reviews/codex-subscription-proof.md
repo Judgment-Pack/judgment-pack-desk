@@ -30,7 +30,7 @@ or certified subscription feature**.
 ## What was developed
 
 The initial prototype was developed in
-`/tmp/jps-desk-subscription-4mgfp4ys/desk`, a separate copy of the
+`<scratch>/jps-desk-subscription-4mgfp4ys/desk`, a separate copy of the
 Desk's tracked and nonignored working files, including its existing uncommitted
 changes. Its Git baseline records that snapshot. During those proof runs,
 the live Desk checkout, processes, configuration, account stores, and active

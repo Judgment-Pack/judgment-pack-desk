@@ -1,6 +1,6 @@
 # End-to-end implementation review — 2026-10-14
 
-This review covers the current Desk worktree in `/tmp/jps-desk-v013`, including the earlier Dialects, research, pack/test, Job, chat, context, memory and Plan changes. Tests use disposable projects and local scripted providers, with the installed Runtime, Runner and Gateway where applicable. The saved long chat is read only for context replay.
+This review covers the current Desk worktree in `<scratch>/jps-desk-v013`, including the earlier Dialects, research, pack/test, Job, chat, context, memory and Plan changes. Tests use disposable projects and local scripted providers, with the installed Runtime, Runner and Gateway where applicable. The saved long chat is read only for context replay.
 
 ## Findings fixed
 
@@ -37,7 +37,7 @@ All completed browser journeys report no browser page errors. Geometry, semantic
 
 ## Validation record
 
-Logs are retained under `/tmp/e2e-review-*`. The initial failures and successful corrective reruns are retained, rather than replacing their evidence. The final combined frontend run enables all three native/saved-chat opt-in fixtures.
+Logs are retained under `<scratch>/e2e-review-*`. The initial failures and successful corrective reruns are retained, rather than replacing their evidence. The final combined frontend run enables all three native/saved-chat opt-in fixtures.
 
 - Full Go package suite and `go vet -buildvcs=false ./...`.
 - Full frontend suite, including context architecture and certified adapter conformance.
@@ -59,13 +59,13 @@ Existing translation fallbacks, the Vite bundle-size advisory and an AI SDK comp
 
 Use Node 22 and Go with `-buildvcs=false`. The browser tests require an existing production `web/dist`; do not rebuild that directory while a browser fixture is serving it.
 
-The review’s real-companion environment is `/tmp/e2e-review-env.sh`. It pins `JPACK_BIN`, `JPACK_RUNNER_TEST_BIN` and the Gateway bundle to the previously verified installation. Core browser test names are `TestDialectCompanyPeopleTestedJobJourney`, `TestDialectTemplatesBrowser`, `TestPackWorkspaceBrowser`, `TestInputChatBrowser`, `TestInputRecordReviewBrowser`, `TestAIContextGeminiBrowser`, `TestChatQuestionBrowser`, `TestCodexQuestionRecoveryBrowser`, `TestChatRecoveryBrowser`, `TestDelegationBrowser` and `TestAIMemoryPlanBrowser`.
+The review’s real-companion environment is `<scratch>/e2e-review-env.sh`. It pins `JPACK_BIN`, `JPACK_RUNNER_TEST_BIN` and the Gateway bundle to the previously verified installation. Core browser test names are `TestDialectCompanyPeopleTestedJobJourney`, `TestDialectTemplatesBrowser`, `TestPackWorkspaceBrowser`, `TestInputChatBrowser`, `TestInputRecordReviewBrowser`, `TestAIContextGeminiBrowser`, `TestChatQuestionBrowser`, `TestCodexQuestionRecoveryBrowser`, `TestChatRecoveryBrowser`, `TestDelegationBrowser` and `TestAIMemoryPlanBrowser`.
 
 The record-review fixture additionally runs `research-reprocess-browser.mjs` and `research-delegation-browser.mjs` through its `JPS_INPUT_REVIEW_BROWSER` override. Set `JPACK_EXPECTATION_BINARY` for native frontend checks. Saved-chat replay requires explicit `JPS_CHAT_CONTEXT_STORE` and `JPS_CHAT_CONTEXT_ID`; it reads the named conversation without saving or contacting a provider.
 
 ## Final result and local installation
 
-- **403 frontend files, 6,308 tests passed; zero failures and zero skips.** This includes native Runtime checks and the saved-chat replay. Final log: `/tmp/e2e-review-complete.log`.
+- **403 frontend files, 6,308 tests passed; zero failures and zero skips.** This includes native Runtime checks and the saved-chat replay. Final log: `<scratch>/e2e-review-complete.log`.
 - Full Go package suite passed; 50 focused memory/Plan/research/real-companion checks passed, with additional context, incremental evaluation and durable subscription checks passing after the fixes. `go vet` and `git diff --check` passed.
 - All browser journeys in the matrix passed, including corrective reruns of the renamed/updated fixtures. Each reported zero browser page errors.
 - Production TypeScript/Vite and Go builds passed. Localization has zero errors and zero unextracted English messages; 11 existing incomplete catalogs retain English fallback.
@@ -86,19 +86,19 @@ Changes:
 - Preserve the interrupted-conversation phase in checkpoint decoding and interrupted conversational response recovery across reload even when an older draft exists; successful retry/follow-up clears the old conversation error, preserves completed steps and does not duplicate the user message.
 - Extend the saved-history replay to 19 real Gemini SDK context calls followed by the reserved final response. Add equivalent API-family tests, subscription context retrieval, final-step mutation refusal, and visible labels for all retained work rows.
 
-Verification: **88 shared chat/research/assistant files, 1,584 tests passed**, including installed Runtime opt-in checks and the saved-chat replay. The smaller context/adapter pass contains 481 passing tests. Production TypeScript/Vite build and whitespace checks pass. Logs are `/tmp/chat-context-fix-*.log`.
+Verification: **88 shared chat/research/assistant files, 1,584 tests passed**, including installed Runtime opt-in checks and the saved-chat replay. The smaller context/adapter pass contains 481 passing tests. Production TypeScript/Vite build and whitespace checks pass. Logs are `<scratch>/chat-context-fix-*.log`.
 
 The actual pack's latest saved run remains 20/21. `review-no-routing-missing-size` expects `set-aside` with omitted size facts; it observed `unresolved`/`unknown`. The stale-or-undated-size exception has `onUnknown: escalate` and is considered before the no-routing outcome rule. Missing is not false. This is a pack-policy precedence conflict, not a reason to weaken the expected result or change Decimal string encoding. The saved pack, tests and their outcomes have not been edited by this fix.
 
 The extended production-browser fixture passes with the same scoped conversation and existing pack candidate: explicit Retry, 19 context reads, final synthesis, preserved draft bytes and one original user message, plus reload persistence. Gemini main/pane progress, spinner/dimming and reduced-motion checks also pass with zero browser errors. During this extension, the old fixture's missing workspace linkage was corrected so it cannot accidentally test a fresh chat. The reload regression additionally exposed and fixed the checkpoint decoder dropping `phase`.
 
-Browser evidence: `/tmp/chat-context-fix-browser-complete.log`. SDK fixtures exercise OpenAI-compatible, Anthropic and Gemini final-step behavior, and the subscription adapter exercises focused/searchable context. These are scripted providers; no paid live model was used and no claim is made about a model always selecting the ideal reads.
+Browser evidence: `<scratch>/chat-context-fix-browser-complete.log`. SDK fixtures exercise OpenAI-compatible, Anthropic and Gemini final-step behavior, and the subscription adapter exercises focused/searchable context. These are scripted providers; no paid live model was used and no claim is made about a model always selecting the ideal reads.
 
 
 Final follow-up result:
 
-- **403 frontend files / 6,322 tests passed, zero skips**, including installed Runtime fixtures and the saved-chat SDK replay (`/tmp/chat-context-fix-all-final.log`).
-- Production browser recovery passed on the final assets (`/tmp/chat-context-fix-browser-release.log`), with zero page errors. TypeScript/Vite, Go binary build, localization checks and `git diff --check` passed.
+- **403 frontend files / 6,322 tests passed, zero skips**, including installed Runtime fixtures and the saved-chat SDK replay (`<scratch>/chat-context-fix-all-final.log`).
+- Production browser recovery passed on the final assets (`<scratch>/chat-context-fix-browser-release.log`), with zero page errors. TypeScript/Vite, Go binary build, localization checks and `git diff --check` passed.
 - The initial broad run found an ownership regression from preserving all saved execution phases. The decoder now preserves only the interrupted-conversation hint; draft/check phases are reconstructed as before. Draft ownership and the full suite pass. A timing-sensitive ResearchProgress assertion also passed unchanged in the bounded final run.
 - Installed/capability-probed manifest: `6662ef488a7e7f62e61e2d8f58971594d46d2bee1fb056287f89c52a030b7b7c`. Only Desk changed; companion versions were retained.
 - Verified no active chats/research/Jobs before replacement. Restarted the previously running local Desk on port 5173 and verified that it serves the current built assets.
