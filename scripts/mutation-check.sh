@@ -15594,6 +15594,24 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     'site ? 13 : MAX_LINK_READS_PER_TURN'
 fi
 
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant plan: restored root custody omitted' internal/desk/assistant_plan_output.go \
+    'if !in.Root {' \
+    'if false && !in.Root {'
+  mutate go 'assistant plan: current projection reference equality omitted' internal/desk/assistant_plan_references.go \
+    'if !reflect.DeepEqual(current, out.Plan.References) {' \
+    'if false && !reflect.DeepEqual(current, out.Plan.References) {'
+  mutate go 'assistant plan: current acceptance reference equality omitted' internal/desk/assistant_plan_references.go \
+    'if !reflect.DeepEqual(current, plan.References) {' \
+    'if false && !reflect.DeepEqual(current, plan.References) {'
+  mutate go 'assistant plan: UTF16 text bound omitted' internal/desk/chat_plan.go \
+    'runcontext.U16Length(s) <= n' \
+    '(runcontext.U16Length(s) <= n || len([]rune(s)) <= n)'
+  mutate go 'assistant plan: completed domain output required guard omitted' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && op.Name == assistantPlanTool && op.State == "completed" && !seen[op.ID] {' \
+    'if false && op.Kind == "host" && op.Name == assistantPlanTool && op.State == "completed" && !seen[op.ID] {'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

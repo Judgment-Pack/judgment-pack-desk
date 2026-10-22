@@ -1,0 +1,47 @@
+[
+  {
+    "language": "go",
+    "name": "assistant plan: restored root custody omitted",
+    "file": "internal/desk/assistant_plan_output.go",
+    "needle": "if !in.Root {",
+    "replacement": "if false && !in.Root {",
+    "witness": "TestAssistantPlanRecoveryRootCustody",
+    "failure": "child Plan custody imported"
+  },
+  {
+    "language": "go",
+    "name": "assistant plan: current projection reference equality omitted",
+    "file": "internal/desk/assistant_plan_references.go",
+    "needle": "if !reflect.DeepEqual(current, out.Plan.References) {",
+    "replacement": "if false && !reflect.DeepEqual(current, out.Plan.References) {",
+    "witness": "TestAssistantPlanProjectionCurrentState",
+    "failure": "stale Plan was projected"
+  },
+  {
+    "language": "go",
+    "name": "assistant plan: current acceptance reference equality omitted",
+    "file": "internal/desk/assistant_plan_references.go",
+    "needle": "if !reflect.DeepEqual(current, plan.References) {",
+    "replacement": "if false && !reflect.DeepEqual(current, plan.References) {",
+    "witness": "TestAssistantPlanAcceptanceCurrentState",
+    "failure": "Plan acceptance current-state fence differs"
+  },
+  {
+    "language": "go",
+    "name": "assistant plan: UTF16 text bound omitted",
+    "file": "internal/desk/chat_plan.go",
+    "needle": "runcontext.U16Length(s) <= n",
+    "replacement": "(runcontext.U16Length(s) <= n || len([]rune(s)) <= n)",
+    "witness": "TestAssistantPlanStrictArgumentsAndSavedState",
+    "failure": "malformed Plan argument accepted"
+  },
+  {
+    "language": "go",
+    "name": "assistant plan: completed domain output required guard omitted",
+    "file": "internal/desk/assistant_domain_output.go",
+    "needle": "if op.Kind == \"host\" && op.Name == assistantPlanTool && op.State == \"completed\" && !seen[op.ID] {",
+    "replacement": "if false && op.Kind == \"host\" && op.Name == assistantPlanTool && op.State == \"completed\" && !seen[op.ID] {",
+    "witness": "TestAssistantPlanRecoveryCustodyMembers",
+    "failure": "changed Plan custody accepted"
+  }
+]

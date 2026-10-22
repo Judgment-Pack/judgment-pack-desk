@@ -504,3 +504,55 @@ window consumers. This completes private conversational discovery and discovered
 page reads only. Finite source-choice continuation, workflow read/citation tools,
 Plan/memory migration and production activation remain separate; the executor
 stays unregistered and component pins/canonical Agent schemas are unchanged.
+
+### Private reviewable Plan host (#597)
+
+The unregistered private conversation registry now supplies `propose_plan` only
+in Plan phase, with the exact `plan` effect and no delegation, source, approval or
+context-policy override. Policy-linked conversations receive this single Plan
+capability alongside their existing Policy tools; their registry still excludes
+ordinary artifact, search and link tools. The published Agent owns dispatch,
+context, checkpoint accounting and event production. This binding does not copy
+an engine or the package's proposal-edit or memory protocols.
+
+Desk accepts only the canonical objective, ordered steps, questions and additional
+reference arguments. It refuses unknown, duplicate and case-aliased members,
+invalid Unicode, whitespace-only text and malformed saved phases/plans. Objective
+and step/question bounds use UTF-16 units (2000 and 1000); steps number 1–20,
+questions at most 10, additional references at most six, distinct resolved
+references at most eight, and sequential revisions at most 24. File paths and
+Dialect IDs remain exact. The linked pack/graph path and non-list Dialect ID come
+from the current saved chat, and revisions come from the existing rooted file
+reader and consistent Dialect collection view. Model and saved-prose revision
+claims provide no authority and no referenced file content is returned. Validated
+saved Plan revisions enter canonical context as history, retaining open questions
+without restoring approval or allowance.
+
+The existing host journal persists deterministic call identity and Plan metadata
+before work, then exact result and review-only domain output before terminal
+projection. Reconstructed registries share one execution's Plan serialization.
+The current chat/source/session/Policy/profile binding is rechecked after waits;
+projection rechecks current reference revisions before preparation and final
+write. Current-chat CAS applies prior-plan supersession and append atomically.
+Cancellation after observation retains the result. Unknown or interrupted
+operations cannot reissue an effect; lost projection acknowledgement repeats
+only the saved selected-chat bytes and readback. Repeated unchanged terminal
+projection is idempotent.
+
+The existing ChatStore, canonical `validPlans`, `currentChat`, `checkPlan`,
+`acceptPlan` and PlanCard consume the projected model. Proposed revisions retain
+questions and prior history. Human conversation saves alone can change a current
+unchanged proposed Plan to accepted, without unresolved questions; the existing
+server conversation owner verifies exact linked identity and current revisions
+under its normal CAS/write locks, and checks again before rename. Accepted to
+started retains the same Plan and acceptance timestamp. Existing chat-triggered
+action admission also refuses changed or missing accepted-Plan references.
+Ordinary saves of an unchanged already accepted snapshot remain ordinary saves;
+these checks never infer an approval, allowance or automatic Start work action.
+
+Handwritten shared model vectors, actual API/native producers, canonical browser
+readers, actual malformed refusal events against the pinned Agent v0.6 schemas,
+private member omissions, queued authority loss, stale references, interrupted
+custody and acknowledgement recovery cover this bounded host completion. The
+private executor remains unregistered; browser dispatch removal, complete
+cutover/certification and released Agent v0.8 adoption remain separate work.

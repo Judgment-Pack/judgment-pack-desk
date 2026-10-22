@@ -158,7 +158,11 @@ func (e *assistantRunExecution) prepareAssistantPolicy(ctx context.Context, p *a
 }
 func (e *assistantRunExecution) assistantConversationTools(runtime *assistantRuntime, p *assistantPolicyScope) (*assistantHostRegistry, error) {
 	if p != nil && p.ID != "" {
-		return e.assistantPolicyTools(p)
+		registry, err := e.assistantPolicyTools(p)
+		if err != nil {
+			return nil, err
+		}
+		return newAssistantHostRegistry(append(registry.tools, e.assistantPlanTools()...))
 	}
 	graph, err := e.assistantGraphTools(runtime)
 	if err != nil {
@@ -196,7 +200,9 @@ func (e *assistantRunExecution) assistantConversationTools(runtime *assistantRun
 	if err != nil {
 		return nil, err
 	}
-	return newAssistantHostRegistry(append(append(append(append(append(append(append(append(graph.tools, tests...), recipes.tools...), dialects.tools...), records.tools...), research.tools...), search.tools...), links.tools...), websites.tools...))
+	tools := append(append(append(append(append(append(append(graph.tools, tests...), recipes.tools...), dialects.tools...), records.tools...), research.tools...), search.tools...), links.tools...)
+	tools = append(tools, websites.tools...)
+	return newAssistantHostRegistry(append(tools, e.assistantPlanTools()...))
 }
 
 var assistantPolicyNames = []string{"read_policy", "propose_policy_update", "read_policy_comparison", "read_policy_coverage", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}
