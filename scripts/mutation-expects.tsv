@@ -2841,4 +2841,10 @@ go	assistant plan: current projection reference equality omitted	TestAssistantPl
 go	assistant plan: current acceptance reference equality omitted	TestAssistantPlanAcceptanceCurrentState
 go	assistant plan: UTF16 text bound omitted	TestAssistantPlanStrictArgumentsAndSavedState
 go	assistant plan: completed domain output required guard omitted	TestAssistantPlanRecoveryCustodyMembers
+go	typed admission: request data keys folded again	TestTypedAdmissionQualificationHTTPAndReload
+go	typed admission: Policy data keys folded again	TestTypedAdmissionPolicyIntentBytesAndRecovery
+go	typed admission: retained pack data keys folded again	TestTypedAdmissionQualificationHTTPAndReload
+go	typed admission: Exchange pack data keys folded again	TestTypedAdmissionExchangeTargetHTTP
+go	typed admission: request control validation omitted	TestTypedAdmissionQualificationHTTPAndReload
+go	typed admission: Exchange pack predispatch validation omitted	TestTypedAdmissionExchangeTargetHTTP
 go	assistant plan: human acceptance stale classification omitted	TestAssistantPlanAcceptanceCurrentState

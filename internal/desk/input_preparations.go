@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -139,8 +140,8 @@ func inputRequest(r *http.Request, target any) error {
 	if !validUTF8(raw) {
 		return errors.New("invalid UTF-8")
 	}
-	// Reject ambiguous members anywhere, including recipe and import fields.
-	if err = rejectDuplicateMembers(raw); err != nil {
+	// Reserve exact typed controls while preserving keys in declared data maps.
+	if err = checkJSONMembers(raw, reflect.TypeOf(target)); err != nil {
 		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))

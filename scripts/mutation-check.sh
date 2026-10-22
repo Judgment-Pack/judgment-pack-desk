@@ -15613,6 +15613,27 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 fi
 
 if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'typed admission: request data keys folded again' internal/desk/input_preparations.go \
+    'if err = checkJSONMembers(raw, reflect.TypeOf(target)); err != nil {' \
+    'if err = checkJSONMembers(raw, reflect.TypeOf(target)); err != nil || rejectDuplicateMembers(raw) != nil {'
+  mutate go 'typed admission: Policy data keys folded again' internal/desk/policy_execution_service.go \
+    'checkJSONMembers(raw, opaqueJSONMembers) != nil' \
+    'rejectDuplicateMembers(raw) != nil'
+  mutate go 'typed admission: retained pack data keys folded again' internal/desk/input_qualification.go \
+    'if err := checkJSONMembers(raw, reflect.TypeOf(inputPackMembers{})); err != nil {' \
+    'if err := checkJSONMembers(raw, reflect.TypeOf(inputPackMembers{})); err != nil || rejectDuplicateMembers(raw) != nil {'
+  mutate go 'typed admission: Exchange pack data keys folded again' internal/desk/exchange_target.go \
+    'if err != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID {' \
+    'if err != nil || rejectDuplicateMembers([]byte(pack)) != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID {'
+  mutate go 'typed admission: request control validation omitted' internal/desk/input_preparations.go \
+    'if err = checkJSONMembers(raw, reflect.TypeOf(target)); err != nil {' \
+    'if err = checkJSONMembers(raw, reflect.TypeOf(target)); false && err != nil {'
+  mutate go 'typed admission: Exchange pack predispatch validation omitted' internal/desk/exchange_target.go \
+    'if err != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID {' \
+    'if false && (err != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID) {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant plan: human acceptance stale classification omitted' internal/desk/assistant_plan_references.go \
     'if errors.Is(err, errAssistantRunConflict) {' \
     'if false && errors.Is(err, errAssistantRunConflict) {'
