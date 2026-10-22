@@ -868,6 +868,41 @@
         "existing buffer/unsaved/application behavior tests",
         "new callback duplicate/wrong owner/revision/lost-ack/reload fixture"
       ]
+    },
+    {
+      "id": "private-plan-host",
+      "category": "host-capability-registry",
+      "modelEntrypoint": false,
+      "toolNames": [
+        "propose_plan"
+      ],
+      "entrypoints": [
+        "internal/desk/assistant_plan_tools.go",
+        "internal/desk/assistant_plan_output.go",
+        "internal/desk/assistant_plan_references.go",
+        "internal/desk/chat_plan.go",
+        "web/src/assistant/planning/PlanCard.tsx"
+      ],
+      "targetOwner": "Desk persists review-only ChatPlan through the existing private host journal and chat projection; canonical Agent owns execution and events",
+      "preserve": [
+        "Exact plan effect, root Plan phase only; Policy conversations gain only this phase-specific Plan capability",
+        "Current rooted file/Dialect revisions and exact linked identity; at most six additional and eight distinct references",
+        "Immutable operation identity and metadata, 24 sequential revisions, prior supersession, interrupted custody and no uncertain replay",
+        "Canonical ChatStore/validPlans/PlanCard and explicit human Start work; no work, approval or allowance grant"
+      ],
+      "verification": [
+        "TestAssistantPlanActualProducersAndProjection",
+        "TestAssistantPlanActualRefusalEvents",
+        "TestAssistantPlanAcceptanceCurrentState",
+        "TestAssistantPlanProjectionCurrentState",
+        "TestAssistantPlanQueuedAuthority",
+        "TestAssistantPlanCancelledObservedAndUnknown",
+        "scripts/dev/assistant-plan.sh"
+      ],
+      "remaining": [
+        "Production executor activation and browser cutover are separate",
+        "Agent v0.8 draft-edit and memory protocols are package-owned and not implemented here"
+      ]
     }
   ],
   "unknowns": [

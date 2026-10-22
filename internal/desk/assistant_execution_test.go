@@ -30,6 +30,9 @@ func assistantExecutionFixture(t *testing.T, upstreamURL, phase string, families
 	return assistantExecutionFixtureExecute(t, upstreamURL, phase, nil, families...)
 }
 func assistantExecutionFixtureExecute(t *testing.T, upstreamURL, phase string, execute func(context.Context, *assistantRunExecution) error, families ...string) (*Server, string, *assistantRunExecution) {
+	return assistantExecutionFixtureSource(t, upstreamURL, phase, execute, nil, families...)
+}
+func assistantExecutionFixtureSource(t *testing.T, upstreamURL, phase string, execute func(context.Context, *assistantRunExecution) error, prepare func(*Server, string, assistantRunStart) assistantRunStart, families ...string) (*Server, string, *assistantRunExecution) {
 	t.Helper()
 	entered := make(chan *assistantRunExecution, 1)
 	s, token, start, _ := assistantProtocolFixture(t, func(ctx context.Context, e *assistantRunExecution) error {
@@ -61,6 +64,9 @@ func assistantExecutionFixtureExecute(t *testing.T, upstreamURL, phase string, e
 		saved = policyWorkspaceRead(t, s, token, "/api/conversations")
 		assistantRunMust(t, json.Unmarshal(saved.Content, &doc))
 		start.Revision = digestOf(doc.Chats[0])
+	}
+	if prepare != nil {
+		start = prepare(s, token, start)
 	}
 	origin, _ := endpointOrigin(upstreamURL)
 	assistantRunMust(t, s.assistant.storeKeyNamed(connectionKeyName(&connection), storedKey{present: true, key: "host-fixture-key", origin: origin, kind: connection.Assistant.Endpoint.Kind}))

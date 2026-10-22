@@ -71,6 +71,11 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 					return ledger, err
 				}
 			}
+			if fields["plan"] != nil {
+				if err = readAssistantDialectCustody(fields["plan"], reflect.TypeOf(chatPlan{})); err != nil {
+					return ledger, err
+				}
+			}
 			if fields["link"] != nil {
 				if err = readAssistantDialectCustody(fields["link"], reflect.TypeOf(assistantLinkOutput{})); err != nil {
 					return ledger, err

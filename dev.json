@@ -46,6 +46,7 @@
     {"name": "policy-source-contract", "run": "scripts/dev/policy-source-contract.sh", "toolchain": "go", "summary": "^(--- PASS|FAIL|observation\\.json: )", "timeout": 1500},
     {"name": "development-build", "run": "scripts/dev/development-build.sh", "toolchain": "go", "summary": "^development-build:", "timeout": 1500},
     {"name": "component-freshness", "run": "python3 scripts/component-releases.py status", "toolchain": "python", "timeout": 300, "requires_env": "DESK_CHECK_FRESHNESS", "optional": true},
-    {"name": "mutation-rows", "run": "scripts/dev/mutation-rows.sh", "toolchain": "go", "summary": "^(mutation-rows:|discriminating:)", "timeout": 13800, "requires_env": "DESK_MUTATION_BASE", "optional": true}
+    {"name": "mutation-rows", "run": "scripts/dev/mutation-rows.sh", "toolchain": "go", "summary": "^(mutation-rows:|discriminating:)", "timeout": 13800, "requires_env": "DESK_MUTATION_BASE", "optional": true},
+    {"name": "assistant-plan-readers", "run": "scripts/dev/assistant-plan.sh", "toolchain": "node", "summary": "^(ok|FAIL|Plan shared readers:|Plan refusal schemas:)", "timeout": 900}
   ]
 }

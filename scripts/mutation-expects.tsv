@@ -2836,3 +2836,8 @@ web	assistant website: browser exploration reservation omitted	src/chat/linkTool
 web	assistant website: browser distinct seed limit omitted	src/chat/linkTools.test.ts
 web	assistant website: browser discovered status omitted	src/chat/linkTools.test.ts
 web	assistant website: browser shared ten total omitted	src/chat/linkTools.test.ts
+go	assistant plan: restored root custody omitted	TestAssistantPlanRecoveryRootCustody
+go	assistant plan: current projection reference equality omitted	TestAssistantPlanProjectionCurrentState
+go	assistant plan: current acceptance reference equality omitted	TestAssistantPlanAcceptanceCurrentState
+go	assistant plan: UTF16 text bound omitted	TestAssistantPlanStrictArgumentsAndSavedState
+go	assistant plan: completed domain output required guard omitted	TestAssistantPlanRecoveryCustodyMembers

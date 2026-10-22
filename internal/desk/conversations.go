@@ -341,6 +341,10 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 			fail(e)
 			return
 		}
+		if e = s.checkAssistantPlanAcceptance(r, previous.Content, data); e != nil {
+			fail(e)
+			return
+		}
 		if e = s.retainConversationGraphDrafts(r, root, recordName, previous.Content, data); e != nil {
 			fail(e)
 			return
@@ -383,6 +387,23 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		if err = s.authorizePrivateWorkspace(r); err != nil {
 			fail(err)
 			return
+		}
+	}
+	if !graphs && !briefs && !reviews && !tests && !drafts {
+		previous, e := read()
+		var planView inputPreparationRead
+		if e == nil {
+			planView, e = s.holdAssistantPlanAcceptance(r, previous.Content, data)
+		}
+		if e != nil {
+			fail(e)
+			return
+		}
+		if planView != nil {
+			defer planView.Close()
+		}
+		if planView != nil && testHookAssistantPlanAcceptanceCommit != nil {
+			testHookAssistantPlanAcceptanceCommit()
 		}
 	}
 	if err = root.Rename(name, recordName); err != nil {

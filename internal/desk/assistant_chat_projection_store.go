@@ -120,6 +120,9 @@ func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) erro
 		if err := validateAssistantDomainOutputs(*run); err != nil {
 			return false, err
 		}
+		if err := s.checkAssistantPlanProjection(selected, *run, view); err != nil {
+			return false, err
+		}
 		if err := s.checkAssistantDialectProjection(r, *run, view); err != nil {
 			return false, err
 		}
@@ -219,6 +222,9 @@ func (s *Server) writeAssistantChatProjection(r *http.Request, id string) error 
 		if digestOf(selected) == projection.Digest {
 			return false, nil
 		}
+		if err := s.checkAssistantPlanProjection(selected, *run, view); err != nil {
+			return false, err
+		}
 		if err := s.checkAssistantDialectProjection(r, *run, view); err != nil {
 			return false, err
 		}
@@ -266,6 +272,9 @@ func (s *Server) writeAssistantChatProjection(r *http.Request, id string) error 
 				return false, err
 			}
 		} else if err = s.retainConversationDialectDrafts(r.Context(), full, next); err != nil {
+			return false, err
+		}
+		if err := s.checkAssistantPlanProjection(selected, *run, view); err != nil {
 			return false, err
 		}
 		if err := s.checkAssistantDialectProjection(r, *run, view); err != nil {
