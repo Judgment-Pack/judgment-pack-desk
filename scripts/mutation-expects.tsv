@@ -2836,3 +2836,9 @@ web	assistant website: browser exploration reservation omitted	src/chat/linkTool
 web	assistant website: browser distinct seed limit omitted	src/chat/linkTools.test.ts
 web	assistant website: browser discovered status omitted	src/chat/linkTools.test.ts
 web	assistant website: browser shared ten total omitted	src/chat/linkTools.test.ts
+go	typed admission: request data keys folded again	TestTypedAdmissionQualificationHTTPAndReload
+go	typed admission: Policy data keys folded again	TestTypedAdmissionPolicyIntentBytesAndRecovery
+go	typed admission: retained pack data keys folded again	TestTypedAdmissionQualificationHTTPAndReload
+go	typed admission: Exchange pack data keys folded again	TestTypedAdmissionExchangeTargetHTTP
+go	typed admission: request control validation omitted	TestTypedAdmissionQualificationHTTPAndReload
+go	typed admission: Exchange pack predispatch validation omitted	TestTypedAdmissionExchangeTargetHTTP

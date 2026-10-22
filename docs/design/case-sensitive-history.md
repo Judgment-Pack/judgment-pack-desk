@@ -39,18 +39,27 @@ globally would also change unrelated authority decoders.
 | `policyWorkspaceEntries`, used by conversation save, source custody, storage validation and archive restore | Use the explicit workspace/checkpoint schema. Sources and Policy controls retain exact names. |
 | `gatewayCanonicalJSON` | Use exact decoded duplicates. Canonicalization reads JSON maps, keeps exact keys, and still enforces its integer/Unicode profile. It grants no authority. |
 | `sameDialectJSON` | Use exact decoded duplicates. Mapping comparison keeps key case significant. Callers retain their own admission and authority checks. |
-| Input requests, execution intents, retained pack qualification/exchange targets | Leave strict. Their mixed control/data schemas need separate owning changes. |
+| Input requests, execution intents, retained pack qualification/exchange targets | Use typed request controls, exact intent-envelope names and a bounded retained-pack member shape. Declared maps and opaque values preserve case; controls and decoded duplicates stay strict. |
 | Policy/coverage/adoption/archive authority records and other closed decoders | Leave strict; no global decoder relaxation. |
 
-Concrete remaining cases are separate from the conversation boundary fixed here:
-`inputRequest` rejects case-distinct keys in prepared-input `values` and recipe
-`conversions` maps before its closed decoder runs. `policyExecutionService.prepareIntent`
-rejects `{"facts":{"Fact":false,"fact":null}}` at the initial request guard.
-`validateInputQualification` and `checkExchangeTarget` apply the conservative
-helper to retained pack bytes while checking identity. Pure Dialect comparison
-now respects case, but it does not bypass these earlier gates or certify all
-Dialect/Policy snapshot formats. Each mixed schema needs its own reserved-name
-and typed-data regression before changing that authority boundary.
+Desk #576 extends the distinction to the supplied-input and Policy admission
+boundaries. `inputRequest` checks the actual typed request before its closed
+decoder runs, so preparation values and conversion-map keys can differ by case.
+Control aliases, unknown request fields and exact decoded duplicates remain
+refused. Policy intent envelopes permit only exact `facts` and optional
+`evidence` members. Their opaque payloads retain both case-distinct keys and
+exact bytes, including omitted/null evidence and false/zero/numeric/string
+values. Malformed input is refused before authorization or artifact writes.
+
+Retained packs use a finite name-validation shape for the identity, decision,
+title, description and evidence-requirement controls Desk reads. Other pack
+branches remain Runtime-owned data; this shape does not claim to validate the
+pack grammar. Exact decoded duplicates, Unicode errors, excessive nesting and
+aliases of Desk-read controls are refused. Qualification and Exchange retain
+the original pack bytes and digest. Exchange validates those controls before
+Runtime dispatch and still requires the retained template identity, current
+coverage check and declared pack digest or version range. This grants no new
+execution capability and does not relax unrelated authority decoders.
 
 This change fixes Desk #571's conversation/projection/recovery/import mismatch.
 It does not add production execution registration, Graph hosts or other pending
