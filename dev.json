@@ -10,7 +10,7 @@
     {"name": "agent-docs", "run": "scripts/sync-agent-docs.sh --check .", "toolchain": "shell", "summary": "^sync-agent-docs:"},
     {"name": "component-policy", "run": "python3 scripts/component-releases.py check", "toolchain": "python", "timeout": 300},
     {"name": "gofmt", "run": "unformatted=$(gofmt -l $(git ls-files '*.go')); if [ -n \"$unformatted\" ]; then echo 'not gofmt-formatted:'; echo \"$unformatted\"; exit 1; fi", "toolchain": "go"},
-    {"name": "python-tests", "run": "for t in scripts/local-paths_test.py scripts/dev/development-build_test.py scripts/component-releases_test.py scripts/dev-components_test.py scripts/dev/gateway-fixture_test.py scripts/dev/dialect-mapping-fixture_test.py scripts/desk-dev_test.py scripts/desk-update_test.py scripts/package-release_test.py scripts/published-components_test.py scripts/assemble-release_test.py scripts/build-bundle_test.py scripts/needle-check_test.py scripts/mutation-check_test.py scripts/mutation-nightly-table_test.py scripts/mutation-rows-changed_test.py; do python3 \"$t\" || exit 1; done", "toolchain": "python", "summary": "^(Ran |FAILED)", "timeout": 900},
+    {"name": "python-tests", "run": "for t in scripts/local-paths_test.py scripts/dev/ci-ownership_test.py scripts/dev/development-build_test.py scripts/component-releases_test.py scripts/dev-components_test.py scripts/dev/gateway-fixture_test.py scripts/dev/dialect-mapping-fixture_test.py scripts/desk-dev_test.py scripts/desk-update_test.py scripts/package-release_test.py scripts/published-components_test.py scripts/assemble-release_test.py scripts/build-bundle_test.py scripts/needle-check_test.py scripts/mutation-check_test.py scripts/mutation-nightly-table_test.py scripts/mutation-rows-changed_test.py; do python3 \"$t\" || exit 1; done", "toolchain": "python", "summary": "^(Ran |FAILED)", "timeout": 900},
     {"name": "needle-check", "run": "scripts/needle-check.sh .", "toolchain": "shell", "timeout": 600},
     {"name": "i18n-check", "run": "npm run i18n:check", "cwd": "web", "toolchain": "node", "timeout": 300},
     {"name": "ui-message-audit", "run": "node --test scripts/ui-message-audit.test.mjs", "cwd": "web", "toolchain": "node", "summary": "^# (pass|fail) ", "timeout": 300},
@@ -47,6 +47,7 @@
     {"name": "development-build", "run": "scripts/dev/development-build.sh", "toolchain": "go", "summary": "^development-build:", "timeout": 1500},
     {"name": "component-freshness", "run": "python3 scripts/component-releases.py status", "toolchain": "python", "timeout": 300, "requires_env": "DESK_CHECK_FRESHNESS", "optional": true},
     {"name": "mutation-rows", "run": "scripts/dev/mutation-rows.sh", "toolchain": "go", "summary": "^(mutation-rows:|discriminating:)", "timeout": 13800, "requires_env": "DESK_MUTATION_BASE", "optional": true},
-    {"name": "assistant-plan-readers", "run": "scripts/dev/assistant-plan.sh", "toolchain": "node", "summary": "^(ok|FAIL|Plan shared readers:|Plan refusal schemas:)", "timeout": 900}
+    {"name": "assistant-plan-readers", "run": "scripts/dev/assistant-plan.sh", "toolchain": "node", "summary": "^(ok|FAIL|Plan shared readers:|Plan refusal schemas:)", "timeout": 900},
+    {"name": "ci-ownership", "run": "python3 scripts/dev/ci-ownership.py validate && python3 scripts/dev/ci-ownership-omissions.py", "toolchain": "python", "timeout": 60}
   ]
 }

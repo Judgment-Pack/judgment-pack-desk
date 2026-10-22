@@ -8,6 +8,9 @@ on:
       snapshot:
         type: boolean
         default: false
+      ci-receipt:
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -87,3 +90,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
+      # CI's stable-PR archive check records completion only after every native archive
+      # and the assembled platform set pass. Release publication callers omit this input.
+      - name: Record CI archive completion
+        if: inputs.ci-receipt
+        run: python3 scripts/dev/ci-ownership.py release-receipt --evidence "$RUNNER_TEMP/ci-ownership"
+      - name: Keep CI archive completion evidence
+        if: inputs.ci-receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-ownership-release-archives-ubuntu-latest-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-ownership/*.json
+          if-no-files-found: error
+          retention-days: 7

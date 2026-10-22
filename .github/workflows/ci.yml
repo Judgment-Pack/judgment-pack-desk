@@ -1,12 +1,8 @@
 name: CI
 
-# The checks are the steps of dev.json, run by scripts/dev/check.sh. A job sets up the toolchains
-# dev.json names (.github/actions/toolchains) and runs the steps it owns with --only, so a
-# check is defined once, in dev.json, and runs the same way on a contributor's machine.
-#
-# The jobs named Go and Web are the status checks branch protection on main requires (with
-# DCO); keep their names. The job named check runs the whole list, so that nothing in dev.json
-# is left to a job that does not exist.
+# dev.json defines commands; scripts/dev/ci-ownership.json assigns their CI owners and
+# setup dependencies. The helper runs that map and records each successful OS variant.
+# Keep Go, Web and check: branch protection and release callers depend on those names.
 
 on:
   push:
@@ -27,8 +23,16 @@ jobs:
       - uses: actions/checkout@v7
       - id: lock
         run: |
-          scripts/dev/check.sh --only component-policy
+          python3 scripts/dev/ci-ownership.py run --owner component-policy --evidence "$RUNNER_TEMP/ci-ownership"
           python3 -c 'import json; p=json.load(open("internal/releaseplan/components.json")); print("development="+str(any(c["channel"]=="development" for c in p["components"].values())).lower())' >> "$GITHUB_OUTPUT"
+
+      - name: Keep same-candidate completion evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-ownership-component-policy-ubuntu-latest-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-ownership/*.json
+          if-no-files-found: error
+          retention-days: 7
 
   development-bundle:
     name: Development build (${{ matrix.os }})
@@ -47,7 +51,15 @@ jobs:
       - uses: ./.github/actions/toolchains
       # Builds and verifies the exact development companions and starts their programs. The
       # step passes with nothing to build when the lock has no development pin.
-      - run: scripts/dev/check.sh --only development-build
+      - run: python3 scripts/dev/ci-ownership.py run --owner development-bundle --variant "${{ matrix.os }}" --evidence "$RUNNER_TEMP/ci-ownership"
+
+      - name: Keep same-candidate completion evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-ownership-development-bundle-${{ matrix.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-ownership/*.json
+          if-no-files-found: error
+          retention-days: 7
 
   go:
     name: Go
@@ -65,8 +77,8 @@ jobs:
       # The relay's end-to-end tests need a runtime binary and a Judgment Pack project. This job
       # supplies neither, so they skip themselves (requireBinary and e2eFixtures in
       # internal/desk/server_test.go); go-test runs with -v so that the skips stay visible.
-      # What runs with the real companions is in the check job.
-      - run: scripts/dev/check.sh --only gofmt,component-policy,python-tests,needle-check,component-identities,go-vet,go-test
+      # What runs with the real companions is in the integration job.
+      - run: python3 scripts/dev/ci-ownership.py run --owner go --evidence "$RUNNER_TEMP/ci-ownership"
         env:
           JPDEV_LOGDIR: ${{ runner.temp }}/go-check-logs
       # Only per-step command output, not workspace, credentials or caches.
@@ -79,20 +91,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Keep same-candidate completion evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-ownership-go-ubuntu-latest-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-ownership/*.json
+          if-no-files-found: error
+          retention-days: 7
+
   web:
     name: Web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/toolchains
-      - run: scripts/dev/check.sh --setup --only npm-ci
-        env:
-          JPDEV_LOGDIR: ${{ runner.temp }}/web-check-logs
       # The build comes before the tests, not after: one test greps the emitted bundle for a
       # credential on a URL, which is the only place that claim can be checked over the code
       # that actually ships. dialect-read reads a Desk-produced dialect preparation with the
       # pinned dialect specification (read-only test input, never committed).
-      - run: scripts/dev/check.sh --only i18n-check,ui-message-audit,typecheck,vite-build,web-tests,dialect-read
+      - run: python3 scripts/dev/ci-ownership.py run --owner web --evidence "$RUNNER_TEMP/ci-ownership"
         env:
           JPDEV_LOGDIR: ${{ runner.temp }}/web-check-logs
       # Only per-step command output, not workspace, credentials or caches.
@@ -105,6 +122,14 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Keep same-candidate completion evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-ownership-web-ubuntu-latest-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-ownership/*.json
+          if-no-files-found: error
+          retention-days: 7
+
   local-gateway:
     name: Local gateway (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -115,16 +140,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/toolchains
-      - run: scripts/dev/check.sh --only local-gateway
+      - run: python3 scripts/dev/ci-ownership.py run --owner local-gateway --variant "${{ matrix.os }}" --evidence "$RUNNER_TEMP/ci-ownership"
 
-  # The whole list of dev.json. The first step stops a broken manifest or agent doc pair before
-  # the long steps; the rest run with --all, so that one failure does not hide another. The
-  # steps that need the official companions, the Exchange and the Gateway fixtures run here
-  # (they were the Jobs companion and Signed Exchange acquisition acceptance jobs). A step whose
-  # environment variable is empty is skipped and said to be; component-freshness and
-  # mutation-rows are optional because their own workflows set theirs.
-  check:
-    name: check
+      - name: Keep same-candidate completion evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-ownership-local-gateway-${{ matrix.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-ownership/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # Real-companion, browser-reader and certification environments retain their checks.
+  # npm-ci and vite-build repeat here as isolated integration setup, without rerunning
+  # the deterministic Go/Web suites. Optional external reports retain their own workflows.
+  integration:
+    name: Integration checks
     runs-on: ubuntu-latest
     timeout-minutes: 150
     env:
@@ -133,14 +163,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/toolchains
-      - name: The agent docs and the manifest
-        run: scripts/dev/check.sh --only agent-docs
-      - name: Setup steps
-        run: scripts/dev/check.sh --setup
-      - name: Checks
+      - name: Checks and their setup dependencies
         env:
           JPDEV_LOGDIR: ${{ runner.temp }}/check-logs
-        run: scripts/dev/check.sh --all
+        run: python3 scripts/dev/ci-ownership.py run --owner integration --evidence "$RUNNER_TEMP/ci-ownership"
       # The full output of every step, which the summary block shortens.
       - name: Upload the step logs
         if: always()
@@ -151,6 +177,14 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Keep same-candidate completion evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-ownership-integration-ubuntu-latest-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-ownership/*.json
+          if-no-files-found: error
+          retention-days: 7
+
   release-archives:
     needs: component-policy
     if: github.event_name == 'pull_request' && needs.component-policy.outputs.development == 'false'
@@ -158,3 +192,26 @@ jobs:
     with:
       tag: v0.0.0
       snapshot: true
+      ci-receipt: true
+
+  check:
+    name: check
+    needs: [component-policy, go, web, integration, local-gateway, development-bundle, release-archives]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read all owner completion evidence from this run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-ownership-*
+          path: ${{ runner.temp }}/ci-ownership
+          merge-multiple: true
+      - name: Require every expected job and same-candidate OS variant
+        if: always()
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s\n' "$CI_NEEDS" > "$RUNNER_TEMP/ci-needs.json"
+          python3 scripts/dev/ci-ownership.py aggregate --needs "$RUNNER_TEMP/ci-needs.json" --evidence "$RUNNER_TEMP/ci-ownership"

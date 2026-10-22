@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "owners": {
+    "component-policy": {
+      "checks": ["component-policy"],
+      "setup": [],
+      "prepare": [],
+      "variants": ["ubuntu-latest"]
+    },
+    "go": {
+      "checks": ["gofmt", "python-tests", "needle-check", "component-identities", "go-vet", "go-test"],
+      "setup": [],
+      "prepare": [],
+      "variants": ["ubuntu-latest"]
+    },
+    "web": {
+      "checks": ["i18n-check", "ui-message-audit", "typecheck", "vite-build", "web-tests", "dialect-read"],
+      "setup": ["npm-ci"],
+      "prepare": [],
+      "variants": ["ubuntu-latest"]
+    },
+    "local-gateway": {
+      "checks": ["local-gateway"],
+      "setup": [],
+      "prepare": [],
+      "variants": ["ubuntu-latest", "macos-latest"]
+    },
+    "development-bundle": {
+      "checks": ["development-build"],
+      "setup": [],
+      "prepare": [],
+      "variants": ["ubuntu-latest", "macos-15", "macos-15-intel"]
+    },
+    "integration": {
+      "checks": ["diff-check", "local-paths", "agent-docs", "harness-vectors", "certify-vercel", "certify-codex", "certify-deepagents", "official-companions", "jobs-runtime", "jobs-run-signer", "jobs-executor-ownership", "policy-official-draft", "policy-manual-admission", "witness", "new-desks-runtime", "exchange-presets", "dialect-journeys", "assistant-saved-context", "assistant-chat-projection-readers", "assistant-link-readers", "assistant-website-readers", "signed-exchange-release", "acquisition-fixture", "acquisition-acceptance", "policy-source-contract", "assistant-plan-readers", "ci-ownership"],
+      "setup": ["npm-ci"],
+      "prepare": ["vite-build"],
+      "variants": ["ubuntu-latest"]
+    }
+  },
+  "dependencies": {
+    "i18n-check": ["npm-ci"],
+    "ui-message-audit": ["npm-ci"],
+    "typecheck": ["npm-ci"],
+    "vite-build": ["npm-ci"],
+    "web-tests": ["npm-ci", "vite-build"],
+    "dialect-read": ["npm-ci"],
+    "harness-vectors": ["npm-ci"],
+    "certify-vercel": ["npm-ci", "vite-build"],
+    "certify-codex": ["npm-ci", "vite-build"],
+    "certify-deepagents": ["npm-ci", "vite-build"],
+    "assistant-link-readers": ["npm-ci", "vite-build"],
+    "assistant-website-readers": ["npm-ci", "vite-build"],
+    "assistant-plan-readers": ["npm-ci", "vite-build"],
+    "official-companions": ["npm-ci", "vite-build"],
+    "jobs-runtime": ["npm-ci", "vite-build"],
+    "jobs-run-signer": ["npm-ci", "vite-build"],
+    "jobs-executor-ownership": ["npm-ci", "vite-build"],
+    "policy-official-draft": ["npm-ci", "vite-build"],
+    "policy-manual-admission": ["npm-ci", "vite-build"],
+    "witness": ["npm-ci", "vite-build"],
+    "new-desks-runtime": ["npm-ci", "vite-build"],
+    "exchange-presets": ["npm-ci", "vite-build"],
+    "dialect-journeys": ["npm-ci", "vite-build"],
+    "assistant-saved-context": ["npm-ci", "vite-build"],
+    "assistant-chat-projection-readers": ["npm-ci", "vite-build"],
+    "signed-exchange-release": ["npm-ci", "vite-build"],
+    "acquisition-fixture": ["npm-ci", "vite-build"],
+    "acquisition-acceptance": ["npm-ci", "vite-build"],
+    "policy-source-contract": ["npm-ci", "vite-build"]
+  },
+  "external": {
+    "component-freshness": {
+      "workflow": ".github/workflows/component-freshness.yml",
+      "requires_env": "DESK_CHECK_FRESHNESS",
+      "reason": "Scheduled and manual latest-release report; not candidate-deterministic."
+    },
+    "mutation-rows": {
+      "workflow": ".github/workflows/mutation-rows.yml",
+      "requires_env": "DESK_MUTATION_BASE",
+      "reason": "PR changed-row coverage; full mutation suite remains in mutation-nightly.yml."
+    }
+  }
+}
