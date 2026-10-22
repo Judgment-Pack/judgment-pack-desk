@@ -5,8 +5,10 @@ package desk
 // supplied-input slice accepts only mapping-v2 case copies; generated sources
 // must use verified source profiles before they can enter this boundary.
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 )
 
@@ -59,6 +61,37 @@ func inputPointerValid(p string) bool {
 	}
 	return true
 }
+
+// Desk reads these controls by exact name. Other pack branches belong to
+// Runtime's grammar and remain opaque here, including literal fact values.
+// These shapes validate names only; they never replace retained pack bytes.
+type inputPackMembers struct {
+	ID                   json.RawMessage `json:"id"`
+	Version              json.RawMessage `json:"version"`
+	Decision             json.RawMessage `json:"decision"`
+	Title                json.RawMessage `json:"title"`
+	Description          json.RawMessage `json:"description"`
+	EvidenceRequirements []struct {
+		ID                json.RawMessage `json:"id"`
+		Description       json.RawMessage `json:"description"`
+		AdditionalMembers json.RawMessage `json:"-"`
+	} `json:"evidenceRequirements"`
+	AdditionalMembers json.RawMessage `json:"-"`
+}
+
+func readInputPack(raw []byte) (map[string]any, error) {
+	if err := checkJSONMembers(raw, reflect.TypeOf(inputPackMembers{})); err != nil {
+		return nil, err
+	}
+	var pack map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&pack); err != nil || pack == nil {
+		return nil, errors.New("Invalid retained pack.")
+	}
+	return pack, nil
+}
+
 func validateInputQualification(q *inputQualification) error {
 	if q == nil {
 		return nil
@@ -67,8 +100,8 @@ func validateInputQualification(q *inputQualification) error {
 	if q.Kind != "pack" || strings.TrimSpace(q.Key) == "" || len(q.Key) > 512 || len(q.Pack) > 1<<20 || q.Digest != "sha256:"+digestOf([]byte(q.Pack)) {
 		return fail()
 	}
-	var pack map[string]any
-	if rejectDuplicateMembers([]byte(q.Pack)) != nil || json.Unmarshal([]byte(q.Pack), &pack) != nil || pack == nil {
+	pack, err := readInputPack([]byte(q.Pack))
+	if err != nil {
 		return fail()
 	}
 	// Identity belongs to the retained bytes, not a title supplied separately.
