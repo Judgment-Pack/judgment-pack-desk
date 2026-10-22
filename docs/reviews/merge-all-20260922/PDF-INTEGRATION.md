@@ -13,9 +13,9 @@ Base: gateway origin/main as fetched by parent, `625a24a8ae82f49ea171feb9c838215
 | #147 strict HTTP envelope | `b22ac23e01b7e3d3218b0811be6d0e06e2de6b0b` | `98fad04795fa55c87c26e115db4e725531ccf769` |
 | Reviewed connection/source foundation, parent follow-up | `a36190272b012dd5f9d4e5fcaab55a5421fc2eaf` | `d64e9d2641ab9e4bae7a170699c11c1af3983461` |
 
-PDF/HTTP checkout: `/tmp/jp-merge-all-20260922/pdf-integration`, branch `integration/pdf-fixes`, HEAD `98fad04795fa55c87c26e115db4e725531ccf769`.
+PDF/HTTP checkout: `<scratch>/jp-merge-all-20260922/pdf-integration`, branch `integration/pdf-fixes`, HEAD `98fad04795fa55c87c26e115db4e725531ccf769`.
 
-All-gateway checkout: `/tmp/jp-merge-all-20260922/all-gateway-integration`, branch `integration/all-gateway`, original handoff HEAD `d64e9d2641ab9e4bae7a170699c11c1af3983461`. Parent owns further edits here, including the independent review's codespace finding; do not assume its current working tree remains this original handoff.
+All-gateway checkout: `<scratch>/jp-merge-all-20260922/all-gateway-integration`, branch `integration/all-gateway`, original handoff HEAD `d64e9d2641ab9e4bae7a170699c11c1af3983461`. Parent owns further edits here, including the independent review's codespace finding; do not assume its current working tree remains this original handoff.
 
 All four merge commits preserve input histories and carry `Signed-off-by: kikashy <35789537+kikashy@users.noreply.github.com>`. No published history was rebased. #145 and #147 merged without conflicts. The foundation merge also has no conflicts or manual resolutions; its remerge diff is empty. Its PDF/document and core trees are byte-identical to `98fad047`; documentation auto-merges append separate source-extension sections.
 
@@ -23,7 +23,7 @@ All four merge commits preserve input histories and carry `Signed-off-by: kikash
 
 #146 conflicts span 27 regions in eight production files: `adapters/document/pdf/{cmap,content,crypt,document,extract,filters,font,lexer}.go`.
 
-Exact conflict-resolution evidence: `/tmp/jp-merge-all-20260922/pdf-resolution.diff`, generated with `git show --remerge-diff acfdeb9`. This includes cleanly-applied semantic corrections and tests as well as textual conflicts. Comparisons against the two input branches are reproducible with `git diff 14fda49 acfdeb9 -- adapters/document/pdf` and `git diff e91190e acfdeb9 -- adapters/document/pdf`.
+Exact conflict-resolution evidence: `<scratch>/jp-merge-all-20260922/pdf-resolution.diff`, generated with `git show --remerge-diff acfdeb9`. This includes cleanly-applied semantic corrections and tests as well as textual conflicts. Comparisons against the two input branches are reproducible with `git diff 14fda49 acfdeb9 -- adapters/document/pdf` and `git diff e91190e acfdeb9 -- adapters/document/pdf`.
 
 - Keep the #145 generation scope around multi-field operations, the section's generation captured before `/Length`, stale-section queue termination, raw encryption-dictionary reads, rebuilt-handler cache invalidation, and file-scoped scan failures.
 - Retain the #146 shared document allowance, lexer byte charges and reservations, parser allowances, decoded-copy ownership (`heldByDocument` versus `heldByPage`), font/CMap deadlines and page work budgets.
@@ -50,14 +50,14 @@ Focused final production deltas exported for review: `pdf-final-reads-delta.diff
 
 ## Verification
 
-Environment: Go 1.26.5 linux/amd64. Every Go invocation used `GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false`. Paths below are under `/tmp/jp-merge-all-20260922`.
+Environment: Go 1.26.5 linux/amd64. Every Go invocation used `GOCACHE=<scratch>/jp-authoring-go-cache GOFLAGS=-buildvcs=false`. Paths below are under `<scratch>/jp-merge-all-20260922`.
 
 | Check | Result and evidence |
 | --- | --- |
 | `cd pdf-integration/go; go test ./... -count=1` | PASS, 72.325s, `pdf-core-tests-final.log`; required approved escalation for local httptest ports. Initial sandbox-only attempt failed to bind loopback, `pdf-core-tests.log`. |
 | `cd pdf-integration/go; go vet ./...` | PASS |
-| `cd pdf-integration/go; go build -trimpath -o /tmp/jp-merge-all-20260922/pdf-gateway .` and `/tmp/jp-merge-all-20260922/pdf-gateway conform` | PASS: 30 canon and 41 store vectors, zero disagreements; `pdf-conformance.log`. |
-| `cd pdf-integration; GATEWAY_BIN=/tmp/jp-merge-all-20260922/pdf-gateway SMOKE_REQUIRE_ENGINE=1 python3 -m unittest discover -s plugins/smoke/testing -p test_stand_in_engine.py -v` | PASS, four tests, 9.113s, `pdf-smoke-parity.log`; approved local-listener escalation. |
+| `cd pdf-integration/go; go build -trimpath -o <scratch>/jp-merge-all-20260922/pdf-gateway .` and `<scratch>/jp-merge-all-20260922/pdf-gateway conform` | PASS: 30 canon and 41 store vectors, zero disagreements; `pdf-conformance.log`. |
+| `cd pdf-integration; GATEWAY_BIN=<scratch>/jp-merge-all-20260922/pdf-gateway SMOKE_REQUIRE_ENGINE=1 python3 -m unittest discover -s plugins/smoke/testing -p test_stand_in_engine.py -v` | PASS, four tests, 9.113s, `pdf-smoke-parity.log`; approved local-listener escalation. |
 | `cd pdf-integration/adapters; go vet ./...` and `gofmt -l .` | PASS, no formatting output. Core edited files also remain gofmt-clean. |
 | Focused integration/adjusted fixtures: `go test ./document/pdf -run '^TestOpeningBoundsArePDFMalformed$\|^TestBoundsObjectStreamHeaderEntriesAreCharged$\|^TestReadsAnUnusableCMapIsChargedForAllTheSame$\|^TestIntegration' -count=1` (regex alternatives without backslashes in actual command) | PASS, 3.320s, `pdf-reconciled-tests.log`; also `pdf-integration-tests.log`. |
 | `cd pdf-integration/adapters; go test ./document/... ./cmd/adapter-document -count=1` final run | Document PASS 8.730s, command PASS 3.838s. PDF ran 119.487s with exactly one failure: old test assertion omits `d.fileBound`; see below. `pdf-document-tests-final.log`. |
@@ -70,7 +70,7 @@ Environment: Go 1.26.5 linux/amd64. Every Go invocation used `GOCACHE=/tmp/jp-au
 
 A temporary Go overlay changing the assertion to accept either `d.bound` or `d.fileBound`, and additionally asserting the affected case actually has `isBound(d.fileBound)`, makes the entire five-case test pass three times (0.734s): `pdf-trailer-scope-probe.log`. Exact probe/overlay: `pdf-trailer-scope-probe.go`, `pdf-trailer-overlay.json`.
 
-Command: `cd pdf-integration/adapters; GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false go test -overlay /tmp/jp-merge-all-20260922/pdf-trailer-overlay.json ./document/pdf -run '^TestBoundsTrailerRescanIsBoundedByWhatItExamines$' -count=3 -v`.
+Command: `cd pdf-integration/adapters; GOCACHE=<scratch>/jp-authoring-go-cache GOFLAGS=-buildvcs=false go test -overlay <scratch>/jp-merge-all-20260922/pdf-trailer-overlay.json ./document/pdf -run '^TestBoundsTrailerRescanIsBoundedByWhatItExamines$' -count=3 -v`.
 
 Parent was notified and owns the assertion correction together with the independent codespace correction. No source mutation was made after the parent requested a freeze. A full PDF rerun on the corrected final candidate remains required; do not describe the original final PDF suite as passing.
 

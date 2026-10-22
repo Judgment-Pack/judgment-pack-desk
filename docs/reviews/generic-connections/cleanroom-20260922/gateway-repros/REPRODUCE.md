@@ -2,7 +2,7 @@
 
 All added files and generated records are confined to this directory. Reviewed source trees were not edited. These probes use only local fixtures and the published corpus test signing seed.
 
-Run from `/tmp/jp-foundation-cleanroom-20260922/gateway/adapters`:
+Run from `<scratch>/jp-foundation-cleanroom-20260922/gateway/adapters`:
 
 ```sh
 GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false go run /tmp/jp-foundation-cleanroom-20260922/gateway-repros/producer_probe.go
@@ -31,13 +31,13 @@ for path in sorted((root/'gateway-repros/records').glob('*.json')):
 PY
 ```
 
-Run from `/tmp/jp-foundation-cleanroom-20260922/gateway/go`:
+Run from `<scratch>/jp-foundation-cleanroom-20260922/gateway/go`:
 
 ```sh
 GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false go run . conform
 ```
 
-Run from `/tmp/jp-foundation-cleanroom-20260922/desk` with local test listeners enabled:
+Run from `<scratch>/jp-foundation-cleanroom-20260922/desk` with local test listeners enabled:
 
 ```sh
 GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false go test ./internal/desk -run 'Test(ConnectionCatalog|LocalPlan|IndependentGateway)' -count=1

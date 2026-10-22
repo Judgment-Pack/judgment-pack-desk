@@ -2,12 +2,15 @@
 # scripts/dev/development-build.sh
 # When the component lock holds a development pin, build the exact development companions, build
 # the Desk with them and start the companions' programs. With no development pin there is
-# nothing to build: the step says so and passes. The release job (release-archives) builds the
-# archives in that case instead. Run on each platform CI builds for (see the development-bundle
+# nothing to build: the step tests packaging, says so and passes. The release job
+# (release-archives) builds the archives in that case instead. Run on each platform CI builds for (see the development-bundle
 # job of ci.yml); needs network access for the companions' sources.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 cd "$root"
+
+# Packaging contracts must run on native macOS too, including the no-development branch.
+python3 scripts/package-release_test.py
 
 development=$(python3 -c 'import json; p=json.load(open("internal/releaseplan/components.json")); print(str(any(c["channel"]=="development" for c in p["components"].values())).lower())')
 if [ "$development" != true ]; then

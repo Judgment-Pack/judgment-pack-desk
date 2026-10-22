@@ -31,7 +31,7 @@ The web record distinguishes fetched-response digest from retained static-text d
 
 ## Executed evidence
 
-Environment: Go `go1.26.5 linux/amd64`; Node `v22.23.1`; `GOCACHE=/tmp/jp-authoring-go-cache`; `GOFLAGS=-buildvcs=false`.
+Environment: Go `go1.26.5 linux/amd64`; Node `v22.23.1`; `GOCACHE=<scratch>/jp-authoring-go-cache`; `GOFLAGS=-buildvcs=false`.
 
 1. At exact #144 head: `go test ./connections ./cmd/gateway-connections -run Catalog -count=1` — passed. Actual `gateway-connections --catalog` v1 output exported.
 2. At exact #148 head: `go test ./websource ./attachment ./connections ./cmd/gateway-connections` — passed. The initial restricted-sandbox invocation failed only because loopback listeners were prohibited; rerun with approved local-listener escalation passed.
@@ -44,12 +44,12 @@ Environment: Go `go1.26.5 linux/amd64`; Node `v22.23.1`; `GOCACHE=/tmp/jp-author
 
 Reproduction artifacts:
 
-- `/tmp/jp-merge-all-20260922/gateway-parent-review/adapters/websource/independent_review_test.go`
-- `/tmp/jp-merge-all-20260922/gateway-parent-review/evidence/` — emitted records/envelopes, catalog outputs, public test-key signed packets, signer log, and `sign-producer-output.py`
-- `/tmp/jp-merge-all-20260922/gateway-catalog-parent-review/` — exact #144 checkout
-- `/tmp/jp-merge-all-20260922/desk-gateway-parent-consumer/internal/desk/independent_catalog_test.go`
-- `/tmp/jp-merge-all-20260922/desk-gateway-parent-consumer/web/src/documents/independent-producer.test.ts`
-- `/tmp/jp-merge-all-20260922/desk-gateway-parent-consumer/web/src/connections/independent-catalog-v1.ts` — exact #123 parser
+- `<scratch>/jp-merge-all-20260922/gateway-parent-review/adapters/websource/independent_review_test.go`
+- `<scratch>/jp-merge-all-20260922/gateway-parent-review/evidence/` — emitted records/envelopes, catalog outputs, public test-key signed packets, signer log, and `sign-producer-output.py`
+- `<scratch>/jp-merge-all-20260922/gateway-catalog-parent-review/` — exact #144 checkout
+- `<scratch>/jp-merge-all-20260922/desk-gateway-parent-consumer/internal/desk/independent_catalog_test.go`
+- `<scratch>/jp-merge-all-20260922/desk-gateway-parent-consumer/web/src/documents/independent-producer.test.ts`
+- `<scratch>/jp-merge-all-20260922/desk-gateway-parent-consumer/web/src/connections/independent-catalog-v1.ts` — exact #123 parser
 
 ## Limits
 

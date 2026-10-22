@@ -45,6 +45,8 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         run: git tag "$RELEASE_TAG" HEAD
+      - name: Check native packaging contracts
+        run: python3 scripts/package-release_test.py
       - name: Check native installer selection and platform refusals
         run: python3 scripts/desk-update_test.py
       - run: npm --prefix web ci

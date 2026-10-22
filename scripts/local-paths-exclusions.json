@@ -1,0 +1,899 @@
+{
+  "README.md": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/home\/someone\/a-project\/jpack-desk.json",
+      "\/tmp\/jpack-desk"
+    ]
+  },
+  "docs\/design\/chatgpt-subscription-plan.md": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/jps-codex-plan-schema"
+    ]
+  },
+  "docs\/design\/inputs-local-testing.md": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/jps-chat-input-browser-result.json",
+      "\/tmp\/jps-chat-input-browser.mjs",
+      "\/tmp\/jps-input-evaluation-",
+      "\/tmp\/jps-input-evaluation-browser-result.json",
+      "\/tmp\/jps-input-evaluation-browser.mjs",
+      "\/tmp\/jps-input-evaluation-review-",
+      "\/tmp\/jps-inputs-manual-XXXXXX",
+      "\/tmp\/jps-inputs-ux-browser.mjs",
+      "\/tmp\/jps-research-progress-browser.mjs",
+      "\/tmp\/jps-v013-components\/jpack",
+      "\/tmp\/jps-v013-components\/jpack-desk-chat-inputs",
+      "\/tmp\/jps-v013-components\/jpack-runner"
+    ]
+  },
+  "docs\/design\/operational-jobs-pilot.md": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/desk-jobs-pilot\/"
+    ]
+  },
+  "docs\/design\/policy-manual-admission-store-prepare-shape.md": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/jps-policy-manual-admission-store-prepare-wire.json"
+    ]
+  },
+  "docs\/design\/policy-manual-admission-store-prepare-wire.json": {
+    "reason": "Synthetic machine and runner paths in the documented wire fixture.",
+    "paths": [
+      "\/tmp\/jps-synthetic-machine\/executors\/2222222222222222222222222222222222222222222222222222222222222222",
+      "\/tmp\/jps-synthetic-runner"
+    ]
+  },
+  "docs\/design\/release-readiness.md": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/release-browser\/"
+    ]
+  },
+  "docs\/design\/v013-local-validation.md": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/jps-collection-after-",
+      "\/tmp\/jps-collection-consistency-browser.mjs",
+      "\/tmp\/jps-collection-consistency-result.json",
+      "\/tmp\/jps-collection-final-smoke-result.json",
+      "\/tmp\/jps-collection-narrow-",
+      "\/tmp\/jps-collection-rows-browser-result.json",
+      "\/tmp\/jps-collections-browser-result.json",
+      "\/tmp\/jps-compact-jobs-dark.png",
+      "\/tmp\/jps-compact-jobs-light.png",
+      "\/tmp\/jps-compact-search-browser-result.json",
+      "\/tmp\/jps-desk-status-",
+      "\/tmp\/jps-desk-status-acceptance-result.json",
+      "\/tmp\/jps-desk-status-grouped-",
+      "\/tmp\/jps-desk-v013",
+      "\/tmp\/jps-input-activity-browser-result.json",
+      "\/tmp\/jps-input-evaluation-browser-result.json",
+      "\/tmp\/jps-optional-folders-browser.mjs",
+      "\/tmp\/jps-run-controls-",
+      "\/tmp\/jps-run-controls-browser-result.json",
+      "\/tmp\/jps-selection-browser-result.json",
+      "\/tmp\/jps-selection-dark.png",
+      "\/tmp\/jps-selection-light.png",
+      "\/tmp\/jps-selection-menu.png",
+      "\/tmp\/jps-table-polish-",
+      "\/tmp\/jps-table-polish-browser-result.json",
+      "\/tmp\/jps-v013-components",
+      "\/tmp\/jps-v013-components\/jpack-desk-collection-rows",
+      "\/tmp\/jps-v013-components\/jpack-desk-collections",
+      "\/tmp\/jps-v013-components\/jpack-desk-compact-search",
+      "\/tmp\/jps-v013-components\/jpack-desk-input-activity",
+      "\/tmp\/jps-v013-components\/jpack-desk-input-binding",
+      "\/tmp\/jps-v013-components\/jpack-desk-input-evaluation",
+      "\/tmp\/jps-v013-components\/jpack-desk-run-controls",
+      "\/tmp\/jps-v013-components\/jpack-desk-selection",
+      "\/tmp\/jps-v013-components\/jpack-desk-status-notices"
+    ]
+  },
+  "docs\/localization.md": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/localization-artifacts"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/acceptance.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/generic-review"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/DESK-FOLLOWUP.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk-followup\/web"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/author-fix.log": {
+    "reason": "Archived raw evidence retained byte-for-byte to preserve recorded provenance.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/author-fix\/web"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/author-regression-before-fix.log": {
+    "reason": "Archived raw evidence retained byte-for-byte to preserve recorded provenance.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/author-fix\/web"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/desk-followup\/independent-followup-tests.log": {
+    "reason": "Archived raw evidence retained byte-for-byte to preserve recorded provenance.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk-followup\/web"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/desk-followup\/repository-focused-tests.log": {
+    "reason": "Archived raw evidence retained byte-for-byte to preserve recorded provenance.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk-followup\/web"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/desk-repros\/COMMANDS.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/jp-authoring-go-cache",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk-repros\/web",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk\/web"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/desk-repros\/oauth-form-fix-proof.log": {
+    "reason": "Archived raw evidence retained byte-for-byte to preserve recorded provenance.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk-repros\/web"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/desk-repros\/oauth-form.log": {
+    "reason": "Archived raw evidence retained byte-for-byte to preserve recorded provenance.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk-repros\/web"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/desk-repros\/resource-pin.log": {
+    "reason": "Archived raw evidence retained byte-for-byte to preserve recorded provenance.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk-repros\/web"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/gateway-repros\/REPRODUCE.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/jp-authoring-go-cache",
+      "\/tmp\/jp-foundation-cleanroom-20260922",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk\/web\/node_modules\/tsx\/dist\/loader.mjs",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk\/web\/node_modules\/vitest\/vitest.mjs",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/gateway-repros\/catalog.json",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/gateway-repros\/consumer_probe.mts",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/gateway-repros\/plan.json",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/gateway-repros\/producer_probe.go",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/gateway-repros\/vitest.config.mjs"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/gateway-repros\/producer_probe.go": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/gateway-repros\/vitest.config.mjs": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/gateway-repros",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/gateway-repros\/vite-cache"
+    ]
+  },
+  "docs\/reviews\/generic-connections\/cleanroom-20260922\/manifest.json": {
+    "reason": "Archived raw evidence retained byte-for-byte to preserve recorded provenance.",
+    "paths": [
+      "\/tmp\/jp-foundation-cleanroom-20260922\/desk",
+      "\/tmp\/jp-foundation-cleanroom-20260922\/gateway"
+    ]
+  },
+  "docs\/reviews\/merge-all-20260922\/PDF-FINAL-REVIEW.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/jp-authoring-go-cache",
+      "\/tmp\/jp-merge-all-20260922\/pdf-final-review\/adapters"
+    ]
+  },
+  "docs\/reviews\/merge-all-20260922\/PDF-UPSTREAM-BOUNDS-REVIEW.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/jp-authoring-go-cache"
+    ]
+  },
+  "docs\/reviews\/notion-review-recovery\/README.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/desk-connections-review"
+    ]
+  },
+  "docs\/reviews\/policy-import-chat\/README.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/policy-browser-evidence"
+    ]
+  },
+  "docs\/reviews\/policy-import-chat\/smoke.mjs": {
+    "reason": "Documented synthetic examples or repeatable scratch commands, not a machine home.",
+    "paths": [
+      "\/tmp\/jps-policy-import-chat-browser"
+    ]
+  },
+  "docs\/reviews\/policy-source-sync\/README.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/policy-source-browser-evidence"
+    ]
+  },
+  "docs\/reviews\/policy-source-sync\/provenance.json": {
+    "reason": "Archived raw evidence retained byte-for-byte to preserve recorded provenance.",
+    "paths": [
+      "\/tmp\/jps-policy-source-desk-bin",
+      "\/tmp\/jps-portable-delivery\/jpack-runtime-034"
+    ]
+  },
+  "docs\/reviews\/readable-pack-logic.md": {
+    "reason": "Retained runnable scratch commands in a historical verification record.",
+    "paths": [
+      "\/tmp\/jpack-desk",
+      "\/tmp\/readable-logic"
+    ]
+  },
+  "internal\/desk\/assistant_test.go": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone"
+    ]
+  },
+  "internal\/desk\/audit_record_test.go": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/owner\/key.seed",
+      "\/home\/owner\/project",
+      "\/home\/owner\/x"
+    ]
+  },
+  "internal\/desk\/custody.go": {
+    "reason": "Synthetic home path in the custody redaction example comment.",
+    "paths": [
+      "\/home\/someone\/.config"
+    ]
+  },
+  "internal\/desk\/desks_test.go": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/tmp\/escape",
+      "\/tmp\/outside"
+    ]
+  },
+  "internal\/desk\/document_processing_test.go": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone",
+      "\/home\/someone\/ocr"
+    ]
+  },
+  "internal\/desk\/input_handoff_test.go": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/tmp\/secret"
+    ]
+  },
+  "internal\/desk\/jobs_signing_test.go": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/owner\/key.seed"
+    ]
+  },
+  "internal\/desk\/launch_test.go": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project"
+    ]
+  },
+  "internal\/desk\/model_providers_test.go": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/tmp\/other"
+    ]
+  },
+  "internal\/desk\/startup_key_test.go": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/owner\/.config\/jpack-desk\/secrets\/signing\/k.seed"
+    ]
+  },
+  "scripts\/chat-response-check.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jp-chat-response-",
+      "\/tmp\/jp-chat-response-artifacts"
+    ]
+  },
+  "scripts\/chat-workspace-check.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jp-chat-artifacts"
+    ]
+  },
+  "scripts\/check-connections.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/desk-connections-review",
+      "\/tmp\/jp-unified-smoke-"
+    ]
+  },
+  "scripts\/check-generic-connections.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/desk-generic-connections-review",
+      "\/tmp\/jp-generic-smoke-"
+    ]
+  },
+  "scripts\/codex-subscription-probe.py": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/.codex"
+    ]
+  },
+  "scripts\/containment-check.sh": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jpack-desk"
+    ]
+  },
+  "scripts\/graph-composition-check.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-composition-$",
+      "\/tmp\/jps-composition-failure.png"
+    ]
+  },
+  "scripts\/inspection-controls-check.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jp-controls-overview-dark.png",
+      "\/tmp\/jp-controls-overview-light.png",
+      "\/tmp\/jp-controls-overview-narrow.png"
+    ]
+  },
+  "scripts\/localization-check.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jp-localization-artifacts"
+    ]
+  },
+  "scripts\/pane-help-check.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jp-pane-help-desktop.png"
+    ]
+  },
+  "scripts\/readable-logic-check.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jp-readable-fixture-",
+      "\/tmp\/jp-readable-screens"
+    ]
+  },
+  "scripts\/storage-check.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jp-storage-artifacts",
+      "\/tmp\/jp-storage-browser-"
+    ]
+  },
+  "web\/scripts\/ai-completion-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/desk-retry-extension-dark.png",
+      "\/tmp\/desk-retry-main-dark.png",
+      "\/tmp\/desk-retry-pane-dark.png",
+      "\/tmp\/desk-stall-main-dark.png",
+      "\/tmp\/desk-stall-pane-dark.png"
+    ]
+  },
+  "web\/scripts\/ai-context-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-context-browser-error.png",
+      "\/tmp\/jps-context-gemini-$"
+    ]
+  },
+  "web\/scripts\/ai-execution-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-context-browser-error.png",
+      "\/tmp\/jps-context-gemini-$",
+      "\/tmp\/jps-execution-paused.png"
+    ]
+  },
+  "web\/scripts\/ai-failure-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-ai-failure-pane.png"
+    ]
+  },
+  "web\/scripts\/chat-history-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-chat-history-browser-error.png",
+      "\/tmp\/jps-chat-history-loading.png",
+      "\/tmp\/jps-chat-history-unavailable.png",
+      "\/tmp\/jps-shared-loading-narrow.png",
+      "\/tmp\/jps-shared-loading-tests.png"
+    ]
+  },
+  "web\/scripts\/chat-question-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-question-$",
+      "\/tmp\/jps-question-browser-dom.txt",
+      "\/tmp\/jps-question-browser-failure.png",
+      "\/tmp\/jps-question-inputs-pane.png",
+      "\/tmp\/jps-question-main-dark.png",
+      "\/tmp\/jps-question-mobile-light.png"
+    ]
+  },
+  "web\/scripts\/chat-question-recovery-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-question-recovered-$",
+      "\/tmp\/jps-question-recovery-failure.png"
+    ]
+  },
+  "web\/scripts\/chat-recovery-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-recovery-$",
+      "\/tmp\/jps-recovery-browser-failure.png",
+      "\/tmp\/jps-recovery-failed.png",
+      "\/tmp\/jps-recovery-reconnecting.png",
+      "\/tmp\/jps-recovery-working.png"
+    ]
+  },
+  "web\/scripts\/citation-preview-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/desk-citation-preview-$",
+      "\/tmp\/desk-citation-preview-failure.png"
+    ]
+  },
+  "web\/scripts\/delegation-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-delegation-details.png",
+      "\/tmp\/jps-delegation-failure.png",
+      "\/tmp\/jps-delegation-light-narrow.png",
+      "\/tmp\/jps-delegation-running.png",
+      "\/tmp\/jps-delegation-stopped.png",
+      "\/tmp\/jps-history-working.png"
+    ]
+  },
+  "web\/scripts\/desk-home-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-home-$"
+    ]
+  },
+  "web\/scripts\/dialect-chat-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-dialect-browser-error.png",
+      "\/tmp\/jps-dialect-chat-review.png",
+      "\/tmp\/jps-dialects-workspace.png"
+    ]
+  },
+  "web\/scripts\/dialect-job-journey-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-dialect-job-browser-error.png",
+      "\/tmp\/jps-dialect-job-result.png",
+      "\/tmp\/jps-dialect-job-review.png"
+    ]
+  },
+  "web\/scripts\/dialect-templates-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-dialect-new-template.png",
+      "\/tmp\/jps-dialect-person-handoff.png",
+      "\/tmp\/jps-dialect-template-error.png"
+    ]
+  },
+  "web\/scripts\/dialects-refresh-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/dialects-refresh-browser.png",
+      "\/tmp\/dialects-refresh-failure.png"
+    ]
+  },
+  "web\/scripts\/input-chat-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-composer-approval-narrow.png",
+      "\/tmp\/jps-composer-approval-review.png",
+      "\/tmp\/jps-composer-approval-used.png",
+      "\/tmp\/jps-input-card-compact.png",
+      "\/tmp\/jps-input-chat-failure.png",
+      "\/tmp\/jps-input-chat-list.png",
+      "\/tmp\/jps-input-chat-recipe.png",
+      "\/tmp\/jps-input-chat-uncluttered.png",
+      "\/tmp\/jps-related-work-flat-",
+      "\/tmp\/jps-related-work-flat-main.png",
+      "\/tmp\/jps-related-work-main.png",
+      "\/tmp\/jps-research-admission-stopped.png",
+      "\/tmp\/jps-research-admission-waiting.png",
+      "\/tmp\/jps-research-budget-narrow.png",
+      "\/tmp\/jps-research-budget-review.png",
+      "\/tmp\/jps-research-compact-chat.png",
+      "\/tmp\/jps-research-compact-narrow.png",
+      "\/tmp\/jps-research-limits-aligned.png",
+      "\/tmp\/jps-research-limits-narrow.png",
+      "\/tmp\/jps-research-limits-review.png",
+      "\/tmp\/jps-research-reference-correction.png"
+    ]
+  },
+  "web\/scripts\/input-record-review-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-bulk-review-$",
+      "\/tmp\/jps-bulk-review-saved.png"
+    ]
+  },
+  "web\/scripts\/input-status-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-input-status-$",
+      "\/tmp\/jps-input-status-dark-wide.png",
+      "\/tmp\/jps-input-status-docked.png",
+      "\/tmp\/jps-input-status-failure.png"
+    ]
+  },
+  "web\/scripts\/input-test-snapshots-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-inputs-work\/snapshot-error.png",
+      "\/tmp\/jps-inputs-work\/test-snapshot-review.png"
+    ]
+  },
+  "web\/scripts\/memory-plan-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-memory-plan-failure.png",
+      "\/tmp\/jps-plan-main.png",
+      "\/tmp\/jps-plan-pane.png"
+    ]
+  },
+  "web\/scripts\/pack-proposal-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-pack-edit-status.png",
+      "\/tmp\/jps-pack-proposal-failure.png",
+      "\/tmp\/jps-pack-proposal-review.png",
+      "\/tmp\/jps-proposal-density-$",
+      "\/tmp\/jps-proposal-density-unchecked.png"
+    ]
+  },
+  "web\/scripts\/pack-workspace-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-pack-library-spacing.png",
+      "\/tmp\/jps-pack-logic.png",
+      "\/tmp\/jps-pack-sources.png",
+      "\/tmp\/jps-pack-test-result.png",
+      "\/tmp\/jps-pack-workspace-failure.png",
+      "\/tmp\/jps-session-tests-pane.png",
+      "\/tmp\/jps-test-case-page.png",
+      "\/tmp\/jps-tests-collection-narrow.png",
+      "\/tmp\/jps-tests-collection.png"
+    ]
+  },
+  "web\/scripts\/page-loading-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/desk-page-loading-$",
+      "\/tmp\/desk-page-loading-failure.png"
+    ]
+  },
+  "web\/scripts\/password-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-password-change-error-320.png",
+      "\/tmp\/jps-password-entry-$",
+      "\/tmp\/jps-password-entry-de-320.png",
+      "\/tmp\/jps-password-entry-light-320.png",
+      "\/tmp\/jps-password-set-$",
+      "\/tmp\/jps-password-validation-eight-320.png"
+    ]
+  },
+  "web\/scripts\/project-move-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-project-move-$",
+      "\/tmp\/jps-project-move-done-320.png",
+      "\/tmp\/jps-project-move-error.png",
+      "\/tmp\/jps-project-move-review-320.png"
+    ]
+  },
+  "web\/scripts\/research-delegation-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-delegated-activity-mobile.png",
+      "\/tmp\/jps-delegated-activity.png",
+      "\/tmp\/jps-delegated-browser-failure.png",
+      "\/tmp\/jps-delegated-main-hint.png",
+      "\/tmp\/jps-delegated-recipe.png",
+      "\/tmp\/jps-delegated-review.png"
+    ]
+  },
+  "web\/scripts\/research-reprocess-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-reprocess-failure.png",
+      "\/tmp\/jps-reprocess-mobile.png",
+      "\/tmp\/jps-reprocess-review.png",
+      "\/tmp\/jps-reprocess-selection.png"
+    ]
+  },
+  "web\/scripts\/research-review-workspace-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-review-single-mobile.png",
+      "\/tmp\/jps-review-workspace-dark.png",
+      "\/tmp\/jps-review-workspace-failure.png",
+      "\/tmp\/jps-review-workspace-light.png",
+      "\/tmp\/jps-review-workspace-mobile.png"
+    ]
+  },
+  "web\/scripts\/status-notices-browser.mjs": {
+    "reason": "Explicit scratch output defaults or synthetic paths in developer verification scripts.",
+    "paths": [
+      "\/tmp\/jps-status-notices-details.png",
+      "\/tmp\/jps-status-notices-failure.png",
+      "\/tmp\/jps-status-notices-mobile.png",
+      "\/tmp\/jps-status-notices-records.png"
+    ]
+  },
+  "web\/src\/admin\/defaultProject.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/admin\/projectFileCards.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/admin\/projectFileWrite.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/assistant\/AssistantPane.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/assistant\/SharedAssistantSettings.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/assistant\/configWrite.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/assistant\/endpointForm.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/assistant\/pickedModel.test.ts": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/work\/a-project",
+      "\/home\/someone\/work\/another"
+    ]
+  },
+  "web\/src\/assistant\/slotAfterSave.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/assistant\/useAssistantSlot.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/auth\/themeAfterLogin.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/project-a",
+      "\/home\/someone\/project-b"
+    ]
+  },
+  "web\/src\/chat\/LinkedMessageText.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/tmp\/example.org"
+    ]
+  },
+  "web\/src\/config\/deskConfig.test.ts": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json",
+      "\/home\/someone\/a-project",
+      "\/home\/someone\/a-project\/desk.json",
+      "\/home\/someone\/a-project\/jpack-desk.json"
+    ]
+  },
+  "web\/src\/config\/fixtures\/desk-config\/accepted-project-file.json": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project\/jpack-desk.json"
+    ]
+  },
+  "web\/src\/config\/fixtures\/desk-config\/expected.json": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project\/jpack-desk.json"
+    ]
+  },
+  "web\/src\/config\/fixtures\/desk-config\/refused-key-in-project.json": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project\/jpack-desk.json"
+    ]
+  },
+  "web\/src\/config\/fixtures\/desk-config\/refused-project-file-a-directory.json": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project"
+    ]
+  },
+  "web\/src\/config\/fixtures\/desk-config\/refused-project-file-another-name.json": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project\/desk.json"
+    ]
+  },
+  "web\/src\/config\/fixtures\/desk-config\/refused-project-not-object.json": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project\/jpack-desk.json"
+    ]
+  },
+  "web\/src\/config\/fixtures\/desk-config\/refused-project-unknown-member.json": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project",
+      "\/home\/someone\/a-project\/jpack-desk.json"
+    ]
+  },
+  "web\/src\/config\/liveConfig.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json",
+      "\/home\/someone\/a-project"
+    ]
+  },
+  "web\/src\/config\/queries.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project",
+      "\/home\/someone\/a-project\/jpack-desk.json"
+    ]
+  },
+  "web\/src\/documents\/link.test.ts": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/tmp\/example.org"
+    ]
+  },
+  "web\/src\/graphs\/graphs.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/alone\/g.json",
+      "\/home\/secret",
+      "\/home\/x",
+      "\/home\/x\/g.json",
+      "\/home\/y\/g.json"
+    ]
+  },
+  "web\/src\/identity\/identity.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project"
+    ]
+  },
+  "web\/src\/packs\/upgrade\/upgrade.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/owner\/.config\/jpack-desk\/secrets\/signing\/0f.seed"
+    ]
+  },
+  "web\/src\/routes\/AdminView.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json",
+      "\/home\/someone\/a-project"
+    ]
+  },
+  "web\/src\/routes\/GraphViewRow2.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/Owner",
+      "\/home\/someone\/my"
+    ]
+  },
+  "web\/src\/routes\/HelpAbout.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/shell\/AppShell.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project"
+    ]
+  },
+  "web\/src\/shell\/DescribeIt.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/.config\/jpack-desk\/desk.json"
+    ]
+  },
+  "web\/src\/shell\/appearanceProvider.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/project-a",
+      "\/home\/someone\/project-b"
+    ]
+  },
+  "web\/src\/shell\/appearanceState.test.ts": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project"
+    ]
+  },
+  "web\/src\/shell\/narrowShell.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project"
+    ]
+  },
+  "web\/src\/shell\/paneState.test.ts": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/Projects\/Intake",
+      "\/home\/someone\/one",
+      "\/home\/someone\/two"
+    ]
+  },
+  "web\/src\/shell\/shellState.test.tsx": {
+    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
+    "paths": [
+      "\/home\/someone\/a-project"
+    ]
+  }
+}

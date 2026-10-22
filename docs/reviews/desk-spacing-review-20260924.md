@@ -63,7 +63,7 @@ version changes occur from opening a page.
   above.
 
 Screenshots and raw browser measurements are available locally in
-`/tmp/desk-spacing-review`. Browser fixture writes for delete/error-path checks
+`<scratch>/desk-spacing-review`. Browser fixture writes for delete/error-path checks
 are intercepted in memory; the user's saved cases and history are unchanged.
 
 ## Recommended next features
