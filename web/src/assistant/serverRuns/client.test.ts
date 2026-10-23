@@ -112,3 +112,16 @@ it('discovers an unchanged saved request after journal revision changes, retaini
  fetch.mockImplementation(()=>Promise.resolve(json(pending)))
  expect((await client.read({...ref,owner:runs[0].owner})).owner.revision).toBe(original)
 })
+
+it.each([
+ ['array admitted state',['admitted']],
+ ['nested array admitted state',[['admitted']]],
+ ['array running state',['running']],
+ ['nested array running state',[['running']]]
+])('refuses malformed active SSE snapshot before EOF: %s',async(_name,state)=>{
+ const fetch=vi.fn().mockImplementation(()=>Promise.resolve(new Response(`event: snapshot\nid: 1:0\ndata: ${JSON.stringify({...pending,state})}\n\n`,{headers:{'Content-Type':'text/event-stream'}})))
+ vi.stubGlobal('fetch',fetch)
+ const observed=new RunObservations(ref),client=await serverRunClient(),out:unknown[]=[]
+ await expect((async()=>{for await(const value of client.events(observed))out.push(value)})()).rejects.toMatchObject({failure:{code:'invalid-response'}})
+ expect(out).toEqual([]);expect(observed.snapshot).toBeUndefined();expect(observed.cursor).toBeUndefined();expect(fetch).toHaveBeenCalledTimes(1)
+})

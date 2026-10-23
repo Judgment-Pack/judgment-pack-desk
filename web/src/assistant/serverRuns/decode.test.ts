@@ -27,6 +27,18 @@ describe('Desk run envelope',()=>{
   ])('refuses wrong binding, shape, identity and precision',value=>{
     expect(()=>decodeSnapshot(value,{...binding,id:pending.id})).toThrow(AIFailureError)
   })
+  it.each([
+    ['array run state', {...pending,state:['running']}],
+    ['nested array run state', {...pending,state:[['running']]}],
+    ['array operation kind', {...terminal,operations:[{...terminal.operations[0],kind:['model']}]}],
+    ['nested array operation kind', {...terminal,operations:[{...terminal.operations[0],kind:[['model']]}]}],
+    ['array operation state', {...terminal,state:'running',operations:[{...terminal.operations[0],state:['dispatched'],result:null}]}],
+    ['nested array operation state', {...terminal,state:'running',operations:[{...terminal.operations[0],state:[['dispatched']],result:null}]}],
+    ['array projection issue', {...pending,projectionIssue:['pending-question']}],
+    ['nested array projection issue', {...pending,projectionIssue:[['pending-question']]}]
+  ])('rejects non-string envelope enum: %s',(_name,value)=>{
+    expect(()=>decodeSnapshot(value,binding)).toThrow(AIFailureError)
+  })
   it('rejects duplicate JSON keys, malformed JSON and lone surrogate',()=>{
     for (const raw of ['{"id":1,"id":2}','{','{"text":"\\ud800"}']) expect(()=>parseRunJSON(raw)).toThrow(AIFailureError)
   })
