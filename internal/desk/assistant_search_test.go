@@ -330,27 +330,98 @@ func TestAssistantSearchSharedTurnLimit(t *testing.T) {
 		t.Fatal("root/child/retry limit reset", f.acquisitions.Load())
 	}
 }
+
+// queuedCall holds all research slots until a durable dispatch notification proves
+// the actual tool is waiting. Child errors return to the test goroutine; cleanup
+// cancels and drains the child before the fixture can close its private store.
+func (f *assistantSearchFixture) queuedCall(t *testing.T, call, name, raw string, bound time.Duration) func() runcontext.ToolResult {
+	t.Helper()
+	assistantPolicyEvent(t, f.e, call, name, []byte(raw))
+	var tool runcontext.HostTool
+	if name == assistantSearchTool {
+		registry, err := f.e.assistantSearchTools()
+		assistantRunMust(t, err)
+		tool = registry.tools[0]
+	} else {
+		registry, err := f.e.assistantLinkTools()
+		assistantRunMust(t, err)
+		tool = registry.tools[0]
+	}
+	wake, unsubscribe, err := f.e.service.subscribe(f.e.record.ID)
+	assistantRunMust(t, err)
+	defer unsubscribe()
+	for range cap(f.s.researchSlots) {
+		f.s.researchSlots <- struct{}{}
+	}
+	callCtx, cancelCall := context.WithCancel(t.Context())
+	ctx := context.WithValue(runcontext.WithCallID(callCtx, call), assistantHostRootKey{}, true)
+	type outcome struct {
+		result runcontext.ToolResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	drained := false
+	t.Cleanup(func() {
+		cancelCall()
+		for len(f.s.researchSlots) > 0 {
+			<-f.s.researchSlots
+		}
+		if !drained {
+			select {
+			case returned := <-done:
+				if returned.err != nil {
+					t.Errorf("queued child cleanup: %v", returned.err)
+				}
+			case <-time.After(bound):
+				t.Error("queued child failed to drain during cleanup")
+			}
+		}
+	})
+	go func() { result, err := tool.Execute(ctx, json.RawMessage(raw)); done <- outcome{result, err} }()
+	waitCtx, stopWait := context.WithTimeout(t.Context(), bound)
+	defer stopWait()
+waitForDispatch:
+	for {
+		select {
+		case <-wake:
+			// Notifications follow the transaction's private-data unlock. Read once
+			// per commit instead of competing with dispatch writes every 5 ms.
+			record, err := f.e.writer.lease.store.Read(waitCtx, f.e.record.Binding, f.e.record.ID)
+			assistantRunMust(t, err)
+			if name == assistantSearchTool {
+				if len(record.Searches) == 1 && record.Searches[0].Acquire == "dispatched" {
+					break waitForDispatch
+				}
+			} else if len(record.Links) == 1 && record.Links[0].Acquire == "dispatched" {
+				break waitForDispatch
+			}
+		case returned := <-done:
+			drained = true
+			t.Fatalf("%s returned before queuing: %v", name, returned.err)
+		case <-waitCtx.Done():
+			t.Fatalf("%s did not queue", name)
+		}
+	}
+	return func() runcontext.ToolResult {
+		t.Helper()
+		<-f.s.researchSlots
+		select {
+		case returned := <-done:
+			drained = true
+			assistantRunMust(t, returned.err)
+			return returned.result
+		case <-time.After(bound):
+			t.Fatal("queued child failed to return after slot release")
+			return runcontext.ToolResult{}
+		}
+	}
+}
 func TestAssistantSearchQueuedConfiguration(t *testing.T) {
 	for _, change := range []string{"gateway-url", "connection", "session", "profile", "source"} {
 		t.Run(change, func(t *testing.T) {
 			f := newAssistantSearchFixture(t, "api", "research", "work", "http://127.0.0.1:1")
 			_ = assistantExecutionOpen(t, f.s, f.e)
-			for range cap(f.s.researchSlots) {
-				f.s.researchSlots <- struct{}{}
-			}
-			done := make(chan runcontext.ToolResult, 1)
-			go func() { done <- f.invoke(t, "queued-search", true) }()
-			deadline := time.Now().Add(3 * time.Second)
-			for {
-				record := assistantExecutionRecord(t, f.e)
-				if len(record.Searches) == 1 && record.Searches[0].Acquire == "dispatched" {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("search did not queue")
-				}
-				time.Sleep(5 * time.Millisecond)
-			}
+			finish := f.queuedCall(t, "queued-search", assistantSearchTool, `{"query":"public policy"}`, 3*time.Second)
 			switch change {
 			case "gateway-url":
 				f.s.localGateway.mu.Lock()
@@ -374,11 +445,7 @@ func TestAssistantSearchQueuedConfiguration(t *testing.T) {
 					t.Fatal(w.Body.String())
 				}
 			}
-			<-f.s.researchSlots
-			result := <-done
-			for len(f.s.researchSlots) > 0 {
-				<-f.s.researchSlots
-			}
+			result := finish()
 			if !result.Err() || f.calls.Load() != 0 {
 				t.Fatal("queued changed authority dispatched", f.calls.Load(), string(result.Value().JSON()))
 			}
@@ -462,8 +529,6 @@ func TestAssistantSearchActualProducersAndProjection(t *testing.T) {
 				assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(f.trace), "peer.py"), []byte(peer), 0600))
 			}
 			x := assistantExecutionOpen(t, f.s, f.e)
-			off := false
-			x.Run.Review = &off
 			ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 			defer cancel()
 			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
@@ -536,8 +601,6 @@ func TestAssistantSearchActualRefusalEvents(t *testing.T) {
 				assistantRunMust(t, os.WriteFile(f.statusPath, assistantChatJSON(map[string]any{"version": 1, "connections": []any{}}), 0600))
 			}
 			x := assistantExecutionOpen(t, f.s, f.e)
-			off := false
-			x.Run.Review = &off
 			assistantRunMust(t, x.Adapter.Run(t.Context(), x.Run))
 			record := assistantExecutionRecord(t, f.e)
 			refused := false

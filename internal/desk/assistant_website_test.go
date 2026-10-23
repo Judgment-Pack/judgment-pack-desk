@@ -203,8 +203,6 @@ func TestAssistantWebsiteActualRefusalEvents(t *testing.T) {
 				}
 			}
 			x := assistantExecutionOpen(t, f.s, f.e)
-			off := false
-			x.Run.Review = &off
 			assistantRunMust(t, x.Adapter.Run(t.Context(), x.Run))
 			record := assistantExecutionRecord(t, f.e)
 			refused := false
@@ -270,8 +268,6 @@ func TestAssistantWebsiteActualProducers(t *testing.T) {
 				assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(f.trace), "peer.py"), []byte(peer), 0600))
 			}
 			x := assistantExecutionOpen(t, f.s, f.e)
-			off := false
-			x.Run.Review = &off
 			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 			defer cancel()
 			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
@@ -668,24 +664,7 @@ func TestAssistantWebsiteQueuedAuthority(t *testing.T) {
 			}
 			u, _ := assistantPublicURL(seed)
 			target := "https://" + u.Host() + "/child-0"
-			for range cap(f.s.researchSlots) {
-				f.s.researchSlots <- struct{}{}
-			}
-			done := make(chan runcontext.ToolResult, 1)
-			go func() {
-				done <- f.invokeLink(t, "queued", true, string(assistantChatJSON(map[string]string{"url": target})))
-			}()
-			deadline := time.Now().Add(8 * time.Second)
-			for {
-				run := assistantExecutionRecord(t, f.e)
-				if len(run.Links) == 1 && run.Links[0].Acquire == "dispatched" {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("discovered read did not queue")
-				}
-				time.Sleep(5 * time.Millisecond)
-			}
+			finish := f.queuedCall(t, "queued", assistantLinkTool, string(assistantChatJSON(map[string]string{"url": target})), 8*time.Second)
 			run := assistantExecutionRecord(t, f.e)
 			if which == "research-preference" {
 				assistantRunMust(t, os.WriteFile(filepath.Join(f.s.cfg.ProjectDir, "jpack-search.json"), []byte(`{"version":1,"connection":"demo","mode":"provided"}`), 0600))
@@ -696,11 +675,7 @@ func TestAssistantWebsiteQueuedAuthority(t *testing.T) {
 				}
 				assistantWebsiteFixturePacket(t, f, id, func(b []byte) []byte { return append(b, ' ') })
 			}
-			<-f.s.researchSlots
-			result := <-done
-			for len(f.s.researchSlots) > 0 {
-				<-f.s.researchSlots
-			}
+			result := finish()
 			if !result.Err() || f.calls.Load() != calls {
 				t.Fatal("queued website authority changed but acquired", which, f.calls.Load(), string(result.JSON()))
 			}

@@ -106,8 +106,6 @@ func TestAssistantChatDocumentFactory(t *testing.T) {
 			if !found {
 				t.Fatal("verified selection missing from canonical input")
 			}
-			off := false
-			x.Run.Review = &off
 			assistantRunMust(t, x.Adapter.Run(t.Context(), x.Run))
 			wire := ""
 			if engine == "api" {
@@ -307,8 +305,6 @@ func TestAssistantChatDocumentContinuation(t *testing.T) {
 			raw, pin, ref := assistantDocumentFixture(t, "web", "http", nil)
 			s, _, e, _, trace := assistantChatDocumentFixture(t, "codex", "delegate", raw, pin, []assistantDocumentReference{ref})
 			x := assistantExecutionOpen(t, s, e)
-			off := false
-			x.Run.Review = &off
 			if when == "before-child" {
 				original := x.Run.Children
 				x.Run.Children = func(ctx context.Context, p contract.DelegatedTaskProfile, emit func(contract.RunEvent)) (*gate.Calls, []contract.ToolOfferRuntimeTool, error) {
