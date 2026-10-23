@@ -477,6 +477,9 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 		if err := validateAssistantDomainOutputs(run); err != nil {
 			return err
 		}
+		if _, err := pendingAssistantRunQuestion(run); err != nil {
+			return err
+		}
 		if err := validateAssistantRunActionReceipts(run); err != nil {
 			return err
 		}

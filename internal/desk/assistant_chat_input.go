@@ -96,6 +96,9 @@ func (e *assistantRunExecution) prepareAssistantChatInput(ctx context.Context) (
 			return nil, errAssistantRunInvalid
 		}
 	}
+	if err := assistantRunAnswerHistory(e.record, chat); err != nil {
+		return nil, err
+	}
 	return chat, nil
 }
 

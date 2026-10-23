@@ -23,14 +23,21 @@ type assistantRunStart struct {
 	Revision    string `json:"revision"`
 	RequestID   string `json:"requestId"`
 }
+type assistantRunAnswerDraft struct {
+	Selected []string `json:"selected"`
+	Text     *string  `json:"text"`
+}
 type assistantRunAction struct {
-	ID         string  `json:"id"`
-	Kind       string  `json:"kind"`
-	Revision   uint64  `json:"revision"`
-	CallID     string  `json:"callId,omitempty"`
-	ArgsDigest string  `json:"argsDigest,omitempty"`
-	Approved   *bool   `json:"approved,omitempty"`
-	Note       *string `json:"note,omitempty"`
+	QuestionID     string                   `json:"questionId,omitempty"`
+	QuestionDigest string                   `json:"questionDigest,omitempty"`
+	Answer         *assistantRunAnswerDraft `json:"answer,omitempty"`
+	ID             string                   `json:"id"`
+	Kind           string                   `json:"kind"`
+	Revision       uint64                   `json:"revision"`
+	CallID         string                   `json:"callId,omitempty"`
+	ArgsDigest     string                   `json:"argsDigest,omitempty"`
+	Approved       *bool                    `json:"approved,omitempty"`
+	Note           *string                  `json:"note,omitempty"`
 }
 type assistantRunActionReceipt struct {
 	ID                 string `json:"id"`
@@ -41,6 +48,8 @@ type assistantRunActionReceipt struct {
 	// A receipt admits at most one delivery. An interrupted delivery is never
 	// automatically repeated, even if its response was lost.
 	Decision *contract.CheckpointApprovalDecision `json:"decision,omitempty"`
+	Grant    *contract.CheckpointGrant            `json:"grant,omitempty"`
+	Answer   *assistantRunAnswer                  `json:"answer,omitempty"`
 }
 type assistantRunSource struct {
 	Start      assistantRunStart
@@ -248,10 +257,17 @@ func validateAssistantRunActionReceipts(run assistantRunRecord) error {
 		return errAssistantRunInvalid
 	}
 	for _, receipt := range run.Actions {
-		if !assistantRunText(receipt.ID, 128) || !assistantRunDigest(receipt.Digest) || ids[receipt.ID] || !contains([]string{"cancel", "approval", "abandon"}, receipt.Kind) {
+		if !assistantRunText(receipt.ID, 128) || !assistantRunDigest(receipt.Digest) || ids[receipt.ID] || !contains([]string{"cancel", "approval", "abandon", "extend-budget", "answer"}, receipt.Kind) {
 			return errAssistantRunInvalid
 		}
 		ids[receipt.ID] = true
+		if receipt.Kind == "answer" {
+			if receipt.Answer == nil || validateAssistantRunAnswer(run, *receipt.Answer) != nil {
+				return errAssistantRunInvalid
+			}
+		} else if receipt.Answer != nil {
+			return errAssistantRunInvalid
+		}
 		if receipt.Kind == "abandon" {
 			if !assistantRunDigest(receipt.AuthorizingSession) || !assistantRunDigest(receipt.AuthorizingPolicy) || run.State != "stopped" {
 				return errAssistantRunInvalid
@@ -264,6 +280,20 @@ func validateAssistantRunActionReceipts(run assistantRunRecord) error {
 				return errAssistantRunInvalid
 			}
 		} else if receipt.Decision != nil {
+			return errAssistantRunInvalid
+		}
+		if receipt.Kind == "extend-budget" {
+			if receipt.Grant == nil || run.Checkpoint == nil || run.Checkpoint.Unit != "model-requests" {
+				return errAssistantRunInvalid
+			}
+			found := false
+			for _, grant := range run.Checkpoint.Grants {
+				found = found || reflect.DeepEqual(grant, *receipt.Grant)
+			}
+			if !found {
+				return errAssistantRunInvalid
+			}
+		} else if receipt.Grant != nil {
 			return errAssistantRunInvalid
 		}
 	}

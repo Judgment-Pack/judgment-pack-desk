@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
@@ -60,24 +61,41 @@ func assistantChatProjectionCheckpoint(run assistantRunRecord) *contract.Checkpo
 	}
 	return &cp
 }
+
+type assistantChatDigestBase struct {
+	State      string
+	Checkpoint any
+	Events     []assistantRunEvent
+	Outputs    []assistantDomainOutput
+}
+
 func assistantChatEventDigest(run assistantRunRecord) string {
+	return digestOf(assistantChatEventDigestPayload(run))
+}
+func assistantChatEventDigestPayload(run assistantRunRecord) []byte {
+	// Construct the shared fields once: domain output custody is covered by the
+	// same digest boundary both before and after a continuation.
+	base := assistantChatDigestBase{run.State, assistantChatProjectionCheckpoint(run), run.Events, run.DomainOutputs}
+	if continuations := assistantRunContinuations(run); len(continuations) > 0 {
+		raw, _ := json.Marshal(struct {
+			assistantChatDigestBase
+			Continuations []assistantRunContinuationReceipt
+		}{base, continuations})
+		return raw
+	}
 	// Preserve prepared receipts produced before the first domain variant existed.
 	if len(run.DomainOutputs) == 0 {
 		raw, _ := json.Marshal(struct {
 			State      string
 			Checkpoint any
 			Events     []assistantRunEvent
-		}{run.State, assistantChatProjectionCheckpoint(run), run.Events})
-		return digestOf(raw)
+		}{base.State, base.Checkpoint, base.Events})
+		return raw
 	}
-	raw, _ := json.Marshal(struct {
-		State      string
-		Checkpoint any
-		Events     []assistantRunEvent
-		Outputs    []assistantDomainOutput
-	}{run.State, assistantChatProjectionCheckpoint(run), run.Events, run.DomainOutputs})
-	return digestOf(raw)
+	raw, _ := json.Marshal(base)
+	return raw
 }
+
 func validateAssistantChatProjection(run assistantRunRecord) error {
 	if run.ProjectionIssue != "" && run.ProjectionIssue != "proposal-target" && run.ProjectionIssue != "pending-question" && run.ProjectionIssue != "saved-chat-validation" && run.ProjectionIssue != "unsupported-unicode" {
 		return errAssistantRunInvalid
@@ -526,9 +544,48 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 			}
 			state["unknowns"] = assistantChatJSON(unknowns)
 		case event.UserQuestion != nil:
-			// An unresolved interactive question must remain pinned to its canonical
-			// continuation in the ledger, rather than become a new chat action.
-			return nil, errAssistantChatProjectionQuestion
+			q := event.UserQuestion
+			var answer *assistantRunAnswer
+			var actionID string
+			for _, receipt := range run.Actions {
+				if receipt.Answer != nil && receipt.Answer.QuestionID == q.ID {
+					answer, actionID = receipt.Answer, receipt.ID
+				}
+			}
+			if answer == nil {
+				return nil, errAssistantChatProjectionQuestion
+			}
+			if err := validateAssistantRunAnswer(run, *answer); err != nil {
+				return nil, err
+			}
+			answerID := "answer-" + digestOf([]byte(run.ID + "\x00" + actionID))[:32]
+			if ids[q.ID] || ids[answerID] {
+				return nil, errAssistantRunConflict
+			}
+			ids[q.ID], ids[answerID] = true, true
+			labels := []string{}
+			for _, id := range answer.Selected {
+				for _, option := range q.Question.Options {
+					if option.ID == id {
+						labels = append(labels, option.Label)
+					}
+				}
+			}
+			display := strings.Join(labels, "; ")
+			if answer.Text != "" {
+				if display != "" {
+					display += "\n"
+				}
+				display += answer.Text
+			}
+			turns = append(turns, assistantChatJSON(map[string]any{"id": q.ID, "role": "assistant", "kind": "question", "text": q.Question.Question, "at": answer.At}), assistantChatJSON(map[string]any{"id": answerID, "role": "user", "kind": "message", "text": display, "statement": display, "at": answer.At}))
+			questions, err := assistantChatArray(state["questions"])
+			if err != nil {
+				return nil, err
+			}
+			continued := true
+			questions = append(questions, assistantChatJSON(contract.QuestionSaved{ID: q.ID, Prompt: q.Question, Draft: contract.QuestionDraft{Selected: answer.Selected, Text: answer.Text}, Resolution: &contract.QuestionSavedResolution{Kind: "answered", At: answer.At, TurnID: answerID, Continued: &continued}}))
+			state["questions"] = assistantChatEncodeArray(questions)
 		}
 	}
 	for _, out := range run.DomainOutputs {

@@ -41,6 +41,7 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 	var wire struct {
 		Runs []struct {
 			Binding       assistantRunBinding `json:"binding"`
+			Actions       []json.RawMessage   `json:"actions"`
 			Checkpoint    json.RawMessage     `json:"checkpoint"`
 			DomainOutputs []json.RawMessage   `json:"domainOutputs"`
 			Websites      []json.RawMessage   `json:"websites"`
@@ -51,6 +52,19 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 		return ledger, err
 	}
 	for _, run := range wire.Runs {
+		for _, raw := range run.Actions {
+			var a struct {
+				Kind string `json:"kind"`
+			}
+			if json.Unmarshal(raw, &a) != nil {
+				return ledger, errAssistantRunInvalid
+			}
+			if a.Kind == "answer" || a.Kind == "extend-budget" {
+				if _, err := readAssistantRunContinuation(raw); err != nil {
+					return ledger, err
+				}
+			}
+		}
 		for _, raw := range run.Websites {
 			if err := readAssistantDialectCustody(raw, reflect.TypeOf(assistantWebsiteCustody{})); err != nil {
 				return ledger, err

@@ -10,7 +10,9 @@ const rows=[
  ['canonical checkpoint','decode.ts','readExecution(value.checkpoint)','value.checkpoint'],
  ['known semantic discriminator','decode.ts','!Object.hasOwn(SEMANTIC_EVENT_TYPES,value.event.type)','false'],
  ['shared cursor snapshot','stream.ts',"    if (frame.kind === 'snapshot') {","    if (frame.kind === 'snapshot') {\n      if (this.last === frame.cursor) return undefined"],
- ['uncertain POST replay','client.ts','      if (cause instanceof RunRequestError) throw cause\n      throw new RunRequestError', '      if (body) return this.json(path,expected,body,signal)\n      if (cause instanceof RunRequestError) throw cause\n      throw new RunRequestError']
+ ['uncertain POST replay','client.ts','      if (cause instanceof RunRequestError) throw cause\n      throw new RunRequestError', '      if (body) return this.json(path,expected,body,signal)\n      if (cause instanceof RunRequestError) throw cause\n      throw new RunRequestError'],
+ ['retained answer digest','decode.ts','questionDigest(q)!==a.questionDigest','false'],
+ ['canonical grant receipt','decode.ts','!checkpoint.grants.some(saved=>saved.from===g.from&&saved.to===g.to&&saved.at===g.at)','false']
 ]
 const tmp=await mkdtemp(join(tmpdir(),'assistant-run-client-mutants-'))
 try {
@@ -31,7 +33,7 @@ try {
   if(result.error || result.signal)throw Error('probe infrastructure failed: '+(result.error?.message??result.signal))
   if(!row&&result.status!==0)throw Error('baseline probe failed:\n'+result.stderr)
   if(row&&result.status===0)throw Error('survived: '+row[0])
-  const markers=['source revision must remain exact','checkpoint must use canonical reader','unknown union discriminator','same cursor must not suppress snapshot','uncertain POST must not replay']
+  const markers=['source revision must remain exact','checkpoint must use canonical reader','unknown union discriminator','same cursor must not suppress snapshot','uncertain POST must not replay','answer digest must match retained question','grant receipt must match canonical checkpoint']
   if(row&&(!result.stderr.includes('AssertionError [ERR_ASSERTION]')||!result.stderr.includes(markers[rows.indexOf(row)])))throw Error('non-semantic mutant failure: '+row[0]+'\n'+result.stderr)
   console.log('Run client mutation: '+(row?row[0]+' caught':'baseline passed'))
  }

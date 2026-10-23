@@ -1,6 +1,8 @@
 // Isolated invariant probe. Only transport dependencies are stubbed; run client,
 // envelope decoding and stream reconciliation are the production modules.
 import assert from 'node:assert/strict'
+import answer from '../web/src/assistant/serverRuns/fixtures/continuation-answer.json'
+import budget from '../web/src/assistant/serverRuns/fixtures/continuation-budget.json'
 import pending from '../web/src/assistant/serverRuns/fixtures/pending.json'
 import terminal from '../web/src/assistant/serverRuns/fixtures/terminal.json'
 import { decodeSnapshot } from '../web/src/assistant/serverRuns/decode.ts'
@@ -20,3 +22,8 @@ globalThis.fetch=stub
 const client=await serverRunClient()
 await assert.rejects(client.start({admissionId:'admission-one',purpose:'chat',ownerId:ref.owner.id,revision:ref.owner.revision,requestId:ref.requestId}),error=>error.delivery==='uncertain','uncertain POST must not replay')
 assert.equal(posts,1,'uncertain POST must never automatically repeat')
+
+const wrongAnswer=structuredClone(answer);wrongAnswer.continuations[0].answer.questionDigest="a".repeat(64)
+assert.throws(()=>decodeSnapshot(wrongAnswer,ref),"answer digest must match retained question")
+const wrongGrant=structuredClone(budget);wrongGrant.continuations[0].grant.to=60
+assert.throws(()=>decodeSnapshot(wrongGrant,ref),"grant receipt must match canonical checkpoint")

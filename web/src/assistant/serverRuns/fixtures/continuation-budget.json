@@ -1,0 +1,7 @@
+{
+ "id":"arun_11111111111111111111111111111111","revision":5,
+ "owner":{"kind":"chat","id":"chat-one","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+ "requestId":"message-one","state":"admitted","operations":[],"events":[],"cursor":"5:0",
+ "checkpoint":{"version":1,"id":"execution-one","requestKey":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","phase":"work","unit":"model-requests","used":20,"limit":30,"grants":[{"from":20,"to":30,"at":"2026-10-23T00:00:00.000Z"}],"status":"running","plan":[],"explanation":"","operations":[],"context":{"scope":"fixture","entries":[]}},
+ "continuations":[{"id":"budget-one","digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","kind":"extend-budget","grant":{"from":20,"to":30,"at":"2026-10-23T00:00:00.000Z"}}]
+}
