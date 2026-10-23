@@ -895,8 +895,6 @@ func TestAssistantExecutionEinoBudgetPause(t *testing.T) {
 	if !refused.IsError || x.gate.TestCalls() != 1 {
 		t.Fatal("shared test-count fixture was not established")
 	}
-	off := false
-	x.Run.Review = &off
 	close(proceed)
 	assistantProtocolWait(t, s, token, e.record.ID, "paused-budget")
 	record := assistantExecutionRecord(t, e)

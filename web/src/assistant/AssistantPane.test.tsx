@@ -67,12 +67,13 @@ const UNREAD: EffectiveConfig = effectiveConfig(undefined, undefined, undefined,
   }
 })
 
-function config(assistant: unknown): EffectiveConfig {
-  return effectiveConfig(undefined, undefined, undefined, {
+function config(assistant: unknown, critic?: 'on'): EffectiveConfig {
+  const value = effectiveConfig(undefined, undefined, undefined, {
     path: '/home/someone/.config/jpack-desk/desk.json',
     present: true,
     decoded: decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, assistant }), 'desk')
   })
+  return critic === undefined ? value : {...value, assistantProfile: {present:true, value:{profileVersion:1, critic}}}
 }
 
 let runtime: ReturnType<typeof scriptedWebSocket> | null = null
@@ -150,6 +151,7 @@ function DraftHarness({
  */
 async function draw(options: {
   assistant?: unknown
+  critic?: 'on'
   /** A desk whose own configuration read did not produce a file. */
   unreadConfiguration?: boolean
   keyPresent?: boolean
@@ -216,7 +218,7 @@ async function draw(options: {
           value={
             options.unreadConfiguration === true
               ? UNREAD
-              : config(options.assistant ?? { endpoint: ENDPOINT })
+              : config(options.assistant ?? { endpoint: ENDPOINT }, options.critic)
           }
         >
           {options.buffer === undefined ? (
@@ -1338,6 +1340,7 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
     })
     const { relayed, prompted } = await draw({
       assistant: THINKING,
+      critic: 'on',
       prompts: {
         author_pack: { text: 'The runtime’s authoring prompt.' },
         test_pack: { text: 'The runtime’s testing prompt.', hold: held }
@@ -1380,6 +1383,7 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
     // started, and the tab said nothing about why.
     const { relayed } = await draw({
       assistant: THINKING,
+      critic: 'on',
       prompts: {
         author_pack: { text: 'The runtime’s authoring prompt.' },
         test_pack: { text: 'unused', fails: 'the runtime refused this prompt' }
@@ -1407,6 +1411,7 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
     })
     const { relayed } = await draw({
       assistant: THINKING,
+      critic: 'on',
       prompts: {
         author_pack: { text: 'The runtime’s authoring prompt.' },
         test_pack: { text: 'The runtime’s testing prompt.', hold: held }
@@ -1444,6 +1449,7 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
   it('reports that the pass cannot run where the runtime advertises none', async () => {
     const { relayed } = await draw({
       assistant: THINKING,
+      critic: 'on',
       prompts: { author_pack: { text: 'The runtime’s authoring prompt.' } }
     })
     fireEvent.change(await screen.findByLabelText('What should this pack decide?'), {

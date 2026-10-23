@@ -116,8 +116,6 @@ func assistantPolicyOpen(t *testing.T, s *Server, e *assistantRunExecution) *ass
 	x, err := e.openAssistantExecution(t.Context(), assistantExecutionPrompt{Name: "served"})
 	assistantRunMust(t, err)
 	t.Cleanup(x.Close)
-	off := false
-	x.Run.Review = &off
 	return x
 }
 func assistantPolicyInvoke(t *testing.T, e *assistantRunExecution, x *assistantExecution, id, name string, args any) runcontext.ToolResult {
