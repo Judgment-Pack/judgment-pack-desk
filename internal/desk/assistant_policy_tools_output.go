@@ -53,7 +53,8 @@ func validateAssistantPolicyOutput(run assistantRunRecord, out assistantDomainOu
 	var expected []byte
 	if out.Kind == "policy-update" {
 		p := out.PolicyUpdate
-		if producer.Name != "propose_policy_update" || p == nil || out.PolicyInterpretation != nil || out.PolicySource != nil || receipt.PolicySource != nil || scope.Request == nil || p.Version != 1 || !policyInterpretationIDForm.MatchString(p.ID) || p.PolicyID != scope.ID || p.AfterTurnID != run.Binding.RequestID || p.Revision != scope.Request.Revision || p.Revision != args.Revision || p.Before != scope.Request.Candidate || p.Candidate != (assistantPolicyFields{args.Title, args.Narrative, args.ArtifactVersion}) || !validAssistantPolicyFields(p.Candidate) || !policyOperationIDForm.MatchString(p.OperationID) || len(p.Save) != 0 || p.Check == nil || p.Check.Scope != "draft-shape-and-revision" || !contains([]string{"passed", "stale"}, p.Check.Status) {
+		candidate, candidateOK := assistantPolicyUpdateCandidate(scope.Request, args)
+		if producer.Name != "propose_policy_update" || p == nil || out.PolicyInterpretation != nil || out.PolicySource != nil || receipt.PolicySource != nil || scope.Request == nil || p.Version != 1 || !policyInterpretationIDForm.MatchString(p.ID) || p.PolicyID != scope.ID || p.AfterTurnID != run.Binding.RequestID || p.Revision != scope.Request.Revision || p.Revision != args.Revision || p.Before != scope.Request.Candidate || !candidateOK || p.Candidate != candidate || !validAssistantPolicyFields(p.Candidate) || !policyOperationIDForm.MatchString(p.OperationID) || len(p.Save) != 0 || p.Check == nil || p.Check.Scope != "draft-shape-and-revision" || !contains([]string{"passed", "stale"}, p.Check.Status) {
 			return errAssistantRunInvalid
 		}
 		if _, err := time.Parse(time.RFC3339Nano, p.CreatedAt); err != nil {

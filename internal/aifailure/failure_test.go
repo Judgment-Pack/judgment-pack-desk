@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	agentcontract "github.com/Judgment-Pack/judgment-pack-agent/go/contract"
+	agentfailure "github.com/Judgment-Pack/judgment-pack-agent/go/failure"
 )
 
 func TestProviderFailuresAreStructuredAndBounded(t *testing.T) {
@@ -27,5 +30,24 @@ func TestRetryAfterAndUntrustedIdentifiers(t *testing.T) {
 	}
 	if New("unknown-code", "desk", "unknown").Code != "unknown" {
 		t.Fatal("unsupported code accepted")
+	}
+}
+
+func TestReleasedPaceFailureNormalization(t *testing.T) {
+	for _, f := range []*Failure{New("pace exceeded", "desk", "not-started"), FromCode("pace exceeded", "desk", "not-started")} {
+		if f.Code != "pace exceeded" || f.Recovery() != "wait" || f.Error() != agentfailure.Catalog["pace exceeded"].Message {
+			t.Fatalf("released pace failure lost: %+v", f)
+		}
+		raw, err := json.Marshal(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire agentcontract.Failure
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if parsed, ok := agentfailure.Read(wire); !ok || parsed.Code != "pace exceeded" || parsed.Outcome != "not-started" {
+			t.Fatalf("published failure reader lost pace refusal: %+v", wire)
+		}
 	}
 }

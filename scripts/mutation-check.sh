@@ -15650,6 +15650,31 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'return true'
 fi
 
+
+# Desk #627: sparse updates retain exact held fields and explicit empty values.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant policy sparse: held candidate omitted' internal/desk/assistant_policy_tools.go \
+    'candidate := request.Candidate' \
+    'candidate := assistantPolicyFields{}'
+  mutate go 'assistant policy sparse: explicit empty narrative omitted' internal/desk/assistant_policy_tools.go \
+    'if a.present["narrative"] {' \
+    'if a.present["narrative"] && a.Narrative != "" {'
+  mutate go 'assistant policy sparse: revision-only arguments admitted' internal/desk/assistant_policy_tools.go \
+    'len(present) < 2 || !assistantRunDigest(a.Revision)' \
+    'false || !assistantRunDigest(a.Revision)'
+  mutate go 'assistant policy sparse: substituted omitted fields accepted' internal/desk/assistant_policy_tools_output.go \
+    'p.Candidate != candidate' \
+    'false && p.Candidate != candidate'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant policy sparse: browser held candidate omitted' web/src/policies/chat.ts \
+    'const candidate=policyFields(request.candidate)' \
+    'const candidate=policyFields({title:"",narrative:"",artifactVersion:""})'
+  mutate web 'assistant policy sparse: browser explicit empty value omitted' web/src/policies/chat.ts \
+    'candidate[key]=args[key]' \
+    'if(args[key]!=="")candidate[key]=args[key]'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

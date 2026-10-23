@@ -2849,3 +2849,9 @@ go	typed admission: request control validation omitted	TestTypedAdmissionQualifi
 go	typed admission: Exchange pack predispatch validation omitted	TestTypedAdmissionExchangeTargetHTTP
 go	assistant plan: human acceptance stale classification omitted	TestAssistantPlanAcceptanceCurrentState
 go	assistant critic: canonical saved off and Plan controls ignored	TestAssistantCriticReleasedControlMapping
+go	assistant policy sparse: held candidate omitted	TestAssistantPolicySparseUpdateVectors
+go	assistant policy sparse: explicit empty narrative omitted	TestAssistantPolicySparseUpdateVectors
+go	assistant policy sparse: revision-only arguments admitted	TestAssistantPolicySparseUpdateVectors
+go	assistant policy sparse: substituted omitted fields accepted	TestAssistantPolicyOutputImportAndProjectionAssociations
+web	assistant policy sparse: browser held candidate omitted	src/policies/chatTools.test.ts
+web	assistant policy sparse: browser explicit empty value omitted	src/policies/chatTools.test.ts
