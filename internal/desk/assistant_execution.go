@@ -188,7 +188,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		}
 	}
 	promptText += "\n\n" + chat.Transcript + "\n\nTHE PERSON'S MESSAGE\n" + chat.Request.Input
-	run := &adapter.Run{HostTools: registry.offered(gateHostPhase{names: phase.Host}), Purpose: e.source.Start.Purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Review: chat.Review, Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
+	run := &adapter.Run{HostTools: registry.offered(gateHostPhase{names: phase.Host}), Purpose: e.source.Start.Purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Critic: assistantCriticMode(chat), Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
 	if critic != nil {
 		run.TestPrompt, err = runtime.criticPrompt(ctx)
 		if err != nil {

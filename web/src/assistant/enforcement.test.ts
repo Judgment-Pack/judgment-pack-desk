@@ -602,11 +602,22 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
     for (const source of [...sourcesUnder('assistant', 'config', 'routes'), ...harnessSourcesUnder()]) {
       if (source.path.includes('.test.')) continue
       for (const literal of [...source.text.matchAll(/https:\/\/[^\s'"`)]+/g)].map((m) => m[0])) {
+        // Closed schema identities in the published records declarations/data,
+        // never endpoint destinations; no other module or URL is admitted.
+        const schemaRoot = 'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/'
+        const recordSchemas = ['checkpoint.json', 'provenance.json', 'run-event.json#/$defs/critique']
+        const schemaMembers: Record<string, string[]> = {
+          '@judgment-pack/harness/dist/records.js': [...recordSchemas, 'export.json'],
+          '@judgment-pack/harness/dist/records.d.ts': [...recordSchemas, 'export.json'],
+          '@judgment-pack/harness/dist/execution/controller.d.ts': ['checkpoint.json'],
+          '@judgment-pack/harness/dist/testing/scripted.d.ts': recordSchemas
+        }
+        const checkpointSchema = (schemaMembers[source.path] ?? []).some(name => literal === schemaRoot + name)
         const prefill = prefills.includes(literal) && source.path === PREFILL_MODULE
         expect(
           // A user-initiated source-navigation link, never an API endpoint or issuer.
           (source.path === 'routes/StorageFilesView.tsx' && literal === 'https://drive.google.com/open?id=${encodeURIComponent(selected.id') ||
-          prefill || allowed.some((prefix) => literal.startsWith(prefix)),
+          checkpointSchema || prefill || allowed.some((prefix) => literal.startsWith(prefix)),
           `${source.path} carries the literal ${literal}`
         ).toBe(true)
       }
@@ -725,6 +736,15 @@ describe('(7) one member, one refusal', () => {
  * both ways round, exactly as (1) asserts the endpoint's.
  */
 const SESSION_KEYS = [
+  'input',
+  'record',
+  'corpus',
+  'policy',
+  'policyProject',
+  'taskClass',
+  'paceUsed',
+  'policyConnections',
+  'policyRequests',
   'context',
   'purpose',
   'replyLanguage',
@@ -732,19 +752,26 @@ const SESSION_KEYS = [
   'testPrompt',
   'allowConversation',
   'interactive',
+  'critic',
+  'criticProject',
+  'criticReasoning',
+  'existingPack',
+  'reviewerAssigned',
   'adversarialReview',
   'criticCases',
   'tools',
   'callTool',
   'hostTools',
   'skills',
+  'subagents',
+  'childDefinition',
   'model',
   'thinking',
   'signal'
 ] as const
 
 const sessionKeysAreExact: Exactly<
-  keyof import('@judgment-pack/harness/engine').AssistantSession,
+  Extract<keyof import('@judgment-pack/harness/engine').AssistantSession, string | number>,
   (typeof SESSION_KEYS)[number]
 > = true
 
@@ -754,6 +781,12 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // beside the ToolGate rather than behind it, and every guarantee the gate
     // holds would become a guarantee about the door engines happened to use.
     expect(sessionKeysAreExact).toBe(true)
+    // v0.9 adds a private, uninhabitable brand separating raw and resolved sessions.
+    // Keep the executable member inventory closed and inspect that sole symbol too.
+    const body = interfaceBody(harness('engine.d.ts'), 'AssistantSession')
+    expect(body.match(/^\s*readonly \[.*$/gm)?.map(line => line.trim())).toEqual([
+      'readonly [requestSessionBoundary]?: never;'
+    ])
     expect(membersOf(interfaceBody(harness('engine.d.ts'), 'AssistantSession'))).toEqual([
       ...SESSION_KEYS
     ])
@@ -792,7 +825,7 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // capability record's members, read closed by the harness. It is not an
     // address and not a credential, so the rule above holds with it.
     expect(source).toMatch(
-      /model: \{\s*family: EndpointKind;\s*model: string;\s*call: ModelCall;\s*capabilities\?: Partial<import\('\.\/capabilities'\)\.ModelCapabilities>;?\s*\}/
+      /model: \{\s*family: EndpointKind;\s*model: string;\s*call: ModelCall;\s*capabilities\?: Partial<import\("\.\/capabilities\.js"\)\.ModelCapabilities>;?\s*\}/
     )
   })
 
@@ -892,7 +925,25 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
         'JSON.parse(JSON.stringify'
       )
       expect(source.text, `${source.path} calls plain()`).not.toMatch(/[^A-Za-z]plain\(/)
-      if(!FROZEN_TABLES.some(table=>source.path.startsWith(table)))expect(source.text, `${source.path} freezes again`).not.toContain('Object.freeze(')
+      // v0.9 freezes one empty identity token for delegated policy admission.
+      // Strip only that statement; any proposal or second freeze still fails.
+      let freezeSource = source.text
+      if (source.path === '@judgment-pack/harness/dist/context/session.js') {
+        const identityToken = 'const token = Object.freeze({});'
+        expect(source.text.split(identityToken)).toHaveLength(2)
+        expect(source.text).toContain('delegatedPolicies.set(token, projection);')
+        freezeSource = source.text.replace(identityToken, '')
+      }
+      const frozenDeclarations: Record<string, string> = {
+        '@judgment-pack/harness/dist/subagents.js': 'export const SUBAGENT_DEFAULTS = Object.freeze({ cataloguedSubagents: 16, subagentCatalogueBytes: 4000 });',
+        '@judgment-pack/harness/dist/criticSwitch.js': "export const REQUEST_REVIEW_SCHEMA = Object.freeze({ type: 'object', properties: { reason: { type: 'string', description: 'Why a review of this run’s proposal is wanted, in one sentence.' } } });"
+      }
+      const declaration = frozenDeclarations[source.path]
+      if (declaration) {
+        expect(source.text.split(declaration)).toHaveLength(2)
+        freezeSource = freezeSource.replace(declaration, '')
+      }
+      if(!FROZEN_TABLES.some(table=>source.path.startsWith(table)))expect(freezeSource, `${source.path} freezes again`).not.toContain('Object.freeze(')
     }
   })
 

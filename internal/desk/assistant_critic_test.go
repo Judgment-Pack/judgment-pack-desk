@@ -727,3 +727,30 @@ func TestAssistantCriticQueuedRuntime(t *testing.T) {
 		t.Fatal("stale suite reached physical Runtime or retained admission")
 	}
 }
+
+// The existing Desk boolean control remains explicit at the v0.8 boundary.
+// Agent's table default is auto, so leaving Critic empty would change behavior.
+func TestAssistantCriticReleasedControlMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		review *bool
+		want   string
+	}{
+		{"absent", nil, "off"},
+		{"off", new(false), "off"},
+		{"on", new(true), "on"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chat := &assistantChatInput{Review: tc.review}
+			if got := assistantCriticMode(chat); got != tc.want {
+				t.Fatalf("critic control: got %q, want %q", got, tc.want)
+			}
+			if got, want := assistantCriticEnabled(chat, "work"), tc.want == "on"; got != want {
+				t.Fatalf("work critic enabled: got %t, want %t", got, want)
+			}
+			if assistantCriticEnabled(chat, "plan") {
+				t.Fatal("Plan enabled critic inputs")
+			}
+		})
+	}
+}

@@ -72,9 +72,19 @@ func TestAssistantPromptRawPartsAndCanonicalAssembly(t *testing.T) {
 	if parts.Brief != brief || parts.ProjectInstructions != instructions {
 		t.Fatalf("host changed raw parts: %#v", parts)
 	}
+	// v0.8 frames even the temporary legacy-text alias as a canonical recall.
+	// Inspect Desk's raw selection separately; the prompt carries framed data.
+	rawMemory, err := host.MemoryFor(t.Context(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, ok := rawMemory.(string)
 	var entries []memoryEntry
-	if err = json.Unmarshal([]byte(parts.Memory), &entries); err != nil || len(entries) != 1 || entries[0].Key != "outreach-style" {
-		t.Fatalf("explicit query/raw memory: %q %v", parts.Memory, err)
+	if !ok || json.Unmarshal([]byte(text), &entries) != nil || len(entries) != 1 || entries[0].Key != "outreach-style" {
+		t.Fatalf("explicit query/raw memory: %q", rawMemory)
+	}
+	if !strings.Contains(parts.Memory, text) || !strings.Contains(parts.Memory, `id: "legacy-memory"`) {
+		t.Fatalf("canonical recalled record framing missing: %q", parts.Memory)
 	}
 	system := runcontext.SystemText("PACKAGE GUIDANCE", parts, "\nTOOLS")
 	markers := []string{"PACKAGE GUIDANCE", runcontext.BriefHeader, brief, runcontext.ProjectInstructionsHeader, instructions, runcontext.MemoryHeader, parts.Memory, "\nTOOLS"}
@@ -182,7 +192,7 @@ func TestAssistantPromptCancellationAndMemoryLock(t *testing.T) {
 	if _, err = s.assistantPromptHost(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	for _, read := range []func(context.Context) (string, error){host.Brief, host.ProjectInstructions, func(ctx context.Context) (string, error) { return host.MemoryFor(ctx, "outreach") }} {
+	for _, read := range []func(context.Context) (string, error){host.Brief, host.ProjectInstructions, func(ctx context.Context) (string, error) { _, err := host.MemoryFor(ctx, "outreach"); return "", err }} {
 		if _, err = read(ctx); !errors.Is(err, context.Canceled) {
 			t.Fatal(err)
 		}
@@ -270,8 +280,9 @@ func TestAssistantPromptMemoryCountsArrayFraming(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	memory, err := host.MemoryFor(t.Context(), "outreach")
-	if err != nil || len(memory) > limit || memory == "" {
+	answer, err := host.MemoryFor(t.Context(), "outreach")
+	memory, ok := answer.(string) // v0.8.0 legacy-text alias; typed-record adoption belongs to #598.
+	if err != nil || !ok || len(memory) > limit || memory == "" {
 		t.Fatalf("raw recall bound: %d %v", len(memory), err)
 	}
 }

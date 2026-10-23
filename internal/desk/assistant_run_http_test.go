@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/wire"
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 )
@@ -20,20 +22,104 @@ import (
 type assistantProtocolExecutor struct {
 	execute func(context.Context, *assistantRunExecution) error
 	calls   atomic.Int32
+	review  *bool
 }
 
 func (x *assistantProtocolExecutor) Prepare(ctx context.Context, source assistantRunSource) (contract.Checkpoint, error) {
+	return assistantFixtureCheckpoint(ctx, source, x.review)
+}
+
+// Seed the same immutable session inputs that the adapters consume. Policy
+// resolution and checkpoint binding remain owned by ContextualSession.
+func assistantFixtureCheckpoint(ctx context.Context, source assistantRunSource, review *bool) (contract.Checkpoint, error) {
 	chat, err := compileAssistantChatInput(source)
 	if err != nil {
 		return contract.Checkpoint{}, err
 	}
-	run, err := runcontext.ContextualSession(ctx, runcontext.Session{Prompt: source.Text, Purpose: "chat", Model: &runcontext.ModelSession{Family: "gemini", Model: source.Binding.Model}, Context: &runcontext.Input{Phase: source.Binding.Phase, CurrentRequest: &chat.Request}})
+	e := &assistantRunExecution{source: source, record: assistantRunRecord{Binding: source.Binding}}
+	named, err := e.assistantExecutionModels()
+	if err != nil {
+		return contract.Checkpoint{}, err
+	}
+	input := &runcontext.Input{Phase: source.Binding.Phase, Connection: source.Binding.ConnectionID, CurrentRequest: &chat.Request}
+	if source.Profile.Context != nil {
+		raw, err := json.Marshal(source.Profile.Context)
+		if err != nil {
+			return contract.Checkpoint{}, err
+		}
+		value, err := runcontext.ParseJSON(raw)
+		if err != nil {
+			return contract.Checkpoint{}, err
+		}
+		input.Configuration, err = runcontext.ReadConfiguration(value)
+		if err != nil {
+			return contract.Checkpoint{}, err
+		}
+	}
+	r := &adapter.Run{ModelName: source.Binding.Model, Context: input}
+	session := runcontext.Session{Prompt: source.Text, Purpose: source.Start.Purpose, Context: input, Critic: assistantCriticMode(chat), AdversarialReview: review, PolicyLegacyModels: &named}
+	config := source.Connection.Assistant
+	if config.Engine == "codex" {
+		// Prepare precedes persisted execution authority, so it cannot call
+		// assistantAgent. Retain its selected default/override effort here.
+		effort, model := config.Agent.Effort, config.Agent.Model
+		if preferences := assistantChatPreferences(source); preferences != nil && !preferences.Inherit {
+			effort, model = preferences.Effort, preferences.Model
+		}
+		if model == nil || *model != source.Binding.Model {
+			effort = ""
+		}
+		if chat.Reasoning != nil && chat.Reasoning.Get("model").Str() == source.Binding.Model {
+			effort = ""
+			if choice := chat.Reasoning.Get("effort"); choice.IsString() {
+				effort = choice.Str()
+			}
+		}
+		r.Agent = &adapter.Agent{Model: source.Binding.Model, Effort: effort}
+		session.Agent = &runcontext.AgentSession{Model: r.Agent.Model, Effort: r.Agent.Effort}
+	} else {
+		r.Wire = config.Endpoint.Kind
+		host := func(wire.EndpointKind, string) *wire.Value {
+			if config.Endpoint.Capabilities == nil {
+				return wire.Obj()
+			}
+			raw, _ := json.Marshal(config.Endpoint.Capabilities)
+			value, _ := wire.Parse(raw)
+			return value
+		}
+		capabilities, err := wire.CapabilitiesFor(wire.EndpointKind(r.Wire), r.ModelName, host, nil)
+		if err != nil {
+			return contract.Checkpoint{}, err
+		}
+		thinking := chat.Thinking
+		if thinking == "" {
+			thinking = "off"
+		}
+		session.Model = &runcontext.ModelSession{Family: r.Wire, Model: r.ModelName, Thinking: thinking, ToolSchemas: string(capabilities.ToolSchemas)}
+		if capabilities.ContextWindowTokens != nil && capabilities.OutputTokens != nil {
+			session.Model.Budget = &runcontext.ModelBudget{ContextWindowTokens: *capabilities.ContextWindowTokens, OutputTokens: *capabilities.OutputTokens}
+		}
+	}
+	session.PolicyFamilies = adapter.PolicyFamilies(r, named)
+	session.PolicyConnections = append(adapter.PolicyConnectionIDs(r), named.Critic, named.Child)
+	run, err := runcontext.ContextualSession(ctx, session)
 	if err != nil {
 		return contract.Checkpoint{}, err
 	}
 	defer run.Context.Close()
 	return run.Context.Snapshot("")
 }
+
+func assistantFixtureReviewOff(s *Server) {
+	off := false
+	switch x := s.assistantRunExecutor.(type) {
+	case *assistantProtocolExecutor:
+		x.review = &off
+	case *assistantCodexExecutor:
+		x.review = &off
+	}
+}
+
 func (x *assistantProtocolExecutor) Execute(ctx context.Context, e *assistantRunExecution) error {
 	x.calls.Add(1)
 	return x.execute(ctx, e)

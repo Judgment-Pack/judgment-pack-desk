@@ -14966,9 +14966,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant critic: linked target identity ignored' internal/desk/assistant_critic.go \
     '|| packID != current.Pack.ID' \
     '|| false'
-  mutate go 'assistant critic: saved review and Plan controls ignored' internal/desk/assistant_critic.go \
-    'return phase != "plan" && turn.CriticRuns(chat.Review, runcontext.Defaults.AdversarialReview)' \
-    'return true'
+  # Retired location (Agent v0.9 adoption): the canonical critic switch replaces
+  # turn.CriticRuns. Preserve this historical row; the same invariant is retargeted
+  # in the appended canonical critic row below, with its focused catcher.
+  # mutate go 'assistant critic: saved review and Plan controls ignored' internal/desk/assistant_critic.go \
+  # 'return phase != "plan" && turn.CriticRuns(chat.Review, runcontext.Defaults.AdversarialReview)' \
+  # 'return true'
   mutate go 'assistant critic: durable checkpoint binding ignored' internal/desk/assistant_critic.go \
     '|| stored != held.fingerprint' \
     '|| false'
@@ -15637,6 +15640,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant plan: human acceptance stale classification omitted' internal/desk/assistant_plan_references.go \
     'if errors.Is(err, errAssistantRunConflict) {' \
     'if false && errors.Is(err, errAssistantRunConflict) {'
+fi
+
+# Agent v0.9 canonical switch: saved absent/false stays off, and Plan forces off.
+# Retargets "assistant critic: saved review and Plan controls ignored" above.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant critic: canonical saved off and Plan controls ignored' internal/desk/assistant_critic.go \
+    'return runcontext.CriticForcedOff(runcontext.CriticForcedFacts{Phase: phase}) == "" && assistantCriticMode(chat) != "off"' \
+    'return true'
 fi
 
 restore

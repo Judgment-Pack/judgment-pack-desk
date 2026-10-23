@@ -528,12 +528,44 @@ func TestAssistantExecutionPlanAndChildIntersection(t *testing.T) {
 		})
 	}
 }
+func TestAssistantExecutionFixtureChangedPolicyRefusesDispatch(t *testing.T) {
+	var calls atomic.Int32
+	u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		t.Error("changed checkpoint policy reached the model")
+	})
+	s, _, e := assistantExecutionFixtureSource(t, u.server.URL, "work", nil, func(s *Server, _ string, start assistantRunStart) assistantRunStart {
+		assistantFixtureReviewOff(s)
+		return start
+	})
+	x := assistantExecutionOpen(t, s, e)
+	before := assistantExecutionRecord(t, e)
+	x.Run.Critic = "on"
+	assistantRunMust(t, x.Adapter.Run(t.Context(), x.Run))
+	after := assistantExecutionRecord(t, e)
+	refused := false
+	for _, event := range after.Events {
+		if event.Event.Error != nil && event.Event.Error.Failure != nil && event.Event.Error.Failure.Code == "stale-state" && event.Event.Error.Failure.Source == "context" {
+			refused = true
+		}
+	}
+	if !refused || calls.Load() != 0 || after.Checkpoint.Used != before.Checkpoint.Used {
+		t.Fatalf("changed policy did not refuse before dispatch: refused=%v calls=%d used=%d", refused, calls.Load(), after.Checkpoint.Used)
+	}
+	if !reflect.DeepEqual(before.Checkpoint.Policy, after.Checkpoint.Policy) {
+		t.Fatal("refusal replaced the checkpoint policy")
+	}
+}
+
 func TestAssistantExecutionEinoServedPromptAndCheckpoint(t *testing.T) {
 	u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "data: {\"id\":\"fixture\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Fixture answer.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"fixture\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 	})
-	s, _, e := assistantExecutionFixture(t, u.server.URL, "work")
+	s, _, e := assistantExecutionFixtureSource(t, u.server.URL, "work", nil, func(s *Server, _ string, start assistantRunStart) assistantRunStart {
+		assistantFixtureReviewOff(s)
+		return start
+	})
 	x := assistantExecutionOpen(t, s, e)
 	observer := &assistantExecutionPromptObserver{Host: x.Run.Host}
 	x.Run.Host = observer
@@ -625,10 +657,10 @@ func (h *assistantExecutionPromptObserver) ProjectInstructions(ctx context.Conte
 	h.instructions++
 	return h.Host.ProjectInstructions(ctx)
 }
-func (h *assistantExecutionPromptObserver) MemoryFor(ctx context.Context, q string) (string, error) {
+func (h *assistantExecutionPromptObserver) MemoryFor(ctx context.Context, q string) (any, error) {
 	h.memory++
 	h.query = q
-	return h.Host.MemoryFor(ctx, q)
+	return h.Host.(runcontext.MemoryHost).MemoryFor(ctx, q)
 }
 
 func TestAssistantExecutionForeignCheckpointRefused(t *testing.T) {
