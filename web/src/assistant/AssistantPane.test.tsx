@@ -119,12 +119,18 @@ function DraftHarness({
         wrote += 1
         commit(edit(read).text, options)
       },
+      writeIfCurrent: (expect, baseline, edit) => {
+        if (!editing || busyReason) return {applied:false}
+        const result = buffer.commitIfCurrent(expect, baseline, text => edit(buffered(text)).text)
+        if (result.applied) wrote += 1
+        return result
+      },
       diagnosticsAt: () => [],
       ids: { outcomes: [], evidence: [], sources: [], rules: [], factPaths: [] },
       pending: new Map(),
       hold: () => {}
     }),
-    [editing, read, commit]
+    [editing, read, commit, buffer.commitIfCurrent]
   )
   return (
     <EditingContext.Provider value={session}>
@@ -754,10 +760,21 @@ describe('accepting the proposal into the draft', () => {
     expect(held!.canUndo).toBe(false)
   })
 
-  it('stops calling the proposal accepted once Undo has taken it out again', async () => {
-    // "Accepted" is a comparison, not a memory: the draft went back to what it
-    // was, so the proposal is on offer again rather than disabled for ever
-    // with a sentence that is no longer true.
+  it('refuses an enabled captured Accept after a same-tick buffer edit and reports refusal', async () => {
+    await runOver()
+    act(() => {
+      held!.commit(`${DRAFT} `)
+      acceptNow()
+    })
+    expect(wrote).toBe(0)
+    expect(held!.text).toBe(`${DRAFT} `)
+    expect(screen.getByText('The proposal or editor changed. Review it again before saving.')).toBeTruthy()
+    expect(screen.queryByText('Accepted into the draft.')).toBeNull()
+  })
+
+  it('stops calling the proposal accepted after Undo and refuses the old revision', async () => {
+    // "Accepted" is a byte comparison. Undo clears that claim, while its new
+    // revision independently prevents applying the old proposal again.
     await runOver()
     acceptNow()
     await waitFor(() =>
@@ -769,23 +786,23 @@ describe('accepting the proposal into the draft', () => {
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: 'Accept into draft' }).hasAttribute('disabled')
-      ).toBe(false)
+      ).toBe(true)
     )
     expect(screen.getByRole('region', { name: 'The proposal' }).textContent).not.toContain(
       'Accepted into the draft.'
     )
     expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(false)
-    // And accepting again is one more write, not a no-op.
+    // Equal bytes after Undo still belong to a new revision.
     acceptNow()
-    await waitFor(() => expect(held!.dirty).toBe(true))
-    expect(wrote).toBe(2)
+    expect(held!.dirty).toBe(false)
+    expect(wrote).toBe(1)
   })
 
   it('refuses while the route says the draft is busy, and says which', async () => {
     await runOver()
     busyReason = 'This draft is being saved.'
     // A render, so the button picks the reason up.
-    act(() => held!.commit(DRAFT))
+    fireEvent.change(screen.getByLabelText('What should this pack decide?'), {target:{value:`${scenario.policy} `}})
     await waitFor(() =>
       expect(
         helpText(screen.getByRole('button', { name: 'Accept into draft' }))
@@ -1232,26 +1249,26 @@ describe('a proposal belongs to the draft it was given', () => {
     expect(diff.textContent).not.toContain('Compared with the document this request started from.')
   })
 
-  it('goes back to naming the page’s own draft once it is that draft again', async () => {
+  it('keeps the request-time caption after Undo returns the same bytes at a new revision', async () => {
     await runAndEdit()
     act(() => held!.undo())
     await waitFor(() =>
       expect(
         screen.getByRole('region', { name: 'The proposal as a diff' }).textContent
-      ).toContain('Compared with the document this request started from.')
+      ).toContain('Compared with the request-time document.')
     )
   })
 
-  it('offers it again once the draft is back to the bytes it was made about', async () => {
+  it('refuses the old revision once Undo returns the bytes it was made about', async () => {
     await runAndEdit()
     act(() => held!.undo())
     await waitFor(() => expect(held!.text).toBe(DRAFT_A))
     const accept = screen.getByRole('button', { name: 'Accept into draft' })
-    await waitFor(() => expect(accept.hasAttribute('disabled')).toBe(false))
-    expect(screen.queryByText(/The draft changed since this proposal was made/)).toBeNull()
+    expect(accept.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/The draft changed since this proposal was made/)).toBeTruthy()
     fireEvent.click(accept)
-    await waitFor(() => expect(held!.dirty).toBe(true))
-    expect(JSON.parse(held!.text!)).toEqual(PROPOSED)
+    expect(held!.text).toBe(DRAFT_A)
+    expect(wrote).toBe(0)
   })
 })
 

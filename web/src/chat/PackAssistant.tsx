@@ -63,6 +63,7 @@ export function PackAssistant({ packId, title = packId, path, digest, draft, edi
     }
   }, [editing, baseline, chat?.id, path, draft, identity])
   const [accepted, setAccepted] = useState('')
+  const [applyRefused, setApplyRefused] = useState(false)
   const alreadySaved = samePack(candidate?.text,savedFile.data?.content) || !editing && samePack(candidate?.text,draft)
   const proposed = !alreadySaved && baseline?.chatId === chat?.id && candidate && candidate.revision > baseline.revision && state?.status !== 'running' ? candidate.document : undefined
   const unchanged = !!baseline && baseline.bytes === draft && baseline.identity?.path === identity?.path && baseline.identity?.generation === identity?.generation && baseline.identity?.revision === identity?.revision
@@ -75,12 +76,13 @@ export function PackAssistant({ packId, title = packId, path, digest, draft, edi
     onCorrect={()=>store.perform(chat.id,active=>active.run?.send(msg('Correct the proposed pack update using the current policy and saved test findings. Keep saved cases unchanged; ask me if an expectation conflicts with policy.')))}
     basis={durableBasis ?? (baseline ? {packId,path:path??'',text:baseline.bytes} : undefined)} plan={chat.interaction==='plan'}
     onSaved={()=>{if(editing){const next=new URLSearchParams(params);next.delete('edit');navigate({pathname:location.pathname,search:next.toString()},{replace:true})}}}
-    actionDetail={editing ? accepted===candidate.digest ? msg('Applied to the editor. Use Save to write these draft changes.') : !unchanged ? msg('The document changed since this request. Send another message against the current draft.') : undefined : undefined}
+    actionDetail={editing ? accepted===candidate.digest ? msg('Applied to the editor. Use Save to write these draft changes.') : applyRefused ? msg('The proposal or editor changed. Review it again before saving.') : !unchanged ? msg('The document changed since this request. Send another message against the current draft.') : undefined : undefined}
     actions={editing && <ChatAction disabled={!eligible || accepted===candidate.digest} onClick={()=>{
-        if(!eligible || proposed===undefined)return
-        session.write(current=>current.text===baseline?.bytes?applyProposal(current,proposed):current,{coalesceKey:`chat-accept:${chat.id}:${candidate.digest}`})
-        setAccepted(candidate.digest)
+        if(!eligible || proposed===undefined || !baseline?.identity)return
+        const result = session.writeIfCurrent?.(baseline.identity, baseline.bytes, current=>applyProposal(current,proposed))
+        setApplyRefused(!result?.applied)
+        if (result?.applied) setAccepted(candidate.digest)
       }}>{accepted===candidate.digest?msg('Applied to draft'):msg('Apply to draft')}</ChatAction>
     }/>
-  return <ChatPanel active={active} placement="pane" key={chat.id} chat={chat} proposalActions={actions ?? null} context={draft === undefined ? undefined : { ...context!, text: draft, beforeSend: () => { if (baseline?.chatId === chat.id && baseline.bytes === draft && (unchanged || baseline.fromView && !editing)) return; setBaseline({ chatId: chat.id, bytes: draft, revision: candidate?.revision ?? 0, identity, fromView: !editing, path }); setAccepted('') } }} locked={Boolean(busy())} />
+  return <ChatPanel active={active} placement="pane" key={chat.id} chat={chat} proposalActions={actions ?? null} context={draft === undefined ? undefined : { ...context!, text: draft, beforeSend: () => { if (baseline?.chatId === chat.id && baseline.bytes === draft && (unchanged || baseline.fromView && !editing)) return; setBaseline({ chatId: chat.id, bytes: draft, revision: candidate?.revision ?? 0, identity, fromView: !editing, path }); setAccepted(''); setApplyRefused(false) } }} locked={Boolean(busy())} />
 }

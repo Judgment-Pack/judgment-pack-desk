@@ -17,6 +17,7 @@ import { createContext, useContext } from 'react'
 import type { AnchoredDiagnostic } from '../checks'
 import type { Buffered } from './writes'
 import { parsePointer, pointer as pointerOf } from '../pointers'
+import type { BufferApplication, BufferIdentity } from './useDocumentBuffer'
 
 export interface DeclaredIds {
   /** `outcomes[].id`, for the Select a rule's outcome is chosen from. */
@@ -48,6 +49,8 @@ export interface EditingSession {
    * same key are one undo entry, so typing a sentence is one action.
    */
   write: (edit: (current: Buffered) => Buffered, options?: { coalesceKey?: string }) => void
+  /** Explicit proposal application; absent outside a guarded editor, never fall back to write. */
+  writeIfCurrent?: (expect: BufferIdentity, baseline: string, edit: (current: Buffered) => Buffered) => BufferApplication
   /** The diagnostics anchored exactly on one pointer, for the field to print. */
   diagnosticsAt: (pointer: string) => AnchoredDiagnostic[]
   /** The ids the document itself declares, for the Selects over them. */
