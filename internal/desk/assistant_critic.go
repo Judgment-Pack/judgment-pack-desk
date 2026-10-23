@@ -93,8 +93,17 @@ func assistantCriticCases(declared, suite *runcontext.Value) ([]json.RawMessage,
 	return out, nil
 }
 
+// Map Desk's existing boolean control explicitly. An absent control keeps Desk's
+// existing off choice rather than silently inheriting Agent's new auto default.
+func assistantCriticMode(chat *assistantChatInput) string {
+	if chat.Review != nil && *chat.Review {
+		return "on"
+	}
+	return "off"
+}
+
 func assistantCriticEnabled(chat *assistantChatInput, phase string) bool {
-	return phase != "plan" && turn.CriticRuns(chat.Review, runcontext.Defaults.AdversarialReview)
+	return runcontext.CriticForcedOff(runcontext.CriticForcedFacts{Phase: phase}) == "" && assistantCriticMode(chat) != "off"
 }
 
 func (e *assistantRunExecution) readAssistantCriticSnapshot(ctx context.Context) (*assistantCriticSnapshot, error) {

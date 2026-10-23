@@ -331,14 +331,15 @@ bounded() {
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
 #
-# A clean Desk Go suite took 236.653s in PR #583's Go CI while the mutation
-# baseline hit the old 240s watchdog before any mutant ran. Give deliberate
-# test waits roughly twice that runtime: 480s leaves about 243s for load and
-# scheduling variation. Go's own timeout follows 60s later as a backstop. Both
-# selected and whole-package runs, plus the clean baseline binary, share these
-# bounds so their verdicts stay aligned.
+# PR #625's successful Go CI took 446s; its separate mutation worker's
+# unmutated full-package baseline exceeded 480s before any Go mutant ran.
+# Keep selected checks at 480s, but give full-package baselines/fallbacks 900s
+# (the web full-suite bound), below the CI step's 3000s. Go's panic backstop
+# follows each process-tree watchdog by 60s; compilation keeps its own bound.
 GO_TEST_WATCHDOG=480
 GO_TEST_BACKSTOP=540s
+GO_FULL_WATCHDOG=900
+GO_FULL_BACKSTOP=960s
 
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
@@ -359,7 +360,7 @@ run_go() {
   if [ -n "${1:-}" ]; then
     bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP" -run "$1"
   else
-    bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP"
+    bounded "$GO_FULL_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_FULL_BACKSTOP"
   fi
   code=$?
   go_verdict "$code" "$log"
@@ -408,11 +409,12 @@ go_package_green() {
 
 # Run in the same package directory as go test, with its own clean binary.
 run_go_unmutated() {
-  local package="$1" key log code
+  local package="$1" key log code watchdog=$GO_TEST_WATCHDOG backstop=$GO_TEST_BACKSTOP
+  if [ "$2" = . ]; then watchdog=$GO_FULL_WATCHDOG; backstop=$GO_FULL_BACKSTOP; fi
   key=$(go_package_key "$package")
   log="$work/package-$key.baseline.log"
-  bounded "$GO_TEST_WATCHDOG" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
-    _ "$package" "$work/package-$key.test" "$2" "$GO_TEST_BACKSTOP"
+  bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
+    _ "$package" "$work/package-$key.test" "$2" "$backstop"
   code=$?
   go_verdict "$code" "$log"
 }
@@ -14966,9 +14968,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant critic: linked target identity ignored' internal/desk/assistant_critic.go \
     '|| packID != current.Pack.ID' \
     '|| false'
-  mutate go 'assistant critic: saved review and Plan controls ignored' internal/desk/assistant_critic.go \
-    'return phase != "plan" && turn.CriticRuns(chat.Review, runcontext.Defaults.AdversarialReview)' \
-    'return true'
+  # Retired location (Agent v0.9 adoption): the canonical critic switch replaces
+  # turn.CriticRuns. Preserve this historical row; the same invariant is retargeted
+  # in the appended canonical critic row below, with its focused catcher.
+  # mutate go 'assistant critic: saved review and Plan controls ignored' internal/desk/assistant_critic.go \
+  # 'return phase != "plan" && turn.CriticRuns(chat.Review, runcontext.Defaults.AdversarialReview)' \
+  # 'return true'
   mutate go 'assistant critic: durable checkpoint binding ignored' internal/desk/assistant_critic.go \
     '|| stored != held.fingerprint' \
     '|| false'
@@ -15637,6 +15642,39 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant plan: human acceptance stale classification omitted' internal/desk/assistant_plan_references.go \
     'if errors.Is(err, errAssistantRunConflict) {' \
     'if false && errors.Is(err, errAssistantRunConflict) {'
+fi
+
+# Agent v0.9 canonical switch: saved absent/false stays off, and Plan forces off.
+# Retargets "assistant critic: saved review and Plan controls ignored" above.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant critic: canonical saved off and Plan controls ignored' internal/desk/assistant_critic.go \
+    'return runcontext.CriticForcedOff(runcontext.CriticForcedFacts{Phase: phase}) == "" && assistantCriticMode(chat) != "off"' \
+    'return true'
+fi
+
+
+# Desk #627: sparse updates retain exact held fields and explicit empty values.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant policy sparse: held candidate omitted' internal/desk/assistant_policy_tools.go \
+    'candidate := request.Candidate' \
+    'candidate := assistantPolicyFields{}'
+  mutate go 'assistant policy sparse: explicit empty narrative omitted' internal/desk/assistant_policy_tools.go \
+    'if a.present["narrative"] {' \
+    'if a.present["narrative"] && a.Narrative != "" {'
+  mutate go 'assistant policy sparse: revision-only arguments admitted' internal/desk/assistant_policy_tools.go \
+    'len(present) < 2 || !assistantRunDigest(a.Revision)' \
+    'false || !assistantRunDigest(a.Revision)'
+  mutate go 'assistant policy sparse: substituted omitted fields accepted' internal/desk/assistant_policy_tools_output.go \
+    'p.Candidate != candidate' \
+    'false && p.Candidate != candidate'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant policy sparse: browser held candidate omitted' web/src/policies/chat.ts \
+    'const candidate=policyFields(request.candidate)' \
+    'const candidate=policyFields({title:"",narrative:"",artifactVersion:""})'
+  mutate web 'assistant policy sparse: browser explicit empty value omitted' web/src/policies/chat.ts \
+    'candidate[key]=args[key]' \
+    'if(args[key]!=="")candidate[key]=args[key]'
 fi
 
 restore

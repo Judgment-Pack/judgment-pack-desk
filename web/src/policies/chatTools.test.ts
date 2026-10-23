@@ -1,7 +1,10 @@
+import {readFileSync} from 'node:fs'
+import {resolve} from 'node:path'
+import {argumentProblem} from '@judgment-pack/harness/sourceArguments'
 import {afterEach,expect,it,vi} from 'vitest'
 import {policyChatTools} from './chatTools'
 import {readPolicy,type PolicyReply} from './client'
-import {validPolicyProposal,type PolicyProposal} from './chat'
+import {policyUpdateCandidate,validPolicyProposal,type PolicyProposal} from './chat'
 import {planningSession} from '@judgment-pack/harness/planning/policy'
 import {validPolicyId} from './chat'
 import {readCoverageCandidate} from './coverageClient'
@@ -49,4 +52,33 @@ it('reads one exact saved coverage candidate without checking or adding any writ
  vi.mocked(readCoverageCandidate).mockResolvedValue({...coverageReply(),document:{...coverageReply().document,candidate:{...coverageReply().document.candidate,id:'coverage_candidate_'+'0'.repeat(48)}}})
  await expect(tool.execute({coverageId:coverageRecordId,candidateId:coverageCandidateId},signal)).rejects.toThrow('exact selected coverage')
  expect(tools.some(t=>/^(save|approve|review|check)_policy_coverage$/.test(t.name))).toBe(false)
+})
+
+it('reads the shared handwritten sparse update vectors',()=>{
+ const vectors=JSON.parse(readFileSync(resolve(import.meta.dirname,'../../../internal/desk/testdata/policy-sparse-updates.json'),'utf8'))
+ const schema=fixture().tools[1]!.inputSchema
+ for(const row of vectors.cases){
+  expect(policyUpdateCandidate(row.args,vectors.request),row.name).toEqual(row.want)
+  expect(argumentProblem(schema,row.args)===undefined,row.name+' schema').toBe(!!row.want||row.name==='wrong-revision')
+ }
+ expect(schema).toMatchObject({required:['revision'],minProperties:2,additionalProperties:false})
+ // Removing any offered field from a scratch schema breaks a valid shared vector.
+ for(const field of ['revision','title','narrative','artifactVersion']){
+  const scratch=structuredClone(schema) as {properties:Record<string,unknown>}
+  delete scratch.properties[field]
+  expect(vectors.cases.some((row:{args:unknown;want?:unknown})=>row.want&&argumentProblem(scratch,row.args)!==undefined),field).toBe(true)
+ }
+ const noRevision=structuredClone(schema) as {required:string[]}
+ noRevision.required=[]
+ expect(argumentProblem(noRevision,vectors.cases.find((row:{name:string})=>row.name==='missing-revision').args)).toBeUndefined()
+ const noField=structuredClone(schema) as {anyOf?:unknown}
+ delete noField.anyOf
+ expect(argumentProblem(noField,vectors.cases.find((row:{name:string})=>row.name==='revision-only').args)).toBeUndefined()
+})
+it('merges omitted fields from the held request even after mutable saved content changes',async()=>{
+ const f=fixture(),signal=new AbortController().signal
+ vi.mocked(readPolicy).mockResolvedValue({...saved,revision:'c'.repeat(64),document:{...saved.document,candidate:{...saved.document.candidate,narrative:'Concurrent mutable narrative'}}})
+ await expect(f.tools[1]!.execute({revision,title:'Changed title'},signal)).rejects.toThrow('retained')
+ expect(f.proposals[0]).toMatchObject({revision,before:candidate,candidate:{...candidate,title:'Changed title'},check:{status:'stale'}})
+ expect(f.proposals[0]!.candidate.narrative).toBe(candidate.narrative)
 })

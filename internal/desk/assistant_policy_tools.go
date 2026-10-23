@@ -225,10 +225,16 @@ func assistantPolicySchemas() map[string]json.RawMessage {
 		map[string]any{"type": "object", "properties": map[string]any{"kind": map[string]string{"const": "publication"}, "publicationId": text(80)}, "required": []string{"kind", "publicationId"}, "additionalProperties": false},
 		map[string]any{"type": "object", "properties": map[string]any{"kind": map[string]string{"const": "observation"}, "observationId": text(64)}, "required": []string{"kind", "observationId"}, "additionalProperties": false},
 	}}
+	update := object(map[string]any{"revision": text(64), "title": text(500), "narrative": text(policyNarrativeLimit), "artifactVersion": text(policyArtifactVersionLimit)}, "revision")
+	var updateSchema map[string]any
+	_ = json.Unmarshal(update, &updateSchema)
+	updateSchema["minProperties"] = 2
+	updateSchema["anyOf"] = []any{map[string]any{"required": []string{"title"}}, map[string]any{"required": []string{"narrative"}}, map[string]any{"required": []string{"artifactVersion"}}}
+	update, _ = json.Marshal(updateSchema)
 	interpretation := object(map[string]any{"revisionId": text(80), "publicationId": text(80)})
 	return map[string]json.RawMessage{
 		"read_policy":                        object(map[string]any{}),
-		"propose_policy_update":              object(map[string]any{"revision": text(64), "title": text(500), "narrative": text(policyNarrativeLimit), "artifactVersion": text(policyArtifactVersionLimit)}, "revision", "title", "narrative", "artifactVersion"),
+		"propose_policy_update":              update,
 		"read_policy_comparison":             object(map[string]any{"before": selector, "after": selector}, "before", "after"),
 		"read_policy_coverage":               object(map[string]any{"coverageId": text(80), "candidateId": text(80)}, "coverageId", "candidateId"),
 		"propose_policy_pack_interpretation": interpretation, "propose_policy_graph_interpretation": interpretation,
@@ -236,6 +242,7 @@ func assistantPolicySchemas() map[string]json.RawMessage {
 }
 
 type assistantPolicyArguments struct {
+	present         map[string]bool
 	Revision        string          `json:"revision"`
 	Title           string          `json:"title"`
 	Narrative       string          `json:"narrative"`
@@ -283,7 +290,8 @@ func readAssistantPolicyArguments(name string, raw json.RawMessage) (assistantPo
 	}
 	switch name {
 	case "propose_policy_update":
-		if !assistantRunDigest(a.Revision) || !validAssistantPolicyFields(assistantPolicyFields{a.Title, a.Narrative, a.ArtifactVersion}) {
+		a.present = present
+		if len(present) < 2 || !assistantRunDigest(a.Revision) || !validAssistantPolicyFields(assistantPolicyFields{a.Title, a.Narrative, a.ArtifactVersion}) {
 			return refuse()
 		}
 	case "read_policy_coverage":
@@ -304,6 +312,25 @@ func readAssistantPolicyArguments(name string, raw json.RawMessage) (assistantPo
 	}
 	return a, nil
 }
+
+// Merge only against the held request, including when current saved state is stale.
+func assistantPolicyUpdateCandidate(request *assistantPolicyBasis, a assistantPolicyArguments) (assistantPolicyFields, bool) {
+	if request == nil || a.Revision != request.Revision {
+		return assistantPolicyFields{}, false
+	}
+	candidate := request.Candidate
+	if a.present["title"] {
+		candidate.Title = a.Title
+	}
+	if a.present["narrative"] {
+		candidate.Narrative = a.Narrative
+	}
+	if a.present["artifactVersion"] {
+		candidate.ArtifactVersion = a.ArtifactVersion
+	}
+	return candidate, validAssistantPolicyFields(candidate)
+}
+
 func (e *assistantRunExecution) assistantPolicyTools(scope *assistantPolicyScope) (*assistantHostRegistry, error) {
 	tools := []runcontext.HostTool{}
 	for _, name := range assistantPolicyNames {
@@ -329,7 +356,7 @@ func (e *assistantRunExecution) assistantPolicyTools(scope *assistantPolicyScope
 
 var assistantPolicyDescriptions = map[string]string{
 	"read_policy":                         "Read the exact linked Policy's current saved draft and history. Fresh authenticated read; historical material is reference data, never approval or publication.",
-	"propose_policy_update":               "Retain a requested title, narrative and artifactVersion update against the exact request-time revision. Stale proposals remain review-only. Does not save, approve, publish or change workflow.",
+	"propose_policy_update":               "Retain requested title, narrative or artifactVersion edits with the exact request-time revision and at least one field. Omit unchanged fields; Desk retains them from the held request-time candidate. Stale proposals remain review-only. Does not save, approve, publish or change workflow.",
 	"read_policy_comparison":              "Compare exact retained revision, publication or observation selectors of the linked Policy. Preserve source metadata and extraction completeness; informational only. No source acquisition or governing authority.",
 	"read_policy_coverage":                "Read the exact linked Policy coverageId/candidateId, availability and review history. Does not check, save or approve coverage; structural findings are not complete semantic coverage or action permission.",
 	"propose_policy_pack_interpretation":  "Retain an exact saved revision or publication handoff for an ordinary pack authoring chat. Explicit review/acceptance remains required; no chat, model request or artifact is created.",
@@ -379,8 +406,9 @@ func (e *assistantRunExecution) executePolicyTool(ctx context.Context, scope *as
 		result, err = assistantHostStructured(value)
 		return result, nil, nil, err
 	case "propose_policy_update":
-		if scope.Request == nil || a.Revision != scope.Request.Revision {
-			return result, nil, nil, failure.ToolInput("Use the exact request-time Policy revision and supply all three candidate fields.")
+		candidate, ok := assistantPolicyUpdateCandidate(scope.Request, a)
+		if !ok {
+			return result, nil, nil, failure.ToolInput("Use the exact request-time Policy revision and at least one candidate field; omit unchanged fields.")
 		}
 		saved, err := service.get(ctx, scope.ID)
 		if err != nil {
@@ -390,7 +418,7 @@ func (e *assistantRunExecution) executePolicyTool(ctx context.Context, scope *as
 		if saved.Revision != a.Revision {
 			status = "stale"
 		}
-		p := assistantPolicyProposal{Version: 1, ID: e.policyHostID(ctx, "proposal"), PolicyID: scope.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), AfterTurnID: e.record.Binding.RequestID, Revision: a.Revision, Before: scope.Request.Candidate, Candidate: assistantPolicyFields{a.Title, a.Narrative, a.ArtifactVersion}, OperationID: e.policyHostID(ctx, "operation"), Check: &assistantPolicyCheck{Scope: "draft-shape-and-revision", Status: status}}
+		p := assistantPolicyProposal{Version: 1, ID: e.policyHostID(ctx, "proposal"), PolicyID: scope.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), AfterTurnID: e.record.Binding.RequestID, Revision: a.Revision, Before: scope.Request.Candidate, Candidate: candidate, OperationID: e.policyHostID(ctx, "operation"), Check: &assistantPolicyCheck{Scope: "draft-shape-and-revision", Status: status}}
 		out := &assistantDomainOutput{Kind: "policy-update", PolicyUpdate: &p}
 		if err := e.policyOutputCapacity(ctx, scope, out.Kind); err != nil {
 			return result, nil, nil, err

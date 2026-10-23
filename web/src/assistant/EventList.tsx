@@ -55,6 +55,19 @@ const COMPACT: ReadonlySet<AssistantEvent['type']> = new Set([
  */
 export function describeEvent(event: AssistantEvent, msg: typeof uiMessage = uiMessage): string {
   switch (event.type) {
+    case 'steered': return msg('New guidance delivered')
+    case 'compacted': return msg('Earlier context compacted')
+    case 'policy_resolved': return msg('Run settings resolved')
+    case 'critic_decided': return event.ran ? msg('Review started') : msg('Review skipped')
+    case 'memory_proposed': return msg('Memory proposed for review')
+    case 'memory_recalled': return msg('Project memory recalled')
+    case 'edit_applied': return msg('Draft edit validated; nothing was saved')
+    case 'edit_refused': return msg('Draft edit refused')
+    case 'output_guarded': return event.action === 'redact' ? msg('Sensitive output redacted') : msg('Sensitive output refused')
+    case 'export_written': return msg('Run records exported')
+    case 'connection_switched': return msg('Model connection changed')
+    case 'usage': return msg('Model usage recorded')
+    case 'recorded': return msg('Run recording saved')
     case 'execution_checkpoint': return msg('Task progress saved')
     case 'budget_paused': return msg('Paused · Request limit reached')
     case 'approval_requested':

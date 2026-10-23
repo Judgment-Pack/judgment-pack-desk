@@ -23,6 +23,7 @@ const assistantPlanCandidate = `{"objective":"Review exact Δ 💡","steps":["Re
 func assistantPlanPrepareSource(t *testing.T) func(*Server, string, assistantRunStart) assistantRunStart {
 	t.Helper()
 	return func(s *Server, token string, start assistantRunStart) assistantRunStart {
+		assistantFixtureReviewOff(s)
 		saved := policyWorkspaceRead(t, s, token, "/api/conversations")
 		var doc conversationDocument
 		assistantRunMust(t, json.Unmarshal(saved.Content, &doc))

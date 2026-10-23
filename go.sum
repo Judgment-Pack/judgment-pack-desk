@@ -1,5 +1,5 @@
-github.com/Judgment-Pack/judgment-pack-agent/go v0.6.0 h1:WeDQdePpO2RIcSLzhRNnR4Qs+urr6yW7BOk3ljUwgds=
-github.com/Judgment-Pack/judgment-pack-agent/go v0.6.0/go.mod h1:AVl+6oeQwnOgRb5tNeNV9oLR1u7ZqneRKvqr+lVPthg=
+github.com/Judgment-Pack/judgment-pack-agent/go v0.9.0 h1:x1KQUtuvfu4o8hn0IYMxyfLlkIMlTOYg3Sbgx7pMpM8=
+github.com/Judgment-Pack/judgment-pack-agent/go v0.9.0/go.mod h1:AVl+6oeQwnOgRb5tNeNV9oLR1u7ZqneRKvqr+lVPthg=
 github.com/airbrake/gobrake v3.6.1+incompatible/go.mod h1:wM4gu3Cn0W0K7GUuVWnlXZU11AGBXMILnrdOU8Kn00o=
 github.com/bahlo/generic-list-go v0.2.0 h1:5sz/EEAK+ls5wF+NeqDpk5+iNdMDXrh3z3nPnH1Wvgk=
 github.com/bahlo/generic-list-go v0.2.0/go.mod h1:2KvAjgMlE5NNynlg/5iLrrCCZ2+5xWbdbCW3pNTGyYg=

@@ -21,7 +21,7 @@ func currentAssistantPromptPolicy() assistantPromptPolicy {
 
 // assistantPromptHost snapshots the selected project's explicit configuration.
 // Agent asks its parts once per run and owns all framing and layer ordering.
-func (s *Server) assistantPromptHost(ctx context.Context) (runcontext.Host, error) {
+func (s *Server) assistantPromptHost(ctx context.Context) (*projectPromptHost, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -46,6 +46,7 @@ type projectPromptHost struct {
 }
 
 var _ runcontext.Host = (*projectPromptHost)(nil)
+var _ runcontext.MemoryHost = (*projectPromptHost)(nil)
 
 func (h *projectPromptHost) Brief(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
@@ -74,7 +75,7 @@ func (h *projectPromptHost) ProjectInstructions(ctx context.Context) (string, er
 	return h.instructions, nil
 }
 
-func (h *projectPromptHost) MemoryFor(ctx context.Context, query string) (string, error) {
+func (h *projectPromptHost) MemoryFor(ctx context.Context, query string) (any, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}

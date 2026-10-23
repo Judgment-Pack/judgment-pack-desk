@@ -626,7 +626,38 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn("./internal/desk", calls)
         self.assertEqual(calls.count("go test -c"), 1, calls)
 
-    def test_go_baseline_selected_and_full_runs_share_ordered_timeout_budgets(self):
+    def instrument_go_timeout_budgets(self):
+        # Run the real driver with short stand-ins, recording the actual watchdog
+        # selected by each call. A declared synthetic work cost exceeds a budget
+        # deterministically, without waiting 480 or 900 seconds in a unit test.
+        script = self.root / "scripts/mutation-check.sh"
+        source = script.read_text()
+        opening = 'bounded() {\n'
+        self.assertEqual(source.count(opening), 1)
+        probe = r'''  local budget_kind=other budget_cost=0
+  if [ "${3:-}" = bash ] && [[ "${5:-}" == *-test.run* ]]; then
+    if [ "${9:-}" = . ]; then budget_kind=full-baseline; else budget_kind=clean-selection; fi
+  elif [ "${3:-}" = go ] && [ "${7:-}" = -timeout ]; then
+    if [ "${9:-}" = -run ]; then budget_kind=selected-mutant; else budget_kind=full-mutant; fi
+  elif [ "${3:-}" = go ]; then
+    budget_kind=build
+  fi
+  printf 'budget %s %s\n' "$budget_kind" "$1" >> "$FAKE_LOG"
+  case "$budget_kind" in
+    full-baseline) budget_cost=${FAKE_GO_FULL_COST:-0} ;;
+    full-mutant) budget_cost=${FAKE_GO_FULL_MUTANT_COST:-${FAKE_GO_FULL_COST:-0}} ;;
+    selected-mutant) budget_cost=${FAKE_GO_SELECTED_COST:-0} ;;
+  esac
+  if [ "$1" -lt "$budget_cost" ]; then
+    printf 'simulated %s watchdog\n' "$budget_kind" > "$2"
+    return 124
+  fi
+'''
+        script.write_text(source.replace(opening, opening + probe))
+        self.git("add", "scripts/mutation-check.sh")
+        self.git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qsm", "budget fixture")
+
+    def budget_fixture(self):
         rows = [
             ("go", "bridge selected budget", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge"),
             ("go", "bridge full budget", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge"),
@@ -635,24 +666,70 @@ class SelectionTests(unittest.TestCase):
             "bridge selected budget": "TestBridge",
             "bridge full budget": "TestOther",
         }, {"./internal/bridge": {"TestBridge": ["broken bridge"], "TestOther": []}})
+        self.instrument_go_timeout_budgets()
 
+    def test_go_baseline_and_full_runs_have_separate_ordered_timeout_budgets(self):
+        self.budget_fixture()
         source = HARNESS.read_text()
-        self.assertIn("GO_TEST_WATCHDOG=480", source)
-        self.assertIn("GO_TEST_BACKSTOP=540s", source)
-        self.assertLess(480, 540, "the process-tree watchdog must fire before Go's panic timeout")
+        for declaration in ("GO_TEST_WATCHDOG=480", "GO_TEST_BACKSTOP=540s",
+                            "GO_FULL_WATCHDOG=900", "GO_FULL_BACKSTOP=960s"):
+            self.assertIn(declaration, source)
+        self.assertLess(480, 540, "selected watchdog must precede the panic timeout")
+        self.assertLess(900, 960, "full-package watchdog must precede the panic timeout")
         self.assertIn('bounded 1800 "$log" go test -c', source, "build timeout must remain independent")
-        self.assertIn('bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP" -run "$1"', source)
-        self.assertIn('bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP"', source)
-        self.assertIn('bounded "$GO_TEST_WATCHDOG" "$log" bash -c', source)
 
         result = self.harness("go")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = self.log.read_text().splitlines()
+        for route in ("budget full-baseline 900", "budget clean-selection 480",
+                      "budget selected-mutant 480", "budget full-mutant 900", "budget build 1800"):
+            self.assertIn(route, calls)
         executions = [line for line in calls if line.startswith("go test ./internal/bridge -count=1")]
         self.assertTrue(any("-timeout 540s -run ^(TestBridge)$" in line for line in executions), calls)
-        self.assertTrue(any("-timeout 540s" in line and "-run" not in line for line in executions), calls)
+        self.assertTrue(any("-timeout 960s" in line and "-run" not in line for line in executions), calls)
+        self.assertTrue(any(line.startswith("go-test-binary ") and "-test.timeout=960s -test.run ." in line for line in calls), calls)
         self.assertTrue(any(line.startswith("go-test-binary ") and "-test.timeout=540s" in line for line in calls), calls)
         self.assertEqual(self.how(result), {"bridge selected budget": "selected", "bridge full budget": "fallback"})
+
+        whole = self.harness("go", "--whole")
+        self.assertEqual(whole.returncode, 0, whole.stdout + whole.stderr)
+        self.assertIn("budget full-mutant 900", self.log.read_text())
+        self.assertNotIn("budget selected-mutant", self.log.read_text())
+        self.assertEqual(set(self.how(whole).values()), {"whole"})
+
+    def test_full_package_cost_above_selected_budget_still_checks_mutants(self):
+        self.budget_fixture()
+        self.env["FAKE_GO_FULL_COST"] = "900"
+        result = self.harness("go")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.table(result), {"bridge selected budget": "TestBridge", "bridge full budget": "TestBridge"})
+        self.assertEqual(self.how(result), {"bridge selected budget": "selected", "bridge full budget": "fallback"})
+
+    def test_full_package_timeout_still_blocks_mutants_and_selected_timeout_falls_back(self):
+        self.budget_fixture()
+        self.env["FAKE_GO_FULL_COST"] = "901"
+        timed_out = self.harness("go")
+        self.assertNotEqual(timed_out.returncode, 0)
+        self.assertTrue(all("BASELINE NOT GREEN" in verdict for verdict in self.table(timed_out).values()))
+        self.assertIn("INCONCLUSIVE", timed_out.stderr)
+        self.assertNotIn("budget selected-mutant", self.log.read_text())
+        self.assertNotIn("budget full-mutant", self.log.read_text())
+
+        self.env.pop("FAKE_GO_FULL_COST")
+        self.env["FAKE_GO_SELECTED_COST"] = "481"
+        selected_timeout = self.harness("go")
+        self.assertEqual(selected_timeout.returncode, 0, selected_timeout.stdout + selected_timeout.stderr)
+        self.assertEqual(set(self.how(selected_timeout).values()), {"fallback"})
+        self.assertEqual(set(self.table(selected_timeout).values()), {"TestBridge"})
+        self.assertIn("budget selected-mutant 480", self.log.read_text())
+        self.assertIn("budget full-mutant 900", self.log.read_text())
+
+        self.env.pop("FAKE_GO_SELECTED_COST")
+        self.env["FAKE_GO_FULL_MUTANT_COST"] = "901"
+        fallback_timeout = self.harness("go")
+        self.assertNotEqual(fallback_timeout.returncode, 0)
+        self.assertIn("INCONCLUSIVE", self.table(fallback_timeout)["bridge full budget"])
+        self.assertEqual(self.how(fallback_timeout)["bridge full budget"], "fallback")
 
     def test_clean_listing_uses_package_directory_for_initialization(self):
         row = ("go", "package-relative initialization", "internal/bridge/a.go",

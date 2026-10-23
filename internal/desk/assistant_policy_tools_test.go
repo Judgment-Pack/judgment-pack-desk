@@ -301,7 +301,7 @@ func TestAssistantPolicyPlanChildAndStaleBasis(t *testing.T) {
 				}
 				return
 			}
-			args := map[string]string{"revision": p.Revision, "title": "Changed", "narrative": assistantPolicyNarrative, "artifactVersion": "1.1.0"}
+			args := map[string]string{"revision": p.Revision, "title": "Changed"}
 			child := assistantGraphFind(t, x.Run.HostTools, "propose_policy_update")
 			raw, _ := json.Marshal(args)
 			no, err := child.Execute(runcontext.WithCallID(t.Context(), "child"), raw)
@@ -318,7 +318,7 @@ func TestAssistantPolicyPlanChildAndStaleBasis(t *testing.T) {
 			}
 			stale := assistantPolicyInvoke(t, e, x, "stale", "propose_policy_update", args)
 			record := assistantExecutionRecord(t, e)
-			if !stale.Err() || len(record.DomainOutputs) != 1 || record.DomainOutputs[0].PolicyUpdate.Check.Status != "stale" {
+			if !stale.Err() || len(record.DomainOutputs) != 1 || record.DomainOutputs[0].PolicyUpdate.Check.Status != "stale" || record.DomainOutputs[0].PolicyUpdate.Candidate.Narrative != p.Document.Candidate.Narrative {
 				t.Fatal("stale proposal lost or became savable")
 			}
 			assistantRunMust(t, validateAssistantDomainOutputs(record))
@@ -341,4 +341,128 @@ func TestAssistantPolicyPlanChildAndStaleBasis(t *testing.T) {
 func assistantPolicyEvent(t *testing.T, e *assistantRunExecution, id, name string, raw json.RawMessage) {
 	t.Helper()
 	assistantRunMust(t, e.writer.boundEvent(t.Context(), contract.RunEvent{ToolCall: &contract.ToolCall{Type: "tool_call", CallID: &id, Name: name, Args: raw}}))
+}
+
+func TestAssistantPolicySparseUpdateVectors(t *testing.T) {
+	raw, err := os.ReadFile("testdata/policy-sparse-updates.json")
+	assistantRunMust(t, err)
+	var vectors struct {
+		Request assistantPolicyBasis `json:"request"`
+		Cases   []struct {
+			Name string                 `json:"name"`
+			Args json.RawMessage        `json:"args"`
+			Want *assistantPolicyFields `json:"want"`
+		} `json:"cases"`
+	}
+	assistantRunMust(t, json.Unmarshal(raw, &vectors))
+	schemaRaw := assistantPolicySchemas()["propose_policy_update"]
+	schemaValue := runcontext.MustParseJSON(string(schemaRaw))
+	for _, row := range vectors.Cases {
+		t.Run(row.Name, func(t *testing.T) {
+			schemaValid := runcontext.ArgumentProblem(schemaValue, runcontext.MustParseJSON(string(row.Args))) == ""
+			if schemaValid != (row.Want != nil || row.Name == "wrong-revision") {
+				t.Fatal("offered schema disagrees with shared vector")
+			}
+			args, err := readAssistantPolicyArguments("propose_policy_update", row.Args)
+			got, ok := assistantPolicyUpdateCandidate(&vectors.Request, args)
+			if row.Want == nil {
+				if err == nil && ok {
+					t.Fatal("malformed update admitted")
+				}
+				return
+			}
+			assistantRunMust(t, err)
+			if !ok || got != *row.Want {
+				t.Fatalf("sparse update lost held fields: %+v, want %+v", got, *row.Want)
+			}
+		})
+	}
+	// Every offered field has a valid vector that fails if the scratch schema loses it.
+	for _, field := range []string{"revision", "title", "narrative", "artifactVersion"} {
+		var scratch map[string]any
+		assistantRunMust(t, json.Unmarshal(schemaRaw, &scratch))
+		delete(scratch["properties"].(map[string]any), field)
+		changed, _ := json.Marshal(scratch)
+		caught := false
+		for _, row := range vectors.Cases {
+			if row.Want != nil && runcontext.ArgumentProblem(runcontext.MustParseJSON(string(changed)), runcontext.MustParseJSON(string(row.Args))) != "" {
+				caught = true
+			}
+		}
+		if !caught {
+			t.Fatal("schema omission has no vector", field)
+		}
+	}
+	for _, control := range []struct{ key, row string }{{"required", "missing-revision"}, {"anyOf", "revision-only"}} {
+		var scratch map[string]any
+		assistantRunMust(t, json.Unmarshal(schemaRaw, &scratch))
+		delete(scratch, control.key)
+		changed, _ := json.Marshal(scratch)
+		for _, row := range vectors.Cases {
+			if row.Name == control.row && runcontext.ArgumentProblem(runcontext.MustParseJSON(string(changed)), runcontext.MustParseJSON(string(row.Args))) != "" {
+				t.Fatal("control mutant did not expose invalid vector", control.key)
+			}
+		}
+	}
+	var schema struct {
+		Required      []string `json:"required"`
+		MinProperties int      `json:"minProperties"`
+	}
+	assistantRunMust(t, json.Unmarshal(assistantPolicySchemas()["propose_policy_update"], &schema))
+	if len(schema.Required) != 1 || schema.Required[0] != "revision" || schema.MinProperties != 2 {
+		t.Fatal("sparse schema lost required revision/field")
+	}
+}
+
+func TestAssistantPolicySparseLargeActualAdapters(t *testing.T) {
+	for _, native := range []bool{false, true} {
+		t.Run(fmt.Sprint(native), func(t *testing.T) {
+			narrative := strings.Repeat("x", policyNarrativeLimit-len("HELD-NARRATIVE")) + "HELD-NARRATIVE"
+			var held policyReply
+			var calls atomic.Int32
+			u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+				if calls.Add(1) == 1 {
+					assistantPolicySSE(w, "propose_policy_update", map[string]string{"revision": held.Revision, "title": "Only title changed"}, "")
+				} else {
+					assistantPolicySSE(w, "", nil, "The complete draft proposal is ready for review.")
+				}
+			})
+			s, token, e, p, trace := assistantPolicyFixture(t, u.server.URL, "work", native, func(s *Server, token string, p policyReply) policyReply {
+				edit := policyEditBody(t, p)
+				edit.Narrative = narrative
+				return policyMutation(t, policyCall(s, token, "PUT", "/api/policies/"+p.Document.ID, edit)).Policy
+			})
+			held = p
+			if native {
+				peer := strings.Replace(assistantExecutionCodexPeer, "if mode=='delegate' and index==1:\n   tool(offered('delegate_tasks'),{'tasks':[{'title':'Inspect schema','objective':'Inspect the schema only.','profile':'review'}]})", "if mode=='delegate' and index==1: tool(offered('propose_policy_update'),{'revision':"+fmt.Sprintf("%q", p.Revision)+",'title':'Only title changed'})", 1)
+				assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(trace), "peer.py"), []byte(peer), 0600))
+			}
+			x := assistantPolicyOpen(t, s, e)
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
+			record := assistantExecutionRecord(t, e)
+			if len(record.DomainOutputs) != 1 {
+				t.Fatalf("missing sparse proposal: outputs=%d writer=%v", len(record.DomainOutputs), e.writer.Err())
+			}
+			proposal := record.DomainOutputs[0].PolicyUpdate
+			if proposal == nil || proposal.Revision != p.Revision || proposal.Candidate.Title != "Only title changed" || proposal.Candidate.Narrative != narrative || proposal.Before.Narrative != narrative || proposal.Candidate.ArtifactVersion != p.Document.Candidate.ArtifactVersion || proposal.Check.Status != "passed" {
+				t.Fatal("large sparse proposal lost held fields")
+			}
+			assistantRunMust(t, validateAssistantDomainOutputs(record))
+			for _, op := range record.Operations {
+				if op.Kind == "host" && op.Name == "propose_policy_update" {
+					var intent assistantHostIntent
+					assistantRunMust(t, readAssistantHostReceipt(op.Intent, &intent))
+					if bytes.Contains(intent.Arguments, []byte("narrative")) || len(intent.Arguments) > 256 {
+						t.Fatal("model echoed unchanged narrative")
+					}
+				}
+			}
+			current := policyRead(t, s, token, p.Document.ID)
+			if current.Revision != p.Revision || current.Document.Candidate != p.Document.Candidate {
+				t.Fatal("proposal wrote Policy")
+			}
+		})
+	}
 }
