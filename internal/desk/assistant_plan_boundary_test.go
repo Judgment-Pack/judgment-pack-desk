@@ -210,27 +210,69 @@ func TestAssistantPlanCancelledObservedAndUnknown(t *testing.T) {
 func TestAssistantPlanQueuedAuthority(t *testing.T) {
 	for _, mode := range []string{"phase", "source", "session", "profile", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
-			s, token, e := assistantExecutionFixture(t, "http://127.0.0.1:1", "plan")
+			release := make(chan struct{})
+			defer close(release)
+			s, token, e := assistantExecutionFixtureExecute(t, "http://127.0.0.1:1", "plan", func(ctx context.Context, _ *assistantRunExecution) error {
+				<-ctx.Done()
+				<-release
+				return ctx.Err()
+			})
 			assistantPlanSeed(t, s)
+			call := "queued-plan"
+			args := json.RawMessage(assistantPlanCandidate)
+			// Journal on the test goroutine; child failures must return through done.
+			assistantRunMust(t, e.writer.boundEvent(t.Context(), contract.RunEvent{ToolCall: &contract.ToolCall{Type: "tool_call", CallID: &call, Name: assistantPlanTool, Args: args}}))
+			wake, unsubscribe, err := e.service.subscribe(e.record.ID)
+			assistantRunMust(t, err)
+			defer unsubscribe()
 			s.writes.Lock()
 			held := true
+			callCtx, cancelCall := context.WithCancel(t.Context())
+			ctx := context.WithValue(runcontext.WithCallID(callCtx, call), assistantHostRootKey{}, true)
+			type outcome struct {
+				result runcontext.ToolResult
+				err    error
+			}
+			done := make(chan outcome, 1)
+			drained := false
 			defer func() {
+				cancelCall()
 				if held {
 					s.writes.Unlock()
 				}
-			}()
-			done := make(chan runcontext.ToolResult, 1)
-			go func() { done <- assistantPlanInvoke(t, e, "queued-plan", true, assistantPlanCandidate) }()
-			deadline := time.Now().Add(3 * time.Second)
-			for {
-				r := assistantExecutionRecord(t, e)
-				if len(r.Operations) > 0 && r.Operations[len(r.Operations)-1].State == "dispatched" {
-					break
+				if !drained {
+					select {
+					case <-done:
+					case <-time.After(3 * time.Second):
+						t.Error("queued Plan child failed to drain during cleanup")
+					}
 				}
-				if time.Now().After(deadline) {
+			}()
+			// The finalizer stays paused until the call and its observed refusal drain.
+			go func() { result, err := e.assistantPlanTools()[0].Execute(ctx, args); done <- outcome{result, err} }()
+			waitCtx, stopWait := context.WithTimeout(t.Context(), 3*time.Second)
+			defer stopWait()
+			var queued assistantRunOperation
+		waitForDispatch:
+			for {
+				select {
+				case <-wake:
+					// A commit notification follows the transaction's private-data unlock.
+					// Read once per notification, rather than competing with writes every ms.
+					record, err := e.writer.lease.store.Read(waitCtx, e.record.Binding, e.record.ID)
+					assistantRunMust(t, err)
+					for _, op := range record.Operations {
+						if op.Name == assistantPlanTool && op.State == "dispatched" {
+							queued = op
+							break waitForDispatch
+						}
+					}
+				case returned := <-done:
+					drained = true
+					t.Fatalf("Plan returned before waiting behind writes: %v", returned.err)
+				case <-waitCtx.Done():
 					t.Fatal("Plan did not wait behind writes")
 				}
-				time.Sleep(time.Millisecond)
 			}
 			switch mode {
 			case "phase", "source":
@@ -243,8 +285,10 @@ func TestAssistantPlanQueuedAuthority(t *testing.T) {
 				} else {
 					raw = bytes.ReplaceAll(raw, []byte("Review exact input"), []byte("Changed input"))
 				}
-				assistantRunMust(t, writePrivateData(data.root, s.conversationName(), raw))
-				data.root.Close()
+				err = writePrivateData(data.root, s.conversationName(), raw)
+				closeErr := data.root.Close()
+				assistantRunMust(t, err)
+				assistantRunMust(t, closeErr)
 			case "session":
 				s.sessions.revoke(token)
 			case "profile":
@@ -255,15 +299,21 @@ func TestAssistantPlanQueuedAuthority(t *testing.T) {
 			s.writes.Unlock()
 			held = false
 			select {
-			case result := <-done:
-				if !result.Err() {
+			case returned := <-done:
+				drained = true
+				assistantRunMust(t, returned.err)
+				if !returned.result.Err() {
 					t.Fatal("queued stale authority proposed Plan", mode)
 				}
 			case <-time.After(3 * time.Second):
 				t.Fatal("queued Plan failed to drain")
 			}
-			if len(assistantExecutionRecord(t, e).DomainOutputs) != 0 {
+			record := assistantExecutionRecord(t, e)
+			if len(record.DomainOutputs) != 0 {
 				t.Fatal("queued authority loss retained Plan")
+			}
+			if len(record.Operations) != 1 || record.Operations[0].ID != queued.ID || record.Operations[0].State != "refused" {
+				t.Fatal("authority loss dispatched more work or lost the exact refused operation")
 			}
 		})
 	}
