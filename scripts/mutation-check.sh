@@ -15660,11 +15660,11 @@ fi
 # Desk critic controls: omissions must fail the shared readers, not just a source scan.
 if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'critic switch: saved mode omitted' web/src/chat/store.ts \
-    '...(chat.critic === undefined ? {} : { critic: chat.critic })' '{}'
+    '...(chat.critic === undefined ? {} : { critic: chat.critic })' '...{}'
   mutate web 'critic switch: saved reasoning omitted' web/src/chat/store.ts \
-    '...(chat.criticReasoning === undefined ? {} : { criticReasoning: chat.criticReasoning })' '{}'
+    '...(chat.criticReasoning === undefined ? {} : { criticReasoning: chat.criticReasoning })' '...{}'
   mutate web 'critic switch: report decision omitted' web/src/assistant/report.ts \
-    '...(execution?.critic === undefined ? {} : { critic: structuredClone(execution.critic) })' '{}'
+    '...(execution?.critic === undefined ? {} : { critic: structuredClone(execution.critic) })' '...{}'
 fi
 if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'critic switch: project mode omitted' internal/desk/assistant_chat_input.go \
