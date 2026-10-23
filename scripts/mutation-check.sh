@@ -15711,7 +15711,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'assistant run client: uncertain POST replayed' web/src/assistant/serverRuns/client.ts \
     '      if (cause instanceof RunRequestError) throw cause
       throw new RunRequestError' \
-    '      if (body) return this.json(path,expected,body,signal)
+    '      if (body && sent && !(cause instanceof RunRequestError)) { try { await discardBody(await deskFetch(path,{method:"POST",redirect:"error",signal:scope.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})) } catch {} }
       if (cause instanceof RunRequestError) throw cause
       throw new RunRequestError'
 fi
