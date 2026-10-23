@@ -129,7 +129,7 @@ func TestAssistantPolicyFiniteArgumentsAndScope(t *testing.T) {
 func TestAssistantPolicyOutputImportAndProjectionAssociations(t *testing.T) {
 	s, _, e, p, _ := assistantPolicyFixture(t, "http://127.0.0.1:1", "work", false, nil)
 	x := assistantPolicyOpen(t, s, e)
-	result := assistantPolicyInvoke(t, e, x, "candidate", "propose_policy_update", map[string]string{"revision": p.Revision, "title": "Candidate", "narrative": assistantPolicyNarrative, "artifactVersion": "1.1.0"})
+	result := assistantPolicyInvoke(t, e, x, "candidate", "propose_policy_update", map[string]string{"revision": p.Revision, "title": "Candidate"})
 	if result.Err() {
 		t.Fatal(result.Value().Text())
 	}
@@ -140,6 +140,7 @@ func TestAssistantPolicyOutputImportAndProjectionAssociations(t *testing.T) {
 		func(r *assistantRunRecord) { r.DomainOutputs = append(r.DomainOutputs, r.DomainOutputs[0]) },
 		func(r *assistantRunRecord) { r.DomainOutputs[0].RequestKey = "foreign" },
 		func(r *assistantRunRecord) { r.DomainOutputs[0].PolicyUpdate.Before.Narrative = "foreign" },
+		func(r *assistantRunRecord) { r.DomainOutputs[0].PolicyUpdate.Candidate.Narrative = "foreign" },
 		func(r *assistantRunRecord) {
 			r.DomainOutputs[0].PolicyUpdate.PolicyID = "policy_" + strings.Repeat("f", 48)
 		},

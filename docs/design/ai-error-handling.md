@@ -67,3 +67,10 @@ stop reasons; raw provider prose is excluded. This guard performs no second mode
 request. The owning workflow retains the failed attempt and decides continuation.
 Older compatible endpoints that omit stop metadata still undergo the feature's
 bounded response validation.
+
+Agent v0.9 adds the canonical `pace exceeded` failure with `wait` recovery. Desk's
+shared catalogue and catalogue-driven Go normalization retain that code and its
+not-started outcome; saved-chat readers and the shared recovery UI retain the
+same typed failure. The message asks the user to wait for the project period or
+change project policy. It does not grant allowance, authorize operations or
+start a retry.

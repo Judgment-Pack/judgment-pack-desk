@@ -72,3 +72,23 @@ it('says how long requests waited for a turn at the relay, in the summary and ag
   render(<RunReportLines report={{requests:1,unit:'model-requests',critic}} />)
   expect(screen.getByText(line)).toBeTruthy()
  })
+
+it.each(['model-requests', 'provider-managed'] as const)('keeps %s prompt details collapsed and shows exact selectable digests by ordinal', (unit) => {
+  const sha256 = '0123456789abcdef'.repeat(4)
+  render(<RunReportLines report={{requests: 2, unit, prompts: [{request: 41, sha256}, {request: 43, sha256: 'b'.repeat(64)}]}} />)
+  const summary = screen.getByText('Prompt digests')
+  const details = summary.closest('details')!
+  expect(details.open).toBe(false)
+  fireEvent.click(summary)
+  expect(details.open).toBe(true)
+  expect(rowsOf()).toEqual([['41', sha256], ['43', 'b'.repeat(64)]])
+  expect(screen.getByText(sha256).tagName).toBe('CODE')
+  expect(screen.getByRole('columnheader', {name: 'Request'})).toBeTruthy()
+})
+
+it('offers no prompt detail for legacy or empty rows', () => {
+  const {rerender} = render(<RunReportLines report={{requests: 1, unit: 'model-requests'}} />)
+  expect(screen.queryByText('Prompt digests')).toBeNull()
+  rerender(<RunReportLines report={{requests: 1, unit: 'model-requests', prompts: []}} />)
+  expect(screen.queryByText('Prompt digests')).toBeNull()
+})

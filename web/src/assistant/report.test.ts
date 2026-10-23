@@ -63,3 +63,46 @@ it('keeps every canonical critic decision through saved checkpoint and report re
  }
  expect(validRunReport({requests:0,unit:'model-requests',critic:{mode:'sometimes'}})).toBe(false)
 })
+
+const prompts = [{ request: 41, sha256: 'a'.repeat(64) }, { request: 43, sha256: '0123456789abcdef'.repeat(4) }]
+
+describe('retained prompt digests', () => {
+  it.each(['complete', 'paused', 'stopped'] as const)('preserves %s rows independently of request and retry counters', (status) => {
+    const execution = readExecution(JSON.parse(JSON.stringify(checkpoint({ status, unit: 'provider-managed', used: 1, limit: 1, prompts }))))!
+    const report = reportFromExecution(execution)!
+    expect(report.prompts).toEqual(prompts)
+    expect(report.prompts).not.toBe(execution.prompts)
+    expect(report.prompts![0]).not.toBe(execution.prompts![0])
+    report.prompts![0]!.sha256 = 'b'.repeat(64)
+    expect(execution.prompts).toEqual(prompts)
+  })
+
+  it('accepts legacy, empty and the full retained window without inventing rows', () => {
+    expect(reportFromExecution(checkpoint())!.prompts).toBeUndefined()
+    for (const rows of [[], prompts, Array.from({length: 300}, (_, at) => ({request: at + 400, sha256: 'a'.repeat(64)}))]) {
+      expect(validRunReport({requests: 1, unit: 'model-requests', prompts: rows})).toBe(true)
+      expect(readExecution(checkpoint({prompts: rows}))?.prompts).toEqual(rows)
+    }
+  })
+
+  it('refuses the same malformed rows as the canonical checkpoint reader', () => {
+    const row = prompts[0]!
+    const invalid = [null, {}, 'private prompt text', [null], [[row]], [{}], [{request: 1}], [{sha256: row.sha256}],
+      [{...row, text: 'private prompt text'}], [{...row, request: 0}], [{...row, request: -1}], [{...row, request: 1.5}],
+      [{...row, request: Number.MAX_SAFE_INTEGER + 1}], [{...row, request: '41'}], [{...row, sha256: 'A'.repeat(64)}],
+      [{...row, sha256: 'a'.repeat(63)}], [{...row, sha256: 'g'.repeat(64)}], [{...row, sha256: 1}],
+      [row, row], [prompts[1], row], Array.from({length: 301}, (_, at) => ({...row, request: at + 1}))]
+    for (const rows of invalid) {
+      expect(validRunReport({requests: 2, unit: 'model-requests', prompts: rows})).toBe(false)
+      expect(() => readExecution({...checkpoint(), prompts: rows})).toThrow()
+    }
+  })
+})
+
+// Keep this probe separate from the shared malformed corpus: a future pinned
+// checkpoint reader change must not weaken the saved report's exact hash boundary.
+it.each([['LF', '\n'], ['CR', '\r'], ['U+2028', '\u2028'], ['U+2029', '\u2029']])('refuses a trailing %s in saved report digests and probes the pinned reader', (_name, separator) => {
+  const rows = [{request: 41, sha256: 'a'.repeat(64) + separator}]
+  expect(validRunReport({requests: 2, unit: 'model-requests', prompts: rows})).toBe(false)
+  expect(() => readExecution(checkpoint({prompts: rows}))).toThrow('Saved execution progress is invalid. History was left untouched.')
+})

@@ -598,6 +598,9 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 		if run.Checkpoint.Critic != nil {
 			report["critic"] = run.Checkpoint.Critic
 		}
+		if run.Checkpoint.Prompts != nil {
+			report["prompts"] = append([]contract.ProvenancePromptDigest{}, run.Checkpoint.Prompts...)
+		}
 		work["report"] = report
 		display := *assistantChatProjectionCheckpoint(run)
 		// Approval/handoff capabilities stay in the bound ledger. Historical

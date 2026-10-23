@@ -33,6 +33,15 @@ export function RunReportLines({ report, titles = {}, className }: { report: Run
         {report.tokens && msg(' · tokens reported by the provider: {{tokens}}', { tokens: tokensOf(report.tokens) })}
       </p>
       {report.critic && <p>{criticDecisionLine(report.critic)}</p>}
+
+      {report.prompts && report.prompts.length > 0 && (
+        <Disclosure title={msg('Prompt digests')} size="small">
+          <table className={styles.table}>
+            <thead><tr><th scope="col">{msg('Request')}</th><th scope="col">{msg('SHA-256')}</th></tr></thead>
+            <tbody>{report.prompts.map((row) => <tr key={row.request}><th scope="row">{row.request}</th><td><code className={styles.digest}>{row.sha256}</code></td></tr>)}</tbody>
+          </table>
+        </Disclosure>
+      )}
       {totals && (
         <p>
           {msg('Requests took {{seconds}} s in all', { seconds: seconds(totals.modelMs) })}

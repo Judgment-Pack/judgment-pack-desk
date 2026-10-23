@@ -300,8 +300,8 @@ func TestAssistantChatInputControlsAndAdmission(t *testing.T) {
 			raw = strings.Replace(raw, `"interaction":"work"`, `"interaction":"work","adversarialReview":true,"reasoning":`+tc.reasoning, 1)
 			e := assistantChatResave(t, s, token, old, raw, 201)
 			x := assistantExecutionOpen(t, s, e)
-			if x.Run.Agent.Effort != tc.want || x.Run.Review == nil || !*x.Run.Review {
-				t.Fatal("saved controls lost", x.Run.Agent.Effort, x.Run.Review)
+			if x.Run.Agent.Effort != tc.want || x.Run.Critic != "on" {
+				t.Fatal("saved controls lost", x.Run.Agent.Effort, x.Run.Critic)
 			}
 		})
 	}
@@ -313,7 +313,7 @@ func TestAssistantChatInputControlsAndAdmission(t *testing.T) {
 	raw = strings.Replace(raw, `"interaction":"work"`, `"interaction":"work","apiThinking":"ultra","adversarialReview":false`, 1)
 	e := assistantChatResave(t, s, token, old, raw, 201)
 	x := assistantExecutionOpen(t, s, e)
-	if x.Run.Thinking != "ultra" || x.Run.Review == nil || *x.Run.Review {
+	if x.Run.Thinking != "ultra" || x.Run.Critic != "off" {
 		t.Fatal("chat did not override project thinking/review")
 	}
 	if _, err := e.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served", Arguments: map[string]string{"input": "untrusted duplicate"}}); err == nil {
