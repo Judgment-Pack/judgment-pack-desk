@@ -321,22 +321,7 @@ func TestAssistantLinkQueuedConfiguration(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			f := newAssistantLinkFixture(t, "api", "research", "work", "http://127.0.0.1:1")
 			_ = assistantExecutionOpen(t, f.s, f.e)
-			for range cap(f.s.researchSlots) {
-				f.s.researchSlots <- struct{}{}
-			}
-			done := make(chan runcontext.ToolResult, 1)
-			go func() { done <- f.invokeLink(t, "queued-search", true, `{"url":"https://example.org/report"}`) }()
-			deadline := time.Now().Add(3 * time.Second)
-			for {
-				record := assistantExecutionRecord(t, f.e)
-				if len(record.Links) == 1 && record.Links[0].Acquire == "dispatched" {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("search did not queue")
-				}
-				time.Sleep(5 * time.Millisecond)
-			}
+			finish := f.queuedCall(t, "queued-search", assistantLinkTool, `{"url":"https://example.org/report"}`, 3*time.Second)
 			switch change {
 			case "gateway-url":
 				f.s.localGateway.mu.Lock()
@@ -360,11 +345,7 @@ func TestAssistantLinkQueuedConfiguration(t *testing.T) {
 					t.Fatal(w.Body.String())
 				}
 			}
-			<-f.s.researchSlots
-			result := <-done
-			for len(f.s.researchSlots) > 0 {
-				<-f.s.researchSlots
-			}
+			result := finish()
 			if !result.Err() || f.calls.Load() != 0 {
 				t.Fatal("queued changed authority dispatched", f.calls.Load(), string(result.Value().JSON()))
 			}
@@ -1106,24 +1087,7 @@ func TestAssistantLinkQueuedVerifiedSearchAuthority(t *testing.T) {
 			if result := f.invoke(t, "queued-search", true); result.Err() {
 				t.Fatal(string(result.JSON()))
 			}
-			for range cap(f.s.researchSlots) {
-				f.s.researchSlots <- struct{}{}
-			}
-			done := make(chan runcontext.ToolResult, 1)
-			go func() {
-				done <- f.invokeLink(t, "queued-searched-link", true, `{"url":"https://news.example.net/report"}`)
-			}()
-			deadline := time.Now().Add(3 * time.Second)
-			for {
-				record := assistantExecutionRecord(t, f.e)
-				if len(record.Links) == 1 && record.Links[0].Acquire == "dispatched" {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("searched read did not queue")
-				}
-				time.Sleep(5 * time.Millisecond)
-			}
+			finish := f.queuedCall(t, "queued-searched-link", assistantLinkTool, `{"url":"https://news.example.net/report"}`, 3*time.Second)
 			if change == "connection" {
 				assistantRunMust(t, os.WriteFile(f.statusPath, assistantChatJSON(map[string]any{"version": 1, "connections": []any{map[string]any{"id": "demo", "revision": strings.Repeat("b", 64), "provider": "tavily"}}}), 0600))
 			} else {
@@ -1139,11 +1103,7 @@ func TestAssistantLinkQueuedVerifiedSearchAuthority(t *testing.T) {
 				assistantRunMust(t, writePrivateData(data.root, file, packet))
 				assistantRunMust(t, data.root.Close())
 			}
-			<-f.s.researchSlots
-			result := <-done
-			for len(f.s.researchSlots) > 0 {
-				<-f.s.researchSlots
-			}
+			result := finish()
 			if !result.Err() || f.calls.Load() != 2 {
 				t.Fatal("queued revoked search proof/config acquired", string(result.JSON()), f.calls.Load())
 			}
