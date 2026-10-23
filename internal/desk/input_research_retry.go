@@ -197,6 +197,22 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 			return err
 		})
 		if e != nil {
+			if errors.Is(e, errPortableResearchJournalSize) {
+				_, saveErr := root.change(func(r *inputResearchRun) error {
+					if r.State == "running" {
+						if r.StopRequested {
+							r.State = "stopped"
+						} else {
+							r.State = "partial"
+						}
+						r.Problem = errPortableResearchJournalSize.Error()
+					}
+					return nil
+				})
+				if saveErr != nil {
+					return nil, saveErr
+				}
+			}
 			if after != "" {
 				_, saveErr := root.change(func(r *inputResearchRun) error {
 					removeResearchRetry(r, after, "The retry could not be admitted. No further request was sent.")
@@ -221,6 +237,9 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 		problem := ""
 		if callErr != nil {
 			problem = callErr.Error()
+		}
+		if run.Portable != nil {
+			problem = portableResearchProblemText(problem)
 		}
 		var refused *researchAcquisitionRefused
 		if !errors.As(callErr, &refused) || kind == "model" || len(raw) == 0 {

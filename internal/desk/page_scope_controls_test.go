@@ -282,7 +282,7 @@ func TestRound16PathFormAtRegistrationAdmissionAndReceipt(t *testing.T) {
 
 // The receipt check reads the signed receipt's acquisition.endpoint exactly:
 // a missing, null, non-string or duplicated member is refused, a profile
-// without a scope is left to Runner's exact comparison, and an in-scope
+// without a scope uses a literal exact comparison, and an in-scope
 // endpoint is admitted however the request was spelled.
 func TestScopedPageReceiptCheckReadsTheReceiptEndpoint(t *testing.T) {
 	profile := scopedDeskPageProfile()
@@ -307,7 +307,7 @@ func TestScopedPageReceiptCheckReadsTheReceiptEndpoint(t *testing.T) {
 			t.Errorf("admitted %s: %v", retained, err)
 		}
 	}
-	legacy := portableProfileDetails{Shape: "http", Adapter: searchBindingAdapter{Name: "adapter-web"}, Endpoint: "https://legacy.example/final"}
+	legacy := exactDeskPageProfile()
 	if err := admitPortablePageReceipt(legacy, json.RawMessage(`{"receipt":{"acquisition":{"endpoint":"https://legacy.example/final"}}}`)); err != nil {
 		t.Fatal("a profile without a scope was held to one", err)
 	}
