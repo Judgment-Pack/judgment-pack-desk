@@ -150,11 +150,22 @@ func TestAssistantPlanProjectionCurrentState(t *testing.T) {
 
 func TestAssistantPlanCancelledObservedAndUnknown(t *testing.T) {
 	t.Run("cancelled-observed", func(t *testing.T) {
-		s, _, e := assistantExecutionFixture(t, "http://127.0.0.1:1", "plan")
+		release := make(chan struct{})
+		s, _, e := assistantExecutionFixtureExecute(t, "http://127.0.0.1:1", "plan", func(ctx context.Context, _ *assistantRunExecution) error {
+			<-ctx.Done()
+			<-release
+			return ctx.Err()
+		})
+		// Keep cancellation live, but let the test finish its synthetic checkpoint
+		// and projection before the service finalizer closes the executor lease.
+		t.Cleanup(func() { close(release) })
 		assistantPlanSeed(t, s)
 		testHookAssistantPlanObserved = e.cancel
 		defer func() { testHookAssistantPlanObserved = nil }()
 		result := assistantPlanInvoke(t, e, "cancelled-plan", true, assistantPlanCandidate)
+		if !errors.Is(e.ctx.Err(), context.Canceled) {
+			t.Fatal("observed Plan did not cancel the execution")
+		}
 		if result.Err() {
 			t.Fatal(result.Value().Text())
 		}

@@ -99,6 +99,7 @@ func (f *chatProjectionFixture) admit(t *testing.T, owner, request, admission, s
 		assistantRunMust(t, writer.Event(t.Context(), "event-"+string(rune('a'+i)), event))
 	}
 	cp.Used = 2
+	cp.Prompts = projectionPromptDigests()
 	switch state {
 	case "complete":
 		cp.Status = "complete"
@@ -126,6 +127,9 @@ func (f *chatProjectionFixture) admit(t *testing.T, owner, request, admission, s
 	run, err = f.store.Read(t.Context(), run.Binding, run.ID)
 	assistantRunMust(t, err)
 	return run
+}
+func projectionPromptDigests() []contract.ProvenancePromptDigest {
+	return []contract.ProvenancePromptDigest{{Request: 41, Sha256: strings.Repeat("a", 64)}, {Request: 43, Sha256: strings.Repeat("0123456789abcdef", 4)}}
 }
 func projectionMessage(text string) contract.RunEvent {
 	return contract.RunEvent{Message: &contract.RunEventMessage{Type: "message", Text: text}}
@@ -179,6 +183,9 @@ func TestAssistantChatProjectionPrepareWriteReadbackAck(t *testing.T) {
 	assistantRunMust(t, err)
 	if len(saved.Operations) != 1 || !bytes.Equal(saved.Operations[0].Intent, run.Operations[0].Intent) || !bytes.Equal(saved.Operations[0].Result, run.Operations[0].Result) {
 		t.Fatal("exact typed operation originals changed during recovery")
+	}
+	if !reflect.DeepEqual(saved.Checkpoint.Prompts, projectionPromptDigests()) {
+		t.Fatal("checkpoint prompt rows changed during recovery")
 	}
 	if saved.Checkpoint.Used != 2 {
 		t.Fatal("projection reset charged usage")
@@ -261,7 +268,16 @@ func TestAssistantChatProjectionPausesStayPinned(t *testing.T) {
 			if state == "awaiting-input" && (rows[0].Checkpoint.Approval == nil || rows[0].Checkpoint.Approval.CallID != "question-one" || rows[0].Checkpoint.Approval.Name != "ask_user") {
 				t.Fatal("pending canonical question lost its bound checkpoint")
 			}
-			exportChatProjection(t, state, before)
+			if !reflect.DeepEqual(rows[0].Checkpoint.Prompts, projectionPromptDigests()) {
+				t.Fatal("pause lost retained prompt rows")
+			}
+			// Export the fresh ledger observation alongside the unchanged pinned chat.
+			var observation map[string]json.RawMessage
+			assistantRunMust(t, json.Unmarshal(before, &observation))
+			observation["pendingExecution"] = assistantChatJSON(rows[0].Checkpoint)
+			exported, err := json.Marshal(observation)
+			assistantRunMust(t, err)
+			exportChatProjection(t, state, exported)
 		})
 	}
 }
