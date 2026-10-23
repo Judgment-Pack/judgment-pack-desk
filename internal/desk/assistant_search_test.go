@@ -462,8 +462,6 @@ func TestAssistantSearchActualProducersAndProjection(t *testing.T) {
 				assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(f.trace), "peer.py"), []byte(peer), 0600))
 			}
 			x := assistantExecutionOpen(t, f.s, f.e)
-			off := false
-			x.Run.Review = &off
 			ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 			defer cancel()
 			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
@@ -536,8 +534,6 @@ func TestAssistantSearchActualRefusalEvents(t *testing.T) {
 				assistantRunMust(t, os.WriteFile(f.statusPath, assistantChatJSON(map[string]any{"version": 1, "connections": []any{}}), 0600))
 			}
 			x := assistantExecutionOpen(t, f.s, f.e)
-			off := false
-			x.Run.Review = &off
 			assistantRunMust(t, x.Adapter.Run(t.Context(), x.Run))
 			record := assistantExecutionRecord(t, f.e)
 			refused := false
