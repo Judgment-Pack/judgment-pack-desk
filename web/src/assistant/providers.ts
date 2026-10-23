@@ -9,6 +9,9 @@ export interface ProviderStatus { provider: string; authMethod: string; agent: s
 export interface ProviderModel { id: string; name: string; efforts: CodexEffort[]; defaultEffort: CodexEffort }
 export interface ProviderChallenge { method: string; id: string; url: string; code?: string; expiresAt: string }
 const errors: Record<string,string> = {
+  'storage-full': sourceMessage("Disk is full. Free space on the drive holding Desk's configuration and try again."),
+  'account-lookup-failed': sourceMessage('Desk could not reach ChatGPT to check the account. Check your internet connection and try again.'),
+  'operation-canceled': sourceMessage('The ChatGPT connection request was stopped. Try again when ready.'),
   'runtime-install-failed': sourceMessage('Desk could not prepare the ChatGPT connection. Check your internet connection and try again.'),
   'provider-busy': sourceMessage('Another Codex operation is active. Try again when it finishes.'),
   'connection-unavailable': sourceMessage('This AI connection is unavailable. Reload Connections > AI.'),

@@ -3,11 +3,13 @@ package desk
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
@@ -308,5 +310,37 @@ func TestNamedDesksShareCodexAccountManagerAndOnlyRootClosesIt(t *testing.T) {
 	}
 	if !stub.closed {
 		t.Fatal("root shutdown did not close the shared account")
+	}
+}
+
+func TestProviderAccountLookupAndDiskFullFailuresAreBounded(t *testing.T) {
+	for _, tc := range []struct {
+		err    error
+		code   string
+		status int
+	}{
+		{codexbridge.ErrAccountLookup, "account-lookup-failed", http.StatusRequestTimeout},
+		{errors.Join(codexbridge.ErrInstall, &os.PathError{Op: "write", Path: "PRIVATE_SENTINEL", Err: syscall.ENOSPC}), "storage-full", http.StatusInsufficientStorage},
+		{errors.Join(codexbridge.ErrProfile, syscall.ENOSPC), "storage-full", http.StatusInsufficientStorage},
+		{codexbridge.ErrUnavailable, "provider-unavailable", http.StatusServiceUnavailable},
+		{context.Canceled, "operation-canceled", http.StatusRequestTimeout},
+	} {
+		t.Run(tc.code+tc.err.Error(), func(t *testing.T) {
+			s, _, token := providerTestServer(t)
+			s.codex = &modelAccountStub{accountStub: accountStub{err: tc.err}, modelErr: tc.err}
+			for _, action := range []string{"status", "models", "login"} {
+				method, origin, body := "GET", "", ""
+				if action == "login" {
+					method, origin, body = "POST", "http://127.0.0.1:8791", `{"method":"browser"}`
+				}
+				w := providerRequest(s, method, "/api/model-providers/openai/"+action, token, origin, body)
+				if w.Code != tc.status || !strings.Contains(w.Body.String(), `"error":"`+tc.code+`"`) {
+					t.Fatalf("%s: %d %s", action, w.Code, w.Body.String())
+				}
+				if strings.Contains(w.Body.String(), "PRIVATE_SENTINEL") {
+					t.Fatal("private provider data escaped")
+				}
+			}
+		})
 	}
 }
