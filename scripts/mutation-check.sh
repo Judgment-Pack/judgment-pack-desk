@@ -15695,6 +15695,25 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     'if(args[key]!=="")candidate[key]=args[key]'
 fi
 
+
+# Desk #629: exact observations and explicit delivery through the browser transport.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant run client: owner source revision ignored' web/src/assistant/serverRuns/decode.ts \
+    'value.owner.revision !== expected.owner.revision' 'false'
+  mutate web 'assistant run client: canonical checkpoint bypassed' web/src/assistant/serverRuns/decode.ts \
+    'readExecution(value.checkpoint)' 'value.checkpoint'
+  mutate web 'assistant run client: unknown semantic discriminator accepted' web/src/assistant/serverRuns/decode.ts \
+    '!Object.hasOwn(SEMANTIC_EVENT_TYPES,value.event.type)' 'false'
+  mutate web 'assistant run client: shared cursor snapshot suppressed' web/src/assistant/serverRuns/stream.ts \
+    "    if (frame.kind === 'snapshot') {" "    if (frame.kind === 'snapshot') { if (this.last === frame.cursor) return undefined"
+  mutate web 'assistant run client: uncertain POST replayed' web/src/assistant/serverRuns/client.ts \
+    '      if (cause instanceof RunRequestError) throw cause
+      throw new RunRequestError' \
+    '      if (body) return this.json(path,expected,body,signal)
+      if (cause instanceof RunRequestError) throw cause
+      throw new RunRequestError'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

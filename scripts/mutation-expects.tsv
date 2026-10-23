@@ -2861,3 +2861,8 @@ go	assistant policy sparse: revision-only arguments admitted	TestAssistantPolicy
 go	assistant policy sparse: substituted omitted fields accepted	TestAssistantPolicyOutputImportAndProjectionAssociations
 web	assistant policy sparse: browser held candidate omitted	src/policies/chatTools.test.ts
 web	assistant policy sparse: browser explicit empty value omitted	src/policies/chatTools.test.ts
+web	assistant run client: owner source revision ignored	src/assistant/serverRuns/decode.test.ts
+web	assistant run client: canonical checkpoint bypassed	src/assistant/serverRuns/decode.test.ts
+web	assistant run client: unknown semantic discriminator accepted	src/assistant/serverRuns/decode.test.ts
+web	assistant run client: shared cursor snapshot suppressed	src/assistant/serverRuns/stream.test.ts
+web	assistant run client: uncertain POST replayed	src/assistant/serverRuns/client.test.ts
