@@ -1,12 +1,28 @@
 # Saved-chat critic inputs
 
 The private server factory binds the published Agent's critic inputs. Agent
-v0.6.0 owns proposal detection, critic orchestration, named model selection,
+v0.9.0 owns proposal detection, critic orchestration, named model selection,
 context isolation, comparison, events, checkpoints and request accounting. Desk
 adds neither a critic loop nor a provider-specific context policy.
 
-An explicit saved `adversarialReview` wins over the canonical policy default.
-Plan disables critic inputs and retains its existing tool restrictions. A normal
+The composer saves optional `critic: off | auto | on` and `criticReasoning`.
+Project profiles (versions 1 and 2) save optional `critic`. The package resolves
+the run choice over the project choice over the policy table default (`auto`).
+Admin displays that canonical fallback read-only; Desk has no second default.
+Explicit legacy `adversarialReview: false/true` remains `off/on` for compatibility;
+a new explicit `critic` wins. Missing old and new fields intentionally inherit
+instead of becoming an implicit `off`; old explicit booleans are not rewritten.
+
+Under Auto, Agent uses proposal, accepted test cases, existing-pack identity and
+`request_review` facts. Prose grants nothing. Desk captures the same immutable
+saved-suite custody before dispatch for Auto and On. Agent alone owns precedence,
+forced-off decisions (human reviewer, graph, Plan, child), and the reasoning floor.
+An explicit critic tier may lower the author's tier; absence inherits it.
+Plan disables critic inputs and retains its existing tool restrictions.
+Every canonical `critic_decided` event reaches the task view. Checkpoint `critic`
+is projected independently into the shared run report, including skipped reasons
+and actual reasoning. A model-ask-only checkpoint is shown as requested until a
+decision arrives; reload does not infer that a review ran. A normal
 explanation produces no critic model request or test. For an enabled review,
 Desk discovers and obtains Runtime's `test_pack` prompt with no arguments. It
 never inserts the saved request or pack into prompt arguments. Required Runtime

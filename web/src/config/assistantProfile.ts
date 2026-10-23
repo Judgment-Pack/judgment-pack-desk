@@ -1,3 +1,4 @@
+import { CRITIC_MODES, type CriticMode } from '@judgment-pack/harness/contract'
 import { CODEX_EFFORTS, ASSISTANT_THINKING, type AssistantConfig, type AssistantAgentConfig, type ThinkingTier } from './deskConfig'
 import { contextConfiguration, type ContextConfiguration } from '@judgment-pack/harness/context/policy'
 import { sourceMessage } from '../i18n/source'
@@ -8,7 +9,7 @@ export type ModelPreferences = { inherit: true } | {
   inherit: false; models: string[]; model: string | null
   effort?: AssistantAgentConfig['effort']; thinking?: ThinkingTier
 }
-export interface AssistantProfile { profileVersion: 1 | 2; context?:ContextConfiguration; projectInstructions?:string; codex?: ModelPreferences; api?: ModelPreferences; inherit?:boolean; connections?:string[]; defaultConnection?:string|null; models?:Record<string,ModelPreferences> }
+export interface AssistantProfile { profileVersion: 1 | 2; critic?:CriticMode; context?:ContextConfiguration; projectInstructions?:string; codex?: ModelPreferences; api?: ModelPreferences; inherit?:boolean; connections?:string[]; defaultConnection?:string|null; models?:Record<string,ModelPreferences> }
 export interface AssistantProfileRead {
   present: boolean; sha256?: string; text?: string; value?: AssistantProfile; problem?: string
 }
@@ -20,9 +21,10 @@ export function decodeAssistantProfile(text: string, projectInstructionsBytes?: 
     const instructions=value.projectInstructions
     if(typeof instructions!=='string'||!wellFormedText(instructions)||(projectInstructionsBytes!==undefined&&new TextEncoder().encode(instructions).byteLength>projectInstructionsBytes))throw new Error(PROFILE_PROBLEM)
   }
+  if(object(value)&&value.critic!==undefined&&!(CRITIC_MODES as readonly unknown[]).includes(value.critic))throw new Error(PROFILE_PROBLEM)
   if(object(value)&&value.context!==undefined)contextConfiguration(value.context)
   if(object(value)&&value.profileVersion===2)return decodeProfileV2(value,text)
-  if(new TextEncoder().encode(text).byteLength>65536 || !object(value) || value.profileVersion!==1 || Object.keys(value).some(key=>!['profileVersion','codex','api','context','projectInstructions'].includes(key))) throw new Error(PROFILE_PROBLEM)
+  if(new TextEncoder().encode(text).byteLength>65536 || !object(value) || value.profileVersion!==1 || Object.keys(value).some(key=>!['profileVersion','codex','api','context','projectInstructions','critic'].includes(key))) throw new Error(PROFILE_PROBLEM)
   for(const key of ['codex','api'] as const){
     const row=value[key];if(row===undefined)continue
     if(!object(row)||typeof row.inherit!=='boolean')throw new Error(PROFILE_PROBLEM)
@@ -48,7 +50,7 @@ export function applyAssistantProfile(machine: AssistantConfig, read?: Assistant
 function decodeProfileV2(value:Record<string,unknown>,text:string):AssistantProfile {
  const fail=()=>{throw new Error(PROFILE_PROBLEM)}
  if(new TextEncoder().encode(text).byteLength>65536||typeof value.inherit!=='boolean')return fail()
- const keys=value.inherit?['profileVersion','inherit','context','projectInstructions']:['profileVersion','inherit','connections','defaultConnection','models','context','projectInstructions']
+ const keys=value.inherit?['profileVersion','inherit','context','projectInstructions','critic']:['profileVersion','inherit','connections','defaultConnection','models','context','projectInstructions','critic']
  if(Object.keys(value).some(k=>!keys.includes(k)))return fail()
  if(!value.inherit){
   if(!Array.isArray(value.connections)||value.connections.length>32||value.connections.some(id=>typeof id!=='string'||!/^(legacy-api|legacy-codex|ai-[a-f0-9]{24})$/.test(id))||new Set(value.connections).size!==value.connections.length)return fail()

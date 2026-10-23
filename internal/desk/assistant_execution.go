@@ -76,7 +76,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		return nil, err
 	}
 	var critic *assistantCriticSnapshot
-	if assistantCriticEnabled(chat, e.record.Binding.Phase) {
+	if assistantCriticEnabled(chat, e.record.Binding.Phase) && runcontext.CriticForcedOff(runcontext.CriticForcedFacts{Purpose: chat.CriticPurpose}) == "" {
 		critic, err = e.holdAssistantCritic(ctx)
 		if err != nil {
 			return nil, err
@@ -188,7 +188,11 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		}
 	}
 	promptText += "\n\n" + chat.Transcript + "\n\nTHE PERSON'S MESSAGE\n" + chat.Request.Input
-	run := &adapter.Run{HostTools: registry.offered(gateHostPhase{names: phase.Host}), Purpose: e.source.Start.Purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Critic: assistantCriticMode(chat), Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
+	purpose := e.source.Start.Purpose
+	if chat.CriticPurpose != "" {
+		purpose = chat.CriticPurpose
+	}
+	run := &adapter.Run{HostTools: registry.offered(gateHostPhase{names: phase.Host}), Purpose: purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Critic: chat.Critic, CriticProject: e.source.Profile.Critic, CriticReasoning: chat.CriticReasoning, Review: chat.Review, ExistingPack: critic != nil && critic.path != "", Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
 	if critic != nil {
 		run.TestPrompt, err = runtime.criticPrompt(ctx)
 		if err != nil {

@@ -77,7 +77,9 @@ func assistantCriticResave(t *testing.T, s *Server, token string, old *assistant
 	t.Helper()
 	chat := assistantCriticValue(t, string(old.source.Original))
 	chat.Set("interaction", runcontext.String(phase))
-	if review != "absent" {
+	if contains([]string{"off", "auto", "on"}, review) {
+		chat.Set("critic", runcontext.String(review))
+	} else if review != "absent" {
 		chat.Set("adversarialReview", assistantCriticValue(t, review))
 	}
 	chat.Get("checkpoint").Get("state").Set("cases", assistantCriticValue(t, `[{"id":"case-one","facts":{"amount":"4","zero":0,"false":false,"null":null},"expectedDisposition":`+assistantCriticDisposition+`,"rationale":"Exact declared focus"}]`))
@@ -321,7 +323,7 @@ func TestAssistantCriticControlsAndSupport(t *testing.T) {
 		wantCalls                    int
 	}{
 		{"off", "false", "work", "served", true, 1},
-		{"default", "absent", "work", "served", true, 1},
+		{"default", "absent", "work", "served", false, 1},
 		{"explanation", "true", "work", "served", false, 1},
 		{"plan", "true", "plan", "served", false, 1},
 		{"missing-test-guidance", "true", "work", "missing", true, 1},
@@ -337,7 +339,7 @@ func TestAssistantCriticControlsAndSupport(t *testing.T) {
 			s, token, old := assistantExecutionFixture(t, u.server.URL, "work")
 			e := assistantCriticResave(t, s, token, old, tc.review, tc.phase, false)
 			x := assistantCriticOpen(t, s, e, tc.support)
-			if tc.review != "true" || tc.phase == "plan" {
+			if tc.review == "false" || tc.phase == "plan" {
 				if x.Run.TestPrompt != "" || len(x.Run.Cases) != 0 {
 					t.Fatal("review-disabled run bound critic inputs")
 				}
@@ -351,7 +353,7 @@ func TestAssistantCriticControlsAndSupport(t *testing.T) {
 			defer cancel()
 			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
 			if len(u.arrivals()) != tc.wantCalls || x.gate.TestCalls() != 0 {
-				t.Fatal("extra critic or test request")
+				t.Fatalf("extra critic or test request: model=%d want=%d tests=%d events=%+v", len(u.arrivals()), tc.wantCalls, x.gate.TestCalls(), assistantExecutionRecord(t, e).Events)
 			}
 			found := false
 			for _, held := range assistantExecutionRecord(t, e).Events {
@@ -728,24 +730,23 @@ func TestAssistantCriticQueuedRuntime(t *testing.T) {
 	}
 }
 
-// The existing Desk boolean control remains explicit at the v0.8 boundary.
-// Agent's table default is auto, so leaving Critic empty would change behavior.
+// Explicit saved booleans retain their meaning; absence inherits canonical Auto.
 func TestAssistantCriticReleasedControlMapping(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		review *bool
 		want   string
 	}{
-		{"absent", nil, "off"},
+		{"absent", nil, "auto"},
 		{"off", new(false), "off"},
 		{"on", new(true), "on"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			chat := &assistantChatInput{Review: tc.review}
-			if got := assistantCriticMode(chat); got != tc.want {
+			if got, _ := runcontext.CriticMode(runcontext.CriticSettings{Critic: assistantCriticMode(chat), AdversarialReview: chat.Review}, runcontext.CriticTable{}); got != tc.want {
 				t.Fatalf("critic control: got %q, want %q", got, tc.want)
 			}
-			if got, want := assistantCriticEnabled(chat, "work"), tc.want == "on"; got != want {
+			if got, want := assistantCriticEnabled(chat, "work"), tc.want != "off"; got != want {
 				t.Fatalf("work critic enabled: got %t, want %t", got, want)
 			}
 			if assistantCriticEnabled(chat, "plan") {

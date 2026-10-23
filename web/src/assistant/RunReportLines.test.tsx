@@ -62,3 +62,13 @@ it('says how long requests waited for a turn at the relay, in the summary and ag
   expect(rowsOf()[0]![5]).toBe('Done · 200 · waited 4.2 s')
   expect(rowsOf()[1]![5]).toBe('Done · 200')
 })
+
+ it.each([
+  [{mode:'auto',ran:false,reason:'no-proposal'}, 'Review skipped · auto · No pack proposal'],
+  [{mode:'auto',ran:true,reason:'cases',trigger:'cases',reasoning:'high'}, 'Review ran · auto · Pack has tests · Reasoning effort: high'],
+  [{mode:'auto',trigger:'model-asked'}, 'Review requested · auto · Assistant requested review'],
+  [{mode:'on',ran:false,reason:'phase'}, 'Review skipped · on · Plan mode']
+ ] as const)('shows the saved critic decision without inferring an outcome: %j', (critic,line)=>{
+  render(<RunReportLines report={{requests:1,unit:'model-requests',critic}} />)
+  expect(screen.getByText(line)).toBeTruthy()
+ })

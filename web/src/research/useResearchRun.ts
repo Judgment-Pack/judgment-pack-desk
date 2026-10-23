@@ -1,3 +1,5 @@
+import { criticForcedOff } from '@judgment-pack/harness/criticSwitch'
+import { criticMode, type CriticMode, type CriticTier } from '@judgment-pack/harness/contract'
 import { withDelegation } from '@judgment-pack/harness/delegation'
 import { chatReasoningAgent, type ChatReasoning } from '../chat/reasoning'
 import { conversationMode, type AuthoringMode } from './mode'
@@ -138,6 +140,9 @@ export function useResearchRun(options?: {
   model?: string
   reasoning?: ChatReasoning
   mode?: AuthoringMode
+  purpose?:'graph'
+  critic?:CriticMode
+  criticReasoning?:CriticTier
   adversarialReview?: boolean
   authorizeContext?:(signal:AbortSignal)=>Promise<void>
   executionContext?:()=>import('@judgment-pack/harness/context/session').ContextInput
@@ -163,12 +168,12 @@ export function useResearchRun(options?: {
     : nativeModels.isError ? nativeModels.error.message
     : !selected?.models.includes(picked.model) ? sourceMessage('Choose an enabled model in Admin › Assistant.')
     : !nativeModels.data?.models.some(model => model.id === picked.model) ? sourceMessage('This model is no longer available. Choose another model.') : ''
+  const { config, assistantProfile } = useEffectiveConfig()
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
   const authorPrompt = usePromptText(AUTHOR_PACK_PROMPT, advertised)
   const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
-  const testPrompt = usePromptText(TEST_PACK_PROMPT, ((options?.apiThinking??slot.thinking) !== 'off' || options?.adversarialReview === true) && advertisesTest)
-  const { config, assistantProfile } = useEffectiveConfig()
+  const testPrompt = usePromptText(TEST_PACK_PROMPT, criticMode({critic:options?.critic,criticProject:assistantProfile?.value?.critic,adversarialReview:options?.adversarialReview},{}).mode !== 'off' && advertisesTest)
   const research = config.research
   const mcp = useMcp()
 
@@ -187,8 +192,8 @@ export function useResearchRun(options?: {
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents })
-  settings.current = { savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents }
+  const settings = useRef({ purpose:options?.purpose, savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, critic:options?.critic, criticProject:assistantProfile?.value?.critic, criticReasoning:options?.criticReasoning, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents })
+  settings.current = { purpose:options?.purpose, savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, critic:options?.critic, criticProject:assistantProfile?.value?.critic, criticReasoning:options?.criticReasoning, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(text, 'research')
@@ -216,7 +221,7 @@ export function useResearchRun(options?: {
       // The cases whose outcomes the critic compares with the proposal's: the linked pack's
       // saved tests and the cases this conversation has declared. Read only where a critic runs;
       // one that cannot be read leaves the critic to review the proposal alone.
-      const declared = !request.reviewer && settings.current.adversarialReview === true
+      const declared = !criticForcedOff({child:false,phase:executionContext?.phase,purpose:settings.current.purpose,reviewerAssigned:!!request.reviewer}) && criticMode(settings.current,{}).mode !== 'off'
         ? criticCases(await settings.current.savedTests?.(signal).catch(() => []) ?? [], declaredCases(built?.getSnapshot().cases ?? []))
         : []
       const sessionId = await sessionBearer()
@@ -238,7 +243,7 @@ export function useResearchRun(options?: {
             // An independent reviewer works from a scope of its own, so it is handed none of the chat's.
             context:{...request.context,...executionContext,...(executionContext?.documents?{documents:[...(request.context?.documents??[]),...executionContext.documents]}:{}),chat:request.reviewer?undefined:executionContext?.chat,...(runtime?{runtime}:{}),...(memory===undefined?{}:{memory}),...(slot.connectionId?{connection:{connectionId:slot.connectionId,...(slot.connectionRevision?{connectionRevision:slot.connectionRevision}:{}),...(slot.connectionName?{connectionName:slot.connectionName}:{})}}:{}),authorize:settings.current.authorizeContext,checkpoint:request.conversation?async checkpoint=>{deliver({type:'execution_checkpoint',checkpoint});await settings.current.checkpointDelegation?.(signal)}:undefined,configuration:settings.current.contextConfiguration},
             interactive: true,
-            adversarialReview: !request.reviewer && settings.current.adversarialReview === true,
+            purpose:settings.current.purpose, critic:settings.current.critic, criticProject:settings.current.criticProject, criticReasoning:settings.current.criticReasoning, adversarialReview:settings.current.adversarialReview, reviewerAssigned:!!request.reviewer, existingPack:!!settings.current.savedPackReview,
             ...(declared.length ? { criticCases: declared } : {}),
             testPrompt: request.reviewer ? '' : testPrompt,
             tools: ready.tools,

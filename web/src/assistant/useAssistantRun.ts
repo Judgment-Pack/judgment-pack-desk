@@ -1,3 +1,4 @@
+import type { CriticMode, CriticTier } from '@judgment-pack/harness/contract'
 import {failureEvent,authoredFailure} from '@judgment-pack/harness/failures'
 import type { AITarget } from './aiConnections'
 import { bindExecution } from './target'
@@ -271,9 +272,13 @@ export function useAssistantRun(options: {
    * saved tests and any the request declares), read at start. Only the default
    * purpose runs a critic, so only it is handed them.
    */
+  critic?:CriticMode
+  criticReasoning?:CriticTier
   criticCases?: CriticCase[]
 }): AssistantRun {
-  const contextConfiguration=useEffectiveConfig().assistantProfile?.value?.context
+  const profile=useEffectiveConfig().assistantProfile?.value
+  const contextConfiguration=profile?.context
+  const criticProject=profile?.critic
   const mcp = useMcp()
   const connectionTarget = options.target ?? {}
   const [status, setStatus] = useState<RunStatus>('idle')
@@ -289,8 +294,8 @@ export function useAssistantRun(options: {
   const terminals = useRef({ count: 0 })
   // Read at call time rather than captured, so a run started with one
   // configuration is not carried on with another.
-  const settings = useRef({...options,connectionTarget,contextConfiguration,mcp})
-  settings.current = {...options,connectionTarget,contextConfiguration,mcp}
+  const settings = useRef({...options,connectionTarget,contextConfiguration,criticProject,mcp})
+  settings.current = {...options,connectionTarget,contextConfiguration,criticProject,mcp}
 
   /**
    * Put one event on the stream, for the run that produced it.
@@ -437,18 +442,12 @@ export function useAssistantRun(options: {
               context:{configuration:settings.current.contextConfiguration,chat:retained.current,...(runtime?{runtime}:{}),...(memory===undefined?{}:{memory}),...(connectionTarget.connectionId?{connection:connectionTarget}:{})},
               testPrompt: testPrompt ?? '',
               purpose,
-              // **The critic is asked for, here, where the panes had it.** Since
-              // `@judgment-pack/harness` v0.2.0 neither engine starts it on a thinking
-              // tier by itself: both read the session's `adversarialReview`, otherwise
-              // off. The default purpose, which the pack pane and Describe it start,
-              // ran it for the API engine at any tier but `off` and never for Codex.
-              // The default purpose streams its prose as it is written, as the chat does, behind the same
-              // contract events (`message_progress`); the others show their answer whole.
+              // Agent resolves critic precedence and the reasoning floor from these exact choices.
               ...(purpose === undefined ? { interactive: true } : {}),
-              adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off',
+              critic:settings.current.critic, criticProject:settings.current.criticProject, criticReasoning:settings.current.criticReasoning,
               ...(purpose === undefined && criticCases?.length ? { criticCases } : {}),
-              ...(purpose === 'graph' ? { adversarialReview: false } : {}),
-              ...(purpose === 'test-design' || purpose === 'brief' ? { allowConversation: true, interactive: true, adversarialReview: false } : {}),
+
+              ...(purpose === 'test-design' || purpose === 'brief' ? { allowConversation: true, interactive: true, critic: 'off' } : {}),
               tools: ready.tools,
               callTool: ready.callTool,
               hostTools: hostTools ?? [],

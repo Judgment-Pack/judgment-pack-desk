@@ -2849,3 +2849,8 @@ go	typed admission: request control validation omitted	TestTypedAdmissionQualifi
 go	typed admission: Exchange pack predispatch validation omitted	TestTypedAdmissionExchangeTargetHTTP
 go	assistant plan: human acceptance stale classification omitted	TestAssistantPlanAcceptanceCurrentState
 go	assistant critic: canonical saved off and Plan controls ignored	TestAssistantCriticReleasedControlMapping
+web	critic switch: saved mode omitted	src/chat/store.test.ts
+web	critic switch: saved reasoning omitted	src/chat/store.test.ts
+web	critic switch: report decision omitted	src/assistant/report.test.ts
+go	critic switch: project mode omitted	TestAssistantCriticControlVectors
+go	critic switch: reasoning omitted	TestAssistantCriticControlVectors

@@ -349,7 +349,7 @@ it('generates briefs without opening runtime tools or a socket', async () => {
   expect(socket).not.toHaveBeenCalled()
   expect(handed?.purpose).toBe('brief')
   expect(handed?.tools).toEqual([])
-  expect(handed?.adversarialReview).toBe(false)
+  expect(handed?.critic).toBe('off')
   await expect(handed!.callTool('evaluate', {})).rejects.toThrow('no tool capability')
 })
 
@@ -364,7 +364,7 @@ it('graph authoring keeps the ToolGate ceiling and adds only the two read-only h
   act(() => result.current.start('The runtime author_graph prompt.'))
   await waitFor(() => expect(result.current.status).toBe('finished'))
   expect(handed?.purpose).toBe('graph')
-  expect(handed?.adversarialReview).toBe(false)
+  expect(handed?.critic).toBeUndefined()
   expect(handed?.hostTools.map(tool => tool.name)).toEqual(['graph_validate', 'graph_explain'])
   expect(handed?.tools.map(tool => tool.name).sort()).toEqual([...scenario.scenarioTools].sort())
   await expect(handed!.callTool('write_file', {})).rejects.toThrow()
@@ -411,13 +411,17 @@ describe('what a run is told of the critic and of project memory', () => {
     return handed!
   }
 
-  it('asks for the critic where the panes ran it: the API engine at any thinking tier but off, never Codex', async () => {
-    expect((await run({ thinking: 'off' })).adversarialReview).toBe(false)
-    handed = null; cleanup()
-    expect((await run({ thinking: 'on' })).adversarialReview).toBe(true)
-    handed = null; cleanup()
-    // Codex carries its own tier and never the critic.
-    expect((await run({ engine: 'codex', endpoint: null, agent: { model: 'a-model', provider: 'openai', authMethod: 'subscription', tools: scenario.scenarioTools } as never, thinking: 'on' })).adversarialReview).toBe(false)
+  it('passes exact critic choices without deriving a boolean from the engine or thinking tier', async () => {
+    for (const critic of ['off','auto','on'] as const) {
+      const session=await run({thinking:'on',critic,criticReasoning:'ultra'})
+      expect(session.critic).toBe(critic)
+      expect(session.criticReasoning).toBe('ultra')
+      expect(session.adversarialReview).toBeUndefined()
+      handed=null;cleanup()
+    }
+    expect((await run({thinking:'on'})).critic).toBeUndefined()
+    handed=null;cleanup()
+    expect((await run({engine:'codex',endpoint:null,agent:{model:'a-model',provider:'openai',authMethod:'subscription',tools:scenario.scenarioTools} as never,thinking:'on',critic:'on',criticReasoning:'high'})).critic).toBe('on')
   })
 
   it('hands the critic the cases it was given, on the default purpose alone', async () => {
@@ -440,7 +444,7 @@ describe('what a run is told of the critic and of project memory', () => {
 
   it('asks for no critic on the purposes that never had one', async () => {
     for (const purpose of ['test-design', 'graph'] as const) {
-      expect((await run({ purpose, thinking: 'on' })).adversarialReview, purpose).toBe(false)
+      expect((await run({ purpose, thinking: 'on' })).critic, purpose).toBe(purpose==='graph'?undefined:'off')
       handed = null; cleanup()
     }
   })

@@ -1,6 +1,8 @@
+import criticControls from './fixtures/critic-controls.json'
+import { criticMode } from '@judgment-pack/harness/contract'
 import { memoryDraftPersistence } from '../testing/draftPersistence'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ChatStore, type ChatPersistence } from './store'
+import { criticChoice, ChatStore, type ChatPersistence } from './store'
 import { INITIAL_STATE } from '../research/run'
 import type { ResearchRunBinding } from '../research/useResearchRun'
 import { chatContextFor, disposeChatContext } from '../assistant/chatContexts'
@@ -444,4 +446,47 @@ it('restores refused Dialect candidates and exact findings without saved-action 
  const bad=structuredClone(saved) as any;bad.chats[0].inputActions[0].dialectCheck.report.compatibility={notes:'not findings'}
  const invalid=setup({read:async()=>({project:'/project',sha256:'loaded',content:bad})});await invalid.store.load()
  expect(invalid.store.getSnapshot().ready).toBe(false);expect(invalid.write).not.toHaveBeenCalled()
+})
+
+ it('roundtrips exact critic choices and preserves explicit legacy booleans without inventing an absent choice',async()=>{
+  const {store,write}=setup();await store.load()
+  const settings=[{}, {adversarialReview:false},{adversarialReview:true}, ...(['off','auto','on'] as const).map(critic=>({critic,criticReasoning:'ultra' as const}))]
+  for(const setting of settings){const chat=store.create();store.update(chat.id,setting)}
+  await store.flush()
+  const document=write.mock.calls.at(-1)![0] as {chats:import('./store').Chat[]}
+  const loaded=setup({read:async()=>({project:'/project',sha256:'saved',content:document})});await loaded.store.load()
+  for(let i=0;i<settings.length;i++){
+   const expected=document.chats[i]!
+   expect(loaded.store.getSnapshot().chats[i]).toMatchObject(expected)
+   expect(loaded.store.getSnapshot().chats[i]?.adversarialReview).toBe(expected.adversarialReview)
+   expect(loaded.store.getSnapshot().chats[i]?.critic).toBe(expected.critic)
+   expect(loaded.store.getSnapshot().chats[i]?.criticReasoning).toBe(expected.criticReasoning)
+  }
+ })
+
+it('reads the shared critic control vectors through the actual saved chat reader',async()=>{
+ for(const row of criticControls){
+  const {store}=setup();await store.load();const original=store.create()
+  const chat={...original,...row.chat}
+  const loaded=setup({read:async()=>({project:'/project',sha256:'saved',content:{version:1,chats:[chat]}})});await loaded.store.load()
+  const actual=loaded.store.getSnapshot().chats[0]!
+  expect(actual.critic,row.name).toBe(row.chat.critic)
+  expect(actual.criticReasoning,row.name).toBe(row.chat.criticReasoning)
+  expect(actual.adversarialReview,row.name).toBe(row.chat.adversarialReview)
+  expect(criticMode({critic:actual.critic,adversarialReview:actual.adversarialReview,criticProject:row.project||undefined} as Parameters<typeof criticMode>[0],{}).mode,row.name).toBe(row.mode)
+ }
+})
+
+it('lets an explicit control edit restore project inheritance after a legacy boolean',async()=>{
+ const {store,write}=setup();await store.load();const chat=store.create()
+ store.update(chat.id,{adversarialReview:false})
+ store.update(chat.id,criticChoice('on'))
+ expect(store.getSnapshot().chats[0].critic).toBe('on')
+ expect(store.getSnapshot().chats[0].adversarialReview).toBeUndefined()
+ store.update(chat.id,criticChoice(undefined));await store.flush()
+ const document=write.mock.calls.at(-1)![0]
+ const restored=setup({read:async()=>({project:'/project',sha256:'saved',content:document})});await restored.store.load()
+ const read=restored.store.getSnapshot().chats[0]
+ expect(read.critic).toBeUndefined();expect(read.adversarialReview).toBeUndefined()
+ expect(criticMode({critic:read.critic,adversarialReview:read.adversarialReview,criticProject:'on'},{}).mode).toBe('on')
 })

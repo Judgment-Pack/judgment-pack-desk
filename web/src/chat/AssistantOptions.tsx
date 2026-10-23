@@ -1,3 +1,7 @@
+import { MODEL_TIERS } from '@judgment-pack/harness/criticSwitch'
+import type { CriticTier } from '@judgment-pack/harness/contract'
+import { useProviderModels } from '../assistant/providers'
+import type { CriticMode } from '@judgment-pack/harness/contract'
 import {LoadingState} from '../ui/LoadingState'
 import { conversationMode, type AuthoringMode } from '../research/mode'
 import { useSearchConnections, useSearchPreference } from '../search/connections'
@@ -21,9 +25,10 @@ import { ConfigureAssistant } from './ConfigureAssistant'
 import styles from './ChatWorkspace.module.css'
 
 /** One compact settings summary, shared by the home and pack conversations. */
-export function AssistantOptions({ reasoning, researchMode, searchConnection, searchOptions, thinking, tools, mode = 'draft', review = false, onReview, disabled, notice, linkReading = false, websiteExploration=false }: {
-  reasoning?: string; researchMode?:'auto'|'provided'; searchConnection?:string; searchOptions?:ReactNode; thinking: ThinkingTier; tools: readonly string[]; mode?: AuthoringMode; review?: boolean
-  onReview?: (value: boolean) => void; disabled?: boolean; notice?: string
+export function AssistantOptions({ reasoning, researchMode, searchConnection, searchOptions, thinking, tools, mode = 'draft', review, onReview, criticReasoning, onCriticReasoning, criticModel, connectionId, codex = false, disabled, notice, linkReading = false, websiteExploration=false }: {
+  reasoning?: string; researchMode?:'auto'|'provided'; searchConnection?:string; searchOptions?:ReactNode; thinking: ThinkingTier; tools: readonly string[]; mode?: AuthoringMode; review?: CriticMode
+  criticReasoning?:CriticTier; onCriticReasoning?:(value:CriticTier|undefined)=>void; criticModel?:string; connectionId?:string; codex?:boolean
+  onReview?: (value: CriticMode | undefined) => void; disabled?: boolean; notice?: string
   /** Whether an ordinary chat may read links the person gives (the gateway offers the web source). */
   linkReading?: boolean; websiteExploration?:boolean
 }) {
@@ -33,6 +38,8 @@ export function AssistantOptions({ reasoning, researchMode, searchConnection, se
   const mcp = useMcp()
   const project = useFileListing().data?.root
   const { config } = useEffectiveConfig()
+  const criticCatalog=useProviderModels(codex,connectionId)
+  const criticTiers=codex ? criticCatalog.data?.models.find(model=>model.id===criticModel)?.efforts ?? [] : MODEL_TIERS
   const prompts = usePromptNames()
   const reviewAvailable = mcp.status === 'ready' && (prompts.data ?? []).includes(TEST_PACK_PROMPT)
   const listed = useQuery({ queryKey: ['assistant-tool-options', project, mcp.connectionEpoch], enabled: open && mcp.status === 'ready' && !!mcp.client,
@@ -57,7 +64,11 @@ export function AssistantOptions({ reasoning, researchMode, searchConnection, se
         {searchOptions}
         <dl className={styles.setting}><dt>{config.assistant.engine === "codex" ? msg("Codex reasoning") : msg("Thinking requested")}</dt><dd>{config.assistant.engine === "codex" ? reasoning ?? msg("Model default") : thinking === 'off' ? msg("Off") : thinking === 'ultra' ? msg("Ultra") : msg("On")}</dd></dl>
         <p className={styles.caption}>{(notice ? systemMessage(notice) : undefined) || msg("Reasoning support depends on the selected model.")}</p>
-        {onReview && <label className={styles.reviewOption}><Message text={"<0/> Adversarial review"} slots={[<input type="checkbox" checked={review} disabled={disabled || !reviewAvailable} onChange={event => onReview(event.target.checked)} />]} /></label>}
+        {onReview && <label className={styles.reviewOption}>{msg('Adversarial review')}<select aria-label={msg('Adversarial review')} value={review ?? ''} disabled={disabled} onChange={event => onReview(event.target.value === '' ? undefined : event.target.value as CriticMode)}>
+          <option value="">{msg('Project default')}</option><option value="off">{msg('Off')}</option><option value="auto">{msg('Auto')}</option><option value="on">{msg('On')}</option>
+        </select></label>}
+        {onCriticReasoning && <label className={styles.reviewOption}>{msg('Critic reasoning')}<select aria-label={msg('Critic reasoning')} value={criticReasoning??''} disabled={disabled||codex&&(criticCatalog.isPending||criticCatalog.isError)} onChange={event=>onCriticReasoning(event.target.value===''?undefined:event.target.value as CriticTier)}><option value="">{msg('Author reasoning')}</option>{criticTiers.map(tier=><option key={tier} value={tier}>{tier}</option>)}</select></label>}
+        {review === 'auto'  && <p className={styles.caption}>{msg('A review runs when the run proposes a pack with saved tests, when the proposal changes an existing pack, or when the assistant asks.')}</p>}
         <p className={styles.caption}>{reviewAvailable ? msg("Optional model review of proposed changes. Runtime validation remains required.") : msg("Connect a runtime with test_pack to enable adversarial review.")}</p>
         <section className={styles.toolSection} aria-label={msg("Allowed tools")}>
           <h3><Message text={"Available tools <0/>"} slots={[<span>{available.length + host.length}</span>]} /></h3>

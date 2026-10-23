@@ -53,3 +53,13 @@ describe('a saved report', () => {
     }
   })
 })
+
+it('keeps every canonical critic decision through saved checkpoint and report readers, including why no critic ran',()=>{
+ for(const critic of [{mode:'auto',ran:false,reason:'no-proposal'}, {mode:'on',ran:true,reason:'person',reasoning:'ultra'}, {mode:'auto',ran:true,reason:'cases',trigger:'cases',reasoning:'on'}] as const){
+  const restored=readExecution(JSON.parse(JSON.stringify(checkpoint({critic}))))
+  const report=reportFromExecution(restored)!
+  expect(report.critic).toEqual(critic)
+  expect(validRunReport(JSON.parse(JSON.stringify(report)))).toBe(true)
+ }
+ expect(validRunReport({requests:0,unit:'model-requests',critic:{mode:'sometimes'}})).toBe(false)
+})

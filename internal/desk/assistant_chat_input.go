@@ -21,16 +21,20 @@ import (
 var assistantChatID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 
 type assistantChatInput struct {
-	Policy      *assistantPolicyScope
-	Request     runcontext.CurrentRequest
-	Documents   []runcontext.Document
-	Transcript  string
-	State       string
-	Review      *bool
-	Thinking    string
-	Reasoning   *runcontext.Value
-	References  []assistantDocumentReference
-	Attachments []assistantChatAttachmentGroup
+	Policy          *assistantPolicyScope
+	Request         runcontext.CurrentRequest
+	Documents       []runcontext.Document
+	Transcript      string
+	State           string
+	Review          *bool
+	Critic          string
+	CriticPurpose   string
+	CriticProject   string
+	CriticReasoning string
+	Thinking        string
+	Reasoning       *runcontext.Value
+	References      []assistantDocumentReference
+	Attachments     []assistantChatAttachmentGroup
 }
 
 type assistantChatAttachmentGroup struct {
@@ -417,6 +421,21 @@ func compileAssistantChatInput(source assistantRunSource) (*assistantChatInput, 
 		}
 		review := value.Truth()
 		out.Review = &review
+	}
+	out.CriticProject = source.Profile.Critic
+	if chat.Has("graph") || chat.Has("policyInterpretationKind") && chat.Get("policyInterpretationKind").Str() == "graph" {
+		out.CriticPurpose = "graph"
+	}
+	for key, target := range map[string]*string{"critic": &out.Critic, "criticReasoning": &out.CriticReasoning} {
+		if value := chat.Get(key); value != nil {
+			if !value.IsString() || value.Str() == "" {
+				return nil, errAssistantRunInvalid
+			}
+			*target = value.Str()
+		}
+	}
+	if err := runcontext.ReadCriticSettings(runcontext.CriticSettings{Critic: out.Critic, CriticReasoning: out.CriticReasoning, AdversarialReview: out.Review}, source.Connection.Assistant.Engine == "codex"); err != nil {
+		return nil, errAssistantRunInvalid
 	}
 	prefs := assistantChatPreferences(source)
 	if source.Connection.Assistant.Engine != "codex" && prefs != nil && !prefs.Inherit && prefs.Thinking != "" {
