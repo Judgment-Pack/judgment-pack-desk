@@ -331,14 +331,15 @@ bounded() {
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
 #
-# A clean Desk Go suite took 236.653s in PR #583's Go CI while the mutation
-# baseline hit the old 240s watchdog before any mutant ran. Give deliberate
-# test waits roughly twice that runtime: 480s leaves about 243s for load and
-# scheduling variation. Go's own timeout follows 60s later as a backstop. Both
-# selected and whole-package runs, plus the clean baseline binary, share these
-# bounds so their verdicts stay aligned.
+# PR #625's successful Go CI took 446s; its separate mutation worker's
+# unmutated full-package baseline exceeded 480s before any Go mutant ran.
+# Keep selected checks at 480s, but give full-package baselines/fallbacks 900s
+# (the web full-suite bound), below the CI step's 3000s. Go's panic backstop
+# follows each process-tree watchdog by 60s; compilation keeps its own bound.
 GO_TEST_WATCHDOG=480
 GO_TEST_BACKSTOP=540s
+GO_FULL_WATCHDOG=900
+GO_FULL_BACKSTOP=960s
 
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
@@ -359,7 +360,7 @@ run_go() {
   if [ -n "${1:-}" ]; then
     bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP" -run "$1"
   else
-    bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP"
+    bounded "$GO_FULL_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_FULL_BACKSTOP"
   fi
   code=$?
   go_verdict "$code" "$log"
@@ -408,11 +409,12 @@ go_package_green() {
 
 # Run in the same package directory as go test, with its own clean binary.
 run_go_unmutated() {
-  local package="$1" key log code
+  local package="$1" key log code watchdog=$GO_TEST_WATCHDOG backstop=$GO_TEST_BACKSTOP
+  if [ "$2" = . ]; then watchdog=$GO_FULL_WATCHDOG; backstop=$GO_FULL_BACKSTOP; fi
   key=$(go_package_key "$package")
   log="$work/package-$key.baseline.log"
-  bounded "$GO_TEST_WATCHDOG" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
-    _ "$package" "$work/package-$key.test" "$2" "$GO_TEST_BACKSTOP"
+  bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
+    _ "$package" "$work/package-$key.test" "$2" "$backstop"
   code=$?
   go_verdict "$code" "$log"
 }
