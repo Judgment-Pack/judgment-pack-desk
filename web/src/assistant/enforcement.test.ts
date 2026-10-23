@@ -913,7 +913,7 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
         source.path !== 'assistant/useAssistantRun.ts'
     )
 
-  it('round-trips and freezes in the run hook, and in no other module', () => {
+  it('round-trips and freezes proposals only in the run hook', () => {
     const hook = read('assistant/useAssistantRun.ts')
     expect(hook).toContain('JSON.stringify(value)')
     expect(hook).toContain('JSON.parse(text)')
@@ -935,6 +935,9 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
         freezeSource = source.text.replace(identityToken, '')
       }
       const frozenDeclarations: Record<string, string> = {
+        // Immutable run identity is not proposal canonicalization. Strip this
+        // exact statement once; any other freeze in the module still fails.
+        'assistant/serverRuns/stream.ts': 'this.reference = Object.freeze({id:reference.id, owner:Object.freeze({...reference.owner}), requestId:reference.requestId})',
         '@judgment-pack/harness/dist/subagents.js': 'export const SUBAGENT_DEFAULTS = Object.freeze({ cataloguedSubagents: 16, subagentCatalogueBytes: 4000 });',
         '@judgment-pack/harness/dist/criticSwitch.js': "export const REQUEST_REVIEW_SCHEMA = Object.freeze({ type: 'object', properties: { reason: { type: 'string', description: 'Why a review of this run’s proposal is wanted, in one sentence.' } } });"
       }
