@@ -7,7 +7,13 @@ import {validPolicyProposal} from '../web/src/policies/chat.ts'
 import {validPolicyInterpretationProposal} from '../web/src/policies/interpretation.ts'
 const [passedPath,stalePath]=process.argv.slice(2)
 assert(passedPath&&stalePath,'passed and stale Policy producer outputs required')
-for(const [path,status,interpretations] of [[passedPath,'passed',2],[stalePath,'stale',0]]){
+const heldNarrative='Only approved staff may access records.\r\nRetain missing values, 中文, < and >.'
+// Independent producer inputs: passed replaces every field; stale changes only
+// title and must retain the request-time narrative/version, even after a save.
+for(const [path,status,interpretations,candidate] of [
+ [passedPath,'passed',2,{title:' Exact title ',narrative:'Preserve missing, false, zero, 1.20 and "50" exactly.\r\n中文 <record>.',artifactVersion:'1.1.0'}],
+ [stalePath,'stale',0,{title:'Changed',narrative:heldNarrative,artifactVersion:'1.0.0'}],
+]){
  const document=JSON.parse(await readFile(path,'utf8'))
  let writes=0
  const persistence={read:async()=>({project:'fixture',sha256:'fixture',content:document}),write:async()=>{writes++;throw Error('Reader must not save')}}
@@ -24,7 +30,8 @@ for(const [path,status,interpretations] of [[passedPath,'passed',2],[stalePath,'
  assert.equal(proposal.policyId,chat.policy.id)
  assert.equal(proposal.revision,chat.policyRequest.revision)
  assert.deepEqual(proposal.before,chat.policyRequest.candidate)
- assert.equal(proposal.candidate.narrative,'Preserve missing, false, zero, 1.20 and "50" exactly.\r\n中文 <record>.')
+ assert.deepEqual(proposal.candidate,candidate)
+ if(status==='stale'){assert.equal(chat.policyRequest.candidate.narrative,heldNarrative);assert.equal(chat.policyRequest.candidate.artifactVersion,'1.0.0')}
  assert.equal(proposal.check.scope,'draft-shape-and-revision')
  assert.equal(proposal.check.status,status)
  assert.equal(proposal.save,undefined)

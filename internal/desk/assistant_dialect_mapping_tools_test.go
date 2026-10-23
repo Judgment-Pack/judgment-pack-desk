@@ -135,8 +135,6 @@ func TestAssistantDialectMappingActualAPIProducer(t *testing.T) {
 		}
 	}
 	x := assistantMappingOpen(t, s, e)
-	off := false
-	x.Run.Review = &off
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
 	assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
@@ -239,8 +237,6 @@ func TestAssistantDialectMappingActualNativeParentChild(t *testing.T) {
   elif mode=='duplicate': tool(offered('get_schema'),{},rpc='rpc-two')`, 1)
 			assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(trace), "peer.py"), []byte(peer), 0600))
 			x := assistantMappingOpen(t, s, e)
-			off := false
-			x.Run.Review = &off
 			ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 			defer cancel()
 			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
@@ -416,8 +412,6 @@ func TestAssistantDialectMappingPublicationUncertaintyStops(t *testing.T) {
 	s, token, e := assistantRecipeBrowserFixture(t, u.server.URL)
 	saved = assistantMappingSeed(t, s)
 	x := assistantMappingOpen(t, s, e)
-	off := false
-	x.Run.Review = &off
 	s.retainedArtifacts = assistantMappingArtifactOwner{base: s.artifactRepository(), fail: true}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
