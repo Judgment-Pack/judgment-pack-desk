@@ -30,7 +30,13 @@ async function mount({mutate,existing=false,initial,recovered,optionsWait,option
  const view=render(tree())
  return {...fixture,view,cache,writes,requests,rerender:(nextContent:string,nextDisabled=disabled)=>view.rerender(tree(nextContent,nextDisabled)),setCurrent:(reply:AdoptionReply)=>{current=reply},setOptions:(next:AdoptionOptions)=>{options=next},setFailed:(value:boolean)=>{failed=value},setInventoryFailed:(value:boolean)=>{inventoryFailed=value},setDetailFailed:(value:boolean)=>{detailFailed=value},setRecovery:(result:AdoptionOutcome)=>{receipt=result;current=result.adoption;hasRecord=true}}
 }
-async function selectPack(){const select=await screen.findByRole('combobox',{name:'Governing Pack publication'});fireEvent.keyDown(select,{key:'Enter'});fireEvent.click(await screen.findByRole('option',{name:/1\.0\.0/}));await screen.findByRole('checkbox',{name:/Eligibility policy/})}
+async function selectPack(){
+ const select=await screen.findByRole('combobox',{name:'Governing Pack publication'})
+ // The trigger exists while the asynchronous pending-operation journal is
+ // still initializing. A key sent before it unlocks cannot open the options.
+ await waitFor(()=>expect(select).toHaveProperty('disabled',false))
+ fireEvent.keyDown(select,{key:'Enter'});fireEvent.click(await screen.findByRole('option',{name:/1\.0\.0/}));await screen.findByRole('checkbox',{name:/Eligibility policy/})
+}
 async function selectPolicies(){await selectPack();fireEvent.click(screen.getByRole('checkbox',{name:/Eligibility policy/}));fireEvent.click(screen.getByRole('checkbox',{name:/Reporting policy/}));await waitFor(()=>expect(screen.getByRole('button',{name:'Prepare adoption candidate'})).toHaveProperty('disabled',false))}
 async function openHistory(){fireEvent.click(screen.getByText('Governing-policy history',{exact:true}));fireEvent.click(await screen.findByRole('button',{name:'Open adoption'}));await screen.findByRole('textbox',{name:'Adoption review comment'});await waitFor(()=>expect(screen.getByRole('button',{name:'Adopt complete policy set'})).toHaveProperty('disabled',false))}
 
