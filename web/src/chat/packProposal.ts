@@ -36,14 +36,17 @@ export function readPackReview(value: unknown): PackReview | undefined {
   if (!object(value)) return undefined
   const basis = readPackBasis(value.basis)
   if (!basis) return undefined
-  const c = value.check
-  // Historical check output is display data. It never grants permission to save.
-  const check = object(c) && typeof c.documentDigest === 'string' && /^[a-f0-9]{64}$/.test(c.documentDigest) &&
+  const check = readPackCheck(value.check)
+  return {basis,...(check ? {check} : {})}
+}
+/** Shared original-output and explicit server recheck reader; display data only. */
+export function readPackCheck(c: unknown): PackProposalCheck | undefined {
+  return object(c) && typeof c.documentDigest === 'string' && /^[a-f0-9]{64}$/.test(c.documentDigest) &&
     typeof c.suiteKey === 'string' && c.suiteKey.length <= 4_000_000 && typeof c.at === 'string' && Number.isFinite(Date.parse(c.at)) &&
     typeof c.valid === 'boolean' && Array.isArray(c.diagnostics) && Number.isSafeInteger(c.totalCases) && (c.totalCases as number) >= 0 &&
     (c.report === undefined || validReport(c.report)) ? c as unknown as PackProposalCheck : undefined
-  return {basis,...(check ? {check} : {})}
 }
+
 export function samePack(left: string | undefined, right: string | undefined): boolean {
   if (left === undefined || right === undefined) return false
   try { return jsonIdentity(JSON.parse(left)) === jsonIdentity(JSON.parse(right)) } catch { return false }

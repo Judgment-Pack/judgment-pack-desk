@@ -43,6 +43,8 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 			Binding       assistantRunBinding `json:"binding"`
 			Actions       []json.RawMessage   `json:"actions"`
 			Checkpoint    json.RawMessage     `json:"checkpoint"`
+			SavedPack     json.RawMessage     `json:"savedPack"`
+			PackChecks    []json.RawMessage   `json:"packChecks"`
 			DomainOutputs []json.RawMessage   `json:"domainOutputs"`
 			Websites      []json.RawMessage   `json:"websites"`
 			Links         []json.RawMessage   `json:"links"`
@@ -52,6 +54,16 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 		return ledger, err
 	}
 	for _, run := range wire.Runs {
+		if len(run.SavedPack) > 0 {
+			if err := readAssistantDialectCustody(run.SavedPack, reflect.TypeOf(assistantSavedPackBasis{})); err != nil {
+				return ledger, err
+			}
+		}
+		for _, raw := range run.PackChecks {
+			if err := readAssistantDialectCustody(raw, reflect.TypeOf(assistantPackRecheck{})); err != nil {
+				return ledger, err
+			}
+		}
 		for _, raw := range run.Actions {
 			var a struct {
 				Kind string `json:"kind"`
@@ -79,6 +91,11 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 			fields, err := assistantTestObject(raw)
 			if err != nil {
 				return ledger, err
+			}
+			if fields["packProposal"] != nil {
+				if err := readAssistantDialectCustody(fields["packProposal"], reflect.TypeOf(assistantSavedPackProposal{})); err != nil {
+					return ledger, err
+				}
 			}
 			if fields["website"] != nil {
 				if err = readAssistantDialectCustody(fields["website"], reflect.TypeOf(assistantWebsiteOutput{})); err != nil {

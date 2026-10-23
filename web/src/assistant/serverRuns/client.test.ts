@@ -125,3 +125,18 @@ it.each([
  await expect((async()=>{for await(const value of client.events(observed))out.push(value)})()).rejects.toMatchObject({failure:{code:'invalid-response'}})
  expect(out).toEqual([]);expect(observed.snapshot).toBeUndefined();expect(observed.cursor).toBeUndefined();expect(fetch).toHaveBeenCalledTimes(1)
 })
+
+it('explicit saved-pack recheck uses references only, binds returned findings and never retries',async()=>{
+ const {digestOf}=await import('../../research/checkCandidate')
+ const check={documentDigest:'a'.repeat(64),suiteKey:'[]',at:'2026-10-23T00:00:00Z',valid:true,diagnostics:[],totalCases:0}
+ const request={id:'check-one',documentDigest:check.documentDigest,suiteDigest:await digestOf(check.suiteKey)}
+ const fetch=vi.fn().mockResolvedValueOnce(json(check)).mockResolvedValueOnce(json({...check,documentDigest:'b'.repeat(64)})).mockRejectedValueOnce(Error('private transport prose'))
+ vi.stubGlobal('fetch',fetch);const client=await serverRunClient()
+ expect(await client.recheckPack(ref,request)).toEqual(check)
+ expect(fetch.mock.calls[0][0]).toBe(`/api/assistant-runs/${ref.id}/pack-checks`)
+ expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(request)
+ await expect(client.recheckPack(ref,{...request,id:'check-two'})).rejects.toMatchObject({delivery:'uncertain',failure:{code:'invalid-response'}})
+ await expect(client.recheckPack(ref,{...request,id:'check-three'})).rejects.toMatchObject({delivery:'uncertain',failure:{code:'connection-lost'}})
+ await expect(client.recheckPack(ref,{...request,path:'foreign.json'} as never)).rejects.toMatchObject({delivery:'not-sent'})
+ expect(fetch).toHaveBeenCalledTimes(3)
+})

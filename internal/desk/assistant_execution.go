@@ -165,7 +165,8 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		return nil, err
 	}
 	input := &runcontext.Input{Phase: e.record.Binding.Phase, Connection: e.record.Binding.ConnectionID, Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: e.record.Checkpoint, Approval: e.decision, CurrentRequest: &chat.Request, Documents: chat.Documents, CurrentState: chat.State, Memory: memory}
-	if chat.Policy != nil && chat.Policy.ID != "" {
+	packID, _, _ := assistantSavedPackLink(e.source.Original)
+	if packID != "" || chat.Policy != nil && chat.Policy.ID != "" {
 		off := false
 		input.ArtifactProposals = &off
 	}

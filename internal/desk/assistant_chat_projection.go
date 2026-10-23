@@ -76,6 +76,14 @@ func assistantChatEventDigestPayload(run assistantRunRecord) []byte {
 	// Construct the shared fields once: domain output custody is covered by the
 	// same digest boundary both before and after a continuation.
 	base := assistantChatDigestBase{run.State, assistantChatProjectionCheckpoint(run), run.Events, run.DomainOutputs}
+	if run.SavedPack != nil {
+		raw, _ := json.Marshal(struct {
+			assistantChatDigestBase
+			SavedPack     *assistantSavedPackBasis
+			Continuations []assistantRunContinuationReceipt
+		}{base, run.SavedPack, assistantRunContinuations(run)})
+		return raw
+	}
 	if continuations := assistantRunContinuations(run); len(continuations) > 0 {
 		raw, _ := json.Marshal(struct {
 			assistantChatDigestBase
@@ -332,6 +340,9 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	if err := validateAssistantDomainOutputs(run); err != nil {
 		return nil, err
 	}
+	if err := validateAssistantSavedPackSource(source, run); err != nil {
+		return nil, err
+	}
 	if err := validateAssistantTestProjectionSource(source, run); err != nil {
 		return nil, err
 	}
@@ -419,6 +430,10 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 		return nil, err
 	}
 	responseID := assistantChatResponseID(run.ID)
+	candidates, err = appendAssistantSavedPackCandidates(candidates, run, responseID)
+	if err != nil {
+		return nil, err
+	}
 	items := []map[string]any{}
 	calls := map[string]int{}
 	completed := map[string]bool{}

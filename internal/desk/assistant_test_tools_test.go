@@ -54,10 +54,19 @@ const assistantTestRuntimeBranch = `
 `
 
 func assistantTestHostFixture(t *testing.T, url, phase string, draft, native bool, review ...bool) (*Server, string, *assistantRunExecution, string) {
+	return assistantTestHostFixtureCapture(t, url, phase, draft, native, nil, review...)
+}
+func assistantTestHostFixtureCapture(t *testing.T, url, phase string, draft, native bool, capture *assistantPackBasis, review ...bool) (*Server, string, *assistantRunExecution, string) {
+	return assistantTestHostFixtureExecuteCapture(t, url, phase, draft, native, capture, nil, review...)
+}
+func assistantTestHostFixtureExecuteCapture(t *testing.T, url, phase string, draft, native bool, capture *assistantPackBasis, execute func(context.Context, *assistantRunExecution) error, review ...bool) (*Server, string, *assistantRunExecution, string) {
 	t.Helper()
 	entered := make(chan *assistantRunExecution, 1)
 	s, token, start, executor := assistantProtocolFixture(t, func(ctx context.Context, e *assistantRunExecution) error {
 		entered <- e
+		if execute != nil {
+			return execute(ctx, e)
+		}
 		<-ctx.Done()
 		return ctx.Err()
 	})
@@ -111,6 +120,17 @@ func assistantTestHostFixture(t *testing.T, url, phase string, draft, native boo
 		policyWorkspaceSave(t, s, token, "/api/draft-packs", map[string]any{"version": 1, "drafts": []any{draft}, "deleted": []string{}})
 	} else {
 		chat["pack"] = assistantChatJSON(map[string]string{"id": owner, "path": "one.json", "digest": digestOf([]byte(assistantTestPack))})
+	}
+	if capture != nil {
+		cp, _ := assistantTestObject(chat["checkpoint"])
+		state, _ := assistantTestObject(cp["state"])
+		turns, _ := assistantChatArray(state["turns"])
+		turn, _ := assistantTestObject(turns[len(turns)-1])
+		turn["packContext"] = assistantChatJSON(capture)
+		turns[len(turns)-1] = assistantChatEncodeObject(turn)
+		state["turns"] = assistantChatEncodeArray(turns)
+		cp["state"] = assistantChatEncodeObject(state)
+		chat["checkpoint"] = assistantChatEncodeObject(cp)
 	}
 	doc.Chats[0] = assistantChatEncodeObject(chat)
 	policyWorkspaceSave(t, s, token, "/api/conversations", doc)

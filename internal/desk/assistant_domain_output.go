@@ -16,6 +16,7 @@ import (
 // Only this finite domain payload is absent from canonical Agent events. It is
 // authored by a finite domain producer with its exact retained result.
 type assistantDomainOutput struct {
+	PackProposal         *assistantSavedPackProposal   `json:"packProposal,omitempty"`
 	Website              *assistantWebsiteOutput       `json:"website,omitempty"`
 	Plan                 *chatPlan                     `json:"plan,omitempty"`
 	Link                 *assistantLinkOutput          `json:"link,omitempty"`
@@ -130,6 +131,9 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 	return false
 }
 func validateAssistantDomainOutputs(run assistantRunRecord) error {
+	if err := validateAssistantSavedPack(run); err != nil {
+		return err
+	}
 	if err := validateAssistantWebsiteCustody(run); err != nil {
 		return err
 	}
@@ -157,7 +161,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		if op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {
 			return errAssistantRunInvalid
 		}
-		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) && op.Name != assistantSearchTool && op.Name != assistantLinkTool && op.Name != assistantWebsiteTool && op.Name != assistantPlanTool {
+		if op.Kind != "host" || !assistantGraphTool(op.Name) && !assistantPolicyTool(op.Name) && !assistantDialectRecipeTool(op.Name) && !assistantTestTool(op.Name) && !assistantDialectTool(op.Name) && op.Name != assistantSearchTool && op.Name != assistantLinkTool && op.Name != assistantWebsiteTool && op.Name != assistantPlanTool && op.Name != assistantSavedPackTool {
 			continue
 		}
 		var in assistantHostIntent
@@ -193,7 +197,9 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			return errAssistantRunInvalid
 		}
 		var argumentErr error
-		if op.Name == assistantWebsiteTool {
+		if op.Name == assistantSavedPackTool {
+			_, argumentErr = readAssistantSavedPackArguments(in.Arguments)
+		} else if op.Name == assistantWebsiteTool {
 			_, argumentErr = readAssistantWebsiteArguments(in.Arguments)
 		} else if op.Name == assistantPlanTool {
 			_, argumentErr = readAssistantPlanArguments(in.Arguments)
@@ -268,6 +274,13 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	seen := map[string]bool{}
 	draftIDs := map[string]bool{}
 	for _, out := range run.DomainOutputs {
+		if out.Kind == "saved-pack" {
+			if seen[out.OperationID] {
+				return errAssistantRunInvalid
+			}
+			seen[out.OperationID] = true
+			continue
+		}
 		if out.Kind == "plan" {
 			if seen[out.OperationID] || validateAssistantPlanOutput(run, out, receipts) != nil {
 				return errAssistantRunInvalid

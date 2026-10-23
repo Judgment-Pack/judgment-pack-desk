@@ -274,3 +274,31 @@ done
  --outfile="$tmp/search-reference.mjs"
 "$node_bin" "$tmp/search-reference.mjs" "$search_outputs" | tee "$tmp/search-reader.log"
 grep -Fxq 'Search shared readers: 3 actual API/native/research-child projections and exact sealed originals passed.' "$tmp/search-reader.log"
+
+# Saved-pack candidates and explicit model-free checks use the real Go producer
+# payloads, then the same checkpoint/proposal readers and authenticated client.
+saved_pack_outputs="$tmp/saved-pack"
+mkdir -m 700 "$saved_pack_outputs"
+(
+ cd "$root"
+ env "${go_env[@]}" DESK_SAVED_PACK_READER_OUTPUT="$saved_pack_outputs/chat.json" \
+  DESK_SAVED_PACK_SUITE_OUTPUT="$saved_pack_outputs/suite.json" \
+  DESK_SAVED_PACK_RECHECK_OUTPUT="$saved_pack_outputs/recheck.json" \
+  DESK_SAVED_PACK_RECHECK_REFERENCE="$saved_pack_outputs/reference.json" \
+  go test ./internal/desk -run '^TestAssistantSavedPack(ActualAPIAndReload|ExplicitRecheckHTTP)$' -count=1 -v
+) | tee "$tmp/saved-pack-producers.log"
+for producer in ActualAPIAndReload ExplicitRecheckHTTP; do
+ grep -Eq -- "^--- PASS: TestAssistantSavedPack$producer \\(" "$tmp/saved-pack-producers.log" || {
+  echo "Saved-pack $producer producer did not run and pass" >&2
+  exit 1
+ }
+done
+"$esbuild" "$root/scripts/assistant-saved-pack-reference.mjs" \
+ --bundle --platform=node --format=esm \
+ --inject:"$root/scripts/assistant-chat-projection-reference-locale.mjs" \
+ --define:import.meta.glob=offlineLocaleCatalogues \
+ --outfile="$tmp/saved-pack-reference.mjs"
+"$node_bin" "$tmp/saved-pack-reference.mjs" "$saved_pack_outputs/chat.json" \
+ "$saved_pack_outputs/suite.json" "$saved_pack_outputs/recheck.json" \
+ "$saved_pack_outputs/reference.json" | tee "$tmp/saved-pack-reader.log"
+grep -Fxq 'Saved-pack proposal: actual Go correction/basis/check/reload and explicit model-free recheck passed shared browser readers and client.' "$tmp/saved-pack-reader.log"

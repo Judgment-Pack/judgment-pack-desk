@@ -1,3 +1,5 @@
+import { readPackCheck, type PackProposalCheck } from '../../chat/packProposal'
+import { digestOf } from '../../research/checkCandidate'
 import { validQuestionDraft } from '@judgment-pack/harness/questions'
 import { AIFailureError, failure, normalizeFailure, type FailureCode } from '@judgment-pack/harness/failures'
 import { deskFetch } from '../../files/client'
@@ -68,6 +70,24 @@ export class ServerRunClient {
     }
     if(body.kind==='extend-budget'&&(snapshot.state!=='paused-budget'||pendingQuestion(snapshot)))throw new RunRequestError('not-sent',undefined,'permission')
     return this.json(`${ROOT}/${bound.id}/actions`,bound,body,signal)
+  }
+  /** User-owned, model-free recheck. References never authorize a write or model request. */
+  async recheckPack(ref: RunReference, request: {id:string;documentDigest:string;suiteDigest:string}, signal?: AbortSignal): Promise<PackProposalCheck> {
+    const bound=bind(ref)
+    if (!object(request)||!exact(request,['id','documentDigest','suiteDigest'])||!text(request.id,128)||!digest(request.documentDigest)||!digest(request.suiteDigest)) throw new RunRequestError('not-sent',undefined,'invalid-request')
+    const scope=await this.scope(signal)
+    let sent=false,answer:Response|undefined
+    try {
+      sent=true
+      answer=await deskFetch(`${ROOT}/${bound.id}/pack-checks`,{method:'POST',redirect:'error',signal:scope.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({id:request.id,documentDigest:request.documentDigest,suiteDigest:request.suiteDigest})})
+      await this.current(scope.signal)
+      if(!answer.ok){await discardBody(answer);throw new RunRequestError(answer.status>=400&&answer.status<500&&answer.status!==408?'refused':'uncertain',answer.status,statusCode(answer.status))}
+      const check=readPackCheck(await readJSON(answer,scope.signal))
+      if(!check||check.documentDigest!==request.documentDigest||await digestOf(check.suiteKey)!==request.suiteDigest) throw new RunRequestError('uncertain',undefined,'invalid-response')
+      await this.current(scope.signal)
+      return check
+    } catch(cause){if(cause instanceof RunRequestError)throw cause;throw new RunRequestError(sent?'uncertain':'not-sent',undefined,'connection-lost')}
+    finally{if(answer)await discardBody(answer);scope.close()}
   }
   async discover(binding: RunDiscovery, signal?: AbortSignal): Promise<readonly RunSnapshot[]> {
     if (!object(binding) || !object(binding.owner) || !ownerID(binding.owner.id) || binding.owner.kind !== 'chat' || !(typeof binding.requestId === 'string' && /^[A-Za-z0-9-]{1,100}$/.test(binding.requestId))) throw new RunRequestError('not-sent',undefined,'invalid-response')
