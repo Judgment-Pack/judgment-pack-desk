@@ -201,7 +201,10 @@ func (h *assistantRunService) launch(r *http.Request, record assistantRunRecord,
 				}
 			}
 		}()
-		err := h.server.assistantRunExecutor.Execute(ctx, execution)
+		err := execution.Authorize(ctx)
+		if err == nil {
+			err = h.server.assistantRunExecutor.Execute(ctx, execution)
+		}
 		canceled := ctx.Err() != nil
 		cancel()
 		<-monitorDone
@@ -214,7 +217,9 @@ func (h *assistantRunService) launch(r *http.Request, record assistantRunRecord,
 			paused := err == nil && !canceled && latest.Checkpoint != nil
 			// cancel above only stops the monitor; distinguish executor outcome using
 			// its persisted checkpoint, not a canceled HTTP reader.
-			if paused && latest.Checkpoint.Approval != nil && latest.Checkpoint.Approval.State == "asked" && latest.Checkpoint.Status == "stopped" {
+			if question, questionErr := pendingAssistantRunQuestion(latest); paused && questionErr == nil && question != nil && latest.Checkpoint.Status == "complete" {
+				_ = writer.State(bounded, "awaiting-input")
+			} else if paused && latest.Checkpoint.Approval != nil && latest.Checkpoint.Approval.State == "asked" && latest.Checkpoint.Status == "stopped" {
 				_ = writer.State(bounded, "awaiting-input")
 			} else if paused && latest.State == "awaiting-client" && latest.Checkpoint.Status == "stopped" {
 				// A client-required pause has already closed its adapter context.
@@ -242,7 +247,7 @@ func (h *assistantRunService) read(r *http.Request, id string) (assistantRunReco
 	return h.server.assistantRuns().lookup(r.Context(), identity, id, "", true)
 }
 func (h *assistantRunService) action(r *http.Request, id string, action assistantRunAction) (assistantRunRecord, error) {
-	if !assistantRunText(action.ID, 128) || !contains([]string{"cancel", "approval", "abandon"}, action.Kind) || action.Revision == 0 {
+	if !assistantRunText(action.ID, 128) || !contains([]string{"cancel", "approval", "abandon", "answer", "extend-budget"}, action.Kind) || action.Revision == 0 {
 		return assistantRunRecord{}, errAssistantRunInvalid
 	}
 	h.mu.Lock()
@@ -252,6 +257,9 @@ func (h *assistantRunService) action(r *http.Request, id string, action assistan
 	}
 	record, err := h.read(r, id)
 	if err != nil {
+		return record, err
+	}
+	if err = validateAssistantRunActionShape(action); err != nil {
 		return record, err
 	}
 	if action.Kind == "abandon" {
@@ -268,6 +276,9 @@ func (h *assistantRunService) action(r *http.Request, id string, action assistan
 			}
 			return record, nil
 		}
+	}
+	if action.Kind == "answer" || action.Kind == "extend-budget" {
+		return h.continueRun(r, record, action)
 	}
 	if record.Historical || assistantRunTerminal(record.State) || record.Revision != action.Revision {
 		return record, errAssistantRunConflict

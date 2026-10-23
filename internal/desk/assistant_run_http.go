@@ -13,25 +13,27 @@ import (
 	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/jsonscalar"
 )
 
 type assistantRunView struct {
-	ChatProjection  *assistantChatProjectionView `json:"chatProjection,omitempty"`
-	ProjectionIssue string                       `json:"projectionIssue,omitempty"`
-	ID              string                       `json:"id"`
-	Revision        uint64                       `json:"revision"`
-	Owner           assistantRunOwner            `json:"owner"`
-	RequestID       string                       `json:"requestId"`
-	State           string                       `json:"state"`
-	Historical      bool                         `json:"historical,omitempty"`
-	Checkpoint      *contract.Checkpoint         `json:"checkpoint,omitempty"`
-	Operations      []assistantRunOperation      `json:"operations"`
-	Events          []assistantRunEvent          `json:"events"`
-	Cursor          string                       `json:"cursor"`
+	Continuations   []assistantRunContinuationReceipt `json:"continuations,omitempty"`
+	ChatProjection  *assistantChatProjectionView      `json:"chatProjection,omitempty"`
+	ProjectionIssue string                            `json:"projectionIssue,omitempty"`
+	ID              string                            `json:"id"`
+	Revision        uint64                            `json:"revision"`
+	Owner           assistantRunOwner                 `json:"owner"`
+	RequestID       string                            `json:"requestId"`
+	State           string                            `json:"state"`
+	Historical      bool                              `json:"historical,omitempty"`
+	Checkpoint      *contract.Checkpoint              `json:"checkpoint,omitempty"`
+	Operations      []assistantRunOperation           `json:"operations"`
+	Events          []assistantRunEvent               `json:"events"`
+	Cursor          string                            `json:"cursor"`
 }
 
 func assistantRunPublic(run assistantRunRecord) assistantRunView {
-	return assistantRunView{ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
+	return assistantRunView{Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
 }
 func (s *Server) registerAssistantRuns() {
 	s.mux.HandleFunc("GET /api/assistant-runs/owners/{owner}/requests/{request}", s.handleAssistantChatRuns)
@@ -56,7 +58,7 @@ func (s *Server) guardAssistantRun(w http.ResponseWriter, r *http.Request) bool 
 // Go's case-insensitive struct matching. This body can never supply a binding.
 func assistantRunRequest(r *http.Request, target any) error {
 	raw, err := readBounded(r.Body, 16<<10)
-	if err != nil || !uniqueJSON(raw) {
+	if err != nil || !validUTF8(raw) || jsonscalar.ValidateEscapes(raw) != nil || !uniqueJSON(raw) {
 		return errAssistantRunInvalid
 	}
 	var fields map[string]json.RawMessage
@@ -80,6 +82,29 @@ func assistantRunRequest(r *http.Request, target any) error {
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(target); err != nil {
 		return errAssistantRunInvalid
+	}
+	if action, ok := target.(*assistantRunAction); ok {
+		allowed := []string{"id", "kind", "revision"}
+		switch action.Kind {
+		case "approval":
+			allowed = append(allowed, "callId", "argsDigest", "approved", "note")
+		case "answer":
+			allowed = append(allowed, "questionId", "questionDigest", "answer")
+		case "cancel", "abandon", "extend-budget":
+		default:
+			return errAssistantRunInvalid
+		}
+		for key := range fields {
+			if !contains(allowed, key) {
+				return errAssistantRunInvalid
+			}
+		}
+		if action.Kind == "answer" {
+			var draft map[string]json.RawMessage
+			if json.Unmarshal(fields["answer"], &draft) != nil || len(draft) != 2 || draft["selected"] == nil || draft["text"] == nil {
+				return errAssistantRunInvalid
+			}
+		}
 	}
 	return nil
 }

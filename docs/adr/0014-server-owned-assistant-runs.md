@@ -559,3 +559,18 @@ private member omissions, queued authority loss, stale references, interrupted
 custody and acknowledgement recovery cover this bounded host completion. The
 private executor remains unregistered; browser dispatch removal, complete
 cutover/certification and released Agent v0.8 adoption remain separate work.
+
+### Explicit question and compute continuation (#631)
+
+The private protocol now admits closed `answer` and `extend-budget` actions with
+stable IDs and current revisions, exact persisted receipts, exclusive executor
+ownership and fresh source/session/Policy checks before continuation. Answers use
+canonical history documents and a labeled transcript segment while preserving the
+original request key; terminal projection retains the question, exact answer and
+saved resolution. Compute extensions use published `ExtendExecution` only for
+safe canonical model-request pauses. Provider-managed grants, interrupted replay
+and the completed-question checkpoint at the API ceiling remain refused. The
+released ceiling seam is recorded in
+[the continuation design](../design/assistant-run-continuation.md). This paragraph
+updates actual implementation status; it does not activate the production factory
+or complete the broader swap described by the early target table.

@@ -116,18 +116,9 @@ func (f *chatProjectionFixture) admit(t *testing.T, owner, request, admission, s
 		cp.Status = "stopped"
 	}
 	if state == "awaiting-input" {
-		cp = assistantProtocolAsked(cp)
-		for _, event := range events {
-			if q := event.UserQuestion; q != nil {
-				raw, err := json.Marshal(q.Question)
-				assistantRunMust(t, err)
-				var args map[string]json.RawMessage
-				assistantRunMust(t, json.Unmarshal(raw, &args))
-				cp.Approval.CallID = q.ID
-				cp.Approval.Name, cp.Approval.Tool = "ask_user", "ask_user"
-				cp.Approval.Args = args
-			}
-		}
+		// Published producers finish the question turn; its unanswered event,
+		// rather than a tool approval, owns the host's awaiting-input state.
+		cp.Status = "complete"
 	}
 	assistantRunMust(t, writer.Checkpoint(t.Context(), cp))
 	assistantRunMust(t, writer.State(t.Context(), state))
@@ -258,7 +249,7 @@ func TestAssistantChatProjectionPausesStayPinned(t *testing.T) {
 			before := f.read(t)
 			events := []contract.RunEvent{projectionMessage("Retained while paused")}
 			if state == "awaiting-input" {
-				events = append(events, contract.RunEvent{UserQuestion: &contract.RunEventUserQuestion{Type: "user_question", ID: "question-one", Question: contract.Question{Title: "Choose", Question: "Which input should be used?", Selection: "single", Options: []contract.QuestionOption{{ID: "a", Label: "First", Description: "Use the first input."}, {ID: "b", Label: "Second", Description: "Use the second input."}}}}})
+				events = append(events, contract.RunEvent{UserQuestion: &contract.RunEventUserQuestion{Type: "user_question", ID: "question-one", Question: contract.Question{Title: "Choose", Question: "Which input should be used?", Selection: "single", RecommendedOptionID: contract.Nullable[string]{Set: true, Null: true}, Recommendation: contract.Nullable[string]{Set: true, Null: true}, Options: []contract.QuestionOption{{ID: "a", Label: "First", Description: "Use the first input."}, {ID: "b", Label: "Second", Description: "Use the second input."}}}}})
 			}
 			run := f.admit(t, "chat-one", "message-one", state, state, events...)
 			if err := f.s.reconcileAssistantChatProjection(f.request(), run.ID); err == nil {
@@ -276,8 +267,11 @@ func TestAssistantChatProjectionPausesStayPinned(t *testing.T) {
 			if critic == nil || critic.Mode != "auto" || critic.Trigger == nil || *critic.Trigger != "model-asked" || critic.Ran != nil {
 				t.Fatal("rediscovered pending run lost its exact critic checkpoint", critic)
 			}
-			if state == "awaiting-input" && (rows[0].Checkpoint.Approval == nil || rows[0].Checkpoint.Approval.CallID != "question-one" || rows[0].Checkpoint.Approval.Name != "ask_user") {
-				t.Fatal("pending canonical question lost its bound checkpoint")
+			if state == "awaiting-input" && (rows[0].Checkpoint.Status != "complete" || rows[0].Checkpoint.Approval != nil) {
+				t.Fatal("pending question must retain the completed turn without a tool approval")
+			}
+			if state == "awaiting-input" && !reflect.DeepEqual(rows[0].Events[len(events)-1].Event.UserQuestion, events[len(events)-1].UserQuestion) {
+				t.Fatal("pending canonical question changed during durable readback")
 			}
 			if !reflect.DeepEqual(rows[0].Checkpoint.Prompts, projectionPromptDigests()) {
 				t.Fatal("pause lost retained prompt rows")
@@ -289,6 +283,38 @@ func TestAssistantChatProjectionPausesStayPinned(t *testing.T) {
 			exported, err := json.Marshal(observation)
 			assistantRunMust(t, err)
 			exportChatProjection(t, state, exported)
+		})
+	}
+}
+func TestAssistantChatProjectionInvalidPendingQuestionRefused(t *testing.T) {
+	for _, name := range []string{"missing-recommendation", "empty-title", "duplicate-choice", "unpaired-recommendation"} {
+		t.Run(name, func(t *testing.T) {
+			f := newChatProjectionFixture(t)
+			run := f.admit(t, "chat-one", "message-one", name, "awaiting-client")
+			before := f.read(t)
+			question := contract.Question{Title: "Choose", Question: "Which input should be used?", Selection: "single", RecommendedOptionID: contract.Nullable[string]{Set: true, Null: true}, Recommendation: contract.Nullable[string]{Set: true, Null: true}, Options: []contract.QuestionOption{{ID: "a", Label: "First", Description: ""}, {ID: "b", Label: "Second", Description: ""}}}
+			switch name {
+			case "missing-recommendation":
+				question.RecommendedOptionID = contract.Nullable[string]{}
+				question.Recommendation = contract.Nullable[string]{}
+			case "empty-title":
+				question.Title = ""
+			case "duplicate-choice":
+				question.Options[1].ID = "a"
+			case "unpaired-recommendation":
+				question.RecommendedOptionID = contract.Nullable[string]{Set: true, Value: "a"}
+			}
+			writer, err := f.lease.Writer(t.Context(), run.Binding, run.ID)
+			assistantRunMust(t, err)
+			err = writer.Event(t.Context(), "invalid-question", contract.RunEvent{UserQuestion: &contract.RunEventUserQuestion{Type: "user_question", ID: "question-one", Question: question}})
+			if !errors.Is(err, errAssistantRunInvalid) {
+				t.Fatal("noncanonical persisted question was accepted", err)
+			}
+			saved, err := f.store.Read(t.Context(), run.Binding, run.ID)
+			assistantRunMust(t, err)
+			if !reflect.DeepEqual(saved, run) || !bytes.Equal(before, f.read(t)) {
+				t.Fatal("refused question changed the durable run or pinned chat")
+			}
 		})
 	}
 }

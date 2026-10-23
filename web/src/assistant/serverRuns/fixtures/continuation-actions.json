@@ -1,0 +1,4 @@
+[
+ {"id":"answer-one","kind":"answer","revision":5,"questionId":"question-one","questionDigest":"7f2f67acd59f588a436dca7e58cfb4fa346c0adcbcd77437e2b8d50599e7f2a6","answer":{"selected":["two"],"text":"Exact answer <&> 한글\nnext line"}},
+ {"id":"budget-one","kind":"extend-budget","revision":5}
+]

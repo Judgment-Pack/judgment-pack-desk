@@ -243,6 +243,10 @@ func (w *assistantRunWriter) State(ctx context.Context, state string) error {
 		switch state {
 		case "complete":
 			expected = "complete"
+		case "awaiting-input":
+			if question, err := pendingAssistantRunQuestion(*run); err == nil && question != nil {
+				expected = "complete"
+			}
 		case "paused-budget":
 			expected = "paused"
 		case "running":

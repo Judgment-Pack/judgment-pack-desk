@@ -1,7 +1,8 @@
+import { validQuestionDraft } from '@judgment-pack/harness/questions'
 import { AIFailureError, failure, normalizeFailure, type FailureCode } from '@judgment-pack/harness/failures'
 import { deskFetch } from '../../files/client'
 import { discardBody, sessionBearer, whenSessionEnds } from '../../mcp/session'
-import { cursorParts, decodeDiscovery, decodeSnapshot, digest, exact, invalid, MAX_RUN_BYTES, object, ownerID, parseRunJSON, revision, runID, text } from './decode'
+import { cursorParts, decodeDiscovery, decodeSnapshot, digest, exact, invalid, MAX_RUN_BYTES, object, ownerID, parseRunJSON, pendingQuestion, revision, runID, text } from './decode'
 import { readFrames, RunObservations } from './stream'
 import type { RunAction, RunBinding, RunDiscovery, RunObservation, RunReference, RunSnapshot, RunStart } from './types'
 
@@ -57,9 +58,15 @@ export class ServerRunClient {
   read(ref: RunReference, signal?: AbortSignal): Promise<RunSnapshot> { const bound = bind(ref); return this.json(`${ROOT}/${bound.id}`,bound,undefined,signal) }
   action(snapshot: RunSnapshot, action: RunAction, signal?: AbortSignal): Promise<RunSnapshot> {
     const bound = bind(snapshot)
-    if (snapshot.historical || !object(action) || !text(action.id,128) || !revision(action.revision) || action.revision !== snapshot.revision || !['cancel','approval','abandon'].includes(action.kind) || !exact(action,action.kind === 'approval' ? ['id','kind','revision','callId','argsDigest','approved','note'] : ['id','kind','revision'])) throw new RunRequestError('not-sent',undefined,'permission')
-    const body: RunAction = action.kind === 'approval' ? {id:action.id,kind:'approval',revision:action.revision,callId:action.callId,argsDigest:action.argsDigest,approved:action.approved,...(action.note === undefined ? {} : {note:action.note})} : {id:action.id,kind:action.kind,revision:action.revision}
+    if (snapshot.historical || !object(action) || !text(action.id,128) || !revision(action.revision) || action.revision !== snapshot.revision || !['cancel','approval','abandon','answer','extend-budget'].includes(action.kind) || !exact(action,action.kind === 'approval' ? ['id','kind','revision','callId','argsDigest','approved','note'] : action.kind === 'answer' ? ['id','kind','revision','questionId','questionDigest','answer'] : ['id','kind','revision'])) throw new RunRequestError('not-sent',undefined,'permission')
+    const body: RunAction = action.kind === 'approval' ? {id:action.id,kind:'approval',revision:action.revision,callId:action.callId,argsDigest:action.argsDigest,approved:action.approved,...(action.note === undefined ? {} : {note:action.note})} : action.kind === 'answer' ? {id:action.id,kind:'answer',revision:action.revision,questionId:action.questionId,questionDigest:action.questionDigest,answer:action.answer} : {id:action.id,kind:action.kind,revision:action.revision}
     if (body.kind === 'approval' && (!text(body.callId,256) || !digest(body.argsDigest) || typeof body.approved !== 'boolean' || body.note !== undefined && (typeof body.note !== 'string' || body.note.length > 2000))) throw new RunRequestError('not-sent',undefined,'invalid-response')
+    if(body.kind==='answer'){
+      const q=pendingQuestion(snapshot)
+      if(snapshot.state!=='awaiting-input'||!q||body.questionId!==q.id||body.questionDigest!==q.digest||!validQuestionDraft(q.question,body.answer)||!body.answer.selected.length&&!body.answer.text.trim())throw new RunRequestError('not-sent',undefined,'invalid-request')
+      try { parseRunJSON(JSON.stringify(body.answer.text)); if(body.answer.text.includes('\0'))throw Error() } catch {throw new RunRequestError('not-sent',undefined,'invalid-request')}
+    }
+    if(body.kind==='extend-budget'&&(snapshot.state!=='paused-budget'||pendingQuestion(snapshot)))throw new RunRequestError('not-sent',undefined,'permission')
     return this.json(`${ROOT}/${bound.id}/actions`,bound,body,signal)
   }
   async discover(binding: RunDiscovery, signal?: AbortSignal): Promise<readonly RunSnapshot[]> {

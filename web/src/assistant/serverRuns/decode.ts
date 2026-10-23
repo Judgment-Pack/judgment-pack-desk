@@ -1,9 +1,10 @@
 import type { AssistantEvent } from '@judgment-pack/harness/contract'
-import { sha256 } from '@judgment-pack/harness/records'
+import { readUserQuestion, validQuestionDraft, type UserQuestion } from '@judgment-pack/harness/questions'
+import { recordDigest, sha256 } from '@judgment-pack/harness/records'
 import { readExecution } from '@judgment-pack/harness/execution/state'
 import { AIFailureError, failure } from '@judgment-pack/harness/failures'
 import { parseJsonText } from '../../research/verify/canon'
-import type { RunBinding, RunDiscovery, RunEvent, RunOperation, RunReference, RunSnapshot } from './types'
+import type { RunBinding, RunContinuation, RunDiscovery, RunEvent, RunOperation, RunReference, RunSnapshot } from './types'
 
 export const MAX_RUN_BYTES = 16 * 1024 * 1024
 export const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -46,8 +47,42 @@ function operations(value: unknown): readonly RunOperation[] {
   return value as RunOperation[]
 }
 function base64(value: string, empty: boolean): boolean { return (empty || value.length > 0) && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value) }
+export const questionDigest = (question: UserQuestion): string => recordDigest(question).slice(7)
+export function pendingQuestion(snapshot: Pick<RunSnapshot,'events'|'continuations'>): {id:string; question:UserQuestion; digest:string} | undefined {
+ const answered=new Set(snapshot.continuations?.flatMap(r=>r.kind==='answer'?[r.answer.questionId]:[])??[])
+ const seen=new Set<string>(); let pending
+ for(const event of snapshot.events) if(event.event.type==='user_question') {
+  const id=event.event.id
+  if(typeof id!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(id)||seen.has(id))return invalid()
+  seen.add(id)
+  let question: UserQuestion;try{question=readUserQuestion(event.event.question)}catch{return invalid()}
+  if(!answered.has(id)){if(pending)return invalid();pending={id,question,digest:questionDigest(question)}}
+ }
+ return pending
+}
+function continuations(value:unknown, events:readonly RunEvent[],checkpoint:RunSnapshot['checkpoint']): readonly RunContinuation[] | undefined {
+ if(value===undefined)return undefined
+ if(!Array.isArray(value)||!value.length||value.length>512)return invalid()
+ const ids=new Set<string>(),questions=new Set<string>()
+ for(const r of value){
+  if(!object(r)||!text(r.id,128)||ids.has(r.id)||!digest(r.digest))return invalid();ids.add(r.id)
+  if(r.kind==='answer'){
+   const a=r.answer
+   if(!exact(r,['id','digest','kind','answer'])||!object(a)||!exact(a,['questionId','questionDigest','selected','text','at'])||typeof a.questionId!=='string'||questions.has(a.questionId)||!digest(a.questionDigest)||typeof a.at!=='string'||!Number.isFinite(Date.parse(a.at)))return invalid()
+   const matching=events.filter(e=>e.event.type==='user_question'&&e.event.id===a.questionId)
+   if(matching.length!==1)return invalid()
+   let q:UserQuestion;try{q=readUserQuestion(matching[0].event.question)}catch{return invalid()}
+   if(questionDigest(q)!==a.questionDigest||!validQuestionDraft(q,{selected:a.selected,text:a.text})||!(a.selected as string[]).length&&!String(a.text).trim())return invalid()
+   questions.add(a.questionId)
+  }else if(r.kind==='extend-budget'){
+   const g=r.grant
+   if(!exact(r,['id','digest','kind','grant'])||!object(g)||!exact(g,['from','to','at'])||!checkpoint||checkpoint.unit!=='model-requests'||!checkpoint.grants.some(saved=>saved.from===g.from&&saved.to===g.to&&saved.at===g.at))return invalid()
+  }else return invalid()
+ }
+ return value as RunContinuation[]
+}
 export function decodeSnapshot(value: unknown, expected: RunBinding & { readonly id?: string }): RunSnapshot {
-  if (!object(value) || !exact(value,['id','revision','owner','requestId','state','historical','checkpoint','operations','events','cursor','chatProjection','projectionIssue']) || !runID(value.id) || expected.id !== undefined && value.id !== expected.id || !revision(value.revision) || !object(value.owner) || !exact(value.owner,['kind','id','revision']) || value.owner.kind !== 'chat' || !ownerID(value.owner.id) || !digest(value.owner.revision) || value.owner.kind !== expected.owner.kind || value.owner.id !== expected.owner.id || value.owner.revision !== expected.owner.revision || !text(value.requestId,128) || value.requestId !== expected.requestId || typeof value.state !== 'string' || !['admitted','running','awaiting-input','awaiting-client','paused-budget','stopped','interrupted','complete','failed'].includes(value.state) || value.historical !== undefined && typeof value.historical !== 'boolean') return invalid()
+  if (!object(value) || !exact(value,['id','revision','owner','requestId','state','historical','checkpoint','operations','events','cursor','chatProjection','projectionIssue','continuations']) || !runID(value.id) || expected.id !== undefined && value.id !== expected.id || !revision(value.revision) || !object(value.owner) || !exact(value.owner,['kind','id','revision']) || value.owner.kind !== 'chat' || !ownerID(value.owner.id) || !digest(value.owner.revision) || value.owner.kind !== expected.owner.kind || value.owner.id !== expected.owner.id || value.owner.revision !== expected.owner.revision || !text(value.requestId,128) || value.requestId !== expected.requestId || typeof value.state !== 'string' || !['admitted','running','awaiting-input','awaiting-client','paused-budget','stopped','interrupted','complete','failed'].includes(value.state) || value.historical !== undefined && typeof value.historical !== 'boolean') return invalid()
   const [r, count] = cursorParts(value.cursor)
   const events = value.events === null ? [] : Array.isArray(value.events) ? value.events.map(decodeEvent) : invalid()
   if (events.length > 1024 || new Set(events.map(e => e.id)).size !== events.length || r !== value.revision || count !== events.length) return invalid()
@@ -56,9 +91,11 @@ export function decodeSnapshot(value: unknown, expected: RunBinding & { readonly
   if (value.checkpoint !== undefined && !checkpoint) return invalid()
   if (value.chatProjection !== undefined && (!object(value.chatProjection) || !exact(value.chatProjection,['responseId','digest','acknowledged']) || value.chatProjection.responseId !== `response-${sha256(value.id).slice(0,32)}` || !digest(value.chatProjection.digest) || typeof value.chatProjection.acknowledged !== 'boolean')) return invalid()
   if (value.projectionIssue !== undefined && (typeof value.projectionIssue !== 'string' || !['proposal-target','pending-question','saved-chat-validation','unsupported-unicode'].includes(value.projectionIssue))) return invalid()
+  const receipts = continuations(value.continuations,events,checkpoint)
+  pendingQuestion({events,continuations:receipts})
   const ops = operations(value.operations)
   if (value.state === 'complete' && ops.some(op=>!['completed','refused'].includes(op.state))) return invalid()
-  return {...value, operations: ops, events, ...(checkpoint ? {checkpoint} : {})} as unknown as RunSnapshot
+  return {...value, ...(receipts ? {continuations:receipts} : {}), operations: ops, events, ...(checkpoint ? {checkpoint} : {})} as unknown as RunSnapshot
 }
 export function reference(snapshot: RunSnapshot): RunReference { return {id:snapshot.id, owner:{...snapshot.owner}, requestId:snapshot.requestId} }
 

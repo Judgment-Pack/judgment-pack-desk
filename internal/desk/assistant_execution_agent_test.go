@@ -87,7 +87,12 @@ for line in sys.stdin:
   if mode=='delegate' and index==1:
    tool(offered('delegate_tasks'),{'tasks':[{'title':'Inspect schema','objective':'Inspect the schema only.','profile':'review'}]})
   elif mode=='budget': tool(offered('request_budget_increase'),{'reason':'More work','nextStep':'Read the schema'})
-  elif mode=='question': tool(offered('ask_user'),{'title':'Scope','question':'Which scope?','selection':'single','options':[{'label':'One','id':'one'},{'label':'Two','id':'two'}]})
+  elif mode=='continuation-question' and index>1:
+   history=prompt.split("PERSON'S RETAINED QUESTION ANSWER (user history; preserve the original task and constraints; no tool approval or compute grant)\n",1)[1]
+   answer=json.JSONDecoder().raw_decode(history)[0]['answer']
+   if answer['selected']!=['two'] or answer['text']!='Exact answer <&> 한글\nnext line' or 'Review exact input' not in prompt: sys.exit(75)
+   finish()
+  elif mode in ['question','continuation-question']: tool(offered('ask_user'),{'title':'Scope','question':'Which scope?','selection':'single','options':[{'label':'One','id':'one'},{'label':'Two','id':'two'}]})
   elif mode=='unoffered': tool('desk_unoffered',{})
   elif mode=='malformed': tool(offered('get_schema'),[])
   elif mode=='duplicate': tool(offered('get_schema'),{})
@@ -115,10 +120,16 @@ func assistantCodexProfileFixture(t *testing.T, mode, phase, connectionID, profi
 	return assistantCodexSourceFixture(t, mode, phase, connectionID, profile, nil)
 }
 func assistantCodexSourceFixture(t *testing.T, mode, phase, connectionID, profile string, prepare func(*Server, string, assistantRunStart) assistantRunStart) (*Server, string, *assistantRunExecution, *codexbridge.Manager, string) {
+	return assistantCodexSourceFixtureExecute(t, mode, phase, connectionID, profile, prepare, nil)
+}
+func assistantCodexSourceFixtureExecute(t *testing.T, mode, phase, connectionID, profile string, prepare func(*Server, string, assistantRunStart) assistantRunStart, execute func(context.Context, *assistantRunExecution) error) (*Server, string, *assistantRunExecution, *codexbridge.Manager, string) {
 	t.Helper()
 	entered := make(chan *assistantRunExecution, 1)
 	s, token, start, executor := assistantProtocolFixture(t, func(ctx context.Context, e *assistantRunExecution) error {
 		entered <- e
+		if execute != nil {
+			return execute(ctx, e)
+		}
 		<-ctx.Done()
 		return ctx.Err()
 	})

@@ -1,0 +1,7 @@
+{
+ "id":"arun_11111111111111111111111111111111","revision":5,
+ "owner":{"kind":"chat","id":"chat-one","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+ "requestId":"message-one","state":"complete","operations":[],"cursor":"5:1",
+ "events":[{"id":"question-event","event":{"type":"user_question","id":"question-one","question":{"title":"Scope","question":"Which scope?","selection":"single","options":[{"id":"one","label":"One","description":""},{"id":"two","label":"Two","description":""}],"recommendedOptionId":null,"recommendation":null}}}],
+ "continuations":[{"id":"answer-one","digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","kind":"answer","answer":{"questionId":"question-one","questionDigest":"7f2f67acd59f588a436dca7e58cfb4fa346c0adcbcd77437e2b8d50599e7f2a6","selected":["two"],"text":"Exact answer <&> 한글\nnext line","at":"2026-10-23T00:00:00Z"}}]
+}

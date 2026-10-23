@@ -15,8 +15,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1586,43 +1588,76 @@ func TestRelayRefusesWhereNoKeyCanBeKept(t *testing.T) {
 // holdingRelay is a desk whose endpoint holds every request it is sent until
 // the test lets them go, and the clients to send them.
 type holdingRelay struct {
-	t        *testing.T
-	server   *Server
-	ts       *httptest.Server
-	u        *upstream
-	arrived  chan struct{}
-	released chan struct{}
-	wg       sync.WaitGroup
-	mu       sync.Mutex
-	answers  []*http.Response
-	bodies   []string
+	t         *testing.T
+	server    *Server
+	ts        *httptest.Server
+	u         *upstream
+	arrived   chan struct{}
+	released  chan struct{}
+	completed chan struct{}
+	sent      int
+	failures  []error
+	wg        sync.WaitGroup
+	mu        sync.Mutex
+	answers   []*http.Response
+	bodies    []string
 }
 
 func newHoldingRelay(t *testing.T) *holdingRelay {
 	t.Helper()
-	h := &holdingRelay{t: t, arrived: make(chan struct{}, 64), released: make(chan struct{})}
+	return newHoldingRelayWithWriter(t, nil)
+}
+
+func newHoldingRelayWithWriter(t *testing.T, wrap func(http.ResponseWriter) http.ResponseWriter) *holdingRelay {
+	t.Helper()
+	h := &holdingRelay{t: t, arrived: make(chan struct{}, 64), released: make(chan struct{}), completed: make(chan struct{}, 64)}
 	h.u = newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		h.arrived <- struct{}{}
 		<-h.released
 		w.WriteHeader(http.StatusOK)
 	})
-	h.server, h.ts, _ = relayDesk(t, "openai-compatible", h.u)
+	h.server, h.ts = startDeskWithHandler(t, Config{ProjectDir: t.TempDir(), JpackBin: standInRuntime(t), Token: testToken, Logger: log.New(io.Discard, "", 0), DeskConfigDir: t.TempDir()}, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Test-Holding-Relay") == "1" {
+				defer func() { h.completed <- struct{}{} }()
+				if wrap != nil {
+					w = wrap(w)
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
+	t.Cleanup(func() { h.server.Close() })
+	t.Cleanup(h.ts.Close)
+	writeDeskConfig(t, h.server, fmt.Sprintf(`{"deskConfigVersion":1,"assistant":{"endpoint":{"url":%q,"kind":"openai-compatible","model":"a-model","tools":[]}}}`, h.u.server.URL))
+	if status, body := storeKey(t, h.ts, testKey); status != http.StatusOK {
+		t.Fatalf("store: %d %v", status, body)
+	}
 	return h
 }
 
 // send starts n requests and returns without waiting for their answers.
 func (h *holdingRelay) send(n int) {
 	for i := 0; i < n; i++ {
+		h.sent++
 		h.wg.Add(1)
 		go func() {
 			defer h.wg.Done()
-			resp, err := h.ts.Client().Do(relayRequest(h.t, h.ts, http.MethodGet, "chat/completions", nil))
+			req := relayRequest(h.t, h.ts, http.MethodGet, "chat/completions", nil)
+			req.Header.Set("X-Test-Holding-Relay", "1")
+			resp, err := h.ts.Client().Do(req)
 			if err != nil {
+				h.mu.Lock()
+				h.failures = append(h.failures, err)
+				h.mu.Unlock()
 				return
 			}
-			raw, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			raw, readErr := io.ReadAll(resp.Body)
+			closeErr := resp.Body.Close()
 			h.mu.Lock()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				h.failures = append(h.failures, err)
+			}
 			h.answers = append(h.answers, resp)
 			h.bodies = append(h.bodies, string(raw))
 			h.mu.Unlock()
@@ -1659,8 +1694,83 @@ func (h *holdingRelay) waitingIs(n int) {
 }
 
 func (h *holdingRelay) finish() {
+	h.t.Helper()
 	close(h.released)
 	h.wg.Wait()
+	if len(h.failures) != 0 {
+		h.t.Fatalf("%d relay clients failed: %v", len(h.failures), h.failures)
+	}
+	// An empty response can reach client EOF while ReverseProxy is still
+	// flushing. Wait for ServeHTTP (and its deferred admission release),
+	// independently of response arrival, before inspecting slots or queues.
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	for i := 0; i < h.sent; i++ {
+		select {
+		case <-h.completed:
+		case <-timer.C:
+			h.t.Fatalf("only %d of %d relay handlers completed", i, h.sent)
+		}
+	}
+}
+
+// heldRelayHeaders publishes a complete empty response, then keeps the relay
+// inside WriteHeader so the handler's deferred admission release cannot run.
+type heldRelayHeaders struct {
+	http.ResponseWriter
+	entered chan struct{}
+	release <-chan struct{}
+}
+
+func (w *heldRelayHeaders) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+func (w *heldRelayHeaders) WriteHeader(status int) {
+	w.ResponseWriter.WriteHeader(status)
+	_ = http.NewResponseController(w.ResponseWriter).Flush()
+	close(w.entered)
+	<-w.release
+}
+
+func TestRelayClientEOFPredatesHandlerSlotRelease(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	h := newHoldingRelayWithWriter(t, func(w http.ResponseWriter) http.ResponseWriter {
+		return &heldRelayHeaders{ResponseWriter: w, entered: entered, release: release}
+	})
+	h.send(1)
+	h.reached(1)
+	finished := make(chan struct{})
+	go func() { h.finish(); close(finished) }()
+	clientDone := make(chan struct{})
+	go func() { h.wg.Wait(); close(clientDone) }()
+	for _, signal := range []<-chan struct{}{entered, clientDone} {
+		select {
+		case <-signal:
+		case <-time.After(10 * time.Second):
+			t.Fatal("empty relay response did not reach client EOF while its handler was held")
+		}
+	}
+	if len(h.answers) != 1 || h.answers[0].StatusCode != http.StatusOK || len(h.failures) != 0 {
+		t.Fatalf("client did not receive the complete successful response: %v, %v", h.answers, h.failures)
+	}
+	if len(h.server.relaySlots) != 1 {
+		t.Fatal("held handler did not retain its admission slot")
+	}
+	select {
+	case <-finished:
+		t.Fatal("finish returned at client EOF before its relay handler completed")
+	default:
+	}
+	unblock()
+	select {
+	case <-finished:
+	case <-time.After(10 * time.Second):
+		t.Fatal("finish did not observe the completed relay handler")
+	}
+	if len(h.server.relayQueue) != 0 || len(h.server.relaySlots) != 0 {
+		t.Fatal("completed relay handler did not release its queue and admission slot")
+	}
 }
 
 func TestRelayQueuesPastTheSlotsAndCompletesEveryRequest(t *testing.T) {
