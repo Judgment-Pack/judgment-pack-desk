@@ -240,8 +240,9 @@
       ],
       "preserve": [
         "separate critic phase/tools; incomplete IDs/typed facts/outcomes",
+        "chat/project critic off-auto-on and capability reasoning; canonical decision retained through report/reload",
         "enabled critic model only; known request/token/invocation figures",
-        "no silent extra review on default Codex pane; preserve current explicit chat review settings"
+        "canonical Auto facts and forced-off decisions across API/subscription capabilities; preserve explicit saved chat review choices"
       ],
       "verification": [
         "web/src/assistant/criticCases.test.ts",

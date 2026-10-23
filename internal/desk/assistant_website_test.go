@@ -203,8 +203,6 @@ func TestAssistantWebsiteActualRefusalEvents(t *testing.T) {
 				}
 			}
 			x := assistantExecutionOpen(t, f.s, f.e)
-			off := false
-			x.Run.Review = &off
 			assistantRunMust(t, x.Adapter.Run(t.Context(), x.Run))
 			record := assistantExecutionRecord(t, f.e)
 			refused := false
@@ -270,8 +268,6 @@ func TestAssistantWebsiteActualProducers(t *testing.T) {
 				assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(f.trace), "peer.py"), []byte(peer), 0600))
 			}
 			x := assistantExecutionOpen(t, f.s, f.e)
-			off := false
-			x.Run.Review = &off
 			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 			defer cancel()
 			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))

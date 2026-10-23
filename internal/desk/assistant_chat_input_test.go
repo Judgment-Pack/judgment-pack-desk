@@ -115,6 +115,10 @@ func TestAssistantChatInputPresenceAndRefusal(t *testing.T) {
 		{"draft-not-choice", `"selected":["one"]`, `"selected":["unoffered"]`},
 		{"question-resolution", `"turnId":"message-one"`, `"turnId":"q1"`},
 		{"invalid-review", `"interaction":"work"`, `"interaction":"work","adversarialReview":"yes"`},
+		{"invalid-critic", `"interaction":"work"`, `"interaction":"work","critic":"sometimes"`},
+		{"empty-critic", `"interaction":"work"`, `"interaction":"work","critic":""`},
+		{"null-critic", `"interaction":"work"`, `"interaction":"work","critic":null`},
+		{"invalid-critic-tier", `"interaction":"work"`, `"interaction":"work","criticReasoning":"guess"`},
 		{"invalid-thinking", `"interaction":"work"`, `"interaction":"work","apiThinking":"guess"`},
 		{"invalid-reasoning", `"interaction":"work"`, `"interaction":"work","reasoning":{"model":"shared-model","effort":false}`},
 		{"malformed-unicode", `"statement":"EXACT-AUTHORED-REQUEST"`, `"statement":"\ud800"`},
@@ -233,6 +237,7 @@ func TestAssistantChatInputActualFactory(t *testing.T) {
 				s, token, old, _, trace = assistantCodexFixture(t, "normal", "work")
 			}
 			raw := strings.Replace(assistantChatSaved, "ai-111111111111111111111111", testAIAlpha, 1)
+			raw = strings.Replace(raw, `"interaction":"work"`, `"interaction":"work","critic":"off"`, 1)
 			e := assistantChatResave(t, s, token, old, raw, 201)
 			if engine == "api" {
 				changeMemory(t, s, memoryChange{Action: "settings", Settings: &memorySettings{Use: true}})
@@ -245,8 +250,6 @@ func TestAssistantChatInputActualFactory(t *testing.T) {
 			if len(x.Run.Context.Documents) != 3 || !strings.Contains(x.Run.Context.CurrentState, "not accepted answers") {
 				t.Fatal("history/attachments/observations omitted")
 			}
-			off := false
-			x.Run.Review = &off
 			observer := &assistantExecutionPromptObserver{Host: x.Run.Host}
 			x.Run.Host = observer
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -297,7 +300,7 @@ func TestAssistantChatInputControlsAndAdmission(t *testing.T) {
 			raw = strings.Replace(raw, `"interaction":"work"`, `"interaction":"work","adversarialReview":true,"reasoning":`+tc.reasoning, 1)
 			e := assistantChatResave(t, s, token, old, raw, 201)
 			x := assistantExecutionOpen(t, s, e)
-			if x.Run.Agent.Effort != tc.want || x.Run.Critic != "on" {
+			if x.Run.Agent.Effort != tc.want || x.Run.Critic != "" || x.Run.Review == nil || !*x.Run.Review {
 				t.Fatal("saved controls lost", x.Run.Agent.Effort, x.Run.Critic)
 			}
 		})
@@ -310,7 +313,7 @@ func TestAssistantChatInputControlsAndAdmission(t *testing.T) {
 	raw = strings.Replace(raw, `"interaction":"work"`, `"interaction":"work","apiThinking":"ultra","adversarialReview":false`, 1)
 	e := assistantChatResave(t, s, token, old, raw, 201)
 	x := assistantExecutionOpen(t, s, e)
-	if x.Run.Thinking != "ultra" || x.Run.Critic != "off" {
+	if x.Run.Thinking != "ultra" || x.Run.Critic != "" || x.Run.Review == nil || *x.Run.Review {
 		t.Fatal("chat did not override project thinking/review")
 	}
 	if _, err := e.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served", Arguments: map[string]string{"input": "untrusted duplicate"}}); err == nil {

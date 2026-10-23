@@ -1,3 +1,4 @@
+import { criticDecisionLine } from './criticDecision'
 import {FailureDetails} from './FailureDetails'
 import { sourceMessage } from '../i18n/source'
 import { systemMessage, msg as uiMessage } from '../i18n'
@@ -58,7 +59,7 @@ export function describeEvent(event: AssistantEvent, msg: typeof uiMessage = uiM
     case 'steered': return msg('New guidance delivered')
     case 'compacted': return msg('Earlier context compacted')
     case 'policy_resolved': return msg('Run settings resolved')
-    case 'critic_decided': return event.ran ? msg('Review started') : msg('Review skipped')
+    case 'critic_decided': return criticDecisionLine(event, msg)
     case 'memory_proposed': return msg('Memory proposed for review')
     case 'memory_recalled': return msg('Project memory recalled')
     case 'edit_applied': return msg('Draft edit validated; nothing was saved')

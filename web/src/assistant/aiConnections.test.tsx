@@ -137,3 +137,14 @@ it('discovers API models for the edited desk connection and saves its override w
  expect(file.models[alpha].models).toContain('work-extra')
  expect(state.registry.connections[0]!.assistant.endpoint!.models).toEqual(['same-model'])
 })
+
+it('saves and reloads the project critic in the connected profile form',async()=>{
+ const state=setup(<DeskAISettings unavailable={false}/>)
+ const control=await screen.findByRole('combobox',{name:'Project review default'})
+ fireEvent.click(control);fireEvent.click(screen.getByRole('option',{name:'On'}))
+ fireEvent.click(screen.getByRole('button',{name:'Save preferences'}))
+ await screen.findByText('Assistant preferences saved.')
+ const write=state.writes.find(row=>row.url==='/api/file')!
+ expect(JSON.parse(write.body.content)).toMatchObject({profileVersion:2,inherit:true,critic:'on'})
+ expect(screen.getByRole('combobox',{name:'Project review default'}).textContent).toBe('On')
+})

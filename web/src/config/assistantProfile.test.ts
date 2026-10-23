@@ -42,3 +42,7 @@ it('preserves instructions when policy metadata is temporarily unavailable',()=>
  const value={profileVersion:2,inherit:true,projectInstructions:'Keep the exact saved guidance.\n'}
  expect(decodeAssistantProfile(JSON.stringify(value))).toEqual(value)
 })
+
+it('retains project critic words in both profile versions',()=>{
+ for(const version of [1,2])for(const critic of ['off','auto','on'])expect(decodeAssistantProfile(JSON.stringify({profileVersion:version,...(version===2?{inherit:true}:{}),critic})).critic).toBe(critic)
+})

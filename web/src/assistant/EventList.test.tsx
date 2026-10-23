@@ -70,7 +70,7 @@ describe('published v0.9 event observations', () => {
   it('renders each released kind without exposing private payloads or granting an action', () => {
     const expected = [
       'New guidance delivered', 'Earlier context compacted', 'Run settings resolved',
-      'Review skipped', 'Review started', 'Memory proposed for review',
+      'Review skipped · off · Review is off', 'Review ran · on · Chat setting', 'Memory proposed for review',
       'Project memory recalled', 'Draft edit validated; nothing was saved',
       'Draft edit refused', 'Sensitive output redacted', 'Sensitive output refused',
       'Run records exported', 'Model connection changed', 'Model usage recorded',

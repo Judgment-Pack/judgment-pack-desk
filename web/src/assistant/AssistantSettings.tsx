@@ -1,3 +1,4 @@
+import { CONTEXT_DEFAULTS } from '@judgment-pack/harness/context/policy'
 import {LoadingState} from '../ui/LoadingState'
 import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useAIConnectionScope } from './aiConnections'
@@ -35,6 +36,7 @@ export function MachineAssistantSettings({ unavailable, onDirtyChange }: { unava
   useUnsavedChanges(access!==config.assistant.engine)
   useEffect(()=>onDirtyChange?.(apiDirty || agentDirty || access!==config.assistant.engine),[apiDirty,agentDirty,access,config.assistant.engine,onDirtyChange])
   return <div className={styles.settings}>
+    <p>{msg('Policy table review fallback: {{mode}}', {mode:CONTEXT_DEFAULTS.criticDefault})}</p>
     {!scope&&<Field label={msg('Connection method')}>
       {wiring=><Select {...wiring} value={access} disabled={unavailable} onValueChange={value=>setAccess(value as typeof access)} options={[
         {value:'vercel',label:msg('API key')}, {value:'codex',label:msg('ChatGPT subscription')}

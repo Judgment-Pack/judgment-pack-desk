@@ -30,8 +30,6 @@ func TestAssistantGraphCancellationRetainsObservedOutput(t *testing.T) {
 			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) { requests.Add(1); assistantGraphCancellationResponse(w) })
 			s, token, e := assistantExecutionFixture(t, u.server.URL, "work")
 			x := assistantGraphSetup(t, s, e)
-			off := false
-			x.Run.Review = &off
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			type observation struct {

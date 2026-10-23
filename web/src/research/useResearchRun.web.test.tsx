@@ -318,10 +318,12 @@ it('declares the saved tests and the conversation\'s cases to a critic that will
   return sessions.at(-1)!
  }
  expect((await drive({mode:'draft',draftTools:fake.tools,adversarialReview:true,savedTests})).criticCases).toEqual([test])
- // No critic asked for: nothing is read, nothing declared.
+ // An explicit off choice reads no critic input.
  savedTests.mockClear()
- expect(await drive({mode:'draft',draftTools:fake.tools,savedTests})).not.toHaveProperty('criticCases')
+ expect(await drive({mode:'draft',draftTools:fake.tools,critic:'off',savedTests})).not.toHaveProperty('criticCases')
  expect(savedTests).not.toHaveBeenCalled()
+ expect((await drive({mode:'draft',draftTools:fake.tools,critic:'auto',criticReasoning:'ultra',savedTests}))).toMatchObject({critic:'auto',criticReasoning:'ultra',criticCases:[test]})
+ savedTests.mockClear()
  // An independent reviewer runs no critic.
  expect(await drive({mode:'draft',draftTools:fake.tools,adversarialReview:true,savedTests},true)).not.toHaveProperty('criticCases')
  expect(savedTests).not.toHaveBeenCalled()

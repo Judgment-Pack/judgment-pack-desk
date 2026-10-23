@@ -156,3 +156,9 @@ the browser-accepted unpaired checkpoint code units that the next server turn
 refuses. Separate omissions detect missing raw/output or candidate-text scans.
 The normal mutation harness can run these rows from a clean integration candidate.
 Full application/CI and independent review remain integration gates.
+
+The optional canonical checkpoint `critic` record is also retained in execution
+and projected into `work.report.critic`, independently of critique figures.
+This includes skipped decisions, their reasons and actual reasoning, plus a
+pending model request before the decision. Interrupted sources keep their exact
+checkpoint; terminal projection never infers that a review ran from critique text.

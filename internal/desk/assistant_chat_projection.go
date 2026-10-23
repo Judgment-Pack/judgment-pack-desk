@@ -595,6 +595,9 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	work["notices"] = notices
 	if run.Checkpoint != nil {
 		report := map[string]any{"requests": run.Checkpoint.Used, "unit": run.Checkpoint.Unit}
+		if run.Checkpoint.Critic != nil {
+			report["critic"] = run.Checkpoint.Critic
+		}
 		if run.Checkpoint.Prompts != nil {
 			report["prompts"] = append([]contract.ProvenancePromptDigest{}, run.Checkpoint.Prompts...)
 		}

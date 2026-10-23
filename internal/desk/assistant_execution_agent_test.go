@@ -307,8 +307,6 @@ func TestAssistantExecutionCodexFactoryDelegation(t *testing.T) {
 	x := assistantExecutionOpen(t, s, e)
 	observer := &assistantExecutionPromptObserver{Host: x.Run.Host}
 	x.Run.Host = observer
-	off := false
-	x.Run.Review = &off
 	if x.Run.Agent == nil || x.Run.Model != nil {
 		t.Fatal("subscription factory did not bind exactly one capability")
 	}

@@ -1,3 +1,5 @@
+import { CONTEXT_DEFAULTS } from '@judgment-pack/harness/context/policy'
+import type { CriticMode } from '@judgment-pack/harness/contract'
 import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -27,12 +29,13 @@ export function DeskModelPreferences({unavailable,onDirtyChange}:{unavailable:bo
  const baseline=read?.value?.[key]??{inherit:true} as ModelPreferences
  const [draft,setDraft]=useState<ModelPreferences>(baseline),[dirty,setDirty]=useState(false),[saved,setSaved]=useState(false)
  const [instructions,setInstructions]=useState(read?.value?.projectInstructions??'')
+ const [critic,setCritic]=useState<CriticMode|undefined>(read?.value?.critic)
  const instructionLimit=effective.promptPolicy?.projectInstructionsBytes
  const instructionBytes=new TextEncoder().encode(instructions).byteLength
  const [base,setBase]=useState(read),[draftKey,setDraftKey]=useState(key)
  const instructionsValid=wellFormedText(instructions)&&(instructionLimit===undefined?instructions===(base?.value?.projectInstructions??''):instructionBytes<=instructionLimit)
- const seed=JSON.stringify([baseline,read?.value?.projectInstructions])
- useEffect(()=>{if(!dirty){setDraft(baseline);setBase(read);setDraftKey(key);setInstructions(read?.value?.projectInstructions??'')}},[seed,dirty,read,key])
+ const seed=JSON.stringify([baseline,read?.value?.projectInstructions,read?.value?.critic])
+ useEffect(()=>{if(!dirty){setDraft(baseline);setBase(read);setDraftKey(key);setInstructions(read?.value?.projectInstructions??'');setCritic(read?.value?.critic)}},[seed,dirty,read,key])
  useUnsavedChanges(dirty)
  useEffect(()=>{onDirtyChange?.(dirty);return()=>onDirtyChange?.(false)},[dirty,onDirtyChange])
  const custom=codex?machine.agent:machine.endpoint
@@ -44,7 +47,7 @@ export function DeskModelPreferences({unavailable,onDirtyChange}:{unavailable:bo
  const write=useMutation({mutationFn:async()=>{
    if(!base||base.sha256===undefined||base.problem||draftKey!==key)throw new Error(PROFILE_PROBLEM)
    if(!instructionsValid)throw new Error(PROFILE_PROBLEM)
-   const value:AssistantProfile={...(base.value??INHERITED_PROFILE),...(base.value?.profileVersion===2&&JSON.stringify(draft)===JSON.stringify(baseline)?{}:{[draftKey]:draft}),...(instructions!==''||base.value?.projectInstructions!==undefined?{projectInstructions:instructions}:{})}
+   const value:AssistantProfile={...(base.value??INHERITED_PROFILE),...(base.value?.profileVersion===2&&JSON.stringify(draft)===JSON.stringify(baseline)?{}:{[draftKey]:draft}),critic,...(instructions!==''||base.value?.projectInstructions!==undefined?{projectInstructions:instructions}:{})}
    const content=JSON.stringify(value,null,2)+'\n';decodeAssistantProfile(content,instructionLimit)
    return writeFile({path:ASSISTANT_PROFILE_PATH,content,baseSha256:base.sha256})
   },onSuccess:file=>{
@@ -68,13 +71,16 @@ export function DeskModelPreferences({unavailable,onDirtyChange}:{unavailable:bo
     onValueChange={value=>{if(!draft.inherit){const {effort:_,...rest}=draft;edit({...rest,...(value==='__default__'?{}:{effort:value as typeof draft.effort})})}}} options={[{value:'__default__',label:msg('Model default')},...(chosen?.efforts??[]).map(value=>({value,label:value}))]}/>}</Field>}
   {!codex&&<Field label={msg('Reasoning effort')}>{wiring=><Select {...wiring} value={current.thinking??machine.thinking} disabled={locked||draft.inherit} onValueChange={value=>{if(!draft.inherit)edit({...draft,thinking:value as typeof machine.thinking})}} options={[{value:'off',label:msg('off')},{value:'on',label:msg('standard')},{value:'ultra',label:msg('deep')}]}/>}</Field>}
   </>}
+  <Field label={msg('Project review default')}>
+   {wiring=><Select {...wiring} value={critic??'inherit'} disabled={locked} onValueChange={value=>{if(!dirty){setBase(read);setDraftKey(key)}setCritic(value==='inherit'?undefined:value as CriticMode);setDirty(true);setSaved(false);write.reset()}} options={[{value:'inherit',label:msg('Policy table default ({{mode}})',{mode:CONTEXT_DEFAULTS.criticDefault})},{value:'off',label:msg('Off')},{value:'auto',label:msg('Auto')},{value:'on',label:msg('On')}]}/>}
+  </Field>
   <Field label={msg('Project instructions')} hint={msg('Guidance for this project. It cannot grant permissions or override the current request.')} error={!instructionsValid?msg('Project instructions must be valid text within {{limit}} UTF-8 bytes.',{limit:instructionLimit??0}):undefined}>
    {wiring=><TextArea {...wiring} rows={5} value={instructions} disabled={locked||instructionLimit===undefined} onChange={event=>{if(!dirty){setBase(read);setDraftKey(key)}setInstructions(event.target.value);setDirty(true);setSaved(false);write.reset()}}/>}
   </Field>
   <ButtonLink variant="quiet" to="/admin#connections-ai">{msg('Manage shared AI settings')}</ButtonLink>
   {catalog.error&&codex&&<SettingsFeedback tone="error">{msg(catalog.error.message)}</SettingsFeedback>}
   <SettingsActions feedback={<SettingsFeedback tone={read?.problem||write.error?'error':saved?'success':'neutral'}>{read?.problem?msg(read.problem):write.error?write.error.message:write.isPending?msg('Saving…'):saved?msg('Desk model preferences saved.'):dirty?msg('Unsaved changes'):null}</SettingsFeedback>}>
-   {dirty&&<Button variant="quiet" onClick={()=>{setDirty(false);setDraft(baseline);setInstructions(read?.value?.projectInstructions??'');setSaved(false);write.reset()}}>{msg('Cancel')}</Button>}
+   {dirty&&<Button variant="quiet" onClick={()=>{setDirty(false);setDraft(baseline);setInstructions(read?.value?.projectInstructions??'');setCritic(read?.value?.critic);setSaved(false);write.reset()}}>{msg('Cancel')}</Button>}
    <Button variant="primary" disabled={locked||!valid||!instructionsValid||(!dirty&&read?.present)} onClick={()=>write.mutate()}>{write.isPending?msg('Saving…'):msg('Save preferences')}</Button>
   </SettingsActions>
   <Disclosure title={msg('Advanced settings')}>

@@ -98,6 +98,13 @@ func (f *chatProjectionFixture) admit(t *testing.T, owner, request, admission, s
 	for i, event := range events {
 		assistantRunMust(t, writer.Event(t.Context(), "event-"+string(rune('a'+i)), event))
 	}
+	// Hand-authored decision is retained across writer reacquisition and pinned pauses.
+	criticJSON := `{"mode":"auto","ran":false,"reason":"no-proposal"}`
+	if state != "complete" {
+		criticJSON = `{"mode":"auto","trigger":"model-asked"}`
+	}
+	cp.Critic = &contract.CheckpointCritic{}
+	assistantRunMust(t, json.Unmarshal([]byte(criticJSON), cp.Critic))
 	cp.Used = 2
 	cp.Prompts = projectionPromptDigests()
 	switch state {
@@ -264,6 +271,10 @@ func TestAssistantChatProjectionPausesStayPinned(t *testing.T) {
 			assistantRunMust(t, err)
 			if len(rows) != 1 || rows[0].State != state || len(rows[0].Events) != len(events) {
 				t.Fatal("pause not discoverable")
+			}
+			critic := rows[0].Checkpoint.Critic
+			if critic == nil || critic.Mode != "auto" || critic.Trigger == nil || *critic.Trigger != "model-asked" || critic.Ran != nil {
+				t.Fatal("rediscovered pending run lost its exact critic checkpoint", critic)
 			}
 			if state == "awaiting-input" && (rows[0].Checkpoint.Approval == nil || rows[0].Checkpoint.Approval.CallID != "question-one" || rows[0].Checkpoint.Approval.Name != "ask_user") {
 				t.Fatal("pending canonical question lost its bound checkpoint")

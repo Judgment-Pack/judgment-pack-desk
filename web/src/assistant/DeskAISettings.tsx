@@ -1,3 +1,5 @@
+import { CONTEXT_DEFAULTS } from '@judgment-pack/harness/context/policy'
+import type { CriticMode } from '@judgment-pack/harness/contract'
 import {MemorySettingsDisclosure} from './memory/MemorySettings'
 import {LoadingState} from '../ui/LoadingState'
 import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
@@ -31,7 +33,8 @@ function initialProfile(read:EffectiveConfig['assistantProfile'],registry:AIRegi
  if(read?.value?.profileVersion===2)return read.value
  const models=Object.fromEntries(registry.connections.flatMap(c=>{const p=modelPreferences(read,c);return p&&!p.inherit?[[c.id,p]]:[]}))
  const context=read?.value?.context
- return Object.keys(models).length?{profileVersion:2,context,inherit:false,connections:registry.connections.filter(c=>c.enabled).map(c=>c.id),defaultConnection:registry.defaultConnection||null,models}:{profileVersion:2,context,inherit:true}
+ const critic=read?.value?.critic
+ return Object.keys(models).length?{profileVersion:2,context,critic,inherit:false,connections:registry.connections.filter(c=>c.enabled).map(c=>c.id),defaultConnection:registry.defaultConnection||null,models}:{profileVersion:2,context,critic,inherit:true}
 }
 function ConnectionPreferences({connection:c,value,disabled,onChange}:{connection:AIConnection;value:ModelPreferences;disabled:boolean;onChange:(p:ModelPreferences)=>void}) {
  const native=c.assistant.engine==='codex',account=useProviderStatus(native&&c.enabled,c.id),catalog=useProviderModels(native&&c.enabled&&account.data?.account==='connected',c.id)
@@ -89,7 +92,7 @@ function ConnectedDeskSettings({unavailable,onDirtyChange}:{unavailable:boolean;
  if(!draft.inherit&&(missing.length||ids.length>0&&!choices.some(c=>c.id===selected)))valid=false
  return <section className={styles.stack} aria-label={msg('Desk assistant settings')}>
   <p className="quiet">{msg('Choose the AI connections and models available in this desk. Credentials are managed in Connections > AI.')}</p>
-  <label className={styles.label}><input type="checkbox" checked={!!draft.inherit} disabled={locked} onChange={e=>edit(e.target.checked?{profileVersion:2,context:draft.context,inherit:true}:{profileVersion:2,context:draft.context,inherit:false,connections:enabled.map(c=>c.id),defaultConnection:registry.defaultConnection||enabled[0]?.id||null,models:{}})}/>{msg('Use shared assistant defaults')}</label>
+  <label className={styles.label}><input type="checkbox" checked={!!draft.inherit} disabled={locked} onChange={e=>edit(e.target.checked?{profileVersion:2,context:draft.context,critic:draft.critic,inherit:true}:{profileVersion:2,context:draft.context,critic:draft.critic,inherit:false,connections:enabled.map(c=>c.id),defaultConnection:registry.defaultConnection||enabled[0]?.id||null,models:{}})}/>{msg('Use shared assistant defaults')}</label>
   {draft.inherit?<div className={styles.stack}><span className={styles.meta}>{msg('Default connection')} · {registry.connections.find(c=>c.id===registry.defaultConnection)?.name??msg('Not selected')}</span><span className={styles.meta}>{msg('Available connections')} · {enabled.map(c=>c.name).join(', ')||msg('None')}</span><span className={styles.meta}>{msg('Shared connection and model defaults apply here. Existing chats keep their selected connection.')}</span></div>:<>
    <Field label={msg('Enabled connections')}>{w=><Popover title={msg('Enabled connections')} align="start" trigger={<Button id={w.id} disabled={locked}>{msg('Connections')} · {ids.length}</Button>}>
     <SearchInput type="search" aria-label={msg('Search connections')} placeholder={msg('Search connections')} value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -100,6 +103,7 @@ function ConnectedDeskSettings({unavailable,onDirtyChange}:{unavailable:boolean;
    <Field label={msg('Default connection')}>{w=><Select {...w} value={selected??''} disabled={locked||!choices.length} onValueChange={defaultConnection=>edit({...draft,defaultConnection})} placeholder={msg('Choose a connection')} options={choices.map(c=>({value:c.id,label:c.name}))}/>}</Field>
    {choices.map(c=><ConnectionPreferences key={c.id} connection={c} value={draft.models?.[c.id]??{inherit:true}} disabled={locked} onChange={value=>edit({...draft,models:{...draft.models,[c.id]:value}})}/>)}
   </>}
+  <Field label={msg('Project review default')}>{w=><Select {...w} value={draft.critic??'inherit'} disabled={locked} onValueChange={v=>edit({...draft,critic:v==='inherit'?undefined:v as CriticMode})} options={[{value:'inherit',label:msg('Policy table default ({{mode}})',{mode:CONTEXT_DEFAULTS.criticDefault})},{value:'off',label:msg('Off')},{value:'auto',label:msg('Auto')},{value:'on',label:msg('On')}]}/>}</Field>
   <ButtonLink variant="quiet" to="/admin#connections-ai">{msg('Manage AI connections')}</ButtonLink>
   <SettingsActions feedback={<SettingsFeedback tone={read?.problem||save.error?'error':saved&&!dirty?'success':'neutral'}>{read?.problem||save.error?.message||(save.isPending?msg('Saving…'):saved&&!dirty?msg('Assistant preferences saved.'):dirty?msg('Unsaved changes'):null)}</SettingsFeedback>}>{dirty&&<Button variant="quiet" onClick={()=>{setDirty(false);save.reset()}}>{msg('Cancel')}</Button>}<Button variant="primary" disabled={locked||!dirty||!valid} onClick={()=>save.mutate()}>{msg(save.isPending?'Saving…':'Save preferences')}</Button></SettingsActions>
   <Disclosure title={msg('Advanced settings')}><div className={styles.actions}><Button variant="quiet" disabled={dirty||save.isPending} onClick={()=>void client.invalidateQueries({queryKey:DESK_CONFIG_QUERY_KEY})}>{msg('Reload from disk')}</Button>{read?.present&&<ButtonLink variant="inline" to="/author" onClick={()=>requestOpen(ASSISTANT_PROFILE_PATH)}>{ASSISTANT_PROFILE_PATH}</ButtonLink>}</div></Disclosure>

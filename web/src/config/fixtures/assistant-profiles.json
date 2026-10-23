@@ -267,9 +267,9 @@
       "codex": {
         "inherit": false,
         "models": [
-          "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+          "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
         ],
-        "model": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        "model": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
       }
     },
     "accepted": false
@@ -763,7 +763,7 @@
     "accepted": true,
     "value": {
       "profileVersion": 1,
-      "projectInstructions": "Keep missing facts explicit. 😀\n"
+      "projectInstructions": "Keep missing facts explicit. \ud83d\ude00\n"
     }
   },
   {
@@ -809,5 +809,80 @@
         "projectInstructions": "Do something"
       }
     }
+  },
+  {
+    "name": "critic off v1",
+    "value": {
+      "profileVersion": 1,
+      "critic": "off"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic auto v1",
+    "value": {
+      "profileVersion": 1,
+      "critic": "auto"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic on v1",
+    "value": {
+      "profileVersion": 1,
+      "critic": "on"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic off v2",
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "critic": "off"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic auto v2",
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "critic": "auto"
+    },
+    "accepted": true
+  },
+  {
+    "name": "critic on v2",
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "critic": "on"
+    },
+    "accepted": true
+  },
+  {
+    "name": "invalid critic sometimes",
+    "value": {
+      "profileVersion": 1,
+      "critic": "sometimes"
+    },
+    "accepted": false
+  },
+  {
+    "name": "invalid critic False",
+    "value": {
+      "profileVersion": 1,
+      "critic": false
+    },
+    "accepted": false
+  },
+  {
+    "name": "invalid critic None",
+    "value": {
+      "profileVersion": 1,
+      "critic": null
+    },
+    "accepted": false
   }
 ]

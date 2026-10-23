@@ -25,6 +25,8 @@ for (const name of names) {
     assert.deepEqual(responses[0].work.report.prompts, prompts, name)
   }
   if (name === 'completed.json') {
+    assert.deepEqual(saved.state.execution.critic, {mode:'auto',ran:false,reason:'no-proposal'})
+    assert.deepEqual(responses[0].work.report.critic, {mode:'auto',ran:false,reason:'no-proposal'})
     assert.equal(saved.state.execution.used, 2)
     assert.equal(responses[0].work.report.requests, 2)
     assert.equal(saved.state.turns.at(-1).text, 'Exact completed answer.')
@@ -45,6 +47,7 @@ for (const name of names) {
     assert.deepEqual(readExecution(document.pendingExecution).prompts, prompts, name)
     assert.equal(responses.length, 0, 'a pending continuation must retain the pinned source chat')
     assert.equal(saved.state.turns.length, 1)
+    assert.equal(saved.state.execution, undefined, 'pending private checkpoint must not replace the pinned chat')
   }
 }
 console.log(`Shared chat readers: ${names.length} completed, work/failure, create and pinned-pause fixtures passed.`)

@@ -25,6 +25,7 @@ type modelPreferences struct {
 	Thinking string   `json:"thinking,omitempty"`
 }
 type assistantProfile struct {
+	Critic              string                       `json:"critic,omitempty"`
 	ProjectInstructions string                       `json:"projectInstructions,omitempty"`
 	Context             *aicontext.Configuration     `json:"context,omitempty"`
 	Version             int                          `json:"profileVersion"`
@@ -46,6 +47,12 @@ func decodeAssistantProfile(data []byte) (*assistantProfile, error) {
 	if json.Unmarshal(data, &fields) != nil || !uniqueJSON(data) {
 		return fail()
 	}
+	if raw, present := fields["critic"]; present {
+		var mode string
+		if json.Unmarshal(raw, &mode) != nil || !contains(runcontext.CriticModes, mode) {
+			return fail()
+		}
+	}
 	if raw, present := fields["context"]; present {
 		if _, err := aicontext.Decode(raw); err != nil {
 			return fail()
@@ -64,7 +71,7 @@ func decodeAssistantProfile(data []byte) (*assistantProfile, error) {
 		return fail()
 	}
 	for key := range value {
-		if !contains([]string{"profileVersion", "codex", "api", "context", "projectInstructions"}, key) {
+		if !contains([]string{"profileVersion", "codex", "api", "context", "projectInstructions", "critic"}, key) {
 			return fail()
 		}
 	}
@@ -228,7 +235,7 @@ func decodeAssistantProfileV2(data []byte, value map[string]any) (*assistantProf
 	if !ok {
 		return fail()
 	}
-	keys := []string{"profileVersion", "inherit", "context", "projectInstructions"}
+	keys := []string{"profileVersion", "inherit", "context", "projectInstructions", "critic"}
 	if !inherit {
 		keys = append(keys, "connections", "defaultConnection", "models")
 	}

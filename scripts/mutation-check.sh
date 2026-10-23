@@ -14434,9 +14434,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web 'graph row 3: host tools submit different graph bytes' web/src/graphs/author.ts \
     'JSON.stringify({ content: args.content })' \
     'JSON.stringify({ content: args.content + '"'"' '"'"' })'
-  mutate web 'graph row 3: the graph session runs the pack critic' web/src/assistant/useAssistantRun.ts \
-    '...(purpose === '"'"'graph'"'"' ? { adversarialReview: false } : {}),' \
-    '...(purpose === '"'"'graph'"'"' ? { adversarialReview: true } : {}),'
+  # Retired by ADR-0010: Agent owns engine-independent and graph forced-off decisions.
+  # mutate web 'graph row 3: the graph session runs the pack critic' web/src/assistant/useAssistantRun.ts \
+  # '...(purpose === '"'"'graph'"'"' ? { adversarialReview: false } : {}),' \
+  # '...(purpose === '"'"'graph'"'"' ? { adversarialReview: true } : {}),'
 
   # ADR-0011, row 4.
   mutate web 'graph row 4: command not checked on page' web/src/graphs/GraphRehearsal.tsx \
@@ -14642,15 +14643,18 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  modelsFor: (run) => connectionModels.modelsFor(run)
 ' \
     ''
-  mutate web 'critic: the pack pane does not ask for the critic' web/src/assistant/useAssistantRun.ts \
-    "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
-    'adversarialReview: false,'
-  mutate web 'critic: the Codex engine is asked for the critic' web/src/assistant/useAssistantRun.ts \
-    "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
-    "adversarialReview: purpose === undefined && thinking !== 'off',"
-  mutate web 'critic: the critic is asked for with thinking off' web/src/assistant/useAssistantRun.ts \
-    "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
-    "adversarialReview: purpose === undefined && engine === 'vercel',"
+  # Retired by ADR-0010: Agent owns engine-independent and graph forced-off decisions.
+  # mutate web 'critic: the pack pane does not ask for the critic' web/src/assistant/useAssistantRun.ts \
+  # "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
+  # 'adversarialReview: false,'
+  # Retired by ADR-0010: Agent owns engine-independent and graph forced-off decisions.
+  # mutate web 'critic: the Codex engine is asked for the critic' web/src/assistant/useAssistantRun.ts \
+  # "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
+  # "adversarialReview: purpose === undefined && thinking !== 'off',"
+  # Retired by ADR-0010: Agent owns engine-independent and graph forced-off decisions.
+  # mutate web 'critic: the critic is asked for with thinking off' web/src/assistant/useAssistantRun.ts \
+  # "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
+  # "adversarialReview: purpose === undefined && engine === 'vercel',"
   mutate web 'probe: the probe overrides what the owner set' web/src/assistant/endpointCapabilities.ts \
     '  return { ...found, ...(record.override ?? {}) }' \
     '  return { ...(record.override ?? {}), ...found }'
@@ -15644,7 +15648,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if false && errors.Is(err, errAssistantRunConflict) {'
 fi
 
-# Agent v0.9 canonical switch: saved absent/false stays off, and Plan forces off.
+# Agent v0.9 canonical switch: explicit saved false stays off, and Plan forces off.
+# Missing choices inherit the project/table default (auto).
 # Retargets "assistant critic: saved review and Plan controls ignored" above.
 if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant critic: canonical saved off and Plan controls ignored' internal/desk/assistant_critic.go \
@@ -15652,6 +15657,21 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'return true'
 fi
 
+# Desk critic controls: omissions must fail the shared readers, not just a source scan.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'critic switch: saved mode omitted' web/src/chat/store.ts \
+    '...(chat.critic === undefined ? {} : { critic: chat.critic })' '...{}'
+  mutate web 'critic switch: saved reasoning omitted' web/src/chat/store.ts \
+    '...(chat.criticReasoning === undefined ? {} : { criticReasoning: chat.criticReasoning })' '...{}'
+  mutate web 'critic switch: report decision omitted' web/src/assistant/report.ts \
+    '...(execution?.critic === undefined ? {} : { critic: structuredClone(execution.critic) })' '...{}'
+fi
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'critic switch: project mode omitted' internal/desk/assistant_chat_input.go \
+    'out.CriticProject = source.Profile.Critic' 'out.CriticProject = ""'
+  mutate go 'critic switch: reasoning omitted' internal/desk/assistant_chat_input.go \
+    '"criticReasoning": &out.CriticReasoning' '"criticReasoning": new(string)'
+fi
 
 # Desk #627: sparse updates retain exact held fields and explicit empty values.
 if [ "$which" = all ] || [ "$which" = go ]; then

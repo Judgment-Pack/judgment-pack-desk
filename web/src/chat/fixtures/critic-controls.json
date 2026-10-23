@@ -1,0 +1,167 @@
+[
+  {
+    "name": "inherit table",
+    "chat": {},
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "legacy explicit off",
+    "chat": {
+      "adversarialReview": false
+    },
+    "project": "on",
+    "mode": "off"
+  },
+  {
+    "name": "legacy explicit on",
+    "chat": {
+      "adversarialReview": true
+    },
+    "project": "off",
+    "mode": "on"
+  },
+  {
+    "name": "run off",
+    "chat": {
+      "critic": "off",
+      "criticReasoning": "off"
+    },
+    "project": "on",
+    "mode": "off"
+  },
+  {
+    "name": "run auto",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "on"
+    },
+    "project": "off",
+    "mode": "auto"
+  },
+  {
+    "name": "run on wins over old false",
+    "chat": {
+      "critic": "on",
+      "criticReasoning": "ultra",
+      "adversarialReview": false
+    },
+    "project": "off",
+    "mode": "on"
+  },
+  {
+    "name": "project off",
+    "chat": {},
+    "project": "off",
+    "mode": "off"
+  },
+  {
+    "name": "project auto",
+    "chat": {},
+    "project": "auto",
+    "mode": "auto"
+  },
+  {
+    "name": "project on",
+    "chat": {},
+    "project": "on",
+    "mode": "on"
+  },
+  {
+    "name": "model critic tier low",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "low"
+    },
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "model critic tier medium",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "medium"
+    },
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "model critic tier high",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "high"
+    },
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "agent critic tier none",
+    "engine": "codex",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "none"
+    },
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "agent critic tier minimal",
+    "engine": "codex",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "minimal"
+    },
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "agent critic tier low",
+    "engine": "codex",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "low"
+    },
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "agent critic tier medium",
+    "engine": "codex",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "medium"
+    },
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "agent critic tier high",
+    "engine": "codex",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "high"
+    },
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "agent critic tier xhigh",
+    "engine": "codex",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "xhigh"
+    },
+    "project": "",
+    "mode": "auto"
+  },
+  {
+    "name": "agent critic tier max",
+    "engine": "codex",
+    "chat": {
+      "critic": "auto",
+      "criticReasoning": "max"
+    },
+    "project": "",
+    "mode": "auto"
+  }
+]

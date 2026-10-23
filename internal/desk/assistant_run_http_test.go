@@ -57,7 +57,13 @@ func assistantFixtureCheckpoint(ctx context.Context, source assistantRunSource, 
 		}
 	}
 	r := &adapter.Run{ModelName: source.Binding.Model, Context: input}
-	session := runcontext.Session{Prompt: source.Text, Purpose: source.Start.Purpose, Context: input, Critic: assistantCriticMode(chat), AdversarialReview: review, PolicyLegacyModels: &named}
+	if review == nil {
+		review = chat.Review
+	}
+	session := runcontext.Session{Prompt: source.Text, Purpose: source.Start.Purpose, Context: input, Critic: chat.Critic, CriticProject: chat.CriticProject, CriticReasoning: chat.CriticReasoning, AdversarialReview: review, PolicyLegacyModels: &named}
+	if chat.CriticPurpose != "" {
+		session.Purpose = chat.CriticPurpose
+	}
 	config := source.Connection.Assistant
 	if config.Engine == "codex" {
 		// Prepare precedes persisted execution authority, so it cannot call

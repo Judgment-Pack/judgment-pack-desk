@@ -259,8 +259,6 @@ func TestAssistantGraphActualEinoProducer(t *testing.T) {
 	})
 	s, _, e := assistantExecutionFixture(t, u.server.URL, "work")
 	x := assistantGraphSetup(t, s, e)
-	off := false
-	x.Run.Review = &off
 	// Seven serial host tools and their durable model/checkpoint steps need
 	// headroom under the race detector; this is only the scripted fixture bound.
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)

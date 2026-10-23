@@ -170,12 +170,13 @@ let runtime: ReturnType<typeof scriptedWebSocket> | null = null
 let calls: { name: string; args: Record<string, unknown> }[] = []
 const stubCalls = () => calls
 
-function config(assistant: unknown): EffectiveConfig {
-  return effectiveConfig(undefined, undefined, undefined, {
+function config(assistant: unknown, critic?: 'on'): EffectiveConfig {
+  const value = effectiveConfig(undefined, undefined, undefined, {
     path: '/home/someone/.config/jpack-desk/desk.json',
     present: true,
     decoded: decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, assistant }), 'desk')
   })
+  return critic === undefined ? value : {...value, assistantProfile: {present:true, value:{profileVersion:1, critic}}}
 }
 
 /**
@@ -366,6 +367,7 @@ function drawUnread() {
 function draw(
   assistant: unknown = { endpoint: ENDPOINT },
   options: {
+    critic?: 'on'
     persist?: boolean
     page?: boolean
     secondPrompt?: 'ok' | 'reject' | 'hang'
@@ -373,7 +375,7 @@ function draw(
     testPrompt?: 'none' | 'ok' | 'reject'
   } = {}
 ) {
-  return drawWith(config(assistant), options)
+  return drawWith(config(assistant, options.critic), options)
 }
 
 function drawWith(
@@ -1380,7 +1382,7 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
     // saying "running" with nothing running at all: the authoring prompt had
     // arrived and no engine ever started.
     serve()
-    draw(THINKING, { testPrompt: 'reject' })
+    draw(THINKING, { testPrompt: 'reject', critic: 'on' })
     await propose()
     // The session runs to its end…
     await waitFor(() => expect(ends()).toHaveLength(1), { timeout: 20000 })
@@ -1397,7 +1399,7 @@ describe('the runtime’s testing prompt, which the refutation pass needs', () =
 
   it('runs with a critic where the runtime serves it', async () => {
     serve()
-    draw(THINKING, { testPrompt: 'ok' })
+    draw(THINKING, { testPrompt: 'ok', critic: 'on' })
     await propose()
     await waitFor(() => expect(ends()).toHaveLength(1), { timeout: 20000 })
     expect(

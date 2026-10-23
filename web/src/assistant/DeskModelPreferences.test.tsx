@@ -100,3 +100,20 @@ it('preserves instructions and allows model preference saves while policy metada
  await waitFor(()=>expect(state.writes).toHaveLength(1))
  expect(JSON.parse(state.writes[0].content).projectInstructions).toBe(original.projectInstructions)
 })
+
+it.each([1,2] as const)('saves and reloads every project critic choice in profile v%d', async version=>{
+ const state=setup({present:true,sha256:'a'.repeat(64),value:version===1?{profileVersion:1,codex:{inherit:true}}:{profileVersion:2,inherit:true}})
+ for(const [label,critic] of [['Off','off'],['Auto','auto'],['On','on'],['Policy table default (auto)',undefined]] as const){
+  fireEvent.click(screen.getByRole('combobox',{name:'Project review default'}))
+  fireEvent.click(screen.getByRole('option',{name:label}))
+  fireEvent.click(screen.getByRole('button',{name:'Save preferences'}))
+  await waitFor(()=>expect(state.writes.length).toBeGreaterThan(0))
+  const saved=JSON.parse(state.writes.at(-1).content)
+  expect(saved.critic).toBe(critic)
+  expect(saved.profileVersion).toBe(version)
+  state.rerender({present:true,sha256:'b'.repeat(64),value:saved})
+  await screen.findByText('Desk model preferences saved.')
+  expect(screen.getByRole('combobox',{name:'Project review default'}).textContent).toBe(label)
+  state.writes.length=0
+ }
+})

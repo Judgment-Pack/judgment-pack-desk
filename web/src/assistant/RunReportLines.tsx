@@ -1,3 +1,4 @@
+import { criticDecisionLine } from './criticDecision'
 import type { ChildFigures, FiguresTotal, TokenFigures } from '@judgment-pack/harness/execution/state'
 import { msg, useLocale } from '../i18n'
 import { Disclosure } from '../ui/Disclosure'
@@ -31,6 +32,8 @@ export function RunReportLines({ report, titles = {}, className }: { report: Run
         {report.retries && msg(' · retried: {{retried}} ({{reasons}})', { retried: report.retries.count, reasons: report.retries.reasons.join(', ') })}
         {report.tokens && msg(' · tokens reported by the provider: {{tokens}}', { tokens: tokensOf(report.tokens) })}
       </p>
+      {report.critic && <p>{criticDecisionLine(report.critic)}</p>}
+
       {report.prompts && report.prompts.length > 0 && (
         <Disclosure title={msg('Prompt digests')} size="small">
           <table className={styles.table}>
