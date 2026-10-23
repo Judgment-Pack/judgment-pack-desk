@@ -1371,7 +1371,7 @@ go	witness: the witness's deadline does not hold the next submission	TestWitness
 web	Accept is drawn on the reading route	src/assistant/AssistantPane.test.tsx
 web	Accept is enabled while the session is still running	src/assistant/acceptProposal.test.ts
 web	Accept pushes a second undo entry	src/assistant/AssistantPane.test.tsx
-web	Accept trusts the rendered busy state at the click	src/assistant/AssistantPane.test.tsx
+web	Accept trusts the rendered busy state at the click	src/packs/edit/proposalApplication.test.tsx
 web	Accept writes the whole document instead of splicing it	src/assistant/AssistantPane.test.tsx,src/assistant/acceptProposal.test.ts
 web	Admin claims a location the listing does not show	src/routes/AdminView.test.tsx
 web	Admin sources every unread reason to the chassis	src/admin/SourceCard.test.tsx,src/routes/AdminView.test.tsx

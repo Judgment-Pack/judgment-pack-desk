@@ -9627,9 +9627,12 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      void expect'
   mutate web "an earlier reload answers over a later one" "$FE" \
     '          if (ticket !== reloads.current) return
+          reloadPending.current = false
           setReloading(false)
           // **The buffer decides first.**' \
-    '          // **The buffer decides first.**'
+    '          reloadPending.current = false
+          setReloading(false)
+          // **The buffer decides first.**'
   mutate web "a failed reload names whatever file is on screen" "$FE" \
     '          setReloadError({
             path,
@@ -10959,18 +10962,15 @@ function usePacks() { useExampleListing(); return readPacks() }'
     agreesWithParse(current.text, current.index).length === 0' \
     '  const readable = false'
 
-  # One accept is one undo entry. A second write with its own key is a second
-  # entry, so the first Undo leaves the author where the accept put them.
-  mutate web "Accept pushes a second undo entry" "$AP" \
-    '      { coalesceKey: `assistant-accept:${(accepts.current += 1)}` }
-    )
-    setAccepted(landed.text)' \
-    '      { coalesceKey: `assistant-accept:${(accepts.current += 1)}` }
-    )
-    write((current) => applyProposal(current, proposed), {
-      coalesceKey: `assistant-accept:${(accepts.current += 1)}`
-    })
-    setAccepted(landed.text)'
+  # One accept is one undo entry. Application now passes through the shared
+  # conditional buffer writer; committing twice there leaves the proposal in
+  # place after the first Undo.
+  mutate web "Accept pushes a second undo entry" "$BUF" \
+    '    commit(next)
+    return { applied: true, text: next }' \
+    '    commit(next)
+    commit(next)
+    return { applied: true, text: next }'
 
   # **A proposal is an edit of the draft it was given.** The run captures its
   # baseline where it starts; the comparison against the bytes on the page now
@@ -10983,11 +10983,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the diff follows the live buffer instead of the baseline" "$AP" \
     '    () => (proposed === undefined ? undefined : diffProposal(baseline?.bytes, proposed)),' \
     '    () => (proposed === undefined ? undefined : diffProposal(draft, proposed)),'
-  # The save latch is claimed synchronously and reported to React a render
-  # later, so the click has to ask again.
-  mutate web "Accept trusts the rendered busy state at the click" "$AP" \
-    "    if (busyNow.current() !== '' || !onBaseline) return" \
-    '    void onBaseline'
+  # The editor owns the live save/reload latches. Keeping only the rendered
+  # mutation state permits an application in the same turn a latch is claimed.
+  mutate web "Accept trusts the rendered busy state at the click" "web/src/routes/PackView.tsx" \
+    '      saving.current !== undefined || live.savePending || editor.isReloading()) return { applied: false }' \
+    '      live.savePending) return { applied: false }'
   # "Accepted" is a comparison. Stored, it outlived the bytes it was about:
   # Undo put the draft back and the pane still said the proposal was in it.
   mutate web "an accepted proposal stays accepted after Undo" "$AP" \

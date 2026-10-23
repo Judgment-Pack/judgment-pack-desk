@@ -106,6 +106,7 @@ interface Baseline {
   bytes: string | undefined
   path: string | undefined
   generation: number | undefined
+  revision: number | undefined
 }
 
 /** Nothing is in the way. The default, for a caller with no draft to speak of. */
@@ -225,7 +226,6 @@ export function AssistantPane({
     args: Record<string, string>
   } | null>(null)
   const nextRun = useRef(0)
-  const accepts = useRef(0)
   /**
    * **What this run is about**: the document it was given, and the bytes of it.
    *
@@ -242,11 +242,12 @@ export function AssistantPane({
    * than remembered.
    *
    * Undo puts the draft back exactly as it was, and a stored disposition then
-   * said "already in the draft" about a draft that no longer carried it — with
-   * Accept disabled and no way to put it back. What is true is a comparison:
+   * said "already in the draft" about a draft that no longer carried it.
+   * Baseline revision guards application separately. What is true is a comparison:
    * this proposal is in the draft exactly while the draft is the bytes it made.
    */
   const [accepted, setAccepted] = useState<string | null>(null)
+  const [applyRefused, setApplyRefused] = useState(false)
   const [rejected, setRejected] = useState(false)
   // The bytes and the identity as of now, readable from the effect that starts
   // a run without making it restart on every keystroke in the editor beside it.
@@ -330,10 +331,12 @@ export function AssistantPane({
     started.current = submitted.id
     setRejected(false)
     setAccepted(null)
+    setApplyRefused(false)
     setBaseline({
       bytes: draftNow.current,
       path: identityNow.current?.path,
-      generation: identityNow.current?.generation
+      generation: identityNow.current?.generation,
+      revision: identityNow.current?.revision
     })
     setRan(submitted.name)
     startRun(withDraft(prompt.data.text, draftNow.current))
@@ -406,7 +409,8 @@ export function AssistantPane({
     baseline !== null &&
     baseline.bytes === draft &&
     baseline.path === identity?.path &&
-    baseline.generation === identity?.generation
+    baseline.generation === identity?.generation &&
+    baseline.revision === identity?.revision
   const sentDraft = carriesDraft(baseline?.bytes)
   const disposition: Disposition = rejected
     ? 'rejected'
@@ -414,29 +418,19 @@ export function AssistantPane({
       ? 'accepted'
       : 'open'
 
-  const write = session.write
+  const writeIfCurrent = session.writeIfCurrent
   const acceptIntoDraft = useCallback(() => {
-    if (proposed === undefined) return
+    if (proposed === undefined || baseline?.bytes === undefined || baseline.path === undefined ||
+      baseline.generation === undefined || baseline.revision === undefined) return
     // **Asked again at the instant of the click.** The rendered `busy` disables
     // the button a render after a save is claimed, and the claim is
     // synchronous; the baseline is re-checked here for the same reason.
-    if (busyNow.current() !== '' || !onBaseline) return
-    // **One write, and one undo entry.** The key is this accept's own, so a
-    // second accept is a second action rather than being coalesced into the
-    // first — which would make one Undo take both of them back.
-    const landed = { text: '' }
-    write(
-      (current) => {
-        const next = applyProposal(current, proposed)
-        // Read back on the next line: `write` runs this synchronously, and the
-        // bytes it produced are what "already in the draft" is a claim about.
-        landed.text = next.text
-        return next
-      },
-      { coalesceKey: `assistant-accept:${(accepts.current += 1)}` }
-    )
-    setAccepted(landed.text)
-  }, [proposed, write, onBaseline])
+    if (busyNow.current() !== '' || !onBaseline) { setApplyRefused(true); return }
+    const result = writeIfCurrent?.({ path: baseline.path, generation: baseline.generation, revision: baseline.revision },
+      baseline.bytes, current => applyProposal(current, proposed))
+    setApplyRefused(!result?.applied)
+    if (result?.applied) setAccepted(result.text)
+  }, [proposed, writeIfCurrent, onBaseline, baseline])
 
   if (!assistantReady(slot)) {
     return (
@@ -603,6 +597,7 @@ export function AssistantPane({
             <ChatAction disabled={disposition !== 'open' || running} onClick={() => setRejected(true)}>{msg("Reject")}</ChatAction>
           </ChatActions>
           {editing && accept.why && <p id={`${helpId}-accept`} className={styles.honesty}>{systemMessage(accept.why)}</p>}
+          {editing && applyRefused && <p className={styles.honesty}>{msg('The proposal or editor changed. Review it again before saving.')}</p>}
           {disposition === 'accepted' && (
             <p className={styles.honesty}><Message text={"Accepted into the draft. <0/> The check runs again over the new bytes, Undo takes the whole accept back in one step, and Save is yours to press."} slots={[<strong>{msg("Nothing has been saved.")}</strong>]} /></p>
           )}

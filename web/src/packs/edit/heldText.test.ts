@@ -125,3 +125,20 @@ describe('holding and letting go', () => {
     expect(touch).toHaveBeenCalledTimes(1)
   })
 })
+
+it('reads and preserves pending operand text before the next render', () => {
+  const {result} = renderHook(() => useBoth())
+  const captured = result.current.held
+  const value = draft('  {"unfinished\n')
+  act(() => {
+    captured.hold('/rules/0/when/value', value)
+    expect(captured.hasPending()).toBe(true)
+    captured.hold('/rules/0/when/value', value)
+  })
+  expect(result.current.held.drafts.get('/rules/0/when/value')).toEqual(value)
+  expect(result.current.buffer.identity!.revision).toBe(1)
+  act(() => {
+    captured.hold('/rules/0/when/value', null)
+    expect(captured.hasPending()).toBe(false)
+  })
+})
