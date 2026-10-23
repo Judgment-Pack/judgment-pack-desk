@@ -46,6 +46,11 @@ const testPort = 8799
 // of them (the FIFO test) deliberately leaks a listener rather than hang.
 func startDesk(t *testing.T, cfg Config) (*Server, *httptest.Server) {
 	t.Helper()
+	return startDeskWithHandler(t, cfg, nil)
+}
+
+func startDeskWithHandler(t *testing.T, cfg Config, wrap func(http.Handler) http.Handler) (*Server, *httptest.Server) {
+	t.Helper()
 	if cfg.DeskConfigDir == "" {
 		cfg.DeskConfigDir = t.TempDir()
 	}
@@ -57,6 +62,9 @@ func startDesk(t *testing.T, cfg Config) (*Server, *httptest.Server) {
 		t.Fatalf("New: %v", err)
 	}
 	ts.Config.Handler = s
+	if wrap != nil {
+		ts.Config.Handler = wrap(s)
+	}
 	ts.Start()
 	return s, ts
 }
