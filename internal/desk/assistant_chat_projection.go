@@ -594,7 +594,11 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	work["items"] = items
 	work["notices"] = notices
 	if run.Checkpoint != nil {
-		work["report"] = map[string]any{"requests": run.Checkpoint.Used, "unit": run.Checkpoint.Unit}
+		report := map[string]any{"requests": run.Checkpoint.Used, "unit": run.Checkpoint.Unit}
+		if run.Checkpoint.Prompts != nil {
+			report["prompts"] = append([]contract.ProvenancePromptDigest{}, run.Checkpoint.Prompts...)
+		}
+		work["report"] = report
 		display := *assistantChatProjectionCheckpoint(run)
 		// Approval/handoff capabilities stay in the bound ledger. Historical
 		// allowance records and used counters are facts, not fresh grants.
