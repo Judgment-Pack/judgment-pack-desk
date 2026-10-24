@@ -309,5 +309,5 @@ grep -Fxq 'Saved-pack proposal: actual Go correction/basis/check/reload and expl
 (
   cd "$root/web"
   JPS_REQUIRE_DOMAIN_OUTPUTS=1 JPS_DOMAIN_OUTPUTS="$tmp" \
-    ./node_modules/.bin/vitest run src/chat/CanonicalDomainProjections.test.tsx
+    ./node_modules/.bin/vitest run src/chat/CanonicalDomainProjections.test.tsx src/chat/CanonicalDomainChatPanel.test.tsx
 ) | tee "$tmp/mounted-domain-reader.log"
