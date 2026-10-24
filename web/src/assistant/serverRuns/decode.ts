@@ -16,7 +16,7 @@ export const revision = (v: unknown): v is number => Number.isSafeInteger(v) && 
 export const runID = (v: unknown): v is string => typeof v === 'string' && /^arun_[a-f0-9]{32}$/.test(v)
 export const ownerID = (v: unknown): v is string => typeof v === 'string' && /^[a-zA-Z0-9_-]{1,160}$/.test(v)
 export const briefSubject = (v: unknown): v is string => text(v,1024) && (/^(pack|pack-draft|graph|graph-draft):.+$/.test(v) || /^case:.+:.+$/.test(v) || /^(job:job_|run:run_)[a-f0-9]{32}$/.test(v))
-export const runOwner = (kind:unknown,id:unknown):boolean => kind === 'chat' ? ownerID(id) : kind === 'brief' && briefSubject(id)
+export const runOwner = (kind:unknown,id:unknown):boolean => kind === 'chat' ? ownerID(id) : kind === 'brief' ? briefSubject(id) : (kind === 'author-pack' || kind === 'describe-pack' || kind === 'author-graph') && typeof id === 'string' && /^author_[a-f0-9]{32}$/.test(id)
 export function invalid(): never { throw new AIFailureError(failure('invalid-response', 'desk', 'unknown')) }
 export function parseRunJSON(raw: string): unknown {
   try { parseJsonText(raw); return JSON.parse(raw) as unknown } catch { return invalid() }

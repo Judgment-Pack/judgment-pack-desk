@@ -681,12 +681,6 @@
       "\/home\/someone\/.config\/jpack-desk\/desk.json"
     ]
   },
-  "web\/src\/assistant\/AssistantPane.test.tsx": {
-    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
-    "paths": [
-      "\/home\/someone\/.config\/jpack-desk\/desk.json"
-    ]
-  },
   "web\/src\/assistant\/SharedAssistantSettings.test.tsx": {
     "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
     "paths": [
@@ -855,12 +849,6 @@
     "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
     "paths": [
       "\/home\/someone\/a-project"
-    ]
-  },
-  "web\/src\/shell\/DescribeIt.test.tsx": {
-    "reason": "Synthetic path fixtures for isolation, redaction, or configuration tests.",
-    "paths": [
-      "\/home\/someone\/.config\/jpack-desk\/desk.json"
     ]
   },
   "web\/src\/shell\/appearanceProvider.test.tsx": {

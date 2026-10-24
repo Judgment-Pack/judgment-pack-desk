@@ -34,14 +34,13 @@ import { systemMessage, msg, useLocale } from '../i18n'
  * key on this machine, and it says in one line where that is configured rather
  * than showing a control that would refuse.
  *
- * **Nothing is persisted.** Leaving the route ends the session and closes its
- * connection; coming back is a new one.
+ * Request capture and execution are retained by the host. Leaving the route
+ * detaches this view; it never silently replays the retained request.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   AUTHOR_PACK_PROMPT,
   FIX_PACK_PROMPT,
-  TEST_PACK_PROMPT,
   usePromptNames,
   usePromptText
 } from '../mcp/prompts'
@@ -61,9 +60,9 @@ import { ProposalUnknowns, RefutationReport, RuntimeChecks } from './ProposalRep
 import { acceptState, applyProposal, writable, type Disposition } from './acceptProposal'
 import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
-import { proposePackTool } from './proposePack'
 import { stateFromEvents, thinkingLine } from '@judgment-pack/harness/thinking'
-import { useAssistantRun } from './useAssistantRun'
+import { useAuthoringRun } from './useAuthoringRun'
+import { whenSessionEnds } from '../mcp/session'
 import type { CriticCase } from '@judgment-pack/harness/refutation'
 import { CHECKING_KEY, UNREAD_KEY, useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
@@ -115,7 +114,6 @@ const noBusy = () => ''
 /** One list, allocated once, so an unconfigured desk re-renders to one value. */
 const EMPTY_MODELS: readonly string[] = []
 /** The pane proposes a pack: it offers `propose_pack` beside the fence (`assistant/proposePack.ts`). */
-const PANE_HOST_TOOLS = [proposePackTool()]
 
 /** Why Fix is not offered, where it is not. */
 function fixWhy(diagnostics: number, advertised: boolean, listed: boolean): string | undefined {
@@ -126,11 +124,11 @@ function fixWhy(diagnostics: number, advertised: boolean, listed: boolean): stri
 
 export function AssistantPane({
   draft,
+  path,
   editing = false,
   identity,
   busy = noBusy,
-  diagnostics,
-  criticCases
+  diagnostics
 }: {
   /**
    * The bytes this page is about: the editor's buffer on `?edit`, the saved
@@ -143,6 +141,8 @@ export function AssistantPane({
    * sent.
    */
   draft?: string
+  /** Source locator only; the host independently resolves saved declarations/bytes. */
+  path?: string
   /**
    * True where this page is being edited **and** has bytes to edit.
    *
@@ -183,9 +183,8 @@ export function AssistantPane({
    */
   diagnostics?: { count: number; bytes: string }
   /**
-   * The cases whose outcomes the critic compares with the proposal's: the saved
-   * tests of the pack on this page, `savedTestCases` of its suite. Left out where
-   * the page has none, and the critic then reviews the proposal alone.
+   * Compatibility input for callers. The host independently reads the current
+   * saved suite; browser-supplied cases never establish expected outcomes.
    */
   criticCases?: CriticCase[]
 } = {}) {
@@ -253,6 +252,7 @@ export function AssistantPane({
   // a run without making it restart on every keystroke in the editor beside it.
   const draftNow = useRef<string | undefined>(draft)
   draftNow.current = draft
+  const pathNow = useRef(path); pathNow.current = path
   const identityNow = useRef<BufferIdentity | undefined>(identity)
   identityNow.current = identity
   const prompt = usePromptText(
@@ -263,60 +263,20 @@ export function AssistantPane({
   /** Which prompt the run on screen is of, once one has started. */
   const [ran, setRan] = useState<string | undefined>(undefined)
 
-  /**
-   * The runtime's testing prompt, for the refutation pass.
-   *
-   * Read **only where a critic will run** — the pass is gated on the tier, so a
-   * desk at `off` spends no `prompts/get` on it — and read with no `pack`
-   * argument, because the document the critic will be given does not exist
-   * until the session has produced it. The critic is handed the document
-   * itself, fenced, beside this guidance.
-   */
-  const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
-  const testPrompt = usePromptText(TEST_PACK_PROMPT, slot.thinking !== 'off' && advertisesTest)
-  /**
-   * Whether this session still owes the critic the runtime's testing prompt.
-   *
-   * A session begins by reading the runtime's prompts, and the refutation pass
-   * needs a **second** one. Starting on the first alone handed the engine an
-   * empty `testPrompt`, and the critic then ran on the desk's sentence with
-   * none of the runtime's instructions — the one thing the pass is not allowed
-   * to be. A runtime that advertises no `test_pack` is not waited for: the pass
-   * reports that it cannot run, and the proposal is shown without a line.
-   *
-   * **A read that failed is a settled read.** `data` alone stays undefined for
-   * ever on the error state, so a `prompts/get` the runtime refused deadlocked
-   * the whole session: the authoring prompt had arrived, no engine started, and
-   * the tab said nothing about why. A rejection settles this the same way an
-   * answer does — the run goes ahead **without a critic**, and the reason is a
-   * line of its own beside the stream.
-   */
-  const waitingForTest =
-    slot.thinking !== 'off' &&
-    advertisesTest &&
-    testPrompt.data === undefined &&
-    testPrompt.error === null
-  // **The pick is this tab's, on this project**, and the run is given its
-  // answer rather than the file's default. The project root is the chassis'
-  // own, from the listing every other per-project preference is keyed on.
+  // The host reads test_pack guidance and current saved cases for the critic.
   const listing = useFileListing()
   const picked = usePickedModel(
     selected?.models ?? EMPTY_MODELS,
     selected?.model ?? null,
     listing.data?.root, slot.connectionId, 'authoring'
   )
-  const run = useAssistantRun({ target: slot,
-    // Only rendered where the endpoint exists; the fallback keeps the hook
-    // unconditional, which is the rule React enforces.
-    endpoint: slot.endpoint,
-    agent: slot.agent,
-    model: picked.model,
-    engine: slot.engine,
-    thinking: slot.thinking,
-    testPrompt: testPrompt.data?.text ?? '',
-    hostTools: PANE_HOST_TOOLS,
-    criticCases
-  })
+  const run = useAuthoringRun({ target: slot, model: picked.model, engine: slot.engine,
+    thinking: slot.thinking, ...(slot.agent?.model === picked.model && slot.agent.effort ? {effort:slot.agent.effort} : {}) })
+
+  useEffect(() => whenSessionEnds(() => {
+    setSubmitted(null);setBaseline(null);setAccepted(null);setRejected(false)
+    setApplyRefused(false);setRan(undefined);setTyped('')
+  }), [])
 
   // The run starts when the prompt this submission asked for has arrived, and
   // once per submission: the query answers again on a refetch, and a second
@@ -325,8 +285,6 @@ export function AssistantPane({
   const startRun = run.start
   useEffect(() => {
     if (submitted === null || prompt.data === undefined) return
-    // Both prompts, or neither: see `waitingForTest`.
-    if (waitingForTest) return
     if (started.current === submitted.id) return
     started.current = submitted.id
     setRejected(false)
@@ -339,8 +297,10 @@ export function AssistantPane({
       revision: identityNow.current?.revision
     })
     setRan(submitted.name)
-    startRun(withDraft(prompt.data.text, draftNow.current))
-  }, [submitted, prompt.data, waitingForTest, startRun])
+    startRun({purpose:'author-pack',prompt:submitted.name,arguments:submitted.args,
+      ...(draftNow.current===undefined?{}:{draft:draftNow.current}),
+      ...((identityNow.current?.path??pathNow.current)?{path:identityNow.current?.path??pathNow.current}:{})})
+  }, [submitted, prompt.data, startRun])
 
   /**
    * Stop, in **both** phases of a session.
@@ -459,7 +419,7 @@ export function AssistantPane({
   // runtime's prompts. Stop has to be usable while the desk is waiting for one:
   // a wait nobody can end is the same trap as a run nobody can end.
   const running =
-    run.status === 'running' || (submitted !== null && (prompt.isFetching || waitingForTest))
+    run.status === 'running' || (submitted !== null && prompt.isFetching)
   const accept = acceptState({
     editing,
     proposal: proposal !== undefined,
@@ -505,7 +465,7 @@ export function AssistantPane({
       <div className={styles.actions}>
         <ChatAction
           variant="primary"
-          disabled={running || typed.trim() === '' || !advertised}
+          disabled={running || run.canStart === false || typed.trim() === '' || !advertised}
           onClick={() =>
             setSubmitted({
               id: (nextRun.current += 1),
@@ -521,7 +481,7 @@ export function AssistantPane({
           diagnostics the check on this page already produced.
         */}
         <ChatAction
-          disabled={running || diagnostics === undefined || !canFix}
+          disabled={running || run.canStart === false || diagnostics === undefined || !canFix}
           aria-describedby={fixWhy(diagnosticCount, canFix, prompts.isSuccess) ? `${helpId}-fix` : undefined}
           onClick={() => {
             if (diagnostics === undefined) return
@@ -533,7 +493,7 @@ export function AssistantPane({
             })
           }}
         >{msg("Fix")}</ChatAction>
-        <ChatAction disabled={!running} onClick={stop}>{msg("Stop")}</ChatAction>
+        <ChatAction disabled={!running && !run.canStop} onClick={stop}>{msg("Stop")}</ChatAction>
       </div>
       {fixWhy(diagnosticCount, canFix, prompts.isSuccess) && <p id={`${helpId}-fix`} className={styles.honesty}>
         {fixWhy(diagnosticCount, canFix, prompts.isSuccess)}
@@ -544,14 +504,7 @@ export function AssistantPane({
       {prompt.error !== null && submitted !== null && (
         <p className={styles.notice}><Message text={"The runtime’s <0/> prompt could not be read: <1/>"} slots={[submitted.name, prompt.error.message]} /></p>
       )}
-      {/*
-        **Which of the two ways the desk has no testing prompt.** The engine
-        says only that it has none; this says why, because only this knows. The
-        session runs either way — without a critic.
-      */}
-      {testPrompt.error !== null && (
-        <p className={styles.notice}><Message text={"The runtime’s <0/> prompt could not be read, so the refutation pass did not run: <1/>"} slots={[TEST_PACK_PROMPT, testPrompt.error.message]} /></p>
-      )}
+
 
       <EventList events={run.events} failure={run.failure} />
       <StreamingText text={run.streaming} />

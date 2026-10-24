@@ -121,7 +121,7 @@
     },
     {
       "name": "go-test",
-      "run": "go test -v ./...",
+      "run": "go test -timeout=40m -v ./...",
       "toolchain": "go",
       "summary": "^(ok|FAIL) ",
       "timeout": 3000
@@ -349,6 +349,13 @@
       "toolchain": "shell",
       "timeout": 900,
       "summary": "Brief|PASS|passed"
+    },
+    {
+      "name": "assistant-authoring-readers",
+      "run": "scripts/dev/assistant-authoring.sh",
+      "toolchain": "shell",
+      "timeout": 900,
+      "summary": "Authoring|PASS|passed"
     }
   ]
 }

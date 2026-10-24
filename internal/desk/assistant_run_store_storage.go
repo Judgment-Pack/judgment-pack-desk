@@ -33,6 +33,17 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 	if err := assistantRunJSONMembers(data); err != nil {
 		return ledger, err
 	}
+	var captureWire struct {
+		Captures json.RawMessage `json:"authoringCaptures"`
+	}
+	if json.Unmarshal(data, &captureWire) != nil {
+		return ledger, errAssistantRunInvalid
+	}
+	if len(captureWire.Captures) > 0 {
+		if err := readAssistantDialectCustody(captureWire.Captures, reflect.TypeOf([]assistantAuthoringCapture{})); err != nil {
+			return ledger, err
+		}
+	}
 	if err := decodeDataJSON(data, &ledger); err != nil {
 		return ledger, err
 	}
@@ -272,6 +283,14 @@ func assistantRunJSONMembers(raw []byte) error {
 // bindings, exact receipts and canonical grants as evidence, not authority.
 func interruptAssistantRuns(ledger *assistantRunLedger, historical bool) bool {
 	changed := false
+	if historical {
+		for i := range ledger.AuthoringCaptures {
+			if !ledger.AuthoringCaptures[i].Cancelled {
+				ledger.AuthoringCaptures[i].Cancelled = true
+				changed = true
+			}
+		}
+	}
 	for i := range ledger.Runs {
 		run := &ledger.Runs[i]
 		modified := false

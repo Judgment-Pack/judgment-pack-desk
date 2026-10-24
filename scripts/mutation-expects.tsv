@@ -1557,7 +1557,7 @@ web	a refused file's bytes are rendered anyway	src/admin/ConfigPane.test.tsx,src
 web	a refused pack listing is called again on every route change	src/mcp/queries.test.tsx
 web	a refused reload still clears the editor it landed in	src/packs/edit/navigate.test.tsx
 web	a refused row discloses a pair the runtime never gave	src/research/ui/ExpectationReview.test.tsx
-web	a refused testing prompt is waited for for ever	src/assistant/AssistantPane.test.tsx
+go	a refused testing prompt is waited for for ever	TestAssistantAuthoringCriticGuidanceAdmission
 web	a reload adopts over an edit made while it was in flight	src/packs/edit/useDocumentBuffer.test.ts
 web	a removal takes its neighbour layout rather than its own	src/packs/documentText.test.ts
 web	a removed condition is called a kind this desk does not know	src/packs/edit/forms.test.tsx
@@ -1896,7 +1896,7 @@ web	harness swap: the Go state header drifts from the package's	src/assistant/ha
 web	harness swap: the case writer gets no attachments	src/research/run.test.ts
 web	harness swap: the draft snapshot back in the prompt	src/research/run.test.ts
 web	harness swap: the draft snapshot is not the current state	src/research/run.test.ts
-web	harness swap: the pack pane offers no propose_pack	src/assistant/AssistantPane.test.tsx
+go	harness swap: the pack pane offers no propose_pack	TestAssistantAuthoringSavedCasesAndClosedTools
 web	help: a path is not quoted for the shell	src/routes/HelpAbout.test.tsx
 web	help: the agent command names no configuration	src/routes/HelpAbout.test.tsx
 web	help: the tested-releases setting is not read	src/routes/HelpAbout.test.tsx
@@ -2344,7 +2344,7 @@ web	the id is not re-checked against the file as it is now	src/shell/CreatePackD
 web	the id prefix is not normalised, so ids run together	src/admin/projectFileCards.test.tsx,src/config/deskConfig.test.ts,src/routes/AdminView.test.tsx,src/shell/CreatePackDialog.test.tsx
 web	the identity slot admits a discriminator one level up	src/identity/enforcement.test.ts
 web	the identity type grows a second field	src/identity/enforcement.test.ts
-web	the ingested proposal is left mutable	src/assistant/enforcement.test.ts,src/assistant/useAssistantRun.test.tsx
+web	the ingested proposal is left mutable	src/assistant/useAuthoringRun.test.tsx
 web	the inspector drawer answers to no id	src/shell/narrowShell.test.tsx
 web	the inspector drawer is a width nobody configured	src/shell/narrowShell.test.tsx
 web	the key binding is not re-read after a write	src/assistant/configWrite.test.tsx,src/assistant/slotAfterSave.test.tsx
@@ -2401,7 +2401,7 @@ web	the previous proposal is not withdrawn at the press	src/shell/DescribeIt.tes
 web	the primary button is not a submit (Enter does nothing)	src/admin/ChatBackupSettings.test.tsx,src/admin/ChatDataSettings.test.tsx,src/admin/DocumentProcessingSettings.test.tsx,src/assistant/endpointForm.test.tsx,src/audit/handover.test.tsx,src/connections/ConnectionsPane.test.tsx,src/connections/WebSourcePane.test.tsx,src/packs/folders/FolderBrowser.test.tsx,src/packs/test-workspace/CaseEditor.test.tsx,src/packs/test-workspace/TestAssistant.test.tsx,src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/routes/AdminView.test.tsx,src/routes/ResearchAuthoringPage.test.tsx,src/routes/StorageFilesView.test.tsx,src/search/WebSearchSettings.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/ui/ui.test.tsx
 web	the probe names its own destination	src/assistant/SharedAssistantSettings.test.tsx
 web	the project default is not applied when no preference exists	src/config/liveConfig.test.tsx,src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx,src/shell/appearanceState.test.ts
-web	the proposal is written from event.document, not the snapshot	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/research/run.test.ts,src/shell/DescribeIt.test.tsx
+web	the proposal is written from event.document, not the snapshot	src/assistant/useAuthoringRun.test.tsx
 web	the proposal reaches the pane uncanonicalized	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/shell/DescribeIt.test.tsx
 web	the provenance line survives an unsaved edit	src/packs/edit/resilience.test.tsx
 web	the provider object admits a discriminator	src/config/deskConfig.test.ts,src/identity/enforcement.test.ts
@@ -2447,8 +2447,8 @@ web	the route never says the check is still running	src/routes/PackView.test.tsx
 web	the rows are hidden when the endpoint moves rather than cleared	src/assistant/endpointForm.test.tsx
 web	the rules member is treated as optional	src/packs/document/PackDocumentView.test.tsx,src/packs/document/members.test.ts
 web	the run ignores the model that was picked	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx
-web	the run is left open when the dialog closes	src/shell/DescribeIt.test.tsx
-web	the run starts before the runtime's testing prompt arrives	src/assistant/AssistantPane.test.tsx
+web	the run is left open when the dialog closes	src/shell/CreatePackDialog.test.tsx
+go	the run starts before the runtime's testing prompt arrives	TestAssistantAuthoringCriticGuidanceAdmission
 web	the save read-back installs over a newer read	src/routes/AuthorView.test.tsx
 web	the scanner assigns member names into a plain object	src/packs/documentText.test.ts
 web	the scroll listener stays on the element that was replaced	src/packs/useWindowedRows.test.tsx
@@ -2867,3 +2867,5 @@ web	assistant run client: unknown semantic discriminator accepted	src/assistant/
 web	assistant run client: shared cursor snapshot suppressed	src/assistant/serverRuns/stream.test.ts
 web	assistant run client: uncertain POST replayed	src/assistant/serverRuns/client.test.ts
 web	assistant saved chat: unreconciled Send guard omitted	src/chat/store.server.test.ts
+web	assistant authoring: session-private projections retained	src/assistant/authoringLifecycle.test.tsx
+web	assistant authoring: paused presentation resolves host owner	src/assistant/authoringLifecycle.test.tsx

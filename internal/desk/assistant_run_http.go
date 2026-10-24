@@ -66,6 +66,7 @@ func assistantRunPublic(run assistantRunRecord) assistantRunView {
 }
 func (s *Server) registerAssistantRuns() {
 	s.registerAssistantBriefRuns()
+	s.registerAssistantAuthoringRuns()
 	s.mux.HandleFunc("POST /api/assistant-runs/{run}/pack-checks", s.handleAssistantPackRecheck)
 	s.mux.HandleFunc("GET /api/assistant-runs/owners/{owner}/requests/{request}", s.handleAssistantChatRuns)
 	s.mux.HandleFunc("POST /api/assistant-runs", s.handleAssistantRunStart)
@@ -172,7 +173,7 @@ func (s *Server) handleAssistantRunStart(w http.ResponseWriter, r *http.Request)
 		assistantRunHTTPError(w, errAssistantRunInvalid)
 		return
 	}
-	ownerValid := start.Purpose == "chat" && researchChatID.MatchString(start.OwnerID) || start.Purpose == "brief" && assistantBriefSubject(start.OwnerID)
+	ownerValid := start.Purpose == "chat" && researchChatID.MatchString(start.OwnerID) || start.Purpose == "brief" && assistantBriefSubject(start.OwnerID) || assistantAuthoringPurpose(start.Purpose) && assistantAuthoringID.MatchString(start.OwnerID)
 	if !assistantRunText(start.AdmissionID, 128) || !ownerValid || !assistantRunDigest(start.Revision) || !assistantRunText(start.RequestID, 128) {
 		assistantRunHTTPError(w, errAssistantRunInvalid)
 		return

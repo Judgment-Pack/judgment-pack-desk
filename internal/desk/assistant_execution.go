@@ -64,17 +64,26 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	// Saved chat uses method guidance only. Request/document prompt arguments
 	// belong to explicit authoring panes; accepting them here would duplicate or
 	// smuggle the retained request into instruction material.
-	if len(prompt.Arguments) != 0 {
+	if assistantAuthoringPurpose(e.source.Start.Purpose) {
+		expected, promptErr := assistantAuthoringPrompt(e.source)
+		if promptErr != nil || !sameAssistantExecutionPrompt(prompt, expected) {
+			return nil, errAssistantRunInvalid
+		}
+	} else if len(prompt.Arguments) != 0 {
 		return nil, errAssistantRunInvalid
 	}
 	if err := e.Authorize(ctx); err != nil {
 		return nil, err
 	}
-	chat, err := e.prepareAssistantChatInput(ctx)
+	chat, err := e.prepareAssistantInput(ctx)
 	if err != nil {
 		return nil, err
 	}
-	memory, err := e.assistantChatMemory(ctx)
+	offMemory := false
+	memory := &offMemory
+	if !assistantAuthoringPurpose(e.source.Start.Purpose) {
+		memory, err = e.assistantChatMemory(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +154,12 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	// The coordinator supplies the canonical declaration/function; the host
 	// gate permits this interaction without granting any domain action.
 	interaction := "delegation"
-	registry, err := e.assistantConversationTools(runtime, chat.Policy)
+	var registry *assistantHostRegistry
+	if assistantAuthoringPurpose(e.source.Start.Purpose) {
+		registry, err = e.assistantAuthoringTools()
+	} else {
+		registry, err = e.assistantConversationTools(runtime, chat.Policy)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +183,10 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		return nil, err
 	}
 	input := &runcontext.Input{Phase: e.record.Binding.Phase, Connection: e.record.Binding.ConnectionID, Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: e.record.Checkpoint, Approval: e.decision, CurrentRequest: &chat.Request, Documents: chat.Documents, CurrentState: chat.State, Memory: memory}
-	packID, _, _ := assistantSavedPackLink(e.source.Original)
+	packID := ""
+	if e.source.Start.Purpose == "chat" {
+		packID, _, _ = assistantSavedPackLink(e.source.Original)
+	}
 	if packID != "" || chat.Policy != nil && chat.Policy.ID != "" {
 		off := false
 		input.ArtifactProposals = &off
@@ -194,6 +211,9 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	}
 	promptText += "\n\n" + chat.Transcript + "\n\nTHE PERSON'S MESSAGE\n" + chat.Request.Input
 	purpose := e.source.Start.Purpose
+	if assistantAuthoringPurpose(purpose) {
+		purpose = ""
+	}
 	if chat.CriticPurpose != "" {
 		purpose = chat.CriticPurpose
 	}
