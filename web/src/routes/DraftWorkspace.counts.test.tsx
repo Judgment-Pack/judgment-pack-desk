@@ -6,7 +6,7 @@ import {DraftWorkspace} from './ChatWorkspace'
 import {INITIAL_STATE} from '../research/run'
 import type {Chat} from '../chat/store'
 import type {PackDraft} from '../packs/drafts/model'
-import type {ResearchRunBinding} from '../research/useResearchRun'
+import type {ResearchRunBinding} from '../research/types'
 
 vi.mock('../chat/ChatProvider', () => ({useChats: () => ({bindings: new Map()})}))
 vi.mock('../chat/ChatPanel', () => ({ChatPanel: () => null}))

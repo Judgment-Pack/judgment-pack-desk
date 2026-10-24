@@ -673,23 +673,23 @@ class SelectionTests(unittest.TestCase):
         source = HARNESS.read_text()
         for declaration in ("GO_TEST_WATCHDOG=480", "GO_TEST_BACKSTOP=540s",
                             "GO_FULL_WATCHDOG=900", "GO_FULL_BACKSTOP=960s",
-                            "GO_BASELINE_WATCHDOG=1800", "GO_BASELINE_BACKSTOP=1860s"):
+                            "GO_BASELINE_WATCHDOG=2400", "GO_BASELINE_BACKSTOP=2460s"):
             self.assertIn(declaration, source)
         self.assertLess(480, 540, "selected watchdog must precede the panic timeout")
         self.assertLess(900, 960, "full-mutant watchdog must precede the panic timeout")
-        self.assertLess(1800, 1860, "baseline watchdog must precede the panic timeout")
+        self.assertLess(2400, 2460, "baseline watchdog must precede the panic timeout")
         self.assertIn('bounded 1800 "$log" go test -c', source, "build timeout must remain independent")
 
         result = self.harness("go")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = self.log.read_text().splitlines()
-        for route in ("budget full-baseline 1800", "budget clean-selection 480",
+        for route in ("budget full-baseline 2400", "budget clean-selection 480",
                       "budget selected-mutant 480", "budget full-mutant 900", "budget build 1800"):
             self.assertIn(route, calls)
         executions = [line for line in calls if line.startswith("go test ./internal/bridge -count=1")]
         self.assertTrue(any("-timeout 540s -run ^(TestBridge)$" in line for line in executions), calls)
         self.assertTrue(any("-timeout 960s" in line and "-run" not in line for line in executions), calls)
-        self.assertTrue(any(line.startswith("go-test-binary ") and "-test.timeout=1860s -test.run ." in line for line in calls), calls)
+        self.assertTrue(any(line.startswith("go-test-binary ") and "-test.timeout=2460s -test.run ." in line for line in calls), calls)
         self.assertTrue(any(line.startswith("go-test-binary ") and "-test.timeout=540s" in line for line in calls), calls)
         self.assertEqual(self.how(result), {"bridge selected budget": "selected", "bridge full budget": "fallback"})
 
@@ -710,13 +710,13 @@ class SelectionTests(unittest.TestCase):
     def test_clean_baseline_above_mutant_budget_does_not_extend_whole_mutants(self):
         self.budget_fixture()
         self.env["FAKE_GO_FULL_MUTANT_COST"] = "900"
-        for cost in (901, 1350, 1800):
+        for cost in (901, 1350, 1800, 2100, 2400):
             with self.subTest(baseline_cost=cost):
                 self.env["FAKE_GO_FULL_COST"] = str(cost)
                 result = self.harness("go")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(self.how(result), {"bridge selected budget": "selected", "bridge full budget": "fallback"})
-                self.assertIn("budget full-baseline 1800", self.log.read_text())
+                self.assertIn("budget full-baseline 2400", self.log.read_text())
                 self.assertIn("budget full-mutant 900", self.log.read_text())
 
         self.env["FAKE_GO_FULL_MUTANT_COST"] = "901"
@@ -730,7 +730,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_full_package_timeout_still_blocks_mutants_and_selected_timeout_falls_back(self):
         self.budget_fixture()
-        self.env["FAKE_GO_FULL_COST"] = "1801"
+        self.env["FAKE_GO_FULL_COST"] = "2401"
         timed_out = self.harness("go")
         self.assertNotEqual(timed_out.returncode, 0)
         self.assertTrue(all("BASELINE NOT GREEN" in verdict for verdict in self.table(timed_out).values()))

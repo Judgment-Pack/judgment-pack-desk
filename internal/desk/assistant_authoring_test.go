@@ -64,7 +64,6 @@ func assistantAuthoringFixture(t *testing.T, upstream string) (*Server, string) 
 	assistantRunMust(t, os.WriteFile(s.cfg.JpackBin, []byte(peer), 0700))
 	config, _ := json.Marshal(map[string]string{"ledger": ledgerPath})
 	writeProjectFile(t, s.projectDir, "execution-fixture.json", string(config))
-	s.assistantRunExecutor = &assistantAuthoringExecutor{}
 	return s, token
 }
 func assistantAuthoringCaptureFixture(t *testing.T, s *Server, token string, a assistantAuthoringRequest) assistantAuthoringReply {

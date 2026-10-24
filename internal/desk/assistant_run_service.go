@@ -566,7 +566,8 @@ func (e *assistantRunExecution) changed(err error) {
 	e.service.notify(e.record.ID)
 }
 
-// Only the fixed diagnostic activates here; general chat factory activation is separate.
+// Diagnostic keeps its fixed narrow owner; all other admitted source purposes
+// use the closed executor installed by New.
 func (h *assistantRunService) executor(purpose string) assistantRunExecutor {
 	if purpose == assistantDiagnosticPurpose {
 		return &assistantDiagnosticExecutor{}

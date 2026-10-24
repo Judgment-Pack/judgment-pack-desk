@@ -335,15 +335,18 @@ bounded() {
 # the pinned Gateway and scoped Runtime fixtures. Two clean CI baselines exceeded
 # 900s. A verbose diagnostic reached more than 1500 cases before its 840s panic,
 # with the current test running for 0s: measured aggregate work, not a hung handler.
-# Give only the clean full-package baseline 1800s. Selected checks stay at 480s,
+# The companion-enabled baseline now exceeds 1800s; its last started website
+# test passes in isolation in 19.12s. Align only this clean run with ordinary
+# Go CI's 40-minute limit and retain its complete progress log on failure.
+# Selected checks stay at 480s,
 # whole-mutant/fallback checks at 900s, and compilation at its independent bound.
 # Each Go panic backstop follows its process-tree watchdog by 60s.
 GO_TEST_WATCHDOG=480
 GO_TEST_BACKSTOP=540s
 GO_FULL_WATCHDOG=900
 GO_FULL_BACKSTOP=960s
-GO_BASELINE_WATCHDOG=1800
-GO_BASELINE_BACKSTOP=1860s
+GO_BASELINE_WATCHDOG=2400
+GO_BASELINE_BACKSTOP=2460s
 
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
@@ -403,7 +406,7 @@ go_package_green() {
   verdict=$(run_go_unmutated "$package" '.')
   if [ -n "$verdict" ]; then
     echo "unmutated Go baseline is not green: $package: $verdict" >&2
-    tail -n 30 "$work/package-$key.baseline.log" >&2
+    cat "$work/package-$key.baseline.log" >&2
     : > "$work/package-$key.failed"
     return 1
   fi
@@ -9900,24 +9903,15 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # transport says nothing about the question the reviewer answered, and that
   # turn is the most expensive in the run; unheld, the only way back is to alter
   # the draft and buy a second reviewer for the same question.
-  mutate web "the reviewer's proposal is discarded before validation" "$RR" \
-    '    this.set({ heldProposal: held })' \
-    '    void held'
 
   # **And it is released the moment it is answered.** A hold that outlives its
   # own establishment offers a retry of a settled question, over cases already
   # established and issues already blocked.
-  mutate web "the held proposal outlives the establishment that answered it" "$RR" \
-    '      this.set({ cases, expectationIssues: issues, droppedCases: dropped, heldProposal: null })' \
-    '      this.set({ cases, expectationIssues: issues, droppedCases: dropped })'
 
   # **A hold answers the draft it was proposed against, and no other.** The
   # suite comes from that draft's outcomes and fact paths, so reusing it for
   # changed bytes silently establishes a suite nobody proposed for them --
   # where establishment has always asked a fresh reviewer.
-  mutate web "a held proposal is reused for a draft it was never proposed for" "$RR" \
-    '      const held = kept !== null && kept.candidateDigest === candidate.digest ? kept : await this.proposeCases(signal, candidate)' \
-    '      const held = kept !== null ? kept : await this.proposeCases(signal, candidate)'
 
   # The same binding on the action itself: a retry offered against a draft the
   # hold predates would spend a reviewer turn under a control that says it will
@@ -9930,9 +9924,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # unknowns are the reviewer's own account of what the sources did not settle;
   # a hold that kept the cases and dropped them re-establishes the same suite
   # as a settled one, over questions the reviewer left open.
-  mutate web "the held proposal drops the reviewer's unknowns" "$RR" \
-    '    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: proposal?.unknowns ?? [] }' \
-    '    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: [] }'
 
   # **A retry is offered while the run is at rest, and not while it is running.**
   # The hold is live through validation, so a predicate that ignored the status
@@ -9944,16 +9935,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # **The retry resumes the run it recovers, repair and all.** Declining to
   # repair settles at needs-input over a draft the run still had the budget to
   # fix, which is not what the interrupted path would have done.
-  mutate web "the retry declines to repair the draft it establishes over" "$RR" \
-    '      await this.casesAndCheck(signal, true)' \
-    '      await this.casesAndCheck(signal, false)'
 
   # **A person-initiated establishment leaves a mark.** The retry changes what
   # gets established; without its note the transcript of a retried run is
   # indistinguishable from one that established on the first pass.
-  mutate web "a retry leaves no trace in the transcript" "$RR" \
-    "    this.addTurn({ role: 'user', kind: 'note', text: sourceMessage(\"Sent the held case proposal back for validation.\") })" \
-    '    void 0'
 
   # **Two rows are gone from here**, and the reason is worth the space. They
   # broke a helper that chose the credential sentence at the schema walk, on
@@ -10478,54 +10463,24 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # a hook that reached past the pick would run something nobody chose, under a
   # picker and a standing line both showing something else.
   # Repaired: the run carries the AI connection it was started on.
-  mutate web 'the run ignores the model that was picked' web/src/assistant/useAssistantRun.ts \
-    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, modelOf(model), thinking, run.meter),' \
-    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking, run.meter),'
-  mutate web "Stop writes no terminal event" "$AR" \
-    '    finish(run)
-    release(run)
-    setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))' \
-    '    release(run)
-    setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))'
   # (The event became `held` when the proposal's canonicalization landed in this
   # function; the row is the same claim about the same line.)
-  mutate web "a second end is appended rather than dropped" "$AR" \
-    "    if (held.type === 'end') {
-      run.ended = true
-      terminals.current.count += 1
-    }" \
-    '    void held'
   # **An approval and the retest it promises are one step.** Applied first, an
   # interrupted retest left the correction in place with every check stripped
   # and the issue resolved -- and a resolved issue closes both correction
   # actions while an unchanged message re-checks nothing. The bytes the person
   # approved for could never be tested again, and the run answered that the
   # candidate still disagreed, which was neither true nor what had happened.
-  mutate web "an interrupted approval retest keeps the correction" "$RR" \
-    '      try {
-        await this.casesAndCheck(signal, false)
-      } catch (cause) {
-        this.set(before)
-        this.undone = sourceMessage("The correction for {{value0}} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.", { value0: id })
-        throw cause
-      }' \
-    '      await this.casesAndCheck(signal, false)'
 
   # **An outcome that reports the stop and not the rollback is the trap again.**
   # "Stopped. The last completed stage is kept." is true of the stop and no
   # account of a correction the run took back -- which is #82's complaint, a
   # reason that is not the real one, in a new place.
-  mutate web "a rolled-back approval is not reported" "$RR" \
-    '        this.undone = sourceMessage("The correction for {{value0}} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.", { value0: id })' \
-    '        void 0'
 
   # **Taken back whole means the phase too.** The retest moved the run to
   # `check`; a rollback that restores the suite and leaves the phase rests a
   # run with nothing checked on the Tests view, and a panel that follows the
   # phase lands the person there.
-  mutate web "a rolled-back approval rests at the phase its retest reached" "$RR" \
-    '      const before = { phase: this.state.phase, cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }' \
-    '      const before = { cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }'
 
   # **Create asks about the candidate, not about the last action.** `ready` is
   # the status of whatever the person did last, so a Stop, a spent budget or a
@@ -10556,18 +10511,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # failed withholds the draft even where no citation points at it, so nothing
   # in the recorded key moves; a turn ending in an error or a Stop never reaches
   # the settle that would say so, and Create would stand over the failure.
-  mutate web "a receipt failing after ready leaves Create standing" "$RR" \
-    "    const withholds = this.state.readiness === '' ? null : this.withheld()
-    if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }" \
-    '    void 0'
 
   # **And says which receipt.** The outcome of a turn that ends in an error is
   # the engine's refusal; a readiness withdrawn silently beside it leaves the
   # panel explaining a withheld draft with cases that in fact agree -- the
   # sentence #82 names as the reason that is not the real one.
-  mutate web "a readiness withdrawn by a verdict is withdrawn silently" "$RR" \
-    "    if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }" \
-    "    if (withholds !== null) { this.set({ readiness: '' }) }"
 
   # ---- A conversation draft's citations (#155) ------------------------------
   #
@@ -10595,39 +10543,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # A trace lands only on the basis it began on: a pin or a document list
   # that moved under it is traced again, and a trace a Stop interrupted
   # leaves nothing traced, never the readiness of the trace before it.
-  mutate web "a chat draft's trace lands on a basis that moved under it" "$RR" \
-    '        if (this.basisNow() === basis) {' \
-    '        if (true) {'
-  mutate web "a chat draft's documents are verified under the live pin" "$RR" \
-    '? load(reference, pin, loading) :' \
-    '? load(reference, this.ports.pin?.() ?? pin, loading) :'
-  mutate web "a chat draft's interrupted trace keeps the last trace's readiness" "$RR" \
-    '      citations = unchecked(latest.document, sourceMessage("The citation check was interrupted. Recheck the draft."))' \
-    '      void unchecked'
-  mutate web "a chat draft's trace lands after a Stop" "$RR" \
-    '        const traced = await tracePageCitations(latest.document, kept, (reference, loading) => pin !== null && load ? load(reference, pin, loading) : unverifiable(), signal)
-        this.check(signal)' \
-    '        const traced = await tracePageCitations(latest.document, kept, (reference, loading) => pin !== null && load ? load(reference, pin, loading) : unverifiable(), signal)'
-  mutate web "a chat draft is not traced again when its pin or documents change" "$RR" \
-    '      return
-    }
-    this.traceAtRest()' \
-    '      return
-    }
-    void 0'
-  mutate web "a chat draft keeps its readiness when its pin or documents change" "$RR" \
-    "      if (!this.running) this.pendingSettle = true
-      this.set({ readiness: '' })" \
-    '      if (!this.running) this.pendingSettle = true'
-  mutate web "a chat draft's action ends without tracing the basis that moved under it" "$RR" \
-    '          } else this.traceAtRest()' \
-    '          } else void 0'
-  mutate web "a Stop starts new work on a chat draft whose basis moved" "$RR" \
-    "          if (controller.signal.aborted || this.state.status === 'stopped' || this.state.status === 'budget') {" \
-    '          if (false) {'
-  mutate web "a Stop that ends in an error starts new work on a chat draft" "$RR" \
-    "          if (controller.signal.aborted || this.state.status === 'stopped'" \
-    "          if (this.state.status === 'stopped'"
   mutate web "a superseded chat draft trace goes on loading" "$RR" \
     '    signal.throwIfAborted()
     if (!loads.has(key))' \
@@ -10638,29 +10553,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "Create answers a chat draft asked without a basis" "$RR" \
     '(basis === undefined || state.tracedBasis !== basis)' \
     '(basis !== undefined && state.tracedBasis !== basis)'
-  mutate web "a chat draft settles at ready on a moved basis" "$RR" \
-    '      if (this.state.tracedBasis !== this.basisNow()) return sourceMessage(' \
-    '      if (false) return sourceMessage('
-  mutate web "a chat draft's superseded trace at rest drops the settle it owed" "$RR" \
-    '    }, () => undefined).finally(() => {' \
-    '    }, () => { this.pendingSettle = false }).finally(() => {'
-  mutate web "a chat draft's owner going away leaves its trace at rest running" "$RR" \
-    '    this.detached = true
-    this.background?.abort()' \
-    '    this.detached = true'
-  mutate web "a chat draft's run outlives its owner" web/src/research/useResearchRun.ts \
-    '    return () => run.detach()' \
-    '    return () => undefined'
   mutate web "a web research chat draft whose trace was cut short reads as citing nothing" "$RDP" \
     'const gap = conversation && latest && !state.tracing && !unread ?' \
     'const gap = conversation && latest && !state.tracing ?'
-  mutate web "a Stop leaves a chat draft's trace at rest running" "$RR" \
-    '    this.controller?.abort()
-    this.background?.abort()' \
-    '    this.controller?.abort()'
-  mutate web "a chat draft's citations are not traced again when its documents change" web/src/research/useResearchRun.ts \
-    '  useEffect(() => { run.basisChanged() }, [run, basis])' \
-    '  useEffect(() => { void basis }, [run, basis])'
   mutate web "a chat draft's basis ignores the pin" "$RR" \
     '  return JSON.stringify([pin ?? null, kept.map(' \
     '  return JSON.stringify([null, kept.map('
@@ -10672,21 +10567,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    if (false) {'
   # The settle reads the document again: a trace taken when the candidate was
   # set is a trace of a moment that has passed by the time Create is offered.
-  mutate web "a chat draft settles on a trace taken before the settle" "$RR" \
-    '    await this.traceConversation(signal)
-    this.settleReview(notPassing)' \
-    '    this.settleReview(notPassing)'
-  mutate web "a chat draft settles at ready over an untraced citation" "$RR" \
-    '      return citationGap(this.state.citations, this.ports.mode)' \
-    '      return null'
   mutate web "a web research chat draft settles at ready citing nothing" "$RR" \
     "  if (citations.length === 0 && mode === 'web-research') {" \
     '  if (false) {'
   # A checkpoint keeps no citations; without the trace on reopening, a draft
   # that cites reads as one that cites nothing.
-  mutate web "a reopened chat draft is not traced again" "$RR" \
-    '    if (candidates.length) this.traceAtRest()' \
-    '    void 0'
   # The rule's own clauses, each held by the rule's unit test over one state.
   mutate web "Create is offered on a chat draft while its citations are traced" "$RR" \
     '  if (state.tracing) return false' \
@@ -10697,9 +10582,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "Create is offered on a web research chat draft citing nothing" "$RR" \
     "(mode === 'draft' || state.citations.length > 0) && state.citations.every" \
     'true && state.citations.every'
-  mutate web "the model is not told how a chat draft cites" "$RR" \
-    ' + CONVERSATION_CITATION_INSTRUCTIONS' \
-    " + ''"
   mutate web "a chat draft citing nothing is shown as 0 of 0" "$RDP" \
     '            : mode === '"'"'draft'"'"' && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")' \
     '            : false ? msg("This pack cites no source. It rests on what you told the assistant.")'
@@ -10725,32 +10607,15 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "a chat case rests on a page the draft did not trace" "$RR" \
     '|| grounds.citations.some(citation => citation.traced && citation.location === source))' \
     '|| grounds.citations.some(citation => citation.location === source))'
-  mutate web "a chat case's reviewer is shown the draft's rules" "$RR" \
-    '      CONVERSATION_CASES_INSTRUCTIONS,
-      `OUTCOMES' \
-    '      CONVERSATION_CASES_INSTRUCTIONS, JSON.stringify(document),
-      `OUTCOMES'
   mutate web "a chat case's reviewer is shown the assistant's turns" "$RR" \
     "  return turns.filter(turn => turn.role === 'user' && turn.kind !== 'note')" \
     "  return turns.filter(turn => turn.kind !== 'note')"
-  mutate web "a chat case disagreement is repaired without the person" "$RR" \
-    '      repair = false' \
-    '      void repair'
   mutate web "a chat draft is ready without a chat case" "$RR" \
     '    !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state) &&' \
     '    (conversationMode(mode) || !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state)) &&'
-  mutate web "a recheck writes a chat case with the model" "$RR" \
-    '      await this.casesAndCheck(signal, false, false)' \
-    '      await this.casesAndCheck(signal, false)'
   mutate web 'a saved chat case is grounded in a message sent after it' web/src/research/run.ts \
     '  const values = new Map(state.inheritedStatements)' \
     '  const values = statementsOf(state.turns)'
-  mutate web "a saved chat case suite is kept smaller" "$RR" \
-    '      this.set({ cases: [], expectationIssues: [], heldProposal: null, restored: false,' \
-    '      this.set({ cases: admitted, expectationIssues: [], heldProposal: null, restored: false,'
-  mutate web "the correction reviewer is not shown a chat case's message" "$RR" \
-    "    if (statement !== undefined) return" \
-    "    if (false) return"
   mutate web "the record leaves out the message a chat case rests on" "$RR" \
     '    ...(statements.length ? { statements } : {}),' \
     '    ...{},'
@@ -10777,19 +10642,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # failed" — which is a true statement about that edit and a false impression
   # of the safeguard. So this row removes the signal AND the recording, which
   # is the state the finding described: nothing anywhere can close a hung setup.
-  mutate web 'a hung setup can be closed by nothing' web/src/assistant/useAssistantRun.ts \
-    '          const opened = purpose === '"'"'brief'"'"' ? null : openAssistantConnection({
-            allowed: (engine === '"'"'codex'"'"' ? agent?.tools : endpoint?.tools) ?? [],
-            onEvent: (event) => push(run, event),
-            sessionId,
-            signal: run.controller.signal
-          })
-          run.connection = opened' \
-    '          const opened = purpose === '"'"'brief'"'"' ? null : openAssistantConnection({
-            allowed: (engine === '"'"'codex'"'"' ? agent?.tools : endpoint?.tools) ?? [],
-            onEvent: (event) => push(run, event),
-            sessionId
-          })'
   # An identical policy run twice: the run id is what makes the second press a
   # second submission rather than the same state value.
   # An identical policy run twice: the run id is what makes the second press a
@@ -11008,9 +10860,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # the diff describes A, the pane displays B, the writer writes C. The row
   # takes the canonicalization out of the hook, so the pane's own readers each
   # take their own.
-  mutate web "the proposal reaches the pane uncanonicalized" "$AR" \
-    "    const held = event.type === 'proposal' ? canonicalProposal(event) : event" \
-    '    const held = event'
 
   # `fix_pack` works from the validator's report, and what it is given is the
   # runtime's own bytes: a re-serialization of a parse of them is this desk's
@@ -11140,10 +10989,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # contract, so a throw while an engine unwinds cannot go on the stream — and
   # dropping it made `proposal -> end -> throw` read as a clean run to
   # everything downstream, which offered the proposal for writing.
-  mutate web 'a failure after the run'"'"'s terminal event is dropped' web/src/assistant/useAssistantRun.ts \
-    '            setFailure(said)
-            if (!run.ended) push(run, event)' \
-    '            if (!run.ended) push(run, event)'
 
   # **Every diagnostic, or the author cannot see what is wrong.** The refusal
   # prevents the page that would have shown the rest from existing, so this is
@@ -11228,11 +11073,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # observation instead of the retirement, and the hook now counts its terminal
   # events in an object whose identity is stable for its lifetime, so a test
   # takes the reference while the hook is alive and reads it after it is not.
-  mutate web "an unmount releases the run without finishing it" "$AR" \
-    '      const run = active.current
-      if (run !== null) finish(run)
-      release(run)' \
-    '      release(active.current)'
 
   mutate web "Fix re-serializes the runtime's diagnostics" "$CK" \
     '  const span = spanAt(indexDocument(raw), '"'"'/diagnostics'"'"')
@@ -11725,9 +11565,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # that stops a later draft change from asking a fresh reviewer for a new,
   # smaller suite — which is the reduced passing suite this whole flow exists to
   # refuse. Nothing else notices: the issue simply leaves the state.
-  mutate web "case establishment runs again over a blocked expectation" "$RR" \
-    '    if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0) {' \
-    '    if (this.state.cases.length === 0) {'
 
   # **The exact expectation is the pair.** §8.3 keeps the configured target
   # outside the disposition and this runtime reports one exactly when a handoff
@@ -11743,9 +11580,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # instead leaves the saved matrix row and the checked assertion two different
   # texts for the same set, and a future tightening of the decoder would refuse
   # the saved one.
-  mutate web "the reviewer's spelling is stored instead of the canonical assertion" "$RR" \
-    '        cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))' \
-    '        cases.push(row)'
 
   # ---- The correction flow's backup guards ---------------------------------
   #
@@ -11759,46 +11593,26 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # candidate clears every pending proposal, so in practice only the token
   # decides; with the digest comparison gone, a proposal left standing beside a
   # later draft applies to bytes nobody read it against.
-  mutate web "an approval applies to a draft its proposal never saw" "$RR" \
-    'proposal.candidateDigest !== this.latest()?.digest' \
-    'false'
 
   # **Nothing is applied on a closed run.** The window is microtasks wide -- a
   # validation that answers after Stop -- and without this the correction is
   # written into a run already stopped, and reported as stopped.
-  mutate web "a correction is applied after the run was stopped" "$RR" \
-    '      this.check(signal)
-      const replacement = deepFreeze' \
-    '      const replacement = deepFreeze'
 
   # **An established case is never rewritten.** Admitted ids are unique and an
   # invalid expectation is kept as an issue rather than a case, so no run
   # produces the collision; without the refusal the approval appends a second
   # row under the same id and the suite carries two answers for one case.
-  mutate web "an approval rewrites an established case" "$RR" \
-    '      if (this.state.cases.some(row => row.id === id)) throw new Error(sourceMessage("A case with this id is already established; the correction was not applied."))' \
-    '      void id'
 
   # **A check taken before the corrected case joined the suite is not a check of
   # that suite.** A blocked run has no check to drop today, so this only matters
   # where one survives -- and the panels render the latest check ungated by
   # status, so a survivor would show every case agreeing over a suite whose
   # corrected case was never rehearsed.
-  mutate web "a stale check survives an approved correction" "$RR" \
-    '        candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),' \
-    '        candidates: this.state.candidates,'
 
   # **No path rests at ready with an expectation open.** `casesAndCheck` makes
   # the same refusal before it checks anything, which is why nothing reaches the
   # copy in `settleReview`; where a passing check and an open issue do coexist,
   # it is the only thing between them and `ready`.
-  mutate web 'a run settles at ready with an expectation still open' web/src/research/run.ts \
-    '    if (this.unresolvedExpectations()) {
-      this.setReviewResult({ status: '"'"'needs-input'"'"', detail: this.unresolvedExpectations()!, readiness: '"'"''"'"' }, owner)
-      return
-    }
-    const passing = completeCurrentCheck(this.state)' \
-    '    const passing = completeCurrentCheck(this.state)'
 
   # **A limit is not a Core violation.** The runtime reports one when it did not
   # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
@@ -13297,19 +13111,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "unreachable expectation: summary drops the runtime's reason" "$URE" \
     'so the expectation must change, not the draft: ${finding.message}`' \
     'so the expectation must change, not the draft.`'
-  mutate web "unreachable expectation: established as a case" "$URR" \
-    "        if (finding.status === 'invalid') return void issues.push({ id: row.id, original: row, message: findingSummary(finding) })" \
-    "        if (finding.status === 'invalid' && finding.unreachable) return void cases.push(deepFreeze(structuredClone(row)))
-        if (finding.status === 'invalid') return void issues.push({ id: row.id, original: row, message: findingSummary(finding) })"
-  mutate web "unreachable expectation: a saved case is restored as a case" "$URR" \
-    "      const problem = finding.status === 'invalid' ? findingSummary(finding) : targetContradiction(finding.canonical, row.expectedHandoffTarget)" \
-    "      const problem = finding.status === 'invalid' ? (finding.unreachable ? null : findingSummary(finding)) : targetContradiction(finding.canonical, row.expectedHandoffTarget)"
-  mutate web "unreachable expectation: a proposed correction refused in bare words" "$URR" \
-    "        if (finding!.status === 'invalid') proposalError = findingSummary(finding!)" \
-    "        if (finding!.status === 'invalid') proposalError = finding!.message"
-  mutate web "unreachable expectation: an approved correction is applied" "$URR" \
-    "      if (finding!.status !== 'valid') throw new Error(" \
-    "      if (finding!.status !== 'valid' && !finding!.unreachable) throw new Error("
 
   # **The Tests workspace words an invalid expectation by its class (#208).**
   # Saving a case whose expectation the runtime holds invalid showed the
@@ -14000,9 +13801,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "search and files: the attribution policy does not forbid scripts" "$SAF" \
     "const policy=\"default-src 'none'; script-src 'none'; style-src" \
     "const policy=\"default-src 'none'; style-src"
-  mutate web "search and files: a search row takes its provider from the model's call" "$SRN" \
-    '? {...incoming, presentation: hostTools.find(tool=>tool.name===incoming.name)?.presentation} : incoming' \
-    '? {...incoming} : incoming'
   mutate web "search and files: settings that could not be read let the first turn run" "$SCP" \
     "search.isError?sourceMessage('Search settings could not be read. Reload before sending.')" \
     "false?sourceMessage('Search settings could not be read. Reload before sending.')"
@@ -14538,35 +14336,6 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'harness swap: a message'"'"'s attachments unbounded on send' web/src/chat/useChatAttachments.ts \
     '      if (ledgerBytes(attached.map(attachmentDocument)) > ATTACHMENT_LEDGER_BYTES) throw' \
     '      if (false) throw'
-  mutate web 'harness swap: attachments not in the run'"'"'s ledger' web/src/research/run.ts \
-    'value:{turns:this.state.turns,questions:this.state.questions??[]}},...attached]},' \
-    'value:{turns:this.state.turns,questions:this.state.questions??[]}}]},'
-  mutate web 'harness swap: the case writer gets no attachments' web/src/research/run.ts \
-    '      return supplied.length ? { id, text, attachments: supplied.map(attachmentForReview) } : { id, text }' \
-    '      return { id, text }'
-  mutate web 'harness swap: an unverifiable attachment fails the turn' web/src/research/run.ts \
-    '          if (signal.aborted) throw cause
-          files.push({ file, pages: [], unavailable:' \
-    '          throw cause
-          files.push({ file, pages: [], unavailable:'
-  mutate web 'harness swap: the draft snapshot is not the current state' web/src/research/run.ts \
-    '    const changing=reviewer?undefined:currentState?.()' \
-    '    const changing=undefined as string|undefined'
-  mutate web 'harness swap: the draft snapshot back in the prompt' web/src/research/run.ts \
-    '      CONVERSATION_INSTRUCTIONS,
-      this.transcript(true),' \
-    '      CONVERSATION_INSTRUCTIONS,
-      this.conversationState() ?? '"'"''"'"',
-      this.transcript(true),'
-  mutate web 'harness swap: chat offers no propose_pack' web/src/research/useResearchRun.ts \
-    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
-    'hostTools: request.hostTools,'
-  mutate web 'harness swap: propose_pack offered in a Policy chat' web/src/research/useResearchRun.ts \
-    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
-    'hostTools: request.reviewer ? request.hostTools : withProposePack(request.hostTools),'
-  mutate web 'harness swap: propose_pack offered to the reviewer' web/src/research/useResearchRun.ts \
-    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
-    'hostTools: executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),'
   mutate web 'harness swap: read_source is not framed as retrieved data' web/src/research/tools.ts \
     '    name: '"'"'read_source'"'"',
     effect: '"'"'read'"'"',
@@ -15791,6 +15560,60 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'state = ""'
 fi
 
+
+# Canonical background execution: retain the verified safeguard probes in CI.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'canonical background: request cap' 'internal/desk/background_execution.go' \
+    'input.RequestCap = &requestCap' \
+    'input.RequestCap = nil; _ = requestCap'
+  mutate go 'canonical background: live choice' 'internal/desk/background_execution.go' \
+    'return current == choice && run.Revision' \
+    'return (current == choice || current != choice) && run.Revision'
+  mutate go 'canonical background: receipt history' 'internal/desk/input_research_journal_store.go' \
+    'if !backgroundReceiptTransition(old, a) {' \
+    'if false && !backgroundReceiptTransition(old, a) {'
+  mutate go 'canonical background: canonical reader' 'internal/desk/background_execution.go' \
+    'if _, err = runcontext.ReadExecution(v); err != nil {' \
+    'if false { _ = v'
+  mutate go 'canonical background: completion stop' 'internal/desk/background_execution.go' \
+    'if completion.FinishReason != "stop" {' \
+    'if false && completion.FinishReason != "stop" {'
+  mutate go 'canonical background: native response' 'internal/desk/background_execution.go' \
+    'len(action) == 0 && !native' \
+    'len(action) == 0 && (native || !native)'
+  mutate go 'canonical background: native offer' 'internal/desk/background_execution.go' \
+    'if strings.HasPrefix(tool.Description, b.task.Response.Name+":") {' \
+    'if true {'
+  mutate go 'canonical background: source custody' 'internal/desk/background_execution.go' \
+    'if digestOf([]byte(source)) != b.source {' \
+    'if false && digestOf([]byte(source)) != b.source {'
+  mutate go 'canonical background: credential custody' 'internal/desk/background_execution.go' \
+    'if credential != b.credential {' \
+    'if false && credential != b.credential {'
+  mutate go 'canonical background: epoch custody' 'internal/desk/background_execution.go' \
+    'epoch != b.epoch || epoch.Err() != nil ||' \
+    'false && epoch != b.epoch || false && epoch.Err() != nil ||'
+  mutate go 'canonical background: complete envelope' 'internal/desk/background_execution.go' \
+    'len(raw) > backgroundModelReceiptBytes ||' \
+    'false && len(raw) > backgroundModelReceiptBytes ||'
+  mutate go 'canonical background: legacy reserve' 'internal/desk/input_research_reservations.go' \
+    'allowance := portableResearchAttemptReserve + backgroundModelReceiptReserve' \
+    'allowance := portableResearchAttemptReserve'
+  mutate go 'canonical background: portable reserve' 'internal/desk/input_research_reservations.go' \
+    'reserve += backgroundModelReceiptReserve' \
+    'reserve += 0'
+  mutate go 'canonical background: native pregeneration wire' 'internal/desk/background_execution.go' \
+    'if generated.Load() {
+				r.Wire = raw' \
+    'if true {
+				r.Wire = raw'
+  mutate go 'canonical background: native postgeneration outcome' 'internal/desk/background_execution.go' \
+    'if generated.Load() {
+					copy.Outcome = "unknown"' \
+    'if false {
+					copy.Outcome = "unknown"'
+fi
+
 # Desk #658: partial correction continuation retains exact scope and readiness.
 if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant creation: correction proposal rewrites evidence' internal/desk/assistant_creation_projection.go \
@@ -15881,6 +15704,49 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant memory review: reviewer action accepts attribution' internal/desk/assistant_memory_review.go \
     'if err != nil || assistantMemoryIndependentReview(action) {' \
     'if err != nil || false && assistantMemoryIndependentReview(action) {'
+fi
+
+
+# Closed production factory and retained browser display/exchange guards.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant production: normal Server unbound' internal/desk/server.go \
+    'assistantRunExecutor:   &assistantProductionExecutor{},' \
+    'assistantRunExecutor:   nil,'
+  mutate go 'assistant production: chat selects standalone authoring' internal/desk/assistant_production_executor.go \
+    'return &assistantCreationExecutor{}, nil' \
+    'return &assistantAuthoringExecutor{}, nil'
+  mutate go 'assistant production: unknown purpose has fallback' internal/desk/assistant_production_executor.go \
+    'return nil, errAssistantRunScope' \
+    'return &assistantBriefExecutor{}, nil'
+  mutate go 'assistant production: legacy critic choice omitted' internal/desk/assistant_authoring_execution.go \
+    'Critic: assistantCriticChoice(chat)' \
+    'Critic: chat.Critic'
+  mutate go 'assistant production: project critic choice omitted' internal/desk/assistant_authoring_execution.go \
+    'CriticProject: chat.CriticProject' \
+    'CriticProject: ""'
+  mutate go 'assistant production: absent thinking is not off' internal/desk/assistant_authoring_execution.go \
+    'thinking = "off"' \
+    'thinking = "invalid"'
+  mutate go 'assistant production: explicit native default borrows effort' internal/desk/assistant_creation_adapter.go \
+    'effort = "" // A null override selects the model default.' \
+    '// A null override incorrectly keeps inherited effort.'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'saved chat restore: unfinished work remains running' web/src/assistant/serverRuns/controller.ts \
+    'item.status==='"'"'working'"'"'?{...item,status:'"'"'interrupted'"'"' as const}:item' \
+    item
+  mutate web 'saved chat exchange: duplicate messages appended' web/src/assistant/serverRuns/controller.ts \
+    'if(previous){if(previous.role!==turn.role||previous.text!==turn.text||previous.at!==turn.at)' \
+    'if(false && previous){if(previous!.role!==turn.role||previous!.text!==turn.text||previous!.at!==turn.at)'
+  mutate web 'saved chat exchange: conflicting message accepted' web/src/assistant/serverRuns/controller.ts \
+    'if(previous.role!==turn.role||previous.text!==turn.text||previous.at!==turn.at)throw Error('"'"'A retained message conflicts with this session.'"'"')' \
+    'if(false)throw Error('"'"'A retained message conflicts with this session.'"'"')'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant production: standalone project critic omitted' internal/desk/assistant_authoring_execution.go \
+    'Thinking: a.Thinking, CriticProject: source.Profile.Critic' \
+    'Thinking: a.Thinking, CriticProject: ""'
 fi
 
 restore

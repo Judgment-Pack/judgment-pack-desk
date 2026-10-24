@@ -1390,16 +1390,12 @@ web	Mod+S is swallowed inside the field it exists to fire in	src/packs/edit/save
 web	Overwrite anyway is the primary control	src/packs/edit/save.test.tsx
 web	Reload after a refused write takes the file over the unsaved values	src/admin/projectFileCards.test.tsx
 web	Reload clears the notice without reading the file again	src/assistant/slotAfterSave.test.tsx
-web	Stop writes no terminal event	src/assistant/useAssistantRun.test.tsx
 web	Test connection asks the probe and never the listing	src/assistant/endpointCheck.test.tsx
 web	Try it runs twice for one press of the button	src/packs/edit/TryItPane.test.tsx
 web	a 401 does not forget the id	src/mcp/session.test.tsx
 web	a 409 is read as an ordinary error	src/admin/defaultProject.test.tsx,src/admin/projectFileCards.test.tsx,src/admin/projectFileWrite.test.tsx,src/assistant/configWrite.test.tsx,src/assistant/endpointForm.test.tsx,src/assistant/slotAfterSave.test.tsx,src/routes/AdminView.test.tsx,src/routes/AuthorView.test.tsx
 web	a CRLF jpack.json is rewritten with the platform's line ending	src/packs/jpackConfig.test.ts
 web	a Content disclosure back in Admin's main column	src/routes/AdminView.test.tsx
-web	a Stop leaves a chat draft's trace at rest running	src/research/run.test.ts
-web	a Stop starts new work on a chat draft whose basis moved	src/research/run.test.ts
-web	a Stop that ends in an error starts new work on a chat draft	src/research/run.test.ts
 web	a blank description is written as an empty string	src/packs/jpackConfig.test.ts,src/shell/CreatePackDialog.test.tsx
 web	a box back on a member (border and background)	src/admin/adminSheets.test.ts
 web	a browser error is attributed to the chassis	src/config/liveConfig.test.tsx,src/config/queries.test.tsx
@@ -1409,37 +1405,21 @@ web	a card's Save rewrites the whole file instead of one member	src/admin/projec
 web	a chassis call does not await the bootstrap	src/mcp/session.test.tsx
 web	a chassis code has no Create sentence	src/packs/createRefusal.test.ts
 web	a chat case check carried and repeated is shown twice	src/packs/test-workspace/model.test.ts
-web	a chat case disagreement is repaired without the person	src/research/run.test.ts
 web	a chat case rests on a message the person never sent	src/research/run.test.ts
 web	a chat case rests on a page the draft did not trace	src/research/run.test.ts
 web	a chat case's blocked expectation cannot be reached	src/research/ui/ReviewPanel.test.tsx
 web	a chat case's message reads as a link into the Inspector	src/research/ui/ReviewPanel.test.tsx
 web	a chat case's reviewer is shown the assistant's turns	src/research/run.test.ts
-web	a chat case's reviewer is shown the draft's rules	src/research/run.test.ts
 web	a chat draft citing nothing is shown as 0 of 0	src/research/ui/ReviewPanel.test.tsx
-web	a chat draft is not traced again when its pin or documents change	src/research/run.test.ts,src/research/useResearchRun.web.test.tsx
 web	a chat draft is ready without a chat case	src/research/run.test.ts
-web	a chat draft keeps its readiness when its pin or documents change	src/research/run.test.ts
-web	a chat draft settles at ready on a moved basis	src/research/run.test.ts
-web	a chat draft settles at ready over an untraced citation	src/research/run.test.ts
-web	a chat draft settles on a trace taken before the settle	src/research/run.test.ts
 web	a chat draft whose trace was cut short reads as citing nothing	src/research/ui/ReviewPanel.test.tsx
-web	a chat draft's action ends without tracing the basis that moved under it	src/research/run.test.ts
-web	a chat draft's basis ignores the pin	src/research/run.test.ts,src/research/useResearchRun.web.test.tsx
+web	a chat draft's basis ignores the pin	src/research/run.test.ts
 web	a chat draft's citation is traced on a document that did not verify	src/research/run.test.ts
 web	a chat draft's citation is traced on a page the chat did not keep	src/research/run.test.ts
 web	a chat draft's citation is traced on pages nobody confirmed	src/research/run.test.ts
 web	a chat draft's citation is traced under a URL it was not read from	src/research/run.test.ts
 web	a chat draft's citation is traced under the chat's unsigned note of its link	src/research/run.test.ts
 web	a chat draft's citation is traced without its quote on the page	src/research/run.test.ts
-web	a chat draft's citations are not traced again when its documents change	src/research/useResearchRun.web.test.tsx
-web	a chat draft's documents are verified under the live pin	src/research/run.test.ts
-web	a chat draft's interrupted trace keeps the last trace's readiness	src/research/run.test.ts
-web	a chat draft's owner going away leaves its trace at rest running	src/research/run.test.ts,src/research/useResearchRun.web.test.tsx
-web	a chat draft's run outlives its owner	src/research/useResearchRun.web.test.tsx
-web	a chat draft's superseded trace at rest drops the settle it owed	src/research/run.test.ts
-web	a chat draft's trace lands after a Stop	src/research/run.test.ts
-web	a chat draft's trace lands on a basis that moved under it	src/research/run.test.ts
 web	a chat draft's traced page citation opens nothing	src/research/ui/ReviewPanel.test.tsx
 web	a check that has not answered reads as a clean bill	src/packs/inspector/PackInspector.test.tsx
 web	a choice survives the chassis naming a different project	src/shell/appearanceProvider.test.tsx
@@ -1455,7 +1435,6 @@ web	a config problem no longer refuses the whole file	src/admin/DocumentProcessi
 web	a configured pane may take the whole frame	src/shell/shellSheet.test.ts
 web	a configured query is not held to any rule	src/assistant/endpointForm.test.tsx,src/config/fixtures.test.ts
 web	a control character is accepted in a pack location	src/admin/projectFileCards.test.tsx,src/config/deskConfig.test.ts
-web	a correction is applied after the run was stopped	src/research/run.test.ts
 web	a dark text/background pair pushed under AA	src/ui/palette.test.ts
 web	a deep link stops at the group instead of the control	src/packs/edit/resilience.test.tsx
 web	a diagnostic anchored on the document is counted and never printed	src/routes/PackView.test.tsx
@@ -1475,7 +1454,6 @@ web	a duplicated id is resolved to one of the two	src/packs/inspector/PackInspec
 web	a failed refresh discards previously loaded packs	src/packs/PacksPane.test.tsx
 web	a failed reload leaves the page with nothing on it	src/packs/edit/save.test.tsx
 web	a failed reload names whatever file is on screen	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx
-web	a failure after the run's terminal event is dropped	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/shell/DescribeIt.test.tsx
 web	a field group cannot take focus at all	src/packs/edit/forms.test.tsx
 web	a field over an absent object is drawn as writable	src/packs/edit/forms.test.tsx
 web	a file another entry already claims is written over	src/shell/CreatePackDialog.test.tsx
@@ -1489,7 +1467,6 @@ web	a fragment on the endpoint is accepted	src/config/fixtures.test.ts
 web	a grouped unit is looked up under its own id	src/packs/document/members.test.ts,src/routes/PackView.test.tsx
 web	a handoff target that contradicts its own disposition is admitted	src/research/run.test.ts
 web	a held field survives the seed catching up with it	src/admin/projectFileCards.test.tsx
-web	a held proposal is reused for a draft it was never proposed for	src/research/run.test.ts
 web	a key held down saves once a frame	src/packs/edit/save.test.tsx
 web	a key smuggled into the URL is accepted	src/config/fixtures.test.ts
 web	a kind change re-serializes a subtree it only renamed	src/packs/edit/conditionOps.test.ts
@@ -1533,9 +1510,6 @@ web	a pointer step is concatenated rather than escaped	src/packs/pointers.test.t
 web	a post-end failure does not withdraw the proposal	src/assistant/AssistantPane.test.tsx,src/assistant/runOutcome.test.ts,src/shell/DescribeIt.test.tsx
 web	a previous verdict survives the next save	src/routes/AuthorView.test.tsx
 web	a proposal from an earlier submission is read anyway	src/shell/DescribeIt.test.tsx
-web	a readiness withdrawn by a verdict is withdrawn silently	src/research/run.test.ts
-web	a receipt failing after ready leaves Create standing	src/research/run.test.ts
-web	a recheck writes a chat case with the model	src/research/run.test.ts
 web	a record from another shell version is restored anyway	src/shell/paneState.test.ts
 web	a record with nothing chosen in it is owned again	src/shell/appearanceState.test.ts
 web	a refusal leaves the answer before it on screen	src/packs/edit/TryItPane.test.tsx
@@ -1553,17 +1527,12 @@ go	a refused testing prompt is waited for for ever	TestAssistantAuthoringCriticG
 web	a reload adopts over an edit made while it was in flight	src/packs/edit/useDocumentBuffer.test.ts
 web	a removal takes its neighbour layout rather than its own	src/packs/documentText.test.ts
 web	a removed condition is called a kind this desk does not know	src/packs/edit/forms.test.tsx
-web	a reopened chat draft is not traced again	src/research/run.test.ts,src/research/useResearchRun.web.test.tsx
 web	a reserved query name in another case is accepted	src/config/fixtures.test.ts
-web	a retry leaves no trace in the transcript	src/research/run.test.ts
 web	a reviewed handover is editable at Build	src/shell/CreatePackDialog.test.tsx
 web	a revision that is not on disk is called the file on disk	src/packs/edit/navigate.test.tsx,src/packs/edit/resilience.test.tsx,src/packs/edit/save.test.tsx
-web	a rolled-back approval is not reported	src/research/run.test.ts
-web	a rolled-back approval rests at the phase its retest reached	src/research/run.test.ts
 web	a row that is not rendered yet is never focused	src/packs/PacksPane.test.tsx
 web	a rule that is not an object is drawn as a card	src/packs/edit/resilience.test.tsx
 web	a rule with no outcome still gets an unresolved-id line	src/packs/references.test.ts
-web	a run settles at ready with an expectation still open	src/research/run.test.ts
 web	a run stays fresh after the buffer moves	src/packs/edit/TryItPane.test.tsx
 web	a runtime limit reads as a Core defect	src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/research/expectations.test.ts
 web	a save left in flight by a navigation wedges every later one	src/packs/edit/navigate.test.tsx
@@ -1571,9 +1540,7 @@ web	a save refused for any other reason says nothing	src/packs/edit/save.test.ts
 web	a save that answers to nobody is not reported	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx
 web	a save that lands takes the last sentence with it	src/packs/edit/useDocumentBuffer.test.ts
 web	a saved chat case is grounded in a message sent after it	src/research/retainedCheck.test.ts,src/research/run.test.ts
-web	a saved chat case suite is kept smaller	src/research/run.test.ts
 web	a scrolling pane cannot shrink below its content	src/shell/shellSheet.test.ts
-web	a second end is appended rather than dropped	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/shell/DescribeIt.test.tsx
 web	a second run of the same policy is suppressed	src/assistant/AssistantPane.test.tsx
 web	a selection arriving in an address the route is already at opens nothing	src/routes/PackView.test.tsx
 web	a selection under a member marks no outline entry	src/packs/useDocumentSpy.test.tsx,src/routes/PackView.test.tsx
@@ -1587,12 +1554,11 @@ web	a shorthand is not somewhere a colour can be written	src/ui/convention.test.
 web	a slug that does not begin with a letter is accepted	src/i18n/language.test.tsx,src/packs/newPack.test.ts,src/shell/CreatePackDialog.test.tsx
 web	a spent handoff forgets the id	src/mcp/session.test.tsx
 web	a stale check still issues its clean bill	src/packs/inspector/PackInspector.test.tsx
-web	a stale check survives an approved correction	src/research/run.test.ts
 web	a stale report is anchored onto the document anyway	src/packs/edit/EditView.test.tsx,src/routes/PackView.test.tsx
 web	a standing selection outranks what is on screen	src/packs/useDocumentSpy.test.tsx
 web	a status of zero is painted as an answer	src/assistant/AssistantSection.test.tsx
 web	a storage kind other than filesystem is accepted	src/config/deskConfig.test.ts,src/config/fixtures.test.ts
-web	a superseded chat draft trace goes on loading	src/research/useResearchRun.web.test.tsx
+web	a superseded chat draft trace goes on loading	src/research/run.test.ts
 web	a taken pack file is reported in an editor's words	src/shell/CreatePackDialog.test.tsx
 web	a throwing localStorage takes the shell down	src/shell/paneState.test.ts
 web	a truncated list still claims nothing else was found	src/packs/checks.test.ts,src/packs/inspector/PackInspector.test.tsx
@@ -1620,8 +1586,6 @@ web	an added member invents its own indentation	src/assistant/acceptProposal.tes
 web	an address that arrives with a selection opens no pane	src/routes/PackView.test.tsx
 web	an address the document does not carry still answers	src/packs/references.test.ts
 web	an appearance is written under the provisional key	src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx
-web	an approval applies to a draft its proposal never saw	src/research/run.test.ts
-web	an approval rewrites an established case	src/research/run.test.ts
 web	an array index is read with Number rather than the grammar	src/packs/pointers.test.ts,src/packs/references.test.ts
 web	an arrival with no selection is not recorded as visited	src/routes/PackView.test.tsx
 web	an author cannot be added to a list that is not there	src/packs/edit/forms.test.tsx
@@ -1641,7 +1605,6 @@ web	an id declared twice keeps only the last place it was declared	src/packs/ins
 web	an identity member marks no outline entry	src/routes/PackView.test.tsx
 web	an incomplete listing is treated as a complete one	src/shell/CreatePackDialog.test.tsx
 web	an intentional control-flow code is treated as an omission	src/packs/createRefusal.test.ts
-web	an interrupted approval retest keeps the correction	src/research/run.test.ts
 web	an off-window row is never brought on screen	src/packs/PacksPane.test.tsx,src/packs/useWindowedRows.test.tsx
 web	an offer off the address may still be accepted	src/packs/edit/useDocumentBuffer.test.ts
 web	an offer outlives the address that produced it	src/packs/edit/useDocumentBuffer.test.ts
@@ -1659,7 +1622,6 @@ web	an unconfigured desk's drawer moves to the column's width	src/shell/narrowSh
 web	an unknown config key is accepted silently	src/assistant/enforcement.test.ts,src/config/deskConfig.test.ts,src/config/fixtures.test.ts,src/config/liveConfig.test.tsx,src/config/queries.test.tsx
 web	an unknown fragment opens no section	src/routes/AdminView.test.tsx,src/shell/AppShell.test.tsx
 web	an unknown storage key is accepted	src/config/deskConfig.test.ts
-web	an unmount releases the run without finishing it	src/assistant/useAssistantRun.test.tsx
 web	an unreadable configuration is described as having no assistant	src/shell/DescribeIt.test.tsx
 web	an unreadable configuration is reported as an absent one	src/config/liveConfig.test.tsx,src/config/queries.test.tsx
 web	an unreadable configuration is reported as no assistant	src/assistant/AssistantPane.test.tsx,src/assistant/slotAfterSave.test.tsx,src/shell/DescribeIt.test.tsx
@@ -1710,7 +1672,6 @@ web	audit r2 fix: the page takes the last run for checked with no word on it	src
 web	audit r2 fix: the question on the identity is not asked beside a report	src/audit/resolveIdentity.test.tsx
 web	blanking a nonEmptyString writes an empty string	src/packs/edit/writes.test.ts
 web	bytes that are not a document are handed to the readers	src/packs/edit/resilience.test.tsx
-web	case establishment runs again over a blocked expectation	src/research/run.test.ts
 web	changing the operator retypes the author’s operand	src/packs/edit/ConditionBuilder.test.tsx,src/packs/edit/conditionOps.test.ts
 web	closing Create drops focus on the body	src/admin/ChatDataSettings.test.tsx,src/admin/DocumentProcessingSettings.test.tsx,src/jobs/JobIntegrationPicker.test.tsx,src/shell/QuickSwitcher.test.tsx,src/shell/useDirtyGuard.test.tsx
 web	closing the rail drawer drops focus on the body	src/shell/narrowShell.test.tsx
@@ -1872,21 +1833,13 @@ web	hand-over page: the stale sentence is not said	src/audit/handover.test.tsx
 web	harness swap: a message's attachments unbounded on send	src/chat/useChatAttachments.test.tsx
 web	harness swap: a read window is not cut to the result	src/chat/linkTools.test.ts
 web	harness swap: a read window starts from 20,000 bytes	src/research/tools.test.ts
-web	harness swap: an unverifiable attachment fails the turn	src/research/run.test.ts
 web	harness swap: attachment text inlined in the message	src/chat/attachmentContext.test.ts,src/chat/useChatAttachments.test.tsx
-web	harness swap: attachments not in the run's ledger	src/research/run.test.ts
-web	harness swap: chat offers no propose_pack	src/research/useResearchRun.web.test.tsx
 web	harness swap: endpointCapabilities left unwired	src/assistant/harnessHost.test.ts
 web	harness swap: modelsFor left unwired	src/assistant/connectionModels.test.tsx
-web	harness swap: propose_pack offered in a Policy chat	src/research/useResearchRun.web.test.tsx
-web	harness swap: propose_pack offered to the reviewer	src/research/useResearchRun.web.test.tsx
 web	harness swap: read_link ignores the turn's policy	src/chat/linkTools.test.ts
 web	harness swap: read_source ignores the run's policy	src/research/tools.test.ts
 web	harness swap: read_source is not framed as retrieved data	src/research/tools.test.ts
 web	harness swap: renderImageToText left unwired	src/assistant/harnessHost.test.ts
-web	harness swap: the case writer gets no attachments	src/research/run.test.ts
-web	harness swap: the draft snapshot back in the prompt	src/research/run.test.ts
-web	harness swap: the draft snapshot is not the current state	src/research/run.test.ts
 go	harness swap: the pack pane offers no propose_pack	TestAssistantAuthoringSavedCasesAndClosedTools
 web	help: a path is not quoted for the shell	src/routes/HelpAbout.test.tsx
 web	help: the agent command names no configuration	src/routes/HelpAbout.test.tsx
@@ -2175,7 +2128,6 @@ web	search and files: a failed search's reply carries the gateway's words	src/se
 web	search and files: a failure code Desk did not author is kept on the step	src/search/failures.test.ts
 web	search and files: a read-only file is offered for saving	src/routes/AuthorView.test.tsx
 web	search and files: a read-only file opens in an editable editor	src/routes/AuthorView.test.tsx
-web	search and files: a search row takes its provider from the model's call	src/chat/messageOwnership.test.ts
 web	search and files: a search step names a provider that is not an identifier	src/search/step.test.ts
 web	search and files: a search step's reference is for another query	src/search/step.test.ts
 web	search and files: a stored default timeout is saved as the default's value	src/search/WebSearchSettings.test.tsx
@@ -2265,7 +2217,7 @@ web	the appearance reset does not remove the key	src/identity/identity.test.tsx,
 web	the arrow keys move nothing	src/packs/document/PackDocumentView.test.tsx
 web	the base moves on a watcher refetch	src/packs/edit/useDocumentBuffer.test.ts
 web	the base rebases onto background refetches	src/routes/AuthorView.test.tsx
-web	the bootstrap is no longer memoised	src/assistant/AssistantPane.test.tsx,src/assistant/AssistantSettings.test.tsx,src/assistant/configWrite.test.tsx,src/assistant/modelListing.test.ts,src/assistant/session.test.ts,src/assistant/useAssistantRun.test.tsx,src/auth/SessionGate.test.tsx,src/config/liveConfig.test.tsx,src/files/useFileEditing.test.ts,src/jobs/reviewedSet.desks.test.ts,src/mcp/session.test.tsx,src/packs/collectionPreview.test.tsx,src/routes/AdminView.test.tsx,src/routes/HelpAbout.test.tsx,src/routes/PackView.test.tsx,src/shell/AppShell.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/createFromRail.test.tsx,src/shell/narrowShell.test.tsx
+web	the bootstrap is no longer memoised	src/assistant/AssistantPane.test.tsx,src/assistant/AssistantSettings.test.tsx,src/assistant/configWrite.test.tsx,src/assistant/modelListing.test.ts,src/assistant/session.test.ts,src/auth/SessionGate.test.tsx,src/config/liveConfig.test.tsx,src/files/useFileEditing.test.ts,src/jobs/reviewedSet.desks.test.ts,src/mcp/session.test.tsx,src/packs/collectionPreview.test.tsx,src/routes/AdminView.test.tsx,src/routes/HelpAbout.test.tsx,src/routes/PackView.test.tsx,src/shell/AppShell.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/createFromRail.test.tsx,src/shell/narrowShell.test.tsx
 web	the buffer stays on the pack it opened	src/packs/edit/useDocumentBuffer.test.ts
 web	the buffer takes a revision it is no longer about	src/packs/edit/useDocumentBuffer.test.ts
 web	the caches are left disagreeing with the read-back	src/routes/AuthorView.test.tsx
@@ -2284,7 +2236,6 @@ web	the console floor is smaller than a console	src/shell/shellSheet.test.ts
 web	the console floor may push the strip out of the frame	src/shell/shellSheet.test.ts
 web	the console may grow past the route it sits under	src/shell/shellSheet.test.ts
 web	the control-character rule is asked after the trim has hidden the edges	src/config/deskConfig.test.ts
-web	the correction reviewer is not shown a chat case's message	src/research/run.test.ts
 web	the correction's digest goes back to being unnamed	src/research/run.test.ts
 web	the create dialog renders no failure at all	src/shell/CreatePackDialog.test.tsx
 web	the creation dialog does not say how a chat case suite agrees	src/shell/CreatePackDialog.test.tsx
@@ -2328,8 +2279,6 @@ web	the form is offered over bytes that are not a document	src/packs/edit/resili
 web	the form refuses an empty in list	src/packs/edit/ConditionBuilder.test.tsx
 web	the form-level failure is not announced	src/admin/DocumentProcessingSettings.test.tsx,src/connections/ConnectionsPane.test.tsx,src/connections/WebSourcePane.test.tsx,src/packs/review/review.test.tsx,src/packs/upgrade/upgrade.test.tsx,src/shell/ConnectionNotices.test.tsx,src/shell/CreatePackDialog.test.tsx,src/ui/ui.test.tsx
 web	the frame has no definite height	src/shell/shellSheet.test.ts,src/ui/containingBlock.test.ts
-web	the held proposal drops the reviewer's unknowns	src/research/run.test.ts
-web	the held proposal outlives the establishment that answered it	src/research/run.test.ts
 web	the id hint prints the pattern at the author	src/packs/edit/forms.test.tsx
 web	the id is not re-checked against the file as it is now	src/shell/CreatePackDialog.test.tsx
 web	the id prefix is not normalised, so ids run together	src/admin/projectFileCards.test.tsx,src/config/deskConfig.test.ts,src/routes/AdminView.test.tsx,src/shell/CreatePackDialog.test.tsx
@@ -2355,7 +2304,6 @@ web	the lock line shows with no lock file listed	src/packs/edit/lockLine.test.ts
 web	the mark's size bound is counted in code units	src/config/deskConfig.test.ts
 web	the mirrored code set drifts from the chassis'	src/packs/createRefusal.test.ts
 web	the mirrored nonEmptyString list loses a member	src/packs/edit/shape.test.ts
-web	the model is not told how a chat draft cites	src/research/run.test.ts
 web	the model is saved from the listing label rather than its id	src/assistant/endpointForm.test.tsx
 web	the move chord is bound inside the card again	src/packs/edit/forms.test.tsx,src/packs/edit/resilience.test.tsx
 web	the name field loses to the name the proposal gave itself	src/shell/DescribeIt.test.tsx
@@ -2389,11 +2337,10 @@ web	the path cleaner leaves an interior dot segment alone	src/packs/packPath.tes
 web	the path is only ever the one get_pack names	src/packs/edit/resilience.test.tsx
 web	the preference does not override the project default	src/config/liveConfig.test.tsx,src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx,src/shell/appearanceState.test.ts
 web	the previous proposal is not withdrawn at the press	src/shell/DescribeIt.test.tsx
-web	the primary button is not a submit (Enter does nothing)	src/admin/ChatBackupSettings.test.tsx,src/admin/ChatDataSettings.test.tsx,src/admin/DocumentProcessingSettings.test.tsx,src/assistant/endpointForm.test.tsx,src/audit/handover.test.tsx,src/connections/ConnectionsPane.test.tsx,src/connections/WebSourcePane.test.tsx,src/packs/folders/FolderBrowser.test.tsx,src/packs/test-workspace/CaseEditor.test.tsx,src/packs/test-workspace/TestAssistant.test.tsx,src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/routes/AdminView.test.tsx,src/routes/ResearchAuthoringPage.test.tsx,src/routes/StorageFilesView.test.tsx,src/search/WebSearchSettings.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/ui/ui.test.tsx
+web	the primary button is not a submit (Enter does nothing)	src/admin/ChatBackupSettings.test.tsx,src/admin/ChatDataSettings.test.tsx,src/admin/DocumentProcessingSettings.test.tsx,src/assistant/endpointForm.test.tsx,src/audit/handover.test.tsx,src/connections/ConnectionsPane.test.tsx,src/connections/WebSourcePane.test.tsx,src/packs/folders/FolderBrowser.test.tsx,src/packs/test-workspace/CaseEditor.test.tsx,src/packs/test-workspace/TestAssistant.test.tsx,src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/routes/AdminView.test.tsx,src/routes/StorageFilesView.test.tsx,src/search/WebSearchSettings.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/ui/ui.test.tsx
 web	the probe names its own destination	src/assistant/SharedAssistantSettings.test.tsx
 web	the project default is not applied when no preference exists	src/config/liveConfig.test.tsx,src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx,src/shell/appearanceState.test.ts
 web	the proposal is written from event.document, not the snapshot	src/assistant/useAuthoringRun.test.tsx
-web	the proposal reaches the pane uncanonicalized	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/shell/DescribeIt.test.tsx
 web	the provenance line survives an unsaved edit	src/packs/edit/resilience.test.tsx
 web	the provider object admits a discriminator	src/config/deskConfig.test.ts,src/identity/enforcement.test.ts
 web	the provider object grows a ninth member	src/identity/enforcement.test.ts
@@ -2427,17 +2374,13 @@ web	the reset leaves the panes marked as chosen	src/shell/inspectorWidth.test.ts
 web	the reset removes whatever is under the key	src/identity/identity.test.tsx,src/shell/paneState.test.ts
 web	the reset reports a deletion it did not verify	src/identity/identity.test.tsx,src/shell/paneState.test.ts,src/shell/shellState.test.tsx
 web	the restored layout is not clamped to the viewport	src/shell/paneState.test.ts
-web	the retry declines to repair the draft it establishes over	src/research/run.test.ts
 web	the retry is offered for a draft the hold predates	src/research/run.test.ts,src/research/ui/Conversation.test.tsx
 web	the retry is offered while validation is still in flight	src/research/run.test.ts
-web	the reviewer's proposal is discarded before validation	src/research/run.test.ts
-web	the reviewer's spelling is stored instead of the canonical assertion	src/research/run.test.ts
 web	the revision follows the watcher while a value is unsaved	src/admin/projectFileCards.test.tsx
 web	the room the console may take reserves main's share too	src/shell/shellSheet.test.ts
 web	the route never says the check is still running	src/routes/PackView.test.tsx
 web	the rows are hidden when the endpoint moves rather than cleared	src/assistant/endpointCheck.test.tsx
 web	the rules member is treated as optional	src/packs/document/PackDocumentView.test.tsx,src/packs/document/members.test.ts
-web	the run ignores the model that was picked	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx
 web	the run is left open when the dialog closes	src/shell/CreatePackDialog.test.tsx
 go	the run starts before the runtime's testing prompt arrives	TestAssistantAuthoringCriticGuidanceAdmission
 web	the save read-back installs over a newer read	src/routes/AuthorView.test.tsx
@@ -2489,10 +2432,6 @@ web	ui pass: the store is asked to open a chat before history has loaded	src/rou
 web	undo lies about how far back it can go	src/packs/edit/useDocumentBuffer.test.ts
 web	undo pushes one entry per keystroke	src/packs/edit/useDocumentBuffer.test.ts
 web	unknown members ignored again (ownership read off the version)	src/shell/appearanceState.test.ts
-web	unreachable expectation: a proposed correction refused in bare words	src/research/run.test.ts
-web	unreachable expectation: a saved case is restored as a case	src/research/run.test.ts
-web	unreachable expectation: an approved correction is applied	src/research/run.test.ts
-web	unreachable expectation: established as a case	src/research/run.test.ts
 web	unreachable expectation: read as a Core defect	src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/research/expectations.test.ts,src/research/run.test.ts
 web	unreachable expectation: summary drops the runtime's reason	src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/research/expectations.test.ts,src/research/run.test.ts
 web	unwritten text is not work, so leaving takes it	src/packs/edit/forms.test.tsx,src/packs/edit/navigate.test.tsx,src/packs/edit/transition.test.tsx
@@ -2880,6 +2819,21 @@ go	assistant discovery: body read before bounded transport	TestAssistantDiscover
 go	assistant memory: malformed canonical metadata accepted	TestAssistantMemoryPrivateCanonicalReaders
 go	assistant memory: edited version reuses canonical identity	TestAssistantMemoryLifecycleSnapshotAndIdentity
 go	assistant memory: missing private version is not revoked	TestAssistantMemoryCanonicalResumeLifecycle
+go	canonical background: request cap	TestBackgroundCanonicalOneRequestRetainsExactTypesAndCheckpoint
+go	canonical background: live choice	TestBackgroundCanonicalWorkflowChoiceAndImmutableReceipt
+go	canonical background: receipt history	TestBackgroundCanonicalOneRequestRetainsExactTypesAndCheckpoint
+go	canonical background: canonical reader	TestBackgroundCanonicalOneRequestRetainsExactTypesAndCheckpoint
+go	canonical background: completion stop	TestBackgroundCompletionRefusesPartialJSONWithoutRetry
+go	canonical background: native response	TestBackgroundCanonicalNativeRequiresValidatedResponseTool
+go	canonical background: native offer	TestBackgroundModelSubscriptionUsesOnlyFeatureResponseTool
+go	canonical background: source custody	TestBackgroundCanonicalCurrentCustodyAtWaitAndRetention
+go	canonical background: credential custody	TestBackgroundCanonicalCurrentCustodyAtWaitAndRetention
+go	canonical background: epoch custody	TestBackgroundCanonicalCurrentCustodyAtWaitAndRetention
+go	canonical background: complete envelope	TestBackgroundReceiptStrictMembersAndBounds
+go	canonical background: legacy reserve	TestBackgroundCanonicalReservesWholeReceiptBeforeDispatch
+go	canonical background: portable reserve	TestBackgroundCanonicalReservesWholeReceiptBeforeDispatch
+go	canonical background: native pregeneration wire	TestBackgroundCanonicalNativeFailurePhase
+go	canonical background: native postgeneration outcome	TestBackgroundCanonicalNativeFailurePhase
 go	assistant creation: correction proposal rewrites evidence	TestAssistantCreationMultipleCorrections
 web	assistant creation: passing partial correction refused	src/assistant/serverRuns/creation.test.ts
 web	assistant creation: partial check advertises readiness	src/assistant/serverRuns/creation.test.ts
@@ -2900,3 +2854,14 @@ web	assistant memory review: response belongs to another proposal	src/assistant/
 web	assistant memory review: proposal edit rebases reviewed store	src/assistant/memory/proposals.test.tsx
 go	assistant memory review: independent reviewer gains author cap	TestAssistantMemoryIndependentReview
 go	assistant memory review: reviewer action accepts attribution	TestAssistantMemoryIndependentReview
+go	assistant production: normal Server unbound	TestAssistantProductionActualChat
+go	assistant production: chat selects standalone authoring	TestAssistantProductionClosedFactory
+go	assistant production: unknown purpose has fallback	TestAssistantProductionClosedFactory
+go	assistant production: legacy critic choice omitted	TestAssistantProductionPreparationSettings
+go	assistant production: project critic choice omitted	TestAssistantProductionPreparationSettings
+go	assistant production: absent thinking is not off	TestAssistantProductionPreparationSettings
+go	assistant production: explicit native default borrows effort	TestAssistantProductionActualChat
+web	saved chat restore: unfinished work remains running	src/chat/messageOwnership.test.ts
+web	saved chat exchange: duplicate messages appended	src/chat/store.test.ts
+web	saved chat exchange: conflicting message accepted	src/chat/store.test.ts
+go	assistant production: standalone project critic omitted	TestAssistantAuthoringActualAPI

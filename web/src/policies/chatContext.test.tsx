@@ -6,7 +6,7 @@ import {policyChatTools} from './chatTools'
 import {readPolicy,type PolicyReply} from './client'
 import {ChatStore} from '../chat/store'
 import {INITIAL_STATE} from '../research/run'
-import type {ResearchRunBinding} from '../research/useResearchRun'
+import type {ResearchRunBinding} from '../research/types'
 import {memoryDraftPersistence} from '../testing/draftPersistence'
 const fixture=vi.hoisted(()=>({store:undefined as ChatStore|undefined,initial:undefined as PolicyReply|undefined}))
 vi.mock('../chat/ChatProvider',()=>({useChats:()=>({store:fixture.store})}))

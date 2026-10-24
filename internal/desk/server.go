@@ -184,7 +184,8 @@ type Server struct {
 	assistantRunRecoveryErr error
 	assistantRunServiceMu   sync.Mutex
 	assistantRunHost        *assistantRunService
-	// Bound by the host before serving; nil refuses new server-owned purposes.
+	// The closed production executor is installed by New before serving.
+	// Tests may substitute a bounded executor; nil refuses general purposes.
 	assistantRunExecutor assistantRunExecutor
 
 	// startup is the identity of the project Desk was started on, which
@@ -455,6 +456,7 @@ func New(cfg Config) (*Server, error) {
 		writes = cfg.parent.writes
 	}
 	s := &Server{
+		assistantRunExecutor:   &assistantProductionExecutor{},
 		policyAuthorityAnchor:  policyAnchor,
 		policyAuthorityMachine: machine,
 		writes:                 writes,
