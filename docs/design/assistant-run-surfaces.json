@@ -1,7 +1,7 @@
 {
   "version": 1,
   "status": "closed production purposes bound in candidate; obsolete browser loops removed; Settings migration and full certification/release acceptance pending",
-  "deskEvidence": "Normal-Server API/native chat, authoring, Brief and creation fixtures plus existing reviewed host proofs; per-surface fresh/inherited evidence and gaps below",
+  "deskEvidence": "Normal-Server API/native chat, authoring, Brief and creation fixtures plus inherited reviewed host proofs; three controller observation/refresh cases and two mounted save-hook cases also passed at Desk 8886caf1afacaa8764386a44f49eb7818a68e711 with fixture observations and mocked file/HTTP save boundaries; full persisted UI Apply/Save and complete certification/release acceptance remain unproved",
   "agentEvidence": {
     "version": "v0.9.1",
     "revision": "866b7177ebddb6b9628bc3925a4e0bc43a5fc197",
@@ -209,7 +209,7 @@
         "existing saved-pack proposal browser fixtures"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "Inherited server saved-pack/approval/dirty-CAS workflow. Pure saved-suite/checkpoint/Auto readers PASS; full mounted saved-pack apply/save journey not rerun. #660 mandatory numeric fidelity blocker."
+      "journeyEvidence": "Inherited server saved-pack/approval/dirty-CAS workflow and pure saved-suite/checkpoint/Auto readers. At Desk 8886caf1afacaa8764386a44f49eb7818a68e711, latest saved-pack mismatch/pass controller refresh and both mounted usePackProposalSave server-hook cases passed using fresh Go-produced proposal/recheck inputs. Hook file read/write and HTTP check/suite responses are mocked; complete page/editor Apply and persisted server Save are not proved. #660 remains a mandatory numeric fidelity blocker."
     },
     {
       "id": "brief-summaries-all-subjects",
@@ -295,7 +295,7 @@
       "id": "subscription-generic-delegation",
       "category": "conversation-subphase",
       "currentOwner": "Canonical agent/delegate through actual Desk Manager; complete native binding certification still required",
-      "targetOwner": "published Go Agent v0.6.0 coordinator and actual private Desk Codex transport foundations; full browser cutover/certification pending",
+      "targetOwner": "published Go Agent coordinator through actual Desk Codex transport and registered saved-owner paths; complete native binding certification remains unresolved",
       "entrypoints": [
         "Agent packages/harness/engines/codex/index.ts:145-151",
         "Agent packages/harness/delegation.ts:844-864",
@@ -309,10 +309,10 @@
       ],
       "verification": [
         "private actual CodexManager parent handoff/child/parent continuation and checkpoint/release fixtures are implemented",
-        "complete product/provider-managed certification and browser activation remain pending"
+        "complete product/provider-managed certification remains pending; native certification contract mismatch tracked by https://github.com/Judgment-Pack/judgment-pack-agent/issues/201; bounded fixture passes do not establish full certification"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "Inherited actual CodexManager parent-release/child/parent continuation evidence; current Agent091 certification owned by separate worker. No scheduler added here."
+      "journeyEvidence": "Inherited actual CodexManager parent-release/child/parent continuation evidence. Full native binding certification has an unresolved Agent #201 contract mismatch; no scheduler change or resolution schedule is claimed."
     },
     {
       "id": "input-research-single-step",
@@ -595,7 +595,7 @@
         "internal/desk/assistant_graph_boundary_test.go: actual CodexManager parent/child/parent, immutable callback scope, stale custody, failed persistence and storage/import refusal",
         "scripts/assistant-graph-projection-reference.mjs: existing browser Graph snapshot/detached draft readers"
       ],
-      "status": "private-implemented; production/browser migration pending",
+      "status": "registered server Graph host capabilities with inherited bounded API/native/browser-reader evidence; complete integrated journeys/certification/review remain pending",
       "journeyEvidence": "Inherited server graph host/source/phase/approval contracts; fresh standalone Graph factory wiring PASS."
     },
     {
@@ -617,7 +617,7 @@
         "internal/desk/assistant_policy_tools_output.go",
         "internal/desk/assistant_approval.go"
       ],
-      "targetOwner": "private finite Go host registry with authenticated Policy services and durable typed review cards; production activation pending",
+      "targetOwner": "finite Go host registry with authenticated Policy services and durable typed review cards, reached through the registered saved-chat owner",
       "preserve": [
         "Go authenticated reads/retained proposal; exact Policy revision and retained source selectors; interpretations only open reviewable ordinary authoring",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
@@ -625,9 +625,9 @@
       "verification": [
         "actual API six-tool producer, Plan/child/current-access/stale request, retained comparison and exact coverage fixtures",
         "durable Policy output import/projection and existing ChatStore update/interpretation readers in the standard projection CI path",
-        "actual native parent-child-parent fixtures pass with repeated provider IDs, exact HTML/Unicode arguments and distinct callback receipts; browser migration and typed acceptance actions remain pending"
+        "actual native parent-child-parent fixtures pass with repeated provider IDs, exact HTML/Unicode arguments and distinct callback receipts; typed acceptance actions and complete integrated journey/certification acceptance remain pending"
       ],
-      "status": "private-implemented; production/browser migration and typed acceptance pending",
+      "status": "registered restricted Policy host capabilities with inherited bounded evidence; typed acceptance actions and complete integrated journeys/certification/review remain pending",
       "journeyEvidence": "Inherited reviewed server Policy/source/private approval workflows; no Policy grant or behavior changed."
     },
     {
@@ -648,7 +648,7 @@
         "internal/desk/assistant_dialect_recipe_tools_output.go",
         "internal/desk/dialect_drafts.go"
       ],
-      "targetOwner": "private finite Go HostTool registry, current preparation reads and independent retained recipe draft; production activation pending",
+      "targetOwner": "finite Go HostTool registry, current preparation reads and independent retained recipe draft, reached through the registered saved-chat owner",
       "preserve": [
         "Go recipe contract + independent retained draft; no record fabrication or source execution",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
@@ -658,7 +658,7 @@
         "durable pre-create metadata, actual independent draft readback, queued revocation/cancellation, uncertain-write/replay and import refusals",
         "existing ChatStore proposal reader and actual dialectDraftQuery readback in the standard projection CI path"
       ],
-      "status": "private-implemented with separate exact-allowance research admission; production/browser migration pending",
+      "status": "registered server recipe host capabilities with separate exact-allowance research admission and inherited bounded evidence; complete integrated journeys/certification/review remain pending",
       "journeyEvidence": "Inherited server recipe/source/approval contracts. No new factory purpose or browser execution."
     },
     {
@@ -764,7 +764,7 @@
         "internal/desk/assistant_test_tools_output.go",
         "internal/desk/assistant_test_tools_storage.go"
       ],
-      "targetOwner": "private finite Go registry and exact-owner review-only suite proposals; production/browser migration pending",
+      "targetOwner": "finite Go registry and exact-owner review-only suite proposals, reached through the registered saved-chat owner; released Runtime compatibility remains independently guarded",
       "preserve": [
         "Go read/retain proposal with exact target/suite/coverage/source inputs; human owns expectations and accepts case edits",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
@@ -775,7 +775,7 @@
         "standard projection CI uses actual ChatStore, suite/proposal, reviewed replacement/stale and review-link browser consumers",
         "scripted Runtime fixtures prove the existing Desk consumer contract; pinned Runtime v0.37.0 lacks pack/fact-check matrix support, so released positive proposal acceptance remains blocked by Desk #582 (Runtime #274)"
       ],
-      "status": "private-implemented with scripted contract evidence; released Runtime proposal compatibility #582 and production/browser activation pending",
+      "status": "registered server test-design host capabilities with scripted contract evidence; Desk #582 intentionally v0.17.0-scoped and Runtime v0.37.0 positive proposal support unavailable; complete integrated journeys/certification/review remain pending",
       "journeyEvidence": "Inherited server test proposal/approval/check contracts. Pure retained-check/import tests PASS; canonical appendConversation stable-ID/dedup/conflict preserved and mutants caught."
     },
     {
@@ -827,7 +827,7 @@
         "shared browser/private UTF16 safe-start correction returns an intact surrogate pair and actual offset; canonical encoded-prefix end bound and continuation, BMP/combining/page-span and ECMAScript whitespace/folding vectors",
         "private explore_website API/native/research-child maps and site-bound pages consumed by real browser verifiers; latest per-seed authority, one exploration/16 distinct seeds and shared ordinary3/discovered10, queued exact map/seed receipts and receipt-only recovery"
       ],
-      "status": "private conversational search_sources/read_link/explore_website implemented; finite choice continuation and production/browser activation pending",
+      "status": "registered server search_sources/read_link/explore_website capabilities and finite research-choice continuation with inherited bounded evidence; complete integrated journeys/certification/review remain pending",
       "journeyEvidence": "Inherited server verified chat document/web/search readers. Pure supplied-link/current provenance readers PASS; fresh production Runtime tool read PASS."
     },
     {
@@ -930,7 +930,7 @@
         "existing factory behavior fixtures reused for feature migration",
         "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
       ],
-      "journeyEvidence": "Fresh server-owned question save/CAS and exact digest/current revision action tests PASS. Existing server approval/budget continuation receipts inherited."
+      "journeyEvidence": "Existing server-owned question save/CAS and exact digest/current-revision action tests pass. At Desk 8886caf1afacaa8764386a44f49eb7818a68e711, three controller cases freshly passed against Go observations: API/native continuation readers without fresh admission, snapshots/SSE/session-end, and latest saved-pack mismatch/pass refresh. These protocol/adapter fixture consumers do not establish every integrated interaction or another normal-New activation proof."
     },
     {
       "id": "client-only-editor-interaction",
@@ -986,8 +986,8 @@
         "scripts/dev/assistant-plan.sh"
       ],
       "remaining": [
-        "Production executor activation and browser cutover are separate",
-        "Agent v0.8 draft-edit and memory protocols are package-owned and not implemented here"
+        "Complete current-head integrated Plan journeys, certification and independent review; registered persisted review-only Plan ownership still requires explicit human Start work, separate approvals and compute",
+        "Package-owned draft-edit scope is not established by delivered canonical memory lifecycle/person acceptance or production registration evidence"
       ],
       "journeyEvidence": "Inherited persisted private Plan/source/approval checks; fresh normal-New chat Work/Plan PASS. Phase transition and compute remain separate."
     }
@@ -999,7 +999,7 @@
   ],
   "preparationVerification": "Published Go API/source and actual Desk callsite inventory; each production migration requires the listed focused evidence. Internal ledger tests do not certify the pending cutover.",
   "bindingPreparation": {
-    "status": "private-unregistered",
+    "status": "closed-production-purposes-registered; full-journey/certification/review acceptance pending",
     "delivered": [
       "actual Desk model relay with immutable session/connection/revision and post-queue admission",
       "rooted Runtime stdio with existing project/Policy frame guards and bounded paired receipts",
@@ -1012,23 +1012,28 @@
       "hand-authored actual private Codex subprocess parent-child-parent, account reaping, exact invocation/tool receipts, current-authority refusal, bounded admission retries, cancellation, canonical interaction stops and unchanged provider-managed allowance policy",
       "private saved-chat canonical input: exact statement/input, retained typed history/questions/attachments, transcript projection and validated chat preference precedence through actual API/Codex factories",
       "server verified submitted document selections with signed receipt/digest/readable-page/partial-consent custody, distinct selection identities and rechecks at physical API/Codex dispatch including waits and child/parent continuation (Desk #566)",
-      "completed private foundations from Desk #564/#570/#573/#574: published provider-managed binding, final journal prepare/CAS/readback/ack and positive critic/test-tool custody; these do not activate browser features",
+      "foundations from Desk #564/#570/#573/#574: published provider-managed binding, final journal prepare/CAS/readback/ack and positive critic/test-tool custody, now used by registered closed production paths; bounded fixtures alone do not certify all product journeys",
       "private finite Graph host registry, seven concrete tools, canonical producer-bound draft/read receipts and GraphDraft terminal projection; focused actual API/native and existing browser reader evidence",
       "private finite Policy host registry, six authenticated read/proposal tools, exact retained comparison/coverage, durable update/interpretation cards and actual API/native/shared browser reader evidence",
       "private canonical critic binding with actual API/native named-model, exact admitted cases, Runtime guidance/comparisons and durable current-custody fixtures",
       "private finite test-design read/propose host tools, exact saved/draft review-only proposal persistence and actual API/native/shared browser reader evidence; scripted Runtime contract only, released support blocked by #582",
       "private portable Dialect recipe contract/read/proposal tools with durable independent draft identity/readback, current authority and actual API/native/browser reader fixtures",
       "private Dialect mapping/publication tools with exact read basis, pinned Runtime checks, finite retained review evidence and current-versus-historical projection; no publication grant or write",
-      "private Dialect records/activity and six-kind review-only action proposals bound to exact root recipe reads; typed originals, human review currency, owner history and shared action/browser readers"
+      "private Dialect records/activity and six-kind review-only action proposals bound to exact root recipe reads; typed originals, human review currency, owner history and shared action/browser readers",
+      "finite research-choice continuation through the saved chat/creation owner; current source/phase controls remain server-owned",
+      "canonical memory Use/Suggest snapshot/lifecycle and current person acceptance, including explicit proposal/store revision and identity guards; memory and Plan grant no implicit write or compute authority",
+      "at Desk 8886caf1afacaa8764386a44f49eb7818a68e711, three former controller gaps passed with fresh Go observations: API/native continuation readers, snapshots/SSE/session-end, and latest saved-pack mismatch/pass refresh; protocol/adapter fixtures are not another normal-New activation proof",
+      "at the same Desk head, both existing mounted usePackProposalSave server-hook cases passed with fresh Go proposal/recheck observations, mocked file read/write and HTTP check/suite responses; explicit Save/readback and dirty/stale/suite/mismatch vetoes are covered, not a full persisted page/editor Apply/Save journey"
     ],
     "pending": [
-      "complete provider-managed Desk binding and feature certification",
-      "remaining conversational exploration and research source/citation host tools; finite research-choice continuation",
-      "Plan/memory and remaining continuation/workflow feature migrations; released Runtime test-proposal compatibility #582",
-      "browser cutover and production executor registration after complete migration/review"
+      "complete current-head provider-managed binding and feature certification; unresolved native certification contract mismatch tracked by https://github.com/Judgment-Pack/judgment-pack-agent/issues/201",
+      "full integrated product journeys not established by bounded fixtures, including complete page/editor Apply and persisted server Save; current-head integration/bundle evidence, independent review and release acceptance",
+      "mandatory Desk #660 provider-wire numeric fidelity and #662 remaining Settings capability/connection browser transport; no probe ceiling relaxation or full direct-transport exclusion claim",
+      "Desk #582 remains intentionally v0.17.0-scoped: pinned Runtime v0.37.0 fact-type proposal support is unavailable (Runtime #274); preserve authored unavailable, unchanged facts/expectations, no fabricated advice and current pins",
+      "package-owned draft-edit scope not independently verified by the delivered Plan/memory and registration evidence"
     ],
     "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",
-    "activation": "production executor remains unregistered"
+    "activation": "Normal Server construction installs assistantProductionExecutor for existing chat/creation, Brief and standalone author-pack/describe-pack/author-graph purposes; unknown purposes refuse. Saved chat uses SavedChatRun; remaining Settings transport and complete release acceptance stay pending."
   },
   "requiredReleaseGates": [
     "Desk #660 canonical proposal numeric fidelity",
