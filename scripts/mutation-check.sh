@@ -335,15 +335,18 @@ bounded() {
 # the pinned Gateway and scoped Runtime fixtures. Two clean CI baselines exceeded
 # 900s. A verbose diagnostic reached more than 1500 cases before its 840s panic,
 # with the current test running for 0s: measured aggregate work, not a hung handler.
-# Give only the clean full-package baseline 1800s. Selected checks stay at 480s,
+# The companion-enabled baseline now exceeds 1800s; its last started website
+# test passes in isolation in 19.12s. Align only this clean run with ordinary
+# Go CI's 40-minute limit and retain its complete progress log on failure.
+# Selected checks stay at 480s,
 # whole-mutant/fallback checks at 900s, and compilation at its independent bound.
 # Each Go panic backstop follows its process-tree watchdog by 60s.
 GO_TEST_WATCHDOG=480
 GO_TEST_BACKSTOP=540s
 GO_FULL_WATCHDOG=900
 GO_FULL_BACKSTOP=960s
-GO_BASELINE_WATCHDOG=1800
-GO_BASELINE_BACKSTOP=1860s
+GO_BASELINE_WATCHDOG=2400
+GO_BASELINE_BACKSTOP=2460s
 
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
@@ -403,7 +406,7 @@ go_package_green() {
   verdict=$(run_go_unmutated "$package" '.')
   if [ -n "$verdict" ]; then
     echo "unmutated Go baseline is not green: $package: $verdict" >&2
-    tail -n 30 "$work/package-$key.baseline.log" >&2
+    cat "$work/package-$key.baseline.log" >&2
     : > "$work/package-$key.failed"
     return 1
   fi
