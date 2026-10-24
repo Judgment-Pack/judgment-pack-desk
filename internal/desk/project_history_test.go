@@ -37,6 +37,7 @@ func TestProjectHistoryRelocationSurvivesMoveAndBackup(t *testing.T) {
 	if code, _ := chatRequest(t, ots, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
 	}
+	storageChat := savedConversationBytes(t, old, ots)
 	request := projectHistoryRequest{PreviousProject: old.projectDir}
 	code, preview, body := historyRequest(t, mts, "preview", request)
 	if code != 200 || preview.ChatCount != 1 {
@@ -57,6 +58,7 @@ func TestProjectHistoryRelocationSurvivesMoveAndBackup(t *testing.T) {
 	if code, _ := chatRequest(t, mts, "PUT", preview.SourceRevision, next, true, ""); code != 200 {
 		t.Fatal(code)
 	}
+	next = savedConversationBytes(t, old, ots)
 	if code, reply := chatRequest(t, ots, "GET", "", "", true, ""); code != 200 || string(reply.Content) != next {
 		t.Fatal("old and new locations did not share linked history", code)
 	}
@@ -99,6 +101,7 @@ func TestProjectHistoryNeverMergesOrUsesStalePreview(t *testing.T) {
 		t.Fatal("stale preview accepted", code)
 	}
 	chatRequest(t, cts, "PUT", "absent", storageChat, true, "")
+	storageChat := savedConversationBytes(t, current, cts)
 	if code, _, _ := historyRequest(t, cts, "preview", projectHistoryRequest{PreviousProject: old.projectDir}); code != 409 {
 		t.Fatal("existing history allowed a merge", code)
 	}
@@ -122,8 +125,9 @@ func TestMissingLinkedHistoryCannotBecomeEmpty(t *testing.T) {
 }
 
 func TestBrokenProjectBindingStillAllowsRestore(t *testing.T) {
-	_, ts, _ := assistantServer(t)
+	s, ts, _ := assistantServer(t)
 	chatRequest(t, ts, "PUT", "absent", storageChat, true, "")
+	storageChat := savedConversationBytes(t, s, ts)
 	backup := backupBytes(t, ts)
 	before := storageGet(t, ts)
 	privateFixture(t, filepath.Join(before.Path, projectBindingsName), `{"version":9,"projects":{}}`)

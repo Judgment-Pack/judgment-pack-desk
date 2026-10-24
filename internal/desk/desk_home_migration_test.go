@@ -18,6 +18,7 @@ func TestDeskHomeMigrationPreservesHistoryCredentialsAndNamedDesk(t *testing.T) 
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
 	}
+	storageChat := savedConversationBytes(t, s, ts)
 	named := createTestDesk(t, ts, "Research · Demo")
 	privateFixture(t, filepath.Join(s.configDir, "secrets", "migration-fixture"), "opaque credential bytes\n")
 	privateFixture(t, filepath.Join(named.Folder, ".desk-private", "retained-proof.json"), "{\"signed\":\"opaque exact bytes\"}\n")

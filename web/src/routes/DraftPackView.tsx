@@ -38,7 +38,7 @@ function DraftReader({artifact}:{artifact:PackDraft}) {
   useEffect(()=>{
     if(restored.current || !fallback.run || !fallback.ledger)return
     restored.current=true
-    try { restoreLedger(fallback.ledger,artifact.checkpoint.sources); void fallback.run.restore(artifact.checkpoint.state).catch(error=>setProblem(error.message)) }
+    try { restoreLedger(fallback.ledger,artifact.checkpoint.sources); void fallback.run.restore?.(artifact.checkpoint.state).catch(error=>setProblem(error.message)) }
     catch(error){setProblem((error as Error).message)}
   },[fallback.run,fallback.ledger,artifact])
   useEffect(()=>{

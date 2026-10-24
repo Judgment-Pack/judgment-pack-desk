@@ -188,7 +188,11 @@ func (s *Server) assistantDocumentSnapshot(r *http.Request, owner assistantDocum
 	// source resolver does not. Its admission fence owns their authorization.
 	current.Binding.Unit = owner.binding.Unit
 	current.Binding.ExecutionKey = owner.binding.ExecutionKey
-	if !reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !assistantDocumentReferenced(current.Original, ref) {
+	referenced := assistantDocumentReferenced(current.Original, ref)
+	if owner.start.Purpose == "brief" {
+		referenced = assistantBriefDocumentReferenced(current.Original, ref)
+	}
+	if !reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !referenced {
 		return nil, zero, errAssistantRunScope
 	}
 	pin, err := s.configuredResearch()

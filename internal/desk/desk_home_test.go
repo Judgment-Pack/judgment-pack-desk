@@ -54,6 +54,7 @@ func TestDeskHomeRetainsHistoryAndRunnerIdentityAfterMove(t *testing.T) {
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
 	}
+	storageChat := savedConversationBytes(t, s, ts)
 	store, err := s.openChatData()
 	if err != nil {
 		t.Fatal(err)

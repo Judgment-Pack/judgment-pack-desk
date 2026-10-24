@@ -67,7 +67,7 @@ export interface DraftToolContext {
 }
 
 export interface ResearchRunBinding {
-  run: AuthoringRun | null
+  run: import('./controller').ResearchRunController | null
   state: RunState
   ledger: Ledger | null
   sources: readonly SourceRecord[]
@@ -154,7 +154,7 @@ export function useResearchRun(options?: {
   draftTools?: (context: DraftToolContext) => HostTool[]
   /** The documents kept in this chat, read when a draft's citations are traced. */
   documents?: () => readonly ChatAttachment[]
-}): ResearchRunBinding {
+}): ResearchRunBinding & {run: AuthoringRun} {
   useLocale()
   const slot = useAssistantSlot(options?.connectionId)
   const selected = selectedAssistant(slot)

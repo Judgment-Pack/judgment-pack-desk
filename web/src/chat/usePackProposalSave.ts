@@ -1,3 +1,4 @@
+import {useChatStore} from './ChatProvider'
 import {useRef,useState,useEffect} from 'react'
 import {useQueryClient} from '@tanstack/react-query'
 import {useFileListing} from '../files/queries'
@@ -12,6 +13,7 @@ import type {Candidate} from '../research/run'
 import {checkPackProposal,type PackProposalBasis} from './packProposal'
 import {ProposalSaveBlocked,savePackProposal} from './savePackProposal'
 export function usePackProposalSave({candidate,basis,busy,plan,onSaved}:{candidate:Candidate;basis?:PackProposalBasis;busy:boolean;plan?:boolean;onSaved?:()=>void}) {
+  const store=useChatStore()
   const mcp=useMcp(),query=useQueryClient(),[saving,setSaving]=useState(false),[error,setError]=useState(''),flight=useRef(false)
   const project=useFileListing().data?.root
   const mounted=useRef(true)
@@ -31,7 +33,10 @@ export function usePackProposalSave({candidate,basis,busy,plan,onSaved}:{candida
         if(!mounted.current||current.candidate.digest!==held.digest||current.basis?.path!==base.path||current.basis.packId!==base.packId||current.busy||current.plan||isPathDirty(base.path))throw new ProposalSaveBlocked(msg('The proposal or editor changed. Review it again before saving.'))
       }
       const saved=await savePackProposal({candidate:held,basis:base,reviewedSuiteKey:held.packReview?.check?.suiteKey??'',guard,
-        check:()=>checkPackProposal(held,async()=>{const snapshot=await readTests();if(project!==undefined&&snapshot.project!==project)throw new ProposalSaveBlocked(msg('The project changed during the checks.'));return snapshot.content.suites[base.packId]??emptySuite()},async(name,args)=>await client.callTool({name,arguments:args}) as McpToolResult,new AbortController().signal)})
+        check:()=>{
+          const owner=store&&[...store.getSnapshot().bindings.values()].find(b=>b.run?.ownership==='server'&&b.state.candidates.some(c=>c.digest===held.digest))
+          if(owner){if(!owner.run?.checkProposal)throw new ProposalSaveBlocked(msg('Reconnect the current proposal before checking it.'));return owner.run.checkProposal(held)}
+          return checkPackProposal(held,async()=>{const snapshot=await readTests();if(project!==undefined&&snapshot.project!==project)throw new ProposalSaveBlocked(msg('The project changed during the checks.'));return snapshot.content.suites[base.packId]??emptySuite()},async(name,args)=>await client.callTool({name,arguments:args}) as McpToolResult,new AbortController().signal)}})
       query.setQueryData(['desk-file',base.path],saved)
       await Promise.allSettled([['list_packs'],['get_pack',base.packId],['validate'],['desk-files']].map(queryKey=>query.invalidateQueries({queryKey})))
       onSaved?.()

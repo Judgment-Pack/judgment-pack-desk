@@ -4,11 +4,13 @@ package desk
 // They use a separate owner-only data root, with explicit legacy migration.
 // The server chooses the name from its pinned project identity.
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 )
@@ -20,11 +22,12 @@ type conversationDocument struct {
 	Chats   []json.RawMessage `json:"chats"`
 }
 type conversationReply struct {
-	Project       string          `json:"project"`
-	SHA256        string          `json:"sha256"`
-	Content       json.RawMessage `json:"content"`
-	Snapshot      json.RawMessage `json:"snapshot,omitempty"`
-	SnapshotIssue string          `json:"snapshotIssue,omitempty"`
+	ChatRevisions map[string]string `json:"chatRevisions,omitempty"`
+	Project       string            `json:"project"`
+	SHA256        string            `json:"sha256"`
+	Content       json.RawMessage   `json:"content"`
+	Snapshot      json.RawMessage   `json:"snapshot,omitempty"`
+	SnapshotIssue string            `json:"snapshotIssue,omitempty"`
 }
 
 func (s *Server) conversationName() string {
@@ -341,6 +344,11 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 			fail(e)
 			return
 		}
+		data, e = preserveConversationRows(previous.Content, data)
+		if e != nil {
+			fail(e)
+			return
+		}
 		if e = s.checkAssistantPlanAcceptance(r, previous.Content, data); e != nil {
 			fail(e)
 			return
@@ -429,6 +437,19 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 // JSON is served as data, never embedded in HTML. Disabling HTML escaping keeps
 // a bounded checkpoint from expanding sixfold in its response envelope.
 func writeConversationReply(w http.ResponseWriter, reply conversationReply) {
+	var doc conversationDocument
+	if json.Unmarshal(reply.Content, &doc) == nil && doc.Chats != nil {
+		reply.ChatRevisions = map[string]string{}
+		for _, raw := range doc.Chats {
+			var row struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(raw, &row) == nil && researchChatID.MatchString(row.ID) {
+				reply.ChatRevisions[row.ID] = digestOf(raw)
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	encoder := json.NewEncoder(w)
@@ -444,4 +465,70 @@ func (s *Server) conversationIdentity() string {
 		return "desk:" + s.cfg.deskID
 	}
 	return s.projectDir
+}
+
+// An unrelated document CAS must not rewrite a run's pinned raw source merely
+// because a browser serialized equivalent JSON with different spacing/escapes.
+// Numbers retain their lexical representation: 1, 1.0 and rounded integers differ.
+func preserveConversationRows(previous, incoming []byte) ([]byte, error) {
+	if !uniqueJSON(previous) || !uniqueJSON(incoming) {
+		return nil, errAssistantRunInvalid
+	}
+	oldDoc, oldRows, err := assistantChatRows(previous)
+	if err != nil {
+		return nil, err
+	}
+	_ = oldDoc
+	newDoc, newRows, err := assistantChatRows(incoming)
+	if err != nil {
+		return nil, err
+	}
+	old := map[string]json.RawMessage{}
+	for _, row := range oldRows {
+		fields, e := assistantChatObject(row)
+		if e != nil {
+			return nil, e
+		}
+		var id string
+		if json.Unmarshal(fields["id"], &id) != nil || !researchChatID.MatchString(id) || old[id] != nil {
+			return nil, errAssistantRunInvalid
+		}
+		old[id] = row
+	}
+	seen := map[string]bool{}
+	for i, row := range newRows {
+		fields, e := assistantChatObject(row)
+		if e != nil {
+			return nil, e
+		}
+		var id string
+		if json.Unmarshal(fields["id"], &id) != nil || !researchChatID.MatchString(id) || seen[id] {
+			return nil, errAssistantRunInvalid
+		}
+		seen[id] = true
+		before := old[id]
+		if before == nil {
+			continue
+		}
+		decode := func(raw []byte) (any, error) {
+			d := json.NewDecoder(bytes.NewReader(raw))
+			d.UseNumber()
+			var v any
+			e := d.Decode(&v)
+			return v, e
+		}
+		a, e := decode(before)
+		if e != nil {
+			return nil, e
+		}
+		b, e := decode(row)
+		if e != nil {
+			return nil, e
+		}
+		if reflect.DeepEqual(a, b) {
+			newRows[i] = before
+		}
+	}
+	newDoc["chats"] = assistantChatEncodeArray(newRows)
+	return assistantChatEncodeObject(newDoc), nil
 }

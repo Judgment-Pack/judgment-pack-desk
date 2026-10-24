@@ -122,6 +122,7 @@ func TestStorageBackupRejectsCorruptionAndNeverActivates(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
 			chatRequest(t, ts, "PUT", "absent", storageChat, true, "")
+			storageChat := savedConversationBytes(t, s, ts)
 			before := storageGet(t, ts)
 			entry := backupEntry{Name: s.conversationName(), Bytes: int64(len(storageChat)), SHA256: digestOf([]byte(storageChat))}
 			manifest := backupManifest{Version: 1, Files: []backupEntry{entry}}

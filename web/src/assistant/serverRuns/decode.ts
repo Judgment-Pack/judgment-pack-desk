@@ -1,3 +1,4 @@
+import { readPackCheck } from '../../chat/packProposal'
 import type { AssistantEvent } from '@judgment-pack/harness/contract'
 import { readUserQuestion, validQuestionDraft, type UserQuestion } from '@judgment-pack/harness/questions'
 import { recordDigest, sha256 } from '@judgment-pack/harness/records'
@@ -14,6 +15,8 @@ export const digest = (v: unknown): v is string => typeof v === 'string' && /^[a
 export const revision = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) > 0
 export const runID = (v: unknown): v is string => typeof v === 'string' && /^arun_[a-f0-9]{32}$/.test(v)
 export const ownerID = (v: unknown): v is string => typeof v === 'string' && /^[a-zA-Z0-9_-]{1,160}$/.test(v)
+export const briefSubject = (v: unknown): v is string => text(v,1024) && (/^(pack|pack-draft|graph|graph-draft):.+$/.test(v) || /^case:.+:.+$/.test(v) || /^(job:job_|run:run_)[a-f0-9]{32}$/.test(v))
+export const runOwner = (kind:unknown,id:unknown):boolean => kind === 'chat' ? ownerID(id) : kind === 'brief' && briefSubject(id)
 export function invalid(): never { throw new AIFailureError(failure('invalid-response', 'desk', 'unknown')) }
 export function parseRunJSON(raw: string): unknown {
   try { parseJsonText(raw); return JSON.parse(raw) as unknown } catch { return invalid() }
@@ -82,7 +85,7 @@ function continuations(value:unknown, events:readonly RunEvent[],checkpoint:RunS
  return value as RunContinuation[]
 }
 export function decodeSnapshot(value: unknown, expected: RunBinding & { readonly id?: string }): RunSnapshot {
-  if (!object(value) || !exact(value,['id','revision','owner','requestId','state','historical','checkpoint','operations','events','cursor','chatProjection','projectionIssue','continuations','displayPreview']) || !runID(value.id) || expected.id !== undefined && value.id !== expected.id || !revision(value.revision) || !object(value.owner) || !exact(value.owner,['kind','id','revision']) || value.owner.kind !== 'chat' || !ownerID(value.owner.id) || !digest(value.owner.revision) || value.owner.kind !== expected.owner.kind || value.owner.id !== expected.owner.id || value.owner.revision !== expected.owner.revision || !text(value.requestId,128) || value.requestId !== expected.requestId || typeof value.state !== 'string' || !['admitted','running','awaiting-input','awaiting-client','paused-budget','stopped','interrupted','complete','failed'].includes(value.state) || value.historical !== undefined && typeof value.historical !== 'boolean') return invalid()
+  if (!object(value) || !exact(value,['packChecks','approvalReference','admissionId','id','revision','owner','requestId','state','historical','checkpoint','operations','events','cursor','chatProjection','projectionIssue','continuations','displayPreview']) || !text(value.admissionId,128) || !runID(value.id) || expected.id !== undefined && value.id !== expected.id || !revision(value.revision) || !object(value.owner) || !exact(value.owner,['kind','id','revision']) || !runOwner(value.owner.kind,value.owner.id) || !digest(value.owner.revision) || value.owner.kind !== expected.owner.kind || value.owner.id !== expected.owner.id || value.owner.revision !== expected.owner.revision || !text(value.requestId,128) || value.requestId !== expected.requestId || typeof value.state !== 'string' || !['admitted','running','awaiting-input','awaiting-client','paused-budget','stopped','interrupted','complete','failed'].includes(value.state) || value.historical !== undefined && typeof value.historical !== 'boolean') return invalid()
   const [r, count] = cursorParts(value.cursor)
   const events = value.events === null ? [] : Array.isArray(value.events) ? value.events.map(decodeEvent) : invalid()
   if (events.length > 1024 || new Set(events.map(e => e.id)).size !== events.length || r !== value.revision || count !== events.length) return invalid()
@@ -91,6 +94,13 @@ export function decodeSnapshot(value: unknown, expected: RunBinding & { readonly
   if (value.checkpoint !== undefined && !checkpoint) return invalid()
   if (value.chatProjection !== undefined && (!object(value.chatProjection) || !exact(value.chatProjection,['responseId','digest','acknowledged']) || value.chatProjection.responseId !== `response-${sha256(value.id).slice(0,32)}` || !digest(value.chatProjection.digest) || typeof value.chatProjection.acknowledged !== 'boolean')) return invalid()
   if (value.projectionIssue !== undefined && (typeof value.projectionIssue !== 'string' || !['proposal-target','pending-question','saved-chat-validation','unsupported-unicode'].includes(value.projectionIssue))) return invalid()
+  if(value.approvalReference!==undefined){const a=value.approvalReference;if(!object(a)||!exact(a,['callId','argsDigest'])||!text(a.callId,256)||!digest(a.argsDigest)||value.state!=='awaiting-input'||checkpoint?.approval?.state!=='asked'||checkpoint.approval.callId!==a.callId)return invalid()}
+  if(value.state==='awaiting-input'&&checkpoint?.approval?.state==='asked'&&value.approvalReference===undefined)return invalid()
+  if(value.packChecks!==undefined){
+   if(!Array.isArray(value.packChecks)||!value.packChecks.length||value.packChecks.length>64)return invalid()
+   const checked=new Set<string>()
+   for(const c of value.packChecks){if(!object(c)||!exact(c,['documentDigest','suiteKey','at','valid','diagnostics','totalCases','report'])||!readPackCheck(c)||!digest(c.documentDigest)||checked.has(c.documentDigest))return invalid();checked.add(c.documentDigest)}
+  }
   const receipts = continuations(value.continuations,events,checkpoint)
   pendingQuestion({events,continuations:receipts})
   if (value.displayPreview !== undefined) decodePreview(value.displayPreview)

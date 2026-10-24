@@ -4,7 +4,7 @@ import { validQuestionDraft } from '@judgment-pack/harness/questions'
 import { AIFailureError, failure, normalizeFailure, type FailureCode } from '@judgment-pack/harness/failures'
 import { deskFetch } from '../../files/client'
 import { discardBody, sessionBearer, whenSessionEnds } from '../../mcp/session'
-import { cursorParts, decodeDiscovery, decodeSnapshot, digest, exact, invalid, MAX_RUN_BYTES, object, ownerID, parseRunJSON, pendingQuestion, revision, runID, text } from './decode'
+import { cursorParts, decodeDiscovery, decodeSnapshot, digest, exact, invalid, MAX_RUN_BYTES, object, ownerID, briefSubject, runOwner, parseRunJSON, pendingQuestion, revision, runID, text } from './decode'
 import { readFrames, RunObservations } from './stream'
 import type { RunAction, RunBinding, RunDiscovery, RunObservation, RunReference, RunSnapshot, RunStart } from './types'
 
@@ -36,12 +36,12 @@ export class ServerRunClient {
   private async current(signal: AbortSignal): Promise<void> {
     if (signal.aborted || await sessionBearer() !== this.session) throw new RunRequestError('uncertain',undefined,'permission')
   }
-  private async json(path: string, expected: RunBinding & {id?:string}, body?: RunStart | RunAction, signal?: AbortSignal): Promise<RunSnapshot> {
+  private async json(path: string, expected: RunBinding & {id?:string}, body?: RunStart | RunAction, signal?: AbortSignal, headers:Record<string,string> = {}): Promise<RunSnapshot> {
     const scope = await this.scope(signal)
     let sent = false, answer: Response | undefined
     try {
       sent = true
-      answer = await deskFetch(path,{method:body ? 'POST' : 'GET',redirect:'error',signal:scope.signal, headers:body ? {'Content-Type':'application/json'} : {}, ...(body ? {body:JSON.stringify(body)} : {})})
+      answer = await deskFetch(path,{method:body ? 'POST' : 'GET',redirect:'error',signal:scope.signal, headers:{...headers,...(body ? {'Content-Type':'application/json'} : {})}, ...(body ? {body:JSON.stringify(body)} : {})})
       await this.current(scope.signal)
       if (!answer.ok) { await discardBody(answer); throw new RunRequestError(answer.status >= 400 && answer.status < 500 && answer.status !== 408 ? 'refused' : 'uncertain',answer.status,statusCode(answer.status)) }
       const snapshot = decodeSnapshot(await readJSON(answer,scope.signal),expected)
@@ -52,10 +52,41 @@ export class ServerRunClient {
       throw new RunRequestError(sent ? 'uncertain' : 'not-sent',undefined,cause instanceof AIFailureError && cause.failure.code === 'invalid-response' ? 'invalid-response' : 'connection-lost')
     } finally { if (answer) await discardBody(answer); scope.close() }
   }
-  async start(start: RunStart, signal?: AbortSignal): Promise<RunSnapshot> {
-    if (!object(start) || !exact(start,['admissionId','purpose','ownerId','revision','requestId']) || !text(start.admissionId,128) || start.purpose !== 'chat' || !ownerID(start.ownerId) || !digest(start.revision) || !text(start.requestId,128)) throw new RunRequestError('not-sent',undefined,'invalid-response')
-    const body: RunStart = {admissionId:start.admissionId,purpose:'chat',ownerId:start.ownerId,revision:start.revision,requestId:start.requestId}
-    return this.json(ROOT,{owner:{kind:'chat',id:body.ownerId,revision:body.revision},requestId:body.requestId},body,signal)
+  async start(start: RunStart, signal?: AbortSignal, target?: {connectionId:string;connectionRevision:string}): Promise<RunSnapshot> {
+    if (!object(start) || !exact(start,['admissionId','purpose','ownerId','revision','requestId']) || !text(start.admissionId,128) || !runOwner(start.purpose,start.ownerId) || !digest(start.revision) || !text(start.requestId,128) || start.purpose === 'brief' && (start.admissionId!==`brief-${start.requestId}` || !/^[a-f0-9]{32}$/.test(start.requestId) || !target || !text(target.connectionId,128) || !text(target.connectionRevision,128))) throw new RunRequestError('not-sent',undefined,'invalid-response')
+    const body: RunStart = {admissionId:start.admissionId,purpose:start.purpose,ownerId:start.ownerId,revision:start.revision,requestId:start.requestId}
+    const snapshot=await this.json(ROOT,{owner:{kind:body.purpose,id:body.ownerId,revision:body.revision},requestId:body.requestId},body,signal,target ? {'X-Assistant-Connection':target.connectionId,'X-Assistant-Revision':target.connectionRevision} : {})
+    if(snapshot.admissionId!==body.admissionId)throw new RunRequestError('uncertain',undefined,'invalid-response')
+    return snapshot
+  }
+  /** A model-free exact reservation lookup. A missing run never triggers start. */
+  async briefReference(subject:string,token:string,signal?:AbortSignal):Promise<{start:RunStart;run?:RunSnapshot}> {
+    if(!briefSubject(subject)||!text(token,128))throw new RunRequestError('not-sent',undefined,'invalid-request')
+    const value=await this.briefJSON('/api/assistant-briefs/reference',{subject,token},signal)
+    if(!object(value)||!exact(value,['start','run'])||!object(value.start)||!exact(value.start,['admissionId','purpose','ownerId','revision','requestId']))return invalid()
+    const start=value.start
+    if(start.purpose!=='brief'||start.ownerId!==subject||start.requestId!==token||start.admissionId!==`brief-${token}`||!digest(start.revision))return invalid()
+    const run=value.run===undefined?undefined:decodeSnapshot(value.run,{owner:{kind:'brief',id:subject,revision:start.revision},requestId:token})
+    if(run&&run.admissionId!==start.admissionId)return invalid()
+    return {start:start as unknown as RunStart,...(run?{run}:{})}
+  }
+  commitBrief(snapshot:RunSnapshot,signal?:AbortSignal):Promise<unknown> {
+    if(snapshot.owner.kind!=='brief'||snapshot.state!=='complete'||snapshot.historical)throw new RunRequestError('not-sent',undefined,'permission')
+    return this.briefJSON(`${ROOT}/${bind(snapshot).id}/brief`,{token:snapshot.requestId},signal)
+  }
+  briefReceipt(snapshot:RunSnapshot,signal?:AbortSignal):Promise<unknown> {
+    if(snapshot.owner.kind!=='brief'||snapshot.state!=='complete'||snapshot.historical)throw new RunRequestError('not-sent',undefined,'permission')
+    return this.briefJSON(`${ROOT}/${bind(snapshot).id}/brief`,undefined,signal)
+  }
+  private async briefJSON(path:string,body:Record<string,unknown>|undefined,signal?:AbortSignal):Promise<unknown> {
+    const scope=await this.scope(signal);let answer:Response|undefined
+    try {
+      answer=await deskFetch(path,{method:body?'POST':'GET',redirect:'error',signal:scope.signal,headers:body?{'Content-Type':'application/json'}:{},...(body?{body:JSON.stringify(body)}:{})})
+      await this.current(scope.signal)
+      if(!answer.ok){await discardBody(answer);throw new RunRequestError(answer.status>=400&&answer.status<500?'refused':'uncertain',answer.status,statusCode(answer.status))}
+      const value=await readJSON(answer,scope.signal);await this.current(scope.signal);return value
+    } catch(cause){if(cause instanceof RunRequestError)throw cause;throw new RunRequestError('uncertain',undefined,cause instanceof AIFailureError?'invalid-response':'connection-lost')}
+    finally{if(answer)await discardBody(answer);scope.close()}
   }
   read(ref: RunReference, signal?: AbortSignal): Promise<RunSnapshot> { const bound = bind(ref); return this.json(`${ROOT}/${bound.id}`,bound,undefined,signal) }
   action(snapshot: RunSnapshot, action: RunAction, signal?: AbortSignal): Promise<RunSnapshot> {
@@ -130,7 +161,7 @@ export class ServerRunClient {
 }
 function statusCode(status: number): FailureCode { return status === 409 ? 'stale-state' : status === 400 ? 'invalid-request' : status === 401 ? 'authentication' : status === 403 ? 'permission' : status === 429 ? 'rate-limited' : 'unavailable' }
 function validateReference(ref: RunReference): void {
-  if (!object(ref) || !object(ref.owner) || !runID(ref.id) || ref.owner.kind !== 'chat' || !ownerID(ref.owner.id) || !digest(ref.owner.revision) || !text(ref.requestId,128)) throw new RunRequestError('not-sent',undefined,'invalid-response')
+  if (!object(ref) || !object(ref.owner) || !runID(ref.id) || !runOwner(ref.owner.kind,ref.owner.id) || !digest(ref.owner.revision) || !text(ref.requestId,128)) throw new RunRequestError('not-sent',undefined,'invalid-response')
 }
 function bind(ref: RunReference): RunReference { validateReference(ref); return {id:ref.id,owner:{...ref.owner},requestId:ref.requestId} }
 async function readJSON(answer: Response, signal: AbortSignal): Promise<unknown> {

@@ -384,7 +384,11 @@ func validateAssistantRunBinding(b assistantRunBinding, project string) error {
 	if b.Project != project {
 		return errAssistantRunScope
 	}
-	if !contains([]string{"chat", "draft", "pane", "brief", "workflow"}, b.Owner.Kind) || !assistantRunText(b.Owner.ID, 200) || !assistantRunText(b.RequestID, 128) || !aiIDPattern.MatchString(b.ConnectionID) || !assistantRunText(b.Model, 128) || !contains([]string{"plan", "work"}, b.Phase) || !contains([]string{"model-requests", "provider-managed"}, b.Unit) || len(b.SourceDigests) > 256 {
+	ownerLimit := 200
+	if b.Owner.Kind == "brief" {
+		ownerLimit = 1024
+	} // Existing BriefCommand.Subject byte bound.
+	if !contains([]string{"chat", "draft", "pane", "brief", "workflow"}, b.Owner.Kind) || !assistantRunText(b.Owner.ID, ownerLimit) || !assistantRunText(b.RequestID, 128) || !aiIDPattern.MatchString(b.ConnectionID) || !assistantRunText(b.Model, 128) || !contains([]string{"plan", "work"}, b.Phase) || !contains([]string{"model-requests", "provider-managed"}, b.Unit) || len(b.SourceDigests) > 256 {
 		return errAssistantRunInvalid
 	}
 	for _, v := range b.SourceDigests {

@@ -25,7 +25,11 @@ type assistantModelDispatch struct {
 }
 
 func (d *assistantModelDispatch) dispatch(ctx context.Context) error {
-	if err := d.execution.recheckAssistantInput(ctx); err != nil {
+	recheck := d.execution.recheckAssistantInput
+	if d.execution.source.Start.Purpose == "brief" {
+		recheck = d.execution.recheckAssistantBriefInput
+	}
+	if err := recheck(ctx); err != nil {
 		return err
 	}
 	if err := d.prepare(ctx); err != nil {
