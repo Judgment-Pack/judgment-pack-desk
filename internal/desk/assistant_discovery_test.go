@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -62,6 +63,51 @@ func TestAssistantDiscoveryRefusesCallerPayload(t *testing.T) {
 	}
 	if len(u.arrivals()) != 0 {
 		t.Fatal("refused action reached endpoint")
+	}
+}
+
+// A client can finish its headers and never send a body byte or EOF. This
+// sentinel records that forbidden read without waiting for a network timeout.
+type discoveryUnreadBody struct{ reads int }
+
+func (b *discoveryUnreadBody) Read([]byte) (int, error) {
+	b.reads++
+	return 0, io.ErrUnexpectedEOF
+}
+func (*discoveryUnreadBody) Close() error { return nil }
+
+func TestAssistantDiscoveryRefusesBodyWithoutReading(t *testing.T) {
+	u := newUpstream(t, nil)
+	s, _, _ := relayDesk(t, "openai-compatible", u)
+	for _, tc := range []struct {
+		name     string
+		length   int64
+		transfer []string
+	}{
+		{"declared nonempty", 1, nil},
+		{"chunked", -1, []string{"chunked"}},
+		{"unknown length", -1, nil},
+		{"unframed body", 0, nil},
+		{"invalid negative length", -2, nil},
+		{"unknown transfer encoding", 0, []string{"unknown"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &discoveryUnreadBody{}
+			req := httptest.NewRequest(http.MethodPost, "/api/assistant/models", nil)
+			bearer(req)
+			req.Body, req.ContentLength, req.TransferEncoding = body, tc.length, tc.transfer
+			reply := httptest.NewRecorder()
+			s.handleAssistantModels(reply, req)
+			if body.reads != 0 {
+				t.Fatalf("body read %d times before refusal; a stalled input would block", body.reads)
+			}
+			if reply.Code != http.StatusBadRequest || reply.Header().Get(RefusalHeader) != string(CodeAssistantRelayPath) {
+				t.Fatalf("expected coded body refusal: %d %s", reply.Code, reply.Body.String())
+			}
+			if len(u.arrivals()) != 0 {
+				t.Fatal("refused body reached endpoint")
+			}
+		})
 	}
 }
 

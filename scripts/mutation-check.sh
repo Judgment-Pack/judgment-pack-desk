@@ -15724,8 +15724,12 @@ fi
 # Desk #649: closed metadata input and current saved connection revision.
 if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant discovery: caller body or query admitted' internal/desk/assistant_discovery.go \
-    'if err != nil || len(body) != 0 || (r.URL.RawQuery != "" || r.URL.ForceQuery) {' \
-    'if false && (err != nil || len(body) != 0 || (r.URL.RawQuery != "" || r.URL.ForceQuery)) {'
+    'if r.ContentLength != 0 || len(r.TransferEncoding) != 0 || (r.Body != nil && r.Body != http.NoBody) || (r.URL.RawQuery != "" || r.URL.ForceQuery) {' \
+    'if false && (r.ContentLength != 0 || len(r.TransferEncoding) != 0 || (r.Body != nil && r.Body != http.NoBody) || (r.URL.RawQuery != "" || r.URL.ForceQuery)) {'
+  mutate go 'assistant discovery: body read before bounded transport' internal/desk/assistant_discovery.go \
+    'if r.ContentLength != 0 || len(r.TransferEncoding) != 0' \
+    'if r.Body != nil { var first [1]byte; _, _ = r.Body.Read(first[:]) }
+	if r.ContentLength != 0 || len(r.TransferEncoding) != 0'
   mutate go 'assistant discovery: saved revision requirement omitted' internal/desk/assistant_discovery.go \
     'if connection != nil && r.Header.Get(aiRevisionHeader) == "" {' \
     'if false && connection != nil && r.Header.Get(aiRevisionHeader) == "" {'
