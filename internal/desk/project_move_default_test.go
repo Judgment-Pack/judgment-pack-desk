@@ -16,6 +16,7 @@ func TestDefaultProjectMoveReviewsWithoutCreatingAndKeepsHistory(t *testing.T) {
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
 	}
+	storageChat := savedConversationBytes(t, s, ts)
 	managed := createTestDesk(t, ts, "Research stays here")
 	code, raw := deskCall(t, ts, "GET", "/api/project-location", managed.ID, "", true)
 	var status projectLocation

@@ -192,6 +192,8 @@ describe('useAssistantSlot', () => {
       // asserting an absence — "none — no endpoint configured" — over a file
       // this desk had just said it could not read. One reading, three readers.
       'assistant/AssistantSection.tsx',
+      // Saved chats use the shared slot when binding their canonical run owner.
+      'assistant/serverRuns/useSavedChatRun.ts',
       // Research and draft renders an assistant of its own: the same slot,
       // read for the same reasons, and the same three states shown.
       'briefs/BriefPane.tsx',
