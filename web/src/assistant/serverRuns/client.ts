@@ -70,6 +70,19 @@ export class ServerRunClient {
     if(run&&run.admissionId!==start.admissionId)return invalid()
     return {start:start as unknown as RunStart,...(run?{run}:{})}
   }
+  /** Explicit closed authoring reservation. No capture/lookup can dispatch a model. */
+  async captureAuthoring(request: import('../useAuthoringRun').AuthoringRequest, target:{connectionId:string;connectionRevision:string}, signal?:AbortSignal):Promise<AuthoringReference> {
+    const value=await this.briefJSON('/api/assistant-authoring/captures',{...request},signal,{'X-Assistant-Connection':target.connectionId,'X-Assistant-Revision':target.connectionRevision})
+    return authoringReference(value,request.requestId,request.purpose)
+  }
+  async authoringReference(requestId:string,purpose:AuthoringPurpose,signal?:AbortSignal):Promise<AuthoringReference> {
+    if(!/^[A-Za-z0-9_-]{1,100}$/.test(requestId))throw new RunRequestError('not-sent',undefined,'invalid-request')
+    return authoringReference(await this.briefJSON(`/api/assistant-authoring/captures/${requestId}`,undefined,signal),requestId,purpose)
+  }
+  async cancelAuthoring(start:RunStart,signal?:AbortSignal):Promise<AuthoringReference> {
+    if(!authoringPurpose(start.purpose)||!runOwner(start.purpose,start.ownerId)||!digest(start.revision)||!/^[A-Za-z0-9_-]{1,100}$/.test(start.requestId))throw new RunRequestError('not-sent',undefined,'invalid-request')
+    return authoringReference(await this.briefJSON(`/api/assistant-authoring/captures/${start.requestId}/cancel`,{ownerId:start.ownerId,revision:start.revision},signal),start.requestId,start.purpose)
+  }
   commitBrief(snapshot:RunSnapshot,signal?:AbortSignal):Promise<unknown> {
     if(snapshot.owner.kind!=='brief'||snapshot.state!=='complete'||snapshot.historical)throw new RunRequestError('not-sent',undefined,'permission')
     return this.briefJSON(`${ROOT}/${bind(snapshot).id}/brief`,{token:snapshot.requestId},signal)
@@ -78,10 +91,10 @@ export class ServerRunClient {
     if(snapshot.owner.kind!=='brief'||snapshot.state!=='complete'||snapshot.historical)throw new RunRequestError('not-sent',undefined,'permission')
     return this.briefJSON(`${ROOT}/${bind(snapshot).id}/brief`,undefined,signal)
   }
-  private async briefJSON(path:string,body:Record<string,unknown>|undefined,signal?:AbortSignal):Promise<unknown> {
+  private async briefJSON(path:string,body:Record<string,unknown>|undefined,signal?:AbortSignal,headers:Record<string,string>={}):Promise<unknown> {
     const scope=await this.scope(signal);let answer:Response|undefined
     try {
-      answer=await deskFetch(path,{method:body?'POST':'GET',redirect:'error',signal:scope.signal,headers:body?{'Content-Type':'application/json'}:{},...(body?{body:JSON.stringify(body)}:{})})
+      answer=await deskFetch(path,{method:body?'POST':'GET',redirect:'error',signal:scope.signal,headers:{...headers,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})})
       await this.current(scope.signal)
       if(!answer.ok){await discardBody(answer);throw new RunRequestError(answer.status>=400&&answer.status<500?'refused':'uncertain',answer.status,statusCode(answer.status))}
       const value=await readJSON(answer,scope.signal);await this.current(scope.signal);return value
@@ -182,4 +195,16 @@ async function readJSON(answer: Response, signal: AbortSignal): Promise<unknown>
     }
     return parseRunJSON(raw + decoder.decode())
   } finally { signal.removeEventListener('abort',abort); try { await reader.cancel() } catch { /* Transport already ended. */ } reader.releaseLock() }
+}
+
+export type AuthoringPurpose='author-pack'|'describe-pack'|'author-graph'
+export interface AuthoringReference {readonly start:RunStart;readonly run?:RunSnapshot;readonly cancelled?:boolean}
+export function authoringPurpose(value:unknown):value is AuthoringPurpose{return value==='author-pack'||value==='describe-pack'||value==='author-graph'}
+function authoringReference(value:unknown,requestId:string,purpose:AuthoringPurpose):AuthoringReference {
+ if(!object(value)||!exact(value,['start','run','cancelled'])||!object(value.start)||!exact(value.start,['admissionId','purpose','ownerId','revision','requestId']))return invalid()
+ const start=value.start
+ if(start.purpose!==purpose||!authoringPurpose(start.purpose)||!runOwner(start.purpose,start.ownerId)||!digest(start.revision)||start.requestId!==requestId||typeof start.admissionId!=='string'||!/^author-admit-[a-f0-9]{32}$/.test(start.admissionId)||value.cancelled!==undefined&&typeof value.cancelled!=='boolean')return invalid()
+ const run=value.run===undefined?undefined:decodeSnapshot(value.run,{owner:{kind:purpose,id:String(start.ownerId),revision:start.revision},requestId})
+ if(run&&run.admissionId!==start.admissionId)return invalid()
+ return {start:start as unknown as RunStart,...(run?{run}:{}),...(value.cancelled===true?{cancelled:true}:{})}
 }

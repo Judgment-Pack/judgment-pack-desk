@@ -26,7 +26,7 @@ func (e *assistantRunExecution) assistantAgent() (*adapter.Agent, error) {
 	var chat *assistantChatInput
 	var err error
 	if e.source.Start.Purpose != "brief" {
-		chat, err = compileAssistantChatInput(e.source)
+		chat, err = compileAssistantExecutionInput(e.source)
 		if err != nil {
 			return nil, err
 		}

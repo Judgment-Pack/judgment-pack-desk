@@ -20,7 +20,7 @@ import (
 
 var assistantChatID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 
-type assistantChatInput struct {
+type assistantExecutionInput struct {
 	Policy          *assistantPolicyScope
 	Request         runcontext.CurrentRequest
 	Documents       []runcontext.Document
@@ -36,6 +36,8 @@ type assistantChatInput struct {
 	References      []assistantDocumentReference
 	Attachments     []assistantChatAttachmentGroup
 }
+
+type assistantChatInput = assistantExecutionInput
 
 type assistantChatAttachmentGroup struct {
 	Bytes      int
@@ -129,7 +131,7 @@ func (e *assistantRunExecution) holdAssistantDocuments(ctx context.Context, refs
 // generation, after their waits. Source resolution remains shape-only, so no
 // verification or recursive private lock is introduced inside its transaction.
 func (e *assistantRunExecution) recheckAssistantInput(ctx context.Context) error {
-	chat, err := e.prepareAssistantChatInput(ctx)
+	chat, err := e.prepareAssistantInput(ctx)
 	if err != nil {
 		e.cancel()
 		return err

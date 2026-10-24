@@ -17,17 +17,11 @@ import { msg, useLocale } from '../i18n'
  * button writes, exactly as it writes a template, and until it is pressed there
  * is no file. ADR-0001: the proposal is the only sink.
  *
- * **The run is the run hook's, never this section's.** `useAssistantRun` owns
- * the connection, the abort controller and the one terminal event, and this
- * section only starts and stops it. That matters most where the dialog closes
- * mid-run: the close path calls `discard()`, which stops the run *through the
- * hook* — one terminal event on the stream, one socket close — rather than
- * leaving an unmount to abort an engine iterator nobody is reading.
- *
- * **Nothing is persisted.** Closing the dialog ends the session and discards
- * the proposal; opening it again is a new one. There is no draft of a
- * conversation to restore, and a dialog that reopened one would be re-offering
- * a document nobody accepted.
+ * The host owns the captured request and canonical execution. This section
+ * projects retained events and sends explicit Propose/Stop actions. A user
+ * dismissal discards its local proposal and cancels pending work; route/unmount
+ * detaches the view. Reopening never automatically replays a request or offers
+ * a proposal whose local creation review was discarded.
  *
  * **It renders as a control only where there is an assistant to run.** No
  * endpoint, or no key on this machine, and it is one line saying where that is
@@ -47,12 +41,12 @@ import {
 } from '../assistant/ProposalReport'
 import { ModelPicker } from '../assistant/ModelPicker'
 import { usePickedModel, type PickedModel } from '../assistant/pickedModel'
-import { useAssistantRun } from '../assistant/useAssistantRun'
+import { useAuthoringRun } from '../assistant/useAuthoringRun'
 import { whenSessionEnds } from '../mcp/session'
 import { outcomeOf, type ProposalEvent } from '../assistant/runOutcome'
 import { CHECKING_KEY, UNREAD_KEY, useAssistantSlot } from '../assistant/useAssistantSlot'
 import { useFileListing } from '../files/queries'
-import { AUTHOR_PACK_PROMPT, TEST_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
+import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { Button } from '../ui/Button'
 import { CodeArea } from '../ui/CodeArea'
 import { TextArea } from '../ui/TextArea'
@@ -158,7 +152,7 @@ export interface DescribeItState {
   propose: () => void
   stop: () => void
   /** Stop the run **and** drop everything it produced. The close path. */
-  discard: () => void
+  discard: (cancel?: boolean) => void
 }
 
 /** One list, allocated once, so an unconfigured desk re-renders to one value. */
@@ -196,7 +190,7 @@ export function useDescribeIt(): DescribeItState {
   /**
    * The submission whose run the hook is carrying events for.
    *
-   * **State, not a ref, because the rendering depends on it.** `useAssistantRun`
+   * **State, not a ref, because the rendering depends on it.** `useAuthoringRun`
    * clears its event list when a run *starts*, which is one effect after the
    * submission that asked for it — so between pressing Propose and the engine
    * beginning, `run.events` still holds the *previous* run's proposal. A
@@ -234,32 +228,9 @@ export function useDescribeIt(): DescribeItState {
     submitted !== null && submitted.id !== stoppedId && advertised,
     submitted?.args
   )
-  // The runtime's testing prompt, for the refutation pass, and only where a
-  // critic will run. Same reading as the Assistant tab's, for the same reason.
-  const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
-  const testPrompt = usePromptText(TEST_PACK_PROMPT, slot.thinking !== 'off' && advertisesTest)
-  /**
-   * Both prompts, or neither. See the Assistant tab's `waitingForTest`.
-   *
-   * A read that **failed** is a settled read: `data` alone stays undefined for
-   * ever on the error state, so a `prompts/get` the runtime refused left this
-   * section saying "running" with nothing running at all.
-   */
-  const waitingForTest =
-    slot.thinking !== 'off' &&
-    advertisesTest &&
-    testPrompt.data === undefined &&
-    testPrompt.error === null
-  const run = useAssistantRun({ target: slot,
-    // Only ever started where the endpoint exists; the fallback keeps the hook
-    // unconditional, which is the rule React enforces.
-    endpoint: slot.endpoint,
-    agent: slot.agent,
-    model: picked.model,
-    engine: slot.engine,
-    thinking: slot.thinking,
-    testPrompt: testPrompt.data?.text ?? ''
-  })
+  // Critic guidance/cases are read independently by the host.
+  const run = useAuthoringRun({ target: slot, model: picked.model, engine: slot.engine,
+    thinking: slot.thinking, ...(slot.agent?.model === picked.model && slot.agent.effort ? {effort:slot.agent.effort} : {}) })
 
   // The run starts once the prompt this submission asked for has arrived, and
   // once per submission: the query answers again on a refetch, and a second
@@ -268,15 +239,14 @@ export function useDescribeIt(): DescribeItState {
   const startRun = run.start
   useEffect(() => {
     if (submitted === null || prompt.data === undefined) return
-    if (waitingForTest) return
     if (submitted.id === stoppedId) return
     if (started.current === submitted.id) return
     started.current = submitted.id
     setRanId(submitted.id)
     // **No draft.** There is no document yet — that is what this section is
     // for — so what comes back is a whole document rather than an edit.
-    startRun(prompt.data.text)
-  }, [submitted, stoppedId, prompt.data, waitingForTest, startRun])
+    startRun({purpose:'describe-pack',prompt:AUTHOR_PACK_PROMPT,arguments:submitted.args})
+  }, [submitted, stoppedId, prompt.data, startRun])
 
   const stopRun = run.stop
   /**
@@ -300,14 +270,14 @@ export function useDescribeIt(): DescribeItState {
    */
   const discardNow = useRef<() => void>(() => {})
 
-  const discard = useCallback(() => {
+  const discard = useCallback((cancel = true) => {
     setLost('')
     setSubmitted(null)
     setRanId(null)
     setStoppedId(null)
     setTyped('')
     setDiscarded(true)
-    stopRun()
+    if (cancel) stopRun()
   }, [stopRun])
   discardNow.current = discard
 

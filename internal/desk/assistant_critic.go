@@ -113,6 +113,9 @@ func (e *assistantRunExecution) readAssistantCriticSnapshot(ctx context.Context)
 // owned is true only when the caller already holds the private-data lock and
 // has resolved the complete current assistant source under that same lock.
 func (e *assistantRunExecution) readAssistantCriticSnapshotOwned(ctx context.Context, owned bool) (*assistantCriticSnapshot, error) {
+	if assistantAuthoringPurpose(e.source.Start.Purpose) {
+		return e.readAssistantAuthoringCriticSnapshot(ctx, owned)
+	}
 	chat, err := assistantChatValue(e.source.Original)
 	if err != nil {
 		return nil, err

@@ -70,7 +70,7 @@ export function PackAssistant({ packId, title = packId, path, digest, draft, edi
   const eligible = editing && session.editing && unchanged && !busy() && session.pending.size === 0 && state?.status !== 'running' && proposed !== undefined
   // Standalone embeddings retain the existing assistant. The application
   // provides the project store above all routes.
-  if (!store) return <AssistantPane draft={draft} editing={editing} identity={identity} busy={busy} diagnostics={diagnostics} criticCases={savedTestCases(tests.suite)} />
+  if (!store) return <AssistantPane path={path} draft={draft} editing={editing} identity={identity} busy={busy} diagnostics={diagnostics} criticCases={savedTestCases(tests.suite)} />
   if (!chat) return <ChatPlaceholder loading={!ready} error={!!error}>{!store.canCreate ? msg("Chat history is full. Export and delete an older chat from Chat history.") : msg("Open Assistant to start a conversation about this pack.")}</ChatPlaceholder>
   const actions = proposed === undefined || !candidate ? undefined : <PackProposalCard candidate={candidate} packId={packId} path={path} savedText={savedFile.data?.content ?? (!editing ? draft : baseline?.bytes)} comparisonText={draft} busy={state?.status==='running' || Boolean(busy()) || Boolean(store.running)} onCheck={()=>store.perform(chat.id, active=>active.run?.recheck(),false)}
     onCorrect={()=>store.perform(chat.id,active=>active.run?.send(msg('Correct the proposed pack update using the current policy and saved test findings. Keep saved cases unchanged; ask me if an expectation conflicts with policy.')))}

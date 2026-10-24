@@ -10837,21 +10837,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # below breaks one of them.
 
 
-  # **Both prompts, or neither.** Starting on the author prompt alone handed the
-  # engine an empty `testPrompt`, and the critic then ran on this desk's one
-  # sentence with none of the runtime's instructions.
-  # **A read that failed is a settled read.** `data` alone stays undefined for
-  # ever on the error state, so a `prompts/get` the runtime refused deadlocked
-  # the whole session: the authoring prompt had arrived, no engine started, and
-  # the tab said nothing about why.
-  mutate web "a refused testing prompt is waited for for ever" "$AP" \
-    '    testPrompt.data === undefined &&
-    testPrompt.error === null' \
-    '    testPrompt.data === undefined'
-
-  mutate web "the run starts before the runtime's testing prompt arrives" "$AP" \
-    '    if (waitingForTest) return' \
-    '    void waitingForTest'
+  # Testing guidance is now a canonical host admission barrier. Its refusal
+  # and pending-response mutations live with the Go authoring rows below.
 
   # The critic runs under the **run's** gate, not on the session capability
   # directly: a viewer who presses Stop during the pass must end it where they
@@ -10932,7 +10919,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # to the pane on the run's event list; unfrozen, anything holding the event
   # can reach into it between the memoised diff and the accept, and the writer
   # then writes a document nobody was shown.
-  mutate web "the ingested proposal is left mutable" "$AR" \
+  mutate web "the ingested proposal is left mutable" web/src/assistant/proposalValue.ts \
     '  return Object.freeze(value)' \
     '  return value'
   # **One canonicalization, and the guard that keeps it one.** A second round
@@ -11017,11 +11004,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     return { enabled: false, why: '"'"''"'"' }
   }'
 
-  # The draft in the first message is what makes the proposal an edit of this
-  # document rather than a document about nothing.
+  # The first canonical capture carries exact current draft bytes as request
+  # data; the server independently reads any authoritative saved basis.
   mutate web "the draft is left out of the first message" "$AP" \
-    '    startRun(withDraft(prompt.data.text, draftNow.current))' \
-    '    startRun(prompt.data.text)'
+    '      ...(draftNow.current===undefined?{}:{draft:draftNow.current}),' \
+    '      ...{},'
 
   # **One canonicalization, where the event arrives.** An engine may put a live
   # object on `document`, and three readings of one getter are three documents:
@@ -11073,7 +11060,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # this row makes the canonical event carry the live one instead — so the
   # document the dialog displayed and the document Create writes are two
   # readings of one getter.
-  mutate web "the proposal is written from event.document, not the snapshot" "$AR" \
+  mutate web "the proposal is written from event.document, not the snapshot" web/src/assistant/proposalValue.ts \
     "    type: 'proposal',
     document," \
     "    type: 'proposal',
@@ -11122,13 +11109,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     ' : false
         ? msg(UNREAD_CONFIGURATION)'
 
-  # Closing the dialog ends the session, and it has to end it **through the run
-  # hook**: an unmount alone aborts the iterator and closes the socket without
-  # ever writing the run's terminal event, so the next session cannot start and
-  # the contract's one `end` is nowhere.
+  # Explicit dismissal asks the hook to cancel exact captured work. Route
+  # detach/completed creation passes false and must retain the host run.
   mutate web "the run is left open when the dialog closes" "$X" \
-    "    if (!next && presentation !== 'page') describe.discard()" \
-    '    void next'
+    "    if (!next && presentation !== 'page') describe.discard(!completed)" \
+    "    if (!next && presentation !== 'page') describe.discard(false)"
 
   # **The desk owns four members, and `specVersion` is not one of them.** It was
   # for one round: the version a model wrote was replaced from the schema, so
@@ -14636,9 +14621,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'harness swap: the Go state header drifts from the package'"'"'s' internal/desk/ai_context.go \
     'const executionStateHeader = "EXECUTION STATE (from the host,' \
     'const executionStateHeader = "EXECUTION STATE (from the desk,'
-  mutate web 'harness swap: the pack pane offers no propose_pack' web/src/assistant/AssistantPane.tsx \
-    '    hostTools: PANE_HOST_TOOLS,' \
-    '    hostTools: [],'
+  # The canonical authoring host now owns the pack proposal offer; its Go
+  # mutation lives with the migrated standalone safeguards below.
   mutate web 'harness swap: renderImageToText left unwired' web/src/assistant/harnessHost.ts \
     '  renderImageToText: () => capabilities.renderImageToText(),
 ' \
@@ -15718,6 +15702,22 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '      if (body && sent && !(cause instanceof RunRequestError)) { try { await discardBody(await deskFetch(path,{method:"POST",redirect:"error",signal:scope.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})) } catch {} }
       if (cause instanceof RunRequestError) throw cause
       throw new RunRequestError'
+fi
+
+# Standalone authoring's testing guidance and tool offer moved from browser
+# engine inputs to the canonical host. Keep the original safeguard row names.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go "a refused testing prompt is waited for for ever" internal/desk/assistant_critic.go \
+    '	return text, err' \
+    '	if err != nil { <-ctx.Done() }
+	return text, err'
+  mutate go "the run starts before the runtime's testing prompt arrives" internal/desk/assistant_execution.go \
+    '		run.TestPrompt, err = runtime.criticPrompt(ctx)' \
+    '		run.TestPrompt, err = "", nil'
+  mutate go 'harness swap: the pack pane offers no propose_pack' internal/desk/assistant_authoring_execution.go \
+    '	return newAssistantHostRegistry(tools)' \
+    '	if e.source.Start.Purpose != "author-graph" { tools = nil }
+	return newAssistantHostRegistry(tools)'
 fi
 
 restore

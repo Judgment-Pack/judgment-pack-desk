@@ -26,6 +26,7 @@ import type { ResearchHandover } from '../routes/ResearchAuthoringPage'
 import { defaultFolders, HOME_FOLDER } from '../packs/folders/model'
 import * as folderClient from '../packs/folders/client'
 import { proposedExpectation } from '../research/__fixtures__/expectationReview'
+import * as describeIt from './DescribeIt'
 
 afterEach(() => {
   cleanup()
@@ -314,6 +315,19 @@ function renderDialog(
 }
 
 const createButton = () => screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
+
+it('explicit dialog dismissal asks the authoring hook to cancel, while route detach stays separate', async () => {
+  const original = describeIt.useDescribeIt
+  const discarded = vi.fn()
+  vi.spyOn(describeIt, 'useDescribeIt').mockImplementation(() => {
+    const state = original()
+    return {...state, discard: (cancel = true) => { discarded(cancel); state.discard(cancel) }}
+  })
+  const {closed} = renderDialog()
+  fireEvent.click(screen.getByRole('button', {name: 'Cancel', exact: true}))
+  await waitFor(() => expect(discarded).toHaveBeenCalledExactlyOnceWith(true))
+  expect(closed).toEqual([false])
+})
 
 /** Type a name and wait until the dialog is willing to act on it. */
 async function nameIt(name: string) {

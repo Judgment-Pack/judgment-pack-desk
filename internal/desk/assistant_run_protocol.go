@@ -99,6 +99,9 @@ func assistantRunIdentityMatches(a, b assistantRunBinding) bool {
 
 // Closed registry: other journal owners require a concrete resolver and tests.
 func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, identity assistantRunBinding, project string) (assistantRunSource, error) {
+	if assistantAuthoringPurpose(start.Purpose) {
+		return s.resolveAssistantAuthoringRun(r, start, identity, project)
+	}
 	if start.Purpose == "brief" {
 		return s.resolveAssistantBriefRun(r, start, identity, project)
 	}

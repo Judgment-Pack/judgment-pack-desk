@@ -652,21 +652,11 @@ export function CreatePackDialog({
     for (const key of keys) void queryClient.invalidateQueries({ queryKey: key })
   }
 
-  /**
-   * **Every way this dialog closes goes through here**, and closing ends the
-   * session the Describe section was running.
-   *
-   * The rail unmounts this component when it closes, so an effect on `open`
-   * would never run: the stop has to happen on the way out rather than after
-   * it. It goes through the run hook — which writes the run's one terminal
-   * event and closes its one connection — rather than leaving the unmount to
-   * abort an iterator nobody is reading. The proposal goes with it: nothing
-   * about a session is persisted, and a dialog that reopened one would be
-   * re-offering a document nobody accepted.
-   */
+  // Explicit dismissal cancels pending standalone work. A completed creation or
+  // navigation discards only local review state; unmount detaches its host view.
   const close = async (next: boolean, completed = false) => {
     if (!next && !completed && presentation !== 'page' && creationDirty && !await confirmDiscard(msg('Discard unsaved pack changes?'), {name,busy})) return
-    if (!next && presentation !== 'page') describe.discard()
+    if (!next && presentation !== 'page') describe.discard(!completed)
     onOpenChange(next)
   }
 
@@ -932,29 +922,8 @@ export function CreatePackDialog({
     }
   }
 
-  /**
-   * **A route change closes this dialog**, and closing it ends the session.
-   *
-   * This dialog is mounted by the rail, which sits above the route's own
-   * `<Routes>`: a browser Back, a Forward, or any programmatic navigation
-   * changes the page underneath without unmounting the dialog or telling it
-   * anything. A run would go on running over a page it has nothing to do with,
-   * with no terminal event and no connection close, because only a Radix
-   * dismissal and a successful Create ever reached `close`.
-   *
-   * A navigation is a dismissal like Escape, so it takes the same path. The one
-   * exception is the one the dismissal handler already makes: while the create
-   * sequence is running this dialog is the only place its outcome is reported,
-   * and it stays to report it.
-   *
-   * **The page is the pathname and the search, and a fragment is not either.**
-   * The obvious key is `location.key`, and it moves for a hash-only history
-   * entry too — which this desk defines as *not* a navigation, in as many words
-   * (`MemberOutline`: selecting a member writes a hash and stays on the page).
-   * Keyed on that, choosing a member in the document behind an open dialog
-   * would have closed it, stopped the run and discarded the proposal, over a
-   * page that had not changed.
-   */
+  // A route change closes the rail dialog and discards local review state,
+  // while retained host execution stays detached. Hash changes stay on this page.
   const closeNow = useRef(close)
   closeNow.current = close
   const page = `${location.pathname}${location.search}`

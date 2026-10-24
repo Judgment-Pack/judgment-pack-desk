@@ -11,13 +11,13 @@ import { readFile } from '../files/client'
 import { useFileContent } from '../files/queries'
 import { assistantReady, useAssistantSlot } from '../assistant/useAssistantSlot'
 import { selectedAssistant } from '../assistant/target'
-import { useAssistantRun } from '../assistant/useAssistantRun'
+import { useAuthoringRun } from '../assistant/useAuthoringRun'
 import { ProposalDiffView } from '../assistant/ProposalDiffView'
 import { diffProposal } from '../assistant/proposalDiff'
 import { Button } from '../ui/Button'
 import { GraphLabels } from './GraphLabels'
 import { shownMessage } from './client'
-import { graphHostTools, graphPost, type GraphOffer } from './author'
+import { graphPost, type GraphOffer } from './author'
 
 /** Model events only fill a proposal. Preview and confirmation are owner actions. */
 export function GraphAuthor({ graphId }: { graphId?: string }) {
@@ -40,8 +40,7 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
   const { client } = useMcp()
   const queries = useQueryClient()
   const config = useFileContent('jpack.json')
-  const hostTools = useMemo(graphHostTools, [])
-  const run = useAssistantRun({ target: slot, endpoint: slot.endpoint, agent: slot.agent, model: selected?.model ?? '', engine: slot.engine, thinking: slot.thinking, purpose: 'graph', hostTools })
+  const run = useAuthoringRun({ target: slot, model: selected?.model ?? '', engine: slot.engine, thinking: slot.thinking, ...(slot.agent?.model === selected?.model && slot.agent?.effort ? {effort:slot.agent.effort} : {}) })
   const [open, setOpen] = useState(false)
   const [chosen, setChosen] = useState<string[]>([])
   const [relationship, setRelationship] = useState('')
@@ -56,6 +55,8 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
+  const [preparing,setPreparing]=useState(false)
+  const preparation=useRef<AbortController | undefined>(undefined)
   const lifetime = useRef(new AbortController())
   useEffect(() => { const controller = new AbortController(); lifetime.current = controller; return () => controller.abort() }, [])
   const declared = useMemo(() => {
@@ -80,21 +81,24 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
   }
   async function start() {
     setOffer(null); setContent(''); setBase(''); setOriginal('')
-    const signal = lifetime.current.signal
+    const controller=new AbortController();preparation.current=controller;setPreparing(true)
+    const signal = AbortSignal.any([lifetime.current.signal,controller.signal])
+    try {
     const packs = await Promise.all(chosen.map(name => readFile(declared.packs![name]!.path, signal)))
-    let draft = ''
+    let graphDigest: string | undefined
     if (graphId) {
       const entry = declared.graphs?.[graphId]
       if (!entry) throw new Error(msg('The configured graph could not be read.'))
       const file = await readFile(entry.path, signal)
       setPath(entry.path); setBase(file.sha256); setOriginal(file.content)
-      draft = '\n\nCurrent graph document to revise:\n```json\n' + file.content + '\n```'
+      graphDigest = file.sha256
     }
     const answer = await client!.getPrompt({ name: AUTHOR_GRAPH_PROMPT, arguments: { relationship, packs: '[' + packs.map(pack => pack.content).join(',') + ']' } })
     signal.throwIfAborted()
     const text = answer.messages.map(message => message.content.type === 'text' ? message.content.text : '').join('\n\n')
     setPromptText(text)
-    run.start(text + draft)
+    run.start({purpose:'author-graph',prompt:AUTHOR_GRAPH_PROMPT,arguments:{relationship},packs:[...chosen],...(graphId?{graphId,graphDigest}:{})})
+    } finally {if(preparation.current===controller){preparation.current=undefined;setPreparing(false)}}
   }
   return <section aria-label={msg('Author graph')}>
     <Button onClick={() => setOpen(!open)}>{msg('Author graph')}</Button>
@@ -106,8 +110,8 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
         <label>{msg('Relationship')}<textarea rows={4} value={relationship} onChange={event => setRelationship(event.target.value)} /></label>
         <Button disabled={!chosen.length || !relationship.trim() || !client} onClick={() => void act(start)}>{msg('Propose graph')}</Button>
       </fieldset>
-      {run.status === 'running' && <Button onClick={run.stop}>{msg('Stop')}</Button>}
-      {promptText && <details><summary>{msg('Runtime author_graph prompt and rows guidance')}</summary><pre lang="en">{shownMessage(promptText)}</pre></details>}
+      {(preparing || run.status === 'running') && <Button onClick={()=>{preparation.current?.abort();run.stop()}}>{msg('Stop')}</Button>}
+      {promptText && <details><summary>{msg('Runtime author_graph guidance preview')}</summary><pre lang="en">{shownMessage(promptText)}</pre></details>}
       {run.events.filter(event => event.type === 'message').map((event, index) => event.type === 'message' && <p key={index}>{shownMessage(event.text)}</p>)}
       {proposal?.type === 'proposal' && proposal.unknowns.map((unknown, index) => <p key={index}>{shownMessage(unknown)}</p>)}
       {content && <fieldset disabled={working} onChange={() => setOffer(null)}>

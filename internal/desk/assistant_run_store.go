@@ -98,9 +98,10 @@ type assistantRunRecord struct {
 	Actions         []assistantRunActionReceipt `json:"actions,omitempty"`
 }
 type assistantRunLedger struct {
-	Version int                  `json:"version"`
-	Project string               `json:"project"`
-	Runs    []assistantRunRecord `json:"runs"`
+	AuthoringCaptures []assistantAuthoringCapture `json:"authoringCaptures,omitempty"`
+	Version           int                         `json:"version"`
+	Project           string                      `json:"project"`
+	Runs              []assistantRunRecord        `json:"runs"`
 }
 
 type assistantRunStore struct {
@@ -249,7 +250,7 @@ func (l *assistantRunLease) Admit(ctx context.Context, binding assistantRunBindi
 				return false, errAssistantRunConflict
 			}
 		}
-		if len(ledger.Runs) >= assistantRunCountLimit {
+		if len(ledger.Runs)+len(ledger.AuthoringCaptures) >= assistantRunCountLimit {
 			return false, withCode(CodeTooLarge, errors.New("Assistant run retention is full."))
 		}
 		if err := freshCAS(); err != nil {
@@ -388,7 +389,7 @@ func validateAssistantRunBinding(b assistantRunBinding, project string) error {
 	if b.Owner.Kind == "brief" {
 		ownerLimit = 1024
 	} // Existing BriefCommand.Subject byte bound.
-	if !contains([]string{"chat", "draft", "pane", "brief", "workflow"}, b.Owner.Kind) || !assistantRunText(b.Owner.ID, ownerLimit) || !assistantRunText(b.RequestID, 128) || !aiIDPattern.MatchString(b.ConnectionID) || !assistantRunText(b.Model, 128) || !contains([]string{"plan", "work"}, b.Phase) || !contains([]string{"model-requests", "provider-managed"}, b.Unit) || len(b.SourceDigests) > 256 {
+	if !contains([]string{"chat", "draft", "pane", "brief", "workflow", "author-pack", "describe-pack", "author-graph"}, b.Owner.Kind) || !assistantRunText(b.Owner.ID, ownerLimit) || !assistantRunText(b.RequestID, 128) || !aiIDPattern.MatchString(b.ConnectionID) || !assistantRunText(b.Model, 128) || !contains([]string{"plan", "work"}, b.Phase) || !contains([]string{"model-requests", "provider-managed"}, b.Unit) || len(b.SourceDigests) > 256 {
 		return errAssistantRunInvalid
 	}
 	for _, v := range b.SourceDigests {
@@ -452,6 +453,9 @@ func assistantRunEventBytes(event contract.RunEvent) ([]byte, error) {
 func validateAssistantRunLedger(ledger assistantRunLedger, project string) error {
 	if ledger.Version != 1 || ledger.Project != project || len(ledger.Runs) > assistantRunCountLimit {
 		return errAssistantRunInvalid
+	}
+	if err := validateAssistantAuthoringCaptures(ledger); err != nil {
+		return err
 	}
 	ids := map[string]bool{}
 	active := map[string]bool{}

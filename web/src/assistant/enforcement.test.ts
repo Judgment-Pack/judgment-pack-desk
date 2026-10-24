@@ -910,11 +910,11 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
       (source) =>
         !source.path.includes('.test.') &&
         !source.path.includes('/certification/') &&
-        source.path !== 'assistant/useAssistantRun.ts'
+        source.path !== 'assistant/proposalValue.ts'
     )
 
-  it('round-trips and freezes proposals only in the run hook', () => {
-    const hook = read('assistant/useAssistantRun.ts')
+  it('round-trips and freezes proposals only in the shared ingestion boundary', () => {
+    const hook = read('assistant/proposalValue.ts')
     expect(hook).toContain('JSON.stringify(value)')
     expect(hook).toContain('JSON.parse(text)')
     expect(hook).toContain('Object.freeze(value)')
