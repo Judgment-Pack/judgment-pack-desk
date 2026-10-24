@@ -783,6 +783,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("PUT /api/assistant/key", s.handleAssistantKeyWrite)
 	s.mux.HandleFunc("DELETE /api/assistant/key", s.handleAssistantKeyDelete)
 	s.mux.HandleFunc("POST /api/assistant/probe", s.handleAssistantProbe)
+	s.mux.HandleFunc("POST /api/assistant/models", s.handleAssistantModels)
 	// The model relay: the one route that carries traffic this chassis does
 	// not read. It exists because the page runs the assistant's loop and the
 	// key must never reach the page, so the request that presents it has to be
