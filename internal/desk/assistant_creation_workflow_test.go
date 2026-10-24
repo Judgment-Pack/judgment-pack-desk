@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -100,13 +101,13 @@ func TestAssistantCreationCorrectionExactBinding(t *testing.T) {
 }
 
 func TestAssistantCreationCorrectionRetestBeforeCommit(t *testing.T) {
-	for _, mode := range []string{"complete", "interrupted", "failed", "short-suite", "changed-candidate", "cas"} {
+	for _, mode := range []string{"complete", "interrupted", "failed", "short-suite", "changed-candidate", "mismatch", "cas"} {
 		t.Run(mode, func(t *testing.T) {
 			scope, issue, _ := creationFixture(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			commits, tested := 0, false
-			err := approveAssistantCreationCorrection(ctx, scope, issue, issue.Proposal.Token, nil, creationValidation, func(context.Context) error { return nil }, func(ctx context.Context, rows []assistantCreationCase) (assistantPackCheck, error) {
+			err := approveAssistantCreationCorrection(ctx, scope, issue, issue.Proposal.Token, nil, nil, creationValidation, func(context.Context) error { return nil }, func(ctx context.Context, rows []assistantCreationCase) (assistantPackCheck, error) {
 				tested = true
 				if len(rows) != 1 || string(rows[0].Facts) != string(issue.Original.Facts) || string(rows[0].ExpectedHandoffTarget) != "null" {
 					t.Fatal("retest changed original facts or target")
@@ -118,6 +119,9 @@ func TestAssistantCreationCorrectionRetestBeforeCommit(t *testing.T) {
 					return assistantPackCheck{}, errors.New("transport uncertainty")
 				}
 				check := creationCheck(scope, issue.ID)
+				if mode == "mismatch" {
+					check.Report = assistantChatJSON(map[string]any{"status": "mismatch", "summary": map[string]int{"total": 1, "passed": 0}, "packs": []any{map[string]any{"rows": []any{map[string]any{"id": issue.ID, "status": "mismatch", "expected": creationDisposition, "actual": "{}"}}}}})
+				}
 				if mode == "short-suite" {
 					check.TotalCases = 0
 				}
@@ -148,5 +152,66 @@ func TestAssistantCreationExpectationReportIsComplete(t *testing.T) {
 		if err == nil {
 			t.Fatal("incomplete expectation report admitted", results)
 		}
+	}
+}
+
+func TestAssistantCreationCorrectionOriginalPositions(t *testing.T) {
+	_, issue, _ := creationFixture(t)
+	first, last := 0, 2
+	left := issue
+	left.Position = &first
+	left.ID, left.Original.ID = "first", "first"
+	right := issue
+	right.Position = &last
+	right.ID, right.Original.ID = "last", "last"
+	middle := issue.Original
+	middle.ID = "middle"
+	for _, order := range [][]assistantCreationIssue{{left, right}, {right, left}} {
+		cases, issues := []assistantCreationCase{middle}, []assistantCreationIssue{left, right}
+		for _, next := range order {
+			var err error
+			cases, err = assistantCreationStage(cases, issues, next, next.Original)
+			assistantRunMust(t, err)
+			remaining := []assistantCreationIssue{}
+			for _, row := range issues {
+				if row.ID != next.ID {
+					remaining = append(remaining, row)
+				}
+			}
+			issues = remaining
+		}
+		if len(cases) != 3 || cases[0].ID != "first" || cases[1].ID != "middle" || cases[2].ID != "last" {
+			t.Fatal("independent sequence changed", cases)
+		}
+	}
+}
+
+func TestAssistantCreationPositionVectors(t *testing.T) {
+	raw, err := os.ReadFile("testdata/assistant-creation-positions.json")
+	assistantRunMust(t, err)
+	var vectors []struct {
+		Name     string `json:"name"`
+		Position string `json:"positionJSON"`
+		Valid    bool   `json:"valid"`
+	}
+	assistantRunMust(t, json.Unmarshal(raw, &vectors))
+	for _, v := range vectors {
+		t.Run(v.Name, func(t *testing.T) {
+			_, issue, _ := creationFixture(t)
+			other := issue.Original
+			other.ID = "other"
+			row := map[string]any{"id": issue.ID, "original": issue.Original, "message": issue.Finding.Message, "finding": issue.Finding}
+			if v.Position != "" {
+				row["position"] = json.RawMessage(v.Position)
+			}
+			input := &assistantCreationInput{State: map[string]json.RawMessage{"cases": assistantChatJSON([]assistantCreationCase{other}), "expectationIssues": assistantChatJSON([]any{row})}, Grounds: map[string]json.RawMessage{"message:user": []byte(`"Independent statement"`)}}
+			_, issues, err := assistantCreationCasesAndIssues(input)
+			if (err == nil) != v.Valid {
+				t.Fatal("position custody acceptance differs", err)
+			}
+			if v.Valid && v.Position != "" && (issues[0].Position == nil || string(assistantChatJSON(*issues[0].Position)) != string(v.Position)) {
+				t.Fatal("original position was dropped")
+			}
+		})
 	}
 }

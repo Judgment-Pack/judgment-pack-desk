@@ -102,7 +102,7 @@ func validateAssistantCreationTransition(run assistantRunRecord, input *assistan
 			}
 			for i, issue := range issues {
 				finding := findings[len(before)+i]
-				if finding.Status != "invalid" || !same(r.Issues[i].Original, issue.Original) || !same(r.Issues[i].Finding, finding) {
+				if finding.Status != "invalid" || !same(r.Issues[i].Position, issue.Position) || !same(r.Issues[i].Original, issue.Original) || !same(r.Issues[i].Finding, finding) {
 					return errAssistantRunScope
 				}
 			}
@@ -146,7 +146,13 @@ func validateAssistantCreationTransition(run assistantRunRecord, input *assistan
 		expectedIssues := []assistantCreationIssue{}
 		for i, row := range proposed {
 			if findings[i].Status == "invalid" {
-				expectedIssues = append(expectedIssues, assistantCreationIssue{ID: row.ID, Original: row, Finding: findings[i]})
+				// Earlier retained receipts predate explicit position custody.
+				// Validate a supplied slot exactly; omission remains legacy data.
+				position := &i
+				if len(expectedIssues) < len(r.Issues) && r.Issues[len(expectedIssues)].Position == nil {
+					position = nil
+				}
+				expectedIssues = append(expectedIssues, assistantCreationIssue{Position: position, ID: row.ID, Original: row, Finding: findings[i]})
 			} else {
 				row.ExpectedDisposition = []byte(findings[i].Canonical)
 				cases = append(cases, row)
@@ -202,7 +208,7 @@ func validateAssistantCreationTransition(run assistantRunRecord, input *assistan
 			}
 			return nil
 		}
-		if r.Approved == nil || r.Proposal != nil || r.Check == nil || len(r.Held) != 0 {
+		if r.Approved == nil || r.Proposal != nil || r.Check == nil || len(r.Held) != 0 || !assistantCreationSuccessfulCheck(*r.Check, input.Scope.CandidateDigest, r.Cases) {
 			return errAssistantRunScope
 		}
 		var issue *assistantCreationIssue
@@ -226,7 +232,8 @@ func validateAssistantCreationTransition(run assistantRunRecord, input *assistan
 		if err != nil || findings[0].Status != "valid" {
 			return errAssistantRunScope
 		}
-		if !same(append(before, replacement), r.Cases) || !same(remaining, r.Issues) {
+		staged, err := assistantCreationStage(before, issues, *issue, replacement)
+		if err != nil || !same(staged, r.Cases) || !same(remaining, r.Issues) {
 			return errAssistantRunScope
 		}
 	default:

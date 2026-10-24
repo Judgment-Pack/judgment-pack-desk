@@ -145,8 +145,8 @@ func TestPortablePageBindingActualCompanionReviewAndRegistration(t *testing.T) {
 	if err != nil || selected.EndpointScope != nil {
 		t.Fatal("legacy profile inherited installation scope", err, selected.EndpointScope)
 	}
-	if err := admitPortablePage(selected, json.RawMessage(`{"url":"https://legacy.example/redirect?query=%2F"}`)); err != nil {
-		t.Fatal("legacy query/redirect request narrowed", err)
+	if err := admitPortablePage(selected, json.RawMessage(`{"url":"https://legacy.example/final?query=%2F"}`)); err != nil {
+		t.Fatal("exact query request refused", err)
 	}
 }
 

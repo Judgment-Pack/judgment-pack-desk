@@ -1,9 +1,6 @@
 package desk
 
-import (
-	"io"
-	"net/http"
-)
+import "net/http"
 
 // handleAssistantModels is a closed metadata action. The saved connection owns
 // the family and destination; callers cannot supply a path, query or model call.
@@ -13,8 +10,9 @@ func (s *Server) handleAssistantModels(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1))
-	if err != nil || len(body) != 0 || (r.URL.RawQuery != "" || r.URL.ForceQuery) {
+	// This action has no body. Refuse from framing alone: even a one-byte
+	// preflight read could wait forever before the relay installs its deadline.
+	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 || (r.Body != nil && r.Body != http.NoBody) || (r.URL.RawQuery != "" || r.URL.ForceQuery) {
 		writeJSONCoded(w, http.StatusBadRequest, CodeAssistantRelayPath, "Model discovery accepts no body or query.")
 		return
 	}

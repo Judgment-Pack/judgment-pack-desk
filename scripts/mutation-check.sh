@@ -15724,8 +15724,12 @@ fi
 # Desk #649: closed metadata input and current saved connection revision.
 if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant discovery: caller body or query admitted' internal/desk/assistant_discovery.go \
-    'if err != nil || len(body) != 0 || (r.URL.RawQuery != "" || r.URL.ForceQuery) {' \
-    'if false && (err != nil || len(body) != 0 || (r.URL.RawQuery != "" || r.URL.ForceQuery)) {'
+    'if r.ContentLength != 0 || len(r.TransferEncoding) != 0 || (r.Body != nil && r.Body != http.NoBody) || (r.URL.RawQuery != "" || r.URL.ForceQuery) {' \
+    'if false && (r.ContentLength != 0 || len(r.TransferEncoding) != 0 || (r.Body != nil && r.Body != http.NoBody) || (r.URL.RawQuery != "" || r.URL.ForceQuery)) {'
+  mutate go 'assistant discovery: body read before bounded transport' internal/desk/assistant_discovery.go \
+    'if r.ContentLength != 0 || len(r.TransferEncoding) != 0' \
+    'if r.Body != nil { var first [1]byte; _, _ = r.Body.Read(first[:]) }
+	if r.ContentLength != 0 || len(r.TransferEncoding) != 0'
   mutate go 'assistant discovery: saved revision requirement omitted' internal/desk/assistant_discovery.go \
     'if connection != nil && r.Header.Get(aiRevisionHeader) == "" {' \
     'if false && connection != nil && r.Header.Get(aiRevisionHeader) == "" {'
@@ -15786,6 +15790,27 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'native diagnostic: changed form keeps prior success' web/src/assistant/useConnectionDiagnostic.ts \
     'setCanStart(!closed.current)},[identity])' \
     'setCanStart(!closed.current)},[])'
+fi
+
+# Desk #648 review: passing publish/receipt gates, original order and raw custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant creation: mismatching staged suite publishes' internal/desk/assistant_creation_workflow.go \
+    'if !assistantCreationSuccessfulCheck(check, scope.CandidateDigest, staged) {' \
+    'if false {'
+  mutate go 'assistant creation: completed mismatch approval retained' internal/desk/assistant_creation_transition.go \
+    ' || !assistantCreationSuccessfulCheck(*r.Check, input.Scope.CandidateDigest, r.Cases)' \
+    ' || false'
+  mutate go 'assistant creation: original issue position ignored' internal/desk/assistant_creation_workflow.go \
+    'at = *issue.Position' \
+    'at = len(cases)'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant creation: artifact numeric custody rewritten' web/src/packs/drafts/model.ts \
+    'body: encodeWireValue(document)' \
+    'body: JSON.stringify(document)'
+  mutate web 'assistant creation: next control numeric custody rewritten' web/src/chat/wire.ts \
+    'wireJSON(old,true):encodeWireValue(value)' \
+    'wireJSON(old,true):JSON.stringify(value)'
 fi
 
 restore

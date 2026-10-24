@@ -30,6 +30,7 @@ for(const file of files){
  if(run.creation){
   const current=withCreation(state,run.creation,run.state==='complete',true)
   assert.equal(current.candidates.at(-1).text,run.creation.candidate)
+  for(const issue of JSON.parse(run.creation.issues)){assert.equal(issue.position,1);assert.equal(saved.state.expectationIssues.find(row=>row.id===issue.id&&!row.resolved).position,issue.position)}
   if(run.creation.action==='approve-correction'&&run.state==='complete'){
    assert.equal(current.cases.length,2);assert(current.candidates.at(-1).check.cases.every(row=>row.passed))
    assert.equal(current.readiness,readinessKey(current));assert.equal(current.tracedBasis,run.creation.sourceDigest)

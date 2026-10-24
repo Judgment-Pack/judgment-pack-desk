@@ -86,3 +86,22 @@ including stopped validation/retest, then feeds their temporary observations to
 the strict browser snapshot/SSE/creation readers and mounted NewPackView/
 DraftPackView journey. These observations are not recorded golden vectors.
 Final activation, complete CI and independent review remain coordinator gates.
+
+Review corrections retain an optional zero-based `position` on each unresolved
+issue in both the private receipt and public `issues` JSON string, and on its
+checkpoint row. New independent proposals always supply the original suite slot.
+Approval inserts the replacement at that slot after accounting for other still
+unresolved slots, so approving findings in either order preserves the proposal's
+sequence. Legacy rows without a position remain readable and append on correction.
+The shared handwritten `assistant-creation-positions.json` vectors are consumed by
+both Go and browser readers; fractional, decimal/exponent tokens, null, negative and out-of-range positions
+are refused. Retained completed approvals require the same passing full-suite
+report as the publish gate, including every ordered row.
+
+Conversation and draft readers retain the authoritative JSON trees for cases,
+held proposals and issues separately from their display values. Both persistence
+writers use those trees to keep number tokens and member order through artifact
+materialization, updates, reload and the next explicit creation control. Browser
+creation overlays also compare number-preserving identities; an equal rounded
+JavaScript value cannot hide a changed token. Local edits still replace their
+edited values, and wire provenance never establishes approval or readiness.

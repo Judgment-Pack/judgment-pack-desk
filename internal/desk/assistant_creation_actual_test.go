@@ -441,3 +441,128 @@ func TestAssistantCreationInterruptedValidationAndRetest(t *testing.T) {
 		t.Fatal("explicit approval retry omitted a case or repeated the reviewer")
 	}
 }
+
+func TestAssistantCreationOriginalCaseOrder(t *testing.T) {
+	t.Setenv("JPS_CREATION_OUTPUTS", "")
+	fields, err := assistantTestObject([]byte(assistantCreationCasesDocument))
+	assistantRunMust(t, err)
+	rows, err := assistantChatArray(fields["cases"])
+	assistantRunMust(t, err)
+	proposed := assistantChatJSON(map[string]any{"cases": []json.RawMessage{rows[1], rows[0]}})
+	var calls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			assistantBriefSSE(w, assistantAuthoringProposalFixture(json.RawMessage(proposed)), "stop")
+		} else {
+			assistantBriefSSE(w, assistantAuthoringProposalFixture(json.RawMessage(assistantCreationCorrectionDocument)), "stop")
+		}
+	}))
+	defer provider.Close()
+	s, token := assistantCreationActualFixture(t, provider.URL)
+	recovered := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "recover", MessageID: "assistant-one", MessageDigest: digestOf([]byte(assistantAuthoringProposalFixture(json.RawMessage(reviewPack))))}, 1)
+	digest := recovered.Creation.CandidateDigest
+	assistantCreationRetainDraft(t, s, token)
+	established := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "establish-cases", CandidateDigest: digest}, 2)
+	for _, run := range assistantAuthoringLedger(t, s).Runs {
+		if run.ID == established.ID {
+			if run.Creation.Issues[0].Position == nil || *run.Creation.Issues[0].Position != 0 {
+				t.Fatal("new issue lost its first position")
+			}
+			run.Creation.Issues[0].Position = nil
+			assistantRunMust(t, validateAssistantCreationReceipt(run)) // Earlier receipts remain readable.
+		}
+	}
+	assistantCreationRetainDraft(t, s, token)
+	proposal := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "propose-correction", CandidateDigest: digest, IssueID: "invalid"}, 3)
+	approved := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "approve-correction", CandidateDigest: digest, IssueID: "invalid", Token: proposal.Creation.Proposal.Token}, 4)
+	var cases []assistantCreationCase
+	assistantRunMust(t, json.Unmarshal([]byte(approved.Creation.Cases), &cases))
+	if len(cases) != 2 || cases[0].ID != "invalid" || cases[1].ID != "typed" {
+		t.Fatalf("independent proposal order [invalid typed] changed on approval: %s", approved.Creation.Cases)
+	}
+	// A syntactically complete mismatch is still inadmissible as a retained
+	// completed approval even when its exact Runtime result agrees with the receipt.
+	for _, run := range assistantAuthoringLedger(t, s).Runs {
+		if run.ID == approved.ID {
+			assistantRunMust(t, validateAssistantCreationReceipt(run))
+			report, err := assistantTestObject(run.Creation.Check.Report)
+			assistantRunMust(t, err)
+			report["status"] = []byte(`"mismatch"`)
+			report["summary"] = []byte(`{"total":2,"passed":1}`)
+			packs, err := assistantChatArray(report["packs"])
+			assistantRunMust(t, err)
+			pack, err := assistantTestObject(packs[0])
+			assistantRunMust(t, err)
+			results, err := assistantChatArray(pack["rows"])
+			assistantRunMust(t, err)
+			result, err := assistantTestObject(results[0])
+			assistantRunMust(t, err)
+			result["status"] = []byte(`"mismatch"`)
+			result["actual"] = assistantChatJSON(`{}`)
+			results[0] = assistantChatEncodeObject(result)
+			pack["rows"] = assistantChatEncodeArray(results)
+			packs[0] = assistantChatEncodeObject(pack)
+			report["packs"] = assistantChatEncodeArray(packs)
+			run.Creation.Check.Report = assistantChatEncodeObject(report)
+			for i, op := range run.Operations {
+				if op.ID == run.Creation.TestID {
+					reply, err := assistantTestObject(op.Result)
+					assistantRunMust(t, err)
+					body, err := assistantTestObject(reply["result"])
+					assistantRunMust(t, err)
+					body["structuredContent"] = run.Creation.Check.Report
+					reply["result"] = assistantChatEncodeObject(body)
+					run.Operations[i].Result = assistantChatEncodeObject(reply)
+				}
+			}
+			if validateAssistantCreationReceipt(run) == nil {
+				t.Fatal("retained completed mismatch approval admitted")
+			}
+		}
+	}
+
+}
+
+func TestAssistantCreationFailedRetestRetainsIssue(t *testing.T) {
+	t.Setenv("JPS_CREATION_OUTPUTS", "")
+	var calls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			assistantBriefSSE(w, assistantAuthoringProposalFixture(json.RawMessage(assistantCreationCasesDocument)), "stop")
+		} else {
+			assistantBriefSSE(w, assistantAuthoringProposalFixture(json.RawMessage(strings.ReplaceAll(assistantCreationCorrectionDocument, `"accept"`, `"reject"`))), "stop")
+		}
+	}))
+	defer provider.Close()
+	s, token := assistantCreationActualFixture(t, provider.URL)
+	recovered := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "recover", MessageID: "assistant-one", MessageDigest: digestOf([]byte(assistantAuthoringProposalFixture(json.RawMessage(reviewPack))))}, 1)
+	digest := recovered.Creation.CandidateDigest
+	assistantCreationRetainDraft(t, s, token)
+	established := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "establish-cases", CandidateDigest: digest}, 2)
+	assistantCreationRetainDraft(t, s, token)
+	proposal := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "propose-correction", CandidateDigest: digest, IssueID: "invalid"}, 3)
+	action := assistantCreationAction{Kind: "approve-correction", CandidateDigest: digest, IssueID: "invalid", Token: proposal.Creation.Proposal.Token}
+	start := assistantCreationActualStart(t, s, token, action, 4)
+	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
+	failed := assistantProtocolWait(t, s, token, first.ID, "stopped")
+	if failed.Creation == nil || failed.Creation.Check != nil || failed.Creation.Proposal == nil || failed.Creation.Cases != established.Creation.Cases || failed.Creation.Issues != established.Creation.Issues || calls.Load() != 2 {
+		t.Fatal("mismatching retest published or lost staged correction", failed.Creation)
+	}
+	for _, run := range assistantAuthoringLedger(t, s).Runs {
+		if run.ID == first.ID {
+			if run.Creation.Approved != nil || run.Creation.Proposal == nil {
+				t.Fatal("failed retest resolved original issue")
+			}
+			retained := false
+			for _, op := range run.Operations {
+				if op.State == "completed" && strings.Contains(string(op.Intent), `experimental_test_cases`) && strings.Contains(string(op.Intent), `reject`) {
+					retained = true
+				}
+			}
+			if !retained {
+				t.Fatal("failed retest lost exact staged matrix operation")
+			}
+			assistantRunMust(t, validateAssistantCreationReceipt(run))
+		}
+	}
+}

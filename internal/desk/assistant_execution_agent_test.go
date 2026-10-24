@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/failure"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -59,6 +61,9 @@ for line in sys.stdin:
  if method=='initialize': reply({'userAgent':'jps_desk/0.157.1 (Linux)'})
  elif method=='initialized': pass
  elif method=='account/read':
+  if mode=='account-lookup-fail':
+   write({'id':q['id'],'error':{'code':-1,'message':'PRIVATE_SENTINEL'}})
+   continue
   reply({'requiresOpenaiAuth':True,'account':{'type':'chatgpt','planType':'plus'}})
  elif method=='model/list':
   if p.get('includeHidden'):
@@ -808,5 +813,56 @@ func TestAssistantExecutionCodexCallbackAuthority(t *testing.T) {
 	r := assistantExecutionRecord(t, e)
 	if len(r.Operations) != 1 || r.Operations[0].State != "completed" {
 		t.Fatal("revoked callback obtained operation authority", r.Operations)
+	}
+}
+
+func TestAssistantExecutionCodexAccountLookupTypedFailure(t *testing.T) {
+	_, _, e, _, _ := assistantCodexFixture(t, "account-lookup-fail", "work")
+	agent, err := e.assistantAgent()
+	assistantRunMust(t, err)
+	var calls atomic.Int32
+	err = agent.Run(context.Background(), assistantCodexRequest(), assistantCodexCallbacks(&calls))
+	if !errors.Is(err, codexbridge.ErrAccountLookup) || calls.Load() != 0 {
+		t.Fatalf("lookup admission: %v, calls %d", err, calls.Load())
+	}
+	record := assistantExecutionRecord(t, e)
+	if len(record.Operations) != 1 || record.Operations[0].State != "refused" {
+		t.Fatalf("lookup dispatched generation: %+v", record.Operations)
+	}
+	var result assistantAgentOutcome
+	assistantRunMust(t, json.Unmarshal(record.Operations[0].Result, &result))
+	if result.Failure == nil || result.Failure.Code != "connection-lost" || result.Failure.Outcome != "not-started" || result.Failure.Detail == nil || !strings.Contains(*result.Failure.Detail, "check the account") {
+		t.Fatalf("canonical lookup provenance lost: %+v", result.Failure)
+	}
+	if _, ok := failure.Read(*result.Failure); !ok {
+		t.Fatal("canonical failure contract rejected lookup")
+	}
+	if strings.Contains(string(record.Operations[0].Result), "PRIVATE_SENTINEL") {
+		t.Fatal("native prose retained")
+	}
+}
+
+func TestAssistantAgentHostFailureClassification(t *testing.T) {
+	for _, tc := range []struct {
+		err          error
+		code, detail string
+	}{
+		{errors.Join(codexbridge.ErrAccountLookup, context.DeadlineExceeded), "connection-lost", "check the account"},
+		{errors.Join(codexbridge.ErrInstall, &os.PathError{Op: "write", Path: "PRIVATE_SENTINEL", Err: syscall.ENOSPC}), "storage", "Disk is full"},
+	} {
+		got := assistantAgentFailure(tc.err)
+		if got == nil || got.Code != tc.code || got.Outcome != "unknown" || got.Detail == nil || !strings.Contains(*got.Detail, tc.detail) {
+			t.Fatalf("canonical host classification lost: %+v", got)
+		}
+		if _, ok := failure.Read(*got); !ok {
+			t.Fatal("canonical failure rejected")
+		}
+		data, _ := json.Marshal(got)
+		if strings.Contains(string(data), "PRIVATE_SENTINEL") {
+			t.Fatal("private path retained")
+		}
+	}
+	if got := assistantAgentFailure(context.Canceled); got.Code != "cancelled" {
+		t.Fatal("cancellation classification lost", got)
 	}
 }

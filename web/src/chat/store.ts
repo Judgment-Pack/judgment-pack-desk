@@ -1,4 +1,4 @@
-import { conversationWire, encodeWireChat, wireField } from './wire'
+import { conversationWire, encodeWireChat, encodeWireValue, wireField } from './wire'
 import { reconcileChats } from './reconcile'
 import type { CriticMode, CriticTier } from '@judgment-pack/harness/contract'
 import { readCriticSettings } from '@judgment-pack/harness/criticSwitch'
@@ -104,7 +104,7 @@ async function readReply(response:Response):Promise<Reply> {
  const raw=await response.text(),wireChats=conversationWire(raw)
  return {...JSON.parse(raw) as Reply,wireChats}
 }
-function decode(value: unknown): Chat[] {
+function decode(value: unknown,wireChats?:Record<string,string>): Chat[] {
   const doc = value as Partial<Document> | null
   if (doc?.version !== 1 || !Array.isArray(doc.chats) || doc.chats.length > 256) throw new Error(sourceMessage("Unsupported chat history. The saved file has not been changed."))
   const ids = new Set<string>()
@@ -158,7 +158,7 @@ function decode(value: unknown): Chat[] {
       updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode === 'research' && !chat.checkpoint && !chat.draftId ? 'web-research' : chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], websites:chat.websites ?? [], searches:chat.searches??[], researchMode:chat.researchMode, searchConnection:chat.searchConnection, ...(chat.adversarialReview === undefined ? {} : { adversarialReview: chat.adversarialReview }), ...(chat.critic === undefined ? {} : { critic: chat.critic }), ...(chat.criticReasoning === undefined ? {} : { criticReasoning: chat.criticReasoning }), titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.draftId ? { draftId: chat.draftId, draftGeneration:chat.draftGeneration } : {}),
       ...(chat.targetFolderId !== undefined ? { targetFolderId: chat.targetFolderId } : {}),
-      ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint) } : {}),
+      ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint,wireChats?.[chat.id]&&wireField(wireChats[chat.id]!,'checkpoint')) } : {}),
       ...(typeof chat.createdCandidateDigest === 'string' ? { createdCandidateDigest: chat.createdCandidateDigest } : {}) }
   })
 }
@@ -210,10 +210,10 @@ export class ChatStore {
       try {
         const reply = await this.io.read()
         if (reply.project !== this.project) throw new Error(sourceMessage("Chat history belongs to a different project"))
-        const chats = decode(reply.content).map(migrateMessageOwnership)
+        const chats = decode(reply.content,reply.wireChats).map(migrateMessageOwnership)
         const draftReply = await this.draftIO.read()
         if (draftReply.project !== this.project) throw new Error(sourceMessage('Chat history belongs to a different project'))
-        const artifacts = decodeDrafts(draftReply.content)
+        const artifacts = decodeDrafts(draftReply.content,draftReply.wireDrafts)
         this.baselineWire=reply.wireChats??{}
         this.baseline = chats
         this.digest = reply.sha256
@@ -258,14 +258,14 @@ export class ChatStore {
         const current=await this.io.read()
         if(current.project!==this.project||this.disposed)throw Error('The project changed before saving.')
         this.verifyWireConflicts(current,fieldEdits)
-        const remote=decode(current.content).map(migrateMessageOwnership)
+        const remote=decode(current.content,current.wireChats).map(migrateMessageOwnership)
         document={version:1,chats:reconcileChats(this.baseline,local,remote,(current.content as Document).chats)}
         this.digest=current.sha256
         wireChats=current.wireChats
       }
       const reply = await this.io.write(document, this.digest, wireChats, fieldEdits)
       if (reply.project !== this.project) throw new Error(sourceMessage("Chat save answered for a different project"))
-      const saved=this.serverOwned?decode(reply.content).map(migrateMessageOwnership):local
+      const saved=this.serverOwned?decode(reply.content,reply.wireChats).map(migrateMessageOwnership):local
       // Edits made while the CAS was in flight remain dirty and are merged once.
       const next=this.serverOwned?reconcileChats(local,this.state.chats,saved):this.state.chats
       this.baselineWire=reply.wireChats??{}
@@ -517,7 +517,7 @@ export class ChatStore {
     if(reply.project!==this.project||this.disposed)throw Error('The project changed before starting.')
     const revision=reply.chatRevisions?.[id]
     if(!revision||!/^[a-f0-9]{64}$/.test(revision))throw Error('The exact saved chat revision is unavailable.')
-    const saved=decode(reply.content).find(c=>c.id===id)
+    const saved=decode(reply.content,reply.wireChats).find(c=>c.id===id)
     if(saved?.serverRequest?.requestId!==requestId||saved.serverRequest.admissionId!==admissionId||!saved.checkpoint?.state.turns.some(t=>t.id===requestId))throw Error('The saved request changed before starting.')
     this.pins.add(id)
     return revision
@@ -536,7 +536,7 @@ export class ChatStore {
     const reply=await this.io.read()
     if(reply.project!==this.project||this.disposed)throw Error('The project changed during chat reconciliation.')
     this.verifyWireConflicts(reply,new Map([...this.fieldEdits].map(([id,keys])=>[id,new Set(keys.keys())])))
-    const remote=decode(reply.content).map(migrateMessageOwnership)
+    const remote=decode(reply.content,reply.wireChats).map(migrateMessageOwnership)
     const chats=reconcileChats(this.baseline,this.state.chats,remote)
     this.baseline=remote;this.baselineWire=reply.wireChats??{};this.digest=reply.sha256
     if(release)this.pins.delete(id)
@@ -561,7 +561,7 @@ export class ChatStore {
 			// Original chat history retains every control and observation. Artifact
 			// generation tracks the candidate and independent evidence; a check or
 			// visible correction proposal cannot invalidate its own approval token.
-			const basis=(draft:PackDraft)=>{const s=draft.checkpoint.state;return JSON.stringify([draft.title,draft.mode,s.candidates.map(c=>c.text),s.cases,s.expectationIssues,s.heldProposal,s.unknowns,s.inheritedStatements,draft.checkpoint.sources,draft.sourceFiles,draft.policySources,draft.documents])}
+			const basis=(draft:PackDraft)=>{const s=draft.checkpoint.state;return JSON.stringify([draft.title,draft.mode,s.candidates.map(c=>c.text),encodeWireValue(s.cases),encodeWireValue(s.expectationIssues),encodeWireValue(s.heldProposal),s.unknowns,s.inheritedStatements,draft.checkpoint.sources,draft.sourceFiles,draft.policySources,draft.documents])}
 			if(basis(next)!==basis(current)){
 				if(!this.saveDraft({...next,generation:current.generation+1,updatedAt:selected.updatedAt}))throw Error('The retained draft could not be saved.')
 				this.update(id,{draftGeneration:current.generation+1})

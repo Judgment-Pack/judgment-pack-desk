@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -80,7 +81,7 @@ func (p *profile) runtimeRoot(create bool) (*os.Root, error) {
 	}
 	if create {
 		if err := p.root.Mkdir("runtime", 0700); err != nil && !errors.Is(err, os.ErrExist) {
-			return nil, ErrProfile
+			return nil, failureCause(ErrProfile, err)
 		}
 	}
 	info, err := p.root.Lstat("runtime")
@@ -88,11 +89,11 @@ func (p *profile) runtimeRoot(create bool) (*os.Root, error) {
 		return nil, ErrNotInstalled
 	}
 	if err != nil || !privateInfo(info, true) {
-		return nil, ErrProfile
+		return nil, failureCause(ErrProfile, err)
 	}
 	root, err := p.root.OpenRoot("runtime")
 	if err != nil {
-		return nil, ErrProfile
+		return nil, failureCause(ErrProfile, err)
 	}
 	return root, nil
 }
@@ -148,10 +149,24 @@ func verifyRuntime(ctx context.Context, root *os.Root, artifact runtimeArtifact)
 	}
 	return nil
 }
-func runtimeTemp(root *os.Root) (*os.File, string, error) {
+
+type runtimeStage interface {
+	io.ReadWriteSeeker
+	Chmod(os.FileMode) error
+	Sync() error
+	Close() error
+}
+
+func (p *profile) newRuntimeTemp(root *os.Root) (runtimeStage, string, error) {
+	if p.stageRuntime != nil {
+		return p.stageRuntime(root)
+	}
+	return runtimeTemp(root)
+}
+func runtimeTemp(root *os.Root) (runtimeStage, string, error) {
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
-		return nil, "", ErrInstall
+		return nil, "", failureCause(ErrInstall, err)
 	}
 	name := ".prepare-" + hex.EncodeToString(token[:])
 	f, err := root.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL|noFollow, 0600)
@@ -182,8 +197,8 @@ func cleanupRuntimeStaging(root *os.Root) error {
 		if err != nil || !privateInfo(info, false) {
 			return ErrProfile
 		}
-		if root.Remove(entry.Name()) != nil {
-			return ErrInstall
+		if err := root.Remove(entry.Name()); err != nil {
+			return failureCause(ErrInstall, err)
 		}
 	}
 	return nil
@@ -205,72 +220,81 @@ func (p *profile) resolveRuntime(ctx context.Context, install bool, artifact run
 	path := filepath.Join(p.dir, "runtime", runtimeFilename)
 	err = verifyRuntime(ctx, root, artifact)
 	if err == nil {
-		return path, nil
+		if install {
+			err = p.pruneRuntimes(root)
+		}
+		return path, err
 	}
 	if !errors.Is(err, ErrNotInstalled) || !install {
 		return "", err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	archive, archiveName, err := runtimeTemp(root)
+	archive, archiveName, err := p.newRuntimeTemp(root)
 	if err != nil {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	defer func() { archive.Close(); _ = root.Remove(archiveName) }()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, artifact.URL, nil)
 	if err != nil {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	request.Header.Set("User-Agent", "JPS-Desk-managed-runtime")
 	response, err := client.Do(request)
 	if err != nil {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK || response.ContentLength > artifact.ArchiveSize {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	hash := sha256.New()
 	n, err := copyRuntime(ctx, io.MultiWriter(archive, hash), io.LimitReader(response.Body, artifact.ArchiveSize+1))
 	if err != nil || n != artifact.ArchiveSize || hex.EncodeToString(hash.Sum(nil)) != artifact.ArchiveSHA256 {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	if _, err = archive.Seek(0, io.SeekStart); err != nil {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	compressed, err := gzip.NewReader(archive)
 	if err != nil {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	defer compressed.Close()
 	unpacked := io.LimitReader(compressed, artifact.BinarySize+(1<<20))
 	contents := tar.NewReader(unpacked)
 	header, err := contents.Next()
 	if err != nil || header.Typeflag != tar.TypeReg || header.Name != artifact.Member || header.Size != artifact.BinarySize {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
-	binary, binaryName, err := runtimeTemp(root)
+	binary, binaryName, err := p.newRuntimeTemp(root)
 	if err != nil {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	defer func() { binary.Close(); _ = root.Remove(binaryName) }()
 	hash = sha256.New()
 	n, err = copyRuntime(ctx, io.MultiWriter(binary, hash), contents)
 	if err != nil || n != artifact.BinarySize || hex.EncodeToString(hash.Sum(nil)) != artifact.BinarySHA256 {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	if _, err = contents.Next(); err != io.EOF {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	// Read the gzip trailer, checking its CRC and bounding any trailing payload.
 	if n, err = copyRuntime(ctx, io.Discard, unpacked); err != nil || n > 16384 {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	if err = ctx.Err(); err != nil {
 		return "", err
 	}
-	if binary.Chmod(0700) != nil || binary.Sync() != nil || binary.Close() != nil {
-		return "", ErrInstall
+	if err = binary.Chmod(0700); err == nil {
+		err = binary.Sync()
+	}
+	if err == nil {
+		err = binary.Close()
+	}
+	if err != nil {
+		return "", failureCause(ErrInstall, err)
 	}
 	// Recheck custody before publishing; no partial executable is ever launched.
 	if err = p.check(); err != nil {
@@ -282,15 +306,72 @@ func (p *profile) resolveRuntime(ctx context.Context, install bool, artifact run
 		return "", ErrProfile
 	}
 	if err = root.Rename(binaryName, runtimeFilename); err != nil {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	dir, err := root.Open(".")
 	if err != nil {
-		return "", ErrInstall
+		return "", failureCause(ErrInstall, err)
 	}
 	defer dir.Close()
-	if dir.Sync() != nil {
-		return "", ErrInstall
+	if err = dir.Sync(); err != nil {
+		return "", failureCause(ErrInstall, err)
+	}
+	// Verify the published bytes before any superseded executable is removed.
+	if err = verifyRuntime(ctx, root, artifact); err != nil {
+		return "", err
+	}
+	if err = p.pruneRuntimes(root); err != nil {
+		return "", err
 	}
 	return path, nil
+}
+
+var managedRuntimeName = regexp.MustCompile(`^codex-[0-9]+\.[0-9]+\.[0-9]+$`)
+
+// Called only after verified preparation, under the Manager mutex and lifetime
+// profile lease. Setup cannot overlap a live run; another Desk cannot prepare
+// this profile. Unlink only owned, private, singly linked executable files by
+// name through the held root. Never traverse or adopt unrelated cache entries.
+func (p *profile) pruneRuntimes(root *os.Root) error {
+	if err := p.check(); err != nil {
+		return err
+	}
+	current, err := p.root.Lstat("runtime")
+	held, heldErr := root.Stat(".")
+	if err != nil || heldErr != nil || !os.SameFile(current, held) {
+		return ErrProfile
+	}
+	dir, err := root.Open(".")
+	if err != nil {
+		return failureCause(ErrProfile, err)
+	}
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return failureCause(ErrProfile, err)
+	}
+	removed := false
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == runtimeFilename || !managedRuntimeName.MatchString(name) {
+			continue
+		}
+		info, err := root.Lstat(name)
+		if err != nil {
+			return failureCause(ErrProfile, err)
+		}
+		if !privateInfo(info, false) || info.Mode().Perm()&0100 == 0 {
+			continue
+		}
+		if err = root.Remove(name); err != nil {
+			return failureCause(ErrInstall, err)
+		}
+		removed = true
+	}
+	if removed {
+		if err = dir.Sync(); err != nil {
+			return failureCause(ErrInstall, err)
+		}
+	}
+	return nil
 }

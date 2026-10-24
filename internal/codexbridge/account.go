@@ -200,7 +200,11 @@ func (m *Manager) readAccount(ctx context.Context, refresh bool) (AccountState, 
 	if err := m.client.call(ctx, "account/read", map[string]bool{"refreshToken": refresh}, &raw); err != nil {
 		return AccountState{}, err
 	}
-	return accountState(raw)
+	account, err := accountState(raw)
+	if err != nil {
+		return AccountState{}, ErrUnavailable
+	}
+	return account, nil
 }
 
 // reset stops the login writer BEFORE logging out in a fresh process. A stale

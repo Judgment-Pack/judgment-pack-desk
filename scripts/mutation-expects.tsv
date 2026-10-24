@@ -2880,3 +2880,9 @@ go	native diagnostic: native context tools escape schema offer	TestAssistantDiag
 go	native diagnostic: cancellation poisons terminal persistence	TestAssistantDiagnosticRefusesProseAndNonSchemaTools,TestAssistantDiagnosticLateCredentialMutationClosesSchemaDispatch
 web	native diagnostic: uncertain admission starts twice	src/assistant/useConnectionDiagnostic.test.tsx
 web	native diagnostic: changed form keeps prior success	src/assistant/useConnectionDiagnostic.test.tsx
+go	assistant creation: mismatching staged suite publishes	TestAssistantCreationCorrectionRetestBeforeCommit,TestAssistantCreationFailedRetestRetainsIssue
+go	assistant creation: completed mismatch approval retained	TestAssistantCreationOriginalCaseOrder
+go	assistant creation: original issue position ignored	TestAssistantCreationCorrectionOriginalPositions,TestAssistantCreationOriginalCaseOrder
+web	assistant creation: artifact numeric custody rewritten	src/chat/store.server.test.ts
+web	assistant creation: next control numeric custody rewritten	src/chat/store.server.test.ts
+go	assistant discovery: body read before bounded transport	TestAssistantDiscoveryRefusesBodyWithoutReading

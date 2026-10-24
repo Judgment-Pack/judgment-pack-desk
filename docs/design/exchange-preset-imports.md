@@ -169,37 +169,81 @@ refusal and the reason from Runner's listing; nothing else of Runner's text is
 shown. A trigger's caller gets Runner's answer unchanged. The set-aside id stays
 taken; a page profile registered for a corrected scope has a new id.
 
-A request in scope can still be redirected outside it. After each scoped page
-acquisition, before the page can reach the model, the worker checks the signed
-receipt's `acquisition.endpoint` (the final URL after followed redirects, its
-query removed) with the same matcher. On a miss the attempt is `refused` with
-problem code `acquisition-invalid`: its retained response and receipt are kept for
-audit and count against the page allowance, but it is no retained source, so the
-page is left out of every later model request and of the retained answer. The
-model receives the refusal as a validation finding, exactly as for a page refused
-before acquisition, within the same correction bound; a request with the same
-arguments again is refused without another acquisition. Another spelling of the
-same page (an added query, host case, `:443`) is a different request: it is
-acquired and refused again, within the page allowance. A refused attempt stays
-`refused` across a restart and a resume. This check reads the receipt as the
-Gateway wrote it and verifies no signature. Runner's check 3 remains the verifier:
-it holds every retained receipt's final endpoint to the profile's scope when the
-answer is prepared.
+A request admitted by a page profile can still be redirected outside it. After
+each page acquisition, before the page can reach the model, the worker reads the
+signed receipt's `acquisition.endpoint` (the final URL after followed redirects,
+its query removed). Scoped profiles use the same scope matcher; profiles without
+a scope require byte-for-byte equality with their nonempty exact `endpoint`.
+Exact HTTP profiles also admit only a submitted URL whose bytes before the first
+query delimiter equal that endpoint. Query arguments remain unchanged; host case,
+port spelling and path escapes are not normalized. Fixed-service MCP page
+profiles keep their tool contract and use the same exact receipt comparison.
+Missing endpoint/profile forms, malformed receipts and duplicate JSON members
+fail closed.
 
-Refusal has a storage cost. Each refused result is kept in the run's journal, up
-to the per-result bound, outside the check that reserves room for the answer, which
-counts retained sources only. A source that redirects every request out of scope
-and serves large pages can therefore fill the journal record within the page
-allowance; the next journal write then fails and the run ends `interrupted`. A
-bound on refused bytes checked before the next page request is #475. Profiles with
-an exact `endpoint` instead of a scope are not receipt-checked yet (#474): their
-pages reach the model, and only Runner's check 3 refuses a final endpoint that
-differs.
+On a receipt miss the attempt is `refused` with problem code
+`acquisition-invalid`: its retained response and receipt are kept for audit and
+count against the page allowance, but it is no retained source, so the page is
+left out of every later model request and of the retained answer. The model
+receives the refusal as a validation finding, within the existing correction
+bound. A request with the same arguments again is refused without another
+acquisition. Another allowed spelling or query is a different request and can be
+acquired and refused again within the allowance. A refused attempt stays
+`refused` across a restart and a resume. Desk reads the exact retained receipt
+and verifies no signature. Runner's check 3 remains the verifier.
 
-Scope-absent legacy profiles retain their existing request handling, including
-queries and redirects. Runner continues to verify the receipt's exact final
-endpoint, or its scope when declared. Neither check establishes the scope of
-intermediate redirects, page accuracy or outreach permission; the scope holds the
+Before admitting any portable acquisition, Desk measures the actual encoded
+journal, including completed and refused results, escaped metadata and any
+in-flight reservations. It reserves the maximum bounded retained result (2 MiB),
+64 KiB for terminal attempt metadata, and a separate final reserve for the 1 MiB
+answer and 64 KiB of terminal run metadata. Host diagnostic text is bounded by
+its encoded size, with a fixed fallback for oversized details; signed evidence
+is unchanged. Admission and the started attempt are saved under the journal lock. When the 16 MiB journal cannot cover those reserves,
+no request is sent: the run ends `partial` with a named journal storage-limit
+reason. Every acquired attempt remains terminal and its signed evidence is kept
+unchanged. This durable journal bound is separate from the answer-capacity check,
+which counts only completed sources and stops before further model requests when
+they cannot fit the portable answer. A refused page cannot evade the journal
+bound by being absent from the answer.
+
+A complete Gateway envelope can exceed the 2 MiB inline bound while still fitting
+its 16 MiB + 64 KiB transport limit. Such acquisitions keep the exact envelope
+and request bytes in the existing immutable research proof/artifact store. The
+portable attempt carries a bounded `retainedProof` descriptor: version 1, the
+frozen profile ID/digest, the exact proof manifest's SHA-256 and byte count, and
+total proof bytes. Readers validate that descriptor and all objects against the
+current run, attempt, session, Gateway pin and profile. Missing, altered or
+mismatched evidence fails closed; reads do not repair, migrate or reacquire it.
+Existing inline histories retain their representation.
+
+An accepted oversized acquisition is terminal `refused` with the existing
+`source-response-too-large` reason. An endpoint-refused oversized page keeps its
+`acquisition-invalid` reason. Both end the run `partial` with an explicit inline
+result-size reason, without another model request or source acquisition. Their
+content is absent from every model projection and answer; the answer limit stays
+1 MiB. Activity uses the existing refused-state and problem-code contract.
+
+Before any portable dispatch, Desk additionally reserves maximum proof storage:
+the transport envelope, up to 128 KiB of request arguments, and the already bounded
+8 KiB manifest. The proof limit includes that manifest overhead separately from
+both objects. The current encoded journal, retained acquisitions and in-flight
+proof/journal reservations must also fit the run's 64 MiB retained-evidence allowance;
+accounting is conservative when inline evidence is represented in both counts.
+Admission never spends the same reservation twice. Storage failures are charged
+at the maximum proof reservation until recovery rather than treating possibly
+written objects as free space.
+
+Proof objects are verified durable before the manifest is published; the journal
+terminal update follows that publication. These are separate writes. An uncertain
+artifact, manifest or journal acknowledgement keeps the existing uncertain/no
+replay behavior and retains possible orphan objects for recovery. A process loss
+does not invent a terminal proof reference or retry the acquisition. Proof copies
+and complete project snapshots/moves include the manifests and project-relative
+artifact objects. Chat-data backups keep their existing scope, which excludes
+project research and artifact stores.
+
+Runner continues to verify each receipt's exact endpoint or declared scope.
+Neither check establishes the scope of intermediate redirects, page accuracy or outreach permission; the scope holds the
 URL as written, not what a server serves for it. The portable definition,
 retained job release and historical profiles remain distinct.
 

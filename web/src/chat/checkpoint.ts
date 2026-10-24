@@ -1,3 +1,4 @@
+import { copyWireValue, retainWireValue } from './wire'
 import {readPackBasis,readPackReview} from './packProposal'
 import { readCreationAction } from '../assistant/serverRuns/creation'
 import {readFailure} from '@judgment-pack/harness/failures'
@@ -30,7 +31,7 @@ export function checkpoint(state: RunState, sources: readonly SourceRecord[]): C
   return {
     state: { ...state, checkRecovery:undefined, checkIssue:undefined, streaming: undefined, streamingId: undefined, taskProgress: undefined, events: [], verdicts: {}, registries: {}, citations: [], tracing: undefined, tracedBasis: undefined,
       candidates: state.candidates.map(({ check, ...candidate }) => ({ ...candidate, ...(check ? { previousCheck: check } : {}) })),
-      expectationIssues: state.expectationIssues.map(({ proposal: _proposal, ...issue }) => issue) },
+      expectationIssues: state.expectationIssues.map(original => { const { proposal: _proposal, ...issue } = original; return copyWireValue(original,issue) }) },
     sources: sources.map(source => ({ session: source.session, kind: source.kind, request: source.request,
       requestedAt: source.requestedAt, text: source.response?.text ?? null,
       failure: source.failure, quotes: source.excerpts.map(excerpt => excerpt.text) }))
@@ -41,7 +42,7 @@ const strings = (value: unknown): value is string[] => Array.isArray(value) && v
 function invalid(): never { throw new Error('Saved chat data is not supported. History was left untouched.') }
 
 /** Validate display data before it reaches React; all trust is reset by restore. */
-export function decodeCheckpoint(value: unknown): Checkpoint {
+export function decodeCheckpoint(value: unknown,raw?:string): Checkpoint {
   if (!object(value) || !object(value.state) || !Array.isArray(value.sources)) return invalid()
   const state = value.state
   if (typeof state.brief !== 'string' || !strings(state.seedUrls) || !strings(state.unknowns) || !strings(state.sessions)
@@ -92,7 +93,8 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
     }
 		let finding:RunState['expectationIssues'][number]['finding']
 		if(issue.finding!==undefined){const f=issue.finding;if(!object(f)||f.status!=='invalid'||typeof f.message!=='string'||!f.message.trim()||f.admitted!==undefined&&typeof f.admitted!=='boolean'||f.unreachable!==undefined&&typeof f.unreachable!=='boolean')return invalid();finding=f as typeof finding}
-    return { id: issue.id, message: issue.message, original: readCase(issue.original), ...(finding?{finding}:{}), ...(resolved ? { resolved } : {}) }
+    if(issue.position!==undefined&&(!Number.isSafeInteger(issue.position)||(issue.position as number)<0||(issue.position as number)>255))return invalid()
+    return { ...(issue.position===undefined?{}:{position:issue.position as number}), id: issue.id, message: issue.message, original: readCase(issue.original), ...(finding?{finding}:{}), ...(resolved ? { resolved } : {}) }
   })
   const sources: SavedSource[] = value.sources.map(source => {
     if (!object(source) || typeof source.session !== 'string' || !['search', 'page'].includes(String(source.kind))
@@ -106,12 +108,18 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
       request: { source: source.request.source, dialect: source.request.dialect,
         ...(source.request.url ? { url: source.request.url as string } : {}), ...(source.request.query ? { query: source.request.query as string } : {}) } }
   })
+  const wireState=raw&&memberOf(parseJsonText(raw),'state')
+  const cases=state.cases.map(readCase)
+  for(const [key,value] of [['cases',cases],['heldProposal',heldProposal],['expectationIssues',issues]] as const){
+    const node=wireState&&memberOf(wireState,key)
+    if(node)retainWireValue(value,node)
+  }
   // Retain only the interrupted-conversation recovery hint. Artifact/check
   // phases are reconstructed by restore, never resumed from a checkpoint.
   return { state: { ...INITIAL_STATE, phase: state.phase==='conversation' && ['failed','running','stopped','budget'].includes(String(state.status)) ? 'conversation' : INITIAL_STATE.phase, detail: typeof state.detail === 'string' && state.detail.length <= 4096 ? state.detail : '', status: ['idle', 'running', 'complete', 'ready', 'needs-input', 'budget', 'stalled', 'stopped', 'failed'].includes(String(state.status)) ? state.status as RunState['status'] : 'idle', execution:readExecution(state.execution), failure:readFailure(state.failure), brief: state.brief, seedUrls: state.seedUrls, turns, questions, candidates, responses: readResponseHistory(state.responses),
     inheritedStatements: state.inheritedStatements as RunState['inheritedStatements'],
     checkRun: ['running','complete','failed','stopped'].includes(String(state.checkRun)) ? state.checkRun as RunState['checkRun'] : undefined,
-    probes: readProbes(state.probes), cases: state.cases.map(readCase), heldProposal, expectationIssues: issues, unknowns: state.unknowns,
+    probes: readProbes(state.probes), cases, heldProposal, expectationIssues: issues, unknowns: state.unknowns,
     revisionsUsed: state.revisionsUsed as number, sessions: state.sessions }, sources }
 }
 
