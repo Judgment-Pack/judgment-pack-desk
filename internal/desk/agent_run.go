@@ -189,7 +189,7 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 		_ = send(map[string]any{"type": "end", "runId": runID, "error": "model-not-allowed", "failure": aifailure.New("permission", "agent", "not-started")})
 		return
 	}
-	if err = s.prepareAgentContext(start.Request); err != nil {
+	if err = s.checkAgentWireContext(*start.Request); err != nil {
 		problem := aifailure.New("configuration", "context", "not-started")
 		errors.As(err, &problem)
 		_ = send(map[string]any{"type": "end", "runId": runID, "error": problem.Code, "failure": problem})
