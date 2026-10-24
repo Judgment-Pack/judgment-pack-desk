@@ -4,7 +4,7 @@ import { recordDigest, sha256 } from '@judgment-pack/harness/records'
 import { readExecution } from '@judgment-pack/harness/execution/state'
 import { AIFailureError, failure } from '@judgment-pack/harness/failures'
 import { parseJsonText } from '../../research/verify/canon'
-import type { RunBinding, RunContinuation, RunDiscovery, RunEvent, RunOperation, RunReference, RunSnapshot } from './types'
+import type { RunBinding, RunContinuation, RunDiscovery, RunEvent, RunOperation, RunProgress, RunReference, RunSnapshot } from './types'
 
 export const MAX_RUN_BYTES = 16 * 1024 * 1024
 export const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -82,7 +82,7 @@ function continuations(value:unknown, events:readonly RunEvent[],checkpoint:RunS
  return value as RunContinuation[]
 }
 export function decodeSnapshot(value: unknown, expected: RunBinding & { readonly id?: string }): RunSnapshot {
-  if (!object(value) || !exact(value,['id','revision','owner','requestId','state','historical','checkpoint','operations','events','cursor','chatProjection','projectionIssue','continuations']) || !runID(value.id) || expected.id !== undefined && value.id !== expected.id || !revision(value.revision) || !object(value.owner) || !exact(value.owner,['kind','id','revision']) || value.owner.kind !== 'chat' || !ownerID(value.owner.id) || !digest(value.owner.revision) || value.owner.kind !== expected.owner.kind || value.owner.id !== expected.owner.id || value.owner.revision !== expected.owner.revision || !text(value.requestId,128) || value.requestId !== expected.requestId || typeof value.state !== 'string' || !['admitted','running','awaiting-input','awaiting-client','paused-budget','stopped','interrupted','complete','failed'].includes(value.state) || value.historical !== undefined && typeof value.historical !== 'boolean') return invalid()
+  if (!object(value) || !exact(value,['id','revision','owner','requestId','state','historical','checkpoint','operations','events','cursor','chatProjection','projectionIssue','continuations','displayPreview']) || !runID(value.id) || expected.id !== undefined && value.id !== expected.id || !revision(value.revision) || !object(value.owner) || !exact(value.owner,['kind','id','revision']) || value.owner.kind !== 'chat' || !ownerID(value.owner.id) || !digest(value.owner.revision) || value.owner.kind !== expected.owner.kind || value.owner.id !== expected.owner.id || value.owner.revision !== expected.owner.revision || !text(value.requestId,128) || value.requestId !== expected.requestId || typeof value.state !== 'string' || !['admitted','running','awaiting-input','awaiting-client','paused-budget','stopped','interrupted','complete','failed'].includes(value.state) || value.historical !== undefined && typeof value.historical !== 'boolean') return invalid()
   const [r, count] = cursorParts(value.cursor)
   const events = value.events === null ? [] : Array.isArray(value.events) ? value.events.map(decodeEvent) : invalid()
   if (events.length > 1024 || new Set(events.map(e => e.id)).size !== events.length || r !== value.revision || count !== events.length) return invalid()
@@ -93,6 +93,7 @@ export function decodeSnapshot(value: unknown, expected: RunBinding & { readonly
   if (value.projectionIssue !== undefined && (typeof value.projectionIssue !== 'string' || !['proposal-target','pending-question','saved-chat-validation','unsupported-unicode'].includes(value.projectionIssue))) return invalid()
   const receipts = continuations(value.continuations,events,checkpoint)
   pendingQuestion({events,continuations:receipts})
+  if (value.displayPreview !== undefined) decodePreview(value.displayPreview)
   const ops = operations(value.operations)
   if (value.state === 'complete' && ops.some(op=>!['completed','refused'].includes(op.state))) return invalid()
   return {...value, ...(receipts ? {continuations:receipts} : {}), operations: ops, events, ...(checkpoint ? {checkpoint} : {})} as unknown as RunSnapshot
@@ -108,4 +109,20 @@ export function decodeDiscovery(value: unknown, expected: RunDiscovery): readonl
   })
   if (new Set(runs.map(run=>run.id)).size !== runs.length) return invalid()
   return runs
+}
+
+export const MAX_PROGRESS_BYTES = 64 * 1024
+export function decodeProgress(value: unknown, expected: RunReference): RunProgress {
+  if (!object(value) || !exact(value,['id','owner','requestId','epoch','sequence','cursor','text','taskId']) || value.id !== expected.id || !object(value.owner) || !exact(value.owner,['kind','id','revision']) || value.owner.kind !== expected.owner.kind || value.owner.id !== expected.owner.id || value.owner.revision !== expected.owner.revision || value.requestId !== expected.requestId || typeof value.epoch !== 'string' || !/^[a-f0-9]{32}$/.test(value.epoch) || !revision(value.sequence) || typeof value.text !== 'string' || new TextEncoder().encode(value.text).length > MAX_PROGRESS_BYTES || /\0|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value.text) || value.taskId !== undefined && !text(value.taskId,128)) return invalid()
+  cursorParts(value.cursor)
+  return value as unknown as RunProgress
+}
+
+export function decodePreview(value: unknown): void {
+ if(!Array.isArray(value)||!value.length||value.length>17||new TextEncoder().encode(JSON.stringify(value)).length>1024*1024)return invalid()
+ const keys=new Set<string>()
+ for(const p of value){
+  if(!object(p)||!exact(p,['text','taskId'])||typeof p.text!=='string'||!p.text||new TextEncoder().encode(p.text).length>MAX_PROGRESS_BYTES||/\0|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(p.text)||p.taskId!==undefined&&!text(p.taskId,128))return invalid()
+  const key=p.taskId??'';if(keys.has(key as string))return invalid();keys.add(key as string)
+ }
 }

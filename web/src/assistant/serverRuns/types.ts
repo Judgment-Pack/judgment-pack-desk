@@ -17,7 +17,9 @@ export type RunContinuation = { readonly id: string; readonly digest: string } &
  { readonly kind: 'answer'; readonly answer: RunAnswer } |
  { readonly kind: 'extend-budget'; readonly grant: { readonly from: number; readonly to: number; readonly at: string } }
 )
+export interface RunPreview { readonly text: string; readonly taskId?: string }
 export interface RunSnapshot extends RunReference {
+  readonly displayPreview?: readonly RunPreview[]
   readonly continuations?: readonly RunContinuation[]
   readonly revision: number; readonly state: RunState; readonly historical?: boolean
   readonly checkpoint?: ExecutionCheckpoint; readonly operations: readonly RunOperation[]; readonly events: readonly RunEvent[]; readonly cursor: string
@@ -30,4 +32,6 @@ export type RunAction = { readonly id: string; readonly revision: number } & (
   { readonly kind: 'answer'; readonly questionId: string; readonly questionDigest: string; readonly answer: { readonly selected: readonly string[]; readonly text: string } } |
   { readonly kind: 'approval'; readonly callId: string; readonly argsDigest: string; readonly approved: boolean; readonly note?: string }
 )
-export type RunObservation = { readonly kind: 'snapshot'; readonly snapshot: RunSnapshot; readonly cursor: string } | { readonly kind: 'event'; readonly event: RunEvent; readonly cursor: string }
+/** Ephemeral whole prefix; taskId belongs exclusively to a child view. */
+export interface RunProgress extends RunReference { readonly epoch: string; readonly sequence: number; readonly cursor: string; readonly text: string; readonly taskId?: string }
+export type RunObservation = { readonly kind: 'progress'; readonly progress: RunProgress } | { readonly kind: 'snapshot'; readonly snapshot: RunSnapshot; readonly cursor: string } | { readonly kind: 'event'; readonly event: RunEvent; readonly cursor: string }

@@ -110,7 +110,8 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	}
 	emit := func(event contract.RunEvent) {
 		if event.MessageProgress != nil {
-			return // live prefixes are not durable semantic events
+			_ = e.Progress(ctx, *event.MessageProgress)
+			return // live prefixes never enter the durable journal
 		}
 		if event.ExecutionCheckpoint != nil {
 			_ = saveCheckpoint(ctx, event.ExecutionCheckpoint.Checkpoint)
@@ -120,7 +121,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 			_ = saveCheckpoint(ctx, event.BudgetPaused.Checkpoint)
 			return
 		}
-		err := e.writer.boundEvent(ctx, event)
+		err := e.writer.boundEvent(ctx, event, e.boundaryProgressPreview(event.Message != nil))
 		e.changed(err)
 	}
 	endpoint := e.source.Connection.Assistant.Endpoint

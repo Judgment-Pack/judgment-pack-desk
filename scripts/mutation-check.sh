@@ -14729,8 +14729,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'id := nextAssistantRunIdentity(run, kind)' \
     'id := assistantExecutionID(kind, 1)'
   mutate go 'assistant execution: reconstructed event identities restart' internal/desk/assistant_run_store_writer.go \
-    'return appendAssistantRunEvent(run, nextAssistantRunIdentity(run, "event"), event)' \
-    'return appendAssistantRunEvent(run, assistantExecutionID("event", 1), event)'
+    'changed, err := appendAssistantRunEvent(run, nextAssistantRunIdentity(run, "event"), event)' \
+    'changed, err := appendAssistantRunEvent(run, assistantExecutionID("event", 1), event)'
   mutate go 'assistant execution: canceled unread close leaves root admission open' internal/desk/assistant_execution_model.go \
     'if b.dispatch.admitted.Load() && !b.retained.Load() {' \
     'if false {'
@@ -15701,7 +15701,7 @@ fi
 # Desk #629: exact observations and explicit delivery through the browser transport.
 if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'assistant run client: owner source revision ignored' web/src/assistant/serverRuns/decode.ts \
-    'value.owner.revision !== expected.owner.revision' 'false'
+    'value.owner.revision !== expected.owner.revision || !text(value.requestId,128)' 'false || !text(value.requestId,128)'
   mutate web 'assistant run client: canonical checkpoint bypassed' web/src/assistant/serverRuns/decode.ts \
     'readExecution(value.checkpoint)' 'value.checkpoint'
   mutate web 'assistant run client: unknown semantic discriminator accepted' web/src/assistant/serverRuns/decode.ts \

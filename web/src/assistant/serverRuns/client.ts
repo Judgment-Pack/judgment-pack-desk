@@ -108,6 +108,7 @@ export class ServerRunClient {
     validateReference(observations.reference)
     const cursor = observations.cursor
     if (cursor !== undefined) cursorParts(cursor)
+    observations.beginStream()
     const scope = await this.scope(signal)
     let answer: Response | undefined
     try {
@@ -124,7 +125,7 @@ export class ServerRunClient {
       }
       if (!scope.signal.aborted && (!reconciled || !observations.snapshot || ['admitted','running'].includes(observations.snapshot.state))) throw new RunRequestError('uncertain')
     } catch (cause) { if (!scope.signal.aborted) throw cause instanceof AIFailureError ? cause : new AIFailureError(normalizeFailure(cause,'desk')) }
-    finally { if (answer) await discardBody(answer); scope.close() }
+    finally { observations.endStream(); if (answer) await discardBody(answer); scope.close() }
   }
 }
 function statusCode(status: number): FailureCode { return status === 409 ? 'stale-state' : status === 400 ? 'invalid-request' : status === 401 ? 'authentication' : status === 403 ? 'permission' : status === 429 ? 'rate-limited' : 'unavailable' }

@@ -17,6 +17,7 @@ import (
 )
 
 type assistantRunView struct {
+	DisplayPreview  []assistantRunPreview             `json:"displayPreview,omitempty"`
 	Continuations   []assistantRunContinuationReceipt `json:"continuations,omitempty"`
 	ChatProjection  *assistantChatProjectionView      `json:"chatProjection,omitempty"`
 	ProjectionIssue string                            `json:"projectionIssue,omitempty"`
@@ -33,7 +34,7 @@ type assistantRunView struct {
 }
 
 func assistantRunPublic(run assistantRunRecord) assistantRunView {
-	return assistantRunView{Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
+	return assistantRunView{DisplayPreview: run.DisplayPreview, Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
 }
 func (s *Server) registerAssistantRuns() {
 	s.mux.HandleFunc("POST /api/assistant-runs/{run}/pack-checks", s.handleAssistantPackRecheck)
@@ -216,7 +217,11 @@ func assistantRunSSE(w http.ResponseWriter, controller *http.ResponseController,
 		return err
 	}
 	return assistantRunStreamWrite(controller, func() error {
-		_, err := fmt.Fprintf(w, "event: %s\nid: %s\ndata: %s\n\n", kind, cursor, raw)
+		id := ""
+		if cursor != "" {
+			id = "id: " + cursor + "\n"
+		}
+		_, err := fmt.Fprintf(w, "event: %s\n%sdata: %s\n\n", kind, id, raw)
 		return err
 	})
 }
@@ -249,6 +254,7 @@ func (s *Server) handleAssistantRunEvents(w http.ResponseWriter, r *http.Request
 	w.Header().Set("X-Accel-Buffering", "no")
 	cursor := r.Header.Get("Last-Event-ID")
 	first := true
+	liveSequence := uint64(0)
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 	for {
@@ -276,6 +282,18 @@ func (s *Server) handleAssistantRunEvents(w http.ResponseWriter, r *http.Request
 		cursor = assistantRunCursor(run)
 		if assistantRunTerminal(run.State) || run.State == "awaiting-input" || run.State == "paused-budget" || run.State == "awaiting-client" {
 			return
+		}
+		progress, err := host.readProgress(r, run)
+		if err != nil {
+			return
+		}
+		for _, observation := range progress {
+			if observation.Sequence > liveSequence {
+				if assistantRunSSE(w, controller, "progress", "", observation) != nil {
+					return
+				}
+				liveSequence = observation.Sequence
+			}
 		}
 		select {
 		case <-r.Context().Done():

@@ -38,6 +38,7 @@ type assistantRunExecution struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	done     chan struct{}
+	progress assistantRunProgressState
 	input    *assistantChatCustody
 }
 
@@ -162,6 +163,10 @@ func (h *assistantRunService) launch(r *http.Request, record assistantRunRecord,
 	if err != nil {
 		return err
 	}
+	epoch, err := newAssistantRunProgressEpoch()
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	stopSession := context.AfterFunc(session, cancel)
 	stopPolicy := func() bool { return true }
@@ -178,6 +183,15 @@ func (h *assistantRunService) launch(r *http.Request, record assistantRunRecord,
 		cancel()
 	}
 	execution := &assistantRunExecution{service: h, source: source, request: r.Clone(ctx), record: record, writer: writer, decision: decision, ctx: ctx, cancel: cancel, done: make(chan struct{}), input: &assistantChatCustody{}}
+	execution.progress.epoch = epoch
+	execution.progress.retained = map[string]assistantRunPreview{}
+	for _, p := range record.DisplayPreview {
+		key := ""
+		if p.TaskID != nil {
+			key = *p.TaskID
+		}
+		execution.progress.retained[key] = p
+	}
 	h.active[record.ID] = execution
 	go func() {
 		defer close(execution.done)
@@ -210,6 +224,7 @@ func (h *assistantRunService) launch(r *http.Request, record assistantRunRecord,
 		<-monitorDone
 		bounded, finish := context.WithTimeout(context.Background(), 5*time.Second)
 		defer finish()
+		_ = execution.saveProgressPreview(bounded, false)
 		latest, readErr := writer.lease.store.Read(bounded, record.Binding, record.ID)
 		if readErr == nil && !assistantRunTerminal(latest.State) {
 			// A valid pause survives stream disconnection and process reacquisition.
@@ -334,6 +349,9 @@ func (h *assistantRunService) action(r *http.Request, id string, action assistan
 		}
 		run.Actions = append(run.Actions, assistantRunActionReceipt{ID: action.ID, Digest: digest, Kind: action.Kind, Decision: decision})
 		if action.Kind == "cancel" {
+			if active := h.active[id]; active != nil {
+				run.DisplayPreview = active.progressPreviewLocked()
+			}
 			stopAssistantRun(run)
 		} else {
 			run.State = "admitted"
@@ -497,12 +515,15 @@ func (e *assistantRunExecution) Authorize(ctx context.Context) error {
 	return nil
 }
 func (e *assistantRunExecution) Checkpoint(ctx context.Context, cp contract.Checkpoint) error {
-	err := e.writer.Checkpoint(ctx, cp)
+	if cp.Status != "running" {
+		e.clearProgress()
+	}
+	err := e.writer.Checkpoint(ctx, cp, e.boundaryProgressPreview(false))
 	e.changed(err)
 	return err
 }
 func (e *assistantRunExecution) Event(ctx context.Context, id string, event contract.RunEvent) error {
-	err := e.writer.Event(ctx, id, event)
+	err := e.writer.Event(ctx, id, event, e.boundaryProgressPreview(event.Message != nil))
 	e.changed(err)
 	return err
 }
