@@ -691,12 +691,19 @@ class SelectionTests(unittest.TestCase):
         self.assertTrue(any("-timeout 960s" in line and "-run" not in line for line in executions), calls)
         self.assertTrue(any(line.startswith("go-test-binary ") and "-test.timeout=2460s -test.run ." in line for line in calls), calls)
         self.assertTrue(any(line.startswith("go-test-binary ") and "-test.timeout=540s" in line for line in calls), calls)
+        full_baselines = [line for line in calls if line.startswith("go-test-binary ") and "-test.run . " in line]
+        self.assertTrue(full_baselines, calls)
+        self.assertTrue(all("-test.v=true -test.failfast" in line for line in full_baselines), calls)
+        self.assertTrue(all("failfast" not in line for line in calls if line not in full_baselines), calls)
         self.assertEqual(self.how(result), {"bridge selected budget": "selected", "bridge full budget": "fallback"})
 
         whole = self.harness("go", "--whole")
         self.assertEqual(whole.returncode, 0, whole.stdout + whole.stderr)
         self.assertIn("budget full-mutant 900", self.log.read_text())
         self.assertNotIn("budget selected-mutant", self.log.read_text())
+        whole_calls = self.log.read_text().splitlines()
+        self.assertTrue(all("failfast" not in line for line in whole_calls
+                            if not (line.startswith("go-test-binary ") and "-test.run . " in line)), whole_calls)
         self.assertEqual(set(self.how(whole).values()), {"whole"})
 
     def test_full_package_cost_above_selected_budget_still_checks_mutants(self):
@@ -807,14 +814,20 @@ class SelectionTests(unittest.TestCase):
 
     def test_failed_package_baseline_or_build_never_measures_a_mutant(self):
         row=("go", "bad baseline", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge")
+        later=("go", "later row", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge")
         for build in [False,True]:
             with self.subTest(build=build):
-                self.package_fixture([row], {"bad baseline":"TestBridge"}, {"./internal/bridge":{"TestBridge":["guard bridge"]}})
+                self.package_fixture([row,later], {"bad baseline":"TestBridge", "later row":"TestBridge"}, {"./internal/bridge":{"TestBridge":["guard bridge"]}})
                 if build:self.env["FAKE_GO_COMPILE_PACKAGE"]="./internal/bridge"
                 result=self.harness("go")
                 self.assertNotEqual(result.returncode,0)
-                self.assertIn("BASELINE NOT GREEN",self.table(result)["bad baseline"])
-                self.assertNotIn("-count=1 -timeout",self.log.read_text())
+                self.assertEqual(set(self.table(result)), {"bad baseline", "later row"})
+                self.assertTrue(all("BASELINE NOT GREEN" in verdict for verdict in self.table(result).values()))
+                calls=self.log.read_text()
+                self.assertNotIn("-count=1 -timeout",calls)
+                if not build:
+                    self.assertEqual(calls.count("go-test-binary "),1,calls)
+                    self.assertIn("-test.run . -test.v=true -test.failfast",calls)
                 self.env.pop("FAKE_GO_COMPILE_PACKAGE",None)
 
     def test_go_non_verdicts_never_become_caught_or_survived(self):

@@ -65,7 +65,7 @@ func TestAssistantPromptRawPartsAndCanonicalAssembly(t *testing.T) {
 	}
 	// The explicit adapter query is used whole: the legacy message marker must
 	// not discard the matching word before it, nor infer another query.
-	query := "outreach\n" + personMessageMarker + "unrelated astronomy"
+	query := "outreach\n" + "THE PERSON'S MESSAGE\n" + "unrelated astronomy"
 	parts, err := runcontext.ReadHostParts(t.Context(), host, query, runcontext.Defaults, true)
 	if err != nil {
 		t.Fatal(err)

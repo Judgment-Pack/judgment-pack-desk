@@ -598,15 +598,7 @@ go	hand-over: the record moves to another record	TestAConfirmationRecordsExactly
 go	hand-over: what a stopped confirmation wrote is appended again	TestTheHoldersFileIsOnlyAppendedTo
 go	harness swap: anthropic cache read dropped	TestBackgroundCompletionAdmitsCacheFigures
 go	harness swap: cache figures leave the completion JSON	TestBackgroundCompletionAdmitsCacheFigures
-go	harness swap: codex recall reads past the state header	TestAgentRecallQueryStopsAtTheStateHeader
-go	harness swap: codex recall reads the execution state	TestAgentRecallQueryStopsAtTheStateHeader
 go	harness swap: openai-compatible cache read dropped	TestBackgroundCompletionAdmitsCacheFigures
-go	harness swap: recall reads a later user turn	TestMemoryRecallQueryHoldsOnEachShape
-go	harness swap: recall reads a part that is not text	TestMemoryRecallQueryHoldsOnEachShape
-go	harness swap: recall reads the execution state in a content list	TestMemoryRecallQueryHoldsOnEachShape
-go	harness swap: recall reads the execution state message	TestMemoryRecallQueryHoldsOnEachShape
-go	harness swap: recall reads the execution state part	TestMemoryRecallQueryHoldsOnEachShape
-go	harness swap: recall skips no thought part	TestMemoryRecallQueryHoldsOnEachShape
 go	http is accepted off loopback	TestARefusedFileSendsNothing,TestConfiguredEndpointRefusals,TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse,TestRelayRefusesARefusedConfiguration,TestSharedFixturesDecodeAsTheVerdictSays
 go	http is accepted on the LAN without the opt-in	TestARefusedFileSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays,TestTransportRuleAdmitsAPrivateNetworkAddressOnlyWithTheOptIn
 go	http is accepted past the LAN with the opt-in	TestARefusedFileSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays,TestTransportRuleAdmitsAPrivateNetworkAddressOnlyWithTheOptIn
@@ -1892,7 +1884,6 @@ web	harness swap: read_link ignores the turn's policy	src/chat/linkTools.test.ts
 web	harness swap: read_source ignores the run's policy	src/research/tools.test.ts
 web	harness swap: read_source is not framed as retrieved data	src/research/tools.test.ts
 web	harness swap: renderImageToText left unwired	src/assistant/harnessHost.test.ts
-web	harness swap: the Go state header drifts from the package's	src/assistant/harnessHost.test.ts
 web	harness swap: the case writer gets no attachments	src/research/run.test.ts
 web	harness swap: the draft snapshot back in the prompt	src/research/run.test.ts
 web	harness swap: the draft snapshot is not the current state	src/research/run.test.ts
@@ -2908,3 +2899,8 @@ go	assistant creation: correction proposal rewrites evidence	TestAssistantCreati
 web	assistant creation: passing partial correction refused	src/assistant/serverRuns/creation.test.ts
 web	assistant creation: partial check advertises readiness	src/assistant/serverRuns/creation.test.ts
 web	assistant creation: correction overlay reorders issue rows	src/assistant/serverRuns/creation.test.ts
+go	assistant prompt: transport context ceilings ignored	TestAIWireGuardBudgetsEveryWireWithoutClipping,TestAIWireGuardLegacyDispatchOwnsNoPromptLayers
+go	assistant prompt: transport reads brief again	TestAIWireGuardNeverReadsPromptSourcesOrChangesInput,TestAIWireGuardLegacyDispatchOwnsNoPromptLayers
+go	assistant prompt: relay appends another prompt layer	TestAIWireGuardLegacyDispatchOwnsNoPromptLayers,TestAssistantPromptCanonicalAdapterOwnsEveryWire
+go	assistant prompt: native transport appends instructions	TestAIWireGuardLegacyDispatchOwnsNoPromptLayers
+go	assistant prompt: transport rereads memory	TestAIWireGuardNeverReadsPromptSourcesOrChangesInput
