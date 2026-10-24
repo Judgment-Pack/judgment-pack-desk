@@ -28,6 +28,7 @@ type assistantCreationFinding struct {
 }
 
 type assistantCreationIssue struct {
+	Position *int                         `json:"position,omitempty"`
 	ID       string                       `json:"id"`
 	Original assistantCreationCase        `json:"original"`
 	Finding  assistantCreationFinding     `json:"finding"`
@@ -184,7 +185,7 @@ func assistantCreationCorrectedCase(scope assistantCreationScope, issue assistan
 
 // Retest first, then CAS the result. Failure/Stop/uncertain delivery leaves the
 // original issue unresolved; no temporary replacement ever becomes current.
-func approveAssistantCreationCorrection(ctx context.Context, scope assistantCreationScope, issue assistantCreationIssue, token string, cases []assistantCreationCase, call assistantCreationCall, fresh func(context.Context) error, retest func(context.Context, []assistantCreationCase) (assistantPackCheck, error), commit func(context.Context, []assistantCreationCase, assistantPackCheck) error) error {
+func approveAssistantCreationCorrection(ctx context.Context, scope assistantCreationScope, issue assistantCreationIssue, token string, cases []assistantCreationCase, issues []assistantCreationIssue, call assistantCreationCall, fresh func(context.Context) error, retest func(context.Context, []assistantCreationCase) (assistantPackCheck, error), commit func(context.Context, []assistantCreationCase, assistantPackCheck) error) error {
 	if issue.Proposal == nil || fresh(ctx) != nil {
 		return errAssistantRunScope
 	}
@@ -199,7 +200,10 @@ func approveAssistantCreationCorrection(ctx context.Context, scope assistantCrea
 	if findings[0].Status != "valid" || !assistantHostArgumentsMatch([]byte(findings[0].Canonical), replacement.ExpectedDisposition) {
 		return errAssistantRunScope
 	}
-	staged := append(append([]assistantCreationCase{}, cases...), replacement)
+	staged, err := assistantCreationStage(cases, issues, issue, replacement)
+	if err != nil {
+		return err
+	}
 	if err = fresh(ctx); err != nil {
 		return err
 	}
@@ -210,18 +214,46 @@ func approveAssistantCreationCorrection(ctx context.Context, scope assistantCrea
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if check.DocumentDigest != scope.CandidateDigest || check.TotalCases != len(staged) || !check.Valid || len(check.Report) == 0 {
-		return errAssistantRunScope
-	}
-	ids := make([]string, len(staged))
-	for i := range staged {
-		ids[i] = staged[i].ID
-	}
-	if !validAssistantSavedPackReport(check.Report, ids) {
+	if !assistantCreationSuccessfulCheck(check, scope.CandidateDigest, staged) {
 		return errAssistantRunScope
 	}
 	if err = fresh(ctx); err != nil {
 		return err
 	}
 	return commit(ctx, staged, check)
+}
+
+// Position is the independent proposal's original slot. Other unresolved slots
+// are absent from Cases until explicitly corrected; approvals may arrive in any order.
+func assistantCreationStage(cases []assistantCreationCase, issues []assistantCreationIssue, issue assistantCreationIssue, replacement assistantCreationCase) ([]assistantCreationCase, error) {
+	at := len(cases) // Legacy findings have no retained position.
+	if issue.Position != nil {
+		at = *issue.Position
+		for _, other := range issues {
+			if other.ID != issue.ID && other.Position != nil && *other.Position < *issue.Position {
+				at--
+			}
+		}
+		if at < 0 || at > len(cases) {
+			return nil, errAssistantRunScope
+		}
+	}
+	staged := append([]assistantCreationCase{}, cases[:at]...)
+	staged = append(staged, replacement)
+	return append(staged, cases[at:]...), nil
+}
+
+func assistantCreationSuccessfulCheck(check assistantPackCheck, digest string, cases []assistantCreationCase) bool {
+	if check.DocumentDigest != digest || check.TotalCases != len(cases) || !check.Valid {
+		return false
+	}
+	ids := make([]string, len(cases))
+	for i := range cases {
+		ids[i] = cases[i].ID
+	}
+	if !validAssistantSavedPackReport(check.Report, ids) {
+		return false
+	}
+	report, err := assistantTestObject(check.Report)
+	return err == nil && string(report["status"]) == `"passed"`
 }

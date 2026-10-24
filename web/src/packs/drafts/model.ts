@@ -1,3 +1,4 @@
+import { conversationWire, encodeWireValue, wireField } from '../../chat/wire'
 import {validPolicySources,type PolicyAuthoringSource} from '../../policies/authoringSource'
 import { decodeCheckpoint, type Checkpoint } from '../../chat/checkpoint'
 import type { Chat, ChatAttachment } from '../../chat/store'
@@ -15,18 +16,23 @@ export interface PackDraft {
   documents: ChatAttachment[]; finalized?: NonNullable<Chat['pack']>
 }
 export interface DraftDocument { version: 1; drafts: PackDraft[]; deleted: string[] }
-export interface DraftReply { project: string; sha256: string; content: unknown }
+export interface DraftReply { project: string; sha256: string; content: unknown; wireDrafts?:Record<string,string> }
 export interface DraftPersistence {
   read(): Promise<DraftReply>
   write(document: DraftDocument, digest: string): Promise<DraftReply>
 }
 export const draftPersistence: DraftPersistence = {
-  read: async () => answer<DraftReply>(await deskFetch('/api/draft-packs')),
-  write: async (document, digest) => answer<DraftReply>(await deskFetch('/api/draft-packs', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': digest }, body: JSON.stringify(document) }))
+  read: async () => readDraftReply(await deskFetch('/api/draft-packs')),
+  write: async (document, digest) => readDraftReply(await deskFetch('/api/draft-packs', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': digest }, body: encodeWireValue(document) }))
+}
+async function readDraftReply(response:Response):Promise<DraftReply> {
+ if(!response.ok)return answer<DraftReply>(response)
+ const raw=await response.text()
+ return {...JSON.parse(raw) as DraftReply,wireDrafts:conversationWire(raw,'drafts')}
 }
 export const emptyDraftDocument = (): DraftDocument => ({version: 1, drafts: [], deleted: []})
 const id = (value: unknown): value is string => typeof value === 'string' && /^draft-[a-z0-9-]{1,160}$/.test(value)
-export function decodeDrafts(value: unknown): DraftDocument {
+export function decodeDrafts(value: unknown,wireDrafts?:Record<string,string>): DraftDocument {
   const doc = value as DraftDocument | null
   const invalid = (): never => { throw new Error(sourceMessage('Saved drafts could not be read. The saved file has not been changed.')) }
   if (doc?.version !== 1 || !Array.isArray(doc.drafts) || doc.drafts.length > 256 || !Array.isArray(doc.deleted) || doc.deleted.length > 4096 || doc.deleted.some(value => !id(value)) || new Set(doc.deleted).size !== doc.deleted.length) return invalid()
@@ -42,7 +48,7 @@ export function decodeDrafts(value: unknown): DraftDocument {
     if(draft.policySources!==undefined&&!validPolicySources(draft.policySources))return invalid()
     if (draft.sourceFiles !== undefined && (!Array.isArray(draft.sourceFiles) || draft.sourceFiles.some(file=>!file || typeof file.name!=='string' || typeof file.text!=='string'))) return invalid()
     seen.add(draft.id)
-    const saved = decodeCheckpoint(draft.checkpoint)
+    const saved = decodeCheckpoint(draft.checkpoint,wireDrafts?.[draft.id]&&wireField(wireDrafts[draft.id]!,'checkpoint'))
     if (!saved.state.candidates.length || saved.state.turns.length || saved.state.responses?.length) return invalid()
     return {...draft, checkpoint: saved}
   })}

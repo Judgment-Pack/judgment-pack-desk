@@ -27,7 +27,11 @@ func projectAssistantCreation(state map[string]json.RawMessage, run assistantRun
 		}
 	}
 	for _, issue := range r.Issues {
-		issues = append(issues, assistantChatJSON(map[string]any{"id": issue.ID, "original": issue.Original, "message": issue.Finding.Message, "finding": issue.Finding}))
+		fields := map[string]any{"id": issue.ID, "original": issue.Original, "message": issue.Finding.Message, "finding": issue.Finding}
+		if issue.Position != nil {
+			fields["position"] = *issue.Position
+		}
+		issues = append(issues, assistantChatJSON(fields))
 	}
 	if approval := r.Approved; approval != nil {
 		for _, replacement := range r.Cases {

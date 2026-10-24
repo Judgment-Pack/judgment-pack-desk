@@ -15765,6 +15765,27 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	}'
 fi
 
+# Desk #648 review: passing publish/receipt gates, original order and raw custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant creation: mismatching staged suite publishes' internal/desk/assistant_creation_workflow.go \
+    'if !assistantCreationSuccessfulCheck(check, scope.CandidateDigest, staged) {' \
+    'if false {'
+  mutate go 'assistant creation: completed mismatch approval retained' internal/desk/assistant_creation_transition.go \
+    ' || !assistantCreationSuccessfulCheck(*r.Check, input.Scope.CandidateDigest, r.Cases)' \
+    ' || false'
+  mutate go 'assistant creation: original issue position ignored' internal/desk/assistant_creation_workflow.go \
+    'at = *issue.Position' \
+    'at = len(cases)'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant creation: artifact numeric custody rewritten' web/src/packs/drafts/model.ts \
+    'body: encodeWireValue(document)' \
+    'body: JSON.stringify(document)'
+  mutate web 'assistant creation: next control numeric custody rewritten' web/src/chat/wire.ts \
+    'wireJSON(old,true):encodeWireValue(value)' \
+    'wireJSON(old,true):JSON.stringify(value)'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

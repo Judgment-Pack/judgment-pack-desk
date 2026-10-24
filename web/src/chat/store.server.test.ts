@@ -131,3 +131,58 @@ it('retains the original controller and store admission while terminal reconcili
  expect(fetch.mock.calls.filter(([path])=>String(path).endsWith(`/requests/${pending.requestId}`))).toHaveLength(2)
  expect(prepare).not.toHaveBeenCalled();expect(h.writes).toEqual([]);expect(run.canRetryResponse).toBe(true)
 })
+
+it.each(['cases','held','issues'] as const)('retains exact %s case tokens and member order across artifact saves, reload and the next creation action',async kind=>{
+ const {readCreation,withCreation}=await import('../assistant/serverRuns/creation')
+ const {copyWireValue,encodeWireValue,wireField}=await import('./wire')
+ const candidate='{ "title":"Exact numbers" }',candidateDigest=sha256(candidate)
+ let row='{"id":"precise","facts":{"large":9007199254740993,"decimal":1.20,"negativeZero":-0,"flag":false,"nil":null,"numeric":"1"},"expectedDisposition":{"kind":"outcome","outcomeId":"accept","reasons":[],"handoff":{"state":"none"}},"expectationSource":"you-1","rationale":"Independent person statement."}'
+ const finding='{"status":"invalid","message":"Review the independent expectation.","admitted":true}'
+ const issue='{"finding":'+finding+',"id":"precise","message":"Review the independent expectation.","original":'+row+',"position":0}'
+ const held='{"admitted":['+row+'],"candidateDigest":"'+candidateDigest+'","dropped":[],"unknowns":[]}'
+ const state={...one.checkpoint!.state,turns:[{id:'person-one',role:'user',kind:'brief',text:'Always accept.',at}],responses:[{id:'response-one',messageId:'person-one',documents:[],websites:[],sourceIds:[],work:{items:[],notices:[]}}],candidates:[{text:candidate,digest:'',document:JSON.parse(candidate),revision:1,producedBy:'conversation'}]}
+ let chatRaw=JSON.stringify({version:1,chats:[{...one,serverRequest:{requestId:'person-one',admissionId:'admit-one'},checkpoint:{state,sources:[]}}]})
+ chatRaw=chatRaw.replace('"cases":[]','"cases":'+(kind==='cases'?'['+row+']':'[]')).replace('"heldProposal":null','"heldProposal":'+(kind==='held'?held:'null')).replace('"expectationIssues":[]','"expectationIssues":'+(kind==='issues'?'['+issue+']':'[]'))
+ let draftRaw='{"version":1,"drafts":[],"deleted":[]}'
+ const writes:string[]=[]
+ vi.stubGlobal('fetch',vi.fn(async(path:unknown,init?:RequestInit)=>{
+  const drafts=String(path)==='/api/draft-packs'
+  if(init?.method==='PUT'){if(drafts)draftRaw=String(init.body);else chatRaw=String(init.body);writes.push(String(init.body))}
+  return new Response('{"project":"/project","sha256":"saved","content":'+(drafts?draftRaw:chatRaw)+(drafts?'':',"chatRevisions":{"chat-one":"'+'b'.repeat(64)+'"}')+'}',{headers:{'Content-Type':'application/json'}})
+ }))
+ let store=new ChatStore('/project');stores.push(store);await store.load();expect(store.getSnapshot().error).toBe('')
+ store.pinServerChat(one.id)
+ await store.reconcileServer(one.id,true,{digest:'b'.repeat(64),responseId:'response-one',requestId:'person-one',admissionId:'admit-one'})
+ const custody=()=>{
+  const artifact=JSON.parse(draftRaw).drafts[0]
+  const draftWire=conversationWire('{"content":'+draftRaw+'}','drafts')[artifact.id]!
+  const chatWire=conversationWire('{"content":'+chatRaw+'}')[one.id]!
+  const draftState=wireField(wireField(draftWire,'checkpoint')!,'state')!,chatState=wireField(wireField(chatWire,'checkpoint')!,'state')!
+  for(const key of ['cases','heldProposal','expectationIssues'])expect(wireField(draftState,key)).toBe(wireField(chatState,key))
+  for(const raw of [draftState,chatState]){expect(raw).toContain('9007199254740993');expect(raw).toContain('1.20');expect(raw).toContain('"negativeZero":-0')}
+ }
+ custody()
+ const generation=JSON.parse(draftRaw).drafts[0].generation
+ // A changed literal with the same JS display value is a new artifact revision.
+ chatRaw=chatRaw.replace('1.20','1.200');row=row.replace('1.20','1.200')
+ store.pinServerChat(one.id)
+ await store.reconcileServer(one.id,true,{digest:'b'.repeat(64),responseId:'response-one',requestId:'person-one',admissionId:'admit-one'})
+ expect(JSON.parse(draftRaw).drafts[0].generation).toBe(generation+1)
+ custody();store.dispose()
+ // Real draft and conversation readers must reattach custody after reload.
+ store=new ChatStore('/project');stores.push(store);await store.load();expect(store.getSnapshot().error).toBe('')
+ let saved=store.getSnapshot().chats[0]!.checkpoint!.state
+ saved={...saved,candidates:saved.candidates.map(c=>({...c,digest:sha256(c.text)}))}
+ const evidence=readCreation({action:'check',candidate,candidateDigest,sourceDigest:'b'.repeat(64),generation:1,cases:kind==='cases'?'['+row+']':'[]',held:kind==='held'?'['+row+']':'[]',issues:kind==='issues'?'[{"position":0,"id":"precise","original":'+row+',"finding":'+finding+'}]':'[]',citations:[],unknowns:[]})
+ const current=withCreation(saved,evidence,true)
+ expect(()=>withCreation(saved,{...evidence,cases:evidence.cases.replace('1.200','1.20'),held:evidence.held.replace('1.200','1.20'),issues:evidence.issues.replace('1.200','1.20')},true)).toThrow()
+ const next={id:'check-next',role:'user' as const,kind:'message' as const,text:'Check current draft',at,creation:{kind:'check' as const,candidateDigest}}
+ await store.prepareServerRequest(one.id,{...current,turns:[...current.turns,next]},next.id,next.id,new AbortController().signal)
+ custody()
+ // An explicit edit cannot silently recover an older raw token from provenance.
+ const source=current.cases[0]??current.heldProposal?.admitted[0]??current.expectationIssues[0]!.original
+ const edited=copyWireValue(source,{...source,facts:{large:9007199254740992}})
+ expect(encodeWireValue(edited)).not.toContain('9007199254740993')
+ expect(encodeWireValue(edited)).toContain('9007199254740992')
+ expect(writes.length).toBeGreaterThan(0)
+})

@@ -38,3 +38,16 @@ it('constructs a historical draft display without restoring execution, current c
  const binding=historicalDraftBinding({checkpoint:{state:old,sources:[]}} as unknown as PackDraft)
  expect(binding.run).toBeNull();expect(binding.state.execution).toBeUndefined();expect(binding.state.restored).toBe(true);expect(binding.state.readiness).toBe('');expect(binding.state.expectationIssues[0]?.proposal).toBeUndefined();expect(binding.state.candidates[0]?.check).toBeUndefined();expect(binding.state.candidates[0]?.previousCheck?.valid).toBe(true)
 })
+
+it('reads the shared original-position vectors without dropping explicit custody',async()=>{
+ const {default:vectors}=await import('../../../../internal/desk/testdata/assistant-creation-positions.json')
+ const original={...row,id:'invalid'},finding={status:'invalid',message:'Review original expectation.',admitted:true}
+ for(const v of vectors){
+  const issue=JSON.stringify({id:original.id,original,finding})
+  const position='positionJSON' in v?v.positionJSON:undefined
+  const issues='['+issue.slice(0,-1)+(position===undefined?'':',\"position\":'+position)+'}]'
+  const read=()=>readCreation({...evidence(),check:undefined,issues})
+  if(v.valid)expect(JSON.parse(read().issues)[0].position,v.name).toBe(position===undefined?undefined:JSON.parse(position))
+  else expect(read,v.name).toThrow()
+ }
+})
