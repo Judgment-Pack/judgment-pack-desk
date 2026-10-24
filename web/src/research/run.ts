@@ -100,6 +100,7 @@ export interface Citation {
 }
 
 export interface ExpectationIssue {
+  position?:number
 	finding?: {status:'invalid';message:string;admitted?:boolean;unreachable?:boolean}
   id: string
   original: AuthoringCase

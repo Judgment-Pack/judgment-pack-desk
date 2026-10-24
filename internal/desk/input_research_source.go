@@ -45,7 +45,9 @@ func (s *Server) researchVerifier() (string, error) {
 // The local Gateway admits 16 MiB source results; receipts add a small envelope.
 // These are retained acquisition bytes, separate from bounded model context.
 const inputResearchSourceResponseLimit = (16 << 20) + (64 << 10)
-const inputResearchSourceProofLimit = inputResearchSourceResponseLimit + (128 << 10)
+
+// The bounded manifest is additional to maximum request and response objects.
+const inputResearchSourceProofLimit = inputResearchSourceResponseLimit + backgroundModelResponseBytes + (8 << 10)
 const inputResearchRetainedByteLimit = 64 << 20
 const inputResearchSourceMetadataReserve = 512 << 10
 

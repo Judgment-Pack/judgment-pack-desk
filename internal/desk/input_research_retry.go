@@ -146,6 +146,7 @@ func waitResearchRetry(ctx context.Context, at time.Time) error {
 // refused. The attempt is finished "refused" under code, its response kept for
 // audit and never used as a source; it is not continued or retried.
 type researchAcquisitionRefused struct {
+	proof *portableResearchProofReference
 	code  string
 	cause error
 }
@@ -197,6 +198,22 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 			return err
 		})
 		if e != nil {
+			if errors.Is(e, errPortableResearchJournalSize) || errors.Is(e, errPortableResearchStorageLimit) {
+				_, saveErr := root.change(func(r *inputResearchRun) error {
+					if r.Portable != nil && r.State == "running" {
+						if r.StopRequested {
+							r.State = "stopped"
+						} else {
+							r.State = "partial"
+						}
+						r.Problem = e.Error()
+					}
+					return nil
+				})
+				if saveErr != nil {
+					return nil, saveErr
+				}
+			}
 			if after != "" {
 				_, saveErr := root.change(func(r *inputResearchRun) error {
 					removeResearchRetry(r, after, "The retry could not be admitted. No further request was sent.")
@@ -222,8 +239,11 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 		if callErr != nil {
 			problem = callErr.Error()
 		}
+		if run.Portable != nil {
+			problem = portableResearchProblemText(problem)
+		}
 		var refused *researchAcquisitionRefused
-		if !errors.As(callErr, &refused) || kind == "model" || len(raw) == 0 {
+		if !errors.As(callErr, &refused) || (kind == "model" || len(raw) == 0) && refused.proof == nil {
 			refused = nil
 		}
 		_, e = root.change(func(r *inputResearchRun) error {
@@ -232,6 +252,16 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 				return err
 			}
 			size := len(raw)
+			if r.Portable != nil && errors.Is(callErr, errPortableResearchProofUnavailable) {
+				size = inputResearchSourceProofLimit
+			}
+			if refused != nil && refused.proof != nil {
+				if !refused.proof.valid() || len(raw) != 0 || r.Portable == nil {
+					return errPortableResearchProofUnavailable
+				}
+				current.RetainedProof = refused.proof
+				size += refused.proof.Bytes
+			}
 			if kind != "model" && callErr == nil && r.Portable == nil {
 				var source inputResearchSource
 				if json.Unmarshal(raw, &source) != nil {
@@ -266,7 +296,18 @@ func researchAttemptWithWait(ctx context.Context, root researchRunStore, kind st
 				problem = callErr.Error()
 			}
 			if refused != nil {
-				return refuseResearchAttempt(r, attempt.ID, raw, refused.code, problem)
+				if err := refuseResearchAttempt(r, attempt.ID, raw, refused.code, problem); err != nil {
+					return err
+				}
+				if refused.proof != nil {
+					if r.StopRequested {
+						r.State = "stopped"
+					} else {
+						r.State = "partial"
+					}
+					r.Problem = errPortableResearchAcquisitionSize.Error()
+				}
+				return nil
 			}
 			if err := finishResearchAttempt(r, attempt.ID, raw, problem); err != nil {
 				return err

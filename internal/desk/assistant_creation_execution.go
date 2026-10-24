@@ -116,7 +116,24 @@ func assistantCreationCasesAndIssues(input *assistantCreationInput) ([]assistant
 					return nil, nil, errAssistantRunInvalid
 				}
 			}
-			issues = append(issues, assistantCreationIssue{ID: original[0].ID, Original: original[0], Finding: finding})
+			var position *int
+			if fields["position"] != nil {
+				var n int
+				if string(fields["position"]) == "null" || json.Unmarshal(fields["position"], &n) != nil || n < 0 {
+					return nil, nil, errAssistantRunInvalid
+				}
+				position = &n
+			}
+			issues = append(issues, assistantCreationIssue{Position: position, ID: original[0].ID, Original: original[0], Finding: finding})
+		}
+	}
+	positions := map[int]bool{}
+	for _, issue := range issues {
+		if issue.Position != nil {
+			if *issue.Position >= len(cases)+len(issues) || positions[*issue.Position] {
+				return nil, nil, errAssistantRunScope
+			}
+			positions[*issue.Position] = true
 		}
 	}
 	return cases, issues, nil
@@ -308,7 +325,7 @@ func (e *assistantRunExecution) executeAssistantCreation(ctx context.Context, re
 		receipt.ExpectationID = operations["experimental_validate_expectations"]
 		for i, row := range receipt.Held {
 			if findings[i].Status == "invalid" {
-				receipt.Issues = append(receipt.Issues, assistantCreationIssue{ID: row.ID, Original: row, Finding: findings[i]})
+				receipt.Issues = append(receipt.Issues, assistantCreationIssue{Position: &i, ID: row.ID, Original: row, Finding: findings[i]})
 			} else {
 				row.ExpectedDisposition = []byte(findings[i].Canonical)
 				receipt.Cases = append(receipt.Cases, row)
@@ -413,7 +430,7 @@ func (e *assistantRunExecution) executeAssistantCreation(ctx context.Context, re
 		if err := e.retainAssistantCreation(ctx, input, receipt); err != nil {
 			return true, err
 		}
-		err = approveAssistantCreationCorrection(ctx, input.Scope, issue, input.Action.Token, cases, call, input.Fresh, func(ctx context.Context, staged []assistantCreationCase) (assistantPackCheck, error) {
+		err = approveAssistantCreationCorrection(ctx, input.Scope, issue, input.Action.Token, cases, issues, call, input.Fresh, func(ctx context.Context, staged []assistantCreationCase) (assistantPackCheck, error) {
 			return e.checkAssistantCreation(ctx, input, staged, call)
 		}, func(ctx context.Context, staged []assistantCreationCase, check assistantPackCheck) error {
 			receipt.Cases, receipt.Check = staged, &check
