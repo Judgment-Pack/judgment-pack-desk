@@ -1,10 +1,12 @@
 {
   "version": 1,
-  "status": "accepted architecture; private Go binding, critic, terminal projection and Graph/Policy/recipe/mapping/records/research-admission/search host foundations implemented; production activation pending",
-  "deskEvidence": "reviewed private foundations and focused actual API/native execution proofs; existing browser features remain on current engines pending full migration/certification",
+  "status": "closed production purposes bound in candidate; obsolete browser loops removed; Settings migration and full certification/release acceptance pending",
+  "deskEvidence": "Normal-Server API/native chat, authoring, Brief and creation fixtures plus existing reviewed host proofs; per-surface fresh/inherited evidence and gaps below",
   "agentEvidence": {
-    "version": "v0.6.0",
-    "revision": "3f308215afadd9d72ae963ebea1062247d1963ba"
+    "version": "v0.9.1",
+    "revision": "866b7177ebddb6b9628bc3925a4e0bc43a5fc197",
+    "harnessArchiveSha256": "71b8b5aa286af9e8756f9e3772710ff2a8ae113906a4d53e288abacc18f76fbf",
+    "inventory": "agent-v091-contract-inventory.json"
   },
   "adr": "../adr/0014-server-owned-assistant-runs.md",
   "scope": "All actual model dispatch callsites found by runAssistantSession/loadEngine/bindModelCall/bindAgentRun/runBackgroundModel scans; host subrows are feature capabilities, not independent provider loops.",
@@ -45,13 +47,13 @@
     {
       "id": "main-chat-and-right-pane",
       "category": "conversation",
-      "currentOwner": "ChatProvider \u2192 useResearchRun \u2192 AuthoringRun.turn \u2192 browser engine",
+      "currentOwner": "ChatProvider \u2192 useSavedChatRun \u2192 authenticated saved-chat server owner and canonical adapter",
       "targetOwner": "Go durable run + server domain workflow; browser renders shared events and submits explicit actions",
       "entrypoints": [
         "web/src/chat/ChatProvider.tsx",
         "web/src/chat/ChatPanel.tsx",
-        "web/src/research/useResearchRun.ts:useResearchRun",
-        "web/src/research/run.ts:AuthoringRun"
+        "web/src/assistant/serverRuns/useSavedChatRun.ts",
+        "web/src/assistant/serverRuns/controller.ts:SavedChatRun"
       ],
       "preserve": [
         "selected connection/revision/model and per-chat reasoning",
@@ -59,21 +61,23 @@
         "ordered response history/proposals/questions/budget/task progress and reload"
       ],
       "verification": [
-        "web/src/research/useResearchRun.web.test.tsx",
+        "web/src/assistant/serverRuns/useSavedChatRun.test.tsx",
         "web/src/research/run.test.ts",
         "web/src/chat/store.test.ts",
-        "existing AI browser recovery fixtures; new SSE reconnect/lost-ack coverage"
+        "existing AI browser recovery fixtures; new SSE reconnect/lost-ack coverage",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New API/native Work/Plan chat, exact Runtime read/GET/SSE/readback/idempotence; current SavedChatRun/controller tests PASS."
     },
     {
       "id": "pack-authoring-pane",
       "category": "conversation",
-      "currentOwner": "AssistantPane \u2192 useAssistantRun; one gated socket per run",
+      "currentOwner": "Existing standalone authoring capture \u2192 useAuthoringRun \u2192 closed production author-pack owner",
       "targetOwner": "same Go run service, purpose authoring; pane owns immutable capture and view lease",
       "entrypoints": [
         "web/src/assistant/AssistantPane.tsx",
-        "web/src/assistant/useAssistantRun.ts:useAssistantRun",
+        "web/src/assistant/useAuthoringRun.ts",
         "web/src/chat/PackAssistant.tsx"
       ],
       "preserve": [
@@ -82,20 +86,22 @@
         "retained pane context, host Runtime identity outside model gate, memory flag; no spontaneous guardrail"
       ],
       "verification": [
-        "web/src/assistant/useAssistantRun.test.tsx",
+        "web/src/assistant/useAuthoringRun.test.tsx",
         "web/src/assistant/AssistantPane.test.tsx",
-        "web/src/assistant/runContext.test.ts"
+        "web/src/assistant/runContext.test.ts",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New API/native author-pack execution PASS; source/selection currentness8 cases PASS."
     },
     {
       "id": "describe-it",
       "category": "conversation",
-      "currentOwner": "useDescribeIt \u2192 useAssistantRun \u2192 useProposalGenerator",
+      "currentOwner": "DescribeIt capture \u2192 useAuthoringRun \u2192 closed production describe-pack owner",
       "targetOwner": "Go authoring run on exact captured source; existing review/apply UI",
       "entrypoints": [
         "web/src/shell/DescribeIt.tsx:useDescribeIt",
-        "web/src/assistant/useProposalGenerator.ts"
+        "web/src/assistant/useAuthoringRun.ts"
       ],
       "preserve": [
         "single terminal state, stream/report, unknowns",
@@ -103,15 +109,17 @@
       ],
       "verification": [
         "web/src/shell/DescribeIt.test.tsx",
-        "web/src/assistant/useAssistantRun.test.tsx",
-        "existing proposal/recovery browser fixtures"
+        "web/src/assistant/useAuthoringRun.test.tsx",
+        "existing proposal/recovery browser fixtures",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New describe-pack API execution PASS; standalone browser fixture selected."
     },
     {
       "id": "graph-authoring-pane",
       "category": "conversation",
-      "currentOwner": "GraphAuthor \u2192 useAssistantRun(purpose graph) with graphHostTools",
+      "currentOwner": "GraphAuthor capture \u2192 useAuthoringRun \u2192 closed production author-graph owner",
       "targetOwner": "Go graph purpose and server-owned graph validation/explain handlers",
       "entrypoints": [
         "web/src/graphs/GraphAuthor.tsx",
@@ -125,19 +133,21 @@
       "verification": [
         "web/src/graphs/author.test.tsx",
         "internal/desk/graph_author_test.go",
-        "web/src/graphs/assistant.test.tsx"
+        "web/src/graphs/assistant.test.tsx",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New author-graph API execution PASS; current graph/source selection guards retained."
     },
     {
       "id": "legacy-research-authoring-and-draft-view",
       "category": "domain-workflow",
-      "currentOwner": "ResearchAuthoringPage/DraftPackView \u2192 useResearchRun \u2192 AuthoringRun; browser sequences source/review/repair turns",
+      "currentOwner": "Legacy URL redirects to NewPackView and canonical saved chat; unreachable browser loop removed",
       "targetOwner": "Go feature workflow using shared adapter turns and context.CorrectArtifact; UI projection only",
       "entrypoints": [
-        "web/src/routes/ResearchAuthoringPage.tsx",
+        "web/src/routes/DraftPackView.tsx:NewPackView",
         "web/src/routes/DraftPackView.tsx",
-        "web/src/research/useResearchRun.ts",
+        "web/src/assistant/serverRuns/useSavedChatRun.ts",
         "web/src/research/run.ts"
       ],
       "preserve": [
@@ -151,16 +161,16 @@
         "web/src/research/tools.test.ts",
         "internal/desk/ai_execution_browser_test.go"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh all3 mounted CreationRoutes PASS against current normal-New actual producer outputs; existing legacy URL redirects to NewPackView; no new research hook."
     },
     {
       "id": "independent-authoring-review-turn",
       "category": "conversation-subphase",
-      "currentOwner": "AuthoringRun calls TurnRequest.reviewer through useResearchRun",
+      "currentOwner": "Server creation workflow retains exact isolated review input and runs the canonical adapter",
       "targetOwner": "Go workflow invokes isolated adapter turn using canonical context/phase",
       "entrypoints": [
-        "web/src/research/run.ts:ports.turn reviewer",
-        "web/src/research/useResearchRun.ts:turn"
+        "internal/desk/assistant_creation_adapter.go"
       ],
       "preserve": [
         "no parent chat transcript/context index; explicit scoped source/candidate/check inputs",
@@ -169,18 +179,19 @@
       ],
       "verification": [
         "web/src/research/run.test.ts",
-        "web/src/research/useResearchRun.web.test.tsx",
+        "web/src/assistant/serverRuns/useSavedChatRun.test.tsx",
         "published six-scenario isolation fixtures"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh actual normal-New creation API and MultipleCorrections/last PASS; independent source oracle and exact explicit correction/retest guards retained."
     },
     {
       "id": "saved-pack-proposal-check-correct-save",
       "category": "domain-workflow",
-      "currentOwner": "AuthoringRun + ChatProvider savedPackReview + usePackAutoSave",
+      "currentOwner": "Server saved-pack proposal/check/continuation and explicit reviewed save; browser renders and submits current actions",
       "targetOwner": "Go owning artifact workflow/check ports; existing approval dispatcher for writes",
       "entrypoints": [
-        "web/src/research/run.ts:review/update/check/correction methods",
+        "internal/desk/assistant_saved_pack.go",
         "web/src/chat/packProposal.ts",
         "web/src/chat/usePackAutoSave.ts",
         "web/src/chat/usePackProposalSave.ts",
@@ -197,12 +208,13 @@
         "internal/desk/assistant_approval_test.go",
         "existing saved-pack proposal browser fixtures"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited server saved-pack/approval/dirty-CAS workflow. Pure saved-suite/checkpoint/Auto readers PASS; full mounted saved-pack apply/save journey not rerun. #660 mandatory numeric fidelity blocker."
     },
     {
       "id": "brief-summaries-all-subjects",
       "category": "tool-free-generation",
-      "currentOwner": "BriefPane reservation \u2192 useAssistantRun(purpose brief) \u2192 useProposalGenerator",
+      "currentOwner": "BriefPane fixed reservation and server client \u2192 closed production Brief executor",
       "targetOwner": "Go run on server-verified frozen brief reservation; no tools, browser rendering/print remain",
       "entrypoints": [
         "web/src/briefs/BriefPane.tsx:start",
@@ -221,14 +233,16 @@
         "web/src/briefs/BriefPane.test.tsx",
         "internal/desk/briefs_test.go",
         "internal/desk/brief_definition_test.go",
-        "internal/desk/brief_state_test.go"
+        "internal/desk/brief_state_test.go",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh normal-New API pack/graph/pack-draft/graph-draft/case + native + Runner job/run PASS. Fixture forbids Runtime execution/tools."
     },
     {
       "id": "canonical-critic",
       "category": "conversation-subphase",
-      "currentOwner": "package browser API/Codex adapter critic; host supplies cases/model",
+      "currentOwner": "Released Go canonical critic with exact Desk cases/settings; browser reads reports",
       "targetOwner": "Eino canonical critic; Desk Codex transport uses published turn critique helpers when requested",
       "entrypoints": [
         "web/src/assistant/criticCases.ts",
@@ -247,17 +261,19 @@
       "verification": [
         "web/src/assistant/criticCases.test.ts",
         "web/src/assistant/critic.test.ts",
-        "canonical critic vectors/scenarios, separate bridge fixture"
+        "canonical critic vectors/scenarios, separate bridge fixture",
+        "internal/desk/assistant_production_executor_test.go: normal Server construction, model-free settings and actual API/native Work/Plan fixtures"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Fresh model-free preparation legacy/canonical/project settings PASS. Standalone compiler project-setting omission found/repaired; normal-New authoring passes. Existing canonical critic behavior/vectors inherited."
     },
     {
       "id": "api-generic-delegation",
       "category": "conversation-subphase",
-      "currentOwner": "withDelegation(browser API engine)",
+      "currentOwner": "Canonical delegate.With(Eino) through production factory and Desk gate/source/receipt owners",
       "targetOwner": "published delegate.With(eino.New(), Options) and host Children gate factory",
       "entrypoints": [
-        "web/src/research/useResearchRun.ts:withDelegation",
+        "internal/desk/assistant_execution.go",
         "Agent go/adapter/delegate",
         "Agent go/gate/phase.go:ChildPhase"
       ],
@@ -272,12 +288,13 @@
         "web/src/assistant/execution/ExecutionProgress.test.tsx",
         "new bound parent/child gate/allowance race fixtures"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited bound Eino/delegate gate/capacity/progress fixtures. Full generic parent/child journey not rerun here; current binding certification belongs to separate worker."
     },
     {
       "id": "subscription-generic-delegation",
       "category": "conversation-subphase",
-      "currentOwner": "canonical TS withDelegation + runCodex delegation_requested/release/batch/parent continuation",
+      "currentOwner": "Canonical agent/delegate through actual Desk Manager; complete native binding certification still required",
       "targetOwner": "published Go Agent v0.6.0 coordinator and actual private Desk Codex transport foundations; full browser cutover/certification pending",
       "entrypoints": [
         "Agent packages/harness/engines/codex/index.ts:145-151",
@@ -294,7 +311,8 @@
         "private actual CodexManager parent handoff/child/parent continuation and checkpoint/release fixtures are implemented",
         "complete product/provider-managed certification and browser activation remain pending"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited actual CodexManager parent-release/child/parent continuation evidence; current Agent091 certification owned by separate worker. No scheduler added here."
     },
     {
       "id": "input-research-single-step",
@@ -324,7 +342,8 @@
         "internal/desk/background_completion_test.go",
         "internal/desk/background_execution_test.go"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited background091 final-focused.log PASS27, API RequestCap1/native0/1 exact one-use receipt proofs. Workflow unchanged."
     },
     {
       "id": "input-research-domain-parent-child",
@@ -355,7 +374,8 @@
         "internal/desk/input_research_recovery_test.go",
         "internal/desk/background_execution_test.go"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited background091 reservation-concurrency-fixed.log and final-focused.log; original two-child/journal limits and no replay unchanged."
     },
     {
       "id": "portable-research-and-model-acquisition",
@@ -386,12 +406,13 @@
         "internal/desk/input_research_journal_workflows_test.go",
         "internal/desk/background_execution_test.go"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited background091 actual-portable-and-native.log and model-source-actual.log using verified official Runner/Runtime."
     },
     {
       "id": "model-list-discovery",
       "category": "non-generative-diagnostic",
-      "currentOwner": "provider forms listModels via browser bindModelCall GET; Codex account model discovery",
+      "currentOwner": "Fixed server discovery owner and separate account model discovery; browser reads bounded replies",
       "targetOwner": "fixed server diagnostic/listing capability with same session/Desk/connection binding; no browser relay capability",
       "entrypoints": [
         "web/src/assistant/DeskAISettings.tsx:listedModels",
@@ -407,10 +428,11 @@
       ],
       "verification": [
         "web/src/assistant/modelListing.test.ts",
-        "web/src/assistant/endpointCheck.test.ts",
+        "web/src/assistant/modelListing.test.ts",
         "existing connection/provider/model admission tests"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited reviewed diagnostic discovery current/historical/refusal proofs; model list remains separate from conversation execution."
     },
     {
       "id": "capability-probe",
@@ -432,7 +454,8 @@
         "web/src/assistant/endpointCapabilities.test.ts",
         "new server diagnostic request/accounting fixture"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "BLOCKED #662: EndpointCapabilitiesSection still imports bindModelCall. Probe observation/one-token ceiling unchanged; no complete direct-transport exclusion claim."
     },
     {
       "id": "endpoint-connection-probe",
@@ -449,9 +472,10 @@
       ],
       "verification": [
         "internal/desk/assistant_test.go",
-        "web/src/assistant/endpointCheck.test.ts"
+        "internal/desk/assistant_test.go"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "BLOCKED #662: separate Settings probe path retained. No observation or ceiling relaxation."
     },
     {
       "id": "codex-connection-test",
@@ -477,12 +501,13 @@
         "web/src/assistant/useConnectionDiagnostic.test.tsx",
         "scripts/dev/assistant-diagnostic.sh"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited component091 native091-focused-final.log and native091-reference.log: Used0/Limit1/noRequestCap/schema receipt/exact one generation."
     },
     {
       "id": "context-maintenance",
       "category": "model-free-canonical",
-      "currentOwner": "browser retained context awaits final cutover; Go candidates use canonical raw Host parts and adapter-owned context policy",
+      "currentOwner": "Canonical Go Host/context/checkpoint ownership; retired browser loop and duplicate prompt assembly removed; Settings direct transport remains #662",
       "targetOwner": "published Go context plus server-owned ChatContext per authorized owner; no model summarizer",
       "entrypoints": [
         "web/src/assistant/chatContexts.ts",
@@ -506,7 +531,8 @@
         "internal/desk/assistant_prompt_wire_test.go",
         "internal/desk/ai_wire_guard_test.go"
       ],
-      "blockedByProviderManagedCoordinator": false
+      "blockedByProviderManagedCoordinator": false,
+      "journeyEvidence": "Inherited released Agent091 canonical records/context/projection/continuation proofs. Retired browser loops removed; no second context policy."
     },
     {
       "id": "runtime-model-ceiling",
@@ -533,7 +559,8 @@
       "verification": [
         "existing factory behavior fixtures reused for feature migration",
         "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
-      ]
+      ],
+      "journeyEvidence": "Inherited Runtime/provider transport bound/refusal vectors; no ceiling/parser/probe changes authorized."
     },
     {
       "id": "graph-host",
@@ -568,7 +595,8 @@
         "internal/desk/assistant_graph_boundary_test.go: actual CodexManager parent/child/parent, immutable callback scope, stale custody, failed persistence and storage/import refusal",
         "scripts/assistant-graph-projection-reference.mjs: existing browser Graph snapshot/detached draft readers"
       ],
-      "status": "private-implemented; production/browser migration pending"
+      "status": "private-implemented; production/browser migration pending",
+      "journeyEvidence": "Inherited server graph host/source/phase/approval contracts; fresh standalone Graph factory wiring PASS."
     },
     {
       "id": "policy-host",
@@ -599,7 +627,8 @@
         "durable Policy output import/projection and existing ChatStore update/interpretation readers in the standard projection CI path",
         "actual native parent-child-parent fixtures pass with repeated provider IDs, exact HTML/Unicode arguments and distinct callback receipts; browser migration and typed acceptance actions remain pending"
       ],
-      "status": "private-implemented; production/browser migration and typed acceptance pending"
+      "status": "private-implemented; production/browser migration and typed acceptance pending",
+      "journeyEvidence": "Inherited reviewed server Policy/source/private approval workflows; no Policy grant or behavior changed."
     },
     {
       "id": "dialect-recipe-host",
@@ -629,7 +658,8 @@
         "durable pre-create metadata, actual independent draft readback, queued revocation/cancellation, uncertain-write/replay and import refusals",
         "existing ChatStore proposal reader and actual dialectDraftQuery readback in the standard projection CI path"
       ],
-      "status": "private-implemented with separate exact-allowance research admission; production/browser migration pending"
+      "status": "private-implemented with separate exact-allowance research admission; production/browser migration pending",
+      "journeyEvidence": "Inherited server recipe/source/approval contracts. No new factory purpose or browser execution."
     },
     {
       "id": "dialect-mapping-host",
@@ -655,7 +685,8 @@
         "actual four-tool API and native parent/child producers against pinned offline Runtime",
         "finite import, typed preview, freshness, owner queued revocation, unknown retention and completed observation fixtures",
         "existing ChatStore/action/check/publication/review readers in the standard projection CI command"
-      ]
+      ],
+      "journeyEvidence": "Inherited reviewed server mapping/background one-use workflow and background091 custody evidence; no mapping/parser change."
     },
     {
       "id": "dialect-actions-host",
@@ -687,7 +718,8 @@
         "actual API/native producers and existing ChatStore/validDialectChatAction/applyDialectRecipeAction readers in standard CI",
         "bounded supplied strings versus typed research, local human review currency, real owner history, queued authority/source and finite import/projection witnesses",
         "actual request_dialect_research API/native workflow producers: exact existing grant and same-turn manual/other-call receipt, held preparation view/current authority/expiry at queue commit, independent worker, typed unknown outcome and explicit model-free ProjectChat reconciliation; real browser review/admitted/activity readers"
-      ]
+      ],
+      "journeyEvidence": "Inherited exact-source job/action admission and approval workflow; no new purpose or authority."
     },
     {
       "id": "dialect-publication-host",
@@ -713,7 +745,8 @@
         "actual four-tool API and native parent/child producers against pinned offline Runtime",
         "finite import, typed preview, freshness, owner queued revocation, unknown retention and completed observation fixtures",
         "existing ChatStore/action/check/publication/review readers in the standard projection CI command"
-      ]
+      ],
+      "journeyEvidence": "Inherited canonical publication/retained subscription checks and approval admission; frontend only uses extracted pure handover types."
     },
     {
       "id": "test-workspace-host",
@@ -742,7 +775,8 @@
         "standard projection CI uses actual ChatStore, suite/proposal, reviewed replacement/stale and review-link browser consumers",
         "scripted Runtime fixtures prove the existing Desk consumer contract; pinned Runtime v0.37.0 lacks pack/fact-check matrix support, so released positive proposal acceptance remains blocked by Desk #582 (Runtime #274)"
       ],
-      "status": "private-implemented with scripted contract evidence; released Runtime proposal compatibility #582 and production/browser activation pending"
+      "status": "private-implemented with scripted contract evidence; released Runtime proposal compatibility #582 and production/browser activation pending",
+      "journeyEvidence": "Inherited server test proposal/approval/check contracts. Pure retained-check/import tests PASS; canonical appendConversation stable-ID/dedup/conflict preserved and mutants caught."
     },
     {
       "id": "chat-web-host",
@@ -793,7 +827,8 @@
         "shared browser/private UTF16 safe-start correction returns an intact surrogate pair and actual offset; canonical encoded-prefix end bound and continuation, BMP/combining/page-span and ECMAScript whitespace/folding vectors",
         "private explore_website API/native/research-child maps and site-bound pages consumed by real browser verifiers; latest per-seed authority, one exploration/16 distinct seeds and shared ordinary3/discovered10, queued exact map/seed receipts and receipt-only recovery"
       ],
-      "status": "private conversational search_sources/read_link/explore_website implemented; finite choice continuation and production/browser activation pending"
+      "status": "private conversational search_sources/read_link/explore_website implemented; finite choice continuation and production/browser activation pending",
+      "journeyEvidence": "Inherited server verified chat document/web/search readers. Pure supplied-link/current provenance readers PASS; fresh production Runtime tool read PASS."
     },
     {
       "id": "research-source-host",
@@ -817,7 +852,8 @@
       "verification": [
         "existing factory behavior fixtures reused for feature migration",
         "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
-      ]
+      ],
+      "journeyEvidence": "Inherited signed source/current-pin/custody proofs. Pure page/excerpt/admission readers PASS; old browser research scheduler/microtasks obsolete."
     },
     {
       "id": "plan-and-memory-host",
@@ -825,8 +861,7 @@
       "modelEntrypoint": false,
       "toolNames": [
         "propose_plan",
-        "recall_memory",
-        "remember_memory"
+        "remember"
       ],
       "entrypoints": [
         "web/src/chat/ChatProvider.tsx",
@@ -853,10 +888,16 @@
         "Exact current person/session/project/chat/latest-human/run/revision/proposal and If-Match acceptance; canonical identity preserved, edits distinct, atomic metadata-only receipts; Clear/Forget/uncertain replay barriers and focused CAS race",
         "Actual independent creation reviewers reject forced reserved remember and complete with readable checkpoints; shared Go/backup/browser strict receipt vectors, default UI consumers and eleven targeted mutation kills"
       ],
-      "status": "private typed recall, lifecycle and canonical person acceptance implemented; legacy tool removal and production activation pending",
+      "status": "canonical memory production wiring candidate implemented; final complete cutover and certification pending",
       "remaining": [
-        "Remove superseded legacy memory tools with coordinated browser engine cutover",
-        "Global factory activation and complete release journeys/certification/review remain required"
+        "Remove any remaining unused legacy host support after final replacement certification",
+        "Complete release journeys and bound API/native certification"
+      ],
+      "journeyEvidence": "Inherited memory626 lifecycle12 and memory598 actual API/native Work/Plan8 plus acceptance/CAS proofs. Fresh production Suggest cap0 and current controls PASS.",
+      "currentOwner": "Canonical reserved remember and typed recall/lifecycle; Desk explicit person review and private store/source CAS",
+      "retiredLegacyToolNames": [
+        "recall_memory",
+        "remember_memory"
       ]
     },
     {
@@ -888,7 +929,8 @@
       "verification": [
         "existing factory behavior fixtures reused for feature migration",
         "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
-      ]
+      ],
+      "journeyEvidence": "Fresh server-owned question save/CAS and exact digest/current revision action tests PASS. Existing server approval/budget continuation receipts inherited."
     },
     {
       "id": "client-only-editor-interaction",
@@ -910,7 +952,8 @@
       "verification": [
         "existing buffer/unsaved/application behavior tests",
         "new callback duplicate/wrong owner/revision/lost-ack/reload fixture"
-      ]
+      ],
+      "journeyEvidence": "Inherited exact host-action/editor/dirty-CAS tests; current SavedChatRun/controller and mounted creation routes PASS; no editor authority moved."
     },
     {
       "id": "private-plan-host",
@@ -945,7 +988,8 @@
       "remaining": [
         "Production executor activation and browser cutover are separate",
         "Agent v0.8 draft-edit and memory protocols are package-owned and not implemented here"
-      ]
+      ],
+      "journeyEvidence": "Inherited persisted private Plan/source/approval checks; fresh normal-New chat Work/Plan PASS. Phase transition and compute remain separate."
     }
   ],
   "unknowns": [
@@ -985,5 +1029,12 @@
     ],
     "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",
     "activation": "production executor remains unregistered"
-  }
+  },
+  "requiredReleaseGates": [
+    "Desk #660 canonical proposal numeric fidelity",
+    "Desk #662 bounded Settings probes and remaining direct transport",
+    "Complete actual bound API/native certification; preserve host authority and uncertainty guards",
+    "Complete source-bound journey, race, platform, i18n, security and release-diff review",
+    "Maintainer approval for each merge and release gate"
+  ]
 }

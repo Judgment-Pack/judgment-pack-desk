@@ -12,7 +12,7 @@ import { sourceMessage } from '../i18n/source'
 import type { Turn } from '../research/run'
 import { RETRIEVED, heldWindow } from '../research/tools'
 import { CONTEXT_DEFAULTS, readWindowBytes } from '@judgment-pack/harness/context/policy'
-import type { DraftToolContext } from '../research/useResearchRun'
+import type { DraftToolContext } from '../research/types'
 import type { ChatAttachment } from './store'
 
 export const READ_LINK = 'read_link'

@@ -11,7 +11,7 @@ import {readTests} from '../packs/test-workspace/store'
 import {emptySuite} from '../packs/test-workspace/model'
 import {msg} from '../i18n'
 import type {Chat,ChatStore} from './store'
-import type {ResearchRunBinding} from '../research/useResearchRun'
+import type {ResearchRunBinding} from '../research/types'
 import type {CallTool} from '@judgment-pack/harness/engine'
 /** The pack adapter runs with the chat worker, including when its pane is closed. */
 export function usePackAutoSave({chat,store,binding,restored,call,project}:{chat:Chat;store:ChatStore;binding:ResearchRunBinding;restored:boolean;call:CallTool;project?:string}) {

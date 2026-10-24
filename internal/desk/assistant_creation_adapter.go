@@ -8,8 +8,8 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 )
 
-// A closed executor for the eventual factory, with the same real chat source
-// resolver and managed context as chat. This slice does not install the factory.
+// Saved chat and creation share the production factory, real chat source
+// resolver and managed context.
 type assistantCreationExecutor struct{}
 
 func (*assistantCreationExecutor) Prepare(ctx context.Context, source assistantRunSource) (contract.Checkpoint, error) {
@@ -33,6 +33,7 @@ func (*assistantCreationExecutor) Prepare(ctx context.Context, source assistantR
 		}
 	}
 	if input.Reasoning != nil && input.Reasoning.Get("model").Str() == source.Binding.Model {
+		effort = "" // A null override selects the model default.
 		if value := input.Reasoning.Get("effort"); value != nil && value.IsString() {
 			effort = value.Str()
 		}

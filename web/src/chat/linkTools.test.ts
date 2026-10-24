@@ -4,9 +4,8 @@ import fixture from '../documents/__fixtures__/web-snapshot.json'
 import type { DocumentReference, VerifiedDocument } from '../documents/client'
 import type { DocumentRecord } from '../documents/record'
 import { GatewayError } from '../research/gatewayClient'
-import { Ledger } from '../research/ledger'
-import { AuthoringRun, type Turn } from '../research/run'
-import type { DraftToolContext } from '../research/useResearchRun'
+import type { Turn } from '../research/run'
+import type { DraftToolContext } from '../research/types'
 import { RETRIEVED } from '../research/tools'
 import { CONTEXT_DEFAULTS, readWindowBytes, utf8Bytes } from '@judgment-pack/harness/context/policy'
 import { MAX_LINK_READS_PER_TURN, EXPLORE_WEBSITE, READ_LINK, givenInChat, linkReadable, linkReading, webSourceOffered, type LinkReadingDeps } from './linkTools'
@@ -288,46 +287,15 @@ describe('givenInChat', () => {
   })
 })
 
-describe('in a draft run', () => {
-  it('is offered to the turn by the controller, with the message just sent among the turns it may read from', async () => {
-    const { factory, ingested } = harness({ turns: [] })
-    let answered = ''
-    let offered: string[] = []
-    let built: AuthoringRun | null = null
-    // The hook's own wiring: the context reads the run that is about to exist.
-    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [] }
-    built = new AuthoringRun({
-      mode: 'draft',
-      turn: async (request, turnSignal, onEvent) => {
-        offered = request.hostTools.map((tool) => tool.name)
-        const read = request.hostTools.find((tool) => tool.name === READ_LINK)!
-        answered = said(await read.execute({ url: INCIDENT }, turnSignal))
-        onEvent({ type: 'message', text: 'The page describes a brief human review.' })
-      },
-      callTool: async () => { throw new Error('the runtime is not asked in this test') },
-      ledger: new Ledger('unset'),
-      get researchTools() { return factory(context) },
-      seal: async () => {},
-      registry: async () => '',
-      gateway: null,
-      newSession: () => 's1',
-      authorPrompt: '',
-      maxRevisions: 2,
-      seconds: 600,
-      log: () => {}
-    })
-    built.start(`can you check the link he posted: ${INCIDENT}`, [])
-    const started = Date.now()
-    while (built.getSnapshot().status === 'running' || built.getSnapshot().status === 'idle') {
-      if (Date.now() - started > 5000) throw new Error(`still ${built.getSnapshot().status}`)
-      await new Promise((resolve) => setTimeout(resolve, 5))
-    }
-    expect(built.getSnapshot().status).toBe('complete')
-    expect(offered).toEqual(['get_authoring_instructions', READ_LINK])
-    expect(ingested).toEqual([FETCHED])
-    expect(answered).toContain(`link: ${INCIDENT}`)
-    expect(built.getSnapshot().turns.map((turn) => turn.role)).toEqual(['user', 'assistant'])
-  })
+it('reads the latest submitted message through the pure tool context', async () => {
+ const {factory,ingested}=harness({turns:[]})
+ const turns:Turn[]=[]
+ const context:DraftToolContext={turns:()=>turns}
+ turns.push(user(`can you check the link he posted: ${INCIDENT}`))
+ const read=factory(context).find(tool=>tool.name===READ_LINK)!
+ const answered=said(await read.execute({url:INCIDENT},signal))
+ expect(ingested).toEqual([FETCHED])
+ expect(answered).toContain(`link: ${INCIDENT}`)
 })
 
 describe('read_link lifecycle and verification boundaries', () => {

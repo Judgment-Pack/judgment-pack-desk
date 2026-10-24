@@ -5,7 +5,8 @@ import { validQuestionDraft, type QuestionDraft } from '@judgment-pack/harness/q
 import { INITIAL_STATE } from '../../research/initialState'
 import type { Candidate, RunState, Turn } from '../../research/run'
 import type { ResearchRunController } from '../../research/controller'
-import type { Chat, ChatStore } from '../../chat/store'
+import type { Chat, ChatAttachment, ChatStore } from '../../chat/store'
+import type { PackProposalBasis } from '../../chat/packProposal'
 import { readTests } from '../../packs/test-workspace/client'
 import { emptySuite } from '../../packs/test-workspace/model'
 import { jsonIdentity } from '../../research/checkCandidate'
@@ -31,7 +32,7 @@ interface Ports {
 const restored=(chat:Chat):RunState=>{
  const saved=chat.checkpoint?.state??INITIAL_STATE
  return {...saved,restored:true,readiness:'',phase:saved.turns.length?'conversation':'idle',status:!saved.turns.length?'idle':saved.status==='running'?'stopped':saved.status==='ready'?'complete':saved.status,
-  candidates:saved.candidates.map(c=>({...c,digest:sha256(c.text),document:JSON.parse(c.text)})),events:[],streaming:undefined,taskProgress:undefined}
+  candidates:saved.candidates.map(c=>({...c,digest:sha256(c.text),document:JSON.parse(c.text)})),responses:saved.responses?.map(row=>({...row,work:{...row.work,items:row.work.items.map(item=>item.status==='working'?{...item,status:'interrupted' as const}:item)}})),events:[],streaming:undefined,taskProgress:undefined}
 }
 /** One saved owner. Lifecycle disconnect never sends a mutation. */
 export class SavedChatRun implements ResearchRunController {
@@ -129,8 +130,8 @@ export class SavedChatRun implements ResearchRunController {
    }else if(observation.kind==='progress'&&this.snapshot)this.set(this.present(this.snapshot,observations.answer,Object.fromEntries([...observations.children].map(([k,p])=>[k,p.text]))))
   }
  }
- start:ResearchRunController['start']=(prompt,_seeds,display,attachments,statement,choice,pack)=>{this.send(prompt,display,false,attachments,statement,choice,pack)}
- send:ResearchRunController['send']=(input,display=input,_retry=false,attachments=[],statement=display,choice,packContext)=>{
+ start=(prompt:string,_seeds:string[],display=prompt,attachments:ChatAttachment[]=[],statement=display,choice?:Turn['researchChoice'],pack?:PackProposalBasis)=>{this.send(prompt,display,false,attachments,statement,choice,pack)}
+ send=(input:string,display=input,_retry=false,attachments:ChatAttachment[]=[],statement=display,choice?:Turn['researchChoice'],packContext?:PackProposalBasis)=>{
   if(this.ended||this.running||this.uncertain||this.unreconciled)return
   const creation=this.pendingCreation;this.pendingCreation=undefined
   const turn:Turn={...(creation?{creation}:{}),id:crypto.randomUUID(),role:'user',kind:'message',text:display,input,statement,attachments,at:new Date().toISOString(),...(choice?{researchChoice:choice}:{}),...(packContext?{packContext}:{})}
@@ -185,7 +186,18 @@ export class SavedChatRun implements ResearchRunController {
  }
  prepareQuestionAnswer=(id:string,kind:'answered'|'help')=>{const q=this.state.questions?.find(q=>q.id===id);if(this.ended||this.running||this.snapshot?.historical||!q||q.resolution||!validQuestionDraft(q.prompt,q.draft)||kind==='answered'&&!q.draft.selected.length&&!q.draft.text.trim())return false;this.preparedAnswer={id,draft:kind==='help'?{selected:[],text:['Help me decide. Explain the options without choosing for me.',q.draft.text].filter(Boolean).join('\n')}:structuredClone(q.draft)};return true}
  continueQuestion=(id:string)=>{const q=this.snapshot&&pendingQuestion(this.snapshot),answer=this.preparedAnswer;if(!q||q.id!==id||answer?.id!==id)return false;this.preparedAnswer=undefined;void this.action({kind:'answer',questionId:q.id,questionDigest:q.digest,answer:answer.draft} as ActionBody);return true}
- appendConversation=(turns:Turn[])=>{if(this.running||this.unreconciled)throw Error('Finish the active response before adding messages.');this.base={...this.state,turns:[...this.state.turns,...turns]};this.set(this.base);return this.state}
+ appendConversation=(turns:Turn[])=>{
+  if(this.running||this.unreconciled)throw Error('Finish the active response before adding messages.')
+  const byId=new Map(this.state.turns.filter(turn=>turn.id).map(turn=>[turn.id!,turn])),added:Turn[]=[]
+  for(const turn of turns){
+   if(!turn.id)throw Error('A retained message needs a stable identity.')
+   const previous=byId.get(turn.id)
+   if(previous){if(previous.role!==turn.role||previous.text!==turn.text||previous.at!==turn.at)throw Error('A retained message conflicts with this session.')}
+   else{byId.set(turn.id,turn);added.push(structuredClone(turn))}
+  }
+  if(added.length){this.base={...this.state,turns:[...this.state.turns,...added].sort((a,b)=>a.at.localeCompare(b.at)),...(this.state.phase==='idle'?{phase:'conversation' as const,status:'complete' as const}:{})};this.set(this.base)}
+  return this.state
+ }
  get pendingApproval(){const snapshot=this.snapshot,a=snapshot?.checkpoint?.approval,r=snapshot?.approvalReference;return !this.running&&!snapshot?.historical&&a?.state==='asked'&&r?{...r,name:a.name,args:a.args}:undefined}
  decideApproval=(approved:boolean)=>{const current=this.pendingApproval;if(current)void this.action({kind:'approval',callId:current.callId,argsDigest:current.argsDigest,approved})}
  recheck=()=>{if(this.state.candidates.at(-1)?.packReview){void this.check();return}const candidate=this.state.candidates.at(-1);if(candidate)this.requestCreation({kind:'check',candidateDigest:candidate.digest},'Run current draft checks.')}
