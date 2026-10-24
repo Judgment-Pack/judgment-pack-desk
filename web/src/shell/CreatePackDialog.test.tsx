@@ -324,7 +324,7 @@ it('explicit dialog dismissal asks the authoring hook to cancel, while route det
     return {...state, discard: (cancel = true) => { discarded(cancel); state.discard(cancel) }}
   })
   const {closed} = renderDialog()
-  fireEvent.click(screen.getByRole('button', {name: 'Cancel', exact: true}))
+  fireEvent.click(screen.getByRole('button', {name: 'Cancel'}))
   await waitFor(() => expect(discarded).toHaveBeenCalledExactlyOnceWith(true))
   expect(closed).toEqual([false])
 })
