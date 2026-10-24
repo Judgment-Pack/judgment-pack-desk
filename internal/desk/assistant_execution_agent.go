@@ -3,6 +3,7 @@ package desk
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +26,7 @@ func (e *assistantRunExecution) assistantAgent() (*adapter.Agent, error) {
 	}
 	var chat *assistantChatInput
 	var err error
-	if e.source.Start.Purpose != "brief" {
+	if e.source.Start.Purpose != "brief" && e.source.Start.Purpose != assistantDiagnosticPurpose {
 		chat, err = compileAssistantExecutionInput(e.source)
 		if err != nil {
 			return nil, err
@@ -105,6 +106,18 @@ func (e *assistantRunExecution) assistantAgent() (*adapter.Agent, error) {
 		defer cancel()
 		if err := enabled(ctx, request.Model); err != nil {
 			return err
+		}
+		if e.source.Start.Purpose == assistantDiagnosticPurpose {
+			tools := []adapter.AgentTool{}
+			for _, tool := range request.Tools {
+				if strings.HasPrefix(tool.Description, "get_schema:") {
+					tools = append(tools, tool)
+				}
+			}
+			request.Tools = tools
+			if request.Model != e.record.Binding.Model || len(tools) != 1 {
+				return errAssistantRunScope
+			}
 		}
 		intent, err := json.Marshal(request)
 		if err != nil {

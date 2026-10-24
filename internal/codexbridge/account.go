@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -48,14 +50,15 @@ type Challenge struct {
 // Status reports account presence, not a promise of subscription entitlement.
 // Native identifiers, email, upstream errors and credentials cannot appear here.
 type Status struct {
-	Provider     string      `json:"provider"`
-	AuthMethod   string      `json:"authMethod"`
-	Agent        string      `json:"agent"`
-	Runtime      string      `json:"runtime"`
-	Account      string      `json:"account"`
-	Plan         string      `json:"plan,omitempty"`
-	LastVerified *time.Time  `json:"lastVerified,omitempty"`
-	Login        *LoginState `json:"login,omitempty"`
+	Provider        string      `json:"provider"`
+	AuthMethod      string      `json:"authMethod"`
+	Agent           string      `json:"agent"`
+	Runtime         string      `json:"runtime"`
+	Account         string      `json:"account"`
+	AccountRevision string      `json:"accountRevision,omitempty"`
+	Plan            string      `json:"plan,omitempty"`
+	LastVerified    *time.Time  `json:"lastVerified,omitempty"`
+	Login           *LoginState `json:"login,omitempty"`
 }
 
 type loginAttempt struct {
@@ -74,6 +77,8 @@ func (p *loginAttempt) stop() {
 // Manager supervises the private native account process. It does not expose
 // raw RPC, inference, a project cwd or a tool-execution capability.
 type Manager struct {
+	accountNonce  string
+	accountEpoch  atomic.Uint64
 	mu            sync.Mutex
 	active        *activeRun
 	disconnecting bool
@@ -119,8 +124,13 @@ func NewManager(options Options) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		p.close()
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Manager{life: ctx, cancel: cancel, profile: p, binary: binary, managed: options.Binary == "", resolveBinary: p.managedBinary, launch: startClient, loginTTL: 10 * time.Minute}, nil
+	return &Manager{accountNonce: hex.EncodeToString(nonce[:]), life: ctx, cancel: cancel, profile: p, binary: binary, managed: options.Binary == "", resolveBinary: p.managedBinary, launch: startClient, loginTTL: 10 * time.Minute}, nil
 }
 
 func (m *Manager) operation(ctx context.Context) (context.Context, func()) {
@@ -271,7 +281,8 @@ func (m *Manager) ready(ctx context.Context) error {
 }
 
 func (m *Manager) Status(ctx context.Context, ownerID string, refresh bool) (Status, error) {
-	status := Status{Provider: "openai", AuthMethod: "subscription", Agent: "codex", Runtime: "unavailable", Account: "unavailable"}
+	binding, _ := m.AccountBinding()
+	status := Status{AccountRevision: binding, Provider: "openai", AuthMethod: "subscription", Agent: "codex", Runtime: "unavailable", Account: "unavailable"}
 	if !m.mu.TryLock() {
 		return status, ErrBusy
 	}
@@ -316,7 +327,8 @@ func (m *Manager) Status(ctx context.Context, ownerID string, refresh bool) (Sta
 		status.Account = "connected"
 		status.Plan = account.Plan
 	}
-	return status, nil
+	status.AccountRevision, err = m.AccountBinding()
+	return status, err
 }
 
 func (m *Manager) StartLogin(ctx context.Context, owner Owner, method string) (Challenge, error) {
@@ -344,6 +356,7 @@ func (m *Manager) StartLogin(ctx context.Context, owner Owner, method string) (C
 		return Challenge{}, ErrAttempt
 	}
 	ctx = prepareCtx
+	m.accountEpoch.Add(1)
 	if m.managed {
 		if _, err = m.resolveBinary(ctx, true); err != nil {
 			return Challenge{}, err
@@ -427,6 +440,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 		return ErrUnavailable
 	}
 	m.disconnecting = true
+	m.accountEpoch.Add(1)
 	run := m.active
 	if run != nil {
 		run.cancel()
@@ -553,4 +567,9 @@ func (m *Manager) Close() {
 		m.mu.Unlock()
 		m.workers.Wait()
 	})
+}
+
+// Each manager lifetime and account operation has a distinct private epoch.
+func (m *Manager) accountRevision() string {
+	return m.accountNonce + "-" + fmt.Sprint(m.accountEpoch.Load())
 }

@@ -66,6 +66,7 @@ func assistantRunPublic(run assistantRunRecord) assistantRunView {
 	return assistantRunView{Creation: assistantCreationPublic(run), PackChecks: checks, ApprovalReference: approval, AdmissionID: run.AdmissionID, DisplayPreview: run.DisplayPreview, Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
 }
 func (s *Server) registerAssistantRuns() {
+	s.registerAssistantDiagnosticRuns()
 	s.registerAssistantBriefRuns()
 	s.registerAssistantAuthoringRuns()
 	s.mux.HandleFunc("POST /api/assistant-runs/{run}/pack-checks", s.handleAssistantPackRecheck)
@@ -174,7 +175,7 @@ func (s *Server) handleAssistantRunStart(w http.ResponseWriter, r *http.Request)
 		assistantRunHTTPError(w, errAssistantRunInvalid)
 		return
 	}
-	ownerValid := start.Purpose == "chat" && researchChatID.MatchString(start.OwnerID) || start.Purpose == "brief" && assistantBriefSubject(start.OwnerID) || assistantAuthoringPurpose(start.Purpose) && assistantAuthoringID.MatchString(start.OwnerID)
+	ownerValid := start.Purpose == assistantDiagnosticPurpose && aiIDPattern.MatchString(start.OwnerID) || start.Purpose == "chat" && researchChatID.MatchString(start.OwnerID) || start.Purpose == "brief" && assistantBriefSubject(start.OwnerID) || assistantAuthoringPurpose(start.Purpose) && assistantAuthoringID.MatchString(start.OwnerID)
 	if !assistantRunText(start.AdmissionID, 128) || !ownerValid || !assistantRunDigest(start.Revision) || !assistantRunText(start.RequestID, 128) {
 		assistantRunHTTPError(w, errAssistantRunInvalid)
 		return

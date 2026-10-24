@@ -438,22 +438,26 @@
     {
       "id": "codex-connection-test",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "AssistantSettings \u2192 useAssistantRun(codex,purpose test-design, optional get_schema)",
-      "targetOwner": "fixed server diagnostic run on actual bridge and narrow saved get_schema grant",
+      "currentOwner": "AssistantSettings → useConnectionDiagnostic → closed canonical connection-diagnostic owner",
+      "targetOwner": "implemented fixed server diagnostic on the actual private bridge, canonical context/checkpoint and schema-only Runtime grant",
       "entrypoints": [
         "web/src/assistant/AssistantSettings.tsx",
-        "web/src/assistant/useAssistantRun.ts",
-        "internal/desk/agent_run.go",
+        "web/src/assistant/useConnectionDiagnostic.ts",
+        "internal/desk/assistant_diagnostic_execution.go",
         "internal/codexbridge/run.go"
       ],
       "preserve": [
         "actual subscription auth/native model admission; no API fallback",
-        "provider-managed invocation accounting, optional schema read remains gated"
+        "honest provider-managed usage 0/not supplied, required current schema observation remains gated",
+        "exact saved connection/profile/session/project/credential-file custody, lost-ack read-only reconciliation, Stop and stale observation withdrawal"
       ],
       "verification": [
         "web/src/assistant/AssistantSettings.test.tsx",
         "internal/desk/agent_run_test.go",
-        "new shared diagnostic bridge fixture"
+        "internal/desk/assistant_diagnostic_test.go",
+        "internal/codexbridge/account_binding_linux_test.go",
+        "web/src/assistant/useConnectionDiagnostic.test.tsx",
+        "scripts/dev/assistant-diagnostic.sh"
       ],
       "blockedByProviderManagedCoordinator": false
     },
