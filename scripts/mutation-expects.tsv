@@ -2904,3 +2904,5 @@ go	canonical background: legacy reserve	TestBackgroundCanonicalReservesWholeRece
 go	canonical background: portable reserve	TestBackgroundCanonicalReservesWholeReceiptBeforeDispatch
 go	canonical background: native pregeneration wire	TestBackgroundCanonicalNativeFailurePhase
 go	canonical background: native postgeneration outcome	TestBackgroundCanonicalNativeFailurePhase
+go	assistant memory: approval trims canonical text	TestAssistantMemoryCanonicalApprovalExactText
+go	assistant memory: terminal identity recalled on resume	TestAssistantMemoryTerminalRecallDoesNotBlockResume

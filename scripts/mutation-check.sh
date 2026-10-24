@@ -15832,6 +15832,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 fi
 
 
+
 # Canonical background execution: retain the verified safeguard probes in CI.
 if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'canonical background: request cap' 'internal/desk/background_execution.go' \
@@ -15883,6 +15884,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 					copy.Outcome = "unknown"' \
     'if false {
 					copy.Outcome = "unknown"'
+fi
+
+# Desk #657 review fixes: exact approval and terminal recall exclusion.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory: approval trims canonical text' internal/desk/ai_memory.go \
+    '	if c.Action != "approve" {
+		c.Text = strings.TrimSpace(c.Text)
+	}' \
+    '	c.Text = strings.TrimSpace(c.Text)'
+  mutate go 'assistant memory: terminal identity recalled on resume' internal/desk/assistant_memory_lifecycle.go \
+    'if !terminal[record.ID] {' \
+    'if !terminal[record.ID] || true {'
 fi
 
 restore
