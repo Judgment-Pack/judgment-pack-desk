@@ -23,10 +23,10 @@ fi
 export DESK_ASSISTANT_CERTIFICATION_SOURCE="$source_root"
 log=$(mktemp "$tmp/assistant-binding-certification.XXXXXX.log")
 trap 'rm -f "$log"' EXIT
-if ! go test -count=1 -timeout=15m -v ./internal/desk -run '^TestAssistantBindingCertificationAPI$' > "$log" 2>&1; then
+if ! go test -count=1 -timeout=15m -v ./internal/desk -run '^TestAssistantBindingCertification(API|TimeoutReply)$' > "$log" 2>&1; then
   cat "$log"
   exit 1
 fi
-need_passed "$log" TestAssistantBindingCertificationAPI
+need_passed "$log" TestAssistantBindingCertificationTimeoutReply TestAssistantBindingCertificationAPI
 cat "$log"
 echo 'assistant-binding-certification: API relay passed; native and production factory are not certified by this command'

@@ -3,11 +3,13 @@ package desk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,11 +19,53 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/delegate"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/eino"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/wire"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/certification"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/failure"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/relay"
 )
 
 var assistantCertificationPhysical atomic.Int64
+
+// A canonical typed model timeout specifies classification, not connection loss.
+// Represent exactly that fixture value as a complete, ordinary HTTP504 response:
+// failure.Normalize preserves timeout/model/unknown and adds the known status.
+// Plain errors and errors with additional provenance remain physical interruptions.
+func assistantCertificationTimeoutReply(w http.ResponseWriter, err error) bool {
+	typed, ok := err.(*failure.Error)
+	if !ok || !reflect.DeepEqual(typed.Failure, failure.New("timeout", "model", "unknown")) {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusGatewayTimeout)
+	_, _ = io.WriteString(w, `{"error":{"message":"Fixture model timeout"}}`)
+	return true
+}
+
+func TestAssistantBindingCertificationTimeoutReply(t *testing.T) {
+	for _, err := range []error{errors.New("Interrupted after edit"), context.DeadlineExceeded, fmt.Errorf("wrapped: %w", failure.Err("timeout", "model", "unknown")), failure.Err("unavailable", "model", "unknown"), failure.Err("timeout", "agent", "unknown")} {
+		recorder := httptest.NewRecorder()
+		if assistantCertificationTimeoutReply(recorder, err) || recorder.Body.Len() != 0 || recorder.Flushed {
+			t.Fatalf("noncanonical error received a complete response: %T", err)
+		}
+	}
+	recorder := httptest.NewRecorder()
+	original := failure.Err("timeout", "model", "unknown")
+	if !assistantCertificationTimeoutReply(recorder, original) {
+		t.Fatal("canonical timeout was not represented")
+	}
+	result := recorder.Result()
+	defer result.Body.Close()
+	body, err := io.ReadAll(result.Body)
+	assistantRunMust(t, err)
+	got := failure.Normalize(&wire.RelayRefusal{Status: result.StatusCode, Body: string(body), Headers: result.Header}, "model", time.Unix(0, 0))
+	want := original.Failure
+	status := int64(http.StatusGatewayTimeout)
+	want.Status = &status
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("HTTP timeout normalization changed more than known status: got %#v, want %#v", got, want)
+	}
+}
 
 // The released suite is a read-only input at the locked source revision. The
 // ordinary package tests do not need its Node fixture; the required dev check
@@ -119,7 +163,7 @@ func assistantBindingCertificationAPI(t *testing.T, inner adapter.Adapter) adapt
 			if family == "" {
 				family = "openai-compatible"
 			}
-			var arrived, interrupted atomic.Int32
+			var arrived, interrupted, timeoutReplies atomic.Int32
 			type wireRequest struct{ suffix, body string }
 			var wireMu sync.Mutex
 			physical := map[wireRequest]int{}
@@ -162,6 +206,10 @@ func assistantBindingCertificationAPI(t *testing.T, inner adapter.Adapter) adapt
 				wireMu.Unlock()
 				response, err := backend(r.Context(), suffix, relay.Request{Method: r.Method, Headers: headers, Body: body})
 				if err != nil {
+					if assistantCertificationTimeoutReply(w, err) {
+						timeoutReplies.Add(1)
+						return
+					}
 					// A scripted transport interruption is an upstream connection
 					// loss at this physical endpoint, not a test fixture failure.
 					interrupted.Add(1)
@@ -211,6 +259,9 @@ func assistantBindingCertificationAPI(t *testing.T, inner adapter.Adapter) adapt
 				}
 				if interrupted.Load() > 0 && (uncertain == 0 || e.ctx.Err() == nil) {
 					t.Error("physical transport interruption did not retain uncertainty and close execution authority")
+				}
+				if timeoutReplies.Load() > 0 && interrupted.Load() == 0 && uncertain != 0 {
+					t.Error("complete HTTP timeout left an uncertain dispatch receipt")
 				}
 			})
 			return call
