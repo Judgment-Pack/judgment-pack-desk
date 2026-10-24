@@ -15748,6 +15748,23 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "  if(terminal(run)||run.historical||!['admitted','running'].includes(run.state)){attempt.resolved=true;setCanStart(true)}"
 fi
 
+# Desk #648: current creation evidence, independent expectations and staged approval.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant creation: stale artifact generation accepted' internal/desk/assistant_creation_source.go \
+    '!assistantHostArgumentsMatch(draft["generation"], chat["draftGeneration"])' \
+    'false'
+  mutate go 'assistant creation: independent reviewer receives draft and history' internal/desk/assistant_chat_input.go \
+    'return filtered, nil' \
+    'return out, nil'
+  mutate go 'assistant creation: canceled retest commits correction' internal/desk/assistant_creation_workflow.go \
+    'if ctx.Err() != nil {
+		return ctx.Err()
+	}' \
+    'if false {
+		return ctx.Err()
+	}'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
