@@ -525,3 +525,19 @@ it('lets an explicit control edit restore project inheritance after a legacy boo
  expect(read.critic).toBeUndefined();expect(read.adversarialReview).toBeUndefined()
  expect(criticMode({critic:savedCriticChoice(read),criticProject:'on'},{}).mode).toBe('on')
 })
+
+it('refuses malformed original critic controls in persisted JSON without changing history',async()=>{
+ const base=setup();await base.store.load();const chat=base.store.create()
+ const invalidControls=[
+  ...[null,false,true,0,1,'','invalid',[],{}].flatMap(critic=>[{critic},{critic,adversarialReview:true}]),
+  ...[null,0,1,'','false','invalid',[],{}].flatMap(adversarialReview=>[{adversarialReview},{critic:'on',adversarialReview}]),
+ ]
+ for(const controls of invalidControls){
+  const content=JSON.parse(JSON.stringify({version:1,chats:[{...chat,...controls}]}))
+  const loaded=setup({read:async()=>({project:'/project',sha256:'saved',content})});await loaded.store.load()
+  expect(loaded.store.getSnapshot().ready,JSON.stringify(controls)).toBe(false)
+  expect(loaded.store.getSnapshot().error,JSON.stringify(controls)).toBe('Invalid saved chat')
+  expect(loaded.store.getSnapshot().chats).toEqual([])
+  expect(loaded.write).not.toHaveBeenCalled()
+ }
+})
