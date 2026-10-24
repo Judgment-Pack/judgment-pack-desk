@@ -55,6 +55,12 @@ it('keeps both frontend and backend execution paths inside the context boundary'
  const pane=readFileSync(resolve(root,'briefs/BriefPane.tsx'),'utf8')
  for(const boundary of ['serverRunClient(', 'client.briefReference(', 'client.commitBrief(', '<ExecutionProgress', '<ResponseRecovery'])expect(pane).toContain(boundary)
  expect(pane).not.toContain('useAssistantRun(')
+ const diagnostic=readFileSync(resolve(backend,'assistant_diagnostic_execution.go'),'utf8')
+ for(const boundary of ['runcontext.ContextualSession(', 'Execution.LimitTo(1)', 'ArtifactProposals:', 'e.assistantAgent()', 'assistantCanonicalAgent(agentadapter.New())', 'e.assistantRuntime(', 'assistantDiagnosticSucceeded('])expect(diagnostic).toContain(boundary)
+ for(const forbidden of ['delegate.With(', 'runBackgroundModel(', 'e.assistantModel(', 'HostTools:'])expect(diagnostic).not.toContain(forbidden)
+ const settings=readFileSync(resolve(root,'assistant/AssistantSettings.tsx'),'utf8')
+ expect(settings).toContain('useConnectionDiagnostic(');expect(settings).not.toContain('useAssistantRun(')
+
 })
 
 it('keeps future conversational progress and request accounting in the shared execution boundary',()=>{

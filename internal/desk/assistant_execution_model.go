@@ -26,6 +26,9 @@ type assistantModelDispatch struct {
 
 func (d *assistantModelDispatch) dispatch(ctx context.Context) error {
 	recheck := d.execution.recheckAssistantInput
+	if d.execution.source.Start.Purpose == assistantDiagnosticPurpose {
+		recheck = d.execution.Authorize
+	}
 	if d.execution.source.Start.Purpose == "brief" {
 		recheck = d.execution.recheckAssistantBriefInput
 	}

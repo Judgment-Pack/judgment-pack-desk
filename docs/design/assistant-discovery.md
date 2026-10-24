@@ -43,11 +43,51 @@ execution. The legacy capability probe cannot pass the relay's canonical
 non-listing dispatch gate. This metadata action makes no capability-generation
 claims and does not activate that path.
 
-Native Test connection is also separate: `AssistantSettings.tsx` currently calls
-`useAssistantRun` with purpose `test-design`, only the saved `get_schema` tool,
-and a fixed no-proposal instruction. Its replacement needs the canonical native
-run/checkpoint/context path, current saved account/model binding, one schema-read
-observation, schema refusal/cancel and no-proposal browser evidence. Reuse the
-account/catalog bindings from #636. This requires the shared run/hooks activation
-lane and is outside this metadata-only change; it is not blocked merely because
-API generation has the #186 budget defect.
+Native Test connection uses the closed server `connection-diagnostic` purpose.
+The browser requests a model-free reference with only an attempt ID and explicit
+saved connection/revision, then starts that exact reference through the canonical
+assistant ledger. The host selects the current saved effective model/profile,
+fixed instruction and schema-only capability. No prompt, suffix, model, tools,
+checkpoint or provider transport can be supplied by that action.
+
+The source digest binds the signed-in session/policy, project, exact connection
+and profile, rooted Runtime selection and private native credential-file custody.
+The managed profile is private and exclusively leased. Its opaque custody digest
+binds manager lifetime/account-operation epoch and rooted file identity/change
+metadata; no credential contents, account labels, file identifiers or paths are
+returned. External replacement or renewal conservatively invalidates a capture.
+This is credential-file custody, not a provider account identity claim. Native
+sign-in and catalog/effort admission remain the existing bridge's responsibility,
+with source checks at physical native admission/generation and schema dispatch.
+
+Execution uses the released native adapter and managed context/checkpoint with
+`LimitTo(1)`. The actual native fixture completes with provider-managed usage `0`
+and limit `1`; API #186 does not block this native path. Only `get_schema` is
+offered to the native peer. Artifact proposals, host tools, writes, acquisition,
+evaluation, delegation and compute grants are unavailable. Success requires a
+complete current checkpoint, one successful actual Runtime schema receipt and
+one matching tool-result observation. Provider confirmation text is insufficient.
+
+A lost start acknowledgement reconciles that exact admission through a read-only
+lookup once, without resending or allocating a replacement. A missing uncertain
+admission stays unresolved. Explicit Stop persists canonical cancellation before
+provider-context cancellation; view detachment only drops browser observations.
+Diagnostic reads retain their exact original session/policy owner; replacement
+windows cannot inherit their private observations. Restart and restored records
+cannot replay. Restored records remain historical
+and never establish a current successful connection check. Form, configuration,
+profile, account-custody, project and session changes withdraw displayed status;
+reverting edits cannot revive an earlier success. Saving remains a separate action.
+
+Runtime currentness binds the resolved executable path, device/inode, size,
+mode, modification time and kernel change time into the opaque source digest.
+Both admission and final success recompute it, so replacing executable bytes while
+preserving size and modification time withdraws the capture. This check reads
+metadata only; platforms without file identity and change time refuse diagnostics.
+
+Public additions are the `connection-diagnostic` owner/purpose, fixed diagnostic
+reference/lookup/result routes, and optional opaque `accountRevision` on native
+provider status. Private storage adds only the owner enum, using the existing
+strict run format, backup/move and historical restore handling. Handwritten owner
+vectors and the actual native/schema/checkpoint/restore producer are read by both
+Go and the browser; `scripts/dev/assistant-diagnostic.sh` runs that proof.
