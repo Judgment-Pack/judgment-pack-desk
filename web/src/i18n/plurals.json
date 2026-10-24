@@ -36,5 +36,7 @@
   "{{count}} AI requests": "{{count}} AI request",
   "{{count}} source requests": "{{count}} source request",
   "Up to {{count}} concurrent AI tasks": "Up to {{count}} concurrent AI task",
-  "{{count}} coverage gaps": "{{count}} coverage gap"
+  "{{count}} coverage gaps": "{{count}} coverage gap",
+  "{{count}} invalid expectations must be corrected and approved before testing or creating the pack.": "{{count}} invalid expectation must be corrected and approved before testing or creating the pack.",
+  "The unchanged draft is not a valid pack: {{count}} diagnostics. Review them, or send a message to repair it.": "The unchanged draft is not a valid pack: {{count}} diagnostic. Review them, or send a message to repair it."
 }

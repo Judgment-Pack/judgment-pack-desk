@@ -13,6 +13,9 @@ import {parse} from '@babel/parser'
 const root=resolve(import.meta.dirname,'../..')
 const harnessRoot=resolve(root,'../node_modules/@judgment-pack/harness/dist')
 const harness=(path:string)=>readFileSync(resolve(harnessRoot,path),'utf8')
+const backend=resolve(root,'../../internal/desk')
+const goSource=(path:string)=>readFileSync(resolve(backend,path),'utf8')
+const browser=(path:string)=>readFileSync(resolve(root,path),'utf8')
 function files(dir:string,pattern=/\.tsx?$/):string[]{return readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?files(resolve(dir,e.name),pattern):pattern.test(e.name)&&!e.name.includes('.test.')?[resolve(dir,e.name)]:[])}
 function sdkImports(base:string,paths:string[]){
  const imports:string[]=[]
@@ -34,7 +37,12 @@ it('keeps both frontend and backend execution paths inside the context boundary'
  for(const path of ['engines/codex/index.js','engines/vercel/loop.js']){
   const source=harness(path);expect(source).toContain('managedContext(');expect(source).toContain('context.result(');expect(source).toContain('context.beginCriticPhase()')
  }
- for(const path of ['assistant/useAssistantRun.ts','research/useResearchRun.ts'])expect(readFileSync(resolve(root,path),'utf8')).toContain('configuration:settings.current.contextConfiguration')
+ // Saved browser surfaces observe runs; the canonical owner reads the retained profile.
+ for(const path of ['assistant_execution.go','assistant_authoring_execution.go']){
+  const source=goSource(path)
+  for(const boundary of ['Profile.Context', 'input.Configuration, err = runcontext.ReadConfiguration(value)'])expect(source).toContain(boundary)
+ }
+ for(const boundary of ['savedChatRun(store,chat)', 'useSyncExternalStore(run.subscribe,run.getSnapshot,run.getSnapshot)', 'void run.reconnect()'])expect(browser('assistant/serverRuns/useSavedChatRun.ts')).toContain(boundary)
  for(const file of ['input_research_model.go','portable_research_worker.go'])expect(readFileSync(resolve(root,'../../internal/desk',file),'utf8')).toContain('s.runBackgroundModel(')
  const portable=readFileSync(resolve(root,'../../internal/desk/portable_research_worker.go'),'utf8')
  for(const boundary of ['fitResearchContextWithInstructions(', 'researchContextRead(', 'researchAttempt(', 'portableResearchChatWork(', 'pauseResearchForBudget('])expect(portable).toContain(boundary)
@@ -78,8 +86,12 @@ it('keeps future conversational progress and request accounting in the shared ex
  expect(context).toContain('ExecutionController')
  expect(context).toContain('context.execution.claim()')
  expect(context).toContain('session.context?.checkpoint?.(')
- const run=readFileSync(resolve(root,'research/useResearchRun.ts'),'utf8')
- expect(run).toContain('checkpoint:request.conversation?async checkpoint=>')
+ const owner=goSource('assistant_execution.go')
+ for(const boundary of ['cp.ID != e.record.Checkpoint.ID || cp.RequestKey != e.record.Binding.ExecutionKey', 'return e.Checkpoint(ctx, cp)', 'saveCheckpoint(ctx, event.ExecutionCheckpoint.Checkpoint)', 'saveCheckpoint(ctx, event.BudgetPaused.Checkpoint)', 'Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: e.record.Checkpoint'])expect(owner).toContain(boundary)
+ const writer=goSource('assistant_run_store_writer.go')
+ for(const boundary of ['readAssistantRunCheckpoint(state, run.Binding)', 'cp.Used < run.Checkpoint.Used', 'run.Checkpoint = cp'])expect(writer).toContain(boundary)
+ for(const boundary of ['client.events(observations,this.scope!.signal)', 'this.set(this.present(observation.snapshot'])expect(browser('assistant/serverRuns/controller.ts')).toContain(boundary)
+ expect(browser('assistant/serverRuns/presentation.ts')).toContain('execution:snapshot.checkpoint')
  const managed=harness('context/managed.js')
  expect(managed).toContain('context.execution.observe(event)')
  expect(managed).toMatch(/type:\s*'budget_paused'/)
@@ -87,7 +99,11 @@ it('keeps future conversational progress and request accounting in the shared ex
 
 it('keeps future AI failures behind the shared contract and recovery UI',()=>{
  for(const file of ['engines/codex/index.js','engines/vercel/loop.js','context/managed.js'])expect(harness(file)).toContain('failureEvent(')
- expect(readFileSync(resolve(root,'assistant/useAssistantRun.ts'),'utf8')).toContain('failureEvent(')
+ // Transport errors normalize at the canonical adapter; the browser reads typed events.
+ for(const boundary of ['failure.Normalize(err, "agent", time.Time{})', 'failure.Authored(code, detail, "agent").Failure'])expect(goSource('assistant_execution_agent.go')).toContain(boundary)
+ expect(browser('assistant/serverRuns/controller.ts')).toContain("normalizeFailure(cause,'desk')")
+ expect(browser('assistant/serverRuns/presentation.ts')).toContain('failure=readFailure(e.failure)')
+ expect(goSource('assistant_run_store_writer.go')).toContain('appendAssistantRunEvent(run, nextAssistantRunIdentity(run, "event"), event)')
  // The page reads the package's copy of the Go-side catalogue, so the copy it bundles is the Desk's catalogue.
  expect(harness('failures.js')).toContain("from './contract/catalog.json'")
  expect(JSON.parse(harness('contract/catalog.json'))).toEqual(JSON.parse(readFileSync(resolve(root,'../../internal/aifailure/catalog.json'),'utf8')))
@@ -108,11 +124,21 @@ it('keeps working-context retention independent of chat topics and feature tool 
  expect(projection).not.toMatch(/p\.toolName\s*===\s*'get_authoring_instructions'/)
  expect(controller).toMatch(/policy\.immutable\s*===\s*true\s*&&\s*readOnly/)
  expect(controller).not.toMatch(/\[\s*'get_authoring_instructions',\s*'get_schema',\s*'read_context'\s*\]/)
- for(const file of ['research/run.ts','dialects/chatTools.ts','graphs/chatTools.ts','policies/chatTools.ts'])expect(readFileSync(resolve(root,file),'utf8')).toContain('contextPolicy:')
+ for(const file of ['dialects/chatTools.ts','graphs/chatTools.ts','policies/chatTools.ts'])expect(browser(file)).toContain('contextPolicy:')
+ // Retention is declared on current canonical host offers, including immutable read-only contracts.
+ for(const file of ['assistant_dialect_action_registry.go','assistant_graph_tools.go','assistant_policy_tools.go'])expect(goSource(file)).toContain(file==='assistant_graph_tools.go'?'ContextPolicy = &runcontext.ToolContextPolicy{Reference: true}':'ContextPolicy: &runcontext.ToolContextPolicy{Reference: true}')
+ expect(goSource('assistant_dialect_recipe_tools_store.go')).toContain('tool.ContextPolicy = &runcontext.ToolContextPolicy{Immutable: true, Reference: true}')
 })
 
 it('routes artifact correction and scoped automatic saving through shared host boundaries',()=>{
- expect(readFileSync(resolve(root,'research/run.ts'),'utf8')).toContain('correctArtifact(')
+ // Saved creation corrections now belong to the canonical durable workflow.
+ const creation=goSource('assistant_creation_execution.go')
+ for(const boundary of ['receipt.Proposal = &proposal', 'e.retainAssistantCreation(ctx, input, receipt)', 'run.Creation.Proposal.Token != input.Action.Token', 'run.Historical', '!run.ChatProjection.Acknowledged', 'proposal.Scope != input.Scope', 'approveAssistantCreationCorrection(ctx, input.Scope'])expect(creation).toContain(boundary)
+ const adapter=goSource('assistant_creation_adapter.go')
+ for(const boundary of ['e.executeAssistantCreation(ctx, e.reviewAssistantCreation)', 'if handled || err != nil', 'execution.Adapter.Run(ctx, execution.Run)', 'run.Checkpoint.Status != "complete"', 'if proposal != nil', 'cp.Status = "running"', 'e.Checkpoint(ctx, cp)'])expect(adapter).toContain(boundary)
+ const correction=goSource('assistant_creation_workflow.go')
+ for(const boundary of ['issue.Proposal == nil || fresh(ctx) != nil', 'assistantCreationCorrectedCase(scope, issue, *issue.Proposal, token, cases)', 'validateAssistantCreationExpectations(ctx, []assistantCreationCase{replacement}, call)', 'check, err := retest(ctx, staged)', 'assistantCreationSuccessfulCheck(check, scope.CandidateDigest, staged)', 'return commit(ctx, staged, check)'])expect(correction).toContain(boundary)
+ expect(correction.indexOf('check, err := retest(ctx, staged)')).toBeLessThan(correction.indexOf('return commit(ctx, staged, check)'))
  expect(harness('execution/checkArtifact.js')).toContain('correctArtifact(')
  expect(readFileSync(resolve(root,'dialects/dialectChatTools.ts'),'utf8')).toContain('checkArtifact(')
  const core=harness('execution/correctArtifact.js')
