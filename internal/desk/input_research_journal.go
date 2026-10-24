@@ -17,6 +17,7 @@ const inputResearchRecordLimit = 16 << 20
 var inputResearchID = regexp.MustCompile(`^research_[a-f0-9]{32}$`)
 
 type inputResearchAttempt struct {
+	Background      *backgroundModelReceipt         `json:"background,omitempty"`
 	RetainedProof   *portableResearchProofReference `json:"retainedProof,omitempty"`
 	Failure         *aifailure.Failure              `json:"failure,omitempty"`
 	AppliedSequence int                             `json:"appliedSequence,omitempty"`

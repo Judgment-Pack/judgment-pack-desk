@@ -58,15 +58,18 @@ Execution checkpoints retain normalized finish reasons and reported token counts
 
 An interrupted conversational response whose model-request allowance is exhausted can offer an explicit **Retry · +10 requests** action, subject to the shared ceiling and existing retry eligibility. The grant is persisted before dispatch; it does not add a duplicate user turn or replay prior operations. Remaining-allowance failures retain ordinary **Retry response**. Both controls use the shared compact secondary button, retry icon, density tokens and right-aligned action placement. Technical diagnostics stay in the shared disclosure. A changed artifact's background validation updates readiness without stealing ownership from failed responses, pending questions or budget pauses.
 
-Background feature calls use the same normalized completion contract as chat.
-`backgroundCompletion` rejects explicit truncation, filtering and unexpected API
-tool calls before returning structured output to a feature. Valid JSON does not
-make an explicitly truncated answer complete. Failure metadata keeps sanitized
-usage totals (including Gemini reasoning and Anthropic cache input) and normalized
-stop reasons; raw provider prose is excluded. This guard performs no second model
-request. The owning workflow retains the failed attempt and decides continuation.
-Older compatible endpoints that omit stop metadata still undergo the feature's
-bounded response validation.
+Background feature calls use canonical Eino/native adapters and the same
+normalized completion contract as chat. The reserved one-request API binding
+accepts only one canonical `stop` completion. Truncation, filtering, tool-call,
+unknown and omitted stop metadata are refused even when the text is valid JSON.
+This intentionally narrows the older background path, which accepted omitted stop
+metadata. The host reads retained canonical completion provenance and uses the
+released failure helper; it adds no response parser or finishing request. Reported
+usage totals and safe failure metadata remain in the original workflow journal.
+Native accounting remains provider-managed and its fixed host response tool must
+validate the response. The owning workflow decides continuation; an uncertain or
+already used operation is never replayed. See
+[canonical background operations](background-canonical-execution.md).
 
 Agent v0.9 adds the canonical `pace exceeded` failure with `wait` recovery. Desk's
 shared catalogue and catalogue-driven Go normalization retain that code and its
