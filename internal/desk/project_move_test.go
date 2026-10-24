@@ -53,6 +53,7 @@ func TestRecognizedMoveLinksAllHistoryBeforeIdentity(t *testing.T) {
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
 	}
+	storageChat := savedConversationBytes(t, s, ts)
 	location := storageGet(t, ts)
 	source := s.conversationName()
 	siblings := map[string]string{draftPackName(source): `{"version":1,"drafts":[]}`, strings.Replace(source, "conversations-", "briefs-", 1): `{"version":1,"entries":[]}`, attachmentProjectPrefix(source) + "00000000-0000-0000-0000-000000000000.json": `{"retained":"unchanged"}`}
@@ -151,6 +152,7 @@ func TestProjectMoveConfirmedAndRestarted(t *testing.T) {
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
 	}
+	storageChat := savedConversationBytes(t, s, ts)
 	previous := s.projectDir
 	destination := filepath.Join(t.TempDir(), "new project")
 	request := movePreview(t, ts, destination)
@@ -234,6 +236,7 @@ func TestProjectMoveCrashRecovery(t *testing.T) {
 		t.Run(step, func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
 			chatRequest(t, ts, "PUT", "absent", storageChat, true, "")
+			storageChat := savedConversationBytes(t, s, ts)
 			destination := filepath.Join(t.TempDir(), "new")
 			request := movePreview(t, ts, destination)
 			testProjectMoveStep = func(at string) error {
@@ -278,6 +281,7 @@ func TestConfirmedMoveOrCopyKeepsHistorySeparate(t *testing.T) {
 			s, ts, _ := assistantServer(t)
 			stampMoveIdentity(t, s)
 			chatRequest(t, ts, "PUT", "absent", storageChat, true, "")
+			storageChat := savedConversationBytes(t, s, ts)
 			previous := s.projectDir
 			destination := previous + "-new"
 			record := identityRecord{ID: strings.Repeat("c", 64), Path: previous}
