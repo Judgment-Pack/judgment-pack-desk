@@ -56,8 +56,10 @@ it('keeps both frontend and backend execution paths inside the context boundary'
  for(const boundary of ['serverRunClient(', 'client.briefReference(', 'client.commitBrief(', '<ExecutionProgress', '<ResponseRecovery'])expect(pane).toContain(boundary)
  expect(pane).not.toContain('useAssistantRun(')
  const diagnostic=readFileSync(resolve(backend,'assistant_diagnostic_execution.go'),'utf8')
- for(const boundary of ['runcontext.ContextualSession(', 'Execution.LimitTo(1)', 'ArtifactProposals:', 'e.assistantAgent()', 'assistantCanonicalAgent(agentadapter.New())', 'e.assistantRuntime(', 'assistantDiagnosticSucceeded('])expect(diagnostic).toContain(boundary)
- for(const forbidden of ['delegate.With(', 'runBackgroundModel(', 'e.assistantModel(', 'HostTools:'])expect(diagnostic).not.toContain(forbidden)
+ for(const boundary of ['runcontext.ContextualSession(', 'Agent: &runcontext.AgentSession{', 'ArtifactProposals:', 'e.assistantAgent()', 'assistantCanonicalAgent(agentadapter.New())', 'e.assistantRuntime(', 'assistantDiagnosticSucceeded('])expect(diagnostic).toContain(boundary)
+ // Native diagnostics keep provider-managed accounting and the admitted custody.
+ for(const boundary of ['Memory: &off', 'CurrentRequest:', 'e.Authorize(ctx)', 'Granted: []string{"get_schema"}', 'len(offer.Tools) != 1', 'input.Authorize, input.Checkpoint, input.Execution = e.Authorize, e.Checkpoint, e.record.Checkpoint', 'e.Checkpoint(ctx, event.ExecutionCheckpoint.Checkpoint)', 'e.writer.boundEvent(persist, event,', 'case event.BudgetPaused != nil:', 'eventErr = errAssistantRunScope'])expect(diagnostic).toContain(boundary)
+ for(const forbidden of ['Execution.LimitTo(', 'RequestCap:', 'delegate.With(', 'runBackgroundModel(', 'e.assistantModel(', 'HostTools:'])expect(diagnostic).not.toContain(forbidden)
  const settings=readFileSync(resolve(root,'assistant/AssistantSettings.tsx'),'utf8')
  expect(settings).toContain('useConnectionDiagnostic(');expect(settings).not.toContain('useAssistantRun(')
 

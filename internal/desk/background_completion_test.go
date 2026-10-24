@@ -1,7 +1,6 @@
 package desk
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -41,7 +40,7 @@ func TestBackgroundCompletionRefusesPartialJSONWithoutRetry(t *testing.T) {
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			})
-			result, err := s.runBackgroundModel(context.Background(), task, nil)
+			result, err := s.runBackgroundModel(backgroundFixtureContext(t, &task), task, nil)
 			var failure *aifailure.Failure
 			if len(result) != 0 || !errors.As(err, &failure) || failure.Code != tc.code || failure.Completion == nil || failure.Completion.FinishReason != tc.normalized || calls.Load() != 1 {
 				t.Fatalf("result %s failure %+v calls %d", result, failure, calls.Load())

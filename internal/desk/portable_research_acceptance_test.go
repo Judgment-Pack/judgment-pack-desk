@@ -35,7 +35,7 @@ func TestPortableResearchAcrossAPIFamiliesWithRealReceipts(t *testing.T) {
 			var calls atomic.Int32
 			s, _, run := portableResearchFixtureFor(t, func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
-				wantPath := map[string]string{"openai-compatible": "/chat/completions", "anthropic": "/v1/messages", "gemini": "/v1beta/models/shared-model:generateContent"}[family]
+				wantPath := map[string]string{"openai-compatible": "/chat/completions", "anthropic": "/v1/messages", "gemini": "/v1beta/models/shared-model:streamGenerateContent"}[family]
 				if r.URL.Path != wantPath {
 					t.Errorf("wrong %s route %s", family, r.URL.Path)
 				}

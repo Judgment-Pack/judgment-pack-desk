@@ -1,6 +1,9 @@
 package desk
 
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+)
 
 var errResearchStorageLimit = errors.New("The saved-source storage limit leaves no room for another request. Save records from retained evidence.")
 
@@ -28,6 +31,18 @@ func reserveResearchSource(run *inputResearchRun, attempt *inputResearchAttempt)
 		return reservePortableResearchJournal(run, attempt)
 	}
 	if attempt.Kind == "model" {
+		raw, err := json.Marshal(run)
+		if err != nil {
+			return err
+		}
+		allowance := portableResearchAttemptReserve + backgroundModelReceiptReserve
+		if len(raw)+researchReservedBytes(*run)+allowance > inputResearchRecordLimit {
+			return errPortableResearchJournalSize
+		}
+		if run.RetrievedBytes < 0 || run.RetrievedBytes+researchReservedBytes(*run)+allowance > inputResearchRetainedByteLimit {
+			return errResearchStorageLimit
+		}
+		attempt.ReservedBytes = allowance
 		return nil
 	}
 	allowance := inputResearchSourceProofLimit + (2 << 20)
@@ -55,13 +70,17 @@ func reservePortableResearchJournal(run *inputResearchRun, attempt *inputResearc
 	if err != nil {
 		return err
 	}
-	if len(raw)+researchReservedBytes(*run)+portableResearchAttemptReserve+portableResearchFinalReserve > inputResearchRecordLimit {
+	reserve := portableResearchAttemptReserve
+	if attempt.Kind == "model" {
+		reserve += backgroundModelReceiptReserve
+	}
+	if len(raw)+researchReservedBytes(*run)+reserve+portableResearchFinalReserve > inputResearchRecordLimit {
 		return errPortableResearchJournalSize
 	}
-	if run.RetrievedBytes < 0 || len(raw)+run.RetrievedBytes+researchReservedBytes(*run)+portableResearchProofReservedBytes(*run)+portableResearchAttemptReserve+inputResearchSourceProofLimit+portableResearchFinalReserve > inputResearchRetainedByteLimit {
+	if run.RetrievedBytes < 0 || len(raw)+run.RetrievedBytes+researchReservedBytes(*run)+portableResearchProofReservedBytes(*run)+reserve+inputResearchSourceProofLimit+portableResearchFinalReserve > inputResearchRetainedByteLimit {
 		return errPortableResearchStorageLimit
 	}
-	attempt.ReservedBytes = portableResearchAttemptReserve
+	attempt.ReservedBytes = reserve
 	return nil
 }
 
