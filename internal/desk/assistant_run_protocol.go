@@ -102,6 +102,9 @@ func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, i
 	if assistantAuthoringPurpose(start.Purpose) {
 		return s.resolveAssistantAuthoringRun(r, start, identity, project)
 	}
+	if start.Purpose == assistantDiagnosticPurpose {
+		return s.resolveAssistantDiagnosticRun(r, start, identity, project)
+	}
 	if start.Purpose == "brief" {
 		return s.resolveAssistantBriefRun(r, start, identity, project)
 	}

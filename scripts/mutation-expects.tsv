@@ -2874,6 +2874,12 @@ web	assistant authoring: paused presentation resolves host owner	src/assistant/a
 go	assistant creation: stale artifact generation accepted	TestAssistantCreationDraftCurrentCustody
 go	assistant creation: independent reviewer receives draft and history	TestAssistantCreationActualAPI
 go	assistant creation: canceled retest commits correction	TestAssistantCreationCorrectionRetestBeforeCommit
+go	native diagnostic: captured source revision ignored	TestAssistantDiagnosticRejectsStaleAndExecutableReferences
+go	native diagnostic: provider prose accepted without schema	TestAssistantDiagnosticRefusesProseAndNonSchemaTools
+go	native diagnostic: native context tools escape schema offer	TestAssistantDiagnosticActualNativeCheckpoint
+go	native diagnostic: cancellation poisons terminal persistence	TestAssistantDiagnosticRefusesProseAndNonSchemaTools,TestAssistantDiagnosticLateCredentialMutationClosesSchemaDispatch
+web	native diagnostic: uncertain admission starts twice	src/assistant/useConnectionDiagnostic.test.tsx
+web	native diagnostic: changed form keeps prior success	src/assistant/useConnectionDiagnostic.test.tsx
 go	assistant creation: mismatching staged suite publishes	TestAssistantCreationCorrectionRetestBeforeCommit,TestAssistantCreationFailedRetestRetainsIssue
 go	assistant creation: completed mismatch approval retained	TestAssistantCreationOriginalCaseOrder
 go	assistant creation: original issue position ignored	TestAssistantCreationCorrectionOriginalPositions,TestAssistantCreationOriginalCaseOrder

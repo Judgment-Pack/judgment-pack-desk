@@ -53,11 +53,36 @@ export class ServerRunClient {
     } finally { if (answer) await discardBody(answer); scope.close() }
   }
   async start(start: RunStart, signal?: AbortSignal, target?: {connectionId:string;connectionRevision:string}): Promise<RunSnapshot> {
-    if (!object(start) || !exact(start,['admissionId','purpose','ownerId','revision','requestId']) || !text(start.admissionId,128) || !runOwner(start.purpose,start.ownerId) || !digest(start.revision) || !text(start.requestId,128) || start.purpose === 'brief' && (start.admissionId!==`brief-${start.requestId}` || !/^[a-f0-9]{32}$/.test(start.requestId) || !target || !text(target.connectionId,128) || !text(target.connectionRevision,128))) throw new RunRequestError('not-sent',undefined,'invalid-response')
+    if (!object(start) || !exact(start,['admissionId','purpose','ownerId','revision','requestId']) || !text(start.admissionId,128) || !runOwner(start.purpose,start.ownerId) || !digest(start.revision) || !text(start.requestId,128) || start.purpose === 'connection-diagnostic' && (start.admissionId!==`diagnostic-${start.requestId}` || !/^[A-Za-z0-9-]{1,100}$/.test(start.requestId) || !target || target.connectionId!==start.ownerId || !text(target.connectionRevision,128)) || start.purpose === 'brief' && (start.admissionId!==`brief-${start.requestId}` || !/^[a-f0-9]{32}$/.test(start.requestId) || !target || !text(target.connectionId,128) || !text(target.connectionRevision,128))) throw new RunRequestError('not-sent',undefined,'invalid-response')
     const body: RunStart = {admissionId:start.admissionId,purpose:start.purpose,ownerId:start.ownerId,revision:start.revision,requestId:start.requestId}
     const snapshot=await this.json(ROOT,{owner:{kind:body.purpose,id:body.ownerId,revision:body.revision},requestId:body.requestId},body,signal,target ? {'X-Assistant-Connection':target.connectionId,'X-Assistant-Revision':target.connectionRevision} : {})
     if(snapshot.admissionId!==body.admissionId)throw new RunRequestError('uncertain',undefined,'invalid-response')
     return snapshot
+  }
+  /** Model-free host capture: the caller supplies only one attempt ID and saved connection. */
+  async diagnosticReference(requestId:string,target:{connectionId:string;connectionRevision:string}):Promise<RunStart> {
+    if(!/^[A-Za-z0-9-]{1,100}$/.test(requestId)||!runOwner('connection-diagnostic',target.connectionId)||!text(target.connectionRevision,128))throw new RunRequestError('not-sent',undefined,'invalid-request')
+    const value=await this.briefJSON('/api/assistant-diagnostics/reference',{requestId},undefined,{'X-Assistant-Connection':target.connectionId,'X-Assistant-Revision':target.connectionRevision})
+    if(!object(value)||!exact(value,['start'])||!object(value.start)||!exact(value.start,['admissionId','purpose','ownerId','revision','requestId']))return invalid()
+    const start=value.start
+    if(start.purpose!=='connection-diagnostic'||start.ownerId!==target.connectionId||start.requestId!==requestId||start.admissionId!==`diagnostic-${requestId}`||!digest(start.revision))return invalid()
+    return start as unknown as RunStart
+  }
+  /** Uncertain admission is read once; this method never creates a replacement run. */
+  async diagnosticLookup(start:RunStart):Promise<RunSnapshot|undefined>{
+    if(start.purpose!=='connection-diagnostic'||!runOwner(start.purpose,start.ownerId)||!digest(start.revision)||!/^[A-Za-z0-9-]{1,100}$/.test(start.requestId)||start.admissionId!==`diagnostic-${start.requestId}`)throw new RunRequestError('not-sent',undefined,'invalid-request')
+    const value=await this.briefJSON(`/api/assistant-diagnostics/requests/${start.requestId}`,undefined)
+    if(!object(value)||!exact(value,['run']))return invalid()
+    if(value.run===undefined)return undefined
+    const run=decodeSnapshot(value.run,{owner:{kind:'connection-diagnostic',id:start.ownerId,revision:start.revision},requestId:start.requestId})
+    if(run.admissionId!==start.admissionId)return invalid()
+    return run
+  }
+  async diagnosticResult(run:RunSnapshot,signal?:AbortSignal):Promise<boolean>{
+    if(run.owner.kind!=='connection-diagnostic'||run.state!=='complete'||run.historical)throw new RunRequestError('not-sent',undefined,'permission')
+    const value=await this.briefJSON(`${ROOT}/${bind(run).id}/connection-diagnostic`,undefined,signal)
+    if(!object(value)||!exact(value,['succeeded'])||typeof value.succeeded!=='boolean')return invalid()
+    return value.succeeded
   }
   /** A model-free exact reservation lookup. A missing run never triggers start. */
   async briefReference(subject:string,token:string,signal?:AbortSignal):Promise<{start:RunStart;run?:RunSnapshot}> {

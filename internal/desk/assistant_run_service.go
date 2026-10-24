@@ -93,7 +93,7 @@ func (h *assistantRunService) start(r *http.Request, start assistantRunStart) (a
 	if !errors.Is(err, errAssistantRunNotFound) {
 		return assistantRunRecord{}, false, err
 	}
-	if h.server.assistantRunExecutor == nil {
+	if h.executor(start.Purpose) == nil {
 		return assistantRunRecord{}, false, errAssistantRunUnavailable
 	}
 	if len(h.active) >= assistantRunActiveLimit {
@@ -107,7 +107,7 @@ func (h *assistantRunService) start(r *http.Request, start assistantRunStart) (a
 	if err != nil {
 		return assistantRunRecord{}, false, err
 	}
-	cp, err := h.server.assistantRunExecutor.Prepare(r.Context(), source)
+	cp, err := h.executor(start.Purpose).Prepare(r.Context(), source)
 	if err != nil {
 		return assistantRunRecord{}, false, err
 	}
@@ -217,7 +217,7 @@ func (h *assistantRunService) launch(r *http.Request, record assistantRunRecord,
 		}()
 		err := execution.Authorize(ctx)
 		if err == nil {
-			err = h.server.assistantRunExecutor.Execute(ctx, execution)
+			err = h.executor(source.Start.Purpose).Execute(ctx, execution)
 		}
 		canceled := ctx.Err() != nil
 		cancel()
@@ -259,7 +259,11 @@ func (h *assistantRunService) read(r *http.Request, id string) (assistantRunReco
 	if err != nil {
 		return assistantRunRecord{}, err
 	}
-	return h.server.assistantRuns().lookup(r.Context(), identity, id, "", true)
+	run, err := h.server.assistantRuns().lookup(r.Context(), identity, id, "", true)
+	if err == nil && run.Binding.Owner.Kind == assistantDiagnosticPurpose && !assistantRunIdentityMatches(identity, run.Binding) {
+		return assistantRunRecord{}, errAssistantRunScope
+	}
+	return run, err
 }
 func (h *assistantRunService) action(r *http.Request, id string, action assistantRunAction) (assistantRunRecord, error) {
 	if !assistantRunText(action.ID, 128) || !contains([]string{"cancel", "approval", "abandon", "answer", "extend-budget"}, action.Kind) || action.Revision == 0 {
@@ -291,6 +295,9 @@ func (h *assistantRunService) action(r *http.Request, id string, action assistan
 			}
 			return record, nil
 		}
+	}
+	if record.Binding.Owner.Kind == assistantDiagnosticPurpose && action.Kind != "cancel" {
+		return record, errAssistantRunScope
 	}
 	if action.Kind == "answer" || action.Kind == "extend-budget" {
 		return h.continueRun(r, record, action)
@@ -515,6 +522,8 @@ func (e *assistantRunExecution) Authorize(ctx context.Context) error {
 	return nil
 }
 func (e *assistantRunExecution) Checkpoint(ctx context.Context, cp contract.Checkpoint) error {
+	ctx, finish := e.diagnosticPersistenceContext(ctx)
+	defer finish()
 	if cp.Status != "running" {
 		e.clearProgress()
 	}
@@ -555,4 +564,12 @@ func (e *assistantRunExecution) changed(err error) {
 		e.cancel()
 	}
 	e.service.notify(e.record.ID)
+}
+
+// Only the fixed diagnostic activates here; general chat factory activation is separate.
+func (h *assistantRunService) executor(purpose string) assistantRunExecutor {
+	if purpose == assistantDiagnosticPurpose {
+		return &assistantDiagnosticExecutor{}
+	}
+	return h.server.assistantRunExecutor
 }

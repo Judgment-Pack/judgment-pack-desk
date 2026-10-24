@@ -45,7 +45,7 @@
     {
       "id": "main-chat-and-right-pane",
       "category": "conversation",
-      "currentOwner": "ChatProvider \u2192 useResearchRun \u2192 AuthoringRun.turn \u2192 browser engine",
+      "currentOwner": "ChatProvider → useResearchRun → AuthoringRun.turn → browser engine",
       "targetOwner": "Go durable run + server domain workflow; browser renders shared events and submits explicit actions",
       "entrypoints": [
         "web/src/chat/ChatProvider.tsx",
@@ -69,7 +69,7 @@
     {
       "id": "pack-authoring-pane",
       "category": "conversation",
-      "currentOwner": "AssistantPane \u2192 useAssistantRun; one gated socket per run",
+      "currentOwner": "AssistantPane → useAssistantRun; one gated socket per run",
       "targetOwner": "same Go run service, purpose authoring; pane owns immutable capture and view lease",
       "entrypoints": [
         "web/src/assistant/AssistantPane.tsx",
@@ -91,7 +91,7 @@
     {
       "id": "describe-it",
       "category": "conversation",
-      "currentOwner": "useDescribeIt \u2192 useAssistantRun \u2192 useProposalGenerator",
+      "currentOwner": "useDescribeIt → useAssistantRun → useProposalGenerator",
       "targetOwner": "Go authoring run on exact captured source; existing review/apply UI",
       "entrypoints": [
         "web/src/shell/DescribeIt.tsx:useDescribeIt",
@@ -111,7 +111,7 @@
     {
       "id": "graph-authoring-pane",
       "category": "conversation",
-      "currentOwner": "GraphAuthor \u2192 useAssistantRun(purpose graph) with graphHostTools",
+      "currentOwner": "GraphAuthor → useAssistantRun(purpose graph) with graphHostTools",
       "targetOwner": "Go graph purpose and server-owned graph validation/explain handlers",
       "entrypoints": [
         "web/src/graphs/GraphAuthor.tsx",
@@ -132,7 +132,7 @@
     {
       "id": "legacy-research-authoring-and-draft-view",
       "category": "domain-workflow",
-      "currentOwner": "ResearchAuthoringPage/DraftPackView \u2192 useResearchRun \u2192 AuthoringRun; browser sequences source/review/repair turns",
+      "currentOwner": "ResearchAuthoringPage/DraftPackView → useResearchRun → AuthoringRun; browser sequences source/review/repair turns",
       "targetOwner": "Go feature workflow using shared adapter turns and context.CorrectArtifact; UI projection only",
       "entrypoints": [
         "web/src/routes/ResearchAuthoringPage.tsx",
@@ -202,7 +202,7 @@
     {
       "id": "brief-summaries-all-subjects",
       "category": "tool-free-generation",
-      "currentOwner": "BriefPane reservation \u2192 useAssistantRun(purpose brief) \u2192 useProposalGenerator",
+      "currentOwner": "BriefPane reservation → useAssistantRun(purpose brief) → useProposalGenerator",
       "targetOwner": "Go run on server-verified frozen brief reservation; no tools, browser rendering/print remain",
       "entrypoints": [
         "web/src/briefs/BriefPane.tsx:start",
@@ -299,7 +299,7 @@
     {
       "id": "input-research-single-step",
       "category": "bounded-structured-step",
-      "currentOwner": "inputResearchModel \u2192 runBackgroundModel; durable worker owns phase/budget",
+      "currentOwner": "inputResearchModel → runBackgroundModel; durable worker owns phase/budget",
       "targetOwner": "same explicit workflow, unified bound dispatch authorization/context/capacity and one reservation per model action",
       "entrypoints": [
         "internal/desk/input_research_worker.go",
@@ -348,7 +348,7 @@
     {
       "id": "portable-research-and-model-acquisition",
       "category": "bounded-structured-step",
-      "currentOwner": "portableResearchWorker \u2192 acquirePortableResearchModel \u2192 model broker \u2192 runBackgroundModel",
+      "currentOwner": "portableResearchWorker → acquirePortableResearchModel → model broker → runBackgroundModel",
       "targetOwner": "retain reviewed portable workflow and nonce-bound model-source acquisition; shared bound dispatch",
       "entrypoints": [
         "internal/desk/portable_research_worker.go",
@@ -397,7 +397,7 @@
     {
       "id": "capability-probe",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "EndpointCapabilitiesSection \u2192 capabilityProbe: one chat request plus model-list GET",
+      "currentOwner": "EndpointCapabilitiesSection → capabilityProbe: one chat request plus model-list GET",
       "targetOwner": "fixed host-authored one-request diagnostic; same bound relay/context/accounting; no tool execution",
       "entrypoints": [
         "web/src/assistant/EndpointCapabilitiesSection.tsx",
@@ -419,7 +419,7 @@
     {
       "id": "endpoint-connection-probe",
       "category": "bounded-diagnostic-mixed",
-      "currentOwner": "handleAssistantProbe \u2192 probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
+      "currentOwner": "handleAssistantProbe → probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
       "targetOwner": "same fixed diagnostic owner; generative ping reserved/accounted, shared auth/context/custody path",
       "entrypoints": [
         "internal/desk/assistant.go:handleAssistantProbe/probeEndpoint",
@@ -438,22 +438,26 @@
     {
       "id": "codex-connection-test",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "AssistantSettings \u2192 useAssistantRun(codex,purpose test-design, optional get_schema)",
-      "targetOwner": "fixed server diagnostic run on actual bridge and narrow saved get_schema grant",
+      "currentOwner": "AssistantSettings → useConnectionDiagnostic → closed canonical connection-diagnostic owner",
+      "targetOwner": "implemented fixed server diagnostic on the actual private bridge, canonical context/checkpoint and schema-only Runtime grant",
       "entrypoints": [
         "web/src/assistant/AssistantSettings.tsx",
-        "web/src/assistant/useAssistantRun.ts",
-        "internal/desk/agent_run.go",
+        "web/src/assistant/useConnectionDiagnostic.ts",
+        "internal/desk/assistant_diagnostic_execution.go",
         "internal/codexbridge/run.go"
       ],
       "preserve": [
         "actual subscription auth/native model admission; no API fallback",
-        "provider-managed invocation accounting, optional schema read remains gated"
+        "honest provider-managed usage 0/not supplied, required current schema observation remains gated",
+        "exact saved connection/profile/session/project/credential-file custody, lost-ack read-only reconciliation, Stop and stale observation withdrawal"
       ],
       "verification": [
         "web/src/assistant/AssistantSettings.test.tsx",
         "internal/desk/agent_run_test.go",
-        "new shared diagnostic bridge fixture"
+        "internal/desk/assistant_diagnostic_test.go",
+        "internal/codexbridge/account_binding_linux_test.go",
+        "web/src/assistant/useConnectionDiagnostic.test.tsx",
+        "scripts/dev/assistant-diagnostic.sh"
       ],
       "blockedByProviderManagedCoordinator": false
     },
@@ -805,16 +809,24 @@
         "web/src/chat/ChatProvider.tsx",
         "Agent packages/harness/planning/tools.ts",
         "Agent packages/harness/memory/tools.ts",
-        "internal/desk/ai_memory.go"
+        "internal/desk/ai_memory.go",
+        "internal/desk/assistant_memory_lifecycle.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "Desk private memory store and person management; released Agent v0.9.1 typed recall and metadata-only MemoryLifecycle callback",
       "preserve": [
         "Go Plan record/references and existing private memory handlers; latest saved user message binding, separate human Start work, no remembered permissions/evidence",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
         "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation",
+        "TestAssistantMemoryActualBindings: actual API/native question pause and person-answer resume explicitly revoke forgotten, cleared, edited, disabled, dependency-changed and expired records without reconstructing deleted text",
+        "Strict legacy/enriched private v1 and backup readers; canonical identity/digest and byte/count bounds; stable shared-host snapshot, query-independent lifecycle eligibility and focused concurrent CAS race probes"
+      ],
+      "status": "private typed recall and lifecycle foundation implemented; human proposal acceptance and final activation pending",
+      "remaining": [
+        "Canonical model/Plan proposal projection and authenticated person acceptance (#598), full memory UI control wiring and legacy tool removal",
+        "Global factory activation and complete release journeys remain separate required work"
       ]
     },
     {
