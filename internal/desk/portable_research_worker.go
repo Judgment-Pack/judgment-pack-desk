@@ -157,7 +157,11 @@ func (s *Server) acquirePortableResearchModel(ctx context.Context, store researc
 		return nil, err
 	}
 	requestRaw, _ := json.Marshal(request)
-	return retainPortableAcquisition(run, "answer", requestRaw, raw)
+	profile, err := portableResearchProfileFor(run, "answer")
+	if err != nil {
+		return nil, err
+	}
+	return retainPortableAcquisitionWithCustody(ctx, store, run, attempt, "answer", profile, requestRaw, raw)
 }
 func retainPortableAcquisition(run inputResearchRun, capability string, request, raw json.RawMessage) (json.RawMessage, error) {
 	assignments, err := portableResearchAssignments(run.Portable.Frozen.Input, run.Portable.Frozen.Plan.Name)
@@ -181,9 +185,10 @@ func retainPortableAcquisition(run inputResearchRun, capability string, request,
 	return portableResearchJSON(retained)
 }
 
-// The host admits acquired pages before returning a result to the execution
-// owner. A refused acquisition keeps its exact bounded envelope for audit and
-// never becomes a model-visible completed source. Runner verifies signatures.
+// Decode and admit the acquired page before it becomes a model-visible source.
+// Dispatch owners use retainPortableAcquisitionWithCustody before journaling;
+// this in-memory step alone does not own durable oversized response custody.
+// Runner verifies signatures.
 func retainAdmittedPortableAcquisition(run inputResearchRun, capability string, profile portableProfileDetails, request, raw json.RawMessage) (json.RawMessage, error) {
 	retained, err := retainPortableAcquisition(run, capability, request, raw)
 	if err != nil {
@@ -286,7 +291,10 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 			return s.acquirePortableResearchModel(call, store, current, attempt, prompt)
 		})
 		if err != nil {
-			if errors.Is(err, errPortableResearchJournalSize) {
+			var refused *researchAcquisitionRefused
+			if errors.As(err, &refused) && refused.proof != nil {
+				finish("partial", errPortableResearchAcquisitionSize)
+			} else if errors.Is(err, errPortableResearchJournalSize) || errors.Is(err, errPortableResearchStorageLimit) {
 				finish("partial", err)
 			} else {
 				finish("interrupted", err)
@@ -417,18 +425,22 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 					if err != nil {
 						return nil, err
 					}
-					return retainAdmittedPortableAcquisition(current, action.Kind, profile, action.Arguments, raw)
+					return retainPortableAcquisitionWithCustody(call, store, current, attempt, action.Kind, profile, action.Arguments, raw)
 				})
 				// Refused at its receipt check, the page is an acquisition-invalid
 				// request like one refused before acquisition: a validation
 				// finding on this model step, within the same correction bound.
 				var refusal *researchAcquisitionRefused
 				if errors.As(err, &refusal) {
+					if refusal.proof != nil {
+						finish("partial", errPortableResearchAcquisitionSize)
+						return
+					}
 					problem = refusal.cause
 					break
 				}
 				if err != nil {
-					if errors.Is(err, errResearchRequestLimit) || errors.Is(err, errPortableResearchJournalSize) {
+					if errors.Is(err, errResearchRequestLimit) || errors.Is(err, errPortableResearchJournalSize) || errors.Is(err, errPortableResearchStorageLimit) {
 						finish("partial", err)
 					} else {
 						finish("interrupted", err)

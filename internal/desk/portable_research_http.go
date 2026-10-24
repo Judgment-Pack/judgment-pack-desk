@@ -159,6 +159,9 @@ func (s *Server) handlePortableResearch(w http.ResponseWriter, r *http.Request) 
 	defer rr.Close()
 	journal := s.researchJournal(rr, id)
 	run, err := journal.Read(r.Context())
+	if err == nil {
+		err = s.researchRunStore(rr, id).validatePortableProofs(r.Context(), run)
+	}
 	if err != nil || run.Portable == nil {
 		writeJSONCoded(w, 404, CodeNotFound, "Research run not found.")
 		return

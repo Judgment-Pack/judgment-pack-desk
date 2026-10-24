@@ -206,6 +206,42 @@ which counts only completed sources and stops before further model requests when
 they cannot fit the portable answer. A refused page cannot evade the journal
 bound by being absent from the answer.
 
+A complete Gateway envelope can exceed the 2 MiB inline bound while still fitting
+its 16 MiB + 64 KiB transport limit. Such acquisitions keep the exact envelope
+and request bytes in the existing immutable research proof/artifact store. The
+portable attempt carries a bounded `retainedProof` descriptor: version 1, the
+frozen profile ID/digest, the exact proof manifest's SHA-256 and byte count, and
+total proof bytes. Readers validate that descriptor and all objects against the
+current run, attempt, session, Gateway pin and profile. Missing, altered or
+mismatched evidence fails closed; reads do not repair, migrate or reacquire it.
+Existing inline histories retain their representation.
+
+An accepted oversized acquisition is terminal `refused` with the existing
+`source-response-too-large` reason. An endpoint-refused oversized page keeps its
+`acquisition-invalid` reason. Both end the run `partial` with an explicit inline
+result-size reason, without another model request or source acquisition. Their
+content is absent from every model projection and answer; the answer limit stays
+1 MiB. Activity uses the existing refused-state and problem-code contract.
+
+Before any portable dispatch, Desk additionally reserves maximum proof storage:
+the transport envelope, up to 128 KiB of request arguments, and the already bounded
+8 KiB manifest. The proof limit includes that manifest overhead separately from
+both objects. The current encoded journal, retained acquisitions and in-flight
+proof/journal reservations must also fit the run's 64 MiB retained-evidence allowance;
+accounting is conservative when inline evidence is represented in both counts.
+Admission never spends the same reservation twice. Storage failures are charged
+at the maximum proof reservation until recovery rather than treating possibly
+written objects as free space.
+
+Proof objects are verified durable before the manifest is published; the journal
+terminal update follows that publication. These are separate writes. An uncertain
+artifact, manifest or journal acknowledgement keeps the existing uncertain/no
+replay behavior and retains possible orphan objects for recovery. A process loss
+does not invent a terminal proof reference or retry the acquisition. Proof copies
+and complete project snapshots/moves include the manifests and project-relative
+artifact objects. Chat-data backups keep their existing scope, which excludes
+project research and artifact stores.
+
 Runner continues to verify each receipt's exact endpoint or declared scope.
 Neither check establishes the scope of intermediate redirects, page accuracy or outreach permission; the scope holds the
 URL as written, not what a server serves for it. The portable definition,

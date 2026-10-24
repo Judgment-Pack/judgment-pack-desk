@@ -112,6 +112,35 @@ func validatePortableResearchJournal(run inputResearchRun, id string) error {
 	if used.ModelCalls > limits.ModelCalls || used.Searches > limits.Searches || used.Pages > limits.Pages {
 		return bad
 	}
+	proofBytes := 0
+	for _, a := range run.Attempts {
+		if a.RetainedProof == nil {
+			if a.State == "refused" && len(a.Result) == 0 {
+				return bad
+			}
+			continue
+		}
+		capability := a.Kind
+		if capability == "model" {
+			capability = "answer"
+		}
+		assignments, err := portableResearchAssignments(run.Portable.Frozen.Input, run.Portable.Frozen.Plan.Name)
+		if err != nil || assignments[capability].Profile != a.RetainedProof.Profile || assignments[capability].Digest != a.RetainedProof.ProfileDigest {
+			return bad
+		}
+		for _, stamp := range []string{a.StartedAt, a.FinishedAt} {
+			if _, err := time.Parse(time.RFC3339Nano, stamp); err != nil {
+				return bad
+			}
+		}
+		proofBytes += a.RetainedProof.Bytes
+		if !a.RetainedProof.valid() || a.ID != "attempt_"+a.Digest || !retainedArtifactDigest.MatchString(a.Digest) || a.State != "refused" || len(a.Result) != 0 || a.ReservedBytes != 0 || a.FinishedAt == "" || (a.ProblemCode != "acquisition-invalid" && a.ProblemCode != "source-response-too-large") {
+			return bad
+		}
+	}
+	if proofBytes > run.RetrievedBytes || proofBytes > inputResearchRetainedByteLimit {
+		return bad
+	}
 	if len(run.Portable.Response) > 0 && (!json.Valid(run.Portable.Response) || len(run.Portable.Response) > portableResearchResponseLimit) {
 		return bad
 	}

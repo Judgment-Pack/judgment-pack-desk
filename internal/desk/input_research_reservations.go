@@ -58,6 +58,9 @@ func reservePortableResearchJournal(run *inputResearchRun, attempt *inputResearc
 	if len(raw)+researchReservedBytes(*run)+portableResearchAttemptReserve+portableResearchFinalReserve > inputResearchRecordLimit {
 		return errPortableResearchJournalSize
 	}
+	if run.RetrievedBytes < 0 || len(raw)+run.RetrievedBytes+researchReservedBytes(*run)+portableResearchProofReservedBytes(*run)+portableResearchAttemptReserve+inputResearchSourceProofLimit+portableResearchFinalReserve > inputResearchRetainedByteLimit {
+		return errPortableResearchStorageLimit
+	}
 	attempt.ReservedBytes = portableResearchAttemptReserve
 	return nil
 }
