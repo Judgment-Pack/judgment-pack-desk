@@ -12,6 +12,7 @@ import { useFileContent } from '../files/queries'
 import { assistantReady, useAssistantSlot } from '../assistant/useAssistantSlot'
 import { selectedAssistant } from '../assistant/target'
 import { useAuthoringRun } from '../assistant/useAuthoringRun'
+import { whenSessionEnds } from '../mcp/session'
 import { ProposalDiffView } from '../assistant/ProposalDiffView'
 import { diffProposal } from '../assistant/proposalDiff'
 import { Button } from '../ui/Button'
@@ -59,13 +60,18 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
   const preparation=useRef<AbortController | undefined>(undefined)
   const lifetime = useRef(new AbortController())
   useEffect(() => { const controller = new AbortController(); lifetime.current = controller; return () => controller.abort() }, [])
+  useEffect(() => whenSessionEnds(() => {
+    lifetime.current.abort();preparation.current?.abort();setPreparing(false)
+    setContent('');setOffer(null);setPromptText('');setDescription('')
+    setId(graphId ?? '');setPath('');setBase('');setOriginal('');setError('');setSaved(null)
+  }), [graphId])
   const declared = useMemo(() => {
     try { return JSON.parse(config.data?.content ?? '{}') as { packs?: Record<string, { path: string }>; graphs?: Record<string, { path: string }> } }
     catch { return {} }
   }, [config.data?.content])
   const proposal = run.events.find(event => event.type === 'proposal')
   useEffect(() => {
-    if (proposal?.type !== 'proposal') return
+    if (lifetime.current.signal.aborted || proposal?.type !== 'proposal') return
     const document = proposal.document as { graph?: unknown; id?: string; description?: string }
     if (!document.graph || typeof document.graph !== 'object') { setError(msg('The assistant returned no graph document.')); return }
     setContent(JSON.stringify(document.graph, null, 2) + '\n')
@@ -75,21 +81,25 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
   }, [proposal, graphId])
   const working = busy || run.status === 'running'
   async function act(action: () => Promise<void>) {
+    if (lifetime.current.signal.aborted) return
     setBusy(true); setError(''); setSaved(null)
     try { await action() } catch (cause) { if (!lifetime.current.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
   }
   async function start() {
+    if (run.canStart === false) return
     setOffer(null); setContent(''); setBase(''); setOriginal('')
     const controller=new AbortController();preparation.current=controller;setPreparing(true)
     const signal = AbortSignal.any([lifetime.current.signal,controller.signal])
     try {
     const packs = await Promise.all(chosen.map(name => readFile(declared.packs![name]!.path, signal)))
+    signal.throwIfAborted()
     let graphDigest: string | undefined
     if (graphId) {
       const entry = declared.graphs?.[graphId]
       if (!entry) throw new Error(msg('The configured graph could not be read.'))
       const file = await readFile(entry.path, signal)
+      signal.throwIfAborted()
       setPath(entry.path); setBase(file.sha256); setOriginal(file.content)
       graphDigest = file.sha256
     }
@@ -108,9 +118,9 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
         <legend>{msg('Choose packs')}</legend>
         {Object.keys(declared.packs ?? {}).map(name => <label key={name}><input type="checkbox" checked={chosen.includes(name)} onChange={event => setChosen(event.target.checked ? [...chosen, name] : chosen.filter(value => value !== name))} />{name}</label>)}
         <label>{msg('Relationship')}<textarea rows={4} value={relationship} onChange={event => setRelationship(event.target.value)} /></label>
-        <Button disabled={!chosen.length || !relationship.trim() || !client} onClick={() => void act(start)}>{msg('Propose graph')}</Button>
+        <Button disabled={run.canStart === false || !chosen.length || !relationship.trim() || !client} onClick={() => void act(start)}>{msg('Propose graph')}</Button>
       </fieldset>
-      {(preparing || run.status === 'running') && <Button onClick={()=>{preparation.current?.abort();run.stop()}}>{msg('Stop')}</Button>}
+      {(preparing || run.status === 'running' || run.canStop) && <Button onClick={()=>{preparation.current?.abort();run.stop()}}>{msg('Stop')}</Button>}
       {promptText && <details><summary>{msg('Runtime author_graph guidance preview')}</summary><pre lang="en">{shownMessage(promptText)}</pre></details>}
       {run.events.filter(event => event.type === 'message').map((event, index) => event.type === 'message' && <p key={index}>{shownMessage(event.text)}</p>)}
       {proposal?.type === 'proposal' && proposal.unknowns.map((unknown, index) => <p key={index}>{shownMessage(unknown)}</p>)}
@@ -122,12 +132,16 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
         {!graphId && <label>{msg('Description')}<input value={description} onChange={event => setDescription(event.target.value)} /></label>}
         {original && <details><summary>{msg('Graph before')}</summary><pre>{original}</pre></details>}
         <label>{msg('Graph bytes to write')}<textarea rows={16} spellCheck={false} value={content} onChange={event => setContent(event.target.value)} /></label>
-        <Button disabled={!id || !path || !!run.failure || run.events.some(event => event.type === 'error')} onClick={() => void act(async () => setOffer(await graphPost<GraphOffer>('proposal', { id, path, content, description, baseSha256: base }, lifetime.current.signal)))}>{msg('Review graph write')}</Button>
+        <Button disabled={!id || !path || !!run.failure || run.events.some(event => event.type === 'error')} onClick={() => void act(async () => {
+          const reviewed = await graphPost<GraphOffer>('proposal', { id, path, content, description, baseSha256: base }, lifetime.current.signal)
+          lifetime.current.signal.throwIfAborted();setOffer(reviewed)
+        })}>{msg('Review graph write')}</Button>
       </fieldset>}
       {offer && <GraphConfirmation offer={offer} busy={working} onConfirm={() => void act(async () => {
         const accepted = offer; setOffer(null)
         try {
           await graphPost('write', accepted, lifetime.current.signal)
+          lifetime.current.signal.throwIfAborted()
           setSaved(accepted.hasLock)
         } finally {
           await queries.invalidateQueries()

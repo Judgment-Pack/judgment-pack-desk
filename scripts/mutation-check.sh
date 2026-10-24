@@ -15738,6 +15738,16 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     'if(this.ended||this.running||this.uncertain)return'
 fi
 
+# Desk #647 first review: private projections and paused exact ownership.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant authoring: session-private projections retained' web/src/assistant/useAuthoringRun.ts \
+    "  setEvents([]);setSnapshot(undefined);setStreaming('')" \
+    '  // Private projection clearing omitted.'
+  mutate web 'assistant authoring: paused presentation resolves host owner' web/src/assistant/useAuthoringRun.ts \
+    '  if(terminal(run)||run.historical){attempt.resolved=true;setCanStart(true)}' \
+    "  if(terminal(run)||run.historical||!['admitted','running'].includes(run.state)){attempt.resolved=true;setCanStart(true)}"
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

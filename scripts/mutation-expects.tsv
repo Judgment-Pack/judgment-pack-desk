@@ -2869,3 +2869,5 @@ web	assistant run client: uncertain POST replayed	src/assistant/serverRuns/clien
 go	assistant discovery: caller body or query admitted	TestAssistantDiscoveryRefusesCallerPayload
 go	assistant discovery: saved revision requirement omitted	TestAssistantDiscoverySavedConnection
 web	assistant saved chat: unreconciled Send guard omitted	src/chat/store.server.test.ts
+web	assistant authoring: session-private projections retained	src/assistant/authoringLifecycle.test.tsx
+web	assistant authoring: paused presentation resolves host owner	src/assistant/authoringLifecycle.test.tsx

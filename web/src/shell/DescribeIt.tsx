@@ -125,6 +125,8 @@ export interface DescribeItState {
   blocking: string
   /** The prompt is being read, or the engine is running. */
   running: boolean
+  canStart?: boolean
+  canStop?: boolean
   events: readonly AssistantEvent[]
   /** The prose the assistant has written so far, while it writes it; empty otherwise. */
   streaming: string
@@ -352,11 +354,12 @@ export function useDescribeIt(): DescribeItState {
    * harness reported it as a line nothing holds.)
    */
   const propose = useCallback(() => {
+    if (run.canStart === false) return
     setLost('')
     setDiscarded(false)
     setStoppedId(null)
     setSubmitted({ id: (nextRun.current += 1), args: { policy: typed } })
-  }, [typed])
+  }, [typed, run.canStart])
 
   /**
    * The events of the **latest submission's** run, and of no other.
@@ -474,6 +477,8 @@ export function useDescribeIt(): DescribeItState {
     offered: proposal !== undefined,
     blocking,
     running,
+    canStart: run.canStart,
+    canStop: run.canStop,
     events,
     streaming: events === EMPTY ? '' : run.streaming,
     report: events === EMPTY ? undefined : run.report,
@@ -524,10 +529,10 @@ function Section({ state, blockingElsewhere }: { state: DescribeItState; blockin
       />
       <div className={styles.actions}>
         <Button
-          disabled={state.running || state.typed.trim() === '' || !state.advertised}
+          disabled={state.running || state.canStart === false || state.typed.trim() === '' || !state.advertised}
           onClick={state.propose}
         >{msg("Propose")}</Button>
-        <Button disabled={!state.running} onClick={state.stop}>{msg("Stop")}</Button>
+        <Button disabled={!state.running && !state.canStop} onClick={state.stop}>{msg("Stop")}</Button>
       </div>
       <p className={styles.quiet}>{msg("Nothing is written until you press Create. The name above gives the pack its id and its file name, whatever the assistant proposes to call it.")}</p>
       {!state.advertised && (
