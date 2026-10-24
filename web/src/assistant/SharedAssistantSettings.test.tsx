@@ -133,7 +133,7 @@ function stubChassis(answers: {
     // the request begins, not what it holds once the answer has come back and
     // a render has flushed.
     answers.onRequest?.(method, url)
-    if (url.includes('/api/assistant/relay/')) {
+    if (url.includes('/api/assistant/models')) {
       // The listing half of one press. This file is about the probe and the
       // key; what the list does with the rows is `endpointForm.test.tsx`'s.
       return new Response(JSON.stringify(answers.listing ?? { data: [] }), {
@@ -445,7 +445,7 @@ describe('shared AI settings', () => {
     await testConnection()
     expect(await screen.findByText('Connected · 2 models available')).toBeTruthy()
     await waitFor(() =>
-      expect(sent.filter((each) => each.url.includes('/api/assistant/relay/'))).toHaveLength(1)
+      expect(sent.filter((each) => each.url.includes('/api/assistant/models'))).toHaveLength(1)
     )
   })
 
