@@ -50,7 +50,9 @@ func (*assistantDiagnosticExecutor) Prepare(ctx context.Context, source assistan
 		return contract.Checkpoint{}, err
 	}
 	defer opened.Context.Close()
-	opened.Context.Execution.LimitTo(1)
+	// Native execution is provider-managed: v0.9.1 reserves LimitTo for API
+	// request caps and refuses it here. Keep the released native accounting;
+	// the closed schema offer and diagnostic receipt checks own this action.
 	return opened.Context.Snapshot("")
 }
 func (*assistantDiagnosticExecutor) Execute(ctx context.Context, e *assistantRunExecution) error {

@@ -2,6 +2,7 @@ import { conversationWire, encodeWireChat, encodeWireValue, wireField } from './
 import { reconcileChats } from './reconcile'
 import type { CriticMode, CriticTier } from '@judgment-pack/harness/contract'
 import { readCriticSettings } from '@judgment-pack/harness/criticSwitch'
+import { savedCriticChoice } from '../assistant/criticSettings'
 import {validPolicySources,type PolicyAuthoringSource} from '../policies/authoringSource'
 import {validPolicyInterpretationProposal,type PolicyInterpretationProposal} from '../policies/interpretation'
 import {validPolicyId,validPolicyRequest,validPolicyProposal,type PolicyRequest,type PolicyProposal} from '../policies/chat'
@@ -137,7 +138,7 @@ function decode(value: unknown,wireChats?:Record<string,string>): Chat[] {
     if (chat.graphDrafts !== undefined && (!Array.isArray(chat.graphDrafts) || chat.graphDrafts.length > 16 || !chat.graphDrafts.every(validGraphSnapshot) || new Set(chat.graphDrafts.map(d => d.draftId)).size !== chat.graphDrafts.length)) throw new Error(sourceMessage('Invalid saved graph drafts'))
     if (chat.graph && (chat.pack || chat.draftId || typeof chat.graph.id !== 'string' || typeof chat.graph.path !== 'string' || typeof chat.graph.workspace !== 'string' || chat.graph.id.length > 128 || chat.graph.path.length > 1024 || !/^[a-zA-Z0-9-]{1,160}$/.test(chat.graph.workspace))) throw new Error(sourceMessage('Invalid saved graph context'))
     if(chat.interaction!==undefined&&!['plan','work'].includes(chat.interaction)||chat.plans!==undefined&&!validPlans(chat.plans))throw Error(sourceMessage('Invalid saved plan'))
-    readCriticSettings({critic:chat.critic,criticReasoning:chat.criticReasoning,adversarialReview:chat.adversarialReview}, chat.criticReasoning !== undefined && !['off','on','ultra'].includes(chat.criticReasoning))
+    readCriticSettings({critic:savedCriticChoice(chat),criticReasoning:chat.criticReasoning}, chat.criticReasoning !== undefined && !['off','on','ultra'].includes(chat.criticReasoning))
     ids.add(chat.id)
     if (chat.attachments !== undefined && (!Array.isArray(chat.attachments) || chat.attachments.length > 4
       || chat.attachments.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000))) throw new Error(sourceMessage("Invalid saved attachments"))

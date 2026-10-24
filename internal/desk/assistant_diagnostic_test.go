@@ -69,7 +69,7 @@ func TestAssistantDiagnosticActualNativeCheckpoint(t *testing.T) {
 	if result.Code != 200 || strings.TrimSpace(result.Body.String()) != `{"succeeded":true}` {
 		t.Fatalf("diagnostic result %d %s checkpoint=%+v events=%+v", result.Code, result.Body.String(), complete.Checkpoint, complete.Events)
 	}
-	if complete.Checkpoint.Unit != "provider-managed" || complete.Checkpoint.Used != 0 || complete.Checkpoint.Limit != 1 {
+	if complete.Checkpoint.Unit != "provider-managed" || complete.Checkpoint.Used != 0 || complete.Checkpoint.Limit != 1 || complete.Checkpoint.RequestCap != nil {
 		t.Fatalf("native accounting %+v", complete.Checkpoint)
 	}
 	logs := assistantCodexLog(t, trace)
@@ -124,7 +124,7 @@ func TestAssistantDiagnosticActualNativeCheckpoint(t *testing.T) {
 		t.Fatal("diagnostic restore", restored.Code, restored.Body.String())
 	}
 	historical := assistantProtocolView(t, policyCall(s, token, "GET", "/api/assistant-runs/"+view.ID, nil), 200)
-	if !historical.Historical || historical.Owner.Kind != assistantDiagnosticPurpose || historical.Checkpoint.Limit != 1 || historical.Checkpoint.Used != 0 {
+	if !historical.Historical || historical.Owner.Kind != assistantDiagnosticPurpose || historical.Checkpoint.Limit != complete.Checkpoint.Limit || historical.Checkpoint.Used != 0 || historical.Checkpoint.RequestCap != nil {
 		t.Fatal("restore lost native diagnostic checkpoint")
 	}
 	assistantRunClientJSON(t, "diagnostic-restored.json", historical)

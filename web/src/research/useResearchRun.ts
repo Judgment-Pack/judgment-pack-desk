@@ -1,3 +1,4 @@
+import { savedCriticChoice } from '../assistant/criticSettings'
 import { criticForcedOff } from '@judgment-pack/harness/criticSwitch'
 import { criticMode, type CriticMode, type CriticTier } from '@judgment-pack/harness/contract'
 import { withDelegation } from '@judgment-pack/harness/delegation'
@@ -173,7 +174,7 @@ export function useResearchRun(options?: {
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
   const authorPrompt = usePromptText(AUTHOR_PACK_PROMPT, advertised)
   const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
-  const testPrompt = usePromptText(TEST_PACK_PROMPT, criticMode({critic:options?.critic,criticProject:assistantProfile?.value?.critic,adversarialReview:options?.adversarialReview},{}).mode !== 'off' && advertisesTest)
+  const testPrompt = usePromptText(TEST_PACK_PROMPT, criticMode({critic:savedCriticChoice(options ?? {}),criticProject:assistantProfile?.value?.critic},{}).mode !== 'off' && advertisesTest)
   const research = config.research
   const mcp = useMcp()
 
@@ -192,8 +193,8 @@ export function useResearchRun(options?: {
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ purpose:options?.purpose, savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, critic:options?.critic, criticProject:assistantProfile?.value?.critic, criticReasoning:options?.criticReasoning, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents })
-  settings.current = { purpose:options?.purpose, savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, critic:options?.critic, criticProject:assistantProfile?.value?.critic, criticReasoning:options?.criticReasoning, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents }
+  const settings = useRef({ purpose:options?.purpose, savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, critic:savedCriticChoice(options ?? {}), criticProject:assistantProfile?.value?.critic, criticReasoning:options?.criticReasoning, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents })
+  settings.current = { purpose:options?.purpose, savedPackReview:options?.savedPackReview, authorizeContext:options?.authorizeContext, executionContext:options?.executionContext, savedTests:options?.savedTests, contextConfiguration:assistantProfile?.value?.context, slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, critic:savedCriticChoice(options ?? {}), criticProject:assistantProfile?.value?.critic, criticReasoning:options?.criticReasoning, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, checkpointDelegation:options?.checkpointDelegation, documents: options?.documents }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(text, 'research')
@@ -243,7 +244,7 @@ export function useResearchRun(options?: {
             // An independent reviewer works from a scope of its own, so it is handed none of the chat's.
             context:{...request.context,...executionContext,...(executionContext?.documents?{documents:[...(request.context?.documents??[]),...executionContext.documents]}:{}),chat:request.reviewer?undefined:executionContext?.chat,...(runtime?{runtime}:{}),...(memory===undefined?{}:{memory}),...(slot.connectionId?{connection:{connectionId:slot.connectionId,...(slot.connectionRevision?{connectionRevision:slot.connectionRevision}:{}),...(slot.connectionName?{connectionName:slot.connectionName}:{})}}:{}),authorize:settings.current.authorizeContext,checkpoint:request.conversation?async checkpoint=>{deliver({type:'execution_checkpoint',checkpoint});await settings.current.checkpointDelegation?.(signal)}:undefined,configuration:settings.current.contextConfiguration},
             interactive: true,
-            purpose:settings.current.purpose, critic:settings.current.critic, criticProject:settings.current.criticProject, criticReasoning:settings.current.criticReasoning, adversarialReview:settings.current.adversarialReview, reviewerAssigned:!!request.reviewer, existingPack:!!settings.current.savedPackReview,
+            purpose:settings.current.purpose, critic:settings.current.critic, criticProject:settings.current.criticProject, criticReasoning:settings.current.criticReasoning, reviewerAssigned:!!request.reviewer, existingPack:!!settings.current.savedPackReview,
             ...(declared.length ? { criticCases: declared } : {}),
             testPrompt: request.reviewer ? '' : testPrompt,
             tools: ready.tools,

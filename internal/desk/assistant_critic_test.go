@@ -761,7 +761,7 @@ func TestAssistantCriticReleasedControlMapping(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			chat := &assistantChatInput{Review: tc.review}
-			if got, _ := runcontext.CriticMode(runcontext.CriticSettings{Critic: assistantCriticMode(chat), AdversarialReview: chat.Review}, runcontext.CriticTable{}); got != tc.want {
+			if got, _ := runcontext.CriticMode(runcontext.CriticSettings{Critic: assistantCriticChoice(chat)}, runcontext.CriticTable{}); got != tc.want {
 				t.Fatalf("critic control: got %q, want %q", got, tc.want)
 			}
 			if got, want := assistantCriticEnabled(chat, "work"), tc.want != "off"; got != want {

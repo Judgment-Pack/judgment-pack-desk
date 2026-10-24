@@ -93,9 +93,23 @@ func assistantCriticCases(declared, suite *runcontext.Value) ([]json.RawMessage,
 	return out, nil
 }
 
-// Preserve an explicit legacy boolean; an absent choice inherits the canonical default.
+// Translate persisted Desk booleans at the host boundary. Agent v0.9.1 refuses
+// the retired alias; an explicit canonical choice still takes precedence.
+func assistantCriticChoice(chat *assistantChatInput) string {
+	if chat.Critic != "" {
+		return chat.Critic
+	}
+	if chat.Review != nil {
+		if *chat.Review {
+			return "on"
+		}
+		return "off"
+	}
+	return ""
+}
+
 func assistantCriticMode(chat *assistantChatInput) string {
-	mode, _ := runcontext.CriticMode(runcontext.CriticSettings{Critic: chat.Critic, CriticProject: chat.CriticProject, AdversarialReview: chat.Review}, runcontext.CriticTable{})
+	mode, _ := runcontext.CriticMode(runcontext.CriticSettings{Critic: assistantCriticChoice(chat), CriticProject: chat.CriticProject}, runcontext.CriticTable{})
 	return mode
 }
 

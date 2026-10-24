@@ -455,7 +455,7 @@ func compileAssistantChatInput(source assistantRunSource) (*assistantChatInput, 
 			*target = value.Str()
 		}
 	}
-	if err := runcontext.ReadCriticSettings(runcontext.CriticSettings{Critic: out.Critic, CriticReasoning: out.CriticReasoning, AdversarialReview: out.Review}, source.Connection.Assistant.Engine == "codex"); err != nil {
+	if err := runcontext.ReadCriticSettings(runcontext.CriticSettings{Critic: assistantCriticChoice(out), CriticReasoning: out.CriticReasoning}, source.Connection.Assistant.Engine == "codex"); err != nil {
 		return nil, errAssistantRunInvalid
 	}
 	prefs := assistantChatPreferences(source)

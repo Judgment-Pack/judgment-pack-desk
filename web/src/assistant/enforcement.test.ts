@@ -933,6 +933,16 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
         expect(source.text.split(identityToken)).toHaveLength(2)
         expect(source.text).toContain('delegatedPolicies.set(token, projection);')
         freezeSource = source.text.replace(identityToken, '')
+        // v0.9.1 freezes the two admitted request value views. Match each
+        // complete declaration once; freezes elsewhere remain in the sweep.
+        const requestViews = [
+          "return Object.freeze(Object.defineProperties({ member: common.member, sameBinding: common.sameBinding, allowsTool: common.allowsTool, model: Object.freeze({ family: selected.family, model: override ?? selected.model, call }), get capabilities() { return requestCopy(capabilitiesFor(selected)); }, ...(value === undefined ? {} : { reasoning: normalize(value, selected.family) }), forRole: (next) => view(next), withModel: (name) => view(role, name) }, Object.getOwnPropertyDescriptors(common)));",
+          "return Object.freeze(Object.defineProperties({ member: common.member, sameBinding: common.sameBinding, allowsTool: common.allowsTool, agent: Object.freeze({ ...requestCopy(binding.agent), run: 'agent' in session ? session.agent.run : binding.agent.run }), ...(value === undefined ? {} : { reasoning: value }), forRole: (next) => view(next) }, Object.getOwnPropertyDescriptors(common)));",
+        ]
+        for (const declaration of requestViews) {
+          expect(freezeSource.split(declaration)).toHaveLength(2)
+          freezeSource = freezeSource.replace(declaration, '')
+        }
       }
       const frozenDeclarations: Record<string, string> = {
         // Immutable run identity is not proposal canonicalization. Strip this

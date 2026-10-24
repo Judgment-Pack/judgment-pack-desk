@@ -11,13 +11,13 @@ const base=():AssistantSession=>({prompt:'Fix the missing-size exception and ver
 describe('shared execution continuity',()=>{
  it('keeps progress and exact typed operation results across JSON checkpoint and explicit extension',async()=>{
   const input=base(),ready=await contextualSession(input),task=ready.context.execution
-  const update=ready.session.hostTools.find(t=>t.name==='update_plan')!
+  const update=ready.session.values.hostTools.find(t=>t.name==='update_plan')!
   await update.execute({explanation:'Exception fixed in a proposal; tests remain',plan:[{step:'Inspect exception',status:'completed'},{step:'Verify proposed change',status:'in_progress'}]},input.signal)
   const ref=await ready.context.ledger.retain({id:'test-facts',kind:'tool',label:'Exact facts',value:{zero:0,flag:false,nothing:null,decimal:'24'}})
   task.observe({type:'tool_call',callId:'check',name:'experimental_evaluate',args:{facts:{zero:0,flag:false,nothing:null}}})
   task.observe({type:'tool_result',callId:'check',name:'experimental_evaluate',isError:false,text:'verified',structured:{result:'set-aside'}})
-  for(let i=0;i<20;i++)await ready.session.model.call('generate',{body:'{}'})
-  await expect(ready.session.model.call('generate',{body:'{}'})).rejects.toBeInstanceOf(ExecutionPaused)
+  for(let i=0;i<20;i++)await ready.session.values.model.call('generate',{body:'{}'})
+  await expect(ready.session.values.model.call('generate',{body:'{}'})).rejects.toBeInstanceOf(ExecutionPaused)
   expect(input.model.call).toHaveBeenCalledTimes(20)
   const saved=decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint({...INITIAL_STATE,execution:task.snapshot('paused')},[])))).state.execution!
   expect(saved.operations[0]).toMatchObject({args:{facts:{zero:0,flag:false,nothing:null}},result:{structuredContent:{result:'set-aside'}}})

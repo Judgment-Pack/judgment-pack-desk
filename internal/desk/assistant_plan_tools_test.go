@@ -86,8 +86,7 @@ func assistantPlanAPI(t *testing.T, arguments []string) (*Server, string, *assis
 	s, token, e := assistantExecutionFixtureSource(t, u.server.URL, "plan", nil, assistantPlanPrepareSource(t))
 	assistantPlanSeed(t, s)
 	x := assistantExecutionOpen(t, s, e)
-	off := false
-	x.Run.Review = &off
+	x.Run.Critic = "off"
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
@@ -114,8 +113,7 @@ func TestAssistantPlanActualProducersAndProjection(t *testing.T) {
 				peer := strings.Replace(assistantExecutionCodexPeer, "else: tool(offered('get_schema'),{})", "else: tool(offered('propose_plan'),json.loads("+fmt.Sprintf("%q", assistantPlanCandidate)+"))", 1)
 				assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(trace), "peer.py"), []byte(peer), 0600))
 				x := assistantExecutionOpen(t, s, e)
-				off := false
-				x.Run.Review = &off
+				x.Run.Critic = "off"
 				ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 				defer cancel()
 				assistantRunMust(t, x.Adapter.Run(ctx, x.Run))

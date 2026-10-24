@@ -60,10 +60,13 @@ This is credential-file custody, not a provider account identity claim. Native
 sign-in and catalog/effort admission remain the existing bridge's responsibility,
 with source checks at physical native admission/generation and schema dispatch.
 
-Execution uses the released native adapter and managed context/checkpoint with
-`LimitTo(1)`. The actual native fixture completes with provider-managed usage `0`
-and limit `1`; API #186 does not block this native path. Only `get_schema` is
-offered to the native peer. Artifact proposals, host tools, writes, acquisition,
+Execution uses the released native adapter and managed context/checkpoint. Agent
+v0.9.1 reserves `LimitTo` and `requestCap` for API executions and refuses them for
+native sessions. The native fixture retains provider-managed usage `0`, the
+released native default limit `1` and no API request cap; that limit does not
+count the provider’s internal requests. The host admits one schema-only native generation,
+verified with one actual schema receipt and no replay; API #186 does not block
+this native path. Only `get_schema` is offered to the native peer. Artifact proposals, host tools, writes, acquisition,
 evaluation, delegation and compute grants are unavailable. Success requires a
 complete current checkpoint, one successful actual Runtime schema receipt and
 one matching tool-result observation. Provider confirmation text is insufficient.

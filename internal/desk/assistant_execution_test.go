@@ -569,8 +569,7 @@ func TestAssistantExecutionEinoServedPromptAndCheckpoint(t *testing.T) {
 	x := assistantExecutionOpen(t, s, e)
 	observer := &assistantExecutionPromptObserver{Host: x.Run.Host}
 	x.Run.Host = observer
-	off := false
-	x.Run.Review = &off
+	x.Run.Critic = "off"
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	assistantRunMust(t, x.Adapter.Run(ctx, x.Run))

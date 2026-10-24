@@ -1,3 +1,4 @@
+import { savedCriticChoice } from '../assistant/criticSettings'
 import criticControls from './fixtures/critic-controls.json'
 import { criticMode } from '@judgment-pack/harness/contract'
 import { memoryDraftPersistence } from '../testing/draftPersistence'
@@ -506,7 +507,7 @@ it('reads the shared critic control vectors through the actual saved chat reader
   expect(actual.critic,row.name).toBe(row.chat.critic)
   expect(actual.criticReasoning,row.name).toBe(row.chat.criticReasoning)
   expect(actual.adversarialReview,row.name).toBe(row.chat.adversarialReview)
-  expect(criticMode({critic:actual.critic,adversarialReview:actual.adversarialReview,criticProject:row.project||undefined} as Parameters<typeof criticMode>[0],{}).mode,row.name).toBe(row.mode)
+  expect(criticMode({critic:savedCriticChoice(actual),criticProject:row.project||undefined} as Parameters<typeof criticMode>[0],{}).mode,row.name).toBe(row.mode)
  }
 })
 
@@ -521,5 +522,21 @@ it('lets an explicit control edit restore project inheritance after a legacy boo
  const restored=setup({read:async()=>({project:'/project',sha256:'saved',content:document})});await restored.store.load()
  const read=restored.store.getSnapshot().chats[0]
  expect(read.critic).toBeUndefined();expect(read.adversarialReview).toBeUndefined()
- expect(criticMode({critic:read.critic,adversarialReview:read.adversarialReview,criticProject:'on'},{}).mode).toBe('on')
+ expect(criticMode({critic:savedCriticChoice(read),criticProject:'on'},{}).mode).toBe('on')
+})
+
+it('refuses malformed original critic controls in persisted JSON without changing history',async()=>{
+ const base=setup();await base.store.load();const chat=base.store.create()
+ const invalidControls=[
+  ...[null,false,true,0,1,'','invalid',[],{}].flatMap(critic=>[{critic},{critic,adversarialReview:true}]),
+  ...[null,0,1,'','false','invalid',[],{}].flatMap(adversarialReview=>[{adversarialReview},{critic:'on',adversarialReview}]),
+ ]
+ for(const controls of invalidControls){
+  const content=JSON.parse(JSON.stringify({version:1,chats:[{...chat,...controls}]}))
+  const loaded=setup({read:async()=>({project:'/project',sha256:'saved',content})});await loaded.store.load()
+  expect(loaded.store.getSnapshot().ready,JSON.stringify(controls)).toBe(false)
+  expect(loaded.store.getSnapshot().error,JSON.stringify(controls)).toBe('Invalid saved chat')
+  expect(loaded.store.getSnapshot().chats).toEqual([])
+  expect(loaded.write).not.toHaveBeenCalled()
+ }
 })

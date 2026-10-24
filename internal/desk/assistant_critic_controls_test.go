@@ -44,7 +44,7 @@ func TestAssistantCriticControlVectors(t *testing.T) {
 			if (input.Review == nil) != (exact.AdversarialReview == nil) || input.Review != nil && *input.Review != *exact.AdversarialReview {
 				t.Fatal("legacy boolean presence lost")
 			}
-			mode, _ := runcontext.CriticMode(runcontext.CriticSettings{Critic: input.Critic, CriticProject: input.CriticProject, AdversarialReview: input.Review}, runcontext.CriticTable{})
+			mode, _ := runcontext.CriticMode(runcontext.CriticSettings{Critic: assistantCriticChoice(input), CriticProject: input.CriticProject}, runcontext.CriticTable{})
 			if mode != row.Mode {
 				t.Fatal("canonical mode", mode, row.Mode)
 			}

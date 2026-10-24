@@ -15,7 +15,7 @@ vi.mock('./comparison',async original=>({...await original<typeof import('./comp
 const id='policy_'+'a'.repeat(48),revision='b'.repeat(64)
 const candidate={title:'Retention policy',narrative:('Exact policy clause.\n'.repeat(6000)+'CLAUSE_END').padEnd(131072,' '),artifactVersion:'1.0.0'}
 const saved={revision,document:{id,candidate}} as PolicyReply
-function base():AssistantSession{return {prompt:'Change the title to Requested title.\n'+JSON.stringify({id,revision,candidate}),context:{currentRequest:{message:'Change the title to Requested title.',input:JSON.stringify({id,revision,candidate})},configuration:{version:1,models:{fixture:{contextWindowTokens:16384,outputTokens:4096}}}},testPrompt:'',tools:[],hostTools:[],callTool:async()=>({}),model:{family:'gemini',model:'fixture',call:async()=>new Response()},thinking:normalize('off','gemini'),signal:new AbortController().signal,allowConversation:true,interactive:true,adversarialReview:false}}
+function base():AssistantSession{return {prompt:'Change the title to Requested title.\n'+JSON.stringify({id,revision,candidate}),context:{currentRequest:{message:'Change the title to Requested title.',input:JSON.stringify({id,revision,candidate})},configuration:{version:1,models:{fixture:{contextWindowTokens:16384,outputTokens:4096}}}},testPrompt:'',tools:[],hostTools:[],callTool:async()=>({}),model:{family:'gemini',model:'fixture',call:async()=>new Response()},thinking:normalize('off','gemini'),signal:new AbortController().signal,allowConversation:true,interactive:true,critic:'off'}}
 const retainTools=(retained:PolicyProposal[])=>policyChatTools({id,request:()=>({revision,candidate}),afterTurnId:()=> 'latest-user',retain:async p=>{const index=retained.findIndex(row=>row.id===p.id);if(index<0)retained.push(structuredClone(p));else retained[index]=structuredClone(p)}})
 it('retains a near-limit Policy narrative and request revision through shared prompt and tool-result projection',async()=>{
  const session=base(),context=new SessionContext(session),prompt=await context.prompt(session.prompt,'Host instructions',[],session.context!.currentRequest)
@@ -73,10 +73,10 @@ it('checks current access before retained-context retrieval and each provider di
  session.hostTools=[{name:'read_policy',description:'Read current Policy',effect:'read',inputSchema:{type:'object',properties:{}},execute:async()=>{reads++;return {structuredContent:saved}}}]
  session.model.call=async()=>{calls++;return new Response()}
  const managed=await contextualSession(session)
- await managed.session.hostTools.find(tool=>tool.name==='read_policy')!.execute({},session.signal)
+ await managed.session.values.hostTools.find(tool=>tool.name==='read_policy')!.execute({},session.signal)
  allowed=false
- await expect(managed.session.hostTools.find(tool=>tool.name==='list_context')!.execute({},session.signal)).rejects.toThrow()
- await expect(managed.session.model.call('/v1/chat/completions',{method:'POST',headers:{},body:'{}'})).rejects.toThrow()
+ await expect(managed.session.values.hostTools.find(tool=>tool.name==='list_context')!.execute({},session.signal)).rejects.toThrow()
+ await expect(managed.session.values.model.call('/v1/chat/completions',{method:'POST',headers:{},body:'{}'})).rejects.toThrow()
  expect(reads).toBe(1);expect(calls).toBe(0);expect(authorizations).toBe(4)
 })
 it('refuses pack or graph proposal envelopes in a Policy-only conversation without adopting another artifact scope',async()=>{
@@ -140,10 +140,10 @@ it('checks current access before retained comparison retrieval and later provide
  vi.mocked(resolvePolicyComparison).mockClear().mockResolvedValue(comparisonResult())
  let allowed=true,calls=0
  const session=base();session.prompt='Explain changes';session.hostTools=retainTools([]);session.context!.authorize=async()=>{if(!allowed)throw failureError('permission','desk','not-started')};session.model.call=async()=>{calls++;return new Response()}
- const managed=await contextualSession(session),answer=await managed.session.hostTools.find(t=>t.name==='read_policy_comparison')!.execute(comparisonRequest,session.signal)
+ const managed=await contextualSession(session),answer=await managed.session.values.hostTools.find(t=>t.name==='read_policy_comparison')!.execute(comparisonRequest,session.signal)
  const projected=await managed.context.result('read_policy_comparison',answer as import('@judgment-pack/harness/engine').McpToolResult),contextId=(projected.structuredContent as {contextId:string}).contextId
  expect(contextId).toBeDefined();allowed=false
- await expect(managed.session.hostTools.find(t=>t.name==='read_context')!.execute({id:contextId,path:'/structuredContent/before/text',limit:1024},session.signal)).rejects.toThrow()
- await expect(managed.session.model.call('/v1/chat/completions',{method:'POST',headers:{},body:'{}'})).rejects.toThrow()
+ await expect(managed.session.values.hostTools.find(t=>t.name==='read_context')!.execute({id:contextId,path:'/structuredContent/before/text',limit:1024},session.signal)).rejects.toThrow()
+ await expect(managed.session.values.model.call('/v1/chat/completions',{method:'POST',headers:{},body:'{}'})).rejects.toThrow()
  expect(calls).toBe(0);expect(resolvePolicyComparison).toHaveBeenCalledTimes(1)
 })

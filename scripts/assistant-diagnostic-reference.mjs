@@ -7,7 +7,7 @@ assert.equal(decodeSnapshot(vector,{owner:vector.owner,requestId:vector.requestI
 const read=async name=>{const raw=JSON.parse(await readFile(join(process.argv[2],name),'utf8'));return decodeSnapshot(raw,{id:raw.id,owner:raw.owner,requestId:raw.requestId})}
 const run=await read('diagnostic-actual.json')
 assert.equal(run.owner.kind,'connection-diagnostic');assert.equal(run.state,'complete')
-assert.equal(run.checkpoint.unit,'provider-managed');assert.equal(run.checkpoint.used,0);assert.equal(run.checkpoint.limit,1)
+assert.equal(run.checkpoint.unit,'provider-managed');assert.equal(run.checkpoint.used,0);assert.equal(run.checkpoint.limit,1);assert.equal(run.checkpoint.requestCap,undefined)
 assert.equal(run.events.filter(e=>e.event.type==='tool_result'&&e.event.name==='get_schema'&&!e.event.isError).length,1)
 assert.equal(run.events.some(e=>['proposal','user_question','approval_requested','delegation_requested','error'].includes(e.event.type)),false)
 const restored=await read('diagnostic-restored.json')
@@ -16,4 +16,4 @@ for(const mode of ['prose','unoffered','question','budget','malformed','duplicat
  const refused=await read(`diagnostic-refused-${mode}.json`)
  assert.equal(refused.state,'stopped');assert.equal(refused.events.some(e=>['proposal','user_question','approval_requested','delegation_requested'].includes(e.event.type)),false)
 }
-console.log('Native diagnostic readers: real bridge/schema/checkpoint, provider-managed 0/limit 1, strict owner, historical restore and six refusal producers passed.')
+console.log('Native diagnostic readers: real bridge/schema/checkpoint, provider-managed 0/default limit 1/no API cap, strict owner, historical restore and six refusal producers passed.')

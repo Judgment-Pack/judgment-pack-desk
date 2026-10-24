@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 )
 
 // The browser reads the released Agent budget from the server, rather than
@@ -77,41 +78,76 @@ func (h *projectPromptHost) ProjectInstructions(ctx context.Context) (string, er
 
 func (h *projectPromptHost) MemoryFor(ctx context.Context, query string) (any, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return nil, err
 	}
 	// A private-data transaction reads the same project binding and memory
 	// document as management and legacy recall. No wire/message parsing belongs here.
 	lock, err := h.server.privateDataLockContext(ctx, true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer lock.Close()
 	store, err := h.server.openChatData()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer store.root.Close()
 	conversation, err := resolveConversationName(store.root, h.server.conversationIdentity())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	memory, err := readMemory(store.root, strings.Replace(conversation, "conversations-", "ai-memory-", 1))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	entries := h.server.recallMemory(memory.Content, query)
+	entries := h.server.memoryCandidates(memory.Content, query)
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return nil, err
 	}
-	if len(entries) == 0 {
-		return "", nil
+	return assistantMemoryRecords(conversation, entries)
+}
+
+// Manual memory remains in Desk's private schema. This projection identifies an
+// exact stored version, without treating a historical chat/turn as an Agent run.
+// The opaque host import identity binds the project and all retained entry fields.
+func assistantMemoryRecords(project string, entries []memoryEntry) ([]contract.Memory, error) {
+	records := []contract.Memory{}
+	bytes := 0
+	for _, entry := range entries {
+		raw, err := json.Marshal(struct {
+			Project string      `json:"project"`
+			Entry   memoryEntry `json:"entry"`
+		}{project, entry})
+		if err != nil {
+			return nil, err
+		}
+		identity := runcontext.ContextDigest(string(raw))
+		text := entry.Key + ": " + entry.Text
+		record := contract.Memory{
+			ID: "desk-memory:" + identity, Kind: "reference", Text: text,
+			Source: contract.MemorySource{Run: "desk-memory-import:" + identity, ProposedBy: "host"},
+			Scope:  "project", Digest: "sha256:" + runcontext.ContextDigest(text),
+			CreatedAt: entry.CreatedAt, State: "accepted",
+		}
+		// Agent validates the closed record and measures its canonical serialized
+		// bytes. The private store bound permits measuring a single valid row before
+		// applying the smaller recall bound, so an oversized row can be skipped.
+		// Keep the same relevance ordering, skip-to-fit behavior and five rows.
+		recalled, err := runcontext.RecallMemory([]contract.Memory{record}, memoryLimit, "")
+		if err != nil {
+			return nil, err
+		}
+		if bytes+recalled.Bytes > runcontext.Defaults.MemoryBytes {
+			continue
+		}
+		records = append(records, record)
+		bytes += recalled.Bytes
+		if len(records) == 5 {
+			break
+		}
 	}
-	data, err := json.Marshal(entries)
-	if err != nil {
-		return "", err
+	if _, err := runcontext.RecallMemory(records, runcontext.Defaults.MemoryBytes, ""); err != nil {
+		return nil, err
 	}
-	if len(data) > runcontext.Defaults.MemoryBytes {
-		return "", errors.New("Recalled project memory exceeds its size limit.")
-	}
-	return string(data), nil
+	return records, nil
 }

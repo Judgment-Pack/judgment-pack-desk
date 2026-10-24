@@ -281,8 +281,7 @@ func TestAssistantExecutionCodexProjectEffort(t *testing.T) {
 			if x.Run.Agent.Effort != tc.effort {
 				t.Fatalf("effective saved effort = %q, want %q", x.Run.Agent.Effort, tc.effort)
 			}
-			review := false
-			x.Run.Review = &review
+			x.Run.Critic = "off"
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
