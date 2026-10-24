@@ -170,6 +170,11 @@ func assistantProtocolView(t *testing.T, w *httptest.ResponseRecorder, status in
 }
 func assistantProtocolWait(t *testing.T, s *Server, token, id, state string) assistantRunView {
 	t.Helper()
+	return assistantProtocolWaitWithin(t, s, token, id, state, 15*time.Second)
+}
+
+func assistantProtocolWaitWithin(t *testing.T, s *Server, token, id, state string, timeout time.Duration) assistantRunView {
+	t.Helper()
 	h := s.assistantRunService()
 	h.mu.Lock()
 	execution := h.active[id]
@@ -179,7 +184,7 @@ func assistantProtocolWait(t *testing.T, s *Server, token, id, state string) ass
 	// closes after final persistence and active-run cleanup, so avoid competing
 	// with those writes through repeated authenticated reads. Allow the service's
 	// five-second finalization window as well as the executor itself to finish.
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 	var waitErr error
 	if execution != nil {

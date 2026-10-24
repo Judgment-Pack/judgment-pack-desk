@@ -290,7 +290,25 @@ func TestAssistantDiagnosticActualSchemaRefusals(t *testing.T) {
 			assistantRunMust(t, os.WriteFile(s.cfg.JpackBin, []byte(peer), 0700))
 			start := assistantDiagnosticCapture(t, s, token, "schema-refused")
 			run := assistantProtocolView(t, assistantDiagnosticCall(t, s, token, "POST", "/api/assistant-runs", start), 201)
-			assistantProtocolWait(t, s, token, run.ID, "stopped")
+			wait := 15 * time.Second
+			if mode == "oversized" {
+				// This actual response is retained in both the Runtime receipt and
+				// canonical checkpoint. Strict ledger validation repeatedly decodes
+				// that MiB payload; allow bounded processing time on CI runners.
+				wait = 45 * time.Second
+			}
+			done := assistantProtocolWaitWithin(t, s, token, run.ID, "stopped", wait)
+			if mode == "oversized" {
+				receipts := 0
+				for _, op := range done.Operations {
+					if op.Kind == "runtime" && op.Name == "tools/call" && op.State == "completed" && len(op.Result) > 1<<20 {
+						receipts++
+					}
+				}
+				if receipts != 1 {
+					t.Fatalf("oversized schema did not retain exactly one completed oversized Runtime receipt: %d", receipts)
+				}
+			}
 			resultView := policyCall(s, token, "GET", "/api/assistant-runs/"+run.ID+"/connection-diagnostic", nil)
 			if resultView.Code != 200 || strings.Contains(resultView.Body.String(), "true") {
 				t.Fatal("invalid schema became success", resultView.Code, resultView.Body.String())
