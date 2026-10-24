@@ -45,7 +45,7 @@
     {
       "id": "main-chat-and-right-pane",
       "category": "conversation",
-      "currentOwner": "ChatProvider → useResearchRun → AuthoringRun.turn → browser engine",
+      "currentOwner": "ChatProvider \u2192 useResearchRun \u2192 AuthoringRun.turn \u2192 browser engine",
       "targetOwner": "Go durable run + server domain workflow; browser renders shared events and submits explicit actions",
       "entrypoints": [
         "web/src/chat/ChatProvider.tsx",
@@ -69,7 +69,7 @@
     {
       "id": "pack-authoring-pane",
       "category": "conversation",
-      "currentOwner": "AssistantPane → useAssistantRun; one gated socket per run",
+      "currentOwner": "AssistantPane \u2192 useAssistantRun; one gated socket per run",
       "targetOwner": "same Go run service, purpose authoring; pane owns immutable capture and view lease",
       "entrypoints": [
         "web/src/assistant/AssistantPane.tsx",
@@ -91,7 +91,7 @@
     {
       "id": "describe-it",
       "category": "conversation",
-      "currentOwner": "useDescribeIt → useAssistantRun → useProposalGenerator",
+      "currentOwner": "useDescribeIt \u2192 useAssistantRun \u2192 useProposalGenerator",
       "targetOwner": "Go authoring run on exact captured source; existing review/apply UI",
       "entrypoints": [
         "web/src/shell/DescribeIt.tsx:useDescribeIt",
@@ -111,7 +111,7 @@
     {
       "id": "graph-authoring-pane",
       "category": "conversation",
-      "currentOwner": "GraphAuthor → useAssistantRun(purpose graph) with graphHostTools",
+      "currentOwner": "GraphAuthor \u2192 useAssistantRun(purpose graph) with graphHostTools",
       "targetOwner": "Go graph purpose and server-owned graph validation/explain handlers",
       "entrypoints": [
         "web/src/graphs/GraphAuthor.tsx",
@@ -132,7 +132,7 @@
     {
       "id": "legacy-research-authoring-and-draft-view",
       "category": "domain-workflow",
-      "currentOwner": "ResearchAuthoringPage/DraftPackView → useResearchRun → AuthoringRun; browser sequences source/review/repair turns",
+      "currentOwner": "ResearchAuthoringPage/DraftPackView \u2192 useResearchRun \u2192 AuthoringRun; browser sequences source/review/repair turns",
       "targetOwner": "Go feature workflow using shared adapter turns and context.CorrectArtifact; UI projection only",
       "entrypoints": [
         "web/src/routes/ResearchAuthoringPage.tsx",
@@ -202,7 +202,7 @@
     {
       "id": "brief-summaries-all-subjects",
       "category": "tool-free-generation",
-      "currentOwner": "BriefPane reservation → useAssistantRun(purpose brief) → useProposalGenerator",
+      "currentOwner": "BriefPane reservation \u2192 useAssistantRun(purpose brief) \u2192 useProposalGenerator",
       "targetOwner": "Go run on server-verified frozen brief reservation; no tools, browser rendering/print remain",
       "entrypoints": [
         "web/src/briefs/BriefPane.tsx:start",
@@ -299,7 +299,7 @@
     {
       "id": "input-research-single-step",
       "category": "bounded-structured-step",
-      "currentOwner": "inputResearchModel → runBackgroundModel; durable worker owns phase/budget",
+      "currentOwner": "inputResearchModel \u2192 runBackgroundModel; durable worker owns phase/budget",
       "targetOwner": "same explicit workflow, unified bound dispatch authorization/context/capacity and one reservation per model action",
       "entrypoints": [
         "internal/desk/input_research_worker.go",
@@ -348,7 +348,7 @@
     {
       "id": "portable-research-and-model-acquisition",
       "category": "bounded-structured-step",
-      "currentOwner": "portableResearchWorker → acquirePortableResearchModel → model broker → runBackgroundModel",
+      "currentOwner": "portableResearchWorker \u2192 acquirePortableResearchModel \u2192 model broker \u2192 runBackgroundModel",
       "targetOwner": "retain reviewed portable workflow and nonce-bound model-source acquisition; shared bound dispatch",
       "entrypoints": [
         "internal/desk/portable_research_worker.go",
@@ -397,7 +397,7 @@
     {
       "id": "capability-probe",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "EndpointCapabilitiesSection → capabilityProbe: one chat request plus model-list GET",
+      "currentOwner": "EndpointCapabilitiesSection \u2192 capabilityProbe: one chat request plus model-list GET",
       "targetOwner": "fixed host-authored one-request diagnostic; same bound relay/context/accounting; no tool execution",
       "entrypoints": [
         "web/src/assistant/EndpointCapabilitiesSection.tsx",
@@ -419,7 +419,7 @@
     {
       "id": "endpoint-connection-probe",
       "category": "bounded-diagnostic-mixed",
-      "currentOwner": "handleAssistantProbe → probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
+      "currentOwner": "handleAssistantProbe \u2192 probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
       "targetOwner": "same fixed diagnostic owner; generative ping reserved/accounted, shared auth/context/custody path",
       "entrypoints": [
         "internal/desk/assistant.go:handleAssistantProbe/probeEndpoint",
@@ -438,7 +438,7 @@
     {
       "id": "codex-connection-test",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "AssistantSettings → useConnectionDiagnostic → closed canonical connection-diagnostic owner",
+      "currentOwner": "AssistantSettings \u2192 useConnectionDiagnostic \u2192 closed canonical connection-diagnostic owner",
       "targetOwner": "implemented fixed server diagnostic on the actual private bridge, canonical context/checkpoint and schema-only Runtime grant",
       "entrypoints": [
         "web/src/assistant/AssistantSettings.tsx",
