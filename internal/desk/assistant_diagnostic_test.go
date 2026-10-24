@@ -406,3 +406,106 @@ func TestAssistantDiagnosticServerRestartNeverReplays(t *testing.T) {
 		t.Fatal("restart lost receipt or regenerated")
 	}
 }
+
+// Keep the metadata deliberately unchanged: size/mtime are not executable identity.
+func assistantDiagnosticReplaceRuntime(t *testing.T, name string, atomic bool) {
+	t.Helper()
+	old, err := os.ReadFile(name)
+	assistantRunMust(t, err)
+	before, err := os.Stat(name)
+	assistantRunMust(t, err)
+	changed := bytes.Replace(old, []byte("child-result"), []byte("other-result"), 1)
+	if bytes.Equal(old, changed) || len(old) != len(changed) {
+		t.Fatal("invalid Runtime replacement fixture")
+	}
+	target := name
+	if atomic {
+		target += ".replacement"
+	}
+	assistantRunMust(t, os.WriteFile(target, changed, 0700))
+	assistantRunMust(t, os.Chtimes(target, before.ModTime(), before.ModTime()))
+	if atomic {
+		assistantRunMust(t, os.Rename(target, name))
+	}
+	after, err := os.Stat(name)
+	assistantRunMust(t, err)
+	if after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
+		t.Fatal("fixture did not preserve Runtime size/mtime")
+	}
+}
+
+func TestAssistantDiagnosticRuntimeReplacementCurrentness(t *testing.T) {
+	for _, phase := range []string{"before-start", "during-native", "after-complete"} {
+		for _, atomic := range []bool{true, false} {
+			name := "in-place"
+			if atomic {
+				name = "atomic"
+			}
+			t.Run(phase+"/"+name, func(t *testing.T) {
+				mode := "tool"
+				if phase == "during-native" {
+					mode = "callback-wait"
+				}
+				s, token, _, trace := assistantDiagnosticFixture(t, mode)
+				start := assistantDiagnosticCapture(t, s, token, "runtime-currentness")
+				if phase == "before-start" {
+					before := len(assistantCodexLog(t, trace))
+					assistantDiagnosticReplaceRuntime(t, s.cfg.JpackBin, atomic)
+					response := assistantDiagnosticCall(t, s, token, "POST", "/api/assistant-runs", start)
+					if response.Code != 409 || len(assistantCodexLog(t, trace)) != before {
+						t.Fatalf("stale Runtime capture dispatched: %d %s", response.Code, response.Body.String())
+					}
+					return
+				}
+				run := assistantProtocolView(t, assistantDiagnosticCall(t, s, token, "POST", "/api/assistant-runs", start), 201)
+				if phase == "during-native" {
+					assistantCodexWait(t, trace+".waiting")
+				} else {
+					assistantProtocolWait(t, s, token, run.ID, "complete")
+					for i := 0; i < 2; i++ {
+						result := policyCall(s, token, "GET", "/api/assistant-runs/"+run.ID+"/connection-diagnostic", nil)
+						if result.Code != 200 || strings.TrimSpace(result.Body.String()) != `{"succeeded":true}` {
+							t.Fatalf("unchanged Runtime lost success: %d %s", result.Code, result.Body.String())
+						}
+					}
+				}
+				assistantDiagnosticReplaceRuntime(t, s.cfg.JpackBin, atomic)
+				if phase == "during-native" {
+					assistantRunMust(t, os.WriteFile(trace+".release", []byte("release"), 0600))
+					stopped := assistantProtocolWait(t, s, token, run.ID, "stopped")
+					for _, op := range stopped.Operations {
+						if op.Kind == "runtime" && op.Name == "tools/call" {
+							t.Fatal("changed Runtime reached schema dispatch")
+						}
+					}
+				}
+				before := len(assistantCodexLog(t, trace))
+				result := policyCall(s, token, "GET", "/api/assistant-runs/"+run.ID+"/connection-diagnostic", nil)
+				if result.Code != 409 || len(assistantCodexLog(t, trace)) != before {
+					t.Fatalf("changed Runtime result remained current or dispatched: %d %s", result.Code, result.Body.String())
+				}
+			})
+		}
+	}
+}
+
+type assistantDiagnosticMissingStat struct{ os.FileInfo }
+
+func (assistantDiagnosticMissingStat) Sys() any { return nil }
+
+func TestAssistantDiagnosticRuntimeIdentityRefusesMissingMetadata(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "runtime")
+	assistantRunMust(t, os.WriteFile(name, []byte("fixture"), 0700))
+	info, err := os.Stat(name)
+	assistantRunMust(t, err)
+	if _, err := assistantDiagnosticRuntimeIdentity(info); err != nil {
+		t.Fatal("platform lacks required Runtime identity", err)
+	}
+	dir, err := os.Stat(filepath.Dir(name))
+	assistantRunMust(t, err)
+	for _, missing := range []os.FileInfo{nil, dir, assistantDiagnosticMissingStat{info}} {
+		if _, err := assistantDiagnosticRuntimeIdentity(missing); err == nil {
+			t.Fatal("Runtime identity silently fell back without required metadata")
+		}
+	}
+}

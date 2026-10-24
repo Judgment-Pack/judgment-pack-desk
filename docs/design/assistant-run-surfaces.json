@@ -299,74 +299,92 @@
     {
       "id": "input-research-single-step",
       "category": "bounded-structured-step",
-      "currentOwner": "inputResearchModel \u2192 runBackgroundModel; durable worker owns phase/budget",
+      "currentOwner": "inputResearchModel \u2192 runBackgroundModel; durable worker owns phase/budget; canonical Eino/native dispatch retains one-use execution receipts in the original workflow journal",
       "targetOwner": "same explicit workflow, unified bound dispatch authorization/context/capacity and one reservation per model action",
       "entrypoints": [
         "internal/desk/input_research_worker.go",
         "internal/desk/input_research_model.go:inputResearchModel",
         "internal/desk/background_model.go:runBackgroundModel",
-        "internal/desk/input_research_context.go"
+        "internal/desk/input_research_context.go",
+        "internal/desk/background_execution.go",
+        "docs/design/background-canonical-execution.md"
       ],
       "preserve": [
         "host-authored tool/JSON response schema + validation and typed fields",
         "fitResearchContext/read_context; exact source/result receipts and budget reservations",
-        "one response per step, no generic browser loop; no uncertain-call replay"
+        "one response per step, no generic browser loop; no uncertain-call replay",
+        "API RequestCap=1 with finishing/tools closed; native provider-managed accounting and one fixed validated response tool",
+        "original 16 MiB journal limit and two-child concurrency; full bounded receipt reserved before dispatch",
+        "current choice/source/profile/credential/session custody; uncertain delivery and restored receipts never replay"
       ],
       "verification": [
         "internal/desk/input_research_model_test.go",
         "internal/desk/input_research_completion_test.go",
         "internal/desk/background_model_test.go",
-        "internal/desk/background_completion_test.go"
+        "internal/desk/background_completion_test.go",
+        "internal/desk/background_execution_test.go"
       ],
       "blockedByProviderManagedCoordinator": false
     },
     {
       "id": "input-research-domain-parent-child",
       "category": "domain-workflow",
-      "currentOwner": "journaled input research worker selects sequential/delegated host phases and admitted steps",
+      "currentOwner": "journaled input research worker selects sequential/delegated host phases and admitted steps; canonical Eino/native dispatch retains one-use execution receipts in the original workflow journal",
       "targetOwner": "retain domain workflow on server; route each step via same one-use bound dispatch reservation",
       "entrypoints": [
         "internal/desk/input_research_delegation.go",
         "internal/desk/input_research_phases.go",
         "internal/desk/input_research_budget.go",
         "internal/desk/input_research_http.go",
-        "internal/desk/input_research_journal.go"
+        "internal/desk/input_research_journal.go",
+        "internal/desk/background_execution.go",
+        "docs/design/background-canonical-execution.md"
       ],
       "preserve": [
         "reviewed recipe/profiles/record goal and aggregate approved source/model budgets",
         "domain child assignments and acquisition receipts, retained typed record values",
-        "not generic assistant delegate_tasks and not blocked by absent generic provider coordinator"
+        "not generic assistant delegate_tasks and not blocked by absent generic provider coordinator",
+        "API RequestCap=1 with finishing/tools closed; native provider-managed accounting and one fixed validated response tool",
+        "original 16 MiB journal limit and two-child concurrency; full bounded receipt reserved before dispatch",
+        "current choice/source/profile/credential/session custody; uncertain delivery and restored receipts never replay"
       ],
       "verification": [
         "internal/desk/input_research_delegation_test.go",
         "internal/desk/input_research_budget_test.go",
         "internal/desk/input_research_parent_identity_test.go",
-        "internal/desk/input_research_recovery_test.go"
+        "internal/desk/input_research_recovery_test.go",
+        "internal/desk/background_execution_test.go"
       ],
       "blockedByProviderManagedCoordinator": false
     },
     {
       "id": "portable-research-and-model-acquisition",
       "category": "bounded-structured-step",
-      "currentOwner": "portableResearchWorker \u2192 acquirePortableResearchModel \u2192 model broker \u2192 runBackgroundModel",
+      "currentOwner": "portableResearchWorker \u2192 acquirePortableResearchModel \u2192 model broker \u2192 runBackgroundModel; canonical Eino/native dispatch retains one-use execution receipts in the original workflow journal",
       "targetOwner": "retain reviewed portable workflow and nonce-bound model-source acquisition; shared bound dispatch",
       "entrypoints": [
         "internal/desk/portable_research_worker.go",
         "internal/desk/model_source.go",
         "internal/desk/portable_research_journal.go",
         "internal/desk/portable_research_budget.go",
-        "internal/desk/input_research_reservations.go"
+        "internal/desk/input_research_reservations.go",
+        "internal/desk/background_execution.go",
+        "docs/design/background-canonical-execution.md"
       ],
       "preserve": [
         "frozen Plan/choice/profile/limits, action schema answer/search/page/read_context",
         "one admitted acquisition/response with durable exact operation ID",
-        "no arbitrary prompt/model browser endpoint; original transport uncertainty cannot replay"
+        "no arbitrary prompt/model browser endpoint; original transport uncertainty cannot replay",
+        "API RequestCap=1 with finishing/tools closed; native provider-managed accounting and one fixed validated response tool",
+        "original 16 MiB journal limit and two-child concurrency; full bounded receipt reserved before dispatch",
+        "current choice/source/profile/credential/session custody; uncertain delivery and restored receipts never replay"
       ],
       "verification": [
         "internal/desk/portable_research_test.go",
         "internal/desk/model_source_test.go",
         "internal/desk/portable_research_acceptance_test.go",
-        "internal/desk/input_research_journal_workflows_test.go"
+        "internal/desk/input_research_journal_workflows_test.go",
+        "internal/desk/background_execution_test.go"
       ],
       "blockedByProviderManagedCoordinator": false
     },
