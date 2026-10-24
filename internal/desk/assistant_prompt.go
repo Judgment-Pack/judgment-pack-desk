@@ -2,9 +2,8 @@ package desk
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"strings"
+	"sync"
 
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
@@ -41,13 +40,16 @@ func (s *Server) assistantPromptHost(ctx context.Context) (*projectPromptHost, e
 }
 
 type projectPromptHost struct {
-	server       *Server
-	brief        string
-	instructions string
+	server         *Server
+	brief          string
+	instructions   string
+	memoryMu       sync.Mutex
+	memorySnapshot *assistantMemorySnapshot
 }
 
 var _ runcontext.Host = (*projectPromptHost)(nil)
 var _ runcontext.MemoryHost = (*projectPromptHost)(nil)
+var _ runcontext.MemoryLifecycleHost = (*projectPromptHost)(nil)
 
 func (h *projectPromptHost) Brief(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
@@ -80,31 +82,21 @@ func (h *projectPromptHost) MemoryFor(ctx context.Context, query string) (any, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	// A private-data transaction reads the same project binding and memory
-	// document as management and legacy recall. No wire/message parsing belongs here.
-	lock, err := h.server.privateDataLockContext(ctx, true)
-	if err != nil {
-		return nil, err
+	h.memoryMu.Lock()
+	defer h.memoryMu.Unlock()
+	snapshot := h.memorySnapshot
+	if snapshot == nil {
+		var err error
+		snapshot, err = h.readMemorySnapshot(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
-	defer lock.Close()
-	store, err := h.server.openChatData()
-	if err != nil {
-		return nil, err
-	}
-	defer store.root.Close()
-	conversation, err := resolveConversationName(store.root, h.server.conversationIdentity())
-	if err != nil {
-		return nil, err
-	}
-	memory, err := readMemory(store.root, strings.Replace(conversation, "conversations-", "ai-memory-", 1))
-	if err != nil {
-		return nil, err
-	}
-	entries := h.server.memoryCandidates(memory.Content, query)
+	entries := rankMemoryCandidates(snapshot.eligible, query)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return assistantMemoryRecords(conversation, entries)
+	return assistantMemoryRecords(snapshot.project, entries)
 }
 
 // Manual memory remains in Desk's private schema. This projection identifies an
@@ -114,20 +106,9 @@ func assistantMemoryRecords(project string, entries []memoryEntry) ([]contract.M
 	records := []contract.Memory{}
 	bytes := 0
 	for _, entry := range entries {
-		raw, err := json.Marshal(struct {
-			Project string      `json:"project"`
-			Entry   memoryEntry `json:"entry"`
-		}{project, entry})
+		record, err := assistantMemoryRecord(project, entry)
 		if err != nil {
 			return nil, err
-		}
-		identity := runcontext.ContextDigest(string(raw))
-		text := entry.Key + ": " + entry.Text
-		record := contract.Memory{
-			ID: "desk-memory:" + identity, Kind: "reference", Text: text,
-			Source: contract.MemorySource{Run: "desk-memory-import:" + identity, ProposedBy: "host"},
-			Scope:  "project", Digest: "sha256:" + runcontext.ContextDigest(text),
-			CreatedAt: entry.CreatedAt, State: "accepted",
 		}
 		// Agent validates the closed record and measures its canonical serialized
 		// bytes. The private store bound permits measuring a single valid row before
@@ -137,7 +118,7 @@ func assistantMemoryRecords(project string, entries []memoryEntry) ([]contract.M
 		if err != nil {
 			return nil, err
 		}
-		if bytes+recalled.Bytes > runcontext.Defaults.MemoryBytes {
+		if len(recalled.Records) == 0 || bytes+recalled.Bytes > runcontext.Defaults.MemoryBytes {
 			continue
 		}
 		records = append(records, record)
