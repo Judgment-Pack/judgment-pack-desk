@@ -157,7 +157,11 @@ func (s *Server) acquirePortableResearchModel(ctx context.Context, store researc
 		return nil, err
 	}
 	requestRaw, _ := json.Marshal(request)
-	return retainPortableAcquisition(run, "answer", requestRaw, raw)
+	profile, err := portableResearchProfileFor(run, "answer")
+	if err != nil {
+		return nil, err
+	}
+	return retainPortableAcquisitionWithCustody(ctx, store, run, attempt, "answer", profile, requestRaw, raw)
 }
 func retainPortableAcquisition(run inputResearchRun, capability string, request, raw json.RawMessage) (json.RawMessage, error) {
 	assignments, err := portableResearchAssignments(run.Portable.Frozen.Input, run.Portable.Frozen.Plan.Name)
@@ -173,13 +177,31 @@ func retainPortableAcquisition(run inputResearchRun, capability string, request,
 		Receipt json.RawMessage `json:"receipt"`
 		Salts   json.RawMessage `json:"salts"`
 	}
-	if json.Unmarshal(raw, &envelope) != nil || !json.Valid(envelope.Result) || !json.Valid(envelope.Receipt) || !json.Valid(envelope.Salts) {
+	if rejectDuplicateMembers(raw) != nil || json.Unmarshal(raw, &envelope) != nil || !json.Valid(envelope.Result) || !json.Valid(envelope.Receipt) || !json.Valid(envelope.Salts) {
 		return nil, errors.New("The acquired research response is incomplete.")
 	}
 	retained := portableRetainedResponse{Request: request, Result: envelope.Result, Receipt: envelope.Receipt, Salts: envelope.Salts}
 	retained.Profile.ID, retained.Profile.Digest = pin.Profile, pin.Digest
 	return portableResearchJSON(retained)
 }
+
+// Decode and admit the acquired page before it becomes a model-visible source.
+// Dispatch owners use retainPortableAcquisitionWithCustody before journaling;
+// this in-memory step alone does not own durable oversized response custody.
+// Runner verifies signatures.
+func retainAdmittedPortableAcquisition(run inputResearchRun, capability string, profile portableProfileDetails, request, raw json.RawMessage) (json.RawMessage, error) {
+	retained, err := retainPortableAcquisition(run, capability, request, raw)
+	if err != nil {
+		return nil, err
+	}
+	if capability == "page" {
+		if err := admitPortablePageReceipt(profile, retained); err != nil {
+			return retained, &researchAcquisitionRefused{code: "acquisition-invalid", cause: err}
+		}
+	}
+	return retained, nil
+}
+
 func portableResearchProfileFor(run inputResearchRun, capability string) (portableProfileDetails, error) {
 	var details portableProfileDetails
 	assignments, err := portableResearchAssignments(run.Portable.Frozen.Input, run.Portable.Frozen.Plan.Name)
@@ -230,7 +252,7 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 			}
 			run.State = state
 			if problem != nil {
-				run.Problem = problem.Error()
+				run.Problem = portableResearchProblemText(problem.Error())
 			}
 			if !run.StopRequested && ctx.Err() == nil && errors.Is(problem, errResearchRequestLimit) {
 				pauseResearchForBudget(run)
@@ -269,7 +291,14 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 			return s.acquirePortableResearchModel(call, store, current, attempt, prompt)
 		})
 		if err != nil {
-			finish("interrupted", err)
+			var refused *researchAcquisitionRefused
+			if errors.As(err, &refused) && refused.proof != nil {
+				finish("partial", errPortableResearchAcquisitionSize)
+			} else if errors.Is(err, errPortableResearchJournalSize) || errors.Is(err, errPortableResearchStorageLimit) {
+				finish("partial", err)
+			} else {
+				finish("interrupted", err)
+			}
 			return
 		}
 		run, err = store.read()
@@ -396,32 +425,22 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 					if err != nil {
 						return nil, err
 					}
-					retained, err := retainPortableAcquisition(current, action.Kind, action.Arguments, raw)
-					if err != nil {
-						return nil, err
-					}
-					// The scoped page's signed receipt names its final URL after
-					// redirects. Outside the reviewed scope, the attempt is
-					// refused with its receipt kept, and the page never enters
-					// the model context or the answer. Runner's check 3 remains
-					// the verifier of every retained receipt.
-					if action.Kind == "page" {
-						if err := admitPortablePageReceipt(profile, retained); err != nil {
-							return retained, &researchAcquisitionRefused{code: "acquisition-invalid", cause: err}
-						}
-					}
-					return retained, nil
+					return retainPortableAcquisitionWithCustody(call, store, current, attempt, action.Kind, profile, action.Arguments, raw)
 				})
 				// Refused at its receipt check, the page is an acquisition-invalid
 				// request like one refused before acquisition: a validation
 				// finding on this model step, within the same correction bound.
 				var refusal *researchAcquisitionRefused
 				if errors.As(err, &refusal) {
+					if refusal.proof != nil {
+						finish("partial", errPortableResearchAcquisitionSize)
+						return
+					}
 					problem = refusal.cause
 					break
 				}
 				if err != nil {
-					if errors.Is(err, errResearchRequestLimit) {
+					if errors.Is(err, errResearchRequestLimit) || errors.Is(err, errPortableResearchJournalSize) || errors.Is(err, errPortableResearchStorageLimit) {
 						finish("partial", err)
 					} else {
 						finish("interrupted", err)
@@ -435,7 +454,7 @@ func (s *Server) executePortableResearch(parent context.Context, store researchR
 			_, err = store.change(func(current *inputResearchRun) error {
 				for i := len(current.Attempts) - 1; i >= 0; i-- {
 					if current.Attempts[i].Kind == "model" {
-						current.Attempts[i].ActionProblem = problem.Error()
+						current.Attempts[i].ActionProblem = portableResearchProblemText(problem.Error())
 						break
 					}
 				}
