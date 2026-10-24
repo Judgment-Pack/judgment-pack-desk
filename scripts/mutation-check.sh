@@ -15827,6 +15827,51 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'state = ""'
 fi
 
+
+# Desk #598: canonical proposal control and person-owned acceptance.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory review: another session accepted' internal/desk/assistant_memory_review.go \
+    'if err != nil || !assistantRunIdentityMatches(identity, run.Binding) || run.Historical || run.Binding.Owner.Kind != "chat" {' \
+    'if err != nil || false && !assistantRunIdentityMatches(identity, run.Binding) || run.Historical || run.Binding.Owner.Kind != "chat" {'
+  mutate go 'assistant memory review: store CAS omitted' internal/desk/assistant_memory_review.go \
+    'if reply.SHA256 != r.Header.Get("If-Match") {' \
+    'if false && reply.SHA256 != r.Header.Get("If-Match") {'
+  mutate go 'assistant memory review: Clear generation ignored' internal/desk/assistant_memory_review.go \
+    'if d.GenerationAfter != "" {' \
+    'if false && d.GenerationAfter != "" {'
+  mutate go 'assistant memory review: Suggest off grants a proposal' internal/desk/assistant_memory_review.go \
+    '"memoryProposalsPerRun": 0' \
+    '"memoryProposalsPerRun": 1'
+  mutate go 'assistant memory review: owned receipt accepts another intent' internal/desk/assistant_memory_review.go \
+    'receipt.IntentDigest != intent' \
+    false
+  mutate go 'assistant memory review: accepted receipt identity unbound' internal/desk/assistant_memory_review.go \
+    'receipt.MemoryID != receipt.ProposalID' \
+    false
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant memory review: accepted receipt identity unbound' web/src/assistant/memory/client.ts \
+    'value.memoryId!==value.proposalId' \
+    false
+  mutate web 'assistant memory review: response belongs to another proposal' web/src/assistant/memory/client.ts \
+    'receipt.proposalId!==change.proposalId' \
+    false
+  mutate web 'assistant memory review: proposal edit rebases reviewed store' web/src/assistant/memory/MemorySettings.tsx \
+    'decide(proposalEdit.proposal,'"'"'edit'"'"',proposalEdit.text,proposalEdit.revision)' \
+    'decide(proposalEdit.proposal,'"'"'edit'"'"',proposalEdit.text,query.data!.sha256)'
+fi
+
+
+# Host-authored independent creation reviewer source and acceptance authority.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory review: independent reviewer gains author cap' internal/desk/assistant_run_protocol.go \
+    'if assistantMemoryIndependentReview(creation) {' \
+    'if false && assistantMemoryIndependentReview(creation) {'
+  mutate go 'assistant memory review: reviewer action accepts attribution' internal/desk/assistant_memory_review.go \
+    'if err != nil || assistantMemoryIndependentReview(action) {' \
+    'if err != nil || false && assistantMemoryIndependentReview(action) {'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
