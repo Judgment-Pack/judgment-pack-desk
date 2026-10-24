@@ -167,21 +167,43 @@ func assistantProtocolView(t *testing.T, w *httptest.ResponseRecorder, status in
 }
 func assistantProtocolWait(t *testing.T, s *Server, token, id, state string) assistantRunView {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		view := assistantProtocolView(t, policyCall(s, token, "GET", "/api/assistant-runs/"+id, nil), 200)
-		h := s.assistantRunService()
-		h.mu.Lock()
-		active := h.active[id] != nil
-		h.mu.Unlock()
-		if view.State == state && !active {
-			return view
+	h := s.assistantRunService()
+	h.mu.Lock()
+	execution := h.active[id]
+	h.mu.Unlock()
+
+	// Admission registers the execution before returning. Its completion channel
+	// closes after final persistence and active-run cleanup, so avoid competing
+	// with those writes through repeated authenticated reads. Allow the service's
+	// five-second finalization window as well as the executor itself to finish.
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	var waitErr error
+	if execution != nil {
+		select {
+		case <-execution.done:
+		case <-ctx.Done():
+			waitErr = ctx.Err()
 		}
-		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatal("run did not settle", state)
-	return assistantRunView{}
+	view := assistantProtocolView(t, policyCall(s, token, "GET", "/api/assistant-runs/"+id, nil), 200)
+	h.mu.Lock()
+	active := h.active[id] != nil
+	h.mu.Unlock()
+	if waitErr != nil || view.State != state || active {
+		checkpoint := "missing"
+		if cp := view.Checkpoint; cp != nil {
+			checkpoint = fmt.Sprintf("status=%s used=%d limit=%d prompts=%d", cp.Status, cp.Used, cp.Limit, len(cp.Prompts))
+		}
+		var writerErr error
+		if execution != nil {
+			writerErr = execution.writer.Err()
+		}
+		t.Fatalf("run did not settle %s: wait_error=%v state=%s active=%t revision=%d checkpoint={%s} operations=%d events=%d writer_error=%v", state, waitErr, view.State, active, view.Revision, checkpoint, len(view.Operations), len(view.Events), writerErr)
+	}
+	return view
 }
+
 func assistantProtocolComplete(ctx context.Context, e *assistantRunExecution) error {
 	cp := *e.record.Checkpoint
 	cp.Status = "complete"
