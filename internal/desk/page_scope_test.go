@@ -73,19 +73,56 @@ func TestPortablePageAdmissionPreservesSubmittedArguments(t *testing.T) {
 	}
 }
 
-func TestLegacyPageProfilesKeepExactEndpointAndExistingToolContract(t *testing.T) {
-	profile := portableProfileDetails{Shape: "http", Adapter: searchBindingAdapter{Name: "adapter-web"}, Endpoint: "http://legacy.example:8080/page?x=1"}
-	good := json.RawMessage(`{ "url" : "http://legacy.example:8080/redirect?x=2" }`)
+func exactDeskPageProfile() portableProfileDetails {
+	p := scopedDeskPageProfile()
+	p.EndpointScope, p.Endpoint = nil, "https://legacy.example/final"
+	return p
+}
+
+func TestExactPageAdmissionKeepsQueriesAndFixedServiceTools(t *testing.T) {
+	profile := exactDeskPageProfile()
+	good := json.RawMessage(`{ "url" : "https://legacy.example/final?x=%2F&next=?/../\\x" }`)
 	before := append([]byte(nil), good...)
 	if err := admitPortablePage(profile, good); err != nil {
-		t.Fatal("legacy exact endpoint narrowed by scope grammar", err)
+		t.Fatal(err)
 	}
 	if !bytes.Equal(before, good) {
-		t.Fatal("legacy submitted request bytes changed")
+		t.Fatal("exact submitted request bytes changed")
+	}
+	for _, raw := range []string{`{}`, `null`, `{"url":null}`, `{"url":""}`, `{"url":"https://legacy.example/redirect"}`, `{"url":"https://LEGACY.example/final"}`, `{"url":"https://legacy.example:443/final"}`, `{"url":"https://legacy.example/final?bad=%"}`, `{"url":"https://legacy.example/final#x"}`, `{"url":"https://legacy.example/final","url":"https://legacy.example/final"}`} {
+		if admitPortablePage(profile, json.RawMessage(raw)) == nil {
+			t.Fatal("exact profile admitted", raw)
+		}
 	}
 	profile.Shape, profile.Endpoint = "mcp", "fixture:page"
 	if err := admitPortablePage(profile, json.RawMessage(`{"tool":"page"}`)); err != nil {
-		t.Fatal("legacy fixed-service page tool changed", err)
+		t.Fatal("fixed-service page tool changed", err)
+	}
+	if err := admitPortablePageReceipt(profile, json.RawMessage(`{"receipt":{"acquisition":{"endpoint":"fixture:page"}}}`)); err != nil {
+		t.Fatal("fixed service exact receipt refused", err)
+	}
+	if err := admitPortablePageReceipt(profile, json.RawMessage(`{"receipt":{"acquisition":{"endpoint":"fixture:other"}}}`)); err == nil {
+		t.Fatal("fixed service receipt bypassed exact equality")
+	}
+}
+
+func TestExactPageProfileAndReceiptFailClosed(t *testing.T) {
+	profile := exactDeskPageProfile()
+	for _, receipt := range []string{`{}`, `null`, `{"Receipt":{"acquisition":{"endpoint":"https://legacy.example/final"}}}`, `{"receipt":null}`, `{"receipt":{"acquisition":{}}}`, `{"receipt":{"acquisition":{"endpoint":null}}}`, `{"receipt":{"acquisition":{"endpoint":1}}}`, `{"receipt":{"acquisition":{"endpoint":"https://elsewhere.example/final"}}}`, `{"receipt":{"acquisition":{"endpoint":"https://LEGACY.example/final"}}}`, `{"receipt":{"acquisition":{"endpoint":"https://legacy.example/final?x=1"}}}`, `{"receipt":{"acquisition":{"endpoint":"https://legacy.example/final","endpoint":"https://elsewhere.example/final"}}}`, `{"receipt":{"acquisition":{"endpoint":"https://legacy.example/final"}},"receipt":{"acquisition":{"endpoint":"https://legacy.example/final"}}}`} {
+		if admitPortablePageReceipt(profile, json.RawMessage(receipt)) == nil {
+			t.Fatal("exact receipt admitted", receipt)
+		}
+	}
+	good := json.RawMessage(`{"receipt":{"acquisition":{"endpoint":"https://legacy.example/final"}}}`)
+	if err := admitPortablePageReceipt(profile, good); err != nil {
+		t.Fatal(err)
+	}
+	for _, edit := range []func(*portableProfileDetails){func(p *portableProfileDetails) { p.Endpoint = "" }, func(p *portableProfileDetails) { p.Class = "record" }, func(p *portableProfileDetails) { p.Research.Capabilities = nil }} {
+		invalid := profile
+		edit(&invalid)
+		if admitPortablePage(invalid, json.RawMessage(`{"url":"https://legacy.example/final"}`)) == nil || admitPortablePageReceipt(invalid, good) == nil {
+			t.Fatal("invalid exact profile admitted")
+		}
 	}
 }
 
@@ -105,8 +142,8 @@ func TestPortablePageProfileLookupDoesNotInheritAnotherProfilesScope(t *testing.
 	if profile.EndpointScope != nil {
 		t.Fatal("legacy profile inherited another profile's scope", profile.EndpointScope)
 	}
-	if err := admitPortablePage(profile, json.RawMessage(`{"url":"https://legacy.example/redirect?query=%2F"}`)); err != nil {
-		t.Fatal("legacy request narrowed by an unrelated scope", err)
+	if err := admitPortablePage(profile, json.RawMessage(`{"url":"https://legacy.example/final?query=%2F"}`)); err != nil {
+		t.Fatal("exact request acquired an unrelated scope", err)
 	}
 }
 

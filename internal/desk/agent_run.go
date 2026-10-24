@@ -225,6 +225,10 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		code = "run-failed"
 		switch {
+		case codexbridge.DiskFull(err):
+			code = "storage-full"
+		case errors.Is(err, codexbridge.ErrAccountLookup):
+			code = "account-lookup-failed"
 		case errors.Is(err, codexbridge.ErrBusy):
 			code = "busy"
 		case errors.Is(err, codexbridge.ErrRetries):

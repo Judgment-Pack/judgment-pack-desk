@@ -169,29 +169,52 @@ func requestedPageInScope(requested string, scope EndpointScope) bool {
 	return !strings.Contains(query, "#") && pagePercentForm(query) && pageEndpointInScope(endpoint, scope)
 }
 
-// The pre-acquisition scope check applies only to scoped profiles. Legacy
-// profiles retain their existing request contract: the submitted URL may have
-// a query or redirect to the exact endpoint Runner checks in the receipt.
-// Neither that endpoint comparison nor the legacy profile's form is changed.
+// Exact HTTP profiles compare the URL before its query byte-for-byte. Queries
+// remain acquisition arguments; redirects are checked again at the receipt.
+// Fixed-service profiles use their tool contract rather than an HTTP URL.
 func admitPortablePage(profile portableProfileDetails, raw json.RawMessage) error {
-	if profile.EndpointScope == nil {
-		return nil
-	}
 	refuse := func() error {
 		return errors.New("acquisition-invalid: The requested page is invalid or outside the reviewed page profile.")
 	}
+	if err := validatePortablePageForm(profile); err != nil {
+		return err
+	}
 	var arguments map[string]json.RawMessage
+	if rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &arguments) != nil || arguments == nil {
+		return refuse()
+	}
+	if profile.EndpointScope == nil && profile.Shape != "http" {
+		return nil
+	}
 	var requested string
-	if rejectDuplicateMembers(raw) != nil || decodeDataJSON(raw, &arguments) != nil || json.Unmarshal(arguments["url"], &requested) != nil || requested == "" {
+	if json.Unmarshal(arguments["url"], &requested) != nil || requested == "" {
 		return refuse()
 	}
-	if err := validatePageScope(profile.EndpointScope); err != nil {
-		return fmt.Errorf("acquisition-invalid: %w", err)
-	}
-	if !scopedPageProfile(profile) || !requestedPageInScope(requested, profile.EndpointScope) {
-		return refuse()
+	if profile.EndpointScope != nil {
+		if !requestedPageInScope(requested, profile.EndpointScope) {
+			return refuse()
+		}
+	} else {
+		endpoint, query, _ := strings.Cut(requested, "?")
+		if len(requested) > 2048 || !pageASCII(requested) || strings.Contains(requested, "#") || !pagePercentForm(query) || endpoint != profile.Endpoint {
+			return refuse()
+		}
 	}
 	return nil
+}
+
+func validatePortablePageForm(profile portableProfileDetails) error {
+	if profile.EndpointScope != nil {
+		if err := validatePageScope(profile.EndpointScope); err != nil {
+			return fmt.Errorf("acquisition-invalid: %w", err)
+		}
+		if scopedPageProfile(profile) {
+			return nil
+		}
+	} else if profile.Class == "generated" && (profile.Shape == "http" || profile.Shape == "mcp") && contains(profile.Research.Capabilities, "page") && profile.Endpoint != "" && len(profile.Endpoint) <= 2048 {
+		return nil
+	}
+	return errors.New("acquisition-invalid: The reviewed page profile has no valid endpoint or scope.")
 }
 
 // scopedPageProfile is the one profile form the Desk reads a scoped page
@@ -201,10 +224,11 @@ func scopedPageProfile(profile portableProfileDetails) bool {
 	return profile.Class == "generated" && profile.Shape == "http" && profile.Adapter.Name == "adapter-web" && profile.Endpoint == "" && len(profile.Research.Capabilities) == 1 && profile.Research.Capabilities[0] == "page"
 }
 
-// errScopedPageReceipt names a scoped page acquisition whose signed receipt
+// errScopedPageReceipt names a page acquisition whose signed receipt
 // endpoint, the final URL after followed redirects with its query removed
 // (spec dialect §5.2, "Which URL is held"), is outside the reviewed scope or
-// the constrained form. It carries no URL or page text: it becomes a
+// constrained form, or differs from its exact endpoint. It carries no URL or
+// page text: it becomes a
 // validation finding the model reads.
 var errScopedPageReceipt = errors.New("acquisition-invalid: The page's final address after redirects is outside the reviewed page profile. Its receipt was kept for audit; the page was left out of the research and of the answer.")
 
@@ -213,25 +237,23 @@ var errScopedPageReceipt = errors.New("acquisition-invalid: The page's final add
 // again.
 var errScopedPageRefusedAgain = errors.New("acquisition-invalid: This page was already acquired and its final address after redirects is outside the reviewed page profile. It was not requested again.")
 
-// admitPortablePageReceipt checks a retained scoped page acquisition before it
+// admitPortablePageReceipt checks a retained page acquisition before it
 // can reach the model or an answer: the signed receipt's acquisition.endpoint
-// holds §5.1's form and matches the profile's scope (pageEndpointInScope). It
+// matches the exact endpoint or holds §5.1's form and matches its scope. It
 // reads the receipt as the Gateway wrote it and verifies no signature; Runner's
 // check 3 remains the verifier of every retained receipt. A profile without a
-// scope keeps its exact endpoint, which Runner alone compares.
+// scope uses literal equality against its exact endpoint.
 func admitPortablePageReceipt(profile portableProfileDetails, retained json.RawMessage) error {
-	if profile.EndpointScope == nil {
-		return nil
-	}
-	var response struct {
-		Receipt json.RawMessage `json:"receipt"`
-	}
-	var receipt, acquisition map[string]json.RawMessage
-	var endpoint string
-	if json.Unmarshal(retained, &response) != nil || rejectDuplicateMembers(response.Receipt) != nil || json.Unmarshal(response.Receipt, &receipt) != nil || json.Unmarshal(receipt["acquisition"], &acquisition) != nil || json.Unmarshal(acquisition["endpoint"], &endpoint) != nil {
+	if validatePortablePageForm(profile) != nil || rejectDuplicateMembers(retained) != nil {
 		return errScopedPageReceipt
 	}
-	if !pageEndpointInScope(endpoint, profile.EndpointScope) {
+	var response map[string]json.RawMessage
+	var receipt, acquisition map[string]json.RawMessage
+	var endpoint string
+	if json.Unmarshal(retained, &response) != nil || rejectDuplicateMembers(response["receipt"]) != nil || json.Unmarshal(response["receipt"], &receipt) != nil || json.Unmarshal(receipt["acquisition"], &acquisition) != nil || json.Unmarshal(acquisition["endpoint"], &endpoint) != nil {
+		return errScopedPageReceipt
+	}
+	if profile.EndpointScope == nil && endpoint != profile.Endpoint || profile.EndpointScope != nil && !pageEndpointInScope(endpoint, profile.EndpointScope) {
 		return errScopedPageReceipt
 	}
 	return nil

@@ -16,6 +16,8 @@ var ErrProfile = errors.New("the private Codex profile is unavailable or unsafe"
 // profile is deliberately separate from both terminal CODEX_HOME and projects.
 // The only persistent auth-operation record is a cleanup bit, never credentials.
 type profile struct {
+	// Test-only staging failure injection; production always uses runtimeTemp.
+	stageRuntime                 func(*os.Root) (runtimeStage, string, error)
 	root                         *os.Root
 	lease                        *os.File
 	dir, home, codex, work, temp string
@@ -52,7 +54,7 @@ func openProfile(dir, project string) (*profile, error) {
 	if err = parentRoot.Mkdir(name, 0700); err == nil {
 		created = true
 	} else if !errors.Is(err, os.ErrExist) {
-		return nil, ErrProfile
+		return nil, failureCause(ErrProfile, err)
 	}
 	info, err = parentRoot.Lstat(name)
 	if err != nil || !privateInfo(info, true) {
@@ -73,15 +75,15 @@ func openProfile(dir, project string) (*profile, error) {
 			return fail(err)
 		}
 	} else if data, err := p.readSmall("managed"); err != nil || string(data) != profileMarker {
-		return fail(ErrProfile)
+		return fail(failureCause(ErrProfile, err))
 	}
 	for _, child := range []string{"home", "profile", "work", "tmp"} {
 		if err = root.Mkdir(child, 0700); err != nil && !errors.Is(err, os.ErrExist) {
-			return fail(ErrProfile)
+			return fail(failureCause(ErrProfile, err))
 		}
 		info, err = root.Lstat(child)
 		if err != nil || !privateInfo(info, true) {
-			return fail(ErrProfile)
+			return fail(failureCause(ErrProfile, err))
 		}
 	}
 	for _, file := range p.managedFiles() {
@@ -97,7 +99,7 @@ func openProfile(dir, project string) (*profile, error) {
 			}
 		}
 		if err != nil {
-			return fail(ErrProfile)
+			return fail(failureCause(ErrProfile, err))
 		}
 	}
 	if err = p.check(); err != nil {
@@ -170,7 +172,7 @@ func (p *profile) writeManaged(name string, data []byte) error {
 	}
 	if err := p.root.Rename(staged, name); err != nil {
 		_ = p.root.Remove(staged)
-		return ErrProfile
+		return failureCause(ErrProfile, err)
 	}
 	return p.sync()
 }
@@ -197,26 +199,29 @@ func (p *profile) readBounded(name string, limit int) ([]byte, error) {
 func (p *profile) writeNew(name string, data []byte) error {
 	f, err := p.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|noFollow, 0600)
 	if err != nil {
-		return ErrProfile
+		return failureCause(ErrProfile, err)
 	}
 	_, err = f.Write(data)
 	if err == nil {
 		err = f.Sync()
 	}
 	closeErr := f.Close()
-	if err != nil || closeErr != nil {
-		return ErrProfile
+	if err != nil {
+		return failureCause(ErrProfile, err)
+	}
+	if closeErr != nil {
+		return failureCause(ErrProfile, closeErr)
 	}
 	return p.sync()
 }
 func (p *profile) sync() error {
 	f, err := p.root.Open(".")
 	if err != nil {
-		return ErrProfile
+		return failureCause(ErrProfile, err)
 	}
 	defer f.Close()
-	if f.Sync() != nil {
-		return ErrProfile
+	if err = f.Sync(); err != nil {
+		return failureCause(ErrProfile, err)
 	}
 	return nil
 }
