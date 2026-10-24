@@ -335,15 +335,18 @@ bounded() {
 # the pinned Gateway and scoped Runtime fixtures. Two clean CI baselines exceeded
 # 900s. A verbose diagnostic reached more than 1500 cases before its 840s panic,
 # with the current test running for 0s: measured aggregate work, not a hung handler.
-# Give only the clean full-package baseline 1800s. Selected checks stay at 480s,
+# The companion-enabled baseline now exceeds 1800s; its last started website
+# test passes in isolation in 19.12s. Align only this clean run with ordinary
+# Go CI's 40-minute limit and retain its complete progress log on failure.
+# Selected checks stay at 480s,
 # whole-mutant/fallback checks at 900s, and compilation at its independent bound.
 # Each Go panic backstop follows its process-tree watchdog by 60s.
 GO_TEST_WATCHDOG=480
 GO_TEST_BACKSTOP=540s
 GO_FULL_WATCHDOG=900
 GO_FULL_BACKSTOP=960s
-GO_BASELINE_WATCHDOG=1800
-GO_BASELINE_BACKSTOP=1860s
+GO_BASELINE_WATCHDOG=2400
+GO_BASELINE_BACKSTOP=2460s
 
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
@@ -403,7 +406,7 @@ go_package_green() {
   verdict=$(run_go_unmutated "$package" '.')
   if [ -n "$verdict" ]; then
     echo "unmutated Go baseline is not green: $package: $verdict" >&2
-    tail -n 30 "$work/package-$key.baseline.log" >&2
+    cat "$work/package-$key.baseline.log" >&2
     : > "$work/package-$key.failed"
     return 1
   fi
@@ -15789,6 +15792,60 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant memory: missing private version is not revoked' internal/desk/assistant_memory_lifecycle.go \
     'state = "revoked"' \
     'state = ""'
+fi
+
+
+# Canonical background execution: retain the verified safeguard probes in CI.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'canonical background: request cap' 'internal/desk/background_execution.go' \
+    'input.RequestCap = &requestCap' \
+    'input.RequestCap = nil; _ = requestCap'
+  mutate go 'canonical background: live choice' 'internal/desk/background_execution.go' \
+    'return current == choice && run.Revision' \
+    'return (current == choice || current != choice) && run.Revision'
+  mutate go 'canonical background: receipt history' 'internal/desk/input_research_journal_store.go' \
+    'if !backgroundReceiptTransition(old, a) {' \
+    'if false && !backgroundReceiptTransition(old, a) {'
+  mutate go 'canonical background: canonical reader' 'internal/desk/background_execution.go' \
+    'if _, err = runcontext.ReadExecution(v); err != nil {' \
+    'if false { _ = v'
+  mutate go 'canonical background: completion stop' 'internal/desk/background_execution.go' \
+    'if completion.FinishReason != "stop" {' \
+    'if false && completion.FinishReason != "stop" {'
+  mutate go 'canonical background: native response' 'internal/desk/background_execution.go' \
+    'len(action) == 0 && !native' \
+    'len(action) == 0 && (native || !native)'
+  mutate go 'canonical background: native offer' 'internal/desk/background_execution.go' \
+    'if strings.HasPrefix(tool.Description, b.task.Response.Name+":") {' \
+    'if true {'
+  mutate go 'canonical background: source custody' 'internal/desk/background_execution.go' \
+    'if digestOf([]byte(source)) != b.source {' \
+    'if false && digestOf([]byte(source)) != b.source {'
+  mutate go 'canonical background: credential custody' 'internal/desk/background_execution.go' \
+    'if credential != b.credential {' \
+    'if false && credential != b.credential {'
+  mutate go 'canonical background: epoch custody' 'internal/desk/background_execution.go' \
+    'epoch != b.epoch || epoch.Err() != nil ||' \
+    'false && epoch != b.epoch || false && epoch.Err() != nil ||'
+  mutate go 'canonical background: complete envelope' 'internal/desk/background_execution.go' \
+    'len(raw) > backgroundModelReceiptBytes ||' \
+    'false && len(raw) > backgroundModelReceiptBytes ||'
+  mutate go 'canonical background: legacy reserve' 'internal/desk/input_research_reservations.go' \
+    'allowance := portableResearchAttemptReserve + backgroundModelReceiptReserve' \
+    'allowance := portableResearchAttemptReserve'
+  mutate go 'canonical background: portable reserve' 'internal/desk/input_research_reservations.go' \
+    'reserve += backgroundModelReceiptReserve' \
+    'reserve += 0'
+  mutate go 'canonical background: native pregeneration wire' 'internal/desk/background_execution.go' \
+    'if generated.Load() {
+				r.Wire = raw' \
+    'if true {
+				r.Wire = raw'
+  mutate go 'canonical background: native postgeneration outcome' 'internal/desk/background_execution.go' \
+    'if generated.Load() {
+					copy.Outcome = "unknown"' \
+    'if false {
+					copy.Outcome = "unknown"'
 fi
 
 # Desk #658: partial correction continuation retains exact scope and readiness.
