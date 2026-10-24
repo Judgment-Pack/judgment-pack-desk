@@ -68,7 +68,12 @@ export function readCreation(value:unknown):CreationEvidence {
   const cases=readCases(value.cases),held=readCases(value.held,false),issues=readIssues(value.issues)
   if(issues.some(i=>i.position!==undefined&&i.position>=cases.length+issues.length)||new Set(issues.filter(i=>i.position!==undefined).map(i=>i.position)).size!==issues.filter(i=>i.position!==undefined).length)return invalid()
   if(new Set([...cases.map(c=>c.id),...issues.map(i=>i.id)]).size!==cases.length+issues.length||held.length&&(cases.length||issues.length))return invalid()
-  if(value.check!==undefined){const check=readPackCheck(value.check);if(!check||check.documentDigest!==value.candidateDigest||check.totalCases!==cases.length||check.valid&&cases.length&&!check.report||held.length||issues.length)return invalid()}
+  if(value.check!==undefined){
+    const check=readPackCheck(value.check)
+    if(!check||check.documentDigest!==value.candidateDigest||check.totalCases!==cases.length||check.valid&&cases.length&&!check.report||held.length)return invalid()
+    if(check.report&&(check.report.summary.total!==cases.length||check.report.packs?.[0]?.rows?.some((row,i)=>row.id!==cases[i]?.id)))return invalid()
+    if(issues.length&&(!cases.length||value.action!=='approve-correction'||!check.valid||check.report?.status!=='passed'))return invalid()
+  }
   if(value.proposal!==undefined){const p=value.proposal;if(!object(p)||!exact(p,['token','issueId','expectedDisposition','rationale'])||!digest(p.token)||!issues.some(i=>i.id===p.issueId)||!object(p.expectedDisposition)||typeof p.rationale!=='string'||!p.rationale.trim())return invalid()}
   return value as unknown as CreationEvidence
 }
@@ -88,10 +93,11 @@ export function withCreation(state:RunState,evidence:CreationEvidence|undefined,
   const parsed=(text:string)=>{try{return JSON.parse(text) as unknown}catch{return text}}
   const check=c?{documentDigest:c.documentDigest,valid:c.valid,diagnostics:c.diagnostics,cases:c.report?.packs?.[0]?.rows?.map(row=>({id:row.id,passed:row.status==='passed',expected:{disposition:parsed(row.expected),...(cases.find(c=>c.id===row.id)?.expectedHandoffTarget===undefined?{}:{handoffTarget:cases.find(c=>c.id===row.id)!.expectedHandoffTarget})},actual:{disposition:parsed(row.actual),...(cases.find(c=>c.id===row.id)?.expectedHandoffTarget===undefined?{}:{handoffTarget:row.actualHandoffTarget===undefined?null:parsed(row.actualHandoffTarget)})}}))??[]}:undefined
   if(check&&check.cases.some((row,i)=>row.id!==cases[i]?.id))return invalid()
-  let result:RunState={...state,cases,heldProposal:held.length?copyWireValue(state.heldProposal,{...state.heldProposal!,candidateDigest:evidence.candidateDigest,admitted:held,dropped:[],unknowns:evidence.unknowns}):null,unknowns:evidence.unknowns,
-    expectationIssues:[...state.expectationIssues.filter(i=>i.resolved),...issues.map(i=>copyWireValue(state.expectationIssues.find(old=>!old.resolved&&old.id===i.id),{...(i.position===undefined?{}:{position:i.position}),id:i.id,original:i.original,message:i.finding.message,finding:i.finding,...(proposalCurrent&&evidence.proposal?.issueId===i.id?{proposal:{...evidence.proposal,candidateDigest:evidence.candidateDigest}}:{})}))],
+  let result:RunState={...state,cases:state.cases,heldProposal:held.length?copyWireValue(state.heldProposal,{...state.heldProposal!,candidateDigest:evidence.candidateDigest,admitted:held,dropped:[],unknowns:evidence.unknowns}):null,unknowns:evidence.unknowns,
+    expectationIssues:state.expectationIssues.map(old=>old.resolved?old:copyWireValue(old,{...old,proposal:proposalCurrent&&evidence.proposal?.issueId===old.id?{...evidence.proposal,candidateDigest:evidence.candidateDigest}:undefined})),
     candidates:state.candidates.map(candidate=>candidate===latest?{...candidate,...(current?{check}:{previousCheck:check,check:undefined})}:candidate),
     citations:evidence.citations.map(c=>({...c,traced:current&&c.traced})),readiness:'',restored:!current,tracedBasis:current?evidence.sourceDigest:undefined,checkRun:c?'complete':undefined}
+  if(issues.length||held.length)result={...result,status:'needs-input'}
   if(current&&check?.valid&&cases.length&&check.cases.length===cases.length&&check.cases.every(row=>row.passed)&&issues.length===0){result={...result,status:'ready'};result.readiness=readinessKey(result)}
   return result
 }

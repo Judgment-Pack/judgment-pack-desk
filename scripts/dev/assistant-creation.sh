@@ -12,11 +12,11 @@ mkdir -m 700 "$tmp/outputs"
 (
  cd "$root"
  export JPS_CREATION_OUTPUTS="$tmp/outputs"
- command=(go test ./internal/desk -run '^TestAssistantCreation(ActualAPI|ActualNative|InterruptedValidationAndRetest)$' -count=1 -v)
+ command=(go test ./internal/desk -run '^TestAssistantCreation(ActualAPI|ActualNative|InterruptedValidationAndRetest|MultipleCorrections)$' -count=1 -v)
  if [ -n "${JPDEV_WRAP:-}" ];then command=("$JPDEV_WRAP" go -- "${command[@]}");fi
  "${command[@]}"
 ) | tee "$tmp/producers.log"
-for producer in ActualAPI ActualNative InterruptedValidationAndRetest;do
+for producer in ActualAPI ActualNative InterruptedValidationAndRetest MultipleCorrections;do
  grep -Eq -- "^--- PASS: TestAssistantCreation$producer \\(" "$tmp/producers.log" || { echo "Creation $producer producer did not pass" >&2;exit 1; }
 done
 node_command=(bash -c '
@@ -24,7 +24,7 @@ node_command=(bash -c '
  "$1/web/node_modules/.bin/esbuild" "$1/scripts/assistant-creation-reference.mjs" --bundle --platform=node --format=esm --outfile="$2/reference.mjs"
  node "$2/reference.mjs" "$2/outputs"
  cd "$1/web"
- JPS_CREATION_OUTPUTS="$2/outputs" ./node_modules/.bin/vitest run src/routes/CreationRoutes.test.tsx
+ JPS_CREATION_OUTPUTS="$2/outputs" ./node_modules/.bin/vitest run src/routes/CreationRoutes.test.tsx src/assistant/serverRuns/creationContinuation.test.ts
 ' assistant-creation "$root" "$tmp")
 if [ -n "${JPDEV_WRAP:-}" ];then node_command=(flock "$JPDEV_LOCK" "$JPDEV_WRAP" node -- "${node_command[@]}");fi
 "${node_command[@]}"

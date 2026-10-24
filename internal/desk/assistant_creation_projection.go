@@ -10,6 +10,13 @@ func projectAssistantCreation(state map[string]json.RawMessage, run assistantRun
 	if r.Action == "approve-correction" && run.State != "complete" {
 		return nil
 	}
+	// A proposal does not change the evidence bound into its visible token.
+	// Keep original case/issue member order and resolved-row sequence intact.
+	if r.Action == "propose-correction" {
+		state["readiness"] = assistantChatJSON("")
+		state["status"] = assistantChatJSON("needs-input")
+		return nil
+	}
 	state["cases"] = assistantChatJSON(r.Cases)
 	state["unknowns"] = assistantChatJSON(r.Unknowns)
 	issues := []json.RawMessage{}

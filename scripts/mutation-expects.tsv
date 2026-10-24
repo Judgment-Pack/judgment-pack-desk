@@ -2889,3 +2889,7 @@ go	assistant discovery: body read before bounded transport	TestAssistantDiscover
 go	assistant memory: malformed canonical metadata accepted	TestAssistantMemoryPrivateCanonicalReaders
 go	assistant memory: edited version reuses canonical identity	TestAssistantMemoryLifecycleSnapshotAndIdentity
 go	assistant memory: missing private version is not revoked	TestAssistantMemoryCanonicalResumeLifecycle
+go	assistant creation: correction proposal rewrites evidence	TestAssistantCreationMultipleCorrections
+web	assistant creation: passing partial correction refused	src/assistant/serverRuns/creation.test.ts
+web	assistant creation: partial check advertises readiness	src/assistant/serverRuns/creation.test.ts
+web	assistant creation: correction overlay reorders issue rows	src/assistant/serverRuns/creation.test.ts
