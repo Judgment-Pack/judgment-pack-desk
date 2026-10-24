@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { SavedChatRun } from '../web/src/assistant/serverRuns/controller.ts'
 import { serverRunClient } from '../web/src/assistant/serverRuns/client.ts'
 import { reconcileChats } from '../web/src/chat/reconcile.ts'
@@ -34,3 +35,31 @@ assert.equal(encodeWireChat({id:'one',n:9007199254740992},'{"id":"one","n":90071
 const candidate={text:'{}',document:{},digest:'e'.repeat(64),revision:1,producedBy:'conversation',packReview:{basis:{packId:'one',path:'one.json',text:'{}'},check:{documentDigest:'e'.repeat(64),valid:true}}}
 const latest={documentDigest:candidate.digest,suiteKey:'[]',at:'2026-10-23T00:00:00Z',valid:false,diagnostics:[],totalCases:0}
 assert.equal(withPackChecks({...INITIAL_STATE,candidates:[candidate]},[latest]).candidates[0].packReview.check.valid,false,'latest failed check must replace older pass')
+
+// An acknowledged terminal still owns the chat until its saved projection lands.
+// Hold the real reconcile port pending; no controller fields are manufactured.
+let releaseReconciliation,enteredReconciliation,pendingPrepares=0
+const entered=new Promise(resolve=>{enteredReconciliation=resolve})
+const reconciliation=new Promise(resolve=>{releaseReconciliation=resolve})
+const responseId=`response-${createHash('sha256').update(pending.id).digest('hex').slice(0,32)}`
+const acknowledged={...pending,state:'failed',chatProjection:{responseId,digest:'b'.repeat(64),acknowledged:true}}
+const retained={...chat,serverRequest:{requestId:pending.requestId,admissionId:pending.admissionId}}
+const reconciling=new SavedChatRun(chat.id,retained,{
+ project:'/project',client:async()=>({discover:async()=>[acknowledged]}),
+ prepare:async()=>{pendingPrepares++;return 'a'.repeat(64)},
+ reconcile:async()=>{enteredReconciliation();return reconciliation},pin(){},problem(){},
+})
+const reconnecting=reconciling.reconnect()
+await Promise.race([entered,reconnecting.then(()=>assert.fail('acknowledged terminal must enter saved-chat reconciliation'))])
+assert.equal(reconciling.canRetryResponse,false,'acknowledged terminal must wait for saved-chat reconciliation')
+assert.equal(reconciling.needsReconnect,true,'pending terminal reconciliation must remain recoverable')
+const held=reconciling.getSnapshot()
+reconciling.retryResponse()
+reconciling.send('Too early')
+assert.equal(reconciling.getSnapshot(),held,'pending terminal reconciliation must not admit a fresh turn')
+assert.equal(pendingPrepares,0,'pending terminal reconciliation must not prepare a fresh request')
+assert.throws(()=>reconciling.appendConversation([]),'pending terminal reconciliation must retain conversation ownership')
+releaseReconciliation(chat)
+await reconnecting
+assert.equal(reconciling.canRetryResponse,true,'reconciled acknowledged terminal must release retry')
+assert.equal(reconciling.needsReconnect,false,'reconciled acknowledged terminal must clear recovery')
