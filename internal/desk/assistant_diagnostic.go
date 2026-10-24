@@ -140,8 +140,12 @@ func (s *Server) assistantDiagnosticSource(r *http.Request, start assistantRunSt
 		return zero, errAssistantRunUnavailable
 	}
 	info, err := os.Stat(runtime)
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil {
 		return zero, errAssistantRunUnavailable
+	}
+	runtimeIdentity, err := assistantDiagnosticRuntimeIdentity(info)
+	if err != nil {
+		return zero, err
 	}
 	// Only opaque digests enter storage. Account identifiers, profile paths and
 	// credentials never enter the checkpoint or public projection.
@@ -150,8 +154,8 @@ func (s *Server) assistantDiagnosticSource(r *http.Request, start assistantRunSt
 		Connection                aiConnection
 		Profile                   assistantProfile
 		Account, Runtime, Project string
-		Size, Modified            int64
-	}{identity, *connection, *profile, epoch, runtime, project, info.Size(), info.ModTime().UnixNano()})
+		RuntimeIdentity           string
+	}{identity, *connection, *profile, epoch, runtime, project, runtimeIdentity})
 	original, _ := json.Marshal(struct {
 		Source      string `json:"source"`
 		Instruction string `json:"instruction"`
@@ -166,6 +170,38 @@ func (s *Server) assistantDiagnosticSource(r *http.Request, start assistantRunSt
 	binding.ProfileRevision, binding.Model, binding.Phase = digestOf(profileRaw), *selected, "work"
 	return assistantRunSource{Start: start, Binding: binding, Original: original, Request: request, Text: assistantDiagnosticInstruction, Connection: *connection, Profile: *profile}, nil
 }
+
+// Runtime currentness uses kernel file identity and change time, not caller-settable
+// size/mtime alone. Recompute this small metadata digest at every source check,
+// including final success; no executable bytes are read per event. A platform
+// without both identity and change time cannot establish a current diagnostic.
+func assistantDiagnosticRuntimeIdentity(info os.FileInfo) (string, error) {
+	if info == nil || !info.Mode().IsRegular() || identityKey(info) == "" {
+		return "", errAssistantRunUnavailable
+	}
+	value := reflect.Indirect(reflect.ValueOf(info.Sys()))
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return "", errAssistantRunUnavailable
+	}
+	for _, name := range []string{"Ctim", "Ctimespec"} {
+		changed := value.FieldByName(name)
+		if !changed.IsValid() || changed.Kind() != reflect.Struct {
+			continue
+		}
+		sec, nsec := changed.FieldByName("Sec"), changed.FieldByName("Nsec")
+		if !sec.IsValid() || !nsec.IsValid() || !sec.CanInt() || !nsec.CanInt() {
+			continue
+		}
+		raw, _ := json.Marshal(struct {
+			File                                         string
+			Size, Modified, ChangedSeconds, ChangedNanos int64
+			Mode                                         os.FileMode
+		}{identityKey(info), info.Size(), info.ModTime().UnixNano(), sec.Int(), nsec.Int(), info.Mode()})
+		return digestOf(raw), nil
+	}
+	return "", errAssistantRunUnavailable
+}
+
 func (s *Server) handleAssistantDiagnosticResult(w http.ResponseWriter, r *http.Request) {
 	if !s.guardAssistantRun(w, r) {
 		return
