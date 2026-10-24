@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -18,7 +19,7 @@ func TestAIAgentFailureClassification(t *testing.T) {
 	for _, tc := range []struct {
 		err  error
 		code string
-	}{{codexbridge.ErrBusy, "busy"}, {codexbridge.ErrSignIn, "authentication"}, {codexbridge.ErrRetries, "retries-exhausted"}, {codexbridge.ErrLimit, "provider-limit"}, {context.DeadlineExceeded, "timeout"}, {errors.New("PRIVATE_SENTINEL"), "unknown"}} {
+	}{{codexbridge.ErrAccountLookup, "connection-lost"}, {errors.Join(codexbridge.ErrInstall, syscall.ENOSPC), "storage"}, {codexbridge.ErrBusy, "busy"}, {codexbridge.ErrSignIn, "authentication"}, {codexbridge.ErrRetries, "retries-exhausted"}, {codexbridge.ErrLimit, "provider-limit"}, {context.DeadlineExceeded, "timeout"}, {errors.New("PRIVATE_SENTINEL"), "unknown"}} {
 		var got *aifailure.Failure
 		if !errors.As(aiAgentFailure(tc.err), &got) || got.Code != tc.code {
 			t.Fatalf("%v: %+v", tc.err, got)
@@ -63,5 +64,20 @@ func TestAIResearchProviderFailureRetainsMetadataWithoutRetry(t *testing.T) {
 	}
 	if strings.Contains(got.Error(), "PRIVATE_SENTINEL") || calls.Load() != 1 {
 		t.Fatal("unsafe error or automatic replay")
+	}
+}
+
+func TestAIAgentAccountLookupAndDiskFullDetails(t *testing.T) {
+	for _, tc := range []struct {
+		err                   error
+		code, detail, outcome string
+	}{
+		{errors.Join(codexbridge.ErrAccountLookup, context.DeadlineExceeded), "connection-lost", "check the account", "not-started"},
+		{errors.Join(codexbridge.ErrInstall, syscall.ENOSPC), "storage", "Disk is full", "unknown"},
+	} {
+		got := aiAgentFailure(tc.err).(*aifailure.Failure)
+		if got.Code != tc.code || got.Outcome != tc.outcome || !strings.Contains(got.Detail, tc.detail) {
+			t.Fatalf("wrong typed detail: %+v", got)
+		}
 	}
 }

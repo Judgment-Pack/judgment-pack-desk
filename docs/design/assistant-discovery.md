@@ -1,7 +1,9 @@
 # Saved connection model metadata
 
 `POST /api/assistant/models` is a fixed authenticated metadata action. It accepts
-no body or query. The saved API connection selects its family, destination and
+no body or query. Declared nonempty, chunked and unknown body forms are refused
+without reading the input, before the bounded relay transport is entered. The
+saved API connection selects its family, destination and
 first model-list page. A supplied connection requires its current saved revision;
 missing, unknown or stale identities are refused without choosing a default.
 Legacy configuration remains supported only while no connection registry exists.

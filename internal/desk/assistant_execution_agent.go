@@ -255,6 +255,9 @@ func assistantAgentFailure(err error) *contract.Failure {
 	// An admitted failure remains an observed unknown outcome, regardless of
 	// whether its error happens to resemble a not-started busy failure.
 	held := failure.Normalize(err, "agent", time.Time{})
+	if code, detail := codexHostFailure(err); code != "" {
+		held = failure.Authored(code, detail, "agent").Failure
+	}
 	held.Outcome = "unknown"
 	return &held
 }

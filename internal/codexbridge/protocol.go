@@ -18,10 +18,15 @@ import (
 const Version = "codex-cli 0.157.1"
 const maxFrame = 4 << 20
 
+// The pinned backend has a 15-second workspace lookup budget. Allow its bounded
+// failure to arrive before Desk stops the process; all other calls keep 15s.
+const accountLookupBudget = 20 * time.Second
+
 var (
-	ErrUnavailable = errors.New("Codex is unavailable or its protocol is incompatible")
-	ErrUpstream    = errors.New("Codex could not complete the request")
-	ErrBusy        = errors.New("another Codex operation is active")
+	ErrUnavailable   = errors.New("Codex is unavailable or its protocol is incompatible")
+	ErrUpstream      = errors.New("Codex could not complete the request")
+	ErrBusy          = errors.New("another Codex operation is active")
+	ErrAccountLookup = errors.New("Desk could not reach ChatGPT to check the account")
 )
 
 type frame struct {
@@ -46,6 +51,8 @@ type client struct {
 	exited  chan struct{}
 	once    sync.Once
 	next    atomic.Uint64
+	// Test-only deadline injection; zero selects the pinned account lookup budget.
+	accountReadBudget time.Duration
 }
 
 func startClient(ctx context.Context, cmd *exec.Cmd) (*client, error) {
@@ -66,7 +73,7 @@ func startClient(ctx context.Context, cmd *exec.Cmd) (*client, error) {
 	if err := cmd.Start(); err != nil {
 		input.Close()
 		output.Close()
-		return nil, ErrUnavailable
+		return nil, failureCause(ErrUnavailable, err)
 	}
 	c := &client{cmd: cmd, input: input, output: output, pending: make(map[string]chan frame), events: make(chan frame, 64), done: make(chan struct{}), exited: make(chan struct{})}
 	go func() {
@@ -141,8 +148,20 @@ func (c *client) send(value any) error {
 	return nil
 }
 
-func (c *client) call(ctx context.Context, method string, params any, result any) error {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+func (c *client) call(ctx context.Context, method string, params any, result any) (err error) {
+	defer func() {
+		if method == "account/read" && !errors.Is(err, context.Canceled) && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrUpstream)) {
+			err = failureCause(ErrAccountLookup, err)
+		}
+	}()
+	budget := 15 * time.Second
+	if method == "account/read" {
+		budget = accountLookupBudget
+		if c.accountReadBudget != 0 {
+			budget = c.accountReadBudget
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	stopOnCancel := context.AfterFunc(ctx, c.stop)
 	defer stopOnCancel()
@@ -157,7 +176,13 @@ func (c *client) call(ctx context.Context, method string, params any, result any
 	c.pending[string(key)] = answer
 	c.mu.Unlock()
 	defer func() { c.mu.Lock(); delete(c.pending, string(key)); c.mu.Unlock() }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := c.send(map[string]any{"id": id, "method": method, "params": params}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	select {
@@ -166,6 +191,16 @@ func (c *client) call(ctx context.Context, method string, params any, result any
 			return ctx.Err()
 		}
 		if len(f.Error) > 0 && string(f.Error) != "null" {
+			// Reject incompatible error shapes before account lookup classification.
+			// Optional data stays private; only the required typed fields matter.
+			var backendError map[string]json.RawMessage
+			var code *int64
+			var message *string
+			if json.Unmarshal(f.Error, &backendError) != nil ||
+				json.Unmarshal(backendError["code"], &code) != nil ||
+				json.Unmarshal(backendError["message"], &message) != nil || code == nil || message == nil {
+				return ErrUnavailable
+			}
 			return ErrUpstream
 		}
 		if result != nil && json.Unmarshal(f.Result, result) != nil {
@@ -175,6 +210,9 @@ func (c *client) call(ctx context.Context, method string, params any, result any
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-c.done:
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return ErrUnavailable
 	}
 }

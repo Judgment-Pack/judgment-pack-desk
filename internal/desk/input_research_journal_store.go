@@ -38,10 +38,16 @@ func (s *Server) researchJournal(root *os.Root, id string) researchJournal {
 type researchRunStore struct {
 	journal   researchJournal
 	proofSize func(string) (int, error)
+	saveProof func(context.Context, string, inputResearchProof, int) (int, error)
+	loadProof func(context.Context, string) (researchProofSnapshot, error)
 }
 
 func (s *Server) researchRunStore(root *os.Root, id string) researchRunStore {
-	return researchRunStore{journal: s.researchJournal(root, id), proofSize: func(attempt string) (int, error) { return retainedResearchProofSize(root, attempt) }}
+	return researchRunStore{journal: s.researchJournal(root, id), proofSize: func(attempt string) (int, error) { return retainedResearchProofSize(root, attempt) }, saveProof: func(ctx context.Context, attempt string, p inputResearchProof, used int) (int, error) {
+		return s.saveResearchProof(ctx, root, attempt, p, used)
+	}, loadProof: func(ctx context.Context, attempt string) (researchProofSnapshot, error) {
+		return s.loadResearchProof(ctx, root, attempt)
+	}}
 }
 func (s *Server) researchSource(root *os.Root) func(context.Context, inputResearchRun, inputResearchAttempt, json.RawMessage) (inputResearchSource, error) {
 	return func(ctx context.Context, run inputResearchRun, attempt inputResearchAttempt, args json.RawMessage) (inputResearchSource, error) {
@@ -55,7 +61,11 @@ func (s *Server) researchSource(root *os.Root) func(context.Context, inputResear
 func (s researchRunStore) read() (inputResearchRun, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), privateDataLockWait)
 	defer cancel()
-	return s.journal.Read(ctx)
+	run, err := s.journal.Read(ctx)
+	if err == nil {
+		err = s.validatePortableProofs(ctx, run)
+	}
+	return run, err
 }
 func (s researchRunStore) change(change func(*inputResearchRun) error) (inputResearchRun, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), privateDataLockWait)
@@ -85,6 +95,11 @@ func validateResearchJournal(run inputResearchRun, id string) error {
 	}
 	if run.Portable != nil {
 		return errors.New("Portable research requires its own journal version.")
+	}
+	for _, a := range run.Attempts {
+		if a.RetainedProof != nil {
+			return errors.New("Portable proof reference requires portable research.")
+		}
 	}
 	if run.Version != 1 || !inputResearchID.MatchString(id) || run.ID != id || !inputPreparationID.MatchString(run.PreparationID) || len(run.Records) > 50 || len(run.Attempts) > 250 || len(run.Sources) > 130 {
 		return errors.New("Invalid research record.")
@@ -150,7 +165,7 @@ func changeResearchJournal(raw []byte, id string, change func(*inputResearchRun)
 	}
 	for i, old := range before.Attempts {
 		a := next.Attempts[i]
-		if a.ID != old.ID || a.Kind != old.Kind || a.Digest != old.Digest || a.StartedAt != old.StartedAt || a.Number != old.Number || a.RetryOf != old.RetryOf || ((old.State == "completed" || old.State == "refused") && (a.State != old.State || !bytes.Equal(a.Result, old.Result))) {
+		if a.ID != old.ID || a.Kind != old.Kind || a.Digest != old.Digest || a.StartedAt != old.StartedAt || a.Number != old.Number || a.RetryOf != old.RetryOf || ((old.State == "completed" || old.State == "refused") && (a.State != old.State || !bytes.Equal(a.Result, old.Result) || !reflect.DeepEqual(a.RetainedProof, old.RetainedProof))) {
 			return nil, errors.New("Retained research operations cannot be replaced or replayed.")
 		}
 	}
