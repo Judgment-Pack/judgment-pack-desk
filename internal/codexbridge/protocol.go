@@ -191,6 +191,16 @@ func (c *client) call(ctx context.Context, method string, params any, result any
 			return ctx.Err()
 		}
 		if len(f.Error) > 0 && string(f.Error) != "null" {
+			// Reject incompatible error shapes before account lookup classification.
+			// Optional data stays private; only the required typed fields matter.
+			var backendError map[string]json.RawMessage
+			var code *int64
+			var message *string
+			if json.Unmarshal(f.Error, &backendError) != nil ||
+				json.Unmarshal(backendError["code"], &code) != nil ||
+				json.Unmarshal(backendError["message"], &message) != nil || code == nil || message == nil {
+				return ErrUnavailable
+			}
 			return ErrUpstream
 		}
 		if result != nil && json.Unmarshal(f.Result, result) != nil {
