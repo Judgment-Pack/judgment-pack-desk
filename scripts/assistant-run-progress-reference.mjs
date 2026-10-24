@@ -9,7 +9,7 @@ assert(directory, 'expected temporary producer observation directory')
 for (const engine of ['api', 'native']) for (const mode of ['off', 'redact']) {
   const raw = fs.readFileSync(path.join(directory, `progress-${engine}-${mode}.sse`), 'utf8')
   const bytes = new TextEncoder().encode(raw)
-  let at = 0, observations, progress = 0, messages = 0, snapshots = 0
+  let at = 0, observations, progress = 0, clears = 0, messages = 0, snapshots = 0
   const body = new ReadableStream({ pull(controller) {
     if (at === bytes.length) controller.close()
     else { controller.enqueue(bytes.slice(at, at + 7)); at += Math.min(7, bytes.length - at) }
@@ -27,8 +27,13 @@ for (const engine of ['api', 'native']) for (const mode of ['off', 'redact']) {
       assert.equal(observations.cursor, cursor, 'ephemeral text cannot move durable replay')
       assert.equal(messages, 0, 'prefix must precede the authoritative final message')
       assert.equal(observation.progress.taskId, undefined, 'root answer cannot be a child')
-      assert.match(observations.answer, /^Fixture/)
-      progress++
+      if (observation.progress.text === '') {
+        assert.equal(observations.answer, '', 'empty whole prefix clears live text')
+        clears++
+      } else {
+        assert.match(observations.answer, /^Fixture/)
+        progress++
+      }
     } else if (observation?.kind === 'event' && observation.event.event.type === 'message') {
       messages++
       assert.equal(observations.answer, '', 'authoritative message reconciles live text')
@@ -41,7 +46,7 @@ for (const engine of ['api', 'native']) for (const mode of ['off', 'redact']) {
   assert.equal(observations.answer, '')
   assert.equal(observations.snapshot.displayPreview, undefined, 'completed prose is not duplicated')
   if (mode === 'off') assert(progress >= 1, 'actual admitted adapter must stream before completion')
-  else assert.equal(progress, 0, 'default guarded mode must withhold raw prefixes')
+  else assert.equal(progress + clears, 0, 'default guarded mode must withhold raw prefixes')
   observations.endStream()
 }
 console.log('Run progress readers: actual API/native SSE passed; guarded/default policy preserved')

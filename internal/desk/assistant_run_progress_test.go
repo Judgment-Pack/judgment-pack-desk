@@ -322,6 +322,7 @@ func TestAssistantRunProgressActualAPIAndNativeSSE(t *testing.T) {
 				go func() { done <- x.Adapter.Run(e.ctx, x.Run) }()
 				if mode == "off" {
 					var frame string
+					var sequence uint64
 					timer := time.NewTimer(5 * time.Second)
 					defer timer.Stop()
 					for frame == "" {
@@ -329,6 +330,36 @@ func TestAssistantRunProgressActualAPIAndNativeSSE(t *testing.T) {
 						case held := <-frames:
 							wire += held
 							if strings.HasPrefix(held, "event: progress\n") {
+								payload := []byte(strings.TrimSpace(strings.TrimPrefix(held, "event: progress\ndata: ")))
+								var fields map[string]json.RawMessage
+								var p assistantRunProgress
+								decoder := json.NewDecoder(bytes.NewReader(payload))
+								decoder.DisallowUnknownFields()
+								if strings.Contains(held, "\nid:") || !uniqueJSON(payload) || json.Unmarshal(payload, &fields) != nil || decoder.Decode(&p) != nil {
+									t.Fatal("noncanonical progressive frame", held)
+								}
+								for _, key := range []string{"id", "owner", "requestId", "epoch", "sequence", "cursor", "text"} {
+									if len(fields[key]) == 0 || string(fields[key]) == "null" {
+										t.Fatal("missing progressive member", key, held)
+									}
+								}
+								record := assistantExecutionRecord(t, e)
+								_, _, cursorOK := assistantRunParseCursor(p.Cursor, record)
+								e.service.mu.Lock()
+								epoch := e.progress.epoch
+								e.service.mu.Unlock()
+								if p.ID != record.ID || p.Owner != record.Binding.Owner || p.RequestID != record.Binding.RequestID || p.Epoch != epoch || p.Sequence <= sequence || !cursorOK || fields["taskId"] != nil || !validAssistantRunProgress(progressValue(p.Text, nil)) {
+									t.Fatal("invalid progressive identity, sequence or prefix", held)
+								}
+								sequence = p.Sequence
+								// Initial clears are valid whole prefixes. Retain them in wire and
+								// await prose under the same deadline, without dropping invalid frames.
+								if p.Text == "" {
+									continue
+								}
+								if !strings.HasPrefix(p.Text, "Fixture") {
+									t.Fatal("unexpected nonempty progressive prefix", held)
+								}
 								frame = held
 							}
 						case err := <-done:
@@ -336,9 +367,6 @@ func TestAssistantRunProgressActualAPIAndNativeSSE(t *testing.T) {
 						case <-timer.C:
 							t.Fatalf("missing SSE progress: %s", assistantProgressSummary(t, e))
 						}
-					}
-					if strings.Contains(frame, "\nid:") || !strings.Contains(frame, `"text":"Fixture`) {
-						t.Fatal("noncanonical progressive frame", frame)
 					}
 					for _, event := range assistantExecutionRecord(t, e).Events {
 						if event.Event.Message != nil {
