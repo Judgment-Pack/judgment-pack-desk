@@ -2908,3 +2908,5 @@ go	assistant creation: correction proposal rewrites evidence	TestAssistantCreati
 web	assistant creation: passing partial correction refused	src/assistant/serverRuns/creation.test.ts
 web	assistant creation: partial check advertises readiness	src/assistant/serverRuns/creation.test.ts
 web	assistant creation: correction overlay reorders issue rows	src/assistant/serverRuns/creation.test.ts
+go	assistant memory: approval trims canonical text	TestAssistantMemoryCanonicalApprovalExactText
+go	assistant memory: terminal identity recalled on resume	TestAssistantMemoryTerminalRecallDoesNotBlockResume

@@ -130,9 +130,11 @@ func (h *projectPromptHost) MemoryLifecycle(ctx context.Context, prior []contrac
 		}
 		current[record.ID] = record
 	}
+	terminal := map[string]bool{}
 	updates := []contract.MemoryLifecycleUpdate{}
 	for _, retained := range prior {
 		if retained.State != "accepted" {
+			terminal[retained.ID] = true
 			continue // Terminal states cannot switch on a later resume.
 		}
 		record, exists := current[retained.ID]
@@ -146,8 +148,25 @@ func (h *projectPromptHost) MemoryLifecycle(ctx context.Context, prior []contrac
 			}
 		}
 		if state != "" {
+			terminal[retained.ID] = true
 			updates = append(updates, contract.MemoryLifecycleUpdate{ID: retained.ID, Digest: retained.Digest, Kind: retained.Kind, State: state})
 		}
+	}
+	if h.memorySnapshot == nil {
+		// Terminal provenance belongs to this execution even if management makes
+		// the same private identity eligible again. Filter before recall ranking
+		// and budgeting, and freeze this selection with the first lifecycle read.
+		eligible := []memoryEntry{}
+		for _, entry := range snapshot.eligible {
+			record, err := assistantMemoryRecord(snapshot.project, entry)
+			if err != nil {
+				return nil, err
+			}
+			if !terminal[record.ID] {
+				eligible = append(eligible, entry)
+			}
+		}
+		snapshot.eligible = eligible
 	}
 	// Delegated children can share this host concurrently. Freeze it once so
 	// their callbacks cannot replace a parent's lifecycle/recall snapshot. Each
