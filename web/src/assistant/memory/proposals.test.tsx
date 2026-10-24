@@ -36,6 +36,23 @@ for(const native of [false,true])for(const phase of ['work','plan'])it.runIf(out
  expect(after.content.entries[0]!.text).toBe(phase==='plan'?'Keep outreach evidence explicit.':'Keep outreach concise.')
  expect(after.content.entries[0]!.state).toBe('active')
 })
+it('keeps the proposal edit bound to the reviewed store and proposal after a refresh',async()=>{
+ const before=await readMemoryReply({sha256:'a'.repeat(64),content:{version:1,settings:{use:false,suggest:true},entries:[]},proposals:[{runId:'arun_'+'a'.repeat(32),runRevision:7,chatId:'chat-one',turnId:'message-one',reviewable:true,memory:{id:'proposal-one',kind:'preference',text:'Keep outreach concise.',source:{run:'agent-run-one',proposedBy:'model'},scope:'project',digest:'sha256:3704e6fbc67976084bc7708f3c428132f879adfa86917c6451fe000c7b83298a',createdAt:'2026-10-24T10:00:00Z',state:'proposed'}}]})
+ const proposal=before.proposals![0],text='Keep outreach evidence explicit.'
+ vi.mocked(transport).mockImplementation(async action=>{if(action)throw Error('stale reviewed store');return before as never})
+ const cache=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}})
+ render(<QueryClientProvider client={cache}><MemorySettings/></QueryClientProvider>)
+ await screen.findByText(proposal.memory.text)
+ fireEvent.click(screen.getByRole('button',{name:'Edit'}))
+ const dialog=screen.getByRole('dialog',{name:'Edit memory'})
+ fireEvent.change(within(dialog).getByRole('textbox',{name:'Memory'}),{target:{value:text}})
+ act(()=>cache.setQueryData(MEMORY_KEY,{...before,sha256:'b'.repeat(64),content:{...before.content,settings:{use:true,suggest:true}},proposals:[{...proposal,runRevision:8}]}))
+ await waitFor(()=>expect((screen.getByLabelText('Use saved memory') as HTMLInputElement).checked).toBe(true))
+ fireEvent.click(within(dialog).getByRole('button',{name:'Remember'}))
+ await waitFor(()=>expect(transport).toHaveBeenCalledWith({action:'review',review:{id:expect.any(String),runId:proposal.runId,runRevision:7,proposalId:proposal.memory.id,proposalDigest:proposal.memory.digest,decision:'edit',text}},before.sha256))
+ await waitFor(()=>expect(vi.mocked(transport).mock.calls.filter(call=>call[0])).toHaveLength(1))
+ expect((within(screen.getByRole('dialog',{name:'Edit memory'})).getByRole('textbox',{name:'Memory'}) as HTMLTextAreaElement).value).toBe(text)
+})
 it('an uncertain human write refetches observations and never repeats the mutation',async()=>{
  const doc={version:1 as const,settings:{use:false,suggest:true},entries:[]},proposal={runId:'arun_'+'a'.repeat(32),runRevision:7,chatId:'chat-one',turnId:'message-one',reviewable:true,memory:{id:'proposal-one',kind:'preference',text:'Keep outreach concise.',source:{run:'agent-run-one',proposedBy:'model'},scope:'project',digest:'sha256:3704e6fbc67976084bc7708f3c428132f879adfa86917c6451fe000c7b83298a',createdAt:'2026-10-24T10:00:00Z',state:'proposed'}}
  const before={sha256:'a'.repeat(64),content:doc,proposals:[proposal]}
