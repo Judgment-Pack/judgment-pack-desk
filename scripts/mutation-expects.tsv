@@ -2866,3 +2866,4 @@ web	assistant run client: canonical checkpoint bypassed	src/assistant/serverRuns
 web	assistant run client: unknown semantic discriminator accepted	src/assistant/serverRuns/decode.test.ts
 web	assistant run client: shared cursor snapshot suppressed	src/assistant/serverRuns/stream.test.ts
 web	assistant run client: uncertain POST replayed	src/assistant/serverRuns/client.test.ts
+web	assistant saved chat: unreconciled Send guard omitted	src/chat/store.server.test.ts
