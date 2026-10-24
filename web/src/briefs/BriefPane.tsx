@@ -13,8 +13,12 @@ import { answer, deskFetch } from '../files/client'
 import { useFileListing } from '../files/queries'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { usePickedModel } from '../assistant/pickedModel'
-import { useAssistantRun } from '../assistant/useAssistantRun'
-import { useProposalGenerator } from '../assistant/useProposalGenerator'
+import { serverRunClient } from '../assistant/serverRuns/client'
+import type { RunSnapshot } from '../assistant/serverRuns/types'
+import { ExecutionProgress } from '../assistant/execution/ExecutionProgress'
+import { ResponseRecovery } from '../chat/ResponseRecovery'
+import { AIFailureError, normalizeFailure, readFailure, type AIFailure } from '@judgment-pack/harness/failures'
+import { observeBrief, savedBrief } from './serverGeneration'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
@@ -24,10 +28,8 @@ import { IconMore } from '../shell/icons'
 import { useDetailsSlot } from '../shell/DetailsSlot'
 import { SourceReader } from '../documents/SourceReader'
 import type { ChatAttachment } from '../chat/store'
-import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { documentContext, loadDocument } from '../documents/client'
 import type { BriefSubject } from './context'
-import { briefText, evidenceFor, briefResults, sourceIdentity, type Reply, type Snapshot } from './model'
+import { evidenceFor, briefResults, sourceIdentity, type Reply, type Snapshot } from './model'
 import { printBrief } from './print'
 import styles from './BriefPane.module.css'
 const EMPTY: readonly string[] = []
@@ -44,12 +46,10 @@ export function BriefPane({ subject, headerTarget = null, embedded = false, sour
   const [connectionId, setConnectionId] = useState<string>()
   const [regenerating, setRegenerating] = useState(false)
   useLocale()
-  const config = useEffectiveConfig()
   const listing = useFileListing(), project = listing.data?.root, slot = useAssistantSlot(connectionId), details = useDetailsSlot()
   const selected = selectedAssistant(slot)
   const picked = usePickedModel(selected?.models ?? EMPTY, selected?.model ?? null, project, slot.connectionId, 'brief')
-  const run = useAssistantRun({ target: slot, purpose: 'brief', endpoint: slot.endpoint, agent: slot.agent ? { ...slot.agent, tools: [] } : undefined, model: picked.model, engine: slot.engine, thinking: slot.thinking })
-  const generate = useProposalGenerator(run), cache = useQueryClient()
+  const cache = useQueryClient()
   const key = ['briefs', project, subject.path, subject.id]
   const query = useQuery({ ...privateQuery, queryKey: key, enabled: !!project && !subject.unavailable, queryFn: () => request(subject.path), refetchInterval: q => q.state.data?.content.subjects[subject.id]?.pending ? 4000 : privateQuery.refetchInterval })
   const previousSource = useRef(sourceKey)
@@ -58,8 +58,13 @@ export function BriefPane({ subject, headerTarget = null, embedded = false, sour
   const revisions = history?.revisions ?? []
   const source = subject.snapshot ?? query.data?.snapshot
   const [revision, setRevision] = useState('latest'), [showHistory, setHistory] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [phase, setPhase] = useState('')
+  const [serverRun,setServerRun] = useState<RunSnapshot>()
+  const [runFailure,setRunFailure] = useState<AIFailure>()
   const active = useRef<AbortController | null>(null), page = useRef<HTMLDivElement>(null)
-  useEffect(() => () => active.current?.abort(), [])
+  useEffect(() => {
+    setServerRun(undefined);setBusy(false);setError('');setRunFailure(undefined)
+    return () => {active.current?.abort();active.current=null}
+  }, [subject.id,subject.path,project])
   const held = revision === 'latest' ? revisions.at(-1) : revisions.find(r => r.id === revision)
   const sourceMismatch = content !== undefined && source !== undefined && source.pack !== content
   const blocked = generationUnavailable || query.data?.snapshotIssue || (sourceMismatch ? msg('Save the current changes before generating a brief.') : undefined)
@@ -79,45 +84,79 @@ export function BriefPane({ subject, headerTarget = null, embedded = false, sour
     cache.setQueryData(key, response)
     return response
   }
+  async function follow(client:Awaited<ReturnType<typeof serverRunClient>>,initial:RunSnapshot,controller:AbortController) {
+    const run=await observeBrief(client,initial,controller.signal,setServerRun)
+    if(run.state==='complete') {
+      setPhase(msg('Writing brief…'))
+      try { cache.setQueryData(key,savedBrief(await client.commitBrief(run,controller.signal),run)) }
+      catch(saveError) {
+        try {cache.setQueryData(key,savedBrief(await client.briefReceipt(run,controller.signal),run))}
+        catch {throw saveError}
+      }
+      setRevision('latest')
+    }
+  }
+  // Mount/route changes detach only the reader. An exact prior admission may
+  // finish or be inspected, but this effect never starts a model request.
+  useEffect(()=>{
+    const token=history?.pending?.token
+    if(!token||active.current)return
+    const controller=new AbortController();active.current=controller
+    void (async()=>{
+      try {
+        const client=await serverRunClient(),reference=await client.briefReference(subject.id,token,controller.signal)
+        if(reference.run){setBusy(['admitted','running'].includes(reference.run.state));await follow(client,reference.run,controller)}
+      }catch(cause){if(!controller.signal.aborted){setRunFailure(normalizeFailure(cause,'desk'));setError(cause instanceof AIFailureError?cause.message:(cause as Error).message)}}
+      finally{if(active.current===controller){active.current=null;setBusy(false)}}
+    })()
+    return ()=>{controller.abort();if(active.current===controller)active.current=null}
+  },[history?.pending?.token,subject.id,subject.path,project])
   async function start() {
-    if (active.current || blocked || !source || !picked.model || !assistantReady(slot)) return
-    const controller = new AbortController(); active.current = controller; setBusy(true); setError('')
-    let token = ''
+    if (active.current || blocked || !source || !picked.model || !assistantReady(slot) || !slot.connectionId || !slot.connectionRevision) return
+    const controller = new AbortController(); active.current = controller; setBusy(true); setError('');setServerRun(undefined);setRunFailure(undefined)
     try {
       setPhase(msg('Reading sources…'))
       const frozen = structuredClone(source)
-      const documents: { id: string; context: string }[] = []
-      for (const file of (frozen.record.case as { sources?: ChatAttachment[] })?.sources ?? []) {
-        if (!file.document) continue
-        if (!config.config.research.gateway) throw Error(msg('Configure document processing to read these sources.'))
-        const doc = await loadDocument(file.document, config.config.research.gateway, controller.signal)
-        documents.push({ id: file.id, context: documentContext(doc, file.document) })
-      }
-      if (documents.length) frozen.documents = documents
+      // Source selections are verified by the canonical server document service.
+      delete frozen.documents
       if (new TextEncoder().encode(JSON.stringify(frozen)).length > 1000000) throw Error(msg('Select fewer source pages before continuing.'))
-      controller.signal.throwIfAborted()
       const reservation = await post({ action: 'begin', expectedRevision: revisions.length, snapshot: frozen, model: picked.model })
       const pending = reservation.content.subjects[subject.id]?.pending
       if (!pending) throw Error(msg('The brief reservation could not be read.'))
-      token = pending.token
       controller.signal.throwIfAborted()
       setPhase(msg('Writing brief…'))
-      const result = await generate('Write the one-page brief from this frozen snapshot. Distinguish definition-level summaries from individual case, job or run briefs. Do not report a definition as having one actual outcome. Identify historical or nonmatching checks as such. Keep all four sections together below 220 words.\n' + JSON.stringify(pending.snapshot), controller.signal)
-      controller.signal.throwIfAborted()
-      if (result.failure) throw Error(result.failure)
-      const text = briefText(result.document)
-      try { await post({ action: 'complete', token, text }) }
-      catch (saveError) {
-        const saved = await request(subject.path)
-        if (!saved.content.subjects[subject.id]?.revisions.some(r => r.id === token)) throw saveError
-        cache.setQueryData(key, saved)
+      const client=await serverRunClient(),reference=await client.briefReference(subject.id,pending.token,controller.signal)
+      let started=reference.run
+      if(!started) {
+        try { started=await client.start(reference.start,controller.signal,{connectionId:slot.connectionId,connectionRevision:slot.connectionRevision}) }
+        catch(cause) {
+          controller.signal.throwIfAborted()
+          // Resolve only the same admission after lost acknowledgement; never
+          // resend or allocate a replacement generation automatically.
+          started=(await client.briefReference(subject.id,pending.token,controller.signal)).run
+          if(!started)throw cause
+        }
       }
-      token = ''; setRevision('latest')
-    } catch (e) { if (!controller.signal.aborted) setError((e as Error).message) }
-    finally {
-      if (token) { try { await post({ action: 'cancel', token }) } catch { /* Server lease expires; existing revisions remain readable. */ } }
-      active.current = null; setBusy(false); void query.refetch()
+      await follow(client,started,controller)
+    } catch(cause) {
+      if(!controller.signal.aborted){setRunFailure(normalizeFailure(cause,'desk'));setError(cause instanceof AIFailureError?cause.message:(cause as Error).message)}
+    } finally {
+      if(active.current===controller){active.current=null;setBusy(false)}
+      void query.refetch()
     }
+  }
+  async function stop() {
+    const token=history?.pending?.token
+    active.current?.abort()
+    let stopError:unknown
+    try {
+      const client=await serverRunClient()
+      const retained=token?(await client.briefReference(subject.id,token)).run:serverRun
+      if(retained&&!retained.historical&&!['complete','stopped','interrupted','failed'].includes(retained.state))setServerRun(await client.action(retained,{id:crypto.randomUUID(),kind:'cancel',revision:retained.revision}))
+    }catch(cause){stopError=cause}
+    try {if(token)await post({action:'cancel',token})}catch(cause){stopError=cause}
+    if(stopError)setError((stopError as Error).message)
+    active.current=null;setBusy(false);void query.refetch()
   }
   function print() { try { if (page.current && held) printBrief(page.current, held.snapshot.title) } catch(e) { setError((e as Error).message) } }
   const modelControls = <><AIConnectionPicker value={slot.connectionId} onValueChange={setConnectionId} disabled={busy}/>{selected && <Select id={id + '-model'} aria-label={msg('Brief model')} disabled={busy} value={picked.model} options={selected.models.map(m => ({ value: m, label: m }))} onValueChange={picked.pick} />}</>
@@ -137,8 +176,11 @@ export function BriefPane({ subject, headerTarget = null, embedded = false, sour
         {query.isPending && <LoadingState>{msg('Loading brief…')}</LoadingState>}
         {(error || query.error) && <RunStatus error>{error || (query.error as Error).message}</RunStatus>}
         {query.error && <div><Button onClick={() => { void query.refetch() }}>{msg('Retry')}</Button></div>}
-        {busy && <div className={styles.actions}><RunStatus running>{phase}</RunStatus><Button variant="quiet" onClick={() => active.current?.abort()}>{msg('Stop')}</Button></div>}
-        {!busy && pending && <RunStatus>{msg('A brief is being generated in another window. The saved version remains available.')}</RunStatus>}
+        {busy && <div className={styles.actions}><RunStatus running>{phase}</RunStatus><Button variant="quiet" onClick={() => {void stop()}}>{msg('Stop')}</Button></div>}
+        {!busy && pending && serverRun?.state !== 'complete' && <div className={styles.actions}><Button variant="quiet" onClick={()=>{void stop()}}>{msg('Stop')}</Button></div>}
+        {serverRun && <ExecutionProgress execution={serverRun.checkpoint} onStop={()=>{void stop()}}/>}
+        {serverRun && (['interrupted','failed','stopped'].includes(serverRun.state) || !!error) && <ResponseRecovery detail={error} failure={readFailure([...serverRun.events].reverse().find(e=>e.event.type==='error')?.event.failure)??runFailure} disabled={busy}/>}
+        {!busy && pending && !serverRun && <RunStatus>{msg('A brief is being generated in another window. The saved version remains available.')}</RunStatus>}
         {blocked && <p className={styles.notice}>{blocked}</p>}
         {stale && <p className={styles.notice}>{msg('Dialects have changed since this brief was generated. Regenerate when you are ready.')}</p>}
         {showHistory && revisions.length > 0 && <Select id={id + "-revision"} aria-label={msg('Brief revision')} value={revision} onValueChange={setRevision} options={[{ value: 'latest', label: msg('Latest revision') }, ...[...revisions].reverse().map(r => ({ value: r.id, label: msg('Revision {{revision}} · {{date}}', { revision: r.revision, date: new Date(r.at).toLocaleString() }) }))]} />}

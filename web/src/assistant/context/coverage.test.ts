@@ -49,6 +49,12 @@ it('keeps both frontend and backend execution paths inside the context boundary'
  const agent=readFileSync(resolve(backend,'assistant_execution_agent.go'),'utf8')
  for(const boundary of ['e.Authorize(', 'enabled(ctx, request.Model)', 'bridge.BeforeGeneration', 'return dispatch.dispatch(ctx)'])expect(agent).toContain(boundary)
  for(const file of ['background_model.go','modelrelay.go'])expect(readFileSync(resolve(backend,file),'utf8')).toContain('prepareModelContext(')
+ const brief=readFileSync(resolve(backend,'assistant_brief_execution.go'),'utf8')
+ for(const boundary of ['runcontext.ContextualSession(', 'Purpose: "brief"', 'e.assistantAgent()', 'e.assistantModel()', 'e.holdAssistantDocuments(', 'e.service.server.recheckAssistantDocument('])expect(brief).toContain(boundary)
+ for(const forbidden of ['e.assistantRuntime(', 'delegate.With(', 'Children:', 'runBackgroundModel('])expect(brief).not.toContain(forbidden)
+ const pane=readFileSync(resolve(root,'briefs/BriefPane.tsx'),'utf8')
+ for(const boundary of ['serverRunClient(', 'client.briefReference(', 'client.commitBrief(', '<ExecutionProgress', '<ResponseRecovery'])expect(pane).toContain(boundary)
+ expect(pane).not.toContain('useAssistantRun(')
 })
 
 it('keeps future conversational progress and request accounting in the shared execution boundary',()=>{

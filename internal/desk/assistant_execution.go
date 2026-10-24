@@ -34,6 +34,9 @@ type assistantExecutionPrompt struct {
 func (x *assistantExecution) Close() { x.runtime.Close() }
 
 func (e *assistantRunExecution) assistantExecutionModels() (runcontext.RunModels, error) {
+	if e.source.Start.Purpose == "brief" {
+		return runcontext.ReadRunModels(runcontext.RunIdentity{Connection: e.record.Binding.ConnectionID, Model: e.record.Binding.Model}, runcontext.NamedModels{})
+	}
 	named := runcontext.NamedModels{}
 	connection := e.source.Connection.Assistant
 	if connection.Engine == "codex" && connection.Agent != nil {
