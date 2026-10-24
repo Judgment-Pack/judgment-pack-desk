@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DeskConfigProvider, DeskConfigFixture } from '../config/DeskConfigProvider'
 import { effectiveConfig } from '../config/deskConfig'
+import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
 import { testQueryClient } from '../testing/harness'
 import { AI_CONNECTIONS_KEY, connectionAssistant, deskAIConnections, resolveAIConnection, type AIRegistry, type AIConnection } from './aiConnections'
 import { AIConnectionsSettings } from './AIConnectionsSettings'
@@ -146,5 +147,10 @@ it('saves and reloads the project critic in the connected profile form',async()=
  await screen.findByText('Assistant preferences saved.')
  const write=state.writes.find(row=>row.url==='/api/file')!
  expect(JSON.parse(write.body.content)).toMatchObject({profileVersion:2,inherit:true,critic:'on'})
- expect(screen.getByRole('combobox',{name:'Project review default'}).textContent).toBe('On')
+ // Saving starts an asynchronous reload; the success message precedes its completion.
+ await waitFor(()=>{
+  expect(state.requests.filter(row=>row.path==='/api/desk-config')).toHaveLength(2)
+  expect(state.client.getQueryState(DESK_CONFIG_QUERY_KEY)?.fetchStatus).toBe('idle')
+  expect(screen.getByRole('combobox',{name:'Project review default'}).textContent).toBe('On')
+ })
 })
