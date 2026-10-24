@@ -438,7 +438,7 @@
     {
       "id": "codex-connection-test",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "AssistantSettings → useConnectionDiagnostic → closed canonical connection-diagnostic owner",
+      "currentOwner": "AssistantSettings \u2192 useConnectionDiagnostic \u2192 closed canonical connection-diagnostic owner",
       "targetOwner": "implemented fixed server diagnostic on the actual private bridge, canonical context/checkpoint and schema-only Runtime grant",
       "entrypoints": [
         "web/src/assistant/AssistantSettings.tsx",
@@ -809,16 +809,24 @@
         "web/src/chat/ChatProvider.tsx",
         "Agent packages/harness/planning/tools.ts",
         "Agent packages/harness/memory/tools.ts",
-        "internal/desk/ai_memory.go"
+        "internal/desk/ai_memory.go",
+        "internal/desk/assistant_memory_lifecycle.go"
       ],
-      "targetOwner": "server-authored fixed registry; published gate/context/turn where applicable",
+      "targetOwner": "Desk private memory store and person management; released Agent v0.9.1 typed recall and metadata-only MemoryLifecycle callback",
       "preserve": [
         "Go Plan record/references and existing private memory handlers; latest saved user message binding, separate human Start work, no remembered permissions/evidence",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
       ],
       "verification": [
         "existing factory behavior fixtures reused for feature migration",
-        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation"
+        "new real Go admission/retention/action fixtures; exact canonical names checked before implementation",
+        "TestAssistantMemoryActualBindings: actual API/native question pause and person-answer resume explicitly revoke forgotten, cleared, edited, disabled, dependency-changed and expired records without reconstructing deleted text",
+        "Strict legacy/enriched private v1 and backup readers; canonical identity/digest and byte/count bounds; stable shared-host snapshot, query-independent lifecycle eligibility and focused concurrent CAS race probes"
+      ],
+      "status": "private typed recall and lifecycle foundation implemented; human proposal acceptance and final activation pending",
+      "remaining": [
+        "Canonical model/Plan proposal projection and authenticated person acceptance (#598), full memory UI control wiring and legacy tool removal",
+        "Global factory activation and complete release journeys remain separate required work"
       ]
     },
     {

@@ -2886,3 +2886,8 @@ go	assistant creation: original issue position ignored	TestAssistantCreationCorr
 web	assistant creation: artifact numeric custody rewritten	src/chat/store.server.test.ts
 web	assistant creation: next control numeric custody rewritten	src/chat/store.server.test.ts
 go	assistant discovery: body read before bounded transport	TestAssistantDiscoveryRefusesBodyWithoutReading
+go	assistant memory: malformed canonical metadata accepted	TestAssistantMemoryPrivateCanonicalReaders
+go	assistant memory: edited version reuses canonical identity	TestAssistantMemoryLifecycleSnapshotAndIdentity
+go	assistant memory: missing private version is not revoked	TestAssistantMemoryCanonicalResumeLifecycle
+go	assistant memory: approval trims canonical text	TestAssistantMemoryCanonicalApprovalExactText
+go	assistant memory: terminal identity recalled on resume	TestAssistantMemoryTerminalRecallDoesNotBlockResume

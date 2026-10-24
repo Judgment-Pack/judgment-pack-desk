@@ -335,15 +335,18 @@ bounded() {
 # the pinned Gateway and scoped Runtime fixtures. Two clean CI baselines exceeded
 # 900s. A verbose diagnostic reached more than 1500 cases before its 840s panic,
 # with the current test running for 0s: measured aggregate work, not a hung handler.
-# Give only the clean full-package baseline 1800s. Selected checks stay at 480s,
+# The companion-enabled baseline now exceeds 1800s; its last started website
+# test passes in isolation in 19.12s. Align only this clean run with ordinary
+# Go CI's 40-minute limit and retain its complete progress log on failure.
+# Selected checks stay at 480s,
 # whole-mutant/fallback checks at 900s, and compilation at its independent bound.
 # Each Go panic backstop follows its process-tree watchdog by 60s.
 GO_TEST_WATCHDOG=480
 GO_TEST_BACKSTOP=540s
 GO_FULL_WATCHDOG=900
 GO_FULL_BACKSTOP=960s
-GO_BASELINE_WATCHDOG=1800
-GO_BASELINE_BACKSTOP=1860s
+GO_BASELINE_WATCHDOG=2400
+GO_BASELINE_BACKSTOP=2460s
 
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
@@ -403,7 +406,7 @@ go_package_green() {
   verdict=$(run_go_unmutated "$package" '.')
   if [ -n "$verdict" ]; then
     echo "unmutated Go baseline is not green: $package: $verdict" >&2
-    tail -n 30 "$work/package-$key.baseline.log" >&2
+    cat "$work/package-$key.baseline.log" >&2
     : > "$work/package-$key.failed"
     return 1
   fi
@@ -414,11 +417,12 @@ go_package_green() {
 # Run in the same package directory as go test, with its own clean binary.
 run_go_unmutated() {
   local package="$1" key log code watchdog=$GO_TEST_WATCHDOG backstop=$GO_TEST_BACKSTOP
-  if [ "$2" = . ]; then watchdog=$GO_BASELINE_WATCHDOG; backstop=$GO_BASELINE_BACKSTOP; fi
+  local -a baseline_flags=()
+  if [ "$2" = . ]; then watchdog=$GO_BASELINE_WATCHDOG; backstop=$GO_BASELINE_BACKSTOP; baseline_flags=(-test.v=true); fi
   key=$(go_package_key "$package")
   log="$work/package-$key.baseline.log"
-  bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
-    _ "$package" "$work/package-$key.test" "$2" "$backstop"
+  bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3" "${@:5}"' \
+    _ "$package" "$work/package-$key.test" "$2" "$backstop" "${baseline_flags[@]}"
   code=$?
   go_verdict "$code" "$log"
 }
@@ -15811,6 +15815,32 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'assistant creation: next control numeric custody rewritten' web/src/chat/wire.ts \
     'wireJSON(old,true):encodeWireValue(value)' \
     'wireJSON(old,true):JSON.stringify(value)'
+fi
+
+
+# Desk #626: private canonical identity and explicit lifecycle revocation.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory: malformed canonical metadata accepted' internal/desk/ai_memory.go \
+    'if _, err := assistantMemoryRecord("", e); err != nil {' \
+    'if _, err := assistantMemoryRecord("", e); false && err != nil {'
+  mutate go 'assistant memory: edited version reuses canonical identity' internal/desk/ai_memory.go \
+    'entry.Canonical = nil // A changed version cannot reuse a proposed identity.' \
+    '// Canonical identity was retained after an edit.'
+  mutate go 'assistant memory: missing private version is not revoked' internal/desk/assistant_memory_lifecycle.go \
+    'state = "revoked"' \
+    'state = ""'
+fi
+
+# Desk #657 review fixes: exact approval and terminal recall exclusion.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory: approval trims canonical text' internal/desk/ai_memory.go \
+    '	if c.Action != "approve" {
+		c.Text = strings.TrimSpace(c.Text)
+	}' \
+    '	c.Text = strings.TrimSpace(c.Text)'
+  mutate go 'assistant memory: terminal identity recalled on resume' internal/desk/assistant_memory_lifecycle.go \
+    'if !terminal[record.ID] {' \
+    'if !terminal[record.ID] || true {'
 fi
 
 restore

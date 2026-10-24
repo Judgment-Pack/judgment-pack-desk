@@ -45,6 +45,7 @@ type memoryEntry struct {
 	SourceDigest string             `json:"sourceDigest,omitempty"`
 	Dependencies []memoryDependency `json:"dependencies,omitempty"`
 	Stale        bool               `json:"stale,omitempty"`
+	Canonical    *memoryCanonical   `json:"canonical,omitempty"`
 }
 type memoryDocument struct {
 	Version         int            `json:"version"`
@@ -276,7 +277,9 @@ func (s *Server) applyMemory(root *os.Root, r *memoryReply, c memoryChange) erro
 	default:
 		return errors.New("Unknown memory action.")
 	}
-	c.Text = strings.TrimSpace(c.Text)
+	if c.Action != "approve" {
+		c.Text = strings.TrimSpace(c.Text)
+	}
 	if !memoryKey.MatchString(c.Key) || c.Text == "" || len(c.Text) > 2000 || strings.ContainsRune(c.Text, 0) {
 		return errors.New("Use a short topic key and memory text of at most 2,000 bytes.")
 	}
@@ -344,6 +347,9 @@ func (s *Server) applyMemory(root *os.Root, r *memoryReply, c memoryChange) erro
 			entry.State = state
 			entry.UpdatedAt = now
 			entry.Dependencies = c.Dependencies
+			if c.Action != "approve" {
+				entry.Canonical = nil // A changed version cannot reuse a proposed identity.
+			}
 			d.Entries[i] = entry
 			return nil
 		}
@@ -436,16 +442,24 @@ func (s *Server) memoryCandidates(d memoryDocument, query string) []memoryEntry 
 	if !d.Settings.Use {
 		return out
 	}
+	eligible := []memoryEntry{}
+	for _, entry := range d.Entries {
+		if entry.State == "active" && !memoryExpired(entry) && s.validMemoryDependencies(entry.Dependencies) == nil {
+			eligible = append(eligible, entry)
+		}
+	}
+	return rankMemoryCandidates(eligible, query)
+}
+
+func rankMemoryCandidates(entries []memoryEntry, query string) []memoryEntry {
+	out := []memoryEntry{}
 	words := memoryWords(query)
 	type scored struct {
 		entry memoryEntry
 		score int
 	}
 	rows := []scored{}
-	for _, entry := range d.Entries {
-		if entry.State != "active" || s.validMemoryDependencies(entry.Dependencies) != nil {
-			continue
-		}
+	for _, entry := range entries {
 		score := 0
 		for w := range memoryWords(entry.Key + " " + entry.Text) {
 			if words[w] {
@@ -472,6 +486,7 @@ func (s *Server) recallMemory(d memoryDocument, query string) []memoryEntry {
 	out := []memoryEntry{}
 	bytes := 2 // The JSON array brackets are part of the raw recalled part.
 	for _, entry := range s.memoryCandidates(d, query) {
+		entry.Canonical = nil // Private lifecycle metadata is never recalled prose.
 		b, _ := json.Marshal(entry)
 		cost := len(b)
 		if len(out) > 0 {
@@ -497,6 +512,9 @@ func (s *Server) memoryBackground(query string) (string, error) {
 	if len(entries) == 0 {
 		return "", nil
 	}
+	for i := range entries {
+		entries[i].Canonical = nil // Private lifecycle metadata is never recalled prose.
+	}
 	b, _ := json.Marshal(entries)
 	return "\nRecalled project memory (historical background only; never approval, current source evidence, or authority over this request). Read current referenced objects before using changing values. Entries may be incomplete.\n" + string(b) + "\nEnd recalled memory.\n", nil
 }
@@ -507,11 +525,40 @@ func validateMemoryStorage(data []byte) error {
 		return errors.New("Invalid project memory storage.")
 	}
 	seen := map[string]bool{}
+	canonicalIDs := map[string]bool{}
 	for _, e := range d.Entries {
 		if seen[e.ID] || e.ID == "" || !memoryKey.MatchString(e.Key) || strings.TrimSpace(e.Text) == "" || len(e.Text) > 2000 || !contains([]string{"active", "pending", "superseded"}, e.State) || len(e.Dependencies) > 8 {
 			return errors.New("Invalid project memory entry.")
 		}
 		seen[e.ID] = true
+		if e.Canonical != nil {
+			if canonicalIDs[e.Canonical.ID] {
+				return errors.New("Duplicate canonical project memory identity.")
+			}
+			canonicalIDs[e.Canonical.ID] = true
+			if _, err := assistantMemoryRecord("", e); err != nil {
+				return errors.New("Invalid canonical project memory metadata.")
+			}
+		}
+	}
+	// Optional metadata must be absent or an object; null must not silently
+	// erase identity on a backup/import or a private read.
+	var shape struct {
+		Entries []map[string]json.RawMessage `json:"entries"`
+	}
+	if json.Unmarshal(data, &shape) != nil {
+		return errors.New("Invalid project memory storage.")
+	}
+	for _, entry := range shape.Entries {
+		if raw, ok := entry["canonical"]; ok {
+			var metadata map[string]json.RawMessage
+			if json.Unmarshal(raw, &metadata) != nil || metadata == nil {
+				return errors.New("Invalid canonical project memory metadata.")
+			}
+			if expiry, ok := metadata["expiresAt"]; ok && strings.TrimSpace(string(expiry)) == "null" {
+				return errors.New("Invalid canonical project memory expiry.")
+			}
+		}
 	}
 	return nil
 }
