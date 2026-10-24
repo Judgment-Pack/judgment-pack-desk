@@ -28,7 +28,13 @@ func validateResearchCandidates(run inputResearchRun) error {
 		return errors.New("Research candidate limit exceeded.")
 	}
 	for _, a := range run.Attempts {
-		if a.ReservedBytes < 0 || a.ReservedBytes > inputResearchSourceProofLimit+(2<<20) || a.ReservedBytes > 0 && (a.Kind == "model" || a.State != "started") {
+		maximum := inputResearchSourceProofLimit + (2 << 20)
+		active := a.State == "started"
+		if a.Kind == "model" {
+			maximum = portableResearchAttemptReserve + backgroundModelReceiptReserve
+			active = active || a.State == "waiting"
+		}
+		if a.ReservedBytes < 0 || a.ReservedBytes > maximum || a.ReservedBytes > 0 && !active {
 			return errors.New("Invalid research storage reservation.")
 		}
 	}

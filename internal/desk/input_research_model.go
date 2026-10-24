@@ -55,7 +55,7 @@ func (s *Server) inputResearchModel(ctx context.Context, choice inputResearchAI,
 		return nil, err
 	}
 	return s.runBackgroundModel(ctx, backgroundModelRequest{
-		Choice: choice, Owner: "input-research", Prompt: prompt,
+		Choice: choice, Owner: backgroundAttemptOwner(ctx), Prompt: prompt,
 		Instructions: researchModelInstructions(prompt),
 		Response: codexbridge.Tool{
 			Name:        "desk_research_action",

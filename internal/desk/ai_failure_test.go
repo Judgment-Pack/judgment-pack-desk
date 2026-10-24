@@ -54,7 +54,7 @@ func TestAIResearchProviderFailureRetainsMetadataWithoutRetry(t *testing.T) {
 	if code != 200 {
 		t.Fatal(code)
 	}
-	_, err := s.inputResearchModel(context.Background(), inputResearchAI{Connection: connection.ID, Revision: connection.Revision, Model: "shared-model"}, "Research fixtures", nil)
+	_, err := s.inputResearchModel(backgroundResearchFixtureContext(t, inputResearchAI{Connection: connection.ID, Revision: connection.Revision, Model: "shared-model"}), inputResearchAI{Connection: connection.ID, Revision: connection.Revision, Model: "shared-model"}, "Research fixtures", nil)
 	var got *aifailure.Failure
 	if !errors.As(err, &got) || got.Code != "configuration" || got.Status != 429 || got.RequestID != "req_research" {
 		t.Fatalf("failure %+v, %v", got, err)

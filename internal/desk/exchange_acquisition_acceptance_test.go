@@ -59,14 +59,15 @@ func (scenario *exchangeAcquisitionScenario) respond(request *http.Request) stri
 	for _, message := range wire.Contents {
 		for _, part := range message.Parts {
 			var candidate exchangeAcquisitionPrompt
-			if json.Unmarshal([]byte(part.Text), &candidate) == nil && len(candidate.Request) > 0 {
+			body, err := portableCanonicalPrompt(part.Text)
+			if err == nil && json.Unmarshal(body, &candidate) == nil && len(candidate.Request) > 0 {
 				prompt = candidate
 				found = true
 			}
 		}
 	}
 	if !found {
-		t.Errorf("portable prompt absent from Gemini request: %s", raw)
+		t.Error("canonical portable prompt absent from Gemini request")
 		return `{}`
 	}
 	scenario.callbacks++

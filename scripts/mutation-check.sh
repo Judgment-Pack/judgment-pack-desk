@@ -15831,6 +15831,60 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'state = ""'
 fi
 
+
+# Canonical background execution: retain the verified safeguard probes in CI.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'canonical background: request cap' 'internal/desk/background_execution.go' \
+    'input.RequestCap = &requestCap' \
+    'input.RequestCap = nil; _ = requestCap'
+  mutate go 'canonical background: live choice' 'internal/desk/background_execution.go' \
+    'return current == choice && run.Revision' \
+    'return (current == choice || current != choice) && run.Revision'
+  mutate go 'canonical background: receipt history' 'internal/desk/input_research_journal_store.go' \
+    'if !backgroundReceiptTransition(old, a) {' \
+    'if false && !backgroundReceiptTransition(old, a) {'
+  mutate go 'canonical background: canonical reader' 'internal/desk/background_execution.go' \
+    'if _, err = runcontext.ReadExecution(v); err != nil {' \
+    'if false { _ = v'
+  mutate go 'canonical background: completion stop' 'internal/desk/background_execution.go' \
+    'if completion.FinishReason != "stop" {' \
+    'if false && completion.FinishReason != "stop" {'
+  mutate go 'canonical background: native response' 'internal/desk/background_execution.go' \
+    'len(action) == 0 && !native' \
+    'len(action) == 0 && (native || !native)'
+  mutate go 'canonical background: native offer' 'internal/desk/background_execution.go' \
+    'if strings.HasPrefix(tool.Description, b.task.Response.Name+":") {' \
+    'if true {'
+  mutate go 'canonical background: source custody' 'internal/desk/background_execution.go' \
+    'if digestOf([]byte(source)) != b.source {' \
+    'if false && digestOf([]byte(source)) != b.source {'
+  mutate go 'canonical background: credential custody' 'internal/desk/background_execution.go' \
+    'if credential != b.credential {' \
+    'if false && credential != b.credential {'
+  mutate go 'canonical background: epoch custody' 'internal/desk/background_execution.go' \
+    'epoch != b.epoch || epoch.Err() != nil ||' \
+    'false && epoch != b.epoch || false && epoch.Err() != nil ||'
+  mutate go 'canonical background: complete envelope' 'internal/desk/background_execution.go' \
+    'len(raw) > backgroundModelReceiptBytes ||' \
+    'false && len(raw) > backgroundModelReceiptBytes ||'
+  mutate go 'canonical background: legacy reserve' 'internal/desk/input_research_reservations.go' \
+    'allowance := portableResearchAttemptReserve + backgroundModelReceiptReserve' \
+    'allowance := portableResearchAttemptReserve'
+  mutate go 'canonical background: portable reserve' 'internal/desk/input_research_reservations.go' \
+    'reserve += backgroundModelReceiptReserve' \
+    'reserve += 0'
+  mutate go 'canonical background: native pregeneration wire' 'internal/desk/background_execution.go' \
+    'if generated.Load() {
+				r.Wire = raw' \
+    'if true {
+				r.Wire = raw'
+  mutate go 'canonical background: native postgeneration outcome' 'internal/desk/background_execution.go' \
+    'if generated.Load() {
+					copy.Outcome = "unknown"' \
+    'if false {
+					copy.Outcome = "unknown"'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

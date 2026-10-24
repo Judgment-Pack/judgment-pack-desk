@@ -90,6 +90,12 @@ func decodeResearchJournal(raw []byte, id string) (inputResearchRun, error) {
 	return run, nil
 }
 func validateResearchJournal(run inputResearchRun, id string) error {
+	for _, a := range run.Attempts {
+		if r := a.Background; r != nil && (a.Kind != "model" || r.Digest != a.Digest || r.Owner != run.ID+"/"+a.ID) {
+			return errBackgroundReceipt
+		}
+	}
+
 	if run.Version == 2 {
 		return validatePortableResearchJournal(run, id)
 	}
@@ -165,6 +171,9 @@ func changeResearchJournal(raw []byte, id string, change func(*inputResearchRun)
 	}
 	for i, old := range before.Attempts {
 		a := next.Attempts[i]
+		if !backgroundReceiptTransition(old, a) {
+			return nil, errBackgroundReceipt
+		}
 		if a.ID != old.ID || a.Kind != old.Kind || a.Digest != old.Digest || a.StartedAt != old.StartedAt || a.Number != old.Number || a.RetryOf != old.RetryOf || ((old.State == "completed" || old.State == "refused") && (a.State != old.State || !bytes.Equal(a.Result, old.Result) || !reflect.DeepEqual(a.RetainedProof, old.RetainedProof))) {
 			return nil, errors.New("Retained research operations cannot be replaced or replayed.")
 		}

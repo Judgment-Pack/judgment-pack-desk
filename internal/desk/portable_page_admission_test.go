@@ -112,7 +112,17 @@ func TestPortableRefusedJournalCapacityStopsBeforeDispatchAndReloads(t *testing.
 			if len(kept) > 2<<20 || len(kept) < (2<<20)-2048 {
 				t.Fatal("fixture is not near the per-result limit", len(kept))
 			}
-			calls := 0
+			// Four near-2 MiB refusals leave room for the next model's 2 MiB
+			// result, 4 MiB complete Background receipt and terminal reserves.
+			// The fifth refusal still fits, but its following model cannot fit.
+			const wantPages = 5
+			const metadataRoom = 64 << 10
+			modelAndFinalReserve := portableResearchAttemptReserve + backgroundModelReceiptReserve + portableResearchFinalReserve
+			if (wantPages-1)*len(kept)+modelAndFinalReserve+metadataRoom > inputResearchRecordLimit || wantPages*len(kept)+modelAndFinalReserve <= inputResearchRecordLimit {
+				t.Fatal("fixture no longer straddles the complete-model reservation boundary")
+			}
+			calls, models := 0, 0
+			blockedKind := ""
 			for i := 0; i < 15; i++ {
 				args := json.RawMessage(fmt.Sprintf(`{"url":"https://legacy.example/final?page=%d"}`, i))
 				_, err := researchAttempt(t.Context(), store, "page", args, func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
@@ -120,6 +130,7 @@ func TestPortableRefusedJournalCapacityStopsBeforeDispatchAndReloads(t *testing.
 					return kept, &researchAcquisitionRefused{code: "acquisition-invalid", cause: errScopedPageReceipt}
 				})
 				if errors.Is(err, errPortableResearchJournalSize) {
+					blockedKind = "page"
 					break
 				}
 				if !errors.Is(err, errScopedPageReceipt) {
@@ -128,9 +139,11 @@ func TestPortableRefusedJournalCapacityStopsBeforeDispatchAndReloads(t *testing.
 				// Successful model operations separate refusals, so a correction counter
 				// cannot make this storage test pass before journal capacity is reached.
 				_, err = researchAttempt(t.Context(), store, "model", json.RawMessage(fmt.Sprintf(`{"step":%d}`, i)), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+					models++
 					return admissionRetained(t, `{}`, `{"kind":"read_context","arguments":{}}`, `{}`), nil
 				})
 				if errors.Is(err, errPortableResearchJournalSize) {
+					blockedKind = "model"
 					break
 				}
 				if err != nil {
@@ -141,8 +154,8 @@ func TestPortableRefusedJournalCapacityStopsBeforeDispatchAndReloads(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			if held.State != "partial" || held.Problem != errPortableResearchJournalSize.Error() || calls < 6 || calls >= 15 {
-				t.Fatalf("capacity did not stop explicitly: state=%s calls=%d problem=%s", held.State, calls, held.Problem)
+			if held.State != "partial" || held.Problem != errPortableResearchJournalSize.Error() || calls != wantPages || models != wantPages-1 || blockedKind != "model" || len(held.Attempts) != calls+models {
+				t.Fatalf("capacity did not stop before model dispatch: state=%s pages=%d models=%d blocked=%s attempts=%d problem=%s", held.State, calls, models, blockedKind, len(held.Attempts), held.Problem)
 			}
 			for _, a := range held.Attempts {
 				if a.State != "completed" && a.State != "refused" || a.FinishedAt == "" || a.ReservedBytes != 0 {
@@ -159,7 +172,10 @@ func TestPortableRefusedJournalCapacityStopsBeforeDispatchAndReloads(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Logf("capacity stop: %d refused pages, %d terminal attempts, %d encoded bytes", calls, len(held.Attempts), len(raw))
+			if len(raw)-calls*len(kept) > metadataRoom || len(raw)+modelAndFinalReserve <= inputResearchRecordLimit {
+				t.Fatal("retained encoding does not explain model reservation refusal", len(raw))
+			}
+			t.Logf("capacity stop: %d refused pages, %d completed models, %d encoded bytes; next model and final reserve %d bytes", calls, models, len(raw), modelAndFinalReserve)
 			restored, err := decodeResearchJournal(raw, held.ID)
 			if err != nil {
 				t.Fatal(err)
@@ -167,6 +183,27 @@ func TestPortableRefusedJournalCapacityStopsBeforeDispatchAndReloads(t *testing.
 			recoverInputResearch(&restored)
 			if restored.State != "partial" || restored.Problem != held.Problem || len(restored.Attempts) != len(held.Attempts) {
 				t.Fatal("reload changed capacity terminal state")
+			}
+			beforeAttempts, err := portableResearchJSON(held.Attempts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			afterAttempts, err := portableResearchJSON(restored.Attempts)
+			if err != nil || !bytes.Equal(beforeAttempts, afterAttempts) {
+				t.Fatal("reload changed retained attempts or signed evidence", err)
+			}
+			reloaded := portableResearchStoreFixture(t, restored, memory)
+			for _, request := range []struct{ kind, args string }{
+				{"page", `{"url":"https://legacy.example/final?page=0"}`},  // retained refusal
+				{"model", fmt.Sprintf(`{"step":%d}`, wantPages-1)},         // denied model
+				{"page", `{"url":"https://legacy.example/final?page=15"}`}, // new request
+			} {
+				if _, err := researchAttempt(t.Context(), reloaded, request.kind, json.RawMessage(request.args), func(context.Context, inputResearchRun, inputResearchAttempt) (json.RawMessage, error) {
+					t.Error("capacity-stopped journal dispatched after reload", request.kind)
+					return nil, nil
+				}); err == nil {
+					t.Fatal("capacity-stopped journal admitted after reload", request.kind)
+				}
 			}
 			// Both the final response and additional terminal metadata still fit. No
 			// retained signed evidence is rewritten or omitted to make room.
