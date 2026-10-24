@@ -414,11 +414,12 @@ go_package_green() {
 # Run in the same package directory as go test, with its own clean binary.
 run_go_unmutated() {
   local package="$1" key log code watchdog=$GO_TEST_WATCHDOG backstop=$GO_TEST_BACKSTOP
-  if [ "$2" = . ]; then watchdog=$GO_BASELINE_WATCHDOG; backstop=$GO_BASELINE_BACKSTOP; fi
+  local -a baseline_flags=()
+  if [ "$2" = . ]; then watchdog=$GO_BASELINE_WATCHDOG; backstop=$GO_BASELINE_BACKSTOP; baseline_flags=(-test.v=true); fi
   key=$(go_package_key "$package")
   log="$work/package-$key.baseline.log"
-  bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
-    _ "$package" "$work/package-$key.test" "$2" "$backstop"
+  bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3" "${@:5}"' \
+    _ "$package" "$work/package-$key.test" "$2" "$backstop" "${baseline_flags[@]}"
   code=$?
   go_verdict "$code" "$log"
 }
