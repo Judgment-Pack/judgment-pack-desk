@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "closed production purposes bound in candidate; obsolete browser loops removed; Settings migration and full certification/release acceptance pending",
+  "status": "closed production purposes bound in candidate; obsolete browser loops removed; Settings migration, Desk #668 background-context blocker, and full certification/release acceptance pending",
   "deskEvidence": "Normal-Server API/native chat, authoring, Brief and creation fixtures plus inherited reviewed host proofs; three controller observation/refresh cases and two mounted save-hook cases also passed at Desk 8886caf1afacaa8764386a44f49eb7818a68e711 with fixture observations and mocked file/HTTP save boundaries; full persisted UI Apply/Save and complete certification/release acceptance remain unproved",
   "agentEvidence": {
     "version": "v0.9.1",
@@ -343,7 +343,7 @@
         "internal/desk/background_execution_test.go"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "Inherited background091 final-focused.log PASS27, API RequestCap1/native0/1 exact one-use receipt proofs. Workflow unchanged."
+      "journeyEvidence": "Inherited background091 final-focused.log PASS27, API RequestCap1/native0/1 exact one-use receipt proofs. These preserve one-request admission and receipt custody but do not cover complete structured-input retention at the actual boundary; Desk #668 remains blocked pending [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) and strict real-boundary tests. Workflow unchanged."
     },
     {
       "id": "input-research-domain-parent-child",
@@ -375,7 +375,7 @@
         "internal/desk/background_execution_test.go"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "Inherited background091 reservation-concurrency-fixed.log and final-focused.log; original two-child/journal limits and no replay unchanged."
+      "journeyEvidence": "Inherited background091 reservation-concurrency-fixed.log and final-focused.log; original two-child/journal limits and no replay unchanged. These proofs do not resolve Desk #668's incomplete structured background input at the actual boundary; [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) and strict real-boundary tests remain required."
     },
     {
       "id": "portable-research-and-model-acquisition",
@@ -407,7 +407,7 @@
         "internal/desk/background_execution_test.go"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "Inherited background091 actual-portable-and-native.log and model-source-actual.log using verified official Runner/Runtime."
+      "journeyEvidence": "Inherited background091 actual-portable-and-native.log and model-source-actual.log using verified official Runner/Runtime. These proofs do not establish complete structured background input at the actual boundary; Desk #668 remains blocked pending [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) and strict real-boundary tests."
     },
     {
       "id": "model-list-discovery",
@@ -1027,6 +1027,7 @@
     ],
     "pending": [
       "complete current-head provider-managed binding and feature certification; unresolved native certification contract mismatch tracked by https://github.com/Judgment-Pack/judgment-pack-agent/issues/201",
+      "mandatory Desk #668 v0.14.0 blocker: Agent v0.9.1 generic context opening can reduce the complete background research envelope to incomplete JSON, omitting domain searchBindings/used; preserve the strict boundary assertions while this blocker is unresolved, and require released [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202)'s supported projection plus complete API/native boundary tests. Preserve one physical request and all existing budgets, admission and canonical guards. Agent #202 is owner-scheduled for v0.11.0 alongside #199 and #201, following Agent v0.10.0; this schedule is not a Desk resolution date",
       "full integrated product journeys not established by bounded fixtures, including complete page/editor Apply and persisted server Save; current-head integration/bundle evidence, independent review and release acceptance",
       "mandatory Desk #660 provider-wire numeric fidelity and #662 remaining Settings capability/connection browser transport; no probe ceiling relaxation or full direct-transport exclusion claim",
       "Desk #582 remains intentionally v0.17.0-scoped: pinned Runtime v0.37.0 fact-type proposal support is unavailable (Runtime #274); preserve authored unavailable, unchanged facts/expectations, no fabricated advice and current pins",
@@ -1036,6 +1037,7 @@
     "activation": "Normal Server construction installs assistantProductionExecutor for existing chat/creation, Brief and standalone author-pack/describe-pack/author-graph purposes; unknown purposes refuse. Saved chat uses SavedChatRun; remaining Settings transport and complete release acceptance stay pending."
   },
   "requiredReleaseGates": [
+    "Desk #668 background structured-input boundary: adopt released [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) projection after final canonical system/schema assembly and pass strict actual API/native boundary tests for complete protected fields, retained large sources and refusal before dispatch when permitted reduction cannot fit; preserve one physical request, budgets, admission and canonical guards",
     "Desk #660 canonical proposal numeric fidelity",
     "Desk #662 bounded Settings probes and remaining direct transport",
     "Complete actual bound API/native certification; preserve host authority and uncertainty guards",

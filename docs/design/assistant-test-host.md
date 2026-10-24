@@ -46,6 +46,18 @@ fact checks produce explicit authored unavailable; no cases or proposal are save
 no advice is fabricated, guards are not relaxed and pins are unchanged. Scripted
 positive fixtures do not establish positive acceptance on released Runtime v0.37.0.
 
+The background research path has a separate mandatory Desk #668 v0.14.0 release
+blocker: Agent v0.9.1 generic context opening can turn a complete structured
+request into incomplete JSON, omitting domain `searchBindings` and `used` at the
+real boundary. Preserve the strict boundary assertions while this blocker is
+unresolved; require actual API/native inputs to pass for released Agent #202.
+Preserve the one physical request,
+all budgets, one-use admission and canonical guards; refuse before dispatch with
+a typed context failure if protected fields cannot fit. Agent #202 is scheduled
+for Agent v0.11.0 alongside #199 and #201, following Agent v0.10.0. Desk #660
+is a separate v0.14.0 release blocker; its upstream Agent #198 is scheduled for
+v0.10.0.
+
 These finite capabilities are now reached through the registered closed server
 conversation owner and the canonical saved-chat client. Registration does not
 establish every integrated journey or complete certification/review. Native
