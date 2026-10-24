@@ -331,15 +331,19 @@ bounded() {
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
 #
-# PR #625's successful Go CI took 446s; its separate mutation worker's
-# unmutated full-package baseline exceeded 480s before any Go mutant ran.
-# Keep selected checks at 480s, but give full-package baselines/fallbacks 900s
-# (the web full-suite bound), below the CI step's 3000s. Go's panic backstop
-# follows each process-tree watchdog by 60s; compilation keeps its own bound.
+# Ordinary Go CI skips companion-gated tests; the mutation baseline includes
+# the pinned Gateway and scoped Runtime fixtures. Two clean CI baselines exceeded
+# 900s. A verbose diagnostic reached more than 1500 cases before its 840s panic,
+# with the current test running for 0s: measured aggregate work, not a hung handler.
+# Give only the clean full-package baseline 1800s. Selected checks stay at 480s,
+# whole-mutant/fallback checks at 900s, and compilation at its independent bound.
+# Each Go panic backstop follows its process-tree watchdog by 60s.
 GO_TEST_WATCHDOG=480
 GO_TEST_BACKSTOP=540s
 GO_FULL_WATCHDOG=900
 GO_FULL_BACKSTOP=960s
+GO_BASELINE_WATCHDOG=1800
+GO_BASELINE_BACKSTOP=1860s
 
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
@@ -410,7 +414,7 @@ go_package_green() {
 # Run in the same package directory as go test, with its own clean binary.
 run_go_unmutated() {
   local package="$1" key log code watchdog=$GO_TEST_WATCHDOG backstop=$GO_TEST_BACKSTOP
-  if [ "$2" = . ]; then watchdog=$GO_FULL_WATCHDOG; backstop=$GO_FULL_BACKSTOP; fi
+  if [ "$2" = . ]; then watchdog=$GO_BASELINE_WATCHDOG; backstop=$GO_BASELINE_BACKSTOP; fi
   key=$(go_package_key "$package")
   log="$work/package-$key.baseline.log"
   bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
