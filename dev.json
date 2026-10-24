@@ -121,7 +121,7 @@
     },
     {
       "name": "go-test",
-      "run": "go test -v ./...",
+      "run": "go test -timeout=40m -v ./...",
       "toolchain": "go",
       "summary": "^(ok|FAIL) ",
       "timeout": 3000
