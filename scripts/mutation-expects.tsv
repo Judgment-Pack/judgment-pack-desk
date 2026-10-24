@@ -2865,3 +2865,5 @@ web	saved chat restore: unfinished work remains running	src/chat/messageOwnershi
 web	saved chat exchange: duplicate messages appended	src/chat/store.test.ts
 web	saved chat exchange: conflicting message accepted	src/chat/store.test.ts
 go	assistant production: standalone project critic omitted	TestAssistantAuthoringActualAPI
+go	assistant memory: approval trims canonical text	TestAssistantMemoryCanonicalApprovalExactText
+go	assistant memory: terminal identity recalled on resume	TestAssistantMemoryTerminalRecallDoesNotBlockResume
