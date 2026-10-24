@@ -79,6 +79,12 @@ and never establish a current successful connection check. Form, configuration,
 profile, account-custody, project and session changes withdraw displayed status;
 reverting edits cannot revive an earlier success. Saving remains a separate action.
 
+Runtime currentness binds the resolved executable path, device/inode, size,
+mode, modification time and kernel change time into the opaque source digest.
+Both admission and final success recompute it, so replacing executable bytes while
+preserving size and modification time withdraws the capture. This check reads
+metadata only; platforms without file identity and change time refuse diagnostics.
+
 Public additions are the `connection-diagnostic` owner/purpose, fixed diagnostic
 reference/lookup/result routes, and optional opaque `accountRevision` on native
 provider status. Private storage adds only the owner enum, using the existing
