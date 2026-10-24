@@ -105,3 +105,24 @@ materialization, updates, reload and the next explicit creation control. Browser
 creation overlays also compare number-preserving identities; an equal rounded
 JavaScript value cannot hide a changed token. Local edits still replace their
 edited values, and wire provenance never establishes approval or readiness.
+
+A completed correction may retain a passing check of the exact current established
+cases while other independent expectation issues remain unresolved. Strict readers
+admit this combination only for a successful correction approval, with the full
+ordered current case report. It remains `needs-input`, with no readiness or final
+create/apply/save authority. Historical observations retain the check for display
+only. Each remaining issue needs its own new proposal and explicit approval.
+
+A correction proposal preserves the existing case, held, issue and unknown bytes,
+including the relative positions of resolved and unresolved issue rows. Browser
+overlays keep the same saved row sequence and original case bytes. Showing a
+proposal therefore does not create a new artifact generation or invalidate the
+visible token's generation/source scope. This permits both correction orders
+without relaxing current-session, phase, revision, artifact CAS or witness checks.
+
+The continuation fixtures compare actual producer custody against the canonical
+accepted proposal event, then separately exercise handwritten accepted-wire number
+tokens through the default browser writers. The pinned Agent's conversion of
+provider-wire numbers before canonical proposal admission is a distinct unresolved
+release dependency; these continuation checks do not claim fidelity across that
+boundary or reconstruct accepted documents from provider prose.

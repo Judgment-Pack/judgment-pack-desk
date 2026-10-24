@@ -2904,3 +2904,7 @@ go	canonical background: legacy reserve	TestBackgroundCanonicalReservesWholeRece
 go	canonical background: portable reserve	TestBackgroundCanonicalReservesWholeReceiptBeforeDispatch
 go	canonical background: native pregeneration wire	TestBackgroundCanonicalNativeFailurePhase
 go	canonical background: native postgeneration outcome	TestBackgroundCanonicalNativeFailurePhase
+go	assistant creation: correction proposal rewrites evidence	TestAssistantCreationMultipleCorrections
+web	assistant creation: passing partial correction refused	src/assistant/serverRuns/creation.test.ts
+web	assistant creation: partial check advertises readiness	src/assistant/serverRuns/creation.test.ts
+web	assistant creation: correction overlay reorders issue rows	src/assistant/serverRuns/creation.test.ts

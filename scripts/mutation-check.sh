@@ -15885,6 +15885,24 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 					copy.Outcome = "unknown"'
 fi
 
+# Desk #658: partial correction continuation retains exact scope and readiness.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant creation: correction proposal rewrites evidence' internal/desk/assistant_creation_projection.go \
+    'if r.Action == "propose-correction" {' \
+    'if false {'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant creation: passing partial correction refused' web/src/assistant/serverRuns/creation.ts \
+    "if(issues.length&&(!cases.length||value.action!=='approve-correction'||!check.valid||check.report?.status!=='passed'))return invalid()" \
+    'if(issues.length)return invalid()'
+  mutate web 'assistant creation: partial check advertises readiness' web/src/assistant/serverRuns/creation.ts \
+    '&&issues.length===0){result=' \
+    '){result='
+  mutate web 'assistant creation: correction overlay reorders issue rows' web/src/assistant/serverRuns/creation.ts \
+    'expectationIssues:state.expectationIssues.map' \
+    'expectationIssues:[...state.expectationIssues.filter(i=>i.resolved),...state.expectationIssues.filter(i=>!i.resolved)].map'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
