@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const creationContinuationFacts = `{"large":9007199254740993,"decimal":1.20,"negativeZero":-0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.500}}`
@@ -161,15 +162,19 @@ func TestAssistantCreationContinuationStopRetainsPartial(t *testing.T) {
 			t.Setenv("JPS_CREATION_OUTPUTS", "")
 			correction := assistantCreationCorrectionDocument
 			s, token, calls := assistantCreationContinuationFixture(t, correction)
-			recovered := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "recover", MessageID: "assistant-one", MessageDigest: digestOf([]byte(assistantAuthoringProposalFixture(json.RawMessage(reviewPack))))}, 1)
+			// Profiling shows repeated strict validation of the retained ledger
+			// across real-Runtime setup actions. Bound each setup action consistently
+			// under variable CI and host load while keeping all completion checks.
+			const setupWait = 45 * time.Second
+			recovered := assistantCreationActualRunWithin(t, s, token, assistantCreationAction{Kind: "recover", MessageID: "assistant-one", MessageDigest: digestOf([]byte(assistantAuthoringProposalFixture(json.RawMessage(reviewPack))))}, 1, setupWait)
 			digest := recovered.Creation.CandidateDigest
 			assistantCreationRetainDraft(t, s, token)
-			assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "establish-cases", CandidateDigest: digest}, 2)
+			assistantCreationActualRunWithin(t, s, token, assistantCreationAction{Kind: "establish-cases", CandidateDigest: digest}, 2, setupWait)
 			assistantCreationRetainDraft(t, s, token)
-			proposed := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "propose-correction", CandidateDigest: digest, IssueID: "first"}, 3)
-			partial := assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "approve-correction", CandidateDigest: digest, IssueID: "first", Token: proposed.Creation.Proposal.Token}, 4)
+			proposed := assistantCreationActualRunWithin(t, s, token, assistantCreationAction{Kind: "propose-correction", CandidateDigest: digest, IssueID: "first"}, 3, setupWait)
+			partial := assistantCreationActualRunWithin(t, s, token, assistantCreationAction{Kind: "approve-correction", CandidateDigest: digest, IssueID: "first", Token: proposed.Creation.Proposal.Token}, 4, setupWait)
 			assistantCreationRetainDraft(t, s, token)
-			proposed = assistantCreationActualRun(t, s, token, assistantCreationAction{Kind: "propose-correction", CandidateDigest: digest, IssueID: "last"}, 5)
+			proposed = assistantCreationActualRunWithin(t, s, token, assistantCreationAction{Kind: "propose-correction", CandidateDigest: digest, IssueID: "last"}, 5, setupWait)
 			action := assistantCreationAction{Kind: "approve-correction", CandidateDigest: digest, IssueID: "last", Token: proposed.Creation.Proposal.Token}
 			var stopped assistantRunView
 			if mode == "cancel" {

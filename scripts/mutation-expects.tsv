@@ -2915,3 +2915,5 @@ web	assistant memory review: response belongs to another proposal	src/assistant/
 web	assistant memory review: proposal edit rebases reviewed store	src/assistant/memory/proposals.test.tsx
 go	assistant memory review: independent reviewer gains author cap	TestAssistantMemoryIndependentReview
 go	assistant memory review: reviewer action accepts attribution	TestAssistantMemoryIndependentReview
+go	assistant memory: approval trims canonical text	TestAssistantMemoryCanonicalApprovalExactText
+go	assistant memory: terminal identity recalled on resume	TestAssistantMemoryTerminalRecallDoesNotBlockResume
