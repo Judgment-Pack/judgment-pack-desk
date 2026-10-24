@@ -5,7 +5,7 @@ import { memoryDraftPersistence } from '../testing/draftPersistence'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { criticChoice, ChatStore, type ChatPersistence } from './store'
 import { INITIAL_STATE } from '../research/run'
-import type { ResearchRunBinding } from '../research/useResearchRun'
+import type { ResearchRunBinding } from '../research/types'
 import { chatContextFor, disposeChatContext } from '../assistant/chatContexts'
 
 const stores: ChatStore[] = []
@@ -433,13 +433,14 @@ it('cancels a checkpoint wait without cancelling or replaying the existing save'
 })
 
 it('stores test-design exchanges in the existing session, deduplicates checkpoints, and reloads them', async () => {
- const {AuthoringRun}=await import('../research/run')
+ const {SavedChatRun}=await import('../assistant/serverRuns/controller')
  const {store,write}=setup();await store.load()
  const chat=store.startChat({id:'pack',path:'pack.json',digest:'digest'})
- const run=new AuthoringRun({} as import('../research/run').RunPorts)
+ const run=new SavedChatRun(chat.id,chat,{project:'/project',client:async()=>{throw Error('No dispatch')},prepare:async()=>{throw Error('No dispatch')},reconcile:async()=>undefined,pin:()=>{},problem:()=>{}})
  store.report(chat.id,{run,state:run.getSnapshot(),sources:[],model:'fixture'} as unknown as ResearchRunBinding)
  const turns=[{id:'test-user',role:'user' as const,kind:'message' as const,text:'Design boundary cases',at:'2026-10-13T12:00:00Z',testDesign:{owner:'pack',proposalId:'proposal'}},{id:'test-assistant',role:'assistant' as const,kind:'message' as const,text:'Proposed cases for review',at:'2026-10-13T12:01:00Z',testDesign:{owner:'pack',proposalId:'proposal'}}]
  store.appendConversation(chat.id,turns);store.appendConversation(chat.id,turns)
+ expect(run.getSnapshot().turns).toHaveLength(2)
  store.report(chat.id,{run,state:INITIAL_STATE,sources:[],model:'fixture'} as unknown as ResearchRunBinding)
  await store.checkpoint(new AbortController().signal)
  expect(store.getSnapshot().chats).toHaveLength(1)

@@ -1,7 +1,6 @@
 package desk
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
@@ -19,42 +18,6 @@ import (
 const assistantCreationCasesDocument = `{"cases":[{"id":"typed","facts":{"zero":0,"flag":false,"nil":null,"numeric":"1"},"expectedDisposition":` + creationDisposition + `,"expectedHandoffTarget":null,"expectationSource":"you-1","rationale":"The person explicitly requires accept for these facts."},{"id":"invalid","facts":{},"expectedDisposition":{"kind":"outcome","outcomeId":"accept","reasons":"invalid","handoff":{"state":"none"}},"expectedHandoffTarget":null,"expectationSource":"you-1","rationale":"The person explicitly requires accept with no handoff."}]}`
 const assistantCreationCorrectionDocument = `{"expectedDisposition":` + creationDisposition + `,"rationale":"The independent person statement establishes accept with no handoff."}`
 
-type assistantCreationObservedExecutor struct {
-	assistantCreationExecutor
-	t *testing.T
-}
-
-func (x *assistantCreationObservedExecutor) Execute(ctx context.Context, e *assistantRunExecution) error {
-	err := x.assistantCreationExecutor.Execute(ctx, e)
-	if err != nil {
-		x.t.Logf("creation execution: %v", err)
-		for _, run := range assistantAuthoringLedger(x.t, e.service.server).Runs {
-			if run.ID == e.record.ID {
-				for _, op := range run.Operations {
-					x.t.Logf("operation %s %s %s", op.ID, op.Name, op.State)
-				}
-				if run.Creation != nil {
-					x.t.Logf("creation action %s cases=%d issues=%d held=%d check=%t", run.Creation.Action, len(run.Creation.Cases), len(run.Creation.Issues), len(run.Creation.Held), run.Creation.Check != nil)
-					if run.Creation.Proposal != nil {
-						x.t.Logf("pending expected disposition %s", run.Creation.Proposal.ExpectedDisposition)
-					}
-					for _, op := range run.Operations {
-						if op.Kind == "runtime" && op.State == "completed" {
-							var result struct{ Result json.RawMessage }
-							if json.Unmarshal(op.Result, &result) == nil {
-								if payload, err := assistantSavedPackPayload(result.Result); err == nil && payload["results"] != nil {
-									x.t.Logf("retained expectation report %s", assistantChatEncodeObject(payload))
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	return err
-}
-
 func assistantCreationActualFixture(t *testing.T, endpoint string) (*Server, string) {
 	t.Helper()
 	runtime := os.Getenv("DESK_DIALECT_MAPPING_RUNTIME")
@@ -63,7 +26,6 @@ func assistantCreationActualFixture(t *testing.T, endpoint string) (*Server, str
 	}
 	s, token := assistantBriefFixture(t, endpoint)
 	s.cfg.JpackBin = runtime
-	s.assistantRunExecutor = &assistantCreationObservedExecutor{t: t}
 	writeProjectFile(t, s.projectDir, "jpack.json", `{"configVersion":"5","packs":{"one":{"path":"one.pack.json"}}}`)
 	writeProjectFile(t, s.projectDir, "one.pack.json", reviewPack)
 	writeProjectFile(t, s.projectDir, assistantProfilePath, `{"profileVersion":1,"api":{"inherit":true},"critic":"off"}`)

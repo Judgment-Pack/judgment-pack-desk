@@ -15,7 +15,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { ChatPanel } from '../chat/ChatPanel'
 import { useChats } from '../chat/ChatProvider'
 import { draftHref, type PackDraft } from '../packs/drafts/model'
-import type { ResearchRunBinding } from '../research/useResearchRun'
+import type { ResearchRunBinding } from '../research/types'
 import { ShowFolders } from '../packs/folders/FolderBrowser'
 import { usePackFolders } from '../packs/folders/FolderContext'
 import { packFolder } from '../packs/folders/model'

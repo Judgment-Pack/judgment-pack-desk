@@ -25,7 +25,7 @@ import type { DocumentReference } from '../documents/client'
 import { sourceMessage } from '../i18n/source'
 import { answer, deskFetch } from '../files/client'
 import { checkpoint, decodeCheckpoint, type Checkpoint } from './checkpoint'
-import type { ResearchRunBinding } from '../research/useResearchRun'
+import type { ResearchRunBinding } from '../research/types'
 import { validWebURL } from '../documents/record'
 
 /** The link a web document was read from: the fetched address, and the anchor kept beside it, never sent. */

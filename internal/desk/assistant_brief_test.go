@@ -88,7 +88,9 @@ func assistantBriefFixture(t *testing.T, upstream string) (*Server, string) {
 	writeProjectFile(t, s.projectDir, "flow.graph.json", `{"nodes":{"node":{"pack":"one"}},"edges":[],"result":"node"}`)
 	// A brief must never launch the configured Runtime executable.
 	s.cfg.JpackBin = filepath.Join(t.TempDir(), "runtime-must-not-start")
-	s.assistantRunExecutor = &assistantBriefExecutor{}
+	if _, ok := s.assistantRunExecutor.(*assistantProductionExecutor); !ok {
+		t.Fatal("normal Server lacks the production executor")
+	}
 	return s, token
 }
 

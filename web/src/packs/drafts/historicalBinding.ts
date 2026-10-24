@@ -2,7 +2,7 @@ import { sha256 } from '@judgment-pack/harness/records'
 import { restoreLedger } from '../../chat/checkpoint'
 import { INITIAL_STATE } from '../../research/initialState'
 import { Ledger } from '../../research/ledger'
-import type { ResearchRunBinding } from '../../research/useResearchRun'
+import type { ResearchRunBinding } from '../../research/types'
 import type { PackDraft } from './model'
 
 /** Decode retained history for display. This object owns no execution capability. */

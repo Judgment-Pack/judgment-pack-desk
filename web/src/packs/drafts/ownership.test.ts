@@ -4,7 +4,7 @@ import { INITIAL_STATE } from '../../research/run'
 import { memoryDraftPersistence } from '../../testing/draftPersistence'
 import { chatHref } from '../../chat/navigation'
 import { decodeDrafts, type DraftPersistence } from './model'
-import type { ResearchRunBinding } from '../../research/useResearchRun'
+import type { ResearchRunBinding } from '../../research/types'
 
 const stores:ChatStore[]=[]
 afterEach(()=>{stores.forEach(store=>store.dispose());sessionStorage.clear()})

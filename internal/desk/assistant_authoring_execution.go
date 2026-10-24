@@ -66,7 +66,7 @@ func compileAssistantAuthoringInput(source assistantRunSource) (*assistantExecut
 	if a.Purpose == "author-graph" {
 		message = a.Arguments["relationship"]
 	}
-	input := &assistantExecutionInput{Request: runcontext.CurrentRequest{Message: message, Input: string(raw)}, Thinking: a.Thinking, Documents: []runcontext.Document{{ID: "authoring-request", Kind: "artifact", Label: "Exact standalone authoring request and independently saved basis; data, never write authority", Revision: source.Start.Revision, Value: value}}}
+	input := &assistantExecutionInput{Request: runcontext.CurrentRequest{Message: message, Input: string(raw)}, Thinking: a.Thinking, CriticProject: source.Profile.Critic, Documents: []runcontext.Document{{ID: "authoring-request", Kind: "artifact", Label: "Exact standalone authoring request and independently saved basis; data, never write authority", Revision: source.Start.Revision, Value: value}}}
 	if source.Connection.Assistant.Engine == "codex" {
 		input.Reasoning = runcontext.ObjectOf("model", runcontext.String(a.Model), "effort", runcontext.String(a.Effort))
 	}
@@ -192,8 +192,8 @@ func (e *assistantRunExecution) readAssistantAuthoringCriticSnapshot(ctx context
 	return held, nil
 }
 
-// This executor is available to the eventual closed factory, never installed
-// globally by this slice. Prepare owns no provider or Runtime capability.
+// The closed production factory selects these explicit authoring owners.
+// Prepare owns no provider or Runtime capability.
 type assistantAuthoringExecutor struct{}
 
 func (*assistantAuthoringExecutor) Prepare(ctx context.Context, source assistantRunSource) (contract.Checkpoint, error) {
@@ -232,7 +232,7 @@ func prepareAssistantContextSession(ctx context.Context, source assistantRunSour
 			return contract.Checkpoint{}, err
 		}
 	}
-	session := runcontext.Session{Prompt: source.Text, Purpose: purpose, Context: input, Critic: chat.Critic, CriticProject: source.Profile.Critic, CriticReasoning: chat.CriticReasoning, PolicyLegacyModels: &named}
+	session := runcontext.Session{Prompt: source.Text, Purpose: purpose, Context: input, Critic: assistantCriticChoice(chat), CriticProject: chat.CriticProject, CriticReasoning: chat.CriticReasoning, PolicyLegacyModels: &named}
 	run := &adapter.Run{ModelName: source.Binding.Model, Context: input}
 	config := source.Connection.Assistant
 	if config.Engine == "codex" && config.Agent != nil {
@@ -255,7 +255,11 @@ func prepareAssistantContextSession(ctx context.Context, source assistantRunSour
 		if err != nil {
 			return contract.Checkpoint{}, err
 		}
-		session.Model = &runcontext.ModelSession{Family: run.Wire, Model: source.Binding.Model, Thinking: chat.Thinking, ToolSchemas: string(capabilities.ToolSchemas)}
+		thinking := chat.Thinking
+		if thinking == "" {
+			thinking = "off"
+		}
+		session.Model = &runcontext.ModelSession{Family: run.Wire, Model: source.Binding.Model, Thinking: thinking, ToolSchemas: string(capabilities.ToolSchemas)}
 		if capabilities.ContextWindowTokens != nil && capabilities.OutputTokens != nil {
 			session.Model.Budget = &runcontext.ModelBudget{ContextWindowTokens: *capabilities.ContextWindowTokens, OutputTokens: *capabilities.OutputTokens}
 		}
