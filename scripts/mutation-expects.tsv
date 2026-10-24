@@ -2871,3 +2871,9 @@ go	assistant discovery: saved revision requirement omitted	TestAssistantDiscover
 web	assistant saved chat: unreconciled Send guard omitted	src/chat/store.server.test.ts
 web	assistant authoring: session-private projections retained	src/assistant/authoringLifecycle.test.tsx
 web	assistant authoring: paused presentation resolves host owner	src/assistant/authoringLifecycle.test.tsx
+go	native diagnostic: captured source revision ignored	TestAssistantDiagnosticRejectsStaleAndExecutableReferences
+go	native diagnostic: provider prose accepted without schema	TestAssistantDiagnosticRefusesProseAndNonSchemaTools
+go	native diagnostic: native context tools escape schema offer	TestAssistantDiagnosticActualNativeCheckpoint
+go	native diagnostic: cancellation poisons terminal persistence	TestAssistantDiagnosticRefusesProseAndNonSchemaTools,TestAssistantDiagnosticLateCredentialMutationClosesSchemaDispatch
+web	native diagnostic: uncertain admission starts twice	src/assistant/useConnectionDiagnostic.test.tsx
+web	native diagnostic: changed form keeps prior success	src/assistant/useConnectionDiagnostic.test.tsx

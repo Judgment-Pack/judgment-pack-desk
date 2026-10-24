@@ -5,7 +5,7 @@ import { sourceMessage } from '../i18n/source'
 import type { CodexEffort } from '@judgment-pack/harness/agent'
 
 export interface Provider { id: string; authMethod: string; agent: string; configured: boolean; enabled: boolean; engineReady: boolean; requiredVersion: string; availability?: string; loginMethods: string[] }
-export interface ProviderStatus { provider: string; authMethod: string; agent: string; runtime: string; account: string; plan?: string; login?: { id: string; state: string; expiresAt: string } }
+export interface ProviderStatus { provider: string; authMethod: string; agent: string; runtime: string; account: string; accountRevision?: string; plan?: string; login?: { id: string; state: string; expiresAt: string } }
 export interface ProviderModel { id: string; name: string; efforts: CodexEffort[]; defaultEffort: CodexEffort }
 export interface ProviderChallenge { method: string; id: string; url: string; code?: string; expiresAt: string }
 const errors: Record<string,string> = {
@@ -28,6 +28,7 @@ export async function providerRequest<T>(action: string, body?: unknown, signal?
   })
   const value = await response.json()
   if (!response.ok) throw new ProviderError(typeof value?.error === 'string' ? value.error : 'unavailable')
+  if ((action==='status'||action==='refresh') && value?.accountRevision!==undefined && (typeof value.accountRevision!=='string'||! /^[a-f0-9]{64}$/.test(value.accountRevision))) throw new ProviderError('provider-unavailable')
   return value as T
 }
 export function useProviderCatalog(enabled = true) {

@@ -363,6 +363,13 @@
       "toolchain": "shell",
       "timeout": 900,
       "summary": "Creation|PASS|passed"
+    },
+    {
+      "name": "assistant-diagnostic-readers",
+      "run": "scripts/dev/assistant-diagnostic.sh",
+      "toolchain": "shell",
+      "timeout": 900,
+      "summary": "Native diagnostic readers:|PASS|passed"
     }
   ]
 }

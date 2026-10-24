@@ -15748,6 +15748,29 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     "  if(terminal(run)||run.historical||!['admitted','running'].includes(run.state)){attempt.resolved=true;setCanStart(true)}"
 fi
 
+# Desk #651: fixed native diagnostic source, offer, finalization and browser ownership.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'native diagnostic: captured source revision ignored' internal/desk/assistant_diagnostic.go \
+    'if !assistantRunDigest(start.Revision) || start.Revision != digestOf(source.Original) {' \
+    'if false && (!assistantRunDigest(start.Revision) || start.Revision != digestOf(source.Original)) {'
+  mutate go 'native diagnostic: provider prose accepted without schema' internal/desk/assistant_diagnostic_execution.go \
+    'if !assistantDiagnosticSucceeded(latest) {' \
+    'if false && !assistantDiagnosticSucceeded(latest) {'
+  mutate go 'native diagnostic: native context tools escape schema offer' internal/desk/assistant_execution_agent.go \
+    'request.Tools = tools' 'request.Tools = request.Tools'
+  mutate go 'native diagnostic: cancellation poisons terminal persistence' internal/desk/assistant_diagnostic_execution.go \
+    'context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)' \
+    'context.WithTimeout(ctx, 5*time.Second)'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'native diagnostic: uncertain admission starts twice' web/src/assistant/useConnectionDiagnostic.ts \
+    'const retained=await client.diagnosticLookup(ref)' \
+    'const retained=await client.start(ref,undefined,bound)'
+  mutate web 'native diagnostic: changed form keeps prior success' web/src/assistant/useConnectionDiagnostic.ts \
+    'setCanStart(!closed.current)},[identity])' \
+    'setCanStart(!closed.current)},[])'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row

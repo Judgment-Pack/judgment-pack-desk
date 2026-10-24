@@ -19,7 +19,7 @@ import { Button } from '../ui/Button'
 import { RunStatus } from '../ui/RunStatus'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { useUpdateAssistantConfig } from './queries'
-import { useAssistantRun } from './useAssistantRun'
+import { useConnectionDiagnostic } from './useConnectionDiagnostic'
 import { ProviderError, providerRequest, useProviderCatalog, useProviderModels, useProviderStatus, type ProviderChallenge } from './providers'
 import { whenSessionEnds } from '../mcp/session'
 import { useUnsavedChanges } from '../shell/DraftScope'
@@ -125,15 +125,15 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
   useEffect(()=>{if(dirty&&stored)setDirty(false)},[dirty,stored])
   const canReadSchema=config.assistant.agent?.tools.includes('get_schema')===true
   const executionAgent=applyAssistantProfile(config.assistant,assistantProfile).agent
-  const test=useAssistantRun({target:scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:{},endpoint:null,agent:executionAgent?{...executionAgent,tools:canReadSchema?['get_schema']:[]}:undefined,engine:'codex',model:executionAgent?.model??'',thinking:'off',purpose:'test-design'})
-  const tested=test.status==='finished' && !test.failure && !test.events.some(event=>event.type==='error') && test.events.some(event=>event.type==='tool_result'&&event.name==='get_schema'&&!event.isError)
+  const test=useConnectionDiagnostic(scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:{},JSON.stringify([scope?.connection.id,scope?.connection.revision,desk?.sha256,assistantProfile,status.data?.account,status.data?.accountRevision,model,allowed,effort,tools,critic,child,dirty,active,unavailable]))
+  const tested=test.tested
   const testRunning=test.status==='running'
   const save=()=>{
     if (!desk || desk.sha256===undefined || !valid || unavailable)return
     setProblem('');setSaved(false)
     write.mutate({assistant:{endpoint:config.assistant.endpoint,thinking:config.assistant.thinking,engine:'codex',agent},ifMatch:desk.sha256},{onSuccess:()=>{setDirty(false);setSaved(true)},onError:error=>setProblem(error.message)})
   }
-  const edit=()=>{setDirty(true);setSaved(false);test.stop()}
+  const edit=()=>{setDirty(true);setSaved(false)}
   return <section aria-label={msg('ChatGPT subscription')} className={styles.subscription}>
     <div><h3>{msg('OpenAI / ChatGPT')}</h3><p className="quiet">{msg('Use your ChatGPT account through Codex. No API key is required.')}</p></div>
     {catalog.isPending && <LoadingState>{msg('Checking the ChatGPT connection…')}</LoadingState>}
@@ -169,9 +169,9 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
         <SettingsActions feedback={<SettingsFeedback tone={problem||test.status==='finished'&&stored&&!dirty&&!tested?'error':saved||test.status==='finished'&&stored&&!dirty&&tested?'success':'neutral'}>
           {problem?msg(problem):write.isPending?msg('Saving…'):testRunning?msg('Testing connection…'):test.status==='finished'&&stored&&!dirty?(tested?msg('Connected. Codex read the pack schema through Desk.'):msg('The connection check did not complete. Check the connection and try again.')):saved?msg('Assistant settings saved.'):dirty?msg('Unsaved changes'):null}
         </SettingsFeedback>}>
-          <Button disabled={unavailable||!!assistantProfile?.problem||!executionAgent?.model||!canReadSchema||!stored||!model||dirty||!valid||busy||testRunning} onClick={()=>test.start('Connection check only. Call get_schema once to read the Judgment Pack schema, then reply with one short confirmation. Do not propose changes or test cases.')}>{msg('Test connection')}</Button>
+          <Button disabled={!test.canStart||!scope||unavailable||!!assistantProfile?.problem||!executionAgent?.model||!canReadSchema||!stored||!model||dirty||!valid||busy||testRunning} onClick={test.start}>{msg('Test connection')}</Button>
           {dirty&&<Button variant="quiet" disabled={busy||testRunning||write.isPending} onClick={()=>{setDirty(false);setProblem('');setSaved(false);write.reset()}}>{msg('Cancel')}</Button>}
-          {testRunning&&<Button variant="quiet" onClick={test.stop}>{msg('Stop')}</Button>}
+          {test.canStop&&<Button variant="quiet" onClick={test.stop}>{msg('Stop')}</Button>}
           <Button variant="primary" disabled={stored||!valid||!provider.engineReady||unavailable||write.isPending||busy||testRunning} onClick={save}>{write.isPending?msg('Saving…'):msg('Save shared settings')}</Button>
         </SettingsActions>
         {!canReadSchema&&<p className="quiet">{msg('Enable and save get_schema in Allowed pack tools to test the connection.')}</p>}
