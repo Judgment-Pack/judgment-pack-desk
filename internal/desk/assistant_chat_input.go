@@ -74,6 +74,9 @@ func (e *assistantRunExecution) prepareAssistantChatInput(ctx context.Context) (
 	if err != nil {
 		return nil, err
 	}
+	if err := e.prepareAssistantSavedPack(ctx, chat); err != nil {
+		return nil, err
+	}
 	if err := e.prepareAssistantPolicy(ctx, chat.Policy); err != nil {
 		return nil, err
 	}

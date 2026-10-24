@@ -36,6 +36,7 @@ func assistantRunPublic(run assistantRunRecord) assistantRunView {
 	return assistantRunView{Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
 }
 func (s *Server) registerAssistantRuns() {
+	s.mux.HandleFunc("POST /api/assistant-runs/{run}/pack-checks", s.handleAssistantPackRecheck)
 	s.mux.HandleFunc("GET /api/assistant-runs/owners/{owner}/requests/{request}", s.handleAssistantChatRuns)
 	s.mux.HandleFunc("POST /api/assistant-runs", s.handleAssistantRunStart)
 	s.mux.HandleFunc("GET /api/assistant-runs/{run}", s.handleAssistantRunRead)

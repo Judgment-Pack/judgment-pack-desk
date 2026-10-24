@@ -76,6 +76,8 @@ type assistantRunEvent struct {
 	Event contract.RunEvent `json:"event"`
 }
 type assistantRunRecord struct {
+	PackChecks      []assistantPackRecheck      `json:"packChecks,omitempty"`
+	SavedPack       *assistantSavedPackBasis    `json:"savedPack,omitempty"`
 	Websites        []assistantWebsiteCustody   `json:"websites,omitempty"`
 	Links           []assistantLinkCustody      `json:"links,omitempty"`
 	Searches        []assistantSearchCustody    `json:"searches,omitempty"`

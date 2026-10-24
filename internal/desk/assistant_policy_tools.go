@@ -202,6 +202,7 @@ func (e *assistantRunExecution) assistantConversationTools(runtime *assistantRun
 	}
 	tools := append(append(append(append(append(append(append(graph.tools, tests...), recipes.tools...), dialects.tools...), records.tools...), research.tools...), search.tools...), links.tools...)
 	tools = append(tools, websites.tools...)
+	tools = append(tools, e.assistantSavedPackTools(runtime)...)
 	return newAssistantHostRegistry(append(tools, e.assistantPlanTools()...))
 }
 
@@ -209,7 +210,7 @@ var assistantPolicyNames = []string{"read_policy", "propose_policy_update", "rea
 
 func assistantPolicyTool(name string) bool { return contains(assistantPolicyNames, name) }
 func assistantHostProposal(name string) bool {
-	return assistantDialectProposal(name) || name == "propose_graph" || name == "propose_test_cases" || name == "propose_dialect_recipe" || contains([]string{"propose_policy_update", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}, name)
+	return name == assistantSavedPackTool || assistantDialectProposal(name) || name == "propose_graph" || name == "propose_test_cases" || name == "propose_dialect_recipe" || contains([]string{"propose_policy_update", "propose_policy_pack_interpretation", "propose_policy_graph_interpretation"}, name)
 }
 func assistantPolicySchemas() map[string]json.RawMessage {
 	text := func(n int) any { return map[string]any{"type": "string", "maxLength": n} }

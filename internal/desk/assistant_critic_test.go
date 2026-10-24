@@ -89,6 +89,9 @@ func assistantCriticResave(t *testing.T, s *Server, token string, old *assistant
 	chat.Get("checkpoint").Get("state").Set("execution", assistantCriticValue(t, `{"approval":{"state":"granted"},"grants":["historical-not-authority"],"deskCriticInputV1":"caller-value-not-authority"}`))
 	chat.Get("checkpoint").Set(assistantCriticCheckpointMember, runcontext.String("caller-value-not-authority"))
 	if linked {
+		// Linked saved-pack context resolves its exact project declaration before
+		// authoring; a browser link and saved file alone cannot establish it.
+		assistantRunMust(t, os.WriteFile(filepath.Join(s.cfg.ProjectDir, runtimeConfigName), []byte(`{"configVersion":"5","packs":{"p":{"path":"pack.json"}}}`), 0600))
 		assistantRunMust(t, os.WriteFile(filepath.Join(s.cfg.ProjectDir, "pack.json"), []byte(`{"id":"p","title":"Saved target"}`), 0600))
 		chat.Set("pack", assistantCriticValue(t, `{"id":"p","path":"pack.json","digest":"historic-link-digest"}`))
 		saved := policyWorkspaceRead(t, s, token, "/api/pack-tests")
@@ -217,7 +220,7 @@ func assistantCriticAssertResult(t *testing.T, e *assistantRunExecution, x *assi
 	if !assistantRunDigest(fingerprint) || fingerprint != e.input.critic.fingerprint {
 		t.Fatal("canonical snapshot lost host-bound critic custody")
 	}
-	critique, proposal, testResult := false, false, false
+	critique, proposal, testResult, proposalRefused := false, false, false, false
 	for _, held := range record.Events {
 		event := held.Event
 		if event.Critique != nil {
@@ -226,6 +229,9 @@ func assistantCriticAssertResult(t *testing.T, e *assistantRunExecution, x *assi
 		if event.Proposal != nil {
 			proposal = event.Proposal.Critique != nil && !event.Proposal.Critique.Refuted
 		}
+		if event.Guardrail != nil && event.Guardrail.Tool == "proposal" && event.Guardrail.Action == "refused" {
+			proposalRefused = true
+		}
 		if event.ToolResult != nil && event.ToolResult.Name == "experimental_evaluate" {
 			testResult = !event.ToolResult.IsError
 		}
@@ -233,7 +239,19 @@ func assistantCriticAssertResult(t *testing.T, e *assistantRunExecution, x *assi
 			t.Fatal("critic restored approval")
 		}
 	}
-	if !critique || !proposal || !testResult {
+	linked, _, err := assistantSavedPackLink(e.source.Original)
+	assistantRunMust(t, err)
+	// The canonical critic still reviews the candidate. Linked saved packs
+	// deliver proposals only through their checked host tool, so generic
+	// artifact delivery must be explicitly refused after that review.
+	if linked != "" {
+		if proposal || !proposalRefused {
+			t.Fatal("linked generic proposal escaped its canonical guard", record.Events)
+		}
+	} else if !proposal || proposalRefused {
+		t.Fatal("canonical artifact proposal changed", record.Events)
+	}
+	if !critique || !testResult {
 		t.Fatalf("canonical critic evidence missing: %+v", record.Events)
 	}
 	for _, op := range record.Operations {

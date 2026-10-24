@@ -503,14 +503,31 @@ func TestAssistantRunProtocolPersistenceFailureBeforeDispatch(t *testing.T) {
 }
 func TestAssistantRunProtocolOwnerChangeStopsDispatch(t *testing.T) {
 	proceed := make(chan struct{})
+	defer func() {
+		select {
+		case <-proceed:
+		default:
+			close(proceed)
+		}
+	}()
+	entered := make(chan struct{})
 	result := make(chan error, 1)
 	s, token, start, _ := assistantProtocolFixture(t, func(ctx context.Context, e *assistantRunExecution) error {
+		close(entered)
 		<-proceed
 		err := e.Intent(ctx, assistantRunOp("one"))
 		result <- err
 		return err
 	})
 	view := assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs", start), 201)
+	// Admission returns before the runner's initial Authorize. Enter the
+	// executor before revoking scope, so this exercises the next Intent fence
+	// rather than skipping the executor and leaving its result unsignaled.
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runner did not enter before owner change")
+	}
 	assistantRunMust(t, os.WriteFile(filepath.Join(s.projectDir, assistantProfilePath), []byte(`{"profileVersion":1,"api":{"inherit":false,"models":[],"model":null}}`), 0600))
 	close(proceed)
 	select {
@@ -518,7 +535,7 @@ func TestAssistantRunProtocolOwnerChangeStopsDispatch(t *testing.T) {
 		if err == nil {
 			t.Fatal("disabled model escaped dispatch admission")
 		}
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("runner did not return")
 	}
 	assistantProtocolWait(t, s, token, view.ID, "stopped")

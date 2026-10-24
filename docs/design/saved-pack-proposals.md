@@ -29,3 +29,44 @@ In a saved-pack workspace, the same composer approval control can grant **one ch
 This separates proposal repair from execution permission in the same way that [Vercel's tool approval](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling) separates tool generation from execution. The shared Desk controller also serves subscription adapters, so approval and correction behavior are not limited to the Vercel API adapter. [Vercel loop control](https://ai-sdk.dev/docs/agents/loop-control) supplies adapter-level stopping; Desk retains its cross-provider execution allowance and recovery journal above it.
 
 Verified host writes publish a same-window receipt through `files/verifiedWrites`. A document buffer adopts it only when its path and base digest match and it has neither changed bytes nor pending field work. This keeps a clean pack reader current after chat saving without weakening the frozen-revision rule for watcher refreshes or replacing unsaved edits. Receipts are not retained or replayed and never grant permission.
+
+## Private server proposal lifecycle
+
+The private saved-chat executor captures the host-resolved linked pack, declaration,
+exact saved bytes and saved case snapshot before its first author request. A matching
+`packContext` on that exact saved user turn supplies the comparison text, including
+unsaved editor edits. It cannot select a different target or grant permission. The
+original capture lives in the run ledger and projects into `Candidate.packReview.basis`;
+continuations reuse it and refuse changed source or suite custody.
+
+Linked saved packs disable generic artifact proposals and use the root Work-only
+`propose_saved_pack` proposal HostTool. Agent v0.9.0 `CheckArtifact` retains exact
+candidate text before checks and invokes the released `CorrectArtifact` controller
+with zero internal corrections. Structural validation and the complete executable
+saved matrix use the exact candidate, with immutable suite and source checks before
+and after asynchronous Runtime work and at physical dispatch. Findings bind to the
+exact completed Runtime operations and are retained before tool return. Further
+corrections are tool attempts in the same managed turn and allowance. An exact
+previous candidate returns retained findings with stalled/clarification guidance
+after fresh custody checks; it does not replay Runtime work or allocate another
+turn. Canonical progress and request accounting still own dispatch termination.
+Explanations need no proposal. Expected-error rows execute; unasserted rows remain
+visible in the total. Fact values, decimal spellings, omissions, supported extension
+semantics, row order, rationales and intentional type notes remain saved review data.
+The unavailable Runtime fact-type advisory surface does not block these checks.
+
+An explicit private `POST /api/assistant-runs/{run}/pack-checks` accepts only an
+idempotency ID, candidate digest and digest of the current case identity. The host
+resolves the candidate from its retained producer and the current linked chat,
+then uses the same model-free checker. Only the two snapshot tools run in a temporary
+directory. The attempt and exact Runtime results persist beside the original run;
+completed duplicate delivery reads them, while incomplete delivery refuses replay.
+A fresh explicit request can check a new suite snapshot, but source, declaration,
+owner and candidate changes refuse. This endpoint updates no conversation response,
+question, execution checkpoint, allowance, pack file or saved expectations. Its
+browser client validates candidate and suite identity before returning display data.
+The existing proposal readers consume both the Go projection and recheck response.
+
+These hooks remain private migration infrastructure. They do not activate the
+production executor, replace the browser engine, or add server Save admission.
+Current editor veto and final executor adoption remain separate cutover work.
