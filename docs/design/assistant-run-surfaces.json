@@ -482,24 +482,29 @@
     {
       "id": "context-maintenance",
       "category": "model-free-canonical",
-      "currentOwner": "browser managedContext ledger/cache/compaction, connection/runtime/memory host injection",
+      "currentOwner": "browser retained context awaits final cutover; Go candidates use canonical raw Host parts and adapter-owned context policy",
       "targetOwner": "published Go context plus server-owned ChatContext per authorized owner; no model summarizer",
       "entrypoints": [
         "web/src/assistant/chatContexts.ts",
         "web/src/assistant/runContext.ts",
         "web/src/research/retainedCheck.ts",
         "Agent go/context/chat.go",
-        "Agent go/context/session.go"
+        "Agent go/context/session.go",
+        "internal/desk/assistant_prompt.go",
+        "internal/desk/ai_wire_guard.go"
       ],
       "preserve": [
         "immutable Runtime reads keyed by identity/version, development build run-only",
         "child visible-reference scopes; dispose owner context on authorized delete",
-        "no reuse of mutable evaluation/workspace reads; preserve exact originals"
+        "no reuse of mutable evaluation/workspace reads; preserve exact originals",
+        "adapter owns prompt assembly; legacy relay/native transports measure limits without recall inference or prompt appends"
       ],
       "verification": [
         "web/src/assistant/context/coverage.test.ts",
         "web/src/assistant/runContext.test.ts",
-        "published context vectors; host descriptor/model gate integration fixture"
+        "published context vectors; host descriptor/model gate integration fixture",
+        "internal/desk/assistant_prompt_wire_test.go",
+        "internal/desk/ai_wire_guard_test.go"
       ],
       "blockedByProviderManagedCoordinator": false
     },
