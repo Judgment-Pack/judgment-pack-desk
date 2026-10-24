@@ -1,3 +1,4 @@
+import { withCreation, type CreationAction } from './creation'
 import { normalizeFailure } from '@judgment-pack/harness/failures'
 import { sha256 } from '@judgment-pack/harness/records'
 import { validQuestionDraft, type QuestionDraft } from '@judgment-pack/harness/questions'
@@ -18,17 +19,18 @@ import type { RunAction, RunSnapshot } from './types'
 type ActionBody = RunAction extends infer A ? A extends RunAction ? Omit<A,'id'|'revision'> : never : never
 interface Ports {
  project:string
+ current?:()=>Chat|undefined
  draftScope?:()=>Promise<string>
  client:()=>Promise<ServerRunClient>
  prepare:(state:RunState,requestId:string,admissionId:string,signal:AbortSignal)=>Promise<string>
- reconcile:(release:boolean)=>Promise<Chat|undefined>
+ reconcile:(release:boolean,projection?:{digest:string;responseId:string;requestId:string;admissionId:string})=>Promise<Chat|undefined>
  notSent?:(state:RunState,requestId:string)=>void
  pin:()=>void
  problem:(text:string)=>void
 }
 const restored=(chat:Chat):RunState=>{
  const saved=chat.checkpoint?.state??INITIAL_STATE
- return {...saved,phase:saved.turns.length?'conversation':'idle',status:!saved.turns.length?'idle':saved.status==='running'?'stopped':saved.status==='ready'?'complete':saved.status,
+ return {...saved,restored:true,readiness:'',phase:saved.turns.length?'conversation':'idle',status:!saved.turns.length?'idle':saved.status==='running'?'stopped':saved.status==='ready'?'complete':saved.status,
   candidates:saved.candidates.map(c=>({...c,digest:sha256(c.text),document:JSON.parse(c.text)})),events:[],streaming:undefined,taskProgress:undefined}
 }
 /** One saved owner. Lifecycle disconnect never sends a mutation. */
@@ -50,6 +52,8 @@ export class SavedChatRun implements ResearchRunController {
  private cancelling=false
  private stopRequested=false
  private preparedAnswer?:{id:string;draft:QuestionDraft}
+ private pendingCreation?:CreationAction
+ private creationContext?:string
  private marker?:Chat['serverRequest']
  constructor(private readonly ownerId:string,chat:Chat,private readonly ports:Ports) {this.base=restored(chat);this.state=this.base;this.marker=chat.serverRequest}
  subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
@@ -99,9 +103,9 @@ export class SavedChatRun implements ResearchRunController {
   this.observations=new RunObservations(reference(snapshot),snapshot)
   this.busy=false
   if(snapshot.chatProjection?.acknowledged) {
-   const chat=await this.ports.reconcile(true)
+   const chat=await this.ports.reconcile(true,{digest:snapshot.chatProjection!.digest,responseId:snapshot.chatProjection!.responseId,requestId:snapshot.requestId,admissionId:snapshot.admissionId})
    if(!this.active(epoch))return
-   if(chat){this.clearDrafts();this.base=withPackChecks(restored(chat),snapshot.packChecks);this.set(this.base)}
+   if(chat){this.clearDrafts();this.base=withCreation(withPackChecks(restored(chat),snapshot.packChecks),snapshot.creation,!snapshot.historical&&snapshot.state==='complete',!snapshot.historical);this.creationContext=this.context(chat);this.set(this.base)}
    return
   }
   this.set(this.present(snapshot))
@@ -117,8 +121,8 @@ export class SavedChatRun implements ResearchRunController {
     this.snapshot=observation.snapshot
     this.set(this.present(observation.snapshot,observations.answer,Object.fromEntries([...observations.children].map(([k,p])=>[k,p.text]))))
     if(observation.snapshot.chatProjection?.acknowledged) {
-     const chat=await this.ports.reconcile(true)
-     if(this.active(epoch)&&chat){this.clearDrafts();this.base=withPackChecks(restored(chat),observation.snapshot.packChecks);this.set(this.base)}
+     const chat=await this.ports.reconcile(true,{digest:observation.snapshot.chatProjection!.digest,responseId:observation.snapshot.chatProjection!.responseId,requestId:observation.snapshot.requestId,admissionId:observation.snapshot.admissionId})
+     if(this.active(epoch)&&chat){this.clearDrafts();this.base=withCreation(withPackChecks(restored(chat),observation.snapshot.packChecks),observation.snapshot.creation,!observation.snapshot.historical&&observation.snapshot.state==='complete',!observation.snapshot.historical);this.creationContext=this.context(chat);this.set(this.base)}
     }
    }else if(observation.kind==='progress'&&this.snapshot)this.set(this.present(this.snapshot,observations.answer,Object.fromEntries([...observations.children].map(([k,p])=>[k,p.text]))))
   }
@@ -126,8 +130,9 @@ export class SavedChatRun implements ResearchRunController {
  start:ResearchRunController['start']=(prompt,_seeds,display,attachments,statement,choice,pack)=>{this.send(prompt,display,false,attachments,statement,choice,pack)}
  send:ResearchRunController['send']=(input,display=input,_retry=false,attachments=[],statement=display,choice,packContext)=>{
   if(this.ended||this.running||this.uncertain)return
-  const turn:Turn={id:crypto.randomUUID(),role:'user',kind:'message',text:display,input,statement,attachments,at:new Date().toISOString(),...(choice?{researchChoice:choice}:{}),...(packContext?{packContext}:{})}
-  this.base={...this.state,failure:undefined,detail:'',events:[],streaming:undefined,streamingId:undefined,taskProgress:undefined,turns:[...this.state.turns,turn]}
+  const creation=this.pendingCreation;this.pendingCreation=undefined
+  const turn:Turn={...(creation?{creation}:{}),id:crypto.randomUUID(),role:'user',kind:'message',text:display,input,statement,attachments,at:new Date().toISOString(),...(choice?{researchChoice:choice}:{}),...(packContext?{packContext}:{})}
+  this.base={...this.state,restored:true,readiness:'',failure:undefined,detail:'',events:[],streaming:undefined,streamingId:undefined,taskProgress:undefined,turns:[...this.state.turns,turn]}
   this.marker={requestId:turn.id!,admissionId:turn.id!};this.snapshot=undefined;this.knownNotSent=false;this.stopRequested=false;this.busy=true;this.set({...this.base,phase:'conversation',status:'running',failure:undefined,detail:''})
   // The composer's synchronous selected controls/attachments update is part of this CAS.
   queueMicrotask(()=>{void this.begin(turn.id!)})
@@ -169,7 +174,7 @@ export class SavedChatRun implements ResearchRunController {
  keepExecution=()=>{void this.action({kind:'abandon'})}
  prepareBudgetContinuation=()=>this.canExtendResponse
  continueExecution=()=>{if(this.canExtendResponse)void this.action({kind:'extend-budget'})}
- retryResponse=()=>{if(this.canRetryResponse){const original=[...this.state.turns].reverse().find(t=>this.knownNotSent?t.role==='user':t.id===this.snapshot?.requestId);if(original)this.send(original.input??original.text,original.text,false,original.attachments,original.statement,original.researchChoice,original.packContext)}}
+ retryResponse=()=>{if(this.canRetryResponse){const original=[...this.state.turns].reverse().find(t=>this.knownNotSent?t.role==='user':t.id===this.snapshot?.requestId);if(original?.creation){const action=original.creation;if(action.kind==='approve-correction'){this.approveExpectationCorrection(action.issueId,action.token)}else{this.requestCreation(action,original.text)}}else if(original)this.send(original.input??original.text,original.text,false,original.attachments,original.statement,original.researchChoice,original.packContext)}}
  updateQuestionDraft=(id:string,draft:QuestionDraft)=>{
   const q=this.state.questions?.find(q=>q.id===id)
   if(this.ended||this.running||this.snapshot?.historical||!q||q.resolution||!validQuestionDraft(q.prompt,draft))return
@@ -181,7 +186,18 @@ export class SavedChatRun implements ResearchRunController {
  appendConversation=(turns:Turn[])=>{if(this.running)throw Error('Finish the active response before adding messages.');this.base={...this.state,turns:[...this.state.turns,...turns]};this.set(this.base);return this.state}
  get pendingApproval(){const snapshot=this.snapshot,a=snapshot?.checkpoint?.approval,r=snapshot?.approvalReference;return !this.running&&!snapshot?.historical&&a?.state==='asked'&&r?{...r,name:a.name,args:a.args}:undefined}
  decideApproval=(approved:boolean)=>{const current=this.pendingApproval;if(current)void this.action({kind:'approval',callId:current.callId,argsDigest:current.argsDigest,approved})}
- recheck=()=>{void this.check()}
+ recheck=()=>{if(this.state.candidates.at(-1)?.packReview){void this.check();return}const candidate=this.state.candidates.at(-1);if(candidate)this.requestCreation({kind:'check',candidateDigest:candidate.digest},'Run current draft checks.')}
+ private context(chat:Chat){return JSON.stringify([chat.draftGeneration,chat.mode,chat.interaction,chat.aiConnection,chat.model,chat.documents,chat.checkpoint?.sources,chat.checkpoint?.state.cases,chat.checkpoint?.state.expectationIssues,chat.checkpoint?.state.turns])}
+ basisNow=()=>{const current=this.ports.current?.();return this.snapshot?.creation&&this.creationContext&&current&&this.context(current)===this.creationContext&&!this.running&&!this.state.restored?this.snapshot.creation.sourceDigest:''}
+ private requestCreation(action:CreationAction,label:string){if(this.ended||this.running||this.uncertain||this.needsReconnect)return false;this.pendingCreation=action;this.send(label,label,false,[],label,action.kind==='research-choice'?action.choice:undefined);return true}
+ prepareCreation=async()=>{const candidate=this.state.candidates.at(-1);if(!candidate||candidate.packReview||!this.requestCreation({kind:'check',candidateDigest:candidate.digest},'Run current draft checks before finalizing.'))return false;return await new Promise<boolean>(resolve=>{const done=()=>{if(this.running)return;unsubscribe();resolve(this.state.status==='ready'&&!!this.basisNow())},unsubscribe=this.subscribe(done);done()})}
+ recoverDraft=(text:string)=>{const turn=this.state.turns.find(t=>t.role==='assistant'&&t.kind==='message'&&t.text===text);if(turn?.id&&!this.state.candidates.length)this.requestCreation({kind:'recover',messageId:turn.id,messageDigest:sha256(text)},'Recover the complete proposal from the selected assistant message.')}
+ establishCases=()=>{const candidate=this.state.candidates.at(-1);if(candidate&&!this.state.cases.length&&!this.state.expectationIssues.some(i=>!i.resolved)&&!this.state.heldProposal)this.requestCreation({kind:'establish-cases',candidateDigest:candidate.digest},'Establish independent cases from my statements and verified sources.')}
+ retryExpectationValidation=()=>{const candidate=this.state.candidates.at(-1);if(candidate&&this.state.heldProposal?.candidateDigest===candidate.digest)this.requestCreation({kind:'retry-validation',candidateDigest:candidate.digest},'Retry validation of the exact retained case proposal.')}
+ proposeExpectationCorrection=(issueId:string)=>{const candidate=this.state.candidates.at(-1);if(candidate&&this.state.expectationIssues.some(i=>i.id===issueId&&!i.resolved))this.requestCreation({kind:'propose-correction',candidateDigest:candidate.digest,issueId},'Propose an independently grounded expectation correction for '+issueId+'.')}
+ approveExpectationCorrection=(issueId:string,token:string)=>{const candidate=this.state.candidates.at(-1),issue=this.state.expectationIssues.find(i=>i.id===issueId&&!i.resolved);if(candidate&&issue?.proposal?.token===token)this.requestCreation({kind:'approve-correction',candidateDigest:candidate.digest,issueId,token},'Approve the visible expectation correction for '+issueId+' and retest the exact unchanged draft.')}
+ chooseResearch=(choice:'research'|'provided')=>{this.requestCreation({kind:'research-choice',choice},'Continue my previous request using this explicit read-only research choice. Do not repeat prior actions, propose artifacts, write packs or graphs, or send messages.')}
+
  checkProposal=async(candidate:Candidate)=>{
   const held=this.snapshot
   if(this.ended||!held||held.historical||!candidate.packReview||!this.state.candidates.some(c=>c.digest===candidate.digest)||this.running)throw new RunRequestError('not-sent',undefined,'permission')
@@ -199,5 +215,5 @@ export class SavedChatRun implements ResearchRunController {
 
 }
 export function savedChatRun(store:ChatStore,chat:Chat):SavedChatRun {
- return new SavedChatRun(chat.id,chat,{project:store.projectRoot,draftScope:async()=>sha256((await sessionBearer())+'\0'+store.projectRoot+'\0'+chat.id),notSent:(state,requestId)=>store.releaseUnsentServerRequest(chat.id,requestId,state),client:serverRunClient,prepare:(state,id,admission,signal)=>store.prepareServerRequest(chat.id,state,id,admission,signal),reconcile:release=>store.reconcileServer(chat.id,release),pin:()=>store.pinServerChat(chat.id),problem:text=>store.problem(text)})
+ return new SavedChatRun(chat.id,chat,{project:store.projectRoot,current:()=>{const s=store.getSnapshot();return [...s.chats,...s.drafts].find(c=>c.id===chat.id)},draftScope:async()=>sha256((await sessionBearer())+'\0'+store.projectRoot+'\0'+chat.id),notSent:(state,requestId)=>store.releaseUnsentServerRequest(chat.id,requestId,state),client:serverRunClient,prepare:(state,id,admission,signal)=>store.prepareServerRequest(chat.id,state,id,admission,signal),reconcile:(release,projection)=>store.reconcileServer(chat.id,release,projection),pin:()=>store.pinServerChat(chat.id),problem:text=>store.problem(text)})
 }

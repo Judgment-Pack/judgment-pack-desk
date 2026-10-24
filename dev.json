@@ -356,6 +356,13 @@
       "toolchain": "shell",
       "timeout": 900,
       "summary": "Authoring|PASS|passed"
+    },
+    {
+      "name": "assistant-creation-readers",
+      "run": "scripts/dev/assistant-creation.sh",
+      "toolchain": "shell",
+      "timeout": 900,
+      "summary": "Creation|PASS|passed"
     }
   ]
 }

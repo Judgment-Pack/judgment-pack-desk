@@ -1,3 +1,4 @@
+import { readCreation } from './creation'
 import { readPackCheck } from '../../chat/packProposal'
 import type { AssistantEvent } from '@judgment-pack/harness/contract'
 import { readUserQuestion, validQuestionDraft, type UserQuestion } from '@judgment-pack/harness/questions'
@@ -85,7 +86,7 @@ function continuations(value:unknown, events:readonly RunEvent[],checkpoint:RunS
  return value as RunContinuation[]
 }
 export function decodeSnapshot(value: unknown, expected: RunBinding & { readonly id?: string }): RunSnapshot {
-  if (!object(value) || !exact(value,['packChecks','approvalReference','admissionId','id','revision','owner','requestId','state','historical','checkpoint','operations','events','cursor','chatProjection','projectionIssue','continuations','displayPreview']) || !text(value.admissionId,128) || !runID(value.id) || expected.id !== undefined && value.id !== expected.id || !revision(value.revision) || !object(value.owner) || !exact(value.owner,['kind','id','revision']) || !runOwner(value.owner.kind,value.owner.id) || !digest(value.owner.revision) || value.owner.kind !== expected.owner.kind || value.owner.id !== expected.owner.id || value.owner.revision !== expected.owner.revision || !text(value.requestId,128) || value.requestId !== expected.requestId || typeof value.state !== 'string' || !['admitted','running','awaiting-input','awaiting-client','paused-budget','stopped','interrupted','complete','failed'].includes(value.state) || value.historical !== undefined && typeof value.historical !== 'boolean') return invalid()
+  if (!object(value) || !exact(value,['creation','packChecks','approvalReference','admissionId','id','revision','owner','requestId','state','historical','checkpoint','operations','events','cursor','chatProjection','projectionIssue','continuations','displayPreview']) || !text(value.admissionId,128) || !runID(value.id) || expected.id !== undefined && value.id !== expected.id || !revision(value.revision) || !object(value.owner) || !exact(value.owner,['kind','id','revision']) || !runOwner(value.owner.kind,value.owner.id) || !digest(value.owner.revision) || value.owner.kind !== expected.owner.kind || value.owner.id !== expected.owner.id || value.owner.revision !== expected.owner.revision || !text(value.requestId,128) || value.requestId !== expected.requestId || typeof value.state !== 'string' || !['admitted','running','awaiting-input','awaiting-client','paused-budget','stopped','interrupted','complete','failed'].includes(value.state) || value.historical !== undefined && typeof value.historical !== 'boolean') return invalid()
   const [r, count] = cursorParts(value.cursor)
   const events = value.events === null ? [] : Array.isArray(value.events) ? value.events.map(decodeEvent) : invalid()
   if (events.length > 1024 || new Set(events.map(e => e.id)).size !== events.length || r !== value.revision || count !== events.length) return invalid()
@@ -106,7 +107,7 @@ export function decodeSnapshot(value: unknown, expected: RunBinding & { readonly
   if (value.displayPreview !== undefined) decodePreview(value.displayPreview)
   const ops = operations(value.operations)
   if (value.state === 'complete' && ops.some(op=>!['completed','refused'].includes(op.state))) return invalid()
-  return {...value, ...(receipts ? {continuations:receipts} : {}), operations: ops, events, ...(checkpoint ? {checkpoint} : {})} as unknown as RunSnapshot
+  return {...value, ...(value.creation===undefined?{}:{creation:readCreation(value.creation)}), ...(receipts ? {continuations:receipts} : {}), operations: ops, events, ...(checkpoint ? {checkpoint} : {})} as unknown as RunSnapshot
 }
 export function reference(snapshot: RunSnapshot): RunReference { return {id:snapshot.id, owner:{...snapshot.owner}, requestId:snapshot.requestId} }
 

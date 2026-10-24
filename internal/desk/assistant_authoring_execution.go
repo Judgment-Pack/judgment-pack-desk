@@ -201,6 +201,20 @@ func (*assistantAuthoringExecutor) Prepare(ctx context.Context, source assistant
 	if err != nil {
 		return contract.Checkpoint{}, err
 	}
+	purpose := ""
+	if source.Start.Purpose == "author-graph" {
+		purpose = "graph"
+	}
+	a, err := readAssistantAuthoringRequest(source.Request)
+	if err != nil {
+		return contract.Checkpoint{}, err
+	}
+	return prepareAssistantContextSession(ctx, source, chat, purpose, a.Effort)
+}
+
+// All explicit saved-owner workflows prepare the same managed session. This
+// function constructs policy/allowance state and cannot dispatch a provider.
+func prepareAssistantContextSession(ctx context.Context, source assistantRunSource, chat *assistantExecutionInput, purpose, effort string) (contract.Checkpoint, error) {
 	e := &assistantRunExecution{source: source, record: assistantRunRecord{Binding: source.Binding}}
 	named, err := e.assistantExecutionModels()
 	if err != nil {
@@ -218,16 +232,10 @@ func (*assistantAuthoringExecutor) Prepare(ctx context.Context, source assistant
 			return contract.Checkpoint{}, err
 		}
 	}
-	purpose := ""
-	if source.Start.Purpose == "author-graph" {
-		purpose = "graph"
-	}
 	session := runcontext.Session{Prompt: source.Text, Purpose: purpose, Context: input, Critic: chat.Critic, CriticProject: source.Profile.Critic, CriticReasoning: chat.CriticReasoning, PolicyLegacyModels: &named}
 	run := &adapter.Run{ModelName: source.Binding.Model, Context: input}
 	config := source.Connection.Assistant
 	if config.Engine == "codex" && config.Agent != nil {
-		a, _ := readAssistantAuthoringRequest(source.Request)
-		effort := a.Effort
 		run.Agent = &adapter.Agent{Model: source.Binding.Model, Effort: effort}
 		session.Agent = &runcontext.AgentSession{Model: source.Binding.Model, Effort: effort}
 	} else if config.Engine == "vercel" && config.Endpoint != nil {

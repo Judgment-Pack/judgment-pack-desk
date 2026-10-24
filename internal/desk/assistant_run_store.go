@@ -76,6 +76,7 @@ type assistantRunEvent struct {
 	Event contract.RunEvent `json:"event"`
 }
 type assistantRunRecord struct {
+	Creation        *assistantCreationReceipt   `json:"creation,omitempty"`
 	DisplayPreview  []assistantRunPreview       `json:"displayPreview,omitempty"`
 	PackChecks      []assistantPackRecheck      `json:"packChecks,omitempty"`
 	SavedPack       *assistantSavedPackBasis    `json:"savedPack,omitempty"`
@@ -491,6 +492,9 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 		if err := validateAssistantDomainOutputs(run); err != nil {
 			return err
 		}
+		if err := validateAssistantCreationReceipt(run); err != nil {
+			return err
+		}
 		if _, err := pendingAssistantRunQuestion(run); err != nil {
 			return err
 		}
@@ -535,7 +539,7 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 			events[event.ID] = true
 		}
 	}
-	return nil
+	return validateAssistantCreationHeldWitnesses(ledger)
 }
 
 func sameAssistantRunCheckpoint(a, b *contract.Checkpoint) bool {

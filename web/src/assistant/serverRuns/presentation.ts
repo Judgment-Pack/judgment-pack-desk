@@ -26,7 +26,7 @@ export function presentRun(base: RunState, snapshot: RunSnapshot, streaming='', 
    if(answer?.kind==='answer')turns.push({id:answerId,role:'user',kind:'message',text:[...prompt.options.filter(o=>draft.selected.includes(o.id)).map(o=>o.label),draft.text].filter(Boolean).join('\n'),at:answer.answer.at})
    questions.push({id:e.id,prompt,draft,...(answer?.kind==='answer'?{resolution:{kind:'answered' as const,at:answer.answer.at,turnId:answerId!,continued:true}}:{})})
   } else if(e.type==='error')failure=readFailure(e.failure)
-  else if(e.type==='proposal'&&e.document&&typeof e.document==='object') {
+  else if(e.type==='proposal'&&e.document&&typeof e.document==='object'&&!base.turns.some(t=>t.id===snapshot.requestId&&t.creation&&['establish-cases','propose-correction'].includes(t.creation.kind))) {
    const text=JSON.stringify(e.document)
    candidates.push({text,document:e.document,digest:sha256(text),revision:candidates.length+1,producedBy:'conversation',responseId})
   }

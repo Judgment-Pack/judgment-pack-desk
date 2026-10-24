@@ -81,23 +81,25 @@ admission, editor dirty/buffer/save/reload veto, CAS and exact readback. A succe
 check does not grant a write. Stale source, changed suite and mismatch findings
 refuse Save; uncertain delivery is not replayed.
 
-## Controls withheld until their owners migrate
+## Generic creation controls (#648)
 
-These are explicit remaining activation gates, not delivered replacements:
+The private creation executor and current browser binding now provide these controls
+through the same persisted chat admission and terminal projection boundary. The
+[creation workflow](creation-server-runs.md) owns their evidence and readiness.
 
-| Existing control | Saved-chat behavior in this slice | Required canonical replacement/owner |
+| Existing control | Canonical behavior | Boundary |
 | --- | --- | --- |
-| Recover draft from assistant prose | Hidden for canonical binding | Reviewed generic proposal recovery with exact source/candidate custody; standalone authoring owner |
-| Generic unlinked Run checks | Hidden for canonical binding; linked saved-pack Check proposal remains | Generic creation-candidate check/readiness owner, including source/case evidence |
-| Retry expectation validation | Hidden without a controller capability | Canonical generic expectation validation/recovery owner |
-| Establish cases | No callback for canonical binding | Canonical generic creation-case owner and explicit independent check path |
-| Propose expectation correction | No callback for canonical binding | Canonical expectation correction with retained findings and explicit reviewed replacement |
-| Approve expectation correction | No callback for canonical binding | Canonical exact expectation approval/CAS owner; historical text cannot authorize it |
-| Legacy research-choice continuation | Hidden for canonical binding | Explicit fresh read-only canonical research-choice request owner; composer choice on new Send remains |
+| Recover draft from assistant prose | Explicit exact retained-message recovery | Strict complete proposal and model-free Runtime validation |
+| Generic unlinked Run checks | Fresh current creation check | Independent cases and current source evidence; Save remains separate |
+| Retry expectation validation | Explicit retry of the retained full proposal | No paid reviewer, changed outcomes or reduced suite |
+| Establish cases | Explicit independent reviewer | Original person statements and verified evidence, without draft rules or observed results |
+| Propose expectation correction | Explicit independently grounded replacement | Current typed finding and unchanged handoff target |
+| Approve expectation correction | Exact visible person approval | Current token/source/candidate/session/project/generation, full retest and projection CAS |
+| Research-choice continuation | Fresh read-only canonical admission | Current phase, action permissions and compute; no restored grant |
 
-These omissions keep full factory activation and full v0.14.0 migration pending.
-Existing standalone surfaces retain their own implementation until their separate
-owner cutovers; this change introduces no compatibility fallback for saved chat.
+NewPackView and DraftPackView use this binding. Historical fallback is pure display;
+it constructs no browser execution owner and restores no approval. Global factory
+activation and engine removal still wait for the remaining release gates.
 
 ## Focused evidence
 

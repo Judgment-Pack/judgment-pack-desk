@@ -316,6 +316,28 @@ function renderDialog(
 
 const createButton = () => screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
 
+function renderCurrentCreation(beforeCreate:()=>Promise<boolean>,canCreate=()=>true){
+ const handover=researchHandover(),stub=handoverStub()
+ const router=createMemoryRouter([{path:'*',element:<McpContext.Provider value={connected({client:stub.client,...FULL_CAPS,validateSupported:true})}><DeskConfigFixture value={effectiveConfig(undefined)}><CreatePackDialog open presentation="review" onOpenChange={()=>{}} beforeCreate={beforeCreate} canCreate={canCreate} reviewDraft={{...handover,research:handover}}/></DeskConfigFixture></McpContext.Provider>}])
+ return render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router}/></QueryClientProvider>)
+}
+
+it.each(['refused','dirty','detached','complete'] as const)('keeps physical creation behind fresh canonical checks and the current manual guard: %s',async mode=>{
+ const sent=serveProject({project:PROJECT})
+ let finish!:(passed:boolean)=>void,current=true
+ const before=vi.fn(()=>new Promise<boolean>(resolve=>{finish=resolve}))
+ const view=renderCurrentCreation(before,()=>current)
+ await waitFor(()=>expect(createButton().disabled).toBe(false))
+ fireEvent.click(createButton())
+ await waitFor(()=>expect(before).toHaveBeenCalledOnce())
+ expect(sent).toEqual([])
+ if(mode==='dirty')current=false
+ if(mode==='detached')view.unmount()
+ await act(async()=>{finish(mode!=='refused')})
+ if(mode==='complete')await waitFor(()=>expect(sent.map(write=>write.path)).toEqual(['packs/reviewed-pack.pack.json','packs/reviewed-pack.matrix.json','packs/reviewed-pack.research.json','jpack.json']))
+ else {expect(sent).toEqual([]);if(mode!=='detached')expect(await screen.findByRole('alert')).toBeTruthy()}
+})
+
 it('explicit dialog dismissal asks the authoring hook to cancel, while route detach stays separate', async () => {
   const original = describeIt.useDescribeIt
   const discarded = vi.fn()
@@ -324,7 +346,7 @@ it('explicit dialog dismissal asks the authoring hook to cancel, while route det
     return {...state, discard: (cancel = true) => { discarded(cancel); state.discard(cancel) }}
   })
   const {closed} = renderDialog()
-  fireEvent.click(screen.getByRole('button', {name: 'Cancel', exact: true}))
+  fireEvent.click(screen.getByRole('button', {name: 'Cancel'}))
   await waitFor(() => expect(discarded).toHaveBeenCalledExactlyOnceWith(true))
   expect(closed).toEqual([false])
 })

@@ -186,6 +186,7 @@ export function CreatePackDialog({
   reviewDraft,
   onSaved,
   canCreate,
+	beforeCreate,
   initialFolderId,
   onFolderChange,
   submitLabel
@@ -197,6 +198,7 @@ export function CreatePackDialog({
   initialFolderId?: string
   onFolderChange?: (id:string) => void
   canCreate?: () => boolean
+	beforeCreate?: () => Promise<boolean>
   onDirtyChange?: (dirty: boolean) => void
   onWritingChange?: (writing: boolean) => void
   open: boolean
@@ -219,6 +221,8 @@ export function CreatePackDialog({
   const folderReady = initialFolderId===undefined || !folders.isError && !!folders.data?.document.folders.some(folder=>folder.id===folderId)
   const createHelpId = useId()
   const { config } = useEffectiveConfig()
+	const accepting=useRef(true)
+	useEffect(()=>{accepting.current=true;return()=>{accepting.current=false}},[])
   const { dir, idBase } = config.storage.packs
   const { known, exampleSupported, schemaSupported, validateSupported } = useMcp()
   const listing = useFileListing()
@@ -784,7 +788,8 @@ export function CreatePackDialog({
       // Discarding it and registering the requested spelling is how an entry
       // ends up naming a path the runtime cleans to something else — the same
       // aliasing defect the collision check had, arriving from the other side.
-      if (canCreate && !canCreate()) { setFailure({ lead: sourceMessage("The draft changed during review. Return to the conversation and review it again.") }); return }
+		if(beforeCreate&&!await beforeCreate()){if(accepting.current)setFailure({lead:sourceMessage('Current draft checks did not complete. Review the retained findings before creating the pack.')});return}
+      if (!accepting.current || canCreate && !canCreate()) { if(accepting.current)setFailure({ lead: sourceMessage("The draft changed during review. Return to the conversation and review it again.") }); return }
       let landed: FileContent
       try {
         landed = await writeFile({ path, content, baseSha256: '', createParents: true })

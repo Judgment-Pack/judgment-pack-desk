@@ -165,6 +165,12 @@ func (s *Server) assistantDocumentSnapshot(r *http.Request, owner assistantDocum
 		return nil, zero, err
 	}
 	defer lock.Close()
+	return s.assistantDocumentSnapshotLocked(r, owner, ref)
+}
+
+// The caller already holds the canonical private-data transaction.
+func (s *Server) assistantDocumentSnapshotLocked(r *http.Request, owner assistantDocumentOwner, ref assistantDocumentReference) ([]byte, researchGateway, error) {
+	var zero researchGateway
 	identity, _, err := s.assistantRunIdentity(r)
 	if err != nil || !assistantRunIdentityMatches(identity, owner.binding) {
 		return nil, zero, errAssistantRunScope

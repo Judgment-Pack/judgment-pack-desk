@@ -47,12 +47,13 @@ type assistantChatAttachmentGroup struct {
 // This pointer belongs to one retained execution; reconstructed capabilities
 // share the immutable custody snapshot, never a copied mutex or browser hook.
 type assistantChatCustody struct {
-	planMu      sync.Mutex
-	mu          sync.Mutex
-	ready       bool
-	documents   []assistantVerifiedDocument
-	critic      *assistantCriticSnapshot
-	policyReady bool
+	planMu          sync.Mutex
+	mu              sync.Mutex
+	ready           bool
+	documents       []assistantVerifiedDocument
+	critic          *assistantCriticSnapshot
+	policyReady     bool
+	creationSources *assistantCreationSourceCache
 }
 
 func assistantChatReferenceKey(ref assistantDocumentReference) string {
@@ -75,6 +76,18 @@ func (e *assistantRunExecution) prepareAssistantChatInput(ctx context.Context) (
 	chat, err := compileAssistantChatInput(e.source)
 	if err != nil {
 		return nil, err
+	}
+	creation, err := compileAssistantCreationInput(e.source)
+	if err != nil {
+		return nil, err
+	}
+	if creation != nil && contains([]string{"establish-cases", "propose-correction"}, creation.Action.Kind) {
+		if _, _, err := e.verifyAssistantCreationSources(ctx, creation); err != nil {
+			return nil, err
+		}
+		if err := creation.Fresh(ctx); err != nil {
+			return nil, err
+		}
 	}
 	if err := e.prepareAssistantSavedPack(ctx, chat); err != nil {
 		return nil, err
@@ -464,6 +477,19 @@ func compileAssistantChatInput(source assistantRunSource) (*assistantChatInput, 
 			return nil, errAssistantRunInvalid
 		}
 		out.Reasoning = value.Clone()
+	}
+	creation, err := compileAssistantCreationInput(source)
+	if err != nil {
+		return nil, err
+	}
+	if creation != nil && contains([]string{"establish-cases", "propose-correction"}, creation.Action.Kind) {
+		filtered, err := assistantCreationReviewerInput(creation)
+		if err != nil {
+			return nil, err
+		}
+		filtered.Thinking, filtered.Reasoning = out.Thinking, out.Reasoning
+		filtered.References, filtered.Attachments = out.References, out.Attachments
+		return filtered, nil
 	}
 	return out, nil
 }

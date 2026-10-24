@@ -9,6 +9,7 @@ export type ResearchRunController = Pick<AuthoringRun,
     readonly pendingApproval?: {callId:string;argsDigest:string;name:string;args:Record<string,unknown>}
     decideApproval?: (approved:boolean)=>void
     checkProposal?: (candidate:import('./run').Candidate)=>Promise<import('../chat/packProposal').PackProposalCheck>
+	prepareCreation?: () => Promise<boolean>
     readonly ownership?: 'server'
     disconnect?: () => void
     readonly needsReconnect?:boolean

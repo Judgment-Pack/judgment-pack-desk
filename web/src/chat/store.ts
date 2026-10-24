@@ -6,7 +6,7 @@ import {validPolicySources,type PolicyAuthoringSource} from '../policies/authori
 import {validPolicyInterpretationProposal,type PolicyInterpretationProposal} from '../policies/interpretation'
 import {validPolicyId,validPolicyRequest,validPolicyProposal,type PolicyRequest,type PolicyProposal} from '../policies/chat'
 import {validPlans,type ChatPlan} from '@judgment-pack/harness/planning/model'
-import type { Turn } from '../research/run'
+import { caseStatements, statementTurns, type Turn } from '../research/run'
 import {validDialectChatAction,validDialectId,type DialectChatAction} from '../dialects/chatActions'
 import {validDialectRecipeProposal,type DialectRecipeProposal} from '../dialects/proposals'
 import { validGraphSnapshot, type GraphDraft } from '../graphs/drafts'
@@ -508,7 +508,10 @@ export class ChatStore {
     this.serverOwned=true
     this.retainChat(id)
     if(this.pins.has(id))throw Error('The previous server response has not reconciled.')
-    this.update(id,{checkpoint:checkpoint(state,[]),serverRequest:{requestId,admissionId}})
+	const owner=[...this.state.chats,...this.state.drafts].find(chat=>chat.id===id)
+	const retained=checkpoint(state,[])
+	retained.sources=owner?.checkpoint?.sources??[]
+    this.update(id,{checkpoint:retained,serverRequest:{requestId,admissionId}})
     await this.checkpoint(signal)
     const reply=await this.io.read();signal.throwIfAborted()
     if(reply.project!==this.project||this.disposed)throw Error('The project changed before starting.')
@@ -524,11 +527,12 @@ export class ChatStore {
     const chat=[...this.state.chats,...this.state.drafts].find(c=>c.id===id)
     if(chat?.serverRequest?.requestId!==requestId||this.disposed)return
     this.pins.delete(id)
-    this.update(id,{serverRequest:undefined,checkpoint:checkpoint({...state,phase:'conversation',status:'stopped'},[])})
+    const retained=checkpoint({...state,phase:'conversation',status:'stopped'},[]);retained.sources=chat.checkpoint?.sources??[]
+    this.update(id,{serverRequest:undefined,checkpoint:retained})
   }
   pinServerChat(id:string) { this.serverOwned=true;this.pins.add(id) }
   /** Read-only private snapshot reconciliation. Local edits survive both refresh and CAS conflicts. */
-  async reconcileServer(id:string, release=false):Promise<Chat|undefined> {
+  async reconcileServer(id:string, release=false, projection?:{digest:string;responseId:string;requestId:string;admissionId:string}):Promise<Chat|undefined> {
     const reply=await this.io.read()
     if(reply.project!==this.project||this.disposed)throw Error('The project changed during chat reconciliation.')
     this.verifyWireConflicts(reply,new Map([...this.fieldEdits].map(([id,keys])=>[id,new Set(keys.keys())])))
@@ -537,7 +541,35 @@ export class ChatStore {
     this.baseline=remote;this.baselineWire=reply.wireChats??{};this.digest=reply.sha256
     if(release)this.pins.delete(id)
     this.set({chats})
-    return chats.find(c=>c.id===id)
+	const selected=chats.find(c=>c.id===id)
+	const exactProjection=projection&&reply.chatRevisions?.[id]===projection.digest&&selected?.serverRequest?.requestId===projection.requestId&&selected.serverRequest.admissionId===projection.admissionId&&selected.checkpoint?.state.responses?.some(r=>r.id===projection.responseId)
+	if(release&&exactProjection&&selected?.checkpoint?.state.candidates.length&&!selected.pack&&!selected.graph&&!selected.input&&!selected.policy){
+		const state=selected.checkpoint.state,statements=caseStatements(state)
+        for(const {id:statementId,turn} of statementTurns(state.turns))if(turn.creation)statements.delete(state.inheritedStatements===undefined?statementId:`message:${turn.id}`)
+        const saved:Checkpoint={...selected.checkpoint,state:{...state,inheritedStatements:[...statements],phase:'review',status:'needs-input',restored:true,execution:undefined,failure:undefined,events:[],checkRun:undefined,readiness:''}},current=this.state.packDrafts.find(d=>d.id===selected.draftId)
+		if(!selected.draftId){
+			const created=fromChat(selected,saved)
+			if(!this.state.deletedDrafts.includes(created.id)){
+				const retained=this.state.packDrafts.find(d=>d.id===created.id)
+				if(!retained&&!this.saveDraft(created))throw Error('The retained draft could not be saved.')
+				this.update(id,{draftId:created.id,draftGeneration:retained?.generation??created.generation})
+			}
+		}else if(current&&!current.finalized&&selected.draftGeneration===current.generation){
+			const accepted=current.checkpoint.state.candidates
+			if(!accepted.every((c,index)=>saved.state.candidates[index]?.text===c.text))throw Error('The retained draft changed before reconciliation.')
+			const next={...current,title:current.titleEdited?current.title:draftTitle(saved),checkpoint:artifactCheckpoint(saved),sourceFiles:[...new Map([...(current.sourceFiles??[]),...retainedSourceFiles(saved)].map(file=>[file.name+'\0'+file.text,file])).values()],policySources:selected.policySources??current.policySources,documents:retainSentDocuments(current.documents,selected.documents??[])}
+			// Original chat history retains every control and observation. Artifact
+			// generation tracks the candidate and independent evidence; a check or
+			// visible correction proposal cannot invalidate its own approval token.
+			const basis=(draft:PackDraft)=>{const s=draft.checkpoint.state;return JSON.stringify([draft.title,draft.mode,s.candidates.map(c=>c.text),s.cases,s.expectationIssues,s.heldProposal,s.unknowns,s.inheritedStatements,draft.checkpoint.sources,draft.sourceFiles,draft.policySources,draft.documents])}
+			if(basis(next)!==basis(current)){
+				if(!this.saveDraft({...next,generation:current.generation+1,updatedAt:selected.updatedAt}))throw Error('The retained draft could not be saved.')
+				this.update(id,{draftGeneration:current.generation+1})
+			}
+		}
+		if(this.state.dirty&&!await this.flush())throw Error('The retained draft link could not be saved.')
+	}
+    return this.state.chats.find(c=>c.id===id)
   }
 
 }
