@@ -62,6 +62,7 @@ import { diffProposal } from './proposalDiff'
 import { outcomeOf } from './runOutcome'
 import { stateFromEvents, thinkingLine } from '@judgment-pack/harness/thinking'
 import { useAuthoringRun } from './useAuthoringRun'
+import { whenSessionEnds } from '../mcp/session'
 import type { CriticCase } from '@judgment-pack/harness/refutation'
 import { CHECKING_KEY, UNREAD_KEY, useAssistantSlot } from './useAssistantSlot'
 import styles from './AssistantPane.module.css'
@@ -272,6 +273,11 @@ export function AssistantPane({
   const run = useAuthoringRun({ target: slot, model: picked.model, engine: slot.engine,
     thinking: slot.thinking, ...(slot.agent?.model === picked.model && slot.agent.effort ? {effort:slot.agent.effort} : {}) })
 
+  useEffect(() => whenSessionEnds(() => {
+    setSubmitted(null);setBaseline(null);setAccepted(null);setRejected(false)
+    setApplyRefused(false);setRan(undefined);setTyped('')
+  }), [])
+
   // The run starts when the prompt this submission asked for has arrived, and
   // once per submission: the query answers again on a refetch, and a second
   // start would be a second `jpack mcp` for one press of Run.
@@ -459,7 +465,7 @@ export function AssistantPane({
       <div className={styles.actions}>
         <ChatAction
           variant="primary"
-          disabled={running || typed.trim() === '' || !advertised}
+          disabled={running || run.canStart === false || typed.trim() === '' || !advertised}
           onClick={() =>
             setSubmitted({
               id: (nextRun.current += 1),
@@ -475,7 +481,7 @@ export function AssistantPane({
           diagnostics the check on this page already produced.
         */}
         <ChatAction
-          disabled={running || diagnostics === undefined || !canFix}
+          disabled={running || run.canStart === false || diagnostics === undefined || !canFix}
           aria-describedby={fixWhy(diagnosticCount, canFix, prompts.isSuccess) ? `${helpId}-fix` : undefined}
           onClick={() => {
             if (diagnostics === undefined) return
@@ -487,7 +493,7 @@ export function AssistantPane({
             })
           }}
         >{msg("Fix")}</ChatAction>
-        <ChatAction disabled={!running} onClick={stop}>{msg("Stop")}</ChatAction>
+        <ChatAction disabled={!running && !run.canStop} onClick={stop}>{msg("Stop")}</ChatAction>
       </div>
       {fixWhy(diagnosticCount, canFix, prompts.isSuccess) && <p id={`${helpId}-fix`} className={styles.honesty}>
         {fixWhy(diagnosticCount, canFix, prompts.isSuccess)}

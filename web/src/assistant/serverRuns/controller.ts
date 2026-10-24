@@ -54,14 +54,16 @@ export class SavedChatRun implements ResearchRunController {
  private preparedAnswer?:{id:string;draft:QuestionDraft}
  private pendingCreation?:CreationAction
  private creationContext?:string
+ // A terminal acknowledgement does not prove that the saved chat was reconciled.
+ private unreconciled=false
  private marker?:Chat['serverRequest']
- constructor(private readonly ownerId:string,chat:Chat,private readonly ports:Ports) {this.base=restored(chat);this.state=this.base;this.marker=chat.serverRequest}
+ constructor(private readonly ownerId:string,chat:Chat,private readonly ports:Ports) {this.base=restored(chat);this.state=this.base;this.marker=chat.serverRequest;this.unreconciled=!!this.marker}
  subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
  getSnapshot=()=>this.state
  private set(patch:Partial<RunState>) {this.state={...this.state,...patch};this.listeners.forEach(l=>l())}
  get running(){return this.busy||this.state.status==='running'}
- get canRetryResponse(){if(this.knownNotSent)return !this.ended&&!this.running&&!this.uncertain;return !this.ended&&!this.running&&!this.uncertain&&!!this.snapshot?.chatProjection?.acknowledged&&!this.snapshot.historical&&['failed','interrupted','stopped','complete'].includes(this.snapshot.state)}
- get needsReconnect(){return this.uncertain||!!this.snapshot&&!this.snapshot.historical&&!this.snapshot.chatProjection?.acknowledged&&!['admitted','running','awaiting-input','awaiting-client','paused-budget'].includes(this.snapshot.state)}
+ get canRetryResponse(){if(this.unreconciled)return false;if(this.knownNotSent)return !this.ended&&!this.running&&!this.uncertain;return !this.ended&&!this.running&&!this.uncertain&&!!this.snapshot?.chatProjection?.acknowledged&&!this.snapshot.historical&&['failed','interrupted','stopped','complete'].includes(this.snapshot.state)}
+ get needsReconnect(){if(this.ended)return false;return this.uncertain||this.unreconciled&&(!this.snapshot||!!this.snapshot.chatProjection?.acknowledged)||!!this.snapshot&&!this.snapshot.historical&&!this.snapshot.chatProjection?.acknowledged&&!['admitted','running','awaiting-input','awaiting-client','paused-budget'].includes(this.snapshot.state)}
  get canExtendResponse(){return !this.running&&!this.snapshot?.historical&&this.snapshot?.state==='paused-budget'}
  disconnect=()=>{this.epoch++;this.scope?.abort();this.scope=undefined;this.busy=false}
  private active(epoch:number){return epoch===this.epoch&&!this.scope?.signal.aborted}
@@ -86,7 +88,7 @@ export class SavedChatRun implements ResearchRunController {
  reconnect=async()=>{
   this.disconnect();const epoch=this.epoch;this.scope=new AbortController()
   if(!this.marker)return
-  this.ports.pin()
+  this.unreconciled=true;this.ports.pin()
   try {
    const client=await this.ready(),runs=await client.discover({owner:{kind:'chat',id:this.ownerId},requestId:this.marker.requestId},this.scope.signal)
    if(!this.active(epoch))return
@@ -98,14 +100,14 @@ export class SavedChatRun implements ResearchRunController {
  private async adopt(snapshot:RunSnapshot,epoch:number) {
   if(!this.active(epoch))return
   if(snapshot.admissionId!==this.marker?.admissionId||snapshot.owner.id!==this.ownerId||snapshot.requestId!==this.marker?.requestId)throw new RunRequestError('uncertain',undefined,'stale-state')
-  this.snapshot=snapshot
+  this.unreconciled=true;this.snapshot=snapshot
   if(this.stopRequested&&!snapshot.historical&&['admitted','running','awaiting-input','awaiting-client','paused-budget'].includes(snapshot.state)){this.stopRequested=false;this.busy=false;await this.action({kind:'cancel'});return}
   this.observations=new RunObservations(reference(snapshot),snapshot)
   this.busy=false
   if(snapshot.chatProjection?.acknowledged) {
    const chat=await this.ports.reconcile(true,{digest:snapshot.chatProjection!.digest,responseId:snapshot.chatProjection!.responseId,requestId:snapshot.requestId,admissionId:snapshot.admissionId})
    if(!this.active(epoch))return
-   if(chat){this.clearDrafts();this.base=withCreation(withPackChecks(restored(chat),snapshot.packChecks),snapshot.creation,!snapshot.historical&&snapshot.state==='complete',!snapshot.historical);this.creationContext=this.context(chat);this.set(this.base)}
+   if(chat){this.clearDrafts();this.base=withCreation(withPackChecks(restored(chat),snapshot.packChecks),snapshot.creation,!snapshot.historical&&snapshot.state==='complete',!snapshot.historical);this.creationContext=this.context(chat);this.unreconciled=false;this.set(this.base)}
    return
   }
   this.set(this.present(snapshot))
@@ -118,22 +120,22 @@ export class SavedChatRun implements ResearchRunController {
   for await(const observation of client.events(observations,this.scope!.signal)) {
    if(!this.active(epoch))return
    if(observation.kind==='snapshot') {
-    this.snapshot=observation.snapshot
+    this.unreconciled=true;this.snapshot=observation.snapshot
     this.set(this.present(observation.snapshot,observations.answer,Object.fromEntries([...observations.children].map(([k,p])=>[k,p.text]))))
     if(observation.snapshot.chatProjection?.acknowledged) {
      const chat=await this.ports.reconcile(true,{digest:observation.snapshot.chatProjection!.digest,responseId:observation.snapshot.chatProjection!.responseId,requestId:observation.snapshot.requestId,admissionId:observation.snapshot.admissionId})
-     if(this.active(epoch)&&chat){this.clearDrafts();this.base=withCreation(withPackChecks(restored(chat),observation.snapshot.packChecks),observation.snapshot.creation,!observation.snapshot.historical&&observation.snapshot.state==='complete',!observation.snapshot.historical);this.creationContext=this.context(chat);this.set(this.base)}
+     if(this.active(epoch)&&chat){this.clearDrafts();this.base=withCreation(withPackChecks(restored(chat),observation.snapshot.packChecks),observation.snapshot.creation,!observation.snapshot.historical&&observation.snapshot.state==='complete',!observation.snapshot.historical);this.creationContext=this.context(chat);this.unreconciled=false;this.set(this.base)}
     }
    }else if(observation.kind==='progress'&&this.snapshot)this.set(this.present(this.snapshot,observations.answer,Object.fromEntries([...observations.children].map(([k,p])=>[k,p.text]))))
   }
  }
  start:ResearchRunController['start']=(prompt,_seeds,display,attachments,statement,choice,pack)=>{this.send(prompt,display,false,attachments,statement,choice,pack)}
  send:ResearchRunController['send']=(input,display=input,_retry=false,attachments=[],statement=display,choice,packContext)=>{
-  if(this.ended||this.running||this.uncertain)return
+  if(this.ended||this.running||this.uncertain||this.unreconciled)return
   const creation=this.pendingCreation;this.pendingCreation=undefined
   const turn:Turn={...(creation?{creation}:{}),id:crypto.randomUUID(),role:'user',kind:'message',text:display,input,statement,attachments,at:new Date().toISOString(),...(choice?{researchChoice:choice}:{}),...(packContext?{packContext}:{})}
   this.base={...this.state,restored:true,readiness:'',failure:undefined,detail:'',events:[],streaming:undefined,streamingId:undefined,taskProgress:undefined,turns:[...this.state.turns,turn]}
-  this.marker={requestId:turn.id!,admissionId:turn.id!};this.snapshot=undefined;this.knownNotSent=false;this.stopRequested=false;this.busy=true;this.set({...this.base,phase:'conversation',status:'running',failure:undefined,detail:''})
+  this.unreconciled=true;this.marker={requestId:turn.id!,admissionId:turn.id!};this.snapshot=undefined;this.knownNotSent=false;this.stopRequested=false;this.busy=true;this.set({...this.base,phase:'conversation',status:'running',failure:undefined,detail:''})
   // The composer's synchronous selected controls/attachments update is part of this CAS.
   queueMicrotask(()=>{void this.begin(turn.id!)})
  }
@@ -143,7 +145,7 @@ export class SavedChatRun implements ResearchRunController {
   try {
    const revision=await this.ports.prepare(this.base,requestId,this.marker!.admissionId,this.scope.signal)
    if(!this.active(epoch))return
-   if(this.stopRequested){this.stopRequested=false;this.ports.notSent?.(this.base,requestId);this.marker=undefined;this.knownNotSent=true;this.busy=false;this.set({status:'stopped'});return}
+   if(this.stopRequested){this.stopRequested=false;this.ports.notSent?.(this.base,requestId);this.marker=undefined;this.unreconciled=false;this.knownNotSent=true;this.busy=false;this.set({status:'stopped'});return}
    const client=await this.ready()
    postAttempted=true
    try {await this.adopt(await client.start({admissionId:this.marker!.admissionId,purpose:'chat',ownerId:this.ownerId,revision,requestId},this.scope.signal),epoch)}
@@ -160,7 +162,7 @@ export class SavedChatRun implements ResearchRunController {
    }
   }catch(cause){if(this.active(epoch)){
     const notSent=!postAttempted||!this.snapshot&&cause instanceof RunRequestError&&(cause.delivery==='not-sent'||cause.delivery==='refused')
-    if(notSent){this.ports.notSent?.(this.base,requestId);this.marker=undefined;this.knownNotSent=true}
+    if(notSent){this.ports.notSent?.(this.base,requestId);this.marker=undefined;this.unreconciled=false;this.knownNotSent=true}
     this.uncertain=!notSent;this.failed(cause)
   }}
  }
@@ -183,13 +185,13 @@ export class SavedChatRun implements ResearchRunController {
  }
  prepareQuestionAnswer=(id:string,kind:'answered'|'help')=>{const q=this.state.questions?.find(q=>q.id===id);if(this.ended||this.running||this.snapshot?.historical||!q||q.resolution||!validQuestionDraft(q.prompt,q.draft)||kind==='answered'&&!q.draft.selected.length&&!q.draft.text.trim())return false;this.preparedAnswer={id,draft:kind==='help'?{selected:[],text:['Help me decide. Explain the options without choosing for me.',q.draft.text].filter(Boolean).join('\n')}:structuredClone(q.draft)};return true}
  continueQuestion=(id:string)=>{const q=this.snapshot&&pendingQuestion(this.snapshot),answer=this.preparedAnswer;if(!q||q.id!==id||answer?.id!==id)return false;this.preparedAnswer=undefined;void this.action({kind:'answer',questionId:q.id,questionDigest:q.digest,answer:answer.draft} as ActionBody);return true}
- appendConversation=(turns:Turn[])=>{if(this.running)throw Error('Finish the active response before adding messages.');this.base={...this.state,turns:[...this.state.turns,...turns]};this.set(this.base);return this.state}
+ appendConversation=(turns:Turn[])=>{if(this.running||this.unreconciled)throw Error('Finish the active response before adding messages.');this.base={...this.state,turns:[...this.state.turns,...turns]};this.set(this.base);return this.state}
  get pendingApproval(){const snapshot=this.snapshot,a=snapshot?.checkpoint?.approval,r=snapshot?.approvalReference;return !this.running&&!snapshot?.historical&&a?.state==='asked'&&r?{...r,name:a.name,args:a.args}:undefined}
  decideApproval=(approved:boolean)=>{const current=this.pendingApproval;if(current)void this.action({kind:'approval',callId:current.callId,argsDigest:current.argsDigest,approved})}
  recheck=()=>{if(this.state.candidates.at(-1)?.packReview){void this.check();return}const candidate=this.state.candidates.at(-1);if(candidate)this.requestCreation({kind:'check',candidateDigest:candidate.digest},'Run current draft checks.')}
  private context(chat:Chat){return JSON.stringify([chat.draftGeneration,chat.mode,chat.interaction,chat.aiConnection,chat.model,chat.documents,chat.checkpoint?.sources,chat.checkpoint?.state.cases,chat.checkpoint?.state.expectationIssues,chat.checkpoint?.state.turns])}
- basisNow=()=>{const current=this.ports.current?.();return this.snapshot?.creation&&this.creationContext&&current&&this.context(current)===this.creationContext&&!this.running&&!this.state.restored?this.snapshot.creation.sourceDigest:''}
- private requestCreation(action:CreationAction,label:string){if(this.ended||this.running||this.uncertain||this.needsReconnect)return false;this.pendingCreation=action;this.send(label,label,false,[],label,action.kind==='research-choice'?action.choice:undefined);return true}
+ basisNow=()=>{const current=this.ports.current?.();return this.snapshot?.creation&&this.creationContext&&current&&this.context(current)===this.creationContext&&!this.running&&!this.unreconciled&&!this.state.restored?this.snapshot.creation.sourceDigest:''}
+ private requestCreation(action:CreationAction,label:string){if(this.ended||this.running||this.uncertain||this.unreconciled||this.needsReconnect)return false;this.pendingCreation=action;this.send(label,label,false,[],label,action.kind==='research-choice'?action.choice:undefined);return true}
  prepareCreation=async()=>{const candidate=this.state.candidates.at(-1);if(!candidate||candidate.packReview||!this.requestCreation({kind:'check',candidateDigest:candidate.digest},'Run current draft checks before finalizing.'))return false;return await new Promise<boolean>(resolve=>{const done=()=>{if(this.running)return;unsubscribe();resolve(this.state.status==='ready'&&!!this.basisNow())},unsubscribe=this.subscribe(done);done()})}
  recoverDraft=(text:string)=>{const turn=this.state.turns.find(t=>t.role==='assistant'&&t.kind==='message'&&t.text===text);if(turn?.id&&!this.state.candidates.length)this.requestCreation({kind:'recover',messageId:turn.id,messageDigest:sha256(text)},'Recover the complete proposal from the selected assistant message.')}
  establishCases=()=>{const candidate=this.state.candidates.at(-1);if(candidate&&!this.state.cases.length&&!this.state.expectationIssues.some(i=>!i.resolved)&&!this.state.heldProposal)this.requestCreation({kind:'establish-cases',candidateDigest:candidate.digest},'Establish independent cases from my statements and verified sources.')}

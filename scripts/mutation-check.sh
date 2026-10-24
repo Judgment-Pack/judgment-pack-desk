@@ -10305,18 +10305,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # the mutation keeps them and hides them, which is the arrangement that was
   # wrong rather than a weaker version of the right one.
   mutate web "the rows are hidden when the endpoint moves rather than cleared" "$ECK" \
-    '  const here = identityOf(draft)
-  if (answer !== undefined && answer.of !== here) reset()' \
-    '  const here = identityOf(draft)'
-  # **The page names a suffix; the desk builds the address.** A listing that
-  # built its own URL would hold the endpoint — and, on this route, this
-  # chassis' session token — in page code that no gate is on.
-  # Repaired: the listing names the AI connection it lists, through the desk.
-  mutate web "the listing address is built on the page" "$ECK" \
-    '    void listModels(target.kind, bindModelCall(target.kind,scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:undefined)).then(' \
-    "    void listModels(target.kind, async (suffix) =>
-      globalThis.fetch(\`\${target.url}/\${suffix}\`, { method: 'GET' })
-    ).then("
+    '  if (answer !== undefined && answer.of !== here) reset()' \
+    '  if (false && answer !== undefined && answer.of !== here) reset()'
+  # Listing address authority now belongs to the closed server action. The
+  # corresponding Go row below verifies its host-selected first-page path.
   # **The default is a member of the set, and the two are one decision.** A
   # default nothing enables is a value no picker would offer and no run could
   # take, and the page composes both members from one draft — so a rule that
@@ -10338,7 +10330,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # on the page saying the endpoint was never asked.
   # Repaired with the row above.
   mutate web "Test connection asks the probe and never the listing" "$ECK" \
-    "    void listModels(target.kind, bindModelCall(target.kind,scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:undefined)).then(
+    "    void listModels(target.kind, scope?.connection.id, scope?.connection.revision, cancellation.current?.signal).then(
       (rows) => landed((previous) => ({ ...previous, rows })),
       (cause: unknown) =>
         landed((previous) => ({ ...previous, listingRefusal: said(cause) }))
@@ -13943,7 +13935,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # probe beside the listing, the key routes, the relay and the run socket —
   # and a name the desk refuses is not offered for saving.
   mutate web "ai connections: Test connection's probe names no connection" web/src/assistant/endpointCheck.ts \
-    '    void probeAssistantEndpoint(undefined, scope?.connection.id, scope?.connection.revision).then(' \
+    '    void probeAssistantEndpoint(cancellation.current.signal, scope?.connection.id, scope?.connection.revision).then(' \
     '    void probeAssistantEndpoint().then('
   mutate web "ai connections: the page's requests name no connection" web/src/assistant/aiConnections.tsx \
     "export const aiHeaders=(id?:string,revision?:string):Record<string,string>=>id?{'X-Assistant-Connection':id,...(revision?{'X-Assistant-Revision':revision}:{})}:{}" \
@@ -15718,6 +15710,42 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	return newAssistantHostRegistry(tools)' \
     '	if e.source.Start.Purpose != "author-graph" { tools = nil }
 	return newAssistantHostRegistry(tools)'
+fi
+
+
+# The former browser listing-address row now guards server-owned authority.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go "the listing address is built on the page" internal/desk/assistant_discovery.go \
+    'fixed.URL.Path = relayPrefix + suffix' \
+    'fixed.URL.Path = r.Header.Get("X-Assistant-Listing-Path")
+	_ = suffix'
+fi
+
+# Desk #649: closed metadata input and current saved connection revision.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant discovery: caller body or query admitted' internal/desk/assistant_discovery.go \
+    'if err != nil || len(body) != 0 || (r.URL.RawQuery != "" || r.URL.ForceQuery) {' \
+    'if false && (err != nil || len(body) != 0 || (r.URL.RawQuery != "" || r.URL.ForceQuery)) {'
+  mutate go 'assistant discovery: saved revision requirement omitted' internal/desk/assistant_discovery.go \
+    'if connection != nil && r.Header.Get(aiRevisionHeader) == "" {' \
+    'if false && connection != nil && r.Header.Get(aiRevisionHeader) == "" {'
+fi
+
+# Desk #645 F1: acknowledged terminal data must reconcile before a fresh Send.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant saved chat: unreconciled Send guard omitted' web/src/assistant/serverRuns/controller.ts \
+    'if(this.ended||this.running||this.uncertain||this.unreconciled)return' \
+    'if(this.ended||this.running||this.uncertain)return'
+fi
+
+# Desk #647 first review: private projections and paused exact ownership.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant authoring: session-private projections retained' web/src/assistant/useAuthoringRun.ts \
+    "  setEvents([]);setSnapshot(undefined);setStreaming('')" \
+    '  // Private projection clearing omitted.'
+  mutate web 'assistant authoring: paused presentation resolves host owner' web/src/assistant/useAuthoringRun.ts \
+    '  if(terminal(run)||run.historical){attempt.resolved=true;setCanStart(true)}' \
+    "  if(terminal(run)||run.historical||!['admitted','running'].includes(run.state)){attempt.resolved=true;setCanStart(true)}"
 fi
 
 restore

@@ -15,7 +15,7 @@ const chat:Chat={id:'chat-one',title:'Conversation',pinned:false,archived:false,
 const json=(v:unknown)=>new Response(JSON.stringify(v),{headers:{'Content-Type':'application/json'}})
 const snapshot=(requestId='00000000-0000-4000-8000-000000000001',patch:Record<string,unknown>={})=>({...pending,admissionId:requestId,requestId,...patch})
 function setup(saved:Chat=chat,draftScope?:()=>Promise<string>){
- const prepare=vi.fn(async(_state:RunState,_requestId:string,_admissionId:string,_signal:AbortSignal)=> 'a'.repeat(64)),reconcile=vi.fn(async()=>saved),pin=vi.fn(),problem=vi.fn(),notSent=vi.fn()
+ const prepare=vi.fn(async(_state:RunState,_requestId:string,_admissionId:string,_signal:AbortSignal)=> 'a'.repeat(64)),reconcile=vi.fn(async():Promise<Chat|undefined>=>saved),pin=vi.fn(),problem=vi.fn(),notSent=vi.fn()
  const run=new SavedChatRun(saved.id,saved,{project:'/project',draftScope,client:serverRunClient,prepare,reconcile,pin,problem,notSent})
  return {run,prepare,reconcile,pin,notSent}
 }
@@ -162,4 +162,79 @@ it('retains typed question drafts across refresh only for the exact authenticate
  fetch.mockImplementation(()=>Promise.resolve(json({runs:[changed]})));const newer=setup(saved,async()=> 'session-project-owner-a');await newer.run.reconnect()
  expect(newer.run.getSnapshot().questions![0].draft.text).toBe('')
  refresh.run.endSession();expect(sessionStorage.length).toBe(0);expect(refresh.run.getSnapshot().turns).toEqual([])
+})
+
+const retainedChat=()=>({...chat,serverRequest:{requestId:pending.requestId,admissionId:pending.admissionId},checkpoint:{state:{...INITIAL_STATE,turns:[{id:pending.requestId,role:'user' as const,kind:'message' as const,text:'Original message',at:chat.updatedAt}]},sources:[]}})
+const acknowledged=()=>({...pending,state:'complete',chatProjection:{responseId:`response-${sha256(pending.id).slice(0,32)}`,digest:'b'.repeat(64),acknowledged:true}})
+const deferred=<T,>()=>{let resolve!:(value:T)=>void,reject!:(cause:unknown)=>void;const promise=new Promise<T>((r,j)=>{resolve=r;reject=j});return {promise,resolve,reject}}
+function expectFreshWorkBlocked(h:ReturnType<typeof setup>){
+ const before=h.run.getSnapshot()
+ expect(h.run.canRetryResponse).toBe(false)
+ h.run.send('Fresh request');h.run.retryResponse()
+ expect(()=>h.run.appendConversation([])).toThrow()
+ expect(h.run.getSnapshot()).toBe(before);expect(h.prepare).not.toHaveBeenCalled()
+}
+it('blocks restored-marker work before discovery and preserves the original admission throughout deferred adoption',async()=>{
+ const h=setup(retainedChat()),read=deferred<Chat|undefined>()
+ const fetch=vi.fn().mockImplementation(async()=>json({runs:[acknowledged()]}));vi.stubGlobal('fetch',fetch)
+ expectFreshWorkBlocked(h);expect(h.run.needsReconnect).toBe(true)
+ h.reconcile.mockReturnValueOnce(read.promise);const reconnect=h.run.reconnect()
+ await vi.waitFor(()=>expect(h.reconcile).toHaveBeenCalledOnce());expectFreshWorkBlocked(h)
+ expect(h.run.needsReconnect).toBe(true)
+ read.resolve(retainedChat());await reconnect
+ expect(h.run.canRetryResponse).toBe(true);expect(h.run.needsReconnect).toBe(false)
+ h.prepare.mockImplementation(()=>new Promise(()=>{}));h.run.retryResponse()
+ await vi.waitFor(()=>expect(h.prepare).toHaveBeenCalledOnce());h.run.disconnect()
+ expect(fetch).toHaveBeenCalledOnce()
+})
+it.each(['undefined','rejected'] as const)('retains original Reconnect identity after %s reconciliation and blocked fresh work',async outcome=>{
+ const h=setup(retainedChat()),fetch=vi.fn().mockImplementation(async()=>json({runs:[acknowledged()]}));vi.stubGlobal('fetch',fetch)
+ if(outcome==='undefined')h.reconcile.mockResolvedValueOnce(undefined)
+ else h.reconcile.mockRejectedValueOnce(Error('private read failed'))
+ await h.run.reconnect();expectFreshWorkBlocked(h);expect(h.run.needsReconnect).toBe(true)
+ await h.run.reconnect();expect(fetch).toHaveBeenCalledTimes(2)
+ expect(fetch.mock.calls.every(([url])=>String(url).endsWith(`/requests/${pending.requestId}`))).toBe(true)
+ expect(h.run.canRetryResponse).toBe(true)
+ h.prepare.mockImplementation(()=>new Promise(()=>{}));h.run.send('Fresh after reconciliation')
+ await vi.waitFor(()=>expect(h.prepare).toHaveBeenCalledOnce());h.run.disconnect()
+})
+it.each(['disconnect','replacement','logout'] as const)('does not unlock fresh work from a stale terminal reconciliation after %s',async transition=>{
+ const h=setup(retainedChat()),old=deferred<Chat|undefined>(),current=deferred<Chat|undefined>()
+ vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>json({runs:[acknowledged()]})))
+ h.reconcile.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
+ const first=h.run.reconnect();await vi.waitFor(()=>expect(h.reconcile).toHaveBeenCalledOnce())
+ let second:Promise<void>|undefined
+ if(transition==='replacement'){second=h.run.reconnect();await vi.waitFor(()=>expect(h.reconcile).toHaveBeenCalledTimes(2))}
+ else if(transition==='logout'){h.run.endSession();expect(h.run.needsReconnect).toBe(false)}
+ else h.run.disconnect()
+ const before=h.run.getSnapshot();old.resolve(retainedChat());await first
+ expectFreshWorkBlocked(h);expect(h.run.getSnapshot()).toBe(before)
+ if(transition==='logout')expect(h.run.needsReconnect).toBe(false)
+ if(second){current.resolve(retainedChat());await second;expect(h.run.canRetryResponse).toBe(true)}
+})
+it.each(['success','undefined','rejected'] as const)('keeps observed terminal acknowledgement gated through %s saved projection reconciliation',async outcome=>{
+ const h=setup(retainedChat()),read=deferred<Chat|undefined>()
+ const terminal=acknowledged(),wire=`event: snapshot\nid: ${terminal.cursor}\ndata: ${JSON.stringify(terminal)}\n\n`
+ const fetch=vi.fn().mockResolvedValueOnce(json({runs:[pending]})).mockResolvedValueOnce(new Response(wire,{headers:{'Content-Type':'text/event-stream'}}));vi.stubGlobal('fetch',fetch)
+ h.reconcile.mockReturnValueOnce(read.promise);const reconnect=h.run.reconnect()
+ await vi.waitFor(()=>expect(h.reconcile).toHaveBeenCalledOnce());expectFreshWorkBlocked(h)
+ if(outcome==='rejected')read.reject(Error('private read failed'))
+ else read.resolve(outcome==='undefined'?undefined:retainedChat())
+ await reconnect
+ if(outcome==='success')expect(h.run.canRetryResponse).toBe(true)
+ else {
+  expectFreshWorkBlocked(h);expect(h.run.needsReconnect).toBe(true)
+  fetch.mockResolvedValueOnce(json({runs:[terminal]}));await h.run.reconnect()
+  expect(h.run.canRetryResponse).toBe(true);expect(fetch.mock.calls[2][0]).toContain(`/requests/${pending.requestId}`)
+ }
+})
+
+it('gates each observed terminal reconciliation after an earlier successful projection',async()=>{
+ const h=setup(retainedChat()),first=deferred<Chat|undefined>(),second=deferred<Chat|undefined>(),terminal=acknowledged()
+ const frame=`event: snapshot\nid: ${terminal.cursor}\ndata: ${JSON.stringify(terminal)}\n\n`
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(json({runs:[pending]})).mockResolvedValueOnce(new Response(frame+frame,{headers:{'Content-Type':'text/event-stream'}})))
+ h.reconcile.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+ const reconnect=h.run.reconnect();await vi.waitFor(()=>expect(h.reconcile).toHaveBeenCalledOnce())
+ first.resolve(retainedChat());await vi.waitFor(()=>expect(h.reconcile).toHaveBeenCalledTimes(2));expectFreshWorkBlocked(h)
+ second.resolve(retainedChat());await reconnect;expect(h.run.canRetryResponse).toBe(true)
 })

@@ -517,7 +517,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
             )
         }
       }
-      if (!url.includes('/api/assistant/relay/')) {
+      if (!url.includes('/api/assistant/models')) {
         return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(WRITTEN) }
       }
       return new Response(JSON.stringify(listing), {
@@ -548,7 +548,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
   /** Press it, once the key read has answered and the button is offered. */
   const test = async () =>
     await testConnection()
-  const relayed = (urls: string[]) => urls.filter((url) => url.includes('/api/assistant/relay/'))
+  const metadataRequests = (urls: string[]) => urls.filter((url) => url.includes('/api/assistant/models'))
   const probed = (urls: string[]) => urls.filter((url) => url.includes('/api/assistant/probe'))
 
   it('reads down in the order somebody sets one of these up', async () => {
@@ -618,8 +618,8 @@ describe('Test connection: the probe and the listing, in one press', () => {
     )
     await test()
     await waitFor(() => expect(probed(seen.urls)).toHaveLength(1))
-    await waitFor(() => expect(relayed(seen.urls)).toHaveLength(1))
-    for (const url of [probed(seen.urls)[0]!, relayed(seen.urls)[0]!]) {
+    await waitFor(() => expect(metadataRequests(seen.urls)).toHaveLength(1))
+    for (const url of [probed(seen.urls)[0]!, metadataRequests(seen.urls)[0]!]) {
       const headers = new Headers(seen.inits[seen.urls.indexOf(url)]!.headers)
       expect(headers.get('X-Assistant-Connection'), url).toBe(connection.id)
       expect(headers.get('X-Assistant-Revision'), url).toBe(connection.revision)
@@ -632,7 +632,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     const seen = servesCheck(LISTED)
     renderForm(GEMINI, true)
     await screen.findByRole('button', { name: 'Test connection' })
-    expect(relayed(seen.urls)).toHaveLength(0)
+    expect(metadataRequests(seen.urls)).toHaveLength(0)
     expect(probed(seen.urls)).toHaveLength(0)
   })
 
@@ -640,11 +640,14 @@ describe('Test connection: the probe and the listing, in one press', () => {
     const seen = servesCheck(LISTED)
     renderForm(GEMINI, true)
     await test()
-    await waitFor(() => expect(relayed(seen.urls)).toHaveLength(1))
+    await waitFor(() => expect(metadataRequests(seen.urls)).toHaveLength(1))
     await waitFor(() => expect(probed(seen.urls)).toHaveLength(1))
-    // The listing is a suffix through the relay; the probe carries nothing.
-    expect(relayed(seen.urls)[0]).toContain('/api/assistant/relay/v1/v1beta/models')
-    expect(relayed(seen.urls)[0]).not.toContain('api.example.invalid')
+    // Both fixed actions carry no caller destination or request body.
+    expect(metadataRequests(seen.urls)[0]).toBe('/api/assistant/models')
+    const metadataInit = seen.inits[seen.urls.indexOf(metadataRequests(seen.urls)[0]!)]!
+    expect(metadataInit.method).toBe('POST')
+    expect(metadataInit.body).toBeUndefined()
+    expect(metadataRequests(seen.urls)[0]).not.toContain('api.example.invalid')
     expect(probed(seen.urls)[0]).not.toContain('api.example.invalid')
   })
 
@@ -717,7 +720,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     expect(await screen.findByText('Choose a model to test this provider.')).toBeTruthy()
     // And nothing at all left this page.
     expect(probed(seen.urls)).toHaveLength(0)
-    expect(relayed(seen.urls)).toHaveLength(0)
+    expect(metadataRequests(seen.urls)).toHaveLength(0)
   })
 
   it('is disabled before there is an endpoint saved and a key stored', async () => {
@@ -767,7 +770,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     // The button is back, and nothing was asked in the meantime.
     expect(await screen.findByRole('button', { name: 'Test connection' })).toBeTruthy()
     expect(screen.queryByText(/models available/)).toBeNull()
-    expect(relayed(seen.urls)).toHaveLength(1)
+    expect(metadataRequests(seen.urls)).toHaveLength(1)
   })
 
   it('does not test automatically after saving a key', async () => {
@@ -779,7 +782,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
     typeKey('sk-a-key')
     saveApiKey()
     await screen.findByText('API key saved on this computer.')
-    expect(relayed(seen.urls)).toHaveLength(0)
+    expect(metadataRequests(seen.urls)).toHaveLength(0)
     expect(probed(seen.urls)).toHaveLength(0)
   })
 })
@@ -803,7 +806,7 @@ describe('Models: the set, the default, and an id nobody listed', () => {
             JSON.stringify({ reachable: true, status: 200, latencyMs: 12, diagnostic: '' })
         }
       }
-      if (!url.includes('/api/assistant/relay/')) {
+      if (!url.includes('/api/assistant/models')) {
         return { ok: true, status: 200, statusText: '', text: async () => JSON.stringify(WRITTEN) }
       }
       return new Response(JSON.stringify(listing), {
@@ -1262,7 +1265,7 @@ describe('the narration guard, over the states only the form can reach', () => {
             JSON.stringify({ reachable: true, status: 200, latencyMs: 12, diagnostic: '' })
         }
       }
-      if (url.includes('/api/assistant/relay/')) {
+      if (url.includes('/api/assistant/models')) {
         return new Response(
           JSON.stringify({ data: [{ id: 'a-listed-model' }, { id: 'a-second-listed-model' }] }),
           { status: 200, headers: { 'content-type': 'application/json' } }
@@ -1377,7 +1380,7 @@ describe('API key save and connection readiness', () => {
         requests++
         return new Promise<Response>((resolve) => { probe = resolve })
       }
-      if (url.includes('/api/assistant/relay/')) {
+      if (url.includes('/api/assistant/models')) {
         requests++
         return new Promise<Response>((resolve) => { listing = resolve })
       }

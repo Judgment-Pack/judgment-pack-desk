@@ -1,43 +1,12 @@
 import { sourceMessage } from '../i18n/source'
-/**
- * The endpoint's own model listing, read through the relay and no other way.
- *
- * **The page names a path suffix and nothing else.** It does not build a URL,
- * does not hold the address, does not attach a credential and does not choose
- * a query: `bindModelCall` builds the address out of the relay's mount point
- * and a suffix it has held to the chassis' own rule, and the relay attaches the
- * configured key on the far side. That is the same capability an engine gets,
- * for the same reason — see "Why the engine gets a capability and not a base
- * URL" — and it is why there is no `fetch` in this module.
- *
- * **First page only, and that is the whole of it.** Gemini's listing pages with
- * `pageToken`; nothing of the page's query is forwarded, and `pageToken` is
- * refused from the configured URL as well, so an endpoint with more models than
- * one page holds shows the first page and no more. Supporting the rest would
- * need a mechanism that passes a cursor safely, and this release does not have
- * one. A model absent from the first page is typed into the field beside the
- * list, which is why that field never goes away.
- *
- * **Nothing the endpoint wrote is repeated.** A refusal is reported as its
- * status and one word from the probe's closed vocabulary; the body is not read
- * on a refusal and is not quoted on any path — **not even its `code`**, which
- * would be reading a body the relay may have forwarded from the endpoint. The
- * probe's own ruling is the reason: a body under the endpoint's control can
- * carry a derived representation of the credential that no substitution
- * reliably finds.
- *
- * **What this module cannot do is keep the credential out of a listing that
- * succeeded**, and it is not asked to: it has never held the key and could not
- * recognise one. An endpoint that reflects its own credential as a model id
- * would otherwise put it into this page's state, into a picker and into a
- * field somebody can copy — so the **chassis** reads a listing's body whole,
- * scans it, and answers `assistant-listing-refused` with none of it. That is
- * the one relayed answer the desk reads, and the reason it is the one is that
- * it is the one the desk *renders*.
+/** Fixed server metadata action. The server selects the saved destination and
+ * first listing page, guards the current connection and scans the bounded reply.
+ * This reader retains protocol parsing and never receives a model-call capability.
  */
 import { modelIdProblem, type EndpointKind } from '../config/deskConfig'
 import { DIAGNOSTIC_SAYS, type ProbeDiagnostic } from './client'
-import type { ModelCall } from '@judgment-pack/harness/engine'
+import { chassisUrl, deskFetch } from '../files/client'
+import { aiHeaders } from './aiConnections'
 
 /**
  * The listing path each protocol documents, **relative to the configured
@@ -110,31 +79,22 @@ function diagnosticFor(status: number): ProbeDiagnostic {
   return 'unexpected-status'
 }
 
-/**
- * Ask the configured endpoint what models it has, through the desk's own
- * capability.
- *
- * A `GET`, which is what each protocol's listing is; the relay forwards the
- * method verbatim and attaches the credential. Nothing here is retried — a
- * listing is a question, and asking it twice because the first answer was
- * inconvenient is a second charge on somebody's account.
- */
+/** Load only metadata from the current saved API connection. No retries. */
 export async function listModels(
   kind: EndpointKind,
-  call: ModelCall,
+  connectionId?: string,
+  connectionRevision?: string,
   signal?: AbortSignal
 ): Promise<ModelRow[]> {
-  // The empty body is stated rather than omitted: `ModelRequest` requires one
-  // so that a `POST` cannot forget it, and `bindModelCall` sends none on a
-  // `GET` because `fetch` refuses one.
-  const answered = await call(LISTING_SUFFIX[kind], { method: 'GET', body: '', signal })
+  const answered = await deskFetch(chassisUrl('/api/assistant/models'), {
+    method: 'POST', headers: aiHeaders(connectionId, connectionRevision), signal
+  })
   if (!answered.ok) throw new Error(listingRefusal(answered.status))
   let body: unknown
-  try {
-    body = JSON.parse(await answered.text())
-  } catch {
-    throw new Error(NOT_A_LISTING)
-  }
+  try { body = JSON.parse(await answered.text()) } catch { throw new Error(NOT_A_LISTING) }
+  const items = body !== null && typeof body === 'object'
+    ? (body as Record<string, unknown>)[kind === 'gemini' ? 'models' : 'data'] : undefined
+  if (!Array.isArray(items)) throw new Error(NOT_A_LISTING)
   return modelRows(kind, body)
 }
 

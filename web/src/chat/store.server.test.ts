@@ -36,7 +36,7 @@ function bind(store:ChatStore,id='chat-one'){
 it('canonical observations do not autosave a pinned checkpoint and dispose only disconnects',async()=>{
  const h=fixture();await h.store.load();const run=bind(h.store),stop=vi.spyOn(run,'stop'),disconnect=vi.spyOn(run,'disconnect')
  const before=h.store.getSnapshot().chats[0].checkpoint
- run.appendConversation([{id:'display-only',role:'assistant',kind:'message',text:'Observation',at}])
+ expect(()=>run.appendConversation([{id:'display-only',role:'assistant',kind:'message',text:'Observation',at}])).toThrow()
  h.store.report(one.id,{run,state:run.getSnapshot(),ledger:null,sources:[],blocked:'',model:'model',researchConfigured:false})
  expect(h.store.getSnapshot().chats[0].checkpoint).toBe(before);expect(h.store.getSnapshot().dirty).toBe(false)
  h.store.dispose();expect(disconnect).toHaveBeenCalledOnce();expect(stop).not.toHaveBeenCalled();expect(h.writes).toEqual([])
@@ -109,4 +109,25 @@ it('a proven pre-POST stop clears only its matching marker and retains the stopp
  expect(await h.store.flush()).toBe(true)
  const saved=JSON.parse(h.raw).chats[0]
  expect(saved.serverRequest).toBeUndefined();expect(saved.checkpoint.state.status).toBe('stopped');expect(saved.checkpoint.state.turns[0].text).toBe('Original message')
+})
+
+it('retains the original controller and store admission while terminal reconciliation is pending',async()=>{
+ giveThisPageASessionForTesting('store-reconcile-session')
+ const {default:pending}=await import('../assistant/serverRuns/fixtures/pending.json')
+ const saved={...one,serverRequest:{requestId:pending.requestId,admissionId:pending.admissionId}}
+ const h=fixture(JSON.stringify({version:1,chats:[saved,other]}));await h.store.load();const run=bind(h.store)
+ const terminal={...pending,state:'complete',chatProjection:{responseId:`response-${sha256(pending.id).slice(0,32)}`,digest:'b'.repeat(64),acknowledged:true}}
+ let release!:()=>void;const held=new Promise<void>(r=>{release=r})
+ const reconcile=vi.spyOn(h.store,'reconcileServer').mockImplementationOnce(async(...args)=>{await held;return original(...args)})
+ const original=ChatStore.prototype.reconcileServer.bind(h.store)
+ const prepare=vi.spyOn(h.store,'prepareServerRequest'),baseFetch=h.fetch
+ const fetch=vi.fn(async(path:unknown,init?:RequestInit)=>String(path).startsWith('/api/assistant-runs/')?new Response(JSON.stringify({runs:[terminal]}),{headers:{'Content-Type':'application/json'}}):baseFetch(path,init));vi.stubGlobal('fetch',fetch)
+ const reconnect=run.reconnect();await vi.waitFor(()=>expect(reconcile).toHaveBeenCalledOnce())
+ const before=run.getSnapshot();expect(run.canRetryResponse).toBe(false)
+ run.send('Too early');run.retryResponse();expect(()=>run.appendConversation([])).toThrow()
+ expect(run.getSnapshot()).toBe(before);expect(prepare).not.toHaveBeenCalled();expect(h.writes).toEqual([])
+ expect(h.store.getSnapshot().chats[0].serverRequest).toEqual(saved.serverRequest)
+ release();await reconnect;await run.reconnect()
+ expect(fetch.mock.calls.filter(([path])=>String(path).endsWith(`/requests/${pending.requestId}`))).toHaveLength(2)
+ expect(prepare).not.toHaveBeenCalled();expect(h.writes).toEqual([]);expect(run.canRetryResponse).toBe(true)
 })
