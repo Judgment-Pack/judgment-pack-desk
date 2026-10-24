@@ -134,6 +134,13 @@
       "timeout": 600
     },
     {
+      "name": "certify-desk-go-relay",
+      "run": "scripts/dev/assistant-binding-certification.sh",
+      "toolchain": "go",
+      "summary": "^(assistant-binding-certification:|.*Desk actual relay binding:)",
+      "timeout": 1200
+    },
+    {
       "name": "certify-vercel",
       "run": "scripts/dev/web-fixtures.sh certify vercel",
       "toolchain": "node",

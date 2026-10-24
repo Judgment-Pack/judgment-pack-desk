@@ -26,10 +26,12 @@ on:
       - 'web/package.json'
       - 'web/package-lock.json'
       - 'internal/releaseplan/components.json'
-      - 'internal/desk/testdata/harness-recall/**'
-      - 'internal/desk/testdata/harness-approval/**'
-      - 'internal/desk/testdata/harness-prompt/**'
-      - 'internal/desk/assistant_approval*.go'
+      - 'internal/desk/**'
+      - 'internal/codexbridge/**'
+      - 'scripts/dev/assistant-binding-certification.sh'
+      - 'dev.json'
+      - 'go.mod'
+      - 'go.sum'
       - '.github/workflows/harness-certification.yml'
   push:
     branches: [main, 'integration/**']
@@ -59,3 +61,13 @@ jobs:
       # certify-ADAPTER certifies the adapter on the Desk's wiring.
       - name: Certify the ${{ matrix.adapter }} adapter on the Desk's wiring
         run: scripts/dev/check.sh --only harness-vectors,certify-${{ matrix.adapter }}
+
+  certify-go-relay:
+    name: Desk Go relay certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchains
+      - name: Certify the released API adapter through the actual Desk Go relay
+        run: scripts/dev/check.sh --only certify-desk-go-relay
