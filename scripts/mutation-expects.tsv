@@ -2904,3 +2904,5 @@ go	assistant prompt: transport reads brief again	TestAIWireGuardNeverReadsPrompt
 go	assistant prompt: relay appends another prompt layer	TestAIWireGuardLegacyDispatchOwnsNoPromptLayers,TestAssistantPromptCanonicalAdapterOwnsEveryWire
 go	assistant prompt: native transport appends instructions	TestAIWireGuardLegacyDispatchOwnsNoPromptLayers
 go	assistant prompt: transport rereads memory	TestAIWireGuardNeverReadsPromptSourcesOrChangesInput
+go	assistant memory: approval trims canonical text	TestAssistantMemoryCanonicalApprovalExactText
+go	assistant memory: terminal identity recalled on resume	TestAssistantMemoryTerminalRecallDoesNotBlockResume

@@ -116,9 +116,14 @@ func assistantCreationActualStart(t *testing.T, s *Server, token string, action 
 
 func assistantCreationActualRun(t *testing.T, s *Server, token string, action assistantCreationAction, n int) assistantRunView {
 	t.Helper()
+	return assistantCreationActualRunWithin(t, s, token, action, n, 15*time.Second)
+}
+
+func assistantCreationActualRunWithin(t *testing.T, s *Server, token string, action assistantCreationAction, n int, timeout time.Duration) assistantRunView {
+	t.Helper()
 	start := assistantCreationActualStart(t, s, token, action, n)
 	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
-	complete := assistantProtocolWait(t, s, token, first.ID, "complete")
+	complete := assistantProtocolWaitWithin(t, s, token, first.ID, "complete", timeout)
 	if complete.ChatProjection == nil || !complete.ChatProjection.Acknowledged {
 		t.Fatal("terminal projection not acknowledged", complete.ProjectionIssue)
 	}

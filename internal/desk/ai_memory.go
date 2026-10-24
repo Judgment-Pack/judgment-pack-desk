@@ -277,7 +277,9 @@ func (s *Server) applyMemory(root *os.Root, r *memoryReply, c memoryChange) erro
 	default:
 		return errors.New("Unknown memory action.")
 	}
-	c.Text = strings.TrimSpace(c.Text)
+	if c.Action != "approve" {
+		c.Text = strings.TrimSpace(c.Text)
+	}
 	if !memoryKey.MatchString(c.Key) || c.Text == "" || len(c.Text) > 2000 || strings.ContainsRune(c.Text, 0) {
 		return errors.New("Use a short topic key and memory text of at most 2,000 bytes.")
 	}
