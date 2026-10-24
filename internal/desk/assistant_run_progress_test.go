@@ -290,8 +290,7 @@ func TestAssistantRunProgressActualAPIAndNativeSSE(t *testing.T) {
 					defer release()
 				}
 				x := assistantExecutionOpen(t, s, e)
-				off := false
-				x.Run.Review = &off
+				x.Run.Critic = "off"
 				if mode == "off" {
 					x.Run.Policy = runcontext.PolicyLayer{"outputGuard": "off"}
 				}

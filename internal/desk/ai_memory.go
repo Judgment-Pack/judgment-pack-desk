@@ -431,7 +431,7 @@ func memoryWords(text string) map[string]bool {
 	}
 	return out
 }
-func (s *Server) recallMemory(d memoryDocument, query string) []memoryEntry {
+func (s *Server) memoryCandidates(d memoryDocument, query string) []memoryEntry {
 	out := []memoryEntry{}
 	if !d.Settings.Use {
 		return out
@@ -462,9 +462,17 @@ func (s *Server) recallMemory(d memoryDocument, query string) []memoryEntry {
 		}
 		return rows[i].score > rows[j].score
 	})
-	bytes := 2 // The JSON array brackets are part of the raw recalled part.
 	for _, row := range rows {
-		b, _ := json.Marshal(row.entry)
+		out = append(out, row.entry)
+	}
+	return out
+}
+
+func (s *Server) recallMemory(d memoryDocument, query string) []memoryEntry {
+	out := []memoryEntry{}
+	bytes := 2 // The JSON array brackets are part of the raw recalled part.
+	for _, entry := range s.memoryCandidates(d, query) {
+		b, _ := json.Marshal(entry)
 		cost := len(b)
 		if len(out) > 0 {
 			cost++ // comma between entries
@@ -472,7 +480,7 @@ func (s *Server) recallMemory(d memoryDocument, query string) []memoryEntry {
 		if bytes+cost > aicontext.Defaults().MemoryBytes {
 			continue
 		}
-		out = append(out, row.entry)
+		out = append(out, entry)
 		bytes += cost
 		if len(out) == 5 {
 			break

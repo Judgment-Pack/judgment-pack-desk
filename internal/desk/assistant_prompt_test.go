@@ -12,6 +12,7 @@ import (
 	"time"
 
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 )
 
 // Prompt tests need rooted project/private files, not an HTTP listener or model.
@@ -72,18 +73,15 @@ func TestAssistantPromptRawPartsAndCanonicalAssembly(t *testing.T) {
 	if parts.Brief != brief || parts.ProjectInstructions != instructions {
 		t.Fatalf("host changed raw parts: %#v", parts)
 	}
-	// v0.8 frames even the temporary legacy-text alias as a canonical recall.
-	// Inspect Desk's raw selection separately; the prompt carries framed data.
 	rawMemory, err := host.MemoryFor(t.Context(), query)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, ok := rawMemory.(string)
-	var entries []memoryEntry
-	if !ok || json.Unmarshal([]byte(text), &entries) != nil || len(entries) != 1 || entries[0].Key != "outreach-style" {
-		t.Fatalf("explicit query/raw memory: %q", rawMemory)
+	records, ok := rawMemory.([]contract.Memory)
+	if !ok || len(records) != 1 || records[0].Text != "outreach-style: Outreach notes label missing evidence." || records[0].State != "accepted" {
+		t.Fatalf("explicit query/typed memory: %#v", rawMemory)
 	}
-	if !strings.Contains(parts.Memory, text) || !strings.Contains(parts.Memory, `id: "legacy-memory"`) {
+	if !strings.Contains(parts.Memory, records[0].Text) || !strings.Contains(parts.Memory, `id: "`+records[0].ID+`"`) {
 		t.Fatalf("canonical recalled record framing missing: %q", parts.Memory)
 	}
 	system := runcontext.SystemText("PACKAGE GUIDANCE", parts, "\nTOOLS")
@@ -100,13 +98,16 @@ func TestAssistantPromptRawPartsAndCanonicalAssembly(t *testing.T) {
 		t.Fatal("legacy framing duplicated")
 	}
 	// Agent does not ask memory at all when a run disables it.
-	disabled := runcontext.HostFuncs{BriefFunc: host.Brief, ProjectInstructionsFunc: host.ProjectInstructions, MemoryForFunc: func(context.Context, string) (string, error) { t.Fatal("memory asked while disabled"); return "", nil }}
+	disabled := runcontext.HostFuncs{BriefFunc: host.Brief, ProjectInstructionsFunc: host.ProjectInstructions, MemoryRecordsForFunc: func(context.Context, string) ([]contract.Memory, error) {
+		t.Fatal("memory asked while disabled")
+		return nil, nil
+	}}
 	parts, err = runcontext.ReadHostParts(t.Context(), disabled, query, runcontext.Defaults, false)
 	if err != nil || parts.Memory != "" {
 		t.Fatal(parts, err)
 	}
 	changeMemory(t, s, memoryChange{Action: "settings", Settings: &memorySettings{Use: false}})
-	if memory, err := host.MemoryFor(t.Context(), query); err != nil || memory != "" {
+	if memory, err := host.MemoryFor(t.Context(), query); err != nil || len(memory.([]contract.Memory)) != 0 {
 		t.Fatalf("project memory off: %q %v", memory, err)
 	}
 }
@@ -134,7 +135,7 @@ func TestAssistantPromptSelectedProjectIsolationAndSnapshot(t *testing.T) {
 	if got, err := hostB.ProjectInstructions(t.Context()); err != nil || got != "Beta guidance" {
 		t.Fatal(got, err)
 	}
-	if got, err := hostB.MemoryFor(t.Context(), "outreach"); err != nil || got != "" {
+	if got, err := hostB.MemoryFor(t.Context(), "outreach"); err != nil || len(got.([]contract.Memory)) != 0 {
 		t.Fatalf("other project memory: %q %v", got, err)
 	}
 }
@@ -248,41 +249,5 @@ func TestAssistantProfileInstructionBytesAndSource(t *testing.T) {
 	}
 	if currentAssistantPromptPolicy().ProjectInstructionsBytes != limit {
 		t.Fatal("browser bound differs from Agent")
-	}
-}
-
-func TestAssistantPromptMemoryCountsArrayFraming(t *testing.T) {
-	s := promptFixture(t, "")
-	limit := runcontext.Defaults.MemoryBytes
-	one := memoryEntry{ID: "one", Key: "outreach-one", Text: strings.Repeat("a", 1991) + " outreach", State: "active"}
-	two := memoryEntry{ID: "two", Key: "outreach-two", Text: "outreach ", State: "active"}
-	first, _ := json.Marshal(one)
-	second, _ := json.Marshal(two)
-	two.Text += strings.Repeat("b", limit-len(first)-len(second))
-	if len(two.Text) > 2000 {
-		t.Fatal("fixture exceeds entry bound")
-	}
-	// Individual entries total exactly the limit; their array needs three more
-	// bytes. Recall must reserve framing before selecting the second entry.
-	err := s.withMemory(func(root *os.Root, r *memoryReply) error {
-		r.Content.Settings.Use = true
-		r.Content.Entries = []memoryEntry{one, two}
-		data, _ := json.Marshal(r.Content)
-		if err := validateMemoryStorage(data); err != nil {
-			return err
-		}
-		return writePrivateData(root, s.memoryName(), data)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	host, err := s.assistantPromptHost(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	answer, err := host.MemoryFor(t.Context(), "outreach")
-	memory, ok := answer.(string) // v0.8.0 legacy-text alias; typed-record adoption belongs to #598.
-	if err != nil || !ok || len(memory) > limit || memory == "" {
-		t.Fatalf("raw recall bound: %d %v", len(memory), err)
 	}
 }

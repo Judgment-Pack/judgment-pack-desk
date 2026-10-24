@@ -1,3 +1,4 @@
+import { savedCriticChoice } from '../assistant/criticSettings'
 import criticControls from './fixtures/critic-controls.json'
 import { criticMode } from '@judgment-pack/harness/contract'
 import { memoryDraftPersistence } from '../testing/draftPersistence'
@@ -506,7 +507,7 @@ it('reads the shared critic control vectors through the actual saved chat reader
   expect(actual.critic,row.name).toBe(row.chat.critic)
   expect(actual.criticReasoning,row.name).toBe(row.chat.criticReasoning)
   expect(actual.adversarialReview,row.name).toBe(row.chat.adversarialReview)
-  expect(criticMode({critic:actual.critic,adversarialReview:actual.adversarialReview,criticProject:row.project||undefined} as Parameters<typeof criticMode>[0],{}).mode,row.name).toBe(row.mode)
+  expect(criticMode({critic:savedCriticChoice(actual),criticProject:row.project||undefined} as Parameters<typeof criticMode>[0],{}).mode,row.name).toBe(row.mode)
  }
 })
 
@@ -521,5 +522,5 @@ it('lets an explicit control edit restore project inheritance after a legacy boo
  const restored=setup({read:async()=>({project:'/project',sha256:'saved',content:document})});await restored.store.load()
  const read=restored.store.getSnapshot().chats[0]
  expect(read.critic).toBeUndefined();expect(read.adversarialReview).toBeUndefined()
- expect(criticMode({critic:read.critic,adversarialReview:read.adversarialReview,criticProject:'on'},{}).mode).toBe('on')
+ expect(criticMode({critic:savedCriticChoice(read),criticProject:'on'},{}).mode).toBe('on')
 })

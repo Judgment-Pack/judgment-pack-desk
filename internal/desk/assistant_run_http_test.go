@@ -57,10 +57,10 @@ func assistantFixtureCheckpoint(ctx context.Context, source assistantRunSource, 
 		}
 	}
 	r := &adapter.Run{ModelName: source.Binding.Model, Context: input}
-	if review == nil {
-		review = chat.Review
+	if review != nil {
+		chat.Review = review
 	}
-	session := runcontext.Session{Prompt: source.Text, Purpose: source.Start.Purpose, Context: input, Critic: chat.Critic, CriticProject: chat.CriticProject, CriticReasoning: chat.CriticReasoning, AdversarialReview: review, PolicyLegacyModels: &named}
+	session := runcontext.Session{Prompt: source.Text, Purpose: source.Start.Purpose, Context: input, Critic: assistantCriticChoice(chat), CriticProject: chat.CriticProject, CriticReasoning: chat.CriticReasoning, PolicyLegacyModels: &named}
 	if chat.CriticPurpose != "" {
 		session.Purpose = chat.CriticPurpose
 	}
