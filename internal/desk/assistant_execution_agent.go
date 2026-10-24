@@ -23,9 +23,13 @@ func (e *assistantRunExecution) assistantAgent() (*adapter.Agent, error) {
 	if config.Engine != "codex" || config.Agent == nil {
 		return nil, errAssistantRunUnavailable
 	}
-	chat, err := compileAssistantChatInput(e.source)
-	if err != nil {
-		return nil, err
+	var chat *assistantChatInput
+	var err error
+	if e.source.Start.Purpose != "brief" {
+		chat, err = compileAssistantChatInput(e.source)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// Resolve the retained validated profile using connectionModels' preference
 	// selection and inheritance rules. A non-inherited preference with omitted
@@ -42,7 +46,7 @@ func (e *assistantRunExecution) assistantAgent() (*adapter.Agent, error) {
 	if model == nil || *model != e.record.Binding.Model {
 		effort = ""
 	}
-	if chat.Reasoning != nil && chat.Reasoning.Get("model").Str() == e.record.Binding.Model {
+	if chat != nil && chat.Reasoning != nil && chat.Reasoning.Get("model").Str() == e.record.Binding.Model {
 		effort = ""
 		if choice := chat.Reasoning.Get("effort"); choice.IsString() {
 			effort = choice.Str()
@@ -74,6 +78,12 @@ func (e *assistantRunExecution) assistantAgent() (*adapter.Agent, error) {
 		if err := e.Authorize(ctx); err != nil {
 			e.cancel()
 			return err
+		}
+		if e.source.Start.Purpose == "brief" {
+			if err := e.recheckAssistantBriefInput(ctx); err != nil {
+				e.cancel()
+				return err
+			}
 		}
 		if !s.connectionAgentAllowed(r.WithContext(ctx), model) {
 			e.cancel()

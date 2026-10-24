@@ -872,7 +872,6 @@
   "Configure a ChatGPT subscription in Connections > AI.": "アシスタント設定で ChatGPT サブスクリプションを設定してください。",
   "Configure an Assistant model in Admin to generate a brief.": "ブリーフを生成するには管理画面でアシスタントのモデルを設定してください。",
   "Configure an assistant and choose a model to author a graph.": "グラフを作成するには、アシスタントを設定しモデルを選択してください。",
-  "Configure document processing to read these sources.": "これらのソースを読むには、ドキュメント処理を設定してください。",
   "Configure inputs and preview them first.": "まず入力を設定してプレビューしてください。",
   "Configure source": "ソースを設定",
   "Configure template": "テンプレートを設定",

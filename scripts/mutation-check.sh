@@ -14665,8 +14665,8 @@ fi
 if [ "$which" = all ] || [ "$which" = go ]; then
   # Actual private subscription binding safeguards.
   mutate go 'assistant saved context: physical dispatch omits document recheck' internal/desk/assistant_execution_model.go \
-    'if err := d.execution.recheckAssistantInput(ctx); err != nil {' \
-    'if err := error(nil); err != nil {'
+    'if err := recheck(ctx); err != nil {' \
+    'if err := error(nil); err != nil && recheck != nil {'
   mutate go 'assistant saved context: different selections share context identity' internal/desk/assistant_chat_input.go \
     'document.ID += "-" + digestOf([]byte(assistantChatReferenceKey(held.reference)))[:16]' \
     'document.ID += ""'
@@ -14689,7 +14689,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if len(prompt.Arguments) != 0 {' \
     'if false {'
   mutate go 'assistant chat input: saved chat reasoning ignored' internal/desk/assistant_execution_agent.go \
-    'if chat.Reasoning != nil && chat.Reasoning.Get("model").Str() == e.record.Binding.Model {' \
+    'if chat != nil && chat.Reasoning != nil && chat.Reasoning.Get("model").Str() == e.record.Binding.Model {' \
     'if false {'
   mutate go 'assistant chat input: lossy typed number admitted' internal/desk/assistant_chat_input.go \
     'if !a || !b || before.Cmp(after) != 0 {' \
@@ -14936,8 +14936,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if !page.usable {' \
     'if false && !page.usable {'
   mutate go 'assistant documents: substituted saved request is accepted' internal/desk/assistant_documents.go \
-    'if !reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !assistantDocumentReferenced(current.Original, ref) {' \
-    'if false && (!reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !assistantDocumentReferenced(current.Original, ref)) {'
+    'if !reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !referenced {' \
+    'if false && (!reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !referenced) {'
   mutate go 'assistant documents: changed attachment or trust survives recheck' internal/desk/assistant_documents.go \
     'if digestOf(raw) != held.attachmentDigest || !reflect.DeepEqual(pin, held.gateway) {' \
     'if false && (digestOf(raw) != held.attachmentDigest || !reflect.DeepEqual(pin, held.gateway)) {'

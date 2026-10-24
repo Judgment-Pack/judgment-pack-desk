@@ -342,6 +342,13 @@
       "toolchain": "shell",
       "timeout": 900,
       "summary": "Test Files|Tests |Saved-chat mutation:"
+    },
+    {
+      "name": "assistant-brief-readers",
+      "run": "scripts/dev/assistant-brief.sh",
+      "toolchain": "shell",
+      "timeout": 900,
+      "summary": "Brief|PASS|passed"
     }
   ]
 }
