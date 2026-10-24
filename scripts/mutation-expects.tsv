@@ -2868,3 +2868,4 @@ web	assistant run client: shared cursor snapshot suppressed	src/assistant/server
 web	assistant run client: uncertain POST replayed	src/assistant/serverRuns/client.test.ts
 go	assistant discovery: caller body or query admitted	TestAssistantDiscoveryRefusesCallerPayload
 go	assistant discovery: saved revision requirement omitted	TestAssistantDiscoverySavedConnection
+web	assistant saved chat: unreconciled Send guard omitted	src/chat/store.server.test.ts

@@ -15731,6 +15731,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if false && connection != nil && r.Header.Get(aiRevisionHeader) == "" {'
 fi
 
+# Desk #645 F1: acknowledged terminal data must reconcile before a fresh Send.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant saved chat: unreconciled Send guard omitted' web/src/assistant/serverRuns/controller.ts \
+    'if(this.ended||this.running||this.uncertain||this.unreconciled)return' \
+    'if(this.ended||this.running||this.uncertain)return'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
