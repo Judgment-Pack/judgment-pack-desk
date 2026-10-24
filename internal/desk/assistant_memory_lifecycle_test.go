@@ -430,3 +430,131 @@ func TestAssistantMemoryCanonicalStorageLifecycle(t *testing.T) {
 		})
 	}
 }
+
+func TestAssistantMemoryCanonicalApprovalExactText(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	entry := enrichedMemoryFixture()
+	entry.State = "pending"
+	entry.Text = "  Keep outreach concise.\n"
+	entry.Canonical.Digest = "sha256:" + runcontext.ContextDigest(entry.Text)
+	seedCanonicalMemory(t, s, entry)
+	var revision string
+	assistantRunMust(t, s.withMemory(func(_ *os.Root, r *memoryReply) error { revision = r.SHA256; return nil }))
+	body, _ := json.Marshal(memoryChange{Action: "approve", ID: entry.ID})
+	req, err := http.NewRequest("POST", ts.URL+"/api/ai-memory", strings.NewReader(string(body)))
+	assistantRunMust(t, err)
+	bearer(req)
+	req.Header.Set("If-Match", revision)
+	response, err := ts.Client().Do(req)
+	assistantRunMust(t, err)
+	defer response.Body.Close()
+	if response.StatusCode != 200 {
+		t.Fatalf("approval rejected: %d", response.StatusCode)
+	}
+	var reply memoryReply
+	assistantRunMust(t, json.NewDecoder(response.Body).Decode(&reply))
+	if reply.Content.Entries[0].State != "active" || !reflect.DeepEqual(reply.Content.Entries[0].Canonical, entry.Canonical) {
+		t.Fatal("approval changed canonical metadata", reply.Content)
+	}
+	if reply.Content.Entries[0].Text != entry.Text {
+		t.Errorf("canonical approval rewrote exact text: got %q want %q", reply.Content.Entries[0].Text, entry.Text)
+	}
+	if err := s.withMemory(func(_ *os.Root, r *memoryReply) error { return nil }); err != nil {
+		t.Fatalf("approval made private store unreadable: %v", err)
+	}
+}
+
+func TestAssistantMemoryTerminalRecallDoesNotBlockResume(t *testing.T) {
+	for _, native := range []bool{false, true} {
+		for _, canonical := range []bool{false, true} {
+			name := "legacy"
+			if canonical {
+				name = "canonical"
+			}
+			if native {
+				name += "-native"
+			} else {
+				name += "-api"
+			}
+			t.Run(name, func(t *testing.T) {
+				s := promptFixture(t, "")
+				entry := enrichedMemoryFixture()
+				if !canonical {
+					entry.Canonical = nil
+				}
+				seedCanonicalMemory(t, s, entry)
+				first, err := runcontext.ContextualSession(t.Context(), memoryCanonicalSession(t, s, nil, true, "outreach", native))
+				assistantRunMust(t, err)
+				one, err := first.Context.Snapshot("stopped")
+				assistantRunMust(t, err)
+				first.Context.Close()
+				if len(one.Memories.Recalled) != 1 || one.Memories.Recalled[0].State != "accepted" {
+					t.Fatal("initial recall missing", one.Memories)
+				}
+				changeMemory(t, s, memoryChange{Action: "settings", Settings: &memorySettings{Use: false}})
+				second, err := runcontext.ContextualSession(t.Context(), memoryCanonicalSession(t, s, memoryReload(t, one), false, "outreach", native))
+				assistantRunMust(t, err)
+				two, err := second.Context.Snapshot("stopped")
+				assistantRunMust(t, err)
+				second.Context.Close()
+				if len(two.Memories.Recalled) != 1 || two.Memories.Recalled[0].State != "revoked" {
+					t.Fatal("disable did not revoke", two.Memories)
+				}
+				changeMemory(t, s, memoryChange{Action: "settings", Settings: &memorySettings{Use: true}})
+				third, err := runcontext.ContextualSession(t.Context(), memoryCanonicalSession(t, s, memoryReload(t, two), true, "outreach", native))
+				if err != nil {
+					t.Fatalf("re-enabling memory blocked response resume: %v", err)
+				}
+				defer third.Context.Close()
+				three, err := third.Context.Snapshot("stopped")
+				assistantRunMust(t, err)
+				if !reflect.DeepEqual(three.Memories.Recalled, two.Memories.Recalled) || strings.Contains(third.Context.System("guidance", ""), entry.Text) {
+					t.Fatal("terminal provenance or exclusion lost", three.Memories)
+				}
+				fresh, err := runcontext.ContextualSession(t.Context(), memoryCanonicalSession(t, s, nil, true, "outreach", native))
+				assistantRunMust(t, err)
+				defer fresh.Context.Close()
+				restored, err := fresh.Context.Snapshot("stopped")
+				assistantRunMust(t, err)
+				if len(restored.Memories.Recalled) != 1 || restored.Memories.Recalled[0].State != "accepted" || restored.Memories.Recalled[0].ID != one.Memories.Recalled[0].ID || !strings.Contains(fresh.Context.System("guidance", ""), entry.Text) {
+					t.Fatal("fresh execution lost eligible recall", restored.Memories)
+				}
+			})
+		}
+	}
+}
+
+func TestAssistantMemoryTerminalSharedHostConcurrentSnapshots(t *testing.T) {
+	for _, state := range []string{"revoked", "expired"} {
+		t.Run(state, func(t *testing.T) {
+			s := promptFixture(t, "")
+			entry := enrichedMemoryFixture()
+			seedCanonicalMemory(t, s, entry)
+			host, err := s.assistantPromptHost(t.Context())
+			assistantRunMust(t, err)
+			prior := []contract.ProvenanceMemoryRecall{{ID: entry.Canonical.ID, Digest: entry.Canonical.Digest, Kind: entry.Canonical.Kind, State: state}}
+			updates, err := host.MemoryLifecycle(t.Context(), prior)
+			assistantRunMust(t, err)
+			if len(updates.([]contract.MemoryLifecycleUpdate)) != 0 {
+				t.Fatal("terminal provenance changed", updates)
+			}
+			results := make(chan bool, 12)
+			for range 12 {
+				go func() {
+					_, err := host.MemoryLifecycle(t.Context(), nil)
+					if err != nil {
+						results <- false
+						return
+					}
+					answer, err := host.MemoryFor(t.Context(), "outreach")
+					results <- err == nil && len(answer.([]contract.Memory)) == 0
+				}()
+			}
+			for range 12 {
+				if !<-results {
+					t.Fatal("shared callback replaced frozen terminal exclusions")
+				}
+			}
+		})
+	}
+}

@@ -15831,6 +15831,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'state = ""'
 fi
 
+# Desk #657 review fixes: exact approval and terminal recall exclusion.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory: approval trims canonical text' internal/desk/ai_memory.go \
+    '	if c.Action != "approve" {
+		c.Text = strings.TrimSpace(c.Text)
+	}' \
+    '	c.Text = strings.TrimSpace(c.Text)'
+  mutate go 'assistant memory: terminal identity recalled on resume' internal/desk/assistant_memory_lifecycle.go \
+    'if !terminal[record.ID] {' \
+    'if !terminal[record.ID] || true {'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
