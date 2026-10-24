@@ -83,3 +83,23 @@ it.skipIf(!outputs)('mounts the actual API-produced approved draft with current 
  expect(retained.checkpoint!.state.turns.at(-1)?.creation).toEqual({kind:'check',candidateDigest:sha256(approved.run.creation.candidate)})
  expect(h.store.getSnapshot().bindings.get(chat.id)!.state.readiness).toBe('')
 })
+
+it.skipIf(!outputs)('keeps the actual partial corrected draft readable and blocks finalization while another issue remains',async()=>{
+ const partial=JSON.parse(readFileSync(`${outputs}/last/04-approve-correction.json`,'utf8')),chat=partial.chat.chats[0]
+ const draftIO=memoryDraftPersistence('/project'),saved={...chat.checkpoint,state:decodeCheckpoint(chat.checkpoint).state}
+ const artifact={...fromChat(chat,saved),id:chat.draftId,generation:chat.draftGeneration}
+ await draftIO.write({version:1,drafts:[artifact],deleted:[]},'absent')
+ fixture.snapshot=partial.run
+ const h=await setup(partial.chat,draftIO,partial.run.chatProjection.digest)
+ renderConnected(<Mounted/>,connected({client:h.runtime.client}),{path:`/packs/drafts/${chat.draftId}`})
+ await waitFor(()=>{
+  const snapshot=h.store.getSnapshot(),binding=snapshot.bindings.get(chat.id)
+  expect(snapshot.error).toBe('');expect(binding?.state.status).toBe('needs-input')
+  expect(binding?.state.restored).toBe(false)
+  expect(binding?.state.candidates.at(-1)?.check?.cases.every(c=>c.passed)).toBe(true)
+  expect(binding?.state.expectationIssues.filter(i=>!i.resolved)).toHaveLength(1)
+  expect(binding?.state.readiness).toBe('')
+ })
+ expect(screen.getByRole('button',{name:'Review and finalize'})).toHaveProperty('disabled',true)
+ expect(h.runtime.calls.filter(call=>/test|evaluate|save|apply/.test(call.name))).toEqual([])
+})

@@ -414,11 +414,12 @@ go_package_green() {
 # Run in the same package directory as go test, with its own clean binary.
 run_go_unmutated() {
   local package="$1" key log code watchdog=$GO_TEST_WATCHDOG backstop=$GO_TEST_BACKSTOP
-  if [ "$2" = . ]; then watchdog=$GO_BASELINE_WATCHDOG; backstop=$GO_BASELINE_BACKSTOP; fi
+  local -a baseline_flags=()
+  if [ "$2" = . ]; then watchdog=$GO_BASELINE_WATCHDOG; backstop=$GO_BASELINE_BACKSTOP; baseline_flags=(-test.v=true); fi
   key=$(go_package_key "$package")
   log="$work/package-$key.baseline.log"
-  bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3"' \
-    _ "$package" "$work/package-$key.test" "$2" "$backstop"
+  bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3" "${@:5}"' \
+    _ "$package" "$work/package-$key.test" "$2" "$backstop" "${baseline_flags[@]}"
   code=$?
   go_verdict "$code" "$log"
 }
@@ -14484,43 +14485,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
 fi
 
 # The Desk's own safeguards around @judgment-pack/harness v0.1.0 (#515; review of #516):
-# the recall query, the completion reader, the read windows, attachments in the
+# the completion reader, the read windows, attachments in the
 # ledger, the current state, propose_pack's offer, framing and the host wiring.
 if [ "$which" = all ] || [ "$which" = go ]; then
-  mutate go 'harness swap: recall reads the execution state part' internal/desk/ai_context.go \
-    '					continue
-				}
-				if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {' \
-    '					continue
-				}
-				if t, ok := p["text"].(string); ok {'
-  mutate go 'harness swap: recall reads the execution state in a content list' internal/desk/ai_context.go \
-    '			if p, ok := part.(map[string]any); ok && p["type"] == "text" {
-				if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {' \
-    '			if p, ok := part.(map[string]any); ok && p["type"] == "text" {
-				if t, ok := p["text"].(string); ok {'
-  mutate go 'harness swap: recall reads the execution state message' internal/desk/ai_context.go \
-    'return text, !strings.HasPrefix(text, executionStateHeader)' \
-    'return text, true'
-  mutate go 'harness swap: recall skips no thought part' internal/desk/ai_context.go \
-    '				if thought, _ := p["thought"].(bool); thought {' \
-    '				if false {'
-  mutate go 'harness swap: recall reads a later user turn' internal/desk/ai_context.go \
-    '				return memoryQueryTail(text)
-			}
-			return ""' \
-    '				return memoryQueryTail(text)
-			}
-			continue'
-  mutate go 'harness swap: recall reads a part that is not text' internal/desk/ai_context.go \
-    '			if p, ok := part.(map[string]any); ok && p["type"] == "text" {' \
-    '			if p, ok := part.(map[string]any); ok {'
-  mutate go 'harness swap: codex recall reads the execution state' internal/desk/ai_context.go \
-    '	if strings.HasPrefix(request.Prompt, executionStateHeader) {' \
-    '	if false {'
-  mutate go 'harness swap: codex recall reads past the state header' internal/desk/ai_context.go \
-    '		text = text[:at]' \
-    '		_ = at'
   mutate go 'queue: a request passes those waiting' internal/desk/relay_queue.go \
     'ok && s.relayLine.empty() {' \
     'ok {'
@@ -14610,9 +14577,6 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  endpointCapabilities: (endpoint) => capabilities.endpointCapabilities(endpoint),
 ' \
     ''
-  mutate web 'harness swap: the Go state header drifts from the package'"'"'s' internal/desk/ai_context.go \
-    'const executionStateHeader = "EXECUTION STATE (from the host,' \
-    'const executionStateHeader = "EXECUTION STATE (from the desk,'
   # The canonical authoring host now owns the pack proposal offer; its Go
   # mutation lives with the migrated standalone safeguards below.
   mutate web 'harness swap: renderImageToText left unwired' web/src/assistant/harnessHost.ts \
@@ -15826,6 +15790,53 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'state = "revoked"' \
     'state = ""'
 fi
+
+# Desk #658: partial correction continuation retains exact scope and readiness.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant creation: correction proposal rewrites evidence' internal/desk/assistant_creation_projection.go \
+    'if r.Action == "propose-correction" {' \
+    'if false {'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant creation: passing partial correction refused' web/src/assistant/serverRuns/creation.ts \
+    "if(issues.length&&(!cases.length||value.action!=='approve-correction'||!check.valid||check.report?.status!=='passed'))return invalid()" \
+    'if(issues.length)return invalid()'
+  mutate web 'assistant creation: partial check advertises readiness' web/src/assistant/serverRuns/creation.ts \
+    '&&issues.length===0){result=' \
+    '){result='
+  mutate web 'assistant creation: correction overlay reorders issue rows' web/src/assistant/serverRuns/creation.ts \
+    'expectationIssues:state.expectationIssues.map' \
+    'expectationIssues:[...state.expectationIssues.filter(i=>i.resolved),...state.expectationIssues.filter(i=>!i.resolved)].map'
+fi
+
+# Desk #546: adapters own prompt layers; transports only enforce wire limits.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant prompt: transport context ceilings ignored' internal/desk/ai_wire_guard.go \
+    'return aicontext.Resolve(profile.Context, model), nil' \
+    'policy := aicontext.Resolve(profile.Context, model)
+ policy.MaxInputBytes, policy.ContextWindowTokens = 2000000, 2000000
+ return policy, nil'
+  mutate go 'assistant prompt: transport reads brief again' internal/desk/ai_wire_guard.go \
+    'return aicontext.Resolve(profile.Context, model), nil' \
+    '_, _, err = s.aiContext(model)
+ if err != nil { return aicontext.Policy{}, err }
+ return aicontext.Resolve(profile.Context, model), nil'
+  mutate go 'assistant prompt: relay appends another prompt layer' internal/desk/modelrelay.go \
+    '	r.Body = io.NopCloser(bytes.NewReader(body))' \
+    '	if !listing { body = append(body, []byte("LEGACY-APPEND")...) }
+	r.Body = io.NopCloser(bytes.NewReader(body))'
+  mutate go 'assistant prompt: native transport appends instructions' internal/desk/agent_run.go \
+    '	err = runner.Run(ctx, owner, *start.Request,' \
+    '	start.Request.Instructions += "LEGACY-APPEND"
+	err = runner.Run(ctx, owner, *start.Request,'
+  mutate go 'assistant prompt: transport rereads memory' internal/desk/ai_wire_guard.go \
+    'return aicontext.Resolve(profile.Context, model), nil' \
+    '_, err = s.memoryBackground("outreach")
+ if err != nil { return aicontext.Policy{}, err }
+ return aicontext.Resolve(profile.Context, model), nil'
+
+fi
+
 
 
 # Desk #598: canonical proposal control and person-owned acceptance.

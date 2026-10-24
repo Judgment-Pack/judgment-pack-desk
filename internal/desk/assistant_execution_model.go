@@ -14,8 +14,8 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-agent/go/relay"
 )
 
-// Only an authorized, server-held execution constructs this marker. No header
-// or request field can suppress the legacy context preparation path.
+// Only an authorized, server-held execution constructs this marker. Canonical
+// adapters own prompt assembly and context policy; legacy wire guards never add prompt layers.
 type assistantAssembledPromptKey struct{}
 type assistantModelDispatch struct {
 	execution *assistantRunExecution

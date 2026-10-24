@@ -876,8 +876,7 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	assembled, canonical := r.Context().Value(assistantAssembledPromptKey{}).(*assistantModelDispatch)
 	if !listing && !canonical {
-		body, err = s.prepareModelContext(endpoint.kind, suffix, body)
-		if err != nil {
+		if err = s.checkModelWireContext(endpoint.kind, suffix, body); err != nil {
 			writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge, err.Error())
 			return
 		}

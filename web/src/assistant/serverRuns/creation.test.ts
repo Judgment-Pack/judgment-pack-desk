@@ -4,7 +4,8 @@ import {INITIAL_STATE} from '../../research/initialState'
 import {readCreation,readCreationAction,withCreation} from './creation'
 import {historicalDraftBinding} from '../../packs/drafts/historicalBinding'
 import type {PackDraft} from '../../packs/drafts/model'
-import type {RunState} from '../../research/run'
+import {canCreateDraft,type RunState} from '../../research/run'
+import {readinessKey} from '../../research/readiness'
 
 const candidate='{ "title":"Exact", "zero":0, "flag":false, "nil":null }'
 const disposition={kind:'outcome',outcomeId:'accept',reasons:[],handoff:{state:'none'}}
@@ -50,4 +51,23 @@ it('reads the shared original-position vectors without dropping explicit custody
   if(v.valid)expect(JSON.parse(read().issues)[0].position,v.name).toBe(position===undefined?undefined:JSON.parse(position))
   else expect(read,v.name).toThrow()
  }
+})
+
+it('admits a passing partial correction check while preserving remaining evidence and blocking readiness',()=>{
+ const original={...row,id:'remaining'},finding={status:'invalid' as const,message:'Invalid expectation.',admitted:true}
+ const unresolved={id:original.id,original,message:finding.message,finding,position:0}
+ const resolved={id:'prior',original:{...row,id:'prior'},message:'Approved',resolved:{replacement:{...row,id:'prior'},approvedAt:'2026-10-24T00:00:00Z',rationale:'Explicit approval.'}}
+ const partial={...evidence(),action:'approve-correction',issues:JSON.stringify([{id:original.id,original,finding,position:0}])}
+ const saved={...state(),status:'ready' as const,readiness:'stale',expectationIssues:[unresolved,resolved]}
+ const view=readCreation(partial),current=withCreation(saved,view,true)
+ expect(current.candidates[0]?.check?.cases.every(c=>c.passed)).toBe(true)
+ expect(current.status).toBe('needs-input');expect(current.readiness).toBe('')
+ expect(canCreateDraft(current,'draft',current.tracedBasis)).toBe(false)
+ expect(canCreateDraft({...current,status:'ready',readiness:readinessKey(current)},'draft',current.tracedBasis)).toBe(false)
+ expect(current.expectationIssues.map(i=>i.id)).toEqual(['remaining','prior'])
+ expect(current.cases).toBe(saved.cases)
+ const historical=withCreation(saved,view,false,false)
+ expect(historical.candidates[0]?.check).toBeUndefined();expect(historical.candidates[0]?.previousCheck?.valid).toBe(true)
+ expect(historical.readiness).toBe('');expect(historical.status).toBe('needs-input')
+ for(const changed of [{...partial,action:'check'},{...partial,check:{...partial.check,report:{...partial.check.report,packs:[{rows:[{...partial.check.report.packs[0]!.rows[0]!,id:'foreign'}]}]}}},{...partial,check:{...partial.check,valid:false}},{...partial,check:{...partial.check,totalCases:2}},{...partial,check:{...partial.check,report:{...partial.check.report,status:'mismatch',summary:{total:1,passed:0},packs:[{rows:[{...partial.check.report.packs[0]!.rows[0]!,status:'mismatch'}]}]}}}])expect(()=>readCreation(changed)).toThrow()
 })
