@@ -244,7 +244,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if chat.CriticPurpose != "" {
 		purpose = chat.CriticPurpose
 	}
-	run := &adapter.Run{HostTools: registry.offered(gateHostPhase{names: phase.Host}), Purpose: purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Critic: assistantCriticChoice(chat), CriticProject: e.source.Profile.Critic, CriticReasoning: chat.CriticReasoning, ExistingPack: critic != nil && critic.path != "", Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
+	run := &adapter.Run{PolicyProject: assistantMemoryProposalPolicy(e.record.Binding), HostTools: registry.offered(gateHostPhase{names: phase.Host}), Purpose: purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Critic: assistantCriticChoice(chat), CriticProject: e.source.Profile.Critic, CriticReasoning: chat.CriticReasoning, ExistingPack: critic != nil && critic.path != "", Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
 	if critic != nil {
 		run.TestPrompt, err = runtime.criticPrompt(ctx)
 		if err != nil {

@@ -1,0 +1,113 @@
+{
+  "document": {
+    "version": 1,
+    "settings": {
+      "use": false,
+      "suggest": true
+    },
+    "entries": [],
+    "blocked": [],
+    "reviews": [
+      {
+        "id": "review-one",
+        "intentDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "principal": "2222222222222222222222222222222222222222222222222222222222222222",
+        "session": "3333333333333333333333333333333333333333333333333333333333333333",
+        "policy": "4444444444444444444444444444444444444444444444444444444444444444",
+        "project": "5555555555555555555555555555555555555555555555555555555555555555",
+        "runId": "arun_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "runRevision": 7,
+        "proposalId": "proposal-one",
+        "proposalDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "decision": "decline",
+        "at": "2026-10-24T10:00:00Z"
+      }
+    ]
+  },
+  "requiredReceiptMembers": [
+    "id",
+    "intentDigest",
+    "principal",
+    "session",
+    "policy",
+    "project",
+    "runId",
+    "runRevision",
+    "proposalId",
+    "proposalDigest",
+    "decision",
+    "at"
+  ],
+  "badReceiptMembers": [
+    {
+      "member": "id",
+      "value": ""
+    },
+    {
+      "member": "intentDigest",
+      "value": "wrong"
+    },
+    {
+      "member": "principal",
+      "value": null
+    },
+    {
+      "member": "session",
+      "value": ""
+    },
+    {
+      "member": "policy",
+      "value": false
+    },
+    {
+      "member": "project",
+      "value": "elsewhere"
+    },
+    {
+      "member": "runId",
+      "value": "arun_GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+    },
+    {
+      "member": "runRevision",
+      "value": 0
+    },
+    {
+      "member": "proposalId",
+      "value": ""
+    },
+    {
+      "member": "proposalDigest",
+      "value": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "member": "decision",
+      "value": "automatic"
+    },
+    {
+      "member": "at",
+      "value": "yesterday"
+    },
+    {
+      "member": "unknown",
+      "value": true
+    },
+    {
+      "member": "entryId",
+      "value": "unexpected-decline-entry"
+    }
+  ],
+  "badResultLinks": [
+    {
+      "decision": "accept",
+      "entryId": "private-one",
+      "memoryId": "different-proposal",
+      "memoryDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "decision": "edit",
+      "entryId": "private-one",
+      "memoryId": "proposal-one",
+      "memoryDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    }
+  ]
+}

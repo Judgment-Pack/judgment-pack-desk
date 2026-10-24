@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 )
@@ -226,6 +227,11 @@ func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, i
 	binding.ProfileRevision = digestOf(profileRaw)
 	binding.Model = model
 	binding.Phase = phase
+	memory, err := readMemory(store.root, strings.Replace(name, "conversations-", "ai-memory-", 1))
+	if err != nil {
+		return assistantRunSource{}, err
+	}
+	binding.MemoryProposals = &memory.Content.Settings.Suggest
 	source := assistantRunSource{Start: start, Binding: binding, Original: bytes.Clone(selected), Request: bytes.Clone(request), Text: text, Connection: *connection, Profile: *profile}
 	if _, err := compileAssistantChatInput(source); err != nil {
 		return assistantRunSource{}, err
@@ -233,6 +239,10 @@ func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, i
 	creation, err := readAssistantCreationAction(source.Request)
 	if err != nil {
 		return assistantRunSource{}, err
+	}
+	if assistantMemoryIndependentReview(creation) {
+		allowed := false
+		source.Binding.MemoryProposals = &allowed
 	}
 	if chat["draftGeneration"] != nil || creation != nil && creation.Kind != "research-choice" {
 		if err := s.validateAssistantCreationDraftLocked(r, store.root, name, chat, state); err != nil {

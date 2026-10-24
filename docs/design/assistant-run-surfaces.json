@@ -833,9 +833,13 @@
         "Agent packages/harness/planning/tools.ts",
         "Agent packages/harness/memory/tools.ts",
         "internal/desk/ai_memory.go",
-        "internal/desk/assistant_memory_lifecycle.go"
+        "internal/desk/assistant_memory_lifecycle.go",
+        "internal/desk/assistant_memory_review.go",
+        "web/src/assistant/memory/client.ts",
+        "web/src/assistant/memory/MemorySettings.tsx",
+        "docs/design/canonical-memory-acceptance.md"
       ],
-      "targetOwner": "Desk private memory store and person management; released Agent v0.9.1 typed recall and metadata-only MemoryLifecycle callback",
+      "targetOwner": "Desk private memory store, authenticated person review and exact source/store CAS; released Agent v0.9.1 reserved remember, canonical proposal identity, typed recall and metadata-only MemoryLifecycle callback",
       "preserve": [
         "Go Plan record/references and existing private memory handlers; latest saved user message binding, separate human Start work, no remembered permissions/evidence",
         "server determines effect/delegation/context policy and phase; client cannot submit tool declarations"
@@ -844,12 +848,15 @@
         "existing factory behavior fixtures reused for feature migration",
         "new real Go admission/retention/action fixtures; exact canonical names checked before implementation",
         "TestAssistantMemoryActualBindings: actual API/native question pause and person-answer resume explicitly revoke forgotten, cleared, edited, disabled, dependency-changed and expired records without reconstructing deleted text",
-        "Strict legacy/enriched private v1 and backup readers; canonical identity/digest and byte/count bounds; stable shared-host snapshot, query-independent lifecycle eligibility and focused concurrent CAS race probes"
+        "Strict legacy/enriched private v1 and backup readers; canonical identity/digest and byte/count bounds; stable shared-host snapshot, query-independent lifecycle eligibility and focused concurrent CAS race probes",
+        "TestAssistantMemoryProposalActual: API/native Work/Plan root proposals, captured Suggest false proposal cap zero and separate Use recall; current setting changes refuse dispatch without admitted policy mutation",
+        "Exact current person/session/project/chat/latest-human/run/revision/proposal and If-Match acceptance; canonical identity preserved, edits distinct, atomic metadata-only receipts; Clear/Forget/uncertain replay barriers and focused CAS race",
+        "Actual independent creation reviewers reject forced reserved remember and complete with readable checkpoints; shared Go/backup/browser strict receipt vectors, default UI consumers and eleven targeted mutation kills"
       ],
-      "status": "private typed recall and lifecycle foundation implemented; human proposal acceptance and final activation pending",
+      "status": "private typed recall, lifecycle and canonical person acceptance implemented; legacy tool removal and production activation pending",
       "remaining": [
-        "Canonical model/Plan proposal projection and authenticated person acceptance (#598), full memory UI control wiring and legacy tool removal",
-        "Global factory activation and complete release journeys remain separate required work"
+        "Remove superseded legacy memory tools with coordinated browser engine cutover",
+        "Global factory activation and complete release journeys/certification/review remain required"
       ]
     },
     {

@@ -58,6 +58,7 @@ type assistantRunBinding struct {
 	Phase              string            `json:"phase"`
 	Unit               string            `json:"unit"`
 	ExecutionKey       string            `json:"executionKey"`
+	MemoryProposals    *bool             `json:"memoryProposals,omitempty"`
 }
 
 type assistantRunOperation struct {

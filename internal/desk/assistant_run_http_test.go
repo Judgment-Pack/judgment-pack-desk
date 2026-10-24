@@ -106,6 +106,7 @@ func assistantFixtureCheckpoint(ctx context.Context, source assistantRunSource, 
 			session.Model.Budget = &runcontext.ModelBudget{ContextWindowTokens: *capabilities.ContextWindowTokens, OutputTokens: *capabilities.OutputTokens}
 		}
 	}
+	session.PolicyProject = assistantMemoryProposalPolicy(source.Binding)
 	if len(policy) > 0 {
 		session.Policy = policy[0]
 	}

@@ -2904,3 +2904,14 @@ go	assistant prompt: transport reads brief again	TestAIWireGuardNeverReadsPrompt
 go	assistant prompt: relay appends another prompt layer	TestAIWireGuardLegacyDispatchOwnsNoPromptLayers,TestAssistantPromptCanonicalAdapterOwnsEveryWire
 go	assistant prompt: native transport appends instructions	TestAIWireGuardLegacyDispatchOwnsNoPromptLayers
 go	assistant prompt: transport rereads memory	TestAIWireGuardNeverReadsPromptSourcesOrChangesInput
+go	assistant memory review: another session accepted	TestAssistantMemoryReviewRefusals
+go	assistant memory review: store CAS omitted	TestAssistantMemoryReviewRefusals
+go	assistant memory review: Clear generation ignored	TestAssistantMemoryReviewDeclineAndBarrier
+go	assistant memory review: Suggest off grants a proposal	TestAssistantMemoryProposalActual
+go	assistant memory review: owned receipt accepts another intent	TestAssistantMemoryProposalActual
+go	assistant memory review: accepted receipt identity unbound	TestAssistantMemoryReviewSharedStorageVectors
+web	assistant memory review: accepted receipt identity unbound	src/assistant/memory/client.test.ts
+web	assistant memory review: response belongs to another proposal	src/assistant/memory/client.test.ts
+web	assistant memory review: proposal edit rebases reviewed store	src/assistant/memory/proposals.test.tsx
+go	assistant memory review: independent reviewer gains author cap	TestAssistantMemoryIndependentReview
+go	assistant memory review: reviewer action accepts attribution	TestAssistantMemoryIndependentReview

@@ -262,6 +262,7 @@ func prepareAssistantContextSession(ctx context.Context, source assistantRunSour
 	} else {
 		return contract.Checkpoint{}, errAssistantRunUnavailable
 	}
+	session.PolicyProject = assistantMemoryProposalPolicy(source.Binding)
 	session.PolicyFamilies = adapter.PolicyFamilies(run, named)
 	session.PolicyConnections = append(adapter.PolicyConnectionIDs(run), named.Critic, named.Child)
 	opened, err := runcontext.ContextualSession(ctx, session)

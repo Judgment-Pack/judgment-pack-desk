@@ -2,7 +2,7 @@
 
 Status: **accepted architecture; implementation in bounded slices**. This record does not authorize or claim a completed production cutover. Slices 1–2 supply the durable host ledger, storage integration and startup/reacquisition recovery. Slice 3 adds the authenticated run protocol and a host execution lifecycle. Production purposes remain unbound; existing browser execution is still active.
 
-Scope: [Desk #537](https://github.com/Judgment-Pack/judgment-pack-desk/issues/537), following the reviewed v0.3.0 prerequisite. The [32-row ownership matrix](../design/assistant-run-surfaces.json) records migration points and verification obligations, not already delivered behavior.
+Scope: [Desk #537](https://github.com/Judgment-Pack/judgment-pack-desk/issues/537), following the reviewed v0.3.0 prerequisite. The [33-row ownership matrix](../design/assistant-run-surfaces.json) records migration points and verification obligations, not already delivered behavior.
 
 Published Go dependency: `github.com/Judgment-Pack/judgment-pack-agent/go v0.6.0`, a normal tagged module with no replace/vendor. The browser package also pins the attested `@judgment-pack/harness` v0.6.0 release asset through the component lock. Root and `go/v0.6.0` tags resolve to `3f308215afadd9d72ae963ebea1062247d1963ba`; the archive SHA-256 is `5bc4e0314d79b2f5c68296b0ebd0e0f8044444d4a9f50d68b6c0712c40b5c2b0`. Release-workflow asset attestations, tag/source identity and module origin/checksums are verified during adoption. This does not assert Git tag-signature verification. The approval framing-marker correction is included in this released pin. Optional skills are not declared or enabled by this component update; their Desk workflow remains separate. See the [v0.6.0 adoption note](../design/agent-v060-adoption.md) for compatibility evidence and limits. Browser/server production cutover remains pending.
 
@@ -650,3 +650,12 @@ continue to come from shared durable snapshots under either policy.
 `scripts/dev/assistant-run-progress.sh` sends temporary observations from those
 actual registered SSE runs through the browser's real frame and observation
 readers. The temporary outputs are evidence inputs, not generated golden vectors.
+
+
+## Canonical memory proposal acceptance (#598)
+
+The canonical candidate uses the released Agent v0.9.1 reserved `remember {kind,text}` proposal mechanism. Desk does not register another memory writer beside it or copy proposal/budget machinery. Root saved-chat authors may propose in Plan, while released child/critic/reformatting admission remains authoritative. The model's proposal is immutable data and cannot accept itself, grant permission or establish evidence.
+
+Desk captures Suggest in the current saved-chat source binding and supplies only the released nested project proposal cap zero when off; the enabled case inherits the released table. Source equality refuses subsequent dispatch or continuation if Suggest changes. No admitted policy, request allowance or continuation grant is mutated to accommodate that change. Use is a separate recall/lifecycle control. Existing proposals remain explicitly person-reviewable when Suggest is off. Host-authored independent creation review actions capture proposal authority as false and receive the same zero cap; their latest saved action cannot authorize person acceptance. Non-chat purposes cannot supply saved-chat human-turn attribution.
+
+The existing private memory owner projects checkpoint proposals read-only and handles authenticated accept/decline/edit with exact run/proposal/revision and store CAS. Latest saved user-turn attribution, project namespace, stable topic key and verified file dependencies are host-owned. Accepted text and its metadata-only receipt share one atomic document replacement; known completed receipts reconcile without replaying or reconstructing removed entries. Unknown outcomes never cause an automatic write retry. Existing tombstones, Clear cutoff, sensitive text and storage/dependency limits remain in force. [Canonical memory acceptance](../design/canonical-memory-acceptance.md) describes the format and verification. This slice does not activate the global factory, delete old engines or change component pins; exact-head CI, independent review and the maintainer gate remain required.

@@ -48,26 +48,29 @@ type memoryEntry struct {
 	Canonical    *memoryCanonical   `json:"canonical,omitempty"`
 }
 type memoryDocument struct {
-	Version         int            `json:"version"`
-	Settings        memorySettings `json:"settings"`
-	Entries         []memoryEntry  `json:"entries"`
-	Blocked         []string       `json:"blocked"`
-	GenerationAfter string         `json:"generationAfter,omitempty"`
+	Version         int                   `json:"version"`
+	Settings        memorySettings        `json:"settings"`
+	Entries         []memoryEntry         `json:"entries"`
+	Blocked         []string              `json:"blocked"`
+	GenerationAfter string                `json:"generationAfter,omitempty"`
+	Reviews         []memoryReviewReceipt `json:"reviews,omitempty"`
 }
 type memoryReply struct {
-	Name    string         `json:"-"`
-	SHA256  string         `json:"sha256"`
-	Content memoryDocument `json:"content"`
+	Name      string                 `json:"-"`
+	SHA256    string                 `json:"sha256"`
+	Content   memoryDocument         `json:"content"`
+	Proposals []memoryProposalReview `json:"proposals,omitempty"`
 }
 type memoryChange struct {
-	Action       string             `json:"action"`
-	ID           string             `json:"id,omitempty"`
-	Key          string             `json:"key,omitempty"`
-	Text         string             `json:"text,omitempty"`
-	Settings     *memorySettings    `json:"settings,omitempty"`
-	Source       *memorySource      `json:"source,omitempty"`
-	Dependencies []memoryDependency `json:"dependencies,omitempty"`
-	Query        string             `json:"query,omitempty"`
+	Action       string              `json:"action"`
+	Review       *memoryReviewChange `json:"review,omitempty"`
+	ID           string              `json:"id,omitempty"`
+	Key          string              `json:"key,omitempty"`
+	Text         string              `json:"text,omitempty"`
+	Settings     *memorySettings     `json:"settings,omitempty"`
+	Source       *memorySource       `json:"source,omitempty"`
+	Dependencies []memoryDependency  `json:"dependencies,omitempty"`
+	Query        string              `json:"query,omitempty"`
 }
 
 func (s *Server) memoryName() string {
@@ -366,7 +369,13 @@ func (s *Server) handleAIMemory(w http.ResponseWriter, r *http.Request) {
 	var change memoryChange
 	if r.Method == "POST" {
 		b, e := readBounded(r.Body, 10000)
-		if e != nil || decodeDataJSON(b, &change) != nil {
+		if e == nil {
+			e = decodeDataJSON(b, &change)
+		}
+		if e == nil && change.Action == "review" {
+			_, e = assistantTestControls(b, "action", "review")
+		}
+		if e != nil {
 			writeJSONError(w, 400, errors.New("Invalid memory request."))
 			return
 		}
@@ -386,24 +395,44 @@ func (s *Server) handleAIMemory(w http.ResponseWriter, r *http.Request) {
 		} else if change.Action == "suggest" {
 			return errors.New("Use the suggestion endpoint.")
 		}
+		if change.Review != nil && change.Action != "review" {
+			return errAssistantRunInvalid
+		}
 		if r.Method == "POST" {
-			if change.Action != "suggest" && r.Header.Get("If-Match") != current.SHA256 {
-				return withCode(CodeStale, errors.New("Project memory changed. Reload before saving."))
+			changed := true
+			if change.Action == "review" {
+				if change.Review == nil || change.ID != "" || change.Key != "" || change.Text != "" || change.Settings != nil || change.Source != nil || change.Dependencies != nil || change.Query != "" {
+					return errAssistantRunInvalid
+				}
+				var e error
+				changed, e = s.reviewMemory(r, root, current, *change.Review)
+				if e != nil {
+					return e
+				}
+			} else {
+				if change.Action != "suggest" && r.Header.Get("If-Match") != current.SHA256 {
+					return withCode(CodeStale, errors.New("Project memory changed. Reload before saving."))
+				}
+				if e := s.applyMemory(root, current, change); e != nil {
+					return e
+				}
 			}
-			if e := s.applyMemory(root, current, change); e != nil {
-				return e
+			if changed {
+				if len(current.Content.Blocked) > 4096 {
+					return errors.New("Memory deletion history is full. No entries were changed.")
+				}
+				b, e := json.Marshal(current.Content)
+				if e != nil || len(b) > memoryLimit {
+					return errors.New("Project memory storage is full.")
+				}
+				if e = validateMemoryStorage(b); e != nil {
+					return e
+				}
+				if e = writePrivateData(root, current.Name, b); e != nil {
+					return e
+				}
+				current.SHA256 = digestOf(b)
 			}
-			if len(current.Content.Blocked) > 4096 {
-				return errors.New("Memory deletion history is full. No entries were changed.")
-			}
-			b, e := json.Marshal(current.Content)
-			if e != nil || len(b) > memoryLimit {
-				return errors.New("Project memory storage is full.")
-			}
-			if e = writePrivateData(root, current.Name, b); e != nil {
-				return e
-			}
-			current.SHA256 = digestOf(b)
 		}
 		if change.Action == "suggest" {
 			writeJSON(w, 200, map[string]any{"saved": true, "reviewRequired": func() bool {
@@ -419,10 +448,17 @@ func (s *Server) handleAIMemory(w http.ResponseWriter, r *http.Request) {
 		for i := range current.Content.Entries {
 			current.Content.Entries[i].Stale = s.validMemoryDependencies(current.Content.Entries[i].Dependencies) != nil
 		}
+		if e := s.projectMemoryProposals(r, root, current); e != nil {
+			return e
+		}
 		writeJSON(w, 200, current)
 		return nil
 	})
 	if e != nil {
+		if change.Action == "review" {
+			assistantRunHTTPError(w, e)
+			return
+		}
 		writeJSONCoded(w, statusForRefusal(e), codeOf(e), e.Error())
 	}
 }
@@ -519,8 +555,14 @@ func (s *Server) memoryBackground(query string) (string, error) {
 
 func validateMemoryStorage(data []byte) error {
 	var d memoryDocument
-	if len(data) > memoryLimit || decodeDataJSON(data, &d) != nil || d.Version != 1 || d.Entries == nil || len(d.Entries) > 256 || len(d.Blocked) > 4096 {
+	if len(data) > memoryLimit || !uniqueJSON(data) || decodeDataJSON(data, &d) != nil || d.Version != 1 || d.Entries == nil || len(d.Entries) > 256 || len(d.Blocked) > 4096 {
 		return errors.New("Invalid project memory storage.")
+	}
+	if _, err := assistantTestControls(data, "version", "settings", "entries", "blocked", "generationAfter", "reviews"); err != nil {
+		return err
+	}
+	if err := validateMemoryReviews(d.Reviews); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	canonicalIDs := map[string]bool{}
@@ -542,10 +584,14 @@ func validateMemoryStorage(data []byte) error {
 	// Optional metadata must be absent or an object; null must not silently
 	// erase identity on a backup/import or a private read.
 	var shape struct {
+		Reviews json.RawMessage              `json:"reviews"`
 		Entries []map[string]json.RawMessage `json:"entries"`
 	}
 	if json.Unmarshal(data, &shape) != nil {
 		return errors.New("Invalid project memory storage.")
+	}
+	if len(shape.Reviews) > 0 && strings.TrimSpace(string(shape.Reviews)) == "null" {
+		return errAssistantRunInvalid
 	}
 	for _, entry := range shape.Entries {
 		if raw, ok := entry["canonical"]; ok {

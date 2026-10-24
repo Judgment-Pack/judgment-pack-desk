@@ -103,6 +103,7 @@ for line in sys.stdin:
    if answer['selected']!=['two'] or answer['text']!='Exact answer <&> 한글\nnext line' or 'Review exact input' not in prompt: sys.exit(75)
    finish()
   elif mode in ['question','continuation-question']: tool(offered('ask_user'),{'title':'Scope','question':'Which scope?','selection':'single','options':[{'label':'One','id':'one'},{'label':'Two','id':'two'}]})
+  elif mode=='memory': tool(offered('remember'),{'kind':'preference','text':'Keep outreach concise.'})
   elif mode=='unoffered': tool('desk_unoffered',{})
   elif mode=='malformed': tool(offered('get_schema'),[])
   elif mode=='duplicate': tool(offered('get_schema'),{})
@@ -367,6 +368,9 @@ func TestAssistantExecutionCodexFactoryDelegation(t *testing.T) {
 			}
 		}
 		for _, tool := range request.DynamicTools {
+			if i == 1 && strings.HasPrefix(tool.Description, "remember:") {
+				t.Fatal("delegated child received the author-only canonical memory proposal tool")
+			}
 			if strings.HasPrefix(tool.Description, "experimental_test_cases:") || i == 1 && strings.HasPrefix(tool.Description, "delegate_tasks:") {
 				t.Fatal("child or served tool ceiling widened")
 			}

@@ -338,7 +338,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
       }}/>
 
       <ExecutionProgress execution={state.execution} report={state.responses?.at(-1)?.work.report} disabled={actionDisabled} onStop={()=>store?.perform(chat.id,active=>active.run?.keepExecution(),false)} onContinue={continueExecution}/>
-      <ChatMemoryReview chatId={chat.id}/>
+      <ChatMemoryReview chatId={chat.id} observation={state.status+':'+state.events.filter(e=>e.type==='memory_proposed').length}/>
       {proposalActions === undefined && chat.pack ? <LinkedPackProposal chat={chat} state={state} busy={running || Boolean(otherRun)} onCheck={()=>store?.perform(chat.id, active=>active.run?.recheck(),false)}/> : proposalActions}
       {state.status!=='running' && state.streaming && <section aria-label={msg('Written so far')}><p className={styles.caption}>{msg('Written so far')}</p><MessageRenderer text={state.streaming}/></section>}
       {binding?.run?.pendingApproval && <div role="group" aria-label={msg('Approval required')}><p>{binding.run.pendingApproval.name}</p><CodeBlock label={msg('Arguments')} text={JSON.stringify(binding.run.pendingApproval.args,null,2)}/><ChatAction disabled={actionDisabled} onClick={()=>binding.run?.decideApproval?.(true)}>{msg('Approve')}</ChatAction><ChatAction disabled={actionDisabled} onClick={()=>binding.run?.decideApproval?.(false)}>{msg('Decline')}</ChatAction></div>}
