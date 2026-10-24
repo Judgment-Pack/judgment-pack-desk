@@ -17,10 +17,11 @@ const inputResearchRecordLimit = 16 << 20
 var inputResearchID = regexp.MustCompile(`^research_[a-f0-9]{32}$`)
 
 type inputResearchAttempt struct {
-	Failure         *aifailure.Failure      `json:"failure,omitempty"`
-	AppliedSequence int                     `json:"appliedSequence,omitempty"`
-	TaskID          string                  `json:"taskId,omitempty"`
-	RecordResults   []researchRecordOutcome `json:"recordResults,omitempty"`
+	RetainedProof   *portableResearchProofReference `json:"retainedProof,omitempty"`
+	Failure         *aifailure.Failure              `json:"failure,omitempty"`
+	AppliedSequence int                             `json:"appliedSequence,omitempty"`
+	TaskID          string                          `json:"taskId,omitempty"`
+	RecordResults   []researchRecordOutcome         `json:"recordResults,omitempty"`
 
 	ReservedBytes      int             `json:"reservedBytes,omitempty"`
 	ActionProblem      string          `json:"actionProblem,omitempty"`
@@ -201,7 +202,8 @@ func refuseResearchAttempt(run *inputResearchRun, id string, result json.RawMess
 		if a.ID != id {
 			continue
 		}
-		if a.State != "started" || a.Kind == "model" || len(result) == 0 || code == "" || problem == "" {
+		external := run.Portable != nil && a.RetainedProof != nil
+		if a.State != "started" || !external && (a.Kind == "model" || len(result) == 0) || code == "" || problem == "" {
 			return errors.New("Research attempt cannot be refused.")
 		}
 		if len(result) > 2<<20 {
