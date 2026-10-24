@@ -2879,3 +2879,4 @@ go	assistant creation: completed mismatch approval retained	TestAssistantCreatio
 go	assistant creation: original issue position ignored	TestAssistantCreationCorrectionOriginalPositions,TestAssistantCreationOriginalCaseOrder
 web	assistant creation: artifact numeric custody rewritten	src/chat/store.server.test.ts
 web	assistant creation: next control numeric custody rewritten	src/chat/store.server.test.ts
+go	assistant discovery: body read before bounded transport	TestAssistantDiscoveryRefusesBodyWithoutReading

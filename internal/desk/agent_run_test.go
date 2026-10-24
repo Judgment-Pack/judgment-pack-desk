@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -386,6 +388,33 @@ func TestAgentSocketAdmitsTheModelsAConnectionNamesForReviewAndChildren(t *testi
 			case <-called:
 				t.Fatal("a model the connection does not allow ran")
 			default:
+			}
+		})
+	}
+}
+
+func TestAgentSocketAccountLookupAndDiskFullTypedFailure(t *testing.T) {
+	for _, tc := range []struct {
+		err                             error
+		code, terminal, detail, outcome string
+	}{
+		{errors.Join(codexbridge.ErrAccountLookup, context.DeadlineExceeded), "connection-lost", "account-lookup-failed", "check the account", "not-started"},
+		{errors.Join(codexbridge.ErrInstall, &os.PathError{Op: "write", Path: "PRIVATE_SENTINEL", Err: syscall.ENOSPC}), "storage", "storage-full", "Disk is full", "unknown"},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			stub := &agentStub{run: func(context.Context, codexbridge.Owner, codexbridge.RunRequest, func(codexbridge.RunEvent) error, codexbridge.ToolHandler) error {
+				return tc.err
+			}}
+			_, server, token := agentServer(t, stub)
+			ws := agentSocket(t, server, token)
+			startAgent(t, ws)
+			end := readAgent(t, ws)
+			held, _ := end["failure"].(map[string]any)
+			if end["type"] != "end" || end["error"] != tc.terminal || held["code"] != tc.code || held["outcome"] != tc.outcome || !strings.Contains(fmt.Sprint(held["detail"]), tc.detail) {
+				t.Fatalf("wrong terminal: %+v", end)
+			}
+			if strings.Contains(fmt.Sprint(end), "PRIVATE_SENTINEL") {
+				t.Fatal("private data escaped")
 			}
 		})
 	}

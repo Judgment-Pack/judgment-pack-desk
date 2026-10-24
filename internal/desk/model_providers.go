@@ -50,6 +50,10 @@ func providerReply(w http.ResponseWriter, status int, body any) {
 func providerFailure(w http.ResponseWriter, err error) {
 	code, status := "provider-unavailable", http.StatusServiceUnavailable
 	switch {
+	case codexbridge.DiskFull(err):
+		code, status = "storage-full", http.StatusInsufficientStorage
+	case errors.Is(err, codexbridge.ErrAccountLookup):
+		code, status = "account-lookup-failed", http.StatusRequestTimeout
 	case errors.Is(err, codexbridge.ErrInstall):
 		code = "runtime-install-failed"
 	case errors.Is(err, codexbridge.ErrSignIn):
