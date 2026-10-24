@@ -31,7 +31,7 @@ func (x *assistantProtocolExecutor) Prepare(ctx context.Context, source assistan
 
 // Seed the same immutable session inputs that the adapters consume. Policy
 // resolution and checkpoint binding remain owned by ContextualSession.
-func assistantFixtureCheckpoint(ctx context.Context, source assistantRunSource, review *bool) (contract.Checkpoint, error) {
+func assistantFixtureCheckpoint(ctx context.Context, source assistantRunSource, review *bool, policy ...runcontext.PolicyLayer) (contract.Checkpoint, error) {
 	chat, err := compileAssistantChatInput(source)
 	if err != nil {
 		return contract.Checkpoint{}, err
@@ -105,6 +105,9 @@ func assistantFixtureCheckpoint(ctx context.Context, source assistantRunSource, 
 		if capabilities.ContextWindowTokens != nil && capabilities.OutputTokens != nil {
 			session.Model.Budget = &runcontext.ModelBudget{ContextWindowTokens: *capabilities.ContextWindowTokens, OutputTokens: *capabilities.OutputTokens}
 		}
+	}
+	if len(policy) > 0 {
+		session.Policy = policy[0]
 	}
 	session.PolicyFamilies = adapter.PolicyFamilies(r, named)
 	session.PolicyConnections = append(adapter.PolicyConnectionIDs(r), named.Critic, named.Child)

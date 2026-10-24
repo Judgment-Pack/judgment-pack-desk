@@ -576,3 +576,77 @@ released ceiling seam is recorded in
 [the continuation design](../design/assistant-run-continuation.md). This paragraph
 updates actual implementation status; it does not activate the production factory
 or complete the broader swap described by the early target table.
+
+### Bounded canonical live observations (Desk #639)
+
+The private server execution forwards canonical `message_progress` observations
+for API and native subscription adapters through the existing authenticated run
+SSE endpoint. Each value is a whole prose prefix; an empty value clears that
+view. `taskId` identifies a child view and can never replace the parent answer.
+The transport retains at most 17 current views and 1 MiB of escaped observation
+data per active run, with a 64 KiB UTF-8 limit per prefix. It replaces each view's
+value and uses the existing one-slot subscriber wake signal. A slow or disconnected
+reader cannot create an executor-facing text queue. The existing eight active
+execution and 32 subscriber limits and ten-second write deadlines still apply.
+
+A `progress` frame has no SSE `id`. Its closed JSON envelope contains `id`,
+`owner`, `requestId`, a fresh execution `epoch`, a safe positive `sequence`,
+`cursor`, `text`, and optional `taskId`. The payload cursor binds the display
+observation to the durable snapshot the server just sent; accepting it never
+advances the client's durable cursor. Epoch/sequence are ephemeral ordering,
+not semantic identities, completed messages or dispatch authority. The browser
+requires a reconciled snapshot of its exact run/owner/revision/request, rejects a
+changed epoch or cursor, ignores duplicate/older sequences, and validates both
+per-view and aggregate size. The server rechecks current session, principal,
+Policy, project and exact saved execution source on emission and read. Only the
+active execution object can replace its observations.
+
+Every explicit reconnect clears live display state and reconciles durable events
+and a snapshot before it can receive current authorized prefixes. A semantic
+suffix or terminal/pause snapshot clears stale live display state. Cancelling a
+reader or ending its session releases observation state. Callers cancel the
+reader when leaving its project/chat. Reader cancellation does not cancel the execution or schedule a model/tool replay. Cancellation
+of the run closes its own context and removes its active observations when the
+executor exits. A new execution receives a fresh epoch. No provider/model-name
+exception, extra retry loop or engine registration is involved.
+
+Unfinished prose is not present in canonical checkpoints, so the host also keeps
+optional `displayPreview` custody in its private run envelope. These rows contain
+only nonempty `text` and optional `taskId`, with the same view/prefix limits and
+an aggregate 1 MiB limit. Checkpoint and semantic event writes capture the latest
+rows atomically with that boundary; cancellation/exit captures the latest rows at
+the terminal boundary. Prefix receipt itself never writes the ledger. A completed
+parent message removes the parent preview, and an empty child prefix removes
+that child's preview. Strict Go storage and browser snapshot readers validate the
+new optional field, including exact member spelling, UTF-8/Unicode, duplicate
+views and bounds.
+
+Restored preview rows remain display-only retained partial prose. They never
+populate live observation state, canonical checkpoint messages, final response
+journals, model context, request allowances, approvals or completed-operation
+receipts. Explicit continuation preserves their display custody until replaced
+or cleared, but does not assign them an epoch/sequence or replay their generation.
+A process crash can lose prefixes since the last semantic boundary; recovery uses
+the retained checkpoint, receipts, events and optional prior display preview.
+There is no promise to recover transient text by repeating model or tool work.
+
+Hand-authored cross-reader vectors cover the `progress` envelope and private
+preview shape. Focused tests exercise chunked Unicode, missing/foreign/oversized
+values, whole-prefix replacement and empty clears, sequence/epoch/cursor guards,
+child isolation, bounded coalescing and authenticated session termination. Actual
+API and native adapter fixtures hold their completion until the registered SSE
+handler has delivered a genuine canonical prefix; the browser fetch reader uses
+the same frame grammar. Main chat UI and production hook activation remain in the
+parent cutover work.
+
+Progress follows the canonical output policy. Both the published Go boundary and
+browser boundary suppress raw `message_progress` when `outputGuard` is enabled;
+the default is `redact`. This transport forwards only emitted canonical values
+and does not weaken that guard or create progress from provider text. The actual
+API/native streaming fixtures admit `outputGuard: off` consistently before the
+checkpoint and adapter run; matching default/redact cases prove zero raw prefixes
+and durable completed prose/checkpoint delivery. Running status and recovery
+continue to come from shared durable snapshots under either policy.
+`scripts/dev/assistant-run-progress.sh` sends temporary observations from those
+actual registered SSE runs through the browser's real frame and observation
+readers. The temporary outputs are evidence inputs, not generated golden vectors.

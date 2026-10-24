@@ -6,7 +6,7 @@ import { resolve, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 const root=resolve(import.meta.dirname,'..')
 const rows=[
- ['owner source revision','decode.ts','value.owner.revision !== expected.owner.revision','false'],
+ ['owner source revision','decode.ts','value.owner.revision !== expected.owner.revision || !text(value.requestId,128)','false || !text(value.requestId,128)'],
  ['canonical checkpoint','decode.ts','readExecution(value.checkpoint)','value.checkpoint'],
  ['known semantic discriminator','decode.ts','!Object.hasOwn(SEMANTIC_EVENT_TYPES,value.event.type)','false'],
  ['shared cursor snapshot','stream.ts',"    if (frame.kind === 'snapshot') {","    if (frame.kind === 'snapshot') {\n      if (this.last === frame.cursor) return undefined"],

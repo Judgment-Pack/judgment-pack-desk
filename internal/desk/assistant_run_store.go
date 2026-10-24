@@ -76,6 +76,7 @@ type assistantRunEvent struct {
 	Event contract.RunEvent `json:"event"`
 }
 type assistantRunRecord struct {
+	DisplayPreview  []assistantRunPreview       `json:"displayPreview,omitempty"`
 	PackChecks      []assistantPackRecheck      `json:"packChecks,omitempty"`
 	SavedPack       *assistantSavedPackBasis    `json:"savedPack,omitempty"`
 	Websites        []assistantWebsiteCustody   `json:"websites,omitempty"`
@@ -472,6 +473,9 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 		}
 		if run.Historical && !assistantRunTerminal(run.State) {
 			return errAssistantRunInvalid
+		}
+		if err := validateAssistantRunPreview(run.DisplayPreview); err != nil {
+			return err
 		}
 		if err := validateAssistantChatProjection(run); err != nil {
 			return err

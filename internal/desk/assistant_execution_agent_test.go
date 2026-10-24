@@ -42,6 +42,11 @@ def log(v):
 def note(method,p): write({'method':method,'params':p})
 def finish():
  text='Fixture answer.'
+ if mode=='progress':
+  note('item/agentMessage/delta',{'threadId':'thread','turnId':'turn','itemId':'message','delta':'Fixture '})
+  note('item/agentMessage/delta',{'threadId':'thread','turnId':'turn','itemId':'message','delta':'answer.'})
+  with open(trace+'.waiting','w') as f: f.write('ready')
+  while not os.path.exists(trace+'.release'): time.sleep(.005)
  if mode=='delegate' and index==2:
   text='Child findings.\n\n'+'` + "```" + `json\n{"report":{"summary":"Child findings.","findings":[],"citations":[],"openQuestions":[],"confidence":"high","notDone":[]}}\n'+'` + "```" + `'
  note('item/completed',{'threadId':'thread','turnId':'turn','item':{'id':'message','type':'agentMessage','phase':'final_answer','text':text}})

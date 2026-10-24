@@ -3,6 +3,7 @@ package desk
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"sync"
 	"time"
 
@@ -91,14 +92,14 @@ func (w *assistantRunWriter) fail(err error) error {
 	return err
 }
 
-func (w *assistantRunWriter) Checkpoint(ctx context.Context, state contract.Checkpoint) error {
+func (w *assistantRunWriter) Checkpoint(ctx context.Context, state contract.Checkpoint, preview ...[]assistantRunPreview) error {
 	return w.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
 		cp, err := readAssistantRunCheckpoint(state, run.Binding)
 		if err != nil {
 			return false, err
 		}
 		if sameAssistantRunCheckpoint(cp, run.Checkpoint) {
-			return false, nil
+			return setAssistantRunPreview(run, preview), nil
 		}
 		if assistantRunTerminal(run.State) {
 			return false, errAssistantRunDispatch
@@ -106,6 +107,7 @@ func (w *assistantRunWriter) Checkpoint(ctx context.Context, state contract.Chec
 		if run.Checkpoint != nil && (cp.ID != run.Checkpoint.ID || cp.Used < run.Checkpoint.Used) {
 			return false, errAssistantRunConflict
 		}
+		setAssistantRunPreview(run, preview)
 		run.Checkpoint = cp
 		if run.State == "admitted" {
 			run.State = "running"
@@ -113,9 +115,13 @@ func (w *assistantRunWriter) Checkpoint(ctx context.Context, state contract.Chec
 		return true, nil
 	})
 }
-func (w *assistantRunWriter) Event(ctx context.Context, id string, event contract.RunEvent) error {
+func (w *assistantRunWriter) Event(ctx context.Context, id string, event contract.RunEvent, preview ...[]assistantRunPreview) error {
 	return w.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
-		return appendAssistantRunEvent(run, id, event)
+		changed, err := appendAssistantRunEvent(run, id, event)
+		if changed && err == nil {
+			setAssistantRunPreview(run, preview)
+		}
+		return changed, err
 	})
 }
 func appendAssistantRunEvent(run *assistantRunRecord, id string, event contract.RunEvent) (bool, error) {
@@ -335,8 +341,20 @@ func (w *assistantRunWriter) boundIntent(ctx context.Context, kind, name string,
 	})
 	return operation, err
 }
-func (w *assistantRunWriter) boundEvent(ctx context.Context, event contract.RunEvent) error {
+func (w *assistantRunWriter) boundEvent(ctx context.Context, event contract.RunEvent, preview ...[]assistantRunPreview) error {
 	return w.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
-		return appendAssistantRunEvent(run, nextAssistantRunIdentity(run, "event"), event)
+		changed, err := appendAssistantRunEvent(run, nextAssistantRunIdentity(run, "event"), event)
+		if changed && err == nil {
+			setAssistantRunPreview(run, preview)
+		}
+		return changed, err
 	})
+}
+
+func setAssistantRunPreview(run *assistantRunRecord, preview [][]assistantRunPreview) bool {
+	if len(preview) == 0 || reflect.DeepEqual(run.DisplayPreview, preview[0]) {
+		return false
+	}
+	run.DisplayPreview = preview[0]
+	return true
 }
