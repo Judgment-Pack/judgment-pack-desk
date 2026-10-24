@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -23,6 +24,38 @@ func portableFamilyReply(t *testing.T, family string, w http.ResponseWriter, ans
 		_ = json.NewEncoder(w).Encode(map[string]any{"candidates": []any{map[string]any{"finishReason": "STOP", "content": map[string]any{"parts": []any{map[string]any{"text": answer}}}}}})
 	default:
 		portableTestReply(w, answer)
+	}
+}
+
+// The canonical background adapter frames the domain JSON with host instructions
+// and the response schema. Decode that explicit envelope, never search arbitrary
+// instruction text for a JSON object.
+func portableCanonicalPrompt(text string) (json.RawMessage, error) {
+	const schema = `{"type":"object","properties":{"kind":{"type":"string","enum":["answer","search","page","read_context"]},"arguments":{"type":"object"},"fields":{"type":"object"}},"required":["kind"],"additionalProperties":false}`
+	prefix := portableResearchInstructions + "\n\nReturn exactly one JSON object satisfying this host response schema, without markdown:\n" + schema + "\n\n"
+	body, ok := strings.CutPrefix(text, prefix)
+	if !ok || !json.Valid([]byte(body)) {
+		return nil, errors.New("invalid canonical portable prompt envelope")
+	}
+	var members map[string]json.RawMessage
+	if json.Unmarshal([]byte(body), &members) != nil || len(members["request"]) == 0 {
+		return nil, errors.New("missing reviewed portable request")
+	}
+	return json.RawMessage(body), nil
+}
+
+func TestPortableCanonicalPromptEnvelope(t *testing.T) {
+	const schema = `{"type":"object","properties":{"kind":{"type":"string","enum":["answer","search","page","read_context"]},"arguments":{"type":"object"},"fields":{"type":"object"}},"required":["kind"],"additionalProperties":false}`
+	prefix := portableResearchInstructions + "\n\nReturn exactly one JSON object satisfying this host response schema, without markdown:\n" + schema + "\n\n"
+	body := `{"request":{"question":"A \"quoted\" request"},"nextResponseIndex":0}`
+	raw, err := portableCanonicalPrompt(prefix + body)
+	if err != nil || string(raw) != body {
+		t.Fatal("canonical prompt changed", err)
+	}
+	for _, invalid := range []string{body, "untrusted\n\n" + body, prefix + `{}`, prefix + body + `{}`, strings.Replace(prefix, "read_context", "write", 1) + body, prefix + `{"request":`} {
+		if _, err := portableCanonicalPrompt(invalid); err == nil {
+			t.Errorf("accepted malformed envelope: %q", invalid)
+		}
 	}
 }
 
@@ -190,14 +223,27 @@ func TestPortableResearchContextIsFittedAndReadFromRetainedSource(t *testing.T) 
 	var mu sync.Mutex
 	s, _, run := portableResearchFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Messages []struct{ Content string } `json:"messages"`
+			Messages []struct {
+				Role    string
+				Content json.RawMessage
+			} `json:"messages"`
 		}
-		if json.NewDecoder(r.Body).Decode(&body) != nil || len(body.Messages) < 2 {
-			t.Error("unreadable provider request")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Messages) < 2 || body.Messages[1].Role != "user" {
+			t.Errorf("unreadable provider request: decode=%v messages=%d", err, len(body.Messages))
+			return
+		}
+		var parts []struct{ Type, Text string }
+		if json.Unmarshal(body.Messages[1].Content, &parts) != nil || len(parts) < 1 || parts[0].Type != "text" {
+			t.Error("canonical user text part missing")
+			return
+		}
+		prompt, err := portableCanonicalPrompt(parts[0].Text)
+		if err != nil {
+			t.Error(err)
 			return
 		}
 		mu.Lock()
-		prompts = append(prompts, []byte(body.Messages[1].Content))
+		prompts = append(prompts, prompt)
 		mu.Unlock()
 		if calls.Add(1) == 1 {
 			var sent struct {
@@ -206,7 +252,7 @@ func TestPortableResearchContextIsFittedAndReadFromRetainedSource(t *testing.T) 
 					SHA256   string `json:"sha256"`
 				} `json:"retainedResponses"`
 			}
-			if json.Unmarshal([]byte(body.Messages[1].Content), &sent) != nil || len(sent.Responses) != 1 {
+			if json.Unmarshal(prompt, &sent) != nil || len(sent.Responses) != 1 {
 				t.Error("retained source index missing from the prompt")
 				return
 			}
