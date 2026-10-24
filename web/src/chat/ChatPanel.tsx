@@ -1,3 +1,4 @@
+import { CodeBlock } from '../ui/CodeBlock'
 import {PolicyInterpretationProposals} from '../policies/PolicyInterpretation'
 import {usePolicyChatContext} from '../policies/chatContext'
 import {PolicyChatProposals} from '../policies/PolicyChatProposals'
@@ -237,7 +238,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const responses = state.responses ?? []
   const lastResponse = responses.at(-1)
   const lastUser = [...state.turns].reverse().find(turn => turn.role === 'user')
-  const canChooseResearch = searchAllowed && !running && lastUser?.researchChoice !== 'provided' && lastUser?.researchChoice !== 'research' && lastResponse?.afterTurnId === lastUser?.id && !!lastResponse?.work.items.some(item=>item.researchSuggestion)
+  const canChooseResearch = !!binding?.run?.chooseResearch && searchAllowed && !running && lastUser?.researchChoice !== 'provided' && lastUser?.researchChoice !== 'research' && lastResponse?.afterTurnId === lastUser?.id && !!lastResponse?.work.items.some(item=>item.researchSuggestion)
   const actionDisabled = locked || running || Boolean(blocked) || Boolean(otherRun) || connectionBusy || upload.reading
   const continueExecution = () => {
     if(!store||actionDisabled||!binding?.run?.prepareBudgetContinuation())return
@@ -311,7 +312,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
           : turn.kind === 'unknowns' ? <OpenQuestions text={turn.text} documents={chat.documents} onRead={read}><MessageTime turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.text}/>, opener)}/></OpenQuestions>
           : turn.role === 'assistant' ? <MessageRenderer onRead={read} scope={chat.id} documents={chat.documents} text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text} /> : <div className={styles.userText}><LinkedMessageText text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text}/></div>}
         {turn.role === 'user' && <SentAttachments files={turn.attachments ?? []} onRead={read}/>}
-        {recoverableTurns.has(index) && <ChatAction disabled={running || locked || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recoverDraft(turn.text), false)}>{msg('Recover draft')}</ChatAction>}
+        {binding?.run?.recoverDraft && recoverableTurns.has(index) && <ChatAction disabled={running || locked || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recoverDraft?.(turn.text), false)}>{msg('Recover draft')}</ChatAction>}
         {turn.interrupted && <p className={styles.caption}>{msg('Response interrupted')}</p>}
         {turn !== liveTurn && turn.role === 'assistant' && turn.kind === 'message' && <CopyMessage text={turn.text} />}
         {responses.filter(row => row.messageId === turn.id).map(renderResponse)}
@@ -338,6 +339,9 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
       <ExecutionProgress execution={state.execution} report={state.responses?.at(-1)?.work.report} disabled={actionDisabled} onStop={()=>store?.perform(chat.id,active=>active.run?.keepExecution(),false)} onContinue={continueExecution}/>
       <ChatMemoryReview chatId={chat.id}/>
       {proposalActions === undefined && chat.pack ? <LinkedPackProposal chat={chat} state={state} busy={running || Boolean(otherRun)} onCheck={()=>store?.perform(chat.id, active=>active.run?.recheck(),false)}/> : proposalActions}
+      {state.status!=='running' && state.streaming && <section aria-label={msg('Written so far')}><p className={styles.caption}>{msg('Written so far')}</p><MessageRenderer text={state.streaming}/></section>}
+      {binding?.run?.pendingApproval && <div role="group" aria-label={msg('Approval required')}><p>{binding.run.pendingApproval.name}</p><CodeBlock label={msg('Arguments')} text={JSON.stringify(binding.run.pendingApproval.args,null,2)}/><ChatAction disabled={actionDisabled} onClick={()=>binding.run?.decideApproval?.(true)}>{msg('Approve')}</ChatAction><ChatAction disabled={actionDisabled} onClick={()=>binding.run?.decideApproval?.(false)}>{msg('Decline')}</ChatAction></div>}
+      {binding?.run?.needsReconnect && binding.run.reconnect && <ChatAction disabled={running || locked || Boolean(otherRun)} onClick={()=>void binding.run?.reconnect?.()}>{msg('Reconnect')}</ChatAction>}
       {state.status==='failed' && <ResponseRecovery failure={state.failure} detail={state.detail} disabled={actionDisabled} onRetry={binding?.run?.canExtendResponse?continueExecution:binding?.run?.canRetryResponse?retryResponse:undefined} additionalRequests={binding?.run?.canExtendResponse?Math.min(REQUEST_INCREMENT,MAX_REQUEST_ALLOWANCE-state.execution!.limit):undefined}/>}
       </div>
     </div>
@@ -349,13 +353,13 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
       <div className={styles.composerStatus}>
         <ComposerTaskStatus state={state} empty={empty} savedCandidate={savedCandidate || Boolean(chat.pack)}/>
         {chat.draftId && !draftAvailable && <p className={styles.caption}>{msg('This draft is no longer available.')}</p>}
-      {!draftActionsInHeader && !chat.pack && !savedCandidate && state.candidates.length > 0 && <ChatAction disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Run checks")}</ChatAction>}
-      {canRetryExpectationValidation(state) && <ChatAction disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation())}>{msg("Retry validation")}</ChatAction>}
+      {binding?.run?.ownership!=='server' && !draftActionsInHeader && !chat.pack && !savedCandidate && state.candidates.length > 0 && <ChatAction disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Run checks")}</ChatAction>}
+      {binding?.run?.retryExpectationValidation && canRetryExpectationValidation(state) && <ChatAction disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation?.())}>{msg("Retry validation")}</ChatAction>}
       </div>
       {(showResearchSuggestion || canChooseResearch) && <ResearchSuggestion disabled={actionDisabled} onChoose={choice=>{
         if(actionDisabled)return
         if(showResearchSuggestion)void send(choice)
-        else if(store?.perform(chat.id,active=>active.run?.chooseResearch(choice),false)){following.current=true;setAwayFromLatest(false)}
+        else if(store?.perform(chat.id,active=>active.run?.chooseResearch?.(choice),false)){following.current=true;setAwayFromLatest(false)}
       }}/>}
       <ChatComposer id={id} inputRef={messageInput} rows={empty && placement === 'main' ? 3 : 2}
         value={chat.composer} onChange={composer => store?.update(chat.id, { composer })}

@@ -140,3 +140,8 @@ it('explicit saved-pack recheck uses references only, binds returned findings an
  await expect(client.recheckPack(ref,{...request,path:'foreign.json'} as never)).rejects.toMatchObject({delivery:'not-sent'})
  expect(fetch).toHaveBeenCalledTimes(3)
 })
+it('does not confuse another admission acknowledgement with this start',async()=>{
+ const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({...pending,admissionId:'another-admission'}),{headers:{'Content-Type':'application/json'}}));vi.stubGlobal('fetch',fetch)
+ const client=await serverRunClient();await expect(client.start(start)).rejects.toMatchObject({delivery:'uncertain',failure:{code:'invalid-response'}})
+ expect(fetch).toHaveBeenCalledOnce()
+})

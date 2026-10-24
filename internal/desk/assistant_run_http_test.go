@@ -387,6 +387,10 @@ func TestAssistantRunProtocolApprovalRestoredAndDeliveredOnce(t *testing.T) {
 	})
 	view := assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs", start), 201)
 	paused := assistantProtocolWait(t, s, token, view.ID, "awaiting-input")
+	if paused.AdmissionID != start.AdmissionID || paused.ApprovalReference == nil || paused.ApprovalReference.CallID != paused.Checkpoint.Approval.CallID || paused.ApprovalReference.ArgsDigest != assistantRunArgsDigest(paused.Checkpoint.Approval.Args) {
+		t.Fatal("approval/admission reference lost")
+	}
+	assistantRunClientJSON(t, "consumer-approval.json", paused)
 	// service releases its executor lease at the pause. Reacquisition reads the
 	// persisted canonical approval; no model or tool executes on recovery.
 	lease, err := s.assistantRuns().Acquire(context.Background())

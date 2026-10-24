@@ -19,6 +19,9 @@ export type RunContinuation = { readonly id: string; readonly digest: string } &
 )
 export interface RunPreview { readonly text: string; readonly taskId?: string }
 export interface RunSnapshot extends RunReference {
+  readonly packChecks?: readonly import('../../chat/packProposal').PackProposalCheck[]
+  readonly admissionId: string
+  readonly approvalReference?: {readonly callId:string;readonly argsDigest:string}
   readonly displayPreview?: readonly RunPreview[]
   readonly continuations?: readonly RunContinuation[]
   readonly revision: number; readonly state: RunState; readonly historical?: boolean

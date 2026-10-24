@@ -1,0 +1,52 @@
+{
+  "admissionId": "admission-one",
+  "id": "arun_11111111111111111111111111111111",
+  "revision": 1,
+  "owner": {
+    "kind": "chat",
+    "id": "chat-one",
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "requestId": "message-one",
+  "state": "awaiting-input",
+  "operations": null,
+  "events": null,
+  "cursor": "1:0",
+  "checkpoint": {
+    "version": 1,
+    "id": "execution-one",
+    "requestKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "phase": "work",
+    "unit": "model-requests",
+    "used": 1,
+    "limit": 20,
+    "grants": [],
+    "status": "stopped",
+    "plan": [],
+    "explanation": "",
+    "operations": [],
+    "context": {
+      "scope": "fixture",
+      "entries": []
+    },
+    "approval": {
+      "callId": "call-one",
+      "name": "write_file",
+      "tool": "write_file",
+      "source": {
+        "kind": "custom",
+        "id": "fixture",
+        "trust": "person"
+      },
+      "args": {
+        "path": "reviewed.txt",
+        "content": "exact"
+      },
+      "state": "asked"
+    }
+  },
+  "approvalReference": {
+    "callId": "call-one",
+    "argsDigest": "4d92d1b02a04f9543414883232e747922c8cecfba1936b29f88b2eaba3402bfa"
+  }
+}

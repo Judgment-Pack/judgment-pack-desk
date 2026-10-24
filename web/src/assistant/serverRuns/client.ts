@@ -55,7 +55,9 @@ export class ServerRunClient {
   async start(start: RunStart, signal?: AbortSignal): Promise<RunSnapshot> {
     if (!object(start) || !exact(start,['admissionId','purpose','ownerId','revision','requestId']) || !text(start.admissionId,128) || start.purpose !== 'chat' || !ownerID(start.ownerId) || !digest(start.revision) || !text(start.requestId,128)) throw new RunRequestError('not-sent',undefined,'invalid-response')
     const body: RunStart = {admissionId:start.admissionId,purpose:'chat',ownerId:start.ownerId,revision:start.revision,requestId:start.requestId}
-    return this.json(ROOT,{owner:{kind:'chat',id:body.ownerId,revision:body.revision},requestId:body.requestId},body,signal)
+    const snapshot=await this.json(ROOT,{owner:{kind:'chat',id:body.ownerId,revision:body.revision},requestId:body.requestId},body,signal)
+    if(snapshot.admissionId!==body.admissionId)throw new RunRequestError('uncertain',undefined,'invalid-response')
+    return snapshot
   }
   read(ref: RunReference, signal?: AbortSignal): Promise<RunSnapshot> { const bound = bind(ref); return this.json(`${ROOT}/${bound.id}`,bound,undefined,signal) }
   action(snapshot: RunSnapshot, action: RunAction, signal?: AbortSignal): Promise<RunSnapshot> {

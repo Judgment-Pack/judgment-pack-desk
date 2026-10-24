@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -121,6 +122,22 @@ func TestAssistantRunContinuationActualEino(t *testing.T) {
 			}
 			paused := assistantProtocolWait(t, s, token, e.record.ID, state)
 			before := assistantExecutionRecord(t, e)
+			// A browser's unrelated document CAS retains the pinned source, so the
+			// next real adapter dispatch consumes the same request and operation receipts.
+			saved := policyWorkspaceRead(t, s, token, "/api/conversations")
+			var document conversationDocument
+			assistantRunMust(t, json.Unmarshal(saved.Content, &document))
+			original := append([]byte{}, document.Chats[0]...)
+			document.Chats = append(document.Chats, json.RawMessage(`{"id":"unrelated","title":"Unsent draft"}`))
+			changed := policyWorkspaceCall(s, token, "PUT", "/api/conversations", saved.SHA256, document)
+			if changed.Code != 200 {
+				t.Fatal("unrelated CAS", changed.Code, changed.Body.String())
+			}
+			current := policyWorkspaceRead(t, s, token, "/api/conversations")
+			assistantRunMust(t, json.Unmarshal(current.Content, &document))
+			if !bytes.Equal(original, document.Chats[0]) {
+				t.Fatal("unrelated save rewrote pinned chat")
+			}
 			a := assistantContinuationActualAnswer(paused)
 			if kind != "answer" {
 				a = assistantContinuationAction(paused, kind)

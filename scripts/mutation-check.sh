@@ -14022,11 +14022,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '? {...incoming, presentation: hostTools.find(tool=>tool.name===incoming.name)?.presentation} : incoming' \
     '? {...incoming} : incoming'
   mutate web "search and files: settings that could not be read let the first turn run" "$SCP" \
-    "    : searchPreference.isError ? sourceMessage('Search settings could not be read. Reload before sending.')" \
-    "    : false ? sourceMessage('Search settings could not be read. Reload before sending.')"
+    "search.isError?sourceMessage('Search settings could not be read. Reload before sending.')" \
+    "false?sourceMessage('Search settings could not be read. Reload before sending.')"
   mutate web "search and files: the first turn runs before the search connections are known" "$SCP" \
-    "    : researchEnabled && (catalog.loading || searchConnections.loading) ? sourceMessage('Checking search connections…')" \
-    "    : false ? sourceMessage('Checking search connections…')"
+    "researchEnabled&&(catalog.loading||connections.loading)?sourceMessage('Checking search connections…')" \
+    "false?sourceMessage('Checking search connections…')"
   mutate web "search and files: a failed search's reply carries the gateway's words" "$STL" \
     '    return {...reply(`${failure.message} Do not claim' \
     '    return {...reply(`${String((cause as Error)?.message)} ${failure.message} Do not claim'

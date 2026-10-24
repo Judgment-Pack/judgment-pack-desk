@@ -590,7 +590,6 @@
   "Chat changes have not been saved.": "채팅 변경 사항이 저장되지 않았습니다.",
   "Chat changes not saved": "채팅 변경 사항이 저장되지 않음",
   "Chat context": "채팅 컨텍스트",
-  "Chat could not be restored: {{reason}}": "채팅을 복원하지 못했습니다: {{reason}}",
   "Chat data": "채팅 데이터",
   "Chat data moved. The original folder was kept as a recovery copy.": "채팅 데이터를 이동했습니다. 복구를 위해 원래 폴더를 보관했습니다.",
   "Chat history": "대화 기록",

@@ -590,7 +590,6 @@
   "Chat changes have not been saved.": "聊天變更尚未儲存。",
   "Chat changes not saved": "聊天變更未儲存",
   "Chat context": "聊天脈絡",
-  "Chat could not be restored: {{reason}}": "無法還原聊天：{{reason}}",
   "Chat data": "聊天資料",
   "Chat data moved. The original folder was kept as a recovery copy.": "聊天資料已移動。原始資料夾已保留，可供復原。",
   "Chat history": "對話記錄",

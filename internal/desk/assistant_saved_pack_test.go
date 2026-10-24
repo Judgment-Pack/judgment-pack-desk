@@ -123,6 +123,7 @@ func TestAssistantSavedPackActualAPIAndReload(t *testing.T) {
 		t.Fatal("reload replayed Runtime or model")
 	}
 	record = assistantExecutionRecord(t, e)
+	assistantRunClientJSON(t, "saved-pack-snapshot.json", assistantRunPublic(record))
 	raw, _ := json.Marshal(assistantRunLedger{Version: 1, Project: record.Binding.Project, Runs: []assistantRunRecord{record}})
 	_, err := decodeAssistantRunStorage(e.writer.lease.store.name, raw)
 	assistantRunMust(t, err)

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,25 +17,52 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/jsonscalar"
 )
 
+type assistantApprovalReference struct {
+	CallID     string `json:"callId"`
+	ArgsDigest string `json:"argsDigest"`
+}
+
 type assistantRunView struct {
-	DisplayPreview  []assistantRunPreview             `json:"displayPreview,omitempty"`
-	Continuations   []assistantRunContinuationReceipt `json:"continuations,omitempty"`
-	ChatProjection  *assistantChatProjectionView      `json:"chatProjection,omitempty"`
-	ProjectionIssue string                            `json:"projectionIssue,omitempty"`
-	ID              string                            `json:"id"`
-	Revision        uint64                            `json:"revision"`
-	Owner           assistantRunOwner                 `json:"owner"`
-	RequestID       string                            `json:"requestId"`
-	State           string                            `json:"state"`
-	Historical      bool                              `json:"historical,omitempty"`
-	Checkpoint      *contract.Checkpoint              `json:"checkpoint,omitempty"`
-	Operations      []assistantRunOperation           `json:"operations"`
-	Events          []assistantRunEvent               `json:"events"`
-	Cursor          string                            `json:"cursor"`
+	PackChecks        []assistantPackCheck              `json:"packChecks,omitempty"`
+	ApprovalReference *assistantApprovalReference       `json:"approvalReference,omitempty"`
+	AdmissionID       string                            `json:"admissionId"`
+	DisplayPreview    []assistantRunPreview             `json:"displayPreview,omitempty"`
+	Continuations     []assistantRunContinuationReceipt `json:"continuations,omitempty"`
+	ChatProjection    *assistantChatProjectionView      `json:"chatProjection,omitempty"`
+	ProjectionIssue   string                            `json:"projectionIssue,omitempty"`
+	ID                string                            `json:"id"`
+	Revision          uint64                            `json:"revision"`
+	Owner             assistantRunOwner                 `json:"owner"`
+	RequestID         string                            `json:"requestId"`
+	State             string                            `json:"state"`
+	Historical        bool                              `json:"historical,omitempty"`
+	Checkpoint        *contract.Checkpoint              `json:"checkpoint,omitempty"`
+	Operations        []assistantRunOperation           `json:"operations"`
+	Events            []assistantRunEvent               `json:"events"`
+	Cursor            string                            `json:"cursor"`
 }
 
 func assistantRunPublic(run assistantRunRecord) assistantRunView {
-	return assistantRunView{DisplayPreview: run.DisplayPreview, Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
+	var approval *assistantApprovalReference
+	if run.State == "awaiting-input" && run.Checkpoint != nil && run.Checkpoint.Approval != nil && run.Checkpoint.Approval.State == "asked" {
+		approval = &assistantApprovalReference{run.Checkpoint.Approval.CallID, assistantRunArgsDigest(run.Checkpoint.Approval.Args)}
+	}
+	latest := map[string]assistantPackCheck{}
+	for _, receipt := range run.PackChecks {
+		if receipt.Check != nil {
+			latest[receipt.DocumentDigest] = *receipt.Check
+		}
+	}
+	keys := make([]string, 0, len(latest))
+	for digest := range latest {
+		keys = append(keys, digest)
+	}
+	sort.Strings(keys)
+	var checks []assistantPackCheck
+	for _, digest := range keys {
+		checks = append(checks, latest[digest])
+	}
+	return assistantRunView{PackChecks: checks, ApprovalReference: approval, AdmissionID: run.AdmissionID, DisplayPreview: run.DisplayPreview, Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
 }
 func (s *Server) registerAssistantRuns() {
 	s.mux.HandleFunc("POST /api/assistant-runs/{run}/pack-checks", s.handleAssistantPackRecheck)

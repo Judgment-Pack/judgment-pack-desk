@@ -590,7 +590,6 @@
   "Chat changes have not been saved.": "チャットの変更は保存されていません。",
   "Chat changes not saved": "チャットの変更は未保存です",
   "Chat context": "チャットのコンテキスト",
-  "Chat could not be restored: {{reason}}": "チャットを復元できませんでした：{{reason}}",
   "Chat data": "チャットデータ",
   "Chat data moved. The original folder was kept as a recovery copy.": "チャットデータを移動しました。復元用に元のフォルダーを保持しています。",
   "Chat history": "チャット履歴",

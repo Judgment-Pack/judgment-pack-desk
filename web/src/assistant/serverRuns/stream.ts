@@ -93,7 +93,7 @@ export class RunObservations {
     const [revision, count] = cursorParts(frame.cursor)
     if (frame.kind === 'snapshot') {
       const snapshot = decodeSnapshot(frame.data, this.reference)
-      if (snapshot.cursor !== frame.cursor || this.last && revision < cursorParts(this.last)[0] || this.held && (snapshot.revision < this.held.revision || snapshot.events.length < this.held.events.length)) return invalid()
+      if (this.held && snapshot.admissionId !== this.held.admissionId || snapshot.cursor !== frame.cursor || this.last && revision < cursorParts(this.last)[0] || this.held && (snapshot.revision < this.held.revision || snapshot.events.length < this.held.events.length)) return invalid()
       for (const [position,id] of this.positions) if (snapshot.events[position-1]?.id !== id) return invalid()
       for (const event of snapshot.events) if (this.identities.has(event.id) && this.identities.get(event.id) !== JSON.stringify(event.event)) return invalid()
       if (this.held?.checkpoint && !snapshot.checkpoint) return invalid()

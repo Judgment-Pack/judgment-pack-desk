@@ -218,28 +218,8 @@ export const CONTEXT_LIMIT_MESSAGE = sourceMessage("This conversation exceeds th
 /** The engine's own sentence for a final turn with no proposal fence in it. */
 const NO_FENCE = /exactly one fenced JSON block.*carried 0/
 
-export const INITIAL_STATE: RunState = {
-  phase: 'idle',
-  status: 'idle',
-  detail: '',
-  brief: '',
-  seedUrls: [],
-  turns: [],
-  questions: [],
-  events: [],
-  candidates: [],
-  cases: [],
-  droppedCases: [],
-  heldProposal: null,
-  expectationIssues: [],
-  unknowns: [],
-  citations: [],
-  verdicts: {},
-  registries: {},
-  revisionsUsed: 0,
-  sessions: [],
-  readiness: ''
-}
+export { INITIAL_STATE } from './initialState'
+import { INITIAL_STATE } from './initialState'
 
 class AwaitingAnswer extends Error {}
 

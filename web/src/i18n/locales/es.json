@@ -592,7 +592,6 @@
   "Chat changes have not been saved.": "Los cambios del chat no se han guardado.",
   "Chat changes not saved": "Cambios de conversación sin guardar",
   "Chat context": "Contexto del chat",
-  "Chat could not be restored: {{reason}}": "No se pudo restaurar el chat: {{reason}}",
   "Chat data": "Datos de los chats",
   "Chat data moved. The original folder was kept as a recovery copy.": "Se han movido los datos de los chats. La carpeta original se conserva como copia de recuperación.",
   "Chat history": "Historial de chats",

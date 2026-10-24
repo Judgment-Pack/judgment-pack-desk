@@ -50,3 +50,8 @@ it('does not erase an event observed before its snapshot or mutate a completed r
  expect(()=>complete.accept({kind:'snapshot',cursor:'4:2',data:{...terminal,revision:4,cursor:'4:2',operations:[{...terminal.operations[0],result:'e30='}]}})).toThrow(AIFailureError)
  expect(complete.snapshot?.operations[0].result).toBe(terminal.operations[0].result)
 })
+it('rejects a changed admission association on the same bound run',()=>{
+ const binding={owner:{...pending.owner,kind:'chat' as const},requestId:pending.requestId},ref={...binding,id:pending.id}
+ const observed=new RunObservations(ref,decodeSnapshot(pending,binding))
+ expect(()=>observed.accept({kind:'snapshot',cursor:pending.cursor,data:{...pending,admissionId:'foreign-admission'}})).toThrow()
+})

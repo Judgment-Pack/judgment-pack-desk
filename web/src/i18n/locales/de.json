@@ -590,7 +590,6 @@
   "Chat changes have not been saved.": "Chatänderungen wurden nicht gespeichert.",
   "Chat changes not saved": "Chatänderungen nicht gespeichert",
   "Chat context": "Chatkontext",
-  "Chat could not be restored: {{reason}}": "Der Chat konnte nicht wiederhergestellt werden: {{reason}}",
   "Chat data": "Chat-Daten",
   "Chat data moved. The original folder was kept as a recovery copy.": "Die Chat-Daten wurden verschoben. Der ursprüngliche Ordner bleibt als Wiederherstellungskopie erhalten.",
   "Chat history": "Chatverlauf",
