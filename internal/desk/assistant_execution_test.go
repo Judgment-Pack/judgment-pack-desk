@@ -680,7 +680,12 @@ func TestAssistantExecutionForeignCheckpointRefused(t *testing.T) {
 func TestAssistantExecutionLegacyContextMarkerRetains(t *testing.T) {
 	u := newUpstream(t, nil)
 	s, token, e := assistantExecutionFixture(t, u.server.URL, "work")
-	request := httptest.NewRequest("POST", relayPrefix+"chat/completions", bytes.NewReader(assistantExecutionRequest().Body))
+	// The legacy marker cannot make transport assemble context or read a source.
+	// Canonical adapter Host assembly is covered by the prompt wire tests.
+	assistantRunMust(t, os.Remove(filepath.Join(s.projectDir, "execution-brief.md")))
+	body := append([]byte(" \n"), assistantExecutionRequest().Body...)
+	body = append(body, '\n')
+	request := httptest.NewRequest("POST", relayPrefix+"chat/completions", bytes.NewReader(body))
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set(aiConnectionHeader, e.record.Binding.ConnectionID)
 	request.Header.Set(aiRevisionHeader, e.record.Binding.ConnectionRevision)
@@ -692,8 +697,8 @@ func TestAssistantExecutionLegacyContextMarkerRetains(t *testing.T) {
 		t.Fatal(response.Code, response.Body.String())
 	}
 	arrival := u.only(t)
-	if strings.Count(string(arrival.body), "HOST-BRIEF-ONCE") != 1 {
-		t.Fatalf("browser suppressed legacy context: %s", arrival.body)
+	if !bytes.Equal(arrival.body, body) {
+		t.Fatalf("legacy marker changed exact accepted request bytes: %s", arrival.body)
 	}
 }
 
