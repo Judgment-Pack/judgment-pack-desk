@@ -302,3 +302,12 @@ done
  "$saved_pack_outputs/suite.json" "$saved_pack_outputs/recheck.json" \
  "$saved_pack_outputs/reference.json" | tee "$tmp/saved-pack-reader.log"
 grep -Fxq 'Saved-pack proposal: actual Go correction/basis/check/reload and explicit model-free recheck passed shared browser readers and client.' "$tmp/saved-pack-reader.log"
+
+# Mount production shared domain controls over these same producer documents.
+# Required mode fails if observations are absent; an ordinary standalone web
+# suite explicitly skips this external-producer acceptance file when unconfigured.
+(
+  cd "$root/web"
+  JPS_REQUIRE_DOMAIN_OUTPUTS=1 JPS_DOMAIN_OUTPUTS="$tmp" \
+    ./node_modules/.bin/vitest run src/chat/CanonicalDomainProjections.test.tsx src/chat/CanonicalDomainChatPanel.test.tsx
+) | tee "$tmp/mounted-domain-reader.log"
