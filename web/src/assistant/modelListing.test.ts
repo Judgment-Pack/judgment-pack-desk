@@ -10,13 +10,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DIAGNOSTIC_SAYS } from './client'
 import {
-  LISTING_SUFFIX,
   NOT_A_LISTING,
   listModels,
   listingRefusal,
   modelRows
 } from './modelListing'
-import { bindModelCall } from '@judgment-pack/harness/session'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -61,13 +59,13 @@ function serves(
 }
 
 describe('where the listing request goes', () => {
-  it('goes to the relay, by a suffix, and never to the endpoint', async () => {
+  it('goes to the fixed metadata action', async () => {
     const seen = serves(GEMINI_BODY)
-    await listModels('gemini', bindModelCall('gemini'))
+    await listModels('gemini')
     expect(seen.urls).toHaveLength(1)
     // The desk's own route, carrying nothing of its own — and no trace of the
     // configured endpoint, which the page does not hold.
-    expect(seen.urls[0]).toContain('/api/assistant/relay/v1/v1beta/models')
+    expect(seen.urls[0]).toContain('/api/assistant/models')
     expect(seen.urls[0]).not.toContain('token=')
     expect(seen.urls[0]).not.toContain('googleapis')
     expect(seen.urls[0]).not.toContain('https://')
@@ -77,31 +75,37 @@ describe('where the listing request goes', () => {
     // Gemini's first page needs none, and `pageToken` is refused by the relay
     // and by the configured URL alike: later pages are not supported at all.
     const seen = serves(GEMINI_BODY)
-    await listModels('gemini', bindModelCall('gemini'))
+    await listModels('gemini')
     const url = new URL(seen.urls[0]!, 'http://desk.invalid')
     expect([...url.searchParams.keys()]).toEqual([])
   })
 
-  it('asks with a GET and no body, and no credential but this desk’s own', async () => {
+  it('asks with a POST and no body, and no endpoint credential', async () => {
     const seen = serves({ data: [] })
-    await listModels('openai-compatible', bindModelCall('openai-compatible'))
-    expect(seen.inits[0]!.method).toBe('GET')
+    await listModels('openai-compatible')
+    expect(seen.inits[0]!.method).toBe('POST')
     expect(seen.inits[0]!.body).toBeUndefined()
     const headers = seen.inits[0]!.headers as Record<string, string>
     // **One header, and it is the session this page holds** — the relay is a
     // gated chassis route. What must not be here is a credential for the
     // *endpoint*: that one is on this machine and is attached by the chassis.
-    expect(Object.keys(headers)).toEqual(['Authorization'])
+    expect(headers).not.toHaveProperty('api-key')
+    expect(headers).not.toHaveProperty('x-api-key')
     expect(headers.Authorization).toMatch(/^Bearer /)
   })
 
-  it('uses each protocol s own listing path', async () => {
-    for (const [kind, suffix] of Object.entries(LISTING_SUFFIX)) {
-      const seen = serves({ data: [], models: [] })
-      await listModels(kind as keyof typeof LISTING_SUFFIX, bindModelCall(kind as never))
-      expect(seen.urls[0], kind).toBe(`/api/assistant/relay/v1/${suffix}`)
-    }
+  it('binds the saved connection revision and cancellation to the fixed action', async () => {
+    const seen = serves({ data: [] })
+    const cancellation = new AbortController()
+    await listModels('openai-compatible', 'ai-111111111111111111111111', 'saved-revision', cancellation.signal)
+    expect(seen.urls).toEqual(['/api/assistant/models'])
+    expect(seen.inits[0]?.headers).toMatchObject({
+      'X-Assistant-Connection': 'ai-111111111111111111111111',
+      'X-Assistant-Revision': 'saved-revision'
+    })
+    expect(seen.inits[0]?.signal).toBe(cancellation.signal)
   })
+
 })
 
 describe('what the listing makes of an answer', () => {
@@ -199,7 +203,7 @@ describe('a listing that did not answer with one', () => {
       [409, 'unexpected-status']
     ] as const) {
       serves({}, { status })
-      const failure = await listModels('gemini', bindModelCall('gemini')).catch(
+      const failure = await listModels('gemini').catch(
         (cause: Error) => cause
       )
       expect((failure as Error).message, String(status)).toBe(
@@ -213,7 +217,7 @@ describe('a listing that did not answer with one', () => {
     // carry a derived representation of the credential that no substitution
     // finds, so the body is not read on a refusal at all.
     serves({}, { status: 500, text: 'sk-a-real-looking-key-wxyz leaked here' })
-    const failure = await listModels('gemini', bindModelCall('gemini')).catch(
+    const failure = await listModels('gemini').catch(
       (cause: Error) => cause
     )
     expect((failure as Error).message).not.toContain('sk-a-real-looking-key-wxyz')
@@ -223,7 +227,7 @@ describe('a listing that did not answer with one', () => {
   it('says so in a fixed sentence where the answer is not JSON', async () => {
     // `JSON.parse` quotes the text it failed on, and that text is the body.
     serves({}, { text: 'not json: sk-a-real-looking-key-wxyz' })
-    const failure = await listModels('gemini', bindModelCall('gemini')).catch(
+    const failure = await listModels('gemini').catch(
       (cause: Error) => cause
     )
     expect((failure as Error).message).toBe(NOT_A_LISTING)
@@ -240,7 +244,7 @@ describe('a listing the desk itself refused', () => {
     // reading the `code` would be reading a body under the endpoint's control.
     // What is said is what both readings have in common.
     serves({ error: 'sk-a-real-looking-key-wxyz', code: 'assistant-listing-refused' }, { status: 502 })
-    const failure = await listModels('gemini', bindModelCall('gemini')).catch(
+    const failure = await listModels('gemini').catch(
       (cause: Error) => cause
     )
     expect((failure as Error).message).toContain('answered 502')
@@ -253,14 +257,23 @@ describe('a listing the desk itself refused', () => {
     // The other half of the HIGH finding: the page never renders a listing it
     // did not get, and a refused one yields no options for anything to copy.
     serves({ data: [{ id: 'sk-a-real-looking-key-wxyz' }] }, { status: 502 })
-    await expect(listModels('openai-compatible', bindModelCall('openai-compatible'))).rejects.toThrow()
+    await expect(listModels('openai-compatible')).rejects.toThrow()
   })
 
   it('names the busy refusal on its own status', async () => {
     serves({}, { status: 503 })
-    const failure = await listModels('gemini', bindModelCall('gemini')).catch(
+    const failure = await listModels('gemini').catch(
       (cause: Error) => cause
     )
     expect((failure as Error).message).toContain('as many requests to the endpoint as it will')
   })
+})
+
+it('distinguishes an unreadable successful reply from a valid empty listing', async () => {
+  for (const body of [null, {}, {data: 'wrong'}]) {
+    serves(body)
+    await expect(listModels('openai-compatible')).rejects.toThrow(NOT_A_LISTING)
+  }
+  serves({data: []})
+  await expect(listModels('openai-compatible')).resolves.toEqual([])
 })

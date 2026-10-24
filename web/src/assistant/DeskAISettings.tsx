@@ -4,10 +4,9 @@ import {MemorySettingsDisclosure} from './memory/MemorySettings'
 import {LoadingState} from '../ui/LoadingState'
 import { SettingsFeedback, SettingsActions } from '../ui/SettingsFeedback'
 import { listModels } from './modelListing'
-import { bindModelCall } from '@judgment-pack/harness/session'
 import { useAssistantKey } from './queries'
 import { sourceMessage } from '../i18n/source'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { msg } from '../i18n'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -39,11 +38,15 @@ function initialProfile(read:EffectiveConfig['assistantProfile'],registry:AIRegi
 function ConnectionPreferences({connection:c,value,disabled,onChange}:{connection:AIConnection;value:ModelPreferences;disabled:boolean;onChange:(p:ModelPreferences)=>void}) {
  const native=c.assistant.engine==='codex',account=useProviderStatus(native&&c.enabled,c.id),catalog=useProviderModels(native&&c.enabled&&account.data?.account==='connected',c.id)
  const key=useAssistantKey(!native&&c.enabled,c.id,c.revision)
+ const metadataCancellation=useRef<AbortController | undefined>(undefined)
  const discovered=useMutation({mutationFn:async()=>{
+  metadataCancellation.current?.abort()
+  metadataCancellation.current=new AbortController()
   const endpoint=c.assistant.endpoint
   if(!endpoint)throw new Error(sourceMessage('Choose a provider first.'))
-  return {revision:c.revision,rows:await listModels(endpoint.kind,bindModelCall(endpoint.kind,{connectionId:c.id,connectionRevision:c.revision}))}
+  return {revision:c.revision,rows:await listModels(endpoint.kind,c.id,c.revision,metadataCancellation.current.signal)}
  }})
+ useEffect(()=>{discovered.reset();return()=>metadataCancellation.current?.abort()},[c.id,c.revision])
  const apiModels=discovered.data?.revision===c.revision?discovered.data.rows.map(m=>m.id):[]
  const available=native?allowedAgentModels(c.assistant.agent):c.assistant.endpoint?.models??[]
  const baseline={models:available,model:native?c.assistant.agent?.model??null:c.assistant.endpoint?.model??null,effort:c.assistant.agent?.effort,thinking:c.assistant.thinking}
@@ -101,7 +104,7 @@ function ConnectedDeskSettings({unavailable,onDirtyChange}:{unavailable:boolean;
    </Popover>}</Field>
    {missing.length>0&&<SettingsFeedback tone="error" actions={<Button variant="inline" onClick={()=>setConnections(ids.filter(id=>!missing.includes(id)))}>{msg('Remove unavailable connections')}</Button>}>{msg('A selected connection is disabled or no longer available.')}</SettingsFeedback>}
    <Field label={msg('Default connection')}>{w=><Select {...w} value={selected??''} disabled={locked||!choices.length} onValueChange={defaultConnection=>edit({...draft,defaultConnection})} placeholder={msg('Choose a connection')} options={choices.map(c=>({value:c.id,label:c.name}))}/>}</Field>
-   {choices.map(c=><ConnectionPreferences key={c.id} connection={c} value={draft.models?.[c.id]??{inherit:true}} disabled={locked} onChange={value=>edit({...draft,models:{...draft.models,[c.id]:value}})}/>)}
+   {choices.map(c=><ConnectionPreferences key={`${c.id}:${c.revision}`} connection={c} value={draft.models?.[c.id]??{inherit:true}} disabled={locked} onChange={value=>edit({...draft,models:{...draft.models,[c.id]:value}})}/>)}
   </>}
   <Field label={msg('Project review default')}>{w=><Select {...w} value={draft.critic??'inherit'} disabled={locked} onValueChange={v=>edit({...draft,critic:v==='inherit'?undefined:v as CriticMode})} options={[{value:'inherit',label:msg('Policy table default ({{mode}})',{mode:CONTEXT_DEFAULTS.criticDefault})},{value:'off',label:msg('Off')},{value:'auto',label:msg('Auto')},{value:'on',label:msg('On')}]}/>}</Field>
   <ButtonLink variant="quiet" to="/admin#connections-ai">{msg('Manage AI connections')}</ButtonLink>

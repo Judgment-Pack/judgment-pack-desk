@@ -1399,7 +1399,7 @@ web	Overwrite anyway is the primary control	src/packs/edit/save.test.tsx
 web	Reload after a refused write takes the file over the unsaved values	src/admin/projectFileCards.test.tsx
 web	Reload clears the notice without reading the file again	src/assistant/slotAfterSave.test.tsx
 web	Stop writes no terminal event	src/assistant/useAssistantRun.test.tsx
-web	Test connection asks the probe and never the listing	src/assistant/endpointForm.test.tsx
+web	Test connection asks the probe and never the listing	src/assistant/endpointCheck.test.tsx
 web	Try it runs twice for one press of the button	src/packs/edit/TryItPane.test.tsx
 web	a 401 does not forget the id	src/mcp/session.test.tsx
 web	a 409 is read as an ordinary error	src/admin/defaultProject.test.tsx,src/admin/projectFileCards.test.tsx,src/admin/projectFileWrite.test.tsx,src/assistant/configWrite.test.tsx,src/assistant/endpointForm.test.tsx,src/assistant/slotAfterSave.test.tsx,src/routes/AdminView.test.tsx,src/routes/AuthorView.test.tsx
@@ -1611,7 +1611,7 @@ web	a web research chat draft whose trace was cut short reads as citing nothing	
 web	a wrap re-serializes the child instead of moving its bytes	src/packs/edit/conditionOps.test.ts
 web	a write erases the choices an earlier visit made	src/shell/inspectorWidth.test.tsx,src/shell/overlayGeometry.test.ts,src/shell/paneState.test.ts
 web	add over a conditions that is not a list does nothing	src/packs/edit/conditionOps.test.ts
-web	ai connections: Test connection's probe names no connection	src/assistant/endpointForm.test.tsx
+web	ai connections: Test connection's probe names no connection	src/assistant/endpointCheck.test.tsx
 web	ai connections: a ChatGPT allowlist has no bound on the page	src/config/fixtures.test.ts
 web	ai connections: a desk profile over its bound is written	src/config/assistantProfile.test.ts
 web	ai connections: a desk profile over its bound is written, version 2	src/config/assistantProfile.test.ts
@@ -2357,7 +2357,7 @@ web	the latch is released only through the mutation observer	src/packs/edit/navi
 web	the layer sentence drops the status and every row but the failure	src/i18n/language.test.tsx,src/packs/checks.test.ts,src/routes/PackView.test.tsx
 web	the layout key is not the project the chassis pinned	src/config/liveConfig.test.tsx,src/packs/collectionPreview.test.tsx,src/shell/AppShell.test.tsx,src/shell/narrowShell.test.tsx
 web	the legend is written only for a run that had a correction	src/research/run.test.ts
-web	the listing address is built on the page	src/assistant/endpointForm.test.tsx
+go	the listing address is built on the page	TestAssistantDiscoveryFixedMetadata
 web	the listing is asked for while the form says another endpoint	src/assistant/endpointForm.test.tsx
 web	the listing is asked for with no key bound to the endpoint	src/assistant/endpointForm.test.tsx
 web	the lock line shows with no lock file listed	src/packs/edit/lockLine.test.tsx
@@ -2444,7 +2444,7 @@ web	the reviewer's spelling is stored instead of the canonical assertion	src/res
 web	the revision follows the watcher while a value is unsaved	src/admin/projectFileCards.test.tsx
 web	the room the console may take reserves main's share too	src/shell/shellSheet.test.ts
 web	the route never says the check is still running	src/routes/PackView.test.tsx
-web	the rows are hidden when the endpoint moves rather than cleared	src/assistant/endpointForm.test.tsx
+web	the rows are hidden when the endpoint moves rather than cleared	src/assistant/endpointCheck.test.tsx
 web	the rules member is treated as optional	src/packs/document/PackDocumentView.test.tsx,src/packs/document/members.test.ts
 web	the run ignores the model that was picked	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx
 web	the run is left open when the dialog closes	src/shell/CreatePackDialog.test.tsx
@@ -2866,6 +2866,9 @@ web	assistant run client: canonical checkpoint bypassed	src/assistant/serverRuns
 web	assistant run client: unknown semantic discriminator accepted	src/assistant/serverRuns/decode.test.ts
 web	assistant run client: shared cursor snapshot suppressed	src/assistant/serverRuns/stream.test.ts
 web	assistant run client: uncertain POST replayed	src/assistant/serverRuns/client.test.ts
+go	assistant discovery: caller body or query admitted	TestAssistantDiscoveryRefusesCallerPayload
+go	assistant discovery: saved revision requirement omitted	TestAssistantDiscoverySavedConnection
 web	assistant saved chat: unreconciled Send guard omitted	src/chat/store.server.test.ts
 web	assistant authoring: session-private projections retained	src/assistant/authoringLifecycle.test.tsx
 web	assistant authoring: paused presentation resolves host owner	src/assistant/authoringLifecycle.test.tsx
+go	assistant discovery: body read before bounded transport	TestAssistantDiscoveryRefusesBodyWithoutReading
