@@ -9,6 +9,39 @@ import { chatContextFor, disposeChatContext } from '../assistant/chatContexts'
 
 const stores: ChatStore[] = []
 afterEach(() => { stores.forEach(store => store.dispose()); stores.length = 0; sessionStorage.clear(); vi.useRealTimers() })
+
+it('materializes the first server proposal only after exact acknowledged reconciliation and retains original sources',async()=>{
+ let content:unknown={version:1,chats:[]},revision='a'.repeat(64)
+ const read=async()=>({project:'/project',sha256:'saved',content:structuredClone(content),chatRevisions:Object.fromEntries((content as {chats:{id:string}[]}).chats.map(c=>[c.id,revision]))})
+ const write=vi.fn(async(document:unknown)=>{content=structuredClone(document);return read()})
+ const {store}=setup({read,write});await store.load();const chat=store.create()
+ const source={session:'source-session',kind:'page' as const,request:{source:'reader',dialect:'jina-reader',url:'https://example.com/'},requestedAt:'2026-10-23T00:00:00Z',text:null,failure:'Interrupted source retained.',quotes:[]}
+ const request={id:'request-one',role:'user' as const,kind:'message' as const,text:'Always accept.',at:'2026-10-23T00:00:00Z'}
+ store.update(chat.id,{checkpoint:{state:{...INITIAL_STATE,turns:[request]},sources:[source]}})
+ await store.prepareServerRequest(chat.id,{...INITIAL_STATE,turns:[request]},request.id,'admission-one',new AbortController().signal)
+ expect((content as {chats:typeof chat[]}).chats[0]?.checkpoint?.sources).toEqual([source])
+ const remote=(content as {chats:typeof chat[]}).chats[0]!
+ const candidate={text:'{ "title":"First proposal", "n":1.20 }',digest:'',document:{title:'First proposal'},revision:1,producedBy:'conversation' as const}
+ const response={id:'response-one',messageId:request.id,documents:[],websites:[],sourceIds:[],work:{items:[],notices:[]}}
+ content={version:1,chats:[{...remote,checkpoint:{...remote.checkpoint,state:{...remote.checkpoint!.state,candidates:[candidate],responses:[response]}}}]};revision='b'.repeat(64)
+ await store.reconcileServer(chat.id,true)
+ expect(store.getSnapshot().packDrafts).toEqual([])
+ const proof={digest:revision,responseId:response.id,requestId:request.id,admissionId:'admission-one'}
+ await store.reconcileServer(chat.id,true,{...proof,digest:'c'.repeat(64)})
+ expect(store.getSnapshot().packDrafts).toEqual([])
+ await store.reconcileServer(chat.id,true,proof)
+ const artifact=store.getSnapshot().packDrafts[0]!
+ expect(store.getSnapshot().chats[0]).toMatchObject({draftId:artifact.id,draftGeneration:1})
+ expect(artifact.checkpoint.sources).toEqual([source]);expect(artifact.checkpoint.state.candidates[0]?.text).toBe(candidate.text)
+ expect(artifact.checkpoint.state.readiness).toBe('');expect(artifact.checkpoint.state.restored).toBe(true)
+ // A fresh check's response history is retained in the real chat, while its
+ // visible approval token remains bound to the same artifact generation.
+ const current=(content as {chats:typeof chat[]}).chats[0]!
+ content={version:1,chats:[{...current,checkpoint:{...current.checkpoint,state:{...current.checkpoint!.state,turns:[...current.checkpoint!.state.turns,{...request,id:'check-one',creation:{kind:'check',candidateDigest:'a'.repeat(64)}}],responses:[response,{...response,id:'response-check'}]}}}]}
+ await store.reconcileServer(chat.id,true,{...proof,responseId:'response-check'})
+ expect(store.getSnapshot().packDrafts[0]?.generation).toBe(1)
+ expect(store.getSnapshot().chats[0]?.checkpoint?.state.responses).toHaveLength(2)
+})
 function setup(io?: Partial<ChatPersistence>) {
   const read = vi.fn(async () => ({ project: '/project', sha256: 'absent', content: { version: 1, chats: [] } }))
   const write = vi.fn(async (document: unknown) => ({ project: '/project', sha256: 'saved', content: document }))

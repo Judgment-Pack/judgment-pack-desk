@@ -238,7 +238,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const responses = state.responses ?? []
   const lastResponse = responses.at(-1)
   const lastUser = [...state.turns].reverse().find(turn => turn.role === 'user')
-  const canChooseResearch = !!binding?.run?.chooseResearch && searchAllowed && !running && lastUser?.researchChoice !== 'provided' && lastUser?.researchChoice !== 'research' && lastResponse?.afterTurnId === lastUser?.id && !!lastResponse?.work.items.some(item=>item.researchSuggestion)
+  const historicalSources = binding?.run?.ownership==='server' && state.restored && binding.sources.some(source=>source.verification.state!=='verified') && lastUser?.creation?.kind!=='research-choice'
+  const canChooseResearch = !!binding?.run?.chooseResearch && searchAllowed && !running && (historicalSources || lastUser?.researchChoice !== 'provided' && lastUser?.researchChoice !== 'research' && lastResponse?.afterTurnId === lastUser?.id && !!lastResponse?.work.items.some(item=>item.researchSuggestion))
   const actionDisabled = locked || running || Boolean(blocked) || Boolean(otherRun) || connectionBusy || upload.reading
   const continueExecution = () => {
     if(!store||actionDisabled||!binding?.run?.prepareBudgetContinuation())return
@@ -353,9 +354,10 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
       <div className={styles.composerStatus}>
         <ComposerTaskStatus state={state} empty={empty} savedCandidate={savedCandidate || Boolean(chat.pack)}/>
         {chat.draftId && !draftAvailable && <p className={styles.caption}>{msg('This draft is no longer available.')}</p>}
-      {binding?.run?.ownership!=='server' && !draftActionsInHeader && !chat.pack && !savedCandidate && state.candidates.length > 0 && <ChatAction disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Run checks")}</ChatAction>}
-      {binding?.run?.retryExpectationValidation && canRetryExpectationValidation(state) && <ChatAction disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation?.())}>{msg("Retry validation")}</ChatAction>}
+      {!draftActionsInHeader && !chat.pack && !savedCandidate && state.candidates.length > 0 && <ChatAction disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Run checks")}</ChatAction>}
+      {binding?.run?.retryExpectationValidation && canRetryExpectationValidation(state) && <ChatAction disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation?.(),false)}>{msg("Retry validation")}</ChatAction>}
       </div>
+      {historicalSources && searchAllowed && <p className={styles.caption}>{msg('Retained sources remain available to read. Fresh research can establish current source evidence for this draft.')}</p>}
       {(showResearchSuggestion || canChooseResearch) && <ResearchSuggestion disabled={actionDisabled} onChoose={choice=>{
         if(actionDisabled)return
         if(showResearchSuggestion)void send(choice)

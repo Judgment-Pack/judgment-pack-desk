@@ -32,4 +32,8 @@ Handwritten strict-reader and lifecycle tests cover all three purposes, identity
 
 The three safeguards for source drift, cancellation before admission and late continuation, plus the seven migrated guidance/proposal/capture/dismissal/tool-offer mutation probes, must fail their corresponding behavioral tests when removed. The two review regressions additionally mutate private session clearing and nonterminal cancellation ownership; both are held by real session-publisher/component lifecycle tests. Ordinary build/test evidence does not substitute for those verdicts.
 
-The live application still creates packs through saved chats in NewPackView/DraftPackView. Its historical fallback, generic checks, independent case establishment, expectation review, research-choice continuation and current creation readiness remain separate activation work. Global engine deletion and factory activation wait for those controls and the remaining release gates. No new route or compatibility provider loop is introduced here.
+The live application creates packs through saved chats in NewPackView/DraftPackView.
+Their [generic creation workflow](creation-server-runs.md) now owns historical
+display, checks, independent cases, expectation review, fresh research choices and
+current readiness. Global engine deletion and factory activation still wait for
+the remaining release gates. No new route or compatibility provider loop is introduced.

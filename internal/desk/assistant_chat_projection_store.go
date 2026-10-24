@@ -116,6 +116,9 @@ func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) erro
 		if run.ChatProjection != nil {
 			return false, nil
 		}
+		if err := s.checkAssistantCreationProjectionLocked(r, root, conversation, selected, *run); err != nil {
+			return false, err
+		}
 		// A terminal link is prepared only after its exact suite proposal exists.
 		if err := validateAssistantDomainOutputs(*run); err != nil {
 			return false, err
@@ -221,6 +224,9 @@ func (s *Server) writeAssistantChatProjection(r *http.Request, id string) error 
 		}
 		if digestOf(selected) == projection.Digest {
 			return false, nil
+		}
+		if err := s.checkAssistantCreationProjectionLocked(r, root, name, selected, *run); err != nil {
+			return false, err
 		}
 		if err := s.checkAssistantPlanProjection(selected, *run, view); err != nil {
 			return false, err

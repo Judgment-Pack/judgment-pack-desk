@@ -2871,4 +2871,12 @@ go	assistant discovery: saved revision requirement omitted	TestAssistantDiscover
 web	assistant saved chat: unreconciled Send guard omitted	src/chat/store.server.test.ts
 web	assistant authoring: session-private projections retained	src/assistant/authoringLifecycle.test.tsx
 web	assistant authoring: paused presentation resolves host owner	src/assistant/authoringLifecycle.test.tsx
+go	assistant creation: stale artifact generation accepted	TestAssistantCreationDraftCurrentCustody
+go	assistant creation: independent reviewer receives draft and history	TestAssistantCreationActualAPI
+go	assistant creation: canceled retest commits correction	TestAssistantCreationCorrectionRetestBeforeCommit
+go	assistant creation: mismatching staged suite publishes	TestAssistantCreationCorrectionRetestBeforeCommit,TestAssistantCreationFailedRetestRetainsIssue
+go	assistant creation: completed mismatch approval retained	TestAssistantCreationOriginalCaseOrder
+go	assistant creation: original issue position ignored	TestAssistantCreationCorrectionOriginalPositions,TestAssistantCreationOriginalCaseOrder
+web	assistant creation: artifact numeric custody rewritten	src/chat/store.server.test.ts
+web	assistant creation: next control numeric custody rewritten	src/chat/store.server.test.ts
 go	assistant discovery: body read before bounded transport	TestAssistantDiscoveryRefusesBodyWithoutReading

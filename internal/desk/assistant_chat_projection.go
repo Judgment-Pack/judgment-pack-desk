@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +77,13 @@ func assistantChatEventDigestPayload(run assistantRunRecord) []byte {
 	// Construct the shared fields once: domain output custody is covered by the
 	// same digest boundary both before and after a continuation.
 	base := assistantChatDigestBase{run.State, assistantChatProjectionCheckpoint(run), run.Events, run.DomainOutputs}
+	if run.Creation != nil {
+		raw, _ := json.Marshal(struct {
+			assistantChatDigestBase
+			Creation *assistantCreationReceipt
+		}{base, run.Creation})
+		return raw
+	}
 	if run.SavedPack != nil {
 		raw, _ := json.Marshal(struct {
 			assistantChatDigestBase
@@ -271,23 +279,32 @@ func assistantChatRequest(raw []byte, requestID, digest string) bool {
 	}
 	seen := map[string]bool{}
 	found := false
-	for _, raw := range turns {
+	for index, raw := range turns {
 		turn, e := assistantChatObject(raw)
 		if e != nil {
 			return false
 		}
 		var id, role string
-		_ = json.Unmarshal(turn["id"], &id)
+		_ = json.Unmarshal(assistantChatTurnID(turn, index), &id)
 		_ = json.Unmarshal(turn["role"], &role)
 		if !assistantChatProjectionID(id) || seen[id] {
 			return false
 		}
 		seen[id] = true
 		if id == requestID {
-			found = role == "user" && digestOf(raw) == digest
+			found = turn["id"] != nil && role == "user" && digestOf(raw) == digest
 		}
 	}
 	return found
+}
+
+// Historical messages can predate persisted IDs. Use the browser reader's
+// stable association alias without changing the original retained row bytes.
+func assistantChatTurnID(turn map[string]json.RawMessage, index int) []byte {
+	if turn["id"] != nil {
+		return turn["id"]
+	}
+	return assistantChatJSON("legacy-turn-" + strconv.Itoa(index))
 }
 func assistantChatResponseID(runID string) string {
 	return "response-" + digestOf([]byte(runID))[:32]
@@ -336,6 +353,19 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	responses, err := assistantChatArray(state["responses"])
 	if err != nil {
 		return nil, err
+	}
+	var creationAction *assistantCreationAction
+	for _, raw := range turns {
+		turn, err := assistantTestObject(raw)
+		if err != nil {
+			return nil, err
+		}
+		if string(turn["id"]) == string(assistantChatJSON(run.Binding.RequestID)) {
+			creationAction, err = readAssistantCreationAction(raw)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := validateAssistantDomainOutputs(run); err != nil {
 		return nil, err
@@ -398,14 +428,13 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	}
 	// Validate association identities rather than pairing by tool name or prose.
 	ids := map[string]bool{}
-	for _, raw := range turns {
-		var turn struct {
-			ID string `json:"id"`
-		}
-		if json.Unmarshal(raw, &turn) != nil || !assistantChatProjectionID(turn.ID) || ids[turn.ID] {
+	for index, raw := range turns {
+		turn, err := assistantChatObject(raw)
+		var id string
+		if err != nil || json.Unmarshal(assistantChatTurnID(turn, index), &id) != nil || !assistantChatProjectionID(id) || ids[id] {
 			return nil, errAssistantRunInvalid
 		}
-		ids[turn.ID] = true
+		ids[id] = true
 	}
 	responseIDs := map[string]bool{}
 	for _, raw := range responses {
@@ -540,10 +569,16 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 				work["critic"] = critic
 			}
 		case event.Proposal != nil:
-			for _, key := range []string{"pack", "graph", "input", "policy", "draftId"} {
+			if creationAction != nil && contains([]string{"establish-cases", "propose-correction"}, creationAction.Kind) {
+				continue
+			}
+			for _, key := range []string{"pack", "graph", "input", "policy"} {
 				if raw, ok := chat[key]; ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 					return nil, errAssistantChatProjectionUnsupported
 				}
+			}
+			if raw := chat["draftId"]; raw != nil && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) && chat["draftGeneration"] == nil {
+				return nil, errAssistantChatProjectionUnsupported
 			}
 			if event.Proposal.Document == nil {
 				return nil, errAssistantRunInvalid
@@ -703,6 +738,11 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	}
 	state["status"] = assistantChatJSON(status)
 	state["phase"] = assistantChatJSON("conversation")
+	if run.Creation != nil {
+		if err := projectAssistantCreation(state, run, responseID); err != nil {
+			return nil, err
+		}
+	}
 	cp["state"] = assistantChatEncodeObject(state)
 	if cp["sources"] == nil {
 		cp["sources"] = []byte("[]")

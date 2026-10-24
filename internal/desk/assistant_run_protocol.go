@@ -227,6 +227,15 @@ func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, i
 	if _, err := compileAssistantChatInput(source); err != nil {
 		return assistantRunSource{}, err
 	}
+	creation, err := readAssistantCreationAction(source.Request)
+	if err != nil {
+		return assistantRunSource{}, err
+	}
+	if chat["draftGeneration"] != nil || creation != nil && creation.Kind != "research-choice" {
+		if err := s.validateAssistantCreationDraftLocked(r, store.root, name, chat, state); err != nil {
+			return assistantRunSource{}, err
+		}
+	}
 	return source, nil
 }
 

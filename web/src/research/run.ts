@@ -18,6 +18,7 @@ import { needsPartialConsent } from '../documents/record'
 import type { ResearchGatewayConfig } from '../config/deskConfig'
 import { runtimeProbes, type RuntimeProbe } from './runtimeProbes'
 import { sourceMessage } from '../i18n/source'
+import {readinessKey} from './readiness'
 /**
  * The research-backed authoring run: research and draft, establish test cases
  * independently from the sources, check the candidate through the runtime,
@@ -51,6 +52,7 @@ export type Status = 'idle' | 'running' | 'complete' | 'ready' | 'needs-input' |
 
 export interface AssistantProvenance { connectionId:string; connectionName:string; model:string }
 export interface Turn {
+	creation?: import('../assistant/serverRuns/creation').CreationAction
   packContext?: PackProposalBasis
   /** Reviewed test-design conversation; proposals remain in the test workspace. */
   testDesign?: { owner: string; proposalId?: string }
@@ -98,6 +100,8 @@ export interface Citation {
 }
 
 export interface ExpectationIssue {
+  position?:number
+	finding?: {status:'invalid';message:string;admitted?:boolean;unreachable?:boolean}
   id: string
   original: AuthoringCase
   message: string
@@ -2254,14 +2258,7 @@ function completeCurrentCheck(state: RunState): boolean {
  * Readiness is recorded as this key and read back by comparison, so it lapses
  * of its own accord the moment any of the three moves.
  */
-export function readinessKey(state: RunState): string {
-  return JSON.stringify([
-    state.candidates.at(-1)?.digest ?? '',
-    state.cases.map(row => [row.id, jsonIdentity(row)]),
-    state.citations.map(citation => [citation.sourceId, citation.location, citation.traced]),
-    state.tracedBasis ?? ''
-  ])
-}
+export {readinessKey} from './readiness'
 
 /**
  * The one rule Create reads, in every mode. The run must have settled at

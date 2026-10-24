@@ -61,6 +61,11 @@ func (e *assistantRunExecution) assistantExecutionModels() (runcontext.RunModels
 }
 
 func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prompt assistantExecutionPrompt) (_ *assistantExecution, err error) {
+	creation, err := compileAssistantCreationInput(e.source)
+	if err != nil {
+		return nil, err
+	}
+	creationReview := creation != nil && contains([]string{"establish-cases", "propose-correction"}, creation.Action.Kind)
 	// Saved chat uses method guidance only. Request/document prompt arguments
 	// belong to explicit authoring panes; accepting them here would duplicate or
 	// smuggle the retained request into instruction material.
@@ -81,7 +86,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	}
 	offMemory := false
 	memory := &offMemory
-	if !assistantAuthoringPurpose(e.source.Start.Purpose) {
+	if !assistantAuthoringPurpose(e.source.Start.Purpose) && creation == nil {
 		memory, err = e.assistantChatMemory(ctx)
 	}
 	if err != nil {
@@ -145,6 +150,11 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	} else {
 		return nil, errAssistantRunUnavailable
 	}
+	if creation != nil {
+		// Independent review cannot evaluate the draft or retrieve its rules.
+		// Research continuation uses only canonical read host capabilities.
+		granted = nil
+	}
 	testCalls := 0
 	if e.record.Checkpoint.TestCalls != nil {
 		testCalls = int(*e.record.Checkpoint.TestCalls)
@@ -155,7 +165,9 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	// gate permits this interaction without granting any domain action.
 	interaction := "delegation"
 	var registry *assistantHostRegistry
-	if assistantAuthoringPurpose(e.source.Start.Purpose) {
+	if creationReview {
+		registry, err = newAssistantHostRegistry(nil)
+	} else if assistantAuthoringPurpose(e.source.Start.Purpose) {
 		registry, err = e.assistantAuthoringTools()
 	} else {
 		registry, err = e.assistantConversationTools(runtime, chat.Policy)
@@ -163,7 +175,22 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if err != nil {
 		return nil, err
 	}
-	declarations := append(registry.declarations(), contract.ToolOfferHostTool{Name: turn.DelegateTool, Interaction: &interaction})
+	if creation != nil && creation.Action.Kind == "research-choice" {
+		reads := []runcontext.HostTool{}
+		for _, tool := range registry.tools {
+			if tool.Effect == "read" {
+				reads = append(reads, tool)
+			}
+		}
+		registry, err = newAssistantHostRegistry(reads)
+		if err != nil {
+			return nil, err
+		}
+	}
+	declarations := registry.declarations()
+	if creation == nil {
+		declarations = append(declarations, contract.ToolOfferHostTool{Name: turn.DelegateTool, Interaction: &interaction})
+	}
 	offer, err := g.Open(ctx, declarations)
 	if err != nil {
 		return nil, err
@@ -187,7 +214,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if e.source.Start.Purpose == "chat" {
 		packID, _, _ = assistantSavedPackLink(e.source.Original)
 	}
-	if packID != "" || chat.Policy != nil && chat.Policy.ID != "" {
+	if packID != "" || chat.Policy != nil && chat.Policy.ID != "" || creation != nil && creation.Action.Kind == "research-choice" {
 		off := false
 		input.ArtifactProposals = &off
 	}
@@ -265,6 +292,9 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		childPhase := gate.ChildPhase(profile, offer, phase)
 		child.Enter(childPhase)
 		return child.Calls(), childPhase.Offer(offer).Tools, nil
+	}
+	if creation != nil {
+		run.Children = nil
 	}
 	base = assistantHostAdapter(base, e.record.Binding, chat.Request)
 	return &assistantExecution{Run: run, Adapter: delegate.With(base, delegate.Options{}), runtime: runtime, gate: g}, nil

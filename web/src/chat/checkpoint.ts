@@ -1,4 +1,6 @@
+import { copyWireValue, retainWireValue } from './wire'
 import {readPackBasis,readPackReview} from './packProposal'
+import { readCreationAction } from '../assistant/serverRuns/creation'
 import {readFailure} from '@judgment-pack/harness/failures'
 import {readExecution} from '@judgment-pack/harness/execution/state'
 import { readSavedQuestions } from '@judgment-pack/harness/questions'
@@ -29,7 +31,7 @@ export function checkpoint(state: RunState, sources: readonly SourceRecord[]): C
   return {
     state: { ...state, checkRecovery:undefined, checkIssue:undefined, streaming: undefined, streamingId: undefined, taskProgress: undefined, events: [], verdicts: {}, registries: {}, citations: [], tracing: undefined, tracedBasis: undefined,
       candidates: state.candidates.map(({ check, ...candidate }) => ({ ...candidate, ...(check ? { previousCheck: check } : {}) })),
-      expectationIssues: state.expectationIssues.map(({ proposal: _proposal, ...issue }) => issue) },
+      expectationIssues: state.expectationIssues.map(original => { const { proposal: _proposal, ...issue } = original; return copyWireValue(original,issue) }) },
     sources: sources.map(source => ({ session: source.session, kind: source.kind, request: source.request,
       requestedAt: source.requestedAt, text: source.response?.text ?? null,
       failure: source.failure, quotes: source.excerpts.map(excerpt => excerpt.text) }))
@@ -40,7 +42,7 @@ const strings = (value: unknown): value is string[] => Array.isArray(value) && v
 function invalid(): never { throw new Error('Saved chat data is not supported. History was left untouched.') }
 
 /** Validate display data before it reaches React; all trust is reset by restore. */
-export function decodeCheckpoint(value: unknown): Checkpoint {
+export function decodeCheckpoint(value: unknown,raw?:string): Checkpoint {
   if (!object(value) || !object(value.state) || !Array.isArray(value.sources)) return invalid()
   const state = value.state
   if (typeof state.brief !== 'string' || !strings(state.seedUrls) || !strings(state.unknowns) || !strings(state.sessions)
@@ -53,9 +55,10 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
     if (!object(turn) || (turn.role !== 'user' && turn.role !== 'assistant') || typeof turn.text !== 'string'
       || (turn.statement !== undefined && typeof turn.statement !== 'string') || (turn.input !== undefined && typeof turn.input !== 'string') || (turn.interrupted !== undefined && typeof turn.interrupted !== 'boolean') || typeof turn.at !== 'string' || !['brief', 'message', 'unknowns', 'note', 'question'].includes(String(turn.kind))) return invalid()
     if(turn.researchChoice!==undefined && (turn.role!=='user' || !['ask','research','provided'].includes(String(turn.researchChoice))))return invalid()
+	if(turn.creation!==undefined&&turn.role!=='user')return invalid()
     if (turn.testDesign !== undefined && (!object(turn.testDesign) || typeof turn.testDesign.owner !== 'string' || !turn.testDesign.owner || turn.testDesign.owner.length > 256 || (turn.testDesign.proposalId !== undefined && typeof turn.testDesign.proposalId !== 'string'))) return invalid()
     if(turn.target!==undefined&&(!object(turn.target)||!validAIConnectionId(turn.target.connectionId)||typeof turn.target.connectionName!=='string'||turn.target.connectionName.length>128||typeof turn.target.model!=='string'||!turn.target.model||turn.target.model.length>128))return invalid()
-    return { ...(readPackBasis(turn.packContext) ? {packContext:readPackBasis(turn.packContext)} : {}), ...(turn.testDesign ? {testDesign: turn.testDesign as Turn['testDesign']} : {}), ...(turn.researchChoice ? {researchChoice:turn.researchChoice as Turn['researchChoice']} : {}), ...(turn.target?{target:turn.target as unknown as NonNullable<Turn['target']>}:{}), id: readMessageId(turn.id) ?? `legacy-turn-${index}`, ...(turn.attachments !== undefined ? {attachments: readAttachments(turn.attachments, 4)} : {}), role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'], ...(typeof turn.statement === 'string' ? { statement: turn.statement } : {}), ...(typeof turn.input === 'string' ? { input: turn.input } : {}), ...(turn.interrupted === true ? { interrupted: true } : {}) }
+    return { ...(turn.creation===undefined?{}:{creation:readCreationAction(turn.creation)}), ...(readPackBasis(turn.packContext) ? {packContext:readPackBasis(turn.packContext)} : {}), ...(turn.testDesign ? {testDesign: turn.testDesign as Turn['testDesign']} : {}), ...(turn.researchChoice ? {researchChoice:turn.researchChoice as Turn['researchChoice']} : {}), ...(turn.target?{target:turn.target as unknown as NonNullable<Turn['target']>}:{}), id: readMessageId(turn.id) ?? `legacy-turn-${index}`, ...(turn.attachments !== undefined ? {attachments: readAttachments(turn.attachments, 4)} : {}), role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'], ...(typeof turn.statement === 'string' ? { statement: turn.statement } : {}), ...(typeof turn.input === 'string' ? { input: turn.input } : {}), ...(turn.interrupted === true ? { interrupted: true } : {}) }
   })
   if (new Set(turns.map(turn => turn.id)).size !== turns.length) return invalid()
   const questions = readSavedQuestions(state.questions)
@@ -73,6 +76,13 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
       expectedDisposition: row.expectedDisposition, ...(row.evidenceAvailability === undefined ? {} : { evidenceAvailability: row.evidenceAvailability }),
       ...(row.expectedHandoffTarget === undefined ? {} : { expectedHandoffTarget: row.expectedHandoffTarget }) }
   }
+	let heldProposal:RunState['heldProposal']=null
+	if(state.heldProposal!==undefined&&state.heldProposal!==null){
+		const held=state.heldProposal
+		if(!object(held)||typeof held.candidateDigest!=='string'||!/^[a-f0-9]{64}$/.test(held.candidateDigest)||!Array.isArray(held.admitted)||held.admitted.length>256||!Array.isArray(held.dropped)||held.dropped.some(row=>!object(row)||typeof row.id!=='string'||typeof row.reason!=='string')||!strings(held.unknowns))return invalid()
+		heldProposal={candidateDigest:held.candidateDigest,admitted:held.admitted.map(readCase),dropped:held.dropped as {id:string;reason:string}[],unknowns:held.unknowns}
+		if(new Set(heldProposal.admitted.map(row=>row.id)).size!==heldProposal.admitted.length)return invalid()
+	}
   const issues = state.expectationIssues.map(issue => {
     if (!object(issue) || typeof issue.id !== 'string' || typeof issue.message !== 'string') return invalid()
     // Historical approvals remain visible; pending tokens are never restored.
@@ -81,7 +91,10 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
       if (!object(issue.resolved) || typeof issue.resolved.approvedAt !== 'string' || typeof issue.resolved.rationale !== 'string') return invalid()
       resolved = { approvedAt: issue.resolved.approvedAt, rationale: issue.resolved.rationale, replacement: readCase(issue.resolved.replacement) }
     }
-    return { id: issue.id, message: issue.message, original: readCase(issue.original), ...(resolved ? { resolved } : {}) }
+		let finding:RunState['expectationIssues'][number]['finding']
+		if(issue.finding!==undefined){const f=issue.finding;if(!object(f)||f.status!=='invalid'||typeof f.message!=='string'||!f.message.trim()||f.admitted!==undefined&&typeof f.admitted!=='boolean'||f.unreachable!==undefined&&typeof f.unreachable!=='boolean')return invalid();finding=f as typeof finding}
+    if(issue.position!==undefined&&(!Number.isSafeInteger(issue.position)||(issue.position as number)<0||(issue.position as number)>255))return invalid()
+    return { ...(issue.position===undefined?{}:{position:issue.position as number}), id: issue.id, message: issue.message, original: readCase(issue.original), ...(finding?{finding}:{}), ...(resolved ? { resolved } : {}) }
   })
   const sources: SavedSource[] = value.sources.map(source => {
     if (!object(source) || typeof source.session !== 'string' || !['search', 'page'].includes(String(source.kind))
@@ -95,12 +108,18 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
       request: { source: source.request.source, dialect: source.request.dialect,
         ...(source.request.url ? { url: source.request.url as string } : {}), ...(source.request.query ? { query: source.request.query as string } : {}) } }
   })
+  const wireState=raw&&memberOf(parseJsonText(raw),'state')
+  const cases=state.cases.map(readCase)
+  for(const [key,value] of [['cases',cases],['heldProposal',heldProposal],['expectationIssues',issues]] as const){
+    const node=wireState&&memberOf(wireState,key)
+    if(node)retainWireValue(value,node)
+  }
   // Retain only the interrupted-conversation recovery hint. Artifact/check
   // phases are reconstructed by restore, never resumed from a checkpoint.
   return { state: { ...INITIAL_STATE, phase: state.phase==='conversation' && ['failed','running','stopped','budget'].includes(String(state.status)) ? 'conversation' : INITIAL_STATE.phase, detail: typeof state.detail === 'string' && state.detail.length <= 4096 ? state.detail : '', status: ['idle', 'running', 'complete', 'ready', 'needs-input', 'budget', 'stalled', 'stopped', 'failed'].includes(String(state.status)) ? state.status as RunState['status'] : 'idle', execution:readExecution(state.execution), failure:readFailure(state.failure), brief: state.brief, seedUrls: state.seedUrls, turns, questions, candidates, responses: readResponseHistory(state.responses),
     inheritedStatements: state.inheritedStatements as RunState['inheritedStatements'],
     checkRun: ['running','complete','failed','stopped'].includes(String(state.checkRun)) ? state.checkRun as RunState['checkRun'] : undefined,
-    probes: readProbes(state.probes), cases: state.cases.map(readCase), expectationIssues: issues, unknowns: state.unknowns,
+    probes: readProbes(state.probes), cases, heldProposal, expectationIssues: issues, unknowns: state.unknowns,
     revisionsUsed: state.revisionsUsed as number, sessions: state.sessions }, sources }
 }
 

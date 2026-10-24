@@ -3,9 +3,8 @@ import {ChatPlaceholder} from '../chat/ChatPlaceholder'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useChats } from '../chat/ChatProvider'
-import { restoreLedger } from '../chat/checkpoint'
+import { historicalDraftBinding } from '../packs/drafts/historicalBinding'
 import { draftHref, latestText, type PackDraft } from '../packs/drafts/model'
-import { useResearchRun } from '../research/useResearchRun'
 import { DraftWorkspace } from './ChatWorkspace'
 import { Button } from '../ui/Button'
 import { msg, systemMessage, useLocale } from '../i18n'
@@ -31,24 +30,20 @@ export function DraftPackView() {
 }
 function DraftReader({artifact}:{artifact:PackDraft}) {
   const {store,chats,drafts}=useChats(), [params]=useSearchParams()
-  const fallback=useResearchRun({mode:artifact.mode,documents:()=>artifact.documents??[]})
-  const restored=useRef(false), [problem,setProblem]=useState('')
+  const historical=useMemo(()=>{
+    try { return {binding:historicalDraftBinding(artifact),problem:''} }
+    catch { return {binding:undefined,problem:'The retained draft sources could not be read. Original history is unchanged.'} }
+  },[artifact])
   const available=[...chats,...drafts].filter(chat=>chat.draftId===artifact.id && !chat.archived)
   const selected=available.find(chat=>chat.id===params.get('chat')) ?? available.find(chat=>chat.draftGeneration===artifact.generation && chat.checkpoint?.state.candidates.at(-1)?.text===latestText(artifact))
-  useEffect(()=>{
-    if(restored.current || !fallback.run || !fallback.ledger)return
-    restored.current=true
-    try { restoreLedger(fallback.ledger,artifact.checkpoint.sources); void fallback.run.restore?.(artifact.checkpoint.state).catch(error=>setProblem(error.message)) }
-    catch(error){setProblem((error as Error).message)}
-  },[fallback.run,fallback.ledger,artifact])
   useEffect(()=>{
     if(!store)return
     if(selected)store.activate(selected.id)
     else store.startChat(undefined,artifact.mode,true,artifact.id)
   },[store,selected?.id,artifact.id,artifact.mode])
-  if(problem)return <p role="alert">{systemMessage(problem)}</p>
+  if(!historical.binding)return <p role="alert">{systemMessage(historical.problem)}</p>
   if(!selected)return <ChatPlaceholder loading/>
-  return <DraftWorkspace chat={selected} artifact={artifact} fallback={fallback}/>
+  return <DraftWorkspace chat={selected} artifact={artifact} fallback={historical.binding}/>
 }
 
 /** Opening Create is ephemeral; only a produced candidate becomes a draft. */

@@ -23,6 +23,7 @@ type assistantApprovalReference struct {
 }
 
 type assistantRunView struct {
+	Creation          *assistantCreationView            `json:"creation,omitempty"`
 	PackChecks        []assistantPackCheck              `json:"packChecks,omitempty"`
 	ApprovalReference *assistantApprovalReference       `json:"approvalReference,omitempty"`
 	AdmissionID       string                            `json:"admissionId"`
@@ -62,7 +63,7 @@ func assistantRunPublic(run assistantRunRecord) assistantRunView {
 	for _, digest := range keys {
 		checks = append(checks, latest[digest])
 	}
-	return assistantRunView{PackChecks: checks, ApprovalReference: approval, AdmissionID: run.AdmissionID, DisplayPreview: run.DisplayPreview, Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
+	return assistantRunView{Creation: assistantCreationPublic(run), PackChecks: checks, ApprovalReference: approval, AdmissionID: run.AdmissionID, DisplayPreview: run.DisplayPreview, Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
 }
 func (s *Server) registerAssistantRuns() {
 	s.registerAssistantBriefRuns()
