@@ -22,3 +22,14 @@ it('shows a stale source and disables accepting it',async()=>{
  await screen.findByText(/Source changed/)
  expect((screen.getByRole('button',{name:'Remember'}) as HTMLButtonElement).disabled).toBe(true)
 })
+it('keeps private canonical metadata out of management text and edit requests',async()=>{
+ const entry={...initial.content.entries[0]!,state:'active' as const,canonical:{id:'proposed-outreach',kind:'preference',source:{run:'private-agent-run',proposedBy:'model'},digest:'sha256:'+'a'.repeat(64),expiresAt:'2099-01-01T00:00:00Z'}}
+ vi.mocked(memoryRequest).mockResolvedValue({...initial,content:{...initial.content,entries:[entry]}})
+ render(<QueryClientProvider client={new QueryClient()}><MemorySettings/></QueryClientProvider>)
+ await screen.findByText(entry.text)
+ expect(screen.queryByText('private-agent-run')).toBeNull()
+ expect(screen.queryByText('proposed-outreach')).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'Edit'}))
+ fireEvent.click(screen.getByRole('button',{name:'Remember'}))
+ await waitFor(()=>expect(memoryRequest).toHaveBeenCalledWith({action:'edit',id:'m1',key:'outreach',text:entry.text,dependencies:undefined},'revision-one'))
+})

@@ -15813,6 +15813,20 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     'wireJSON(old,true):JSON.stringify(value)'
 fi
 
+
+# Desk #626: private canonical identity and explicit lifecycle revocation.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory: malformed canonical metadata accepted' internal/desk/ai_memory.go \
+    'if _, err := assistantMemoryRecord("", e); err != nil {' \
+    'if _, err := assistantMemoryRecord("", e); false && err != nil {'
+  mutate go 'assistant memory: edited version reuses canonical identity' internal/desk/ai_memory.go \
+    'entry.Canonical = nil // A changed version cannot reuse a proposed identity.' \
+    '// Canonical identity was retained after an edit.'
+  mutate go 'assistant memory: missing private version is not revoked' internal/desk/assistant_memory_lifecycle.go \
+    'state = "revoked"' \
+    'state = ""'
+fi
+
 restore
 echo
 # A filter that matched nothing is not a clean run: it is a filter naming a row
