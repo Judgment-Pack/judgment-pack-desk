@@ -20,19 +20,19 @@ func privateInfo(info os.FileInfo, directory bool) bool {
 func lockProfile(root *os.Root) (*os.File, error) {
 	f, err := root.OpenFile("lease", os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
-		return nil, ErrProfile
+		return nil, failureCause(ErrProfile, err)
 	}
 	info, err := f.Stat()
 	if err != nil || !privateInfo(info, false) {
 		f.Close()
-		return nil, ErrProfile
+		return nil, failureCause(ErrProfile, err)
 	}
 	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
 		if err == syscall.EWOULDBLOCK {
 			return nil, ErrBusy
 		}
-		return nil, ErrProfile
+		return nil, failureCause(ErrProfile, err)
 	}
 	return f, nil
 }

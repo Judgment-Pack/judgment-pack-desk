@@ -122,15 +122,14 @@ function DocumentWalk({
   // the marker is named after the entry rather than shared by a fixed literal.
   const arrow = `diagram-arrow-${entry.id.replace(/[^A-Za-z0-9_-]/g, '-')}`
 
-  return (
-    <div className="diagram-wrap">
+  const diagram = (
       <svg
         className="diagram diagram-document"
         viewBox={`0 0 ${width} ${height}`}
         // Drawn near its natural size: the box widths and type sizes below are
         // chosen to be legible at 1:1, and a percentage width would scale a
         // narrow single-column graph up until its labels swamped it.
-        style={{ maxWidth: Math.min(width, 760) }}
+        style={width > 760 ? { width, maxWidth: 'none' } : { maxWidth: width }}
         role="img"
         aria-label={
           msg('Graph {{graph}}: the served graph document declares {{nodes}} nodes and {{edges}} edges, drawn as a layered walk.', { graph: entry.id, nodes: shape.nodes.length, edges: shape.edges.length })
@@ -287,6 +286,14 @@ function DocumentWalk({
           </text>
         </g>
       </svg>
+  )
+  return (
+    <div className="diagram-wrap">
+      {width > 760 ? (
+        <div className="diagram-scroll" tabIndex={0} role="region" aria-label={msg('Graph {{graph}}: scroll the diagram horizontally', { graph: entry.id })}>
+          {diagram}
+        </div>
+      ) : diagram}
 
       {row && <RowVerdict row={row} />}
 

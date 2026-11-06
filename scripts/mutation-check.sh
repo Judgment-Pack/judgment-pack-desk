@@ -31,7 +31,10 @@
 # rows in the files one PR touches, and days for the list. Selection is how
 # mutation tools run a mutant, and it is how this runs a row:
 #
-# - **A Go row** with an entry in the record runs `go test ./internal/desk -run
+# - **A Go row** may name a sixth argument, one local `./internal/package`;
+#   omitted, it defaults to `./internal/desk`. Its baseline, selection and
+#   whole-package fallback all use that package. Package changes rerun the row.
+#   A row with an entry in the record runs `go test <package> -run
 #   '^(Test1|Test2|…)$'`, the top-level tests its entry names. A Go row with no
 #   entry runs the whole package, as before: one package has no import graph
 #   finer than itself to choose from.
@@ -56,7 +59,7 @@
 #   below says the whole suite is green, and a Go selection is a different run:
 #   a test that passes after the tests before it can fail without them, and
 #   that failure would read as a catch. So each Go selection first runs once on
-#   the unmutated tree, from a test binary built once per run; one that is not
+#   the unmutated tree, from a test binary built once per package; one that is not
 #   green is set aside, and its row runs the whole package. Vitest runs each
 #   test file isolated from the others, so a web file passes alone as it
 #   passes in the baseline.
@@ -88,8 +91,8 @@
 # -<pgid>`, or run it under `setsid` and a watchdog that does, or under
 # `timeout -s KILL`. A TERM or an INT is not enough: it ends the row's suite,
 # the trap below restores the tree, and the batch goes on with its next row.
-# Nothing restores the tree after a KILL, so restore it by hand: `git checkout
-# -- internal web/src`. A suite that outlives its own bound needs no one from
+# Nothing restores the tree after a KILL: inspect `git diff` and restore the
+# exact mutated path before continuing. A suite that outlives its own bound needs no one from
 # outside: the harness ends its whole process tree and goes on.
 set -uo pipefail
 
@@ -162,7 +165,16 @@ commit="$(git rev-parse HEAD)"
 work="$(mktemp -d)" || exit 2
 : > "$work/named"
 
-restore() { git checkout -- internal web/src 2>/dev/null; }
+mutation_file=""
+restore() {
+  if [ -n "$mutation_file" ]; then
+    if ! git --literal-pathspecs checkout -- "$mutation_file"; then
+      echo "cannot restore mutation target: $mutation_file; stopping" >&2
+      exit 2
+    fi
+    mutation_file=""
+  fi
+}
 # However this ends — a failing mutation, Ctrl-C, a kill — the tree goes back.
 # A harness that leaves a mutation in place is worse than no harness: the next
 # thing anyone runs is testing something nobody wrote.
@@ -328,51 +340,102 @@ bounded() {
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
 #
-# run_go [pattern]: the whole package, or only the tests the pattern names.
+# Ordinary Go CI skips companion-gated tests; the mutation baseline includes
+# the pinned Gateway and scoped Runtime fixtures. Two clean CI baselines exceeded
+# 900s. A verbose diagnostic reached more than 1500 cases before its 840s panic,
+# with the current test running for 0s: measured aggregate work, not a hung handler.
+# The companion-enabled baseline now exceeds 1800s; its last started website
+# test passes in isolation in 19.12s. Align only this clean run with ordinary
+# Go CI's 40-minute limit and retain its complete progress log on failure.
+# Selected checks stay at 480s,
+# whole-mutant/fallback checks at 900s, and compilation at its independent bound.
+# Each Go panic backstop follows its process-tree watchdog by 60s.
+GO_TEST_WATCHDOG=480
+GO_TEST_BACKSTOP=540s
+GO_FULL_WATCHDOG=900
+GO_FULL_BACKSTOP=960s
+GO_BASELINE_WATCHDOG=2400
+GO_BASELINE_BACKSTOP=2460s
+
+# run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
-  # **240s, and the number is not arbitrary.** The bound exists to turn a
-  # mutation that hangs a handler into a reported hang rather than a stalled
-  # table. It was 45s, which was already marginal: two relay rows remove an
-  # *idle* deadline and their tests then wait out a deliberate twenty-second
-  # stall, so the mutated suite runs about fifty seconds — and this branch's
-  # forty new session tests pushed both rows over the line and reported
-  # INCONCLUSIVE for a suite that was working. It was then 120s, until the
-  # key-custody tests (ADR-0010 PR 3a) brought the clean suite to about 103s
-  # on an idle machine, mostly waiting rather than computing: any load then
-  # pushed a working suite past the bound. A deliberate wait inside a test is
-  # not a hang; a real one is minutes, and 240s still catches it. A selection
-  # keeps the same bound: one that ran out is run again whole (`mutate`), so a
-  # shorter one could only cost a second run, never a verdict.
-  #
-  # **Now the harness's own bound** (issue #237). When `go test -timeout`
-  # fires, the test binary panics and exits, and what its tests started runs
-  # on (measured), so the harness's bound must fire first and end the whole
-  # tree: `-timeout` is set past it, as a backstop only. The build comes
-  # first, apart, with a bound of its own (a cold cache can take minutes, and
-  # a build is not a hang), so that the 240s is the run's, and the link's.
+  # Keep compilation on its independent bound: a cold build is not a hang.
+  # The run watchdog is the first timeout and kills the whole process tree;
+  # Go's later timeout is only a backstop because its panic can leave children.
   local log code
   log="$(mktemp)"
-  bounded 1800 "$log" go test ./internal/desk -count=1 -run '^$'
+  local package="$1"
+  shift
+  bounded 1800 "$log" go test "$package" -count=1 -run '^$'
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    go_verdict "$code" "$log"
+    mv -f "$log" "$work/last-go.log"
+    return
+  fi
   if [ -n "${1:-}" ]; then
-    bounded 240 "$log" go test ./internal/desk -count=1 -timeout 300s -run "$1"
+    bounded "$GO_TEST_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_TEST_BACKSTOP" -run "$1"
   else
-    bounded 240 "$log" go test ./internal/desk -count=1 -timeout 300s
+    bounded "$GO_FULL_WATCHDOG" "$log" go test "$package" -count=1 -timeout "$GO_FULL_BACKSTOP"
   fi
   code=$?
   go_verdict "$code" "$log"
   mv -f "$log" "$work/last-go.log"
 }
 
-# run_go_unmutated <pattern>: the selection, on the test binary built from the
-# unmutated tree (go_binary), run where `go test` runs it.
+# Go package selectors are authored in rows, never derived from source paths.
+# Admit one local internal package only, with actual Go sources; no patterns,
+# traversal, options, absolute paths or remote module names.
+go_package_valid() {
+  [[ "$1" =~ ^\./internal/[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$ ]] || return 1
+  [ -d "$1" ] || return 1
+  local source
+  for source in "$1"/*.go; do [ ! -f "$source" ] || return 0; done
+  return 1
+}
+go_package_key() { printf '%s' "$1" | sha256sum | cut -c1-32; }
+
+# The clean baseline and its binary are cached by package. Do not run unrelated
+# packages for a selected row. Failed builds/baselines never measure a mutant.
+go_package_green() {
+  local package="$1" key log code verdict
+  key=$(go_package_key "$package")
+  [ ! -f "$work/package-$key.green" ] || return 0
+  [ ! -f "$work/package-$key.failed" ] || return 1
+  log="$work/package-$key.build.log"
+  echo "checking the unmutated Go baseline for $package…" >&2
+  bounded 1800 "$log" go test -c -o "$work/package-$key.test" "$package"
+  code=$?
+  if [ "$code" -ne 0 ] || [ ! -x "$work/package-$key.test" ]; then
+    echo "unmutated Go binary did not build: $package" >&2
+    tail -n 30 "$log" >&2
+    : > "$work/package-$key.failed"
+    return 1
+  fi
+  verdict=$(run_go_unmutated "$package" '.')
+  if [ -n "$verdict" ]; then
+    echo "unmutated Go baseline is not green: $package: $verdict" >&2
+    cat "$work/package-$key.baseline.log" >&2
+    : > "$work/package-$key.failed"
+    return 1
+  fi
+  echo "unmutated Go baseline passed: $package" >&2
+  : > "$work/package-$key.green"
+}
+
+# Run in the same package directory as go test, with its own clean binary.
+# The full clean baseline stops at its first failure: no mutant can run then.
+# Selections and mutants still collect every failure needed for their verdicts.
 run_go_unmutated() {
-  local log code
-  log="$(mktemp)"
-  bounded 240 "$log" bash -c 'cd internal/desk && exec "$0" -test.paniconexit0 -test.count=1 -test.timeout=300s -test.run "$1"' \
-    "$work/desk.test" "$1"
+  local package="$1" key log code watchdog=$GO_TEST_WATCHDOG backstop=$GO_TEST_BACKSTOP
+  local -a baseline_flags=()
+  if [ "$2" = . ]; then watchdog=$GO_BASELINE_WATCHDOG; backstop=$GO_BASELINE_BACKSTOP; baseline_flags=(-test.v=true -test.failfast); fi
+  key=$(go_package_key "$package")
+  log="$work/package-$key.baseline.log"
+  bounded "$watchdog" "$log" bash -c 'cd "$1" && exec "$2" -test.paniconexit0 -test.count=1 -test.timeout="$4" -test.run "$3" "${@:5}"' \
+    _ "$package" "$work/package-$key.test" "$2" "$backstop" "${baseline_flags[@]}"
   code=$?
   go_verdict "$code" "$log"
-  rm -f "$log"
 }
 
 # plain <log>: the log as text, without the terminal's colour codes (every
@@ -403,7 +466,7 @@ go_verdict() {
     echo "INCONCLUSIVE — suite timed out (the mutation hangs a handler)"
     return
   fi
-  if grep -q '^panic:' <<<"$out"; then
+  if grep -qE '^(panic:|fatal error:)' <<<"$out"; then
     echo "INCONCLUSIVE — suite panicked"
     return
   fi
@@ -506,21 +569,31 @@ web_verdict() {
   echo "$named"
 }
 
-# go_selection_green <pattern>: whether the selection passes on the unmutated
-# tree. Each pattern is run once a run.
+# 0: selection passes clean; 1: known tests need whole-package setup;
+# 2: unsupported/missing selection (not a verdict, never trust another test).
+# Both caches include package identity as well as the declared test names.
 go_selection_green() {
-  grep -qxF -- "$1" "$work/green" 2>/dev/null && return 0
-  grep -qxF -- "$1" "$work/not-green" 2>/dev/null && return 1
-  if [ -x "$work/desk.test" ] && [ -z "$(run_go_unmutated "$1")" ]; then
-    printf '%s\n' "$1" >> "$work/green"
+  local package="$1" entry="$2" pattern="^(${2//,/|})\$" key list code test
+  [[ "$entry" =~ ^Test[A-Za-z0-9_]+(,Test[A-Za-z0-9_]+)*$ ]] || return 2
+  key=$(go_package_key "$package:$entry")
+  [ ! -f "$work/selection-$key.green" ] || return 0
+  [ ! -f "$work/selection-$key.not-green" ] || return 1
+  list="$work/selection-$key.list"
+  bounded 240 "$list" bash -c 'cd "$1" && exec "$2" -test.list "$3"' \
+    _ "$package" "$work/package-$(go_package_key "$package").test" "$pattern"
+  code=$?
+  [ "$code" -eq 0 ] || return 2
+  while IFS= read -r test; do grep -qxF -- "$test" "$list" || return 2; done < <(tr , '\n' <<<"$entry")
+  if [ -z "$(run_go_unmutated "$package" "$pattern")" ]; then
+    : > "$work/selection-$key.green"
     return 0
   fi
-  printf '%s\n' "$1" >> "$work/not-green"
-  echo "the tests recorded for a row do not pass by themselves on the unmutated tree; it runs the whole package: $1" >&2
+  : > "$work/selection-$key.not-green"
+  echo "the tests recorded for a row do not pass by themselves on the unmutated tree; it runs the whole package: $package $entry" >&2
   return 1
 }
 
-mutate() { # mutate <lang> <name> <file> <needle> <replacement>
+mutate() { # mutate <lang> <name> <file> <needle> <replacement> [go-package]
   local lang="$1" name="$2" file="$3" needle="$4" replacement="$5"
   case "$name" in
     *"$only"*) ;;
@@ -532,13 +605,38 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
   # --shard k/n: every n-th row matched, from the k-th.
   [ $(((matched - 1) % shard_n)) -eq $((shard_k - 1)) ] || return
   restore
-  local entry how started=$SECONDS pattern="" selection=() line failures caught=""
+  if [ ! -f "$file" ] || [ -L "$file" ] || ! git --literal-pathspecs ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
+    echo "mutation target must be a tracked regular file: $file" >&2
+    exit 2
+  fi
+  # The record may be dirty at startup, but must not be restored over an
+  # owner's edits if a row names the record itself as its mutation target.
+  if ! git --literal-pathspecs diff --quiet HEAD -- "$file"; then
+    echo "mutation target has uncommitted changes: $file" >&2
+    exit 2
+  fi
+  local entry how started=$SECONDS pattern="" selection=() line failures caught="" package="${6-./internal/desk}" selected_status
+  if [ "$lang" = go ]; then
+    if ! go_package_valid "$package"; then
+      report "$name" "**INCONCLUSIVE — unsupported or missing Go test package: $package**"
+      fail=$((fail + 1)); return
+    fi
+    if ! go_package_green "$package"; then
+      report "$name" "**BASELINE NOT GREEN — $package — not run**"
+      fail=$((fail + 1)); return
+    fi
+  fi
   entry="$(expect_of "$lang" "$name")"
   # The selection, chosen on the unmutated tree (see the header).
   if [ "$whole" -eq 1 ]; then
     how=whole
-  elif [ "$lang" = go ] && [ -n "$entry" ]; then
-    if go_selection_green "^(${entry//,/|})\$"; then
+  elif [ "$lang" = go ] && { [ -n "$entry" ] || want_kind=go want_name="$name" awk -F'\t' '$1 == ENVIRON["want_kind"] && $2 == ENVIRON["want_name"] { found=1 } END { exit !found }' "$expects"; }; then
+    go_selection_green "$package" "$entry"
+    selected_status=$?
+    if [ "$selected_status" -eq 2 ]; then
+      report "$name" "**INCONCLUSIVE — missing or unsupported Go test selection: $package $entry**"
+      fail=$((fail + 1)); return
+    elif [ "$selected_status" -eq 0 ]; then
       pattern="^(${entry//,/|})\$"
       how=selected
     else
@@ -552,6 +650,7 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
   else
     how=no-selection
   fi
+  mutation_file="$file"
   if ! apply "$file" "$needle" "$replacement"; then
     report "$name" "MUTATION DID NOT APPLY"
     fail=$((fail + 1))
@@ -559,7 +658,7 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
     return
   fi
   if [ "$how" = selected ]; then
-    if [ "$lang" = go ]; then failures="$(run_go "$pattern")"; else failures="$(run_web "${selection[@]}")"; fi
+    if [ "$lang" = go ]; then failures="$(run_go "$package" "$pattern")"; else failures="$(run_web "${selection[@]}")"; fi
     # Only a failing test decides on a selection's word; everything else is
     # run again whole, which decides as it always did.
     case "$failures" in
@@ -567,7 +666,7 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
     esac
   fi
   if [ "$how" != selected ]; then
-    if [ "$lang" = go ]; then failures="$(run_go)"; else failures="$(run_web)"; fi
+    if [ "$lang" = go ]; then failures="$(run_go "$package")"; else failures="$(run_web)"; fi
   fi
   restore
   case "$failures" in
@@ -633,7 +732,7 @@ echo "checking the unmutated baseline at ${commit:0:7}…" >&2
 # promised web-only and spent forty seconds in `go test` before every run,
 # and a Go toolchain that is not installed failed a mode that needs none.
 baseline_go=""
-if [ "$which" = all ] || [ "$which" = go ]; then baseline_go="$(run_go)"; fi
+# Go baselines are lazy per selected package, immediately before mutation.
 baseline_web=""
 if [ "$which" = all ] || [ "$which" = web ]; then baseline_web="$(run_web)"; fi
 if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
@@ -659,12 +758,6 @@ if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
   echo "| --- | --- |"
   report "${only:-every row}" "**BASELINE NOT GREEN — not run**"
   exit 2
-fi
-# The unmutated test binary each Go selection is first run on. Where it cannot
-# be built, no Go selection is trusted, and each Go row runs the whole package.
-if [ "$whole" -eq 0 ] && { [ "$which" = all ] || [ "$which" = go ]; }; then
-  bounded 1800 "$work/desk.test.log" go test -c -o "$work/desk.test" ./internal/desk \
-    || echo "the unmutated test binary did not build; every Go row runs the whole package" >&2
 fi
 
 echo "mutation check against $commit"
@@ -1188,7 +1281,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "an absent desk-level file is a refusal" "$A" \
     '	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{
-			Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})
+			PromptPolicy: currentAssistantPromptPolicy(), Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})
 		return
 	}' \
     '	if !present {
@@ -1794,8 +1887,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # and then sent nothing at all — not a header, not a byte — was held by the
   # overall deadline, and four of them exhausted every slot for ten minutes.
   mutate go "the wait for the first byte is bounded by nothing but the overall deadline" "$MR" \
-    '		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel},' \
-    '		Transport:     relayTransport,'
+    'transport := http.RoundTripper(beforeTheFirstByte{inner: relayTransport, cancel: cancel})' \
+    'transport := http.RoundTripper(relayTransport)'
   # A number outside float64 is a valid JSON document, and whether Go can hold
   # it is not a fact about the endpoint's listing.
   mutate go "a listing is refused for a number Go cannot hold" "$MR" \
@@ -5314,8 +5407,8 @@ func (b *cappedBuffer) exceeded() bool {'
 		return unsignedRunner(runnerKeyInUse, ""), ""'
   mutate go "runner key: Runner's first start does not wait for the start's sweep" "$J" \
     '		select {
-		case <-s.jobs.started:
-		case <-s.jobs.stop:
+		case <-j.started:
+		case <-j.stop:
 			return
 		}
 ' \
@@ -9564,9 +9657,12 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      void expect'
   mutate web "an earlier reload answers over a later one" "$FE" \
     '          if (ticket !== reloads.current) return
+          reloadPending.current = false
           setReloading(false)
           // **The buffer decides first.**' \
-    '          // **The buffer decides first.**'
+    '          reloadPending.current = false
+          setReloading(false)
+          // **The buffer decides first.**'
   mutate web "a failed reload names whatever file is on screen" "$FE" \
     '          setReloadError({
             path,
@@ -9829,24 +9925,15 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # transport says nothing about the question the reviewer answered, and that
   # turn is the most expensive in the run; unheld, the only way back is to alter
   # the draft and buy a second reviewer for the same question.
-  mutate web "the reviewer's proposal is discarded before validation" "$RR" \
-    '    this.set({ heldProposal: held })' \
-    '    void held'
 
   # **And it is released the moment it is answered.** A hold that outlives its
   # own establishment offers a retry of a settled question, over cases already
   # established and issues already blocked.
-  mutate web "the held proposal outlives the establishment that answered it" "$RR" \
-    '      this.set({ cases, expectationIssues: issues, droppedCases: dropped, heldProposal: null })' \
-    '      this.set({ cases, expectationIssues: issues, droppedCases: dropped })'
 
   # **A hold answers the draft it was proposed against, and no other.** The
   # suite comes from that draft's outcomes and fact paths, so reusing it for
   # changed bytes silently establishes a suite nobody proposed for them --
   # where establishment has always asked a fresh reviewer.
-  mutate web "a held proposal is reused for a draft it was never proposed for" "$RR" \
-    '      const held = kept !== null && kept.candidateDigest === candidate.digest ? kept : await this.proposeCases(signal, candidate)' \
-    '      const held = kept !== null ? kept : await this.proposeCases(signal, candidate)'
 
   # The same binding on the action itself: a retry offered against a draft the
   # hold predates would spend a reviewer turn under a control that says it will
@@ -9859,9 +9946,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # unknowns are the reviewer's own account of what the sources did not settle;
   # a hold that kept the cases and dropped them re-establishes the same suite
   # as a settled one, over questions the reviewer left open.
-  mutate web "the held proposal drops the reviewer's unknowns" "$RR" \
-    '    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: proposal?.unknowns ?? [] }' \
-    '    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: [] }'
 
   # **A retry is offered while the run is at rest, and not while it is running.**
   # The hold is live through validation, so a predicate that ignored the status
@@ -9873,16 +9957,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # **The retry resumes the run it recovers, repair and all.** Declining to
   # repair settles at needs-input over a draft the run still had the budget to
   # fix, which is not what the interrupted path would have done.
-  mutate web "the retry declines to repair the draft it establishes over" "$RR" \
-    '      await this.casesAndCheck(signal, true)' \
-    '      await this.casesAndCheck(signal, false)'
 
   # **A person-initiated establishment leaves a mark.** The retry changes what
   # gets established; without its note the transcript of a retried run is
   # indistinguishable from one that established on the first pass.
-  mutate web "a retry leaves no trace in the transcript" "$RR" \
-    "    this.addTurn({ role: 'user', kind: 'note', text: sourceMessage(\"Sent the held case proposal back for validation.\") })" \
-    '    void 0'
 
   # **Two rows are gone from here**, and the reason is worth the space. They
   # broke a helper that chose the credential sentence at the schema walk, on
@@ -10235,18 +10313,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # the mutation keeps them and hides them, which is the arrangement that was
   # wrong rather than a weaker version of the right one.
   mutate web "the rows are hidden when the endpoint moves rather than cleared" "$ECK" \
-    '  const here = identityOf(draft)
-  if (answer !== undefined && answer.of !== here) reset()' \
-    '  const here = identityOf(draft)'
-  # **The page names a suffix; the desk builds the address.** A listing that
-  # built its own URL would hold the endpoint — and, on this route, this
-  # chassis' session token — in page code that no gate is on.
-  # Repaired: the listing names the AI connection it lists, through the desk.
-  mutate web "the listing address is built on the page" "$ECK" \
-    '    void listModels(target.kind, bindModelCall(target.kind,scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:undefined)).then(' \
-    "    void listModels(target.kind, async (suffix) =>
-      globalThis.fetch(\`\${target.url}/\${suffix}\`, { method: 'GET' })
-    ).then("
+    '  if (answer !== undefined && answer.of !== here) reset()' \
+    '  if (false && answer !== undefined && answer.of !== here) reset()'
+  # Listing address authority now belongs to the closed server action. The
+  # corresponding Go row below verifies its host-selected first-page path.
   # **The default is a member of the set, and the two are one decision.** A
   # default nothing enables is a value no picker would offer and no run could
   # take, and the page composes both members from one draft — so a rule that
@@ -10268,7 +10338,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # on the page saying the endpoint was never asked.
   # Repaired with the row above.
   mutate web "Test connection asks the probe and never the listing" "$ECK" \
-    "    void listModels(target.kind, bindModelCall(target.kind,scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:undefined)).then(
+    "    void listModels(target.kind, scope?.connection.id, scope?.connection.revision, cancellation.current?.signal).then(
       (rows) => landed((previous) => ({ ...previous, rows })),
       (cause: unknown) =>
         landed((previous) => ({ ...previous, listingRefusal: said(cause) }))
@@ -10415,54 +10485,24 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # a hook that reached past the pick would run something nobody chose, under a
   # picker and a standing line both showing something else.
   # Repaired: the run carries the AI connection it was started on.
-  mutate web 'the run ignores the model that was picked' web/src/assistant/useAssistantRun.ts \
-    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, modelOf(model), thinking, run.meter),' \
-    '...bindExecution({ ...connectionTarget, endpoint, agent, engine }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking, run.meter),'
-  mutate web "Stop writes no terminal event" "$AR" \
-    '    finish(run)
-    release(run)
-    setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))' \
-    '    release(run)
-    setStatus((current) => (current === '"'"'running'"'"' ? '"'"'finished'"'"' : current))'
   # (The event became `held` when the proposal's canonicalization landed in this
   # function; the row is the same claim about the same line.)
-  mutate web "a second end is appended rather than dropped" "$AR" \
-    "    if (held.type === 'end') {
-      run.ended = true
-      terminals.current.count += 1
-    }" \
-    '    void held'
   # **An approval and the retest it promises are one step.** Applied first, an
   # interrupted retest left the correction in place with every check stripped
   # and the issue resolved -- and a resolved issue closes both correction
   # actions while an unchanged message re-checks nothing. The bytes the person
   # approved for could never be tested again, and the run answered that the
   # candidate still disagreed, which was neither true nor what had happened.
-  mutate web "an interrupted approval retest keeps the correction" "$RR" \
-    '      try {
-        await this.casesAndCheck(signal, false)
-      } catch (cause) {
-        this.set(before)
-        this.undone = sourceMessage("The correction for {{value0}} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.", { value0: id })
-        throw cause
-      }' \
-    '      await this.casesAndCheck(signal, false)'
 
   # **An outcome that reports the stop and not the rollback is the trap again.**
   # "Stopped. The last completed stage is kept." is true of the stop and no
   # account of a correction the run took back -- which is #82's complaint, a
   # reason that is not the real one, in a new place.
-  mutate web "a rolled-back approval is not reported" "$RR" \
-    '        this.undone = sourceMessage("The correction for {{value0}} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.", { value0: id })' \
-    '        void 0'
 
   # **Taken back whole means the phase too.** The retest moved the run to
   # `check`; a rollback that restores the suite and leaves the phase rests a
   # run with nothing checked on the Tests view, and a panel that follows the
   # phase lands the person there.
-  mutate web "a rolled-back approval rests at the phase its retest reached" "$RR" \
-    '      const before = { phase: this.state.phase, cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }' \
-    '      const before = { cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }'
 
   # **Create asks about the candidate, not about the last action.** `ready` is
   # the status of whatever the person did last, so a Stop, a spent budget or a
@@ -10493,18 +10533,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # failed withholds the draft even where no citation points at it, so nothing
   # in the recorded key moves; a turn ending in an error or a Stop never reaches
   # the settle that would say so, and Create would stand over the failure.
-  mutate web "a receipt failing after ready leaves Create standing" "$RR" \
-    "    const withholds = this.state.readiness === '' ? null : this.withheld()
-    if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }" \
-    '    void 0'
 
   # **And says which receipt.** The outcome of a turn that ends in an error is
   # the engine's refusal; a readiness withdrawn silently beside it leaves the
   # panel explaining a withheld draft with cases that in fact agree -- the
   # sentence #82 names as the reason that is not the real one.
-  mutate web "a readiness withdrawn by a verdict is withdrawn silently" "$RR" \
-    "    if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }" \
-    "    if (withholds !== null) { this.set({ readiness: '' }) }"
 
   # ---- A conversation draft's citations (#155) ------------------------------
   #
@@ -10532,39 +10565,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # A trace lands only on the basis it began on: a pin or a document list
   # that moved under it is traced again, and a trace a Stop interrupted
   # leaves nothing traced, never the readiness of the trace before it.
-  mutate web "a chat draft's trace lands on a basis that moved under it" "$RR" \
-    '        if (this.basisNow() === basis) {' \
-    '        if (true) {'
-  mutate web "a chat draft's documents are verified under the live pin" "$RR" \
-    '? load(reference, pin, loading) :' \
-    '? load(reference, this.ports.pin?.() ?? pin, loading) :'
-  mutate web "a chat draft's interrupted trace keeps the last trace's readiness" "$RR" \
-    '      citations = unchecked(latest.document, sourceMessage("The citation check was interrupted. Recheck the draft."))' \
-    '      void unchecked'
-  mutate web "a chat draft's trace lands after a Stop" "$RR" \
-    '        const traced = await tracePageCitations(latest.document, kept, (reference, loading) => pin !== null && load ? load(reference, pin, loading) : unverifiable(), signal)
-        this.check(signal)' \
-    '        const traced = await tracePageCitations(latest.document, kept, (reference, loading) => pin !== null && load ? load(reference, pin, loading) : unverifiable(), signal)'
-  mutate web "a chat draft is not traced again when its pin or documents change" "$RR" \
-    '      return
-    }
-    this.traceAtRest()' \
-    '      return
-    }
-    void 0'
-  mutate web "a chat draft keeps its readiness when its pin or documents change" "$RR" \
-    "      if (!this.running) this.pendingSettle = true
-      this.set({ readiness: '' })" \
-    '      if (!this.running) this.pendingSettle = true'
-  mutate web "a chat draft's action ends without tracing the basis that moved under it" "$RR" \
-    '          } else this.traceAtRest()' \
-    '          } else void 0'
-  mutate web "a Stop starts new work on a chat draft whose basis moved" "$RR" \
-    "          if (controller.signal.aborted || this.state.status === 'stopped' || this.state.status === 'budget') {" \
-    '          if (false) {'
-  mutate web "a Stop that ends in an error starts new work on a chat draft" "$RR" \
-    "          if (controller.signal.aborted || this.state.status === 'stopped'" \
-    "          if (this.state.status === 'stopped'"
   mutate web "a superseded chat draft trace goes on loading" "$RR" \
     '    signal.throwIfAborted()
     if (!loads.has(key))' \
@@ -10575,29 +10575,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "Create answers a chat draft asked without a basis" "$RR" \
     '(basis === undefined || state.tracedBasis !== basis)' \
     '(basis !== undefined && state.tracedBasis !== basis)'
-  mutate web "a chat draft settles at ready on a moved basis" "$RR" \
-    '      if (this.state.tracedBasis !== this.basisNow()) return sourceMessage(' \
-    '      if (false) return sourceMessage('
-  mutate web "a chat draft's superseded trace at rest drops the settle it owed" "$RR" \
-    '    }, () => undefined).finally(() => {' \
-    '    }, () => { this.pendingSettle = false }).finally(() => {'
-  mutate web "a chat draft's owner going away leaves its trace at rest running" "$RR" \
-    '    this.detached = true
-    this.background?.abort()' \
-    '    this.detached = true'
-  mutate web "a chat draft's run outlives its owner" web/src/research/useResearchRun.ts \
-    '    return () => run.detach()' \
-    '    return () => undefined'
   mutate web "a web research chat draft whose trace was cut short reads as citing nothing" "$RDP" \
     'const gap = conversation && latest && !state.tracing && !unread ?' \
     'const gap = conversation && latest && !state.tracing ?'
-  mutate web "a Stop leaves a chat draft's trace at rest running" "$RR" \
-    '    this.controller?.abort()
-    this.background?.abort()' \
-    '    this.controller?.abort()'
-  mutate web "a chat draft's citations are not traced again when its documents change" web/src/research/useResearchRun.ts \
-    '  useEffect(() => { run.basisChanged() }, [run, basis])' \
-    '  useEffect(() => { void basis }, [run, basis])'
   mutate web "a chat draft's basis ignores the pin" "$RR" \
     '  return JSON.stringify([pin ?? null, kept.map(' \
     '  return JSON.stringify([null, kept.map('
@@ -10609,21 +10589,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    if (false) {'
   # The settle reads the document again: a trace taken when the candidate was
   # set is a trace of a moment that has passed by the time Create is offered.
-  mutate web "a chat draft settles on a trace taken before the settle" "$RR" \
-    '    await this.traceConversation(signal)
-    this.settleReview(notPassing)' \
-    '    this.settleReview(notPassing)'
-  mutate web "a chat draft settles at ready over an untraced citation" "$RR" \
-    '      return citationGap(this.state.citations, this.ports.mode)' \
-    '      return null'
   mutate web "a web research chat draft settles at ready citing nothing" "$RR" \
     "  if (citations.length === 0 && mode === 'web-research') {" \
     '  if (false) {'
   # A checkpoint keeps no citations; without the trace on reopening, a draft
   # that cites reads as one that cites nothing.
-  mutate web "a reopened chat draft is not traced again" "$RR" \
-    '    if (candidates.length) this.traceAtRest()' \
-    '    void 0'
   # The rule's own clauses, each held by the rule's unit test over one state.
   mutate web "Create is offered on a chat draft while its citations are traced" "$RR" \
     '  if (state.tracing) return false' \
@@ -10634,9 +10604,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "Create is offered on a web research chat draft citing nothing" "$RR" \
     "(mode === 'draft' || state.citations.length > 0) && state.citations.every" \
     'true && state.citations.every'
-  mutate web "the model is not told how a chat draft cites" "$RR" \
-    ' + CONVERSATION_CITATION_INSTRUCTIONS' \
-    " + ''"
   mutate web "a chat draft citing nothing is shown as 0 of 0" "$RDP" \
     '            : mode === '"'"'draft'"'"' && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")' \
     '            : false ? msg("This pack cites no source. It rests on what you told the assistant.")'
@@ -10662,32 +10629,15 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "a chat case rests on a page the draft did not trace" "$RR" \
     '|| grounds.citations.some(citation => citation.traced && citation.location === source))' \
     '|| grounds.citations.some(citation => citation.location === source))'
-  mutate web "a chat case's reviewer is shown the draft's rules" "$RR" \
-    '      CONVERSATION_CASES_INSTRUCTIONS,
-      `OUTCOMES' \
-    '      CONVERSATION_CASES_INSTRUCTIONS, JSON.stringify(document),
-      `OUTCOMES'
   mutate web "a chat case's reviewer is shown the assistant's turns" "$RR" \
     "  return turns.filter(turn => turn.role === 'user' && turn.kind !== 'note')" \
     "  return turns.filter(turn => turn.kind !== 'note')"
-  mutate web "a chat case disagreement is repaired without the person" "$RR" \
-    '      repair = false' \
-    '      void repair'
   mutate web "a chat draft is ready without a chat case" "$RR" \
     '    !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state) &&' \
     '    (conversationMode(mode) || !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state)) &&'
-  mutate web "a recheck writes a chat case with the model" "$RR" \
-    '      await this.casesAndCheck(signal, false, false)' \
-    '      await this.casesAndCheck(signal, false)'
   mutate web 'a saved chat case is grounded in a message sent after it' web/src/research/run.ts \
     '  const values = new Map(state.inheritedStatements)' \
     '  const values = statementsOf(state.turns)'
-  mutate web "a saved chat case suite is kept smaller" "$RR" \
-    '      this.set({ cases: [], expectationIssues: [], heldProposal: null, restored: false,' \
-    '      this.set({ cases: admitted, expectationIssues: [], heldProposal: null, restored: false,'
-  mutate web "the correction reviewer is not shown a chat case's message" "$RR" \
-    "    if (statement !== undefined) return" \
-    "    if (false) return"
   mutate web "the record leaves out the message a chat case rests on" "$RR" \
     '    ...(statements.length ? { statements } : {}),' \
     '    ...{},'
@@ -10714,19 +10664,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # failed" — which is a true statement about that edit and a false impression
   # of the safeguard. So this row removes the signal AND the recording, which
   # is the state the finding described: nothing anywhere can close a hung setup.
-  mutate web 'a hung setup can be closed by nothing' web/src/assistant/useAssistantRun.ts \
-    '          const opened = purpose === '"'"'brief'"'"' ? null : openAssistantConnection({
-            allowed: (engine === '"'"'codex'"'"' ? agent?.tools : endpoint?.tools) ?? [],
-            onEvent: (event) => push(run, event),
-            sessionId,
-            signal: run.controller.signal
-          })
-          run.connection = opened' \
-    '          const opened = purpose === '"'"'brief'"'"' ? null : openAssistantConnection({
-            allowed: (engine === '"'"'codex'"'"' ? agent?.tools : endpoint?.tools) ?? [],
-            onEvent: (event) => push(run, event),
-            sessionId
-          })'
   # An identical policy run twice: the run id is what makes the second press a
   # second submission rather than the same state value.
   # An identical policy run twice: the run id is what makes the second press a
@@ -10767,21 +10704,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # below breaks one of them.
 
 
-  # **Both prompts, or neither.** Starting on the author prompt alone handed the
-  # engine an empty `testPrompt`, and the critic then ran on this desk's one
-  # sentence with none of the runtime's instructions.
-  # **A read that failed is a settled read.** `data` alone stays undefined for
-  # ever on the error state, so a `prompts/get` the runtime refused deadlocked
-  # the whole session: the authoring prompt had arrived, no engine started, and
-  # the tab said nothing about why.
-  mutate web "a refused testing prompt is waited for for ever" "$AP" \
-    '    testPrompt.data === undefined &&
-    testPrompt.error === null' \
-    '    testPrompt.data === undefined'
-
-  mutate web "the run starts before the runtime's testing prompt arrives" "$AP" \
-    '    if (waitingForTest) return' \
-    '    void waitingForTest'
+  # Testing guidance is now a canonical host admission barrier. Its refusal
+  # and pending-response mutations live with the Go authoring rows below.
 
   # The critic runs under the **run's** gate, not on the session capability
   # directly: a viewer who presses Stop during the pass must end it where they
@@ -10862,7 +10786,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # to the pane on the run's event list; unfrozen, anything holding the event
   # can reach into it between the memoised diff and the accept, and the writer
   # then writes a document nobody was shown.
-  mutate web "the ingested proposal is left mutable" "$AR" \
+  mutate web "the ingested proposal is left mutable" web/src/assistant/proposalValue.ts \
     '  return Object.freeze(value)' \
     '  return value'
   # **One canonicalization, and the guard that keeps it one.** A second round
@@ -10896,18 +10820,15 @@ function usePacks() { useExampleListing(); return readPacks() }'
     agreesWithParse(current.text, current.index).length === 0' \
     '  const readable = false'
 
-  # One accept is one undo entry. A second write with its own key is a second
-  # entry, so the first Undo leaves the author where the accept put them.
-  mutate web "Accept pushes a second undo entry" "$AP" \
-    '      { coalesceKey: `assistant-accept:${(accepts.current += 1)}` }
-    )
-    setAccepted(landed.text)' \
-    '      { coalesceKey: `assistant-accept:${(accepts.current += 1)}` }
-    )
-    write((current) => applyProposal(current, proposed), {
-      coalesceKey: `assistant-accept:${(accepts.current += 1)}`
-    })
-    setAccepted(landed.text)'
+  # One accept is one undo entry. Application now passes through the shared
+  # conditional buffer writer; committing twice there leaves the proposal in
+  # place after the first Undo.
+  mutate web "Accept pushes a second undo entry" "$BUF" \
+    '    commit(next)
+    return { applied: true, text: next }' \
+    '    commit(next)
+    commit(next)
+    return { applied: true, text: next }'
 
   # **A proposal is an edit of the draft it was given.** The run captures its
   # baseline where it starts; the comparison against the bytes on the page now
@@ -10920,11 +10841,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the diff follows the live buffer instead of the baseline" "$AP" \
     '    () => (proposed === undefined ? undefined : diffProposal(baseline?.bytes, proposed)),' \
     '    () => (proposed === undefined ? undefined : diffProposal(draft, proposed)),'
-  # The save latch is claimed synchronously and reported to React a render
-  # later, so the click has to ask again.
-  mutate web "Accept trusts the rendered busy state at the click" "$AP" \
-    "    if (busyNow.current() !== '' || !onBaseline) return" \
-    '    void onBaseline'
+  # The editor owns the live save/reload latches. Keeping only the rendered
+  # mutation state permits an application in the same turn a latch is claimed.
+  mutate web "Accept trusts the rendered busy state at the click" "web/src/routes/PackView.tsx" \
+    '      saving.current !== undefined || live.savePending || editor.isReloading()) return { applied: false }' \
+    '      live.savePending) return { applied: false }'
   # "Accepted" is a comparison. Stored, it outlived the bytes it was about:
   # Undo put the draft back and the pane still said the proposal was in it.
   mutate web "an accepted proposal stays accepted after Undo" "$AP" \
@@ -10950,20 +10871,17 @@ function usePacks() { useExampleListing(); return readPacks() }'
     return { enabled: false, why: '"'"''"'"' }
   }'
 
-  # The draft in the first message is what makes the proposal an edit of this
-  # document rather than a document about nothing.
+  # The first canonical capture carries exact current draft bytes as request
+  # data; the server independently reads any authoritative saved basis.
   mutate web "the draft is left out of the first message" "$AP" \
-    '    startRun(withDraft(prompt.data.text, draftNow.current))' \
-    '    startRun(prompt.data.text)'
+    '      ...(draftNow.current===undefined?{}:{draft:draftNow.current}),' \
+    '      ...{},'
 
   # **One canonicalization, where the event arrives.** An engine may put a live
   # object on `document`, and three readings of one getter are three documents:
   # the diff describes A, the pane displays B, the writer writes C. The row
   # takes the canonicalization out of the hook, so the pane's own readers each
   # take their own.
-  mutate web "the proposal reaches the pane uncanonicalized" "$AR" \
-    "    const held = event.type === 'proposal' ? canonicalProposal(event) : event" \
-    '    const held = event'
 
   # `fix_pack` works from the validator's report, and what it is given is the
   # runtime's own bytes: a re-serialization of a parse of them is this desk's
@@ -11006,7 +10924,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # this row makes the canonical event carry the live one instead — so the
   # document the dialog displayed and the document Create writes are two
   # readings of one getter.
-  mutate web "the proposal is written from event.document, not the snapshot" "$AR" \
+  mutate web "the proposal is written from event.document, not the snapshot" web/src/assistant/proposalValue.ts \
     "    type: 'proposal',
     document," \
     "    type: 'proposal',
@@ -11055,13 +10973,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     ' : false
         ? msg(UNREAD_CONFIGURATION)'
 
-  # Closing the dialog ends the session, and it has to end it **through the run
-  # hook**: an unmount alone aborts the iterator and closes the socket without
-  # ever writing the run's terminal event, so the next session cannot start and
-  # the contract's one `end` is nowhere.
+  # Explicit dismissal asks the hook to cancel exact captured work. Route
+  # detach/completed creation passes false and must retain the host run.
   mutate web "the run is left open when the dialog closes" "$X" \
-    "    if (!next && presentation !== 'page') describe.discard()" \
-    '    void next'
+    "    if (!next && presentation !== 'page') describe.discard(!completed)" \
+    "    if (!next && presentation !== 'page') describe.discard(false)"
 
   # **The desk owns four members, and `specVersion` is not one of them.** It was
   # for one round: the version a model wrote was replaced from the schema, so
@@ -11095,10 +11011,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # contract, so a throw while an engine unwinds cannot go on the stream — and
   # dropping it made `proposal -> end -> throw` read as a clean run to
   # everything downstream, which offered the proposal for writing.
-  mutate web 'a failure after the run'"'"'s terminal event is dropped' web/src/assistant/useAssistantRun.ts \
-    '            setFailure(said)
-            if (!run.ended) push(run, event)' \
-    '            if (!run.ended) push(run, event)'
 
   # **Every diagnostic, or the author cannot see what is wrong.** The refusal
   # prevents the page that would have shown the rest from existing, so this is
@@ -11183,11 +11095,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # observation instead of the retirement, and the hook now counts its terminal
   # events in an object whose identity is stable for its lifetime, so a test
   # takes the reference while the hook is alive and reads it after it is not.
-  mutate web "an unmount releases the run without finishing it" "$AR" \
-    '      const run = active.current
-      if (run !== null) finish(run)
-      release(run)' \
-    '      release(active.current)'
 
   mutate web "Fix re-serializes the runtime's diagnostics" "$CK" \
     '  const span = spanAt(indexDocument(raw), '"'"'/diagnostics'"'"')
@@ -11680,9 +11587,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # that stops a later draft change from asking a fresh reviewer for a new,
   # smaller suite — which is the reduced passing suite this whole flow exists to
   # refuse. Nothing else notices: the issue simply leaves the state.
-  mutate web "case establishment runs again over a blocked expectation" "$RR" \
-    '    if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0) {' \
-    '    if (this.state.cases.length === 0) {'
 
   # **The exact expectation is the pair.** §8.3 keeps the configured target
   # outside the disposition and this runtime reports one exactly when a handoff
@@ -11698,9 +11602,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # instead leaves the saved matrix row and the checked assertion two different
   # texts for the same set, and a future tightening of the decoder would refuse
   # the saved one.
-  mutate web "the reviewer's spelling is stored instead of the canonical assertion" "$RR" \
-    '        cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))' \
-    '        cases.push(row)'
 
   # ---- The correction flow's backup guards ---------------------------------
   #
@@ -11714,46 +11615,26 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # candidate clears every pending proposal, so in practice only the token
   # decides; with the digest comparison gone, a proposal left standing beside a
   # later draft applies to bytes nobody read it against.
-  mutate web "an approval applies to a draft its proposal never saw" "$RR" \
-    'proposal.candidateDigest !== this.latest()?.digest' \
-    'false'
 
   # **Nothing is applied on a closed run.** The window is microtasks wide -- a
   # validation that answers after Stop -- and without this the correction is
   # written into a run already stopped, and reported as stopped.
-  mutate web "a correction is applied after the run was stopped" "$RR" \
-    '      this.check(signal)
-      const replacement = deepFreeze' \
-    '      const replacement = deepFreeze'
 
   # **An established case is never rewritten.** Admitted ids are unique and an
   # invalid expectation is kept as an issue rather than a case, so no run
   # produces the collision; without the refusal the approval appends a second
   # row under the same id and the suite carries two answers for one case.
-  mutate web "an approval rewrites an established case" "$RR" \
-    '      if (this.state.cases.some(row => row.id === id)) throw new Error(sourceMessage("A case with this id is already established; the correction was not applied."))' \
-    '      void id'
 
   # **A check taken before the corrected case joined the suite is not a check of
   # that suite.** A blocked run has no check to drop today, so this only matters
   # where one survives -- and the panels render the latest check ungated by
   # status, so a survivor would show every case agreeing over a suite whose
   # corrected case was never rehearsed.
-  mutate web "a stale check survives an approved correction" "$RR" \
-    '        candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),' \
-    '        candidates: this.state.candidates,'
 
   # **No path rests at ready with an expectation open.** `casesAndCheck` makes
   # the same refusal before it checks anything, which is why nothing reaches the
   # copy in `settleReview`; where a passing check and an open issue do coexist,
   # it is the only thing between them and `ready`.
-  mutate web 'a run settles at ready with an expectation still open' web/src/research/run.ts \
-    '    if (this.unresolvedExpectations()) {
-      this.setReviewResult({ status: '"'"'needs-input'"'"', detail: this.unresolvedExpectations()!, readiness: '"'"''"'"' }, owner)
-      return
-    }
-    const passing = completeCurrentCheck(this.state)' \
-    '    const passing = completeCurrentCheck(this.state)'
 
   # **A limit is not a Core violation.** The runtime reports one when it did not
   # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
@@ -13252,19 +13133,6 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "unreachable expectation: summary drops the runtime's reason" "$URE" \
     'so the expectation must change, not the draft: ${finding.message}`' \
     'so the expectation must change, not the draft.`'
-  mutate web "unreachable expectation: established as a case" "$URR" \
-    "        if (finding.status === 'invalid') return void issues.push({ id: row.id, original: row, message: findingSummary(finding) })" \
-    "        if (finding.status === 'invalid' && finding.unreachable) return void cases.push(deepFreeze(structuredClone(row)))
-        if (finding.status === 'invalid') return void issues.push({ id: row.id, original: row, message: findingSummary(finding) })"
-  mutate web "unreachable expectation: a saved case is restored as a case" "$URR" \
-    "      const problem = finding.status === 'invalid' ? findingSummary(finding) : targetContradiction(finding.canonical, row.expectedHandoffTarget)" \
-    "      const problem = finding.status === 'invalid' ? (finding.unreachable ? null : findingSummary(finding)) : targetContradiction(finding.canonical, row.expectedHandoffTarget)"
-  mutate web "unreachable expectation: a proposed correction refused in bare words" "$URR" \
-    "        if (finding!.status === 'invalid') proposalError = findingSummary(finding!)" \
-    "        if (finding!.status === 'invalid') proposalError = finding!.message"
-  mutate web "unreachable expectation: an approved correction is applied" "$URR" \
-    "      if (finding!.status !== 'valid') throw new Error(" \
-    "      if (finding!.status !== 'valid' && !finding!.unreachable) throw new Error("
 
   # **The Tests workspace words an invalid expectation by its class (#208).**
   # Saving a case whose expectation the runtime holds invalid showed the
@@ -13531,8 +13399,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (runner.data === null || runner.isPending) return null' \
     '  if (runner.isPending) return null'
   mutate web "jobs record page: the sentence claims keys it did not pass" "$JRP" \
-    'const STATEMENT = "Desk ran this over its own copy of the runner'"'"'s chain of runs, with the checkpoints it keeps.' \
-    'const STATEMENT = "Desk ran this over its own copy of the runner'"'"'s chain of runs, with the keys and checkpoints it keeps.'
+    'const WITH_CHECKPOINTS = "Desk ran the runtime over its own copy of the runner'"'"'s chain of runs. It passed checkpoint files ({{number}} in total) and no public keys.' \
+    'const WITH_CHECKPOINTS = "Desk ran the runtime over its own copy of the runner'"'"'s chain of runs. It passed checkpoint files ({{number}} in total) and public keys.'
+  mutate web "jobs record page: no checkpoints are claimed passed" "$JRP" \
+    ': msg(NO_CHECKPOINTS)}</p>' \
+    ': msg(WITH_CHECKPOINTS, { number: 1 })}</p>'
   mutate web "jobs record page: where each run's signature is checked is not said" "$JRP" \
     '    <p className={styles.quiet}>{msg(SIGNED_STATEMENT)}</p>
 ' \
@@ -13891,7 +13762,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # probe beside the listing, the key routes, the relay and the run socket —
   # and a name the desk refuses is not offered for saving.
   mutate web "ai connections: Test connection's probe names no connection" web/src/assistant/endpointCheck.ts \
-    '    void probeAssistantEndpoint(undefined, scope?.connection.id, scope?.connection.revision).then(' \
+    '    void probeAssistantEndpoint(cancellation.current.signal, scope?.connection.id, scope?.connection.revision).then(' \
     '    void probeAssistantEndpoint().then('
   mutate web "ai connections: the page's requests name no connection" web/src/assistant/aiConnections.tsx \
     "export const aiHeaders=(id?:string,revision?:string):Record<string,string>=>id?{'X-Assistant-Connection':id,...(revision?{'X-Assistant-Revision':revision}:{})}:{}" \
@@ -13955,15 +13826,12 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "search and files: the attribution policy does not forbid scripts" "$SAF" \
     "const policy=\"default-src 'none'; script-src 'none'; style-src" \
     "const policy=\"default-src 'none'; style-src"
-  mutate web "search and files: a search row takes its provider from the model's call" "$SRN" \
-    '? {...incoming, presentation: hostTools.find(tool=>tool.name===incoming.name)?.presentation} : incoming' \
-    '? {...incoming} : incoming'
   mutate web "search and files: settings that could not be read let the first turn run" "$SCP" \
-    "    : searchPreference.isError ? sourceMessage('Search settings could not be read. Reload before sending.')" \
-    "    : false ? sourceMessage('Search settings could not be read. Reload before sending.')"
+    "search.isError?sourceMessage('Search settings could not be read. Reload before sending.')" \
+    "false?sourceMessage('Search settings could not be read. Reload before sending.')"
   mutate web "search and files: the first turn runs before the search connections are known" "$SCP" \
-    "    : researchEnabled && (catalog.loading || searchConnections.loading) ? sourceMessage('Checking search connections…')" \
-    "    : false ? sourceMessage('Checking search connections…')"
+    "researchEnabled&&(catalog.loading||connections.loading)?sourceMessage('Checking search connections…')" \
+    "false?sourceMessage('Checking search connections…')"
   mutate web "search and files: a failed search's reply carries the gateway's words" "$STL" \
     '    return {...reply(`${failure.message} Do not claim' \
     '    return {...reply(`${String((cause as Error)?.message)} ${failure.message} Do not claim'
@@ -14371,9 +14239,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web 'graph row 3: host tools submit different graph bytes' web/src/graphs/author.ts \
     'JSON.stringify({ content: args.content })' \
     'JSON.stringify({ content: args.content + '"'"' '"'"' })'
-  mutate web 'graph row 3: the graph session runs the pack critic' web/src/assistant/useAssistantRun.ts \
-    '...(purpose === '"'"'graph'"'"' ? { adversarialReview: false } : {}),' \
-    '...(purpose === '"'"'graph'"'"' ? { adversarialReview: true } : {}),'
+  # Retired by ADR-0010: Agent owns engine-independent and graph forced-off decisions.
+  # mutate web 'graph row 3: the graph session runs the pack critic' web/src/assistant/useAssistantRun.ts \
+  # '...(purpose === '"'"'graph'"'"' ? { adversarialReview: false } : {}),' \
+  # '...(purpose === '"'"'graph'"'"' ? { adversarialReview: true } : {}),'
 
   # ADR-0011, row 4.
   mutate web 'graph row 4: command not checked on page' web/src/graphs/GraphRehearsal.tsx \
@@ -14439,43 +14308,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
 fi
 
 # The Desk's own safeguards around @judgment-pack/harness v0.1.0 (#515; review of #516):
-# the recall query, the completion reader, the read windows, attachments in the
+# the completion reader, the read windows, attachments in the
 # ledger, the current state, propose_pack's offer, framing and the host wiring.
 if [ "$which" = all ] || [ "$which" = go ]; then
-  mutate go 'harness swap: recall reads the execution state part' internal/desk/ai_context.go \
-    '					continue
-				}
-				if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {' \
-    '					continue
-				}
-				if t, ok := p["text"].(string); ok {'
-  mutate go 'harness swap: recall reads the execution state in a content list' internal/desk/ai_context.go \
-    '			if p, ok := part.(map[string]any); ok && p["type"] == "text" {
-				if t, ok := p["text"].(string); ok && !strings.HasPrefix(t, executionStateHeader) {' \
-    '			if p, ok := part.(map[string]any); ok && p["type"] == "text" {
-				if t, ok := p["text"].(string); ok {'
-  mutate go 'harness swap: recall reads the execution state message' internal/desk/ai_context.go \
-    'return text, !strings.HasPrefix(text, executionStateHeader)' \
-    'return text, true'
-  mutate go 'harness swap: recall skips no thought part' internal/desk/ai_context.go \
-    '				if thought, _ := p["thought"].(bool); thought {' \
-    '				if false {'
-  mutate go 'harness swap: recall reads a later user turn' internal/desk/ai_context.go \
-    '				return memoryQueryTail(text)
-			}
-			return ""' \
-    '				return memoryQueryTail(text)
-			}
-			continue'
-  mutate go 'harness swap: recall reads a part that is not text' internal/desk/ai_context.go \
-    '			if p, ok := part.(map[string]any); ok && p["type"] == "text" {' \
-    '			if p, ok := part.(map[string]any); ok {'
-  mutate go 'harness swap: codex recall reads the execution state' internal/desk/ai_context.go \
-    '	if strings.HasPrefix(request.Prompt, executionStateHeader) {' \
-    '	if false {'
-  mutate go 'harness swap: codex recall reads past the state header' internal/desk/ai_context.go \
-    '		text = text[:at]' \
-    '		_ = at'
   mutate go 'queue: a request passes those waiting' internal/desk/relay_queue.go \
     'ok && s.relayLine.empty() {' \
     'ok {'
@@ -14526,35 +14361,6 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'harness swap: a message'"'"'s attachments unbounded on send' web/src/chat/useChatAttachments.ts \
     '      if (ledgerBytes(attached.map(attachmentDocument)) > ATTACHMENT_LEDGER_BYTES) throw' \
     '      if (false) throw'
-  mutate web 'harness swap: attachments not in the run'"'"'s ledger' web/src/research/run.ts \
-    'value:{turns:this.state.turns,questions:this.state.questions??[]}},...attached]},' \
-    'value:{turns:this.state.turns,questions:this.state.questions??[]}}]},'
-  mutate web 'harness swap: the case writer gets no attachments' web/src/research/run.ts \
-    '      return supplied.length ? { id, text, attachments: supplied.map(attachmentForReview) } : { id, text }' \
-    '      return { id, text }'
-  mutate web 'harness swap: an unverifiable attachment fails the turn' web/src/research/run.ts \
-    '          if (signal.aborted) throw cause
-          files.push({ file, pages: [], unavailable:' \
-    '          throw cause
-          files.push({ file, pages: [], unavailable:'
-  mutate web 'harness swap: the draft snapshot is not the current state' web/src/research/run.ts \
-    '    const changing=reviewer?undefined:currentState?.()' \
-    '    const changing=undefined as string|undefined'
-  mutate web 'harness swap: the draft snapshot back in the prompt' web/src/research/run.ts \
-    '      CONVERSATION_INSTRUCTIONS,
-      this.transcript(true),' \
-    '      CONVERSATION_INSTRUCTIONS,
-      this.conversationState() ?? '"'"''"'"',
-      this.transcript(true),'
-  mutate web 'harness swap: chat offers no propose_pack' web/src/research/useResearchRun.ts \
-    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
-    'hostTools: request.hostTools,'
-  mutate web 'harness swap: propose_pack offered in a Policy chat' web/src/research/useResearchRun.ts \
-    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
-    'hostTools: request.reviewer ? request.hostTools : withProposePack(request.hostTools),'
-  mutate web 'harness swap: propose_pack offered to the reviewer' web/src/research/useResearchRun.ts \
-    'hostTools: request.reviewer || executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),' \
-    'hostTools: executionContext?.artifactProposals === false ? request.hostTools : withProposePack(request.hostTools),'
   mutate web 'harness swap: read_source is not framed as retrieved data' web/src/research/tools.ts \
     '    name: '"'"'read_source'"'"',
     effect: '"'"'read'"'"',
@@ -14565,12 +14371,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  endpointCapabilities: (endpoint) => capabilities.endpointCapabilities(endpoint),
 ' \
     ''
-  mutate web 'harness swap: the Go state header drifts from the package'"'"'s' internal/desk/ai_context.go \
-    'const executionStateHeader = "EXECUTION STATE (from the host,' \
-    'const executionStateHeader = "EXECUTION STATE (from the desk,'
-  mutate web 'harness swap: the pack pane offers no propose_pack' web/src/assistant/AssistantPane.tsx \
-    '    hostTools: PANE_HOST_TOOLS,' \
-    '    hostTools: [],'
+  # The canonical authoring host now owns the pack proposal offer; its Go
+  # mutation lives with the migrated standalone safeguards below.
   mutate web 'harness swap: renderImageToText left unwired' web/src/assistant/harnessHost.ts \
     '  renderImageToText: () => capabilities.renderImageToText(),
 ' \
@@ -14579,15 +14381,18 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  modelsFor: (run) => connectionModels.modelsFor(run)
 ' \
     ''
-  mutate web 'critic: the pack pane does not ask for the critic' web/src/assistant/useAssistantRun.ts \
-    "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
-    'adversarialReview: false,'
-  mutate web 'critic: the Codex engine is asked for the critic' web/src/assistant/useAssistantRun.ts \
-    "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
-    "adversarialReview: purpose === undefined && thinking !== 'off',"
-  mutate web 'critic: the critic is asked for with thinking off' web/src/assistant/useAssistantRun.ts \
-    "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
-    "adversarialReview: purpose === undefined && engine === 'vercel',"
+  # Retired by ADR-0010: Agent owns engine-independent and graph forced-off decisions.
+  # mutate web 'critic: the pack pane does not ask for the critic' web/src/assistant/useAssistantRun.ts \
+  # "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
+  # 'adversarialReview: false,'
+  # Retired by ADR-0010: Agent owns engine-independent and graph forced-off decisions.
+  # mutate web 'critic: the Codex engine is asked for the critic' web/src/assistant/useAssistantRun.ts \
+  # "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
+  # "adversarialReview: purpose === undefined && thinking !== 'off',"
+  # Retired by ADR-0010: Agent owns engine-independent and graph forced-off decisions.
+  # mutate web 'critic: the critic is asked for with thinking off' web/src/assistant/useAssistantRun.ts \
+  # "adversarialReview: purpose === undefined && engine === 'vercel' && thinking !== 'off'," \
+  # "adversarialReview: purpose === undefined && engine === 'vercel',"
   mutate web 'probe: the probe overrides what the owner set' web/src/assistant/endpointCapabilities.ts \
     '  return { ...found, ...(record.override ?? {}) }' \
     '  return { ...(record.override ?? {}), ...found }'
@@ -14596,6 +14401,234 @@ fi
 
 # Desk-owned v0.3.0 admission and credential safeguards (#529, #533).
 if [ "$which" = all ] || [ "$which" = go ]; then
+  # Actual private subscription binding safeguards.
+  mutate go 'assistant saved context: physical dispatch omits document recheck' internal/desk/assistant_execution_model.go \
+    'if err := recheck(ctx); err != nil {' \
+    'if err := error(nil); err != nil && recheck != nil {'
+  mutate go 'assistant saved context: different selections share context identity' internal/desk/assistant_chat_input.go \
+    'document.ID += "-" + digestOf([]byte(assistantChatReferenceKey(held.reference)))[:16]' \
+    'document.ID += ""'
+  mutate go 'assistant chat input: explicit invalid interaction becomes work' internal/desk/assistant_chat_input.go \
+    'if len(raw) == 0 {' \
+    'if len(raw) == 0 || string(raw) == "null" || string(raw) == "\"\"" {'
+  mutate go 'assistant chat input: latest request repeated in transcript' internal/desk/assistant_chat_input.go \
+    'if i == latest || t.Get("kind").Str() == "note" {' \
+    'if t.Get("kind").Str() == "note" {'
+  mutate go 'assistant chat input: obsolete snapshot replaces authored history' internal/desk/assistant_chat_input.go \
+    'text = t.Get("statement").Str()' \
+    'text = t.Get("input").Str()'
+  mutate go 'assistant chat input: explicit empty becomes fallback' internal/desk/assistant_chat_input.go \
+    'if !v.Has(key) {' \
+    'if !v.Has(key) || v.Get(key).IsString() && v.Get(key).Str() == "" {'
+  mutate go 'assistant chat input: unverified document reference admitted' internal/desk/assistant_chat_input.go \
+    'if file.Has("document") {' \
+    'if false {'
+  mutate go 'assistant chat input: request-bearing Runtime arguments admitted' internal/desk/assistant_execution.go \
+    'if len(prompt.Arguments) != 0 {' \
+    'if false {'
+  mutate go 'assistant chat input: saved chat reasoning ignored' internal/desk/assistant_execution_agent.go \
+    'if chat != nil && chat.Reasoning != nil && chat.Reasoning.Get("model").Str() == e.record.Binding.Model {' \
+    'if false {'
+  mutate go 'assistant chat input: lossy typed number admitted' internal/desk/assistant_chat_input.go \
+    'if !a || !b || before.Cmp(after) != 0 {' \
+    'if !a || !b || before.Cmp(after) < -2 {'
+  mutate go 'assistant Codex: saved project effort uses shared configuration' internal/desk/assistant_execution_agent.go \
+    'effort = preferences.Effort' \
+    'effort = config.Agent.Effort'
+  mutate go 'assistant Codex: arbitrary cancellation keeps root dispatch' internal/desk/assistant_execution_agent.go \
+    'if !knownStop {' \
+    'if false {'
+  mutate go 'assistant Codex: canonical stop acknowledgement omitted' internal/desk/assistant_execution_agent.go \
+    's.retained = s.call == id && s.kind != "" && stopped' \
+    's.retained = false'
+  mutate go 'assistant Codex: generation skips acknowledged dispatch' internal/desk/assistant_execution_agent.go \
+    'return dispatch.dispatch(ctx)' \
+    'return error(nil)'
+  mutate go 'assistant Codex: tool callback precedes acknowledged dispatch' internal/desk/assistant_execution_agent.go \
+    'if err = e.Dispatch(callCtx, op.ID); err != nil {' \
+    'if err = error(nil); err != nil {'
+  mutate go 'assistant Codex: busy becomes admitted outcome' internal/desk/assistant_execution_agent.go \
+    'return adapter.ErrBusy' \
+    'return codexbridge.ErrRun'
+  mutate go 'assistant Codex: tool receipt loses invocation pairing' internal/desk/assistant_execution_agent.go \
+    '}{dispatch.operation.ID, call})' \
+    '}{"", call})'
+  mutate go 'assistant Codex: child preference uses parent model' internal/desk/assistant_execution.go \
+    'named.Critic, named.Child = connection.Agent.CriticModel, connection.Agent.ChildModel' \
+    'named.Critic, named.Child = connection.Agent.CriticModel, ""'
+  mutate go 'assistant Codex: bridge skips host admission fence' internal/codexbridge/run.go \
+    'if request.AuthorizeAdmission != nil {' \
+    'if false {' ./internal/codexbridge
+  mutate go 'assistant Codex: bridge skips host generation fence' internal/codexbridge/run.go \
+    'if request.BeforeGeneration != nil {' \
+    'if false {' ./internal/codexbridge
+  # Actual private execution bindings; production activation remains separate.
+  mutate go 'assistant execution: reconstructed operation identities restart' internal/desk/assistant_run_store_writer.go \
+    'id := nextAssistantRunIdentity(run, kind)' \
+    'id := assistantExecutionID(kind, 1)'
+  mutate go 'assistant execution: reconstructed event identities restart' internal/desk/assistant_run_store_writer.go \
+    'changed, err := appendAssistantRunEvent(run, nextAssistantRunIdentity(run, "event"), event)' \
+    'changed, err := appendAssistantRunEvent(run, assistantExecutionID("event", 1), event)'
+  mutate go 'assistant execution: canceled unread close leaves root admission open' internal/desk/assistant_execution_model.go \
+    'if b.dispatch.admitted.Load() && !b.retained.Load() {' \
+    'if false {'
+  mutate go 'assistant execution: budget pause reaches semantic event sink' internal/desk/assistant_execution.go \
+    'if event.BudgetPaused != nil {' \
+    'if false {'
+  mutate go 'assistant execution: model skips durable outbound dispatch' internal/desk/assistant_execution_model.go \
+    'if err := t.bound.dispatch(r.Context()); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant execution: held session bearer omitted' internal/desk/assistant_execution_model.go \
+    'Bearer: bearerOf(e.request)' \
+    'Bearer: ""'
+  mutate go 'assistant execution: selected connection omitted' internal/desk/assistant_execution_model.go \
+    'r.Header.Set(aiConnectionHeader, e.record.Binding.ConnectionID)' \
+    'r.Header.Del(aiConnectionHeader)'
+  mutate go 'assistant execution: selected revision omitted' internal/desk/assistant_execution_model.go \
+    'r.Header.Set(aiRevisionHeader, e.record.Binding.ConnectionRevision)' \
+    'r.Header.Del(aiRevisionHeader)'
+  mutate go 'assistant execution: actual provider body uncertainty unobserved' internal/desk/assistant_execution_model.go \
+    'response.Body = &assistantModelResponse{ReadCloser: response.Body, bound: t.bound}' \
+    'response.Body = response.Body'
+  mutate go 'assistant execution: Gemini admission reads query as method' internal/desk/assistant_execution_model.go \
+    'profileAPIModelAllowed(family, path, request.Body' \
+    'profileAPIModelAllowed(family, suffix+path[len(path):], request.Body'
+  mutate go 'assistant execution: Plan enters unrestricted loop' internal/desk/assistant_execution.go \
+    'phase = gate.PlanPhase(offer)' \
+    'phase = gate.LoopPhase(offer)'
+  mutate go 'assistant execution: child profile widens to parent offer' internal/desk/assistant_execution.go \
+    'childPhase := gate.ChildPhase(profile, offer, phase)' \
+    'childPhase := phase'
+  mutate go 'assistant execution: Runtime skips project admission fence' internal/desk/assistant_execution_runtime.go \
+    'if !s.beginProjectRequest(r.conn, outbound) {' \
+    'if false {'
+  mutate go 'assistant execution: independent Runtime IDs alias' internal/desk/assistant_execution_runtime.go \
+    'hostID, _ := json.Marshal(id)' \
+    'hostID, _ := json.Marshal("aliased-id")'
+  mutate go 'assistant execution: canonical prompt receives legacy injection' internal/desk/modelrelay.go \
+    'if !listing && !canonical {' \
+    'if !listing {'
+  # Durable host ledger guards: these rows exercise real restore/work-lock paths.
+  mutate go 'assistant runs: current event cursor suppresses replay suffix' internal/desk/assistant_run_http.go \
+    'if known {' \
+    'if known && revision != run.Revision {'
+  mutate go 'assistant runs: current full cursor suppresses first snapshot' internal/desk/assistant_run_http.go \
+    'if first || !known || revision != run.Revision || count != len(run.Events) {' \
+    'if first && revision != run.Revision || !known || revision != run.Revision || count != len(run.Events) {'
+  mutate go 'assistant runs: heartbeat skips deadline renewal' internal/desk/assistant_run_http.go \
+    'if err := controller.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {' \
+    'if err := error(nil); err != nil && !errors.Is(err, http.ErrNotSupported) {'
+  mutate go 'assistant runs: abandonment ignores active execution' internal/desk/assistant_run_service.go \
+    'record.Revision != action.Revision || h.active[record.ID] != nil' \
+    'record.Revision != action.Revision'
+  mutate go 'assistant runs: replacement session inherits approval' internal/desk/assistant_run_service.go \
+    'if err = h.server.authorizeAssistantRun(r, record); err != nil {' \
+    'if err = h.server.authorizeAssistantRun(r, record); false {'
+  mutate go 'assistant runs: approval note exceeds canonical UTF-16 bound' internal/desk/assistant_run_service.go \
+    'runcontext.U16Length(*action.Note) > 2000' \
+    'runcontext.U16Length(*action.Note) > 4000'
+  mutate go 'assistant runs: restore retains live authority' internal/desk/assistant_run_store_storage.go \
+    'if !interruptAssistantRuns(&ledger, true)' \
+    'if !interruptAssistantRuns(&ledger, false)'
+  mutate go 'assistant runs: archive trusts its content namespace' internal/desk/assistant_run_store_storage.go \
+    'project := strings.TrimSuffix(strings.TrimPrefix(name, "assistant-runs-"), ".json")' \
+    'project := ledger.Project'
+  mutate go 'assistant runs: executor does not block storage transfer' internal/desk/assistant_run_store.go \
+    's.server.openPrivateDataFileLock(ctx, ".data-work.lock", false, false)' \
+    's.server.openPrivateDataFileLock(ctx, ".assistant-run-work.lock", false, false)'
+  # Terminal chat projection guards; paused runs remain in their private ledger.
+  mutate go 'assistant chat projection: current session is not checked' internal/desk/assistant_chat_projection_store.go \
+    '!assistantRunIdentityMatches(identity, run.Binding)' \
+    'false && !assistantRunIdentityMatches(identity, run.Binding)'
+  mutate go 'assistant chat projection: restored record may write' internal/desk/assistant_chat_projection_store.go \
+    'run.Historical ||' \
+    'false ||'
+  mutate go 'assistant chat projection: pending record may project' internal/desk/assistant_chat_projection_store.go \
+    '!assistantRunTerminal(run.State)' \
+    false
+  mutate go 'assistant chat projection: selected request digest is ignored' internal/desk/assistant_chat_projection_store.go \
+    'if !assistantChatRequest(selected, run.Binding.RequestID, run.Binding.RequestDigest) {' \
+    'if len(selected) < 0 {'
+  mutate go 'assistant chat projection: changed selected chat overwrites newer work' internal/desk/assistant_chat_projection_store.go \
+    'return digest == run.Binding.Owner.Revision || run.ChatProjection != nil && digest == run.ChatProjection.Digest' \
+    'return true || digest == run.Binding.Owner.Revision || run.ChatProjection != nil && digest == run.ChatProjection.Digest'
+  mutate go 'assistant chat projection: unwritten prepared output is acknowledged' internal/desk/assistant_chat_projection_store.go \
+    'if p == nil || digestOf(selected) != p.Digest || !bytes.Equal(selected, p.Output) {' \
+    'if p == nil || len(selected) < 0 {'
+  mutate go 'assistant chat projection: prepared semantic identity changes' internal/desk/assistant_chat_projection.go \
+    'p.EventDigest != assistantChatEventDigest(run)' \
+    false
+  mutate go 'assistant chat projection: unrelated raw chat bytes are compacted' internal/desk/assistant_chat_projection.go \
+    'out.Write(item)' \
+    'var compact bytes.Buffer; _ = json.Compact(&compact, item); out.Write(compact.Bytes())'
+  mutate go 'assistant chat projection: another principal is discoverable' internal/desk/assistant_chat_projection_http.go \
+    'run.Binding.Principal != identity.Principal || ' \
+    ''
+  mutate go 'assistant chat projection: changed request inherits retained response' internal/desk/assistant_chat_projection_http.go \
+    'if !assistantChatRequest(rows[index], request, run.Binding.RequestDigest) {' \
+    'if len(rows[index]) < 0 {'
+  mutate go 'assistant chat projection: saved proposal target is guessed' internal/desk/assistant_chat_projection.go \
+    'ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))' \
+    'ok && bytes.Equal(bytes.TrimSpace(raw), []byte("null"))'
+  mutate go 'assistant chat projection: tool results lose call identity' internal/desk/assistant_chat_projection.go \
+    'if !ok || completed[*result.CallID] || items[index]["name"] != result.Name {' \
+    'if false && (!ok || completed[*result.CallID] || items[index]["name"] != result.Name) {'
+  mutate go 'assistant chat projection: invalid typed failure becomes display data' internal/desk/assistant_chat_projection.go \
+    'held, ok := failure.Read(*event.Error.Failure)' \
+    'held, ok := failure.Read(failure.New("unknown", "desk", "unknown"))'
+  mutate go 'assistant chat projection: critic bounds are skipped' internal/desk/assistant_chat_projection.go \
+    'len(c.Cases) > 200 || len(c.Incomplete) > 64' \
+    false
+  mutate go 'assistant chat projection: recovery changes prepared checkpoint identity' internal/desk/assistant_chat_projection.go \
+    'if cp.Operations[i].Status == "running" {' \
+    'if false && cp.Operations[i].Status == "running" {'
+  mutate go 'assistant chat projection: display normalization mutates original checkpoint' internal/desk/assistant_chat_projection.go \
+    'cp.Operations = append([]contract.CheckpointOperation{}, run.Checkpoint.Operations...)' \
+    'cp.Operations = run.Checkpoint.Operations'
+  mutate go 'case-sensitive history: original case schema is lost' internal/desk/json_members.go \
+    '	Original workspaceJSONCase                   `json:"original"`' \
+    '	Original struct{}                   `json:"original"`'
+  mutate go 'case-sensitive history: replacement case schema is lost' internal/desk/json_members.go \
+    '	Replacement workspaceJSONCase `json:"replacement"`' \
+    '	Replacement struct{} `json:"replacement"`'
+  mutate go 'case-sensitive history: workspace data is folded again' internal/desk/policy_authoring_source.go \
+    'checkJSONMembers(raw, reflect.TypeOf(workspaceJSONHistory{}))' \
+    'checkJSONMembers(raw, reflect.TypeOf(struct{}{}))'
+  mutate go 'case-sensitive history: opaque data keys are folded' internal/desk/json_members.go \
+    'case opaque:
+					identity = key' \
+    'case opaque:
+					identity = strings.ToLower(key)'
+  mutate go 'case-sensitive history: decoded duplicates are admitted' internal/desk/json_members.go \
+    'if seen[identity] {' \
+    'if false && seen[identity] {'
+  mutate go 'case-sensitive history: reserved aliases are admitted' internal/desk/json_members.go \
+    'strings.EqualFold(key, name) {' \
+    'false && strings.EqualFold(key, name) {'
+  mutate go 'case-sensitive history: nesting bound is removed' internal/desk/json_members.go \
+    'if depth > 64 {' \
+    'if depth > 128 {'
+  mutate go 'case-sensitive history: unpaired Unicode is admitted' internal/desk/json_members.go \
+    '!utf8.Valid(raw) || jsonscalar.ValidateEscapes(raw) != nil' \
+    '!utf8.Valid(raw) || (false && jsonscalar.ValidateEscapes(raw) != nil)'
+  mutate go 'case-sensitive history: canonical keys are folded again' internal/desk/gateway_canonical.go \
+    'checkJSONMembers(raw, opaqueJSONMembers)' \
+    'checkJSONMembers(raw, nil)'
+  mutate go 'case-sensitive history: Dialect keys are folded again' internal/desk/dialect_publications.go \
+    'checkJSONMembers(a, opaqueJSONMembers) != nil || checkJSONMembers(b, opaqueJSONMembers) != nil' \
+    'checkJSONMembers(a, nil) != nil || checkJSONMembers(b, nil) != nil'
+  mutate go 'assistant chat projection: saved conversation refusal is hidden' internal/desk/assistant_chat_projection_store.go \
+    'if len(candidate) > maxConversationBytes || validateConversations(candidate) != nil {' \
+    'if len(candidate) > maxConversationBytes {'
+  mutate go 'assistant chat projection: unsupported Unicode reaches prepared output' internal/desk/assistant_chat_projection_store.go \
+    'if !assistantChatProjectionUnicode(output) {' \
+    'if false && !assistantChatProjectionUnicode(output) {'
+  mutate go 'assistant chat projection: checkpoint raw Unicode is not validated' internal/desk/assistant_chat_projection.go \
+    'jsonscalar.ValidateEscapes(output) != nil' \
+    false
+  mutate go 'assistant chat projection: serialized candidate Unicode is not validated' internal/desk/assistant_chat_projection.go \
+    'jsonscalar.ValidateEscapes([]byte(text)) != nil' \
+    false
   mutate go 'harness approval: a ready grant admits another id' internal/desk/assistant_approval.go \
     'grant.ID != req.ID || grant.Action != req.Action' \
     'false || grant.Action != req.Action'
@@ -14613,6 +14646,1148 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web 'harness credentials: session bearer omitted' web/src/assistant/harnessHost.ts \
     'sessionBearer: () => session.sessionBearer(),' \
     'sessionBearer: () => Promise.resolve(""),'
+  mutate web 'graph row 3: partial writes leave queries stale' web/src/graphs/GraphAuthor.tsx \
+    'await queries.invalidateQueries()' \
+    'if (false) await queries.invalidateQueries()'
+  mutate web 'graph row 3: a write without a lock describes a reviewed set' web/src/graphs/GraphAuthor.tsx \
+    'setSaved(accepted.hasLock)' \
+    'setSaved(true)'
+  mutate web 'graph row 3: edit provider disclosure omits current graph' web/src/graphs/GraphAuthor.tsx \
+    '<p>{graphId ? msg(' \
+    '<p>{false ? msg('
+fi
+
+# Private saved-document consumer; offline Gateway fixtures are required for
+# these rows (JPS_TEST_GATEWAY plus JPS_TEST_DOCUMENT_BUNDLE, or the shared
+# JPS_TEST_GATEWAY_BUNDLE used by the companion acceptance lane).
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant documents: signed receipt verdict is ignored' internal/desk/assistant_documents.go \
+    'if json.Unmarshal(verdict, &verified) != nil || !verified.OK {' \
+    'if false && (json.Unmarshal(verdict, &verified) != nil || !verified.OK) {'
+  mutate go 'assistant documents: argument commitment is ignored' internal/desk/assistant_documents.go \
+    'receipt.Commitment != "sha256:"+digestOf(append(append(salt, []byte("args:")...), canonicalArgs...))' \
+    '(false && receipt.Commitment != "sha256:"+digestOf(append(append(salt, []byte("args:")...), canonicalArgs...)))'
+  mutate go 'assistant documents: partial pages bypass consent' internal/desk/assistant_documents.go \
+    'if record.partial && !ref.AllowPartial {' \
+    'if false && record.partial && !ref.AllowPartial {'
+  mutate go 'assistant documents: unreadable selected pages enter context' internal/desk/assistant_documents.go \
+    'if !page.usable {' \
+    'if false && !page.usable {'
+  mutate go 'assistant documents: substituted saved request is accepted' internal/desk/assistant_documents.go \
+    'if !reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !referenced {' \
+    'if false && (!reflect.DeepEqual(current.Binding, owner.binding) || digestOf(current.Original) != owner.chatDigest || digestOf(current.Request) != owner.requestDigest || !referenced) {'
+  mutate go 'assistant documents: changed attachment or trust survives recheck' internal/desk/assistant_documents.go \
+    'if digestOf(raw) != held.attachmentDigest || !reflect.DeepEqual(pin, held.gateway) {' \
+    'if false && (digestOf(raw) != held.attachmentDigest || !reflect.DeepEqual(pin, held.gateway)) {'
+fi
+
+# Saved-chat critic input custody and the published critic binding.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant critic: Runtime testing guidance omitted' internal/desk/assistant_execution.go \
+    'run.TestPrompt, err = runtime.criticPrompt(ctx)' \
+    'run.TestPrompt, err = "", nil'
+  mutate go 'assistant critic: admitted declared cases omitted' internal/desk/assistant_execution.go \
+    'run.Cases = append(run.Cases, append(json.RawMessage(nil), row...))' \
+    'run.Cases = append(run.Cases, append(json.RawMessage(nil), row...))[:0]'
+  mutate go 'assistant critic: duplicate case id admitted' internal/desk/assistant_critic.go \
+    'len(parsed) != 1 || seen[parsed[0].ID] || len(out) >= 200' \
+    'len(parsed) != 1 || false || len(out) >= 200'
+  mutate go 'assistant critic: published case limit omitted' internal/desk/assistant_critic.go \
+    'len(out) >= 200' \
+    'len(out) >= 2000'
+  mutate go 'assistant critic: changed target bytes accepted' internal/desk/assistant_critic.go \
+    'return a.path == b.path && a.packDigest == b.packDigest && a.suiteDigest == b.suiteDigest' \
+    'return a.path == b.path && a.suiteDigest == b.suiteDigest'
+  mutate go 'assistant critic: changed saved suite accepted' internal/desk/assistant_critic.go \
+    'return a.path == b.path && a.packDigest == b.packDigest && a.suiteDigest == b.suiteDigest' \
+    'return a.path == b.path && a.packDigest == b.packDigest'
+  mutate go 'assistant critic: physical model custody recheck omitted' internal/desk/assistant_chat_input.go \
+    'if err := e.recheckAssistantCritic(ctx); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant critic: gated Runtime custody recheck omitted' internal/desk/assistant_execution_runtime.go \
+    'if err := r.execution.recheckAssistantCritic(ctx); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant critic: linked target identity ignored' internal/desk/assistant_critic.go \
+    '|| packID != current.Pack.ID' \
+    '|| false'
+  # Retired location (Agent v0.9 adoption): the canonical critic switch replaces
+  # turn.CriticRuns. Preserve this historical row; the same invariant is retargeted
+  # in the appended canonical critic row below, with its focused catcher.
+  # mutate go 'assistant critic: saved review and Plan controls ignored' internal/desk/assistant_critic.go \
+  # 'return phase != "plan" && turn.CriticRuns(chat.Review, runcontext.Defaults.AdversarialReview)' \
+  # 'return true'
+  mutate go 'assistant critic: durable checkpoint binding ignored' internal/desk/assistant_critic.go \
+    '|| stored.Fingerprint != held.fingerprint' \
+    '|| false'
+  mutate go 'assistant critic: missing resumed custody is recaptured' internal/desk/assistant_critic.go \
+    'if len(run.Operations) != 0 || len(run.Actions) != 0 || len(run.Checkpoint.Prompts) != 0 || run.Checkpoint.Used != 0 {' \
+    'if false {'
+  mutate go 'assistant critic: canonical snapshot loses private custody' internal/desk/assistant_run_store_writer.go \
+    'run.Checkpoint = cp' \
+    'run.Checkpoint = cp; run.CriticCustody = nil'
+fi
+
+# Private finite Graph host producers and durable proposal custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant graph: duplicate registry name accepted' internal/desk/assistant_host_tools.go \
+    't.Name == "" || seen[t.Name] ||' \
+    't.Name == "" || false ||'
+  mutate go 'assistant graph: argument aliases accepted' internal/desk/assistant_graph_tools.go \
+    '!ok || bytes.Equal(bytes.TrimSpace(raw[member.start:member.end]), []byte("null"))' \
+    'false && (!ok || bytes.Equal(bytes.TrimSpace(raw[member.start:member.end]), []byte("null")))'
+  mutate go 'assistant graph: excessive check input accepted' internal/desk/assistant_graph_tools.go \
+    'len(a.Content) > maxFileBytes' \
+    false
+  mutate go 'assistant graph: changed declaration accepted' internal/desk/assistant_graph_tools.go \
+    'basis.Declaration != assistantDeclarationDigest(entry)' \
+    false
+  mutate go 'assistant graph: changed target accepted' internal/desk/assistant_graph_tools.go \
+    'file.err != nil || !file.present || digestOf(file.data) != base' \
+    'file.err != nil || !file.present'
+  mutate go 'assistant graph: deleted declaration recaptured' internal/desk/assistant_graph_tools.go \
+    '} else if basis != nil {' \
+    '} else if false && basis != nil {'
+  mutate go 'assistant graph: foreign execution gains root metadata' internal/desk/assistant_host_tools.go \
+    '&& run.Context.Execution.RequestKey == binding.ExecutionKey' \
+    '&& true'
+  mutate go 'assistant graph: native callback identity omitted' internal/desk/assistant_execution_agent.go \
+    'callbacks.Tool(context.WithValue(callCtx, assistantHostCallbackKey{}, op.ID),' \
+    'callbacks.Tool(callCtx,'
+  mutate go 'assistant graph: native callback association ignored' internal/desk/assistant_domain_output.go \
+    'if intent.CallbackID == "" {' \
+    'if true {'
+  mutate go 'assistant graph: queued guidance freshness omitted' internal/desk/assistant_execution_runtime.go \
+    'if err := recheckAssistantHost(ctx); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant graph: persistence failure exposes success' internal/desk/assistant_domain_output.go \
+    'e.changed(err)
+	if err != nil {
+		return refuse(err)
+	}
+	if name == "propose_test_cases"' \
+    'e.changed(err)
+	if false && err != nil {
+		return refuse(err)
+	}
+	if name == "propose_test_cases"'
+  mutate go 'assistant graph: projection digest drops domain output' internal/desk/assistant_chat_projection.go \
+    'run.Events, run.DomainOutputs' \
+    'run.Events, nil'
+  mutate go 'assistant graph: domain output omitted from chat' internal/desk/assistant_chat_projection.go \
+    'drafts = append(drafts, assistantChatJSON(out.Draft))' \
+    'drafts = drafts'
+  mutate go 'assistant graph: unmatched root call accepted' internal/desk/assistant_domain_output.go \
+    'return count == 1' \
+    'return count <= 1'
+  mutate go 'assistant graph: foreign output run accepted' internal/desk/assistant_domain_output.go \
+    'out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || seen[out.OperationID]' \
+    'false || out.RequestKey != run.Binding.ExecutionKey || seen[out.OperationID]'
+  mutate go 'assistant graph: custody receipt aliases accepted' internal/desk/assistant_host_tools_receipt.go \
+    'members, err := configMembers(raw)' \
+    'if true { return json.Unmarshal(raw,into) }; members, err := configMembers(raw)'
+  mutate go 'assistant graph: producer result status changes' internal/desk/assistant_domain_output.go \
+    '!bytes.Equal(result.Result, expected.Value().JSON())' \
+    'false && !bytes.Equal(result.Result, expected.Value().JSON())'
+
+  mutate go 'assistant graph: request cancellation discards observed output' internal/desk/assistant_domain_output.go \
+    'context.WithoutCancel(ctx)' \
+    ctx
+  mutate go 'assistant graph: Stop discards uncertain observed output' internal/desk/assistant_domain_output.go \
+    'held.State != "dispatched" && held.State != "uncertain"' \
+    'held.State != "dispatched"'
+
+fi
+
+
+# Private Policy host arguments, verified retained sources and review cards.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant policy: argument aliases accepted' internal/desk/assistant_policy_tools.go \
+    '!ok || bytes.Equal(bytes.TrimSpace(raw[m.start:m.end]), []byte("null"))' \
+    'false && (!ok || bytes.Equal(bytes.TrimSpace(raw[m.start:m.end]), []byte("null")))'
+  mutate go 'assistant policy: request before fields substituted' internal/desk/assistant_policy_tools_output.go \
+    'p.Before != scope.Request.Candidate' \
+    false
+  mutate go 'assistant policy: retained observation verification omitted' internal/desk/assistant_policy_tools_comparison.go \
+    'if err := validateArchivedPolicyObservation(ctx, s.artifacts, *held); err != nil {' \
+    'if err := error(nil); err != nil {'
+fi
+
+# Journal JSON serialization preserves argument custody without changing facts.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant native: parent argument journal encoding omitted' internal/desk/assistant_domain_output.go \
+    '!assistantHostArgumentsMatch(c.Args, intent.Arguments)' \
+    '!bytes.Equal(c.Args, intent.Arguments)'
+  mutate go 'assistant native: callback argument journal encoding omitted' internal/desk/assistant_domain_output.go \
+    '!assistantHostArgumentsMatch(v.Call.Arguments, intent.Arguments)' \
+    '!bytes.Equal(v.Call.Arguments, intent.Arguments)'
+  mutate go 'assistant native: changed parent arguments accepted' internal/desk/assistant_domain_output.go \
+    '!assistantHostArgumentsMatch(c.Args, intent.Arguments)' \
+    'false'
+  mutate go 'assistant native: changed callback arguments accepted' internal/desk/assistant_domain_output.go \
+    '!assistantHostArgumentsMatch(v.Call.Arguments, intent.Arguments)' \
+    'false'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant native: callback owning invocation order ignored' internal/desk/assistant_domain_output.go \
+    'v.Invocation != invocation ||' \
+    'false ||'
+fi
+
+# Private test-design custody and consumed critic inputs.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant tests: root read custody omitted' internal/desk/assistant_test_tools_output.go \
+    'if !before {' \
+    'if false && !before {'
+  mutate go 'assistant tests: validation operation receipt omitted' internal/desk/assistant_test_tools_output.go \
+    'if !validated {' \
+    'if false && !validated {'
+  mutate go 'assistant tests: Runtime row identity ignored' internal/desk/assistant_test_tools_validation.go \
+    'return id != m.IDs[i]' \
+    'return false && id != m.IDs[i]'
+  mutate go 'assistant tests: incomplete fact advice accepted' internal/desk/assistant_test_tools_validation.go \
+    'if row.Status != "complete" {' \
+    'if false && row.Status != "complete" {'
+  mutate go 'assistant tests: foreign source mapping accepted' internal/desk/assistant_test_tools_validation.go \
+    '|| !ids[source] {' \
+    '|| false && !ids[source] {'
+  mutate go 'assistant tests: conflicting proposal identity accepted' internal/desk/assistant_test_tools_storage.go \
+    'if !bytes.Equal(p, output.Proposal) {' \
+    'if false && !bytes.Equal(p, output.Proposal) {'
+  mutate go 'assistant tests: changed source appended after observation' internal/desk/assistant_test_tools_storage.go \
+    'if err != nil || !assistantTestSame(output.Read, current) || !assistantTestCoverageSame(output.Read, current) {' \
+    'if err != nil || !assistantTestSame(current, current) || !assistantTestCoverageSame(output.Read, current) {'
+  mutate go 'assistant tests: suite materialization omitted before success' internal/desk/assistant_domain_output.go \
+    'if name == "propose_test_cases" && !result.Err() {' \
+    'if false && name == "propose_test_cases" && !result.Err() {'
+  mutate go 'assistant critic V2: complete consumed rows ignored' internal/desk/assistant_critic.go \
+    'held.suiteDigest = digestOf(inputs.JSON())' \
+    'held.suiteDigest = digestOf([]byte("consumed-input-ignored"))'
+  # Legacy checkpoint members are rejected by Agent's generated closed reader
+  # during storage decoding. Keep the consumed-input and whole-ledger legacy
+  # refusal tests; there is no remaining Desk-local legacy-member guard to mutate.
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant tests: final projection suite custody omitted' internal/desk/assistant_chat_projection_store.go \
+    'if err := s.materializeAssistantTestOutputsLocked(r, root, name, *run); err != nil {' \
+    'if err := error(nil); err != nil {'
+fi
+
+# Finite recipe production, independent storage and exact recovery custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: argument member guard omitted' internal/desk/assistant_dialect_recipe_tools.go \
+    'readAssistantHostReceipt(raw, &a.Content) != nil' \
+    'json.Unmarshal(raw, &a.Content) != nil'
+  mutate go 'assistant recipe: proposal identity derivation omitted' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'p.DraftID == assistantDialectRecipeProposalID(binding, in)' \
+    'true'
+  mutate go 'assistant recipe: retained creation time not reused' internal/desk/assistant_dialect_recipe_tools_store.go \
+    '}, p.CreatedAt)' \
+    '}, "")'
+  mutate go 'assistant recipe: independent readback guard omitted' internal/desk/assistant_dialect_recipe_tools_store.go \
+    'if observed.SHA256 != saved.SHA256 || !validAssistantDialectRecipeRetained(e.record.Binding, *p, observed) {' \
+    'if false {'
+  mutate go 'assistant recipe: stale independent projection admitted' internal/desk/assistant_chat_projection_store.go \
+    'if err = s.checkAssistantDialectRecipeDrafts(r, *run); err != nil {' \
+    'if err = error(nil); err != nil {'
+  mutate go 'assistant recipe: uncertain intents bypass capacity' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'sourceCount+count >= 16' \
+    'false'
+  mutate go 'assistant recipe: read variant accepts producer metadata' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'if in.RecipeProposal != nil {' \
+    'if false {'
+  mutate go 'assistant recipe: completed redelivery result omitted' internal/desk/assistant_domain_output.go \
+    'if replay != nil {' \
+    'if false && replay != nil {'
+  mutate go 'assistant recipe: uncertain create reopens as success' internal/desk/dialect_drafts.go \
+    'saved, err := repository.CompareAndSwap(ctx, doc, "")
+	if errors.Is(err, errDialectDraftConflict) {' \
+    'saved, err := repository.CompareAndSwap(ctx, doc, "")
+	if err != nil {'
+  mutate go 'assistant recipe: pre-write current authority omitted' internal/desk/dialect_draft_file.go \
+    'if e = f.authorize(ctx); e != nil {' \
+    'if e = error(nil); e != nil {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: uncertainty permits another model request' internal/desk/assistant_domain_output.go \
+    'if name == "propose_dialect_recipe" && errors.As(workErr, &unknown) {' \
+    'if false && name == "propose_dialect_recipe" && errors.As(workErr, &unknown) {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: browser-blank text accepted' internal/desk/assistant_dialect_recipe_tools.go \
+    'strings.Trim(value, assistantDialectRecipeWhitespace) != ""' \
+    'strings.TrimSpace(value) != ""'
+fi
+
+
+# The merged finite host variants never exchange intent, receipt or output custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant variants: test output accepts recipe variant' internal/desk/assistant_test_tools_output.go \
+    'p == nil || out.Recipe != nil || out.PolicyUpdate != nil' \
+    'p == nil || out.PolicyUpdate != nil'
+  mutate go 'assistant variants: recipe output accepts test variant' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'out.Recipe == nil || out.TestProposal != nil || out.PolicyUpdate != nil' \
+    'out.Recipe == nil || out.PolicyUpdate != nil'
+  mutate go 'assistant variants: test producer accepts recipe intent metadata' internal/desk/assistant_test_tools_output.go \
+    'in.CallID != out.CallID || in.Policy != nil || in.RecipeProposal != nil' \
+    'in.CallID != out.CallID || in.Policy != nil'
+  mutate go 'assistant variants: test read accepts foreign intent metadata' internal/desk/assistant_test_tools_output.go \
+    'in.RecipeProposal != nil || in.Policy != nil || op.Name != "read_pack_tests"' \
+    'op.Name != "read_pack_tests"'
+  mutate go 'assistant variants: recipe read accepts Policy intent metadata' internal/desk/assistant_dialect_recipe_tools_output.go \
+    'if in.Policy != nil {' \
+    'if false && in.Policy != nil {'
+  mutate go 'assistant variants: recipe producer accepts test read custody' internal/desk/assistant_dialect_recipe_tools_output.go \
+    '!ok || held.Tests != nil || held.Read != nil' \
+    '!ok || held.Read != nil'
+  mutate go 'assistant variants: Policy output accepts foreign variants' internal/desk/assistant_policy_tools_output.go \
+    'out.TestProposal != nil || out.Recipe != nil ||' \
+    'false ||'
+  mutate go 'assistant variants: Policy producer accepts recipe intent metadata' internal/desk/assistant_policy_tools_output.go \
+    'if in.RecipeProposal != nil || in.Policy == nil' \
+    'if in.Policy == nil'
+  mutate go 'assistant variants: Policy producer accepts test read custody' internal/desk/assistant_policy_tools_output.go \
+    '!ok || receipt.Read != nil || receipt.Tests != nil' \
+    '!ok || receipt.Read != nil'
+  mutate go 'assistant variants: unrelated host accepts test custody member' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {' \
+    'if false && op.Kind == "host" && !assistantTestTool(op.Name) && assistantTestReceiptMetadata(op.Result) {'
+  mutate go 'assistant variants: Graph output accepts recipe variant' internal/desk/assistant_domain_output.go \
+    'if out.Recipe != nil {' \
+    'if false && out.Recipe != nil {'
+fi
+
+# Finding-only selected coverage and raw fact-advice safeguards.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant tests: selected coverage equality omitted' internal/desk/assistant_test_tools.go \
+    'beforeErr == nil && afterErr == nil && bytes.Equal(before, after)' \
+    'beforeErr == nil && afterErr == nil && (bytes.Equal(before, after) || true)'
+  mutate go 'assistant tests: changed selected coverage passes dispatch recheck' internal/desk/assistant_test_tools.go \
+    'if err == nil && !assistantTestCoverageSame(held, current) {' \
+    'if false && err == nil && !assistantTestCoverageSame(held, current) {'
+  mutate go 'assistant tests: changed selected coverage materializes new proposal' internal/desk/assistant_test_tools_storage.go \
+    '!assistantTestSame(output.Read, current) || !assistantTestCoverageSame(output.Read, current)' \
+    '!assistantTestSame(output.Read, current)'
+  mutate go 'assistant tests: null expected type advice accepted' internal/desk/assistant_test_tools_validation.go \
+    'if _, err := assistantTestString(rawType); err != nil {' \
+    'if _, err := assistantTestString(rawType); false && err != nil {'
+fi
+
+# Shared offers and current-authorized storage remain inside their owners.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant recipe: owning file authority binding omitted' internal/desk/dialect_draft_repository.go \
+    'return fileDialectDraftRepository{open: s.openDialectDrafts, authorize: authorize}' \
+    'return fileDialectDraftRepository{open: s.openDialectDrafts}'
+  mutate go 'assistant recipe: injected authority binding omitted' internal/desk/dialect_draft_repository.go \
+    'return authorizedDialectDraftRepository{s.dialectDrafts, authorize}' \
+    'return s.dialectDrafts'
+  mutate go 'assistant recipe: concrete draft adapter bypasses owner' internal/desk/assistant_dialect_recipe_tools_store.go \
+    'repository := s.draftRepositoryWithAuthority(e.authorizeAssistantDialectRecipe)' \
+    'repository := fileDialectDraftRepository{open: s.openDialectDrafts, authorize: e.authorizeAssistantDialectRecipe}'
+  mutate go 'assistant shared offers: recipe proposal classified as read' internal/desk/assistant_dialect_recipe_tools_store.go \
+    'tool.Effect = "proposal"' \
+    'tool.Effect = "read"'
+  mutate go 'assistant shared offers: test proposal classified as read' internal/desk/assistant_test_tools.go \
+    't.Effect = "proposal"' \
+    't.Effect = "read"'
+fi
+
+# Finite Dialect mapping/publication custody and current-authorized check effects.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect mapping: finite argument admission omitted' internal/desk/assistant_dialect_mapping_tools.go \
+    'if len(raw) > 1<<20 ||' \
+    'if true { _ = json.Unmarshal(raw, &a); return a, nil }; if len(raw) > 1<<20 ||'
+  mutate go 'assistant dialect mapping: stale read equality omitted' internal/desk/assistant_dialect_mapping_tools.go \
+    'if !sameDraftValue(current, held) {' \
+    'if false && !sameDraftValue(current, held) {'
+  mutate go 'assistant dialect mapping: action identity derivation omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'meta.ID != assistantDialectActionID(run.Binding, in) ||' \
+    'false ||'
+  mutate go 'assistant dialect mapping: attempted producer capacity omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'if count >= 16 || sourceCount+count >= 32 {' \
+    'if false && (count >= 16 || sourceCount+count >= 32) {'
+  mutate go 'assistant dialect mapping: raw custody type guard omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {' \
+    'if false && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {'
+  mutate go 'assistant dialect mapping: report raw member validation omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'func validAssistantDialectReport(raw []byte) bool {' \
+    'func validAssistantDialectReport(raw []byte) bool { if true {return true}'
+  mutate go 'assistant dialect mapping: check producer association omitted' internal/desk/assistant_dialect_mapping_output.go \
+    'in.HostOperationID != host ||' \
+    'false ||'
+  mutate go 'assistant dialect mapping: check chronological association omitted' internal/desk/assistant_dialect_mapping_output.go \
+    '!assistantDialectAfter(run, id, host) ||' \
+    'false ||'
+  mutate go 'assistant dialect mapping: current preparation projection omitted' internal/desk/assistant_dialect_mapping_projection.go \
+    'if current.SHA256 != p.Read.Revision {' \
+    'if false && current.SHA256 != p.Read.Revision {'
+  mutate go 'assistant dialect mapping: current pack projection omitted' internal/desk/assistant_dialect_mapping_projection.go \
+    'file.err != nil || !file.present || !bytes.Equal(file.data, p.Read.Pack)' \
+    'file.err != nil || !file.present || !bytes.Equal(file.data, file.data)'
+  mutate go 'assistant dialect mapping: current publication base projection omitted' internal/desk/assistant_dialect_mapping_projection.go \
+    'if latestDialectPublication(ledger, p.Read.ID, p.Read.Variant) != p.Read.BasePublication {' \
+    'if false && latestDialectPublication(ledger, p.Read.ID, p.Read.Variant) != p.Read.BasePublication {'
+  mutate go 'assistant dialect mapping: physical review projection omitted' internal/desk/assistant_dialect_mapping_projection.go \
+    'if err = s.checkAssistantDialectPublicationEvidence(r.Context(), *p); err != nil {' \
+    'if err = error(nil); err != nil {'
+  mutate go 'assistant dialect mapping: unknown retention continues model' internal/desk/assistant_domain_output.go \
+    'if (assistantDialectProposal(name)) && errors.As(workErr, &dialectUnknown) {' \
+    'if false && (assistantDialectProposal(name)) && errors.As(workErr, &dialectUnknown) {'
+  mutate go 'assistant dialect mapping: unrelated host accepts new custody' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {' \
+    'if false && op.Kind == "host" && !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {'
+  mutate go 'assistant dialect mapping: owning artifact callback omitted' internal/desk/retained_artifacts_file.go \
+    'return f.authorize(ctx)' \
+    'return nil'
+  mutate go 'assistant dialect mapping: injected owner authority binding omitted' internal/desk/retained_artifacts.go \
+    'return owner.WithAuthority(authorize)' \
+    'return owner.WithAuthority(nil)'
+  mutate go 'assistant dialect mapping: unsupported owner admitted' internal/desk/retained_artifacts.go \
+    'return unavailableAuthorityArtifactRepository{}' \
+    'return s.retainedArtifacts'
+  mutate go 'assistant dialect mapping: owning review callback omitted' internal/desk/artifact_review.go \
+    'return authorize(ctx)' \
+    'return nil'
+  mutate go 'assistant dialect mapping: owning receipt callback omitted' internal/desk/dialect_publications.go \
+    'return authorize(ctx)' \
+    'return nil'
+  mutate go 'assistant dialect mapping: test output accepts new variant' internal/desk/assistant_test_tools_output.go \
+    ' || out.DialectAction != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: test receipt accepts new custody' internal/desk/assistant_test_tools_output.go \
+    ' || receipt.DialectRead != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: recipe output accepts new variant' internal/desk/assistant_dialect_recipe_tools_output.go \
+    ' || out.DialectAction != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: recipe receipt accepts new custody' internal/desk/assistant_dialect_recipe_tools_output.go \
+    ' || held.DialectRead != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: Policy output accepts new variant' internal/desk/assistant_policy_tools_output.go \
+    ' || out.DialectAction != nil {' \
+    ' {'
+  mutate go 'assistant dialect mapping: Policy receipt accepts new custody' internal/desk/assistant_policy_tools_output.go \
+    ' || receipt.DialectRead != nil {' \
+    ' {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect mapping: unsupported live read corrupts custody' internal/desk/assistant_dialect_mapping_tools.go \
+    'if len(read.View) > 2<<20 || !validAssistantDialectRead(read) {' \
+    'if false && (len(read.View) > 2<<20 || !validAssistantDialectRead(read)) {'
+fi
+
+
+# Current records/history and review-only action safeguards.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect records: nested raw member types omitted' internal/desk/assistant_dialect_action_tools.go \
+    'readAssistantDialectCustody(raw, reflect.TypeOf(a)) != nil' \
+    'false && readAssistantDialectCustody(raw, reflect.TypeOf(a)) != nil'
+  mutate go 'assistant dialect records: kind member exclusivity omitted' internal/desk/assistant_dialect_action_tools.go \
+    'if !contains(kindAllowed, key) {' \
+    'if false && !contains(kindAllowed, key) {'
+  mutate go 'assistant dialect records: portable patch validation omitted' internal/desk/assistant_dialect_action_tools.go \
+    '!validAssistantDialectPatch(*a.Patch)' \
+    'false'
+  mutate go 'assistant dialect records: pagination bounds omitted' internal/desk/assistant_dialect_action_tools.go \
+    'if a.Offset != nil && (*a.Offset < 0 || *a.Offset > 1000) || a.Limit != nil && (*a.Limit < 1 || *a.Limit > 10) {' \
+    'if false {'
+  mutate go 'assistant dialect records: field enumeration bound omitted' internal/desk/assistant_dialect_record_tools.go \
+    'if len(out) > 30 {' \
+    'if false && len(out) > 30 {'
+  mutate go 'assistant dialect records: original string bound omitted' internal/desk/assistant_dialect_record_tools.go \
+    'assistantDialectShort(v, 500)' \
+    'v'
+  mutate go 'assistant dialect records: source quote bound omitted' internal/desk/assistant_dialect_record_tools.go \
+    'assistantDialectShort(s.Quote, 200)' \
+    's.Quote'
+  mutate go 'assistant dialect records: records postqueue authority omitted' internal/desk/assistant_dialect_record_tools.go \
+    'if err = e.Authorize(ctx); err != nil {
+		return runcontext.ToolResult{}, err
+	}
+	return assistantHostJSON(map[string]any{"id": a.ID, "revision": saved.SHA256, "recipeVersion"' \
+    'if err = e.Authorize(ctx); false {
+		return runcontext.ToolResult{}, err
+	}
+	return assistantHostJSON(map[string]any{"id": a.ID, "revision": saved.SHA256, "recipeVersion"'
+  mutate go 'assistant dialect records: activity postqueue authority omitted' internal/desk/assistant_dialect_record_tools.go \
+    'if err = e.Authorize(ctx); err != nil {
+		return runcontext.ToolResult{}, err
+	}
+	return assistantHostJSON(map[string]any{"id": a.ID, "revision": saved.SHA256, "events"' \
+    'if err = e.Authorize(ctx); false {
+		return runcontext.ToolResult{}, err
+	}
+	return assistantHostJSON(map[string]any{"id": a.ID, "revision": saved.SHA256, "events"'
+  mutate go 'assistant dialect records: current preparation basis omitted' internal/desk/assistant_dialect_action_output.go \
+    'saved.SHA256 != read.Revision || !reflect.DeepEqual(assistantDialectRecipeBasis(saved), *read.Recipe)' \
+    'false && (saved.SHA256 != read.Revision || !reflect.DeepEqual(assistantDialectRecipeBasis(saved), *read.Recipe))'
+  mutate go 'assistant dialect records: generated current human review omitted' internal/desk/assistant_dialect_action_output.go \
+    'a.Kind == "evaluate" && (row.ReviewDecision != "accepted" || row.ReviewVersion != b.Recipe.Version)' \
+    'false'
+  mutate go 'assistant dialect records: evaluation source separation omitted' internal/desk/assistant_dialect_action_output.go \
+    'if a.Kind == "evaluate" && generated && supplied {' \
+    'if false && a.Kind == "evaluate" && generated && supplied {'
+  mutate go 'assistant dialect records: reprocess saved record limit omitted' internal/desk/assistant_dialect_action_output.go \
+    'if a.Kind == "reprocess" && len(a.RecordIDs) > b.Recipe.Research.Limits.Records {' \
+    'if false && a.Kind == "reprocess" && len(a.RecordIDs) > b.Recipe.Research.Limits.Records {'
+  mutate go 'assistant dialect records: exact retained action omitted' internal/desk/assistant_dialect_action_output.go \
+    '!reflect.DeepEqual(p.Action, assistantDialectActionFrom(*in.DialectAction, p.Read, a))' \
+    'false'
+  mutate go 'assistant dialect records: child read establishes root proposal' internal/desk/assistant_dialect_mapping_output.go \
+    'readAssistantHostReceipt(op.Intent, &in) != nil || !in.Root || readAssistantHostReceipt(op.Result, &result) != nil' \
+    'readAssistantHostReceipt(op.Intent, &in) != nil || readAssistantHostReceipt(op.Result, &result) != nil'
+  mutate go 'assistant dialect records: raw recipe eligibility null accepted' internal/desk/assistant_dialect_mapping_output.go \
+    'if rawErr != nil || readAssistantDialectCustody(rawFields["dialectRead"], reflect.TypeOf(read)) != nil {
+		return errAssistantRunInvalid
+	}' \
+    'if rawErr != nil || len(rawFields)==0 { return errAssistantRunInvalid }'
+  mutate go 'assistant dialect records: fresh stop projection ignores active run' internal/desk/assistant_dialect_mapping_projection.go \
+    'if a.Kind == "stop-research" {' \
+    'if false && a.Kind == "stop-research" {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant host effects: unsupported alias admitted' internal/desk/assistant_host_tools.go \
+    '!contains([]string{"read", "proposal"}, t.Effect)' \
+    'false'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect records: same-ID replay collapses optional null' internal/desk/assistant_dialect_mapping_output.go \
+    'if out.DialectAction.Read.Recipe != nil {' \
+    'if false && out.DialectAction.Read.Recipe != nil {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect research: foreign argument refusal omitted' internal/desk/assistant_dialect_research_tools.go \
+    '	if len(raw) > 4096 || !validUTF8(raw) || readAssistantDialectCustody(raw, reflect.TypeOf(struct {
+		ID       string `json:"id"`
+		Revision string `json:"revision"`
+	}{})) != nil || err != nil || len(fields) != 2 || json.Unmarshal(raw, &a) != nil || !inputPreparationID.MatchString(a.ID) || !assistantRunDigest(a.Revision) {' \
+    '	if false && (len(raw) > 4096 || !validUTF8(raw) || readAssistantDialectCustody(raw, reflect.TypeOf(struct {
+		ID       string `json:"id"`
+		Revision string `json:"revision"`
+	}{})) != nil || err != nil || len(fields) != 2 || json.Unmarshal(raw, &a) != nil || !inputPreparationID.MatchString(a.ID) || !assistantRunDigest(a.Revision)) {'
+  mutate go 'assistant dialect research: unimplemented workflow admitted' internal/desk/assistant_host_tools.go \
+    't.Name == "request_dialect_research" && t.Effect == "workflow"' \
+    't.Effect == "workflow"'
+  mutate go 'assistant dialect research: queued complete source comparison omitted' internal/desk/assistant_dialect_research_tools.go \
+    'if !assistantRunFreshSourceEqual(e.source, fresh) {' \
+    'if false && !assistantRunFreshSourceEqual(e.source, fresh) {'
+  mutate go 'assistant dialect research: queued critic custody comparison omitted' internal/desk/assistant_dialect_research_tools.go \
+    'if !assistantCriticSame(held, current) {' \
+    'if false && !assistantCriticSame(held, current) {'
+  mutate go 'assistant dialect research: owner postqueue authority omitted' internal/desk/input_research_request.go \
+    'if err := authorize(); err != nil {' \
+    'if err := error(nil); err != nil {'
+  mutate go 'assistant dialect research: validation-to-commit preparation guard released' internal/desk/input_research_request.go \
+    '			if err := s.researchInputAvailable(r.Context(), root, current.PreparationID, current.ID); err != nil {' \
+    '			preparation.Close()
+			if err := s.researchInputAvailable(r.Context(), root, current.PreparationID, current.ID); err != nil {'
+  mutate go 'assistant dialect research: expiry after validation ignored' internal/desk/input_research_request.go \
+    'if researchApprovalState(*current, now) != "ready" {' \
+    'if false && researchApprovalState(*current, now) != "ready" {'
+  mutate go 'assistant dialect research: current saved preparation revision ignored' internal/desk/input_research_approval.go \
+    'if saved.SHA256 != run.Revision {' \
+    'if false && saved.SHA256 != run.Revision {'
+  mutate go 'assistant dialect research: used receipt assigned to another turn' internal/desk/input_research_request.go \
+    ' && run.Approval.TurnID == q.TurnID' \
+    ''
+  mutate go 'assistant dialect research: used allowance provenance replaceable' internal/desk/input_research_journal_store.go \
+    'if before.Approval != nil && before.Approval.UsedAt != "" &&' \
+    'if false && before.Approval != nil && before.Approval.UsedAt != "" &&'
+  mutate go 'assistant dialect research: unknown attempted request keeps dispatch open' internal/desk/assistant_domain_output.go \
+    'if name == "request_dialect_research" && errors.As(workErr, &researchUnknown) {' \
+    'if false && name == "request_dialect_research" && errors.As(workErr, &researchUnknown) {'
+  mutate go 'assistant dialect research: import loses owning chat and turn' internal/desk/assistant_dialect_research_tools.go \
+    ' || q.ChatID != run.Binding.Owner.ID || q.TurnID != run.Binding.RequestID' \
+    ''
+  mutate go 'assistant dialect research: import loses request provenance' internal/desk/assistant_dialect_research_tools.go \
+    ' || q.RequestKey != assistantResearchRequestKey(run, host.ID)' \
+    ''
+  mutate go 'assistant dialect research: raw receipt null collapsed on import' internal/desk/assistant_dialect_research_tools.go \
+    'readAssistantHostReceipt(op.Result, &result) != nil' \
+    'json.Unmarshal(op.Result, &result) != nil'
+  mutate go 'assistant dialect research: applied action no longer equals exact receipt' internal/desk/assistant_dialect_research_tools.go \
+    'if !reflect.DeepEqual(p, expected) {' \
+    'if false && !reflect.DeepEqual(p, expected) {'
+  mutate go 'assistant dialect research: retained tool result no longer bound' internal/desk/assistant_dialect_research_tools.go \
+    ' || !bytes.Equal(receipt.Result, result.Value().JSON())' \
+    ' || false && !bytes.Equal(receipt.Result, result.Value().JSON())'
+  mutate go 'assistant dialect research: completed workflow can lose domain output' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && (assistantDialectActionProducer(op.Name)) && !seen[op.ID] {' \
+    'if false && op.Kind == "host" && (assistantDialectActionProducer(op.Name)) && !seen[op.ID] {'
+  mutate go 'assistant dialect research: projection skips physical owner receipt' internal/desk/assistant_dialect_mapping_projection.go \
+    'if err := s.checkAssistantResearchEvidence(r, run, p); err != nil {' \
+    'if err := s.checkAssistantResearchEvidence(r, run, p); false {'
+  mutate go 'assistant dialect research: pending request projects without reconciliation' internal/desk/assistant_dialect_mapping_projection.go \
+    'if assistantResearchUnobserved(run) {' \
+    'if false && assistantResearchUnobserved(run) {'
+  mutate go 'assistant dialect research: explicit finalization omits receipt reconciliation' internal/desk/assistant_chat_projection_store.go \
+    '	if err := s.reconcileAssistantResearchRequests(r, id); err != nil {
+		return err
+	}' \
+    '	// Receipt reconciliation omitted.'
+  mutate go 'assistant dialect research: historical admitted card requires new readiness' internal/desk/assistant_dialect_mapping_projection.go \
+    'if p.Research != nil && p.Research.Receipt.Status == "started" {' \
+    'if false && p.Research != nil && p.Research.Receipt.Status == "started" {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect research: stale unadmitted review card retained' internal/desk/assistant_dialect_research_tools.go \
+    'requestErr = e.recheckAssistantDialectAction(ctx, read)' \
+    'requestErr = nil'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant dialect research: preparation waits while private is held' internal/desk/input_research_request.go \
+    'preparation, err = s.preparationRepository().TryRead(r.Context())' \
+    'preparation, err = s.preparationRepository().Read(r.Context())'
+  mutate go 'assistant dialect research: manual local bearer incorrectly requires session' internal/desk/input_research_request.go \
+    'if !s.authorized(r) || !s.originAllowed(r) {' \
+    'if _, ok := s.sessionOf(r); !ok {'
+  mutate go 'assistant dialect research: current shared request guard omitted' internal/desk/input_research_request.go \
+    'if !s.authorized(r) || !s.originAllowed(r) {' \
+    'if false && (!s.authorized(r) || !s.originAllowed(r)) {'
+  mutate go 'assistant dialect research: private host accepts local bearer' internal/desk/input_research_request.go \
+    'if authority != nil {
+			if err := s.authorizePrivateWorkspace(r); err != nil {' \
+    'if false && authority != nil {
+			if err := s.authorizePrivateWorkspace(r); err != nil {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant search: UTF16 query bound omitted' internal/desk/assistant_search_record.go \
+    'query == "" || runcontext.U16Length(query) > 2000' \
+    'query == ""'
+  mutate go 'assistant search: saved research choice omitted' internal/desk/assistant_search_acquire.go \
+    'if choice != "research" {' \
+    'if false && choice != "research" {'
+  mutate go 'assistant search: shared saved-turn limit omitted' internal/desk/assistant_search_store.go \
+    'if attempts >= 3 {' \
+    'if false && attempts >= 3 {'
+  mutate go 'assistant search: retained chat limit omitted' internal/desk/assistant_search_store.go \
+    'if len(retained) >= 64 {' \
+    'if false && len(retained) >= 64 {'
+  mutate go 'assistant search: queued source admission omitted' internal/desk/input_research_source.go \
+    'if admission != nil {' \
+    'if false && admission != nil {'
+  mutate go 'assistant search: canonical original association omitted' internal/desk/assistant_search_recovery.go \
+    'if err != nil || !bytes.Equal(result, original) || object.Original.SHA256 != digest {' \
+    'if err != nil || (false && (!bytes.Equal(result, original) || object.Original.SHA256 != digest)) {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant link: supplied user role guard omitted' internal/desk/assistant_link_read.go \
+    'if turn.Role != "user" {' \
+    'if false && turn.Role != "user" {'
+  mutate go 'assistant link: ordinary saved-turn limit omitted' internal/desk/assistant_link_store.go \
+    'if attempts >= 3 {' \
+    'if false && attempts >= 3 {'
+  mutate go 'assistant link: retained document limit omitted' internal/desk/assistant_link_store.go \
+    'if len(retained) >= 256 {' \
+    'if false && len(retained) >= 256 {'
+  mutate go 'assistant link: pending crash intent ignored' internal/desk/assistant_link_store.go \
+    'search.DispatchClosed || assistantLinkPending(search)' \
+    search.DispatchClosed
+  mutate go 'assistant link: original storage identity omitted' internal/desk/assistant_link_read.go \
+    ' || held.Original.Receipt.ID != held.FinalID' \
+    ''
+  mutate go 'assistant link: queued verified authority bytes omitted' internal/desk/assistant_link_tools.go \
+    'if held.AuthorityPacket != nil {
+		raw, err := e.assistantLinkPacket(ctx, held.AuthorityPacket.ID)' \
+    'if false && held.AuthorityPacket != nil {
+		raw, err := e.assistantLinkPacket(ctx, held.AuthorityPacket.ID)'
+  mutate go 'assistant link: Unicode safe start omitted' internal/desk/assistant_link_window.go \
+    'start = assistantLinkSafeStart(joined, min(chars, start))' \
+    'start = min(chars, start)'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant link: browser Unicode safe start omitted' web/src/chat/linkTools.ts \
+    'if (start > 0 &&' \
+    'if (false && start > 0 &&'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant website: exploration reservation omitted' internal/desk/assistant_link_store.go \
+    'if explorations >= 1 {' \
+    'if false && explorations >= 1 {'
+  mutate go 'assistant website: distinct seed limit omitted' internal/desk/assistant_link_store.go \
+    'if !seeds[request.URL] && len(seeds) >= 16 {' \
+    'if false && !seeds[request.URL] && len(seeds) >= 16 {'
+  mutate go 'assistant website: discovered status omitted' internal/desk/assistant_website_read.go \
+    'if page.URL == url && page.Status == "discovered" {' \
+    'if page.URL == url {'
+  mutate go 'assistant website: shared ten total omitted' internal/desk/assistant_link_store.go \
+    'request.Site == "" || attempts >= 10' \
+    'request.Site == ""'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant website: browser exploration reservation omitted' web/src/chat/linkTools.ts \
+    'if(spent.explored)return' \
+    'if(false&&spent.explored)return'
+  mutate web 'assistant website: browser distinct seed limit omitted' web/src/chat/linkTools.ts \
+    'if((deps.websites?.().length??0)>=16' \
+    'if(false&&(deps.websites?.().length??0)>=16'
+  mutate web 'assistant website: browser discovered status omitted' web/src/chat/linkTools.ts \
+    'p.url===link.fetchUrl&&p.status==='"'"'discovered'"'"'' \
+    p.url===link.fetchUrl
+  mutate web 'assistant website: browser shared ten total omitted' web/src/chat/linkTools.ts \
+    'site ? 10 : MAX_LINK_READS_PER_TURN' \
+    'site ? 13 : MAX_LINK_READS_PER_TURN'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant plan: restored root custody omitted' internal/desk/assistant_plan_output.go \
+    'if !in.Root {' \
+    'if false && !in.Root {'
+  mutate go 'assistant plan: current projection reference equality omitted' internal/desk/assistant_plan_references.go \
+    'if !reflect.DeepEqual(current, out.Plan.References) {' \
+    'if false && !reflect.DeepEqual(current, out.Plan.References) {'
+  mutate go 'assistant plan: current acceptance reference equality omitted' internal/desk/assistant_plan_references.go \
+    'if !reflect.DeepEqual(current, plan.References) {
+			return errAssistantRunConflict
+		}' \
+    'if false && !reflect.DeepEqual(current, plan.References) {
+			return errAssistantRunConflict
+		}'
+  mutate go 'assistant plan: UTF16 text bound omitted' internal/desk/chat_plan.go \
+    'runcontext.U16Length(s) <= n' \
+    '(runcontext.U16Length(s) <= n || len([]rune(s)) <= n)'
+  mutate go 'assistant plan: completed domain output required guard omitted' internal/desk/assistant_domain_output.go \
+    'if op.Kind == "host" && op.Name == assistantPlanTool && op.State == "completed" && !seen[op.ID] {' \
+    'if false && op.Kind == "host" && op.Name == assistantPlanTool && op.State == "completed" && !seen[op.ID] {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'typed admission: request data keys folded again' internal/desk/input_preparations.go \
+    'if err = checkJSONMembers(raw, reflect.TypeOf(target)); err != nil {' \
+    'if err = checkJSONMembers(raw, reflect.TypeOf(target)); err != nil || rejectDuplicateMembers(raw) != nil {'
+  mutate go 'typed admission: Policy data keys folded again' internal/desk/policy_execution_service.go \
+    'checkJSONMembers(raw, opaqueJSONMembers) != nil' \
+    'rejectDuplicateMembers(raw) != nil'
+  mutate go 'typed admission: retained pack data keys folded again' internal/desk/input_qualification.go \
+    'if err := checkJSONMembers(raw, reflect.TypeOf(inputPackMembers{})); err != nil {' \
+    'if err := checkJSONMembers(raw, reflect.TypeOf(inputPackMembers{})); err != nil || rejectDuplicateMembers(raw) != nil {'
+  mutate go 'typed admission: Exchange pack data keys folded again' internal/desk/exchange_target.go \
+    'if err != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID {' \
+    'if err != nil || rejectDuplicateMembers([]byte(pack)) != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID {'
+  mutate go 'typed admission: request control validation omitted' internal/desk/input_preparations.go \
+    'if err = checkJSONMembers(raw, reflect.TypeOf(target)); err != nil {' \
+    'if err = checkJSONMembers(raw, reflect.TypeOf(target)); false && err != nil {'
+  mutate go 'typed admission: Exchange pack predispatch validation omitted' internal/desk/exchange_target.go \
+    'if err != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID {' \
+    'if false && (err != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID) {'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant plan: human acceptance stale classification omitted' internal/desk/assistant_plan_references.go \
+    'if errors.Is(err, errAssistantRunConflict) {' \
+    'if false && errors.Is(err, errAssistantRunConflict) {'
+fi
+
+# Agent v0.9 canonical switch: explicit saved false stays off, and Plan forces off.
+# Missing choices inherit the project/table default (auto).
+# Retargets "assistant critic: saved review and Plan controls ignored" above.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant critic: canonical saved off and Plan controls ignored' internal/desk/assistant_critic.go \
+    'return runcontext.CriticForcedOff(runcontext.CriticForcedFacts{Phase: phase}) == "" && assistantCriticMode(chat) != "off"' \
+    'return true'
+fi
+
+# Desk critic controls: omissions must fail the shared readers, not just a source scan.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'critic switch: saved mode omitted' web/src/chat/store.ts \
+    '...(chat.critic === undefined ? {} : { critic: chat.critic })' '...{}'
+  mutate web 'critic switch: saved reasoning omitted' web/src/chat/store.ts \
+    '...(chat.criticReasoning === undefined ? {} : { criticReasoning: chat.criticReasoning })' '...{}'
+  mutate web 'critic switch: report decision omitted' web/src/assistant/report.ts \
+    '...(execution?.critic === undefined ? {} : { critic: structuredClone(execution.critic) })' '...{}'
+fi
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'critic switch: project mode omitted' internal/desk/assistant_chat_input.go \
+    'out.CriticProject = source.Profile.Critic' 'out.CriticProject = ""'
+  mutate go 'critic switch: reasoning omitted' internal/desk/assistant_chat_input.go \
+    '"criticReasoning": &out.CriticReasoning' '"criticReasoning": new(string)'
+fi
+
+# Desk #627: sparse updates retain exact held fields and explicit empty values.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant policy sparse: held candidate omitted' internal/desk/assistant_policy_tools.go \
+    'candidate := request.Candidate' \
+    'candidate := assistantPolicyFields{}'
+  mutate go 'assistant policy sparse: explicit empty narrative omitted' internal/desk/assistant_policy_tools.go \
+    'if a.present["narrative"] {' \
+    'if a.present["narrative"] && a.Narrative != "" {'
+  mutate go 'assistant policy sparse: revision-only arguments admitted' internal/desk/assistant_policy_tools.go \
+    'len(present) < 2 || !assistantRunDigest(a.Revision)' \
+    'false || !assistantRunDigest(a.Revision)'
+  mutate go 'assistant policy sparse: substituted omitted fields accepted' internal/desk/assistant_policy_tools_output.go \
+    'p.Candidate != candidate' \
+    'false && p.Candidate != candidate'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant policy sparse: browser held candidate omitted' web/src/policies/chat.ts \
+    'const candidate=policyFields(request.candidate)' \
+    'const candidate=policyFields({title:"",narrative:"",artifactVersion:""})'
+  mutate web 'assistant policy sparse: browser explicit empty value omitted' web/src/policies/chat.ts \
+    'candidate[key]=args[key]' \
+    'if(args[key]!=="")candidate[key]=args[key]'
+fi
+
+
+# Desk #629: exact observations and explicit delivery through the browser transport.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant run client: owner source revision ignored' web/src/assistant/serverRuns/decode.ts \
+    'value.owner.revision !== expected.owner.revision || !text(value.requestId,128)' 'false || !text(value.requestId,128)'
+  mutate web 'assistant run client: canonical checkpoint bypassed' web/src/assistant/serverRuns/decode.ts \
+    'readExecution(value.checkpoint)' 'value.checkpoint'
+  mutate web 'assistant run client: unknown semantic discriminator accepted' web/src/assistant/serverRuns/decode.ts \
+    '!Object.hasOwn(SEMANTIC_EVENT_TYPES,value.event.type)' 'false'
+  mutate web 'assistant run client: shared cursor snapshot suppressed' web/src/assistant/serverRuns/stream.ts \
+    "    if (frame.kind === 'snapshot') {" "    if (frame.kind === 'snapshot') { if (this.last === frame.cursor) return undefined"
+  mutate web 'assistant run client: uncertain POST replayed' web/src/assistant/serverRuns/client.ts \
+    '      if (cause instanceof RunRequestError) throw cause
+      throw new RunRequestError' \
+    '      if (body && sent && !(cause instanceof RunRequestError)) { try { await discardBody(await deskFetch(path,{method:"POST",redirect:"error",signal:scope.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})) } catch {} }
+      if (cause instanceof RunRequestError) throw cause
+      throw new RunRequestError'
+fi
+
+# Standalone authoring's testing guidance and tool offer moved from browser
+# engine inputs to the canonical host. Keep the original safeguard row names.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go "a refused testing prompt is waited for for ever" internal/desk/assistant_critic.go \
+    '	return text, err' \
+    '	if err != nil { <-ctx.Done() }
+	return text, err'
+  mutate go "the run starts before the runtime's testing prompt arrives" internal/desk/assistant_execution.go \
+    '		run.TestPrompt, err = runtime.criticPrompt(ctx)' \
+    '		run.TestPrompt, err = "", nil'
+  mutate go 'harness swap: the pack pane offers no propose_pack' internal/desk/assistant_authoring_execution.go \
+    '	return newAssistantHostRegistry(tools)' \
+    '	if e.source.Start.Purpose != "author-graph" { tools = nil }
+	return newAssistantHostRegistry(tools)'
+fi
+
+
+# The former browser listing-address row now guards server-owned authority.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go "the listing address is built on the page" internal/desk/assistant_discovery.go \
+    'fixed.URL.Path = relayPrefix + suffix' \
+    'fixed.URL.Path = r.Header.Get("X-Assistant-Listing-Path")
+	_ = suffix'
+fi
+
+# Desk #649: closed metadata input and current saved connection revision.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant discovery: caller body or query admitted' internal/desk/assistant_discovery.go \
+    'if r.ContentLength != 0 || len(r.TransferEncoding) != 0 || (r.Body != nil && r.Body != http.NoBody) || (r.URL.RawQuery != "" || r.URL.ForceQuery) {' \
+    'if false && (r.ContentLength != 0 || len(r.TransferEncoding) != 0 || (r.Body != nil && r.Body != http.NoBody) || (r.URL.RawQuery != "" || r.URL.ForceQuery)) {'
+  mutate go 'assistant discovery: body read before bounded transport' internal/desk/assistant_discovery.go \
+    'if r.ContentLength != 0 || len(r.TransferEncoding) != 0' \
+    'if r.Body != nil { var first [1]byte; _, _ = r.Body.Read(first[:]) }
+	if r.ContentLength != 0 || len(r.TransferEncoding) != 0'
+  mutate go 'assistant discovery: saved revision requirement omitted' internal/desk/assistant_discovery.go \
+    'if connection != nil && r.Header.Get(aiRevisionHeader) == "" {' \
+    'if false && connection != nil && r.Header.Get(aiRevisionHeader) == "" {'
+fi
+
+# Desk #645 F1: acknowledged terminal data must reconcile before a fresh Send.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant saved chat: unreconciled Send guard omitted' web/src/assistant/serverRuns/controller.ts \
+    'if(this.ended||this.running||this.uncertain||this.unreconciled)return' \
+    'if(this.ended||this.running||this.uncertain)return'
+fi
+
+# Desk #647 first review: private projections and paused exact ownership.
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant authoring: session-private projections retained' web/src/assistant/useAuthoringRun.ts \
+    "  setEvents([]);setSnapshot(undefined);setStreaming('')" \
+    '  // Private projection clearing omitted.'
+  mutate web 'assistant authoring: paused presentation resolves host owner' web/src/assistant/useAuthoringRun.ts \
+    '  if(terminal(run)||run.historical){attempt.resolved=true;setCanStart(true)}' \
+    "  if(terminal(run)||run.historical||!['admitted','running'].includes(run.state)){attempt.resolved=true;setCanStart(true)}"
+fi
+
+# Desk #648: current creation evidence, independent expectations and staged approval.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant creation: stale artifact generation accepted' internal/desk/assistant_creation_source.go \
+    '!assistantHostArgumentsMatch(draft["generation"], chat["draftGeneration"])' \
+    'false'
+  mutate go 'assistant creation: independent reviewer receives draft and history' internal/desk/assistant_chat_input.go \
+    'return filtered, nil' \
+    'return out, nil'
+  mutate go 'assistant creation: canceled retest commits correction' internal/desk/assistant_creation_workflow.go \
+    'if ctx.Err() != nil {
+		return ctx.Err()
+	}' \
+    'if false {
+		return ctx.Err()
+	}'
+fi
+
+# Desk #651: fixed native diagnostic source, offer, finalization and browser ownership.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'native diagnostic: captured source revision ignored' internal/desk/assistant_diagnostic.go \
+    'if !assistantRunDigest(start.Revision) || start.Revision != digestOf(source.Original) {' \
+    'if false && (!assistantRunDigest(start.Revision) || start.Revision != digestOf(source.Original)) {'
+  mutate go 'native diagnostic: provider prose accepted without schema' internal/desk/assistant_diagnostic_execution.go \
+    'if !assistantDiagnosticSucceeded(latest) {' \
+    'if false && !assistantDiagnosticSucceeded(latest) {'
+  mutate go 'native diagnostic: native context tools escape schema offer' internal/desk/assistant_execution_agent.go \
+    'request.Tools = tools' 'request.Tools = request.Tools'
+  mutate go 'native diagnostic: cancellation poisons terminal persistence' internal/desk/assistant_diagnostic_execution.go \
+    'context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)' \
+    'context.WithTimeout(ctx, 5*time.Second)'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'native diagnostic: uncertain admission starts twice' web/src/assistant/useConnectionDiagnostic.ts \
+    'const retained=await client.diagnosticLookup(ref)' \
+    'const retained=await client.start(ref,undefined,bound)'
+  mutate web 'native diagnostic: changed form keeps prior success' web/src/assistant/useConnectionDiagnostic.ts \
+    'setCanStart(!closed.current)},[identity])' \
+    'setCanStart(!closed.current)},[])'
+fi
+
+# Desk #648 review: passing publish/receipt gates, original order and raw custody.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant creation: mismatching staged suite publishes' internal/desk/assistant_creation_workflow.go \
+    'if !assistantCreationSuccessfulCheck(check, scope.CandidateDigest, staged) {' \
+    'if false {'
+  mutate go 'assistant creation: completed mismatch approval retained' internal/desk/assistant_creation_transition.go \
+    ' || !assistantCreationSuccessfulCheck(*r.Check, input.Scope.CandidateDigest, r.Cases)' \
+    ' || false'
+  mutate go 'assistant creation: original issue position ignored' internal/desk/assistant_creation_workflow.go \
+    'at = *issue.Position' \
+    'at = len(cases)'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant creation: artifact numeric custody rewritten' web/src/packs/drafts/model.ts \
+    'body: encodeWireValue(document)' \
+    'body: JSON.stringify(document)'
+  mutate web 'assistant creation: next control numeric custody rewritten' web/src/chat/wire.ts \
+    'wireJSON(old,true):encodeWireValue(value)' \
+    'wireJSON(old,true):JSON.stringify(value)'
+fi
+
+
+# Desk #626: private canonical identity and explicit lifecycle revocation.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory: malformed canonical metadata accepted' internal/desk/ai_memory.go \
+    'if _, err := assistantMemoryRecord("", e); err != nil {' \
+    'if _, err := assistantMemoryRecord("", e); false && err != nil {'
+  mutate go 'assistant memory: edited version reuses canonical identity' internal/desk/ai_memory.go \
+    'entry.Canonical = nil // A changed version cannot reuse a proposed identity.' \
+    '// Canonical identity was retained after an edit.'
+  mutate go 'assistant memory: missing private version is not revoked' internal/desk/assistant_memory_lifecycle.go \
+    'state = "revoked"' \
+    'state = ""'
+fi
+
+
+
+# Canonical background execution: retain the verified safeguard probes in CI.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'canonical background: request cap' 'internal/desk/background_execution.go' \
+    'input.RequestCap = &requestCap' \
+    'input.RequestCap = nil; _ = requestCap'
+  mutate go 'canonical background: live choice' 'internal/desk/background_execution.go' \
+    'return current == choice && run.Revision' \
+    'return (current == choice || current != choice) && run.Revision'
+  mutate go 'canonical background: receipt history' 'internal/desk/input_research_journal_store.go' \
+    'if !backgroundReceiptTransition(old, a) {' \
+    'if false && !backgroundReceiptTransition(old, a) {'
+  mutate go 'canonical background: canonical reader' 'internal/desk/background_execution.go' \
+    'if _, err = runcontext.ReadExecution(v); err != nil {' \
+    'if false { _ = v'
+  mutate go 'canonical background: completion stop' 'internal/desk/background_execution.go' \
+    'if completion.FinishReason != "stop" {' \
+    'if false && completion.FinishReason != "stop" {'
+  mutate go 'canonical background: native response' 'internal/desk/background_execution.go' \
+    'len(action) == 0 && !native' \
+    'len(action) == 0 && (native || !native)'
+  mutate go 'canonical background: native offer' 'internal/desk/background_execution.go' \
+    'if strings.HasPrefix(tool.Description, b.task.Response.Name+":") {' \
+    'if true {'
+  mutate go 'canonical background: source custody' 'internal/desk/background_execution.go' \
+    'if digestOf([]byte(source)) != b.source {' \
+    'if false && digestOf([]byte(source)) != b.source {'
+  mutate go 'canonical background: credential custody' 'internal/desk/background_execution.go' \
+    'if credential != b.credential {' \
+    'if false && credential != b.credential {'
+  mutate go 'canonical background: epoch custody' 'internal/desk/background_execution.go' \
+    'epoch != b.epoch || epoch.Err() != nil ||' \
+    'false && epoch != b.epoch || false && epoch.Err() != nil ||'
+  mutate go 'canonical background: complete envelope' 'internal/desk/background_execution.go' \
+    'len(raw) > backgroundModelReceiptBytes ||' \
+    'false && len(raw) > backgroundModelReceiptBytes ||'
+  mutate go 'canonical background: legacy reserve' 'internal/desk/input_research_reservations.go' \
+    'allowance := portableResearchAttemptReserve + backgroundModelReceiptReserve' \
+    'allowance := portableResearchAttemptReserve'
+  mutate go 'canonical background: portable reserve' 'internal/desk/input_research_reservations.go' \
+    'reserve += backgroundModelReceiptReserve' \
+    'reserve += 0'
+  mutate go 'canonical background: native pregeneration wire' 'internal/desk/background_execution.go' \
+    'if generated.Load() {
+				r.Wire = raw' \
+    'if true {
+				r.Wire = raw'
+  mutate go 'canonical background: native postgeneration outcome' 'internal/desk/background_execution.go' \
+    'if generated.Load() {
+					copy.Outcome = "unknown"' \
+    'if false {
+					copy.Outcome = "unknown"'
+fi
+
+# Desk #658: partial correction continuation retains exact scope and readiness.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant creation: correction proposal rewrites evidence' internal/desk/assistant_creation_projection.go \
+    'if r.Action == "propose-correction" {' \
+    'if false {'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant creation: passing partial correction refused' web/src/assistant/serverRuns/creation.ts \
+    "if(issues.length&&(!cases.length||value.action!=='approve-correction'||!check.valid||check.report?.status!=='passed'))return invalid()" \
+    'if(issues.length)return invalid()'
+  mutate web 'assistant creation: partial check advertises readiness' web/src/assistant/serverRuns/creation.ts \
+    '&&issues.length===0){result=' \
+    '){result='
+  mutate web 'assistant creation: correction overlay reorders issue rows' web/src/assistant/serverRuns/creation.ts \
+    'expectationIssues:state.expectationIssues.map' \
+    'expectationIssues:[...state.expectationIssues.filter(i=>i.resolved),...state.expectationIssues.filter(i=>!i.resolved)].map'
+fi
+# Desk #657 review fixes: exact approval and terminal recall exclusion.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory: approval trims canonical text' internal/desk/ai_memory.go \
+    '	if c.Action != "approve" {
+		c.Text = strings.TrimSpace(c.Text)
+	}' \
+    '	c.Text = strings.TrimSpace(c.Text)'
+  mutate go 'assistant memory: terminal identity recalled on resume' internal/desk/assistant_memory_lifecycle.go \
+    'if !terminal[record.ID] {' \
+    'if !terminal[record.ID] || true {'
+fi
+
+# Desk #546: adapters own prompt layers; transports only enforce wire limits.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant prompt: transport context ceilings ignored' internal/desk/ai_wire_guard.go \
+    'return aicontext.Resolve(profile.Context, model), nil' \
+    'policy := aicontext.Resolve(profile.Context, model)
+ policy.MaxInputBytes, policy.ContextWindowTokens = 2000000, 2000000
+ return policy, nil'
+  mutate go 'assistant prompt: transport reads brief again' internal/desk/ai_wire_guard.go \
+    'return aicontext.Resolve(profile.Context, model), nil' \
+    '_, _, err = s.aiContext(model)
+ if err != nil { return aicontext.Policy{}, err }
+ return aicontext.Resolve(profile.Context, model), nil'
+  mutate go 'assistant prompt: relay appends another prompt layer' internal/desk/modelrelay.go \
+    '	r.Body = io.NopCloser(bytes.NewReader(body))' \
+    '	if !listing { body = append(body, []byte("LEGACY-APPEND")...) }
+	r.Body = io.NopCloser(bytes.NewReader(body))'
+  mutate go 'assistant prompt: native transport appends instructions' internal/desk/agent_run.go \
+    '	err = runner.Run(ctx, owner, *start.Request,' \
+    '	start.Request.Instructions += "LEGACY-APPEND"
+	err = runner.Run(ctx, owner, *start.Request,'
+  mutate go 'assistant prompt: transport rereads memory' internal/desk/ai_wire_guard.go \
+    'return aicontext.Resolve(profile.Context, model), nil' \
+    '_, err = s.memoryBackground("outreach")
+ if err != nil { return aicontext.Policy{}, err }
+ return aicontext.Resolve(profile.Context, model), nil'
+
+fi
+
+
+
+# Desk #598: canonical proposal control and person-owned acceptance.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory review: another session accepted' internal/desk/assistant_memory_review.go \
+    'if err != nil || !assistantRunIdentityMatches(identity, run.Binding) || run.Historical || run.Binding.Owner.Kind != "chat" {' \
+    'if err != nil || false && !assistantRunIdentityMatches(identity, run.Binding) || run.Historical || run.Binding.Owner.Kind != "chat" {'
+  mutate go 'assistant memory review: store CAS omitted' internal/desk/assistant_memory_review.go \
+    'if reply.SHA256 != r.Header.Get("If-Match") {' \
+    'if false && reply.SHA256 != r.Header.Get("If-Match") {'
+  mutate go 'assistant memory review: Clear generation ignored' internal/desk/assistant_memory_review.go \
+    'if d.GenerationAfter != "" {' \
+    'if false && d.GenerationAfter != "" {'
+  mutate go 'assistant memory review: Suggest off grants a proposal' internal/desk/assistant_memory_review.go \
+    '"memoryProposalsPerRun": 0' \
+    '"memoryProposalsPerRun": 1'
+  mutate go 'assistant memory review: owned receipt accepts another intent' internal/desk/assistant_memory_review.go \
+    'receipt.IntentDigest != intent' \
+    false
+  mutate go 'assistant memory review: accepted receipt identity unbound' internal/desk/assistant_memory_review.go \
+    'receipt.MemoryID != receipt.ProposalID' \
+    false
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'assistant memory review: accepted receipt identity unbound' web/src/assistant/memory/client.ts \
+    'value.memoryId!==value.proposalId' \
+    false
+  mutate web 'assistant memory review: response belongs to another proposal' web/src/assistant/memory/client.ts \
+    'receipt.proposalId!==change.proposalId' \
+    false
+  mutate web 'assistant memory review: proposal edit rebases reviewed store' web/src/assistant/memory/MemorySettings.tsx \
+    'decide(proposalEdit.proposal,'"'"'edit'"'"',proposalEdit.text,proposalEdit.revision)' \
+    'decide(proposalEdit.proposal,'"'"'edit'"'"',proposalEdit.text,query.data!.sha256)'
+fi
+
+
+# Host-authored independent creation reviewer source and acceptance authority.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant memory review: independent reviewer gains author cap' internal/desk/assistant_run_protocol.go \
+    'if assistantMemoryIndependentReview(creation) {' \
+    'if false && assistantMemoryIndependentReview(creation) {'
+  mutate go 'assistant memory review: reviewer action accepts attribution' internal/desk/assistant_memory_review.go \
+    'if err != nil || assistantMemoryIndependentReview(action) {' \
+    'if err != nil || false && assistantMemoryIndependentReview(action) {'
+fi
+
+
+# Closed production factory and retained browser display/exchange guards.
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant production: normal Server unbound' internal/desk/server.go \
+    'assistantRunExecutor:   &assistantProductionExecutor{},' \
+    'assistantRunExecutor:   nil,'
+  mutate go 'assistant production: chat selects standalone authoring' internal/desk/assistant_production_executor.go \
+    'return &assistantCreationExecutor{}, nil' \
+    'return &assistantAuthoringExecutor{}, nil'
+  mutate go 'assistant production: unknown purpose has fallback' internal/desk/assistant_production_executor.go \
+    'return nil, errAssistantRunScope' \
+    'return &assistantBriefExecutor{}, nil'
+  mutate go 'assistant production: legacy critic choice omitted' internal/desk/assistant_authoring_execution.go \
+    'Critic: assistantCriticChoice(chat)' \
+    'Critic: chat.Critic'
+  mutate go 'assistant production: project critic choice omitted' internal/desk/assistant_authoring_execution.go \
+    'CriticProject: chat.CriticProject' \
+    'CriticProject: ""'
+  mutate go 'assistant production: absent thinking is not off' internal/desk/assistant_authoring_execution.go \
+    'thinking = "off"' \
+    'thinking = "invalid"'
+  mutate go 'assistant production: explicit native default borrows effort' internal/desk/assistant_creation_adapter.go \
+    'effort = "" // A null override selects the model default.' \
+    '// A null override incorrectly keeps inherited effort.'
+fi
+if [ "$which" = all ] || [ "$which" = web ]; then
+  mutate web 'saved chat restore: unfinished work remains running' web/src/assistant/serverRuns/controller.ts \
+    'item.status==='"'"'working'"'"'?{...item,status:'"'"'interrupted'"'"' as const}:item' \
+    item
+  mutate web 'saved chat exchange: duplicate messages appended' web/src/assistant/serverRuns/controller.ts \
+    'if(previous){if(previous.role!==turn.role||previous.text!==turn.text||previous.at!==turn.at)' \
+    'if(false && previous){if(previous!.role!==turn.role||previous!.text!==turn.text||previous!.at!==turn.at)'
+  mutate web 'saved chat exchange: conflicting message accepted' web/src/assistant/serverRuns/controller.ts \
+    'if(previous.role!==turn.role||previous.text!==turn.text||previous.at!==turn.at)throw Error('"'"'A retained message conflicts with this session.'"'"')' \
+    'if(false)throw Error('"'"'A retained message conflicts with this session.'"'"')'
+fi
+
+if [ "$which" = all ] || [ "$which" = go ]; then
+  mutate go 'assistant production: standalone project critic omitted' internal/desk/assistant_authoring_execution.go \
+    'Thinking: a.Thinking, CriticProject: source.Profile.Critic' \
+    'Thinking: a.Thinking, CriticProject: ""'
 fi
 
 restore
@@ -14623,16 +15798,6 @@ echo
 if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
   echo "no row matched \"$only\" — nothing was checked" >&2
   exit 2
-  mutate web 'graph row 3: partial writes leave queries stale' web/src/graphs/GraphAuthor.tsx \
-    'await queries.invalidateQueries()' \
-    'if (false) await queries.invalidateQueries()'
-  mutate web 'graph row 3: a write without a lock describes a reviewed set' web/src/graphs/GraphAuthor.tsx \
-    'setSaved(accepted.hasLock)' \
-    'setSaved(true)'
-  mutate web 'graph row 3: edit provider disclosure omits current graph' web/src/graphs/GraphAuthor.tsx \
-    '<p>{graphId ? msg(' \
-    '<p>{false ? msg('
-
 fi
 selection_report
 all_named=$?

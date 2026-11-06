@@ -28,7 +28,13 @@ func TestAssistantProfileSharedFixtures(t *testing.T) {
 	}
 	for _, f := range fixtures {
 		t.Run(f.Name, func(t *testing.T) {
-			_, err := decodeAssistantProfile(f.Value)
+			decoded, err := decodeAssistantProfile(f.Value)
+			if err == nil {
+				var expected struct{ Critic string }
+				if json.Unmarshal(f.Value, &expected) != nil || decoded.Critic != expected.Critic {
+					t.Fatal("critic profile field lost")
+				}
+			}
 			if (err == nil) != f.Accepted {
 				t.Fatalf("acceptance mismatch: %v", err)
 			}

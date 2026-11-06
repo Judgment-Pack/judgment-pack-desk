@@ -45,7 +45,7 @@ I formed the finding from source and an independently written reproduction. I di
 | Check | Actual result |
 | --- | --- |
 | `npm test -- --reporter=dot src/connections src/documents` in reviewed Desk `web` | **18 test files / 236 tests passed.** These are repository-authored tests independently executed during this review. |
-| `go test ./internal/desk`, with `GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false` | **Passed**, 78.371 seconds. Initial sandboxed attempt could not open `httptest` loopback listeners; rerun with approved sandbox escalation passed. |
+| `go test ./internal/desk`, with `GOCACHE=<scratch>/jp-authoring-go-cache GOFLAGS=-buildvcs=false` | **Passed**, 78.371 seconds. Initial sandboxed attempt could not open `httptest` loopback listeners; rerun with approved sandbox escalation passed. |
 | `npm run typecheck` | **Passed.** |
 | `npm run i18n:check` | **Passed.** Each of 11 non-English locale files reported 2222/2222 translated strings and zero placeholder errors. |
 | `git diff --check` and final `git status --short` | **Clean.** |

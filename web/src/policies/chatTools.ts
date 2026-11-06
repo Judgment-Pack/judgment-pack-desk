@@ -5,7 +5,7 @@ import {checkArtifact} from '@judgment-pack/harness/execution/checkArtifact'
 import type {HostTool} from '@judgment-pack/harness/engine'
 import {toolInputFailure} from '@judgment-pack/harness/failures'
 import {readPolicy} from './client'
-import {policyFields,validPolicyFields,validPolicyRevision,type PolicyRequest,type PolicyProposal} from './chat'
+import {policyFields,policyUpdateCandidate,type PolicyRequest,type PolicyProposal} from './chat'
 import {resolvePolicyComparison,validPolicyComparisonRequest} from './comparison'
 import {validCoverageSelection} from './coverage'
 import {readCoverageCandidate} from './coverageClient'
@@ -21,9 +21,9 @@ export function policyChatTools(options:{id?:string;request:()=>PolicyRequest|un
    const saved=await readPolicy(id,signal);signal.throwIfAborted()
    return result({id,revision:saved.revision,candidate:saved.document.candidate,revisions:saved.document.revisions,publications:saved.document.publications,workflow:saved.document.workflow,reviewState:saved.document.reviewState,requestRevision:options.request()?.revision,guidance:'Saved draft only. Review/publication remain manual. Use the request-time revision for proposals; a changed saved revision requires a fresh request.'})
   }},
-  {name:'propose_policy_update',effect:'proposal',contextPolicy:{reference:true},description:'Propose a requested update to the linked saved Policy title, narrative and artifactVersion. Supply all three fields and the exact request-time revision. Retains a diff card only; does not save, approve or publish.',inputSchema:{type:'object',properties:{revision:{type:'string'},title:{type:'string'},narrative:{type:'string'},artifactVersion:{type:'string'}},required:['revision','title','narrative','artifactVersion'],additionalProperties:false},execute:async(args,signal)=>{
-   const {revision,...candidate}=args,request=options.request()
-   if(Object.keys(args).length!==4||!validPolicyRevision(revision)||!validPolicyFields(candidate)||!request||revision!==request.revision)throw toolInputFailure('Provide title, narrative and artifactVersion against the exact Policy revision included with this request.')
+  {name:'propose_policy_update',effect:'proposal',contextPolicy:{reference:true},description:'Propose a requested update to the linked saved Policy title, narrative and artifactVersion. Supply the exact request-time revision and at least one field to edit; omit unchanged fields, which Desk retains from that exact request-time candidate. Retains a diff card only; does not save, approve or publish.',inputSchema:{type:'object',properties:{revision:{type:'string'},title:{type:'string'},narrative:{type:'string'},artifactVersion:{type:'string'}},required:['revision'],minProperties:2,anyOf:[{required:['title']},{required:['narrative']},{required:['artifactVersion']}],additionalProperties:false},execute:async(args,signal)=>{
+   const request=options.request(),candidate=policyUpdateCandidate(args,request),revision=request?.revision
+   if(!candidate||!request||!revision)throw toolInputFailure('Provide the exact request-time Policy revision and at least one title, narrative or artifactVersion field. Omit unchanged fields; null and unknown fields are not accepted.')
    const proposal:PolicyProposal={version:1,id:crypto.randomUUID(),policyId:id,createdAt:new Date().toISOString(),afterTurnId:options.afterTurnId(),revision,before:policyFields(request.candidate),candidate:policyFields(candidate),operationId:crypto.randomUUID()}
    const check=await checkArtifact({candidate:proposal,fingerprint:p=>JSON.stringify(p.candidate),retain:async(p,check?:PolicyProposal['check'])=>{if(check)p.check=check;await options.retain(p,signal)},check:async(_p,signal)=>{const saved=await readPolicy(id,signal);return {scope:'draft-shape-and-revision' as const,status:saved.revision===revision?'passed' as const:'stale' as const}},passed:check=>check.status==='passed'},signal)
    if(check.status==='stale')throw toolInputFailure('The saved Policy changed during this request. The proposal is retained but cannot be saved. Send a fresh request against the latest saved draft.')

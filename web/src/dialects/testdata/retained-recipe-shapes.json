@@ -1,0 +1,26 @@
+{
+  "mapping": {
+    "version": 2,
+    "profile": "base",
+    "case": {
+      "facts": [
+        {"target":"/text","source":"/retained","conversion":{"contractVersion":"1","column":"Name","kind":"text"}},
+        {"target":"/decimal","source":"/retained","conversion":{"contractVersion":"1","column":"Amount","kind":"decimal"}},
+        {"target":"/number","source":"/retained","conversion":{"contractVersion":"1","column":"Count","kind":"number"}},
+        {"target":"/boolean","source":"/retained","conversion":{"contractVersion":"1","column":"Active","kind":"boolean","trueValue":"YES","falseValue":"NO"}},
+        {"target":"/research","source":"/retained","conversion":{"contractVersion":"1","column":"old research","kind":"research-value"}}
+      ],
+      "evidence": [{"requirement":"license","source":"/retained","availability":{"contractVersion":"1","column":"License"}}]
+    },
+    "sources": [],
+    "unmapped": ["/unused"],
+    "unmappedEvidence": ["other"]
+  },
+  "conversions": {
+    "/text":{"kind":"text"},
+    "/decimal":{"kind":"decimal"},
+    "/number":{"kind":"number"},
+    "/boolean":{"kind":"boolean","trueValue":"YES","falseValue":"NO"},
+    "/research":{"kind":"research-value"}
+  }
+}

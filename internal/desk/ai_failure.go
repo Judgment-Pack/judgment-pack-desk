@@ -19,6 +19,13 @@ func aiAgentFailure(err error) error {
 	if errors.As(err, &known) {
 		return known
 	}
+	if code, detail := codexHostFailure(err); code != "" {
+		outcome := "unknown"
+		if code == "connection-lost" {
+			outcome = "not-started"
+		}
+		return aifailure.Authored(code, "agent", outcome, detail)
+	}
 	code, outcome := "unknown", "unknown"
 	switch {
 	case errors.Is(err, codexbridge.ErrBusy):
@@ -52,4 +59,19 @@ func aiModelFailure(err error) error {
 		return aifailure.New("timeout", "model", "unknown")
 	}
 	return aifailure.FromCode(codeOf(err), "model", "unknown")
+}
+
+// Closed host-authored guidance shared by legacy and canonical agent boundaries.
+// Raw filesystem paths and native/provider errors must never become detail.
+func codexHostFailure(err error) (code, detail string) {
+	if errors.Is(err, context.Canceled) {
+		return "", ""
+	}
+	if codexbridge.DiskFull(err) {
+		return "storage", "Disk is full. Free space on the drive holding Desk's configuration and try again."
+	}
+	if errors.Is(err, codexbridge.ErrAccountLookup) {
+		return "connection-lost", "Desk could not reach ChatGPT to check the account. Check your internet connection and try again."
+	}
+	return "", ""
 }

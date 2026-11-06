@@ -64,6 +64,18 @@ func mustBytes(t *testing.T, path, want string) {
 	}
 }
 
+// savedConversationBytes captures the first save as the byte-preservation baseline.
+// Request envelope order is not part of the relocation/backup contract.
+func savedConversationBytes(t *testing.T, s *Server, ts *httptest.Server) string {
+	t.Helper()
+	location := storageGet(t, ts)
+	raw, err := os.ReadFile(filepath.Join(location.Path, s.conversationName()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
 const storageChat = `{"version":1,"chats":[{"id":"one","composer":"private draft","attachments":[{"text":"retained source"}]}]}`
 
 func TestStorageDefaultAndLegacy(t *testing.T) {
@@ -110,6 +122,7 @@ func TestStorageMoveAllProjectsAndFreshWriters(t *testing.T) {
 			t.Fatal(code)
 		}
 	}
+	storageChat := savedConversationBytes(t, a, ats)
 	privateFixture(t, filepath.Join(config, "secrets", "unrelated"), "protected credential")
 	before := storageGet(t, ats)
 	if before.ProjectCount != 2 || before.ProjectBytes != int64(len(storageChat)) {
@@ -135,6 +148,7 @@ func TestStorageMoveAllProjectsAndFreshWriters(t *testing.T) {
 	if code, _ := chatRequest(t, bts, "PUT", digestOf([]byte(storageChat)), next, true, ""); code != 200 {
 		t.Fatal("other server did not follow move", code)
 	}
+	next = savedConversationBytes(t, b, bts)
 	mustBytes(t, filepath.Join(target, b.conversationName()), next)
 	mustBytes(t, filepath.Join(before.Path, b.conversationName()), storageChat)
 	if code, _ := chatRequest(t, bts, "PUT", digestOf([]byte(storageChat)), storageChat, true, ""); code != 409 {
@@ -155,6 +169,7 @@ func TestStorageMoveRefusalsPreserveOriginal(t *testing.T) {
 			if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 				t.Fatal(code)
 			}
+			storageChat := savedConversationBytes(t, s, ts)
 			before := storageGet(t, ts)
 			request := moveChatData{Path: filepath.Join(t.TempDir(), "target"), Revision: before.Revision}
 			switch kind {
@@ -290,6 +305,7 @@ func TestStorageCanceledAndInterruptedCopy(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
 			chatRequest(t, ts, "PUT", "absent", storageChat, true, "")
+			storageChat := savedConversationBytes(t, s, ts)
 			before := storageGet(t, ts)
 			target := filepath.Join(t.TempDir(), "target")
 			ctx, cancel := context.WithCancel(context.Background())
@@ -413,6 +429,7 @@ func TestStorageBlocksRelocationDuringRelayRequests(t *testing.T) {
 			if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 				t.Fatal("running relay blocked checkpoint persistence", code)
 			}
+			storageChat := savedConversationBytes(t, s, ts)
 			close(release)
 			released = true
 			select {

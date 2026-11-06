@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { ChatStore, type Chat, type ChatPersistence } from './store'
 import { checkpoint } from './checkpoint'
 import { INITIAL_STATE, type Turn } from '../research/run'
-import type { ResearchRunBinding } from '../research/useResearchRun'
+import type { ResearchRunBinding } from '../research/types'
 const stores: ChatStore[] = []
 afterEach(() => { stores.forEach(store => store.dispose()); stores.length = 0; sessionStorage.clear(); vi.useRealTimers() })
 const binding = { state: INITIAL_STATE, sources: [], blocked: '', run: { running: false, stop: vi.fn() } } as unknown as ResearchRunBinding

@@ -163,7 +163,7 @@ func (s *Server) handleExchange(w http.ResponseWriter, r *http.Request) {
 			fail(400, errors.New("Choose a Git catalog location and release tag"))
 			return
 		}
-		tree, close, e := exchangeCatalog.OpenRelease(r.Context(), request.Location, request.Tag)
+		tree, close, e := exchangeCatalog.OpenRelease(exchangeCatalog.WithScratchObserver(r.Context(), s.observeExchangeScratch), request.Location, request.Tag)
 		if e != nil {
 			fail(422, e)
 			return

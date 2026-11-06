@@ -74,9 +74,16 @@ func readPublicationLedger(root *os.Root) (publicationLedger, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return publicationLedger{Version: 1, Items: []artifactPublication{}}, nil
 	}
-	var ledger publicationLedger
 	if err != nil {
-		return ledger, err
+		return publicationLedger{}, err
+	}
+	return decodePublicationLedger(raw)
+}
+
+func decodePublicationLedger(raw []byte) (publicationLedger, error) {
+	var ledger publicationLedger
+	if len(raw) > publicationLedgerLimit {
+		return ledger, errors.New("Artifact version history exceeds its storage limit.")
 	}
 	if decodeDataJSON(raw, &ledger) != nil || ledger.Version != 1 || len(ledger.Items) > 4096 {
 		return ledger, errors.New("Artifact version history is unreadable.")
@@ -106,7 +113,7 @@ func readPublicationLedger(root *os.Root) (publicationLedger, error) {
 			return ledger, errors.New("Artifact publication receipt is inconsistent.")
 		}
 	}
-	if err = admitPublication(ledger, artifactPublication{}); err != nil {
+	if err := admitPublication(ledger, artifactPublication{}); err != nil {
 		return ledger, err
 	}
 	return ledger, nil
@@ -496,4 +503,40 @@ func (s *Server) openPublicationTransaction(ctx context.Context) (*publicationTr
 	}
 	failed = false
 	return p, nil
+}
+
+func retentionPublicationReferences(raw []byte, ledger publicationLedger) storageRetentionSource {
+	out := storageRetentionUnknown("publication-history", "publications", raw, "opaque-dialect-publication")
+	complete := uniqueJSON(raw) && storageRetentionMembers(raw, "version", "items", "receipts")
+	var original struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if json.Unmarshal(raw, &original) != nil || len(original.Items) != len(ledger.Items) {
+		return out
+	}
+	add := func(ref *retainedArtifactRef) {
+		if ref != nil {
+			out.add(storageRetentionReference{"retained", ref.SHA256, strconv.Itoa(ref.Bytes)})
+		}
+	}
+	for i, p := range ledger.Items {
+		if p.Dialect != nil || !storageRetentionMembers(original.Items[i], "id", "at", "imported", "config", "dialect", "documents", "review", "reviews") {
+			complete = false
+		}
+		add(p.Config)
+		add(p.Review)
+		for _, r := range p.Reviews {
+			v := r
+			add(&v)
+		}
+		for _, d := range p.Documents {
+			v := d.Content
+			add(&v)
+		}
+	}
+	out.Complete = complete && len(out.Reasons) == 1
+	if out.Complete {
+		out.Reasons = []string{}
+	}
+	return out
 }

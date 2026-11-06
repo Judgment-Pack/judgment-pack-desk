@@ -14,3 +14,7 @@ web/dist/*
 # Python build-tool caches
 __pycache__/
 *.py[cod]
+
+# Test input that the check scripts fetch (scripts/dev/web-fixtures.sh)
+/.spec/
+/.venv/

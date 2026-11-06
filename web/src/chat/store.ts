@@ -1,8 +1,17 @@
+import { conversationWire, encodeWireChat, encodeWireValue, wireField } from './wire'
+import { reconcileChats } from './reconcile'
+import type { CriticMode, CriticTier } from '@judgment-pack/harness/contract'
+import { readCriticSettings } from '@judgment-pack/harness/criticSwitch'
+import { savedCriticChoice } from '../assistant/criticSettings'
 import {validPolicySources,type PolicyAuthoringSource} from '../policies/authoringSource'
 import {validPolicyInterpretationProposal,type PolicyInterpretationProposal} from '../policies/interpretation'
 import {validPolicyId,validPolicyRequest,validPolicyProposal,type PolicyRequest,type PolicyProposal} from '../policies/chat'
-import {validPlans,type ChatPlan} from '@judgment-pack/harness/planning/model'
-import type { Turn } from '../research/run'
+import type {ChatPlan} from '@judgment-pack/harness/planning/model'
+import {validDeskPlans as validPlans} from '../assistant/planning/deskPlan'
+import {checkPlan} from '@judgment-pack/harness/planning/tools'
+import type {PlanResolver} from '@judgment-pack/harness/planning/references'
+import {canonicalJSON} from '@judgment-pack/harness/context/chat'
+import { caseStatements, statementTurns, type Turn } from '../research/run'
 import {validDialectChatAction,validDialectId,type DialectChatAction} from '../dialects/chatActions'
 import {validDialectRecipeProposal,type DialectRecipeProposal} from '../dialects/proposals'
 import { validGraphSnapshot, type GraphDraft } from '../graphs/drafts'
@@ -20,7 +29,7 @@ import type { DocumentReference } from '../documents/client'
 import { sourceMessage } from '../i18n/source'
 import { answer, deskFetch } from '../files/client'
 import { checkpoint, decodeCheckpoint, type Checkpoint } from './checkpoint'
-import type { ResearchRunBinding } from '../research/useResearchRun'
+import type { ResearchRunBinding } from '../research/types'
 import { validWebURL } from '../documents/record'
 
 /** The link a web document was read from: the fetched address, and the anchor kept beside it, never sent. */
@@ -45,6 +54,7 @@ export function retainSentDocuments(previous: ChatAttachment[], sent: ChatAttach
   return [...documents.values()]
 }
 export interface Chat {
+ serverRequest?: {requestId:string;admissionId:string}
  policySources?:PolicyAuthoringSource[]
  policyInterpretationKind?:'pack'|'graph'
  policyInterpretations?:PolicyInterpretationProposal[]
@@ -79,20 +89,28 @@ export interface Chat {
   searches?: SearchReference[]
   researchMode?: 'auto' | 'provided'
   searchConnection?: string
+  critic?: CriticMode
+  criticReasoning?: CriticTier
   adversarialReview?: boolean
   titleEdited?: boolean
 }
 interface Document { version: 1; chats: Chat[] }
-interface Reply { project: string; sha256: string; content: unknown }
+interface Reply { project: string; sha256: string; content: unknown; chatRevisions?: Record<string,string>; wireChats?:Record<string,string> }
 interface Snapshot { packDrafts: PackDraft[]; deletedDrafts: string[]; chats: Chat[]; drafts: Chat[]; ready: boolean; saving: boolean; error: string; active: string[]; bindings: ReadonlyMap<string, ResearchRunBinding>; dirty: boolean }
-export interface ChatPersistence { read(): Promise<Reply>; write(document: Document, digest: string): Promise<Reply> }
+export interface ChatPersistence { read(): Promise<Reply>; write(document: Document, digest: string, wireChats?:Record<string,string>, editedFields?:ReadonlyMap<string,ReadonlySet<string>>): Promise<Reply> }
+export interface ReviewedPlanAcceptance { plan:ChatPlan; scope:string }
 const persistence: ChatPersistence = {
-  read: async () => answer<Reply>(await deskFetch('/api/conversations')),
-  write: async (document, digest) => answer<Reply>(await deskFetch('/api/conversations', {
-    method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': digest }, body: JSON.stringify(document)
+  read: async () => readReply(await deskFetch('/api/conversations')),
+  write: async (document, digest, wireChats, editedFields) => readReply(await deskFetch('/api/conversations', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': digest }, body: '{"version":1,"chats":['+document.chats.map(chat=>encodeWireChat(chat,wireChats?.[chat.id],editedFields?.get(chat.id))).join(',')+']}'
   }))
 }
-function decode(value: unknown): Chat[] {
+async function readReply(response:Response):Promise<Reply> {
+ if(!response.ok)return answer<Reply>(response)
+ const raw=await response.text(),wireChats=conversationWire(raw)
+ return {...JSON.parse(raw) as Reply,wireChats}
+}
+function decode(value: unknown,wireChats?:Record<string,string>): Chat[] {
   const doc = value as Partial<Document> | null
   if (doc?.version !== 1 || !Array.isArray(doc.chats) || doc.chats.length > 256) throw new Error(sourceMessage("Unsupported chat history. The saved file has not been changed."))
   const ids = new Set<string>()
@@ -103,6 +121,7 @@ function decode(value: unknown): Chat[] {
       || typeof chat.title !== 'string' || typeof chat.composer !== 'string' || typeof chat.model !== 'string'
       || typeof chat.pinned !== 'boolean' || typeof chat.archived !== 'boolean'
       || typeof chat.updatedAt !== 'string' || !Number.isFinite(Date.parse(chat.updatedAt)) || !['draft', 'research', 'web-research'].includes(chat.mode) || !['chat', 'draft'].includes(chat.view)) throw new Error(sourceMessage("Invalid saved chat. History has not been changed."))
+    if(chat.serverRequest!==undefined&&(!chat.serverRequest||Object.keys(chat.serverRequest).sort().join(',')!=='admissionId,requestId'||![chat.serverRequest.requestId,chat.serverRequest.admissionId].every(v=>typeof v==='string'&&/^[A-Za-z0-9-]{1,100}$/.test(v))))throw Error(sourceMessage('Invalid saved chat'))
     if (chat.apiThinking!==undefined&&!ASSISTANT_THINKING.includes(chat.apiThinking))throw new Error(sourceMessage('Invalid saved chat'))
     if (chat.aiConnection !== undefined && !validAIConnectionId(chat.aiConnection)) throw new Error(sourceMessage('Invalid saved chat'))
     if (chat.aiConnectionName !== undefined && (typeof chat.aiConnectionName!=='string'||chat.aiConnectionName.length>128)) throw new Error(sourceMessage('Invalid saved chat'))
@@ -124,6 +143,7 @@ function decode(value: unknown): Chat[] {
     if (chat.graphDrafts !== undefined && (!Array.isArray(chat.graphDrafts) || chat.graphDrafts.length > 16 || !chat.graphDrafts.every(validGraphSnapshot) || new Set(chat.graphDrafts.map(d => d.draftId)).size !== chat.graphDrafts.length)) throw new Error(sourceMessage('Invalid saved graph drafts'))
     if (chat.graph && (chat.pack || chat.draftId || typeof chat.graph.id !== 'string' || typeof chat.graph.path !== 'string' || typeof chat.graph.workspace !== 'string' || chat.graph.id.length > 128 || chat.graph.path.length > 1024 || !/^[a-zA-Z0-9-]{1,160}$/.test(chat.graph.workspace))) throw new Error(sourceMessage('Invalid saved graph context'))
     if(chat.interaction!==undefined&&!['plan','work'].includes(chat.interaction)||chat.plans!==undefined&&!validPlans(chat.plans))throw Error(sourceMessage('Invalid saved plan'))
+    readCriticSettings({critic:savedCriticChoice(chat),criticReasoning:chat.criticReasoning}, chat.criticReasoning !== undefined && !['off','on','ultra'].includes(chat.criticReasoning))
     ids.add(chat.id)
     if (chat.attachments !== undefined && (!Array.isArray(chat.attachments) || chat.attachments.length > 4
       || chat.attachments.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000))) throw new Error(sourceMessage("Invalid saved attachments"))
@@ -140,11 +160,11 @@ function decode(value: unknown): Chat[] {
     if(chat.searches!==undefined && (!Array.isArray(chat.searches)||chat.searches.length>64||!chat.searches.every(validSearchReference)||new Set(chat.searches.map(s=>s.id)).size!==chat.searches.length))throw new Error(sourceMessage('Invalid saved attachments'))
     if(chat.researchMode!==undefined&&!['auto','provided'].includes(chat.researchMode)||chat.searchConnection!==undefined&&(typeof chat.searchConnection!=='string'||!/^([a-z][a-z0-9-]{0,47})$/.test(chat.searchConnection)))throw new Error(sourceMessage('Invalid saved chat'))
     if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error(sourceMessage("Invalid saved pack context"))
-    return { id: chat.id, title: chat.title, policySources:chat.policySources,policyInterpretationKind:chat.policyInterpretationKind,policyInterpretations:chat.policyInterpretations,policy:chat.policy,policyRequest:chat.policyRequest,policyProposals:chat.policyProposals, interaction:chat.interaction, plans:chat.plans, ...(chat.input?{input:chat.input}:{}), ...(chat.inputActions?{inputActions:chat.inputActions}:{}), ...(chat.inputDrafts?{inputDrafts:chat.inputDrafts}:{}), ...(chat.graph ? {graph: chat.graph} : {}), ...(chat.graphDrafts ? {graphDrafts: chat.graphDrafts} : {}), composer: chat.composer, model: chat.model, ...(chat.apiThinking?{apiThinking:chat.apiThinking}:{}), ...(chat.aiConnection?{aiConnection:chat.aiConnection,aiConnectionName:chat.aiConnectionName}:{}), ...(chat.reasoning ? {reasoning:{model:chat.reasoning.model,effort:chat.reasoning.effort}} : {}), pinned: chat.pinned, archived: chat.archived,
-      updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode === 'research' && !chat.checkpoint && !chat.draftId ? 'web-research' : chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], websites:chat.websites ?? [], searches:chat.searches??[], researchMode:chat.researchMode, searchConnection:chat.searchConnection, adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
+    return { serverRequest:chat.serverRequest, id: chat.id, title: chat.title, policySources:chat.policySources,policyInterpretationKind:chat.policyInterpretationKind,policyInterpretations:chat.policyInterpretations,policy:chat.policy,policyRequest:chat.policyRequest,policyProposals:chat.policyProposals, interaction:chat.interaction, plans:chat.plans, ...(chat.input?{input:chat.input}:{}), ...(chat.inputActions?{inputActions:chat.inputActions}:{}), ...(chat.inputDrafts?{inputDrafts:chat.inputDrafts}:{}), ...(chat.graph ? {graph: chat.graph} : {}), ...(chat.graphDrafts ? {graphDrafts: chat.graphDrafts} : {}), composer: chat.composer, model: chat.model, ...(chat.apiThinking?{apiThinking:chat.apiThinking}:{}), ...(chat.aiConnection?{aiConnection:chat.aiConnection,aiConnectionName:chat.aiConnectionName}:{}), ...(chat.reasoning ? {reasoning:{model:chat.reasoning.model,effort:chat.reasoning.effort}} : {}), pinned: chat.pinned, archived: chat.archived,
+      updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode === 'research' && !chat.checkpoint && !chat.draftId ? 'web-research' : chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], websites:chat.websites ?? [], searches:chat.searches??[], researchMode:chat.researchMode, searchConnection:chat.searchConnection, ...(chat.adversarialReview === undefined ? {} : { adversarialReview: chat.adversarialReview }), ...(chat.critic === undefined ? {} : { critic: chat.critic }), ...(chat.criticReasoning === undefined ? {} : { criticReasoning: chat.criticReasoning }), titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.draftId ? { draftId: chat.draftId, draftGeneration:chat.draftGeneration } : {}),
       ...(chat.targetFolderId !== undefined ? { targetFolderId: chat.targetFolderId } : {}),
-      ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint) } : {}),
+      ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint,wireChats?.[chat.id]&&wireField(wireChats[chat.id]!,'checkpoint')) } : {}),
       ...(typeof chat.createdCandidateDigest === 'string' ? { createdCandidateDigest: chat.createdCandidateDigest } : {}) }
   })
 }
@@ -155,9 +175,21 @@ export class ChatStore {
   private listeners = new Set<() => void>()
   private leases = 0
   retain() { this.leases++; return () => { this.leases--; queueMicrotask(() => { if (!this.leases) this.dispose() }) } }
+  private baselineWire:Record<string,string>={}
+  private fieldEdits=new Map<string,Map<string,number>>()
+  private baseline: Chat[] = []
+  private serverOwned = false
+  private disposed = false
+  private pins = new Set<string>()
   private digest = 'absent'
   private revision = 0
   private savedRevision = 0
+  private persistenceTail: Promise<unknown> = Promise.resolve()
+  private serialPersistence<T>(action:()=>Promise<T>):Promise<T> {
+    const result=this.persistenceTail.then(action)
+    this.persistenceTail=result.catch(()=>{})
+    return result
+  }
   private timer: ReturnType<typeof setTimeout> | undefined
   private loading: Promise<void> | null = null
   private observed = new Map<string, { state: unknown; sources: unknown }>()
@@ -169,10 +201,16 @@ export class ChatStore {
   getSnapshot = () => this.state
   private set(patch: Partial<Snapshot>) { this.state = { ...this.state, ...patch }; this.listeners.forEach(listener => listener()) }
   private changed(chats: Chat[], patch: Partial<Snapshot> = {}) {
+    const previous=new Map(this.state.chats.map(c=>[c.id,c]))
+    for(const chat of chats){const before=previous.get(chat.id);for(const key of Object.keys(chat))if(!before||!Object.is(before[key as keyof Chat],chat[key as keyof Chat]))this.markField(chat.id,key)}
     this.revision++
     this.set({ ...patch, chats, dirty: true })
     clearTimeout(this.timer)
     this.timer = setTimeout(() => { void this.flush() }, 600)
+  }
+  private markField(id:string,key:string){const edits=this.fieldEdits.get(id)??new Map<string,number>();edits.set(key,this.revision+1);this.fieldEdits.set(id,edits)}
+  private verifyWireConflicts(current:Reply,edits:ReadonlyMap<string,ReadonlySet<string>>){
+    for(const [id,keys] of edits){const before=this.baselineWire[id],after=current.wireChats?.[id];if(!before||!after)continue;for(const key of keys)if(wireField(before,key)!==wireField(after,key))throw Error('The same chat field changed on the server. Your local changes are kept.')}
   }
   retryInitialLoad(): Promise<void> {
     if (this.state.ready || !this.state.error || this.state.dirty || this.state.saving || this.running) return Promise.resolve()
@@ -184,10 +222,12 @@ export class ChatStore {
       try {
         const reply = await this.io.read()
         if (reply.project !== this.project) throw new Error(sourceMessage("Chat history belongs to a different project"))
-        const chats = decode(reply.content).map(migrateMessageOwnership)
+        const chats = decode(reply.content,reply.wireChats).map(migrateMessageOwnership)
         const draftReply = await this.draftIO.read()
         if (draftReply.project !== this.project) throw new Error(sourceMessage('Chat history belongs to a different project'))
-        const artifacts = decodeDrafts(draftReply.content)
+        const artifacts = decodeDrafts(draftReply.content,draftReply.wireDrafts)
+        this.baselineWire=reply.wireChats??{}
+        this.baseline = chats
         this.digest = reply.sha256
         this.draftDigest = draftReply.sha256
         this.set({ chats, packDrafts: artifacts.drafts, deletedDrafts: artifacts.deleted, ready: true, error: '' })
@@ -207,12 +247,16 @@ export class ChatStore {
     })()
     return this.loading
   }
-  async flush(): Promise<boolean> {
+  flush(): Promise<boolean> { return this.serialPersistence(()=>this.flushPending()) }
+  private async flushPending(): Promise<boolean> {
     clearTimeout(this.timer)
     if (!this.state.ready || this.state.error || this.state.saving) return false
     if (this.savedRevision === this.revision) return true
     const revision = this.revision
-    const document: Document = { version: 1, chats: this.state.chats }
+    let document: Document = { version: 1, chats: this.state.chats }
+    const local = this.state.chats
+    let wireChats:Record<string,string>|undefined
+    const fieldEdits=new Map([...this.fieldEdits].map(([id,keys])=>[id,new Set(keys.keys())]))
     const draftRevision = this.draftRevision
     const draftDocument: DraftDocument = {version: 1, drafts: this.state.packDrafts, deleted: this.state.deletedDrafts}
     this.set({ saving: true })
@@ -223,8 +267,24 @@ export class ChatStore {
         if (saved.project !== this.project) throw new Error(sourceMessage('Chat save answered for a different project'))
         this.draftDigest = saved.sha256; this.savedDraftRevision = draftRevision
       }
-      const reply = await this.io.write(document, this.digest)
+      if(this.serverOwned) {
+        const current=await this.io.read()
+        if(current.project!==this.project||this.disposed)throw Error('The project changed before saving.')
+        this.verifyWireConflicts(current,fieldEdits)
+        const remote=decode(current.content,current.wireChats).map(migrateMessageOwnership)
+        document={version:1,chats:reconcileChats(this.baseline,local,remote,(current.content as Document).chats)}
+        this.digest=current.sha256
+        wireChats=current.wireChats
+      }
+      const reply = await this.io.write(document, this.digest, wireChats, fieldEdits)
       if (reply.project !== this.project) throw new Error(sourceMessage("Chat save answered for a different project"))
+      const saved=this.serverOwned?decode(reply.content,reply.wireChats).map(migrateMessageOwnership):local
+      // Edits made while the CAS was in flight remain dirty and are merged once.
+      const next=this.serverOwned?reconcileChats(local,this.state.chats,saved):this.state.chats
+      this.baselineWire=reply.wireChats??{}
+      for(const [id,keys] of this.fieldEdits){for(const [key,at] of keys)if(at<=revision)keys.delete(key);if(!keys.size)this.fieldEdits.delete(id)}
+      this.baseline=saved
+      this.set({chats:next})
       this.digest = reply.sha256
       this.savedRevision = revision
       this.set({ saving: false, dirty: this.revision !== revision, error: '' })
@@ -233,6 +293,124 @@ export class ChatStore {
     } catch (error) {
       this.set({ saving: false, error: sourceMessage("Chat changes are not saved: {{value0}}", { value0: (error as Error).message }) })
       return false
+    }
+  }
+  /** Host-owned acceptance: stage privately, commit with the document CAS, then publish.
+   * This intentionally is not the harness's general async ChatStore interface. */
+  acceptReviewedPlan(id:string, reviewed:ChatPlan, resolver:PlanResolver, signal:AbortSignal):Promise<ReviewedPlanAcceptance> {
+    const scope=this.reviewScope(this.planOwner(id))
+    return this.serialPersistence(async()=>{
+      const current=()=>{
+        signal.throwIfAborted()
+        if(this.disposed||!this.state.ready||this.state.error)throw Error(this.state.error||'Chat history is not ready.')
+        if(this.pins.has(id)||this.running)throw Error('Finish or reconcile the active response before starting work.')
+        const chat=this.planOwner(id),latest=chat?.plans?.at(-1)
+        if(!chat||this.reviewScope(chat)!==scope||chat.interaction!=='plan'||!latest||!validPlans(chat.plans)||canonicalJSON(latest)!==canonicalJSON(reviewed)||latest.status!=='proposed'||latest.questions.length)throw Error('The plan changed. Review its current revision.')
+        return chat
+      }
+      current()
+      // A new proposed row must exist before the server can admit its acceptance.
+      this.retainChat(id)
+      if(!await this.flushPending())throw Error(this.state.error||'The proposed plan could not be saved.')
+      current()
+      await checkPlan(reviewed,signal,resolver)
+      current()
+      await this.refreshForPlan()
+      const chat=current()
+      const accepted:ChatPlan={...reviewed,status:'accepted',acceptedAt:new Date().toISOString()}
+      const patch:Partial<Chat>={interaction:'work',plans:chat.plans!.map(p=>p.id===reviewed.id?accepted:p)}
+      const receipt={plan:accepted,scope:this.reviewScope({...chat,...patch})}
+      await this.commitPlan(chat,patch,()=>{current()},signal)
+      // Local changes or response ownership acquired during the write prevent dispatch.
+      this.assertReviewedPlanAccepted(id,receipt)
+      signal.throwIfAborted()
+      return receipt
+    })
+  }
+  private planOwner(id:string) { return [...this.state.chats,...this.state.drafts].find(c=>c.id===id) }
+  /** Resolve only an acknowledged saved proposal. Called lazily after promotion
+   * and flush, so a draft's former document revision cannot authorize lookup. */
+  async reviewedPlanRevision(id:string,plan:ChatPlan,signal:AbortSignal):Promise<string> {
+    const scope=this.reviewScope(this.planOwner(id))
+    const reply=await this.io.read();signal.throwIfAborted()
+    if(this.disposed||reply.project!==this.project||scope!==this.reviewScope(this.planOwner(id)))throw Error('The plan changed. Review its current revision.')
+    const saved=decode(reply.content,reply.wireChats).map(migrateMessageOwnership).find(chat=>chat.id===id)
+    const revision=reply.chatRevisions?.[id]
+    if(!revision||!/^[a-f0-9]{64}$/.test(revision)||!saved||canonicalJSON(saved.plans?.at(-1))!==canonicalJSON(plan)||this.reviewScope(saved)!==scope)throw Error('The plan changed. Review its current revision.')
+    return revision
+  }
+  private reviewScope(chat:Chat|undefined) { return canonicalJSON([chat?.interaction,chat?.plans,chat?.pack,chat?.graph,chat?.input,chat?.serverRequest,chat?.checkpoint]) }
+  assertReviewedPlanAccepted(id:string,accepted:ReviewedPlanAcceptance) {
+    const chat=this.planOwner(id)
+    if(this.disposed||this.state.error||this.pins.has(id)||this.running||chat?.interaction!=='work'||canonicalJSON(chat.plans?.at(-1))!==canonicalJSON(accepted.plan)||this.reviewScope(chat)!==accepted.scope||!this.baseline.some(c=>c.id===id&&this.reviewScope(c)===accepted.scope))throw Error('The accepted plan changed or its save is uncertain. Review the current chat before starting work.')
+  }
+  /** Response ownership wins over a cosmetic started marker. Never unpin or replay. */
+  markReviewedPlanStarted(id:string,accepted:ReviewedPlanAcceptance,signal:AbortSignal):Promise<void> {
+    return this.serialPersistence(async()=>{
+      if(this.pins.has(id)||this.running)return
+      this.assertReviewedPlanAccepted(id,accepted)
+      const scope=this.reviewScope(this.planOwner(id))
+      if(!await this.flushPending())throw Error(this.state.error||'The chat could not be saved.')
+      await this.refreshForPlan()
+      if(this.pins.has(id)||this.running)return
+      this.assertReviewedPlanAccepted(id,accepted)
+      const chat=this.planOwner(id)!
+      const check=()=>{signal.throwIfAborted();if(this.pins.has(id)||this.running||this.reviewScope(this.planOwner(id))!==scope)throw Error('The plan changed before recording work started.')}
+      await this.commitPlan(chat,{plans:chat.plans!.map(p=>p.id===accepted.plan.id?{...p,status:'started'}:p)},check,signal,check)
+    })
+  }
+  private async refreshForPlan() {
+    const reply=await this.io.read()
+    if(reply.project!==this.project||this.disposed)throw Error('The project changed before saving.')
+    this.verifyWireConflicts(reply,new Map([...this.fieldEdits].map(([id,keys])=>[id,new Set(keys.keys())])))
+    const remote=decode(reply.content,reply.wireChats).map(migrateMessageOwnership)
+    const chats=reconcileChats(this.baseline,this.state.chats,remote)
+    this.baseline=remote;this.baselineWire=reply.wireChats??{};this.digest=reply.sha256
+    this.set({chats})
+  }
+  private async commitPlan(chat:Chat,patch:Partial<Chat>,check:()=>void,signal:AbortSignal,checkAfterAck?:()=>void) {
+    check();signal.throwIfAborted()
+    const local=this.state.chats,revision=this.revision
+    const document:Document={version:1,chats:local.map(c=>c.id===chat.id?{...c,...patch}:c)}
+    const edits=new Map([...this.fieldEdits].map(([id,keys])=>[id,new Set(keys.keys())]))
+    edits.set(chat.id,new Set([...(edits.get(chat.id)??[]),...Object.keys(patch)]))
+    const draftRevision=this.draftRevision
+    const draftDocument:DraftDocument={version:1,drafts:this.state.packDrafts,deleted:this.state.deletedDrafts}
+    clearTimeout(this.timer);this.set({saving:true})
+    try {
+      // Preserve the existing artifact-first ordering, including artifact edits
+      // arriving while references were checked. These remain separate CASes.
+      if(draftRevision!==this.savedDraftRevision){
+        const saved=await this.draftIO.write(draftDocument,this.draftDigest)
+        if(saved.project!==this.project)throw Error('Chat save answered for a different project')
+        this.draftDigest=saved.sha256;this.savedDraftRevision=draftRevision
+      }
+      check()
+      const reply=await this.io.write(document,this.digest,this.baselineWire,edits)
+      if(reply.project!==this.project||this.disposed)throw Error('The project changed during Plan acceptance.')
+      const saved=decode(reply.content,reply.wireChats).map(migrateMessageOwnership)
+      if(this.reviewScope(saved.find(c=>c.id===chat.id))!==this.reviewScope(document.chats.find(c=>c.id===chat.id)))throw Error('The exact saved plan acknowledgement is unavailable.')
+      checkAfterAck?.()
+      // Merge edits made during I/O over the acknowledged row, including changed
+      // Plan scope. Those edits stay dirty and cannot authorize this dispatch.
+      const before=new Map(local.map(c=>[c.id,c])),live=new Map(this.state.chats.map(c=>[c.id,c]))
+      const next=saved.filter(c=>!before.has(c.id)||live.has(c.id)).map(c=>{
+        const b=before.get(c.id),l=live.get(c.id)
+        if(!b||!l)return c
+        const merged={...c} as unknown as Record<string,unknown>
+        for(const key of new Set([...Object.keys(b),...Object.keys(l)]))if(!Object.is(b[key as keyof Chat],l[key as keyof Chat])){if(l[key as keyof Chat]===undefined)delete merged[key];else merged[key]=l[key as keyof Chat]}
+        return merged as unknown as Chat
+      })
+      for(const c of this.state.chats)if(!before.has(c.id)&&!next.some(n=>n.id===c.id))next.push(c)
+      this.baseline=saved;this.baselineWire=reply.wireChats??{};this.digest=reply.sha256
+      for(const [id,keys] of this.fieldEdits){for(const [key,at] of keys)if(at<=revision)keys.delete(key);if(!keys.size)this.fieldEdits.delete(id)}
+      this.savedRevision=revision
+      this.set({chats:next,saving:false,dirty:this.revision!==revision})
+      if(this.revision!==revision)this.timer=setTimeout(()=>{void this.flush()},600)
+    } catch(error) {
+      // A rejected/uncertain acknowledgement is never retried as acceptance.
+      this.set({saving:false,error:'Plan save is uncertain or refused. Reconcile the chat before starting work.'})
+      throw error
     }
   }
   /** Await the current checkpoint even when a debounced save is already in flight. */
@@ -255,6 +433,7 @@ export class ChatStore {
     signal.throwIfAborted()
   }
   retrySave() { this.set({ error: '' }); void this.flush() }
+  get projectRoot(){return this.project}
   get canCreate() { return this.state.ready && this.state.chats.length < 256 }
   private saveHomeDraft(chat?: Chat) {
     try {
@@ -304,10 +483,13 @@ export class ChatStore {
     return chat
   }
   update(id: string, patch: Partial<Omit<Chat, 'id' | 'updatedAt' | 'createdAt'>>) {
+    if(this.pins.has(id)) { this.problem(sourceMessage('This chat is owned by an active server response. Reconnect or stop it before editing.')); return }
     const draft = this.state.drafts.find(chat => chat.id === id)
     const previous = draft ?? this.state.chats.find(chat => chat.id === id)
     if (previous?.mode === 'research' && patch.mode !== undefined && patch.mode !== 'research' && (this.state.bindings.get(id)?.state.candidates.length || previous.checkpoint?.state.candidates.length)) return
-    if (!previous || Object.entries(patch).every(([key,value]) => previous[key as keyof Chat] === value)) return
+    if(!previous)return
+    for(const key of Object.keys(patch))this.markField(id,key)
+    if(Object.entries(patch).every(([key,value])=>Object.is(previous[key as keyof Chat],value)))return
     if (draft) {
       const next = { ...draft, ...patch, updatedAt: new Date().toISOString() }
       this.set({ drafts: this.state.drafts.map(chat => chat.id === id ? next : chat) })
@@ -318,6 +500,7 @@ export class ChatStore {
   }
   /** Uses the live session so later chat checkpoints cannot overwrite task messages. */
   appendConversation(id: string, turns: Turn[]) {
+    if(this.pins.has(id))throw Error('Finish or reconcile the active server response before adding messages.')
     const owner = [...this.state.chats, ...this.state.drafts].find(chat => chat.id === id)
     const binding = this.state.bindings.get(id)
     if (!owner || !binding?.run) throw Error('The linked chat is still loading. Try again when it is ready.')
@@ -343,6 +526,7 @@ export class ChatStore {
     if (live && live !== binding.state) return
     const bindings = new Map(this.state.bindings); bindings.set(id,binding)
     this.set({ bindings })
+    if(binding.run?.ownership==='server') { this.serverOwned=true; return }
     const previous = this.observed.get(id)
     if (previous?.state === binding.state && previous?.sources === binding.sources) return
     this.observed.set(id, { state: binding.state, sources: binding.sources })
@@ -449,5 +633,82 @@ export class ChatStore {
     if (!draft) this.changed(this.state.chats.filter(chat => chat.id !== id))
     disposeChatContext(id)
   }
-  dispose() { clearTimeout(this.timer); this.state.bindings.forEach(binding => binding.run?.stop()) }
+  dispose() { this.disposed=true; clearTimeout(this.timer); this.state.bindings.forEach(binding => binding.run?.ownership==='server' ? binding.run.disconnect?.() : binding.run?.stop()) }
+  /** Original user turn and admission identity become durable before any POST. */
+  async prepareServerRequest(id:string, state:ResearchRunBinding['state'], requestId:string, admissionId:string, signal:AbortSignal):Promise<string> {
+    this.serverOwned=true
+    this.retainChat(id)
+    if(this.pins.has(id))throw Error('The previous server response has not reconciled.')
+	const owner=[...this.state.chats,...this.state.drafts].find(chat=>chat.id===id)
+	const retained=checkpoint(state,[])
+	retained.sources=owner?.checkpoint?.sources??[]
+    this.update(id,{checkpoint:retained,serverRequest:{requestId,admissionId}})
+    await this.checkpoint(signal)
+    const reply=await this.io.read();signal.throwIfAborted()
+    if(reply.project!==this.project||this.disposed)throw Error('The project changed before starting.')
+    const revision=reply.chatRevisions?.[id]
+    if(!revision||!/^[a-f0-9]{64}$/.test(revision))throw Error('The exact saved chat revision is unavailable.')
+    const saved=decode(reply.content,reply.wireChats).find(c=>c.id===id)
+    if(saved?.serverRequest?.requestId!==requestId||saved.serverRequest.admissionId!==admissionId||!saved.checkpoint?.state.turns.some(t=>t.id===requestId))throw Error('The saved request changed before starting.')
+    this.pins.add(id)
+    return revision
+  }
+  /** Only the controller's proven pre-POST branch may release an unadmitted marker. */
+  releaseUnsentServerRequest(id:string,requestId:string,state:ResearchRunBinding['state']) {
+    const chat=[...this.state.chats,...this.state.drafts].find(c=>c.id===id)
+    if(chat?.serverRequest?.requestId!==requestId||this.disposed)return
+    this.pins.delete(id)
+    const retained=checkpoint({...state,phase:'conversation',status:'stopped'},[]);retained.sources=chat.checkpoint?.sources??[]
+    this.update(id,{serverRequest:undefined,checkpoint:retained})
+  }
+  pinServerChat(id:string) { this.serverOwned=true;this.pins.add(id) }
+  /** Read-only private snapshot reconciliation. Local edits survive both refresh and CAS conflicts. */
+  reconcileServer(id:string, release=false, projection?:{digest:string;responseId:string;requestId:string;admissionId:string}):Promise<Chat|undefined> {
+    return this.serialPersistence(()=>this.reconcileServerPending(id,release,projection))
+  }
+  private async reconcileServerPending(id:string, release=false, projection?:{digest:string;responseId:string;requestId:string;admissionId:string}):Promise<Chat|undefined> {
+    const reply=await this.io.read()
+    if(reply.project!==this.project||this.disposed)throw Error('The project changed during chat reconciliation.')
+    this.verifyWireConflicts(reply,new Map([...this.fieldEdits].map(([id,keys])=>[id,new Set(keys.keys())])))
+    const remote=decode(reply.content,reply.wireChats).map(migrateMessageOwnership)
+    const chats=reconcileChats(this.baseline,this.state.chats,remote)
+    this.baseline=remote;this.baselineWire=reply.wireChats??{};this.digest=reply.sha256
+    if(release)this.pins.delete(id)
+    this.set({chats})
+	const selected=chats.find(c=>c.id===id)
+	const exactProjection=projection&&reply.chatRevisions?.[id]===projection.digest&&selected?.serverRequest?.requestId===projection.requestId&&selected.serverRequest.admissionId===projection.admissionId&&selected.checkpoint?.state.responses?.some(r=>r.id===projection.responseId)
+	if(release&&exactProjection&&selected?.checkpoint?.state.candidates.length&&!selected.pack&&!selected.graph&&!selected.input&&!selected.policy){
+		const state=selected.checkpoint.state,statements=caseStatements(state)
+        for(const {id:statementId,turn} of statementTurns(state.turns))if(turn.creation)statements.delete(state.inheritedStatements===undefined?statementId:`message:${turn.id}`)
+        const saved:Checkpoint={...selected.checkpoint,state:{...state,inheritedStatements:[...statements],phase:'review',status:'needs-input',restored:true,execution:undefined,failure:undefined,events:[],checkRun:undefined,readiness:''}},current=this.state.packDrafts.find(d=>d.id===selected.draftId)
+		if(!selected.draftId){
+			const created=fromChat(selected,saved)
+			if(!this.state.deletedDrafts.includes(created.id)){
+				const retained=this.state.packDrafts.find(d=>d.id===created.id)
+				if(!retained&&!this.saveDraft(created))throw Error('The retained draft could not be saved.')
+				this.update(id,{draftId:created.id,draftGeneration:retained?.generation??created.generation})
+			}
+		}else if(current&&!current.finalized&&selected.draftGeneration===current.generation){
+			const accepted=current.checkpoint.state.candidates
+			if(!accepted.every((c,index)=>saved.state.candidates[index]?.text===c.text))throw Error('The retained draft changed before reconciliation.')
+			const next={...current,title:current.titleEdited?current.title:draftTitle(saved),checkpoint:artifactCheckpoint(saved),sourceFiles:[...new Map([...(current.sourceFiles??[]),...retainedSourceFiles(saved)].map(file=>[file.name+'\0'+file.text,file])).values()],policySources:selected.policySources??current.policySources,documents:retainSentDocuments(current.documents,selected.documents??[])}
+			// Original chat history retains every control and observation. Artifact
+			// generation tracks the candidate and independent evidence; a check or
+			// visible correction proposal cannot invalidate its own approval token.
+			const basis=(draft:PackDraft)=>{const s=draft.checkpoint.state;return JSON.stringify([draft.title,draft.mode,s.candidates.map(c=>c.text),encodeWireValue(s.cases),encodeWireValue(s.expectationIssues),encodeWireValue(s.heldProposal),s.unknowns,s.inheritedStatements,draft.checkpoint.sources,draft.sourceFiles,draft.policySources,draft.documents])}
+			if(basis(next)!==basis(current)){
+				if(!this.saveDraft({...next,generation:current.generation+1,updatedAt:selected.updatedAt}))throw Error('The retained draft could not be saved.')
+				this.update(id,{draftGeneration:current.generation+1})
+			}
+		}
+		if(this.state.dirty&&!await this.flushPending())throw Error('The retained draft link could not be saved.')
+	}
+    return this.state.chats.find(c=>c.id===id)
+  }
+
+}
+
+/** An explicit control edit replaces the one-release legacy alias, including on inherit. */
+export function criticChoice(critic: CriticMode | undefined): Pick<Chat, 'critic' | 'adversarialReview'> {
+  return {critic, adversarialReview: undefined}
 }

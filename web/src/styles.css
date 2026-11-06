@@ -1320,6 +1320,17 @@ fieldset {
   max-width: none;
 }
 
+/* Keep wide document graphs at their readable natural size. The focusable
+   region lets keyboard users reach every layer column. */
+.diagram-scroll {
+  overflow-x: auto;
+}
+
+.diagram-scroll:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+}
+
 .diagram-axis {
   stroke: var(--border-strong);
   stroke-width: 2;

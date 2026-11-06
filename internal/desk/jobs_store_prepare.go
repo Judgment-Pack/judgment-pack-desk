@@ -32,6 +32,9 @@ type runnerStorePrepareResult struct {
 // held open description at child fd3; neither process explicitly unlocks it.
 // Only a fresh committed reply permits the caller's next activation step.
 func prepareRunnerManualStore(ctx context.Context, bin string, lease *os.File, q runnerStorePrepareRequest) error {
+	if validateRunnerPathFields(bin, q.Dir, q.Workspace, q.Owner, q.ExecutorOwnership.Root) != nil {
+		return policyMachineRefusal()
+	}
 	if lease == nil || q.Version != 1 || q.LeaseFD != 3 || !retainedArtifactDigest.MatchString(q.PrepareID) || !q.ExecutionDemand.valid() || q.Workspace != q.ExecutionDemand.RunnerWorkspace || q.ExecutorOwnership.RunnerWorkspace != q.Workspace || q.ExecutorOwnership.MachineWorkspace != q.ExecutionDemand.MachineWorkspace {
 		return policyMachineRefusal()
 	}

@@ -1,10 +1,13 @@
+import { readRunReport } from '@judgment-pack/harness/runReport'
+import { memberOf, type JsonNode } from '../research/verify/canon'
+import { retainWireValue, wireJSON } from './wire'
 import {questionFailureMessage,type QuestionFailureCode} from '@judgment-pack/harness/questionFailure'
 import { validDelegatedTask, type DelegatedTask } from '@judgment-pack/harness/delegationContract'
 import {dialectRecipeFailureMessage,type DialectRecipeFailureCode} from '../dialects/proposalFailure'
 import { validLinkFailure, type LinkFailureCode } from './linkFailure'
 import { GRAPH_TOOLS, graphWork, graphWorkResult, validGraphWork, type GraphWork } from '../graphs/work'
 import { linkStepFromCall, linkStepFromResult, validLinkStep, type LinkStep } from './linkStep'
-import { validSearchStep, type SearchStep } from '../search/step'
+import { validExternalControl, validSearchStep, type ExternalControl, type SearchStep } from '../search/step'
 import { searchFailureMessage, type SearchFailureCode } from '../search/failures'
 import { validSearchReference, type SearchReference } from '../search/results'
 import type { AssistantEvent } from '@judgment-pack/harness/engine'
@@ -16,7 +19,9 @@ import type { ChatAttachment } from './store'
 import { validWebURL } from '../documents/record'
 import { validWebsiteReference, type WebsiteReference } from '../documents/website'
 
-export interface WorkItem { /** A running delegated task's prose so far, streamed under its task by id; never saved. */ progress?: string; questionFailure?: QuestionFailureCode; questionRecovered?: true; task?: DelegatedTask; inputRecipeFailure?: DialectRecipeFailureCode; redirectPolicy?: 'google-grounding'; linkFailure?: LinkFailureCode; researchSuggestion?: true; graph?: GraphWork; id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted'; failure?: SearchFailureCode; search?: SearchStep; link?: LinkStep }
+export interface ApprovalResultDisplay { available: boolean; text: string[]; otherContent: string[] }
+export const validApprovalResultDisplay = (v: unknown): v is ApprovalResultDisplay => object(v) && Object.keys(v).every(k=>["available","text","otherContent"].includes(k)) && typeof v.available === "boolean" && Array.isArray(v.text) && v.text.every(text=>typeof text==="string") && Array.isArray(v.otherContent) && v.otherContent.every(type=>typeof type==="string"&&type.length<=200) && (v.available || v.text.length===0&&v.otherContent.length===0)
+export interface WorkItem { approvalResult?: ApprovalResultDisplay; externalControl?:ExternalControl; /** A running delegated task's prose so far, streamed under its task by id; never saved. */ progress?: string; questionFailure?: QuestionFailureCode; questionRecovered?: true; task?: DelegatedTask; inputRecipeFailure?: DialectRecipeFailureCode; redirectPolicy?: 'google-grounding'; linkFailure?: LinkFailureCode; researchSuggestion?: true; graph?: GraphWork; id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted'; failure?: SearchFailureCode; search?: SearchStep; link?: LinkStep }
 // Saved work keeps the tool name used at execution, including names before the Dialects rename.
 const isRecipeProposalTool = (name: unknown) => name === 'propose_dialect_recipe' || name === 'propose_input_recipe'
 
@@ -129,19 +134,26 @@ export function readAttachments(value: unknown, limit = 256): ChatAttachment[] {
   if (new Set(files.map(attachmentKey)).size !== files.length) return invalid()
   return files
 }
-export function readResponseHistory(value: unknown): ResponseHistory[] {
+export function readResponseHistory(value: unknown, wire?: JsonNode): ResponseHistory[] {
   if (value === undefined) return []
   if (!Array.isArray(value)) return invalid()
-  const records = value.map(row => {
+  const records = value.map((row, at) => {
+    const rawRow = wire?.kind === 'array' ? wire.items[at] : undefined
+    const rawWork = rawRow && memberOf(rawRow, 'work')
+    const rawReport = rawWork && memberOf(rawWork, 'report')
+    const rawCanonical = rawReport && memberOf(rawReport, 'canonical')
+    // Validate retained literal numbers before the ordinary object reader can
+    // round them. The wire parser has already rejected duplicate member names.
+    const canonical = rawCanonical ? retainWireValue(readRunReport(wireJSON(rawCanonical, true)), rawCanonical) : undefined
     if (!object(row) || row.searches!==undefined && (!Array.isArray(row.searches)||row.searches.length>64||!row.searches.every(validSearchReference)) || !id(row.id) || !Array.isArray(row.websites) || row.websites.length > 16 || !row.websites.every(validWebsiteReference)
       || !Array.isArray(row.sourceIds) || row.sourceIds.some(s => typeof s !== 'string' || !/^src-\d+$/.test(s)) || !object(row.work)
       || !Array.isArray(row.work.items) || !Array.isArray(row.work.notices) || row.work.notices.some(n => typeof n !== 'string')
       || row.work.critique !== undefined && typeof row.work.critique !== 'string'
       || row.work.critic !== undefined && !validCriticRecord(row.work.critic)
       || row.work.report !== undefined && !validRunReport(row.work.report)) return invalid()
-    for (const item of row.work.items) if (!object(item) || item.questionRecovered!==undefined&&(item.questionRecovered!==true||item.name!=='ask_user'||item.status!=='complete') || item.questionFailure!==undefined&&(!questionFailureMessage(item.questionFailure)||item.name!=='ask_user'||(item.status!=='failed'&&!item.questionRecovered)) || item.task!==undefined&&(item.name!=='delegate_task'||!validDelegatedTask(item.task)||item.task.id!==item.id) || item.inputRecipeFailure!==undefined&&(!dialectRecipeFailureMessage(item.inputRecipeFailure)||!isRecipeProposalTool(item.name)||item.status!=='failed') || item.redirectPolicy!==undefined&&(item.redirectPolicy!=='google-grounding'||item.linkFailure!=='web-redirect-origin'||item.status!=='failed'||item.name!=='read_link') || item.linkFailure!==undefined&&(item.name!=='read_link'||item.status!=='failed'||!validLinkFailure(item.linkFailure)) || item.researchSuggestion!==undefined&&(item.researchSuggestion!==true||!['search_sources','explore_website'].includes(String(item.name))) || item.graph!==undefined&&(!GRAPH_TOOLS.has(String(item.name))||!validGraphWork(item.graph)) || typeof item.id !== 'string' || typeof item.name !== 'string' || !['working','complete','failed','interrupted'].includes(String(item.status)) || item.failure!==undefined&&(!searchFailureMessage(item.failure)||item.status!=='failed'||item.name!=='search_sources') || item.search!==undefined&&(item.name!=='search_sources'||!validSearchStep(item.search)) || item.link!==undefined&&(item.name!=='read_link'||!validLinkStep(item.link))) return invalid()
+    for (const item of row.work.items) if (!object(item) || item.approvalResult!==undefined&&(!validApprovalResultDisplay(item.approvalResult)||!['complete','failed'].includes(String(item.status))) || item.externalControl!==undefined&&(!validExternalControl(item.externalControl)||item.status!=='failed'||!['search_sources','read_link','explore_website'].includes(String(item.name))) || item.questionRecovered!==undefined&&(item.questionRecovered!==true||item.name!=='ask_user'||item.status!=='complete') || item.questionFailure!==undefined&&(!questionFailureMessage(item.questionFailure)||item.name!=='ask_user'||(item.status!=='failed'&&!item.questionRecovered)) || item.task!==undefined&&(item.name!=='delegate_task'||!validDelegatedTask(item.task)||item.task.id!==item.id) || item.inputRecipeFailure!==undefined&&(!dialectRecipeFailureMessage(item.inputRecipeFailure)||!isRecipeProposalTool(item.name)||item.status!=='failed') || item.redirectPolicy!==undefined&&(item.redirectPolicy!=='google-grounding'||item.linkFailure!=='web-redirect-origin'||item.status!=='failed'||item.name!=='read_link') || item.linkFailure!==undefined&&(item.name!=='read_link'||item.status!=='failed'||!validLinkFailure(item.linkFailure)) || item.researchSuggestion!==undefined&&(item.researchSuggestion!==true||!['search_sources','explore_website'].includes(String(item.name))) || item.graph!==undefined&&(!GRAPH_TOOLS.has(String(item.name))||!validGraphWork(item.graph)) || typeof item.id !== 'string' || typeof item.name !== 'string' || !['working','complete','failed','interrupted'].includes(String(item.status)) || item.failure!==undefined&&(!searchFailureMessage(item.failure)||item.status!=='failed'||item.name!=='search_sources') || item.search!==undefined&&(item.name!=='search_sources'||!validSearchStep(item.search)) || item.link!==undefined&&(item.name!=='read_link'||!validLinkStep(item.link))) return invalid()
     return {id: row.id, messageId: readMessageId(row.messageId), afterTurnId: readMessageId(row.afterTurnId), documents: readAttachments(row.documents),
-      ...(row.searches ? {searches:structuredClone(row.searches) as SearchReference[]} : {}), websites: structuredClone(row.websites), sourceIds: [...row.sourceIds], work: {items: (structuredClone(row.work.items) as WorkItem[]).map(({progress:_streamed,...kept}):WorkItem=>kept).map((item):WorkItem=>item.task && (item.task.state==='queued'||item.task.state==='running') ? {...item,status:'interrupted',task:{...item.task,state:'interrupted',problem:'This task was interrupted. Nothing restarted automatically.',steps:item.task.steps.map(step=>step.state==='running'?{...step,state:'interrupted'}:step)}} : item), notices: [...row.work.notices] as string[], ...(typeof row.work.critique === 'string' ? {critique: row.work.critique} : {}), ...(row.work.critic !== undefined ? {critic: structuredClone(row.work.critic) as CriticRecord} : {}), ...(row.work.report !== undefined ? {report: structuredClone(row.work.report) as RunReport} : {})}}
+      ...(row.searches ? {searches:structuredClone(row.searches) as SearchReference[]} : {}), websites: structuredClone(row.websites), sourceIds: [...row.sourceIds], work: {items: (structuredClone(row.work.items) as WorkItem[]).map(({progress:_streamed,...kept}):WorkItem=>kept).map((item):WorkItem=>item.task && (item.task.state==='queued'||item.task.state==='running') ? {...item,status:'interrupted',task:{...item.task,state:'interrupted',problem:'This task was interrupted. Nothing restarted automatically.',steps:item.task.steps.map(step=>step.state==='running'?{...step,state:'interrupted'}:step)}} : item), notices: [...row.work.notices] as string[], ...(typeof row.work.critique === 'string' ? {critique: row.work.critique} : {}), ...(row.work.critic !== undefined ? {critic: structuredClone(row.work.critic) as CriticRecord} : {}), ...(row.work.report !== undefined ? {report: {...structuredClone(row.work.report) as RunReport, ...(canonical === undefined ? {} : {canonical})}} : {})}}
   })
   if (new Set(records.map(r => r.id)).size !== records.length) return invalid()
   return records

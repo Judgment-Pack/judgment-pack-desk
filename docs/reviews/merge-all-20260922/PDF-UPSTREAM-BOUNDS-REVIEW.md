@@ -4,7 +4,7 @@ Final scoped verdict: **approved after fixes**, exact combined candidate `ab047f
 
 ## Provenance and reviewed scope
 
-This continues the independent Codex clean-room review under the user's explicit **same-vendor exception**; it is not cross-vendor validation. Work remained in `/tmp/jp-merge-all-20260922/pdf-final-review`. Production source was read before author dispositions. No source fix was implemented by the reviewer and no other worktree was modified.
+This continues the independent Codex clean-room review under the user's explicit **same-vendor exception**; it is not cross-vendor validation. Work remained in `<scratch>/jp-merge-all-20260922/pdf-final-review`. Production source was read before author dispositions. No source fix was implemented by the reviewer and no other worktree was modified.
 
 Reviewed upstream delta: #146 `e91190e1a498aacdaf1f7a83a7e2a15b7ef00d29` to `dafcb070b6bba63e7148d3d9a7f580df2259cb92` (seven files). Reviewed combined merge `ce3f35b2de55b6212b4f51757f6efd5191f04be6`, its one explicit conflict resolution, and corrective commit `ab047f477237cc344ad0b9677f29bdcc151b08d1`.
 
@@ -32,7 +32,7 @@ The independent reproduction freezes the stamp clock at the cutoff for every loo
 
 This is a test-clock/documented-exception defect, **not a demonstrated production `time.Now` failure**. Severity is P3 for that reason.
 
-Probe: `/tmp/jp-merge-all-20260922/pdf-final-review/adapters/document/final_bounds_upstream_review_test.go`, `TestFinalUpstreamStalledClockRefusalAfterPublication`. Evidence: `pdf-upstream-stalled-clock-before.log` and `pdf-upstream-request-before.log`.
+Probe: `<scratch>/jp-merge-all-20260922/pdf-final-review/adapters/document/final_bounds_upstream_review_test.go`, `TestFinalUpstreamStalledClockRefusalAfterPublication`. Evidence: `pdf-upstream-stalled-clock-before.log` and `pdf-upstream-request-before.log`.
 
 Corrective commit `ab047f4` records exhaustion under the mutex and returns the refusal before the fallback receive. The independently preserved failing reproduction now passes under `-race`. A read already stamped by the last arbitration remains eligible; the exception applies only when no stamp exists and the clock has not passed the cutoff.
 
@@ -44,7 +44,7 @@ The automatic lexer merge preserves strict rejection of invalid hexadecimal char
 
 Final focused PDF check: six top-level tests / 25 cases including subtests, **3.690 seconds**, `pdf-upstream-focused-after.log`. Final request check under `-race`: six top-level tests, **10.286 seconds**, including on-time/late publication, equality after empty arbitration, stalled-clock exhaustion, mutex contention and the independent post-exhaustion publication probe; `pdf-upstream-request-after.log`.
 
-All commands used `GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false`. Test logs are in `/tmp/jp-merge-all-20260922/`. The review clone retains only two untracked independent probe files; tracked source matches the reviewed commit.
+All commands used `GOCACHE=<scratch>/jp-authoring-go-cache GOFLAGS=-buildvcs=false`. Test logs are in `<scratch>/jp-merge-all-20260922/`. The review clone retains only two untracked independent probe files; tracked source matches the reviewed commit.
 
 ## Limits
 

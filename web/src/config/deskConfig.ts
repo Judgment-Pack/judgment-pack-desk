@@ -2407,7 +2407,10 @@ export interface ChassisPaths {
  * file that is there and refused is present with problems, and a file that is
  * absent is neither.
  */
+export interface AssistantPromptPolicy { projectInstructionsBytes:number }
+
 export interface DeskLevelRead {
+  promptPolicy?: AssistantPromptPolicy
   localGateway?: LocalGatewayStatus
   /** Absolute, on this machine, and known even where nothing was read. */
   path: string
@@ -2505,6 +2508,7 @@ export interface DeskLevelSummary {
 }
 
 export interface EffectiveConfig {
+  promptPolicy?: AssistantPromptPolicy
   aiConnections?: AIRegistryRead
   machineAssistant?: AssistantConfig
   assistantProfile?: AssistantProfileRead
@@ -2622,6 +2626,7 @@ export function effectiveConfig(
     ...(userNameDefaulted ? { userNameDefaulted: true as const } : {}),
     machineAssistant: deskValues?.assistant ?? DESK_DEFAULTS.assistant,
     assistantProfile,
+    promptPolicy: desk?.promptPolicy,
     config: {
       deskConfigVersion: DESK_CONFIG_VERSION,
       organization: pick('organization'),

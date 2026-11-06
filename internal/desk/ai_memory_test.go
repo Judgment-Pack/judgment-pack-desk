@@ -2,7 +2,7 @@ package desk
 
 import (
 	"encoding/json"
-	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,26 +47,20 @@ func seedMemoryMessage(t *testing.T, s *Server, text string) *memorySource {
 	}
 	return source
 }
-func TestProjectMemoryRecallSettingsAndProviderCoverage(t *testing.T) {
+func TestProjectMemoryRecallSettingsAndScope(t *testing.T) {
 	s, _, _ := assistantServer(t)
 	r := changeMemory(t, s, memoryChange{Action: "save", Key: "outreach-format", Text: "Outreach explanations should label missing evidence."})
 	if got, e := s.memoryBackground("outreach"); e != nil || got != "" {
 		t.Fatal("recall enabled by save", e, got)
 	}
 	changeMemory(t, s, memoryChange{Action: "settings", Settings: &memorySettings{Use: true}})
-	for _, kind := range []string{"openai-compatible", "anthropic", "gemini"} {
-		raw := []byte(`{"model":"fixture","messages":[{"role":"user","content":"outreach"}]}`)
-		if kind == "gemini" {
-			raw = []byte(`{"contents":[{"role":"user","parts":[{"text":"outreach"}]}]}`)
-		}
-		got, e := s.prepareModelContext(kind, "v1beta/models/fixture:generateContent", raw)
-		if e != nil || !strings.Contains(string(got), r.Content.Entries[0].Text) || !strings.Contains(string(got), "never approval") {
-			t.Fatal(kind, e, string(got))
-		}
+	host, err := s.assistantPromptHost(t.Context())
+	if err != nil {
+		t.Fatal(err)
 	}
-	req := codexbridge.RunRequest{Prompt: "outreach"}
-	if e := s.prepareAgentContext(&req); e != nil || !strings.Contains(req.Instructions, r.Content.Entries[0].Text) {
-		t.Fatal(e, req)
+	got, err := host.MemoryFor(t.Context(), "outreach")
+	if err != nil || !strings.Contains(fmt.Sprint(got), r.Content.Entries[0].Text) {
+		t.Fatal("canonical explicit-query recall", got, err)
 	}
 	if got, e := s.memoryBackground("unrelated astronomy"); e != nil || got != "" {
 		t.Fatal("unrelated memory injected", e, got)
