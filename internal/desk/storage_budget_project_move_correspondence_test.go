@@ -1032,7 +1032,7 @@ func TestStorageMoveOriginalHistoryJourneys(t *testing.T) {
 			if cut == "artifact-present-delta" {
 				locatorAfter := len(dialectArtifactOwnerRead(t, dialectArtifactLocationPath(s, locatorOwner)))
 				seen := 0
-				storageTestMust(t, storageTestCompletedMoveJournal(t.Context(), s.storageConstruction.owner, func(ctx context.Context, table *storageIntentTable) error {
+				storageTestMust(t, storageTestOriginalJournal(t.Context(), s.storageConstruction.owner, func(ctx context.Context, table *storageIntentTable) error {
 					for _, j := range table.identity {
 						if j == nil || j.Action != storageIdentityIntentMove || j.Core.Phase != storageIntentRetired {
 							continue
@@ -1107,13 +1107,14 @@ func TestStorageMoveOriginalHistoryJourneys(t *testing.T) {
 	}
 }
 
-// Read-only J inspection after a completed move, when no startup mutation or
-// registered move epoch remains for withControlOriginal. As in
+// Read-only J inspection after a move request has returned (completed, cut,
+// or recovered by restart), when no startup mutation or registered move epoch
+// remains for withControlOriginal. As in
 // withStartupMoveControl, the strict original decode runs once with the caller
 // context; the same try-only controlMu, original bootstrap EX and 250 ms window
 // then bound the J decode, and both physical banks must equal the decoded
 // images before and after it. Every J receipt/mapping check still runs.
-func storageTestCompletedMoveJournal(ctx context.Context, o *storageBudgetOwner, run func(context.Context, *storageIntentTable) error) (err error) {
+func storageTestOriginalJournal(ctx context.Context, o *storageBudgetOwner, run func(context.Context, *storageIntentTable) error) (err error) {
 	if !o.valid() {
 		return storagebudget.ErrAuthority
 	}
@@ -1219,7 +1220,7 @@ func TestStorageMovePendingRecoveryFinalization(t *testing.T) {
 				t.Helper()
 				var out storageIdentityIntent
 				count := 0
-				storageTestMust(t, server.storageConstruction.owner.withControl(t.Context(), func(_ context.Context, table *storageIntentTable) error {
+				storageTestMust(t, storageTestOriginalJournal(t.Context(), server.storageConstruction.owner, func(_ context.Context, table *storageIntentTable) error {
 					for _, j := range table.identity {
 						if j != nil && j.Core.OperationID == request.Operation {
 							out, count = *j, count+1
@@ -1232,21 +1233,45 @@ func TestStorageMovePendingRecoveryFinalization(t *testing.T) {
 				}
 				return out
 			}
-			before := readJournal(s)
+			// The old process's ordinary J reader refuses an unrecovered move
+			// record by design; only restart recovery reads it. The pending
+			// record is asserted here through its exact P row and Q ticket.
+			if e := storageTestOriginalJournal(t.Context(), s.storageConstruction.owner, func(context.Context, *storageIntentTable) error {
+				t.Fatal("ordinary reader returned an unrecovered move record")
+				return nil
+			}); !errors.Is(e, errStorageEnrollmentUnresolved) {
+				t.Fatal("ordinary reader did not require original-owner recovery", e)
+			}
 			beforeQ, err := s.storageConstruction.ref.cell.q.InspectAction(t.Context())
 			storageTestMust(t, err)
-			if cut == "terminal-before-current" {
-				if before.Core.Phase != storageIntentRetired || before.NativePhase != storageIdentityTargetDurable || before.Core.Token.Generation != 3 {
-					t.Fatal("cut was not factual terminal-before-current")
+			// Q names the J operation exactly as storageIntentMatchingTicket does.
+			flat := storageIntentOperation(storageIntentRecord{OperationID: request.Operation})
+			var before storagebudget.Ticket
+			tickets := 0
+			for _, slot := range beforeQ.View.Slots {
+				if slot.Ticket.State != storagebudget.Empty && (slot.Ticket.Operation == flat || strings.HasPrefix(slot.Ticket.Operation, "single-fanout:"+storageHexID(request.Operation)+":")) {
+					before, tickets = slot.Ticket, tickets+1
 				}
-			} else if before.Core.Phase != storageIntentStaging || before.NativePhase != storageIdentityPayloadReady || before.Core.Token.Generation != 2 {
-				t.Fatal("cut was not the original dispatched move")
 			}
+			if tickets != 1 {
+				t.Fatal("original move ticket not unique", tickets)
+			}
+			// Q generations are per slot and continue across slot reuse
+			// (storagebudget coordinator.go:246, io.go:549), so only relations hold.
+			if cut == "terminal-before-current" {
+				if before.State != storagebudget.Terminal {
+					t.Fatal("cut was not factual terminal-before-current", before.State)
+				}
+			} else if before.State != storagebudget.Staging {
+				t.Fatal("cut was not the original dispatched move", before.State)
+			}
+			casBinding, err := request.digest()
+			storageTestMust(t, err)
 			prefix, err := s.storageConstruction.owner.readOriginalPolicy(t.Context())
 			storageTestMust(t, err)
 			pending := 0
 			for _, row := range prefix.Moves {
-				if row.PlanID == request.Plan && row.PendingIntent == before.Core.CASBinding {
+				if row.PlanID == request.Plan && row.PendingIntent == casBinding {
 					pending++
 				}
 			}
@@ -1265,8 +1290,27 @@ func TestStorageMovePendingRecoveryFinalization(t *testing.T) {
 			afterQ, err := again.storageConstruction.ref.cell.q.InspectAction(t.Context())
 			storageTestMust(t, err)
 			terminal := after.Core.Token
-			if after.Core.OperationID != request.Operation || terminal.ID != before.Core.Token.ID || terminal.Slot != before.Core.Token.Slot || terminal.Sequence != before.Core.Token.Sequence || terminal.Generation != 3 || after.Core.Phase != storageIntentRetired {
-				t.Fatal("recovery replaced or repeated the original action")
+			if after.Core.OperationID != request.Operation {
+				t.Error("recovery replaced the original operation")
+			}
+			if terminal.ID != before.Token.ID || terminal.Slot != before.Token.Slot || terminal.Sequence != before.Token.Sequence {
+				t.Error("recovery replaced the original ticket", before.Token, terminal)
+			}
+			if cut == "terminal-before-current" && terminal != before.Token || cut != "terminal-before-current" && !storageIntentNextToken(before.Token, terminal) {
+				t.Error("recovery terminal is not the original ticket's designed successor", before.Token, terminal)
+			}
+			if after.Core.Phase != storageIntentRetired {
+				t.Error("recovered action not retired", after.Core.Phase)
+			}
+			expectedNative := storageIdentityTargetDurable
+			if cut == "before-rename" {
+				expectedNative = storageIdentityAbortObserved
+			}
+			if after.NativePhase != expectedNative {
+				t.Error("recovered native phase", after.NativePhase, expectedNative)
+			}
+			if t.Failed() {
+				t.FailNow()
 			}
 			slot := afterQ.View.Slots[terminal.Slot]
 			if slot.Ticket.State != storagebudget.Terminal || slot.Ticket.Token != terminal || slot.PersistedApplied != terminal || slot.PersistedNextSequence <= terminal.Sequence {
