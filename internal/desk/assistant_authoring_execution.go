@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter"
-	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/turn"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/wire"
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
@@ -115,14 +114,14 @@ func assistantAuthoringPrompt(source assistantRunSource) (assistantExecutionProm
 }
 func (e *assistantRunExecution) assistantAuthoringTools() (*assistantHostRegistry, error) {
 	tools := []runcontext.HostTool{}
-	if e.source.Start.Purpose != "author-graph" {
-		tools = append(tools, runcontext.HostTool{Name: turn.ProposePackTool, Description: "Deliver the pack proposal for the person to review. Nothing is written or saved.", InputSchema: turn.ProposePackSchema, Effect: "proposal", Execute: func(context.Context, json.RawMessage) (runcontext.ToolResult, error) {
-			return runcontext.ToolResult{}, errAssistantRunScope
-		}})
-	} else {
+	if e.source.Start.Purpose == "author-graph" {
 		for _, command := range []string{"validate", "explain"} {
 			command := command
-			tools = append(tools, runcontext.HostTool{Name: "graph_" + command, Description: "Check the exact graph content with the Runtime. Writes nothing.", InputSchema: json.RawMessage(`{"type":"object","properties":{"content":{"type":"string"}},"required":["content"],"additionalProperties":false}`), Effect: "read", Execute: func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
+			purpose := "validate"
+			if command == "explain" {
+				purpose = "analyze"
+			}
+			tools = append(tools, runcontext.HostTool{Name: "graph_" + command, Taxonomy: &runcontext.ToolTaxonomy{Operation: "check", Effect: "read", CheckKind: purpose}, Description: "Check the exact graph content with the Runtime. Writes nothing.", InputSchema: json.RawMessage(`{"type":"object","properties":{"content":{"type":"string"}},"required":["content"],"additionalProperties":false}`), Effect: "read", Execute: func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
 				var a struct {
 					Content string `json:"content"`
 				}
@@ -220,7 +219,10 @@ func prepareAssistantContextSession(ctx context.Context, source assistantRunSour
 	if err != nil {
 		return contract.Checkpoint{}, err
 	}
-	input := &runcontext.Input{Phase: source.Binding.Phase, Connection: source.Binding.ConnectionID, CurrentRequest: &chat.Request}
+	input := &runcontext.Input{Chat: source.chatScope(), Phase: source.Binding.Phase, Connection: source.Binding.ConnectionID, CurrentRequest: &chat.Request}
+	if err := bindAssistantRunPlan(source, input); err != nil {
+		return contract.Checkpoint{}, err
+	}
 	if source.Profile.Context != nil {
 		raw, _ := json.Marshal(source.Profile.Context)
 		value, err := runcontext.ParseJSON(raw)
@@ -286,7 +288,7 @@ func (*assistantAuthoringExecutor) Execute(ctx context.Context, e *assistantRunE
 		return err
 	}
 	defer execution.Close()
-	return execution.Adapter.Run(ctx, execution.Run)
+	return execution.execute(ctx, nil)
 }
 
 // The helper is deliberately a comparison, not a source of fresh draft data.

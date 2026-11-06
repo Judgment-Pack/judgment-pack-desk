@@ -89,3 +89,78 @@ describe('published v0.9 event observations', () => {
     expect(screen.queryByRole('list')).toBeNull()
   })
 })
+
+// Hand-authored v0.10 plan observations. Explanations, evidence, steps, and
+// decision notes stay in the run record; these lines report only finite status.
+const planEvents: AssistantEvent[] = [
+  {type:'plan_revised',execution:'execution-private',sequence:2,previous:'revision-old',revision:'revision-new',explanation:'private revision explanation',diff:[
+    {id:'step-one',kind:'changed',before:{step:'private prior step',status:'pending'},after:{step:'private replacement step',status:'pending'}}
+  ]},
+  {type:'plan_departed',execution:'execution-private',revision:'revision-new',acceptedRevision:'revision-old',explanation:'private departure explanation',departures:[
+    {kind:'removed',step:'private departed step'}
+  ]},
+  {type:'plan_drift_decided',execution:'execution-private',callId:'private-call',revision:'revision-old',candidateRevision:'revision-new',approved:false,note:'private decision note'},
+  {type:'plan_completion_refused',execution:'execution-private',revision:'revision-new',reason:'missing-evidence',step:'private incomplete step'},
+  {type:'approval_requested',purpose:'plan-drift',callId:'private-plan-call',plan:{execution:'execution-private',revision:'revision-old',candidateRevision:'revision-new',explanation:'private pending explanation',departures:[
+    {kind:'changed',step:'private pending step'}
+  ]}}
+]
+
+describe('published v0.10 plan event observations', () => {
+  it('renders finite statuses without exposing plan details or payloads', () => {
+    const expected = [
+      'Plan updated', 'Plan change proposed', 'Plan decision recorded',
+      'Task completion refused', 'Waiting for your approval of the plan change'
+    ]
+    expect(planEvents.map(event=>describeEvent(event,sourceMessage))).toEqual(expected)
+    render(<EventList events={planEvents} />)
+    const list=screen.getByRole('list',{name:'What the assistant did'})
+    expect(within(list).getAllByRole('listitem').map(line=>line.textContent)).toEqual(expected)
+    for (const secret of ['private', 'revision-old', 'execution-private', 'missing-evidence']) {
+      expect(list.textContent).not.toContain(secret)
+    }
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('keeps plan decisions out of the compact action list while retaining approval waiting', () => {
+    const ordinaryApproval=events[0]
+    render(<EventList events={[ordinaryApproval,...planEvents]} compact />)
+    expect(screen.getAllByRole('listitem').map(line=>line.textContent)).toEqual([
+      'Waiting for your approval: create_issue',
+      'Waiting for your approval of the plan change'
+    ])
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+})
+
+// Hand-authored v0.11 observations. These optional features remain disabled in
+// Desk; reading an event records status without granting dispatch or routing.
+const compatibilityEvents: AssistantEvent[] = [
+  {type:'repeat_detected',execution:'private-execution',dispatchId:'private-dispatch',keyDigest:'private-digest',count:2,reminder:false,stopped:false},
+  {type:'repeat_detected',execution:'private-execution',dispatchId:'private-dispatch',keyDigest:'private-digest',count:3,reminder:true,stopped:false},
+  {type:'repeat_detected',execution:'private-execution',dispatchId:'private-dispatch',keyDigest:'private-digest',count:4,reminder:false,stopped:true},
+  {type:'repeat_detected',execution:'private-execution',dispatchId:'private-dispatch',keyDigest:'private-digest',count:4,reminder:true,stopped:true},
+  {type:'route_decided',route:{version:1,route:'direct',skills:['private-skill'],tools:['private-tool'],operations:['private-operation'],planning:'withheld',decidedBy:'host',reason:'private route reason',bindingDigest:'private-binding',catalogueDigest:'private-catalogue',widened:false,refusals:[]}},
+  {type:'route_widened',route:{version:1,route:'agent',tier:'private-tier',skills:[],tools:'all',operations:'all',planning:'offered',decidedBy:'rule',reason:'private route reason',bindingDigest:'private-binding',catalogueDigest:'private-catalogue',widened:true,widenedFor:'private-tool',widenedInvocation:{dispatchId:'private-dispatch',requestDigest:'private-request'},refusals:[{stage:'classifier',reason:'private refusal'}]}}
+]
+
+describe('published v0.11 compatibility event observations', () => {
+  it('distinguishes detected, reminder and stopped repetitions and reports route status safely', () => {
+    const expected = [
+      'Repeated tool use detected', 'Repeated tool use reminder',
+      'Repeated tool use stopped', 'Repeated tool use stopped',
+      'Turn route selected', 'Turn route widened'
+    ]
+    expect(compatibilityEvents.map(event=>describeEvent(event,sourceMessage))).toEqual(expected)
+    render(<EventList events={compatibilityEvents} />)
+    const list=screen.getByRole('list',{name:'What the assistant did'})
+    expect(within(list).getAllByRole('listitem').map(line=>line.textContent)).toEqual(expected)
+    expect(list.textContent).not.toContain('private')
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('keeps compatibility observations out of the compact action list', () => {
+    render(<EventList events={compatibilityEvents} compact />)
+    expect(screen.queryByRole('list')).toBeNull()
+  })
+})

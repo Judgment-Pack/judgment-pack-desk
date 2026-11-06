@@ -4,15 +4,59 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"time"
 
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 )
 
 type assistantPlanMetadata struct {
-	ID        string `json:"id"`
-	Revision  int    `json:"revision"`
-	CreatedAt string `json:"createdAt"`
+	ID        string                 `json:"id"`
+	Revision  int                    `json:"revision"`
+	CreatedAt string                 `json:"createdAt"`
+	Bindings  []assistantPlanBinding `json:"bindings,omitempty"`
+}
+
+// Locators stay in private host custody. They never become opaque artifact IDs
+// by encoding a path, and a handle grants no read or execution authority.
+type assistantPlanBinding struct {
+	ID      string                 `json:"id"`
+	Kind    string                 `json:"kind"`
+	Locator assistantPlanReference `json:"locator"`
+}
+
+func (m *assistantPlanMetadata) UnmarshalJSON(raw []byte) error {
+	type plain assistantPlanMetadata
+	if err := readAssistantDialectCustody(raw, reflect.TypeOf(plain{})); err != nil {
+		return err
+	}
+	var value plain
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	*m = assistantPlanMetadata(value)
+	return nil
+}
+
+func assistantPlanHandle(binding assistantRunBinding, plan assistantPlanMetadata, locator assistantPlanReference, ordinal int) string {
+	raw, _ := json.Marshal([]string{binding.Project, binding.Owner.Kind, binding.Owner.ID, binding.ExecutionKey, plan.ID, strconv.Itoa(plan.Revision), strconv.Itoa(ordinal), locator.Kind, locator.ID})
+	return "plan-ref-" + digestOf(raw)
+}
+
+func validAssistantPlanBindings(run assistantRunRecord, meta *assistantPlanMetadata) bool {
+	seen := map[string]bool{}
+	locators := map[assistantPlanReference]bool{}
+	for i, binding := range meta.Bindings {
+		kind := "artifact"
+		if binding.Locator.Kind == "dialect" {
+			kind = "dialect"
+		}
+		if len(meta.Bindings) > 8 || !validAssistantPlanReference(binding.Locator) || binding.Kind != kind || binding.ID != assistantPlanHandle(run.Binding, *meta, binding.Locator, i) || seen[binding.ID] || locators[binding.Locator] {
+			return false
+		}
+		seen[binding.ID], locators[binding.Locator] = true, true
+	}
+	return true
 }
 
 func assistantPlanID(binding assistantRunBinding, in assistantHostIntent) string {
@@ -27,7 +71,8 @@ func prepareAssistantPlanIntent(run assistantRunRecord, source []byte, in *assis
 	if !in.Root || run.Binding.Phase != "plan" {
 		return errAssistantRunScope
 	}
-	if _, err := readAssistantPlanArguments(in.Arguments); err != nil {
+	a, err := readAssistantPlanArguments(in.Arguments)
+	if err != nil {
 		return err
 	}
 	plans, err := assistantPlanSource(source)
@@ -43,7 +88,18 @@ func prepareAssistantPlanIntent(run assistantRunRecord, source []byte, in *assis
 	if n >= 24 {
 		return errAssistantRunInvalid
 	}
-	in.Plan = &assistantPlanMetadata{assistantPlanID(run.Binding, *in), n + 1, time.Now().UTC().Format(time.RFC3339Nano)}
+	in.Plan = &assistantPlanMetadata{ID: assistantPlanID(run.Binding, *in), Revision: n + 1, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	refs, err := assistantPlanReferences(source, a.References)
+	if err != nil {
+		return err
+	}
+	for i, ref := range refs {
+		kind := "artifact"
+		if ref.Kind == "dialect" {
+			kind = "dialect"
+		}
+		in.Plan.Bindings = append(in.Plan.Bindings, assistantPlanBinding{ID: assistantPlanHandle(run.Binding, *in.Plan, ref, i), Kind: kind, Locator: ref})
+	}
 	return nil
 }
 func validateAssistantPlanIntent(run assistantRunRecord, op assistantRunOperation, in assistantHostIntent) error {
@@ -56,11 +112,21 @@ func validateAssistantPlanIntent(run assistantRunRecord, op assistantRunOperatio
 	if _, err := time.Parse(time.RFC3339Nano, in.Plan.CreatedAt); err != nil {
 		return errAssistantRunInvalid
 	}
+	if !validAssistantPlanBindings(run, in.Plan) {
+		return errAssistantRunInvalid
+	}
 	_, err := readAssistantPlanArguments(in.Arguments)
 	return err
 }
 func assistantPlanResult(plan chatPlan) (runcontext.ToolResult, error) {
-	return assistantHostJSON(map[string]any{"status": "review-required", "revision": plan.Revision, "message": "Plan saved in this chat. The person must choose Start work to execute it. No planned operations have started."})
+	result := map[string]any{"status": "review-required", "revision": plan.Revision, "message": "Plan saved in this chat. The person must choose Start work to execute it. No planned operations have started."}
+	for _, ref := range plan.References {
+		if ref.Revision == "" {
+			result["planId"], result["references"] = plan.ID, plan.References
+			break
+		}
+	}
+	return assistantHostJSON(result)
 }
 func validateAssistantPlanOutput(run assistantRunRecord, out assistantDomainOutput, receipts map[string]assistantHostResult) error {
 	if out.Plan == nil || out.Kind != "plan" || out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey {
@@ -81,10 +147,33 @@ func validateAssistantPlanOutput(run assistantRunRecord, out assistantDomainOutp
 	if err != nil || p.ID != in.Plan.ID || p.Revision != in.Plan.Revision || p.CreatedAt != in.Plan.CreatedAt || p.Objective != a.Objective || !reflect.DeepEqual(p.Steps, a.Steps) || !reflect.DeepEqual(p.Questions, a.Questions) || p.Status != "proposed" || p.AcceptedAt != "" || !validAssistantPlanReferences(p.References) {
 		return errAssistantRunInvalid
 	}
+	if len(in.Plan.Bindings) > 0 {
+		if len(in.Plan.Bindings) != len(p.References) {
+			return errAssistantRunInvalid
+		}
+		for i, binding := range in.Plan.Bindings {
+			ref := p.References[i]
+			if ref.Kind != binding.Kind || ref.ID != binding.ID || ref.Revision != "" || !assistantRunDigest(ref.Digest) {
+				return errAssistantRunInvalid
+			}
+		}
+	} else {
+		for _, ref := range p.References {
+			if ref.Revision == "" {
+				return errAssistantRunInvalid
+			}
+		}
+	}
 	for _, ref := range a.References {
 		found := false
-		for _, held := range p.References {
-			found = found || held.Kind == ref.Kind && held.ID == ref.ID
+		if len(in.Plan.Bindings) > 0 {
+			for _, held := range in.Plan.Bindings {
+				found = found || held.Locator == ref
+			}
+		} else {
+			for _, held := range p.References {
+				found = found || held.Kind == ref.Kind && held.ID == ref.ID && held.Revision != ""
+			}
 		}
 		if !found {
 			return errAssistantRunInvalid
@@ -104,7 +193,10 @@ func validAssistantPlanReferences(refs []chatPlanReference) bool {
 	seen := map[string]bool{}
 	for _, ref := range refs {
 		key := ref.Kind + "\x00" + ref.ID
-		if !validAssistantPlanReference(assistantPlanReference{ref.Kind, ref.ID}) || !assistantRunDigest(ref.Revision) || seen[key] {
+		if ref.Revision == "" {
+			key = "current\x00" + ref.ID
+		}
+		if !validChatPlanReference(ref) || seen[key] {
 			return false
 		}
 		seen[key] = true

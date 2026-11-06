@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useEndpointCheck } from './endpointCheck'
 import { probeAssistantEndpoint } from './client'
+import {observeSettings} from './serverRuns/settingsObservation'
+vi.mock('./serverRuns/settingsObservation',()=>({observeSettings:vi.fn(async()=>({kind:'ping',observeSucceeded:false,ping:{reachable:true,status:200,latencyMs:1,diagnostic:'',observationComplete:false}}))}))
 import type { EndpointDraft } from './endpointDraft'
 import type { AssistantEndpointConfig } from '../config/deskConfig'
 
@@ -43,4 +45,23 @@ it('drops observations and cancels on saved connection revision changes', async(
  expect(fixture.signals).toHaveLength(2)
  unmount()
  expect(fixture.signals[1]?.aborted).toBe(true)
+})
+
+it('renders retained reachability with incomplete generated observation distinctly',async()=>{
+ const {checkLine}=await import('./endpointCheck')
+ expect(checkLine({of:'fixture',asking:false,probe:{reachable:true,status:200,latencyMs:1,diagnostic:'',observationComplete:false},rows:[{id:'a',label:'A'}]}).says).toBe('Connected · test response incomplete')
+})
+
+it('mounted Anthropic check starts canonical ping beside independent listing and aborts on model changes',async()=>{
+ const config={...saved,kind:'anthropic' as const},form={...draft,kind:'anthropic' as const}
+ const {result,rerender,unmount}=renderHook(({form})=>useEndpointCheck(form,config),{initialProps:{form}})
+ act(()=>result.current.run())
+ await waitFor(()=>expect(result.current.answer?.probe?.observationComplete).toBe(false))
+ expect(observeSettings).toHaveBeenCalledExactlyOnceWith({kind:'ping',model:'fixture'},{connectionId:'ai-fixture',connectionRevision:'saved-one'},fixture.signals[0])
+ expect(probeAssistantEndpoint).not.toHaveBeenCalled()
+ expect(fixture.signals).toHaveLength(1)
+ rerender({form:{...form,model:'changed'}})
+ expect(fixture.signals[0]?.aborted).toBe(true)
+ expect(result.current.answer).toBeUndefined()
+ unmount()
 })

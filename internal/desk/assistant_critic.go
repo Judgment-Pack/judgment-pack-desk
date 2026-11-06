@@ -7,7 +7,6 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/turn"
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
-	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 )
 
 // This is input custody, never a tool grant, saved check or approval. Once
@@ -18,8 +17,16 @@ type assistantCriticSnapshot struct {
 	fingerprint                   string
 }
 
-const assistantCriticCheckpointMember = "deskCriticInputV2"
-const assistantCriticLegacyCheckpointMember = "deskCriticInputV1"
+// Private host consistency evidence, independent of the closed Agent checkpoint.
+// Canonical checkpoint callbacks cannot replace or clear this record.
+type assistantCriticCustody struct {
+	Version     int    `json:"version"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+func validAssistantCriticCustody(held *assistantCriticCustody) bool {
+	return held == nil || held.Version == 2 && assistantRunDigest(held.Fingerprint)
+}
 
 var assistantCriticMembers = []string{"id", "facts", "evidenceAvailability", "supportedExtensions", "expectedDisposition", "expectedErrorClass", "expectedErrorPhase", "expectedHandoffTarget", "origin", "focus", "specSection", "cites"}
 
@@ -130,7 +137,17 @@ func (e *assistantRunExecution) readAssistantCriticSnapshotOwned(ctx context.Con
 	if assistantAuthoringPurpose(e.source.Start.Purpose) {
 		return e.readAssistantAuthoringCriticSnapshot(ctx, owned)
 	}
-	chat, err := assistantChatValue(e.source.Original)
+	held, err := e.service.server.readAssistantChatCriticSnapshot(ctx, e.source, owned)
+	if err == nil {
+		held.fingerprint = assistantCriticFingerprint(e.record.ID, e.source.Binding, held)
+	}
+	return held, err
+}
+
+// Read and validate source data only. The caller authorizes the exact saved
+// source; owned reuses its existing private transaction without another lock.
+func (s *Server) readAssistantChatCriticSnapshot(ctx context.Context, source assistantRunSource, owned bool) (*assistantCriticSnapshot, error) {
+	chat, err := assistantChatValue(source.Original)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +162,6 @@ func (e *assistantRunExecution) readAssistantCriticSnapshotOwned(ctx context.Con
 		if err != nil || path != link.Get("path").Str() {
 			return nil, errAssistantRunScope
 		}
-		s := e.service.server
 		// Take the same short private-data lock as admission; no model or
 		// Runtime work occurs under it, or under the input mutex.
 		if !owned {
@@ -155,7 +171,7 @@ func (e *assistantRunExecution) readAssistantCriticSnapshotOwned(ctx context.Con
 			}
 			defer lock.Close()
 		}
-		current, tests, err := s.approvalChat(e.source.Start.OwnerID)
+		current, tests, err := s.approvalChat(source.Start.OwnerID)
 		if err != nil || current.Pack == nil || current.Pack.ID != link.Get("id").Str() || current.Pack.Path != path {
 			return nil, errAssistantRunScope
 		}
@@ -195,28 +211,15 @@ func (e *assistantRunExecution) readAssistantCriticSnapshotOwned(ctx context.Con
 		}
 	}
 	held.cases, err = assistantCriticCases(chat.Get("checkpoint").Get("state").Get("cases"), suite)
-	if err == nil {
-		cases, _ := json.Marshal(held.cases)
-		binding, _ := json.Marshal([]string{e.record.ID, e.source.Binding.ExecutionKey, e.source.Binding.RequestDigest, e.source.Binding.SourceDigests[0], held.path, held.packDigest, held.suiteDigest, digestOf(cases)})
-		held.fingerprint = digestOf(binding)
-	}
 	return held, err
 }
 
-// Only the private host writes this bounded consistency record. It is not
-// restored from saved chat, exposed as a tool, or interpreted as a permission.
-// The open published checkpoint preserves it through the normal reader/store.
-func assistantCriticCheckpoint(cp contract.Checkpoint, held *assistantCriticSnapshot) contract.Checkpoint {
-	if held == nil {
-		return cp
-	}
-	members := make(map[string]json.RawMessage, len(cp.AdditionalMembers)+1)
-	for key, value := range cp.AdditionalMembers {
-		members[key] = append(json.RawMessage(nil), value...)
-	}
-	members[assistantCriticCheckpointMember], _ = json.Marshal(held.fingerprint)
-	cp.AdditionalMembers = members
-	return cp
+// A new admission assigns its own run ID after current source custody succeeds.
+// The snapshot is comparison data; this fingerprint grants no execution rights.
+func assistantCriticFingerprint(runID string, binding assistantRunBinding, held *assistantCriticSnapshot) string {
+	cases, _ := json.Marshal(held.cases)
+	raw, _ := json.Marshal([]string{runID, binding.ExecutionKey, binding.RequestDigest, binding.SourceDigests[0], held.path, held.packDigest, held.suiteDigest, digestOf(cases)})
+	return digestOf(raw)
 }
 
 func (e *assistantRunExecution) bindAssistantCriticCheckpoint(ctx context.Context, held *assistantCriticSnapshot) error {
@@ -226,14 +229,8 @@ func (e *assistantRunExecution) bindAssistantCriticCheckpoint(ctx context.Contex
 		if run.Checkpoint == nil || assistantRunTerminal(run.State) {
 			return false, errAssistantRunScope
 		}
-		// V1 bound the whole suite. Its interpretation cannot be upgraded by
-		// capturing current input; keep the old checkpoint and require a new run.
-		if _, legacy := run.Checkpoint.AdditionalMembers[assistantCriticLegacyCheckpointMember]; legacy {
-			return false, errAssistantRunScope
-		}
-		if raw, present := run.Checkpoint.AdditionalMembers[assistantCriticCheckpointMember]; present {
-			var stored string
-			if json.Unmarshal(raw, &stored) != nil || stored != held.fingerprint {
+		if stored := run.CriticCustody; stored != nil {
+			if !validAssistantCriticCustody(stored) || stored.Fingerprint != held.fingerprint {
 				return false, errAssistantRunScope
 			}
 			return false, nil
@@ -243,11 +240,7 @@ func (e *assistantRunExecution) bindAssistantCriticCheckpoint(ctx context.Contex
 		if len(run.Operations) != 0 || len(run.Actions) != 0 || len(run.Checkpoint.Prompts) != 0 || run.Checkpoint.Used != 0 {
 			return false, errAssistantRunScope
 		}
-		cp, err := readAssistantRunCheckpoint(assistantCriticCheckpoint(*run.Checkpoint, held), run.Binding)
-		if err != nil {
-			return false, err
-		}
-		run.Checkpoint = cp
+		run.CriticCustody = &assistantCriticCustody{Version: 2, Fingerprint: held.fingerprint}
 		return true, nil
 	})
 	e.changed(err)

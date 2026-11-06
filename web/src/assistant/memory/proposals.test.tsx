@@ -10,6 +10,7 @@ import {decodeSnapshot} from '../serverRuns/decode'
 vi.mock('@judgment-pack/harness/memory/client',async original=>({...await original<typeof import('@judgment-pack/harness/memory/client')>(),memoryRequest:vi.fn()}))
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.resetAllMocks()})
 const outputs=process.env.JPS_MEMORY_OUTPUTS
+if(process.env.JPS_REQUIRE_MEMORY_OUTPUTS==='1'&&!outputs)throw new Error('Required memory proposal observations are missing: set JPS_MEMORY_OUTPUTS')
 for(const native of [false,true])for(const phase of ['work','plan'])it.runIf(outputs)(`consumes actual ${native?'native':'API'} ${phase} proposals through the default review UI`,async()=>{
  const observation=JSON.parse(readFileSync(join(outputs!,`${phase}-${native}-true.json`),'utf8'))
  const run=decodeSnapshot(observation.run,{owner:observation.run.owner,requestId:observation.run.requestId}),before=await readMemoryReply(observation.Before),after=await readMemoryReply(observation.After)

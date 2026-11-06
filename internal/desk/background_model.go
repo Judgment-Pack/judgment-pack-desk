@@ -26,12 +26,15 @@ const backgroundModelTimeout = 5 * time.Minute
 // Validate gates the completed structured response before domain dispatch.
 // The original workflow receipt retains malformed completed responses as well.
 type backgroundModelRequest struct {
-	Choice       backgroundModelChoice
-	Owner        string
-	Prompt       string
-	Instructions string
-	Response     codexbridge.Tool
-	Validate     func(json.RawMessage) error
+	Choice backgroundModelChoice
+	Owner  string
+	Prompt string
+	// StructuredResearch keeps the complete host contract and domain JSON in one
+	// canonical opening; only declared retained source previews may shrink.
+	StructuredResearch bool
+	Instructions       string
+	Response           codexbridge.Tool
+	Validate           func(json.RawMessage) error
 }
 
 func backgroundAIRequest(ctx context.Context, choice backgroundModelChoice) *http.Request {

@@ -96,6 +96,10 @@ for line in sys.stdin:
    while not os.path.exists(trace+'.release'): time.sleep(.005)
   if mode=='delegate' and index==1:
    tool(offered('delegate_tasks'),{'tasks':[{'title':'Inspect schema','objective':'Inspect the schema only.','profile':'review'}]})
+  elif mode in ['runtime-approval','runtime-approval-twice']:
+   asks=2 if mode=='runtime-approval-twice' else 1
+   if index<=asks: tool(offered('experimental_evaluate'),{'rehearsal':False,'fixtureStep':index},call='runtime-call-'+str(index))
+   else: finish()
   elif mode=='budget': tool(offered('request_budget_increase'),{'reason':'More work','nextStep':'Read the schema'})
   elif mode=='continuation-question' and index>1:
    history=prompt.split("PERSON'S RETAINED QUESTION ANSWER (user history; preserve the original task and constraints; no tool approval or compute grant)\n",1)[1]
@@ -867,5 +871,227 @@ func TestAssistantAgentHostFailureClassification(t *testing.T) {
 	}
 	if got := assistantAgentFailure(context.Canceled); got.Code != "cancelled" {
 		t.Fatal("cancellation classification lost", got)
+	}
+}
+
+func TestAssistantExecutionCodexLiveProviderRelease(t *testing.T) {
+	for _, route := range []string{"manager", "lazy"} {
+		for _, outcome := range []string{"success", "tool-error", "cancel", "model-refused", "lookup-refused", "wrong-token", "duplicate-token"} {
+			t.Run(route+"/"+outcome, func(t *testing.T) {
+				mode := "normal"
+				if outcome == "lookup-refused" {
+					mode = "account-lookup-fail"
+				}
+				s, _, e, m, trace := assistantCodexFixture(t, mode, "work")
+				if route == "lazy" {
+					m.Close()
+					lazy := codexbridge.NewLazyManager(codexbridge.Options{Binary: filepath.Join(filepath.Dir(trace), "codex-peer"), ProfileDir: filepath.Join(filepath.Dir(trace), "account"), ProjectDir: s.cfg.ProjectDir})
+					t.Cleanup(lazy.Close)
+					s.aiAccounts.values[testAIAlpha] = lazy
+				}
+				agent, err := e.assistantAgent()
+				assistantRunMust(t, err)
+				release, finish := adapter.ProviderReleaseAttempt()
+				var releases atomic.Int32
+				ack := release.Acknowledge
+				release.Acknowledge = func(token *adapter.ProviderReleaseInvocation) bool {
+					releases.Add(1)
+					if token != release.Invocation {
+						t.Error("adapter changed live invocation token")
+					}
+					// The hand-authored peer retains its exact PID; ESRCH requires process
+					// termination AND reap, since a zombie remains visible to signal zero.
+					if raw, readErr := os.ReadFile(trace + ".pid"); readErr == nil {
+						var pid int
+						if _, scanErr := fmt.Sscan(string(raw), &pid); scanErr != nil {
+							t.Error(scanErr)
+						} else if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+							t.Errorf("release preceded exact process reap: %v", err)
+						}
+					}
+					return ack(token)
+				}
+				if outcome == "wrong-token" {
+					other, _ := adapter.ProviderReleaseAttempt()
+					if ack(other.Invocation) {
+						t.Fatal("wrong token accepted")
+					}
+				}
+				var calls atomic.Int32
+				callbacks := assistantCodexCallbacks(&calls)
+				callbacks.ProviderRelease = release
+				callbacks.Event = func(context.Context, adapter.AgentEvent) error {
+					if releases.Load() != 0 {
+						t.Error("release before event completion")
+					}
+					return nil
+				}
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				callbacks.Tool = func(context.Context, adapter.AgentToolCall) (adapter.AgentToolAnswer, error) {
+					calls.Add(1)
+					if releases.Load() != 0 {
+						t.Error("release before callback completion")
+					}
+					if outcome == "cancel" {
+						cancel()
+						return adapter.AgentToolAnswer{}, context.Canceled
+					}
+					if outcome == "tool-error" {
+						return adapter.AgentToolAnswer{}, errors.New("fixture tool refusal")
+					}
+					return adapter.AgentToolAnswer{Text: "schema"}, nil
+				}
+				request := assistantCodexRequest()
+				if outcome == "model-refused" {
+					request.Model = "missing-model"
+				}
+				err = agent.Run(ctx, request, callbacks)
+				if outcome == "success" || outcome == "wrong-token" || outcome == "duplicate-token" {
+					if err != nil {
+						t.Fatal(err)
+					}
+				} else if err == nil {
+					t.Fatal("refusal succeeded")
+				}
+				if outcome == "model-refused" {
+					// Desk's enabled fence refuses before invoking Manager; no acquired
+					// provider admission exists, so it must not mint a release proof.
+					if releases.Load() != 0 || finish() {
+						t.Fatal("pre-run refusal forged release")
+					}
+					return
+				}
+				if releases.Load() != 1 {
+					t.Fatalf("release acknowledgements %d", releases.Load())
+				}
+				if outcome == "duplicate-token" {
+					if ack(release.Invocation) {
+						t.Fatal("duplicate accepted")
+					}
+				}
+				got := finish()
+				if got != (outcome != "wrong-token" && outcome != "duplicate-token") {
+					t.Fatalf("release validity %v", got)
+				}
+				if ack(release.Invocation) {
+					t.Fatal("late acknowledgement accepted")
+				}
+				generations := 0
+				for _, row := range assistantCodexLog(t, trace) {
+					if string(row["type"]) == `"generation"` {
+						generations++
+					}
+				}
+				if generations > 1 {
+					t.Fatalf("invocation replayed %d times", generations)
+				}
+			})
+		}
+	}
+}
+
+func TestAssistantExecutionCodexNeverAdmittedDisposition(t *testing.T) {
+	for _, route := range []string{"manager", "lazy"} {
+		for _, proof := range []string{"exact", "wrong", "duplicate", "mixed", "late", "missing", "callback", "unknown"} {
+			t.Run(route+"/"+proof, func(t *testing.T) {
+				s, _, e, manager, trace := assistantCodexFixture(t, "normal", "work")
+				var runner providerRunner = manager
+				if route == "lazy" {
+					manager.Close()
+					lazy := codexbridge.NewLazyManager(codexbridge.Options{Binary: filepath.Join(filepath.Dir(trace), "codex-peer"), ProfileDir: filepath.Join(filepath.Dir(trace), "account"), ProjectDir: s.cfg.ProjectDir})
+					t.Cleanup(lazy.Close)
+					s.aiAccounts.values[testAIAlpha], runner = lazy, lazy
+				}
+				agent, err := e.assistantAgent()
+				assistantRunMust(t, err)
+				blockerCtx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				entered, done := make(chan struct{}), make(chan error, 1)
+				go func() {
+					done <- runner.Run(blockerCtx, codexbridge.Owner{ID: "separate-owner", Session: context.Background(), Policy: context.Background()}, codexbridge.RunRequest{Model: "shared-model", Prompt: "Other owner", Effort: "medium", BeforeGeneration: func(ctx context.Context) error { close(entered); <-ctx.Done(); return ctx.Err() }}, func(codexbridge.RunEvent) error { return nil }, func(context.Context, codexbridge.ToolCall) (codexbridge.ToolAnswer, error) {
+						return codexbridge.ToolAnswer{}, errors.New("unexpected blocker callback")
+					})
+				}()
+				select {
+				case <-entered:
+				case <-time.After(5 * time.Second):
+					t.Fatal("blocker did not acquire account")
+				}
+				capability, finish := adapter.ProviderDispositionAttempt()
+				ack, notAdmitted := capability.Acknowledge, capability.NotAdmitted
+				var releases, refusals, callbacks atomic.Int32
+				capability.Acknowledge = func(token *adapter.ProviderReleaseInvocation) bool { releases.Add(1); return ack(token) }
+				capability.NotAdmitted = func(token *adapter.ProviderReleaseInvocation) bool {
+					refusals.Add(1)
+					record := assistantExecutionRecord(t, e)
+					if len(record.Operations) != 1 || record.Operations[0].State != "refused" {
+						t.Fatal("proof preceded retained physical refusal")
+					}
+					var held assistantAgentOutcome
+					assistantRunMust(t, json.Unmarshal(record.Operations[0].Result, &held))
+					if held.Failure == nil || held.Failure.Source != "agent" || held.Failure.Outcome != "not-started" {
+						t.Fatal("never-admitted refusal lost typed outcome")
+					}
+					switch proof {
+					case "wrong":
+						other, _ := adapter.ProviderDispositionAttempt()
+						if notAdmitted(other.Invocation) {
+							t.Error("wrong token accepted")
+						}
+					case "late", "missing":
+						return false
+					}
+					accepted := notAdmitted(token)
+					if proof == "duplicate" && notAdmitted(token) {
+						t.Error("duplicate proof accepted")
+					}
+					if proof == "mixed" && ack(token) {
+						t.Error("mixed proof accepted")
+					}
+					return accepted
+				}
+				cb := assistantCodexCallbacks(&callbacks)
+				cb.ProviderRelease = capability
+				cb.Event = func(context.Context, adapter.AgentEvent) error { callbacks.Add(1); return nil }
+				err = agent.Run(t.Context(), assistantCodexRequest(), cb)
+				if err != adapter.ErrBusy || releases.Load() != 0 || refusals.Load() != 1 || callbacks.Load() != 0 {
+					t.Fatalf("busy disposition err=%v released=%d refused=%d callbacks=%d", err, releases.Load(), refusals.Load(), callbacks.Load())
+				}
+				finishErr := err
+				if proof == "unknown" {
+					finishErr = errors.New("unknown invocation outcome")
+				}
+				got := finish(finishErr, proof == "callback")
+				want := adapter.ProviderDispositionUnknown
+				if proof == "exact" {
+					want = adapter.ProviderNeverAdmitted
+				}
+				if got != want {
+					t.Fatalf("disposition %s, want %s", got, want)
+				}
+				if notAdmitted(capability.Invocation) || ack(capability.Invocation) {
+					t.Fatal("late proof accepted")
+				}
+				select {
+				case err := <-done:
+					t.Fatalf("busy invocation closed other owner: %v", err)
+				default:
+				}
+				cancel()
+				select {
+				case <-done:
+				case <-time.After(5 * time.Second):
+					t.Fatal("blocker survived own cancellation")
+				}
+				// The other owner may create its thread before BeforeGeneration.
+				// Only turn/start rows prove generation crossed that fence.
+				for _, row := range assistantCodexLog(t, trace) {
+					if string(row["type"]) == `"generation"` {
+						t.Fatal("never-admitted attempt generated work")
+					}
+				}
+			})
+		}
 	}
 }

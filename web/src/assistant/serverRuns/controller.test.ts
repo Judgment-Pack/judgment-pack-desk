@@ -1,3 +1,6 @@
+import {approvalShownDigest} from '@judgment-pack/harness/contract'
+// Context lifetime is exercised independently; this suite retains its run transport observations.
+vi.mock('../serverContexts',()=>({serverContextDocument:()=>({selector:async()=>({document:'a'.repeat(64)})})}))
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { sha256 } from '@judgment-pack/harness/records'
@@ -29,7 +32,7 @@ it('persists original turn, settings operands and stable admission before POST; 
  await vi.waitFor(()=>expect(h.run.getSnapshot().status).toBe('failed'))
  expect(h.prepare).toHaveBeenCalledOnce();expect(h.prepare.mock.calls[0]).toMatchObject([{turns:[{id:'00000000-0000-4000-8000-000000000001',text:'Original message',input:'Prepared input',statement:'Original statement',attachments:files,researchChoice:'provided',packContext:basis}]},'00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001',expect.any(AbortSignal)])
  expect(fetch).toHaveBeenCalledTimes(2);expect(fetch.mock.calls[0][0]).toBe('/api/assistant-runs')
- expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({admissionId:'00000000-0000-4000-8000-000000000001',purpose:'chat',ownerId:chat.id,revision:'a'.repeat(64),requestId:'00000000-0000-4000-8000-000000000001'})
+ expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({admissionId:'00000000-0000-4000-8000-000000000001',purpose:'chat',ownerId:chat.id,revision:'a'.repeat(64),requestId:'00000000-0000-4000-8000-000000000001',context:{document:'a'.repeat(64)}})
  expect(fetch.mock.calls[1][0]).toContain('/owners/chat-one/requests/00000000-0000-4000-8000-000000000001');expect(h.run.canRetryResponse).toBe(false)
  h.run.retryResponse();expect(fetch).toHaveBeenCalledTimes(2)
 })
@@ -84,10 +87,14 @@ const produced=process.env.DESK_RUN_CLIENT_OUTPUTS
 it.skipIf(!produced)('consumes actual Go API/native continuations through authenticated controller readers without new admission',async()=>{
  for(const name of ['actual-continuation-answer.json','actual-continuation-extend-budget.json','actual-continuation-subscription.json']){
   const observed=JSON.parse(readFileSync(`${produced}/${name}`,'utf8'))
-  const h=setup({...chat,serverRequest:{requestId:observed.requestId,admissionId:observed.admissionId}})
-  const fetch=vi.fn().mockResolvedValue(json({runs:[observed]}));vi.stubGlobal('fetch',fetch)
+  const history=observed.answerHistory??[],parentName=name==='actual-continuation-subscription.json'?'actual-subscription-answer-parent.json':'actual-answer-parent.json'
+  const parent=history.length?JSON.parse(readFileSync(`${produced}/${parentName}`,'utf8')):undefined
+  const h=setup({...chat,serverRequest:{requestId:observed.requestId,admissionId:history[0]?.admissionId??observed.admissionId}})
+  const fetch=vi.fn().mockResolvedValueOnce(json({runs:parent?[parent,observed]:[observed]}))
+  if(parent)fetch.mockResolvedValueOnce(json(observed));vi.stubGlobal('fetch',fetch)
   await h.run.reconnect();expect(h.run.getSnapshot().execution?.used).toBe(observed.checkpoint.used)
-  expect(h.run.getSnapshot().turns.some(t=>t.role==='assistant')).toBe(true);expect(h.prepare).not.toHaveBeenCalled();expect(fetch).toHaveBeenCalledOnce()
+  expect(h.run.getSnapshot().turns.some(t=>t.role==='assistant')).toBe(true);expect(h.prepare).not.toHaveBeenCalled();expect(fetch).toHaveBeenCalledTimes(parent?2:1)
+  expect(fetch.mock.calls.every(([,options])=>options.method!=='POST')).toBe(true)
  }
 })
 it.skipIf(!produced)('consumes actual Go snapshots/SSE and isolates child progress; session end clears display and prevents late access',async()=>{
@@ -170,6 +177,7 @@ const deferred=<T,>()=>{let resolve!:(value:T)=>void,reject!:(cause:unknown)=>vo
 function expectFreshWorkBlocked(h:ReturnType<typeof setup>){
  const before=h.run.getSnapshot()
  expect(h.run.canRetryResponse).toBe(false)
+ expect(h.run.inputBlocked).toBe(true)
  h.run.send('Fresh request');h.run.retryResponse()
  expect(()=>h.run.appendConversation([])).toThrow()
  expect(h.run.getSnapshot()).toBe(before);expect(h.prepare).not.toHaveBeenCalled()
@@ -182,7 +190,7 @@ it('blocks restored-marker work before discovery and preserves the original admi
  await vi.waitFor(()=>expect(h.reconcile).toHaveBeenCalledOnce());expectFreshWorkBlocked(h)
  expect(h.run.needsReconnect).toBe(true)
  read.resolve(retainedChat());await reconnect
- expect(h.run.canRetryResponse).toBe(true);expect(h.run.needsReconnect).toBe(false)
+ expect(h.run.canRetryResponse).toBe(true);expect(h.run.needsReconnect).toBe(false);expect(h.run.inputBlocked).toBe(false)
  h.prepare.mockImplementation(()=>new Promise(()=>{}));h.run.retryResponse()
  await vi.waitFor(()=>expect(h.prepare).toHaveBeenCalledOnce());h.run.disconnect()
  expect(fetch).toHaveBeenCalledOnce()
@@ -237,4 +245,99 @@ it('gates each observed terminal reconciliation after an earlier successful proj
  const reconnect=h.run.reconnect();await vi.waitFor(()=>expect(h.reconcile).toHaveBeenCalledOnce())
  first.resolve(retainedChat());await vi.waitFor(()=>expect(h.reconcile).toHaveBeenCalledTimes(2));expectFreshWorkBlocked(h)
  second.resolve(retainedChat());await reconnect;expect(h.run.canRetryResponse).toBe(true)
+})
+
+it.each([true,false])('reads Plan pause passively and sends one exact explicit decision (%s), never redelivering lost acknowledgement',async approved=>{
+ const {default:plan}=await import('./fixtures/plan-decision.json'),saved={...chat,composer:'Retained unsent text',serverRequest:{requestId:plan.requestId,admissionId:plan.admissionId}},h=setup(saved)
+ const fetch=vi.fn().mockResolvedValueOnce(json({runs:[plan]})).mockRejectedValueOnce(Error('lost action ack')).mockResolvedValueOnce(json({runs:[plan]}));vi.stubGlobal('fetch',fetch)
+ await h.run.reconnect();expect(fetch).toHaveBeenCalledOnce();expect(h.run.getSnapshot().status).toBe('needs-input');expect(h.run.pendingPlanDecision?.explanation).toBe('Remove reviewed second step');expect(h.run.pendingApproval).toBeUndefined();expect(h.run.canExtendResponse).toBe(false)
+ h.run.decidePlan(approved);h.run.decidePlan(approved)
+ await vi.waitFor(()=>expect(h.run.needsReconnect).toBe(true))
+ expect(fetch).toHaveBeenCalledTimes(2)
+ expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({id:expect.any(String),revision:plan.revision,kind:'plan-decision',...plan.planDecisionReference,approved})
+ h.run.decidePlan(approved);expect(fetch).toHaveBeenCalledTimes(2)
+ await h.run.reconnect();expect(fetch).toHaveBeenCalledTimes(3);expect(h.prepare).not.toHaveBeenCalled();expect(saved.composer).toBe('Retained unsent text');h.run.disconnect()
+})
+it.each(['historical','missing','terminal','stale'] as const)('never executes a %s Plan reference',async mode=>{
+ const {default:plan}=await import('./fixtures/plan-decision.json'),value={...plan,...(mode==='historical'?{historical:true,planDecisionReference:undefined}:mode==='missing'?{planDecisionReference:undefined}:mode==='terminal'?{state:'stopped',planDecisionReference:undefined}:{planDecisionReference:{...plan.planDecisionReference,callId:'stale'}})},h=setup({...chat,serverRequest:{requestId:plan.requestId,admissionId:plan.admissionId}})
+ const fetch=vi.fn().mockResolvedValueOnce(json({runs:[value]}));vi.stubGlobal('fetch',fetch)
+ await h.run.reconnect();expect(h.run.pendingPlanDecision).toBeUndefined();h.run.decidePlan(true);expect(fetch).toHaveBeenCalledOnce();h.run.disconnect()
+})
+
+it.each(['lost acknowledgement','server refusal'])('blocks repeated approval after %s until passive reconciliation',async mode=>{
+ const {default:approval}=await import('./fixtures/approval.json'),h=setup({...chat,serverRequest:{requestId:approval.requestId,admissionId:approval.admissionId}})
+ const fetch=vi.fn().mockResolvedValueOnce(json({runs:[approval]}))
+ if(mode==='lost acknowledgement')fetch.mockRejectedValueOnce(Error('lost receipt'))
+ else fetch.mockResolvedValueOnce(new Response('{}',{status:409,headers:{'Content-Type':'application/json'}}))
+ fetch.mockResolvedValueOnce(json({runs:[approval]}));vi.stubGlobal('fetch',fetch)
+ await h.run.reconnect();h.run.decideApproval(true,{callId:approval.checkpoint.approval.callId,shownDigest:approvalShownDigest(approval.checkpoint.approval)});h.run.decideApproval(true,{callId:approval.checkpoint.approval.callId,shownDigest:approvalShownDigest(approval.checkpoint.approval)})
+ await vi.waitFor(()=>expect(h.run.getSnapshot().status).toBe('failed'))
+ expect(h.run.pendingApproval).toBeUndefined();h.run.decideApproval(true,{callId:approval.checkpoint.approval.callId,shownDigest:approvalShownDigest(approval.checkpoint.approval)});h.run.decideApproval(false)
+ expect(fetch).toHaveBeenCalledTimes(2);expect(h.run.needsReconnect).toBe(true)
+ await h.run.reconnect();expect(h.run.pendingApproval).toMatchObject(approval.approvalReference)
+ expect(fetch).toHaveBeenCalledTimes(3);expect(fetch.mock.calls.filter(([,init])=>init?.method==='POST')).toHaveLength(1)
+ expect(h.prepare).not.toHaveBeenCalled()
+})
+it('reader disconnect preserves the acknowledged approval but ending the session removes it',async()=>{
+ const {default:approval}=await import('./fixtures/approval.json'),h=setup({...chat,serverRequest:{requestId:approval.requestId,admissionId:approval.admissionId}})
+ const fetch=vi.fn().mockResolvedValueOnce(json({runs:[approval]}));vi.stubGlobal('fetch',fetch)
+ await h.run.reconnect();h.run.disconnect();expect(h.run.pendingApproval).toMatchObject(approval.approvalReference)
+ h.run.endSession();expect(h.run.pendingApproval).toBeUndefined();h.run.decideApproval(true,{callId:approval.checkpoint.approval.callId,shownDigest:approvalShownDigest(approval.checkpoint.approval)});await h.run.reconnect()
+ expect(fetch).toHaveBeenCalledOnce()
+})
+it('historical approval remains display history without an actionable decision',async()=>{
+ const {default:approval}=await import('./fixtures/approval.json'),h=setup({...chat,serverRequest:{requestId:approval.requestId,admissionId:approval.admissionId}})
+ const fetch=vi.fn().mockResolvedValueOnce(json({runs:[{...approval,historical:true}]}));vi.stubGlobal('fetch',fetch)
+ await h.run.reconnect();expect(h.run.pendingApproval).toBeUndefined();h.run.decideApproval(true,{callId:approval.checkpoint.approval.callId,shownDigest:approvalShownDigest(approval.checkpoint.approval)})
+ expect(fetch).toHaveBeenCalledOnce()
+})
+
+it('requires the proof captured by the card and refuses stale rendering without a POST',async()=>{
+ const {default:approval}=await import('./fixtures/approval.json'),h=setup({...chat,serverRequest:{requestId:approval.requestId,admissionId:approval.admissionId}})
+ const fetch=vi.fn().mockResolvedValue(json({runs:[approval]}));vi.stubGlobal('fetch',fetch)
+ await h.run.reconnect()
+ h.run.decideApproval(true)
+ h.run.decideApproval(true,{callId:'stale-call',shownDigest:approval.approvalReference.argsDigest})
+ h.run.decideApproval(true,{callId:approval.approvalReference.callId,shownDigest:'sha256:'+'a'.repeat(64)})
+ expect(fetch).toHaveBeenCalledOnce()
+ expect(h.run.pendingApproval?.callId).toBe(approval.approvalReference.callId)
+})
+
+it('never retries an approved action whose result was not kept, including after acknowledged reload',async()=>{
+ for(const acknowledged of [false,true]){
+  const saved={...chat,serverRequest:{requestId:pending.requestId,admissionId:pending.admissionId}},h=setup(saved)
+  const responseId=`response-${sha256(pending.id).slice(0,32)}`
+  const guarded={...pending,state:'interrupted',approvalResults:[{callId:'approved-call',name:'experimental_evaluate',isError:true,result:{available:false,text:[],otherContent:[]}}],...(acknowledged?{chatProjection:{responseId,digest:'b'.repeat(64),acknowledged:true}}:{})}
+  const fetch=vi.fn().mockResolvedValue(json({runs:[guarded]}));vi.stubGlobal('fetch',fetch)
+  await h.run.reconnect()
+  expect(h.run.running).toBe(false)
+  expect(h.run.canRetryResponse).toBe(false)
+  expect(h.run.pendingApproval).toBeUndefined()
+  const reads=fetch.mock.calls.length
+  h.run.retryResponse()
+  expect(fetch).toHaveBeenCalledTimes(reads)
+  expect(h.prepare).not.toHaveBeenCalled()
+  expect(fetch.mock.calls.every(([,options])=>options.method!=='POST')).toBe(true)
+  await h.run.reconnect()
+  expect(h.run.canRetryResponse).toBe(false)
+  expect(h.prepare).not.toHaveBeenCalled()
+  h.run.disconnect()
+ }
+})
+
+it.skipIf(!produced)('reads the actual Go guard failure as unknown and never turns reload into an action retry',async()=>{
+ const observed=JSON.parse(readFileSync(`${produced}/actual-guarded-result-343.json`,'utf8'))
+ const h=setup({...chat,serverRequest:{requestId:observed.requestId,admissionId:observed.admissionId}})
+ const fetch=vi.fn().mockResolvedValue(json({runs:[observed]}));vi.stubGlobal('fetch',fetch)
+ await h.run.reconnect()
+ expect(h.run.running).toBe(false)
+ expect(h.run.canRetryResponse).toBe(false)
+ expect(h.run.getSnapshot().execution?.approval?.state).toBe('approved')
+ expect(h.run.getSnapshot().responses?.at(-1)?.work.items.some(row=>row.approvalResult?.available===false&&row.status==='failed')).toBe(true)
+ h.run.retryResponse()
+ await h.run.reconnect()
+ expect(h.run.canRetryResponse).toBe(false)
+ expect(h.prepare).not.toHaveBeenCalled()
+ expect(fetch.mock.calls.every(([,options])=>options.method!=='POST')).toBe(true)
+ h.run.disconnect()
 })

@@ -8,13 +8,27 @@ const dir=process.argv[2]
 for(const name of ['continuation-answer','continuation-extend-budget','actual-continuation-answer','actual-continuation-extend-budget','actual-continuation-subscription']){
  const raw=parseRunJSON(await readFile(join(dir,name+'.json'),'utf8'))
  const value=decodeSnapshot(raw,{owner:raw.owner,requestId:raw.requestId,id:raw.id})
- assert.equal(value.state,'complete');assert.equal(value.continuations.length,1)
+ assert.equal(value.state,'complete')
  assert.equal(value.checkpoint.status,'complete');assert.equal(pendingQuestion(value),undefined)
- const receipt=value.continuations[0]
- if(receipt.kind==='answer'){
-  assert.deepEqual(receipt.answer.selected,['two']);assert.equal(receipt.answer.text,'Exact answer <&> 한글\nnext line')
+ if(value.answerHistory?.length){
+  assert.equal(value.answerHistory.length,1)
+  const origin=value.answerHistory[0]
+  assert.deepEqual(origin.answer.selected,['two']);assert.equal(origin.answer.text,'Exact answer <&> 한글\nnext line')
   assert.equal(value.checkpoint.grants.length,0)
- }else{assert.deepEqual(receipt.grant,value.checkpoint.grants.at(-1));assert.equal(receipt.grant.to-receipt.grant.from,10)}
+  assert.notEqual(value.id,origin.parentRunId)
+  if(name.startsWith('actual-')){
+   const parentName=name.endsWith('subscription')?'actual-subscription-answer-parent.json':'actual-answer-parent.json'
+   const rawParent=parseRunJSON(await readFile(join(dir,parentName),'utf8'))
+   const parent=decodeSnapshot(rawParent,{owner:rawParent.owner,requestId:rawParent.requestId,id:rawParent.id})
+   assert.equal(parent.continuations[0].successorRunId,value.id)
+   assert.deepEqual(parent.continuations[0].answer,origin.answer)
+   assert.notEqual(parent.checkpoint.id,value.checkpoint.id)
+  }
+ }else{
+  assert.equal(value.continuations.length,1)
+  const receipt=value.continuations[0]
+  assert.equal(receipt.kind,'extend-budget');assert.deepEqual(receipt.grant,value.checkpoint.grants.at(-1));assert.equal(receipt.grant.to-receipt.grant.from,10)
+ }
  if(name.endsWith('subscription')){assert.equal(value.checkpoint.unit,'provider-managed');assert.equal(value.checkpoint.used,0);assert.equal(value.checkpoint.limit,1)}
 }
 const chat=parseRunJSON(await readFile(join(dir,'actual-continuation-projected-chat.json'),'utf8'))

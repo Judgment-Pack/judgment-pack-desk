@@ -24,6 +24,10 @@ type Tool struct {
 }
 
 type RunRequest struct {
+	// ProviderReleased is a live invocation callback. It runs at most once, only
+	// after this Run acquired admission and reaped its owned client. Refusal
+	// before admission (including busy) supplies no release proof.
+	ProviderReleased func() `json:"-"`
 	// Host-only admission policy. Never accepted from the browser or sent to Codex.
 	WaitForAvailability bool `json:"-"`
 	// Go-only host fences: admission follows the account lock; generation follows

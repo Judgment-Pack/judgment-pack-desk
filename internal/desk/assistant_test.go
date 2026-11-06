@@ -1986,6 +1986,17 @@ func probeAgainstRaw(t *testing.T, kind, endpoint string) (int, string) {
 	if status, body := storeKey(t, ts, testKey); status != http.StatusOK {
 		t.Fatalf("store: %d %v", status, body)
 	}
+	if kind == "anthropic" {
+		// Generated reachability uses the real durable Settings owner. Metadata
+		// protocols continue to exercise their existing model-free probe route.
+		f := &settingsObservationFixture{s: s, token: policyTestSession(t, s), legacy: true}
+		start := f.reference(t, "reachability-fixture", "ping")
+		run := f.run(t, start)
+		result := f.result(t, run)
+		encoded, err := json.Marshal(result.Ping)
+		assistantRunMust(t, err)
+		return http.StatusOK, string(encoded)
+	}
 	return rawBody(t, ts, http.MethodPost, "/api/assistant/probe", nil)
 }
 

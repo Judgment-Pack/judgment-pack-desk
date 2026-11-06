@@ -50,7 +50,10 @@ func TestAssistantGraphStaleReadCustody(t *testing.T) {
 				}
 			case "reconstructed-narrative":
 				cp := *assistantExecutionRecord(t, e).Checkpoint
-				cp.AdditionalMembers = map[string]json.RawMessage{"graphRead": json.RawMessage(`{"id":"flow","path":"flow.graph.json","sha256":"` + digestOf([]byte(assistantGraphOriginal)) + `"}`)}
+				// Declared retained history is data, never a root read receipt.
+				// Preserve the original fabricated read's exact object payload.
+				narrative := `{"id":"flow","path":"flow.graph.json","sha256":"` + digestOf([]byte(assistantGraphOriginal)) + `"}`
+				cp.Context.Entries = append(cp.Context.Entries, contract.CheckpointRetainedEntry{ID: cp.Context.Scope + ":graphRead", Kind: "history", Label: "Reconstructed graph read", Value: json.RawMessage(narrative), ValueJSON: &narrative, Bytes: int64(len(narrative)), Digest: digestOf([]byte(narrative))})
 				assistantRunMust(t, e.Checkpoint(t.Context(), cp))
 			}
 			registry, err := e.assistantGraphTools(x.runtime)

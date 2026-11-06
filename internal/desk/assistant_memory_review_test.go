@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -535,10 +536,16 @@ func TestAssistantMemoryReviewResumeAndStop(t *testing.T) {
 			accepted := memoryReviewPost(t, s, token, before.SHA256, memoryReviewAction(before.Proposals[0], "accept"))
 			changeMemory(t, s, memoryChange{Action: "settings", Settings: &memorySettings{Suggest: true, Use: true}})
 			if !stop {
-				assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs/"+paused.ID+"/actions", assistantContinuationActualAnswer(paused)), 200)
-				complete := assistantProtocolWait(t, s, token, e.record.ID, "complete")
+				parentBefore := canonicalActivationRecord(t, s, paused.ID)
+				admitted := assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs/"+paused.ID+"/actions", assistantContinuationActualAnswer(paused)), 200)
+				next := assistantContinuationSuccessor(t, s, token, admitted)
+				complete := assistantProtocolWait(t, s, token, next.ID, "complete")
+				parentAfter := canonicalActivationRecord(t, s, paused.ID)
+				if !reflect.DeepEqual(parentBefore.Checkpoint, parentAfter.Checkpoint) {
+					t.Fatal("successor rewrote prior memory proposal checkpoint")
+				}
 				book := memoryReload(t, *complete.Checkpoint).Memories
-				if len(book.Proposed) != 1 || len(book.Recalled) != 1 || book.Proposed[0].ID != accepted.Content.Entries[0].Canonical.ID || book.Recalled[0].ID != book.Proposed[0].ID || book.Recalled[0].Digest != book.Proposed[0].Digest || complete.Checkpoint.Used != 3 || complete.Checkpoint.Limit != paused.Checkpoint.Limit {
+				if len(book.Proposed) != 0 || len(book.Recalled) != 1 || book.Recalled[0].ID != accepted.Content.Entries[0].Canonical.ID || book.Recalled[0].Digest != accepted.Content.Entries[0].Canonical.Digest || complete.Checkpoint.Used != 1 || complete.Checkpoint.Limit != 20 {
 					t.Fatal("proposal/acceptance/recall lost across checkpoint resume", book)
 				}
 			} else if requests.Load() != 2 {

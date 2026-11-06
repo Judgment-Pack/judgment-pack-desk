@@ -132,6 +132,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/toolchains
       - name: The agent docs and the manifest
         run: scripts/dev/check.sh --only agent-docs
@@ -140,7 +142,20 @@ jobs:
       - name: Checks
         env:
           JPDEV_LOGDIR: ${{ runner.temp }}/check-logs
-        run: scripts/dev/check.sh --all
+          CHECK_EVENT: ${{ github.event_name }}
+          CHECK_BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$CHECK_EVENT" = pull_request ]; then
+            if [ -z "$CHECK_BASE_REF" ]; then
+              echo 'check: pull request base ref is empty' >&2
+              exit 2
+            fi
+            git check-ref-format "refs/heads/$CHECK_BASE_REF" || exit 2
+            git rev-parse --verify "refs/remotes/origin/$CHECK_BASE_REF^{commit}" >/dev/null || exit 2
+            scripts/dev/check.sh --all --changed "origin/$CHECK_BASE_REF"
+          else
+            scripts/dev/check.sh --all
+          fi
       # The full output of every step, which the summary block shortens.
       - name: Upload the step logs
         if: always()

@@ -2700,22 +2700,38 @@ func TestRelayRefusesTheListingsPaginationQuery(t *testing.T) {
 /* The one table ------------------------------------------------------------ */
 
 func TestTheProbeAndTheRelayPresentTheSameCredential(t *testing.T) {
-	// Two callers, one table. A second table is how the two would come to
-	// disagree about what an `anthropic` endpoint is sent, and the one that was
-	// wrong would be wrong with a key in it.
+	// Every Settings reachability path uses the relay's credential table.
+	// Anthropic now generates only through the canonical one-request ping;
+	// OpenAI-compatible and Gemini retain their model-free metadata probes.
 	for _, kind := range AssistantKinds {
-		probe, err := probeRequest(context.Background(),
-			assistantEndpoint{url: "https://e.example/v1", kind: kind, model: "m"}, testKey)
-		if err != nil {
-			t.Fatalf("%s: %v", kind, err)
-		}
-		name, value, ok := credentialHeader(kind, "", testKey)
-		if !ok {
-			t.Fatalf("%s has no credential header", kind)
-		}
-		if got := probe.Header.Get(name); got != value {
-			t.Errorf("%s: the probe sends %s=%q, the relay would send %q", kind, name, got, value)
-		}
+		t.Run(kind, func(t *testing.T) {
+			key := testKey
+			var headers http.Header
+			if kind == "anthropic" {
+				f := newSettingsObservationFixture(t, kind, http.StatusOK,
+					`{"id":"msg","type":"message","role":"assistant","model":"shared-model","content":[{"type":"text","text":"P"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`, false, false)
+				run := f.run(t, f.reference(t, "credential-equivalence", "ping"))
+				result := f.result(t, run)
+				if f.calls.Load() != 1 || !result.ObserveSucceeded || result.Ping == nil || !result.Ping.Reachable {
+					t.Fatalf("canonical ping did not complete exactly once: calls=%d", f.calls.Load())
+				}
+				key, headers = "settings-private-key", f.headers
+			} else {
+				probe, err := probeRequest(context.Background(),
+					assistantEndpoint{url: "https://e.example/v1", kind: kind, model: "m"}, key)
+				if err != nil {
+					t.Fatal(err)
+				}
+				headers = probe.Header
+			}
+			name, value, ok := credentialHeader(kind, "", key)
+			if !ok {
+				t.Fatal("kind has no credential header")
+			}
+			if got := headers.Values(name); len(got) != 1 || got[0] != value {
+				t.Errorf("Settings credential must equal the relay credential exactly once for %s", name)
+			}
+		})
 	}
 	if _, _, ok := credentialHeader("something-else", "", testKey); ok {
 		t.Error("a kind nothing defines was given a credential header")

@@ -13,6 +13,7 @@ func (s *Server) discoverAssistantChatRuns(r *http.Request, owner, request strin
 	}
 	store := s.assistantRuns()
 	out := []assistantRunView{}
+	guarded := map[string]assistantRunRecord{}
 	_, err := store.transaction(r.Context(), func(ledger *assistantRunLedger) (bool, error) {
 		identity, _, err := s.assistantRunIdentity(r)
 		if err != nil {
@@ -60,6 +61,9 @@ func (s *Server) discoverAssistantChatRuns(r *http.Request, owner, request strin
 				continue
 			}
 			view := assistantRunPublic(run)
+			if assistantUnkeptApproval(run) != nil {
+				guarded[run.ID] = run
+			}
 			if !current {
 				view.Historical = true
 			}
@@ -67,6 +71,18 @@ func (s *Server) discoverAssistantChatRuns(r *http.Request, owner, request strin
 		}
 		return false, nil
 	})
+	if err == nil {
+		for i, view := range out {
+			if run, ok := guarded[view.ID]; ok {
+				projected, viewErr := s.assistantRunService().guardedResultView(r, run)
+				if viewErr != nil {
+					return nil, viewErr
+				}
+				projected.Historical = projected.Historical || view.Historical
+				out[i] = projected
+			}
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, err
 }

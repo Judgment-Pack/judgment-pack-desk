@@ -12,35 +12,42 @@ import (
 	"reflect"
 	"strings"
 
+	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 )
 
 var errAssistantRunUnavailable = errors.New("This assistant purpose is not available on the server yet.")
 
 type assistantRunStart struct {
-	AdmissionID string `json:"admissionId"`
-	Purpose     string `json:"purpose"`
-	OwnerID     string `json:"ownerId"`
-	Revision    string `json:"revision"`
-	RequestID   string `json:"requestId"`
+	Context     *assistantRunContextSelector  `json:"context,omitempty"`
+	Observation *assistantObservationSelector `json:"observation,omitempty"`
+	AdmissionID string                        `json:"admissionId"`
+	Purpose     string                        `json:"purpose"`
+	OwnerID     string                        `json:"ownerId"`
+	Revision    string                        `json:"revision"`
+	RequestID   string                        `json:"requestId"`
 }
 type assistantRunAnswerDraft struct {
 	Selected []string `json:"selected"`
 	Text     *string  `json:"text"`
 }
 type assistantRunAction struct {
-	QuestionID     string                   `json:"questionId,omitempty"`
-	QuestionDigest string                   `json:"questionDigest,omitempty"`
-	Answer         *assistantRunAnswerDraft `json:"answer,omitempty"`
-	ID             string                   `json:"id"`
-	Kind           string                   `json:"kind"`
-	Revision       uint64                   `json:"revision"`
-	CallID         string                   `json:"callId,omitempty"`
-	ArgsDigest     string                   `json:"argsDigest,omitempty"`
-	Approved       *bool                    `json:"approved,omitempty"`
-	Note           *string                  `json:"note,omitempty"`
+	PlanRevision      string                   `json:"planRevision,omitempty"`
+	CandidateRevision string                   `json:"candidateRevision,omitempty"`
+	QuestionID        string                   `json:"questionId,omitempty"`
+	QuestionDigest    string                   `json:"questionDigest,omitempty"`
+	Answer            *assistantRunAnswerDraft `json:"answer,omitempty"`
+	ID                string                   `json:"id"`
+	Kind              string                   `json:"kind"`
+	Revision          uint64                   `json:"revision"`
+	CallID            string                   `json:"callId,omitempty"`
+	ArgsDigest        string                   `json:"argsDigest,omitempty"`
+	ShownDigest       *string                  `json:"shownDigest,omitempty"`
+	Approved          *bool                    `json:"approved,omitempty"`
+	Note              *string                  `json:"note,omitempty"`
 }
 type assistantRunActionReceipt struct {
+	SuccessorRunID     string `json:"successorRunId,omitempty"`
 	ID                 string `json:"id"`
 	Digest             string `json:"digest"`
 	Kind               string `json:"kind"`
@@ -48,11 +55,14 @@ type assistantRunActionReceipt struct {
 	AuthorizingPolicy  string `json:"authorizingPolicy,omitempty"`
 	// A receipt admits at most one delivery. An interrupted delivery is never
 	// automatically repeated, even if its response was lost.
-	Decision *contract.CheckpointApprovalDecision `json:"decision,omitempty"`
-	Grant    *contract.CheckpointGrant            `json:"grant,omitempty"`
-	Answer   *assistantRunAnswer                  `json:"answer,omitempty"`
+	PlanDecision *assistantPlanDecisionReference      `json:"planDecision,omitempty"`
+	Decision     *contract.CheckpointApprovalDecision `json:"decision,omitempty"`
+	Grant        *contract.CheckpointGrant            `json:"grant,omitempty"`
+	Answer       *assistantRunAnswer                  `json:"answer,omitempty"`
 }
 type assistantRunSource struct {
+	// Host capability only; excluded from immutable source facts and wire input.
+	chat       *runcontext.ChatContext
 	Start      assistantRunStart
 	Binding    assistantRunBinding
 	Original   []byte
@@ -60,6 +70,10 @@ type assistantRunSource struct {
 	Text       string
 	Connection aiConnection
 	Profile    assistantProfile
+	// Selected only by the saved-chat source owner, never decoded from HTTP.
+	// Plan data participates in source equality; resolver capability does not.
+	Plan         *assistantRunPlan
+	PlanResolver *runcontext.PlanResolver
 }
 
 // Bound once by server implementation before serving. Prepare may only build
@@ -100,6 +114,15 @@ func assistantRunIdentityMatches(a, b assistantRunBinding) bool {
 
 // Closed registry: other journal owners require a concrete resolver and tests.
 func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, identity assistantRunBinding, project string) (assistantRunSource, error) {
+	if start.Context != nil && !assistantContextSelectorValid(*start.Context, start.Purpose) {
+		return assistantRunSource{}, errAssistantRunInvalid
+	}
+	if start.Purpose == assistantSettingsObservationPurpose {
+		return s.resolveAssistantSettingsObservationRun(r, start, identity, project)
+	}
+	if start.Observation != nil {
+		return assistantRunSource{}, errAssistantRunInvalid
+	}
 	if assistantAuthoringPurpose(start.Purpose) {
 		return s.resolveAssistantAuthoringRun(r, start, identity, project)
 	}
@@ -249,6 +272,9 @@ func (s *Server) resolveAssistantRun(r *http.Request, start assistantRunStart, i
 			return assistantRunSource{}, err
 		}
 	}
+	if err := s.selectAssistantRunPlanLocked(r, &source); err != nil {
+		return assistantRunSource{}, err
+	}
 	return source, nil
 }
 
@@ -258,6 +284,11 @@ func (s *Server) readAssistantRunSource(r *http.Request, start assistantRunStart
 		return assistantRunSource{}, err
 	}
 	defer lock.Close()
+	// Only read-only authoring checks may reuse full-ledger validation facts.
+	// Mutation/freshCAS callers keep resolveAssistantRun's original full decode.
+	if assistantAuthoringPurpose(start.Purpose) && start.Observation == nil && (start.Context == nil || assistantContextSelectorValid(*start.Context, start.Purpose)) {
+		return s.resolveAssistantAuthoringRunStorage(r, start, identity, project, true)
+	}
 	return s.resolveAssistantRun(r, start, identity, project)
 }
 func (s *Server) authorizeAssistantRun(r *http.Request, run assistantRunRecord) error {
@@ -274,9 +305,15 @@ func assistantRunActionDigest(action assistantRunAction) string {
 	raw, _ := json.Marshal(action)
 	return digestOf(raw)
 }
-func assistantRunArgsDigest(args map[string]json.RawMessage) string {
-	raw, _ := json.Marshal(args)
-	return digestOf(raw)
+
+// Both continuation routes bind the decision to the canonical text shown by the card.
+// An old reference or a missing render proof refuses before a receipt or effect.
+func assistantRunApprovalMatches(asked *contract.CheckpointApproval, action assistantRunAction) bool {
+	if asked == nil || action.Approved == nil {
+		return false
+	}
+	digest := runcontext.ApprovalShownDigest(*asked)
+	return action.ArgsDigest == digest && (!*action.Approved || action.ShownDigest != nil && *action.ShownDigest == digest) && (action.ShownDigest == nil || *action.ShownDigest == digest)
 }
 
 func validateAssistantRunActionReceipts(run assistantRunRecord) error {
@@ -285,10 +322,13 @@ func validateAssistantRunActionReceipts(run assistantRunRecord) error {
 		return errAssistantRunInvalid
 	}
 	for _, receipt := range run.Actions {
-		if !assistantRunText(receipt.ID, 128) || !assistantRunDigest(receipt.Digest) || ids[receipt.ID] || !contains([]string{"cancel", "approval", "abandon", "extend-budget", "answer"}, receipt.Kind) {
+		if !assistantRunText(receipt.ID, 128) || !assistantRunDigest(receipt.Digest) || ids[receipt.ID] || !contains([]string{"cancel", "approval", "plan-decision", "abandon", "extend-budget", "answer"}, receipt.Kind) {
 			return errAssistantRunInvalid
 		}
 		ids[receipt.ID] = true
+		if receipt.SuccessorRunID != "" && (receipt.Kind != "answer" || !validAssistantDeskRunID(receipt.SuccessorRunID)) {
+			return errAssistantRunInvalid
+		}
 		if receipt.Kind == "answer" {
 			if receipt.Answer == nil || validateAssistantRunAnswer(run, *receipt.Answer) != nil {
 				return errAssistantRunInvalid
@@ -303,8 +343,15 @@ func validateAssistantRunActionReceipts(run assistantRunRecord) error {
 		} else if receipt.AuthorizingSession != "" || receipt.AuthorizingPolicy != "" {
 			return errAssistantRunInvalid
 		}
-		if receipt.Kind == "approval" {
-			if receipt.Decision == nil || !assistantRunText(receipt.Decision.CallID, 256) || receipt.Decision.Note != nil && len(*receipt.Decision.Note) > 8000 {
+		if receipt.Kind == "plan-decision" {
+			if !validAssistantRunPlanDecisionReference(receipt.PlanDecision) || receipt.Decision == nil || receipt.PlanDecision.CallID != receipt.Decision.CallID {
+				return errAssistantRunInvalid
+			}
+		} else if receipt.PlanDecision != nil {
+			return errAssistantRunInvalid
+		}
+		if receipt.Kind == "approval" || receipt.Kind == "plan-decision" {
+			if receipt.Decision == nil || !assistantRunText(receipt.Decision.CallID, 256) || receipt.Decision.Note != nil && runcontext.U16Length(*receipt.Decision.Note) > 2000 {
 				return errAssistantRunInvalid
 			}
 		} else if receipt.Decision != nil {
@@ -328,26 +375,27 @@ func validateAssistantRunActionReceipts(run assistantRunRecord) error {
 	return nil
 }
 func (s assistantRunStore) lookup(ctx context.Context, identity assistantRunBinding, id, admission string, historicalRead bool) (assistantRunRecord, error) {
-	var out assistantRunRecord
-	_, err := s.transaction(ctx, func(ledger *assistantRunLedger) (bool, error) {
-		for _, run := range ledger.Runs {
-			if id != "" && run.ID == id || admission != "" && run.AdmissionID == admission && run.Binding.Principal == identity.Principal {
-				if !assistantRunIdentityMatches(identity, run.Binding) && !(historicalRead && identity.Principal == run.Binding.Principal && run.Binding.Project == s.project && (assistantRunTerminal(run.State) || assistantRunPaused(run.State))) {
-					return false, errAssistantRunScope
-				}
-				out = run
-				return false, nil
+	ledger, err := s.readSnapshot(ctx)
+	if err != nil {
+		return assistantRunRecord{}, err
+	}
+	for _, run := range ledger.Runs {
+		if id != "" && run.ID == id || admission != "" && run.AdmissionID == admission && run.Binding.Principal == identity.Principal {
+			if !assistantRunIdentityMatches(identity, run.Binding) && !(historicalRead && identity.Principal == run.Binding.Principal && run.Binding.Project == s.project && (assistantRunTerminal(run.State) || assistantRunPaused(run.State))) {
+				return assistantRunRecord{}, errAssistantRunScope
 			}
+			return run, nil
 		}
-		return false, errAssistantRunNotFound
-	})
-	return out, err
+	}
+	return assistantRunRecord{}, errAssistantRunNotFound
 }
 
 var errAssistantRunNotFound = errors.New("Assistant run is unavailable in this signed-in window.")
 
 func assistantRunFreshSourceEqual(a, b assistantRunSource) bool {
-	return reflect.DeepEqual(a.Binding, b.Binding) && bytes.Equal(a.Original, b.Original) && bytes.Equal(a.Request, b.Request)
+	// Resolver closures are host capabilities, not comparable facts. Immutable
+	// selected snapshots/locators are compared alongside their original source.
+	return reflect.DeepEqual(a.Binding, b.Binding) && bytes.Equal(a.Original, b.Original) && bytes.Equal(a.Request, b.Request) && reflect.DeepEqual(a.Plan, b.Plan)
 }
 func assistantRunCursor(run assistantRunRecord) string {
 	return fmt.Sprintf("%d:%d", run.Revision, len(run.Events))

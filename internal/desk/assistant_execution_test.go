@@ -291,20 +291,29 @@ with open('execution-fixture.json') as f: config=json.load(f)
 for line in sys.stdin:
  q=json.loads(line)
  with open(config['ledger']) as f: ledger=json.load(f)
+ # Operation IDs belong to one run; a fresh successor starts its own journal.
+ if 'run' in config:
+  runs=[run for run in ledger['runs'] if run['id']==config['run']]
+  if len(runs)!=1: sys.exit(31)
+  ledger={'runs':runs}
  ops=[op for run in ledger['runs'] for op in (run.get('operations') or []) if op['id']==q.get('id')]
  if 'id' in q and (len(ops)!=1 or ops[0]['state']!='dispatched'): sys.exit(31)
  with open('execution-fixture.jsonl','a') as f: f.write(json.dumps(q)+'\n')
  if 'id' not in q: continue
  method=q['method']; p=q.get('params',{}); name=p.get('name','')
  if method=='initialize': result={'protocolVersion':'2025-06-18','capabilities':{},'serverInfo':{'name':'fixture','version':'1'}}
- elif method=='tools/list': result={'tools':[{'name':n,'description':n,'inputSchema':{'type':'object','properties':{}}} for n in ['validate','get_schema','experimental_evaluate','experimental_test_cases','unsafe_extra']]}
+ elif method=='tools/list':
+  metadata={'validate':{'operation':'check','effect':'pure','checkKind':'validate'},'get_schema':{'operation':'read','effect':'read'},'experimental_evaluate':{'operation':'evaluate','effect':'act','experimental':True},'experimental_test_cases':{'operation':'check','effect':'pure','checkKind':'test','experimental':True}}
+  result={'tools':[dict({'name':n,'description':n,'inputSchema':{'type':'object','properties':{}}},**({'_meta':metadata[n]} if n in metadata else {})) for n in ['validate','get_schema','experimental_evaluate','experimental_test_cases','unsafe_extra']]}
  elif method=='prompts/list': result={'prompts':[{'name':'served','arguments':[]},{'name':'requires-input','arguments':[{'name':'input','required':True}]}]}
  elif method=='prompts/get': result={'messages':[{'role':'user','content':{'type':'text','text':'SERVED-RUNTIME-PROMPT'}}]}
  else:
   mode=p.get('arguments',{}).get('fixture','')
   if mode=='hang': time.sleep(30)
   if mode=='oversize': print('x'*(32*1024*1024+1),flush=True);continue
-  result={'content':[{'type':'text','text':json.dumps({'cwd':os.path.realpath('.'),'name':name,'exact':'child-result'})}]}
+  if name=='experimental_evaluate' and config.get('retainedResult'):
+   result={'content':[{'type':'text','text':'Exact native fixture evaluation result.'}]}
+  else: result={'content':[{'type':'text','text':json.dumps({'cwd':os.path.realpath('.'),'name':name,'exact':'child-result'})}]}
  answer={'jsonrpc':'2.0','id':q['id'],'result':result}
  if p.get('arguments',{}).get('fixture')=='wrong-id': answer['id']='unpaired'
  print(json.dumps(answer,separators=(',',':')),flush=True)
@@ -319,7 +328,7 @@ func assistantExecutionRuntimeFixture(t *testing.T, s *Server, e *assistantRunEx
 	assistantRunMust(t, err)
 	ledgerPath := filepath.Join(store.root.Name(), e.writer.lease.store.name)
 	assistantRunMust(t, store.root.Close())
-	config, _ := json.Marshal(map[string]string{"ledger": ledgerPath})
+	config, _ := json.Marshal(map[string]string{"ledger": ledgerPath, "run": e.record.ID})
 	assistantRunMust(t, os.WriteFile(filepath.Join(s.cfg.ProjectDir, "execution-fixture.json"), config, 0600))
 }
 func assistantExecutionOpen(t *testing.T, s *Server, e *assistantRunExecution) *assistantExecution {

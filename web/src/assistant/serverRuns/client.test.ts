@@ -5,6 +5,9 @@ import { decodeSnapshot } from './decode'
 import { RunObservations } from './stream'
 import pending from './fixtures/pending.json'
 import terminal from './fixtures/terminal.json'
+import plan from './fixtures/plan-decision.json'
+import approval from './fixtures/approval.json'
+import type { RunAction, RunSnapshot } from './types'
 
 const binding={owner:{...pending.owner,kind:'chat' as const},requestId:pending.requestId}
 const ref={...binding,id:pending.id}
@@ -23,8 +26,8 @@ describe('authenticated explicit durable run client',()=>{
   expect(fetch.mock.calls[0][1]).toMatchObject({credentials:'omit',redirect:'error',headers:{Authorization:'Bearer test-session'}})
   await client.action(snapshot(),{id:'cancel-one',kind:'cancel',revision:1})
   expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({id:'cancel-one',kind:'cancel',revision:1})
-  await client.action(snapshot(),{id:'approval-one',kind:'approval',revision:1,callId:'call-one',argsDigest:'b'.repeat(64),approved:false,note:''})
-  expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({id:'approval-one',kind:'approval',revision:1,callId:'call-one',argsDigest:'b'.repeat(64),approved:false,note:''})
+  await client.action(decodeSnapshot(approval,binding),{id:'approval-one',kind:'approval',revision:1,...approval.approvalReference,approved:false,note:''})
+  expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({id:'approval-one',kind:'approval',revision:1,...approval.approvalReference,approved:false,note:''})
   await client.action(snapshot(),{id:'abandon-one',kind:'abandon',revision:1})
   expect(JSON.parse(fetch.mock.calls[3][1].body)).toEqual({id:'abandon-one',kind:'abandon',revision:1})
  })
@@ -144,4 +147,80 @@ it('does not confuse another admission acknowledgement with this start',async()=
  const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({...pending,admissionId:'another-admission'}),{headers:{'Content-Type':'application/json'}}));vi.stubGlobal('fetch',fetch)
  const client=await serverRunClient();await expect(client.start(start)).rejects.toMatchObject({delivery:'uncertain',failure:{code:'invalid-response'}})
  expect(fetch).toHaveBeenCalledOnce()
+})
+
+const planSnapshot=()=>decodeSnapshot(structuredClone(plan),binding)
+const planAction=(approved=true):RunAction=>({id:'plan-one',kind:'plan-decision',revision:plan.revision,...plan.planDecisionReference,approved})
+it.each([true,false])('sends one exact Plan decision with optional note (%s)',async approved=>{
+ const fetch=vi.fn().mockResolvedValue(json(plan));vi.stubGlobal('fetch',fetch)
+ const client=await serverRunClient(),action={...planAction(approved),note:''}
+ await client.action(planSnapshot(),action)
+ expect(fetch).toHaveBeenCalledOnce()
+ expect(fetch.mock.calls[0][0]).toBe(`/api/assistant-runs/${plan.id}/actions`)
+ expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(action)
+ expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer test-session')
+})
+it.each([
+ ['missing call',{callId:undefined}],['empty call',{callId:''}],['oversized call',{callId:'x'.repeat(257)}],['invalid call',{callId:'bad\ncall'}],['stale call',{callId:'other-call'}],
+ ['missing Plan revision',{planRevision:undefined}],['unprefixed Plan revision',{planRevision:'a'.repeat(64)}],['stale Plan revision',{planRevision:'sha256:'+'a'.repeat(64)}],
+ ['missing candidate revision',{candidateRevision:undefined}],['uppercase candidate revision',{candidateRevision:'sha256:'+'A'.repeat(64)}],['stale candidate revision',{candidateRevision:'sha256:'+'a'.repeat(64)}],
+ ['missing boolean',{approved:undefined}],['null boolean',{approved:null}],['numeric boolean',{approved:1}],
+ ['oversized note',{note:'x'.repeat(2001)}],['null note',{note:null}],['NUL note',{note:'a\0b'}],['invalid Unicode note',{note:'\ud800'}],
+ ['approval digest',{argsDigest:'a'.repeat(64)}],['extra authority',{ownerId:'other-chat'}],['stale run revision',{revision:2}]
+])('refuses malformed or stale Plan action without sending: %s',async(_name,change)=>{
+ const fetch=vi.fn();vi.stubGlobal('fetch',fetch);const client=await serverRunClient()
+ expect(()=>client.action(planSnapshot(),{...planAction(),...change} as RunAction)).toThrow(RunRequestError)
+ expect(fetch).not.toHaveBeenCalled()
+})
+it.each([
+ ['historical',(s:RunSnapshot)=>({...s,historical:true})],
+ ['terminal',(s:RunSnapshot)=>({...s,state:'stopped'})],
+ ['budget',(s:RunSnapshot)=>({...s,state:'paused-budget'})],
+ ['missing saved reference',(s:RunSnapshot)=>({...s,planDecisionReference:undefined})],
+ ['stale saved reference',(s:RunSnapshot)=>({...s,planDecisionReference:{...s.planDecisionReference!,callId:'other-call'}})],
+ ['unknown saved reference field',(s:RunSnapshot)=>({...s,planDecisionReference:{...s.planDecisionReference!,argsDigest:'a'.repeat(64)}})],
+ ['missing checkpoint',(s:RunSnapshot)=>({...s,checkpoint:undefined})],
+ ['running checkpoint',(s:RunSnapshot)=>({...s,checkpoint:{...s.checkpoint!,status:'running'}})],
+ ['Plan phase',(s:RunSnapshot)=>({...s,checkpoint:{...s.checkpoint!,phase:'plan'}})],
+ ['asked approval',(s:RunSnapshot)=>({...s,checkpoint:{...s.checkpoint!,approval:{state:'asked',callId:'other-call',name:'tool',args:{}}}})],
+ ['ambiguous approval reference',(s:RunSnapshot)=>({...s,approvalReference:{callId:'other-call',argsDigest:'a'.repeat(64)}})],
+ ['malformed retained Plan',(s:RunSnapshot)=>({...s,checkpoint:{...s.checkpoint!,planState:{...s.checkpoint!.planState!,revision:'sha256:'+'a'.repeat(64)}}})]
+])('refuses unrunnable saved Plan state without sending: %s',async(_name,change)=>{
+ const fetch=vi.fn();vi.stubGlobal('fetch',fetch);const client=await serverRunClient()
+ expect(()=>client.action(change(planSnapshot()) as RunSnapshot,planAction())).toThrow(RunRequestError)
+ expect(fetch).not.toHaveBeenCalled()
+})
+it('refuses generic budget, answer and approval bypass of a pending Plan without sending',async()=>{
+ const fetch=vi.fn();vi.stubGlobal('fetch',fetch);const client=await serverRunClient()
+ const actions:RunAction[]=[{id:'budget',kind:'extend-budget',revision:1},{id:'answer',kind:'answer',revision:1,questionId:'q',questionDigest:'a'.repeat(64),answer:{selected:[],text:'Continue'}},{id:'approval',kind:'approval',revision:1,callId:'other',argsDigest:'a'.repeat(64),approved:true}]
+ for(const action of actions)expect(()=>client.action(planSnapshot(),action)).toThrow(RunRequestError)
+ expect(fetch).not.toHaveBeenCalled()
+})
+
+it('requires the exact decoded current asked approval before sending a decision',async()=>{
+ const fetch=vi.fn();vi.stubGlobal('fetch',fetch);const client=await serverRunClient(),saved=decodeSnapshot(approval,binding)
+ const action:RunAction={id:'explicit-approval',kind:'approval',revision:saved.revision,...approval.approvalReference,shownDigest:approval.approvalReference.argsDigest,approved:true}
+ const attempts:[RunSnapshot,RunAction][]=[
+  [saved,{...action,callId:'forged-call'}],
+  [saved,{...action,argsDigest:'a'.repeat(64)}],
+  [saved,{...action,revision:2}],
+  [{...saved,historical:true},action],
+  [{...saved,state:'complete'},action],
+  [{...saved,approvalReference:undefined},action],
+  [{...saved,checkpoint:{...saved.checkpoint!,approval:undefined}},action],
+  [{...saved,checkpoint:{...saved.checkpoint!,approval:{...saved.checkpoint!.approval!,state:'approved'}}},action],
+ ]
+ for(const [current,decision] of attempts)expect(()=>client.action(current,decision)).toThrow(RunRequestError)
+ expect(fetch).not.toHaveBeenCalled()
+})
+
+it('fails closed on an old pending reference or missing render proof, then accepts one explicit refreshed decision',async()=>{
+ const {default:approval}=await import('./fixtures/approval.json'),saved=decodeSnapshot(approval,binding)
+ const fetch=vi.fn().mockResolvedValue(json({...pending,state:'stopped'}));vi.stubGlobal('fetch',fetch)
+ const client=await serverRunClient(),action:RunAction={id:'refreshed-card',kind:'approval',revision:saved.revision,...approval.approvalReference,shownDigest:approval.approvalReference.argsDigest,approved:true}
+ for(const stale of [{...action,argsDigest:action.argsDigest.slice(7)},{...action,shownDigest:undefined},{...action,shownDigest:'sha256:'+'a'.repeat(64)}])expect(()=>client.action(saved,stale)).toThrow(RunRequestError)
+ expect(fetch).not.toHaveBeenCalled()
+ await client.action(saved,action)
+ expect(fetch).toHaveBeenCalledOnce()
+ expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(action)
 })

@@ -37,6 +37,7 @@ type assistantDialectMapping struct {
 	Summary    string                     `json:"summary"`
 }
 type assistantDialectArguments struct {
+	Cursor     *int                       `json:"cursor,omitempty"`
 	ID         string                     `json:"id"`
 	Revision   string                     `json:"revision,omitempty"`
 	PackKey    string                     `json:"packKey,omitempty"`
@@ -73,6 +74,7 @@ func readAssistantDialectArguments(name string, raw []byte) (assistantDialectArg
 	allowed := []string{"id", "packKey"}
 	switch name {
 	case "read_dialect":
+		allowed = append(allowed, "cursor")
 	case "propose_dialect":
 		allowed = []string{"id", "revision", "packKey", "packDigest", "facts", "evidence", "summary"}
 	case "read_dialect_publication":
@@ -83,13 +85,19 @@ func readAssistantDialectArguments(name string, raw []byte) (assistantDialectArg
 		return bad()
 	}
 	fields, err := assistantTestControls(raw, allowed...)
-	if err != nil || len(fields) != len(allowed) || json.Unmarshal(raw, &a) != nil || !inputPreparationID.MatchString(a.ID) {
+	if err != nil || (name != "read_dialect" && len(fields) != len(allowed) || name == "read_dialect" && len(fields) != 2 && len(fields) != 3) || json.Unmarshal(raw, &a) != nil || !inputPreparationID.MatchString(a.ID) {
 		return bad()
 	}
 	for _, key := range allowed {
+		if key == "cursor" && fields[key] == nil {
+			continue
+		}
 		if fields[key] == nil || bytes.Equal(bytes.TrimSpace(fields[key]), []byte("null")) {
 			return bad()
 		}
+	}
+	if a.Cursor != nil && (*a.Cursor < 0 || *a.Cursor > 1000000) {
+		return bad()
 	}
 	if strings.Contains(name, "publication") {
 		if !contains([]string{"asserted", "generated"}, a.Variant) {
@@ -179,24 +187,25 @@ type assistantDialectFactView struct {
 	Type  string `json:"type"`
 }
 type assistantDialectRead struct {
-	Recipe          *assistantDialectActionBasis `json:"recipe,omitempty"`
-	ID              string                       `json:"id"`
-	Name            string                       `json:"name"`
-	Revision        string                       `json:"revision"`
-	RecipeVersion   int                          `json:"recipeVersion"`
-	PackKey         string                       `json:"packKey,omitempty"`
-	PackPath        string                       `json:"packPath,omitempty"`
-	Declaration     string                       `json:"declaration,omitempty"`
-	Pack            []byte                       `json:"pack,omitempty"`
-	Variant         string                       `json:"variant,omitempty"`
-	BasePublication string                       `json:"basePublication,omitempty"`
-	View            []byte                       `json:"view"`
+	Complete        *assistantDialectCompleteReadSelector `json:"complete,omitempty"`
+	Recipe          *assistantDialectActionBasis          `json:"recipe,omitempty"`
+	ID              string                                `json:"id"`
+	Name            string                                `json:"name"`
+	Revision        string                                `json:"revision"`
+	RecipeVersion   int                                   `json:"recipeVersion"`
+	PackKey         string                                `json:"packKey,omitempty"`
+	PackPath        string                                `json:"packPath,omitempty"`
+	Declaration     string                                `json:"declaration,omitempty"`
+	Pack            []byte                                `json:"pack,omitempty"`
+	Variant         string                                `json:"variant,omitempty"`
+	BasePublication string                                `json:"basePublication,omitempty"`
+	View            []byte                                `json:"view"`
 }
 
 func assistantDialectColumns(doc inputPreparation) []string {
 	set := map[string]bool{}
 	for _, r := range doc.Records {
-		for key := range r.Values {
+		for key := range legacyInputValues(r) {
 			set[key] = true
 		}
 	}
@@ -394,7 +403,7 @@ func (e *assistantRunExecution) readAssistantDialect(ctx context.Context, a assi
 				}
 			}
 			for _, record := range doc.Records {
-				if v, ok := record.Values[name]; ok {
+				if v, ok := legacyInputValues(record)[name]; ok {
 					c.Planned = false
 					if len(c.Samples) < 3 {
 						sample, truncated := assistantDialectSampleText(v)
@@ -426,6 +435,9 @@ func (e *assistantRunExecution) readAssistantDialect(ctx context.Context, a assi
 	return read, nil
 }
 func (e *assistantRunExecution) recheckAssistantDialect(ctx context.Context, held assistantDialectRead) error {
+	if held.Complete != nil {
+		return e.recheckAssistantDialectCompleteRead(ctx, held)
+	}
 	if err := e.recheckAssistantCritic(ctx); err != nil {
 		return err
 	}
@@ -440,6 +452,9 @@ func (e *assistantRunExecution) recheckAssistantDialect(ctx context.Context, hel
 	return nil
 }
 func assistantDialectQualification(doc inputPreparation, a assistantDialectArguments, read assistantDialectRead) (*inputQualification, error) {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return nil, err
+	}
 	if a.ID != read.ID || a.Revision != read.Revision || a.PackKey != read.PackKey || a.PackDigest != "sha256:"+digestOf(read.Pack) {
 		return nil, errAssistantRunScope
 	}
@@ -453,7 +468,7 @@ func assistantDialectQualification(doc inputPreparation, a assistantDialectArgum
 		if !contains(columns, f.Column) {
 			return nil, failure.ToolInput("Use a current or declared research column.")
 		}
-		q.Mapping.Case.Facts = append(q.Mapping.Case.Facts, inputDialectFact{f.Target, "/values/" + inputEscape(f.Column)})
+		q.Mapping.Case.Facts = append(q.Mapping.Case.Facts, inputDialectFact{Target: f.Target, Source: "/values/" + inputEscape(f.Column)})
 		q.Conversions[f.Target] = f.Conversion
 	}
 	for _, f := range facts {
@@ -480,7 +495,7 @@ func assistantDialectQualification(doc inputPreparation, a assistantDialectArgum
 		if !contains(columns, e.Column) {
 			return nil, failure.ToolInput("Use a current or declared research column.")
 		}
-		q.Mapping.Case.Evidence = append(q.Mapping.Case.Evidence, inputDialectEvidence{e.Requirement, "/values/" + inputEscape(e.Column)})
+		q.Mapping.Case.Evidence = append(q.Mapping.Case.Evidence, inputDialectEvidence{Requirement: e.Requirement, Source: "/values/" + inputEscape(e.Column)})
 	}
 	for _, raw := range requirements {
 		f, err := assistantTestObject(raw)

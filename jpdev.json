@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "changed": [
+    {
+      "paths": [
+        "README.md",
+        "SECURITY.md"
+      ],
+      "checks": [
+        "diff-check",
+        "local-paths",
+        "agent-docs",
+        "python-tests",
+        "needle-check"
+      ]
+    },
+    {
+      "paths": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "checks": [
+        "diff-check",
+        "local-paths",
+        "agent-docs",
+        "python-tests",
+        "needle-check"
+      ]
+    }
+  ]
+}

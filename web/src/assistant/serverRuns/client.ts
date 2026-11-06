@@ -1,11 +1,13 @@
+import { contextRequest, contextSelector, contextToken } from './contextProtocol'
 import { readPackCheck, type PackProposalCheck } from '../../chat/packProposal'
 import { digestOf } from '../../research/checkCandidate'
 import { validQuestionDraft } from '@judgment-pack/harness/questions'
 import { AIFailureError, failure, normalizeFailure, type FailureCode } from '@judgment-pack/harness/failures'
 import { deskFetch } from '../../files/client'
 import { discardBody, sessionBearer, whenSessionEnds } from '../../mcp/session'
-import { cursorParts, decodeDiscovery, decodeSnapshot, digest, exact, invalid, MAX_RUN_BYTES, object, ownerID, briefSubject, runOwner, parseRunJSON, pendingQuestion, revision, runID, text } from './decode'
+import { cursorParts, decodeDiscovery, decodeSnapshot, decodeDialectReadRecovery, recoveryDecimal, MAX_DIALECT_RECOVERY_BYTES, digest, shownDigest, exact, invalid, MAX_RUN_BYTES, object, ownerID, briefSubject, runOwner, parseRunJSON, pendingQuestion, revision, runID, text } from './decode'
 import { readFrames, RunObservations } from './stream'
+import { decodeSettingsResult, settingsSelector, settingsStart, type SettingsObservationResult } from './settingsObservation'
 import type { RunAction, RunBinding, RunDiscovery, RunObservation, RunReference, RunSnapshot, RunStart } from './types'
 
 export type Delivery = 'not-sent' | 'refused' | 'uncertain'
@@ -53,11 +55,31 @@ export class ServerRunClient {
     } finally { if (answer) await discardBody(answer); scope.close() }
   }
   async start(start: RunStart, signal?: AbortSignal, target?: {connectionId:string;connectionRevision:string}): Promise<RunSnapshot> {
-    if (!object(start) || !exact(start,['admissionId','purpose','ownerId','revision','requestId']) || !text(start.admissionId,128) || !runOwner(start.purpose,start.ownerId) || !digest(start.revision) || !text(start.requestId,128) || start.purpose === 'connection-diagnostic' && (start.admissionId!==`diagnostic-${start.requestId}` || !/^[A-Za-z0-9-]{1,100}$/.test(start.requestId) || !target || target.connectionId!==start.ownerId || !text(target.connectionRevision,128)) || start.purpose === 'brief' && (start.admissionId!==`brief-${start.requestId}` || !/^[a-f0-9]{32}$/.test(start.requestId) || !target || !text(target.connectionId,128) || !text(target.connectionRevision,128))) throw new RunRequestError('not-sent',undefined,'invalid-response')
-    const body: RunStart = {admissionId:start.admissionId,purpose:start.purpose,ownerId:start.ownerId,revision:start.revision,requestId:start.requestId}
+    if (!object(start) || start.context !== undefined && !contextSelector(start.context,start.purpose) || !exact(start,['admissionId','purpose','ownerId','revision','requestId','observation','context']) || (start.purpose === 'settings-observation' ? !settingsStart(start) || (target ? target.connectionId !== start.ownerId || !digest(target.connectionRevision) : start.ownerId !== 'legacy-api') : start.observation !== undefined) || !text(start.admissionId,128) || !runOwner(start.purpose,start.ownerId) || !digest(start.revision) || !text(start.requestId,128) || start.purpose === 'connection-diagnostic' && (start.admissionId!==`diagnostic-${start.requestId}` || !/^[A-Za-z0-9-]{1,100}$/.test(start.requestId) || !target || target.connectionId!==start.ownerId || !text(target.connectionRevision,128)) || start.purpose === 'brief' && (start.admissionId!==`brief-${start.requestId}` || !/^[a-f0-9]{32}$/.test(start.requestId) || !target || !text(target.connectionId,128) || !text(target.connectionRevision,128))) throw new RunRequestError('not-sent',undefined,'invalid-response')
+    const body: RunStart = {admissionId:start.admissionId,purpose:start.purpose,ownerId:start.ownerId,revision:start.revision,requestId:start.requestId,...(start.observation ? {observation:{...start.observation}} : {}),...(start.context ? {context:{...start.context}} : {})}
     const snapshot=await this.json(ROOT,{owner:{kind:body.purpose,id:body.ownerId,revision:body.revision},requestId:body.requestId},body,signal,target ? {'X-Assistant-Connection':target.connectionId,'X-Assistant-Revision':target.connectionRevision} : {})
     if(snapshot.admissionId!==body.admissionId)throw new RunRequestError('uncertain',undefined,'invalid-response')
     return snapshot
+  }
+  async settingsReference(requestId:string,selector:import('./types').SettingsObservationSelector,target:{connectionId:string;connectionRevision:string}|undefined,signal?:AbortSignal):Promise<RunStart> {
+    if(!/^[A-Za-z0-9-]{1,100}$/.test(requestId)||!settingsSelector(selector)||target!==undefined&&(!runOwner('settings-observation',target.connectionId)||!digest(target.connectionRevision)))throw new RunRequestError('not-sent',undefined,'invalid-request')
+    const value=await this.briefJSON('/api/assistant-observations/reference',{requestId,...selector},signal,target ? {'X-Assistant-Connection':target.connectionId,'X-Assistant-Revision':target.connectionRevision} : {})
+    if(!object(value)||!exact(value,['start'])||!settingsStart(value.start)||value.start.requestId!==requestId||value.start.ownerId!==(target?.connectionId ?? 'legacy-api')||value.start.observation?.kind!==selector.kind||value.start.observation.model!==selector.model)return invalid()
+    return value.start
+  }
+  /** One read-only recovery of the original admission; never starts a replacement. */
+  async settingsLookup(start:RunStart):Promise<RunSnapshot|undefined> {
+    if(!settingsStart(start))throw new RunRequestError('not-sent',undefined,'invalid-request')
+    const value=await this.briefJSON(`/api/assistant-observations/requests/${start.requestId}`,undefined)
+    if(!object(value)||!exact(value,['run']))return invalid()
+    if(value.run===undefined)return undefined
+    const run=decodeSnapshot(value.run,{owner:{kind:'settings-observation',id:start.ownerId,revision:start.revision},requestId:start.requestId})
+    if(run.admissionId!==start.admissionId)return invalid()
+    return run
+  }
+  async settingsResult(run:RunSnapshot,kind:import('./types').SettingsObservationSelector['kind'],signal?:AbortSignal):Promise<SettingsObservationResult> {
+    if(run.owner.kind!=='settings-observation'||!['complete','failed','stopped','interrupted'].includes(run.state)||run.historical)throw new RunRequestError('not-sent',undefined,'permission')
+    return decodeSettingsResult(await this.briefJSON(`${ROOT}/${bind(run).id}/settings-observation`,undefined,signal),kind)
   }
   /** Model-free host capture: the caller supplies only one attempt ID and saved connection. */
   async diagnosticReference(requestId:string,target:{connectionId:string;connectionRevision:string}):Promise<RunStart> {
@@ -95,6 +117,27 @@ export class ServerRunClient {
     if(run&&run.admissionId!==start.admissionId)return invalid()
     return {start:start as unknown as RunStart,...(run?{run}:{})}
   }
+  /** Model-free registrations retry only the same bounded attempt ID. */
+  async contextDocument(registrationId:string):Promise<{document:string}> {
+    const body={registrationId}
+    if(!contextRequest('document',body))throw new RunRequestError('not-sent',undefined,'invalid-request')
+    const value=await this.briefJSON('/api/assistant-contexts/documents',body,undefined)
+    if(!object(value)||!exact(value,['document'])||!contextToken(value.document))return invalid()
+    return {document:value.document}
+  }
+  async contextPane(document:string,registrationId:string,purpose:AuthoringPurpose):Promise<{document:string;pane:string}> {
+    const body={document,registrationId,purpose}
+    if(!contextRequest('pane',body))throw new RunRequestError('not-sent',undefined,'invalid-request')
+    const value=await this.briefJSON('/api/assistant-contexts/panes',body,undefined)
+    if(!object(value)||!exact(value,['document','pane'])||value.document!==document||!contextToken(value.pane))return invalid()
+    return {document,pane:value.pane}
+  }
+  async releaseContext(selector:import('./types').RunContextSelector):Promise<void> {
+    const pane=Object.hasOwn(selector,'pane'),kind=pane?'release-pane':'release-document'
+    if(!contextRequest(kind,selector))throw new RunRequestError('not-sent',undefined,'invalid-request')
+    const value=await this.briefJSON(`/api/assistant-contexts/${pane?'panes':'documents'}/release`,{...selector},undefined)
+    if(!object(value)||!exact(value,['released'])||value.released!==true)return invalid()
+  }
   /** Explicit closed authoring reservation. No capture/lookup can dispatch a model. */
   async captureAuthoring(request: import('../useAuthoringRun').AuthoringRequest, target:{connectionId:string;connectionRevision:string}, signal?:AbortSignal):Promise<AuthoringReference> {
     const value=await this.briefJSON('/api/assistant-authoring/captures',{...request},signal,{'X-Assistant-Connection':target.connectionId,'X-Assistant-Revision':target.connectionRevision})
@@ -126,12 +169,55 @@ export class ServerRunClient {
     } catch(cause){if(cause instanceof RunRequestError)throw cause;throw new RunRequestError('uncertain',undefined,cause instanceof AIFailureError?'invalid-response':'connection-lost')}
     finally{if(answer)await discardBody(answer);scope.close()}
   }
+  async dialectReadRecovery(ref:RunReference,signal?:AbortSignal):Promise<import('./types').DialectReadRecoveryView> {
+    return this.dialectRecoveryRequest(ref,undefined,signal)
+  }
+  async observeDialectRead(ref:RunReference,view:import('./types').DialectReadRecoveryView,operationId:string,requestId:string,signal?:AbortSignal):Promise<import('./types').DialectReadRecoveryView> {
+    if(view.runId!==ref.id||!recoveryDecimal(view.runRevision,false)||!recoveryDecimal(view.recoveryRevision)||!text(operationId,128)||!text(requestId,128)||!view.reads.some(row=>row.operationId===operationId&&row.canInspect))throw new RunRequestError('not-sent',undefined,'permission')
+    return this.dialectRecoveryRequest(ref,{operationId,runRevision:view.runRevision,recoveryRevision:view.recoveryRevision,requestId},signal)
+  }
+  private async dialectRecoveryRequest(ref:RunReference,body:undefined|{operationId:string;runRevision:string;recoveryRevision:string;requestId:string},signal?:AbortSignal):Promise<import('./types').DialectReadRecoveryView> {
+    const bound=bind(ref),scope=await this.scope(signal)
+    let sent=false,answer:Response|undefined
+    try {
+      const path=`${ROOT}/${bound.id}/dialect-reads${body?`/${encodeURIComponent(body.operationId)}/observe`:''}`
+      sent=true
+      answer=await deskFetch(path,{method:body?'POST':'GET',redirect:'error',signal:scope.signal,...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify({runRevision:body.runRevision,recoveryRevision:body.recoveryRevision,requestId:body.requestId})}:{})})
+      await this.current(scope.signal)
+      if(!answer.ok){await discardBody(answer);throw new RunRequestError(answer.status>=400&&answer.status<500&&answer.status!==408?'refused':'uncertain',answer.status,statusCode(answer.status))}
+      const view=decodeDialectReadRecovery(await readJSON(answer,scope.signal,MAX_DIALECT_RECOVERY_BYTES),bound.id)
+      await this.current(scope.signal)
+      return view
+    }catch(cause){if(cause instanceof RunRequestError)throw cause;throw new RunRequestError(sent?'uncertain':'not-sent',undefined,cause instanceof AIFailureError&&cause.failure.code==='invalid-response'?'invalid-response':'connection-lost')}
+    finally{if(answer)await discardBody(answer);scope.close()}
+  }
   read(ref: RunReference, signal?: AbortSignal): Promise<RunSnapshot> { const bound = bind(ref); return this.json(`${ROOT}/${bound.id}`,bound,undefined,signal) }
   action(snapshot: RunSnapshot, action: RunAction, signal?: AbortSignal): Promise<RunSnapshot> {
     const bound = bind(snapshot)
-    if (snapshot.historical || !object(action) || !text(action.id,128) || !revision(action.revision) || action.revision !== snapshot.revision || !['cancel','approval','abandon','answer','extend-budget'].includes(action.kind) || !exact(action,action.kind === 'approval' ? ['id','kind','revision','callId','argsDigest','approved','note'] : action.kind === 'answer' ? ['id','kind','revision','questionId','questionDigest','answer'] : ['id','kind','revision'])) throw new RunRequestError('not-sent',undefined,'permission')
-    const body: RunAction = action.kind === 'approval' ? {id:action.id,kind:'approval',revision:action.revision,callId:action.callId,argsDigest:action.argsDigest,approved:action.approved,...(action.note === undefined ? {} : {note:action.note})} : action.kind === 'answer' ? {id:action.id,kind:'answer',revision:action.revision,questionId:action.questionId,questionDigest:action.questionDigest,answer:action.answer} : {id:action.id,kind:action.kind,revision:action.revision}
-    if (body.kind === 'approval' && (!text(body.callId,256) || !digest(body.argsDigest) || typeof body.approved !== 'boolean' || body.note !== undefined && (typeof body.note !== 'string' || body.note.length > 2000))) throw new RunRequestError('not-sent',undefined,'invalid-response')
+    if(snapshot.owner.kind==='settings-observation' && action.kind!=='cancel')throw new RunRequestError('not-sent',undefined,'permission')
+    // Validate the raw object without narrowing away an intersection member of RunAction.
+    const rawAction: unknown = action
+    if (snapshot.historical || !object(rawAction) || !text(action.id,128) || !revision(action.revision) || action.revision !== snapshot.revision || !['cancel','approval','plan-decision','abandon','answer','extend-budget'].includes(action.kind) || !exact(rawAction,action.kind === 'approval' ? ['id','kind','revision','callId','argsDigest','shownDigest','approved','note'] : action.kind === 'plan-decision' ? ['id','kind','revision','callId','planRevision','candidateRevision','approved','note'] : action.kind === 'answer' ? ['id','kind','revision','questionId','questionDigest','answer'] : ['id','kind','revision'])) throw new RunRequestError('not-sent',undefined,'permission')
+    const body: RunAction = action.kind === 'approval' ? {id:action.id,kind:'approval',revision:action.revision,callId:action.callId,argsDigest:action.argsDigest,...(action.shownDigest===undefined?{}:{shownDigest:action.shownDigest}),approved:action.approved,...(action.note === undefined ? {} : {note:action.note})} : action.kind === 'plan-decision' ? {id:action.id,kind:'plan-decision',revision:action.revision,callId:action.callId,planRevision:action.planRevision,candidateRevision:action.candidateRevision,approved:action.approved,...(action.note === undefined ? {} : {note:action.note})} : action.kind === 'answer' ? {id:action.id,kind:'answer',revision:action.revision,questionId:action.questionId,questionDigest:action.questionDigest,answer:action.answer} : {id:action.id,kind:action.kind,revision:action.revision}
+    if (body.kind === 'approval' && (!text(body.callId,256) || !shownDigest(body.argsDigest)||body.shownDigest!==undefined&&!shownDigest(body.shownDigest)||body.approved&&body.shownDigest!==body.argsDigest || typeof body.approved !== 'boolean' || body.note !== undefined && (typeof body.note !== 'string' || body.note.length > 2000))) throw new RunRequestError('not-sent',undefined,'invalid-response')
+    if(body.kind==='approval'){
+      // Only the decoded current checkpoint supplies an approval selector; labels grant nothing.
+      let saved: RunSnapshot
+      try { saved=decodeSnapshot(snapshot,bound) } catch { throw new RunRequestError('not-sent',undefined,'invalid-request') }
+      const ref=saved.approvalReference
+      if(saved.state!=='awaiting-input'||saved.checkpoint?.approval?.state!=='asked'||!ref||body.callId!==ref.callId||body.argsDigest!==ref.argsDigest||body.shownDigest!==undefined&&body.shownDigest!==ref.argsDigest)throw new RunRequestError('not-sent',undefined,'invalid-request')
+    }
+    if(body.kind==='plan-decision'){
+      // Revalidate the retained checkpoint; caller-supplied references cannot grant authority.
+      let saved: RunSnapshot
+      try { saved=decodeSnapshot(snapshot,bound) } catch { throw new RunRequestError('not-sent',undefined,'invalid-request') }
+      const ref=saved.planDecisionReference
+      if(saved.state!=='awaiting-input'||saved.checkpoint?.phase!=='work'||!ref||body.callId!==ref.callId||body.planRevision!==ref.planRevision||body.candidateRevision!==ref.candidateRevision||typeof body.approved!=='boolean'||body.note!==undefined&&(typeof body.note!=='string'||body.note.length>2000))throw new RunRequestError('not-sent',undefined,'invalid-request')
+      if(body.note!==undefined){
+        try { parseRunJSON(JSON.stringify(body.note)); if(body.note.includes('\0'))throw Error() } catch {throw new RunRequestError('not-sent',undefined,'invalid-request')}
+      }
+    }
+    if(snapshot.checkpoint?.planState?.pending&&(body.kind==='answer'||body.kind==='extend-budget'||body.kind==='approval'))throw new RunRequestError('not-sent',undefined,'permission')
     if(body.kind==='answer'){
       const q=pendingQuestion(snapshot)
       if(snapshot.state!=='awaiting-input'||!q||body.questionId!==q.id||body.questionDigest!==q.digest||!validQuestionDraft(q.question,body.answer)||!body.answer.selected.length&&!body.answer.text.trim())throw new RunRequestError('not-sent',undefined,'invalid-request')
@@ -202,7 +288,7 @@ function validateReference(ref: RunReference): void {
   if (!object(ref) || !object(ref.owner) || !runID(ref.id) || !runOwner(ref.owner.kind,ref.owner.id) || !digest(ref.owner.revision) || !text(ref.requestId,128)) throw new RunRequestError('not-sent',undefined,'invalid-response')
 }
 function bind(ref: RunReference): RunReference { validateReference(ref); return {id:ref.id,owner:{...ref.owner},requestId:ref.requestId} }
-async function readJSON(answer: Response, signal: AbortSignal): Promise<unknown> {
+async function readJSON(answer: Response, signal: AbortSignal, limit=MAX_RUN_BYTES): Promise<unknown> {
   if (answer.headers.get('Content-Type')?.split(';')[0].trim() !== 'application/json' || !answer.body) { await discardBody(answer); return invalid() }
   const reader = answer.body.getReader(), decoder = new TextDecoder('utf-8',{fatal:true})
   let bytes = 0, raw = ''
@@ -215,7 +301,7 @@ async function readJSON(answer: Response, signal: AbortSignal): Promise<unknown>
       if (signal.aborted) return invalid()
       if (part.done) break
       bytes += part.value.byteLength
-      if (bytes > MAX_RUN_BYTES) return invalid()
+      if (bytes > limit) return invalid()
       raw += decoder.decode(part.value,{stream:true})
     }
     return parseRunJSON(raw + decoder.decode())

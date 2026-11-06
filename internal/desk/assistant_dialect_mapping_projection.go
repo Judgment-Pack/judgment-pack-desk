@@ -2,6 +2,7 @@ package desk
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"reflect"
 )
@@ -50,7 +51,18 @@ func (s *Server) assistantDialectProjectionView(r *http.Request, id string, writ
 	if err != nil || !need {
 		return nil, err
 	}
-	return s.preparationRepository().TryRead(r.Context())
+	view, err := s.preparationRepository().TryRead(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	if complete, ok := r.Context().Value(assistantDialectCompleteProjectionKey{}).(*assistantDialectCompleteProjectionRead); ok && complete != nil {
+		if complete.self != complete || complete.server != s || complete.runID != id || complete.view != nil {
+			return nil, errors.Join(errAssistantRunScope, view.Close())
+		}
+		complete.view = view
+		return complete, nil
+	}
+	return view, nil
 }
 func (s *Server) checkAssistantDialectProjection(r *http.Request, run assistantRunRecord, view inputPreparationReader) error {
 	if assistantResearchUnobserved(run) {
@@ -102,6 +114,25 @@ func (s *Server) checkAssistantDialectProjection(r *http.Request, run assistantR
 			continue
 		}
 		if p.Action.Kind == "update-dialect" {
+			if p.Read.Complete != nil {
+				actual, ok := view.(*assistantDialectCompleteProjectionRead)
+				if !ok || actual.server != s || !actual.matches(run) || actual.Check(r.Context()) != nil {
+					return errAssistantRunScope
+				}
+				op := assistantDialectOperation(run, p.Read.Complete.ReadOperationID)
+				if op == nil {
+					return errAssistantRunScope
+				}
+				original, current, err := (&assistantDialectCompletedReadEvidence{projection: actual}).completeDialectSnapshotUsingView(r.Context(), run, *op, p.Read, actual)
+				if err != nil {
+					return err
+				}
+				if !reflect.DeepEqual(original, current) {
+					return errAssistantRunConflict
+				}
+				continue
+			}
+
 			config, _, err := s.assistantDecisionDeclarations()
 			if err != nil {
 				return err

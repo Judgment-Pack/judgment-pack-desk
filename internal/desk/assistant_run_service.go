@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
@@ -16,37 +18,67 @@ const assistantRunActiveLimit = 8
 const assistantRunSubscriberLimit = 32
 
 type assistantRunService struct {
-	mu             sync.Mutex
-	server         *Server
-	closed         bool
-	lease          *assistantRunLease
-	active         map[string]*assistantRunExecution
-	subscribers    map[uint64]assistantRunSubscriber
-	nextSubscriber uint64
+	contexts                  *assistantContextHTTPState
+	contextOwners             map[string]*assistantContextOwnership
+	mu                        sync.Mutex
+	server                    *Server
+	closed                    bool
+	lease                     *assistantRunLease
+	dialectReadRecoveryPins   int
+	dialectReadRecoveryWriter assistantDialectReadRecoveryWriter
+	active                    map[string]*assistantRunExecution
+	subscribers               map[uint64]assistantRunSubscriber
+	nextSubscriber            uint64
 }
 type assistantRunSubscriber struct {
 	runID string
 	wake  chan struct{}
 }
 type assistantRunExecution struct {
-	service  *assistantRunService
-	source   assistantRunSource
-	request  *http.Request
-	record   assistantRunRecord
-	writer   *assistantRunWriter
-	decision *contract.CheckpointApprovalDecision
-	ctx      context.Context
-	cancel   context.CancelFunc
-	done     chan struct{}
-	progress assistantRunProgressState
-	input    *assistantChatCustody
+	// Exact transport cancellation is published only after its closure is ready.
+	// Stop closes its pipes before waiting on canonical/lease admission locks.
+	contextHandle           *assistantChatContextHandle
+	contextInvoked          bool // canonicalMu; actual outer adapter entered, not returned
+	contextUnknown          bool // canonicalMu; sticky unknown lifetime, never auto-disposed
+	runtimeOwner            atomic.Pointer[assistantRuntime]
+	retainedRuntime         *assistantRuntime         // canonicalMu; survives process publication clearing
+	gateNotices             *assistantGateNoticeRelay // installed once; generation sinks retire before parking
+	service                 *assistantRunService
+	source                  assistantRunSource
+	request                 *http.Request
+	record                  assistantRunRecord
+	writer                  *assistantRunWriter
+	planDecision            *assistantPlanDecisionReference
+	decision                *contract.CheckpointApprovalDecision
+	ctx                     context.Context
+	cancel                  context.CancelFunc
+	done                    chan struct{}
+	progress                assistantRunProgressState
+	input                   *assistantChatCustody
+	initialInput            *assistantChatInput // consumed once by first open; approvals prepare fresh input
+	canonicalMu             sync.Mutex
+	canonicalBinding        *runcontext.RunBinding
+	canonicalStore          *assistantCanonicalRunStore
+	canonicalInput          *runcontext.Input
+	generation              uint64
+	lifecycle               string // canonicalMu: running, settling, parked, resuming, closed
+	settlement              *assistantInvocationSettlement
+	resumeInvocation        assistantRuntimeContinuation
+	closeOwner              func()
+	continuations           chan *runcontext.Input
+	invocationDone          chan struct{}
+	observation             *assistantObservationClaim
+	observationPhysicalUsed bool
+	stopRequested           bool
+	finalizing              bool // protected by service.mu
 }
 
 func (s *Server) assistantRunService() *assistantRunService {
 	s.assistantRunServiceMu.Lock()
 	defer s.assistantRunServiceMu.Unlock()
 	if s.assistantRunHost == nil {
-		s.assistantRunHost = &assistantRunService{server: s, active: map[string]*assistantRunExecution{}, subscribers: map[uint64]assistantRunSubscriber{}}
+		s.assistantRunHost = &assistantRunService{server: s, contexts: newAssistantContextHTTPState(), active: map[string]*assistantRunExecution{}, subscribers: map[uint64]assistantRunSubscriber{}}
+		s.assistantRunHost.contexts.onRetire = s.assistantRunHost.retireContextAuthority
 	}
 	return s.assistantRunHost
 }
@@ -57,6 +89,9 @@ func (h *assistantRunService) acquire(ctx context.Context) error {
 	if h.lease != nil {
 		return nil
 	}
+	if h.dialectReadRecoveryPins != 0 {
+		return errRetainedArtifactBusy
+	}
 	lease, err := h.server.assistantRuns().Acquire(ctx)
 	if err != nil {
 		return err
@@ -65,11 +100,22 @@ func (h *assistantRunService) acquire(ctx context.Context) error {
 	return nil
 }
 func (h *assistantRunService) releaseIdle() {
-	if len(h.active) == 0 && h.lease != nil {
+	if len(h.active) == 0 && h.dialectReadRecoveryPins == 0 && h.lease != nil {
 		_ = h.lease.Close()
 		h.lease = nil
 	}
 }
+func assistantGuardedApprovalRetry(source assistantRunSource, prior assistantRunRecord) bool {
+	if assistantUnkeptApproval(prior) == nil {
+		return false
+	}
+	// The framework execution id is fresh, while the admitted principal,
+	// original request/chat revision, source and connection scope must match.
+	source.Binding.ExecutionKey = prior.Binding.ExecutionKey
+	source.Binding.Unit = prior.Binding.Unit
+	return assistantRunSourceMatchesRecord(source, prior)
+}
+
 func (h *assistantRunService) start(r *http.Request, start assistantRunStart) (assistantRunRecord, bool, error) {
 	identity, _, err := h.server.assistantRunIdentity(r)
 	if err != nil {
@@ -107,6 +153,32 @@ func (h *assistantRunService) start(r *http.Request, start assistantRunStart) (a
 	if err != nil {
 		return assistantRunRecord{}, false, err
 	}
+	// A fresh admission id is not permission to repeat this exact original
+	// request after an approved physical effect lost its canonical result.
+	_, err = store.transaction(r.Context(), func(ledger *assistantRunLedger) (bool, error) {
+		for _, prior := range ledger.Runs {
+			if h.active[prior.ID] == nil && assistantGuardedApprovalRetry(source, prior) {
+				return false, errAssistantRunUnavailable
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		return assistantRunRecord{}, false, err
+	}
+	canonical, err := assistantCanonicalAdmission(h.executor(start.Purpose), source)
+	if err != nil {
+		return assistantRunRecord{}, false, err
+	}
+	observation, err := assistantObservationAdmission(h.executor(start.Purpose), source)
+	if err != nil {
+		return assistantRunRecord{}, false, err
+	}
+	pendingContext, err := h.prepareContext(&source)
+	if err != nil {
+		return assistantRunRecord{}, false, err
+	}
+	defer pendingContext.Release()
 	cp, err := h.executor(start.Purpose).Prepare(r.Context(), source)
 	if err != nil {
 		return assistantRunRecord{}, false, err
@@ -145,45 +217,134 @@ func (h *assistantRunService) start(r *http.Request, start assistantRunStart) (a
 	if err != nil {
 		return record, true, err
 	}
-	if err = writer.Checkpoint(r.Context(), cp); err != nil {
+	if observation != nil {
+		err = writer.initializeObservation(r.Context(), source, *observation, cp)
+	} else if canonical {
+		err = writer.initializeCanonical(r.Context(), cp)
+	} else {
+		err = writer.Checkpoint(r.Context(), cp)
+	}
+	if err != nil {
 		return record, true, err
 	}
 	record, err = h.lease.store.Read(r.Context(), record.Binding, record.ID)
 	if err != nil {
 		return record, true, err
 	}
+	if pendingContext != nil {
+		if err = h.contexts.registry.promoteRun(pendingContext, record.ID, record.Binding); err != nil {
+			_ = writer.Stop(context.Background())
+			return record, true, err
+		}
+		h.rememberContext(record)
+	}
 	if err = h.launch(r, record, source, writer, nil); err != nil {
+		h.settleContextLocked(record.ID)
 		_ = writer.Stop(context.Background())
 		return record, true, err
 	}
 	return record, true, nil
 }
 func (h *assistantRunService) launch(r *http.Request, record assistantRunRecord, source assistantRunSource, writer *assistantRunWriter, decision *contract.CheckpointApprovalDecision) error {
+	prepared, err := h.prepareLaunch(r, record, source, writer, decision, nil)
+	if err != nil {
+		return err
+	}
+	prepared.activate()
+	return nil
+}
+func (h *assistantRunService) prepareLaunch(r *http.Request, record assistantRunRecord, source assistantRunSource, writer *assistantRunWriter, decision *contract.CheckpointApprovalDecision, staged *assistantRunRecord) (*assistantPreparedLaunch, error) {
 	_, session, err := h.server.assistantRunIdentity(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	contextHandle, err := h.launchContext(record, &source)
+	if err != nil {
+		return nil, err
+	}
+	transferred := false
+	defer func() {
+		if !transferred {
+			contextHandle.Release()
+		}
+	}()
 	epoch, err := newAssistantRunProgressEpoch()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	stopSession := context.AfterFunc(session, cancel)
+	execution := &assistantRunExecution{contextHandle: contextHandle, service: h, source: source, request: r.Clone(ctx), record: record, writer: writer, decision: decision, ctx: ctx, done: make(chan struct{}), input: &assistantChatCustody{}, generation: 1, lifecycle: "running", continuations: make(chan *runcontext.Input, 1)}
+	if decision != nil {
+		for _, receipt := range record.Actions {
+			if receipt.Kind == "plan-decision" && receipt.Decision != nil && reflect.DeepEqual(receipt.Decision, decision) {
+				execution.planDecision = receipt.PlanDecision
+			}
+		}
+	}
+	execution.cancel = func() {
+		execution.closeCanonicalDispatch()
+		cancel()
+	}
+	if staged != nil && assistantCanonicalActive(record) {
+		raw, err := json.Marshal(staged)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		var frozen assistantRunRecord
+		if err = json.Unmarshal(raw, &frozen); err != nil {
+			cancel()
+			return nil, err
+		}
+		execution.canonicalStore = &assistantCanonicalRunStore{writer: writer, id: record.Canonical.Head.RunID, prepared: &frozen}
+	}
+	// Ordinary owners bind before cancellable preflight. Fresh observations let
+	// the actual Agent startup open its first writer and attach it before work.
+	observation, err := assistantObservationAdmission(h.executor(source.Start.Purpose), source)
+	if err == nil && observation != nil {
+		err = execution.openObservationClaim(ctx, *observation)
+	} else if err == nil {
+		err = execution.bindCanonicalInput(execution.generationContext(ctx, 1), &runcontext.Input{Chat: source.chatScope()})
+	}
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	execution.progress.epoch = epoch
+	transferred = true
+	return &assistantPreparedLaunch{execution: execution, session: session, cancel: cancel}, nil
+}
+
+type assistantPreparedLaunch struct {
+	execution *assistantRunExecution
+	session   context.Context
+	cancel    context.CancelFunc
+}
+
+func (p *assistantPreparedLaunch) discard() {
+	p.cancel()
+	if p.execution.canonicalBinding != nil {
+		_ = p.execution.canonicalBinding.Writer.CloseDispatch(*p.execution.canonicalBinding)
+	}
+	p.execution.contextHandle.Release()
+}
+func (p *assistantPreparedLaunch) activate() {
+	execution, session, cancel := p.execution, p.session, p.cancel
+	h, record := execution.service, execution.record
+	stopSession := context.AfterFunc(session, execution.cancel)
 	stopPolicy := func() bool { return true }
 	if h.server.signIn != nil {
 		h.server.signIn.mu.Lock()
 		epoch := h.server.signIn.epoch
 		h.server.signIn.mu.Unlock()
-		stopPolicy = context.AfterFunc(epoch, cancel)
+		stopPolicy = context.AfterFunc(epoch, execution.cancel)
 		if epoch.Err() != nil {
-			cancel()
+			execution.cancel()
 		}
 	}
 	if session.Err() != nil {
-		cancel()
+		execution.cancel()
 	}
-	execution := &assistantRunExecution{service: h, source: source, request: r.Clone(ctx), record: record, writer: writer, decision: decision, ctx: ctx, cancel: cancel, done: make(chan struct{}), input: &assistantChatCustody{}}
-	execution.progress.epoch = epoch
 	execution.progress.retained = map[string]assistantRunPreview{}
 	for _, p := range record.DisplayPreview {
 		key := ""
@@ -193,66 +354,10 @@ func (h *assistantRunService) launch(r *http.Request, record assistantRunRecord,
 		execution.progress.retained[key] = p
 	}
 	h.active[record.ID] = execution
-	go func() {
-		defer close(execution.done)
-		defer stopSession()
-		defer stopPolicy()
-		defer cancel()
-		monitorDone := make(chan struct{})
-		go func() {
-			defer close(monitorDone)
-			ticker := time.NewTicker(250 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					if h.server.authorizeAssistantRun(execution.request, record) != nil {
-						cancel()
-						return
-					}
-				}
-			}
-		}()
-		err := execution.Authorize(ctx)
-		if err == nil {
-			err = h.executor(source.Start.Purpose).Execute(ctx, execution)
-		}
-		canceled := ctx.Err() != nil
-		cancel()
-		<-monitorDone
-		bounded, finish := context.WithTimeout(context.Background(), 5*time.Second)
-		defer finish()
-		_ = execution.saveProgressPreview(bounded, false)
-		latest, readErr := writer.lease.store.Read(bounded, record.Binding, record.ID)
-		if readErr == nil && !assistantRunTerminal(latest.State) {
-			// A valid pause survives stream disconnection and process reacquisition.
-			// Unreported or canceled work closes dispatch and preserves uncertainty.
-			paused := err == nil && !canceled && latest.Checkpoint != nil
-			// cancel above only stops the monitor; distinguish executor outcome using
-			// its persisted checkpoint, not a canceled HTTP reader.
-			if question, questionErr := pendingAssistantRunQuestion(latest); paused && questionErr == nil && question != nil && latest.Checkpoint.Status == "complete" {
-				_ = writer.State(bounded, "awaiting-input")
-			} else if paused && latest.Checkpoint.Approval != nil && latest.Checkpoint.Approval.State == "asked" && latest.Checkpoint.Status == "stopped" {
-				_ = writer.State(bounded, "awaiting-input")
-			} else if paused && latest.State == "awaiting-client" && latest.Checkpoint.Status == "stopped" {
-				// A client-required pause has already closed its adapter context.
-			} else if err == nil && !canceled && latest.Checkpoint != nil && latest.Checkpoint.Status == "paused" {
-				_ = writer.State(bounded, "paused-budget")
-			} else if err == nil && !canceled && latest.Checkpoint != nil && latest.Checkpoint.Status == "complete" {
-				_ = writer.State(bounded, "complete")
-			} else {
-				_ = writer.Stop(bounded)
-			}
-		}
-		h.mu.Lock()
-		delete(h.active, record.ID)
-		h.notifyLocked(record.ID)
-		h.releaseIdle()
-		h.mu.Unlock()
-	}()
-	return nil
+	if owner := h.contextOwners[record.ID]; owner != nil {
+		owner.paused = false
+	}
+	go execution.runOwner(session, stopSession, stopPolicy, cancel)
 }
 func (h *assistantRunService) read(r *http.Request, id string) (assistantRunRecord, error) {
 	identity, _, err := h.server.assistantRunIdentity(r)
@@ -266,7 +371,7 @@ func (h *assistantRunService) read(r *http.Request, id string) (assistantRunReco
 	return run, err
 }
 func (h *assistantRunService) action(r *http.Request, id string, action assistantRunAction) (assistantRunRecord, error) {
-	if !assistantRunText(action.ID, 128) || !contains([]string{"cancel", "approval", "abandon", "answer", "extend-budget"}, action.Kind) || action.Revision == 0 {
+	if !assistantRunText(action.ID, 128) || !contains([]string{"cancel", "approval", "plan-decision", "abandon", "answer", "extend-budget"}, action.Kind) || action.Revision == 0 {
 		return assistantRunRecord{}, errAssistantRunInvalid
 	}
 	h.mu.Lock()
@@ -305,10 +410,19 @@ func (h *assistantRunService) action(r *http.Request, id string, action assistan
 	if record.Historical || assistantRunTerminal(record.State) || record.Revision != action.Revision {
 		return record, errAssistantRunConflict
 	}
-	if action.Kind == "cancel" && (action.CallID != "" || action.ArgsDigest != "" || action.Approved != nil || action.Note != nil) {
+	if action.Kind == "cancel" && (action.CallID != "" || action.ArgsDigest != "" || action.ShownDigest != nil || action.Approved != nil || action.Note != nil) {
 		return record, errAssistantRunInvalid
 	}
-	if action.Kind == "approval" && (h.server.assistantRunExecutor == nil || h.active[id] != nil || len(h.active) >= assistantRunActiveLimit) {
+	if action.Kind == "approval" {
+		if active := h.active[id]; active != nil {
+			return h.continueRuntimeApproval(r, record, action, active)
+		}
+		// A canonical approval cannot reacquire a different process/Gate owner.
+		if assistantCanonicalActive(record) {
+			return record, errAssistantRunUnavailable
+		}
+	}
+	if (action.Kind == "approval" || action.Kind == "plan-decision") && (h.server.assistantRunExecutor == nil || h.active[id] != nil || len(h.active) >= assistantRunActiveLimit) {
 		return record, errAssistantRunUnavailable
 	}
 	if err = h.acquire(r.Context()); err != nil {
@@ -323,15 +437,30 @@ func (h *assistantRunService) action(r *http.Request, id string, action assistan
 	if record.Revision != action.Revision {
 		return record, errAssistantRunConflict
 	}
-	writer, err := h.lease.Writer(r.Context(), record.Binding, id)
-	if err != nil {
-		return record, err
+	active := h.active[id]
+	if action.Kind == "cancel" && active != nil && active.finalizing {
+		return record, errAssistantRunConflict
+	}
+	var writer *assistantRunWriter
+	if active != nil && action.Kind == "cancel" {
+		writer = active.writer
+	} else {
+		writer, err = h.lease.Writer(r.Context(), record.Binding, id)
+		if err != nil {
+			return record, err
+		}
 	}
 	var decision *contract.CheckpointApprovalDecision
 	var source assistantRunSource
-	if action.Kind == "approval" {
+	var planDecision *assistantPlanDecisionReference
+	if action.Kind == "approval" || action.Kind == "plan-decision" {
 		cp := record.Checkpoint
-		if record.State != "awaiting-input" || cp == nil || cp.Status != "stopped" || cp.Approval == nil || cp.Approval.State != "asked" || cp.Approval.CallID != action.CallID || action.Approved == nil || assistantRunArgsDigest(cp.Approval.Args) != action.ArgsDigest || action.Note != nil && runcontext.U16Length(*action.Note) > 2000 {
+		if action.Kind == "plan-decision" {
+			planDecision = assistantRunPlanReference(record)
+			if record.State != "awaiting-input" || planDecision == nil || *planDecision != (assistantPlanDecisionReference{action.CallID, action.PlanRevision, action.CandidateRevision}) {
+				return record, errAssistantRunConflict
+			}
+		} else if record.State != "awaiting-input" || cp == nil || !assistantRunApprovalPause(record) || cp.Approval == nil || cp.Approval.State != "asked" || cp.Approval.CallID != action.CallID || action.Approved == nil || !assistantRunApprovalMatches(cp.Approval, action) || action.Note != nil && runcontext.U16Length(*action.Note) > 2000 {
 			return record, errAssistantRunConflict
 		}
 		identity, _, e := h.server.assistantRunIdentity(r)
@@ -345,35 +474,58 @@ func (h *assistantRunService) action(r *http.Request, id string, action assistan
 		}
 		source.Binding.ExecutionKey = record.Binding.ExecutionKey
 		source.Binding.Unit = record.Binding.Unit
-		if source.Binding.Phase != "work" || !assistantRunFreshSourceEqual(source, assistantRunSource{Binding: record.Binding, Original: source.Original, Request: source.Request}) {
+		if source.Binding.Phase != "work" || !assistantRunSourceMatchesRecord(source, record) {
 			return record, errAssistantRunScope
 		}
-		decision = &contract.CheckpointApprovalDecision{CallID: action.CallID, Approved: *action.Approved, Note: action.Note}
-	}
-	err = writer.change(r.Context(), false, func(run *assistantRunRecord) (bool, error) {
-		if run.Revision != action.Revision {
-			return false, errAssistantRunConflict
+		contextHandle, contextErr := h.continuationContext(record)
+		if contextErr != nil {
+			return record, contextErr
 		}
-		run.Actions = append(run.Actions, assistantRunActionReceipt{ID: action.ID, Digest: digest, Kind: action.Kind, Decision: decision})
+		defer contextHandle.Release()
+		assistantContextOnSource(&source, contextHandle)
+		decision = &contract.CheckpointApprovalDecision{CallID: action.CallID, Approved: *action.Approved, Note: action.Note, ShownDigest: action.ShownDigest}
+	}
+	err = writer.changeAt(r.Context(), false, &action.Revision, func(run *assistantRunRecord) (bool, error) {
+		run.Actions = append(run.Actions, assistantRunActionReceipt{ID: action.ID, Digest: digest, Kind: action.Kind, Decision: decision, PlanDecision: planDecision})
 		if action.Kind == "cancel" {
 			if active := h.active[id]; active != nil {
 				run.DisplayPreview = active.progressPreviewLocked()
 			}
-			stopAssistantRun(run)
+			if active == nil {
+				stopAssistantRun(run)
+			}
 		} else {
 			run.State = "admitted"
 		}
 		return true, nil
 	})
 	if err != nil {
-		if active := h.active[id]; active != nil {
+		if active != nil && writer.Err() != nil {
 			active.cancel()
 		}
 		return record, err
 	}
 	if action.Kind == "cancel" {
-		if active := h.active[id]; active != nil {
+		if active == nil {
+			h.settleContextLocked(record.ID)
+		}
+		if active != nil {
 			active.cancel()
+			// Cleanup and canonical delivery need h.mu; never wait while holding it.
+			h.mu.Unlock()
+			timer := time.NewTimer(6 * time.Second)
+			select {
+			case <-active.done:
+			case <-timer.C:
+				err = context.DeadlineExceeded
+			case <-r.Context().Done():
+				err = r.Context().Err()
+			}
+			timer.Stop()
+			h.mu.Lock()
+			if err != nil {
+				return record, err
+			}
 		}
 	} else {
 		latest, e := h.lease.store.Read(r.Context(), record.Binding, id)
@@ -381,20 +533,20 @@ func (h *assistantRunService) action(r *http.Request, id string, action assistan
 			return record, e
 		}
 		if err = h.launch(r, latest, source, writer, decision); err != nil {
+			h.settleContextLocked(record.ID)
 			_ = writer.Stop(context.Background())
 			return record, err
 		}
 	}
 	h.notifyLocked(id)
-	return h.lease.store.Read(r.Context(), record.Binding, id)
+	return writer.lease.store.Read(r.Context(), record.Binding, id)
 }
 
-// abandon is deliberately separate from original-session cancel/approval. The
-// exclusive process lease plus the active registry prove that no executor can
-// still own this paused record; a persisted state string alone cannot prove it.
-// h.mu stays held through admission and persistence, closing the launch race.
+// Abandon admits either a settled retained owner or an inactive paused record.
+// The active registry and exclusive process lease establish custody; a persisted
+// state string alone cannot. Finalization/reaping never retains service.mu.
 func (h *assistantRunService) abandon(r *http.Request, record assistantRunRecord, action assistantRunAction) (assistantRunRecord, error) {
-	if action.CallID != "" || action.ArgsDigest != "" || action.Approved != nil || action.Note != nil {
+	if action.CallID != "" || action.ArgsDigest != "" || action.ShownDigest != nil || action.Approved != nil || action.Note != nil {
 		return record, errAssistantRunInvalid
 	}
 	identity, _, err := h.server.assistantRunIdentity(r)
@@ -413,7 +565,7 @@ func (h *assistantRunService) abandon(r *http.Request, record assistantRunRecord
 			return record, nil
 		}
 	}
-	if record.Historical || !assistantRunPaused(record.State) || record.Revision != action.Revision || h.active[record.ID] != nil {
+	if record.Historical || !assistantRunPaused(record.State) || record.Revision != action.Revision {
 		return record, errAssistantRunConflict
 	}
 	if err = h.acquire(r.Context()); err != nil {
@@ -423,9 +575,41 @@ func (h *assistantRunService) abandon(r *http.Request, record assistantRunRecord
 	if record.Binding.Project != h.lease.store.project {
 		return record, errAssistantRunScope
 	}
-	writer, err := h.lease.Writer(r.Context(), record.Binding, record.ID)
-	if err != nil {
-		return record, err
+	expectedRevision := action.Revision
+	active := h.active[record.ID]
+	var writer *assistantRunWriter
+	if active != nil {
+		active.canonicalMu.Lock()
+		parked := active.lifecycle == "parked"
+		active.canonicalMu.Unlock()
+		if !parked {
+			return record, errAssistantRunConflict
+		}
+		writer = active.writer
+		// Finalize through the current canonical binding before the abandon
+		// receipt requires its terminal envelope. The owner still retains its
+		// lease until the subsequent cancellation/reap completes.
+		h.mu.Unlock()
+		active.closeCanonicalDispatch()
+		err = active.finalizeCanonicalStop()
+		if err == nil {
+			var latest assistantRunRecord
+			latest, err = writer.lease.store.Read(r.Context(), record.Binding, record.ID)
+			if err == nil && !reflect.DeepEqual(latest.Actions, record.Actions) {
+				err = errAssistantRunConflict
+			}
+			expectedRevision = latest.Revision
+		}
+		h.mu.Lock()
+		if err != nil {
+			active.cancel()
+			return record, err
+		}
+	} else {
+		writer, err = h.lease.Writer(r.Context(), record.Binding, record.ID)
+		if err != nil {
+			return record, err
+		}
 	}
 	err = writer.change(r.Context(), false, func(run *assistantRunRecord) (bool, error) {
 		current, _, err := h.server.assistantRunIdentity(r)
@@ -435,7 +619,7 @@ func (h *assistantRunService) abandon(r *http.Request, record assistantRunRecord
 		if !assistantRunIdentityMatches(current, identity) || current.Principal != run.Binding.Principal {
 			return false, errAssistantRunScope
 		}
-		if run.Revision != action.Revision || !assistantRunPaused(run.State) {
+		if run.Revision != expectedRevision || !assistantRunPaused(run.State) {
 			return false, errAssistantRunConflict
 		}
 		run.Actions = append(run.Actions, assistantRunActionReceipt{ID: action.ID, Digest: digest, Kind: action.Kind, AuthorizingSession: current.Session, AuthorizingPolicy: current.Policy})
@@ -443,7 +627,15 @@ func (h *assistantRunService) abandon(r *http.Request, record assistantRunRecord
 		return true, nil
 	})
 	if err != nil {
+		if active != nil {
+			active.cancel()
+		}
 		return record, err
+	}
+	if active != nil {
+		active.cancel()
+	} else {
+		h.settleContextLocked(record.ID)
 	}
 	h.notifyLocked(record.ID)
 	return h.lease.store.Read(r.Context(), record.Binding, record.ID)
@@ -474,6 +666,8 @@ func (h *assistantRunService) subscribe(id string) (<-chan struct{}, func(), err
 func (h *assistantRunService) close() {
 	h.mu.Lock()
 	h.closed = true
+	h.settleIdleContextsLocked(nil)
+	h.contexts.close()
 	done := make([]<-chan struct{}, 0, len(h.active))
 	for _, active := range h.active {
 		active.cancel()
@@ -497,6 +691,17 @@ func (h *assistantRunService) close() {
 // These are the only capability boundaries handed to a server runner. Dispatch
 // rechecks live session, Policy, saved owner and selected connection each time.
 func (e *assistantRunExecution) Authorize(ctx context.Context) error {
+	if g, ok := ctx.Value(assistantInvocationGenerationKey{}).(assistantInvocationGeneration); ok {
+		e.canonicalMu.Lock()
+		current := g.owner == e && g.number == e.generation && !e.stopRequested && e.lifecycle == "running"
+		e.canonicalMu.Unlock()
+		if !current {
+			return errAssistantRunScope
+		}
+	}
+	if err := e.observationError(); err != nil {
+		return err
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -569,6 +774,9 @@ func (e *assistantRunExecution) changed(err error) {
 // Diagnostic keeps its fixed narrow owner; all other admitted source purposes
 // use the closed executor installed by New.
 func (h *assistantRunService) executor(purpose string) assistantRunExecutor {
+	if purpose == assistantSettingsObservationPurpose {
+		return &assistantSettingsObservationExecutor{}
+	}
 	if purpose == assistantDiagnosticPurpose {
 		return &assistantDiagnosticExecutor{}
 	}

@@ -742,57 +742,27 @@ func copyName(digest string) (string, bool) {
 // Git: in a project Desk did not make, `.desk-private/` may not be ignored
 // yet, and these copies duplicate the project's own files.
 func (s *Server) reviewedCopies(create bool) (*os.Root, error) {
-	current := s.root
-	var opened *os.Root
-	made := false
-	for _, part := range strings.Split(reviewedCopiesDir, "/") {
-		info, err := current.Lstat(part)
-		if errors.Is(err, fs.ErrNotExist) && create {
-			if err = current.Mkdir(part, custodyDirMode); err != nil && !errors.Is(err, fs.ErrExist) {
-				break
-			}
-			made = true
-			info, err = current.Lstat(part)
-		}
-		if err == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {
-			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
-		}
-		if err == nil && info.Mode().Perm()&0o077 != 0 {
-			err = fmt.Errorf("%s is open to other users (%v), so Desk does not keep copies in it", part, info.Mode().Perm())
-		}
-		if err == nil {
-			err = ownedByUs(part, info)
-		}
-		var next *os.Root
-		if err == nil {
-			next, err = current.OpenRoot(part)
-		}
-		if err == nil {
-			if held, statErr := next.Stat("."); statErr != nil || !os.SameFile(info, held) {
-				next.Close()
-				err = fmt.Errorf("%s changed while being opened", part)
-			}
-		}
-		if opened != nil {
-			opened.Close()
-		}
-		if err != nil {
-			return nil, err
-		}
-		opened, current = next, next
+	return s.reviewedCopiesWithCreator(create, nil)
+}
+func (s *Server) reviewedCopiesWithCreator(create bool, original *storageCreatorLease) (*os.Root, error) {
+	root, made, err := openOwnFolderWithCreator(s.root, strings.Split(reviewedCopiesDir, "/"), create, "reviewed copies", original)
+	if err != nil {
+		return nil, err
 	}
 	if made {
-		if err := writePrivateData(opened, ".gitignore", []byte("*\n")); err != nil {
-			opened.Close()
-			return nil, err
+		if err = storageCreateDraftIgnore(root); err != nil {
+			return nil, errors.Join(err, root.Close())
 		}
 	}
-	return opened, nil
+	return root, nil
 }
 
 // storeReviewedCopies keeps a copy of each locked file, named by its digest.
 func (s *Server) storeReviewedCopies(snap *reviewSnapshot) error {
-	copies, err := s.reviewedCopies(true)
+	return s.storeReviewedCopiesWithCreator(snap, nil)
+}
+func (s *Server) storeReviewedCopiesWithCreator(snap *reviewSnapshot, original *storageCreatorLease) error {
+	copies, err := s.reviewedCopiesWithCreator(true, original)
 	if err != nil {
 		return err
 	}
@@ -872,12 +842,21 @@ func (s *Server) handleReviewLock(w http.ResponseWriter, r *http.Request) {
 // lockConfirmed locks what the review the token names showed, or puts the
 // previous lock back, under this project's lock (project_lock.go) from the
 // fresh reading to the lock put back (issue #284).
-func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string, reviews map[string]retainedArtifactRef, reconcile bool) (any, *lockFailure) {
-	unlock, failure := s.lockProjectFor(ctx, "a review's lock", "locked")
+func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string, reviews map[string]retainedArtifactRef, reconcile bool) (answer any, failure *lockFailure) {
+	projectLease, failure := s.lockProjectForOwned(ctx, "a review's lock", "locked")
 	if failure != nil {
 		return nil, failure
 	}
-	defer unlock()
+	defer func() {
+		if closeErr := projectLease.Close(); closeErr != nil {
+			answer = nil
+			if failure == nil {
+				failure = &lockFailure{http.StatusInternalServerError, CodeInternal, "The project operation could not finish releasing its lock. Inspect the current state before trying again."}
+			} else {
+				failure.message += " The project lock could not be closed."
+			}
+		}
+	}()
 	snap, err := s.readSnapshot()
 	if err != nil || !hmac.Equal([]byte(s.reviewToken(snap)), []byte(token)) {
 		return nil, &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed it, so nothing was locked. Review it again."}
@@ -944,7 +923,7 @@ func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string, r
 		Copies        string `json:"copies"`
 		CopiesProblem string `json:"copiesProblem,omitempty"`
 	}{Files: 1 + len(snap.set.Entries), Copies: "stored"}
-	if err := s.storeReviewedCopies(snap); err != nil {
+	if err := s.storeReviewedCopiesWithCreator(snap, projectLease); err != nil {
 		s.log.Printf("desk: the reviewed copies were not stored: %v", err)
 		result.Copies, result.CopiesProblem = "not-stored", err.Error()
 	}

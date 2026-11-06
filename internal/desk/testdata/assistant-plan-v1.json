@@ -6,5 +6,16 @@
   ],
   "accepted": [{"id":"plan-vector-accepted","revision":1,"objective":"Explicit human acceptance","steps":["Inspect the approved scope"],"questions":[],"references":[],"status":"accepted","createdAt":"2026-10-21T10:02:00Z","acceptedAt":"2026-10-21T10:03:00Z"}],
   "started": [{"id":"plan-vector-started","revision":1,"objective":"Explicit human start","steps":["Preserve normal action approvals"],"questions":[],"references":[],"status":"started","createdAt":"2026-10-21T10:04:00Z","acceptedAt":"2026-10-21T10:05:00Z"}],
+  "mixed": [{"id":"plan-vector-mixed","revision":1,"objective":"Read historical and current references","steps":["Review all references"],"questions":[],"references":[{"kind":"file","id":"packs/one.json","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"kind":"dialect","id":"prep_00000000000000000000000000000001","revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},{"kind":"artifact","id":"opaque-artifact-one","digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},{"kind":"dialect","id":"opaque-dialect-one","digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}],"status":"proposed","createdAt":"2026-10-21T10:06:00Z"}],
+  "invalidReferences": [
+    "{\"kind\":\"artifact\",\"id\":\"opaque-one\",\"digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"revision\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "{\"kind\":\"artifact\",\"id\":\"opaque-one\"}",
+    "{\"kind\":\"file\",\"id\":\"one.json\",\"digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "{\"kind\":\"dialect\",\"id\":\"opaque-one\",\"digest\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+    "{\"kind\":\"dialect\",\"id\":\"opaque-one\",\"digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"unknown\":true}",
+    "{\"kind\":\"dialect\",\"ID\":\"opaque-one\",\"digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "{\"kind\":\"dialect\",\"id\":\"opaque-one\",\"id\":\"opaque-two\",\"digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "{\"kind\":\"future\",\"id\":\"opaque-one\",\"digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  ],
   "arguments":{"objective":"Review the exact saved pack 💡","steps":["Read the pack","Review the mapping"],"questions":["Which publication applies?"],"references":[{"kind":"file","id":"packs/one.json"},{"kind":"dialect","id":"prep_00000000000000000000000000000001"}]}
 }

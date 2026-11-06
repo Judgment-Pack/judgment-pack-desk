@@ -1,3 +1,5 @@
+// These owner/cancellation fixtures use a fixed model-free pane capability.
+vi.mock('./serverContexts',()=>({serverContextDocument:()=>({pane:()=>({attach:()=>()=>{},selector:async()=>({document:'a'.repeat(64),pane:'b'.repeat(64)})})})}))
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useAuthoringRun } from './useAuthoringRun'
@@ -18,7 +20,7 @@ it('sends closed request data, selected controls and host-issued reference once,
  await waitFor(()=>expect(result.current.status).toBe('finished'))
  expect(fixture.capture).toHaveBeenCalledOnce();const [request,target]=fixture.capture.mock.calls[0]
  expect(request).toMatchObject({...input,model:'chosen-model',thinking:'off',phase:'work'});expect(request).not.toHaveProperty('tools');expect(request).not.toHaveProperty('endpoint');expect(target).toEqual(options.target)
- expect(fixture.start).toHaveBeenCalledExactlyOnceWith(ref,undefined)
+ expect(fixture.start).toHaveBeenCalledExactlyOnceWith({...ref,context:{document:'a'.repeat(64),pane:'b'.repeat(64)}},undefined)
  expect(result.current.events.map(e=>e.type)).toEqual(['proposal','end']);expect(result.current.terminals.count).toBe(1)
  const proposal=result.current.events[0];expect(Object.isFrozen(proposal)).toBe(true)
 })

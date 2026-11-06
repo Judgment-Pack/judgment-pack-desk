@@ -364,7 +364,7 @@ func reviewedInputRealGatewayRunner(t *testing.T, published bool) {
 
 func TestGeneratedConversionsKeepUnresolvedFieldsUnknown(t *testing.T) {
 	q := qualificationFixture()
-	q.Mapping.Case.Facts = []inputDialectFact{{"/count", "/values/count"}, {"/flag", "/values/flag"}, {"/stale", "/values/stale"}, {"/missing", "/values/missing"}}
+	q.Mapping.Case.Facts = []inputDialectFact{{Target: "/count", Source: "/values/count"}, {Target: "/flag", Source: "/values/flag"}, {Target: "/stale", Source: "/values/stale"}, {Target: "/missing", Source: "/values/missing"}}
 	q.Conversions = map[string]inputConversion{"/count": {Kind: "number"}, "/flag": {Kind: "boolean", TrueValue: "true", FalseValue: "false"}}
 	record := preparedInputRecord{ID: "row", Class: "generated", Values: map[string]string{"count": "0", "flag": "false", "stale": "old", "missing": ""}, Research: &inputResearchRecord{Entity: inputResearchEntity{Fields: map[string]inputResearchValue{"count": {Status: "interpretation"}, "flag": {Status: "interpretation"}, "stale": {Status: "stale"}, "missing": {Status: "missing"}}}}}
 	row, err := prepareInputRecord(inputPreparation{Recipe: inputRecipe{Qualification: q}}, record)

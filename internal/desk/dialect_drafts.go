@@ -73,6 +73,9 @@ func dialectDraftChatOrigin(d dialectDraftDocument) *inputChatOrigin {
 	return origin
 }
 func validateDialectDraft(name string, recipe inputRecipe) error {
+	if err := requireOrdinaryInputQualification(recipe.Qualification); err != nil {
+		return err
+	}
 	bad := errors.New("The dialect draft exceeds its supported fields or limits.")
 	if len(name) > 160 || len(recipe.Intent) > 12000 {
 		return bad
@@ -143,6 +146,9 @@ func (s *Server) ensureDialectDraftUsing(ctx context.Context, repository dialect
 		return prior, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
+		return prior, err
+	}
+	if err := requireOrdinaryInputQualification(request.Recipe.Qualification); err != nil {
 		return prior, err
 	}
 	now := createdAt
@@ -326,6 +332,9 @@ func (s *Server) publishDialectDraft(ctx context.Context, d dialectDraftDocument
 		return prior.Document.ID, nil
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return "", e
+	}
+	if err := requireOrdinaryInputQualification(d.Recipe.Qualification); err != nil {
+		return "", err
 	}
 	if strings.TrimSpace(d.Name) == "" {
 		return "", errors.New("Enter a name.")

@@ -2,6 +2,7 @@ package desk
 
 import (
 	"context"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -73,19 +74,23 @@ func assistantCreationDeclaredCitations(text string) ([]assistantCreationCitatio
 // Current rooted document verification, shared with read_link and attachments.
 // A retained source's own verification flag is never read as authority.
 func (e *assistantRunExecution) verifyAssistantCreationSources(ctx context.Context, input *assistantCreationInput) ([]assistantCreationCitation, []assistantCreationSourceProof, error) {
+	return e.service.server.verifyAssistantCreationSources(ctx, e.request, e.source, e.input, e.Authorize, input)
+}
+
+func (s *Server) verifyAssistantCreationSources(ctx context.Context, r *http.Request, source assistantRunSource, custody *assistantChatCustody, authorize func(context.Context) error, input *assistantCreationInput) ([]assistantCreationCitation, []assistantCreationSourceProof, error) {
 	citations, err := assistantCreationDeclaredCitations(input.Candidate)
 	if err != nil {
 		return nil, nil, err
 	}
-	files := assistantSavedLinkAttachments(e.source.Original)
+	files := assistantSavedLinkAttachments(source.Original)
 	held := map[string]assistantVerifiedDocument{}
 	proofs := []assistantCreationSourceProof{}
-	if e.input != nil {
-		e.input.mu.Lock()
-		defer e.input.mu.Unlock()
+	if custody != nil {
+		custody.mu.Lock()
+		defer custody.mu.Unlock()
 	}
-	if e.input != nil && e.input.creationSources != nil && e.input.creationSources.candidate == input.Candidate {
-		cache := e.input.creationSources
+	if custody != nil && custody.creationSources != nil && custody.creationSources.candidate == input.Candidate {
+		cache := custody.creationSources
 		citations, proofs, held = cache.citations, cache.proofs, cache.documents
 	} else {
 		for i := range citations {
@@ -114,7 +119,7 @@ func (e *assistantRunExecution) verifyAssistantCreationSources(ctx context.Conte
 			key := assistantChatReferenceKey(*reference)
 			document, ok := held[key]
 			if !ok {
-				document, err = e.service.server.readAssistantDocument(e.request.WithContext(ctx), e.source, *reference)
+				document, err = s.readAssistantDocument(r.WithContext(ctx), source, *reference)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -134,16 +139,16 @@ func (e *assistantRunExecution) verifyAssistantCreationSources(ctx context.Conte
 			proofs = append(proofs, assistantCreationSourceProof{Location: citation.Location, AttachmentDigest: document.attachmentDigest, GatewayDigest: digestOf(assistantChatJSON(assistantSearchGatewaySnapshot(document.gateway)))})
 		}
 	}
-	if e.input != nil {
-		e.input.creationSources = &assistantCreationSourceCache{input.Candidate, citations, proofs, held}
+	if custody != nil {
+		custody.creationSources = &assistantCreationSourceCache{input.Candidate, citations, proofs, held}
 	}
 	input.Scope.EvidenceDigest = digestOf(assistantChatJSON(proofs))
 	input.Fresh = func(ctx context.Context) error {
-		if err := e.Authorize(ctx); err != nil {
+		if err := authorize(ctx); err != nil {
 			return err
 		}
 		for _, document := range held {
-			if err := e.service.server.recheckAssistantDocument(e.request.WithContext(ctx), document); err != nil {
+			if err := s.recheckAssistantDocument(r.WithContext(ctx), document); err != nil {
 				return err
 			}
 		}
@@ -151,7 +156,7 @@ func (e *assistantRunExecution) verifyAssistantCreationSources(ctx context.Conte
 	}
 	input.FreshLocked = func(ctx context.Context) error {
 		for _, document := range held {
-			raw, gateway, err := e.service.server.assistantDocumentSnapshotLocked(e.request.WithContext(ctx), document.owner, document.reference)
+			raw, gateway, err := s.assistantDocumentSnapshotLocked(r.WithContext(ctx), document.owner, document.reference)
 			if err != nil || digestOf(raw) != document.attachmentDigest || digestOf(assistantChatJSON(assistantSearchGatewaySnapshot(gateway))) != digestOf(assistantChatJSON(assistantSearchGatewaySnapshot(document.gateway))) {
 				return errAssistantDocument
 			}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"math/big"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -99,6 +100,17 @@ func (e *assistantRunExecution) prepareAssistantChatInput(ctx context.Context) (
 	if err != nil {
 		return nil, err
 	}
+	if err := appendAssistantChatDocuments(chat, held); err != nil {
+		return nil, err
+	}
+	if err := assistantRunAnswerHistory(e.record, chat); err != nil {
+		return nil, err
+	}
+	return chat, nil
+}
+
+// The same byte guard and exact verified-document projection serves preflight.
+func appendAssistantChatDocuments(chat *assistantChatInput, held []assistantVerifiedDocument) error {
 	values := map[string]runcontext.Document{}
 	for _, document := range held {
 		value := assistantChatVerifiedContext(document)
@@ -111,33 +123,34 @@ func (e *assistantRunExecution) prepareAssistantChatInput(ctx context.Context) (
 			size += len(values[assistantChatReferenceKey(ref)].Value.JSON())
 		}
 		if size > 800000 {
-			return nil, errAssistantRunInvalid
+			return errAssistantRunInvalid
 		}
 	}
-	if err := assistantRunAnswerHistory(e.record, chat); err != nil {
-		return nil, err
-	}
-	return chat, nil
+	return nil
 }
 
 func (e *assistantRunExecution) holdAssistantDocuments(ctx context.Context, refs []assistantDocumentReference) ([]assistantVerifiedDocument, error) {
-	if e.input == nil {
+	return e.service.server.holdAssistantDocuments(ctx, e.request, e.source, e.input, refs)
+}
+
+func (s *Server) holdAssistantDocuments(ctx context.Context, r *http.Request, source assistantRunSource, custody *assistantChatCustody, refs []assistantDocumentReference) ([]assistantVerifiedDocument, error) {
+	if custody == nil {
 		return nil, errAssistantRunUnavailable
 	}
-	e.input.mu.Lock()
-	defer e.input.mu.Unlock()
-	if !e.input.ready {
+	custody.mu.Lock()
+	defer custody.mu.Unlock()
+	if !custody.ready {
 		held := make([]assistantVerifiedDocument, 0, len(refs))
 		for _, ref := range refs {
-			document, err := e.service.server.readAssistantDocument(e.request.WithContext(ctx), e.source, ref)
+			document, err := s.readAssistantDocument(r.WithContext(ctx), source, ref)
 			if err != nil {
 				return nil, err
 			}
 			held = append(held, document)
 		}
-		e.input.documents, e.input.ready = held, true
+		custody.documents, custody.ready = held, true
 	}
-	return append([]assistantVerifiedDocument(nil), e.input.documents...), nil
+	return append([]assistantVerifiedDocument(nil), custody.documents...), nil
 }
 
 // One host-only physical-dispatch fence serves both relay and native Agent
@@ -387,7 +400,35 @@ func compileAssistantChatInput(source assistantRunSource) (*assistantChatInput, 
 	observations := runcontext.Object()
 	for _, key := range state.Keys() {
 		if key != "turns" && key != "questions" {
-			observations.Set(key, state.Get(key).Clone())
+			value := state.Get(key).Clone()
+			if key == "responses" {
+				// Approval result display belongs to the person. Omit only this new
+				// member from the disposable model copy, never saved history, other
+				// historical fields or user-authored strings with the same contents.
+				for _, response := range value.Items() {
+					work := response.Get("work")
+					items := work.Get("items")
+					if !items.IsArray() {
+						continue
+					}
+					projected := runcontext.Array()
+					for _, item := range items.Items() {
+						if !item.IsObject() || !item.Has("approvalResult") {
+							projected.Append(item)
+							continue
+						}
+						kept := runcontext.Object()
+						for _, member := range item.Keys() {
+							if member != "approvalResult" {
+								kept.Set(member, item.Get(member))
+							}
+						}
+						projected.Append(kept)
+					}
+					work.Set("items", projected)
+				}
+			}
+			observations.Set(key, value)
 		}
 	}
 	if checkpoint.Has("sources") {

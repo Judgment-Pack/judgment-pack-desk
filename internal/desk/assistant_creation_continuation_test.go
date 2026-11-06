@@ -13,9 +13,13 @@ import (
 	"time"
 )
 
-const creationContinuationFacts = `{"large":9007199254740993,"decimal":1.20,"negativeZero":-0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.500}}`
+// This is an actual provider-admission positive fixture. Unsafe historical raw
+// values remain a separate handwritten browser custody witness.
+const creationContinuationCanonicalFacts = `{"large":9007199254740991,"decimal":1.2,"exponent":100,"negativeZero":0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.5}}`
 
-func assistantCreationContinuationFixture(t *testing.T, correction string) (*Server, string, *atomic.Int32) {
+const creationContinuationFacts = `{"large":9007199254740991,"decimal":1.20,"exponent":1e2,"negativeZero":-0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.500}}`
+
+func assistantCreationContinuationDocument(t *testing.T) json.RawMessage {
 	t.Helper()
 	fields, err := assistantTestObject([]byte(assistantCreationCasesDocument))
 	assistantRunMust(t, err)
@@ -28,7 +32,12 @@ func assistantCreationContinuationFixture(t *testing.T, correction string) (*Ser
 		row["facts"] = []byte(creationContinuationFacts)
 		return assistantChatEncodeObject(row)
 	}
-	proposed := assistantChatJSON(map[string]any{"cases": []json.RawMessage{invalid("first"), rows[0], invalid("last")}})
+	return assistantChatJSON(map[string]any{"cases": []json.RawMessage{invalid("first"), rows[0], invalid("last")}})
+}
+
+func assistantCreationContinuationFixture(t *testing.T, correction string) (*Server, string, *atomic.Int32) {
+	t.Helper()
+	proposed := assistantCreationContinuationDocument(t)
 	calls := &atomic.Int32{}
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := calls.Add(1)
@@ -85,7 +94,19 @@ func assistantCreationContinuationBasis(t *testing.T, s *Server, token string) m
 }
 
 func TestAssistantCreationMultipleCorrections(t *testing.T) {
+	assistantCreationMultipleCorrections(t, false)
+}
+
+func TestAssistantCreationNumericNativeContinuation(t *testing.T) {
+	assistantCreationMultipleCorrections(t, true)
+}
+
+func assistantCreationMultipleCorrections(t *testing.T, native bool) {
+	t.Helper()
 	output := os.Getenv("JPS_CREATION_OUTPUTS")
+	if native && output != "" {
+		output = filepath.Join(output, "native")
+	}
 	for _, order := range [][]string{{"first", "last"}, {"last", "first"}} {
 		t.Run(order[0], func(t *testing.T) {
 			if output != "" {
@@ -94,6 +115,24 @@ func TestAssistantCreationMultipleCorrections(t *testing.T) {
 				t.Setenv("JPS_CREATION_OUTPUTS", dir)
 			}
 			s, token, calls := assistantCreationContinuationFixture(t, assistantCreationCorrectionDocument)
+			count := calls.Load
+			if native {
+				trace := assistantNumericNative(t, s, "", "")
+				replies := []string{assistantNumericFence(string(assistantCreationContinuationDocument(t))), assistantNumericFence(assistantCreationCorrectionDocument), assistantNumericFence(assistantCreationCorrectionDocument)}
+				assistantRunMust(t, os.WriteFile(trace+".replies", assistantChatJSON(replies), 0600))
+				count = func() int32 {
+					var n int32
+					for _, row := range assistantCodexLog(t, trace) {
+						if string(row["type"]) == `"generation"` {
+							n++
+						}
+					}
+					if calls.Load() != 0 {
+						t.Fatal("native continuation reached API fixture")
+					}
+					return n
+				}
+			}
 			recovered := assistantCreationContinuationRun(t, s, token, assistantCreationAction{Kind: "recover", MessageID: "assistant-one", MessageDigest: digestOf([]byte(assistantAuthoringProposalFixture(json.RawMessage(reviewPack))))}, 1)
 			digest := recovered.Creation.CandidateDigest
 			assistantCreationRetainDraft(t, s, token)
@@ -113,6 +152,9 @@ func TestAssistantCreationMultipleCorrections(t *testing.T) {
 						id, err := assistantTestString(row["id"])
 						assistantRunMust(t, err)
 						acceptedFacts[id] = row["facts"]
+						if id != "typed" && string(row["facts"]) != creationContinuationCanonicalFacts {
+							t.Fatalf("actual admitted canonical facts changed: %s", row["facts"])
+						}
 					}
 				}
 			}
@@ -139,12 +181,12 @@ func TestAssistantCreationMultipleCorrections(t *testing.T) {
 			if len(cases) != 3 || cases[0].ID != "first" || cases[1].ID != "typed" || cases[2].ID != "last" {
 				t.Fatal("original independent order lost", approved.Creation.Cases)
 			}
-			if !assistantHostArgumentsMatch(cases[0].Facts, acceptedFacts["first"]) || !assistantHostArgumentsMatch(cases[2].Facts, acceptedFacts["last"]) {
+			if string(cases[0].Facts) != string(acceptedFacts["first"]) || string(cases[2].Facts) != string(acceptedFacts["last"]) {
 				t.Fatal("canonical accepted facts changed during continuation")
 			}
 			assistantCreationRetainDraft(t, s, token)
 			checked := assistantCreationContinuationRun(t, s, token, assistantCreationAction{Kind: "check", CandidateDigest: digest}, 7)
-			if checked.Creation.Issues != "[]" || checked.Creation.Check.TotalCases != 3 || calls.Load() != 3 {
+			if checked.Creation.Issues != "[]" || checked.Creation.Check.TotalCases != 3 || count() != 3 {
 				t.Fatal("final check replayed or lost suite")
 			}
 			ledger := assistantAuthoringLedger(t, s)

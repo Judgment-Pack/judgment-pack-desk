@@ -3,6 +3,7 @@ package desk
 import (
 	"bytes"
 	"context"
+	"errors"
 	"reflect"
 	"sync"
 	"time"
@@ -44,6 +45,12 @@ func (w *assistantRunWriter) Err() error { w.mu.Lock(); defer w.mu.Unlock(); ret
 // Result delivery may finish after cancellation/lease loss, but cannot dispatch
 // anything. All other writes require the live exclusive executor lease.
 func (w *assistantRunWriter) change(ctx context.Context, result bool, fn func(*assistantRunRecord) (bool, error)) error {
+	return w.changeAt(ctx, result, nil, fn)
+}
+
+// Actions use the live writer but retain their exact optimistic revision.
+// A stale client refusal is not a storage failure in that writer.
+func (w *assistantRunWriter) changeAt(ctx context.Context, result bool, expected *uint64, fn func(*assistantRunRecord) (bool, error)) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.failure != nil && !result {
@@ -59,10 +66,23 @@ func (w *assistantRunWriter) change(ctx context.Context, result bool, fn func(*a
 			return w.fail(errAssistantRunRecovery)
 		}
 	}
-	ledger, err := w.lease.store.transaction(ctx, func(ledger *assistantRunLedger) (bool, error) {
+	return w.changeLocked(ctx, result, expected, func(change func(*assistantRunLedger) (bool, error)) (assistantRunLedger, error) {
+		return w.lease.store.transaction(ctx, change)
+	}, fn)
+}
+
+// The caller owns writer and (unless result delivery) the executor lease.
+// Share revision, duplicate and failure behavior with guarded reservations.
+func (w *assistantRunWriter) changeLocked(ctx context.Context, result bool, expected *uint64, transaction func(func(*assistantRunLedger) (bool, error)) (assistantRunLedger, error), fn func(*assistantRunRecord) (bool, error)) error {
+	stale := false
+	ledger, err := transaction(func(ledger *assistantRunLedger) (bool, error) {
 		run, err := assistantRunBound(ledger, w.binding, w.id)
 		if err != nil {
 			return false, err
+		}
+		if expected != nil && run.Revision != *expected {
+			stale = true
+			return false, errAssistantRunConflict
 		}
 		changed, err := fn(run)
 		if err != nil || !changed {
@@ -75,6 +95,9 @@ func (w *assistantRunWriter) change(ctx context.Context, result bool, fn func(*a
 		return true, nil
 	})
 	if err != nil {
+		if stale {
+			return err
+		}
 		return w.fail(err)
 	}
 	for _, run := range ledger.Runs {
@@ -85,6 +108,39 @@ func (w *assistantRunWriter) change(ctx context.Context, result bool, fn func(*a
 	}
 	return w.fail(errAssistantRunInvalid)
 }
+func (w *assistantRunWriter) changeDialectDraft(ctx context.Context, owner *assistantDialectDraftPutOwner, stage string, expected assistantDialectDraftIntent, fn func(*assistantRunRecord) (bool, error)) (err error) {
+	if !owner.original() || owner.writer != w {
+		return errAssistantRunScope
+	}
+	g, err := owner.acquireReservationGuard(ctx, stage, expected)
+	if err != nil {
+		return err
+	} // No writer failure latch without its mutex.
+	defer func() {
+		if err == nil {
+			err = g.Check(ctx)
+		}
+		// A Close failure is uncertain and must latch while the writer is held.
+		// Close releases that mutex, so perform the final check and data/private
+		// cleanup before releasing the host holds below.
+		err = errors.Join(err, g.closeData())
+		if err != nil {
+			w.fail(err)
+		}
+		err = errors.Join(err, g.Close())
+	}()
+	var saved assistantRunLedger
+	err = w.changeLocked(ctx, false, nil, func(change func(*assistantRunLedger) (bool, error)) (assistantRunLedger, error) {
+		var transactionErr error
+		saved, transactionErr = w.lease.store.transactionDialectDraftLocked(ctx, g, change)
+		return saved, transactionErr
+	}, fn)
+	if err == nil {
+		err = g.adoptSaved(saved)
+	}
+	return err
+}
+
 func (w *assistantRunWriter) fail(err error) error {
 	if w.failure == nil {
 		w.failure = err
@@ -100,6 +156,9 @@ func (w *assistantRunWriter) Checkpoint(ctx context.Context, state contract.Chec
 		}
 		if sameAssistantRunCheckpoint(cp, run.Checkpoint) {
 			return setAssistantRunPreview(run, preview), nil
+		}
+		if run.Observation != nil || assistantCanonicalActive(*run) {
+			return false, errAssistantRunConflict
 		}
 		if assistantRunTerminal(run.State) {
 			return false, errAssistantRunDispatch
@@ -250,10 +309,15 @@ func (w *assistantRunWriter) State(ctx context.Context, state string) error {
 		case "complete":
 			expected = "complete"
 		case "awaiting-input":
-			if question, err := pendingAssistantRunQuestion(*run); err == nil && question != nil {
+			if assistantRunPlanReference(*run) != nil || assistantRunApprovalPause(*run) && run.Checkpoint.Status == "paused" {
+				expected = "paused"
+			} else if question, err := pendingAssistantRunQuestion(*run); err == nil && question != nil {
 				expected = "complete"
 			}
 		case "paused-budget":
+			if assistantRunApprovalPause(*run) {
+				return false, errAssistantRunConflict
+			}
 			expected = "paused"
 		case "running":
 			expected = "running"
@@ -271,6 +335,11 @@ func (w *assistantRunWriter) State(ctx context.Context, state string) error {
 			}
 		}
 		run.State = state
+		if state != "running" {
+			if err := finishAssistantCanonicalEvents(run); err != nil {
+				return false, err
+			}
+		}
 		return true, nil
 	})
 }
@@ -282,7 +351,12 @@ func stopAssistantRun(run *assistantRunRecord) {
 		return
 	}
 	run.State = "stopped"
-	if run.Checkpoint != nil {
+	if run.Observation != nil && assistantCanonicalActive(*run) && (run.Checkpoint.Status == "running" || run.Checkpoint.Status == "paused") {
+		// No original-writer acknowledgement exists. Preserve the head and say
+		// interrupted, rather than manufacture a canonical stopped checkpoint.
+		run.State = "interrupted"
+	}
+	if run.Checkpoint != nil && !assistantCanonicalActive(*run) {
 		run.Checkpoint.Status = "stopped"
 		for i := range run.Checkpoint.Operations {
 			if run.Checkpoint.Operations[i].Status == "running" {
@@ -302,6 +376,9 @@ func (w *assistantRunWriter) Stop(ctx context.Context) error {
 			return false, nil
 		}
 		stopAssistantRun(run)
+		if err := finishAssistantCanonicalEvents(run); err != nil {
+			return false, err
+		}
 		return true, nil
 	})
 }

@@ -51,6 +51,7 @@ type inputRecipe struct {
 	// initial supplied-input recipe. Live discovery is a separate worker.
 }
 type preparedInputRecord struct {
+	rawCells *inputRawCellCustody
 	Review   *inputRecordReview   `json:"review,omitempty"`
 	ID       string               `json:"id"`
 	Research *inputResearchRecord `json:"research,omitempty"`
@@ -89,6 +90,7 @@ type inputChatOrigin struct {
 }
 
 type inputPreparation struct {
+	cellCustody   *inputPreparationCellCustody
 	Reviews       []inputRecordReviewEvent `json:"reviews,omitempty"`
 	ChatOrigin    *inputChatOrigin         `json:"chatOrigin,omitempty"`
 	Version       int                      `json:"version"`
@@ -124,6 +126,9 @@ func decodeInputPreparation(id string, raw []byte) (inputPreparationReply, error
 		return result, err
 	}
 	if err = validateInputQualification(result.Document.Recipe.Qualification); err != nil {
+		return result, err
+	}
+	if err = attachInputCellCustody(&result.Document, raw); err != nil {
 		return result, err
 	}
 	if err = validateInputRecordReviews(result.Document); err != nil {
@@ -298,6 +303,8 @@ func (s *Server) handleInputPreparations(w http.ResponseWriter, r *http.Request)
 		}
 		// A fresh check of the exact candidate precedes the existing CAS write.
 		// Loading historical recipes never depends on an available Runtime.
+		// Explicit selected candidates check their logical rules only; this does not
+		// admit a profile, source acquisition or public preparation/evaluation.
 		if inputQualificationChanged(saved.Document.Recipe.Qualification, request.Recipe.Qualification) {
 			if err := s.checkInputQualification(r.Context(), request.Recipe.Qualification); err != nil {
 				writeJSONCoded(w, 422, CodeBadRequest, err.Error())

@@ -157,8 +157,23 @@ func TestAssistantPlanActualProducersAndProjection(t *testing.T) {
 			if bytes.Contains(saved.Content, []byte(`"interaction":"work"`)) {
 				t.Fatal("projection started work")
 			}
+			lookups := map[string]json.RawMessage{}
+			for _, ref := range plans[len(plans)-1].References {
+				response := assistantPlanReferenceCall(s, token, plans[len(plans)-1], ref.ID, saved.ChatRevisions["chat-one"])
+				if response.Code != 200 {
+					t.Fatal("actual projected reference lookup", response.Code, response.Body.String())
+				}
+				var live chatPlanReference
+				assistantRunMust(t, json.Unmarshal(response.Body.Bytes(), &live))
+				if live != ref || live.Revision != "" || live.ID == "one.json" || live.ID == "prep_00000000000000000000000000000001" {
+					t.Fatal("actual current reference output differs", live, ref)
+				}
+				lookups[ref.ID] = append([]byte(nil), response.Body.Bytes()...)
+			}
 			if dir := os.Getenv("DESK_PLAN_READER_OUTPUTS"); dir != "" {
 				assistantRunMust(t, os.WriteFile(filepath.Join(dir, engine+".json"), saved.Content, 0600))
+				assistantRunMust(t, os.WriteFile(filepath.Join(dir, engine+"-reply.json"), assistantChatJSON(saved), 0600))
+				assistantRunMust(t, os.WriteFile(filepath.Join(dir, engine+"-references.json"), assistantChatJSON(lookups), 0600))
 			}
 		})
 	}
@@ -300,7 +315,7 @@ func TestAssistantPlanRecoveryCustodyMembers(t *testing.T) {
 			t.Fatal("missing Plan member accepted", member)
 		}
 	}
-	for _, member := range []string{"kind", "id", "revision"} {
+	for _, member := range []string{"kind", "id", "digest"} {
 		planFields, _ := assistantTestObject(assistantChatJSON(r.DomainOutputs[0].Plan))
 		refs, _ := assistantChatArray(planFields["references"])
 		ref, _ := assistantTestObject(refs[0])
@@ -311,7 +326,7 @@ func TestAssistantPlanRecoveryCustodyMembers(t *testing.T) {
 			t.Fatal("missing reference member accepted", member)
 		}
 	}
-	for _, member := range []string{"id", "revision", "createdAt"} {
+	for _, member := range []string{"id", "revision", "createdAt", "bindings"} {
 		changed := assistantVariantClone(t, r)
 		for i := range changed.Operations {
 			if changed.Operations[i].Name == assistantPlanTool {
@@ -326,23 +341,39 @@ func TestAssistantPlanRecoveryCustodyMembers(t *testing.T) {
 			t.Fatal("missing Plan intent member accepted", member)
 		}
 	}
-	for _, change := range []func(*assistantRunRecord){func(r *assistantRunRecord) { r.DomainOutputs = nil }, func(r *assistantRunRecord) { r.DomainOutputs[0].Kind = "graph" }, func(r *assistantRunRecord) { r.DomainOutputs[0].Plan.References[0].Revision = strings.Repeat("f", 64) }, func(r *assistantRunRecord) { r.DomainOutputs[0].Plan.Status = "accepted" }} {
+	for _, member := range []string{"id", "kind", "locator", "locator.kind", "locator.id"} {
+		changed := assistantVariantClone(t, r)
+		for i := range changed.Operations {
+			if changed.Operations[i].Name != assistantPlanTool {
+				continue
+			}
+			fields, _ := assistantTestObject(changed.Operations[i].Intent)
+			meta, _ := assistantTestObject(fields["plan"])
+			bindings, _ := assistantChatArray(meta["bindings"])
+			binding, _ := assistantTestObject(bindings[0])
+			if strings.HasPrefix(member, "locator.") {
+				locator, _ := assistantTestObject(binding["locator"])
+				delete(locator, strings.TrimPrefix(member, "locator."))
+				binding["locator"] = assistantChatEncodeObject(locator)
+			} else {
+				delete(binding, member)
+			}
+			bindings[0] = assistantChatEncodeObject(binding)
+			meta["bindings"] = assistantChatEncodeArray(bindings)
+			fields["plan"] = assistantChatEncodeObject(meta)
+			changed.Operations[i].Intent = assistantChatEncodeObject(fields)
+		}
+		if assistantRecipeImport(t, e, changed) == nil {
+			t.Fatal("missing Plan binding member accepted", member)
+		}
+	}
+	for _, change := range []func(*assistantRunRecord){func(r *assistantRunRecord) { r.DomainOutputs = nil }, func(r *assistantRunRecord) { r.DomainOutputs[0].Kind = "graph" }, func(r *assistantRunRecord) { r.DomainOutputs[0].Plan.References[0].Digest = strings.Repeat("f", 64) }, func(r *assistantRunRecord) { r.DomainOutputs[0].Plan.Status = "accepted" }} {
 		changed := assistantVariantClone(t, r)
 		change(&changed)
-		// Revisions remain structurally valid custody, but current-owner checks
-		// must refuse forged exact revisions at projection/acceptance.
 		if reflect.DeepEqual(changed.DomainOutputs, r.DomainOutputs) {
 			t.Fatal("fixture mutation did not apply")
 		}
-		if len(changed.DomainOutputs) > 0 && changed.DomainOutputs[0].Plan != nil && changed.DomainOutputs[0].Plan.References[0].Revision == strings.Repeat("f", 64) {
-			view, err := s.assistantPlanView(t.Context(), []assistantPlanReference{{"dialect", r.DomainOutputs[0].Plan.References[1].ID}})
-			assistantRunMust(t, err)
-			err = s.checkAssistantPlanProjection(e.source.Original, changed, view)
-			view.Close()
-			if err == nil {
-				t.Fatal("forged current reference accepted")
-			}
-		} else if assistantRecipeImport(t, e, changed) == nil {
+		if assistantRecipeImport(t, e, changed) == nil {
 			t.Fatal("changed Plan custody accepted")
 		}
 	}
@@ -356,12 +387,30 @@ func TestAssistantPlanSharedVectors(t *testing.T) {
 	raw, err := os.ReadFile("testdata/assistant-plan-v1.json")
 	assistantRunMust(t, err)
 	var vectors struct {
-		Plans, Accepted, Started []chatPlan
-		Arguments                json.RawMessage
+		Plans, Accepted, Started, Mixed []chatPlan
+		InvalidReferences               []string
+		Arguments                       json.RawMessage
 	}
 	assistantRunMust(t, json.Unmarshal(raw, &vectors))
-	for _, plans := range [][]chatPlan{vectors.Plans, vectors.Accepted, vectors.Started} {
+	for _, plans := range [][]chatPlan{vectors.Plans, vectors.Accepted, vectors.Started, vectors.Mixed} {
 		assistantRunMust(t, validateChatPlan(assistantChatJSON(map[string]any{"interaction": "plan", "plans": plans})))
+	}
+	for _, ref := range vectors.InvalidReferences {
+		var parsed chatPlanReference
+		if json.Unmarshal([]byte(ref), &parsed) == nil {
+			t.Fatal("malformed reference accepted", ref)
+		}
+	}
+	for _, n := range []int{256, 257} {
+		ref := chatPlanReference{Kind: "artifact", ID: strings.Repeat("x", n), Digest: strings.Repeat("a", 64)}
+		if validChatPlanReference(ref) != (n == 256) {
+			t.Fatal("current reference ID bound", n)
+		}
+	}
+	duplicate := vectors.Mixed[0]
+	duplicate.References = append(append([]chatPlanReference{}, duplicate.References...), duplicate.References[2])
+	if validateChatPlan(assistantChatJSON(map[string]any{"plans": []chatPlan{duplicate}})) == nil {
+		t.Fatal("duplicate current handle accepted")
 	}
 	if _, err := readAssistantPlanArguments(vectors.Arguments); err != nil {
 		t.Fatal(err)

@@ -252,22 +252,25 @@ func assistantSearchError(err error, step assistantSearchStep) runcontext.ToolRe
 	structured["searchFailure"] = code
 	return assistantSearchReply(text, structured, true)
 }
-func (e *assistantRunExecution) assistantSearchTools() (*assistantHostRegistry, error) {
+func assistantSearchDeclaration() runcontext.HostTool {
 	schema := json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","maxLength":2000,"description":"A concise public search query. Do not include private attachments or secrets."}},"required":["query"],"additionalProperties":false}`)
-	tool := runcontext.HostTool{Name: assistantSearchTool, Effect: "read", Delegation: "research", InputSchema: schema, Description: "Search public web sources using the configured search connection. Results are leads, never page evidence. Respect the recorded research choice. At most three searches per current user turn. Do not repeat unknown or interrupted operations."}
+	return runcontext.HostTool{Name: assistantSearchTool, Effect: "read", Delegation: "research", InputSchema: schema, Description: "Search public web sources using the configured search connection. Results are leads, never page evidence. Respect the recorded research choice. At most three searches per current user turn. Do not repeat unknown or interrupted operations."}
+}
+func (e *assistantRunExecution) assistantSearchTools() (*assistantHostRegistry, error) {
+	tool := assistantSearchDeclaration()
 	// Only an already-consented current request reads local connection metadata
 	// while preparing presentation. Ask/provided never acquire a source.
 	_, mode, _, preferenceErr := e.service.server.assistantSearchPreference(e.source)
 	choice, choiceErr := assistantSearchChoice(e.source, mode)
 	if preferenceErr == nil && choiceErr == nil && choice == "research" {
-		if configured, err := e.service.server.assistantSearchConfiguration(e.ctx, e.source); err == nil {
+		if configured, err := e.service.server.assistantSearchConfigurationCurrent(e.ctx, e.source, false); err == nil {
 			tool.Presentation = &contract.ToolOfferHostToolPresentation{Provider: configured.Provider}
 		}
 	}
 	tool.Execute = func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
 		query, err := readAssistantSearchQuery(raw)
 		if err != nil {
-			return assistantHostFailure(err), nil
+			return assistantExternalInputFailure(ctx, assistantSearchTool, err)
 		}
 		return e.invokeObservedHost(ctx, assistantSearchTool, raw, func(ctx context.Context, _ bool) (assistantHostObservation, error) {
 			return e.executeAssistantSearch(ctx, query)

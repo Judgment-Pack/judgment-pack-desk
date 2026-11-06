@@ -65,6 +65,16 @@ func TestAssistantDiagnosticActualNativeCheckpoint(t *testing.T) {
 	}
 	view := assistantProtocolView(t, assistantDiagnosticCall(t, s, token, "POST", "/api/assistant-runs", start), 201)
 	complete := assistantProtocolWait(t, s, token, view.ID, "complete")
+	var canonical assistantRunRecord
+	for _, record := range assistantAuthoringLedger(t, s).Runs {
+		if record.ID == view.ID {
+			canonical = record
+		}
+	}
+	if !assistantCanonicalActive(canonical) || canonical.Checkpoint == nil || canonical.Checkpoint.Durable == nil || len(canonical.Canonical.Events) == 0 || len(canonical.Canonical.Commits) < 2 {
+		t.Fatal("actual diagnostic omitted canonical head, log or provider observations")
+	}
+	assistantRunMust(t, validateAssistantCanonicalProjection(canonical))
 	result := policyCall(s, token, "GET", "/api/assistant-runs/"+view.ID+"/connection-diagnostic", nil)
 	if result.Code != 200 || strings.TrimSpace(result.Body.String()) != `{"succeeded":true}` {
 		t.Fatalf("diagnostic result %d %s checkpoint=%+v events=%+v", result.Code, result.Body.String(), complete.Checkpoint, complete.Events)
@@ -278,7 +288,7 @@ func TestAssistantDiagnosticSharedOwnerVector(t *testing.T) {
 func TestAssistantDiagnosticActualSchemaRefusals(t *testing.T) {
 	for _, mode := range []string{"denied", "malformed", "oversized"} {
 		t.Run(mode, func(t *testing.T) {
-			s, token, _, _ := assistantDiagnosticFixture(t, "tool")
+			s, token, _, trace := assistantDiagnosticFixture(t, "tool")
 			result := `{'isError':True,'content':[{'type':'text','text':'denied'}]}`
 			if mode == "malformed" {
 				result = `{}`
@@ -292,21 +302,43 @@ func TestAssistantDiagnosticActualSchemaRefusals(t *testing.T) {
 			run := assistantProtocolView(t, assistantDiagnosticCall(t, s, token, "POST", "/api/assistant-runs", start), 201)
 			wait := 15 * time.Second
 			if mode == "oversized" {
-				// This actual response is retained in both the Runtime receipt and
-				// canonical checkpoint. Strict ledger validation repeatedly decodes
-				// that MiB payload; allow bounded processing time on CI runners.
+				// The exact MiB Runtime receipt remains retained even though the
+				// model observation is refused. Strict ledger validation decodes
+				// that receipt; allow bounded processing time on CI runners.
 				wait = 45 * time.Second
 			}
 			done := assistantProtocolWaitWithin(t, s, token, run.ID, "stopped", wait)
 			if mode == "oversized" {
-				receipts := 0
+				receipts, schemaCalls, generations := 0, 0, 0
+				for _, row := range assistantCodexLog(t, trace) {
+					var kind string
+					assistantRunMust(t, json.Unmarshal(row["type"], &kind))
+					if kind == "generation" {
+						generations++
+					}
+				}
 				for _, op := range done.Operations {
+					if op.Kind == "runtime" && op.Name == "tools/call" {
+						schemaCalls++
+					}
 					if op.Kind == "runtime" && op.Name == "tools/call" && op.State == "completed" && len(op.Result) > 1<<20 {
 						receipts++
 					}
 				}
-				if receipts != 1 {
-					t.Fatalf("oversized schema did not retain exactly one completed oversized Runtime receipt: %d", receipts)
+				if receipts != 1 || schemaCalls != 1 || generations != 1 {
+					t.Fatalf("oversized schema receipts=%d schema_calls=%d generations=%d", receipts, schemaCalls, generations)
+				}
+				typedRefusal := false
+				for _, event := range done.Events {
+					if event.Event.Error != nil && event.Event.Error.Failure != nil && event.Event.Error.Failure.Code == "invalid-response" {
+						typedRefusal = true
+					}
+					if event.Event.ToolResult != nil && !event.Event.ToolResult.IsError {
+						t.Fatal("oversized schema became a successful model observation")
+					}
+				}
+				if !typedRefusal {
+					t.Fatal("oversized schema omitted persisted typed refusal")
 				}
 			}
 			resultView := policyCall(s, token, "GET", "/api/assistant-runs/"+run.ID+"/connection-diagnostic", nil)
@@ -507,5 +539,75 @@ func TestAssistantDiagnosticRuntimeIdentityRefusesMissingMetadata(t *testing.T) 
 		if _, err := assistantDiagnosticRuntimeIdentity(missing); err == nil {
 			t.Fatal("Runtime identity silently fell back without required metadata")
 		}
+	}
+}
+
+// This Runtime blocks its first initialize frame before any provider generation.
+// The host must already hold the sole canonical writer when cancellation arrives.
+func TestAssistantDiagnosticBootstrapCancellation(t *testing.T) {
+	for _, mode := range []string{"stop", "session-end"} {
+		t.Run(mode, func(t *testing.T) {
+			s, token, _, trace := assistantDiagnosticFixture(t, "tool")
+			peer := `#!/usr/bin/env python3
+import json,sys,time
+for line in sys.stdin:
+ request=json.loads(line)
+ with open('bootstrap-frame.json','w') as f: json.dump(request,f)
+ while True: time.sleep(0.1)
+`
+			assistantRunMust(t, os.WriteFile(s.cfg.JpackBin, []byte(peer), 0700))
+			start := assistantDiagnosticCapture(t, s, token, "bootstrap-"+mode)
+			run := assistantProtocolView(t, assistantDiagnosticCall(t, s, token, "POST", "/api/assistant-runs", start), 201)
+			assistantCodexWait(t, filepath.Join(s.cfg.ProjectDir, "bootstrap-frame.json"))
+			host := s.assistantRunService()
+			host.mu.Lock()
+			e := host.active[run.ID]
+			host.mu.Unlock()
+			if e == nil {
+				t.Fatal("bootstrap was not active")
+			}
+			e.canonicalMu.Lock()
+			original := e.canonicalBinding
+			e.canonicalMu.Unlock()
+			if original == nil {
+				t.Fatal("Runtime preceded original binding")
+			}
+			before, err := e.writer.lease.store.Read(t.Context(), e.record.Binding, run.ID)
+			assistantRunMust(t, err)
+			if len(before.Operations) == 0 || before.Operations[len(before.Operations)-1].State != "dispatched" {
+				t.Fatal("Runtime bootstrap claim missing")
+			}
+			if mode == "stop" {
+				stopped := assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs/"+run.ID+"/actions", assistantRunAction{ID: "bootstrap-stop", Kind: "cancel", Revision: before.Revision}), 200)
+				if stopped.State != "stopped" {
+					t.Fatal("bootstrap Stop not acknowledged")
+				}
+			} else {
+				s.sessions.revoke(token)
+			}
+			select {
+			case <-e.done:
+			case <-time.After(8 * time.Second):
+				t.Fatal("bootstrap cancellation did not settle")
+			}
+			after, err := e.writer.lease.store.Read(t.Context(), e.record.Binding, run.ID)
+			assistantRunMust(t, err)
+			if after.State != "stopped" || after.Checkpoint.Status != "stopped" || e.canonicalBinding != original {
+				t.Fatal("bootstrap lost original stopped acknowledgement")
+			}
+			assistantRunMust(t, validateAssistantCanonicalProjection(after))
+			if len(after.Operations) != len(before.Operations) || after.Operations[len(after.Operations)-1].State != "uncertain" {
+				t.Fatal("bootstrap replayed or lost physical uncertainty")
+			}
+			if len(assistantCodexLog(t, trace)) != 0 {
+				t.Fatal("bootstrap generated model work")
+			}
+			if mode == "stop" {
+				again := assistantProtocolView(t, assistantDiagnosticCall(t, s, token, "POST", "/api/assistant-runs", start), 200)
+				if again.ID != run.ID || again.State != "stopped" {
+					t.Fatal("bootstrap replayed admission")
+				}
+			}
+		})
 	}
 }

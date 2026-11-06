@@ -45,7 +45,7 @@ func readAssistantPlanArguments(raw json.RawMessage) (assistantPlanArguments, er
 	}
 	for _, ref := range a.References {
 		if !validAssistantPlanReference(ref) {
-			return a, failure.ToolInput("Name a saved project file or Dialect using its exact reference ID.")
+			return a, failure.ToolInput("Name a saved project file path or preparation ID as a locator for host resolution.")
 		}
 	}
 	return a, nil
@@ -70,7 +70,7 @@ func (e *assistantRunExecution) assistantPlanTools() []runcontext.HostTool {
 	if e.record.Binding.Phase != "plan" {
 		return nil
 	}
-	return []runcontext.HostTool{{Name: assistantPlanTool, Effect: "plan", InputSchema: assistantPlanSchema(), Description: "Save a reviewable Plan revision in this chat. Include ordered concrete steps and unresolved questions. Name additional saved project files or Dialect IDs; Desk pins current revisions and includes the linked object. The person must choose Start work; this grants no work, approval or compute allowance.", Execute: func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
+	return []runcontext.HostTool{{Name: assistantPlanTool, Taxonomy: &runcontext.ToolTaxonomy{Operation: "propose", Effect: "propose"}, Effect: "plan", InputSchema: assistantPlanSchema(), Description: "Save a reviewable Plan revision in this chat. Include ordered concrete steps and unresolved questions. References are Desk locator inputs: kind=file with an exact project file path, or kind=dialect with a preparation ID. Desk resolves these and the linked object into opaque current artifact/dialect references with SHA-256 digests in the saved Plan. The person must choose Start work; this grants no work, approval or compute allowance.", Execute: func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
 		a, err := readAssistantPlanArguments(raw)
 		if err != nil {
 			return assistantHostFailure(err), nil

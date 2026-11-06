@@ -11,7 +11,7 @@ mkdir -m 700 "$tmp/outputs"
 (
  cd "$root"
  export DESK_RUN_CLIENT_OUTPUTS="$tmp/outputs"
- command=(go test ./internal/desk -run '^TestAssistantRunContinuation' -count=1 -v)
+ command=(go test ./internal/desk -run '^TestAssistant(RunContinuation|AnswerSuccessor)' -count=1 -v)
  if [ -n "${JPDEV_WRAP:-}" ]; then command=("$JPDEV_WRAP" go -- "${command[@]}"); fi
  "${command[@]}"
 ) | tee "$tmp/producers.log"
@@ -23,6 +23,7 @@ node_command=(bash -c '
  set -euo pipefail
  "$1/web/node_modules/.bin/esbuild" "$1/scripts/assistant-run-continuation-reference.mjs" --bundle --platform=node --format=esm --outfile="$2/reference.mjs"
  node "$2/reference.mjs" "$2/outputs"
+ DESK_RUN_CLIENT_OUTPUTS="$2/outputs" npm --prefix "$1/web" test -- src/assistant/serverRuns/answerSuccessor.test.ts src/assistant/serverRuns/continuation.test.ts src/assistant/serverRuns/controller.test.ts
  node "$1/scripts/assistant-run-client-mutations.mjs"
 ' assistant-run-continuation "$root" "$tmp")
 if [ -n "${JPDEV_WRAP:-}" ]; then node_command=(flock "$JPDEV_LOCK" "$JPDEV_WRAP" node -- "${node_command[@]}"); fi

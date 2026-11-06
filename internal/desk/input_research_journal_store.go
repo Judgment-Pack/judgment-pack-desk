@@ -30,7 +30,11 @@ func (s *Server) researchJournal(root *os.Root, id string) researchJournal {
 	if s.researchJournals != nil {
 		return s.researchJournals.Run(id)
 	}
-	return fileResearchJournal{root: root, id: id}
+	return runtimeFileResearchJournal{
+		fileResearchJournal: fileResearchJournal{root: root, id: id},
+		pressure:            s.runtimeStoragePressureReporter(),
+		beforeStage:         s.testBeforeStoragePersistence,
+	}
 }
 
 // Provider execution is independent of journal storage. Proof manifests and

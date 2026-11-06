@@ -40,6 +40,16 @@ type assistantHostRegistry struct{ tools []runcontext.HostTool }
 func newAssistantHostRegistry(tools []runcontext.HostTool) (*assistantHostRegistry, error) {
 	seen := map[string]bool{}
 	for _, t := range tools {
+		if t.Source != nil {
+			if t.Name == "" || seen[t.Name] || t.Execute == nil || !json.Valid(t.InputSchema) || !assistantExternalSourceDeclaration(t) {
+				return nil, errAssistantRunInvalid
+			}
+			seen[t.Name] = true
+			continue
+		}
+		if read, known := assistantCanonicalHostRead(t.Name); known && read != runcontext.ReadingTool(&t) {
+			return nil, errAssistantRunInvalid
+		}
 		if t.Name == assistantSavedPackTool && (t.Effect != "proposal" || t.Delegation != "" || t.Source != nil || t.SourceTool != "" || t.EffectClass != "" || t.Approve != nil || t.Approval != "" || t.ContextPolicy != nil) {
 			return nil, errAssistantRunInvalid
 		}

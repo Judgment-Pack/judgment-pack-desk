@@ -40,6 +40,13 @@ func assistantDialectRecipeFailure(err error) runcontext.ToolResult {
 	return assistantHostFailure(err)
 }
 func (e *assistantRunExecution) assistantDialectRecipeTools() (*assistantHostRegistry, error) {
+	// Owner declarations are closed: an unlisted registration has no taxonomy.
+	taxonomies := map[string]*runcontext.ToolTaxonomy{
+		"get_dialect_recipe_instructions": {Operation: "read", Effect: "read"},
+		"list_dialects":                   {Operation: "discover", Effect: "read"},
+		"read_dialect_recipe":             {Operation: "read", Effect: "read"},
+		"propose_dialect_recipe":          {Operation: "propose", Effect: "propose"},
+	}
 	descriptions := map[string]string{
 		"get_dialect_recipe_instructions": "Read the Desk-owned portable Dialect recipe contract and field types. Does not call Runtime or begin research.",
 		"list_dialects":                   "List this project's saved Dialects names and record counts, without record data or starting work.",
@@ -50,7 +57,7 @@ func (e *assistantRunExecution) assistantDialectRecipeTools() (*assistantHostReg
 	tools := []runcontext.HostTool{}
 	for _, name := range assistantDialectRecipeNames {
 		name := name
-		tool := runcontext.HostTool{Name: name, Description: descriptions[name], InputSchema: schemas[name], Effect: "read", Delegation: "read"}
+		tool := runcontext.HostTool{Name: name, Taxonomy: taxonomies[name], Description: descriptions[name], InputSchema: schemas[name], Effect: "read", Delegation: "read"}
 		if name == "get_dialect_recipe_instructions" {
 			tool.ContextPolicy = &runcontext.ToolContextPolicy{Immutable: true, Reference: true}
 		}

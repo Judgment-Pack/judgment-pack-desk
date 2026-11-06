@@ -56,9 +56,18 @@ const COMPACT: ReadonlySet<AssistantEvent['type']> = new Set([
  */
 export function describeEvent(event: AssistantEvent, msg: typeof uiMessage = uiMessage): string {
   switch (event.type) {
+    case 'plan_revised': return msg('Plan updated')
+    case 'plan_departed': return msg('Plan change proposed')
+    case 'plan_drift_decided': return msg('Plan decision recorded')
+    case 'plan_completion_refused': return msg('Task completion refused')
     case 'steered': return msg('New guidance delivered')
     case 'compacted': return msg('Earlier context compacted')
     case 'policy_resolved': return msg('Run settings resolved')
+    case 'repeat_detected':
+      return event.stopped ? msg('Repeated tool use stopped')
+        : event.reminder ? msg('Repeated tool use reminder') : msg('Repeated tool use detected')
+    case 'route_decided': return msg('Turn route selected')
+    case 'route_widened': return msg('Turn route widened')
     case 'critic_decided': return criticDecisionLine(event, msg)
     case 'memory_proposed': return msg('Memory proposed for review')
     case 'memory_recalled': return msg('Project memory recalled')
@@ -72,7 +81,9 @@ export function describeEvent(event: AssistantEvent, msg: typeof uiMessage = uiM
     case 'execution_checkpoint': return msg('Task progress saved')
     case 'budget_paused': return msg('Paused · Request limit reached')
     case 'approval_requested':
-      return msg('Waiting for your approval: {{tool}}', {tool:event.tool})
+      return event.purpose === 'plan-drift'
+        ? msg('Waiting for your approval of the plan change')
+        : msg('Waiting for your approval: {{tool}}', {tool:event.tool})
     case 'skill_loaded':
       return msg('Loaded skill {{name}} · {{bytes}} bytes', {name:event.skill.name,bytes:event.bytes})
     case 'skill_unloaded':

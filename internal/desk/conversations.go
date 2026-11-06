@@ -42,6 +42,9 @@ func validateConversations(data []byte) error {
 		return errors.New("chat history must have version 1 and at most 256 chats")
 	}
 	for _, chat := range doc.Chats {
+		if err := validateConversationRunReports(chat); err != nil {
+			return err
+		}
 		if err := validateChatPlan(chat); err != nil {
 			return err
 		}
@@ -180,6 +183,30 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	if err := s.ensureDefaultHistoryEnrollment(r.Context()); err != nil {
+		storageFailure(w, err)
+		return
+	}
+	pressure := s.runtimeStoragePressureReporter()
+	var persistenceErr error
+	var persistenceUncertain bool
+	// Registered before writer/domain lock defers: reporting uses memory only and
+	// never acquires enrollment/owner mutexes while a writer lock is held.
+	defer func() { pressure.report(persistenceErr, persistenceUncertain) }()
+	var removedContextOwners []string
+	var contextDeletionCommitted bool
+	var contextBinding assistantRunBinding
+	var contextBindingValid bool
+	if r.URL.Path == "/api/conversations" && r.Method == http.MethodPut {
+		contextBinding, contextBindingValid = s.contextDeletionBinding(r)
+	}
+	// Registered before workspace lock defers: retirement never takes the
+	// assistant service lock while holding the private-data/write transaction.
+	defer func() {
+		if contextDeletionCommitted && contextBindingValid && len(removedContextOwners) > 0 {
+			s.retireSavedContextOwners(contextBinding, removedContextOwners)
+		}
+	}()
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	lock, err := s.privateDataLockContext(r.Context(), true)
@@ -214,8 +241,10 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	} else if drafts {
 		recordName = draftPackName(recordName)
 	}
+	var recordReadErr error
 	read := func() (conversationReply, error) {
 		reply, err := s.readWorkspaceRecord(root, recordName, drafts)
+		recordReadErr = err
 		if err == nil && private {
 			err = s.authorizePrivateWorkspace(r)
 		}
@@ -362,26 +391,38 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 			return
 		}
 	}
+	if hook := s.testBeforeStoragePersistence; hook != nil {
+		if err = hook(storagePersistenceTarget{operation: storagePersistenceWorkspace, name: recordName}); err != nil {
+			persistenceErr = err
+			fail(err)
+			return
+		}
+	}
 	stage, name, err := newDataStage(root)
 	if err != nil {
+		persistenceErr = err
 		fail(err)
 		return
 	}
 	defer root.Remove(name)
 	defer stage.Close()
 	if _, err = stage.Write(data); err != nil {
+		persistenceErr = err
 		fail(err)
 		return
 	}
 	if err = stage.Chmod(custodyFileMode); err != nil {
+		persistenceErr = err
 		fail(err)
 		return
 	}
 	if err = stage.Sync(); err != nil {
+		persistenceErr = err
 		fail(err)
 		return
 	}
 	if err = stage.Close(); err != nil {
+		persistenceErr = err
 		fail(err)
 		return
 	}
@@ -407,6 +448,7 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 			fail(e)
 			return
 		}
+		removedContextOwners = removedSavedContextOwners(previous.Content, data)
 		if planView != nil {
 			defer planView.Close()
 		}
@@ -415,20 +457,38 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		}
 	}
 	if err = root.Rename(name, recordName); err != nil {
+		persistenceErr = err
 		fail(err)
 		return
 	}
-	if dir, err := root.Open("."); err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
+	contextDeletionCommitted = true
+	if dir, dirErr := root.Open("."); dirErr == nil {
+		syncErr := dir.Sync()
+		closeErr := dir.Close()
+		// Preserve the existing returned-error/success behavior of these
+		// best-effort calls, while retaining a volatile durability warning.
+		if syncErr != nil {
+			persistenceErr, persistenceUncertain = syncErr, true
+		} else if closeErr != nil {
+			persistenceErr, persistenceUncertain = closeErr, true
+		}
+	} else {
+		persistenceErr, persistenceUncertain = dirErr, true
 	}
 	reply, err := read()
 	if err != nil {
+		// Only failed record verification belongs to persistence. Authorization
+		// can still refuse this read and must not manufacture storage pressure.
+		if recordReadErr != nil {
+			persistenceErr, persistenceUncertain = recordReadErr, true
+		}
 		fail(err)
 		return
 	}
 	if reply.SHA256 != digestOf(data) {
-		fail(withCode(CodeStale, fmt.Errorf("history changed after the write; reload before saving again")))
+		persistenceErr = withCode(CodeStale, fmt.Errorf("history changed after the write; reload before saving again"))
+		persistenceUncertain = true
+		fail(persistenceErr)
 		return
 	}
 	writeConversationReply(w, reply)
@@ -531,4 +591,86 @@ func preserveConversationRows(previous, incoming []byte) ([]byte, error) {
 	}
 	newDoc["chats"] = assistantChatEncodeArray(newRows)
 	return assistantChatEncodeObject(newDoc), nil
+}
+
+// retentionConversationReferences is deliberately a closed supported subset.
+// Opaque checkpoints/reports/extensions protect the entire joined selection;
+// known attachment references are still recorded for truthful explanations.
+func retentionConversationReferences(name string, raw []byte) storageRetentionSource {
+	out := storageRetentionUnknown(name, "conversations", raw, "opaque-chat-fields")
+	if validateConversations(raw) != nil || !uniqueJSON(raw) {
+		out.Reasons = []string{"invalid-chat-source"}
+		return out
+	}
+	var doc struct {
+		Version int               `json:"version"`
+		Chats   []json.RawMessage `json:"chats"`
+	}
+	if json.Unmarshal(raw, &doc) != nil {
+		return out
+	}
+	complete := storageRetentionMembers(raw, "version", "chats")
+	namespace := strings.TrimSuffix(strings.TrimPrefix(name, "conversations-"), ".json")
+	for _, row := range doc.Chats {
+		var chat struct {
+			ID          string            `json:"id"`
+			Title       string            `json:"title"`
+			Name        string            `json:"name"`
+			CreatedAt   string            `json:"createdAt"`
+			UpdatedAt   string            `json:"updatedAt"`
+			Documents   []json.RawMessage `json:"documents"`
+			Attachments []json.RawMessage `json:"attachments"`
+			Messages    []json.RawMessage `json:"messages"`
+		}
+		if json.Unmarshal(row, &chat) != nil {
+			complete = false
+			continue
+		}
+		if !storageRetentionMembers(row, "id", "title", "name", "createdAt", "updatedAt", "documents", "attachments", "messages") || len(chat.Messages) != 0 {
+			complete = false
+		}
+		for _, key := range []string{"id", "title", "name", "createdAt", "updatedAt", "documents", "attachments", "messages"} {
+			if storageRetentionNullMember(row, key) {
+				complete = false
+			}
+		}
+		for _, original := range append(chat.Documents, chat.Attachments...) {
+			ref, supported := retentionDocumentReference(original)
+			if !supported {
+				complete = false
+			}
+			if assistantDocumentReferenceValid(ref) {
+				out.add(storageRetentionReference{Kind: "attachment", ID: namespace + ":" + ref.ID, Revision: ref.Digest})
+			}
+		}
+	}
+	out.Complete = complete && len(out.Reasons) == 1
+	if out.Complete {
+		out.Reasons = []string{}
+	}
+	return out
+}
+
+// Original RawMessage members are checked before projecting a reference. A
+// future nested value, alias or null cannot disappear into a negative proof.
+func retentionDocumentReference(raw json.RawMessage) (ref assistantDocumentReference, complete bool) {
+	if json.Unmarshal(raw, &ref) != nil {
+		return ref, false
+	}
+	complete = uniqueJSON(raw) && storageRetentionMembers(raw, "id", "digest", "pages", "allowPartial", "needsReview") && assistantDocumentReferenceValid(ref)
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return ref, false
+	}
+	for _, key := range []string{"id", "digest", "pages", "allowPartial"} {
+		if _, ok := fields[key]; !ok {
+			complete = false
+		}
+	}
+	for _, key := range []string{"id", "digest", "pages", "allowPartial", "needsReview"} {
+		if storageRetentionNullMember(raw, key) {
+			complete = false
+		}
+	}
+	return ref, complete
 }

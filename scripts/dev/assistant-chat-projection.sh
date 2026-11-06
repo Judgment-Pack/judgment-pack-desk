@@ -303,6 +303,10 @@ done
  "$saved_pack_outputs/reference.json" | tee "$tmp/saved-pack-reader.log"
 grep -Fxq 'Saved-pack proposal: actual Go correction/basis/check/reload and explicit model-free recheck passed shared browser readers and client.' "$tmp/saved-pack-reader.log"
 
+# Memory review controls must consume all four actual API/native Work/Plan outputs.
+bash "$root/scripts/dev/assistant-memory-projection.sh" produce "$tmp/memory"
+bash "$root/scripts/dev/assistant-memory-projection.sh" consume "$tmp/memory"
+
 # Mount production shared domain controls over these same producer documents.
 # Required mode fails if observations are absent; an ordinary standalone web
 # suite explicitly skips this external-producer acceptance file when unconfigured.

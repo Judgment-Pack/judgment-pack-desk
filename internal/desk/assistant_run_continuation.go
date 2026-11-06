@@ -23,18 +23,19 @@ type assistantRunAnswer struct {
 	At             string   `json:"at"`
 }
 type assistantRunContinuationReceipt struct {
-	ID     string                    `json:"id"`
-	Digest string                    `json:"digest"`
-	Kind   string                    `json:"kind"`
-	Answer *assistantRunAnswer       `json:"answer,omitempty"`
-	Grant  *contract.CheckpointGrant `json:"grant,omitempty"`
+	ID             string                    `json:"id"`
+	Digest         string                    `json:"digest"`
+	Kind           string                    `json:"kind"`
+	Answer         *assistantRunAnswer       `json:"answer,omitempty"`
+	Grant          *contract.CheckpointGrant `json:"grant,omitempty"`
+	SuccessorRunID string                    `json:"successorRunId,omitempty"`
 }
 
 func assistantRunContinuations(run assistantRunRecord) []assistantRunContinuationReceipt {
 	var out []assistantRunContinuationReceipt
 	for _, a := range run.Actions {
 		if a.Kind == "answer" || a.Kind == "extend-budget" {
-			out = append(out, assistantRunContinuationReceipt{ID: a.ID, Digest: a.Digest, Kind: a.Kind, Answer: a.Answer, Grant: a.Grant})
+			out = append(out, assistantRunContinuationReceipt{ID: a.ID, Digest: a.Digest, Kind: a.Kind, Answer: a.Answer, Grant: a.Grant, SuccessorRunID: a.SuccessorRunID})
 		}
 	}
 	return out
@@ -43,7 +44,13 @@ func validateAssistantRunActionShape(a assistantRunAction) error {
 	if a.Kind != "answer" && (a.QuestionID != "" || a.QuestionDigest != "" || a.Answer != nil) {
 		return errAssistantRunInvalid
 	}
-	if a.Kind != "approval" && (a.CallID != "" || a.ArgsDigest != "" || a.Approved != nil || a.Note != nil) {
+	if a.Kind != "plan-decision" && (a.PlanRevision != "" || a.CandidateRevision != "") {
+		return errAssistantRunInvalid
+	}
+	if a.Kind == "plan-decision" && (!validAssistantRunPlanDecisionReference(&assistantPlanDecisionReference{a.CallID, a.PlanRevision, a.CandidateRevision}) || a.Approved == nil || a.ArgsDigest != "" || a.ShownDigest != nil || a.Note != nil && runcontext.U16Length(*a.Note) > 2000) {
+		return errAssistantRunInvalid
+	}
+	if a.Kind != "approval" && a.Kind != "plan-decision" && (a.CallID != "" || a.ArgsDigest != "" || a.ShownDigest != nil || a.Approved != nil || a.Note != nil) {
 		return errAssistantRunInvalid
 	}
 	if a.Kind == "answer" && (!assistantChatID.MatchString(a.QuestionID) || !assistantRunDigest(a.QuestionDigest) || a.Answer == nil || a.Answer.Selected == nil || a.Answer.Text == nil) {
@@ -135,7 +142,7 @@ func validateAssistantRunAnswer(run assistantRunRecord, a assistantRunAnswer) er
 }
 func assistantRunContinuationSafe(run assistantRunRecord) bool {
 	cp := run.Checkpoint
-	if cp == nil || cp.Approval != nil && cp.Approval.State != "answered" || cp.Handoff != nil && cp.Handoff.State != "continued" {
+	if assistantCheckpointHasPendingPlan(cp) || cp == nil || cp.Approval != nil && cp.Approval.State != "answered" || cp.Handoff != nil && cp.Handoff.State != "continued" {
 		return false
 	}
 	for _, op := range run.Operations {
@@ -154,6 +161,9 @@ func assistantRunContinuationSafe(run assistantRunRecord) bool {
 // Caller holds h.mu; the process lease excludes every other server and the
 // active registry excludes a still-draining invocation of this run.
 func (h *assistantRunService) continueRun(r *http.Request, record assistantRunRecord, a assistantRunAction) (assistantRunRecord, error) {
+	if a.Kind == "answer" {
+		return h.answerSuccessor(r, record, a)
+	}
 	if record.Historical || record.Revision != a.Revision || !assistantRunPaused(record.State) {
 		return record, errAssistantRunConflict
 	}
@@ -164,6 +174,11 @@ func (h *assistantRunService) continueRun(r *http.Request, record assistantRunRe
 		return record, err
 	}
 	defer h.releaseIdle()
+	contextHandle, err := h.continuationContext(record)
+	if err != nil {
+		return record, err
+	}
+	defer contextHandle.Release()
 	writer, err := h.lease.Writer(r.Context(), record.Binding, record.ID)
 	if err != nil {
 		return record, err
@@ -188,7 +203,7 @@ func (h *assistantRunService) continueRun(r *http.Request, record assistantRunRe
 		}
 		source.Binding.ExecutionKey = run.Binding.ExecutionKey
 		source.Binding.Unit = run.Binding.Unit
-		if !assistantRunFreshSourceEqual(source, assistantRunSource{Binding: run.Binding, Original: source.Original, Request: source.Request}) {
+		if !assistantRunSourceMatchesRecord(source, *run) {
 			return false, errAssistantRunScope
 		}
 		receipt := assistantRunActionReceipt{ID: a.ID, Digest: assistantRunActionDigest(a), Kind: a.Kind}
@@ -197,20 +212,6 @@ func (h *assistantRunService) continueRun(r *http.Request, record assistantRunRe
 			return false, err
 		}
 		switch a.Kind {
-		case "answer":
-			if run.State != "awaiting-input" || pending == nil || pending.ID != a.QuestionID || run.Checkpoint.Status != "complete" || run.Checkpoint.Used >= run.Checkpoint.Limit {
-				return false, errAssistantRunConflict
-			}
-			answer := &assistantRunAnswer{QuestionID: a.QuestionID, QuestionDigest: a.QuestionDigest, Selected: append([]string{}, a.Answer.Selected...), Text: *a.Answer.Text, At: time.Now().UTC().Format(time.RFC3339Nano)}
-			if err = validateAssistantRunAnswer(*run, *answer); err != nil {
-				return false, err
-			}
-			cp, err := reopenAssistantRunQuestionCheckpoint(*run)
-			if err != nil {
-				return false, err
-			}
-			run.Checkpoint = cp
-			receipt.Answer = answer
 		case "extend-budget":
 			if run.State != "paused-budget" || pending != nil {
 				return false, errAssistantRunConflict
@@ -224,6 +225,21 @@ func (h *assistantRunService) continueRun(r *http.Request, record assistantRunRe
 		default:
 			return false, errAssistantRunInvalid
 		}
+		if assistantCanonicalActive(*run) {
+			// The explicit person action and its exact new canonical head share
+			// one CAS/replacement. Old head bytes and commit receipts stay intact.
+			raw, err := json.Marshal(run.Checkpoint)
+			if err != nil {
+				return false, err
+			}
+			input, err := freezeAssistantCanonicalCommit(runcontext.RunCommit{RunID: run.Canonical.Head.RunID, ExpectedRevision: run.Canonical.Head.Revision, CommitID: "host-action-" + a.ID, Checkpoint: raw, Events: [][]byte{}})
+			if err != nil {
+				return false, err
+			}
+			if _, err = commitAssistantCanonical(run, input, ""); err != nil {
+				return false, err
+			}
+		}
 		run.Actions = append(run.Actions, receipt)
 		run.State = "admitted"
 		return true, nil
@@ -235,7 +251,9 @@ func (h *assistantRunService) continueRun(r *http.Request, record assistantRunRe
 	if err != nil {
 		return record, err
 	}
+	assistantContextOnSource(&source, contextHandle)
 	if err = h.launch(r, latest, source, writer, nil); err != nil {
+		h.settleContextLocked(record.ID)
 		_ = writer.Stop(context.Background())
 		return record, err
 	}
@@ -245,67 +263,47 @@ func (h *assistantRunService) continueRun(r *http.Request, record assistantRunRe
 
 // History is additive data, with original request/phase/source identity intact.
 func assistantRunAnswerHistory(run assistantRunRecord, chat *assistantChatInput) error {
-	for _, receipt := range run.Actions {
-		if a := receipt.Answer; a != nil {
-			if err := validateAssistantRunAnswer(run, *a); err != nil {
-				return err
-			}
-			q, _ := assistantRunQuestion(run, a.QuestionID)
-			labels := []string{}
-			for _, id := range a.Selected {
-				for _, o := range q.Question.Options {
-					if id == o.ID {
-						labels = append(labels, o.Label)
+	records := []assistantRunRecord{}
+	for _, origin := range run.AnswerHistory {
+		q, a := origin.Question, origin.Answer
+		records = append(records, assistantRunRecord{ID: origin.ParentRunID, Events: []assistantRunEvent{{Event: contract.RunEvent{UserQuestion: &q}}}, Actions: []assistantRunActionReceipt{{Answer: &a}}})
+	}
+	records = append(records, run)
+	for _, history := range records {
+		for _, receipt := range history.Actions {
+			if a := receipt.Answer; a != nil {
+				if err := validateAssistantRunAnswer(history, *a); err != nil {
+					return err
+				}
+				q, _ := assistantRunQuestion(history, a.QuestionID)
+				labels := []string{}
+				for _, id := range a.Selected {
+					for _, o := range q.Question.Options {
+						if id == o.ID {
+							labels = append(labels, o.Label)
+						}
 					}
 				}
+				parentRunID := history.ID
+				raw, err := json.Marshal(struct {
+					ParentRunID string              `json:"parentRunId,omitempty"`
+					Question    contract.Question   `json:"question"`
+					Answer      *assistantRunAnswer `json:"answer"`
+					Labels      []string            `json:"selectedLabels"`
+				}{parentRunID, q.Question, a, labels})
+				if err != nil {
+					return err
+				}
+				value, err := runcontext.ParseJSON(raw)
+				if err != nil {
+					return err
+				}
+				chat.Documents = append(chat.Documents, runcontext.Document{ID: "question-answer-" + digestOf([]byte(history.ID + "\x00" + a.QuestionID))[:32], Kind: "history", Label: "Person's explicit answer to a retained question; user history, no tool approval, policy change or compute grant", Value: value})
+				chat.Transcript += "\n\nPERSON'S RETAINED QUESTION ANSWER (user history; preserve the original task and constraints; no tool approval or compute grant)\n" + string(raw)
 			}
-			raw, err := json.Marshal(struct {
-				Question contract.Question   `json:"question"`
-				Answer   *assistantRunAnswer `json:"answer"`
-				Labels   []string            `json:"selectedLabels"`
-			}{q.Question, a, labels})
-			if err != nil {
-				return err
-			}
-			value, err := runcontext.ParseJSON(raw)
-			if err != nil {
-				return err
-			}
-			chat.Documents = append(chat.Documents, runcontext.Document{ID: "question-answer-" + digestOf([]byte(a.QuestionID))[:32], Kind: "history", Label: "Person's explicit answer to a retained question; user history, no tool approval, policy change or compute grant", Value: value})
-			chat.Transcript += "\n\nPERSON'S RETAINED QUESTION ANSWER (user history; preserve the original task and constraints; no tool approval or compute grant)\n" + string(raw)
 		}
 	}
 	return nil
-}
-
-// Canonical Initialize makes this same complete-to-running transition. Host
-// preflight Runtime calls precede adapter initialization, so acknowledge it in
-// the action transaction first. This changes no allowance or operation receipt.
-func reopenAssistantRunQuestionCheckpoint(run assistantRunRecord) (*contract.Checkpoint, error) {
-	if run.Checkpoint == nil || run.Checkpoint.Status != "complete" || run.Checkpoint.Used >= run.Checkpoint.Limit || !assistantRunContinuationSafe(run) {
-		return nil, errAssistantRunConflict
-	}
-	if _, err := readAssistantRunCheckpoint(*run.Checkpoint, run.Binding); err != nil {
-		return nil, err
-	}
-	cp := *run.Checkpoint
-	cp.Status = "running"
-	if cp.Digest != nil {
-		raw, err := json.Marshal(cp)
-		if err != nil {
-			return nil, err
-		}
-		value, err := runcontext.ParseJSON(raw)
-		if err != nil {
-			return nil, err
-		}
-		digest := runcontext.RecordDigest(value)
-		cp.Digest = &digest
-	}
-	if _, err := readAssistantRunCheckpoint(cp, run.Binding); err != nil {
-		return nil, err
-	}
-	return &cp, nil
 }
 
 // Original wire validation distinguishes an omitted empty answer text from a
@@ -322,7 +320,10 @@ func readAssistantRunContinuation(raw []byte) (assistantRunContinuationReceipt, 
 	allowed := []string{"id", "kind", "digest"}
 	switch receipt.Kind {
 	case "answer":
-		allowed = append(allowed, "answer")
+		allowed = append(allowed, "answer", "successorRunId")
+		if receipt.SuccessorRunID != "" && !validAssistantDeskRunID(receipt.SuccessorRunID) {
+			return receipt, errAssistantRunInvalid
+		}
 		if fields["answer"] == nil || readAssistantDialectCustody(fields["answer"], reflect.TypeOf(assistantRunAnswer{})) != nil {
 			return receipt, errAssistantRunInvalid
 		}

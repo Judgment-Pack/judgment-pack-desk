@@ -52,12 +52,27 @@ func dialectPublicationRequestID(id string, req dialectPublicationRequest) strin
 	raw, _ := json.Marshal([]string{id, req.Revision, req.Variant, req.Version})
 	return digestOf(raw)
 }
+
+// Completed receipts select immutable history, never the latest publication or
+// today's recipe. Callers retain their own current authority checks.
+func completedDialectPublication(ledger publicationLedger, request string) *artifactPublication {
+	for i := range ledger.Items {
+		p := &ledger.Items[i]
+		if p.Dialect != nil && (p.Dialect.Request == request || ledger.Receipts[request] == p.ID) {
+			return p
+		}
+	}
+	return nil
+}
 func dialectRecipeBytes(doc inputPreparation) []byte { raw, _ := json.Marshal(doc.Recipe); return raw }
 func dialectArtifactID(id, variant string) string {
 	return "urn:judgmentpack:dialect:" + id + ":" + variant
 }
 
 func executableDialect(doc inputPreparation, variant, version string) ([]byte, error) {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return nil, err
+	}
 	q := doc.Recipe.Qualification
 	if q == nil || q.Mapping.Case == nil {
 		return nil, errors.New("Choose a pack and save its mapping first.")
@@ -279,20 +294,17 @@ func (s *Server) publishCheckedDialectUsing(ctx context.Context, id string, req 
 	}
 	request := dialectPublicationRequestID(id, req)
 	// Completed publication wins over unavailable Runtime or a subsequently edited recipe.
-	for _, p := range ledger.Items {
-		if p.Dialect != nil && (p.Dialect.Request == request || ledger.Receipts[request] == p.ID) {
-			answer, e := s.publicationAnswer(ctx, p)
-			if e != nil {
-				return fail(503, e)
-			} else {
-				if authorize != nil {
-					if err := authorize(ctx); err != nil {
-						return fail(403, err)
-					}
-				}
-				return 200, answer
+	if p := completedDialectPublication(ledger, request); p != nil {
+		answer, e := s.publicationAnswer(ctx, *p)
+		if e != nil {
+			return fail(503, e)
+		}
+		if authorize != nil {
+			if err := authorize(ctx); err != nil {
+				return fail(403, err)
 			}
 		}
+		return 200, answer
 	}
 	if req.Action == "publish" && (!req.Reviewed || req.CheckDigest == "") {
 		return fail(400, errors.New("Check and review this exact version before publishing."))
@@ -447,15 +459,12 @@ func (s *Server) publishCheckedDialectUsing(ctx context.Context, id string, req 
 		return fail(409, err)
 	}
 	defer transaction.close()
-	for _, p := range transaction.ledger.Items {
-		if p.Dialect != nil && (p.Dialect.Request == request || transaction.ledger.Receipts[request] == p.ID) {
-			a, e := s.publicationAnswer(ctx, p)
-			if e != nil {
-				return fail(503, e)
-			} else {
-				return 200, a
-			}
+	if p := completedDialectPublication(transaction.ledger, request); p != nil {
+		a, e := s.publicationAnswer(ctx, *p)
+		if e != nil {
+			return fail(503, e)
 		}
+		return 200, a
 	}
 	if latestDialectPublication(transaction.ledger, id, req.Variant) != base {
 		return fail(409, errors.New("Another version was published. Review against the new publication."))
@@ -486,6 +495,9 @@ func (s *Server) publishCheckedDialectUsing(ctx context.Context, id string, req 
 // Select a retained publication for the exact reviewed recipe. This never uses
 // a newer recipe or changes an existing job's release. Legacy recipes stay usable.
 func (s *Server) publishedExecutable(ctx context.Context, doc inputPreparation, variant string) (*dialectPublicationAnswer, error) {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return nil, err
+	}
 	ledger, err := s.readDialectPublicationLedger()
 	if err != nil {
 		return nil, err
@@ -555,6 +567,9 @@ func sameDialectJSON(a, b []byte) bool {
 	return bytes.Equal(ar, br)
 }
 func (s *Server) frozenExecutable(ctx context.Context, doc inputPreparation, release reviewedInputRelease) (*dialectPublicationAnswer, error) {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return nil, err
+	}
 	var head struct{ FormatVersion string }
 	raw := release.InputMapping
 	if json.Unmarshal(raw, &head) != nil {

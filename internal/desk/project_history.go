@@ -190,6 +190,10 @@ func (s *Server) handleProjectHistory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err = historicalizeAssistantSourceHistory(store.root, source); err != nil {
+		storageFailure(w, err)
+		return
+	}
 	bindings.Projects[s.projectDir] = source
 	data, _ = json.Marshal(bindings)
 	if _, err = decodeProjectBindings(data); err != nil {

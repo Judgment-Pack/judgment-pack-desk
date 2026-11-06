@@ -15,8 +15,41 @@ import (
 type chatPlanReference struct {
 	Kind     string `json:"kind"`
 	ID       string `json:"id"`
-	Revision string `json:"revision"`
+	Revision string `json:"revision,omitempty"`
+	Digest   string `json:"digest,omitempty"`
 }
+
+// Historical locators and current opaque references are distinct closed wire
+// variants. In particular, dialect kind alone cannot select the variant.
+func (r *chatPlanReference) UnmarshalJSON(raw []byte) error {
+	fields, err := assistantTestObject(raw)
+	if err != nil || len(fields) != 3 {
+		return errAssistantRunInvalid
+	}
+	type plain chatPlanReference
+	var value plain
+	if err = json.Unmarshal(raw, &value); err != nil {
+		return errAssistantRunInvalid
+	}
+	for key := range fields {
+		if key != "kind" && key != "id" && key != "revision" && key != "digest" {
+			return errAssistantRunInvalid
+		}
+	}
+	*r = chatPlanReference(value)
+	if !validChatPlanReference(*r) || (fields["revision"] != nil) == (fields["digest"] != nil) {
+		return errAssistantRunInvalid
+	}
+	return nil
+}
+
+func validChatPlanReference(r chatPlanReference) bool {
+	if r.Revision != "" {
+		return r.Digest == "" && contains([]string{"file", "dialect"}, r.Kind) && validPlanText(r.ID, 1024) && planDigest.MatchString(r.Revision)
+	}
+	return contains([]string{"artifact", "dialect"}, r.Kind) && validPlanText(r.ID, 256) && planDigest.MatchString(r.Digest)
+}
+
 type chatPlan struct {
 	ID         string              `json:"id"`
 	Revision   int                 `json:"revision"`
@@ -100,10 +133,8 @@ func validateChatPlan(data json.RawMessage) error {
 				return errors.New("Invalid plan step or question.")
 			}
 		}
-		for _, r := range p.References {
-			if !contains([]string{"file", "dialect"}, r.Kind) || !validPlanText(r.ID, 1024) || !planDigest.MatchString(r.Revision) {
-				return errors.New("Invalid plan reference.")
-			}
+		if !validAssistantPlanReferences(p.References) {
+			return errors.New("Invalid plan reference.")
 		}
 	}
 	return nil

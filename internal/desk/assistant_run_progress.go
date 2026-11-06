@@ -43,7 +43,7 @@ func newAssistantRunProgressEpoch() (string, error) {
 	return hex.EncodeToString(token[:]), err
 }
 func validAssistantRunProgress(p contract.RunEventMessageProgress) bool {
-	return p.Type == "message_progress" && len(p.AdditionalMembers) == 0 && len(p.Text) <= assistantRunProgressBytes && utf8.ValidString(p.Text) && !strings.ContainsRune(p.Text, 0) && (p.TaskID == nil || assistantRunText(*p.TaskID, 128))
+	return p.Type == "message_progress" && (p.Version == nil || *p.Version == 1) && len(p.Text) <= assistantRunProgressBytes && utf8.ValidString(p.Text) && !strings.ContainsRune(p.Text, 0) && (p.TaskID == nil || assistantRunText(*p.TaskID, 128))
 }
 
 // Progress observes the current authenticated execution; it cannot dispatch work

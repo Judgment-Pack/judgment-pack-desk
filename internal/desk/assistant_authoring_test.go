@@ -161,12 +161,13 @@ func TestAssistantAuthoringAdmissionAndInterruptedNoReplay(t *testing.T) {
 	}}
 	s.assistantRunExecutor = executor
 	ref := assistantAuthoringCaptureFixture(t, s, token, assistantAuthoringRequestFixture("same-request", "describe-pack"))
-	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 201)
+	start := assistantContextStartFixture(t, s, token, *ref.Start)
+	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
 	e := <-entered
-	if repeat := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 200); repeat.ID != first.ID {
+	if repeat := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 200); repeat.ID != first.ID {
 		t.Fatal("lost ack duplicated run")
 	}
-	alternate := *ref.Start
+	alternate := start
 	alternate.AdmissionID = "client-chosen-other-admission"
 	if w := assistantBriefCall(s, token, "POST", "/api/assistant-runs", alternate); w.Code < 400 {
 		t.Fatal("same capture admitted twice")
@@ -184,7 +185,7 @@ func TestAssistantAuthoringAdmissionAndInterruptedNoReplay(t *testing.T) {
 	s.assistantRunServiceMu.Lock()
 	s.assistantRunHost = nil
 	s.assistantRunServiceMu.Unlock()
-	again := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 200)
+	again := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 200)
 	if again.ID != first.ID || again.State == "complete" || executor.calls.Load() != 1 {
 		t.Fatal("restart replayed", again.State, executor.calls.Load())
 	}
@@ -198,6 +199,7 @@ func TestAssistantAuthoringCurrentSourceAndSelection(t *testing.T) {
 				a = assistantAuthoringRequestFixture("stale-one", "author-graph")
 			}
 			ref := assistantAuthoringCaptureFixture(t, s, token, a)
+			start := assistantContextStartFixture(t, s, token, *ref.Start)
 			switch mutation {
 			case "saved-bytes", "selected-pack":
 				writeProjectFile(t, s.projectDir, "one.pack.json", reviewPack+"\n")
@@ -222,7 +224,7 @@ func TestAssistantAuthoringCurrentSourceAndSelection(t *testing.T) {
 			case "session":
 				s.sessions.revoke(token)
 			}
-			if w := assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start); w.Code < 400 {
+			if w := assistantBriefCall(s, token, "POST", "/api/assistant-runs", start); w.Code < 400 {
 				t.Fatal("stale capture started", w.Code)
 			}
 			if len(assistantAuthoringLedger(t, s).Runs) != 0 {
@@ -320,13 +322,14 @@ func TestAssistantAuthoringActualAPI(t *testing.T) {
 			s, token := assistantAuthoringFixture(t, provider.URL)
 			a := assistantAuthoringRequestFixture("actual-"+purpose, purpose)
 			ref := assistantAuthoringCaptureFixture(t, s, token, a)
+			start := assistantContextStartFixture(t, s, token, *ref.Start)
 			before := calls.Load()
-			first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 201)
+			first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
 			complete := assistantProtocolWait(t, s, token, first.ID, "complete")
 			if calls.Load() != before+1 || complete.Checkpoint == nil || complete.Checkpoint.Used != 1 || len(complete.Checkpoint.Prompts) == 0 {
 				t.Fatal("canonical request accounting missing", complete.State, calls.Load()-before)
 			}
-			if repeat := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 200); repeat.ID != first.ID || calls.Load() != before+1 {
+			if repeat := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 200); repeat.ID != first.ID || calls.Load() != before+1 {
 				t.Fatal("terminal admission replayed")
 			}
 			assistantAuthoringProbe(t, s, token, "api-"+purpose, a, ref, complete)
@@ -336,7 +339,6 @@ func TestAssistantAuthoringActualAPI(t *testing.T) {
 		})
 	}
 }
-
 func TestAssistantAuthoringPrepareIsModelFree(t *testing.T) {
 	s, token := assistantAuthoringFixture(t, "https://example.invalid")
 	a := assistantAuthoringRequestFixture("prepare", "describe-pack")
@@ -372,7 +374,8 @@ func TestAssistantAuthoringSavedCasesAndClosedTools(t *testing.T) {
 		return ctx.Err()
 	}}
 	ref := assistantAuthoringCaptureFixture(t, s, token, assistantAuthoringRequestFixture("case-input", "author-pack"))
-	assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 201)
+	start := assistantContextStartFixture(t, s, token, *ref.Start)
+	assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
 	e := <-entered
 	input, err := e.prepareAssistantInput(t.Context())
 	assistantRunMust(t, err)
@@ -404,7 +407,6 @@ func TestAssistantAuthoringSavedCasesAndClosedTools(t *testing.T) {
 	s.assistantRunService().close()
 	<-e.done
 }
-
 func TestAssistantAuthoringActualNative(t *testing.T) {
 	s, token := assistantAuthoringFixture(t, "https://example.invalid")
 	registry, err := s.readAIRegistry()
@@ -420,6 +422,7 @@ func TestAssistantAuthoringActualNative(t *testing.T) {
 	a := assistantAuthoringRequestFixture("native-author", "author-pack")
 	a.Effort = "medium"
 	ref := assistantAuthoringCaptureFixture(t, s, token, a)
+	start := assistantContextStartFixture(t, s, token, *ref.Start)
 	fixture := t.TempDir()
 	binary, trace := filepath.Join(fixture, "codex-peer"), filepath.Join(fixture, "trace.jsonl")
 	peer := strings.Replace(assistantExecutionCodexPeer, "text='Fixture answer.'", "text="+fmt.Sprintf("%q", assistantAuthoringProposalFixture(json.RawMessage(reviewPack))), 1)
@@ -436,7 +439,7 @@ func TestAssistantAuthoringActualNative(t *testing.T) {
 	t.Cleanup(manager.Close)
 	s.codex = manager
 	s.aiAccounts.values = map[string]providerAccountManager{testAIAlpha: manager}
-	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 201)
+	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
 	complete := assistantProtocolWait(t, s, token, first.ID, "complete")
 	if complete.Checkpoint == nil || complete.Checkpoint.Unit != "provider-managed" {
 		t.Fatal("native canonical accounting changed")
@@ -455,10 +458,10 @@ func TestAssistantAuthoringActualNative(t *testing.T) {
 	}
 	assistantAuthoringProbe(t, s, token, "native-author-pack", a, ref, complete)
 }
-
 func TestAssistantAuthoringStorageMoveBackupAndHistoricalRestore(t *testing.T) {
 	s, token := assistantAuthoringFixture(t, "https://example.invalid")
 	ref := assistantAuthoringCaptureFixture(t, s, token, assistantAuthoringRequestFixture("storage-author", "author-pack"))
+	start := assistantContextStartFixture(t, s, token, *ref.Start)
 	store := s.assistantRuns()
 	original := assistantRunRaw(t, store)
 	server := httptest.NewServer(s)
@@ -507,11 +510,10 @@ func TestAssistantAuthoringStorageMoveBackupAndHistoricalRestore(t *testing.T) {
 		t.Fatal("restore changed retained bytes or restored admission authority")
 	}
 
-	if w := assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start); w.Code < 400 {
+	if w := assistantBriefCall(s, token, "POST", "/api/assistant-runs", start); w.Code < 400 {
 		t.Fatal("restored capture became executable authority")
 	}
 }
-
 func TestAssistantAuthoringStopActiveProviderAndLateAdmission(t *testing.T) {
 	started, stopped := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
@@ -525,7 +527,8 @@ func TestAssistantAuthoringStopActiveProviderAndLateAdmission(t *testing.T) {
 	defer provider.Close()
 	s, token := assistantAuthoringFixture(t, provider.URL)
 	ref := assistantAuthoringCaptureFixture(t, s, token, assistantAuthoringRequestFixture("stop-active", "describe-pack"))
-	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 201)
+	start := assistantContextStartFixture(t, s, token, *ref.Start)
+	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):
@@ -546,7 +549,7 @@ func TestAssistantAuthoringStopActiveProviderAndLateAdmission(t *testing.T) {
 	if terminal.Checkpoint.Status != "stopped" || len(terminal.Operations) == 0 {
 		t.Fatal("cancel lost canonical operation evidence")
 	}
-	repeat := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 200)
+	repeat := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 200)
 	if repeat.ID != first.ID || repeat.State != "stopped" || calls.Load() != 1 {
 		t.Fatal("late start replayed canceled request")
 	}
@@ -555,15 +558,15 @@ func TestAssistantAuthoringStopActiveProviderAndLateAdmission(t *testing.T) {
 		t.Fatal("idempotent exact cancellation failed", again.Code)
 	}
 }
-
 func TestAssistantAuthoringTerminalCaptureCannotReadmit(t *testing.T) {
 	s, token := assistantAuthoringFixture(t, "https://example.invalid")
 	executor := &assistantAuthoringTestExecutor{execute: assistantAuthoringComplete}
 	s.assistantRunExecutor = executor
 	ref := assistantAuthoringCaptureFixture(t, s, token, assistantAuthoringRequestFixture("terminal-owner", "describe-pack"))
-	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 201)
+	start := assistantContextStartFixture(t, s, token, *ref.Start)
+	first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
 	assistantProtocolWait(t, s, token, first.ID, "complete")
-	alternate := *ref.Start
+	alternate := start
 	alternate.AdmissionID = "author-admit-" + strings.Repeat("0", 32)
 	if w := assistantBriefCall(s, token, "POST", "/api/assistant-runs", alternate); w.Code < 400 {
 		t.Fatal("same terminal capture admitted another model run")
@@ -640,7 +643,8 @@ func TestAssistantAuthoringCriticGuidanceAdmission(t *testing.T) {
 			text = strings.Replace(text, " if method=='initialize':", hook+" if method=='initialize':", 1)
 			assistantRunMust(t, os.WriteFile(s.cfg.JpackBin, []byte(text), 0700))
 			ref := assistantAuthoringCaptureFixture(t, s, token, assistantAuthoringRequestFixture("critic-guidance-"+mode, "author-pack"))
-			assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 201)
+			start := assistantContextStartFixture(t, s, token, *ref.Start)
+			assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", start), 201)
 			e := <-entered
 			t.Cleanup(func() { s.assistantRunService().close(); <-e.done })
 			ctx, cancel := context.WithTimeout(t.Context(), 6*time.Second)

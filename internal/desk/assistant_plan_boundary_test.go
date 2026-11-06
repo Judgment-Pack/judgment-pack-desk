@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +48,7 @@ func TestAssistantPlanAcceptanceCurrentState(t *testing.T) {
 			case "questions":
 				plans[0].Questions = []string{"Unresolved review"}
 			case "forged":
-				plans[0].References[0].Revision = strings.Repeat("f", 64)
+				plans[0].References[0].Digest = strings.Repeat("f", 64)
 			case "new-accepted":
 				plans[0].ID = "model-accepted"
 			case "prior-edit":
@@ -87,7 +86,7 @@ func TestAssistantPlanAcceptanceCurrentState(t *testing.T) {
 				if mode == "file" || mode == "unavailable" {
 					next, err := json.Marshal(doc)
 					assistantRunMust(t, err)
-					view, err := s.holdAssistantPlanAcceptance(httptest.NewRequest("PUT", "/api/conversations", nil), saved.Content, next)
+					view, err := s.holdAssistantPlanAcceptance(e.request.Clone(t.Context()), saved.Content, next)
 					if view != nil {
 						view.Close()
 					}

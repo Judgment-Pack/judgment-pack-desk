@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/wire"
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/failure"
 )
 
 type assistantProtocolExecutor struct {
@@ -195,6 +197,12 @@ func assistantProtocolWaitWithin(t *testing.T, s *Server, token, id, state strin
 			waitErr = ctx.Err()
 		}
 	}
+	// Capture the missed deadline before an authenticated read can join the
+	// private-data queue or spend time validating retained ledger bytes.
+	if waitErr != nil {
+		assistantProtocolPrivateQueue(t, s)
+		assistantProtocolWaitFrames(t)
+	}
 	view := assistantProtocolView(t, policyCall(s, token, "GET", "/api/assistant-runs/"+id, nil), 200)
 	h.mu.Lock()
 	active := h.active[id] != nil
@@ -202,7 +210,46 @@ func assistantProtocolWaitWithin(t *testing.T, s *Server, token, id, state strin
 	if waitErr != nil || view.State != state || active {
 		checkpoint := "missing"
 		if cp := view.Checkpoint; cp != nil {
-			checkpoint = fmt.Sprintf("status=%s used=%d limit=%d prompts=%d", cp.Status, cp.Used, cp.Limit, len(cp.Prompts))
+			approval := "missing"
+			if cp.Approval != nil {
+				approval = cp.Approval.State
+			}
+			checkpoint = fmt.Sprintf("status=%s used=%d limit=%d prompts=%d approval=%.16q canonical_operations=%d", cp.Status, cp.Used, cp.Limit, len(cp.Prompts), approval, len(cp.Operations))
+		}
+		// Keep diagnostics bounded and catalogue-only. Native preflight can
+		// settle a prepared model operation before any request is consumed.
+		logFailure := func(origin string, held *contract.Failure) {
+			if held == nil {
+				return
+			}
+			if f, ok := failure.Read(*held); ok {
+				t.Logf("run failure: origin=%s code=%s source=%s outcome=%s", origin, f.Code, f.Source, f.Outcome)
+			} else {
+				t.Logf("run failure: origin=%s invalid_catalogue_metadata=true", origin)
+			}
+		}
+		for i, op := range view.Operations {
+			if i == 8 {
+				break
+			}
+			t.Logf("run operation: index=%d kind=%.32q state=%.32q", i, op.Kind, op.State)
+			if op.Kind == "model" {
+				var outcome struct {
+					Failure *contract.Failure `json:"failure"`
+				}
+				if json.Unmarshal(op.Result, &outcome) == nil {
+					logFailure("model-operation", outcome.Failure)
+				}
+			}
+		}
+		for i, row := range view.Events {
+			if i == 8 {
+				break
+			}
+			if row.Event.Error != nil {
+				logFailure("error-event", row.Event.Error.Failure)
+			}
+			t.Logf("run event: index=%d tool_call=%t tool_result=%t approval_requested=%t execution_checkpoint=%t", i, row.Event.ToolCall != nil, row.Event.ToolResult != nil, row.Event.ApprovalRequested != nil, row.Event.ExecutionCheckpoint != nil)
 		}
 		var writerErr error
 		if execution != nil {
@@ -211,6 +258,70 @@ func assistantProtocolWaitWithin(t *testing.T, s *Server, token, id, state strin
 		t.Fatalf("run did not settle %s: wait_error=%v state=%s active=%t revision=%d checkpoint={%s} operations=%d events=%d writer_error=%v", state, waitErr, view.State, active, view.Revision, checkpoint, len(view.Operations), len(view.Events), writerErr)
 	}
 	return view
+}
+
+// Queue custody is observed without waiting for a diagnostic mutex. A ready
+// head may own storage or be waiting for its OS lock; code frames distinguish
+// those states. No queue or execution state is changed.
+func assistantProtocolPrivateQueue(t *testing.T, s *Server) {
+	t.Helper()
+	q := &s.privateDataTurns
+	if !q.mu.TryLock() {
+		t.Log("run private queue: snapshot_busy=true")
+		return
+	}
+	depth, ready := len(q.waiters), false
+	if depth != 0 {
+		select {
+		case <-q.waiters[0].ready:
+			ready = true
+		default:
+		}
+	}
+	q.mu.Unlock()
+	t.Logf("run private queue: depth=%d head_ready=%t", depth, ready)
+}
+
+// Sample only code symbols and line numbers when an active run misses the
+// existing settlement deadline. Never print stack arguments, paths or data.
+// Include non-native storage/test and standard-library stacks: the private
+// lock holder may be in source validation, JSON decoding, or fixture scope.
+func assistantProtocolWaitFrames(t *testing.T) {
+	t.Helper()
+	var records [256]runtime.StackRecord
+	n, ok := runtime.GoroutineProfile(records[:])
+	if !ok {
+		t.Logf("run wait frames: profile_capacity=%d goroutines=%d", len(records), n)
+		return
+	}
+	const agent = "github.com/Judgment-Pack/judgment-pack-agent/go/"
+	const desk = "github.com/Judgment-Pack/judgment-pack-desk/internal/"
+	logged := 0
+	for _, record := range records[:n] {
+		frames := runtime.CallersFrames(record.Stack())
+		var symbols []string
+		for {
+			frame, more := frames.Next()
+			name := frame.Function
+			if strings.HasPrefix(name, agent) || strings.HasPrefix(name, desk) {
+				name = strings.TrimPrefix(strings.TrimPrefix(name, agent), desk)
+			} else if slash := strings.LastIndex(name, "/"); slash >= 0 {
+				name = name[slash+1:]
+			}
+			if len(symbols) < 24 {
+				symbols = append(symbols, fmt.Sprintf("%.240s:%d", name, frame.Line))
+			}
+			if !more {
+				break
+			}
+		}
+		t.Logf("run wait frames: sample=%d code=%s", logged, strings.Join(symbols, " > "))
+		logged++
+		if logged == 32 {
+			break
+		}
+	}
+	t.Logf("run wait frames: goroutines=%d logged=%d omitted=%d", n, logged, n-logged)
 }
 
 func assistantProtocolComplete(ctx context.Context, e *assistantRunExecution) error {
@@ -393,7 +504,7 @@ func TestAssistantRunProtocolApprovalRestoredAndDeliveredOnce(t *testing.T) {
 	})
 	view := assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs", start), 201)
 	paused := assistantProtocolWait(t, s, token, view.ID, "awaiting-input")
-	if paused.AdmissionID != start.AdmissionID || paused.ApprovalReference == nil || paused.ApprovalReference.CallID != paused.Checkpoint.Approval.CallID || paused.ApprovalReference.ArgsDigest != assistantRunArgsDigest(paused.Checkpoint.Approval.Args) {
+	if paused.AdmissionID != start.AdmissionID || paused.ApprovalReference == nil || paused.ApprovalReference.CallID != paused.Checkpoint.Approval.CallID || paused.ApprovalReference.ArgsDigest != runcontext.ApprovalShownDigest(*paused.Checkpoint.Approval) {
 		t.Fatal("approval/admission reference lost")
 	}
 	assistantRunClientJSON(t, "consumer-approval.json", paused)
@@ -402,10 +513,13 @@ func TestAssistantRunProtocolApprovalRestoredAndDeliveredOnce(t *testing.T) {
 	lease, err := s.assistantRuns().Acquire(context.Background())
 	assistantRunMust(t, err)
 	assistantRunMust(t, lease.Close())
-	raw, _ := json.Marshal(paused.Checkpoint.Approval.Args)
 	approved := true
-	action := assistantRunAction{ID: "approval-one", Kind: "approval", Revision: paused.Revision, CallID: "call-one", ArgsDigest: digestOf(raw), Approved: &approved}
-	for _, mutate := range []func(*assistantRunAction){func(a *assistantRunAction) { a.CallID = "stale" }, func(a *assistantRunAction) { a.ArgsDigest = digestOf([]byte("changed arguments")) }, func(a *assistantRunAction) { a.Revision-- }} {
+	action := assistantRunAction{ID: "approval-one", Kind: "approval", Revision: paused.Revision, CallID: "call-one", ArgsDigest: paused.ApprovalReference.ArgsDigest, ShownDigest: &paused.ApprovalReference.ArgsDigest, Approved: &approved}
+	for _, mutate := range []func(*assistantRunAction){func(a *assistantRunAction) { a.CallID = "stale" }, func(a *assistantRunAction) { a.ArgsDigest = digestOf([]byte("changed arguments")) }, func(a *assistantRunAction) { a.Revision-- }, func(a *assistantRunAction) { a.ShownDigest = nil }, func(a *assistantRunAction) {
+		old := digestOf([]byte(`{"path":"reviewed.txt","content":"exact"}`))
+		a.ArgsDigest = old
+		a.ShownDigest = &old
+	}} {
 		bad := action
 		mutate(&bad)
 		if w := policyCall(s, token, "POST", "/api/assistant-runs/"+view.ID+"/actions", bad); w.Code != 409 {

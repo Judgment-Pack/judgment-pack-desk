@@ -62,9 +62,28 @@ is pure; it does not start a run or restore approval authority.
 Answer, allowance extension, abandon, cancel and approval use the authenticated
 current run revision. An asked approval carries optional closed
 `approvalReference: {callId,argsDigest}`, emitted only for the exact current
-canonical asked approval. The browser uses the server-authored argument digest;
-it never reserializes arguments to invent approval identity. Ask me/Auto write
-admission, Plan and compute remain distinct.
+canonical asked approval. Its `argsDigest` is the complete `sha256:` digest from
+Agent's `ApprovalShownDigest`, over the UTF-8 text that runs. The card renders
+`approvalShownArguments(approval)` verbatim, including numeric spelling, and its
+render closure returns `callId` and `approvalShownDigest(approval)` as `shownDigest`
+with an approving decision. Neither display nor identity passes through parsed
+`approval.args`. Declining requires no `shownDigest`. Both server continuation
+routes compare the current reference and render proof before saving a receipt.
+A reference from before this change fails closed; passive reconnect reads the
+current record, shows it again and requires another explicit decision. It never
+replays a decision or an uncertain operation. An old checkpoint whose parsed
+arguments cannot recover the original text can still be refused as stale by
+Agent and needs a new model request; Desk does not synthesize its lost text.
+Ask me/Auto write admission, Plan and compute remain distinct.
+
+The browser and server retain the canonical versioned readers: Agent v0.13.2
+adds checkpoints 5 and 6 with `approval.request`, and event 3 with `request` on
+`approval_requested`. Earlier supported inventories and unknown-version refusal
+remain owned by those readers. Event summaries display no approval arguments;
+any future event argument display must use `approvalShownArguments(event)` in
+TypeScript or `ApprovalEventArguments` in Go, directly as a string. This adoption
+requires the released v0.13.2 packages including the upstream #278 continuation fix;
+source preparation against merged #277 does not qualify the current v0.12.0 pins.
 
 Optional `packChecks` contains the latest completed check per exact candidate
 digest, including invalid and mismatching findings. Full receipt history stays
@@ -111,3 +130,29 @@ veto/readback. Scratch-only semantic mutants check save-before-start, lost-ack
 replay, terminal acknowledgement, required metadata, dirty conflict, numeric edit
 custody and latest-check replacement. Full CI and the final interaction/release
 review remain coordinator gates.
+
+A retained Plan departure is a separate input decision. A published-valid paused
+checkpoint with a `planState.pending` of purpose `plan-drift`, matching current
+Plan revision, and no asked tool approval is presented as `awaiting-input`. Its
+`planDecisionReference` contains exactly `callId`, `planRevision` and
+`candidateRevision` (both revisions are `sha256:` content identities). Historical
+records do not offer an executable reference. Tool approval references and Plan
+decision references cannot be offered together.
+
+The browser displays the retained explanation and the current and proposed Plan
+side by side in order. Approve or Decline sends one `plan-decision` action with
+the current run revision, all three exact references, an explicit boolean
+`approved`, and an optional bounded `note`. It carries no tool arguments or
+argument digest. Missing, changed, stale, foreign or revoked authority refuses
+before launch; pending Plan changes cannot be consumed by answer or budget
+continuation. Stop retains its existing meaning.
+
+Admission retains the exact Plan expectation with its action receipt. The
+original canonical writer persists that exact decision before Runtime bootstrap,
+using the original accepted Plan and resolver. A duplicate action reads the
+retained result; a different digest refuses. Reconnect and historical reads are
+passive. A lost acknowledgement requires a read and never automatically repeats
+the action, Runtime work or provider call. The focused HTTP fixture seeds a
+published-valid pause after original critic initialization and proves this
+prebootstrap ordering. It does not qualify the still-open complete production
+Plan binding, native execution or offline browser journey gates.

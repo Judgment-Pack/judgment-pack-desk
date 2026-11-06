@@ -54,18 +54,25 @@ it into a newly reviewed target. The shared physical API/native model dispatch
 fence and the gated Runtime transport recheck current custody. Short private
 store reads and the input mutex are released before Runtime or model work.
 
-A bounded host-authored `deskCriticInputV2` checkpoint extension fingerprints the
-run, execution key, exact saved request/source, target, suite and accepted cases.
-Its first capture and comparison use the existing private writer transaction
-before any Runtime or model request. Canonical checkpoint callbacks reattach
-that record; the published open checkpoint reader and snapshots preserve it.
-Fresh custody on durable continuation must match the original fingerprint.
-Missing evidence after work or an explicit continuation, malformed metadata or
-a conflict refuses. A retained `deskCriticInputV1` whole-suite binding is refused
-without changing its original run/checkpoint; start a fresh run instead of
-reinterpreting or recapturing the old binding. Saved-chat fields bearing the same
-name remain historical data and never seed this record. The extension grants no permissions and does
-not alter allowance, approvals, tools or model context.
+A bounded host-authored private run member `criticCustody`, containing version 2
+and a fingerprint, binds the run, execution key, exact saved request/source,
+target, suite and accepted cases. Its first capture and comparison use the
+existing private writer transaction before any Runtime or model request.
+Canonical checkpoint callbacks update only the closed Agent checkpoint and
+cannot replace or clear private custody. Fresh custody on durable continuation
+must match the original fingerprint. Missing evidence after work or an explicit
+continuation, malformed metadata or a conflict refuses. The private record is
+not projected publicly or stored in Agent's critic decision fields.
+
+Retained `deskCriticInputV1` or `deskCriticInputV2` checkpoint extensions are unknown
+structural members under Agent v0.10.0 and refuse without changing the original
+bytes; they are never stripped, promoted or recaptured. The private run ledger
+is validated as a whole, so one such legacy checkpoint makes every run in that
+ledger unavailable until an explicit separately specified migration is provided.
+This adoption supplies no migration and does not claim that a fresh run bypasses
+a refused ledger. Saved-chat fields bearing those names remain historical data
+and never seed private custody. The record grants no permissions and does not
+alter allowance, approvals, tools or model context.
 
 The row projection matches `criticCases.ts`: deleted and exploratory rows are
 omitted; rationale overrides row focus when nonempty; an AI origin stays AI,

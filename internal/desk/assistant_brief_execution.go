@@ -252,6 +252,10 @@ func (*assistantBriefExecutor) Execute(ctx context.Context, e *assistantRunExecu
 		if eventErr != nil {
 			return
 		}
+		if assistantCanonicalActive(e.record) {
+			eventErr = e.deliverCanonicalEvent(ctx, event)
+			return
+		}
 		switch {
 		case event.MessageProgress != nil:
 			_ = e.Progress(ctx, *event.MessageProgress)
@@ -275,8 +279,15 @@ func (*assistantBriefExecutor) Execute(ctx context.Context, e *assistantRunExecu
 	// Adapters narrow this capability for a tool-free finishing/reformat step,
 	// even when the source run has no tools. It has no Runtime transport and
 	// its host-authored empty offer cannot confer any domain authority.
-	closedGate := gate.New(gate.Options{Emit: emit})
+	gateEmit := emit
+	if assistantCanonicalActive(e.record) {
+		gateEmit = func(event contract.RunEvent) { eventErr = e.publishCanonicalHostEvent(ctx, event) }
+	}
+	closedGate := gate.New(gate.Options{Emit: gateEmit})
 	closedGate.SetOffer(contract.ToolOffer{})
+	if err := e.bindCanonicalInput(ctx, input); err != nil {
+		return err
+	}
 	run := &adapter.Run{Purpose: "brief", ModelName: e.record.Binding.Model, Prompt: assistantBriefVerifiedPrompt(e.source, documents), Context: input, Critic: "off", Gate: closedGate.Calls(), Host: host, Emit: emit}
 	var executor adapter.Adapter = eino.New()
 	if session.Agent != nil {
@@ -296,7 +307,7 @@ func (*assistantBriefExecutor) Execute(ctx context.Context, e *assistantRunExecu
 	if err != nil {
 		return err
 	}
-	if err = executor.Run(ctx, run); err != nil {
+	if err = e.canonicalAdapter(executor, closedGate).Run(ctx, run); err != nil {
 		return err
 	}
 	if eventErr != nil {
@@ -309,7 +320,11 @@ func (*assistantBriefExecutor) Execute(ctx context.Context, e *assistantRunExecu
 	if latest.Checkpoint != nil && latest.Checkpoint.Status == "complete" {
 		if _, err := assistantBriefOutput(latest); err != nil {
 			cause := failure.Authored("invalid-response", "The brief must contain four concise text sections within 4,500 characters. The saved version is unchanged.", "desk")
-			emit(failure.Event(cause, "desk"))
+			if assistantCanonicalActive(e.record) {
+				_ = e.publishCanonicalHostEvent(ctx, failure.Event(cause, "desk"))
+			} else {
+				emit(failure.Event(cause, "desk"))
+			}
 			return cause
 		}
 	}

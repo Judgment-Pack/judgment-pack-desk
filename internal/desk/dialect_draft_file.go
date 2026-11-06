@@ -156,3 +156,43 @@ func (f fileDialectDraftRepository) CompareAndSwap(ctx context.Context, d dialec
 	}
 	return saved, nil
 }
+
+// captureRetentionDrafts runs under the caller's original project lease.
+// It enumerates only this owner's existing folder, preserving checked absence.
+func (s *Server) captureRetentionDrafts(ctx context.Context, c *storageRetentionCapture, o *storageBudgetOwner) (err error) {
+	drafts, absent, e := storageRetentionOwnFolder(s.root, strings.Split(dialectDraftDir, "/"), "dialect drafts", o, "draft-ancestor-close")
+	if e != nil {
+		return e
+	}
+	if absent {
+		c.Sources = append(c.Sources, storageRetentionSource{ID: digestOf([]byte("dialect-drafts")), Kind: "dialect-drafts", Revision: digestOf(nil), Complete: true, Reasons: []string{}, References: []storageRetentionReference{}})
+		return nil
+	}
+	defer func() { err = errors.Join(err, drafts.Close()) }()
+	lock, e := drafts.Open(".")
+	if e != nil {
+		return e
+	}
+	defer func() { err = errors.Join(err, lock.Close()) }()
+	if e = lockPrivateData(lock, false); e != nil {
+		return e
+	}
+	entries, e := storageRetentionEntries(drafts, o, "draft-entries-close")
+	if e != nil {
+		return e
+	}
+	for _, entry := range entries {
+		if entry.Name() == ".gitignore" {
+			continue
+		}
+		raw, _, e := storageRetentionRead(drafts, entry.Name(), min(dialectDraftLimit, int(maxBackupData-c.Total)))
+		if e != nil {
+			return e
+		}
+		if e = c.charge(raw); e != nil {
+			return e
+		}
+		c.Sources = append(c.Sources, storageRetentionUnknown("draft:"+entry.Name(), "dialect-draft", raw, "draft-recipe-origin-and-publication-closure-not-joined"))
+	}
+	return ctx.Err()
+}

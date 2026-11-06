@@ -608,3 +608,41 @@ func validateMemoryStorage(data []byte) error {
 	}
 	return nil
 }
+
+func retentionMemoryReferences(name string, raw []byte) storageRetentionSource {
+	out := storageRetentionUnknown(name, "memory", raw, "opaque-memory-dependencies")
+	if validateMemoryStorage(raw) != nil || !uniqueJSON(raw) {
+		out.Reasons = []string{"invalid-memory-source"}
+		return out
+	}
+	var doc memoryDocument
+	if json.Unmarshal(raw, &doc) != nil {
+		return out
+	}
+	complete := storageRetentionMembers(raw, "version", "settings", "entries", "blocked", "generationAfter", "reviews") && len(doc.Reviews) == 0
+	for _, entry := range doc.Entries {
+		if entry.Source != nil {
+			out.add(storageRetentionReference{"chat", entry.Source.ChatID, entry.SourceDigest})
+		}
+		if len(entry.Dependencies) != 0 || entry.Canonical != nil {
+			complete = false
+		}
+	}
+	// Entry extensions are not erased by the typed decoder.
+	var fields struct {
+		Entries []json.RawMessage `json:"entries"`
+	}
+	if json.Unmarshal(raw, &fields) != nil {
+		return out
+	}
+	for _, entry := range fields.Entries {
+		if !storageRetentionMembers(entry, "id", "key", "text", "state", "createdAt", "updatedAt", "source", "sourceDigest", "dependencies", "stale", "canonical") {
+			complete = false
+		}
+	}
+	out.Complete = complete && len(out.Reasons) == 1
+	if out.Complete {
+		out.Reasons = []string{}
+	}
+	return out
+}

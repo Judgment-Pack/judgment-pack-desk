@@ -131,8 +131,8 @@ func TestMovedHistoryWithoutChatsAndConflicts(t *testing.T) {
 					t.Fatal("created fresh history", code)
 				}
 			} else {
-				if record.Path != destination {
-					t.Fatal(record)
+				if record.Path != destination || again.locationStatus().Problem != "" {
+					t.Fatal(record, again.locationStatus())
 				}
 				store, err := again.openChatData()
 				if err != nil {
@@ -147,6 +147,57 @@ func TestMovedHistoryWithoutChatsAndConflicts(t *testing.T) {
 		})
 	}
 }
+
+func TestMovedHistoryWithoutMarkerValidatesPreviousRuns(t *testing.T) {
+	for _, kind := range []string{"empty ledger", "malformed ledger", "wrong namespace"} {
+		t.Run(kind, func(t *testing.T) {
+			s, ts, _ := assistantServer(t)
+			stampMoveIdentity(t, s)
+			location := storageGet(t, ts)
+			old := s.projectDir
+			destination := old + "-moved"
+			source := s.conversationName()
+			namespace := digestOf([]byte(old))
+			draft := `{"version":1,"drafts":[]}`
+			privateFixture(t, filepath.Join(location.Path, draftPackName(source)), draft)
+			raw := `{"version":1,"project":"` + namespace + `","runs":[]}`
+			switch kind {
+			case "malformed ledger":
+				raw = `{"version":1,"project":"` + namespace + `","runs":[{}]}`
+			case "wrong namespace":
+				raw = `{"version":1,"project":"` + digestOf([]byte(destination)) + `","runs":[]}`
+			}
+			name := "assistant-runs-" + namespace + ".json"
+			privateFixture(t, filepath.Join(location.Path, name), raw)
+			before := dialectArtifactOwnerRead(t, filepath.Join(old, startupIdentityDir, startupIdentityName))
+			if err := os.Rename(old, destination); err != nil {
+				t.Fatal(err)
+			}
+			again, _, _ := startedAt(t, s, destination)
+			if kind == "empty ledger" {
+				if again.locationStatus().Problem != "" {
+					t.Fatal(again.locationStatus())
+				}
+				store, err := again.openChatData()
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer store.root.Close()
+				if name, err := resolveConversationName(store.root, destination); err != nil || name != source {
+					t.Fatal(name, err)
+				}
+			} else {
+				if again.locationStatus().Problem == "" {
+					t.Fatal("invalid previous ledger allowed history move")
+				}
+				mustBytes(t, filepath.Join(destination, startupIdentityDir, startupIdentityName), string(before))
+			}
+			mustBytes(t, filepath.Join(location.Path, name), raw)
+			mustBytes(t, filepath.Join(location.Path, draftPackName(source)), draft)
+		})
+	}
+}
+
 func TestProjectMoveConfirmedAndRestarted(t *testing.T) {
 	s, ts, _ := assistantServer(t)
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {

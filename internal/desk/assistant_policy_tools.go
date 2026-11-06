@@ -117,19 +117,22 @@ func (e *assistantRunExecution) assistantPolicyService(ctx context.Context) poli
 	})
 }
 func (e *assistantRunExecution) prepareAssistantPolicy(ctx context.Context, p *assistantPolicyScope) error {
+	return prepareAssistantPolicy(ctx, e.assistantPolicyService(ctx), e.input, p)
+}
+
+func prepareAssistantPolicy(ctx context.Context, service policyService, custody *assistantChatCustody, p *assistantPolicyScope) error {
 	if p == nil {
 		return nil
 	}
-	if e.input == nil {
+	if custody == nil {
 		return errAssistantRunUnavailable
 	}
-	e.input.mu.Lock()
-	ready := e.input.policyReady
-	e.input.mu.Unlock()
+	custody.mu.Lock()
+	ready := custody.policyReady
+	custody.mu.Unlock()
 	if ready {
 		return nil
 	}
-	service := e.assistantPolicyService(ctx)
 	if p.ID != "" {
 		saved, err := service.get(ctx, p.ID)
 		if err != nil {
@@ -151,9 +154,9 @@ func (e *assistantRunExecution) prepareAssistantPolicy(ctx context.Context, p *a
 	if err := service.authorized(ctx); err != nil {
 		return err
 	}
-	e.input.mu.Lock()
-	e.input.policyReady = true
-	e.input.mu.Unlock()
+	custody.mu.Lock()
+	custody.policyReady = true
+	custody.mu.Unlock()
 	return nil
 }
 func (e *assistantRunExecution) assistantConversationTools(runtime *assistantRuntime, p *assistantPolicyScope) (*assistantHostRegistry, error) {
@@ -203,6 +206,10 @@ func (e *assistantRunExecution) assistantConversationTools(runtime *assistantRun
 	tools := append(append(append(append(append(append(append(graph.tools, tests...), recipes.tools...), dialects.tools...), records.tools...), research.tools...), search.tools...), links.tools...)
 	tools = append(tools, websites.tools...)
 	tools = append(tools, e.assistantSavedPackTools(runtime)...)
+	tools, err = e.assistantEnrolledSourceTools(e.ctx, tools)
+	if err != nil {
+		return nil, err
+	}
 	return newAssistantHostRegistry(append(tools, e.assistantPlanTools()...))
 }
 
@@ -333,10 +340,19 @@ func assistantPolicyUpdateCandidate(request *assistantPolicyBasis, a assistantPo
 }
 
 func (e *assistantRunExecution) assistantPolicyTools(scope *assistantPolicyScope) (*assistantHostRegistry, error) {
+	// Owner declarations are closed: an unlisted registration has no taxonomy.
+	taxonomies := map[string]*runcontext.ToolTaxonomy{
+		"read_policy":                         {Operation: "read", Effect: "read"},
+		"read_policy_comparison":              {Operation: "read", Effect: "read"},
+		"read_policy_coverage":                {Operation: "read", Effect: "read"},
+		"propose_policy_update":               {Operation: "propose", Effect: "propose"},
+		"propose_policy_pack_interpretation":  {Operation: "propose", Effect: "propose"},
+		"propose_policy_graph_interpretation": {Operation: "propose", Effect: "propose"},
+	}
 	tools := []runcontext.HostTool{}
 	for _, name := range assistantPolicyNames {
 		name := name
-		t := runcontext.HostTool{Name: name, Description: assistantPolicyDescriptions[name], InputSchema: assistantPolicySchemas()[name], Effect: "read", Delegation: "read", ContextPolicy: &runcontext.ToolContextPolicy{Reference: true}}
+		t := runcontext.HostTool{Name: name, Taxonomy: taxonomies[name], Description: assistantPolicyDescriptions[name], InputSchema: assistantPolicySchemas()[name], Effect: "read", Delegation: "read", ContextPolicy: &runcontext.ToolContextPolicy{Reference: true}}
 		if assistantHostProposal(name) {
 			t.Effect = "proposal"
 			t.Delegation = ""

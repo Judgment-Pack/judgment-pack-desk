@@ -471,10 +471,15 @@ func (e *assistantRunExecution) completeAssistantCreation(ctx context.Context) e
 	}
 	cp := *run.Checkpoint
 	cp.Status = "complete"
-	if err = e.Checkpoint(ctx, cp); err != nil {
+	if assistantCanonicalActive(e.record) {
+		err = e.canonicalHostStatus(ctx, "complete")
+	} else {
+		err = e.Checkpoint(ctx, cp)
+	}
+	if err != nil {
 		return err
 	}
-	if err := e.writer.boundEvent(ctx, contract.RunEvent{Message: &contract.RunEventMessage{Type: "message", Text: "Creation review retained. Checks do not authorize Save."}}); err != nil {
+	if err := e.publishCanonicalHostEvent(ctx, contract.RunEvent{Message: &contract.RunEventMessage{Type: "message", Text: "Creation review retained. Checks do not authorize Save."}}); err != nil {
 		return err
 	}
 	if err := e.writer.State(ctx, "complete"); err != nil {

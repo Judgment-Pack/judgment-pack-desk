@@ -10,9 +10,9 @@ import (
 	agentadapter "github.com/Judgment-Pack/judgment-pack-agent/go/adapter/agent"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/delegate"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/eino"
-	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/turn"
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/failure"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/gate"
 )
 
@@ -20,10 +20,25 @@ import (
 // production executor: domain tools, client actions and final journal CAS must
 // be migrated before a saved-chat purpose can become available.
 type assistantExecution struct {
-	Run     *adapter.Run
-	Adapter adapter.Adapter
-	runtime *assistantRuntime
-	gate    *gate.Gate
+	Run        *adapter.Run
+	Adapter    adapter.Adapter
+	runtime    *assistantRuntime
+	gate       *gate.Gate
+	invocation *assistantExecutionInvocation
+	notices    *assistantGateNoticeRelay
+	prompt     assistantExecutionPrompt
+	retained   bool
+
+	// Only immutable Runtime method guidance is retained across an approval.
+	// Chat/request/document context is rebuilt for each actual adapter opening.
+	methodText            string
+	methodCriticText      string
+	methodCriticReady     bool
+	methodPrompt          assistantExecutionPrompt
+	methodSource          string
+	methodOwner           *assistantRuntimeOwner
+	methodOwnerIdentity   gate.RuntimeExecutionOwner
+	methodRuntimeIdentity *runcontext.RuntimeIdentity
 }
 
 type assistantExecutionPrompt struct {
@@ -31,10 +46,94 @@ type assistantExecutionPrompt struct {
 	Arguments map[string]string
 }
 
-func (x *assistantExecution) Close() { x.runtime.Close() }
+const assistantRetainedGuidanceChanged = "RetainedRuntimeGuidanceChanged: the original Runtime owner, source, prompt or identity changed. Nothing was sent."
+
+func assistantRetainedGuidanceRefusal() error {
+	held := failure.Authored("stale-state", assistantRetainedGuidanceChanged, "context")
+	held.Failure.Outcome = "not-started"
+	return held
+}
+
+func cloneAssistantExecutionPrompt(prompt assistantExecutionPrompt) assistantExecutionPrompt {
+	copy := assistantExecutionPrompt{Name: prompt.Name}
+	if prompt.Arguments != nil {
+		copy.Arguments = make(map[string]string, len(prompt.Arguments))
+		for key, value := range prompt.Arguments {
+			copy.Arguments[key] = value
+		}
+	}
+	return copy
+}
+
+func cloneAssistantRuntimeIdentity(identity *runcontext.RuntimeIdentity) *runcontext.RuntimeIdentity {
+	if identity == nil {
+		return nil
+	}
+	copy := *identity
+	return &copy
+}
+
+// Match the immutable facts used by assistantRunFreshSourceEqual. Host closures
+// and the current transcript are not retained method-guidance facts.
+func assistantExecutionMethodSource(source assistantRunSource) (string, error) {
+	raw, err := json.Marshal(struct {
+		Binding           assistantRunBinding
+		Original, Request []byte
+		Plan              *assistantRunPlan
+	}{source.Binding, source.Original, source.Request, source.Plan})
+	if err != nil {
+		return "", err
+	}
+	return digestOf(raw), nil
+}
+
+func (e *assistantRunExecution) retainedAssistantMethod(ctx context.Context, held *assistantExecution, prompt assistantExecutionPrompt, input *runcontext.Input) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := e.ctx.Err(); err != nil {
+		return "", err
+	}
+	source, err := assistantExecutionMethodSource(e.source)
+	if err != nil || held == nil || !held.retained || held.methodText == "" || !held.methodCriticReady || held.methodSource != source || !sameAssistantExecutionPrompt(prompt, held.methodPrompt) || held.runtime == nil || held.runtime.execution != e || held.runtime.owner == nil || held.runtime.owner != held.methodOwner || held.invocation == nil || held.invocation.owner != e || input == nil || input.Persistence == nil || input.Persistence.Writer == nil || held.invocation.binding == nil || held.invocation.binding.Writer == nil || held.invocation.binding.Writer.Store != input.Persistence.Writer.Store || held.invocation.binding.Writer.ID != input.Persistence.Writer.ID || !e.runtimeContinuationAlive(held.runtime) {
+		return "", assistantRetainedGuidanceRefusal()
+	}
+	original, current := held.methodRuntimeIdentity, input.Runtime
+	if (original == nil) != (current == nil) || original != nil && (original.Identity != current.Identity || original.Version != current.Version) {
+		return "", assistantRetainedGuidanceRefusal()
+	}
+	owner, err := held.runtime.owner.Current(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if e.ctx.Err() != nil {
+			return "", e.ctx.Err()
+		}
+		return "", assistantRetainedGuidanceRefusal()
+	}
+	if owner != held.methodOwnerIdentity {
+		return "", assistantRetainedGuidanceRefusal()
+	}
+	return held.methodText, nil
+}
+
+func (x *assistantExecution) Close() {
+	if !x.retained {
+		if x.invocation != nil {
+			e := x.invocation.owner
+			e.canonicalMu.Lock()
+			if e.gateNotices == x.notices {
+				e.gateNotices = nil
+			}
+			e.canonicalMu.Unlock()
+		}
+		x.runtime.Close()
+	}
+}
 
 func (e *assistantRunExecution) assistantExecutionModels() (runcontext.RunModels, error) {
-	if e.source.Start.Purpose == "brief" {
+	if e.source.Start.Purpose == "brief" || e.source.Start.Purpose == assistantSettingsObservationPurpose {
 		return runcontext.ReadRunModels(runcontext.RunIdentity{Connection: e.record.Binding.ConnectionID, Model: e.record.Binding.Model}, runcontext.NamedModels{})
 	}
 	named := runcontext.NamedModels{}
@@ -60,7 +159,17 @@ func (e *assistantRunExecution) assistantExecutionModels() (runcontext.RunModels
 	return models, nil
 }
 
-func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prompt assistantExecutionPrompt) (_ *assistantExecution, err error) {
+func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prompt assistantExecutionPrompt) (*assistantExecution, error) {
+	return e.reopenAssistantExecution(ctx, prompt, nil, nil)
+}
+
+func (e *assistantRunExecution) reopenAssistantExecution(ctx context.Context, prompt assistantExecutionPrompt, held *assistantExecution, prepared *runcontext.Input) (_ *assistantExecution, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if held != nil && !sameAssistantExecutionPrompt(prompt, held.methodPrompt) {
+		return nil, assistantRetainedGuidanceRefusal()
+	}
 	creation, err := compileAssistantCreationInput(e.source)
 	if err != nil {
 		return nil, err
@@ -78,12 +187,70 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		return nil, errAssistantRunInvalid
 	}
 	if err := e.Authorize(ctx); err != nil {
+		if e.ctx.Err() != nil {
+			return nil, e.ctx.Err()
+		}
+		if held != nil && errors.Is(err, errAssistantRunScope) {
+			return nil, assistantRetainedGuidanceRefusal()
+		}
 		return nil, err
 	}
-	chat, err := e.prepareAssistantInput(ctx)
+	checkpoint := e.record.Checkpoint
+	if assistantCanonicalActive(e.record) {
+		latest, err := e.writer.lease.store.Read(ctx, e.record.Binding, e.record.ID)
+		if err != nil || !assistantCanonicalActive(latest) || validateAssistantCanonicalProjection(latest) != nil {
+			return nil, &runcontext.ContinuationNotRecoverable{}
+		}
+		checkpoint = latest.Checkpoint
+	}
+	// A saved-chat answer already completed initial source/custody preparation
+	// before admission. Consume its exact value once; later reopens stay fresh.
+	var chat *assistantChatInput
+	if held == nil {
+		e.canonicalMu.Lock()
+		chat, e.initialInput = e.initialInput, nil
+		e.canonicalMu.Unlock()
+	}
+	if chat == nil {
+		chat, err = e.prepareAssistantInput(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var g *gate.Gate
+	saveCheckpoint := func(ctx context.Context, cp contract.Checkpoint) error {
+		if cp.ID != checkpoint.ID || cp.RequestKey != e.record.Binding.ExecutionKey {
+			e.cancel()
+			return errAssistantRunScope
+		}
+		if g != nil {
+			count := int64(g.TestCalls())
+			cp.TestCalls = &count
+		}
+		return e.Checkpoint(ctx, cp)
+	}
+	input := &runcontext.Input{Chat: e.source.chatScope(), Phase: e.record.Binding.Phase, Connection: e.record.Binding.ConnectionID, Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: checkpoint, Approval: e.decision, CurrentRequest: &chat.Request, Documents: chat.Documents, CurrentState: chat.State}
+	if held != nil {
+		if prepared == nil || prepared.Persistence == nil || held.invocation == nil || !held.notices.parked(held.invocation.generation) {
+			return nil, errAssistantRunScope
+		}
+		input.Persistence, input.RunStore = prepared.Persistence, prepared.RunStore
+		input.Approval, input.Chat, input.Runtime = prepared.Approval, prepared.Chat, prepared.Runtime
+	}
+	if err := e.bindCanonicalInput(ctx, input); err != nil {
+		return nil, err
+	}
+	if err := bindAssistantRunPlan(e.source, input); err != nil {
+		return nil, err
+	}
+	if err := e.guardAssistantNativePlanContinuation(ctx, input, creation == nil); err != nil {
+		return nil, err
+	}
+	input, err = e.prepareAssistantPlanDecision(ctx, input)
 	if err != nil {
 		return nil, err
 	}
+	checkpoint = input.Execution
 	offMemory := false
 	memory := &offMemory
 	if !assistantAuthoringPurpose(e.source.Start.Purpose) && creation == nil {
@@ -92,6 +259,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if err != nil {
 		return nil, err
 	}
+	input.Memory = memory
 	var critic *assistantCriticSnapshot
 	if assistantCriticEnabled(chat, e.record.Binding.Phase) && runcontext.CriticForcedOff(runcontext.CriticForcedFacts{Purpose: chat.CriticPurpose}) == "" {
 		critic, err = e.holdAssistantCritic(ctx)
@@ -103,7 +271,15 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := e.assistantRuntime(ctx)
+	var runtime *assistantRuntime
+	if held == nil {
+		runtime, err = e.assistantRuntime(ctx)
+	} else {
+		runtime = held.runtime
+		if runtime == nil || !e.runtimeContinuationAlive(runtime) {
+			return nil, assistantRetainedGuidanceRefusal()
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -112,20 +288,51 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 			runtime.Close()
 		}
 	}()
-	var g *gate.Gate
-	saveCheckpoint := func(ctx context.Context, cp contract.Checkpoint) error {
-		if cp.ID != e.record.Checkpoint.ID || cp.RequestKey != e.record.Binding.ExecutionKey {
-			e.cancel()
-			return errAssistantRunScope
+	var promptText string
+	if held != nil {
+		// Agent must consume the explicit approval and acknowledge its running
+		// checkpoint before any new Runtime dispatch. Reuse only the original
+		// method guidance after exact retained-owner/currentness checks.
+		promptText, err = e.retainedAssistantMethod(ctx, held, prompt, input)
+		if err != nil {
+			return nil, err
 		}
-		if g != nil {
-			count := int64(g.TestCalls())
-			cp.TestCalls = &count
+	}
+	var invocation *assistantExecutionInvocation
+	var notices *assistantGateNoticeRelay
+	if assistantCanonicalActive(e.record) {
+		invocation, err = newAssistantExecutionInvocation(ctx, e)
+		if err != nil {
+			return nil, err
 		}
-		cp = assistantCriticCheckpoint(cp, critic)
-		return e.Checkpoint(ctx, cp)
+		if held == nil {
+			notices = &assistantGateNoticeRelay{}
+		} else {
+			notices = held.notices
+		}
+		input.Authorize = invocation.check
+		// Stop and generation installation share canonicalMu. A prepared sink
+		// cannot be installed after Stop or against a replaced binding, even
+		// though its captured authority would also reject later publication.
+		e.canonicalMu.Lock()
+		if e.stopRequested || e.lifecycle != "running" || e.generation != invocation.generation || e.canonicalBinding != invocation.binding || e.canonicalStore != invocation.store || held == nil && e.gateNotices != nil || held != nil && e.gateNotices != notices {
+			e.canonicalMu.Unlock()
+			return nil, errAssistantRunScope
+		}
+		if err = notices.install(invocation); err != nil {
+			e.canonicalMu.Unlock()
+			return nil, err
+		}
+		if held == nil {
+			e.gateNotices = notices
+		}
+		e.canonicalMu.Unlock()
 	}
 	emit := func(event contract.RunEvent) {
+		if invocation != nil {
+			invocation.deliver(event)
+			return
+		}
 		if event.MessageProgress != nil {
 			_ = e.Progress(ctx, *event.MessageProgress)
 			return // live prefixes never enter the durable journal
@@ -156,14 +363,24 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		granted = nil
 	}
 	testCalls := 0
-	if e.record.Checkpoint.TestCalls != nil {
-		testCalls = int(*e.record.Checkpoint.TestCalls)
+	if checkpoint.TestCalls != nil {
+		testCalls = int(*checkpoint.TestCalls)
 	}
-	options := gate.Options{Runtime: runtime.Call, Granted: granted, TestCalls: testCalls, Emit: emit}
-	g = gate.New(options)
-	// The coordinator supplies the canonical declaration/function; the host
-	// gate permits this interaction without granting any domain action.
-	interaction := "delegation"
+	gateEmit := emit
+	if invocation != nil {
+		gateEmit = notices.emit
+	}
+	options := gate.Options{Runtime: runtime.Call, RuntimeActions: runtime.owner.port(), Granted: granted, TestCalls: testCalls, Emit: gateEmit}
+	if held == nil {
+		g = gate.New(options)
+	} else {
+		g = held.gate
+		if g == nil || g.Calls() != held.Run.Gate {
+			return nil, errAssistantRunScope
+		}
+	}
+	bindings := &assistantGateBindings{invocation: invocation}
+	bindings.add(g)
 	var registry *assistantHostRegistry
 	if creationReview {
 		registry, err = newAssistantHostRegistry(nil)
@@ -178,7 +395,7 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if creation != nil && creation.Action.Kind == "research-choice" {
 		reads := []runcontext.HostTool{}
 		for _, tool := range registry.tools {
-			if tool.Effect == "read" {
+			if assistantHostDeclaredRead(tool) {
 				reads = append(reads, tool)
 			}
 		}
@@ -187,29 +404,42 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 			return nil, err
 		}
 	}
-	declarations := registry.declarations()
-	if creation == nil {
-		declarations = append(declarations, contract.ToolOfferHostTool{Name: turn.DelegateTool, Interaction: &interaction})
+	// Runtime supplies its actual offer; only the actual adapter session may
+	// enroll host and package declarations later.
+	offer := g.Offer()
+	if held == nil {
+		offer, err = g.Open(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		phase := gate.LoopPhase(offer)
+		if e.record.Binding.Phase == "plan" {
+			phase = gate.PlanPhase(offer)
+		}
+		g.Enter(phase)
 	}
-	offer, err := g.Open(ctx, declarations)
-	if err != nil {
-		return nil, err
-	}
-	phase := gate.LoopPhase(offer)
+	phase := g.Phase()
+	// Domain filtering precedes context construction and is independent of the
+	// gate's initially absent host metadata. Package actions come from context.
+	domainOffer := contract.ToolOffer{HostTools: registry.declarations()}
+	domainPhase := gate.LoopPhase(domainOffer)
 	if e.record.Binding.Phase == "plan" {
-		phase = gate.PlanPhase(offer)
+		domainPhase = gate.PlanPhase(domainOffer)
 	}
-	g.Enter(phase)
-	promptText, err := runtime.Prompt(ctx, prompt)
-	if err != nil {
-		return nil, err
+	if held == nil {
+		promptText, err = runtime.Prompt(ctx, prompt)
+		if err != nil {
+			return nil, err
+		}
+		// Host-only immutable metadata from the actual original transport.
+		// It never enlarges the model offer or authorizes an action.
+		descriptor, descriptorErr := runtime.rpc(ctx, "tools/call", map[string]any{"name": "describe_runtime", "arguments": map[string]any{}})
+		if descriptorErr != nil {
+			return nil, descriptorErr
+		}
+		input.Runtime = assistantRuntimeCacheIdentity(descriptor)
 	}
-	// Metadata is host-only, retained through the actual transport. It is never
-	// added to the model's tool offer or used as permission to enlarge it.
-	if _, err = runtime.rpc(ctx, "tools/call", map[string]any{"name": "describe_runtime", "arguments": map[string]any{}}); err != nil {
-		return nil, err
-	}
-	input := &runcontext.Input{Phase: e.record.Binding.Phase, Connection: e.record.Binding.ConnectionID, Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: e.record.Checkpoint, Approval: e.decision, CurrentRequest: &chat.Request, Documents: chat.Documents, CurrentState: chat.State, Memory: memory}
+	methodText := promptText
 	packID := ""
 	if e.source.Start.Purpose == "chat" {
 		packID, _, _ = assistantSavedPackLink(e.source.Original)
@@ -217,10 +447,6 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if packID != "" || chat.Policy != nil && chat.Policy.ID != "" || creation != nil && creation.Action.Kind == "research-choice" {
 		off := false
 		input.ArtifactProposals = &off
-	}
-	if critic != nil {
-		checkpoint := assistantCriticCheckpoint(*input.Execution, critic)
-		input.Execution = &checkpoint
 	}
 	if e.source.Profile.Context != nil {
 		raw, marshalErr := json.Marshal(e.source.Profile.Context)
@@ -244,11 +470,30 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	if chat.CriticPurpose != "" {
 		purpose = chat.CriticPurpose
 	}
-	run := &adapter.Run{PolicyProject: assistantMemoryProposalPolicy(e.record.Binding), HostTools: registry.offered(gateHostPhase{names: phase.Host}), Purpose: purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Critic: assistantCriticChoice(chat), CriticProject: e.source.Profile.Critic, CriticReasoning: chat.CriticReasoning, ExistingPack: critic != nil && critic.path != "", Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
+	hostTools := registry.offered(gateHostPhase{names: domainPhase.Host})
+	if invocation != nil {
+		for i := range hostTools {
+			execute := hostTools[i].Execute
+			hostTools[i].Execute = func(callCtx context.Context, args json.RawMessage) (runcontext.ToolResult, error) {
+				if err := invocation.check(callCtx); err != nil {
+					return runcontext.ToolResult{}, err
+				}
+				return execute(callCtx, args)
+			}
+		}
+	}
+	run := &adapter.Run{PolicyProject: assistantMemoryProposalPolicy(e.record.Binding), HostTools: hostTools, Purpose: purpose, ModelName: e.record.Binding.Model, Thinking: chat.Thinking, Critic: assistantCriticChoice(chat), CriticProject: e.source.Profile.Critic, CriticReasoning: chat.CriticReasoning, ExistingPack: critic != nil && critic.path != "", Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Prompt: promptText, AllowConversation: true, Interactive: true, Context: input, Host: host, Emit: emit}
 	if critic != nil {
-		run.TestPrompt, err = runtime.criticPrompt(ctx)
-		if err != nil {
-			return nil, err
+		if held == nil {
+			run.TestPrompt, err = runtime.criticPrompt(ctx)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// retainedAssistantMethod already qualified the exact original owner,
+			// source and identity, including completed critic discovery. Empty
+			// preserves its acknowledged lack of test_pack support.
+			run.TestPrompt = held.methodCriticText
 		}
 		for _, row := range critic.cases {
 			run.Cases = append(run.Cases, append(json.RawMessage(nil), row...))
@@ -256,10 +501,10 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 	}
 	var base adapter.Adapter = eino.New()
 	if e.source.Connection.Assistant.Engine == "codex" {
-		run.Agent, err = e.assistantAgent()
+		run.Agent, err = e.assistantAgent(invocation)
 		base = assistantCanonicalAgent(agentadapter.New())
 	} else {
-		run.Model, err = e.assistantModel()
+		run.Model, err = e.assistantModel(invocation)
 		if endpoint != nil {
 			run.Wire = endpoint.Kind
 		}
@@ -278,26 +523,47 @@ func (e *assistantRunExecution) openAssistantExecution(ctx context.Context, prom
 		}
 	}
 	run.Models = func() (runcontext.RunModels, error) {
+		if invocation != nil {
+			if err := invocation.check(ctx); err != nil {
+				return runcontext.RunModels{}, err
+			}
+		}
 		if err := e.Authorize(ctx); err != nil {
 			return runcontext.RunModels{}, err
 		}
 		return e.assistantExecutionModels()
 	}
 	run.Children = func(ctx context.Context, profile contract.DelegatedTaskProfile, childEmit func(contract.RunEvent)) (*gate.Calls, []contract.ToolOfferRuntimeTool, error) {
+		if invocation != nil {
+			if err := invocation.check(ctx); err != nil {
+				return nil, nil, err
+			}
+		}
 		if err := e.Authorize(ctx); err != nil {
 			return nil, nil, err
 		}
-		child := gate.New(gate.Options{Runtime: runtime.Call, Granted: granted, Turn: g, Emit: childEmit})
-		child.SetOffer(offer)
-		childPhase := gate.ChildPhase(profile, offer, phase)
-		child.Enter(childPhase)
-		return child.Calls(), childPhase.Offer(offer).Tools, nil
+		calls, tools := bindings.child(g, profile, gate.Options{Runtime: runtime.Call, Granted: granted, Turn: g, Emit: childEmit})
+		return calls, tools, nil
 	}
 	if creation != nil {
 		run.Children = nil
 	}
+	// Native restoration in delegate.With may enroll before reaching inner.Run.
+	if err := bindings.bind(run); err != nil {
+		return nil, err
+	}
+	base = bindings.adapter(base)
 	base = assistantHostAdapter(base, e.record.Binding, chat.Request)
-	return &assistantExecution{Run: run, Adapter: delegate.With(base, delegate.Options{}), runtime: runtime, gate: g}, nil
+	base = e.canonicalAdapter(base, g)
+	outer := delegate.With(base, delegate.Options{})
+	if invocation != nil {
+		outer = invocation.adapter(outer)
+	}
+	methodSource, err := assistantExecutionMethodSource(e.source)
+	if err != nil {
+		return nil, err
+	}
+	return &assistantExecution{Run: run, Adapter: outer, runtime: runtime, gate: g, invocation: invocation, notices: notices, prompt: cloneAssistantExecutionPrompt(prompt), methodText: methodText, methodCriticText: run.TestPrompt, methodCriticReady: true, methodPrompt: cloneAssistantExecutionPrompt(prompt), methodSource: methodSource, methodOwner: runtime.owner, methodOwnerIdentity: runtime.owner.identity, methodRuntimeIdentity: cloneAssistantRuntimeIdentity(input.Runtime)}, nil
 }
 
 func (r *assistantRuntime) rpc(ctx context.Context, method string, params any) (json.RawMessage, error) {

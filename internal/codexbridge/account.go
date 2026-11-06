@@ -24,6 +24,8 @@ type Options struct {
 	// Empty Binary uses the Desk-managed runtime. An explicit override comes
 	// from the installation owner, never project or HTTP input.
 	Binary, ProfileDir, ProjectDir string
+	// Accounting is an optional host-only observation sink, never project input.
+	Accounting *AccountingSink
 }
 
 // Owner binds a transient challenge to a minted Desk session and its policy.
@@ -77,6 +79,7 @@ func (p *loginAttempt) stop() {
 // Manager supervises the private native account process. It does not expose
 // raw RPC, inference, a project cwd or a tool-execution capability.
 type Manager struct {
+	accounting    *AccountingSink
 	accountNonce  string
 	accountEpoch  atomic.Uint64
 	mu            sync.Mutex
@@ -130,7 +133,7 @@ func NewManager(options Options) (*Manager, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Manager{accountNonce: hex.EncodeToString(nonce[:]), life: ctx, cancel: cancel, profile: p, binary: binary, managed: options.Binary == "", resolveBinary: p.managedBinary, launch: startClient, loginTTL: 10 * time.Minute}, nil
+	return &Manager{accounting: options.Accounting, accountNonce: hex.EncodeToString(nonce[:]), life: ctx, cancel: cancel, profile: p, binary: binary, managed: options.Binary == "", resolveBinary: p.managedBinary, launch: startClient, loginTTL: 10 * time.Minute}, nil
 }
 
 func (m *Manager) operation(ctx context.Context) (context.Context, func()) {

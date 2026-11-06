@@ -25,10 +25,11 @@ model-free Runtime validation. Checks do not acquire sources or establish cases.
 Establish cases is an explicit model admission with independent inputs: original
 person statements, current verified citations and declared outcome/evidence/target
 contracts. Draft rules, previous assistant answers and Runtime observations are
-excluded. The full reviewer proposal is retained before finite expectation
-validation. Retry validates that exact retained proposal without another reviewer.
-Case IDs, order, typed facts, missing values, numeric tokens, expected disposition
-and handoff target survive both valid and invalid findings.
+excluded. The full canonically accepted reviewer proposal is retained before
+finite expectation validation. Retry validates that exact retained proposal
+without another reviewer. Starting at canonical admission, case IDs, order, typed
+facts, missing values, accepted numeric tokens, expected disposition and handoff
+target survive both valid and invalid findings.
 
 ## Source custody and correction
 
@@ -100,8 +101,9 @@ report as the publish gate, including every ordered row.
 
 Conversation and draft readers retain the authoritative JSON trees for cases,
 held proposals and issues separately from their display values. Both persistence
-writers use those trees to keep number tokens and member order through artifact
-materialization, updates, reload and the next explicit creation control. Browser
+writers use those trees to keep accepted canonical number tokens and member order
+through artifact materialization, updates, reload and the next explicit creation
+control. Historical saved trees likewise retain their supplied tokens. Browser
 creation overlays also compare number-preserving identities; an equal rounded
 JavaScript value cannot hide a changed token. Local edits still replace their
 edited values, and wire provenance never establishes approval or readiness.
@@ -120,9 +122,28 @@ proposal therefore does not create a new artifact generation or invalidate the
 visible token's generation/source scope. This permits both correction orders
 without relaxing current-session, phase, revision, artifact CAS or witness checks.
 
-The continuation fixtures compare actual producer custody against the canonical
-accepted proposal event, then separately exercise handwritten accepted-wire number
-tokens through the default browser writers. The pinned Agent's conversion of
-provider-wire numbers before canonical proposal admission is a distinct unresolved
-release dependency; these continuation checks do not claim fidelity across that
-boundary or reconstruct accepted documents from provider prose.
+The released Agent v0.10.0 checks original proposal JSON before canonical
+admission. A number whose mathematical decimal value changes during canonical
+serialization refuses: `9007199254740993` cannot become an accepted rounded
+`9007199254740992`. Equivalent decimal/exponent spellings and negative zero may
+normalize (`1.20` to `1.2`, `1e2` to `100`, `-0` to `0`, nested `2.500` to `2.5`).
+Numeric-loss and source-work-bound refusals stop automatic reformat; malformed
+JSON retains its bounded reformat request. Native `propose_pack` requires original
+complete document text in `documentJson`; retired `document` refuses. The fenced
+`proposal.document` envelope is unchanged.
+
+Actual API/native fixtures prove original unsafe-number refusal and accepted
+normalization, then carry accepted canonical bytes through retained receipts and
+projected checkpoints, both correction orders, default browser persistence, reload
+and the next control. Separate handwritten raw browser fixtures prove only
+post-admission custody; they do not certify original provider tokens. Historical
+already-rounded records cannot recover or prove original precision. No host
+reconstruction from provider prose replaces the canonical proposal authority.
+
+On 2026-10-25, the maintainer approved the Desk #660 contract: reject
+mathematical-value-changing rounding, permit equivalent lexical normalization,
+and preserve exact accepted bytes afterward. This does not establish arbitrary-
+precision support or original-spelling preservation. Desk #660 remains open;
+final combined checks, exact-head CI, independent review and release acceptance
+remain pending, and exact provider-to-artifact numeric-token fidelity is not
+claimed.

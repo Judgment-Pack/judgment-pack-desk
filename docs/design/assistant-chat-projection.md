@@ -23,11 +23,24 @@ approval and handoff capabilities stay in the run journal.
 Issue #537 explicitly accepts the Go adapter's sorted-map proposal document.
 A canonical proposal on a normal creation chat becomes new candidate text using
 that serialization. It does not reconstruct original model bytes. Existing
-candidate strings, original turns, input/source strings, missing members, null,
-false, zero and numeric spellings remain unchanged. Unrelated chats retain their
-exact original JSON slices, including whitespace. Raw values are written directly:
+candidate strings, original turns and input/source strings retain their supplied
+bytes; missing members, null, false, zero and numeric spellings in those retained
+records remain unchanged from their saved/admitted starting point. Unrelated chats
+retain their exact original JSON slices, including whitespace. Raw values are written directly:
 marshaling `json.RawMessage` would compact those bytes and invalidate another run's
 pinned source. Duplicate members/IDs and unsupported saved message IDs refuse.
+
+Original provider admission is a separate boundary. Released Agent v0.10.0 refuses
+proposal numbers whose mathematical decimal value changes under canonical
+serialization, including `9007199254740993`; it may normalize equivalent decimal
+and exponent spellings and negative zero. Native proposals supply complete text
+in `documentJson`, while fenced `proposal.document` is unchanged. Projection and
+subsequent persistence protect the accepted canonical bytes, not the original
+provider spelling. Historical already-rounded records cannot recover or certify
+original precision, and model prose is never a second proposal authority.
+The maintainer approved this Desk #660 refusal/normalization contract on
+2026-10-25. Passing custody tests do not complete the open issue's final checks,
+CI, independent review or release acceptance gates.
 
 Proposal events on a saved pack, Graph, Dialect/input, Policy or draft-associated
 chat lack the producer-bound exact target/basis needed for a reviewed update.

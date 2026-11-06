@@ -84,11 +84,16 @@ func readAssistantTestArguments(name string, raw []byte) (assistantTestArguments
 	return a, nil
 }
 func (e *assistantRunExecution) assistantTestTools(runtime *assistantRuntime) ([]runcontext.HostTool, error) {
+	// Owner declarations are closed: an unlisted registration has no taxonomy.
+	taxonomies := map[string]*runcontext.ToolTaxonomy{
+		"read_pack_tests":    {Operation: "read", Effect: "read"},
+		"propose_test_cases": {Operation: "propose", Effect: "propose"},
+	}
 	tools := []runcontext.HostTool{}
 	for _, name := range []string{"read_pack_tests", "propose_test_cases"} {
 		name := name
 		description := "Read an exact declared pack or saved unfinalized draft, saved tests, current coverage and Runtime test-design guidance. Required before proposing cases. Does not run tests or change cases."
-		t := runcontext.HostTool{Name: name, Description: description, InputSchema: assistantTestSchemas()[name], Effect: "read", Delegation: "read", ContextPolicy: &runcontext.ToolContextPolicy{Reference: true}}
+		t := runcontext.HostTool{Name: name, Taxonomy: taxonomies[name], Description: description, InputSchema: assistantTestSchemas()[name], Effect: "read", Delegation: "read", ContextPolicy: &runcontext.ToolContextPolicy{Reference: true}}
 		if name == "propose_test_cases" {
 			t.Description = "Retain a Runtime-validated test proposal in the exact owner's test suite for human review. Read current tests first. No cases, pack, thresholds or expected outcomes are saved or changed. Requires compatible Runtime fact-type validation."
 			t.Effect = "proposal"
@@ -126,14 +131,18 @@ func (e *assistantRunExecution) readAssistantTestTarget(ctx context.Context, own
 	if err := e.Authorize(ctx); err != nil {
 		return assistantTestRead{}, err
 	}
+	return e.service.server.readAssistantTestTarget(ctx, e.source, owner)
+}
+
+// The caller authorizes the exact saved source before this read-only preparation.
+func (s *Server) readAssistantTestTarget(ctx context.Context, source assistantRunSource, owner string) (assistantTestRead, error) {
 	if owner == "" {
-		owner = assistantTestDefaultOwner(e.source.Original)
+		owner = assistantTestDefaultOwner(source.Original)
 	}
 	if owner == "" || len(owner) > 256 {
 		return assistantTestRead{}, failure.ToolInput("Choose a declared saved pack or a real unfinalized draft.")
 	}
-	s := e.service.server
-	config, _, err := e.graphDeclarations(ctx)
+	config, _, err := s.assistantDecisionDeclarations()
 	if err != nil {
 		return assistantTestRead{}, err
 	}

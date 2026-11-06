@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -79,6 +80,11 @@ func assistantRunBackupCode(t *testing.T, ts *httptest.Server, page bool) int {
 func TestAssistantRunStorageBackupRestoreHistorical(t *testing.T) {
 	server, ts, store, binding, record, lease, writer := assistantRunHTTPFixture(t)
 	ctx := context.Background()
+	fingerprint := digestOf([]byte("exact retained critic inputs"))
+	assistantRunMust(t, writer.change(ctx, false, func(run *assistantRunRecord) (bool, error) {
+		run.CriticCustody = &assistantCriticCustody{Version: 2, Fingerprint: fingerprint}
+		return true, nil
+	}))
 	saved, err := store.Read(ctx, binding, record.ID)
 	assistantRunMust(t, err)
 	cp := *saved.Checkpoint
@@ -119,6 +125,14 @@ func TestAssistantRunStorageBackupRestoreHistorical(t *testing.T) {
 	restored := server.assistantRuns()
 	held, err := restored.Read(ctx, binding, record.ID)
 	assistantRunMust(t, err)
+	if held.CriticCustody == nil || held.CriticCustody.Version != 2 || held.CriticCustody.Fingerprint != fingerprint {
+		t.Fatal("restore lost private critic custody")
+	}
+	public, err := json.Marshal(assistantRunPublic(held))
+	assistantRunMust(t, err)
+	if bytes.Contains(public, []byte("criticCustody")) || bytes.Contains(public, []byte(fingerprint)) {
+		t.Fatal("private critic custody exposed publicly")
+	}
 	var facts map[string]any
 	assistantRunMust(t, json.Unmarshal(held.Checkpoint.Operations[0].Args, &facts))
 	if len(facts) != 2 || facts["Fact"] != false || facts["fact"] != nil {
@@ -588,6 +602,94 @@ func TestAssistantRunStorageNestedContentAliases(t *testing.T) {
 				t.Fatal("source archive changed")
 			}
 			mustBytes(t, filepath.Join(before.Path, store.name), string(original))
+		})
+	}
+}
+
+func TestAssistantRunStorageCriticCustodyClosed(t *testing.T) {
+	_, _, store, _, _, _, writer := assistantRunHTTPFixture(t)
+	fingerprint := strings.Repeat("a", 64)
+	assistantRunMust(t, writer.change(t.Context(), false, func(run *assistantRunRecord) (bool, error) {
+		run.CriticCustody = &assistantCriticCustody{Version: 2, Fingerprint: fingerprint}
+		return true, nil
+	}))
+	original := assistantRunRaw(t, store)
+	member := `"criticCustody":{"version":2,"fingerprint":"` + fingerprint + `"}`
+	for _, tc := range []struct {
+		name, value string
+		valid       bool
+	}{
+		{"current", `{"version":2,"fingerprint":"` + fingerprint + `"}`, true},
+		{"missing-version", `{"fingerprint":"` + fingerprint + `"}`, false},
+		{"missing-fingerprint", `{"version":2}`, false},
+		{"null", `null`, false},
+		{"null-version", `{"version":null,"fingerprint":"` + fingerprint + `"}`, false},
+		{"null-fingerprint", `{"version":2,"fingerprint":null}`, false},
+		{"legacy-version", `{"version":1,"fingerprint":"` + fingerprint + `"}`, false},
+		{"future-version", `{"version":3,"fingerprint":"` + fingerprint + `"}`, false},
+		{"string-version", `{"version":"2","fingerprint":"` + fingerprint + `"}`, false},
+		{"bad-fingerprint", `{"version":2,"fingerprint":"forged"}`, false},
+		{"upper-fingerprint", `{"version":2,"fingerprint":"` + strings.Repeat("A", 64) + `"}`, false},
+		{"unknown", `{"version":2,"fingerprint":"` + fingerprint + `","permission":true}`, false},
+		{"alias", `{"Version":2,"fingerprint":"` + fingerprint + `"}`, false},
+		{"duplicate", `{"version":2,"version":2,"fingerprint":"` + fingerprint + `"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := bytes.Replace(original, []byte(member), []byte(`"criticCustody":`+tc.value), 1)
+			if !bytes.Contains(original, []byte(member)) {
+				t.Fatal("custody fixture missing")
+			}
+			before := bytes.Clone(raw)
+			ledger, err := decodeAssistantRunStorage(store.name, raw)
+			if (err == nil) != tc.valid {
+				t.Fatalf("custody admission: %v", err)
+			}
+			if tc.valid && (ledger.Runs[0].CriticCustody == nil || ledger.Runs[0].CriticCustody.Fingerprint != fingerprint) {
+				t.Fatal("custody did not roundtrip")
+			}
+			if !bytes.Equal(before, raw) {
+				t.Fatal("reader rewrote private evidence")
+			}
+		})
+	}
+}
+
+func TestAssistantRunStorageLegacyCriticRefusesWholeLedger(t *testing.T) {
+	for _, members := range []string{`"deskCriticInputV1":"legacy",`, `"deskCriticInputV2":"legacy",`, `"deskCriticInputV1":"legacy","deskCriticInputV2":"legacy",`} {
+		t.Run(members, func(t *testing.T) {
+			server, _, store, binding, first, lease, _ := assistantRunHTTPFixture(t)
+			siblingBinding := binding
+			siblingBinding.Owner.ID = "unaffected-sibling"
+			sibling, _, err := lease.Admit(t.Context(), siblingBinding, "sibling", digestOf([]byte("sibling body")), func() error { return nil })
+			assistantRunMust(t, err)
+			assistantRunMust(t, lease.Close())
+			original := assistantRunRaw(t, store)
+			legacy := bytes.Replace(original, []byte(`"checkpoint":{`), []byte(`"checkpoint":{`+members), 1)
+			if bytes.Equal(original, legacy) {
+				t.Fatal("legacy fixture missing")
+			}
+			root, err := server.openChatData()
+			assistantRunMust(t, err)
+			defer root.root.Close()
+			path := filepath.Join(root.location.Path, store.name)
+			assistantRunMust(t, os.WriteFile(path, legacy, 0600))
+			for _, target := range []struct {
+				binding assistantRunBinding
+				id      string
+			}{{binding, first.ID}, {siblingBinding, sibling.ID}} {
+				if _, err := store.Read(t.Context(), target.binding, target.id); err == nil {
+					t.Fatal("legacy checkpoint did not refuse whole ledger")
+				}
+			}
+			if held, err := store.Acquire(t.Context()); err == nil {
+				held.Close()
+				t.Fatal("legacy ledger granted fresh lease")
+			}
+			after, err := os.ReadFile(path)
+			assistantRunMust(t, err)
+			if !bytes.Equal(legacy, after) {
+				t.Fatal("legacy refusal rewrote original evidence")
+			}
 		})
 	}
 }

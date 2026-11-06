@@ -41,21 +41,28 @@ type assistantGraphRead struct {
 	Declaration string `json:"declaration"`
 }
 type assistantHostIntent struct {
-	Plan           *assistantPlanMetadata          `json:"plan,omitempty"`
-	DialectAction  *assistantDialectActionMetadata `json:"dialectAction,omitempty"`
-	RecipeProposal *assistantDialectRecipeProposal `json:"recipeProposal,omitempty"`
-	CallID         string                          `json:"callId"`
-	CallbackID     string                          `json:"callbackId,omitempty"`
-	Root           bool                            `json:"root"`
-	Arguments      []byte                          `json:"arguments"`
-	Policy         *assistantPolicyHostBinding     `json:"policy,omitempty"`
+	ExternalScope     *assistantExternalScope         `json:"externalScope,omitempty"`
+	SourceBinding     *assistantHostSourceBinding     `json:"sourceBinding,omitempty"`
+	Plan              *assistantPlanMetadata          `json:"plan,omitempty"`
+	DialectAction     *assistantDialectActionMetadata `json:"dialectAction,omitempty"`
+	RecipeProposal    *assistantDialectRecipeProposal `json:"recipeProposal,omitempty"`
+	CallID            string                          `json:"callId"`
+	CallbackID        string                          `json:"callbackId,omitempty"`
+	DurableDispatchID string                          `json:"durableDispatchId,omitempty"`
+	Root              bool                            `json:"root"`
+	Arguments         []byte                          `json:"arguments"`
+	Policy            *assistantPolicyHostBinding     `json:"policy,omitempty"`
 }
 type assistantHostResult struct {
-	DialectRead  *assistantDialectRead  `json:"dialectRead,omitempty"`
-	Tests        *assistantTestRead     `json:"tests,omitempty"`
-	Result       []byte                 `json:"result"`
-	Read         *assistantGraphRead    `json:"read,omitempty"`
-	PolicySource *policyAuthoringSource `json:"policySource,omitempty"`
+	ExternalReadEvidence *assistantExternalReadEvidence       `json:"externalReadEvidence,omitempty"`
+	ExternalControl      *assistantExternalControl            `json:"externalControl,omitempty"`
+	ExternalFailure      []byte                               `json:"externalFailure,omitempty"`
+	DialectRead          *assistantDialectRead                `json:"dialectRead,omitempty"`
+	DialectPage          *assistantDialectCompletePageReceipt `json:"dialectPage,omitempty"`
+	Tests                *assistantTestRead                   `json:"tests,omitempty"`
+	Result               []byte                               `json:"result"`
+	Read                 *assistantGraphRead                  `json:"read,omitempty"`
+	PolicySource         *policyAuthoringSource               `json:"policySource,omitempty"`
 }
 
 func assistantGraphTool(name string) bool {
@@ -78,6 +85,12 @@ func assistantHostArgumentsMatch(retained, original []byte) bool {
 }
 
 func assistantParentHostCall(run assistantRunRecord, name string, intent assistantHostIntent) bool {
+	if assistantCanonicalActive(run) {
+		return assistantCanonicalParentHostCall(run, name, intent)
+	}
+	if intent.DurableDispatchID != "" || intent.SourceBinding != nil {
+		return false
+	}
 	count := 0
 	for _, event := range run.Events {
 		if c := event.Event.ToolCall; c != nil && c.CallID != nil && *c.CallID == intent.CallID {
@@ -90,6 +103,11 @@ func assistantParentHostCall(run assistantRunRecord, name string, intent assista
 	return count == 1
 }
 func assistantNativeHostCall(run assistantRunRecord, name string, intent assistantHostIntent) bool {
+	if intent.SourceBinding != nil {
+		if _, ok := assistantHostSourceRecord(intent.SourceBinding, name); !ok || (intent.CallbackID != "") != (intent.SourceBinding.CallbackAlias != "") {
+			return false
+		}
+	}
 	if intent.CallbackID == "" {
 		return true
 	}
@@ -119,6 +137,17 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 					if json.Unmarshal(inv.Intent, &request) != nil {
 						return false
 					}
+					if intent.SourceBinding != nil {
+						// The live source Execute closure captured this exact alias
+						// after Agent routed it. Descriptions are never identity.
+						count := 0
+						for _, tool := range request.Tools {
+							if tool.Name == v.Call.Name && tool.Name == intent.SourceBinding.CallbackAlias {
+								count++
+							}
+						}
+						return count == 1
+					}
 					for _, tool := range request.Tools {
 						if tool.Name == v.Call.Name && strings.HasPrefix(tool.Description, name+":") {
 							return true
@@ -131,6 +160,9 @@ func assistantNativeHostCall(run assistantRunRecord, name string, intent assista
 	return false
 }
 func validateAssistantDomainOutputs(run assistantRunRecord) error {
+	if err := validateAssistantDialectDraftCustody(run); err != nil {
+		return err
+	}
 	if err := validateAssistantSavedPack(run); err != nil {
 		return err
 	}
@@ -148,8 +180,31 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 	}
 	receipts := map[string]assistantHostResult{}
 	intents := map[string]assistantHostIntent{}
+	dispatches := map[string]bool{}
 	for _, op := range run.Operations {
+		if assistantDialectReserved(op.Result, "externalReadEvidence") || assistantDialectReserved(op.Result, "externalControl") || assistantDialectReserved(op.Result, "externalFailure") {
+			var in assistantHostIntent
+			var result assistantHostResult
+			if op.Kind != "host" || readAssistantHostReceipt(op.Intent, &in) != nil || readAssistantHostReceipt(op.Result, &result) != nil || validateAssistantExternalResult(run, op, in, result) != nil || validateAssistantExternalEvidence(run, op, in, result) != nil {
+				return errAssistantRunInvalid
+			}
+		}
+		if assistantDialectReserved(op.Intent, "externalScope") && !assistantDialectReserved(op.Intent, "sourceBinding") {
+			return errAssistantRunInvalid
+		}
+		if assistantDialectReserved(op.Intent, "sourceBinding") {
+			var in assistantHostIntent
+			if op.Kind != "host" || readAssistantHostReceipt(op.Intent, &in) != nil || in.SourceBinding == nil {
+				return errAssistantRunInvalid
+			}
+			if _, ok := assistantHostSourceRecord(in.SourceBinding, op.Name); !ok {
+				return errAssistantRunInvalid
+			}
+		}
 		if op.Kind == "host" && op.Name != assistantPlanTool && assistantDialectReserved(op.Intent, "plan") {
+			return errAssistantRunInvalid
+		}
+		if assistantDialectReserved(op.Result, "dialectPage") && (op.Kind != "host" || op.Name != "read_dialect") {
 			return errAssistantRunInvalid
 		}
 		if op.Kind == "host" && !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" && (assistantDialectReserved(op.Intent, "dialectAction") || assistantDialectReserved(op.Result, "dialectRead")) {
@@ -167,6 +222,12 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		var in assistantHostIntent
 		if readAssistantHostReceipt(op.Intent, &in) != nil || !assistantRunText(in.CallID, 256) || !json.Valid(in.Arguments) || !assistantNativeHostCall(run, op.Name, in) || in.Root && !assistantParentHostCall(run, op.Name, in) || (assistantHostProposal(op.Name) || op.Name == "request_dialect_research") && !in.Root {
 			return errAssistantRunInvalid
+		}
+		if in.DurableDispatchID != "" {
+			if !in.Root && in.ExternalScope == nil || dispatches[in.DurableDispatchID] || !assistantCanonicalHostResultMatches(run, op, in) {
+				return errAssistantRunInvalid
+			}
+			dispatches[in.DurableDispatchID] = true
 		}
 		if op.Name == assistantPlanTool {
 			if validateAssistantPlanIntent(run, op, in) != nil {
@@ -231,7 +292,7 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 			continue
 		}
 		var result assistantHostResult
-		if readAssistantHostReceipt(op.Result, &result) != nil || !json.Valid(result.Result) {
+		if readAssistantHostReceipt(op.Result, &result) != nil || !json.Valid(result.Result) || validateAssistantExternalResult(run, op, in, result) != nil || validateAssistantExternalEvidence(run, op, in, result) != nil {
 			return errAssistantRunInvalid
 		}
 		value, err := runcontext.ParseJSON(result.Result)
@@ -242,7 +303,10 @@ func validateAssistantDomainOutputs(run assistantRunRecord) error {
 		if err := validateAssistantDialectReadReceipt(op, in, result); err != nil {
 			return err
 		}
-		if (op.Name == "read_dialect" || op.Name == "read_dialect_publication") && op.State == "completed" && !tool.Err() && result.DialectRead == nil {
+		if err := validateAssistantDialectCompletePageReceipt(run, op, in, result); err != nil {
+			return err
+		}
+		if (op.Name == "read_dialect" || op.Name == "read_dialect_publication") && op.State == "completed" && !tool.Err() && result.DialectRead == nil && result.DialectPage == nil {
 			return errAssistantRunInvalid
 		}
 		if err := validateAssistantTestReadReceipt(op, in, result); err != nil {
@@ -518,11 +582,14 @@ func (e *assistantRunExecution) invokeHost(ctx context.Context, name string, arg
 }
 
 type assistantHostObservation struct {
-	Result      runcontext.ToolResult
-	GraphRead   *assistantGraphRead
-	TestsRead   *assistantTestRead
-	DialectRead *assistantDialectRead
-	Output      *assistantDomainOutput
+	ExternalProof      *assistantExternalReadProof
+	ExternalNotStarted *assistantExternalNotStarted
+	Result             runcontext.ToolResult
+	GraphRead          *assistantGraphRead
+	TestsRead          *assistantTestRead
+	DialectRead        *assistantDialectRead
+	DialectPage        *assistantDialectCompletePageReceipt
+	Output             *assistantDomainOutput
 }
 
 func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name string, args json.RawMessage, work func(context.Context, bool) (runcontext.ToolResult, *assistantGraphRead, *assistantDomainOutput, error)) (runcontext.ToolResult, error) {
@@ -533,7 +600,11 @@ func (e *assistantRunExecution) invokeDomainHost(ctx context.Context, name strin
 }
 
 func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name string, args json.RawMessage, work func(context.Context, bool) (assistantHostObservation, error)) (runcontext.ToolResult, error) {
+	physicalStarted := false
 	refuse := func(err error) (runcontext.ToolResult, error) {
+		if assistantExternalSourced(ctx, name) {
+			return runcontext.ToolResult{}, assistantExternalFailure(err, !physicalStarted)
+		}
 		if assistantDialectTool(name) {
 			return assistantDialectFailure(err), nil
 		}
@@ -551,6 +622,37 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		return refuse(errAssistantRunScope)
 	}
 	in := assistantHostIntent{CallID: runcontext.CallIDOf(ctx), CallbackID: callback, Root: root, Arguments: bytes.Clone(args)}
+	var sourceErr error
+	in.SourceBinding, sourceErr = assistantLiveHostSource(ctx, name)
+	if sourceErr != nil {
+		return refuse(sourceErr)
+	}
+	if sourceErr = assistantExternalIntentScope(ctx, &in); sourceErr != nil {
+		return refuse(sourceErr)
+	}
+	var retainedSelection *assistantRunOperation
+	if (root || in.ExternalScope != nil) && assistantCanonicalActive(e.record) {
+		run, err := e.writer.lease.store.Read(ctx, e.record.Binding, e.record.ID)
+		if err != nil {
+			return refuse(err)
+		}
+		retainedSelection, err = e.selectAssistantExternalReplay(ctx, run, name, in)
+		if err != nil {
+			return refuse(err)
+		}
+		if retainedSelection != nil {
+			var original assistantHostIntent
+			if readAssistantHostReceipt(retainedSelection.Intent, &original) != nil {
+				return refuse(errAssistantRunInvalid)
+			}
+			in.DurableDispatchID = original.DurableDispatchID
+		} else {
+			in.DurableDispatchID, err = assistantCanonicalHostClaim(run, name, in)
+			if err != nil {
+				return refuse(err)
+			}
+		}
+	}
 	if assistantPolicyTool(name) {
 		scope, err := readAssistantPolicyScope(e.source)
 		if err != nil || scope == nil || scope.ID == "" {
@@ -631,6 +733,9 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 					in = original
 					raw = held.Intent
 				}
+				if retainedSelection != nil && (held.ID != retainedSelection.ID || !bytes.Equal(held.Intent, retainedSelection.Intent) || !bytes.Equal(held.Result, retainedSelection.Result) || held.State != retainedSelection.State) {
+					return false, errAssistantRunConflict
+				}
 				if held.Name != name || !bytes.Equal(held.Intent, raw) {
 					return false, errAssistantRunConflict
 				}
@@ -644,6 +749,9 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 				replay = &result
 				return false, nil
 			}
+		}
+		if retainedSelection != nil {
+			return false, errAssistantRunConflict
 		}
 		if assistantDialectActionProducer(name) {
 			var source struct {
@@ -691,6 +799,16 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		return refuse(err)
 	}
 	if replay != nil {
+		if in.SourceBinding != nil {
+			if err, found := assistantExternalReplay(*replay); found {
+				return runcontext.ToolResult{}, err
+			}
+			value, restoreErr := e.restoreAssistantExternalReceipt(ctx, assistantRunOperation{ID: id, Name: name, Intent: raw, Result: assistantChatJSON(*replay)}, in, *replay)
+			if restoreErr != nil {
+				return runcontext.ToolResult{}, assistantExternalFailure(restoreErr, false)
+			}
+			return value, nil
+		}
 		value, err := runcontext.ParseJSON(replay.Result)
 		if err != nil {
 			return refuse(err)
@@ -702,9 +820,13 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		}
 		return runcontext.ReadToolResult(value), nil
 	}
+	if retainedSelection != nil {
+		return refuse(errAssistantRunConflict)
+	}
 	if err = e.Dispatch(ctx, id); err != nil {
 		return refuse(err)
 	}
+	physicalStarted = true
 	// Proposals wait for the existing project exclusion without a private-data
 	// lock, then read current custody and retain the result in one bounded span.
 	var unlock func()
@@ -719,7 +841,10 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 	var read *assistantGraphRead
 	var testsRead *assistantTestRead
 	var dialectRead *assistantDialectRead
+	var dialectPage *assistantDialectCompletePageReceipt
 	var output *assistantDomainOutput
+	var externalProof *assistantExternalReadProof
+	var externalNotStarted *assistantExternalNotStarted
 	workErr := lockErr
 	if workErr == nil {
 		if in.RecipeProposal != nil {
@@ -732,8 +857,12 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 			ctx = context.WithValue(ctx, assistantPlanPreparedKey{}, in.Plan)
 		}
 		var observation assistantHostObservation
+		ctx = context.WithValue(ctx, assistantExternalPhysicalKey{}, assistantExternalPhysical{ID: id, Name: name, Intent: in})
 		observation, workErr = work(ctx, root)
 		result, read, testsRead, dialectRead, output = observation.Result, observation.GraphRead, observation.TestsRead, observation.DialectRead, observation.Output
+		dialectPage = observation.DialectPage
+		externalNotStarted = observation.ExternalNotStarted
+		externalProof = observation.ExternalProof
 	}
 	if workErr == nil && output != nil && output.Kind == "graph" && !result.Err() && testHookAssistantGraphObserved != nil {
 		testHookAssistantGraphObserved(result.Clone(), output.Draft)
@@ -747,9 +876,27 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 	if workErr == nil && output != nil && output.Kind == "plan" && testHookAssistantPlanObserved != nil {
 		testHookAssistantPlanObserved()
 	}
+	sourcedRead := in.SourceBinding != nil && assistantExternalReadName(name)
+	var externalEvidence *assistantExternalReadEvidence
+	if sourcedRead && workErr == nil {
+		externalEvidence, workErr = e.prepareAssistantExternalEvidence(ctx, op, in, result, externalProof, output)
+		if workErr == nil {
+			result.Receipt = externalEvidence.ID
+		}
+	}
+	if sourcedRead && (workErr != nil || result.Receipt == "") {
+		if workErr == nil {
+			workErr = assistantExternalResultError(result)
+		}
+		workErr = assistantExternalFailure(workErr, false)
+		if externalNotStarted != nil {
+			workErr = assistantExternalControlFailure(assistantExternalControl{Kind: externalNotStarted.kind})
+		}
+	}
 	state := "completed"
 	if workErr != nil {
 		dialectRead = nil
+		dialectPage = nil
 		testsRead = nil
 		result = assistantHostFailure(workErr)
 		if assistantDialectRecipeTool(name) {
@@ -764,6 +911,7 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 	}
 	if result.Err() {
 		dialectRead = nil
+		dialectPage = nil
 		testsRead = nil
 		state = "refused"
 		read = nil
@@ -773,11 +921,14 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 			output = nil
 		}
 	}
-	retained := assistantHostResult{Result: result.Value().JSON(), Read: read, Tests: testsRead, DialectRead: dialectRead}
+	retained := assistantHostResult{ExternalReadEvidence: externalEvidence, Result: result.Value().JSON(), Read: read, Tests: testsRead, DialectRead: dialectRead, DialectPage: dialectPage}
+	if sourcedRead && workErr != nil {
+		retained.ExternalReadEvidence = nil
+		retained.ExternalFailure = assistantExternalFailureBytes(workErr)
+	}
 	if output != nil {
 		retained.PolicySource = output.PolicySource
 	}
-	receipt, _ := json.Marshal(retained)
 	// Only the observed result/output outlives cancellation. Authorization,
 	// dispatch, lock acquisition and producer work above keep the caller context.
 	observed, finish := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -794,6 +945,17 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 			if output != nil {
 				output.RunID, output.RequestKey, output.OperationID, output.CallID = run.ID, run.Binding.ExecutionKey, id, in.CallID
 				run.DomainOutputs = append(run.DomainOutputs, *output)
+			}
+			if sourcedRead && externalNotStarted != nil {
+				control, controlErr := assistantExternalControlFor(*run, *held, in, externalNotStarted)
+				if controlErr != nil {
+					return false, controlErr
+				}
+				retained.ExternalControl = control
+			}
+			receipt, encodeErr := json.Marshal(retained)
+			if encodeErr != nil {
+				return false, encodeErr
 			}
 			held.State = state
 			held.Result = receipt
@@ -823,6 +985,14 @@ func (e *assistantRunExecution) invokeObservedHost(ctx context.Context, name str
 		// Stop only after preserving the exact failure and deterministic
 		// metadata. Existing read/history/cancel APIs remain available.
 		e.cancel()
+	}
+	if sourcedRead && workErr == nil {
+		if currentErr := assistantExternalCurrent(ctx); currentErr != nil {
+			return runcontext.ToolResult{}, assistantExternalFailure(currentErr, false)
+		}
+	}
+	if sourcedRead && workErr != nil {
+		return runcontext.ToolResult{}, workErr
 	}
 	return result, nil
 }

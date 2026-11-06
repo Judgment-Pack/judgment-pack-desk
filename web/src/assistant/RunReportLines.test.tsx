@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 import { RunReportLines } from './RunReportLines'
+import type { TokenFigures } from '@judgment-pack/harness/execution/state'
 import { DELEGATION } from './reportFixtures'
 afterEach(cleanup)
 
@@ -91,4 +92,48 @@ it('offers no prompt detail for legacy or empty rows', () => {
   expect(screen.queryByText('Prompt digests')).toBeNull()
   rerender(<RunReportLines report={{requests: 1, unit: 'model-requests', prompts: []}} />)
   expect(screen.queryByText('Prompt digests')).toBeNull()
+})
+
+
+it.each<{name: string; tokens?: TokenFigures; expected: string}>([
+  {name: 'absent', expected: '—'},
+  {name: 'empty', tokens: {}, expected: '—'},
+  {name: 'input only', tokens: {inputTokens: 17}, expected: 'in 17, out —'},
+  {name: 'output only', tokens: {outputTokens: 23}, expected: 'in —, out 23'},
+  {name: 'zero input only', tokens: {inputTokens: 0}, expected: 'in 0, out —'},
+  {name: 'zero output only', tokens: {outputTokens: 0}, expected: 'in —, out 0'},
+  {name: 'explicit zeros', tokens: {inputTokens: 0, outputTokens: 0}, expected: 'in 0, out 0'},
+  {name: 'reasoning only', tokens: {reasoningTokens: 5}, expected: '—'}
+])('preserves $name token missingness in main, delegated parent, child and batch figures', ({tokens, expected}) => {
+  const delegation = structuredClone(DELEGATION)
+  delegation.parent.tokens = tokens
+  delegation.batches[0]!.children[0]!.tokens = tokens
+  delegation.batches[0]!.total.tokens = tokens
+  render(<RunReportLines report={{requests: 1, unit: 'model-requests', ...(tokens === undefined ? {} : {tokens}), delegation}} />)
+  const summary = screen.getByRole('region', {name: 'Run report'}).querySelector('p')!
+  expect(summary.textContent).toBe(`Model requests: 1${tokens === undefined ? '' : ` · tokens reported by the provider: ${expected}`}`)
+  for (const index of [0, 1, 3]) expect(rowsOf()[index]![4]).toBe(expected)
+})
+
+it.each([1, 2])('presents the complete retained report v%s without turning provider-managed used zero into invocations', async version => {
+ const {REPORT1, REPORT2} = await import('./reportFixtures')
+ const {readRunReport} = await import('@judgment-pack/harness/runReport')
+ const canonical = readRunReport(version === 1 ? REPORT1 : REPORT2)
+ render(<RunReportLines report={{requests: 0, unit: 'provider-managed', canonical}} />)
+ expect(screen.getByText('Agent runs: 1')).toBeTruthy()
+ expect(screen.queryByText('Agent runs: 0')).toBeNull()
+ fireEvent.click(screen.getByText('Complete run report'))
+ const retained = document.querySelector('pre')!
+ expect(JSON.parse(retained.textContent!)).toEqual(canonical)
+ expect(retained.textContent).toContain('reported-model')
+ expect(retained.textContent).toContain('"outputTokens": 0')
+})
+
+it('keeps native invocation count unknown when a canonical report has only used zero', async () => {
+ const {REPORT1} = await import('./reportFixtures')
+ const {readRunReport} = await import('@judgment-pack/harness/runReport')
+ const {usage: _unknown, ...facts} = REPORT1
+ render(<RunReportLines report={{requests: 0, unit: 'provider-managed', canonical: readRunReport(facts)}} />)
+ expect(screen.getByText('Provider managed · agent runs unknown')).toBeTruthy()
+ expect(screen.queryByText('Agent runs: 0')).toBeNull()
 })

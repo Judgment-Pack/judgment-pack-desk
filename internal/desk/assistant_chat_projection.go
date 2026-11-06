@@ -77,6 +77,14 @@ func assistantChatEventDigestPayload(run assistantRunRecord) []byte {
 	// Construct the shared fields once: domain output custody is covered by the
 	// same digest boundary both before and after a continuation.
 	base := assistantChatDigestBase{run.State, assistantChatProjectionCheckpoint(run), run.Events, run.DomainOutputs}
+	if len(run.AnswerHistory) > 0 {
+		raw, _ := json.Marshal(struct {
+			assistantChatDigestBase
+			AnswerHistory []assistantRunAnswerOrigin
+			Continuations []assistantRunContinuationReceipt
+		}{base, run.AnswerHistory, assistantRunContinuations(run)})
+		return raw
+	}
 	if run.Creation != nil {
 		raw, _ := json.Marshal(struct {
 			assistantChatDigestBase
@@ -469,7 +477,7 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 	notices := []string{}
 	messageID := ""
 	work := map[string]any{}
-	for _, held := range run.Events {
+	for _, held := range assistantRunHistoryProjection(run).Events {
 		event := held.Event
 		switch {
 		case event.Message != nil:
@@ -493,14 +501,14 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 				return nil, errAssistantRunConflict
 			}
 			calls[*call.CallID] = len(items)
-			items = append(items, map[string]any{"id": *call.CallID, "name": call.Name, "status": "interrupted"})
+			items = append(items, map[string]any{"id": *call.CallID, "name": assistantExternalDisplayName(run, *call.CallID, call.Name), "status": "interrupted"})
 		case event.ToolResult != nil:
 			result := event.ToolResult
 			if result.CallID == nil {
 				return nil, errAssistantRunInvalid
 			}
 			index, ok := calls[*result.CallID]
-			if !ok || completed[*result.CallID] || items[index]["name"] != result.Name {
+			if !ok || completed[*result.CallID] || items[index]["name"] != assistantExternalDisplayName(run, *result.CallID, result.Name) {
 				return nil, errAssistantRunConflict
 			}
 			completed[*result.CallID] = true
@@ -509,12 +517,12 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 				status = "failed"
 			}
 			items[index]["status"] = status
-			if result.Name == assistantLinkTool {
+			if assistantExternalDisplayName(run, *result.CallID, result.Name) == assistantLinkTool {
 				if err := assistantLinkProjectionItem(run, *result.CallID, items[index]); err != nil {
 					return nil, err
 				}
 			}
-			if result.Name == assistantSearchTool {
+			if assistantExternalDisplayName(run, *result.CallID, result.Name) == assistantSearchTool {
 				if err := assistantSearchProjectionItem(run, *result.CallID, items[index]); err != nil {
 					return nil, err
 				}
@@ -597,7 +605,7 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 			q := event.UserQuestion
 			var answer *assistantRunAnswer
 			var actionID string
-			for _, receipt := range run.Actions {
+			for _, receipt := range assistantRunHistoryProjection(run).Actions {
 				if receipt.Answer != nil && receipt.Answer.QuestionID == q.ID {
 					answer, actionID = receipt.Answer, receipt.ID
 				}
@@ -605,7 +613,7 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 			if answer == nil {
 				return nil, errAssistantChatProjectionQuestion
 			}
-			if err := validateAssistantRunAnswer(run, *answer); err != nil {
+			if err := validateAssistantRunAnswer(assistantRunHistoryProjection(run), *answer); err != nil {
 				return nil, err
 			}
 			answerID := "answer-" + digestOf([]byte(run.ID + "\x00" + actionID))[:32]
@@ -698,10 +706,43 @@ func compileAssistantChatProjection(source []byte, run assistantRunRecord, at st
 			items = append(items, map[string]any{"id": out.OperationID, "name": assistantSearchTool, "status": "complete", "search": out.Search.Step})
 		}
 	}
+	for _, row := range assistantExternalCalls(run) {
+		for _, item := range items {
+			if item["id"] != row.CallID || item["name"] != row.OwnTool {
+				continue
+			}
+			if row.Control != nil {
+				assistantExternalControlItem(item, *row.Control)
+				notices = append(notices, assistantExternalControlMessage(*row.Control))
+			} else if row.Outcome == "unknown" {
+				item["status"] = "failed"
+				notices = append(notices, "External source outcome is unknown. Review retained work before starting another request.")
+			}
+		}
+	}
+	for _, result := range assistantApprovalResults(run) {
+		status := "complete"
+		if result.IsError {
+			status = "failed"
+		}
+		if index, ok := calls[result.CallID]; ok {
+			items[index]["approvalResult"] = result.Result
+			items[index]["status"] = status
+		} else {
+			items = append(items, map[string]any{"id": result.CallID, "name": assistantExternalDisplayName(run, result.CallID, result.Name), "status": status, "approvalResult": result.Result})
+		}
+	}
 	work["items"] = items
 	work["notices"] = notices
 	if run.Checkpoint != nil {
 		report := map[string]any{"requests": run.Checkpoint.Used, "unit": run.Checkpoint.Unit}
+		canonical, err := assistantCanonicalRunReport(run.Checkpoint)
+		if err != nil {
+			return nil, err
+		}
+		if canonical != nil {
+			report["canonical"] = canonical
+		}
 		if run.Checkpoint.Critic != nil {
 			report["critic"] = run.Checkpoint.Critic
 		}

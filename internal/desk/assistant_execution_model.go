@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-agent/go/relay"
 )
@@ -18,15 +19,24 @@ import (
 // adapters own prompt assembly and context policy; legacy wire guards never add prompt layers.
 type assistantAssembledPromptKey struct{}
 type assistantModelDispatch struct {
-	execution *assistantRunExecution
-	operation assistantRunOperation
-	admitted  atomic.Bool
-	uncertain atomic.Bool
+	execution           *assistantRunExecution
+	operation           assistantRunOperation
+	admitted            atomic.Bool
+	uncertain           atomic.Bool
+	physicalEOF         atomic.Bool
+	physicalClosed      atomic.Bool
+	physicalCloseFailed atomic.Bool
+	handlerReturned     atomic.Bool
+	consumerClosed      atomic.Bool
+	consumerCloseFailed atomic.Bool
+	receiptAcknowledged atomic.Bool
+	physicalStatus      int
+	started             time.Time
 }
 
 func (d *assistantModelDispatch) dispatch(ctx context.Context) error {
 	recheck := d.execution.recheckAssistantInput
-	if d.execution.source.Start.Purpose == assistantDiagnosticPurpose {
+	if d.execution.source.Start.Purpose == assistantDiagnosticPurpose || d.execution.source.Start.Purpose == assistantSettingsObservationPurpose {
 		recheck = d.execution.Authorize
 	}
 	if d.execution.source.Start.Purpose == "brief" {
@@ -34,6 +44,12 @@ func (d *assistantModelDispatch) dispatch(ctx context.Context) error {
 	}
 	if err := recheck(ctx); err != nil {
 		return err
+	}
+	if d.execution.observation != nil {
+		var held assistantSettingsPhysicalIntent
+		if json.Unmarshal(d.operation.Intent, &held) != nil || assistantSettingsWire(d.execution.source, held.Suffix, held.Request) != nil {
+			return errAssistantRunScope
+		}
 	}
 	if err := d.prepare(ctx); err != nil {
 		return err
@@ -67,7 +83,14 @@ func (t assistantModelTransport) RoundTrip(r *http.Request) (*http.Response, err
 	if err := t.bound.dispatch(r.Context()); err != nil {
 		return nil, err
 	}
+	if t.bound.execution.observation != nil && !t.bound.started.IsZero() {
+		return nil, errAssistantRunScope
+	}
+	t.bound.started = time.Now()
 	response, err := t.inner.RoundTrip(r)
+	if response != nil {
+		t.bound.physicalStatus = response.StatusCode
+	}
 	if err != nil {
 		// An admitted transport failure is uncertain, even if ReverseProxy
 		// would otherwise render it as a retryable HTTP gateway refusal.
@@ -84,11 +107,16 @@ func (t assistantModelTransport) RoundTrip(r *http.Request) (*http.Response, err
 // the real provider body before that can erase an interrupted transport.
 type assistantModelResponse struct {
 	io.ReadCloser
-	bound *assistantModelDispatch
+	bound    *assistantModelDispatch
+	once     sync.Once
+	closeErr error
 }
 
 func (b *assistantModelResponse) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
+	if errors.Is(err, io.EOF) {
+		b.bound.physicalEOF.Store(true)
+	}
 	if err != nil && !errors.Is(err, io.EOF) {
 		b.bound.uncertain.Store(true)
 		b.bound.execution.cancel()
@@ -96,9 +124,24 @@ func (b *assistantModelResponse) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// Observe the physical provider's release independently of the relay facade.
+// ReverseProxy ignores a Body.Close error, so retain it in the exact dispatch.
+func (b *assistantModelResponse) Close() error {
+	b.once.Do(func() {
+		b.closeErr = b.ReadCloser.Close()
+		b.bound.physicalCloseFailed.Store(b.closeErr != nil)
+		b.bound.physicalClosed.Store(true)
+	})
+	return b.closeErr
+}
+
 // model gives the published client the actual Desk handler. Session, project,
 // connection and revision belong to the retained execution, never the adapter.
-func (e *assistantRunExecution) assistantModel() (relay.Call, error) {
+func (e *assistantRunExecution) assistantModel(scopes ...*assistantExecutionInvocation) (relay.Call, error) {
+	var scope *assistantExecutionInvocation
+	if len(scopes) != 0 {
+		scope = scopes[0]
+	}
 	if err := e.Authorize(e.ctx); err != nil {
 		return nil, err
 	}
@@ -108,6 +151,9 @@ func (e *assistantRunExecution) assistantModel() (relay.Call, error) {
 	family := e.source.Connection.Assistant.Endpoint.Kind
 	client := &relay.Client{Family: family, Bearer: bearerOf(e.request)}
 	client.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if dispatch, ok := r.Context().Value(assistantAssembledPromptKey{}).(*assistantModelDispatch); ok {
+			defer dispatch.handlerReturned.Store(true)
+		}
 		r.Host = e.request.Host
 		r.URL.Host = e.request.Host
 		r.Header.Set(aiConnectionHeader, e.record.Binding.ConnectionID)
@@ -121,9 +167,26 @@ func (e *assistantRunExecution) assistantModel() (relay.Call, error) {
 		return nil, err
 	}
 	return func(ctx context.Context, suffix string, request relay.Request) (*http.Response, error) {
+		if scope != nil {
+			if err := scope.check(ctx); err != nil {
+				return nil, err
+			}
+		}
 		path, _, _ := strings.Cut(suffix, "?")
 		if request.Method != "" && request.Method != http.MethodPost || !profileAPIModelAllowed(family, path, request.Body, []string{e.record.Binding.Model, models.Critic, models.Child}) {
 			return nil, errAssistantRunScope
+		}
+		if e.observation != nil {
+			if err := assistantSettingsWire(e.source, suffix, request); err != nil {
+				return nil, err
+			}
+			e.canonicalMu.Lock()
+			repeated := e.observationPhysicalUsed
+			e.observationPhysicalUsed = true
+			e.canonicalMu.Unlock()
+			if repeated {
+				return nil, errAssistantRunScope
+			}
 		}
 		ctx, cancel := context.WithCancel(ctx)
 		stop := context.AfterFunc(e.ctx, cancel)
@@ -142,6 +205,13 @@ func (e *assistantRunExecution) assistantModel() (relay.Call, error) {
 			return nil, err
 		}
 		dispatch := &assistantModelDispatch{execution: e, operation: assistantRunOperation{Kind: "model", Name: e.record.Binding.Model, Intent: intent}}
+		if scope != nil {
+			if err := scope.model(dispatch); err != nil {
+				stop()
+				cancel()
+				return nil, err
+			}
+		}
 		ctx = context.WithValue(ctx, assistantAssembledPromptKey{}, dispatch)
 		answer, err := client.Call()(ctx, suffix, request)
 		if err != nil {
@@ -172,6 +242,8 @@ type assistantModelReceipt struct {
 	once      sync.Once
 	err       error
 	retained  atomic.Bool
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func (b *assistantModelReceipt) Read(p []byte) (int, error) {
@@ -197,11 +269,27 @@ func (b *assistantModelReceipt) Read(p []byte) (int, error) {
 		b.once.Do(func() {
 			defer b.stop()
 			defer b.cancel()
+			var latency *int64
+			if b.execution.observation != nil && b.dispatch.admitted.Load() {
+				if !b.dispatch.physicalEOF.Load() || b.dispatch.physicalStatus != b.status {
+					b.err = io.ErrUnexpectedEOF
+					b.dispatch.uncertain.Store(true)
+					b.execution.cancel()
+					return
+				}
+				elapsed := time.Since(b.dispatch.started).Milliseconds()
+				if elapsed < 0 || elapsed > relayDeadline.Milliseconds() {
+					b.err = errAssistantRunScope
+					return
+				}
+				latency = &elapsed
+			}
 			result, encodeErr := json.Marshal(struct {
-				Status  int         `json:"status"`
-				Headers http.Header `json:"headers"`
-				Body    []byte      `json:"body"`
-			}{b.status, b.headers, b.bytes.Bytes()})
+				Status    int         `json:"status"`
+				Headers   http.Header `json:"headers"`
+				Body      []byte      `json:"body"`
+				LatencyMs *int64      `json:"latencyMs,omitempty"`
+			}{b.status, b.headers, b.bytes.Bytes(), latency})
 			if encodeErr != nil {
 				b.err = encodeErr
 				return
@@ -218,6 +306,7 @@ func (b *assistantModelReceipt) Read(p []byte) (int, error) {
 			b.err = b.execution.Result(b.ctx, b.dispatch.operation.ID, state, result)
 			if b.err == nil {
 				b.retained.Store(true)
+				b.dispatch.receiptAcknowledged.Store(true)
 			}
 		})
 		if b.err != nil {
@@ -228,6 +317,15 @@ func (b *assistantModelReceipt) Read(p []byte) (int, error) {
 }
 
 func (b *assistantModelReceipt) Close() error {
+	b.closeOnce.Do(func() {
+		b.closeErr = b.close()
+		b.dispatch.consumerCloseFailed.Store(b.closeErr != nil)
+		b.dispatch.consumerClosed.Store(true)
+	})
+	return b.closeErr
+}
+
+func (b *assistantModelReceipt) close() error {
 	// A protocol terminator may precede HTTP EOF: drain while the request is
 	// live, but only a successfully persisted receipt makes a close known.
 	var err error

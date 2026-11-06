@@ -26,12 +26,27 @@ func readAssistantDialectResearchArguments(raw []byte) (assistantDialectArgument
 	}
 	return a, nil
 }
-func (e *assistantRunExecution) assistantDialectResearchTools() (*assistantHostRegistry, error) {
+func assistantResearchDeclaration() runcontext.HostTool {
 	schema := assistantChatJSON(map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string", "pattern": inputPreparationID.String()}, "revision": map[string]any{"type": "string", "pattern": "^[a-f0-9]{64}$"}}, "required": []string{"id", "revision"}, "additionalProperties": false})
-	return newAssistantHostRegistry([]runcontext.HostTool{{Name: assistantResearchTool, Effect: "workflow", Description: "Request research using only an existing exact user-reviewed research allowance for this chat, session, turn and saved recipe. Read the recipe first. Without an allowance retain a review card. Started means queued, not completed. This never grants permission, publishes, changes limits or repeats an uncertain request.", InputSchema: schema, Execute: func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
+	return runcontext.HostTool{Name: assistantResearchTool, Effect: "workflow", Description: "Request research using only an existing exact user-reviewed research allowance for this chat, session, turn and saved recipe. Read the recipe first. Without an allowance retain a review card. Started means queued, not completed. This never grants permission, publishes, changes limits or repeats an uncertain request.", InputSchema: schema}
+}
+func (e *assistantRunExecution) assistantDialectResearchTools() (*assistantHostRegistry, error) {
+	tool := assistantResearchDeclaration()
+	tool.Execute = func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
 		a, err := readAssistantDialectResearchArguments(raw)
 		if err != nil {
 			return assistantDialectFailure(err), nil
+		}
+		binding, err := assistantLiveHostSource(ctx, assistantResearchTool)
+		if err != nil {
+			return assistantDialectFailure(err), nil
+		}
+		if binding != nil {
+			prepared, err := e.claimAssistantResearchSourcePolicy(ctx, raw, *binding)
+			if err != nil {
+				return assistantDialectFailure(err), nil
+			}
+			ctx = context.WithValue(ctx, assistantResearchSourcePreparedKey{}, prepared)
 		}
 		return e.invokeObservedHost(ctx, assistantResearchTool, raw, func(ctx context.Context, root bool) (assistantHostObservation, error) {
 			if !root || e.record.Binding.Phase != "work" {
@@ -39,7 +54,8 @@ func (e *assistantRunExecution) assistantDialectResearchTools() (*assistantHostR
 			}
 			return e.executeAssistantResearchRequest(ctx, a)
 		})
-	}}})
+	}
+	return newAssistantHostRegistry([]runcontext.HostTool{tool})
 }
 
 // The owner already holds the private lock. Resolve the full original binding,
@@ -87,6 +103,7 @@ func assistantResearchRequestKey(run assistantRunRecord, host string) string {
 }
 
 type assistantResearchIntent struct {
+	SourcePolicyID  string               `json:"sourcePolicyId,omitempty"`
 	HostOperationID string               `json:"hostOperationId"`
 	ResearchRequest inputResearchRequest `json:"researchRequest"`
 }
@@ -126,9 +143,32 @@ func (e *assistantRunExecution) executeAssistantResearchRequest(ctx context.Cont
 	if host == "" || a.ID != read.ID || a.Revision != read.Revision {
 		return empty, errAssistantRunScope
 	}
+	// Sourced execution requires the exact policy and its one-use canonical
+	// claim. Legacy execution remains unchanged until explicit source enrollment.
+	var prepared *assistantResearchSourcePrepared
+	policyID := ""
+	hostOp := assistantDialectOperation(record, host)
+	var hostIntent assistantHostIntent
+	if hostOp == nil || readAssistantHostReceipt(hostOp.Intent, &hostIntent) != nil {
+		return empty, errAssistantRunScope
+	}
+	if hostIntent.SourceBinding != nil {
+		prepared, _ = ctx.Value(assistantResearchSourcePreparedKey{}).(*assistantResearchSourcePrepared)
+		if prepared == nil || !assistantResearchSourceHostMatches(record, *hostOp, hostIntent, prepared.PolicyID) {
+			return empty, errAssistantRunScope
+		}
+		policy := assistantDialectOperation(record, prepared.PolicyID)
+		var retained assistantResearchSourceDisposition
+		if policy == nil || readAssistantHostReceipt(policy.Intent, &retained) != nil || !reflect.DeepEqual(retained, prepared.Disposition) {
+			return empty, errAssistantRunScope
+		}
+		policyID = prepared.PolicyID
+	}
 	// Intent precedes admission. Its exact request is the only permitted recovery key.
 	request := inputResearchRequest{ChatID: record.Binding.Owner.ID, PreparationID: a.ID, Revision: a.Revision, TurnID: record.Binding.RequestID, RequestKey: assistantResearchRequestKey(record, host)}
-	op, err := e.boundIntent(ctx, "action", assistantResearchOperation, func(string) ([]byte, error) { return json.Marshal(assistantResearchIntent{host, request}) })
+	op, err := e.boundIntent(ctx, "action", assistantResearchOperation, func(string) ([]byte, error) {
+		return json.Marshal(assistantResearchIntent{SourcePolicyID: policyID, HostOperationID: host, ResearchRequest: request})
+	})
 	if err != nil {
 		return empty, err
 	}
@@ -138,7 +178,13 @@ func (e *assistantRunExecution) executeAssistantResearchRequest(ctx context.Cont
 	if err = e.Dispatch(ctx, op.ID); err != nil {
 		return empty, err
 	}
-	receipt, requestErr := e.service.server.requestResearch(e.request.WithContext(ctx), request, e.authorizeAssistantResearchLocked)
+	var receipt inputResearchRequestReceipt
+	var requestErr error
+	if prepared != nil {
+		receipt, requestErr = e.service.server.requestResearchWithDisposition(e.request.WithContext(ctx), request, e.assistantResearchSourceAuthority(prepared.Disposition), prepared.Disposition.Allowance)
+	} else {
+		receipt, requestErr = e.service.server.requestResearch(e.request.WithContext(ctx), request, e.authorizeAssistantResearchLocked)
+	}
 	// An admitted same-turn receipt is historical. A new unadmitted review card
 	// must still match its current explicit recipe read at producer completion.
 	if requestErr == nil && receipt.Status == "review-required" {
@@ -202,6 +248,9 @@ func validResearchRequestReceipt(r inputResearchRequestReceipt) bool {
 // Import validates all finite request/receipt associations. Physical owner readback
 // remains necessary for projection; an imported browser card grants nothing.
 func validateAssistantResearchOperations(run assistantRunRecord) error {
+	if err := validateAssistantResearchSourcePolicies(run); err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	for _, op := range run.Operations {
 		if op.Name != assistantResearchOperation {
@@ -217,6 +266,9 @@ func validateAssistantResearchOperations(run assistantRunRecord) error {
 		host := assistantDialectOperation(run, in.HostOperationID)
 		var h assistantHostIntent
 		if host == nil || host.Kind != "host" || host.Name != assistantResearchTool || !assistantDialectAfter(run, op.ID, host.ID) || readAssistantHostReceipt(host.Intent, &h) != nil || h.DialectAction == nil || !h.Root || run.Binding.Phase != "work" || seen[host.ID] {
+			return errAssistantRunInvalid
+		}
+		if (h.SourceBinding != nil) != (in.SourcePolicyID != "") || in.SourcePolicyID != "" && !assistantResearchSourceHostMatches(run, *host, h, in.SourcePolicyID) {
 			return errAssistantRunInvalid
 		}
 		seen[host.ID] = true

@@ -29,6 +29,31 @@ function sdkImports(base:string,paths:string[]){
  }
  return [...new Set(imports)].sort()
 }
+function researchOpeningBoundary(portable:string,background:string,projection:string){
+ // Research supplies retained domain data; the canonical opening owns framing
+ // and allowance. Both the initial fit and reduced previews use its callback.
+ expect(portable).toContain('StructuredResearch: true')
+ expect(portable).toContain('s.runBackgroundModel(')
+ expect(background).toContain('if task.StructuredResearch {')
+ expect(background).toContain('run.Prompt, run.OpeningProjection, err = backgroundResearchOpening(task)')
+ for(const boundary of ['json.RawMessage(task.Prompt)', '&runcontext.OpeningProjection{PreviewPaths: paths, Project:', 'input.Fit(nil)', 'input.Fit(replacements)', 'return nil, runcontext.ErrContextBudget'])expect(projection).toContain(boundary)
+ for(const source of [portable,background,projection])expect(source).not.toContain('fitResearchContextWithInstructions(')
+}
+it('detects research opening bypasses and a restored local fitting boundary',()=>{
+ const sources=[goSource('portable_research_worker.go'),goSource('background_execution.go'),goSource('background_opening_projection.go')] as const
+ // Remove each link independently: a callback left elsewhere cannot cover a
+ // missing dispatch attachment or a missing initial/replacement fit.
+ for(const [index,needle] of [[0,'StructuredResearch: true'],[0,'s.runBackgroundModel('],[1,'if task.StructuredResearch {'],[1,'run.Prompt, run.OpeningProjection, err = backgroundResearchOpening(task)'],[2,'json.RawMessage(task.Prompt)'],[2,'&runcontext.OpeningProjection{PreviewPaths: paths, Project:'],[2,'input.Fit(nil)'],[2,'input.Fit(replacements)'],[2,'return nil, runcontext.ErrContextBudget']] as const){
+  const changed=[...sources]
+  changed[index]=changed[index].split(needle).join('removed_boundary')
+  expect(()=>researchOpeningBoundary(changed[0],changed[1],changed[2])).toThrow()
+ }
+ for(const index of [0,1,2]){
+  const changed=[...sources]
+  changed[index]+='\nfitResearchContextWithInstructions(domain)'
+  expect(()=>researchOpeningBoundary(changed[0],changed[1],changed[2])).toThrow()
+ }
+})
 it('confines model SDK imports to the managed adapters (type imports excluded)',()=>{
  expect(sdkImports(root,files(root))).toEqual([])
  expect(sdkImports(harnessRoot,files(harnessRoot,/\.js$/).filter(path=>!path.includes('/certification/')))).toEqual(['engines/vercel/loop.js'])
@@ -45,7 +70,8 @@ it('keeps both frontend and backend execution paths inside the context boundary'
  for(const boundary of ['savedChatRun(store,chat)', 'useSyncExternalStore(run.subscribe,run.getSnapshot,run.getSnapshot)', 'void run.reconnect()'])expect(browser('assistant/serverRuns/useSavedChatRun.ts')).toContain(boundary)
  for(const file of ['input_research_model.go','portable_research_worker.go'])expect(readFileSync(resolve(root,'../../internal/desk',file),'utf8')).toContain('s.runBackgroundModel(')
  const portable=readFileSync(resolve(root,'../../internal/desk/portable_research_worker.go'),'utf8')
- for(const boundary of ['fitResearchContextWithInstructions(', 'researchContextRead(', 'researchAttempt(', 'portableResearchChatWork(', 'pauseResearchForBudget('])expect(portable).toContain(boundary)
+ for(const boundary of ['researchContextRead(', 'researchAttempt(', 'portableResearchChatWork(', 'pauseResearchForBudget('])expect(portable).toContain(boundary)
+ researchOpeningBoundary(portable,goSource('background_execution.go'),goSource('background_opening_projection.go'))
  const backend=resolve(root,'../../internal/desk')
  const runners=readdirSync(backend).filter(p=>p.endsWith('.go')&&!p.endsWith('_test.go')&&/runner\.Run\(/.test(readFileSync(resolve(backend,p),'utf8'))).sort()
  expect(runners).toEqual(['agent_run.go','assistant_execution_agent.go','background_execution.go'])
@@ -81,15 +107,30 @@ it('keeps both frontend and backend execution paths inside the context boundary'
 
 })
 
+function executionCheckpointBoundary(owner:string,writer:string,store:string,canonicalStore:string,canonical:string){
+ // Legacy saves use the refreshed execution identity. Canonical saves retain
+ // the original durable writer and binding, including Stop acknowledgement.
+ for(const boundary of ['checkpoint := e.record.Checkpoint', 'checkpoint = latest.Checkpoint', 'cp.ID != checkpoint.ID || cp.RequestKey != e.record.Binding.ExecutionKey', 'return e.Checkpoint(ctx, cp)', 'saveCheckpoint(ctx, event.ExecutionCheckpoint.Checkpoint)', 'saveCheckpoint(ctx, event.BudgetPaused.Checkpoint)', 'Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: checkpoint', 'e.bindCanonicalInput(ctx, input)', 'checkpoint = input.Execution'])expect(owner).toContain(boundary)
+ for(const boundary of ['readAssistantRunCheckpoint(state, run.Binding)', 'cp.ID != run.Checkpoint.ID || cp.Used < run.Checkpoint.Used', 'run.Checkpoint = cp', 'if run.Observation != nil || assistantCanonicalActive(*run)', 'if assistantRunTerminal(run.State)', 'run.State = "interrupted"', 'if run.Checkpoint != nil && !assistantCanonicalActive(*run)'])expect(writer).toContain(boundary)
+ expect(store).toContain('held == nil || held.RequestKey != b.ExecutionKey || held.Phase != b.Phase || held.Unit != b.Unit')
+ for(const boundary of ['input.Persistence != nil && input.Persistence != e.canonicalBinding', 'store, err := e.writer.canonicalStore(ctx, e.record.Canonical.Head.RunID)', 'Execution: latest.Checkpoint', 'e.canonicalBinding = prepared.Persistence', 'input.Execution = binding.Writer.Checkpoint()', 'input.Persistence = binding', 'return binding.Writer.Save(ctx, *binding, cp)'])expect(canonicalStore).toContain(boundary)
+ for(const boundary of ['input.Persistence.Writer != original.Writer || input.Persistence.Root && input.Persistence != original', 'e.stopRequested = true', 'binding.Writer.CloseDispatch(*binding)', 'binding.Writer.FinalizeStop(ctx, *binding)'])expect(canonical).toContain(boundary)
+}
+it('detects changed checkpoint identity, original writer and Stop boundaries',()=>{
+ const sources=[goSource('assistant_execution.go'),goSource('assistant_run_store_writer.go'),goSource('assistant_run_store.go'),goSource('assistant_run_canonical_store.go'),goSource('assistant_execution_canonical.go')] as const
+ for(const [index,needle] of [[0,'cp.ID != checkpoint.ID'],[0,'cp.RequestKey != e.record.Binding.ExecutionKey'],[0,'checkpoint = latest.Checkpoint'],[0,'checkpoint = input.Execution'],[1,'cp.ID != run.Checkpoint.ID'],[1,'cp.Used < run.Checkpoint.Used'],[1,'run.Checkpoint = cp'],[1,'run.State = "interrupted"'],[2,'held.RequestKey != b.ExecutionKey'],[2,'held.Phase != b.Phase'],[2,'held.Unit != b.Unit'],[3,'input.Persistence != e.canonicalBinding'],[3,'return binding.Writer.Save(ctx, *binding, cp)'],[4,'input.Persistence.Writer != original.Writer'],[4,'input.Persistence != original'],[4,'binding.Writer.CloseDispatch(*binding)'],[4,'binding.Writer.FinalizeStop(ctx, *binding)']] as const){
+  const changed=[...sources]
+  changed[index]=changed[index].split(needle).join('removed_boundary')
+  expect(()=>executionCheckpointBoundary(changed[0],changed[1],changed[2],changed[3],changed[4])).toThrow()
+ }
+})
+
 it('keeps future conversational progress and request accounting in the shared execution boundary',()=>{
  const context=harness('context/session.js')
  expect(context).toContain('ExecutionController')
  expect(context).toContain('context.execution.claim()')
  expect(context).toContain('session.context?.checkpoint?.(')
- const owner=goSource('assistant_execution.go')
- for(const boundary of ['cp.ID != e.record.Checkpoint.ID || cp.RequestKey != e.record.Binding.ExecutionKey', 'return e.Checkpoint(ctx, cp)', 'saveCheckpoint(ctx, event.ExecutionCheckpoint.Checkpoint)', 'saveCheckpoint(ctx, event.BudgetPaused.Checkpoint)', 'Authorize: e.Authorize, Checkpoint: saveCheckpoint, Execution: e.record.Checkpoint'])expect(owner).toContain(boundary)
- const writer=goSource('assistant_run_store_writer.go')
- for(const boundary of ['readAssistantRunCheckpoint(state, run.Binding)', 'cp.Used < run.Checkpoint.Used', 'run.Checkpoint = cp'])expect(writer).toContain(boundary)
+ executionCheckpointBoundary(goSource('assistant_execution.go'),goSource('assistant_run_store_writer.go'),goSource('assistant_run_store.go'),goSource('assistant_run_canonical_store.go'),goSource('assistant_execution_canonical.go'))
  for(const boundary of ['client.events(observations,this.scope!.signal)', 'this.set(this.present(observation.snapshot'])expect(browser('assistant/serverRuns/controller.ts')).toContain(boundary)
  expect(browser('assistant/serverRuns/presentation.ts')).toContain('execution:snapshot.checkpoint')
  const managed=harness('context/managed.js')
@@ -149,4 +190,15 @@ it('routes artifact correction and scoped automatic saving through shared host b
  const server=readFileSync(resolve(root,'../../internal/desk/assistant_approval.go'),'utf8')
  expect(server).toContain('assistantActionAdapters')
  expect(server).toContain('s.commitWriteLocked(')
+})
+
+it('keeps Settings generation inside canonical Observe and metadata independent',()=>{
+ const helper=browser('assistant/serverRuns/settingsObservation.ts')
+ for(const boundary of ['serverRunClient()', 'client.settingsReference(', 'client.start(', 'client.settingsLookup(', 'client.events(', 'client.settingsResult('])expect(helper).toContain(boundary)
+ const capability=browser('assistant/capabilityProbe.ts')
+ expect(capability).toContain("observeSettings({kind:'capability',model}")
+ expect(capability).toContain("'/api/assistant/models'")
+ for(const file of ['assistant/capabilityProbe.ts','assistant/EndpointCapabilitiesSection.tsx','assistant/endpointCheck.ts'])for(const forbidden of ['bindModelCall','chat/completions','probeBody','readChatAnswer'])expect(browser(file)).not.toContain(forbidden)
+ const canonical=goSource('assistant_settings_observation_execution.go')
+ for(const boundary of ['Observe(', 'runcontext.ContextualSession('])expect(canonical).toContain(boundary)
 })

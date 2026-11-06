@@ -1,3 +1,5 @@
+// These owner/cancellation fixtures use a fixed model-free pane capability.
+vi.mock('./serverContexts',()=>({serverContextDocument:()=>({pane:()=>({attach:()=>()=>{},selector:async()=>({document:'a'.repeat(64),pane:'b'.repeat(64)})})})}))
 /** Desk647: actual hook/consumers and real private-session publisher. Only the
  * server transport is synthetic; no production route or executor is activated. */
 import {act,cleanup,fireEvent,render,renderHook,screen,waitFor} from '@testing-library/react'
@@ -9,6 +11,7 @@ import {AssistantPane} from './AssistantPane'
 import {DescribeIt,useDescribeIt} from '../shell/DescribeIt'
 import {GraphAuthor} from '../graphs/GraphAuthor'
 import {checkpoint} from './reportFixtures'
+import {readExecution} from '@judgment-pack/harness/execution/state'
 import {RunRequestError} from './serverRuns/client'
 import type {RunSnapshot,RunStart,RunState} from './serverRuns/types'
 const f=vi.hoisted(()=>({capture:vi.fn(),start:vi.fn(),cancel:vi.fn(),events:vi.fn(),read:vi.fn(),getPrompt:vi.fn(),post:vi.fn(),state:'complete' as RunState}))
@@ -21,7 +24,7 @@ vi.mock('@tanstack/react-query',async original=>({...await original(),useQueryCl
 vi.mock('../files/client',async original=>({...await original(),readFile:async()=>({content:'{"title":"Saved pack"}',sha256:'a'.repeat(64)}),deskFetch:(...args:unknown[])=>f.post(...args)}))
 const ref:RunStart={admissionId:'author-admit-'+'b'.repeat(32),purpose:'describe-pack',ownerId:'author_'+'a'.repeat(32),revision:'c'.repeat(64),requestId:'request-one'}
 const document={title:'PRIVATE-PROPOSAL',graph:{nodes:{one:{pack:'one'}},edges:[]},id:'PRIVATE-ID',description:'PRIVATE-DESCRIPTION'}
-const snapshot=(start=ref,state=f.state):RunSnapshot=>({admissionId:start.admissionId,id:'arun_'+'d'.repeat(32),owner:{kind:start.purpose,id:start.ownerId,revision:start.revision},requestId:start.requestId,revision:1,state,operations:[],checkpoint:checkpoint({used:1,limit:4}),events:[{id:'proposal',event:{type:'proposal',document,unknowns:['PRIVATE-UNKNOWN']}},{id:'end',event:{type:'end'}}],cursor:'1:2'})
+const snapshot=(start=ref,state=f.state):RunSnapshot=>({admissionId:start.admissionId,id:'arun_'+'d'.repeat(32),owner:{kind:start.purpose,id:start.ownerId,revision:start.revision},requestId:start.requestId,revision:1,state,operations:[],checkpoint:readExecution(checkpoint({used:1,limit:4,requestCap:4})),events:[{id:'proposal',event:{type:'proposal',document,unknowns:['PRIVATE-UNKNOWN']}},{id:'end',event:{type:'end'}}],cursor:'1:2'})
 const options={target:{connectionId:'selected-ai',connectionRevision:'e'.repeat(64)},model:'chosen-model',engine:'vercel' as const,thinking:'off' as const}
 const input={purpose:'describe-pack' as const,prompt:'author_pack',arguments:{policy:'Private policy'}}
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>{resolve=done});return{promise,resolve}}
@@ -47,7 +50,7 @@ it.each(['awaiting-input','paused-budget','awaiting-client'] as const)('paused %
  expect(h.result.current.failure).toBeTruthy();expect(h.result.current.terminals.count).toBe(1)
  await act(async()=>h.result.current.start(input));expect(f.capture).toHaveBeenCalledOnce()
  act(()=>{h.result.current.stop();h.result.current.stop()});await waitFor(()=>expect(f.cancel).toHaveBeenCalledOnce())
- const start=f.start.mock.calls[0][0];expect(f.cancel).toHaveBeenCalledWith(start)
+ const captured=await f.capture.mock.results[0].value as {start:RunStart};const start=f.start.mock.calls[0][0];expect(start).toEqual({...captured.start,context:{document:'a'.repeat(64),pane:'b'.repeat(64)}});expect(f.cancel).toHaveBeenCalledWith(captured.start)
  await act(async()=>h.result.current.start(input));expect(f.capture).toHaveBeenCalledOnce()
  await act(async()=>cancellation.resolve({start,cancelled:true}));expect(h.result.current.terminals.count).toBe(1)
  f.state='complete';act(()=>h.result.current.start(input));await waitFor(()=>expect(f.capture).toHaveBeenCalledTimes(2))

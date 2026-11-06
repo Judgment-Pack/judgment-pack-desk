@@ -155,6 +155,12 @@ func (s *Server) subscriptionJobBase(ctx context.Context, b inputEvaluation) (in
 	return inputUpgradeReview{JobID: current.Job.ID, BaseReleaseID: current.Job.ReleaseID, BaseRevision: current.Job.Revision}, nil
 }
 func (s *Server) reviewSubscriptionUpgrade(ctx context.Context, saved inputPreparationReply, candidate *inputEvaluation, sourceID string) error {
+	if err := requireOrdinaryInputQualification(saved.Document.Recipe.Qualification); err != nil {
+		return err
+	}
+	if err := requireOrdinaryInputQualification(candidate.Recipe.Qualification); err != nil {
+		return err
+	}
 	if !inputEvaluationID.MatchString(sourceID) {
 		return errors.New("Choose a saved subscription to upgrade.")
 	}
@@ -169,6 +175,9 @@ func (s *Server) reviewSubscriptionUpgrade(ctx context.Context, saved inputPrepa
 	}
 	defer close()
 	source := leases[sourceID].snapshot.Document
+	if err := requireOrdinaryInputQualification(source.Recipe.Qualification); err != nil {
+		return err
+	}
 	if source.PreparationID != candidate.PreparationID || subscriptionReserved(source) {
 		return errors.New("This subscription already has a pending or completed upgrade.")
 	}
@@ -386,6 +395,16 @@ func (s *Server) handleSubscriptionUpgrade(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, 200, b)
 		return
 	}
+	// Receipt recovery and cancellation above cannot dispatch another upgrade.
+	// Fresh apply/retry must admit both retained recipes before any new effects.
+	if err = requireOrdinaryInputQualification(b.Recipe.Qualification); err != nil {
+		fail(err)
+		return
+	}
+	if err = requireOrdinaryInputQualification(source.Recipe.Qualification); err != nil {
+		fail(err)
+		return
+	}
 	if subscriptionReviewDigest(source) != review.SourceDigest || subscriptionReserved(source) && source.Successors[len(source.Successors)-1].CandidateID != id {
 		fail(errors.New("The subscription changed. Review its upgrade again."))
 		return
@@ -404,6 +423,10 @@ func (s *Server) handleSubscriptionUpgrade(w http.ResponseWriter, r *http.Reques
 	defer view.Close()
 	saved, err := view.Get(prep)
 	if err != nil {
+		fail(err)
+		return
+	}
+	if err = requireOrdinaryInputQualification(saved.Document.Recipe.Qualification); err != nil {
 		fail(err)
 		return
 	}

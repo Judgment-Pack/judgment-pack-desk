@@ -31,12 +31,18 @@ func assistantDialectRecordSchemas() map[string]json.RawMessage {
 	return map[string]json.RawMessage{"read_dialect_records": assistantChatJSON(object(map[string]any{"id": id, "offset": integer(0, 1000), "limit": integer(1, 10)}, "id")), "read_dialect_activity": assistantChatJSON(object(map[string]any{"id": id}, "id")), "propose_dialect_action": assistantChatJSON(action)}
 }
 func (e *assistantRunExecution) assistantDialectRecordTools() (*assistantHostRegistry, error) {
+	// Owner declarations are closed: an unlisted registration has no taxonomy.
+	taxonomies := map[string]*runcontext.ToolTaxonomy{
+		"read_dialect_records":   {Operation: "read", Effect: "read"},
+		"read_dialect_activity":  {Operation: "read", Effect: "read"},
+		"propose_dialect_action": {Operation: "propose", Effect: "propose"},
+	}
 	schemas := assistantDialectRecordSchemas()
 	tools := []runcontext.HostTool{}
 	descriptions := map[string]string{"read_dialect_records": "Read bounded current Dialect records, original supplied strings and separate typed research, source/run references and current versus stale human review. No values are independently verified and no review is saved.", "read_dialect_activity": "Read bounded local preparation, research and evaluation history. No worker is recovered, started, stopped, retried or authorized.", "propose_dialect_action": "Retain one review-only recipe update/removal or research/reprocess/stop/evaluate card against an explicit current root recipe read. Portable content only. Never saves a recipe, changes records, starts/stops work or grants approval."}
 	for _, name := range assistantDialectRecordNames {
 		name := name
-		tool := runcontext.HostTool{Name: name, Description: descriptions[name], InputSchema: schemas[name], Effect: "read", Delegation: "read", ContextPolicy: &runcontext.ToolContextPolicy{Reference: true}}
+		tool := runcontext.HostTool{Name: name, Taxonomy: taxonomies[name], Description: descriptions[name], InputSchema: schemas[name], Effect: "read", Delegation: "read", ContextPolicy: &runcontext.ToolContextPolicy{Reference: true}}
 		if name == "propose_dialect_action" {
 			tool.Effect = "proposal"
 			tool.Delegation = ""

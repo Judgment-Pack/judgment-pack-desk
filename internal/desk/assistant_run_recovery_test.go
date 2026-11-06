@@ -331,7 +331,7 @@ func TestAssistantRunProtocolApprovalNoteUTF16Bound(t *testing.T) {
 	exact := strings.Repeat("😀", 1000)
 	over := exact + "a"
 	yes := true
-	action := assistantRunAction{ID: "note-bound", Kind: "approval", Revision: v.Revision, CallID: "call-one", ArgsDigest: assistantRunArgsDigest(v.Checkpoint.Approval.Args), Approved: &yes, Note: &over}
+	action := assistantRunAction{ID: "note-bound", Kind: "approval", Revision: v.Revision, CallID: "call-one", ArgsDigest: v.ApprovalReference.ArgsDigest, ShownDigest: &v.ApprovalReference.ArgsDigest, Approved: &yes, Note: &over}
 	path := "/api/assistant-runs/" + v.ID + "/actions"
 	if w := policyCall(s, token, "POST", path, action); w.Code != 409 {
 		t.Fatal("overlong UTF-16 decision accepted", w.Code)

@@ -245,7 +245,7 @@ class SelectionTests(unittest.TestCase):
             cwd=self.root, env=self.env, capture_output=True, text=True, timeout=600,
         )
         self.assertEqual(
-            subprocess.run(["git", "status", "--porcelain", "internal", "web"], cwd=self.root, env=self.env,
+            subprocess.run(["git", "status", "--porcelain", "--", ".", ":(exclude)scripts/mutation-expects.tsv"], cwd=self.root, env=self.env,
                            capture_output=True, text=True).stdout, "", "the tree was not restored")
         return result
 
@@ -599,6 +599,72 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(table["web caught two modules away"], "src/far.test.ts holds")
         self.assertEqual(table["web nothing catches"], "**NOT DISCRIMINATING — nothing failed**")
         self.assertEqual(self.expects()[("web", "web caught by its walk")], "src/a.test.ts,src/c.test.ts")
+
+    def external_target(self, rows):
+        target = "scripts/fixture [one].go"
+        (self.root / target).write_text("guard one\nguard two\n")
+        (self.root / "scripts/mutation-check.sh").write_text(harness_around([
+            ("go", name, target, needle, replacement) for name, needle, replacement in rows
+        ]))
+        self.env["FAKE_GO_SOURCE"] = target
+        self.git("add", "-A")
+        self.git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qsm", "external target")
+        return target
+
+    def test_external_tracked_target_is_restored_between_rows_and_keeps_record(self):
+        target = self.external_target([
+            ("external caught", "guard one", "broken one"),
+            ("external survivor", "guard two", "surviving change"),
+        ])
+        result = self.harness("go", "--record")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("TestOne", self.table(result)["external caught"])
+        self.assertEqual(self.table(result)["external survivor"], "**NOT DISCRIMINATING — nothing failed**")
+        self.assertEqual((self.root / target).read_text(), "guard one\nguard two\n")
+        self.assertIn(("go", "external caught"), self.expects())
+
+    def test_external_target_is_restored_on_early_exit_after_mutation(self):
+        target = self.external_target([("external abort", "guard one", "broken one")])
+        script = self.root / "scripts/mutation-check.sh"
+        source = script.read_text()
+        anchor = '  if [ "$how" = selected ]; then\n'
+        self.assertEqual(source.count(anchor), 1)
+        script.write_text(source.replace(anchor, "  exit 17\n" + anchor))
+        self.git("add", "scripts/mutation-check.sh")
+        self.git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qsm", "early exit")
+        result = self.harness("go")
+        self.assertEqual(result.returncode, 17, result.stdout + result.stderr)
+        self.assertEqual((self.root / target).read_text(), "guard one\nguard two\n")
+
+    def test_ignored_untracked_target_is_refused_before_edit_or_suite(self):
+        target = "scripts/untracked.go"
+        (self.root / ".gitignore").write_text(target + "\n")
+        (self.root / "scripts/mutation-check.sh").write_text(harness_around([
+            ("go", "untracked target", target, "guard one", "broken one")
+        ]))
+        self.git("add", "-A")
+        self.git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qsm", "untracked row")
+        (self.root / target).write_text("guard one\n")
+        result = self.harness("go")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("mutation target must be a tracked regular file", result.stderr)
+        self.assertEqual((self.root / target).read_text(), "guard one\n")
+        self.assertEqual(self.log.read_text(), "")
+
+    def test_dirty_record_cannot_be_a_mutation_target(self):
+        target = "scripts/mutation-expects.tsv"
+        (self.root / "scripts/mutation-check.sh").write_text(harness_around([
+            ("go", "dirty record", target, "TestOne", "TestTwo")
+        ]))
+        self.git("add", "scripts/mutation-check.sh")
+        self.git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qsm", "record target")
+        original = (self.root / target).read_text() + "go\towner record\tTestOne\n"
+        (self.root / target).write_text(original)
+        result = self.harness("go")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("mutation target has uncommitted changes", result.stderr)
+        self.assertEqual((self.root / target).read_text(), original)
+        self.assertEqual(self.log.read_text(), "")
 
     def package_fixture(self, rows, entries, packages):
         self.env["FAKE_GO_PACKAGES"] = json.dumps(packages)

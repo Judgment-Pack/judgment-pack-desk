@@ -17,13 +17,13 @@ command=(go test ./internal/desk -run "$producer" -count=1 -v)
 # The Go wrapper owns the machine lock; never wrap this branch in a second flock.
 if [ -n "${JPDEV_WRAP:-}" ]; then command=("$JPDEV_WRAP" go -- "${command[@]}"); fi
 "${command[@]}"
-for file in pending.json events.sse consumer-source.json consumer-terminal.json consumer-conversations.json consumer-approval.json actual-continuation-answer.json actual-continuation-extend-budget.json actual-continuation-subscription.json saved-pack-chat.json saved-pack-snapshot.json saved-pack-suite.json saved-pack-recheck.json; do
+for file in pending.json events.sse consumer-source.json consumer-terminal.json consumer-conversations.json consumer-approval.json actual-continuation-answer.json actual-answer-parent.json actual-subscription-answer-parent.json actual-continuation-extend-budget.json actual-continuation-subscription.json saved-pack-chat.json saved-pack-snapshot.json saved-pack-suite.json saved-pack-recheck.json; do
  test -s "$DESK_RUN_CLIENT_OUTPUTS/$file" || { echo "Missing actual saved-chat producer: $file" >&2; exit 1; }
 done
 node_command=(bash -c '
  set -euo pipefail
  cd "$1/web"
- npm test -- src/assistant/serverRuns/controller.test.ts src/assistant/serverRuns/useSavedChatRun.test.tsx src/assistant/serverRuns/presentation.test.ts src/assistant/serverRuns/decode.test.ts src/assistant/serverRuns/client.test.ts src/assistant/serverRuns/stream.test.ts src/chat/store.server.test.ts src/chat/ChatProvider.search.test.tsx src/chat/usePackProposalSave.server.test.tsx src/chat/store.test.ts src/chat/questions.test.ts src/chat/savePackProposal.test.ts src/chat/PackAssistant.test.tsx
+ npm test -- src/assistant/serverRuns/answerSuccessor.test.ts src/assistant/serverRuns/controller.test.ts src/assistant/serverRuns/useSavedChatRun.test.tsx src/assistant/serverRuns/presentation.test.ts src/assistant/serverRuns/decode.test.ts src/assistant/serverRuns/client.test.ts src/assistant/serverRuns/stream.test.ts src/chat/store.server.test.ts src/chat/ChatProvider.search.test.tsx src/chat/usePackProposalSave.server.test.tsx src/chat/store.test.ts src/chat/questions.test.ts src/chat/savePackProposal.test.ts src/chat/PackAssistant.test.tsx
  cd "$1"
  node scripts/saved-chat-consumer-mutations.mjs
 ' saved-chat-consumer "$root")

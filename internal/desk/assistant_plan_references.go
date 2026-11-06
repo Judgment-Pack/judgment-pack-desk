@@ -94,7 +94,7 @@ func (s *Server) resolveAssistantPlanReferences(refs []assistantPlanReference, v
 		if !assistantRunDigest(revision) {
 			return nil, errAssistantRunInvalid
 		}
-		resolved = append(resolved, chatPlanReference{ref.Kind, ref.ID, revision})
+		resolved = append(resolved, chatPlanReference{Kind: ref.Kind, ID: ref.ID, Revision: revision})
 	}
 	return resolved, nil
 }
@@ -133,6 +133,10 @@ func (e *assistantRunExecution) proposeAssistantPlan(ctx context.Context, a assi
 	if err != nil {
 		return empty, nil, err
 	}
+	if !assistantPlanBindingLocatorsEqual(meta, refs) {
+		return empty, nil, errAssistantRunInvalid
+	}
+	resolved = assistantPlanCurrentReferences(resolved, meta.Bindings)
 	if err = e.Authorize(ctx); err != nil {
 		return empty, nil, err
 	}
@@ -150,8 +154,11 @@ func (s *Server) checkAssistantPlanProjection(source []byte, run assistantRunRec
 		}
 		op := assistantDialectOperation(run, out.OperationID)
 		var in assistantHostIntent
-		if op == nil || out.Plan == nil || readAssistantHostReceipt(op.Intent, &in) != nil {
+		if op == nil || out.Plan == nil || readAssistantHostReceipt(op.Intent, &in) != nil || validateAssistantPlanIntent(run, *op, in) != nil {
 			return errAssistantRunInvalid
+		}
+		if !assistantCanonicalHostSucceeded(run, *op, in) {
+			return errAssistantRunScope
 		}
 		a, err := readAssistantPlanArguments(in.Arguments)
 		if err != nil {
@@ -164,6 +171,12 @@ func (s *Server) checkAssistantPlanProjection(source []byte, run assistantRunRec
 		current, err := s.resolveAssistantPlanReferences(refs, view)
 		if err != nil {
 			return err
+		}
+		if len(in.Plan.Bindings) > 0 {
+			if !assistantPlanBindingLocatorsEqual(in.Plan, refs) {
+				return errAssistantRunInvalid
+			}
+			current = assistantPlanCurrentReferences(current, in.Plan.Bindings)
 		}
 		if !reflect.DeepEqual(current, out.Plan.References) {
 			return errAssistantRunConflict
@@ -185,21 +198,30 @@ func (s *Server) checkAssistantPlanAcceptance(r *http.Request, previous, next []
 // The final conversation owner retains this nonblocking collection read through
 // rename/readback. No model callback receives it and no private lock waits on it.
 func (s *Server) holdAssistantPlanAcceptance(r *http.Request, previous, next []byte) (inputPreparationRead, error) {
-	var old, candidate struct {
-		Chats []struct {
-			ID    string     `json:"id"`
-			Plans []chatPlan `json:"plans"`
-		} `json:"chats"`
-	}
+	var old, candidate conversationDocument
 	if json.Unmarshal(previous, &old) != nil || json.Unmarshal(next, &candidate) != nil {
 		return nil, errAssistantRunInvalid
 	}
 	before := map[string][]chatPlan{}
-	for _, chat := range old.Chats {
+	for _, raw := range old.Chats {
+		var chat struct {
+			ID    string     `json:"id"`
+			Plans []chatPlan `json:"plans"`
+		}
+		if json.Unmarshal(raw, &chat) != nil {
+			return nil, errAssistantRunInvalid
+		}
 		before[chat.ID] = chat.Plans
 	}
 	refs := []assistantPlanReference{}
-	for _, chat := range candidate.Chats {
+	for _, raw := range candidate.Chats {
+		var chat struct {
+			ID    string     `json:"id"`
+			Plans []chatPlan `json:"plans"`
+		}
+		if json.Unmarshal(raw, &chat) != nil {
+			return nil, errAssistantRunInvalid
+		}
 		if len(chat.Plans) == 0 || reflect.DeepEqual(before[chat.ID], chat.Plans) {
 			continue
 		}
@@ -207,9 +229,25 @@ func (s *Server) holdAssistantPlanAcceptance(r *http.Request, previous, next []b
 		if plan.Status != "accepted" && plan.Status != "started" {
 			continue
 		}
+		var identity *assistantRunBinding
 		for _, ref := range plan.References {
-			refs = append(refs, assistantPlanReference{ref.Kind, ref.ID})
+			if ref.Revision == "" {
+				current, _, err := s.assistantRunIdentity(r)
+				if err != nil {
+					return nil, err
+				}
+				identity = &current
+				break
+			}
 		}
+		locators, err := s.assistantPlanLocatorsLocked(raw, plan, identity)
+		if err != nil {
+			if errors.Is(err, errAssistantRunScope) || errors.Is(err, errAssistantRunConflict) {
+				return nil, withCode(CodeStale, fmt.Errorf("Review the current Plan references again before starting work. %w", errors.Join(err, errAssistantRunConflict)))
+			}
+			return nil, err
+		}
+		refs = append(refs, locators...)
 	}
 	view, err := s.assistantPlanView(r.Context(), refs)
 	if err != nil {
@@ -296,9 +334,9 @@ func (s *Server) checkAssistantPlanAcceptanceUsingView(r *http.Request, previous
 	return r.Context().Err()
 }
 func (s *Server) checkCurrentAssistantPlan(source []byte, plan chatPlan) error {
-	refs := []assistantPlanReference{}
-	for _, ref := range plan.References {
-		refs = append(refs, assistantPlanReference{ref.Kind, ref.ID})
+	refs, err := s.assistantPlanLocatorsLocked(source, plan, nil)
+	if err != nil {
+		return err
 	}
 	view, err := s.assistantPlanView(context.Background(), refs)
 	if err != nil {
@@ -313,9 +351,9 @@ func (s *Server) checkCurrentAssistantPlanUsingView(source []byte, plan chatPlan
 	if !validAssistantPlanReferences(plan.References) {
 		return errAssistantRunInvalid
 	}
-	refs := []assistantPlanReference{}
-	for _, ref := range plan.References {
-		refs = append(refs, assistantPlanReference{ref.Kind, ref.ID})
+	refs, err := s.assistantPlanLocatorsLocked(source, plan, nil)
+	if err != nil {
+		return err
 	}
 	linked, err := assistantPlanReferences(source, nil)
 	if err != nil {
@@ -335,7 +373,16 @@ func (s *Server) checkCurrentAssistantPlanUsingView(source []byte, plan chatPlan
 		return err
 	}
 	if !reflect.DeepEqual(current, plan.References) {
-		return errAssistantRunConflict
+		// Preserve historical pins verbatim, but compare current references using
+		// the exact saved opaque identity and freshly read content digest.
+		for i, ref := range plan.References {
+			if ref.Revision == "" {
+				current[i] = chatPlanReference{Kind: ref.Kind, ID: ref.ID, Digest: current[i].Revision}
+			}
+		}
+		if !reflect.DeepEqual(current, plan.References) {
+			return errAssistantRunConflict
+		}
 	}
 	return nil
 }

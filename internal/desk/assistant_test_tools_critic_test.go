@@ -3,6 +3,8 @@ package desk
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -31,19 +33,23 @@ func TestAssistantTestHostCriticConsumedInputs(t *testing.T) {
 			}
 			x := assistantTestHostOpen(t, s, e)
 			if mode == "legacy-v1" || mode == "legacy-v1-and-v2" {
-				assistantRunMust(t, e.writer.change(t.Context(), false, func(run *assistantRunRecord) (bool, error) {
-					cp := *run.Checkpoint
-					cp.AdditionalMembers = map[string]json.RawMessage{assistantCriticLegacyCheckpointMember: run.Checkpoint.AdditionalMembers[assistantCriticCheckpointMember]}
-					if mode == "legacy-v1-and-v2" {
-						cp.AdditionalMembers[assistantCriticCheckpointMember] = run.Checkpoint.AdditionalMembers[assistantCriticCheckpointMember]
-					}
-					run.Checkpoint = &cp
-					return true, nil
-				}))
-				before, _ := json.Marshal(assistantExecutionRecord(t, e))
+				before := assistantRunRaw(t, e.writer.lease.store)
+				members := `"deskCriticInputV1":"` + e.input.critic.fingerprint + `",`
+				if mode == "legacy-v1-and-v2" {
+					members += `"deskCriticInputV2":"` + e.input.critic.fingerprint + `",`
+				}
+				legacy := bytes.Replace(before, []byte(`"checkpoint":{`), []byte(`"checkpoint":{`+members), 1)
+				if bytes.Equal(legacy, before) {
+					t.Fatal("legacy fixture not applied")
+				}
+				root, err := s.openChatData()
+				assistantRunMust(t, err)
+				defer root.root.Close()
+				path := filepath.Join(root.location.Path, e.writer.lease.store.name)
+				assistantRunMust(t, os.WriteFile(path, legacy, 0600))
 				continued := *e
 				continued.input = &assistantChatCustody{}
-				continued.record = assistantExecutionRecord(t, e)
+				continued.record = e.record
 				next, err := continued.openAssistantExecution(t.Context(), assistantExecutionPrompt{Name: "served"})
 				if next != nil {
 					next.Close()
@@ -51,8 +57,9 @@ func TestAssistantTestHostCriticConsumedInputs(t *testing.T) {
 				if err == nil {
 					t.Fatal("legacy whole-suite custody was rebound as V2")
 				}
-				after, _ := json.Marshal(assistantExecutionRecord(t, e))
-				if !bytes.Equal(before, after) {
+				after, err := os.ReadFile(path)
+				assistantRunMust(t, err)
+				if !bytes.Equal(legacy, after) {
 					t.Fatal("legacy refusal changed original run/checkpoint")
 				}
 				return

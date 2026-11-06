@@ -6,7 +6,11 @@ import { savedCriticChoice } from '../assistant/criticSettings'
 import {validPolicySources,type PolicyAuthoringSource} from '../policies/authoringSource'
 import {validPolicyInterpretationProposal,type PolicyInterpretationProposal} from '../policies/interpretation'
 import {validPolicyId,validPolicyRequest,validPolicyProposal,type PolicyRequest,type PolicyProposal} from '../policies/chat'
-import {validPlans,type ChatPlan} from '@judgment-pack/harness/planning/model'
+import type {ChatPlan} from '@judgment-pack/harness/planning/model'
+import {validDeskPlans as validPlans} from '../assistant/planning/deskPlan'
+import {checkPlan} from '@judgment-pack/harness/planning/tools'
+import type {PlanResolver} from '@judgment-pack/harness/planning/references'
+import {canonicalJSON} from '@judgment-pack/harness/context/chat'
 import { caseStatements, statementTurns, type Turn } from '../research/run'
 import {validDialectChatAction,validDialectId,type DialectChatAction} from '../dialects/chatActions'
 import {validDialectRecipeProposal,type DialectRecipeProposal} from '../dialects/proposals'
@@ -94,6 +98,7 @@ interface Document { version: 1; chats: Chat[] }
 interface Reply { project: string; sha256: string; content: unknown; chatRevisions?: Record<string,string>; wireChats?:Record<string,string> }
 interface Snapshot { packDrafts: PackDraft[]; deletedDrafts: string[]; chats: Chat[]; drafts: Chat[]; ready: boolean; saving: boolean; error: string; active: string[]; bindings: ReadonlyMap<string, ResearchRunBinding>; dirty: boolean }
 export interface ChatPersistence { read(): Promise<Reply>; write(document: Document, digest: string, wireChats?:Record<string,string>, editedFields?:ReadonlyMap<string,ReadonlySet<string>>): Promise<Reply> }
+export interface ReviewedPlanAcceptance { plan:ChatPlan; scope:string }
 const persistence: ChatPersistence = {
   read: async () => readReply(await deskFetch('/api/conversations')),
   write: async (document, digest, wireChats, editedFields) => readReply(await deskFetch('/api/conversations', {
@@ -179,6 +184,12 @@ export class ChatStore {
   private digest = 'absent'
   private revision = 0
   private savedRevision = 0
+  private persistenceTail: Promise<unknown> = Promise.resolve()
+  private serialPersistence<T>(action:()=>Promise<T>):Promise<T> {
+    const result=this.persistenceTail.then(action)
+    this.persistenceTail=result.catch(()=>{})
+    return result
+  }
   private timer: ReturnType<typeof setTimeout> | undefined
   private loading: Promise<void> | null = null
   private observed = new Map<string, { state: unknown; sources: unknown }>()
@@ -236,7 +247,8 @@ export class ChatStore {
     })()
     return this.loading
   }
-  async flush(): Promise<boolean> {
+  flush(): Promise<boolean> { return this.serialPersistence(()=>this.flushPending()) }
+  private async flushPending(): Promise<boolean> {
     clearTimeout(this.timer)
     if (!this.state.ready || this.state.error || this.state.saving) return false
     if (this.savedRevision === this.revision) return true
@@ -281,6 +293,124 @@ export class ChatStore {
     } catch (error) {
       this.set({ saving: false, error: sourceMessage("Chat changes are not saved: {{value0}}", { value0: (error as Error).message }) })
       return false
+    }
+  }
+  /** Host-owned acceptance: stage privately, commit with the document CAS, then publish.
+   * This intentionally is not the harness's general async ChatStore interface. */
+  acceptReviewedPlan(id:string, reviewed:ChatPlan, resolver:PlanResolver, signal:AbortSignal):Promise<ReviewedPlanAcceptance> {
+    const scope=this.reviewScope(this.planOwner(id))
+    return this.serialPersistence(async()=>{
+      const current=()=>{
+        signal.throwIfAborted()
+        if(this.disposed||!this.state.ready||this.state.error)throw Error(this.state.error||'Chat history is not ready.')
+        if(this.pins.has(id)||this.running)throw Error('Finish or reconcile the active response before starting work.')
+        const chat=this.planOwner(id),latest=chat?.plans?.at(-1)
+        if(!chat||this.reviewScope(chat)!==scope||chat.interaction!=='plan'||!latest||!validPlans(chat.plans)||canonicalJSON(latest)!==canonicalJSON(reviewed)||latest.status!=='proposed'||latest.questions.length)throw Error('The plan changed. Review its current revision.')
+        return chat
+      }
+      current()
+      // A new proposed row must exist before the server can admit its acceptance.
+      this.retainChat(id)
+      if(!await this.flushPending())throw Error(this.state.error||'The proposed plan could not be saved.')
+      current()
+      await checkPlan(reviewed,signal,resolver)
+      current()
+      await this.refreshForPlan()
+      const chat=current()
+      const accepted:ChatPlan={...reviewed,status:'accepted',acceptedAt:new Date().toISOString()}
+      const patch:Partial<Chat>={interaction:'work',plans:chat.plans!.map(p=>p.id===reviewed.id?accepted:p)}
+      const receipt={plan:accepted,scope:this.reviewScope({...chat,...patch})}
+      await this.commitPlan(chat,patch,()=>{current()},signal)
+      // Local changes or response ownership acquired during the write prevent dispatch.
+      this.assertReviewedPlanAccepted(id,receipt)
+      signal.throwIfAborted()
+      return receipt
+    })
+  }
+  private planOwner(id:string) { return [...this.state.chats,...this.state.drafts].find(c=>c.id===id) }
+  /** Resolve only an acknowledged saved proposal. Called lazily after promotion
+   * and flush, so a draft's former document revision cannot authorize lookup. */
+  async reviewedPlanRevision(id:string,plan:ChatPlan,signal:AbortSignal):Promise<string> {
+    const scope=this.reviewScope(this.planOwner(id))
+    const reply=await this.io.read();signal.throwIfAborted()
+    if(this.disposed||reply.project!==this.project||scope!==this.reviewScope(this.planOwner(id)))throw Error('The plan changed. Review its current revision.')
+    const saved=decode(reply.content,reply.wireChats).map(migrateMessageOwnership).find(chat=>chat.id===id)
+    const revision=reply.chatRevisions?.[id]
+    if(!revision||!/^[a-f0-9]{64}$/.test(revision)||!saved||canonicalJSON(saved.plans?.at(-1))!==canonicalJSON(plan)||this.reviewScope(saved)!==scope)throw Error('The plan changed. Review its current revision.')
+    return revision
+  }
+  private reviewScope(chat:Chat|undefined) { return canonicalJSON([chat?.interaction,chat?.plans,chat?.pack,chat?.graph,chat?.input,chat?.serverRequest,chat?.checkpoint]) }
+  assertReviewedPlanAccepted(id:string,accepted:ReviewedPlanAcceptance) {
+    const chat=this.planOwner(id)
+    if(this.disposed||this.state.error||this.pins.has(id)||this.running||chat?.interaction!=='work'||canonicalJSON(chat.plans?.at(-1))!==canonicalJSON(accepted.plan)||this.reviewScope(chat)!==accepted.scope||!this.baseline.some(c=>c.id===id&&this.reviewScope(c)===accepted.scope))throw Error('The accepted plan changed or its save is uncertain. Review the current chat before starting work.')
+  }
+  /** Response ownership wins over a cosmetic started marker. Never unpin or replay. */
+  markReviewedPlanStarted(id:string,accepted:ReviewedPlanAcceptance,signal:AbortSignal):Promise<void> {
+    return this.serialPersistence(async()=>{
+      if(this.pins.has(id)||this.running)return
+      this.assertReviewedPlanAccepted(id,accepted)
+      const scope=this.reviewScope(this.planOwner(id))
+      if(!await this.flushPending())throw Error(this.state.error||'The chat could not be saved.')
+      await this.refreshForPlan()
+      if(this.pins.has(id)||this.running)return
+      this.assertReviewedPlanAccepted(id,accepted)
+      const chat=this.planOwner(id)!
+      const check=()=>{signal.throwIfAborted();if(this.pins.has(id)||this.running||this.reviewScope(this.planOwner(id))!==scope)throw Error('The plan changed before recording work started.')}
+      await this.commitPlan(chat,{plans:chat.plans!.map(p=>p.id===accepted.plan.id?{...p,status:'started'}:p)},check,signal,check)
+    })
+  }
+  private async refreshForPlan() {
+    const reply=await this.io.read()
+    if(reply.project!==this.project||this.disposed)throw Error('The project changed before saving.')
+    this.verifyWireConflicts(reply,new Map([...this.fieldEdits].map(([id,keys])=>[id,new Set(keys.keys())])))
+    const remote=decode(reply.content,reply.wireChats).map(migrateMessageOwnership)
+    const chats=reconcileChats(this.baseline,this.state.chats,remote)
+    this.baseline=remote;this.baselineWire=reply.wireChats??{};this.digest=reply.sha256
+    this.set({chats})
+  }
+  private async commitPlan(chat:Chat,patch:Partial<Chat>,check:()=>void,signal:AbortSignal,checkAfterAck?:()=>void) {
+    check();signal.throwIfAborted()
+    const local=this.state.chats,revision=this.revision
+    const document:Document={version:1,chats:local.map(c=>c.id===chat.id?{...c,...patch}:c)}
+    const edits=new Map([...this.fieldEdits].map(([id,keys])=>[id,new Set(keys.keys())]))
+    edits.set(chat.id,new Set([...(edits.get(chat.id)??[]),...Object.keys(patch)]))
+    const draftRevision=this.draftRevision
+    const draftDocument:DraftDocument={version:1,drafts:this.state.packDrafts,deleted:this.state.deletedDrafts}
+    clearTimeout(this.timer);this.set({saving:true})
+    try {
+      // Preserve the existing artifact-first ordering, including artifact edits
+      // arriving while references were checked. These remain separate CASes.
+      if(draftRevision!==this.savedDraftRevision){
+        const saved=await this.draftIO.write(draftDocument,this.draftDigest)
+        if(saved.project!==this.project)throw Error('Chat save answered for a different project')
+        this.draftDigest=saved.sha256;this.savedDraftRevision=draftRevision
+      }
+      check()
+      const reply=await this.io.write(document,this.digest,this.baselineWire,edits)
+      if(reply.project!==this.project||this.disposed)throw Error('The project changed during Plan acceptance.')
+      const saved=decode(reply.content,reply.wireChats).map(migrateMessageOwnership)
+      if(this.reviewScope(saved.find(c=>c.id===chat.id))!==this.reviewScope(document.chats.find(c=>c.id===chat.id)))throw Error('The exact saved plan acknowledgement is unavailable.')
+      checkAfterAck?.()
+      // Merge edits made during I/O over the acknowledged row, including changed
+      // Plan scope. Those edits stay dirty and cannot authorize this dispatch.
+      const before=new Map(local.map(c=>[c.id,c])),live=new Map(this.state.chats.map(c=>[c.id,c]))
+      const next=saved.filter(c=>!before.has(c.id)||live.has(c.id)).map(c=>{
+        const b=before.get(c.id),l=live.get(c.id)
+        if(!b||!l)return c
+        const merged={...c} as unknown as Record<string,unknown>
+        for(const key of new Set([...Object.keys(b),...Object.keys(l)]))if(!Object.is(b[key as keyof Chat],l[key as keyof Chat])){if(l[key as keyof Chat]===undefined)delete merged[key];else merged[key]=l[key as keyof Chat]}
+        return merged as unknown as Chat
+      })
+      for(const c of this.state.chats)if(!before.has(c.id)&&!next.some(n=>n.id===c.id))next.push(c)
+      this.baseline=saved;this.baselineWire=reply.wireChats??{};this.digest=reply.sha256
+      for(const [id,keys] of this.fieldEdits){for(const [key,at] of keys)if(at<=revision)keys.delete(key);if(!keys.size)this.fieldEdits.delete(id)}
+      this.savedRevision=revision
+      this.set({chats:next,saving:false,dirty:this.revision!==revision})
+      if(this.revision!==revision)this.timer=setTimeout(()=>{void this.flush()},600)
+    } catch(error) {
+      // A rejected/uncertain acknowledgement is never retried as acceptance.
+      this.set({saving:false,error:'Plan save is uncertain or refused. Reconcile the chat before starting work.'})
+      throw error
     }
   }
   /** Await the current checkpoint even when a debounced save is already in flight. */
@@ -533,7 +663,10 @@ export class ChatStore {
   }
   pinServerChat(id:string) { this.serverOwned=true;this.pins.add(id) }
   /** Read-only private snapshot reconciliation. Local edits survive both refresh and CAS conflicts. */
-  async reconcileServer(id:string, release=false, projection?:{digest:string;responseId:string;requestId:string;admissionId:string}):Promise<Chat|undefined> {
+  reconcileServer(id:string, release=false, projection?:{digest:string;responseId:string;requestId:string;admissionId:string}):Promise<Chat|undefined> {
+    return this.serialPersistence(()=>this.reconcileServerPending(id,release,projection))
+  }
+  private async reconcileServerPending(id:string, release=false, projection?:{digest:string;responseId:string;requestId:string;admissionId:string}):Promise<Chat|undefined> {
     const reply=await this.io.read()
     if(reply.project!==this.project||this.disposed)throw Error('The project changed during chat reconciliation.')
     this.verifyWireConflicts(reply,new Map([...this.fieldEdits].map(([id,keys])=>[id,new Set(keys.keys())])))
@@ -568,7 +701,7 @@ export class ChatStore {
 				this.update(id,{draftGeneration:current.generation+1})
 			}
 		}
-		if(this.state.dirty&&!await this.flush())throw Error('The retained draft link could not be saved.')
+		if(this.state.dirty&&!await this.flushPending())throw Error('The retained draft link could not be saved.')
 	}
     return this.state.chats.find(c=>c.id===id)
   }

@@ -1,5 +1,4 @@
-import { useRef, useState } from 'react'
-import { bindModelCall } from '@judgment-pack/harness/session'
+import { useEffect, useRef, useState } from 'react'
 import { msg, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -84,7 +83,7 @@ function overrideFacts(draft: EndpointDraft): CapabilityFacts {
  * what the assistant will then assume.
  *
  * **The probe is one press, on a saved endpoint**, and goes through the relay
- * with the connection's own saved address and key (`bindModelCall`), as every
+ * with the connection's own saved address and key, as every
  * other request to the endpoint does. It is offered for an OpenAI-compatible
  * endpoint, which is where models differ in what they take; the other two
  * protocols have the capabilities their reference documents. What it finds is
@@ -110,20 +109,33 @@ export function EndpointCapabilitiesSection({
   const [asking, setAsking] = useState(false)
   const [outcome, setOutcome] = useState<ProbeOutcome | undefined>(undefined)
   const generation = useRef(0)
+  const cancellation = useRef<AbortController | undefined>(undefined)
+  useEffect(() => () => { cancellation.current?.abort(); generation.current += 1 }, [])
   const typed = overrideProblem(draft.override)
   const model = draft.model.trim() || draft.models[0] || ''
   const probeable = draft.kind === 'openai-compatible' && model !== ''
 
+  const identity = `${canProbe}\n${scope?.connection.id ?? ''}\n${scope?.connection.revision ?? ''}\n${probeOf({...draft,model})}`
+  const previous = useRef(identity)
+  const latest = useRef(draft); latest.current = draft
+  if (previous.current !== identity) {
+    previous.current = identity
+    cancellation.current?.abort(); generation.current += 1
+    if (asking) setAsking(false)
+    if (outcome !== undefined) setOutcome(undefined)
+  }
   const probe = async () => {
+    if(!canProbe || asking || !probeable) return
+    const target = scope ? {connectionId:scope.connection.id,connectionRevision:scope.connection.revision} : undefined
+    cancellation.current = new AbortController()
     const mine = ++generation.current
     setAsking(true)
     setOutcome(undefined)
-    const call = bindModelCall('openai-compatible', scope ? { connectionId: scope.connection.id, connectionRevision: scope.connection.revision } : undefined)
-    const answer = await probeCapabilities(call, model)
+    const answer = await probeCapabilities(target, model, cancellation.current.signal)
     if (generation.current !== mine) return
     setAsking(false)
     setOutcome(answer)
-    if (answer.ok) onChange({ ...draft, probe: { at: answer.findings.at, facts: answer.findings.facts, of: probeOf({ ...draft, model }) } })
+    if (answer.ok) onChange({ ...latest.current, probe: { at: answer.findings.at, facts: answer.findings.facts, of: probeOf({ ...draft, model }) } })
   }
 
   const setFlag = (flag: (typeof OVERRIDE_FLAGS)[number], value: Tri) => onChange({ ...draft, override: { ...draft.override, [flag]: value } })

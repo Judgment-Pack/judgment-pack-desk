@@ -10,8 +10,12 @@ export type ParameterType = 'string' | 'integer' | 'timestamp'
 export interface CaseParameter { pointer: Pointer; type: ParameterType; from?: never }
 export interface SourceParameter { from: string; pointer: Pointer; type: ParameterType }
 export type Parameter = CaseParameter | SourceParameter
-export interface FactCopy { target: Pointer; source: Pointer }
-export interface EvidenceCopy { requirement: string; source: Pointer }
+export type RetainedConversion = {contractVersion:'1';column:string} & (
+ | {kind:'text'|'decimal'|'number'|'research-value';trueValue?:never;falseValue?:never}
+ | {kind:'boolean';trueValue:string;falseValue:string})
+export interface RetainedAvailability {contractVersion:'1';column:string}
+export interface FactCopy { target: Pointer; source: Pointer; conversion?:RetainedConversion }
+export interface EvidenceCopy { requirement: string; source: Pointer; availability?:RetainedAvailability }
 export interface CopyMapping { facts?: FactCopy[]; evidence?: EvidenceCopy[] }
 export interface DialectCase { parameters?: Record<string, CaseParameter>; facts: FactCopy[]; evidence: EvidenceCopy[] }
 export type ParameterTemplate = { $param: string }
@@ -102,7 +106,7 @@ interface DialectMembers {
   case?: DialectCase; admits?: Admission; unmapped?: Pointer[]; unmappedEvidence?: string[]
   provider?: ''; facts?: null; evidence?: null
 }
-export interface DialectDocumentV2 extends DialectMembers { version: 2; sources?: DialectSourceV2[] }
+export interface DialectDocumentV2 extends DialectMembers { version: 2; profile?:'base'; sources?: DialectSourceV2[] }
 /** Version 3: portable research, acquisitions and source reconciliation. */
 export interface DialectDocumentV3 extends DialectMembers { version: 3; sources?: DialectSourceV3[] }
 export type DialectDocument = DialectDocumentV2 | DialectDocumentV3

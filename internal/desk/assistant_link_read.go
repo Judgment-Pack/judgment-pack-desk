@@ -333,15 +333,22 @@ func verifyAssistantLinkObject(ctx context.Context, program string, raw []byte, 
 	if err != nil {
 		return zero, file, err
 	}
+	// Review may legitimately select no readable pages. The generic document
+	// verifier clones that empty selection to nil; keep this producer's explicit
+	// array so the closed external proof receipt never serializes pages as null.
+	verified.reference.Pages = append([]int{}, ref.Pages...)
 	return verified, assistantLinkFile(ref, record, link), nil
 }
 func (e *assistantRunExecution) executeAssistantLink(ctx context.Context, args assistantLinkArguments) (assistantHostObservation, error) {
+	if err := assistantExternalCurrent(ctx); err != nil {
+		return assistantHostObservation{}, err
+	}
 	fail := func(err error) (assistantHostObservation, error) {
-		return assistantHostObservation{Result: assistantHostFailure(err)}, nil
+		return assistantExternalObservationFailure(ctx, assistantLinkTool, assistantHostFailure(err), err)
 	}
 	c, err := e.service.server.assistantLinkConfiguration(true)
 	if err != nil {
-		return fail(err)
+		return assistantExternalControlObservation(ctx, assistantLinkTool, assistantHostFailure(err), "setup-required", "configuration-required", "", "")
 	}
 	if err = e.recheckAssistantLink(ctx, c); err != nil {
 		return fail(err)
@@ -354,6 +361,17 @@ func (e *assistantRunExecution) executeAssistantLink(ctx context.Context, args a
 		return fail(err)
 	}
 	if !allowed {
+		if assistantExternalSourced(ctx, assistantLinkTool) {
+			_, mode, _, prefErr := e.service.server.assistantSearchPreference(e.source)
+			choice, choiceErr := assistantSearchChoice(e.source, mode)
+			if prefErr == nil && choiceErr == nil && choice != "research" {
+				kind, reason := "provided-only", "provided-only"
+				if choice == "ask" {
+					kind, reason = "research-choice", "choice-required"
+				}
+				return assistantExternalControlObservation(ctx, assistantLinkTool, assistantHostFailure(errorsNewAssistantLinkAuthority()), kind, reason, "", "")
+			}
+		}
 		return fail(errorsNewAssistantLinkAuthority())
 	}
 	for _, file := range reverseAssistantLinkFiles(assistantSavedLinkAttachments(e.source.Original)) {
@@ -367,11 +385,15 @@ func (e *assistantRunExecution) executeAssistantLink(ctx context.Context, args a
 		if err = e.recheckAssistantLink(ctx, c); err != nil {
 			return fail(err)
 		}
+		if err := assistantExternalCurrent(ctx); err != nil {
+			return fail(err)
+		}
 		result, err := e.assistantLinkWindow(held, args)
 		if err != nil {
 			return fail(err)
 		}
-		return assistantHostObservation{Result: result}, nil
+		proof := &assistantExternalReadProof{Kind: "saved-link", Packet: attachmentReceipt{ID: held.reference.ID, SHA256: held.attachmentDigest}, Document: &held.reference, ConfigurationDigest: assistantLinkConfigurationDigest(c), CustodyDigest: digestOf(assistantChatJSON(held.reference))}
+		return assistantHostObservation{ExternalProof: proof, Result: result}, nil
 	}
 	run, err := e.writer.lease.store.Read(ctx, e.record.Binding, e.record.ID)
 	if err != nil {
@@ -387,11 +409,15 @@ func (e *assistantRunExecution) executeAssistantLink(ctx context.Context, args a
 			if err != nil {
 				return fail(err)
 			}
+			if err := assistantExternalCurrent(ctx); err != nil {
+				return fail(err)
+			}
 			result, err := e.assistantLinkWindow(doc, args)
 			if err != nil {
 				return fail(err)
 			}
-			return assistantHostObservation{Result: result}, nil
+			proof := &assistantExternalReadProof{Kind: "link", AcquisitionID: held.HostOperationID, Packet: *held.Final.Receipt, Document: &doc.reference, ConfigurationDigest: held.ConfigurationDigest, CustodyDigest: digestOf(assistantChatJSON(held))}
+			return assistantHostObservation{ExternalProof: proof, Result: result}, nil
 		}
 	}
 	return e.acquireAssistantLink(ctx, args, c)

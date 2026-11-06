@@ -5,7 +5,7 @@
       "version": "22"
     },
     "go": {
-      "version": "1.26.5"
+      "version": "1.26.10"
     },
     "python": {
       "version": "3.12",
@@ -51,7 +51,7 @@
     },
     {
       "name": "python-tests",
-      "run": "for t in scripts/local-paths_test.py scripts/dev/development-build_test.py scripts/component-releases_test.py scripts/dev-components_test.py scripts/dev/gateway-fixture_test.py scripts/dev/dialect-mapping-fixture_test.py scripts/desk-dev_test.py scripts/desk-update_test.py scripts/package-release_test.py scripts/published-components_test.py scripts/assemble-release_test.py scripts/build-bundle_test.py scripts/needle-check_test.py scripts/mutation-check_test.py scripts/mutation-nightly-table_test.py scripts/mutation-rows-changed_test.py; do python3 \"$t\" || exit 1; done",
+      "run": "for t in scripts/dev/check-selection_test.py scripts/local-paths_test.py scripts/dev/development-build_test.py scripts/component-releases_test.py scripts/dev-components_test.py scripts/dev/gateway-fixture_test.py scripts/dev/dialect-mapping-fixture_test.py scripts/desk-dev_test.py scripts/desk-update_test.py scripts/package-release_test.py scripts/published-components_test.py scripts/assemble-release_test.py scripts/build-bundle_test.py scripts/needle-check_test.py scripts/mutation-check_test.py scripts/mutation-nightly-table_test.py scripts/mutation-rows-changed_test.py; do python3 \"$t\" || exit 1; done",
       "toolchain": "python",
       "summary": "^(Ran |FAILED)",
       "timeout": 900

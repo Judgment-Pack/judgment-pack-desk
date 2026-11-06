@@ -91,8 +91,8 @@
 # -<pgid>`, or run it under `setsid` and a watchdog that does, or under
 # `timeout -s KILL`. A TERM or an INT is not enough: it ends the row's suite,
 # the trap below restores the tree, and the batch goes on with its next row.
-# Nothing restores the tree after a KILL, so restore it by hand: `git checkout
-# -- internal web/src`. A suite that outlives its own bound needs no one from
+# Nothing restores the tree after a KILL: inspect `git diff` and restore the
+# exact mutated path before continuing. A suite that outlives its own bound needs no one from
 # outside: the harness ends its whole process tree and goes on.
 set -uo pipefail
 
@@ -165,7 +165,16 @@ commit="$(git rev-parse HEAD)"
 work="$(mktemp -d)" || exit 2
 : > "$work/named"
 
-restore() { git checkout -- internal web/src 2>/dev/null; }
+mutation_file=""
+restore() {
+  if [ -n "$mutation_file" ]; then
+    if ! git --literal-pathspecs checkout -- "$mutation_file"; then
+      echo "cannot restore mutation target: $mutation_file; stopping" >&2
+      exit 2
+    fi
+    mutation_file=""
+  fi
+}
 # However this ends — a failing mutation, Ctrl-C, a kill — the tree goes back.
 # A harness that leaves a mutation in place is worse than no harness: the next
 # thing anyone runs is testing something nobody wrote.
@@ -596,6 +605,16 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement> [go-package]
   # --shard k/n: every n-th row matched, from the k-th.
   [ $(((matched - 1) % shard_n)) -eq $((shard_k - 1)) ] || return
   restore
+  if [ ! -f "$file" ] || [ -L "$file" ] || ! git --literal-pathspecs ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
+    echo "mutation target must be a tracked regular file: $file" >&2
+    exit 2
+  fi
+  # The record may be dirty at startup, but must not be restored over an
+  # owner's edits if a row names the record itself as its mutation target.
+  if ! git --literal-pathspecs diff --quiet HEAD -- "$file"; then
+    echo "mutation target has uncommitted changes: $file" >&2
+    exit 2
+  fi
   local entry how started=$SECONDS pattern="" selection=() line failures caught="" package="${6-./internal/desk}" selected_status
   if [ "$lang" = go ]; then
     if ! go_package_valid "$package"; then
@@ -631,6 +650,7 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement> [go-package]
   else
     how=no-selection
   fi
+  mutation_file="$file"
   if ! apply "$file" "$needle" "$replacement"; then
     report "$name" "MUTATION DID NOT APPLY"
     fail=$((fail + 1))
@@ -5387,8 +5407,8 @@ func (b *cappedBuffer) exceeded() bool {'
 		return unsignedRunner(runnerKeyInUse, ""), ""'
   mutate go "runner key: Runner's first start does not wait for the start's sweep" "$J" \
     '		select {
-		case <-s.jobs.started:
-		case <-s.jobs.stop:
+		case <-j.started:
+		case <-j.stop:
 			return
 		}
 ' \
@@ -13379,8 +13399,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (runner.data === null || runner.isPending) return null' \
     '  if (runner.isPending) return null'
   mutate web "jobs record page: the sentence claims keys it did not pass" "$JRP" \
-    'const STATEMENT = "Desk ran this over its own copy of the runner'"'"'s chain of runs, with the checkpoints it keeps.' \
-    'const STATEMENT = "Desk ran this over its own copy of the runner'"'"'s chain of runs, with the keys and checkpoints it keeps.'
+    'const WITH_CHECKPOINTS = "Desk ran the runtime over its own copy of the runner'"'"'s chain of runs. It passed checkpoint files ({{number}} in total) and no public keys.' \
+    'const WITH_CHECKPOINTS = "Desk ran the runtime over its own copy of the runner'"'"'s chain of runs. It passed checkpoint files ({{number}} in total) and public keys.'
+  mutate web "jobs record page: no checkpoints are claimed passed" "$JRP" \
+    ': msg(NO_CHECKPOINTS)}</p>' \
+    ': msg(WITH_CHECKPOINTS, { number: 1 })}</p>'
   mutate web "jobs record page: where each run's signature is checked is not said" "$JRP" \
     '    <p className={styles.quiet}>{msg(SIGNED_STATEMENT)}</p>
 ' \
@@ -14694,14 +14717,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # 'return phase != "plan" && turn.CriticRuns(chat.Review, runcontext.Defaults.AdversarialReview)' \
   # 'return true'
   mutate go 'assistant critic: durable checkpoint binding ignored' internal/desk/assistant_critic.go \
-    '|| stored != held.fingerprint' \
+    '|| stored.Fingerprint != held.fingerprint' \
     '|| false'
   mutate go 'assistant critic: missing resumed custody is recaptured' internal/desk/assistant_critic.go \
     'if len(run.Operations) != 0 || len(run.Actions) != 0 || len(run.Checkpoint.Prompts) != 0 || run.Checkpoint.Used != 0 {' \
     'if false {'
-  mutate go 'assistant critic: canonical snapshot loses private custody' internal/desk/assistant_execution.go \
-    'cp = assistantCriticCheckpoint(cp, critic)' \
-    '_ = cp'
+  mutate go 'assistant critic: canonical snapshot loses private custody' internal/desk/assistant_run_store_writer.go \
+    'run.Checkpoint = cp' \
+    'run.Checkpoint = cp; run.CriticCustody = nil'
 fi
 
 # Private finite Graph host producers and durable proposal custody.
@@ -14840,9 +14863,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant critic V2: complete consumed rows ignored' internal/desk/assistant_critic.go \
     'held.suiteDigest = digestOf(inputs.JSON())' \
     'held.suiteDigest = digestOf([]byte("consumed-input-ignored"))'
-  mutate go 'assistant critic V2: legacy custody accepted' internal/desk/assistant_critic.go \
-    'run.Checkpoint.AdditionalMembers[assistantCriticLegacyCheckpointMember]; legacy {' \
-    'run.Checkpoint.AdditionalMembers[assistantCriticLegacyCheckpointMember]; false && legacy {'
+  # Legacy checkpoint members are rejected by Agent's generated closed reader
+  # during storage decoding. Keep the consumed-input and whole-ledger legacy
+  # refusal tests; there is no remaining Desk-local legacy-member guard to mutate.
 fi
 
 if [ "$which" = all ] || [ "$which" = go ]; then
@@ -15326,8 +15349,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if !reflect.DeepEqual(current, out.Plan.References) {' \
     'if false && !reflect.DeepEqual(current, out.Plan.References) {'
   mutate go 'assistant plan: current acceptance reference equality omitted' internal/desk/assistant_plan_references.go \
-    'if !reflect.DeepEqual(current, plan.References) {' \
-    'if false && !reflect.DeepEqual(current, plan.References) {'
+    'if !reflect.DeepEqual(current, plan.References) {
+			return errAssistantRunConflict
+		}' \
+    'if false && !reflect.DeepEqual(current, plan.References) {
+			return errAssistantRunConflict
+		}'
   mutate go 'assistant plan: UTF16 text bound omitted' internal/desk/chat_plan.go \
     'runcontext.U16Length(s) <= n' \
     '(runcontext.U16Length(s) <= n || len([]rune(s)) <= n)'

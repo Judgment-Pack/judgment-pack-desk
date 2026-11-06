@@ -4,7 +4,7 @@ Status: implemented import/review slice of Desk #400, 2026-10-16. This does not
 complete portable research execution or remove the existing recipe templates.
 
 Desk reads an explicit release tag from an HTTPS Git catalog or local repository.
-It verifies the tag, commit, tree and blob identities while reading bounded bytes,
+It checks the tag, commit, tree and blob identities while reading bounded bytes,
 never checks out files, executes entry code, or accepts branches as releases.
 Local Git helpers, prompts, lazy fetching and non-HTTPS transports are disabled.
 Tree traversal counts expanded directories as well as bytes and files. Catalog
@@ -89,9 +89,12 @@ go test ./internal/desk -run '^TestExchangeSignedReleaseImportOnTwoInstallations
 
 It checks every preset in the selected release through authenticated review/import
 requests on two disposable installations, exact tagged files and Runtime canonical identity,
-explicit approval, completed receipts and restart retention. Signature verification
-uses the operator's Git trust configuration. This verifies signed-tag imports;
-release assets and attestations require their own publication checks. It neither
+explicit approval, completed receipts and restart retention. The opt-in test invokes
+`git verify-tag` against the selected tag using the test operator's Git trust
+configuration. The operator is responsible for the signing-key trust decision;
+Desk checks Git object identity and imported content, not the tag signature or
+the publisher's signing identity. Release assets and attestations require their
+own publication checks. The test neither
 runs the presets nor changes their declared model or capabilities. The presets'
 `gemini-2.5-flash` and answer/search/page declarations need matching reviewed local
 profiles. Page assignments use the reviewed producer below; import alone does not

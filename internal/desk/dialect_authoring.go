@@ -182,9 +182,26 @@ func (s *Server) checkInputQualification(ctx context.Context, q *inputQualificat
 	if q == nil {
 		return nil
 	}
+	if q.ConversionContract != nil {
+		if err := validateInputQualification(q); err != nil {
+			return err
+		}
+	} else if err := requireOrdinaryInputQualification(q); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(q.Mapping)
 	if err != nil {
 		return err
+	}
+	if q.ConversionContract != nil {
+		checked, err := s.checkRetainedDialectAuthoring(ctx, retainedInstalledSelector("document-validation"), raw, []byte(q.Pack))
+		if err != nil {
+			return err
+		}
+		if !checked.Accepted {
+			return retainedContractFailure("capability-unsupported")
+		}
+		return nil
 	}
 	_, err = s.checkedDialectMapping(ctx, raw, q.Pack)
 	return err
@@ -204,6 +221,9 @@ func (s *Server) checkedDialectMapping(ctx context.Context, raw []byte, pack str
 // distinct mapping in this request, preserving all case/acquisition byte slices.
 // This request-local index cannot make a later workspace read or check stale.
 func (s *Server) checkPreparedMappings(ctx context.Context, doc inputPreparation, rows []inputPreparedRow) error {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return err
+	}
 	if doc.Recipe.Qualification == nil {
 		return errors.New("Choose a saved pack and review its dialect.")
 	}

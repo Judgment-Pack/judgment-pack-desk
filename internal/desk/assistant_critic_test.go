@@ -87,7 +87,7 @@ func assistantCriticResave(t *testing.T, s *Server, token string, old *assistant
 		chat.Get("checkpoint").Get("state").Set("cases", assistantCriticValue(t, cases[0]))
 	}
 	chat.Get("checkpoint").Get("state").Set("execution", assistantCriticValue(t, `{"approval":{"state":"granted"},"grants":["historical-not-authority"],"deskCriticInputV1":"caller-value-not-authority"}`))
-	chat.Get("checkpoint").Set(assistantCriticCheckpointMember, runcontext.String("caller-value-not-authority"))
+	chat.Get("checkpoint").Set("deskCriticInputV2", runcontext.String("caller-value-not-authority"))
 	if linked {
 		// Linked saved-pack context resolves its exact project declaration before
 		// authoring; a browser link and saved file alone cannot establish it.
@@ -215,10 +215,8 @@ func assistantCriticAssertResult(t *testing.T, e *assistantRunExecution, x *assi
 	if record.Checkpoint.Approval != nil || len(record.Checkpoint.Grants) != 0 || x.Run.Context.Approval != nil {
 		t.Fatal("historical approval or allowance was restored")
 	}
-	var fingerprint string
-	assistantRunMust(t, json.Unmarshal(record.Checkpoint.AdditionalMembers[assistantCriticCheckpointMember], &fingerprint))
-	if !assistantRunDigest(fingerprint) || fingerprint != e.input.critic.fingerprint {
-		t.Fatal("canonical snapshot lost host-bound critic custody")
+	if record.CriticCustody == nil || record.CriticCustody.Version != 2 || record.CriticCustody.Fingerprint != e.input.critic.fingerprint {
+		t.Fatal("private run lost host-bound critic custody")
 	}
 	critique, proposal, testResult, proposalRefused := false, false, false, false
 	for _, held := range record.Events {
@@ -648,22 +646,37 @@ func TestAssistantCriticDurableCustody(t *testing.T) {
 			assistantRunMust(t, err)
 			cp, err := runcontext.ReadExecution(value)
 			assistantRunMust(t, err)
-			if !bytes.Equal(cp.AdditionalMembers[assistantCriticCheckpointMember], record.Checkpoint.AdditionalMembers[assistantCriticCheckpointMember]) {
-				t.Fatal("published checkpoint dropped private consistency metadata")
+			// The private record, not the canonical checkpoint, carries custody.
+			raw := assistantRunRaw(t, e.writer.lease.store)
+			ledger, err := decodeAssistantRunStorage(e.writer.lease.store.name, raw)
+			assistantRunMust(t, err)
+			var stored *assistantCriticCustody
+			for _, run := range ledger.Runs {
+				if run.ID == record.ID {
+					stored = run.CriticCustody
+				}
 			}
+			if stored == nil || *stored != *record.CriticCustody {
+				t.Fatal("private storage lost critic custody")
+			}
+			if bytes.Contains(wire, []byte("criticCustody")) || bytes.Contains(wire, []byte("deskCriticInput")) {
+				t.Fatal("host custody entered canonical checkpoint")
+			}
+			assistantRunMust(t, e.Checkpoint(context.Background(), *cp))
 			if mode == "suite" {
 				assistantCriticChangeSuite(t, s, token)
 			}
 			if mode == "pack" {
 				assistantRunMust(t, os.WriteFile(filepath.Join(s.cfg.ProjectDir, "pack.json"), []byte(`{"id":"p","title":"Changed after checkpoint"}`), 0600))
 			}
-			if mode == "missing" {
-				delete(cp.AdditionalMembers, assistantCriticCheckpointMember)
-				assistantRunMust(t, e.Checkpoint(context.Background(), *cp))
-			}
-			if mode == "conflict" {
-				cp.AdditionalMembers[assistantCriticCheckpointMember] = json.RawMessage(`"caller-value-not-authority"`)
-				assistantRunMust(t, e.Checkpoint(context.Background(), *cp))
+			if mode == "missing" || mode == "conflict" {
+				assistantRunMust(t, e.writer.change(t.Context(), false, func(run *assistantRunRecord) (bool, error) {
+					run.CriticCustody = nil
+					if mode == "conflict" {
+						run.CriticCustody = &assistantCriticCustody{Version: 2, Fingerprint: digestOf([]byte("caller-value-not-authority"))}
+					}
+					return true, nil
+				}))
 			}
 			continued := *e
 			continued.input = &assistantChatCustody{}
@@ -688,16 +701,13 @@ func TestAssistantCriticCanonicalCustody(t *testing.T) {
 	s, token, old := assistantExecutionFixture(t, "http://127.0.0.1:1", "work")
 	e := assistantCriticResave(t, s, token, old, "true", "work", false)
 	x := assistantCriticOpen(t, s, e, "served")
-	for _, raw := range []json.RawMessage{nil, json.RawMessage(`"caller-value-not-authority"`)} {
+	before := *assistantExecutionRecord(t, e).CriticCustody
+	for _, explanation := range []string{"", "caller-value-not-authority"} {
 		cp := *e.record.Checkpoint
-		cp.AdditionalMembers = map[string]json.RawMessage{}
-		if raw != nil {
-			cp.AdditionalMembers[assistantCriticCheckpointMember] = raw
-		}
+		cp.Explanation = explanation
 		x.Run.Emit(contract.RunEvent{ExecutionCheckpoint: &contract.RunEventExecutionCheckpoint{Type: "execution_checkpoint", Checkpoint: cp}})
-		var fingerprint string
-		assistantRunMust(t, json.Unmarshal(assistantExecutionRecord(t, e).Checkpoint.AdditionalMembers[assistantCriticCheckpointMember], &fingerprint))
-		if fingerprint != e.input.critic.fingerprint {
+		retained := assistantExecutionRecord(t, e)
+		if retained.CriticCustody == nil || *retained.CriticCustody != before {
 			t.Fatal("canonical callback replaced private critic custody")
 		}
 	}

@@ -177,6 +177,9 @@ func assistantDialectReserved(raw []byte, key string) bool {
 	return false
 }
 func validAssistantDialectRead(read assistantDialectRead) bool {
+	if read.Complete != nil {
+		return validAssistantDialectCompleteReadSelector(read)
+	}
 	if read.Recipe != nil {
 		return validAssistantDialectActionRead(read)
 	}
@@ -223,7 +226,7 @@ func validateAssistantDialectReadReceipt(op assistantRunOperation, in assistantH
 	if rawErr != nil || readAssistantDialectCustody(rawFields["dialectRead"], reflect.TypeOf(read)) != nil {
 		return errAssistantRunInvalid
 	}
-	if op.State != "completed" || !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" || op.Name != "read_dialect" && op.Name != "read_dialect_publication" && op.Name != "read_dialect_recipe" || !validAssistantDialectRead(read) || result.Tests != nil || result.Read != nil || result.PolicySource != nil {
+	if result.DialectPage != nil || op.State != "completed" || !assistantDialectTool(op.Name) && op.Name != "read_dialect_recipe" || op.Name != "read_dialect" && op.Name != "read_dialect_publication" && op.Name != "read_dialect_recipe" || !validAssistantDialectRead(read) || result.Tests != nil || result.Read != nil || result.PolicySource != nil {
 		return errAssistantRunInvalid
 	}
 	var a assistantDialectArguments
@@ -241,8 +244,14 @@ func validateAssistantDialectReadReceipt(op assistantRunOperation, in assistantH
 			return errAssistantRunInvalid
 		}
 	}
-	if err != nil || a.ID != read.ID || a.PackKey != read.PackKey || a.Variant != read.Variant {
+	if err != nil || a.Cursor != nil || a.ID != read.ID || a.PackKey != read.PackKey || a.Variant != read.Variant {
 		return errAssistantRunInvalid
+	}
+	if read.Complete != nil {
+		if op.Name != "read_dialect" || read.Complete.ReadOperationID != op.ID || digestOf(result.Result) != read.Complete.ResultSHA256 {
+			return errAssistantRunInvalid
+		}
+		return nil
 	}
 	expected, err := assistantHostJSON(json.RawMessage(read.View))
 	if err != nil || !bytes.Equal(expected.Value().JSON(), result.Result) {
@@ -401,7 +410,7 @@ func validateAssistantDialectOutput(run assistantRunRecord, out assistantDomainO
 			return errAssistantRunInvalid
 		}
 		checked, result, report, err := readAssistantDialectCheck(run, p.CheckID, producer.ID)
-		if err != nil || !bytes.Equal(checked.Pack, p.Read.Pack) || string(checked.Document) != p.Action.DialectCheck.Document || !assistantHostArgumentsMatch(result.Report, p.Action.DialectCheck.Report) {
+		if err != nil || !(p.Read.Complete == nil && bytes.Equal(checked.Pack, p.Read.Pack) || p.Read.Complete != nil && "sha256:"+digestOf(checked.Pack) == p.Read.Complete.PackDigest) || string(checked.Document) != p.Action.DialectCheck.Document || !assistantHostArgumentsMatch(result.Report, p.Action.DialectCheck.Report) {
 			return errAssistantRunInvalid
 		}
 		// Rebuild only declarative structure, never values or an evaluator. Exact
@@ -426,7 +435,11 @@ func validateAssistantDialectOutput(run assistantRunRecord, out assistantDomainO
 			}
 			doc.Records[0].Values[name] = ""
 		}
-		q, err := assistantDialectQualification(doc, a, p.Read)
+		basis := p.Read
+		if basis.Complete != nil {
+			basis.Pack = checked.Pack
+		} // Structural check only; source/raw custody is authenticated by production evidence.
+		q, err := assistantDialectQualification(doc, a, basis)
 		if err != nil {
 			return err
 		}

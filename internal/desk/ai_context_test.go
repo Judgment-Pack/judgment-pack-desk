@@ -2,6 +2,7 @@ package desk
 
 import (
 	"encoding/json"
+	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/aicontext"
 	"strings"
 	"testing"
@@ -54,13 +55,17 @@ func TestResearchContextRetrievesExactRetainedPagesWithoutSourceAcquisition(t *t
 func TestResearchContextCompactionPreservesAuthorityAndOriginals(t *testing.T) {
 	body := map[string]any{"approvedLimits": map[string]any{"records": 10}, "retainedSources": []any{map[string]any{"id": "source", "text": strings.Repeat("quotation 😀 ", 20000)}}, "retainedSourceIndex": []any{map[string]any{"sourceId": "source", "sha256": "exact"}}, "recordResults": []any{map[string]any{"status": "saved", "id": "record-1"}}}
 	raw, _ := json.Marshal(body)
-	p := aicontext.Defaults()
-	prompt, err := fitResearchContext(string(raw), p)
+	task := backgroundFixture(backgroundModelChoice{})
+	task.Prompt = string(raw)
+	_, projection, err := backgroundResearchOpening(task)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prompt) >= len(raw) || !strings.Contains(prompt, "record-1") || !strings.Contains(prompt, `"records":10`) || !strings.Contains(prompt, "read_context") {
-		t.Fatal("lost required context")
+	replacements, err := projection.Project(t.Context(), runcontext.OpeningProjectionInput{Fit: func(previews map[string]string) (runcontext.OpeningFit, error) {
+		return runcontext.OpeningFit{Fits: len(previews) == 1 && len(previews["/input/retainedSources/0/text"]) < 4000}, nil
+	}})
+	if err != nil || len(replacements) != 1 || !strings.HasPrefix(body["retainedSources"].([]any)[0].(map[string]any)["text"].(string), replacements["/input/retainedSources/0/text"]) {
+		t.Fatal("invalid source-only projection", err)
 	}
 	unchanged, _ := json.Marshal(body)
 	if string(raw) != string(unchanged) {

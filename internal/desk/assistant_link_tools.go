@@ -196,13 +196,16 @@ func (e *assistantRunExecution) recheckAssistantLinkAuthorityLocked(expected *at
 	}
 	return nil
 }
-func (e *assistantRunExecution) assistantLinkTools() (*assistantHostRegistry, error) {
+func assistantLinkDeclaration() runcontext.HostTool {
 	schema := json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","maxLength":4096},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991},"find":{"type":"string","maxLength":200}},"required":["url"],"additionalProperties":false}`)
-	tool := runcontext.HostTool{Name: assistantLinkTool, Effect: "read", Delegation: "read", InputSchema: schema, Description: "Read a public HTTPS page actually supplied by the person or authorized by a currently verified search. Bare website domains assume HTTPS. Read one bounded window; offset uses UTF-16 units. Cite exact quotes using the given attachment page citations. Section anchors are reported as text matches, never fetched sections. Three new page reads per saved user turn, shared across delegates and retries. Verified discovered pages share a total threshold of ten; ordinary reads stop at three. Never repeat uncertain effects."}
+	return runcontext.HostTool{Name: assistantLinkTool, Effect: "read", Delegation: "read", InputSchema: schema, Description: "Read a public HTTPS page actually supplied by the person or authorized by a currently verified search. Bare website domains assume HTTPS. Read one bounded window; offset uses UTF-16 units. Cite exact quotes using the given attachment page citations. Section anchors are reported as text matches, never fetched sections. Three new page reads per saved user turn, shared across delegates and retries. Verified discovered pages share a total threshold of ten; ordinary reads stop at three. Never repeat uncertain effects."}
+}
+func (e *assistantRunExecution) assistantLinkTools() (*assistantHostRegistry, error) {
+	tool := assistantLinkDeclaration()
 	tool.Execute = func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
 		args, err := readAssistantLinkArguments(raw)
 		if err != nil {
-			return assistantHostFailure(err), nil
+			return assistantExternalInputFailure(ctx, assistantLinkTool, err)
 		}
 		return e.invokeObservedHost(ctx, assistantLinkTool, raw, func(ctx context.Context, _ bool) (assistantHostObservation, error) {
 			return e.executeAssistantLink(ctx, args)

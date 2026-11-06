@@ -20,11 +20,11 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan"
 )
 
@@ -44,7 +44,8 @@ var devOrigins = []string{
 // Config is the chassis' whole configuration.
 type Config struct {
 	// Trusted host configuration, never portable Desk/project settings.
-	PolicyAuthority *PolicyAuthorityOptions
+	retainedArtifactConstruction *retainedArtifactServerConstruction
+	PolicyAuthority              *PolicyAuthorityOptions
 	// Trusted mapping of each pinned workspace, resolved once before workers.
 	// Nil resolver retains legacy mode; a configured nil result must classify a
 	// known never-enrolled workspace. Requests cannot choose this mapping.
@@ -74,6 +75,8 @@ type Config struct {
 	// "off" disables it, otherwise an absolute trusted executable path.
 	// It is never read from project configuration or browser requests.
 	CodexBin string
+	// CodexAccounting is private host instrumentation; no HTTP or persisted input.
+	CodexAccounting *codexbridge.AccountingSink `json:"-"`
 
 	// ProjectDir is the path of the Judgment Pack project. It becomes the
 	// working directory of every `jpack mcp` subprocess, which is how the
@@ -144,14 +147,22 @@ type Config struct {
 
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
+	// Volatile observations only; never grants or durable accounting.
+	childStorageStatus   storageStatusCache
+	childScratch         [16]*os.Root
+	childScratchOverflow uint64
+
+	privateDataTurns       privateDataTurnQueue   // FIFO admission for short private-data transactions
 	policyAuthorityAnchor  *policyAuthorityAnchor // immutable workspace binding from New
 	policyAuthorityMachine *policyAuthorityMachine
 	// Bound once before serving; nil selects the existing workspace file store.
-	inputPreparations  inputPreparationRepository
-	retainedArtifacts  retainedArtifactRepository
-	researchJournals   researchJournalProvider
-	evaluationJournals evaluationJournalProvider
-	dialectDrafts      dialectDraftRepository
+	inputPreparations inputPreparationRepository
+	retainedArtifacts retainedArtifactRepository
+	// Constructor sealed, shared by children; only the actual owner closes it.
+	retainedArtifactProviders *retainedArtifactProviderRegistry
+	researchJournals          researchJournalProvider
+	evaluationJournals        evaluationJournalProvider
+	dialectDrafts             dialectDraftRepository
 
 	actionGrants map[string]assistantActionGrant // scoped one-use allowances; protected by writes
 
@@ -184,15 +195,26 @@ type Server struct {
 	assistantRunRecoveryErr error
 	assistantRunServiceMu   sync.Mutex
 	assistantRunHost        *assistantRunService
+	// One immutable exact-byte validation fact, accessed under private-data custody.
+	assistantRunValidation *assistantRunStorageValidation
 	// The closed production executor is installed by New before serving.
 	// Tests may substitute a bounded executor; nil refuses general purposes.
 	assistantRunExecutor assistantRunExecutor
+	// Optional test scheduling barrier, installed before launch and immutable
+	// thereafter. The monitor calls it only after a successful check.
+	testAssistantRunMonitorChecked func(context.Context, *assistantRunExecution)
+	// Optional passive phase observer, installed before launch and immutable
+	// thereafter. Callers emit fixed names outside service/canonical locks.
+	testAssistantRunPhase func(*assistantRunExecution, string)
 
 	// startup is the identity of the project Desk was started on, which
 	// names what Desk keeps for it (startup_identity.go); unused on a desk
 	// Desk made.
 	startup  startupIdentity
 	location projectLocationState
+	// Constructor-only refusal for a recognized retained move, including
+	// custody failures that happen before its recovery journal is claimed.
+	retainedRecognizedMoveStartupErr error
 	// keyMu serializes what this desk does with its signing key: the
 	// decision record's reading of its keys, a rotation from the token to the
 	// marker's removal, and the finish or undo of one a stop cut short
@@ -284,10 +306,25 @@ type Server struct {
 	// configDir is this machine's desk-level directory, resolved once. Empty
 	// where there is no home directory to resolve it against, which each
 	// endpoint that needs it reports as a sentence rather than a dead desk.
-	configDir string
-	home      *deskHome
-	homeLease *os.File
-	homeMove  homeMoveState
+	configDir                   string
+	home                        *deskHome
+	homeLease                   *os.File
+	recoveryStorageHome         *assistantDialectRecoveryHomeWitness
+	recoveryStorage             *assistantDialectReadRecoveryStorageWriter
+	storageInfrastructure       *storageInfrastructureStart
+	storageInfrastructureLaunch *storageInfrastructureLaunch
+	storageConstruction         *storageBudgetConstruction
+	storageEnrollment           *storageServerEnrollment
+	storageTransfersClosing     bool  // original transfer registry mutex
+	storageTransferCloseErr     error // first completed transfer failure; original registry mutex
+	storageStartupProviders     *dialectArtifactSelectedProviderPins
+	storageReadOnly             bool
+	storageProblem              error
+	storageStatusPressure       storageStatusPressureSlot
+	// Test-only pre-stage refusal; installed before serving and immutable thereafter.
+	// A callback with mutable state must synchronize that state. Nil in production.
+	testBeforeStoragePersistence func(storagePersistenceTarget) error
+	homeMove                     homeMoveState
 	// assistant is that directory validated and pinned — or the reason it was
 	// refused. Built once, at startup, and closed with the server. A desk whose
 	// configuration directory is not safe to keep a credential in still runs;
@@ -324,7 +361,11 @@ type Server struct {
 	// presented as a bearer id the page puts on each request itself. See
 	// session.go for why nothing ambient authorizes anything.
 	sessions *sessionStore
-	signIn   *signInState
+
+	// Private inactive retained review owner; shared admission across child desks.
+	retainedReviews       *retainedReviewManager
+	retainedReviewRetired bool // protected by retainedReviews.mu
+	signIn                *signInState
 	// closeOnce makes shutdown idempotent; see Close.
 	closeOnce sync.Once
 	closeErr  error
@@ -485,33 +526,111 @@ func New(cfg Config) (*Server, error) {
 	// Validated and pinned once. Doing it per request would let the authority
 	// itself be retargeted between requests, which is the same argument the
 	// project root is pinned for.
-	s.assistant = openAssistantStore(s.configDir)
-	s.assistant.logf = s.log.Printf
-	if cfg.parent == nil && s.assistant.usable() {
-		tx, err := readHomeTransaction(homeJournalPath(s.configDir))
-		if err != nil || tx != nil && !tx.Complete {
-			s.Close()
-			if err != nil {
-				return nil, err
-			}
-			return nil, errors.New("Restart Desk to recover its pending home migration.")
-		}
-		lease, err := openHomeLease(s.configDir, false)
+	if cfg.parent != nil {
+		s.retainedReviews = cfg.parent.retainedReviews
+	} else {
+		s.retainedReviews = newRetainedReviewManager()
+	}
+	// Retained construction and pending-home checks precede infrastructure
+	// effects. The original launch retains parent EX until same-FD home EX.
+	if err := s.bindRetainedArtifactConstruction(); err != nil {
+		s.Close()
+		return nil, err
+	}
+	ctx := context.Background()
+	if cfg.parent != nil {
+		var err error
+		s.assistant, err = s.borrowInfrastructure()
 		if err != nil {
 			s.Close()
 			return nil, err
 		}
-		s.homeLease = lease
-	}
-
-	if s.home != nil && s.assistant.usable() {
-		for _, name := range []string{"accounts", "services"} {
-			root, err := openPrivateDataRoot(filepath.Join(s.configDir, name), true)
-			if err != nil {
+	} else {
+		origin := &storageInfrastructureLaunch{server: s, project: s.project, configDir: s.configDir}
+		origin.self = origin
+		s.storageInfrastructureLaunch = origin
+		p, err := s.inspectInfrastructure(ctx)
+		if err == nil {
+			err = p.acquireParentGate(ctx)
+		}
+		var h *storageStartupHome
+		if err == nil {
+			h, err = p.provisionConfigAndAcquireHome(ctx)
+		}
+		if err == nil {
+			s.assistant, err = p.provisionAssistantStore(ctx, h)
+		}
+		if err == nil && s.home != nil {
+			err = p.provisionHomeServices(ctx, h)
+		}
+		if err != nil {
+			problem, fallback := storageInfrastructureProblem(err)
+			if !fallback {
 				s.Close()
 				return nil, err
 			}
-			root.Close()
+			// Preserve unsafe-assistant pack reading without retaining any descriptor
+			// or lease owned by the failed infrastructure attempt.
+			var closeErr error
+			if s.homeLease != nil {
+				closeErr = s.homeLease.Close()
+				s.homeLease = nil
+			}
+			if s.assistant != nil {
+				closeErr = errors.Join(closeErr, s.assistant.Close())
+			}
+			if s.storageInfrastructure != nil {
+				closeErr = errors.Join(closeErr, s.storageInfrastructure.close())
+				s.storageInfrastructure = nil
+			}
+			if closeErr != nil {
+				s.Close()
+				return nil, errors.Join(err, closeErr)
+			}
+			problem.dir = s.configDir
+			s.assistant = problem
+		}
+	}
+	s.assistant.logf = s.log.Printf
+	// Bind the actual same-descriptor home lifetime before any work/service
+	// lease. Children borrow only this original parent witness.
+	if s.cfg.parent == nil && s.homeLease != nil && s.assistant.usable() {
+		if err := s.captureOriginalDialectRecoveryHome(); err != nil {
+			s.Close()
+			return nil, err
+		}
+	}
+	if err := s.activateStorageBudgetStartup(ctx); err != nil {
+		s.storageReadOnly = true
+		s.storageProblem = err
+		s.recordStorageStatusProblem(err)
+	}
+	if !s.storageReadOnly {
+		if err := s.prepareStorageAdmissionHandoff(ctx); err != nil {
+			s.storageReadOnly = true
+			s.storageProblem = err
+			s.recordStorageStatusProblem(err)
+		}
+	}
+	if err := s.finishInfrastructureStartup(ctx); err != nil {
+		s.Close()
+		return nil, err
+	}
+	if err := s.revalidateStorageBudgetStartup(ctx); err != nil {
+		s.storageReadOnly = true
+		s.storageProblem = err
+		s.recordStorageStatusProblem(err)
+	}
+	if !s.storageReadOnly {
+		// Attachment consumes the actual completed owner enrollment/census.
+		// Unsupported external or absent original history leaves no writer.
+		if err := s.attachOriginalDialectReadRecoveryStorage(ctx); err != nil {
+			s.Close()
+			return nil, err
+		}
+		if err := s.replayDialectArtifactProjectMove(); err != nil {
+			s.Close()
+			return nil, err
 		}
 	}
 	if !s.assistant.usable() {
@@ -546,13 +665,17 @@ func New(cfg Config) (*Server, error) {
 	} else {
 		s.openSignIn()
 	}
-	s.initPolicySourceAuthority()
+	if !s.storageReadOnly {
+		s.initPolicySourceAuthority()
+	}
 	s.registerSignIn()
 	if cfg.LocalGatewayBundle != "" {
 		executable, _ := os.Executable()
 		s.localGateway = &localGateway{bundle: cfg.LocalGatewayBundle, executable: executable, inputHandoffs: s.inputHandoffPath()}
 	}
-	s.removeStaleStaging()
+	if !s.storageReadOnly {
+		s.removeStaleStaging()
+	}
 	if cfg.Static != nil {
 		s.static = http.FileServer(http.FS(cfg.Static))
 	}
@@ -609,7 +732,9 @@ func New(cfg Config) (*Server, error) {
 		s.updates = s.cfg.parent.updates
 	} else {
 		s.updates = newUpdateService(s.cfg.DevMode || s.builds.Desk.Modified || releaseplan.Version == "development")
-		s.updates.start()
+		if !s.storageReadOnly {
+			s.updates.start()
+		}
 	}
 	s.mux.HandleFunc("GET /api/updates", s.handleUpdates)
 	s.mux.HandleFunc("POST /api/updates", s.handleUpdates)
@@ -681,6 +806,9 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/input-preparations/{preparation}/research/{research}/activity", s.handleInputResearch)
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research/{research}/confirm", s.handleInputResearch)
 	s.mux.HandleFunc("POST /api/input-preparations/{preparation}/research/{research}/authorize", s.handleInputResearch)
+	s.mux.HandleFunc("GET /api/assistant-source-approvals/{chat}", s.handleAssistantSourceApproval)
+	s.mux.HandleFunc("POST /api/assistant-source-approvals/{chat}/approve", s.handleAssistantSourceApproval)
+	s.mux.HandleFunc("POST /api/assistant-source-approvals/{chat}/revoke", s.handleAssistantSourceApproval)
 	s.mux.HandleFunc("GET /api/assistant-approvals/{chat}", s.handleAssistantApproval)
 	s.registerAssistantRuns()
 	s.mux.HandleFunc("POST /api/assistant-approvals/{chat}/{operation}", s.handleAssistantApproval)
@@ -763,7 +891,14 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/ai-memory/recall", s.handleAIMemory)
 	s.mux.HandleFunc("POST /api/ai-memory/suggest", s.handleAIMemory)
 	s.mux.HandleFunc("GET /api/conversations", s.handleConversations)
+	s.mux.HandleFunc("GET /api/conversations/{chat}/plans/{plan}/references/{reference}", s.handleAssistantPlanReference)
 	s.mux.HandleFunc("PUT /api/conversations", s.handleConversations)
+	s.mux.HandleFunc("/api/storage/status", s.handleStorageStatus)
+	s.mux.HandleFunc("/api/storage/policy", s.handleStoragePolicy)
+	s.mux.HandleFunc("/api/storage/policy/prepare", s.handleStoragePolicy)
+	s.mux.HandleFunc("/api/storage/retention", s.handleStorageRetention)
+	s.mux.HandleFunc("/api/storage/retention/preview", s.handleStorageRetention)
+	s.mux.HandleFunc("/api/storage/retention/export", s.handleStorageRetention)
 	s.mux.HandleFunc("GET /api/storage", s.handleStorage)
 	s.mux.HandleFunc("POST /api/storage/move", s.handleStorageMove)
 	s.mux.HandleFunc("POST /api/storage/project-history/preview", s.handleProjectHistory)
@@ -819,8 +954,19 @@ func New(cfg Config) (*Server, error) {
 	}
 	// The identity of the project Desk was started on, before anything is
 	// kept, stamped or recovered under its name (startup_identity.go).
+	if s.storageReadOnly {
+		return s, nil
+	}
 	s.resolveStartupIdentity()
+	if err := s.requireDialectArtifactRecognizedMoveSettled(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	s.recoverProjectMove()
+	if err := s.finishDialectArtifactProjectMove(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	s.recoverAssistantRuns()
 	s.initJobs()
 	s.startInputEvaluations()
@@ -864,6 +1010,17 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) closeAll() error {
+	s.stopOriginalChatTransfers()
+	s.childStorageStatus.retire()
+	// Retire the volatile runtime reporter before draining any writer leases.
+	s.runtimeStoragePressureReporter().retire()
+	var err error
+	if s.cfg.parent == nil && s.storageConstruction != nil && s.storageConstruction.owner != nil {
+		err = errors.Join(err, s.storageConstruction.owner.closeAdmission())
+	}
+	if s.retainedReviews != nil {
+		s.retainedReviews.closeServer(s, s.cfg.parent == nil)
+	}
 	s.assistantRunService().close()
 	s.policyAuthorityMachine.stopAdmission()
 	s.closeDesks()
@@ -926,12 +1083,32 @@ func (s *Server) closeAll() error {
 	if s.localGateway != nil {
 		s.localGateway.close()
 	}
-	var err error
 	if s.watcher != nil {
-		err = s.watcher.Close()
+		err = errors.Join(err, s.watcher.Close())
 	}
 	if s.policyAuthorityMachine != nil {
 		s.policyAuthorityMachine.work.Wait()
+	}
+	// Service close above stops admission. Cancel/drain prepared recovery
+	// operations before dropping their owner retain and construction custody.
+	if s.recoveryStorage != nil {
+		err = errors.Join(err, s.recoveryStorage.Close())
+	}
+	// Drain storage references and close all borrowed provider/source views
+	// before releasing the pre-home provider operation or closing its registry.
+	err = errors.Join(err, s.drainOriginalChatTransfers())
+	if s.storageEnrollment != nil {
+		err = errors.Join(err, s.storageEnrollment.Close())
+	}
+	if s.cfg.parent == nil && s.storageConstruction != nil {
+		err = errors.Join(err, s.storageConstruction.Close())
+	}
+	if s.storageStartupProviders != nil {
+		err = errors.Join(err, s.storageStartupProviders.Close())
+		s.storageStartupProviders = nil
+	}
+	if s.cfg.parent == nil {
+		err = errors.Join(err, s.retainedArtifactProviders.Close())
 	}
 	if s.project != nil {
 		// **Through the shared cell, which closes at most once**, and without
@@ -943,7 +1120,10 @@ func (s *Server) closeAll() error {
 		}
 	}
 	if s.homeLease != nil {
-		_ = s.homeLease.Close()
+		err = errors.Join(err, s.homeLease.Close())
+	}
+	if s.storageInfrastructure != nil {
+		err = errors.Join(err, s.storageInfrastructure.close())
 	}
 	if s.assistant != nil {
 		if aerr := s.assistant.Close(); err == nil {
@@ -955,6 +1135,9 @@ func (s *Server) closeAll() error {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.storageReadOnly && s.serveStorageReadOnly(w, r) {
+		return
+	}
 	if s.deskOwner().homeMove.queued.Load() && !strings.HasPrefix(r.URL.Path, "/api/desk-home") && (strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/ws") {
 		if !s.guard(w, r) {
 			return

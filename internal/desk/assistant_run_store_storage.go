@@ -25,7 +25,25 @@ func assistantRunNamespace(root *os.Root, identity string) (string, error) {
 	}
 	return strings.TrimSuffix(strings.TrimPrefix(name, "conversations-"), ".json"), nil
 }
+
+// decodeAssistantRunStorage is the authoritative full original-byte decoder.
+// The partial raw pass never establishes a storage validation fact on its own.
 func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, error) {
+	ledger, err := decodeAssistantRunStorageRaw(name, data)
+	if err == nil {
+		project := strings.TrimSuffix(strings.TrimPrefix(name, "assistant-runs-"), ".json")
+		err = validateAssistantRunLedger(ledger, project)
+	}
+	if testHookAssistantRunStorageValidation != nil {
+		testHookAssistantRunStorageValidation()
+	}
+	return ledger, err
+}
+
+// decodeAssistantRunStorageRaw preserves every original storage/custody check,
+// including independent decoding and original checkpoint-byte validation. Its
+// result still requires the complete typed ledger validator.
+func decodeAssistantRunStorageRaw(name string, data []byte) (assistantRunLedger, error) {
 	var ledger assistantRunLedger
 	if !assistantRunFileName.MatchString(name) || len(data) > assistantRunRecordLimit {
 		return ledger, errAssistantRunInvalid
@@ -51,21 +69,67 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 	// missing fields or apply their JSON decoding behavior.
 	var wire struct {
 		Runs []struct {
-			Binding        assistantRunBinding `json:"binding"`
-			Actions        []json.RawMessage   `json:"actions"`
-			Checkpoint     json.RawMessage     `json:"checkpoint"`
-			DisplayPreview json.RawMessage     `json:"displayPreview"`
-			SavedPack      json.RawMessage     `json:"savedPack"`
-			PackChecks     []json.RawMessage   `json:"packChecks"`
-			DomainOutputs  []json.RawMessage   `json:"domainOutputs"`
-			Websites       []json.RawMessage   `json:"websites"`
-			Links          []json.RawMessage   `json:"links"`
+			Canonical             json.RawMessage     `json:"canonical"`
+			Observation           json.RawMessage     `json:"observation"`
+			Binding               assistantRunBinding `json:"binding"`
+			Actions               []json.RawMessage   `json:"actions"`
+			AnswerHistory         json.RawMessage     `json:"answerHistory"`
+			CriticCustody         json.RawMessage     `json:"criticCustody"`
+			Checkpoint            json.RawMessage     `json:"checkpoint"`
+			DisplayPreview        json.RawMessage     `json:"displayPreview"`
+			SavedPack             json.RawMessage     `json:"savedPack"`
+			PackChecks            []json.RawMessage   `json:"packChecks"`
+			DomainOutputs         []json.RawMessage   `json:"domainOutputs"`
+			Websites              []json.RawMessage   `json:"websites"`
+			Links                 []json.RawMessage   `json:"links"`
+			DialectReads          json.RawMessage     `json:"dialectReads"`
+			DialectDrafts         json.RawMessage     `json:"dialectDrafts"`
+			DialectArtifactOwner  json.RawMessage     `json:"dialectArtifactOwner"`
+			DialectArtifactImport json.RawMessage     `json:"dialectArtifactImport"`
 		} `json:"runs"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return ledger, err
 	}
-	for _, run := range wire.Runs {
+	for i, run := range wire.Runs {
+		if len(run.DialectArtifactOwner) > 0 {
+			var owner string
+			if json.Unmarshal(run.DialectArtifactOwner, &owner) != nil || !assistantRunDigest(owner) || owner != ledger.Runs[i].DialectArtifactOwner {
+				return ledger, errAssistantRunInvalid
+			}
+			canonical, _ := json.Marshal(owner)
+			if !bytes.Equal(run.DialectArtifactOwner, canonical) {
+				return ledger, errAssistantRunInvalid
+			}
+		}
+		if len(run.DialectArtifactImport) > 0 {
+			if err := readAssistantDialectArtifactImport(run.DialectArtifactImport); err != nil {
+				return ledger, err
+			}
+		}
+		if len(run.DialectReads) > 0 {
+			if err := readAssistantDialectCompleteReadCustody(run.DialectReads); err != nil {
+				return assistantRunLedger{}, err
+			}
+		}
+		if len(run.DialectDrafts) > 0 {
+			if err := readAssistantDialectDraftCustody(run.DialectDrafts); err != nil {
+				return ledger, err
+			}
+		}
+		if err := readAssistantObservationCustody(run.Observation); err != nil {
+			return ledger, err
+		}
+		if len(run.Canonical) > 0 {
+			if err := readAssistantDialectCustody(run.Canonical, reflect.TypeOf(assistantCanonicalJournal{})); err != nil {
+				return ledger, err
+			}
+		}
+		if len(run.CriticCustody) > 0 {
+			if err := readAssistantDialectCustody(run.CriticCustody, reflect.TypeOf(assistantCriticCustody{})); err != nil {
+				return ledger, err
+			}
+		}
 		if len(run.DisplayPreview) > 0 {
 			if err := readAssistantRunPreview(run.DisplayPreview); err != nil {
 				return ledger, err
@@ -78,6 +142,11 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 		}
 		for _, raw := range run.PackChecks {
 			if err := readAssistantDialectCustody(raw, reflect.TypeOf(assistantPackRecheck{})); err != nil {
+				return ledger, err
+			}
+		}
+		if len(run.AnswerHistory) > 0 {
+			if err := readAssistantRunAnswerHistory(run.AnswerHistory); err != nil {
 				return ledger, err
 			}
 		}
@@ -148,10 +217,6 @@ func decodeAssistantRunStorage(name string, data []byte) (assistantRunLedger, er
 				return ledger, errAssistantRunScope
 			}
 		}
-	}
-	project := strings.TrimSuffix(strings.TrimPrefix(name, "assistant-runs-"), ".json")
-	if err := validateAssistantRunLedger(ledger, project); err != nil {
-		return ledger, err
 	}
 	return ledger, nil
 }
@@ -308,7 +373,7 @@ func interruptAssistantRuns(ledger *assistantRunLedger, historical bool) bool {
 				modified = true
 			}
 		}
-		if run.Checkpoint != nil {
+		if run.Checkpoint != nil && !assistantCanonicalActive(*run) {
 			if run.Checkpoint.Status == "running" || historical && run.Checkpoint.Status == "paused" {
 				run.Checkpoint.Status = "stopped"
 				modified = true
@@ -375,13 +440,21 @@ func (s *Server) recoverAssistantRuns() {
 	defer cancel()
 	// Do not turn a blank or chat-only legacy startup into a storage migration.
 	present, err := func() (bool, error) {
-		lock, err := s.privateDataLockContext(ctx, true)
+		lock, err := s.privateDataSettingsLockContext(ctx, true)
 		if err != nil {
 			return false, err
 		}
 		defer lock.Close()
 		root, err := s.storageSettingsRoot()
 		if err != nil {
+			// A contained project may have no private settings yet. Prove
+			// absence on the retained project, rather than treating a failed
+			// open through an existing unsafe edge as an empty namespace.
+			if s.containedDeskData() && errors.Is(err, os.ErrNotExist) {
+				if _, absent := s.root.Lstat(startupIdentityDir); errors.Is(absent, os.ErrNotExist) {
+					return false, nil
+				}
+			}
 			return false, err
 		}
 		defer root.Close()

@@ -81,18 +81,40 @@ func (e *assistantRunExecution) assistantWebsiteChoice(c *assistantLinkConfigura
 	c.SearchPreferenceDigest = pref
 	return nil
 }
-func (e *assistantRunExecution) assistantWebsiteTools() (*assistantHostRegistry, error) {
+func assistantWebsiteDeclaration() runcontext.HostTool {
 	schema := json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","maxLength":4096}},"required":["url"],"additionalProperties":false}`)
-	tool := runcontext.HostTool{Name: assistantWebsiteTool, Effect: "read", Delegation: "research", InputSchema: schema, Description: "Discover a supplied website or currently verified search seed. One exploration per saved user turn, shared across delegates and retries. At most ten discovered pages, depth two, one hundred listed links, eight MiB and forty-five seconds. This is a navigation map, never page evidence; read exact discovered pages with read_link. Never replay uncertain effects."}
+	return runcontext.HostTool{Name: assistantWebsiteTool, Effect: "read", Delegation: "research", InputSchema: schema, Description: "Discover a supplied website or currently verified search seed. One exploration per saved user turn, shared across delegates and retries. At most ten discovered pages, depth two, one hundred listed links, eight MiB and forty-five seconds. This is a navigation map, never page evidence; read exact discovered pages with read_link. Never replay uncertain effects."}
+}
+func (e *assistantRunExecution) assistantWebsiteTools() (*assistantHostRegistry, error) {
+	tool := assistantWebsiteDeclaration()
 	tool.Execute = func(ctx context.Context, raw json.RawMessage) (runcontext.ToolResult, error) {
 		args, err := readAssistantWebsiteArguments(raw)
 		if err != nil {
-			return assistantHostFailure(err), nil
+			return assistantExternalInputFailure(ctx, assistantWebsiteTool, err)
 		}
 		return e.invokeObservedHost(ctx, assistantWebsiteTool, raw, func(ctx context.Context, _ bool) (assistantHostObservation, error) {
+			// Source controls are authored before any setup/acquisition work. This
+			// does not change the historical unsourced executor's ordering.
+			if assistantExternalSourced(ctx, assistantWebsiteTool) {
+				_, mode, _, prefErr := e.service.server.assistantSearchPreference(e.source)
+				choice, choiceErr := assistantSearchChoice(e.source, mode)
+				if prefErr != nil {
+					return assistantHostObservation{}, prefErr
+				}
+				if choiceErr != nil {
+					return assistantHostObservation{}, choiceErr
+				}
+				if choice != "research" {
+					kind, reason := "provided-only", "provided-only"
+					if choice == "ask" {
+						kind, reason = "research-choice", "choice-required"
+					}
+					return assistantExternalControlObservation(ctx, assistantWebsiteTool, assistantHostFailure(failure.ToolInput("Website exploration needs the saved research choice.")), kind, reason, "", "")
+				}
+			}
 			c, err := e.service.server.assistantLinkConfiguration(true)
 			if err != nil {
-				return assistantHostObservation{Result: assistantHostFailure(err)}, nil
+				return assistantExternalControlObservation(ctx, assistantWebsiteTool, assistantHostFailure(err), "setup-required", "configuration-required", "", "")
 			}
 			c.Discovery = true
 			if err = e.assistantWebsiteChoice(&c); err == nil {
@@ -109,7 +131,7 @@ func (e *assistantRunExecution) assistantWebsiteTools() (*assistantHostRegistry,
 				if err == nil {
 					err = failure.ToolInput("Website exploration needs a supplied URL or a currently verified search result.")
 				}
-				return assistantHostObservation{Result: assistantHostFailure(err)}, nil
+				return assistantExternalObservationFailure(ctx, assistantWebsiteTool, assistantHostFailure(err), err)
 			}
 			return e.acquireAssistantMaterial(ctx, args, c, true)
 		})

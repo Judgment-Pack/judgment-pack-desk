@@ -12,12 +12,15 @@ mkdir -m 700 "$outputs"
 (
  cd "$root"
  export DESK_PLAN_READER_OUTPUTS="$outputs"
- command=(go test ./internal/desk -run '^TestAssistantPlan(ActualProducersAndProjection|ActualRefusalEvents|RecoveryCustodyMembers|SharedVectors)$' -count=1 -v)
+ command=(go test ./internal/desk -run '^TestAssistant(Plan(ActualProducersAndProjection|ActualRefusalEvents|RecoveryCustodyMembers|SharedVectors|BindingActualHistorical|BindingActualCurrentEvidence|BindingLegacyAndMissingLineage|BindingOperationEvidenceRefusals|BindingExplicitContinuation|GateDeclarations|GateActualContextualEvidence|NativePeerConstruction|NativeTraceScope)|CanonicalHostCustodyVectors|HostArgumentWireEncoding|ParentHostArgumentWireEncoding)$' -count=1 -v)
  if [ -n "${JPDEV_WRAP:-}" ]; then command=("$JPDEV_WRAP" go -- "${command[@]}"); fi
  "${command[@]}"
 ) | tee "$tmp/producers.log"
-for producer in ActualProducersAndProjection ActualRefusalEvents RecoveryCustodyMembers SharedVectors; do
+for producer in ActualProducersAndProjection ActualRefusalEvents RecoveryCustodyMembers SharedVectors BindingActualHistorical BindingActualCurrentEvidence BindingLegacyAndMissingLineage BindingOperationEvidenceRefusals BindingExplicitContinuation GateDeclarations GateActualContextualEvidence NativePeerConstruction NativeTraceScope; do
  grep -Eq -- "^--- PASS: TestAssistantPlan$producer \\(" "$tmp/producers.log" || { echo "Plan $producer producer did not pass" >&2; exit 1; }
+done
+for producer in CanonicalHostCustodyVectors HostArgumentWireEncoding ParentHostArgumentWireEncoding; do
+ grep -Eq -- "^--- PASS: TestAssistant$producer \\(" "$tmp/producers.log" || { echo "Plan $producer custody check did not pass" >&2; exit 1; }
 done
 "$root/web/node_modules/.bin/esbuild" "$root/scripts/assistant-plan-reference.mjs" \
  --bundle --platform=node --format=esm --loader:.css=empty \

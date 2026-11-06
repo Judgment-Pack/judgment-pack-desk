@@ -6,12 +6,21 @@ export type ResearchRunController = Pick<SavedChatRun,
   'continueQuestion' | 'prepareBudgetContinuation' | 'continueExecution' | 'keepExecution' | 'recheck'> &
   Partial<Pick<SavedChatRun, 'basisNow' | 'recoverDraft' | 'chooseResearch' |
   'establishCases' | 'retryExpectationValidation' | 'proposeExpectationCorrection' | 'approveExpectationCorrection'>> & {
-    readonly pendingApproval?: {callId:string;argsDigest:string;name:string;args:Record<string,unknown>}
-    decideApproval?: (approved:boolean)=>void
+    readonly pendingPlanDecision?: SavedChatRun['pendingPlanDecision']
+    decidePlan?: (approved:boolean)=>void
+    readonly pendingApproval?: SavedChatRun['pendingApproval']
+    decideApproval?: SavedChatRun['decideApproval']
+    canCheckProposal?: (candidate:import('./run').Candidate)=>boolean
     checkProposal?: (candidate:import('./run').Candidate)=>Promise<import('../chat/packProposal').PackProposalCheck>
 	prepareCreation?: () => Promise<boolean>
+    readonly dialectReadRecovery?: SavedChatRun['dialectReadRecovery']
+    readonly dialectReadRecoveryBusy?: boolean
+    readonly dialectReadRecoveryFailed?: boolean
+    inspectDialectRead?: (operationId:string)=>Promise<void>
+    refreshDialectReadRecovery?: ()=>Promise<void>
     readonly ownership?: 'server'
     disconnect?: () => void
+    readonly inputBlocked?:boolean
     readonly needsReconnect?:boolean
     reconnect?: () => Promise<void>
     retryResponse: () => void

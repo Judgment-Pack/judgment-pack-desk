@@ -34,6 +34,7 @@ func assistantDialectKeys[V any](m map[string]V) []string {
 	return out
 }
 func assistantDialectRecordView(row preparedInputRecord, version int) map[string]any {
+	row.Values = legacyInputValues(row)
 	values := map[string]any{}
 	for _, k := range assistantDialectKeys(row.Values) {
 		v := row.Values[k]

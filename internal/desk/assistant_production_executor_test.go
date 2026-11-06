@@ -44,6 +44,8 @@ func assistantProductionFixture(t *testing.T, endpoint, phase, nativeMode string
 		trace = filepath.Join(dir, "trace.jsonl")
 		peer := filepath.Join(dir, "peer.py")
 		assistantRunMust(t, os.WriteFile(peer, []byte(assistantExecutionCodexPeer), 0600))
+		// First-use history creation belongs to the original enrollment owner.
+		assistantRunMust(t, s.ensureDefaultHistoryEnrollment(t.Context()))
 		data, err := s.openChatData()
 		assistantRunMust(t, err)
 		ledger := filepath.Join(data.root.Name(), s.assistantRuns().name)
@@ -73,7 +75,7 @@ func assistantProductionFixture(t *testing.T, endpoint, phase, nativeMode string
 	saved := policyWorkspaceRead(t, s, token, "/api/conversations")
 	_, rows, err := assistantChatRows(saved.Content)
 	assistantRunMust(t, err)
-	return s, token, assistantRunStart{Purpose: "chat", OwnerID: "chat-one", RequestID: "message-one", AdmissionID: "admission-one", Revision: digestOf(rows[0])}, trace
+	return s, token, assistantContextStartFixture(t, s, token, assistantRunStart{Purpose: "chat", OwnerID: "chat-one", RequestID: "message-one", AdmissionID: "admission-one", Revision: digestOf(rows[0])}), trace
 }
 
 func TestAssistantProductionClosedFactory(t *testing.T) {

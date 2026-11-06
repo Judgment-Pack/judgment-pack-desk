@@ -94,6 +94,9 @@ func validateAttachmentObject(data []byte) error {
 }
 
 func storageFileLimit(name string) int {
+	if assistantDialectReadRecoveryFileName.MatchString(name) {
+		return assistantDialectReadRecoveryFileLimit
+	}
 	if memoryFileName.MatchString(name) {
 		return memoryLimit
 	}
@@ -190,4 +193,32 @@ func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", digestOf(current))
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(current)
+}
+
+// Chat document.Digest names the acquisition result, NOT the raw attachment
+// file digest (assistant_documents.go verifies both separately). Export retains
+// the original packet bytes; this join is not cryptographic re-verification.
+func retentionAttachmentResultDigest(raw []byte) string {
+	var object attachmentObject
+	if validateAttachmentObject(raw) != nil || json.Unmarshal(raw, &object) != nil || object.Proof == nil {
+		return ""
+	}
+	var envelope struct {
+		Receipt json.RawMessage `json:"receipt"`
+	}
+	if !uniqueJSON([]byte(object.Proof.Response)) || json.Unmarshal([]byte(object.Proof.Response), &envelope) != nil {
+		return ""
+	}
+	var receipt struct {
+		Version string `json:"receiptVersion"`
+		Kind    string `json:"kind"`
+		Source  string `json:"source"`
+		Session string `json:"sessionId"`
+		Index   int    `json:"callIndex"`
+		Digest  string `json:"resultDigest"`
+	}
+	if json.Unmarshal(envelope.Receipt, &receipt) != nil || receipt.Version != "3" || receipt.Kind != "acquisition" || receipt.Source != object.Proof.Source || receipt.Session != object.Proof.Session || receipt.Index != 0 || !strings.HasPrefix(receipt.Digest, "sha256:") || !assistantRunDigest(strings.TrimPrefix(receipt.Digest, "sha256:")) {
+		return ""
+	}
+	return receipt.Digest
 }

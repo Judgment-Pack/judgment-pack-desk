@@ -74,11 +74,17 @@ var testHookResearchRequest func()
 // Authority is per invocation and runs under the private lock: it must never
 // reacquire that lock or the assistant ledger. Nil preserves manual admission.
 func (s *Server) requestResearch(r *http.Request, q inputResearchRequest, authority func(context.Context) error) (inputResearchRequestReceipt, error) {
+	return s.requestResearchOwned(r, q, authority, nil)
+}
+
+// A non-nil disposition belongs only to the sourced Agent workflow. Manual
+// admission retains its original matching behavior through requestResearch.
+func (s *Server) requestResearchOwned(r *http.Request, q inputResearchRequest, authority func(context.Context) error, disposition *inputResearchRequestDisposition) (inputResearchRequestReceipt, error) {
 	if testHookResearchRequest != nil {
 		testHookResearchRequest()
 	}
 	empty := inputResearchRequestReceipt{}
-	if !validResearchRequest(q) {
+	if !validResearchRequest(q) || disposition != nil && (authority == nil || !validResearchRequestDisposition(*disposition)) {
 		return empty, errAssistantRunInvalid
 	}
 	lock, err := s.privateDataLockContext(r.Context(), true)
@@ -91,6 +97,20 @@ func (s *Server) requestResearch(r *http.Request, q inputResearchRequest, author
 	}
 	root, err := s.inputResearchRoot(false)
 	if errors.Is(err, os.ErrNotExist) {
+		if disposition != nil {
+			if !s.authorized(r) || !s.originAllowed(r) {
+				return empty, errAssistantRunScope
+			}
+			if err = s.authorizePrivateWorkspace(r); err != nil {
+				return empty, err
+			}
+			if err = authority(r.Context()); err != nil {
+				return empty, err
+			}
+			if disposition.AllowanceID != "" {
+				return empty, errAssistantRunScope
+			}
+		}
 		return inputResearchRequestReceipt{Status: "review-required"}, nil
 	}
 	if err != nil {
@@ -141,7 +161,18 @@ func (s *Server) requestResearch(r *http.Request, q inputResearchRequest, author
 	if err = authorize(); err != nil {
 		return empty, err
 	}
+	if disposition != nil && disposition.AllowanceID == "" {
+		return inputResearchRequestReceipt{Status: "review-required"}, nil
+	}
 	for _, grant := range grants {
+		if disposition != nil {
+			if grant.ID != disposition.AllowanceID {
+				continue
+			}
+			if !researchDispositionMatches(*disposition, grant) || researchApprovalState(grant, time.Now()) != "ready" || grant.PreparationID != q.PreparationID || grant.Revision != q.Revision {
+				return empty, errAssistantRunScope
+			}
+		}
 		if researchApprovalState(grant, time.Now()) != "ready" || grant.PreparationID != q.PreparationID || grant.Revision != q.Revision {
 			continue
 		}
@@ -166,6 +197,9 @@ func (s *Server) requestResearch(r *http.Request, q inputResearchRequest, author
 		}()
 		attempted := false
 		updated, err := s.researchJournal(rr, grant.ID).Update(r.Context(), func(current *inputResearchRun) error {
+			if disposition != nil && !researchDispositionMatches(*disposition, *current) {
+				return errAssistantRunScope
+			}
 			if current.Approval == nil || current.Approval.ChatID != q.ChatID || current.Approval.SessionScope != s.researchApprovalScope(r) || current.PreparationID != q.PreparationID || current.Revision != q.Revision || current.State != "review" || researchApprovalState(*current, time.Now()) != "ready" {
 				return errors.New("This research allowance is no longer available.")
 			}
@@ -206,6 +240,9 @@ func (s *Server) requestResearch(r *http.Request, q inputResearchRequest, author
 			return empty, err
 		}
 		return researchRequestReceipt(updated), nil
+	}
+	if disposition != nil && disposition.AllowanceID != "" {
+		return empty, errAssistantRunScope
 	}
 	return inputResearchRequestReceipt{Status: "review-required"}, nil
 }

@@ -171,6 +171,7 @@ describe('project conversation history', () => {
       .mockImplementation(async document => ({ project: '/project', sha256: 'second', content: document }))
     const { store } = setup({ write }); await store.load()
     const chat = store.create(); const saving = store.flush()
+    await Promise.resolve() // The shared persistence queue has acquired this flush.
     store.update(chat.id,{ composer: 'Typed while saving' })
     release({ project: '/project', sha256: 'first', content: { version: 1, chats: [] } }); await saving
     expect(store.getSnapshot().dirty).toBe(true)

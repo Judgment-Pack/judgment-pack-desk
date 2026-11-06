@@ -5,6 +5,7 @@ package desk
 // captured independently through Desk's rooted readers. Neither grants a write.
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -308,7 +309,74 @@ func newAssistantAuthoringCapture(scope assistantAuthoringScope, key string) (as
 	}
 	return assistantAuthoringCapture{ID: "author_" + hex.EncodeToString(nonce[:16]), AdmissionID: "author-admit-" + hex.EncodeToString(nonce[16:]), RequestID: key, Scope: scope}, nil
 }
+
+// Observation only, after the original full decoder has returned. Tests may
+// count validation calls; this cannot replace the decoder or alter its result.
+var testHookAssistantAuthoringValidation func()
+
+func decodeAssistantAuthoringStorage(name string, raw []byte) (assistantRunLedger, error) {
+	ledger, err := decodeAssistantRunStorage(name, raw)
+	if testHookAssistantAuthoringValidation != nil {
+		testHookAssistantAuthoringValidation()
+	}
+	return ledger, err
+}
+
+// Caller holds private-data custody. Even a hit independently reads current
+// private bytes and proves current rooted scope before comparing exact bytes.
+// An unseen byte sequence always receives the original full ledger validation,
+// including every historical checkpoint and canonical journal. Transactions
+// share only this raw fact, never the returned typed graph.
+func (s *Server) readAssistantAuthoringCapturesLocked(ctx context.Context, data *chatDataStore, project string) ([]assistantAuthoringCapture, error) {
+	name := "assistant-runs-" + project + ".json"
+	store := assistantRunStore{server: s, project: project, name: name}
+	if err := checkPrivateDataPath(data); err != nil {
+		return nil, err
+	}
+	if err := store.checkScope(data.root); err != nil {
+		return nil, err
+	}
+	root, err := data.root.Stat(".")
+	if err != nil {
+		return nil, err
+	}
+	raw, err := readPrivateData(data.root, name, assistantRunRecordLimit)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s.assistantRunValidation.matches(root, data, project, name, raw) {
+		// Fresh decoding owns all capture payloads independently. Skipping the
+		// unrelated typed run graph is justified only by this exact-byte proof.
+		var selected struct {
+			Captures []assistantAuthoringCapture `json:"authoringCaptures"`
+		}
+		if err := json.Unmarshal(raw, &selected); err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return selected.Captures, nil
+	}
+	ledger, err := decodeAssistantAuthoringStorage(name, raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.rememberAssistantRunStorage(root, data, project, name, raw)
+	return ledger.AuthoringCaptures, nil
+}
+
 func (s *Server) resolveAssistantAuthoringRun(r *http.Request, start assistantRunStart, identity assistantRunBinding, project string) (assistantRunSource, error) {
+	return s.resolveAssistantAuthoringRunStorage(r, start, identity, project, false)
+}
+
+func (s *Server) resolveAssistantAuthoringRunStorage(r *http.Request, start assistantRunStart, identity assistantRunBinding, project string, reuseValidation bool) (assistantRunSource, error) {
 	zero := assistantRunSource{}
 	if !assistantAuthoringPurpose(start.Purpose) || !assistantAuthoringID.MatchString(start.OwnerID) || !assistantRunDigest(start.Revision) {
 		return zero, errAssistantRunInvalid
@@ -318,18 +386,39 @@ func (s *Server) resolveAssistantAuthoringRun(r *http.Request, start assistantRu
 		return zero, err
 	}
 	defer data.root.Close()
-	raw, err := readPrivateData(data.root, "assistant-runs-"+project+".json", assistantRunRecordLimit)
+	var captures []assistantAuthoringCapture
+	if reuseValidation {
+		captures, err = s.readAssistantAuthoringCapturesLocked(r.Context(), data, project)
+	} else {
+		var raw []byte
+		raw, err = readPrivateData(data.root, "assistant-runs-"+project+".json", assistantRunRecordLimit)
+		if err == nil {
+			var ledger assistantRunLedger
+			ledger, err = decodeAssistantAuthoringStorage("assistant-runs-"+project+".json", raw)
+			captures = ledger.AuthoringCaptures
+		}
+	}
 	if err != nil {
 		return zero, err
 	}
-	ledger, err := decodeAssistantRunStorage("assistant-runs-"+project+".json", raw)
-	if err != nil {
-		return zero, err
+	if reuseValidation {
+		// Reuse establishes parsing facts only. Request cancellation and the
+		// signed-in principal/session/Policy remain live authorization checks.
+		if err := r.Context().Err(); err != nil {
+			return zero, err
+		}
+		current, _, err := s.assistantRunIdentity(r)
+		if err != nil {
+			return zero, err
+		}
+		if !assistantRunIdentityMatches(current, identity) {
+			return zero, errAssistantRunScope
+		}
 	}
-	for _, c := range ledger.AuthoringCaptures {
+	for _, c := range captures {
 		if c.ID == start.OwnerID {
 			expected := assistantAuthoringStart(c)
-			if c.Cancelled || expected == nil || *expected != start || !assistantAuthoringIdentity(c.Scope, identity, project) {
+			if c.Cancelled || expected == nil || !sameAssistantAuthoringReference(*expected, start) || !assistantAuthoringIdentity(c.Scope, identity, project) {
 				return zero, errAssistantRunScope
 			}
 			a, err := readAssistantAuthoringRequest(c.Request)
@@ -487,7 +576,7 @@ func (s *Server) handleAssistantAuthoringCapture(w http.ResponseWriter, r *http.
 		host := s.assistantRunService()
 		host.mu.Lock()
 		for _, active := range host.active {
-			if active.source.Start == *reply.Start && assistantRunIdentityMatches(identity, active.record.Binding) {
+			if sameAssistantAuthoringReference(active.source.Start, *reply.Start) && assistantRunIdentityMatches(identity, active.record.Binding) {
 				active.cancel()
 				host.notifyLocked(active.record.ID)
 			}
@@ -495,4 +584,14 @@ func (s *Server) handleAssistantAuthoringCapture(w http.ResponseWriter, r *http.
 		host.mu.Unlock()
 	}
 	writeJSON(w, 200, reply)
+}
+
+// Context selects current ephemeral reuse only. It is never part of the original
+// host-authored capture reference. Start body hashing/admission still includes it.
+func sameAssistantAuthoringReference(a, b assistantRunStart) bool {
+	if !assistantAuthoringPurpose(a.Purpose) || !assistantAuthoringPurpose(b.Purpose) {
+		return false
+	}
+	a.Context, b.Context = nil, nil
+	return a == b
 }

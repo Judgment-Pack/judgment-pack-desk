@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/jsonscalar"
 )
@@ -23,30 +24,41 @@ type assistantApprovalReference struct {
 }
 
 type assistantRunView struct {
-	Creation          *assistantCreationView            `json:"creation,omitempty"`
-	PackChecks        []assistantPackCheck              `json:"packChecks,omitempty"`
-	ApprovalReference *assistantApprovalReference       `json:"approvalReference,omitempty"`
-	AdmissionID       string                            `json:"admissionId"`
-	DisplayPreview    []assistantRunPreview             `json:"displayPreview,omitempty"`
-	Continuations     []assistantRunContinuationReceipt `json:"continuations,omitempty"`
-	ChatProjection    *assistantChatProjectionView      `json:"chatProjection,omitempty"`
-	ProjectionIssue   string                            `json:"projectionIssue,omitempty"`
-	ID                string                            `json:"id"`
-	Revision          uint64                            `json:"revision"`
-	Owner             assistantRunOwner                 `json:"owner"`
-	RequestID         string                            `json:"requestId"`
-	State             string                            `json:"state"`
-	Historical        bool                              `json:"historical,omitempty"`
-	Checkpoint        *contract.Checkpoint              `json:"checkpoint,omitempty"`
-	Operations        []assistantRunOperation           `json:"operations"`
-	Events            []assistantRunEvent               `json:"events"`
-	Cursor            string                            `json:"cursor"`
+	AnswerHistory         []assistantRunAnswerOrigin        `json:"answerHistory,omitempty"`
+	ApprovalResults       []assistantApprovalResultView     `json:"approvalResults,omitempty"`
+	ExternalCalls         []assistantExternalCallView       `json:"externalCalls,omitempty"`
+	Creation              *assistantCreationView            `json:"creation,omitempty"`
+	PackChecks            []assistantPackCheck              `json:"packChecks,omitempty"`
+	PlanDecisionReference *assistantPlanDecisionReference   `json:"planDecisionReference,omitempty"`
+	ApprovalReference     *assistantApprovalReference       `json:"approvalReference,omitempty"`
+	AdmissionID           string                            `json:"admissionId"`
+	DisplayPreview        []assistantRunPreview             `json:"displayPreview,omitempty"`
+	Continuations         []assistantRunContinuationReceipt `json:"continuations,omitempty"`
+	ChatProjection        *assistantChatProjectionView      `json:"chatProjection,omitempty"`
+	ProjectionIssue       string                            `json:"projectionIssue,omitempty"`
+	ID                    string                            `json:"id"`
+	Revision              uint64                            `json:"revision"`
+	Owner                 assistantRunOwner                 `json:"owner"`
+	RequestID             string                            `json:"requestId"`
+	State                 string                            `json:"state"`
+	Historical            bool                              `json:"historical,omitempty"`
+	Checkpoint            *contract.Checkpoint              `json:"checkpoint,omitempty"`
+	Operations            []assistantRunOperation           `json:"operations"`
+	Events                []assistantRunEvent               `json:"events"`
+	Cursor                string                            `json:"cursor"`
 }
 
 func assistantRunPublic(run assistantRunRecord) assistantRunView {
+	if run.Binding.Owner.Kind == assistantSettingsObservationPurpose {
+		return assistantSettingsPublic(run)
+	}
 	var approval *assistantApprovalReference
 	if run.State == "awaiting-input" && run.Checkpoint != nil && run.Checkpoint.Approval != nil && run.Checkpoint.Approval.State == "asked" {
-		approval = &assistantApprovalReference{run.Checkpoint.Approval.CallID, assistantRunArgsDigest(run.Checkpoint.Approval.Args)}
+		approval = &assistantApprovalReference{run.Checkpoint.Approval.CallID, runcontext.ApprovalShownDigest(*run.Checkpoint.Approval)}
+	}
+	planReference := assistantRunPlanReference(run)
+	if run.State != "awaiting-input" {
+		planReference = nil
 	}
 	latest := map[string]assistantPackCheck{}
 	for _, receipt := range run.PackChecks {
@@ -63,15 +75,116 @@ func assistantRunPublic(run assistantRunRecord) assistantRunView {
 	for _, digest := range keys {
 		checks = append(checks, latest[digest])
 	}
-	return assistantRunView{Creation: assistantCreationPublic(run), PackChecks: checks, ApprovalReference: approval, AdmissionID: run.AdmissionID, DisplayPreview: run.DisplayPreview, Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
+	return assistantRunView{AnswerHistory: run.AnswerHistory, ApprovalResults: assistantApprovalResults(run), ExternalCalls: assistantExternalCalls(run), Creation: assistantCreationPublic(run), PackChecks: checks, ApprovalReference: approval, PlanDecisionReference: planReference, AdmissionID: run.AdmissionID, DisplayPreview: run.DisplayPreview, Continuations: assistantRunContinuations(run), ChatProjection: assistantChatProjectionPublic(run.ChatProjection), ProjectionIssue: run.ProjectionIssue, ID: run.ID, Revision: run.Revision, Owner: run.Binding.Owner, RequestID: run.Binding.RequestID, State: run.State, Historical: run.Historical, Checkpoint: run.Checkpoint, Operations: run.Operations, Events: run.Events, Cursor: assistantRunCursor(run)}
 }
+
+// Display evidence only: an original approved Runtime call has a physical
+// receipt but its exact canonical durable result is not acknowledged in this head.
+func assistantUnkeptApproval(run assistantRunRecord) *assistantApprovalResultView {
+	cp := run.Checkpoint
+	if !assistantCanonicalActive(run) || cp == nil || cp.Approval == nil || cp.Durable == nil {
+		return nil
+	}
+	a := cp.Approval
+	if a.State != "approved" || a.Result != nil || a.Runtime == nil || a.Source.Kind != "runtime" {
+		return nil
+	}
+	args, err := json.Marshal(a.Args)
+	if err != nil {
+		return nil
+	}
+	claimed := false
+	for _, row := range cp.Durable.Dispatches {
+		if row.Kind != "runtime" || row.Read || row.Scope.Execution != cp.ID || row.Scope.Task != nil || row.Scope.Role != "author" || row.Tool != a.Name || row.Result != nil || row.RepeatResultJSON != nil || row.State != "claimed" && row.State != "unknown" {
+			continue
+		}
+		var descriptor struct {
+			CallID string          `json:"callId"`
+			Name   string          `json:"name"`
+			Args   json.RawMessage `json:"args"`
+		}
+		if json.Unmarshal([]byte(row.Request), &descriptor) == nil && descriptor.CallID == a.CallID && descriptor.Name == a.Name && assistantApprovalArgsEqual(descriptor.Args, args) {
+			claimed = true
+		}
+	}
+	if !claimed {
+		return nil
+	}
+	for _, op := range run.Operations {
+		if op.Kind != "runtime" || op.Name != "tools/call" || op.State != "completed" || len(op.Result) == 0 {
+			continue
+		}
+		var call struct {
+			Params struct {
+				Name      string          `json:"name"`
+				Arguments json.RawMessage `json:"arguments"`
+			} `json:"params"`
+		}
+		var receipt struct {
+			Result json.RawMessage `json:"result"`
+		}
+		if json.Unmarshal(op.Intent, &call) == nil && call.Params.Name == a.Tool && assistantApprovalArgsEqual(call.Params.Arguments, args) && json.Unmarshal(op.Result, &receipt) == nil && len(receipt.Result) != 0 && string(receipt.Result) != "null" {
+			return &assistantApprovalResultView{CallID: a.CallID, Name: a.Name, IsError: true, Result: assistantApprovalResultDisplay{Text: []string{}, OtherContent: []string{}}}
+		}
+	}
+	return nil
+}
+
+// Compare structured argument evidence without coercing numbers. This never
+// rewrites an admitted request, a physical result or a checkpoint.
+func assistantApprovalArgsEqual(left, right []byte) bool {
+	decode := func(raw []byte) (any, error) {
+		var value any
+		d := json.NewDecoder(bytes.NewReader(raw))
+		d.UseNumber()
+		err := d.Decode(&value)
+		return value, err
+	}
+	a, ae := decode(left)
+	b, be := decode(right)
+	return ae == nil && be == nil && reflect.DeepEqual(a, b)
+}
+
+// The active-owner bit is authoritative only while service.mu is held. An
+// incomplete head during a live Commit must remain a running observation.
+func assistantUnkeptApprovalPublic(run assistantRunRecord, ownerActive bool) assistantRunView {
+	view := assistantRunPublic(run)
+	if result := assistantUnkeptApproval(run); !ownerActive && result != nil {
+		view.State = "interrupted"
+		view.ApprovalResults = append(view.ApprovalResults, *result)
+	}
+	return view
+}
+
+// Owner exit can follow the caller's first read. Re-read under the existing
+// service lock so an old pre-Commit snapshot cannot mislabel a successful call.
+func (h *assistantRunService) guardedResultView(r *http.Request, run assistantRunRecord) (assistantRunView, error) {
+	if assistantUnkeptApproval(run) == nil {
+		return assistantRunPublic(run), nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.active[run.ID] != nil {
+		return assistantRunPublic(run), nil
+	}
+	latest, err := h.read(r, run.ID)
+	if err != nil {
+		return assistantRunView{}, err
+	}
+	return assistantUnkeptApprovalPublic(latest, h.active[latest.ID] != nil), nil
+}
+
 func (s *Server) registerAssistantRuns() {
+	s.registerAssistantContexts()
+	s.registerAssistantObservations()
 	s.registerAssistantDiagnosticRuns()
 	s.registerAssistantBriefRuns()
 	s.registerAssistantAuthoringRuns()
 	s.mux.HandleFunc("POST /api/assistant-runs/{run}/pack-checks", s.handleAssistantPackRecheck)
 	s.mux.HandleFunc("GET /api/assistant-runs/owners/{owner}/requests/{request}", s.handleAssistantChatRuns)
 	s.mux.HandleFunc("POST /api/assistant-runs", s.handleAssistantRunStart)
+	s.mux.HandleFunc("GET /api/assistant-runs/{run}/dialect-reads", s.handleAssistantDialectReadRecoveryStatus)
+	s.mux.HandleFunc("POST /api/assistant-runs/{run}/dialect-reads/{operation}/observe", s.handleAssistantDialectReadRecoveryObserve)
 	s.mux.HandleFunc("GET /api/assistant-runs/{run}", s.handleAssistantRunRead)
 	s.mux.HandleFunc("GET /api/assistant-runs/{run}/events", s.handleAssistantRunEvents)
 	s.mux.HandleFunc("POST /api/assistant-runs/{run}/actions", s.handleAssistantRunAction)
@@ -117,11 +230,27 @@ func assistantRunRequest(r *http.Request, target any) error {
 	if err = decoder.Decode(target); err != nil {
 		return errAssistantRunInvalid
 	}
+	if start, ok := target.(*assistantRunStart); ok {
+		if raw, has := fields["context"]; has {
+			if assistantContextSelectorJSON(raw, start.Purpose) != nil {
+				return errAssistantRunInvalid
+			}
+		}
+		if raw, has := fields["observation"]; has {
+			if start.Purpose != assistantSettingsObservationPurpose || assistantObservationSelectorJSON(raw) != nil {
+				return errAssistantRunInvalid
+			}
+		} else if start.Purpose == assistantSettingsObservationPurpose {
+			return errAssistantRunInvalid
+		}
+	}
 	if action, ok := target.(*assistantRunAction); ok {
 		allowed := []string{"id", "kind", "revision"}
 		switch action.Kind {
+		case "plan-decision":
+			allowed = append(allowed, "callId", "planRevision", "candidateRevision", "approved", "note")
 		case "approval":
-			allowed = append(allowed, "callId", "argsDigest", "approved", "note")
+			allowed = append(allowed, "callId", "argsDigest", "shownDigest", "approved", "note")
 		case "answer":
 			allowed = append(allowed, "questionId", "questionDigest", "answer")
 		case "cancel", "abandon", "extend-budget":
@@ -175,7 +304,7 @@ func (s *Server) handleAssistantRunStart(w http.ResponseWriter, r *http.Request)
 		assistantRunHTTPError(w, errAssistantRunInvalid)
 		return
 	}
-	ownerValid := start.Purpose == assistantDiagnosticPurpose && aiIDPattern.MatchString(start.OwnerID) || start.Purpose == "chat" && researchChatID.MatchString(start.OwnerID) || start.Purpose == "brief" && assistantBriefSubject(start.OwnerID) || assistantAuthoringPurpose(start.Purpose) && assistantAuthoringID.MatchString(start.OwnerID)
+	ownerValid := (start.Purpose == assistantDiagnosticPurpose || start.Purpose == assistantSettingsObservationPurpose) && aiIDPattern.MatchString(start.OwnerID) || start.Purpose == "chat" && researchChatID.MatchString(start.OwnerID) || start.Purpose == "brief" && assistantBriefSubject(start.OwnerID) || assistantAuthoringPurpose(start.Purpose) && assistantAuthoringID.MatchString(start.OwnerID)
 	if !assistantRunText(start.AdmissionID, 128) || !ownerValid || !assistantRunDigest(start.Revision) || !assistantRunText(start.RequestID, 128) {
 		assistantRunHTTPError(w, errAssistantRunInvalid)
 		return
@@ -189,7 +318,12 @@ func (s *Server) handleAssistantRunStart(w http.ResponseWriter, r *http.Request)
 	if created {
 		status = http.StatusCreated
 	}
-	writeJSON(w, status, assistantRunPublic(run))
+	view, err := s.assistantRunService().guardedResultView(r, run)
+	if err != nil {
+		assistantRunHTTPError(w, err)
+		return
+	}
+	writeJSON(w, status, view)
 }
 func (s *Server) handleAssistantRunRead(w http.ResponseWriter, r *http.Request) {
 	if !s.guardAssistantRun(w, r) {
@@ -200,7 +334,12 @@ func (s *Server) handleAssistantRunRead(w http.ResponseWriter, r *http.Request) 
 		assistantRunHTTPError(w, err)
 		return
 	}
-	writeJSON(w, 200, assistantRunPublic(run))
+	view, err := s.assistantRunService().guardedResultView(r, run)
+	if err != nil {
+		assistantRunHTTPError(w, err)
+		return
+	}
+	writeJSON(w, 200, view)
 }
 func (s *Server) handleAssistantRunAction(w http.ResponseWriter, r *http.Request) {
 	if !s.guardAssistantRun(w, r) {
@@ -216,7 +355,12 @@ func (s *Server) handleAssistantRunAction(w http.ResponseWriter, r *http.Request
 		assistantRunHTTPError(w, err)
 		return
 	}
-	writeJSON(w, 200, assistantRunPublic(run))
+	view, err := s.assistantRunService().guardedResultView(r, run)
+	if err != nil {
+		assistantRunHTTPError(w, err)
+		return
+	}
+	writeJSON(w, 200, view)
 }
 func assistantRunParseCursor(cursor string, run assistantRunRecord) (uint64, int, bool) {
 	parts := strings.Split(cursor, ":")
@@ -299,21 +443,25 @@ func (s *Server) handleAssistantRunEvents(w http.ResponseWriter, r *http.Request
 		// Event count identifies the semantic suffix independently of revision.
 		// A semantic event and its following snapshot share a cursor, so every
 		// subscription must reconcile even when its supplied cursor is current.
-		if known {
+		if known && run.Binding.Owner.Kind != assistantSettingsObservationPurpose {
 			for i := count; i < len(run.Events); i++ {
 				if assistantRunSSE(w, controller, "event", fmt.Sprintf("%d:%d", run.Revision, i+1), run.Events[i]) != nil {
 					return
 				}
 			}
 		}
-		if first || !known || revision != run.Revision || count != len(run.Events) {
-			if assistantRunSSE(w, controller, "snapshot", assistantRunCursor(run), assistantRunPublic(run)) != nil {
+		view, err := host.guardedResultView(r, run)
+		if err != nil {
+			return
+		}
+		if first || !known || revision != run.Revision || count != len(run.Events) || view.State != run.State {
+			if assistantRunSSE(w, controller, "snapshot", view.Cursor, view) != nil {
 				return
 			}
 		}
 		first = false
-		cursor = assistantRunCursor(run)
-		if assistantRunTerminal(run.State) || run.State == "awaiting-input" || run.State == "paused-budget" || run.State == "awaiting-client" {
+		cursor = view.Cursor
+		if assistantRunTerminal(view.State) || run.State == "awaiting-input" || run.State == "paused-budget" || run.State == "awaiting-client" {
 			return
 		}
 		progress, err := host.readProgress(r, run)

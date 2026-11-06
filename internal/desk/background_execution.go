@@ -388,6 +388,12 @@ func (s *Server) runBackgroundModel(ctx context.Context, task backgroundModelReq
 	}
 	g := gate.New(gate.Options{Emit: emit})
 	run := &adapter.Run{ModelName: task.Choice.Model, AllowConversation: true, Critic: "off", Context: input, Host: host, Gate: g.Calls(), Emit: emit, Prompt: task.Instructions + "\n\nReturn exactly one JSON object satisfying this host response schema, without markdown:\n" + string(task.Response.InputSchema) + "\n\n" + task.Prompt}
+	if task.StructuredResearch {
+		run.Prompt, run.OpeningProjection, err = backgroundResearchOpening(task)
+		if err != nil {
+			return nil, err
+		}
+	}
 	connection, err := s.selectedAIConnection(backgroundAIRequest(ctx, task.Choice), true)
 	if err != nil {
 		return nil, err
@@ -395,7 +401,9 @@ func (s *Server) runBackgroundModel(ctx context.Context, task backgroundModelReq
 	var executor adapter.Adapter = eino.New()
 	if connection.Assistant.Engine == "codex" {
 		native = true
-		response := runcontext.HostTool{Name: task.Response.Name, Description: task.Response.Description, InputSchema: task.Response.InputSchema, Effect: "read", Execute: func(call context.Context, raw json.RawMessage) (result runcontext.ToolResult, toolErr error) {
+		// Capturing generated text only changes this run's receipt, never a
+		// resource or stored fact. The workflow validates any later action.
+		response := runcontext.HostTool{Name: task.Response.Name, Description: task.Response.Description, InputSchema: task.Response.InputSchema, Taxonomy: &runcontext.ToolTaxonomy{Operation: "answer", Effect: "pure"}, Effect: "read", Execute: func(call context.Context, raw json.RawMessage) (result runcontext.ToolResult, toolErr error) {
 			defer func() { toolErr = backgroundCanonicalFailure(toolErr, false) }()
 			if err := b.authorize(call); err != nil {
 				return runcontext.ToolResult{}, err
@@ -443,7 +451,9 @@ func (s *Server) runBackgroundModel(ctx context.Context, task backgroundModelReq
 			run.Policy = runcontext.PolicyLayer{"models": map[string]any{"author": map[string]any{"reasoning": task.Choice.Effort}}}
 		}
 	}
-	err = executor.Run(ctx, run)
+	bindings := &assistantGateBindings{}
+	bindings.add(g)
+	err = bindings.adapter(executor).Run(ctx, run)
 	b.mu.Lock()
 	latched := b.failed
 	b.mu.Unlock()

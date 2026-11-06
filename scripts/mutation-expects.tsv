@@ -1944,6 +1944,7 @@ web	jobs record page: the chain is saved under another name	src/audit/jobsRecord
 web	jobs record page: the copy's lines are not said	src/audit/jobsRecord.test.tsx
 web	jobs record page: the report is not shown	src/audit/jobsRecord.test.tsx
 web	jobs record page: the sentence claims keys it did not pass	src/audit/jobsRecord.test.tsx
+web	jobs record page: no checkpoints are claimed passed	src/audit/jobsRecord.test.tsx
 web	jobs record page: where each run's signature is checked is not said	src/audit/jobsRecord.test.tsx
 web	jobs run times (#223): the Runs table formats the time unguarded	src/jobs/JobsView.test.tsx
 web	jobs run times (#223): the Runs table's helper formats a time Runner did not store	src/jobs/JobsIndex.test.tsx,src/jobs/JobsView.test.tsx
@@ -2639,7 +2640,6 @@ go	assistant tests: conflicting proposal identity accepted	TestAssistantTestHost
 go	assistant tests: changed source appended after observation	TestAssistantTestHostObservationSourceCustody
 go	assistant tests: suite materialization omitted before success	TestAssistantTestHostSavedAndDraftCustody
 go	assistant critic V2: complete consumed rows ignored	TestAssistantTestHostCriticConsumedInputs
-go	assistant critic V2: legacy custody accepted	TestAssistantTestHostCriticConsumedInputs
 go	assistant tests: final projection suite custody omitted	TestAssistantTestHostProjectionSuiteCustody
 go	assistant recipe: argument member guard omitted	TestAssistantDialectRecipeFiniteArguments
 go	assistant recipe: proposal identity derivation omitted	TestAssistantDialectRecipeMetadataAndCapacity

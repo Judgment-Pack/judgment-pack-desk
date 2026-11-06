@@ -12,6 +12,7 @@ import {decodeSnapshot,parseRunJSON} from './decode'
 import {readCreation,withCreation} from './creation'
 
 const outputs=process.env.JPS_CREATION_OUTPUTS
+const nativeOutputs=process.env.JPS_CREATION_NATIVE_OUTPUTS??(outputs?`${outputs}/native`:undefined)
 const stores:ChatStore[]=[]
 afterEach(()=>{stores.forEach(store=>store.dispose());stores.length=0;vi.unstubAllGlobals()})
 const field=(raw:string,key:string)=>wireField(raw,key)!
@@ -19,19 +20,22 @@ const chatRow=(document:string)=>conversationWire('{"content":'+document+'}')['c
 const stateWire=(row:string)=>field(field(row,'checkpoint'),'state')
 const candidateDigests=(state:RunState):RunState=>({...state,candidates:state.candidates.map(c=>({...c,digest:sha256(c.text)}))})
 
+const admittedCanonicalFacts='{"large":9007199254740991,"decimal":1.2,"exponent":100,"negativeZero":0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.5}}'
+// Historical/raw post-admission custody only; never evidence of provider acceptance.
 const handwrittenFacts='{"large":9007199254740993,"decimal":1.20,"negativeZero":-0,"flag":false,"nil":null,"numeric":"1","nested":{"amount":2.500}}'
 const acceptedFacts=(issues:string)=>{
  const tree=parseJsonText(issues)
  if(tree.kind!=='array')throw Error('issue fixture must be an array')
  return new Map(tree.items.map(issue=>{const original=memberOf(issue,'original')!,id=memberOf(original,'id')!;if(id.kind!=='string')throw Error('missing fixture ID');return [id.value,wireJSON(memberOf(original,'facts')!,true)]}))
 }
-it.skipIf(!outputs).each([{order:'first',inject:false},{order:'last',inject:false},{order:'first',inject:true},{order:'last',inject:true}])('continues accepted two-issue data with default writers and reload: $order first, handwritten wire $inject',async({order,inject})=>{
+it.skipIf(!outputs).each([{engine:'api',order:'first',inject:false},{engine:'api',order:'last',inject:false},{engine:'api',order:'first',inject:true},{engine:'api',order:'last',inject:true},{engine:'native',order:'first',inject:false},{engine:'native',order:'last',inject:false}])('continues accepted two-issue data with default writers and reload: $engine $order first, handwritten wire $inject',async({engine,order,inject})=>{
+ const directory=engine==='native'?nativeOutputs:outputs
  const records=['02-establish-cases','03-propose-correction','04-approve-correction','05-propose-correction','06-approve-correction'].map(name=>{
-  let text=readFileSync(`${outputs}/${order}/${name}.json`,'utf8')
+  let text=readFileSync(`${directory}/${order}/${name}.json`,'utf8')
   if(inject){
    // Separate handwritten accepted-wire fixture. Actual API transport snapshots
    // provide the lifecycle scaffold; this does not claim pre-admission fidelity.
-   const first=JSON.parse(readFileSync(`${outputs}/${order}/02-establish-cases.json`,'utf8'))
+   const first=JSON.parse(readFileSync(`${directory}/${order}/02-establish-cases.json`,'utf8'))
    for(const original of new Set(acceptedFacts(first.run.creation.issues).values())){
     text=text.split(original).join(handwrittenFacts)
     text=text.split(JSON.stringify(original).slice(1,-1)).join(JSON.stringify(handwrittenFacts).slice(1,-1))
@@ -99,6 +103,7 @@ it.skipIf(!outputs).each([{order:'first',inject:false},{order:'last',inject:fals
  expect(state.cases.map(c=>c.id)).toEqual(['first','typed','last'])
  expect(state.expectationIssues.every(i=>i.resolved)).toBe(true)
  const accepted=acceptedFacts(records[0]!.parsed.run.creation.issues)
+ if(!inject)for(const facts of accepted.values())expect(facts).toBe(admittedCanonicalFacts)
  for(const row of state.cases.filter(c=>c.id!=='typed'))expect(encodeWireValue(row.facts)).toBe(accepted.get(row.id))
  if(inject)for(const token of ['9007199254740993','1.20','"negativeZero":-0','2.500'])expect(encodeWireValue(state.cases)).toContain(token)
  expect(state.status).toBe('ready');expect(state.readiness).not.toBe('')

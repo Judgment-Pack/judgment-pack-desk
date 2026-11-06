@@ -187,27 +187,79 @@ func TestAssistantRunClientActualProducer(t *testing.T) {
 	if stale.Code != http.StatusConflict {
 		t.Fatal("stale action admitted", stale.Code)
 	}
-	// Enumerate actual union discriminators, not field-name guesses. Browser's
-	// compile-time exhaustive map must match this durable sink's accepted legs.
+	// Handwritten records enumerate the current public event inventory. Required
+	// payload members and each declared version are explicit; these are never
+	// captured from a producer or manufactured by the decoder being checked.
+	records := map[string]string{
+		"approval_requested":      `{"type":"approval_requested","version":1,"callId":"call-one","purpose":"tool-call","name":"fixture_write","tool":"fixture_write","source":{"kind":"custom","id":"fixture","trust":"person","version":"1"},"args":{"text":"Fixture text"}}`,
+		"steered":                 `{"type":"steered","version":1,"bytes":0,"atRequest":1}`,
+		"compacted":               `{"type":"compacted","version":1,"turns":1,"bytes":0,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","mode":"index"}`,
+		"skill_loaded":            `{"type":"skill_loaded","version":1,"skill":{"id":"skill-one","name":"fixture-skill","source":{"kind":"custom","id":"fixture","trust":"person","version":"1"},"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"bytes":0}`,
+		"skill_unloaded":          `{"type":"skill_unloaded","version":1,"id":"skill-one"}`,
+		"retry":                   `{"type":"retry","version":1,"attempt":1}`,
+		"response_recovery":       `{"type":"response_recovery","version":1}`,
+		"delegation_requested":    `{"type":"delegation_requested","version":1,"request":{"tasks":[]}}`,
+		"delegated_task":          `{"type":"delegated_task","version":1,"task":{"id":"11111111-1111-4111-8111-111111111111","parentRunId":"22222222-2222-4222-8222-222222222222","title":"Fixture task","objective":"Read the explicit fixture","profile":"read","state":"complete","createdAt":"2026-11-04T00:00:00Z","modelRequests":0,"toolCalls":0,"attempts":1,"steps":[]}}`,
+		"user_question":           `{"type":"user_question","version":1,"id":"question-one","question":{"title":"Choose","question":"Which fixture?","selection":"single","options":[{"id":"one","label":"One","description":"The explicit fixture"}],"recommendedOptionId":null,"recommendation":null}}`,
+		"reasoning":               `{"type":"reasoning","version":1,"text":"Fixture reasoning","done":true}`,
+		"message":                 `{"type":"message","version":1,"text":"Fixture message"}`,
+		"tool_call":               `{"type":"tool_call","version":1,"name":"fixture_read","args":{}}`,
+		"tool_result":             `{"type":"tool_result","version":1,"name":"fixture_read","isError":false,"text":"Fixture result"}`,
+		"guardrail":               `{"type":"guardrail","version":1,"tool":"fixture_read","action":"refused","detail":"Fixture refusal"}`,
+		"thinking_unavailable":    `{"type":"thinking_unavailable","version":1,"detail":"Fixture unavailable"}`,
+		"critic_decided":          `{"type":"critic_decided","version":1,"mode":"off","ran":false,"reason":"off"}`,
+		"critique":                `{"type":"critique","version":1,"refuted":false,"checks":[],"text":"Fixture critique"}`,
+		"proposal":                `{"type":"proposal","version":1,"document":{},"unknowns":[],"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+		"error":                   `{"type":"error","version":1,"message":"Fixture error"}`,
+		"end":                     `{"type":"end","version":1}`,
+		"policy_resolved":         `{"type":"policy_resolved","version":1,"members":{}}`,
+		"connection_switched":     `{"type":"connection_switched","version":1,"role":"author","from":"first","to":"second","reason":"timeout"}`,
+		"usage":                   `{"type":"usage","version":1,"usage":{"rows":[]}}`,
+		"recorded":                `{"type":"recorded","version":1,"id":"record-one","bytes":0}`,
+		"memory_proposed":         `{"type":"memory_proposed","version":1,"memory":{"id":"memory-one","kind":"fact","text":"Fixture fact","source":{"run":"run-one","proposedBy":"host"},"scope":"project","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","createdAt":"2026-11-04T00:00:00Z","state":"proposed"}}`,
+		"memory_recalled":         `{"type":"memory_recalled","version":1,"ids":[],"digests":[],"bytes":0}`,
+		"edit_applied":            `{"type":"edit_applied","version":1,"document":"fixture-document","line":1,"bytes":0,"valid":true}`,
+		"edit_refused":            `{"type":"edit_refused","version":1,"reason":"Fixture refusal"}`,
+		"export_written":          `{"type":"export_written","version":1,"records":0,"bytes":0,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+		"output_guarded":          `{"type":"output_guarded","version":1,"where":"message","pattern":"fixture","action":"redact"}`,
+		"plan_revised":            `{"type":"plan_revised","version":2,"execution":"execution-one","sequence":1,"previous":"previous-one","revision":"revision-one","explanation":"Fixture revision","diff":[]}`,
+		"plan_departed":           `{"type":"plan_departed","version":2,"execution":"execution-one","revision":"revision-one","acceptedRevision":"accepted-one","explanation":"Fixture departure","departures":[]}`,
+		"plan_completion_refused": `{"type":"plan_completion_refused","version":2,"execution":"execution-one","revision":"revision-one","reason":"missing-evidence"}`,
+		"plan_drift_decided":      `{"type":"plan_drift_decided","version":2,"execution":"execution-one","callId":"call-one","revision":"revision-one","candidateRevision":"candidate-one","approved":false}`,
+		"route_decided":           `{"type":"route_decided","version":2,"route":{"route":"agent","skills":[],"tools":"all","operations":"all","planning":"withheld","version":1,"decidedBy":"host","reason":"Fixture route","bindingDigest":"binding-one","catalogueDigest":"catalogue-one","widened":false,"refusals":[]}}`,
+		"route_widened":           `{"type":"route_widened","version":2,"route":{"route":"agent","skills":[],"tools":"all","operations":"all","planning":"withheld","version":1,"decidedBy":"host","reason":"Fixture route","bindingDigest":"binding-one","catalogueDigest":"catalogue-one","widened":true,"refusals":[]}}`,
+		"repeat_detected":         `{"type":"repeat_detected","version":2,"execution":"execution-one","dispatchId":"dispatch-one","keyDigest":"repeat-one","count":2,"reminder":true,"stopped":false}`,
+	}
 	union := reflect.TypeOf(contract.RunEvent{})
+	seen := map[int]bool{}
 	types := []string{}
-	for i := 0; i < union.NumField(); i++ {
-		for _, candidate := range []string{"approval_requested", "steered", "compacted", "skill_loaded", "skill_unloaded", "retry", "response_recovery", "delegation_requested", "delegated_task", "user_question", "reasoning", "message", "tool_call", "tool_result", "guardrail", "thinking_unavailable", "critic_decided", "critique", "proposal", "error", "end", "policy_resolved", "connection_switched", "usage", "recorded", "memory_proposed", "memory_recalled", "edit_applied", "edit_refused", "export_written", "output_guarded", "message_progress", "execution_checkpoint", "budget_paused"} {
-			var event contract.RunEvent
-			if json.Unmarshal([]byte(`{"type":"`+candidate+`"}`), &event) != nil {
-				continue
-			}
-			if reflect.ValueOf(event).Field(i).IsNil() {
-				continue
-			}
-			if _, err := assistantRunEventBytes(event); err == nil {
-				types = append(types, candidate)
+	for expected, raw := range records {
+		var event contract.RunEvent
+		if err := json.Unmarshal([]byte(raw), &event); err != nil {
+			t.Fatalf("handwritten event %s refused: %T: %v", expected, err, err)
+		}
+		encoded, err := assistantRunEventBytes(event)
+		assistantRunMust(t, err)
+		var discriminator struct {
+			Type string `json:"type"`
+		}
+		assistantRunMust(t, json.Unmarshal(encoded, &discriminator))
+		if discriminator.Type != expected {
+			t.Fatalf("event discriminator %s, want %s", discriminator.Type, expected)
+		}
+		for i := 0; i < union.NumField(); i++ {
+			if !reflect.ValueOf(event).Field(i).IsNil() {
+				if seen[i] {
+					t.Fatalf("duplicate union leg for %s", expected)
+				}
+				seen[i] = true
 			}
 		}
+		types = append(types, discriminator.Type)
 	}
 	sort.Strings(types)
-	if len(types) != 31 {
-		t.Fatal("durable discriminator count", types)
+	if len(types) != 38 || len(seen) != union.NumField()-3 {
+		t.Fatal("durable discriminator inventory", types, "union legs", len(seen), union.NumField())
 	}
 	assistantRunClientJSON(t, "event-types.json", types)
 }

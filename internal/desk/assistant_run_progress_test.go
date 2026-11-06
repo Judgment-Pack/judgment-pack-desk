@@ -43,9 +43,35 @@ func TestAssistantRunProgressWireVector(t *testing.T) {
 	if _, err := assistantRunEventBytes(contract.RunEvent{MessageProgress: &contract.RunEventMessageProgress{Type: "message_progress", Text: p.Text}}); err == nil {
 		t.Fatal("live text entered semantic store")
 	}
-	for _, p := range []contract.RunEventMessageProgress{progressValue(strings.Repeat("x", assistantRunProgressBytes+1), nil), progressValue(string([]byte{0xff}), nil), progressValue("\x00", nil), {Type: "message", Text: "x"}, {Type: "message_progress", Text: "x", AdditionalMembers: map[string]json.RawMessage{"authority": json.RawMessage(`true`)}}, progressValue("x", new(string))} {
+	for _, p := range []contract.RunEventMessageProgress{progressValue(strings.Repeat("x", assistantRunProgressBytes+1), nil), progressValue(string([]byte{0xff}), nil), progressValue("\x00", nil), {Type: "message", Text: "x"}, progressValue("x", new(string))} {
 		if validAssistantRunProgress(p) {
 			t.Fatal("malformed canonical progress accepted")
+		}
+	}
+}
+func TestAssistantRunProgressClosedCanonicalVersion(t *testing.T) {
+	for _, version := range []int64{0, 1, 2, -1} {
+		p := progressValue("prefix", nil)
+		p.Version = &version
+		if validAssistantRunProgress(p) != (version == 1) {
+			t.Fatal("invalid progress version admission", version)
+		}
+	}
+	for _, raw := range []string{`{"type":"message_progress","text":"prefix"}`, `{"version":1,"type":"message_progress","text":"prefix"}`} {
+		var p contract.RunEventMessageProgress
+		assistantRunMust(t, json.Unmarshal([]byte(raw), &p))
+		if !validAssistantRunProgress(p) {
+			t.Fatal("supported progress refused")
+		}
+	}
+	for _, raw := range []string{`{"type":"message_progress","text":"prefix","authority":true}`, `{"version":1,"type":"message_progress","text":"prefix","authority":true}`} {
+		var p contract.RunEventMessageProgress
+		if json.Unmarshal([]byte(raw), &p) == nil {
+			t.Fatal("unknown canonical progress member accepted", raw)
+		}
+		var event contract.RunEvent
+		if json.Unmarshal([]byte(raw), &event) == nil {
+			t.Fatal("unknown enclosing progress member accepted", raw)
 		}
 	}
 }

@@ -1,4 +1,5 @@
 import { useAIConnectionScope } from './aiConnections'
+import { observeSettings } from './serverRuns/settingsObservation'
 /**
  * **Test connection**: one press, one question — *can this desk reach that
  * endpoint, and what does it offer?*
@@ -107,7 +108,7 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
   // **Dropped, not hidden**, the instant the form says a different endpoint.
   // Adjusted during render rather than in an effect, so there is never a frame
   // in which a reading of one endpoint is on screen under another's address.
-  const here = identityOf(draft)
+  const here = identityOf(draft) + (draft.kind === 'anthropic' ? `\n${draft.model}` : '')
   const connectionIdentity = `${scope?.connection.id ?? ""}\n${scope?.connection.revision ?? ""}`
   const previousConnection = useRef(connectionIdentity)
   if (previousConnection.current !== connectionIdentity) {
@@ -123,7 +124,7 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
     // typing into, would be a suffix composed for one destination and sent to
     // another.
     const target = saved
-    const of = identityOf(target)
+    const of = identityOf(target) + (target.kind === 'anthropic' ? `\n${target.model ?? ''}` : '')
     if (target.kind === 'anthropic' && target.model === null) {
       setAnswer({ of, asking: false, refusedToAsk: CHOOSE_A_MODEL })
       return
@@ -150,7 +151,13 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
     }
     // The probe names the connection it asks about, as the listing below does:
     // once AI connections exist, the desk refuses a probe that names none.
-    void probeAssistantEndpoint(cancellation.current.signal, scope?.connection.id, scope?.connection.revision).then(
+    const probing = target.kind === 'anthropic'
+      ? observeSettings({kind:'ping',model:target.model!},scope ? {connectionId:scope.connection.id,connectionRevision:scope.connection.revision} : undefined,cancellation.current.signal).then(result => {
+          if(result.kind!=='ping') throw new Error(DIAGNOSTIC_SAYS['unexpected-status'])
+          return result.ping
+        })
+      : probeAssistantEndpoint(cancellation.current.signal, scope?.connection.id, scope?.connection.revision)
+    void probing.then(
       (result) => landed((previous) => ({ ...previous, probe: result })),
       (cause: unknown) =>
         landed((previous) => ({ ...previous, probeRefusal: said(cause) }))
@@ -213,6 +220,7 @@ export function checkLine(answer: CheckAnswer, msg = sourceMessage): CheckLine {
         : msg('Not connected · {{answered}} · {{diagnostic}}', { answered, diagnostic: DIAGNOSTIC_SAYS[probe.diagnostic] ? msg(DIAGNOSTIC_SAYS[probe.diagnostic]!) : probe.diagnostic })
     return { says }
   }
+  if (probe.observationComplete === false) return { says: msg('Connected · test response incomplete') }
   if (answer.listingRefusal !== undefined) {
     return { says: msg('Connected · the models could not be listed:'), quoted: answer.listingRefusal }
   }

@@ -85,6 +85,8 @@ type localGateway struct {
 	retryAfter         time.Time
 	webPolicy          string
 	problem            error
+	launchBundleDigest string
+	catalogObservation *localGatewayCatalogObservation
 }
 
 func (g *localGateway) close() {
@@ -97,6 +99,8 @@ func (g *localGateway) close() {
 	g.stop()
 }
 func (g *localGateway) stop() {
+	g.catalogObservation = nil
+	g.launchBundleDigest = ""
 	if g.input != nil {
 		_ = g.input.Close()
 		g.input = nil
@@ -331,6 +335,10 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	if err := verifyGatewayBundle(g.bundle); err != nil {
 		return nil, err
 	}
+	manifest, err := assistantSourceManifest(g.bundle)
+	if err != nil {
+		return nil, err
+	}
 	build, err := launchedGatewayBuild(g.bundle)
 	if err != nil {
 		return nil, err
@@ -416,6 +424,7 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 			return nil, errors.New("local processing returned an unexpected identity")
 		}
 		reply.Pin.build = &build
+		g.launchBundleDigest = digestOf(manifest)
 		return reply.Pin, nil
 	case <-time.After(10 * time.Second):
 		return nil, errors.New("local processing did not become ready")
@@ -486,10 +495,12 @@ func (s *Server) localResearchCurrent(documents *documentSourceConfig, start boo
 			currentPolicy = *policy
 		}
 		if policyErr != nil || g.closed || g.done == nil || g.pin == nil || currentPolicy != g.webPolicy {
+			g.catalogObservation = nil
 			return researchGateway{}, errAssistantRunScope
 		}
 		select {
 		case <-g.done:
+			g.catalogObservation = nil
 			return researchGateway{}, errAssistantRunScope
 		default:
 		}
@@ -550,4 +561,110 @@ func manifestRevisionApproved(raw []byte) bool {
 		Revision string `json:"revision"`
 	}
 	return json.Unmarshal(raw, &manifest) == nil && manifest.Revision == GatewayRevision
+}
+
+// The immutable complete catalog witness belongs to one live gateway owner.
+// A catalog is observed only by the existing explicit setup path. Approval
+// review reads it without starting a process, source request or model.
+type localGatewayCatalogBasis struct {
+	done         chan struct{}
+	pin          *localGatewayPin
+	bundleDigest string
+	buildDigest  string
+	policy       string
+}
+type localGatewayCatalogObservation struct {
+	basis  localGatewayCatalogBasis
+	raw    json.RawMessage
+	digest string
+	owner  string
+}
+
+// File verification is outside the gateway mutex and involves no process call.
+// Matching both sides of the genuine catalog read refuses intervening restart,
+// manifest replacement, build replacement or policy change.
+func (g *localGateway) catalogBasis(store *assistantStore, bundle string) (localGatewayCatalogBasis, error) {
+	if g == nil {
+		return localGatewayCatalogBasis{}, errConnectionCatalog
+	}
+	if verifyGatewayBundle(bundle) != nil {
+		g.invalidateCatalog()
+		return localGatewayCatalogBasis{}, errConnectionCatalog
+	}
+	manifest, err := assistantSourceManifest(bundle)
+	if err != nil {
+		g.invalidateCatalog()
+		return localGatewayCatalogBasis{}, err
+	}
+	build, err := launchedGatewayBuild(bundle)
+	if err != nil {
+		g.invalidateCatalog()
+		return localGatewayCatalogBasis{}, err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.catalogBasisLocked(store, bundle, digestOf(manifest), digestOf(assistantChatJSON(build)))
+}
+func (g *localGateway) catalogBasisLocked(store *assistantStore, bundle, manifest, build string) (localGatewayCatalogBasis, error) {
+	policy, _, err := webPolicyValue(store)
+	currentPolicy := ""
+	if policy != nil {
+		currentPolicy = *policy
+	}
+	if err != nil || g.closed || bundle != g.bundle || g.done == nil || g.pin == nil || g.pin.build == nil || !g.pin.documentProcessing || currentPolicy != g.webPolicy || g.launchBundleDigest != manifest || digestOf(assistantChatJSON(*g.pin.build)) != build {
+		g.catalogObservation = nil
+		return localGatewayCatalogBasis{}, errConnectionCatalog
+	}
+	select {
+	case <-g.done:
+		g.catalogObservation = nil
+		return localGatewayCatalogBasis{}, errConnectionCatalog
+	default:
+	}
+	return localGatewayCatalogBasis{done: g.done, pin: g.pin, bundleDigest: manifest, buildDigest: build, policy: currentPolicy}, nil
+}
+func (g *localGateway) retainCatalog(store *assistantStore, before localGatewayCatalogBasis, after localGatewayCatalogBasis, raw json.RawMessage) {
+	if before != after {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	current, err := g.catalogBasisLocked(store, g.bundle, after.bundleDigest, after.buildDigest)
+	if err != nil || current != after {
+		return
+	}
+	digest := digestOf(raw)
+	if held := g.catalogObservation; held != nil && held.basis == after && held.digest == digest {
+		return
+	}
+	id, err := assistantSourceID()
+	if err != nil {
+		return
+	}
+	g.catalogObservation = &localGatewayCatalogObservation{basis: after, raw: append(json.RawMessage{}, raw...), digest: digest, owner: digestOf([]byte(id))}
+}
+func (g *localGateway) currentCatalog(store *assistantStore, manifest, build string) (localGatewayCatalogObservation, error) {
+	if g == nil {
+		return localGatewayCatalogObservation{}, errConnectionCatalog
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	basis, err := g.catalogBasisLocked(store, g.bundle, manifest, build)
+	held := g.catalogObservation
+	if err != nil || held == nil || held.basis != basis {
+		g.catalogObservation = nil
+		return localGatewayCatalogObservation{}, errConnectionCatalog
+	}
+	result := *held
+	result.raw = append(json.RawMessage{}, held.raw...)
+	return result, nil
+}
+
+func (g *localGateway) invalidateCatalog() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.catalogObservation = nil
 }

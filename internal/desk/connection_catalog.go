@@ -16,6 +16,7 @@ const connectionCatalogLimit = 128 << 10
 // These are protocol identifiers, not executable names or authorization URLs.
 // The browser additionally intersects them with the handlers it implements.
 type connectionDescriptor struct {
+	connectionProviderOwner
 	ID                     string                    `json:"id"`
 	Protocol               string                    `json:"protocol,omitempty"`
 	QueryMode              string                    `json:"queryMode,omitempty"`
@@ -30,6 +31,7 @@ type connectionDescriptor struct {
 	Operations             []string                  `json:"operations"`
 }
 type sourceDescriptor struct {
+	connectionSourceOwner
 	ID           string   `json:"id"`
 	Input        string   `json:"input"`
 	MediaTypes   []string `json:"mediaTypes"`
@@ -38,9 +40,10 @@ type sourceDescriptor struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 }
 type connectionCatalog struct {
-	Sources   []sourceDescriptor     `json:"sources"`
-	Version   int                    `json:"version"`
-	Providers []connectionDescriptor `json:"providers"`
+	DiscoveryTaxonomy json.RawMessage        `json:"discoveryTaxonomy,omitempty"`
+	Sources           []sourceDescriptor     `json:"sources"`
+	Version           int                    `json:"version"`
+	Providers         []connectionDescriptor `json:"providers"`
 }
 
 var catalogIdentifier = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
@@ -52,7 +55,7 @@ func readConnectionCatalog(ctx context.Context, bundle string) (json.RawMessage,
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(bundle, executableName("gateway-connections")), "--catalog-v4")
+	cmd := exec.CommandContext(ctx, filepath.Join(bundle, executableName("gateway-connections")), "--catalog-v5")
 	return runConnectionCatalog(ctx, cmd)
 }
 
@@ -80,7 +83,15 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 	}
 	// encoding/json otherwise folds duplicate and case-insensitive member
 	// names. Discovery has one spelling and one value for every protocol field.
-	members, ok := catalogMembers(raw, "version", "providers", "sources")
+	var header struct {
+		Version int `json:"version"`
+	}
+	_ = json.Unmarshal(raw, &header)
+	keys := []string{"version", "providers", "sources"}
+	if header.Version == 5 {
+		keys = append(keys, "discoveryTaxonomy")
+	}
+	members, ok := catalogMembers(raw, keys...)
 	if !ok {
 		return nil, errConnectionCatalog
 	}
@@ -110,6 +121,9 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 				if version.Version >= 3 {
 					keys = append(keys, "queryMode", "protocol", "presentation", "setup", "authorizationEndpoints", "source")
 				}
+				if version.Version == 5 {
+					keys = append(keys, "taxonomy", "profile", "operationTaxonomies", "operationDeclarations")
+				}
 				providerMembers, ok := catalogMembers(row, keys...)
 				if !ok {
 					return nil, errConnectionCatalog
@@ -127,7 +141,10 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 		}
 	}
 	var catalog connectionCatalog
-	if decodeDataJSON(raw, &catalog) != nil || (catalog.Version != 2 && catalog.Version != 3 && catalog.Version != 4) || catalog.Sources == nil || len(catalog.Sources) > 32 || catalog.Providers == nil || len(catalog.Providers) > 32 {
+	if decodeDataJSON(raw, &catalog) != nil || (catalog.Version != 2 && catalog.Version != 3 && catalog.Version != 4 && catalog.Version != 5) || catalog.Sources == nil || len(catalog.Sources) > 32 || catalog.Providers == nil || len(catalog.Providers) > 32 {
+		return nil, errConnectionCatalog
+	}
+	if catalog.Version == 5 && !validConnectionCatalogV5(catalog) {
 		return nil, errConnectionCatalog
 	}
 	seen := map[string]bool{}
@@ -138,7 +155,7 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 		if catalog.Version >= 3 && !validConnectionPresentation(provider) {
 			return nil, errConnectionCatalog
 		}
-		if catalog.Version == 4 && (!validResearchCapabilities(provider.Source.Capabilities) || !validCatalogAdapter(provider.Source.Shape, provider.Source.Adapter)) {
+		if catalog.Version >= 4 && (!validResearchCapabilities(provider.Source.Capabilities) || !validCatalogAdapter(provider.Source.Shape, provider.Source.Adapter)) {
 			return nil, errConnectionCatalog
 		}
 		seen[provider.ID] = true
@@ -155,7 +172,7 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 		if seenSources[source.ID] || !catalogIdentifier.MatchString(source.ID) || !catalogIdentifier.MatchString(source.Input) || source.MaxBytes < 1 || source.MaxBytes > 16<<20 || len(source.MediaTypes) == 0 || len(source.MediaTypes) > 8 {
 			return nil, errConnectionCatalog
 		}
-		if catalog.Version == 4 && (!validResearchCapabilities(source.Capabilities) || source.Adapter != "" && !catalogIdentifier.MatchString(source.Adapter)) {
+		if catalog.Version >= 4 && (!validResearchCapabilities(source.Capabilities) || source.Adapter != "" && !catalogIdentifier.MatchString(source.Adapter)) {
 			return nil, errConnectionCatalog
 		}
 		seenSources[source.ID] = true

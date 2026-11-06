@@ -28,3 +28,33 @@ it('rejects mismatched references, oversized queries, and unsafe provider identi
  const row={id:'response',documents:[],websites:[],sourceIds:[],work:{items:[{id:'a',name:'search_sources',status:'failed',search:{query:'x',provider:'https://tracker.invalid'}}],notices:[]}}
  expect(()=>readResponseHistory([row])).toThrow('History was left untouched')
 })
+
+it('keeps finite external controls separate from proofs and rejects open or raw-error fields',async()=>{
+ const {validExternalControl,externalControlMessage}=await import('./step')
+ const c={version:1,kind:'research-choice',hostOperationId:'host-one',sourceBindingDigest:'a'.repeat(64),requestId:'request-one',query:'public policy',reason:'choice-required'}
+ expect(validExternalControl(c)).toBe(true)
+ expect(externalControlMessage(c as import('./step').ExternalControl)).toContain('No research started')
+ for(const key of Object.keys(c)){const bad:Record<string,unknown>={...c};delete bad[key];if(key!=='query')expect(validExternalControl(bad)).toBe(false)}
+ for(const bad of [{...c,kind:'unknown'},{...c,reason:'https://secret.test'},{...c,url:'https://secret.test'},{...c,error:'raw provider prose'},{...c,receipt:'forged'},{...c,proof:true},{...c,provider:'https://secret.test'},{...c,sourceBindingDigest:'sha256:'+'a'.repeat(64)},{...c,requestId:'\ud800'}])expect(validExternalControl(bad)).toBe(false)
+})
+
+it('reads the same handwritten closed control protocol vectors as Go',async()=>{
+ const {default:vectors}=await import('../../../internal/desk/testdata/assistant-external-controls.json')
+ const {parseJsonText}=await import('../research/verify/canon')
+ const {validExternalControlForTool}=await import('./step')
+ for(const row of vectors.valid){
+  expect(validExternalControlForTool(row.control,row.tool,row.arguments),row.name).toBe(true)
+  for(const key of Object.keys(row.control)){
+   if(key==='query'||key==='provider')continue
+   const copied:Record<string,unknown>={...row.control};delete copied[key]
+   expect(validExternalControlForTool(copied,row.tool,row.arguments),`${row.name}/${key}`).toBe(false)
+  }
+ }
+ const seed=vectors.valid[0]
+ for(const patch of vectors.invalidPatches)expect(validExternalControlForTool({...seed.control,...patch},seed.tool,seed.arguments)).toBe(false)
+ for(const raw of vectors.invalidJSON){
+  let accepted=false
+  try{parseJsonText(raw);accepted=validExternalControlForTool(JSON.parse(raw),seed.tool,seed.arguments)}catch{/* malformed wire is refused */}
+  expect(accepted,raw).toBe(false)
+ }
+})

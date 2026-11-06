@@ -36,38 +36,43 @@ func (e *assistantRunExecution) executeAssistantSearch(ctx context.Context, quer
 	}
 	if choice != "research" {
 		if choice == "ask" {
-			return assistantHostObservation{Result: assistantSearchReply("Pause broader web research. Desk needs the person's recorded choice for this request. No search was performed. Briefly explain that a choice is needed, then stop.", map[string]any{"researchSuggestion": true}, false)}, nil
+			return assistantExternalControlObservation(ctx, assistantSearchTool, assistantSearchReply("Pause broader web research. Desk needs the person's recorded choice for this request. No search was performed. Briefly explain that a choice is needed, then stop.", map[string]any{"researchSuggestion": true}, false), "research-choice", "choice-required", query, "")
 		}
-		return assistantHostObservation{Result: assistantSearchReply("For this request use only the conversation and supplied sources. No search was performed.", nil, true)}, nil
+		return assistantExternalControlObservation(ctx, assistantSearchTool, assistantSearchReply("For this request use only the conversation and supplied sources. No search was performed.", nil, true), "provided-only", "provided-only", query, "")
 	}
 	step := assistantSearchStep{Query: query}
 	configuration, err := s.assistantSearchConfiguration(ctx, e.source)
 	if err != nil {
-		return assistantHostObservation{Result: assistantSearchError(err, step)}, nil
+		return assistantExternalControlObservation(ctx, assistantSearchTool, assistantSearchError(err, step), "setup-required", "configuration-required", query, step.Provider)
 	}
 	step.Provider = configuration.Provider
 	program, err := s.researchVerifier()
 	if err != nil {
-		return assistantHostObservation{Result: assistantSearchError(assistantSearchFailure("setup-required", step.Provider), step)}, nil
+		return assistantExternalControlObservation(ctx, assistantSearchTool, assistantSearchError(assistantSearchFailure("setup-required", step.Provider), step), "setup-required", "verifier-required", query, step.Provider)
 	}
-	host, err := e.assistantSearchHost(ctx, query)
+	host, err := e.assistantExternalPhysicalHost(ctx, assistantSearchTool, func() (string, error) { return e.assistantSearchHost(ctx, query) })
 	if err != nil {
 		return empty, err
 	}
 	request := assistantSearchRequest{Connection: configuration.Connection, Revision: configuration.Revision, Query: query, MaxResults: 5}
 	held, err := e.reserveAssistantSearch(ctx, host, request, configuration)
 	if err != nil {
-		return assistantHostObservation{Result: assistantSearchError(err, step)}, nil
+		return assistantExternalObservationFailure(ctx, assistantSearchTool, assistantSearchError(err, step), err)
 	}
 	fail := func(err error) (assistantHostObservation, error) {
-		return assistantHostObservation{Result: assistantSearchError(err, step)}, nil
+		return assistantExternalObservationFailure(ctx, assistantSearchTool, assistantSearchError(err, step), err)
 	}
 	unknown := func(cause error) (assistantHostObservation, error) {
 		_ = e.changeAssistantSearch(ctx, host, true, func(v *assistantSearchCustody) error { v.DispatchClosed = true; return nil })
 		e.cancel()
 		return fail(cause)
 	}
-	admission := func() error { return e.recheckAssistantSearch(ctx, configuration) }
+	admission := func() error {
+		if err := assistantExternalCurrent(ctx); err != nil {
+			return err
+		}
+		return e.recheckAssistantSearch(ctx, configuration)
+	}
 	if err = admission(); err != nil {
 		return fail(err)
 	}
@@ -222,7 +227,12 @@ func (e *assistantRunExecution) executeAssistantSearch(ctx context.Context, quer
 	step.Provider, step.Reference = found.Provider, &ref
 	output := &assistantSearchOutput{Reference: ref, Stored: receipt, AcquisitionID: host, Step: step}
 	tool, err := assistantSearchResultReply(found, step)
-	return assistantHostObservation{Result: tool, Output: &assistantDomainOutput{Kind: "search", Search: output}}, err
+	held, err = e.currentAssistantSearch(ctx, host)
+	if err != nil {
+		return fail(err)
+	}
+	proof := &assistantExternalReadProof{Kind: "search", AcquisitionID: host, Packet: receipt, ConfigurationDigest: held.ConfigurationDigest, CustodyDigest: digestOf(assistantChatJSON(held))}
+	return assistantHostObservation{ExternalProof: proof, Result: tool, Output: &assistantDomainOutput{Kind: "search", Search: output}}, err
 }
 func assistantSearchResultReply(result assistantSearchResult, step assistantSearchStep) (runcontext.ToolResult, error) {
 	// Alias below keeps this producer's model-facing result bounded by the shared

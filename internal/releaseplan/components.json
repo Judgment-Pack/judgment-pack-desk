@@ -4,20 +4,20 @@
   "components": {
     "runtime": {
       "repository": "Judgment-Pack/judgment-pack-runtime",
-      "version": "v0.37.0",
-      "revision": "bde356c084c1e7786e0a6c327addcd16ec856ebc",
+      "version": "v0.39.0",
+      "revision": "12793d2dd24d18549567ac422711a2b3c1489f04",
       "channel": "stable"
     },
     "runner": {
       "repository": "Judgment-Pack/judgment-pack-runner",
-      "version": "v0.24.0",
-      "revision": "393b5df0f60204fe76b9dcb4bf1ba85d0e5865ff",
+      "version": "v0.27.0",
+      "revision": "1164d78cb401f169e63623700853db5c6e635848",
       "channel": "stable"
     },
     "gateway": {
       "repository": "Judgment-Pack/judgment-pack-gateway",
-      "version": "v0.21.0",
-      "revision": "5673ea8b9db6f3bea59bb4b2c2b78f6d036e3423",
+      "version": "v0.22.0",
+      "revision": "167ff6d6284d24f9ad0922de2ff8820211e5b359",
       "channel": "stable"
     }
   },
@@ -25,10 +25,10 @@
     "harness": {
       "package": "@judgment-pack/harness",
       "repository": "Judgment-Pack/judgment-pack-agent",
-      "version": "v0.9.1",
-      "revision": "866b7177ebddb6b9628bc3925a4e0bc43a5fc197",
-      "asset": "judgment-pack-harness-0.9.1.tgz",
-      "sha256": "71b8b5aa286af9e8756f9e3772710ff2a8ae113906a4d53e288abacc18f76fbf",
+      "version": "v0.13.2",
+      "revision": "44f4ddd6455bfe025a9d058f07690b6bb0c4f58a",
+      "asset": "judgment-pack-harness-0.13.2.tgz",
+      "sha256": "fc406e3949ff2e825d08214bd7066edbe02a39a2439705f3f4e5e510047c64b3",
       "channel": "stable"
     }
   }

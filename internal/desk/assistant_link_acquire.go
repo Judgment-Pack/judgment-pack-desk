@@ -34,7 +34,7 @@ func (e *assistantRunExecution) acquireAssistantMaterial(ctx context.Context, ar
 	if err != nil {
 		return empty, err
 	}
-	host, err := e.assistantMaterialHost(ctx, args, toolName)
+	host, err := e.assistantExternalPhysicalHost(ctx, toolName, func() (string, error) { return e.assistantMaterialHost(ctx, args, toolName) })
 	if err != nil {
 		return empty, err
 	}
@@ -51,7 +51,12 @@ func (e *assistantRunExecution) acquireAssistantMaterial(ctx context.Context, ar
 		e.cancel()
 		return fail(cause)
 	}
-	admission := func() error { return e.recheckAssistantLink(ctx, configuration) }
+	admission := func() error {
+		if err := assistantExternalCurrent(ctx); err != nil {
+			return err
+		}
+		return e.recheckAssistantLink(ctx, configuration)
+	}
 	if err = admission(); err != nil {
 		return fail(err)
 	}
@@ -227,7 +232,8 @@ func (e *assistantRunExecution) acquireAssistantMaterial(ctx context.Context, ar
 		if err != nil {
 			return fail(err)
 		}
-		return assistantHostObservation{Result: assistantWebsiteReply(found.Discovery), Output: &assistantDomainOutput{Kind: "website", Website: &assistantWebsiteOutput{Reference: found.Reference, Stored: receipt, AcquisitionID: host}}}, nil
+		proof := &assistantExternalReadProof{Kind: "website", AcquisitionID: host, Packet: receipt, ConfigurationDigest: held.ConfigurationDigest, CustodyDigest: digestOf(assistantChatJSON(held))}
+		return assistantHostObservation{ExternalProof: proof, Result: assistantWebsiteReply(found.Discovery), Output: &assistantDomainOutput{Kind: "website", Website: &assistantWebsiteOutput{Reference: found.Reference, Stored: receipt, AcquisitionID: host}}}, nil
 	}
 	doc, file, err := e.readAssistantAcquiredLink(ctx, held, configuration)
 	if err != nil {
@@ -242,5 +248,6 @@ func (e *assistantRunExecution) acquireAssistantMaterial(ctx context.Context, ar
 		file.Document.NeedsReview = true
 	}
 	output := &assistantLinkOutput{Attachment: file, Stored: receipt, AcquisitionID: host}
-	return assistantHostObservation{Result: tool, Output: &assistantDomainOutput{Kind: "link-document", Link: output}}, nil
+	proof := &assistantExternalReadProof{Kind: "link", AcquisitionID: host, Packet: receipt, Document: &doc.reference, ConfigurationDigest: held.ConfigurationDigest, CustodyDigest: digestOf(assistantChatJSON(held))}
+	return assistantHostObservation{ExternalProof: proof, Result: tool, Output: &assistantDomainOutput{Kind: "link-document", Link: output}}, nil
 }

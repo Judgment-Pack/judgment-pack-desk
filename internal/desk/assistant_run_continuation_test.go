@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,7 +23,7 @@ func assistantContinuationQuestion() contract.RunEvent {
 func assistantContinuationFixture(t *testing.T, kind string, mutate func(*assistantRunRecord)) (*Server, string, assistantRunView, *assistantProtocolExecutor) {
 	t.Helper()
 	s, token, start, executor := assistantProtocolFixture(t, func(ctx context.Context, e *assistantRunExecution) error {
-		if len(e.record.Actions) > 0 {
+		if len(e.record.Actions) > 0 || len(e.record.AnswerHistory) > 0 {
 			return assistantProtocolComplete(ctx, e)
 		}
 		if kind == "answer" {
@@ -69,28 +70,23 @@ func TestAssistantRunContinuationAnswerAndBudgetOnce(t *testing.T) {
 			a := assistantContinuationAction(paused, kind)
 			before, _ := json.Marshal(paused.Checkpoint)
 			admitted := assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs/"+paused.ID+"/actions", a), 200)
-			if admitted.State != "admitted" || admitted.Checkpoint.Status != "running" || len(admitted.Continuations) != 1 {
-				t.Fatal("admission/receipt missing", admitted)
-			}
-			complete := assistantProtocolWait(t, s, token, paused.ID, "complete")
+			next := assistantContinuationSuccessor(t, s, token, admitted)
+			complete := assistantProtocolWait(t, s, token, next.ID, "complete")
 			duplicate := assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs/"+paused.ID+"/actions", a), 200)
-			if duplicate.Revision != complete.Revision || executor.calls.Load() != 2 {
-				t.Fatal("duplicate re-launched", executor.calls.Load())
+			if executor.calls.Load() != 2 || !reflect.DeepEqual(duplicate.Continuations, admitted.Continuations) {
+				t.Fatal("duplicate re-launched or changed receipt")
 			}
 			changed := a
 			changed.Revision++
 			if w := policyCall(s, token, "POST", "/api/assistant-runs/"+paused.ID+"/actions", changed); w.Code != 409 {
 				t.Fatal("changed payload accepted", w.Code)
 			}
-			if complete.Checkpoint.ID != paused.Checkpoint.ID || complete.Checkpoint.RequestKey != paused.Checkpoint.RequestKey || complete.Checkpoint.Used != paused.Checkpoint.Used {
-				t.Fatal("original identity/accounting lost")
-			}
 			if kind == "answer" {
-				after, _ := json.Marshal(complete.Checkpoint)
-				if string(before) != string(after) {
-					t.Fatal("answer changed allowance/checkpoint")
+				after, _ := json.Marshal(duplicate.Checkpoint)
+				if string(before) != string(after) || next.ID == paused.ID || next.Checkpoint.ID == paused.Checkpoint.ID || complete.Checkpoint.Used != 0 || len(complete.Checkpoint.Grants) != 0 || len(complete.AnswerHistory) != 1 {
+					t.Fatal("successor changed parent or inherited execution", complete)
 				}
-			} else if len(complete.Checkpoint.Grants) != 1 || complete.Checkpoint.Limit != paused.Checkpoint.Limit+int64(runcontext.RequestIncrement) {
+			} else if complete.Checkpoint.ID != paused.Checkpoint.ID || len(complete.Checkpoint.Grants) != 1 || complete.Checkpoint.Limit != paused.Checkpoint.Limit+int64(runcontext.RequestIncrement) {
 				t.Fatal("canonical grant missing")
 			}
 			assistantRunClientJSON(t, "continuation-"+kind+".json", complete)
@@ -98,7 +94,7 @@ func TestAssistantRunContinuationAnswerAndBudgetOnce(t *testing.T) {
 	}
 }
 func TestAssistantRunContinuationRefusals(t *testing.T) {
-	for _, mode := range []string{"stale", "question", "digest", "option", "multiple", "empty", "oversize", "uncertain", "not-started", "canonical-interrupted", "ceiling", "approval", "phase", "profile", "session", "policy", "storage", "cancel"} {
+	for _, mode := range []string{"stale", "question", "digest", "option", "multiple", "empty", "oversize", "uncertain", "not-started", "canonical-interrupted", "approval", "phase", "profile", "session", "policy", "storage", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			mutate := func(run *assistantRunRecord) {
 				switch mode {
@@ -192,37 +188,38 @@ func TestAssistantRunContinuationPersistedCrashNeverReplays(t *testing.T) {
 	s, token, paused, executor := assistantContinuationFixture(t, "answer", nil)
 	lease, err := s.assistantRuns().Acquire(context.Background())
 	assistantRunMust(t, err)
-	var record assistantRunRecord
-	_, err = lease.store.transaction(context.Background(), func(ledger *assistantRunLedger) (bool, error) {
-		for i := range ledger.Runs {
-			run := &ledger.Runs[i]
-			if run.ID == paused.ID {
-				a := assistantContinuationAction(paused, "answer")
-				cp, err := reopenAssistantRunQuestionCheckpoint(*run)
-				if err != nil {
-					return false, err
-				}
-				run.Checkpoint = cp
-				run.Actions = append(run.Actions, assistantRunActionReceipt{ID: a.ID, Kind: a.Kind, Digest: assistantRunActionDigest(a), Answer: &assistantRunAnswer{QuestionID: a.QuestionID, QuestionDigest: a.QuestionDigest, Selected: a.Answer.Selected, Text: *a.Answer.Text, At: "2026-10-23T00:00:00Z"}})
-				run.State = "admitted"
-				run.Revision++
-				record = *run
-				return true, nil
-			}
-		}
-		return false, errors.New("run missing")
-	})
+	request := httptest.NewRequest("POST", "/api/assistant-runs", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	identity, _, err := s.assistantRunIdentity(request)
+	assistantRunMust(t, err)
+	parent, err := lease.store.lookup(context.Background(), identity, paused.ID, "", false)
+	assistantRunMust(t, err)
+	// Resolve exactly the original source and let the normal published Prepare
+	// author the fresh checkpoint; no completed head is reopened by the host.
+	start := assistantRunStart{Purpose: "chat", OwnerID: parent.Binding.Owner.ID, Revision: parent.Binding.Owner.Revision, RequestID: parent.Binding.RequestID, AdmissionID: "crash-successor"}
+	preparedSource, err := s.readAssistantRunSource(request, start, identity, parent.Binding.Project)
+	assistantRunMust(t, err)
+	preparedCheckpoint, err := executor.Prepare(context.Background(), preparedSource)
+	assistantRunMust(t, err)
+	preparedSource.Binding.ExecutionKey = preparedCheckpoint.RequestKey
+	preparedSource.Binding.Unit = preparedCheckpoint.Unit
+	action := assistantContinuationAction(paused, "answer")
+	answer := assistantRunAnswer{QuestionID: action.QuestionID, QuestionDigest: action.QuestionDigest, Selected: action.Answer.Selected, Text: *action.Answer.Text, At: "2026-10-23T00:00:00Z"}
+	question, err := assistantRunQuestion(parent, action.QuestionID)
+	assistantRunMust(t, err)
+	admission := &assistantRunAnswerAdmission{parent: parent, action: action, origin: assistantRunAnswerOrigin{ParentRunID: parent.ID, AdmissionID: parent.AdmissionID, ActionID: action.ID, Question: *question, Answer: answer}, checkpoint: preparedCheckpoint}
+	record, _, err := lease.Admit(context.Background(), preparedSource.Binding, start.AdmissionID, assistantRunActionDigest(action), func() error { return nil }, admission)
 	assistantRunMust(t, err)
 	assistantRunMust(t, lease.Close())
 	lease, err = s.assistantRuns().Acquire(context.Background())
 	assistantRunMust(t, err)
 	assistantRunMust(t, lease.Close())
-	got := assistantProtocolView(t, policyCall(s, token, "GET", "/api/assistant-runs/"+paused.ID, nil), 200)
-	if got.State != "interrupted" || len(got.Continuations) != 1 || executor.calls.Load() != 1 {
+	got := assistantProtocolView(t, policyCall(s, token, "GET", "/api/assistant-runs/"+record.ID, nil), 200)
+	if got.State != "interrupted" || len(got.AnswerHistory) != 1 || executor.calls.Load() != 1 {
 		t.Fatal("recovery replayed/lost receipt", got.State)
 	}
 	duplicate := assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs/"+paused.ID+"/actions", assistantContinuationAction(paused, "answer")), 200)
-	if duplicate.State != "interrupted" || executor.calls.Load() != 1 {
+	if duplicate.State != "complete" || duplicate.Continuations[0].SuccessorRunID != record.ID || executor.calls.Load() != 1 {
 		t.Fatal("duplicate replayed after crash")
 	}
 	source := []byte(`{"id":"chat-one","checkpoint":{"state":{"turns":[{"id":"message-one","role":"user","kind":"message","text":"Review exact input","at":"2026-10-20T00:00:00Z"}]}}}`)
@@ -253,22 +250,17 @@ func TestAssistantRunContinuationCheckpointCustody(t *testing.T) {
 	cp, err := runcontext.ReadExecution(value)
 	assistantRunMust(t, err)
 	run := assistantRunRecord{Binding: assistantRunBinding{ExecutionKey: cp.RequestKey, Phase: cp.Phase, Unit: cp.Unit}, Checkpoint: cp}
-	reopened, err := reopenAssistantRunQuestionCheckpoint(run)
-	assistantRunMust(t, err)
-	if reopened.Status != "running" || reopened.Digest == nil || *reopened.Digest == *cp.Digest {
-		t.Fatal("explicit running transition/digest missing")
+	if _, err := readAssistantRunCheckpoint(*run.Checkpoint, run.Binding); err != nil {
+		t.Fatal(err)
 	}
-	if cp.Status != "complete" {
-		t.Fatal("original checkpoint mutated")
-	}
-	left, right := *cp, *reopened
-	left.Status = right.Status
-	left.Digest = right.Digest
-	if !reflect.DeepEqual(left, right) {
-		t.Fatal("answer altered optional checkpoint member")
-	}
-	run.Checkpoint = reopened
+	original, _ := json.Marshal(run.Checkpoint)
+	copy := *cp
+	run.Checkpoint = &copy
 	run.Checkpoint.Status = "paused"
+	retained, _ := json.Marshal(cp)
+	if !bytes.Equal(original, retained) {
+		t.Fatal("retained completed checkpoint changed")
+	}
 	// Rehash the fixture's status transition before canonical ExtendExecution.
 	encoded, _ := json.Marshal(run.Checkpoint)
 	v, _ := runcontext.ParseJSON(encoded)
@@ -276,7 +268,7 @@ func TestAssistantRunContinuationCheckpointCustody(t *testing.T) {
 	run.Checkpoint.Digest = &digest
 	extended, err := runcontext.ExtendExecution(*run.Checkpoint, false, time.Date(2026, 10, 23, 0, 1, 0, 0, time.UTC))
 	assistantRunMust(t, err)
-	left, right = *run.Checkpoint, *extended
+	left, right := *run.Checkpoint, *extended
 	left.Status = right.Status
 	left.Digest = right.Digest
 	left.Limit = right.Limit
@@ -390,7 +382,11 @@ func TestAssistantRunContinuationConcurrentDuplicate(t *testing.T) {
 			}
 			h := s.assistantRunService()
 			h.mu.Lock()
-			active := h.active[paused.ID] != nil
+			id := paused.ID
+			if kind == "answer" {
+				id = first.Continuations[0].SuccessorRunID
+			}
+			active := h.active[id] != nil
 			h.mu.Unlock()
 			if !active {
 				t.Fatal("continuation not active")
@@ -490,4 +486,18 @@ func TestAssistantRunContinuationDigestPayloadCompatibility(t *testing.T) {
 			}
 		}
 	}
+}
+
+func assistantContinuationSuccessor(t *testing.T, s *Server, token string, view assistantRunView) assistantRunView {
+	t.Helper()
+	for _, receipt := range view.Continuations {
+		if receipt.Kind == "answer" && receipt.SuccessorRunID != "" {
+			next := assistantProtocolView(t, policyCall(s, token, "GET", "/api/assistant-runs/"+receipt.SuccessorRunID, nil), 200)
+			if len(next.AnswerHistory) == 0 || next.AnswerHistory[len(next.AnswerHistory)-1].ParentRunID != view.ID {
+				t.Fatal("successor lost parent history")
+			}
+			return next
+		}
+	}
+	return view
 }

@@ -61,9 +61,14 @@ func newAssistantWebsiteFixture(t *testing.T, engine, choice, phase, upstream st
 	path := filepath.Join(bundle, executableName("gateway-connections"))
 	raw, err := os.ReadFile(path)
 	assistantRunMust(t, err)
-	catalog := `{"version":2,"providers":[],"sources":[{"id":"web","input":"url","maxBytes":4194304,"mediaTypes":["text/html","text/plain","application/pdf"]},{"id":"web-discovery","input":"url","maxBytes":1048576,"mediaTypes":["application/vnd.jpack.web-discovery+json"]}]}`
+	// Handwritten v5 declarations match the Gateway's closed page/discover owners;
+	// discovery metadata describes the contract and grants no acquisition authority.
+	catalog := `{"version":5,"discoveryTaxonomy":{"operation":"discover","effect":"pure"},"providers":[],"sources":[
+ {"id":"web","input":"url","maxBytes":4194304,"mediaTypes":["text/html","text/plain","application/pdf"],"adapter":"adapter-web","capabilities":["page"],"taxonomy":{"operation":"read","effect":"read-external"},"profile":{"effect":"read-external","operations":["read"]},"capabilityTaxonomies":{"page":{"operation":"read","effect":"read-external"}},"dispatchTaxonomies":{"page":{"operation":"read","effect":"read-external"}}},
+ {"id":"web-discovery","input":"url","maxBytes":1048576,"mediaTypes":["application/vnd.jpack.web-discovery+json"],"adapter":"adapter-web","capabilities":[],"taxonomy":{"operation":"discover","effect":"read-external"},"profile":{"effect":"read-external","operations":["discover"]},"capabilityTaxonomies":{},"dispatchTaxonomies":{"discover":{"operation":"discover","effect":"read-external"}}}
+]}`
 	lines := strings.SplitN(string(raw), "\n", 3)
-	modified := lines[0] + "\n" + lines[1] + "\nif '--catalog-v4' in sys.argv:\n print(" + fmt.Sprintf("%q", catalog) + ");sys.exit(0)\n" + lines[2]
+	modified := lines[0] + "\n" + lines[1] + "\nif '--catalog-v5' in sys.argv:\n print(" + fmt.Sprintf("%q", catalog) + ");sys.exit(0)\n" + lines[2]
 	assistantRunMust(t, os.WriteFile(path, []byte(modified), 0700))
 	manifestPath := filepath.Join(bundle, "gateway-bundle.json")
 	manifestRaw, err := os.ReadFile(manifestPath)

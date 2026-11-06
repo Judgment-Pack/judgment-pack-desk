@@ -144,7 +144,18 @@ func (e *assistantRunExecution) executeAssistantDialectProposal(ctx context.Cont
 	if saved.SHA256 != held.Revision {
 		return empty, errAssistantRunScope
 	}
-	qualification, err := assistantDialectQualification(saved.Document, a, held)
+	if err = requireOrdinaryInputQualification(saved.Document.Recipe.Qualification); err != nil {
+		return empty, err
+	}
+	basis := held
+	if held.Complete != nil {
+		original, e := e.resolveAssistantDialectCompleteRead(ctx, record, held)
+		if e != nil {
+			return empty, e
+		}
+		basis.Pack = []byte(original.Snapshot.PackJSON)
+	}
+	qualification, err := assistantDialectQualification(saved.Document, a, basis)
 	if err != nil {
 		return empty, failure.ToolInput("Use current columns, nonoverlapping fact paths, explicit conversions and known evidence requirements.")
 	}
@@ -152,7 +163,7 @@ func (e *assistantRunExecution) executeAssistantDialectProposal(ctx context.Cont
 	if err != nil {
 		return empty, err
 	}
-	raw, report, checkID, err := e.checkAssistantDialect(ctx, hostID, document, string(held.Pack))
+	raw, report, checkID, err := e.checkAssistantDialect(ctx, hostID, document, string(basis.Pack))
 	if err != nil {
 		return empty, err
 	}
@@ -199,7 +210,34 @@ func (e *assistantRunExecution) executeAssistantDialectProposal(ctx context.Cont
 }
 func (e *assistantRunExecution) checkAssistantDialectPublication(ctx context.Context, host string, a assistantDialectArguments, held assistantDialectRead, meta assistantDialectActionMetadata) (assistantHostObservation, error) {
 	var empty assistantHostObservation
+	if err := e.Authorize(ctx); err != nil {
+		return empty, err
+	}
 	request := dialectPublicationRequest{Action: "check", Revision: a.Revision, Variant: a.Variant, Version: a.Version, Impact: a.Impact}
+	ledger, err := e.service.server.readDialectPublicationLedger()
+	if err != nil {
+		return empty, err
+	}
+	// An exact completed request is an immutable observation, even after the
+	// source changes. The shared owner still resolves and authorizes its answer.
+	if completedDialectPublication(ledger, dialectPublicationRequestID(a.ID, request)) == nil {
+		// Refuse a selected saved source before journaling a new ordinary check.
+		if err := e.recheckAssistantDialect(ctx, held); err != nil {
+			return empty, err
+		}
+		saved, err := e.service.server.preparationRepository().Get(ctx, a.ID)
+		if err != nil {
+			return empty, err
+		}
+		if saved.SHA256 != held.Revision {
+			return empty, errAssistantRunScope
+		}
+		if err = requireOrdinaryInputQualification(saved.Document.Recipe.Qualification); err != nil {
+			return empty, err
+		}
+	} else if err = e.recheckAssistantCritic(ctx); err != nil {
+		return empty, err
+	}
 	op, err := e.boundIntent(ctx, "runtime", "dialect-publication/check", func(string) ([]byte, error) {
 		return json.Marshal(assistantDialectPublicationIntent{host, request, held, meta.CreatedAt})
 	})

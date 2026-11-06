@@ -1,3 +1,4 @@
+import { projectRunReport, readRunReport, type RetainedRunReport } from '@judgment-pack/harness/runReport'
 import { validCriticRecord, type CriticRecord } from '@judgment-pack/harness/criticSwitch'
 import { MAX_STEPS, MAX_TOOLS_PER_STEP, timingTotals, type RunTiming } from './runMeter'
 import { MAX_PROMPT_DIGESTS, validDelegationFigures, type DelegationFigures, type ExecutionCheckpoint, type TokenFigures, type PromptDigest } from '@judgment-pack/harness/execution/state'
@@ -13,6 +14,8 @@ import { MAX_PROMPT_DIGESTS, validDelegationFigures, type DelegationFigures, typ
  * the provider did not return is left out rather than said as zero.
  */
 export interface RunReport {
+  /** Complete published presentation facts, never executable checkpoint authority. */
+  canonical?: RetainedRunReport
   critic?: CriticRecord
   /** The model requests the response made (or, on an agent capability, the agent runs). */
   requests: number
@@ -50,14 +53,16 @@ export function sumTokens(rows: readonly Partial<Record<(typeof TOKEN_MEMBERS)[n
  * connection. Nothing where neither holds a request.
  */
 export function reportFromExecution(execution: ExecutionCheckpoint | undefined, timing?: RunTiming): RunReport | undefined {
+  const canonical = execution && (execution.status === 'complete' || execution.status === 'stopped') ? projectRunReport(execution) : undefined
   const measured = timing !== undefined && timingTotals(timing).requests > 0
-  if ((execution === undefined || (execution.used === 0 && execution.delegation === undefined && execution.critic === undefined)) && !measured) return undefined
+  if ((execution === undefined || (execution.used === 0 && execution.delegation === undefined && execution.critic === undefined)) && !measured && canonical === undefined) return undefined
   const rows = execution?.completions ?? []
   // The parent's own tokens: the checkpoint's rows are the parent's requests (a child's are in its figures).
   const tokens = sumTokens(rows.filter((row) => row.phase !== 'review').map((row) => row.result))
   const refused = rows.filter((row) => row.failure !== undefined)
   const reasons = [...new Set(refused.map((row) => row.failure!.code))]
   return {
+    ...(canonical === undefined ? {} : { canonical }),
     requests: execution?.used ?? timingTotals(timing!).requests,
     unit: execution?.unit ?? 'model-requests',
     ...(refused.length === 0 ? {} : { retries: { count: refused.length, reasons } }),
@@ -90,14 +95,17 @@ export function validTiming(value: unknown): value is RunTiming {
 
 /** A saved report, read closed: only the members above, each as the checkpoint or the meter states it. */
 export function validRunReport(value: unknown): value is RunReport {
-  if (!object(value) || !Object.keys(value).every((key) => ['requests', 'unit', 'retries', 'tokens', 'delegation', 'timing', 'critic', 'prompts'].includes(key))) return false
+  if (!object(value) || !Object.keys(value).every((key) => ['requests', 'unit', 'retries', 'tokens', 'delegation', 'timing', 'critic', 'prompts', 'canonical'].includes(key))) return false
+  if (value.canonical !== undefined) {
+    try { readRunReport(value.canonical) } catch { return false }
+  }
   if (!count(value.requests, 1_000_000) || (value.unit !== 'model-requests' && value.unit !== 'provider-managed')) return false
   if (value.retries !== undefined && !(object(value.retries) && Object.keys(value.retries).every((key) => key === 'count' || key === 'reasons') && count(value.retries.count, 1000) && Array.isArray(value.retries.reasons) && value.retries.reasons.length <= 32 && value.retries.reasons.every((reason) => typeof reason === 'string' && reason.length <= 64))) return false
   if (value.critic !== undefined && !validCriticRecord(value.critic)) return false
   if (value.prompts !== undefined && !validPrompts(value.prompts)) return false
   if (value.tokens !== undefined && !validTokens(value.tokens)) return false
   if (value.timing !== undefined && !validTiming(value.timing)) return false
-  return value.delegation === undefined || validDelegationFigures(value.delegation)
+  return value.delegation === undefined || validDelegationFigures(value.delegation, value.unit)
 }
 
 /** Match the canonical checkpoint's bounded, ordered digest rows, without relating ordinals to counters. */
@@ -106,4 +114,14 @@ function validPrompts(value: unknown): value is PromptDigest[] {
     object(row) && Object.keys(row).every((key) => key === 'request' || key === 'sha256') &&
     count(row.request) && row.request > 0 && (at === 0 || row.request > value[at - 1].request) &&
     typeof row.sha256 === 'string' && row.sha256.length === 64 && /^[a-f0-9]{64}$/.test(row.sha256))
+}
+
+/** Historical summaries keep their reported counts. A canonical usage ledger
+ * reports native invocations separately from the harness's allowance counter. */
+export function reportedAgentRuns(report: RunReport): number | undefined {
+  const canonical = report.canonical
+  if (canonical === undefined) return report.requests
+  if (canonical.version === 2 && canonical.usageTotals?.providerInvocations.complete) return canonical.usageTotals.providerInvocations.known
+  const rows = canonical.usage?.rows
+  return rows && rows.length > 0 ? rows.reduce((sum, row) => sum + row.invocations, 0) : undefined
 }

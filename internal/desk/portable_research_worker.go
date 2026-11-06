@@ -94,11 +94,7 @@ func (s *Server) portableResearchPrompt(run inputResearchRun) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	policy, _, err := s.aiContext(run.Portable.Frozen.Choice.Model)
-	if err != nil {
-		return "", err
-	}
-	return fitResearchContextWithInstructions(string(raw), policy, portableResearchInstructions)
+	return string(raw), nil
 }
 
 func (s *Server) acquirePortableResearchModel(ctx context.Context, store researchRunStore, run inputResearchRun, attempt inputResearchAttempt, prompt string) (json.RawMessage, error) {
@@ -118,7 +114,7 @@ func (s *Server) acquirePortableResearchModel(ctx context.Context, store researc
 	if run.Gateway.Authority != pin.Authority || run.Gateway.Public != pin.Signer.Public {
 		return nil, errors.New("The reviewed Gateway changed.")
 	}
-	task := backgroundModelRequest{Choice: run.Portable.Frozen.Choice, Owner: run.ID + "/" + attempt.ID, Prompt: prompt, Instructions: portableResearchInstructions, Response: codexbridge.Tool{Name: "desk_portable_research_action", Description: "Submit one action for the reviewed portable research contract.", InputSchema: json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","enum":["answer","search","page","read_context"]},"arguments":{"type":"object"},"fields":{"type":"object"}},"required":["kind"],"additionalProperties":false}`)}, Validate: func(raw json.RawMessage) error { _, err := decodePortableResearchAction(raw); return err }}
+	task := backgroundModelRequest{Choice: run.Portable.Frozen.Choice, Owner: run.ID + "/" + attempt.ID, Prompt: prompt, StructuredResearch: true, Instructions: portableResearchInstructions, Response: codexbridge.Tool{Name: "desk_portable_research_action", Description: "Submit one action for the reviewed portable research contract.", InputSchema: json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","enum":["answer","search","page","read_context"]},"arguments":{"type":"object"},"fields":{"type":"object"}},"required":["kind"],"additionalProperties":false}`)}, Validate: func(raw json.RawMessage) error { _, err := decodePortableResearchAction(raw); return err }}
 	// Carry the exact shared failure out of the private adapter without exposing
 	// provider prose in Gateway errors. The channel synchronizes callback completion.
 	failure := make(chan error, 1)

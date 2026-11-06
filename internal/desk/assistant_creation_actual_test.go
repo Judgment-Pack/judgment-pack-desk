@@ -73,7 +73,7 @@ func assistantCreationActualStart(t *testing.T, s *Server, token string, action 
 	retained := policyWorkspaceRead(t, s, token, "/api/conversations")
 	_, rows, err = assistantChatRows(retained.Content)
 	assistantRunMust(t, err)
-	return assistantRunStart{Purpose: "chat", OwnerID: "chat-one", RequestID: request, AdmissionID: request, Revision: digestOf(rows[0])}
+	return assistantContextStartFixture(t, s, token, assistantRunStart{Purpose: "chat", OwnerID: "chat-one", RequestID: request, AdmissionID: request, Revision: digestOf(rows[0])})
 }
 
 func assistantCreationActualRun(t *testing.T, s *Server, token string, action assistantCreationAction, n int) assistantRunView {

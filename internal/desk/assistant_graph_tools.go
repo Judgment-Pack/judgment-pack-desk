@@ -43,51 +43,60 @@ func (s *Server) assistantDecisionDeclarations() (assistantDecisions, []byte, er
 		return assistantDecisions{}, nil, failure.ToolInput(refusal)
 	}
 	file := s.readProjectFile(runtimeConfigName)
-	var config assistantDecisions
-	if file.err != nil || !file.present || json.Unmarshal(file.data, &config) != nil {
-		return config, nil, failure.ToolInput("The current project declarations could not be read.")
+	if file.err != nil || !file.present {
+		return assistantDecisions{}, nil, failure.ToolInput("The current project declarations could not be read.")
 	}
-	members, err := configMembers(file.data)
+	config, err := parseAssistantDecisionDeclarations(file.data)
+	return config, file.data, err
+}
+
+// Passive parser shared by original source reads and owned current reconstruction.
+func parseAssistantDecisionDeclarations(raw []byte) (assistantDecisions, error) {
+	var config assistantDecisions
+	if json.Unmarshal(raw, &config) != nil {
+		return config, failure.ToolInput("The current project declarations could not be read.")
+	}
+	members, err := configMembers(raw)
 	if err != nil {
-		return config, nil, failure.ToolInput("The project declarations must have unique members.")
+		return config, failure.ToolInput("The project declarations must have unique members.")
 	}
 	for _, member := range members {
 		for _, name := range []string{"packs", "graphs"} {
 			if strings.EqualFold(member.name, name) && member.name != name {
-				return config, nil, errAssistantRunInvalid
+				return config, errAssistantRunInvalid
 			}
 		}
 		if member.name != "packs" && member.name != "graphs" {
 			continue
 		}
-		declarations, err := configMembers(file.data[member.start:member.end])
+		declarations, err := configMembers(raw[member.start:member.end])
 		if err != nil {
-			return config, nil, errAssistantRunInvalid
+			return config, errAssistantRunInvalid
 		}
 		entries := config.Packs
 		if member.name == "graphs" {
 			entries = config.Graphs
 		}
 		for _, decl := range declarations {
-			raw := file.data[member.start+decl.start : member.start+decl.end]
-			fields, err := configMembers(raw)
+			entryRaw := raw[member.start+decl.start : member.start+decl.end]
+			fields, err := configMembers(entryRaw)
 			if err != nil {
-				return config, nil, errAssistantRunInvalid
+				return config, errAssistantRunInvalid
 			}
 			for _, field := range fields {
 				for _, name := range []string{"path", "description"} {
 					if strings.EqualFold(field.name, name) && field.name != name {
-						return config, nil, errAssistantRunInvalid
+						return config, errAssistantRunInvalid
 					}
 				}
 			}
 			entry := entries[decl.name]
-			entry.declaration = digestOf(raw)
+			entry.declaration = digestOf(entryRaw)
 			entries[decl.name] = entry
 		}
 	}
 
-	return config, file.data, nil
+	return config, nil
 }
 func assistantDecisionID(id string) bool {
 	return len(id) > 0 && len(id) <= 128 && graphDeclarationID.MatchString(id)
@@ -146,12 +155,26 @@ func (e *assistantRunExecution) assistantGraphTools(runtime *assistantRuntime) (
 		"graph_validate":                   "Validate the exact proposed graph document using Runtime. Does not save it.",
 		"graph_explain":                    "Explain the exact proposed graph document using Runtime. Does not save or execute it.",
 		"propose_graph":                    "Retain a graph draft for human review. Does not save a project file, change configuration or run a decision. Read the current graph before proposing a revision.",
-		"graph_rehearse":                   "Rehearse an existing declared graph with explicitly supplied inputs keyed by node id. Ask for missing facts; never invent them. Does not write rows, an audit decision or execute actions.",
+		"graph_rehearse":                   "Rehearsal, non-binding: rehearse an existing declared graph with explicitly supplied inputs keyed by node id. Ask for missing facts; never invent them. Does not write rows, an audit decision or execute actions.",
 	}
 	tools := []runcontext.HostTool{}
 	for _, name := range []string{"list_decisions", "read_decision", "get_graph_authoring_instructions", "graph_validate", "graph_explain", "propose_graph", "graph_rehearse"} {
 		name := name
 		t := runcontext.HostTool{Name: name, Description: descriptions[name], InputSchema: schemas[name], Effect: "read"}
+		switch name {
+		case "list_decisions":
+			t.Taxonomy = &runcontext.ToolTaxonomy{Operation: "discover", Effect: "read"}
+		case "read_decision", "get_graph_authoring_instructions":
+			t.Taxonomy = &runcontext.ToolTaxonomy{Operation: "read", Effect: "read"}
+		case "graph_validate":
+			t.Taxonomy = &runcontext.ToolTaxonomy{Operation: "check", Effect: "read", CheckKind: "validate"}
+		case "graph_rehearse":
+			t.Taxonomy = &runcontext.ToolTaxonomy{Operation: "check", Effect: "read", CheckKind: "rehearse"}
+		case "graph_explain":
+			t.Taxonomy = &runcontext.ToolTaxonomy{Operation: "check", Effect: "read", CheckKind: "analyze"}
+		case "propose_graph":
+			t.Taxonomy = &runcontext.ToolTaxonomy{Operation: "propose", Effect: "propose"}
+		}
 		if name == "propose_graph" {
 			t.Effect = "proposal"
 		} else {

@@ -47,6 +47,6 @@
   },
   "approvalReference": {
     "callId": "call-one",
-    "argsDigest": "4d92d1b02a04f9543414883232e747922c8cecfba1936b29f88b2eaba3402bfa"
+    "argsDigest": "sha256:4d92d1b02a04f9543414883232e747922c8cecfba1936b29f88b2eaba3402bfa"
   }
 }

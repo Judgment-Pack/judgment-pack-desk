@@ -77,27 +77,36 @@ type assistantRunEvent struct {
 	Event contract.RunEvent `json:"event"`
 }
 type assistantRunRecord struct {
-	Creation        *assistantCreationReceipt   `json:"creation,omitempty"`
-	DisplayPreview  []assistantRunPreview       `json:"displayPreview,omitempty"`
-	PackChecks      []assistantPackRecheck      `json:"packChecks,omitempty"`
-	SavedPack       *assistantSavedPackBasis    `json:"savedPack,omitempty"`
-	Websites        []assistantWebsiteCustody   `json:"websites,omitempty"`
-	Links           []assistantLinkCustody      `json:"links,omitempty"`
-	Searches        []assistantSearchCustody    `json:"searches,omitempty"`
-	DomainOutputs   []assistantDomainOutput     `json:"domainOutputs,omitempty"`
-	ChatProjection  *assistantChatProjection    `json:"chatProjection,omitempty"`
-	ProjectionIssue string                      `json:"projectionIssue,omitempty"`
-	ID              string                      `json:"id"`
-	Revision        uint64                      `json:"revision"`
-	Binding         assistantRunBinding         `json:"binding"`
-	AdmissionID     string                      `json:"admissionId"`
-	BodyDigest      string                      `json:"bodyDigest"`
-	State           string                      `json:"state"`
-	Historical      bool                        `json:"historical,omitempty"`
-	Checkpoint      *contract.Checkpoint        `json:"checkpoint,omitempty"`
-	Operations      []assistantRunOperation     `json:"operations"`
-	Events          []assistantRunEvent         `json:"events"`
-	Actions         []assistantRunActionReceipt `json:"actions,omitempty"`
+	AnswerHistory         []assistantRunAnswerOrigin            `json:"answerHistory,omitempty"`
+	CanonicalRequired     bool                                  `json:"canonicalRequired,omitempty"`
+	Observation           *assistantObservationCustody          `json:"observation,omitempty"`
+	Canonical             *assistantCanonicalJournal            `json:"canonical,omitempty"`
+	CriticCustody         *assistantCriticCustody               `json:"criticCustody,omitempty"`
+	Creation              *assistantCreationReceipt             `json:"creation,omitempty"`
+	DisplayPreview        []assistantRunPreview                 `json:"displayPreview,omitempty"`
+	PackChecks            []assistantPackRecheck                `json:"packChecks,omitempty"`
+	SavedPack             *assistantSavedPackBasis              `json:"savedPack,omitempty"`
+	Websites              []assistantWebsiteCustody             `json:"websites,omitempty"`
+	Links                 []assistantLinkCustody                `json:"links,omitempty"`
+	Searches              []assistantSearchCustody              `json:"searches,omitempty"`
+	DialectReads          []assistantDialectCompleteReadCustody `json:"dialectReads,omitempty"`
+	DialectDrafts         []assistantDialectDraftCustody        `json:"dialectDrafts,omitempty"`
+	DialectArtifactOwner  string                                `json:"dialectArtifactOwner,omitempty"`
+	DialectArtifactImport *assistantDialectArtifactImport       `json:"dialectArtifactImport,omitempty"`
+	DomainOutputs         []assistantDomainOutput               `json:"domainOutputs,omitempty"`
+	ChatProjection        *assistantChatProjection              `json:"chatProjection,omitempty"`
+	ProjectionIssue       string                                `json:"projectionIssue,omitempty"`
+	ID                    string                                `json:"id"`
+	Revision              uint64                                `json:"revision"`
+	Binding               assistantRunBinding                   `json:"binding"`
+	AdmissionID           string                                `json:"admissionId"`
+	BodyDigest            string                                `json:"bodyDigest"`
+	State                 string                                `json:"state"`
+	Historical            bool                                  `json:"historical,omitempty"`
+	Checkpoint            *contract.Checkpoint                  `json:"checkpoint,omitempty"`
+	Operations            []assistantRunOperation               `json:"operations"`
+	Events                []assistantRunEvent                   `json:"events"`
+	Actions               []assistantRunActionReceipt           `json:"actions,omitempty"`
 }
 type assistantRunLedger struct {
 	AuthoringCaptures []assistantAuthoringCapture `json:"authoringCaptures,omitempty"`
@@ -110,23 +119,59 @@ type assistantRunStore struct {
 	server        *Server
 	project, name string
 	problem       error
+	// Recovery's independently owned namespace/snapshot views must finish
+	// read custody successfully before any admission or terminal recognition.
+	strictReadCustody bool
 }
 
 func (s *Server) assistantRuns() assistantRunStore {
-	held := assistantRunStore{server: s}
-	lock, err := s.privateDataLockContext(context.Background(), true)
+	return s.assistantRunsNamespace(context.Background(), false)
+}
+
+func (s *Server) assistantRunsContext(ctx context.Context) assistantRunStore {
+	return s.assistantRunsNamespace(ctx, true)
+}
+
+func (s *Server) assistantRunsNamespace(ctx context.Context, strict bool) (held assistantRunStore) {
+	held = assistantRunStore{server: s, strictReadCustody: strict}
+	lock, err := s.privateDataLockContext(ctx, true)
 	if err != nil {
 		held.problem = err
 		return held
 	}
-	defer lock.Close()
+	defer func() {
+		closed := lock.Close()
+		if strict {
+			held.problem = errors.Join(held.problem, assistantRunReadCloseError(ctx, "assistant-run-namespace-private", closed))
+		}
+	}()
 	store, err := s.openChatData()
 	if err != nil {
 		held.problem = err
 		return held
 	}
-	defer store.root.Close()
-	held.project, held.problem = assistantRunNamespace(store.root, s.conversationIdentity())
+	defer func() {
+		closed := store.root.Close()
+		if strict {
+			held.problem = errors.Join(held.problem, assistantRunReadCloseError(ctx, "assistant-run-namespace-data", closed))
+		}
+	}()
+	held = s.assistantRunsLocked(store.root)
+	held.strictReadCustody = strict
+	return held
+}
+
+// The actual root/lock Close has already executed. Reuse the existing owner
+// fault seam only after that boundary, and keep cancellation alongside every
+// real or injected Close error. This never runs under Q or accepts a callback.
+func assistantRunReadCloseError(ctx context.Context, label string, closed error) error {
+	return errors.Join(closed, dialectArtifactOwnerStep(context.Background(), label+".close"), ctx.Err())
+}
+
+// Caller holds private-data custody; namespace selection never acquires it again.
+func (s *Server) assistantRunsLocked(root *os.Root) assistantRunStore {
+	held := assistantRunStore{server: s}
+	held.project, held.problem = assistantRunNamespace(root, s.conversationIdentity())
 	held.name = "assistant-runs-" + held.project + ".json"
 	return held
 }
@@ -151,46 +196,81 @@ func (s assistantRunStore) transaction(ctx context.Context, change func(*assista
 		return empty, err
 	}
 	defer store.root.Close()
-	if err = checkPrivateDataPath(store); err != nil {
+	return s.transactionLocked(ctx, store, nil, nil, change)
+}
+
+// Only the concrete original reservation owns these exact forward-acquired
+// handles. The ordinary and reservation paths share this persistence body.
+func (s assistantRunStore) transactionDialectDraftLocked(ctx context.Context, g *assistantDialectDraftReservationGuard, change func(*assistantRunLedger) (bool, error)) (assistantRunLedger, error) {
+	if g == nil || g.self != g || g.owner.lease.store != s || g.data == nil || g.private == nil {
+		return assistantRunLedger{}, errAssistantRunScope
+	}
+	if err := g.Check(ctx); err != nil {
+		return assistantRunLedger{}, err
+	}
+	return s.transactionLocked(ctx, g.data, g, nil, change)
+}
+
+func (s assistantRunStore) transactionLocked(ctx context.Context, store *chatDataStore, g *assistantDialectDraftReservationGuard, readGuard *assistantDialectCompleteReadGuard, change func(*assistantRunLedger) (bool, error)) (assistantRunLedger, error) {
+	var empty assistantRunLedger
+	ledger, captured, root, err := s.readValidatedLocked(ctx, store)
+	if err != nil {
 		return empty, err
 	}
-	if err = s.checkScope(store.root); err != nil {
+	// Decode an independent baseline before exposing the callback graph. No
+	// retained alias or marshaler may redefine the original transition proof.
+	before, err := captured.decodeValidated(ctx)
+	if err != nil {
 		return empty, err
 	}
-	raw, err := readPrivateData(store.root, s.name, assistantRunRecordLimit)
-	ledger := assistantRunLedger{Version: 1, Project: s.project, Runs: []assistantRunRecord{}}
-	if err == nil {
-		if ledger, err = decodeAssistantRunStorage(s.name, raw); err != nil {
+	var admission *assistantDialectArtifactOwnerAdmission
+	if g != nil {
+		if err = g.bindBaseline(ctx, before); err != nil {
 			return empty, err
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return empty, err
+		proof := g.admission
+		admission = &proof
 	}
-	if err = validateAssistantRunLedger(ledger, s.project); err != nil {
-		return empty, err
-	}
-	if err = ctx.Err(); err != nil {
-		return empty, err
+	if readGuard != nil {
+		if g != nil {
+			return empty, errAssistantRunScope
+		}
+		if err = readGuard.bindBaseline(ctx, before); err != nil {
+			return empty, err
+		}
+		proof := readGuard.admission
+		admission = &proof
 	}
 	changed, err := change(&ledger)
 	if err != nil {
 		return empty, err
 	}
 	if !changed {
-		return ledger, nil
+		// False means no ledger persistence. Preserve closure side effects, but
+		// return the captured durable baseline, not transient callback edits.
+		return captured.decodeValidated(ctx)
 	}
-	if err = validateAssistantRunLedger(ledger, s.project); err != nil {
+	if err = validateAssistantDialectArtifactOwnerTransition(before, ledger, admission); err != nil {
 		return empty, err
 	}
-	raw, err = json.Marshal(ledger)
+	raw, saved, err := prepareAssistantRunStorage(s.name, ledger)
 	if err != nil {
 		return empty, err
 	}
-	if len(raw) > assistantRunRecordLimit {
-		return empty, withCode(CodeTooLarge, errors.New("Assistant run storage limit reached; retained work was not discarded."))
-	}
-	if err = assistantRunJSONMembers(raw); err != nil {
+	// The marshaler may have changed the callback graph or emitted another
+	// graph. Check both against the original immutable admission and baseline.
+	if err = validateAssistantDialectArtifactOwnerTransition(before, saved, admission); err != nil {
 		return empty, err
+	}
+	if g != nil {
+		if err = g.Check(ctx); err != nil {
+			return empty, err
+		}
+	}
+	if readGuard != nil {
+		if err = readGuard.Check(ctx); err != nil {
+			return empty, err
+		}
 	}
 	if err = ctx.Err(); err != nil {
 		return empty, err
@@ -201,13 +281,100 @@ func (s assistantRunStore) transaction(ctx context.Context, change func(*assista
 	if err = writePrivateData(store.root, s.name, raw); err != nil {
 		return empty, err
 	}
-	// Successful calls return independent, validated snapshots, never aliases to
-	// caller-owned checkpoint maps or byte slices. No snapshot on uncertain write.
-	var saved assistantRunLedger
-	if err = decodeDataJSON(raw, &saved); err != nil {
+	// Publish only after the existing verified write succeeds. On uncertain
+	// writes the valid baseline fact remains; the next read must match bytes.
+	s.server.rememberAssistantRunStorage(root, store, s.project, s.name, raw)
+	return saved, nil
+}
+
+// readLocked is bounded read-only journal lookup under the caller's existing
+// private-data lock. It does not recover, lease, write, dispatch or take a service
+// mutex, and therefore is safe in the conversation writes -> private lock span.
+func (s assistantRunStore) readLocked(ctx context.Context, store *chatDataStore) (assistantRunLedger, error) {
+	ledger, _, _, err := s.readValidatedLocked(ctx, store)
+	return ledger, err
+}
+
+// A read captures independently owned bytes under private-data custody, then
+// releases both root and lock before performing whole-ledger validation. Mutation
+// callers continue to use readLocked and retain custody through validation/CAS.
+func (s assistantRunStore) readSnapshot(ctx context.Context) (assistantRunLedger, error) {
+	captured, err := func() (captured assistantRunCapturedRead, err error) {
+		if s.problem != nil {
+			return assistantRunCapturedRead{}, s.problem
+		}
+		if s.server == nil {
+			return assistantRunCapturedRead{}, errAssistantRunScope
+		}
+		lock, err := s.server.privateDataLockContext(ctx, true)
+		if err != nil {
+			return assistantRunCapturedRead{}, err
+		}
+		defer func() {
+			closed := lock.Close()
+			if s.strictReadCustody {
+				err = errors.Join(err, assistantRunReadCloseError(ctx, "assistant-run-snapshot-private", closed))
+			}
+		}()
+		store, err := s.server.openChatData()
+		if err != nil {
+			return assistantRunCapturedRead{}, err
+		}
+		defer func() {
+			closed := store.root.Close()
+			if s.strictReadCustody {
+				err = errors.Join(err, assistantRunReadCloseError(ctx, "assistant-run-snapshot-data", closed))
+			}
+		}()
+		return s.captureLocked(store)
+	}()
+	if err != nil {
+		return assistantRunLedger{}, err
+	}
+	return captured.decode(ctx)
+}
+
+type assistantRunCapturedRead struct {
+	name, project string
+	raw           []byte
+	missing       bool
+}
+
+func (s assistantRunStore) captureLocked(store *chatDataStore) (assistantRunCapturedRead, error) {
+	var empty assistantRunCapturedRead
+	if err := checkPrivateDataPath(store); err != nil {
 		return empty, err
 	}
-	return saved, nil
+	if err := s.checkScope(store.root); err != nil {
+		return empty, err
+	}
+	raw, err := readPrivateData(store.root, s.name, assistantRunRecordLimit)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return empty, err
+	}
+	return assistantRunCapturedRead{name: s.name, project: s.project, raw: raw, missing: errors.Is(err, os.ErrNotExist)}, nil
+}
+
+func (c assistantRunCapturedRead) decode(ctx context.Context) (assistantRunLedger, error) {
+	var empty assistantRunLedger
+	ledger := assistantRunLedger{Version: 1, Project: c.project, Runs: []assistantRunRecord{}}
+	if !c.missing {
+		var err error
+		if ledger, err = decodeAssistantRunStorage(c.name, c.raw); err != nil {
+			return empty, err
+		}
+		// The decoder validates all records against the captured filename; the
+		// scope check binds that filename to the project at capture time.
+		if ledger.Project != c.project {
+			return empty, errAssistantRunInvalid
+		}
+	} else if err := validateAssistantRunLedger(ledger, c.project); err != nil {
+		return empty, err
+	}
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
+	return ledger, nil
 }
 
 // AdmissionID is stable within a project/principal across lost responses and
@@ -215,7 +382,7 @@ func (s assistantRunStore) transaction(ctx context.Context, change func(*assista
 // than accidentally starting a second operation. Fresh attempts need fresh IDs.
 // freshCAS runs only for new admission, under the same private-data lock as the
 // saved owner. It must only read/validate current state; no dispatch or writes.
-func (l *assistantRunLease) Admit(ctx context.Context, binding assistantRunBinding, admissionID, bodyDigest string, freshCAS func() error) (assistantRunRecord, bool, error) {
+func (l *assistantRunLease) Admit(ctx context.Context, binding assistantRunBinding, admissionID, bodyDigest string, freshCAS func() error, successor ...*assistantRunAnswerAdmission) (assistantRunRecord, bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file == nil || l.recoveryErr != nil {
@@ -235,6 +402,13 @@ func (l *assistantRunLease) Admit(ctx context.Context, binding assistantRunBindi
 	if !assistantRunText(admissionID, 128) || !assistantRunDigest(bodyDigest) || freshCAS == nil {
 		return out, false, errAssistantRunInvalid
 	}
+	if len(successor) > 1 {
+		return out, false, errAssistantRunInvalid
+	}
+	var answer *assistantRunAnswerAdmission
+	if len(successor) == 1 {
+		answer = successor[0]
+	}
 	created := false
 	id := ""
 	ledger, err := s.transaction(ctx, func(ledger *assistantRunLedger) (bool, error) {
@@ -247,7 +421,15 @@ func (l *assistantRunLease) Admit(ctx context.Context, binding assistantRunBindi
 				return false, nil
 			}
 		}
+		if answer != nil {
+			if err := answer.validateParent(ledger, binding); err != nil {
+				return false, err
+			}
+		}
 		for _, run := range ledger.Runs {
+			if answer != nil && run.ID == answer.parent.ID {
+				continue
+			}
 			if run.Binding.Owner.Kind == binding.Owner.Kind && run.Binding.Owner.ID == binding.Owner.ID && !assistantRunTerminal(run.State) {
 				return false, errAssistantRunConflict
 			}
@@ -263,7 +445,33 @@ func (l *assistantRunLease) Admit(ctx context.Context, binding assistantRunBindi
 			return false, err
 		}
 		id = "arun_" + hex.EncodeToString(token[:])
-		ledger.Runs = append(ledger.Runs, assistantRunRecord{ID: id, Revision: 1, Binding: binding, AdmissionID: admissionID, BodyDigest: bodyDigest, State: "admitted", Operations: []assistantRunOperation{}, Events: []assistantRunEvent{}})
+		run := assistantRunRecord{ID: id, Revision: 1, Binding: binding, AdmissionID: admissionID, BodyDigest: bodyDigest, State: "admitted", Operations: []assistantRunOperation{}, Events: []assistantRunEvent{}}
+		if answer != nil {
+			if err := answer.initialize(&run); err != nil {
+				return false, err
+			}
+			// Promote before the durable replacement. A failed replacement releases this
+			// provisional reference; no partially admitted successor is discoverable.
+			if answer.promote != nil {
+				if err := answer.promote(run); err != nil {
+					return false, err
+				}
+			}
+			if answer.prepare != nil {
+				if err := answer.prepare(run); err != nil {
+					return false, err
+				}
+			}
+			for i := range ledger.Runs {
+				parent := &ledger.Runs[i]
+				if parent.ID == answer.parent.ID {
+					parent.Actions = append(parent.Actions, assistantRunActionReceipt{ID: answer.action.ID, Digest: assistantRunActionDigest(answer.action), Kind: "answer", Answer: &answer.origin.Answer, SuccessorRunID: id})
+					parent.State = "complete"
+					parent.Revision++
+				}
+			}
+		}
+		ledger.Runs = append(ledger.Runs, run)
 		created = true
 		return true, nil
 	})
@@ -279,16 +487,17 @@ func (l *assistantRunLease) Admit(ctx context.Context, binding assistantRunBindi
 }
 
 func (s assistantRunStore) Read(ctx context.Context, binding assistantRunBinding, id string) (assistantRunRecord, error) {
-	var out assistantRunRecord
-	_, err := s.transaction(ctx, func(ledger *assistantRunLedger) (bool, error) {
-		run, e := assistantRunBound(ledger, binding, id)
-		if e == nil {
-			out = *run
-		}
-		return false, e
-	})
-	return out, err
+	ledger, err := s.readSnapshot(ctx)
+	if err != nil {
+		return assistantRunRecord{}, err
+	}
+	run, err := assistantRunBound(&ledger, binding, id)
+	if err != nil {
+		return assistantRunRecord{}, err
+	}
+	return *run, nil
 }
+
 func assistantRunBound(ledger *assistantRunLedger, binding assistantRunBinding, id string) (*assistantRunRecord, error) {
 	if err := validateAssistantRunBinding(binding, ledger.Project); err != nil {
 		return nil, err
@@ -308,11 +517,12 @@ func assistantRunBound(ledger *assistantRunLedger, binding assistantRunBinding, 
 // recover/dispatch this project's assistant runs. Losing this lease never
 // authorizes a replacement invocation or automatic replay.
 type assistantRunLease struct {
-	mu          sync.Mutex
-	store       assistantRunStore
-	file        *os.File
-	work        *os.File
-	recoveryErr error
+	mu           sync.Mutex
+	store        assistantRunStore
+	file         *os.File
+	work         *os.File
+	recoveryErr  error
+	recoveryHome *assistantDialectRecoveryHomeWitness
 }
 
 func (s assistantRunStore) Acquire(ctx context.Context) (*assistantRunLease, error) {
@@ -331,7 +541,7 @@ func (s assistantRunStore) Acquire(ctx context.Context) (*assistantRunLease, err
 		work.Close()
 		return nil, err
 	}
-	lease := &assistantRunLease{store: s, file: file, work: work}
+	lease := &assistantRunLease{store: s, file: file, work: work, recoveryHome: s.server.originalDialectRecoveryHome()}
 	if err = lease.Recover(ctx); err != nil {
 		lease.Close()
 		return nil, err
@@ -391,7 +601,7 @@ func validateAssistantRunBinding(b assistantRunBinding, project string) error {
 	if b.Owner.Kind == "brief" {
 		ownerLimit = 1024
 	} // Existing BriefCommand.Subject byte bound.
-	if !contains([]string{"chat", "draft", "pane", "brief", "workflow", "author-pack", "describe-pack", "author-graph", assistantDiagnosticPurpose}, b.Owner.Kind) || !assistantRunText(b.Owner.ID, ownerLimit) || !assistantRunText(b.RequestID, 128) || !aiIDPattern.MatchString(b.ConnectionID) || !assistantRunText(b.Model, 128) || !contains([]string{"plan", "work"}, b.Phase) || !contains([]string{"model-requests", "provider-managed"}, b.Unit) || len(b.SourceDigests) > 256 {
+	if !contains([]string{"chat", "draft", "pane", "brief", "workflow", "author-pack", "describe-pack", "author-graph", assistantDiagnosticPurpose, assistantSettingsObservationPurpose}, b.Owner.Kind) || !assistantRunText(b.Owner.ID, ownerLimit) || !assistantRunText(b.RequestID, 128) || !aiIDPattern.MatchString(b.ConnectionID) || !assistantRunText(b.Model, 128) || !contains([]string{"plan", "work"}, b.Phase) || !contains([]string{"model-requests", "provider-managed"}, b.Unit) || len(b.SourceDigests) > 256 {
 		return errAssistantRunInvalid
 	}
 	for _, v := range b.SourceDigests {
@@ -484,6 +694,15 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 		if run.Historical && !assistantRunTerminal(run.State) {
 			return errAssistantRunInvalid
 		}
+		if !validAssistantCriticCustody(run.CriticCustody) {
+			return errAssistantRunInvalid
+		}
+		if !validAssistantCanonicalJournal(run.Canonical) {
+			return errAssistantRunInvalid
+		}
+		if err := validateAssistantCanonicalProjection(run); err != nil {
+			return err
+		}
 		if err := validateAssistantRunPreview(run.DisplayPreview); err != nil {
 			return err
 		}
@@ -540,11 +759,67 @@ func validateAssistantRunLedger(ledger assistantRunLedger, project string) error
 			events[event.ID] = true
 		}
 	}
+	if err := validateAssistantAnswerLinks(ledger); err != nil {
+		return err
+	}
 	return validateAssistantCreationHeldWitnesses(ledger)
 }
 
 func sameAssistantRunCheckpoint(a, b *contract.Checkpoint) bool {
-	left, _ := json.Marshal(a)
-	right, _ := json.Marshal(b)
-	return bytes.Equal(left, right)
+	left, err := json.Marshal(a)
+	if err != nil || checkJSONMembers(left, opaqueJSONMembers) != nil {
+		return false
+	}
+	right, err := json.Marshal(b)
+	if err != nil || checkJSONMembers(right, opaqueJSONMembers) != nil {
+		return false
+	}
+	// Canonical storage reorders object members, including retained RawMessage
+	// values. Keep all members, array order, strings and numeric lexemes exact.
+	left, right = canonicalApprovalJSON(left), canonicalApprovalJSON(right)
+	return left != nil && right != nil && bytes.Equal(left, right)
+}
+
+// Run custody is decoded by its original full validator. Known factory refs
+// remain visible, but unexamined canonical/imported/operation operands prevent
+// a negative reference proof for ANY candidate in the joined preview.
+func retentionRunReferences(name string, raw []byte) storageRetentionSource {
+	out := storageRetentionUnknown(name, "assistant-runs", raw, "opaque-run-custody")
+	ledger, err := decodeAssistantRunStorage(name, raw)
+	if err != nil || !uniqueJSON(raw) {
+		out.Reasons = []string{"invalid-run-source"}
+		return out
+	}
+	complete := storageRetentionMembers(raw, "version", "project", "runs", "authoringCaptures") && len(ledger.AuthoringCaptures) == 0
+	for _, run := range ledger.Runs {
+		// Full schema preservation is independent from preview support. Never
+		// reinterpret absence of a decoded optional field as proof against an opaque
+		// original-byte extension.
+		if !assistantRunTerminal(run.State) || run.Checkpoint != nil || len(run.Binding.SourceDigests) != 0 || len(run.Operations) != 0 || len(run.Events) != 0 || len(run.Actions) != 0 || run.Canonical != nil || run.Creation != nil || run.Observation != nil || run.CriticCustody != nil || run.DialectArtifactImport != nil || len(run.DomainOutputs) != 0 || run.SavedPack != nil || len(run.PackChecks) != 0 || len(run.AnswerHistory) != 0 || len(run.Websites) != 0 || len(run.Links) != 0 || len(run.Searches) != 0 {
+			complete = false
+		}
+		// An arbitrary run JSON can retain forward-compatible raw members. Until
+		// every producer/consumer is covered, nonempty run rows are opaque roots.
+		complete = false
+		for _, held := range run.DialectDrafts {
+			for _, slot := range []assistantDialectDraftSlot{held.Candidate, held.Checked, held.Final} {
+				for _, operand := range []*assistantDialectDraftIntent{slot.Intent, slot.Receipt} {
+					if operand != nil {
+						out.add(storageRetentionReference{"retained", operand.Reference.SHA256, fmt.Sprint(operand.Reference.Bytes)})
+					}
+				}
+			}
+		}
+		for _, held := range run.DialectReads {
+			out.add(storageRetentionReference{"retained", held.Intent.Reference.SHA256, fmt.Sprint(held.Intent.Reference.Bytes)})
+			if held.Receipt != nil {
+				out.add(storageRetentionReference{"retained", held.Receipt.Reference.SHA256, fmt.Sprint(held.Receipt.Reference.Bytes)})
+			}
+		}
+	}
+	out.Complete = complete && len(out.Reasons) == 1
+	if out.Complete {
+		out.Reasons = []string{}
+	}
+	return out
 }

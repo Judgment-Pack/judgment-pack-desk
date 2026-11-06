@@ -1,10 +1,11 @@
+import type {DialectConversionContract} from '@judgment-pack/harness/dialects'
 import type { DialectDocumentV2 as DialectV2 } from '../dialect/types'
 import { answer, deskFetch } from '../files/client'
 export interface RecordReview {recordId:string;recordDigest:string;recipeVersion:number;decision:'accepted'|'needs-information'|'rejected';note:string;at:string;reviewer:{kind:'session'|'local-access';subject?:string;issuer?:string;name?:string}}
 export interface RecordReviewEvent {review:RecordReview;record:DialectRecord}
-export interface DialectRecord {review?:RecordReview;id:string;name:string;values:Record<string,string>;sourceId:string;row:number;class:'asserted'|'generated';status:'provided'|'needs-research'|'researched';research?:{runId:string;recipeVersion:number;entity:import('./research').ResearchEntity}}
+export interface DialectRecord {review?:RecordReview;id:string;name:string;values:Record<string,string|null>;sourceId:string;row:number;class:'asserted'|'generated';status:'provided'|'needs-research'|'researched';research?:{runId:string;recipeVersion:number;entity:import('./research').ResearchEntity}}
 export interface DialectImport {id:string;kind:'csv'|'urls';name:string;digest:string;content:string;at:string;recipeVersion:number}
-export interface DialectPackBinding {kind:'pack';key:string;pack:string;digest:string;mapping:DialectV2;conversions?:Record<string,DialectConversion>}
+export interface DialectPackBinding {conversionContract?:DialectConversionContract;kind:'pack';key:string;pack:string;digest:string;mapping:DialectV2;conversions?:Record<string,DialectConversion>}
 export interface DialectRecipe {template?:import('./templates').TemplateOrigin;intent:string;research?:import('./research').ResearchRecipe;qualification?:DialectPackBinding}
 export interface Preparation {chatOrigin?:{chatId:string;draftId:string};reviews?:RecordReviewEvent[];version:1;id:string;name:string;recipe:DialectRecipe;recipeVersion:number;recipes?:{version:number;name:string;recipe:DialectRecipe;at:string}[];createdAt:string;updatedAt:string;records:DialectRecord[];imports:DialectImport[];activity:{kind:'created'|'imported'|'recipe-updated'|'researched';at:string;count?:number;recipeVersion:number}[]}
 export interface PreparationReply {sha256:string;document:Preparation}

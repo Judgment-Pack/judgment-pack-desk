@@ -70,7 +70,16 @@ func assistantChatProjectionMatches(run *assistantRunRecord, selected []byte) bo
 // Prepare persists immutable output before any conversation write. Repeated
 // preparation never rebuilds a timestamp, candidate or response identity.
 
-func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) error {
+func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) (err error) {
+	completeWork, err := s.acquireAssistantDialectCompleteProjection(r, id, false)
+	if err != nil {
+		return err
+	}
+	if completeWork != nil {
+		defer func() { err = errors.Join(err, completeWork.Close()) }()
+		r = r.WithContext(context.WithValue(r.Context(), assistantDialectCompleteProjectionKey{}, completeWork))
+	}
+
 	linkSnapshot, err := s.assistantLinkProjectionSnapshot(r, id)
 	if err != nil {
 		return err
@@ -188,7 +197,16 @@ func (s *Server) prepareAssistantChatProjection(r *http.Request, id string) erro
 // Write and read back exactly the prepared selected chat. A separate ack lets
 // recovery distinguish retained output from its observed conversation write.
 // The workspace write lock precedes the private-data lock, as in conversations.
-func (s *Server) writeAssistantChatProjection(r *http.Request, id string) error {
+func (s *Server) writeAssistantChatProjection(r *http.Request, id string) (err error) {
+	completeWork, err := s.acquireAssistantDialectCompleteProjection(r, id, true)
+	if err != nil {
+		return err
+	}
+	if completeWork != nil {
+		defer func() { err = errors.Join(err, completeWork.Close()) }()
+		r = r.WithContext(context.WithValue(r.Context(), assistantDialectCompleteProjectionKey{}, completeWork))
+	}
+
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	view, err := s.assistantDialectProjectionView(r, id, true)

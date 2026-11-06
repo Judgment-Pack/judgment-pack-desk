@@ -65,9 +65,10 @@ func (*assistantCreationExecutor) Execute(ctx context.Context, e *assistantRunEx
 		return err
 	}
 	defer execution.Close()
-	if err := execution.Adapter.Run(ctx, execution.Run); err != nil {
-		return err
-	}
+	return execution.execute(ctx, e.completeAssistantConversation)
+}
+
+func (e *assistantRunExecution) completeAssistantConversation(ctx context.Context) error {
 	run, err := e.writer.lease.store.Read(ctx, e.record.Binding, e.record.ID)
 	if err != nil {
 		return err
@@ -114,7 +115,12 @@ func (e *assistantRunExecution) reviewAssistantCreation(ctx context.Context, inp
 	// still has model-free validation/retest work before the run is terminal.
 	cp := *run.Checkpoint
 	cp.Status = "running"
-	if err := e.Checkpoint(ctx, cp); err != nil {
+	if assistantCanonicalActive(e.record) {
+		err = e.canonicalHostStatus(ctx, "running")
+	} else {
+		err = e.Checkpoint(ctx, cp)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return proposal, nil

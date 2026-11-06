@@ -3,19 +3,97 @@
 This file is read by Codex as `AGENTS.md` and by Claude as `CLAUDE.md`; the two are the same text.
 Edit `AGENTS.md` and run `scripts/sync-agent-docs.sh` to regenerate `CLAUDE.md`.
 
+## Implementation and validation batches
+
+Maintainer policy updated 2026-10-25: implement related issues as a
+**dependency-ordered batch**, then validate the integrated candidate.
+
+- Define the batch's issues, dependency order and acceptance criteria before implementation.
+  Preserve issue traceability and keep unrelated work separate.
+- Run focused checks during implementation when needed to verify changed behavior, contracts
+  or fixes. Do not defer useful failure detection until the end of the batch.
+- Do not run a full suite or trigger a separate CI cycle merely because one issue is finished.
+  Individual work-item handoffs retain focused evidence; full validation belongs to the stable
+  integrated candidate. Do not disable automatic or required CI checks.
+- Once the batch is stable, run the required full checklist once and submit the candidate to CI.
+  Fix failures with the affected checks first; repeat full validation only when required below
+  or justified by substantive changes or unresolved evidence.
+- Preserve independent review, security checks and merge/release approvals. Every merge
+  candidate must satisfy its required CI checks at the exact candidate head; a batch result
+  does not automatically qualify another head.
+
+This policy replaces per-issue or per-worker full-suite/CI cadence for a related batch,
+including that cadence in shared devkit guidance. Other repository and devkit gates remain.
+
+## Batch completion and complexity control
+
+Maintainer policy updated 2026-10-31. These rules apply equally to Codex and Claude.
+
+- Maintain one current acceptance checklist for each issue or related batch, linking each
+  requirement to its implementation, verification evidence and remaining gate. Reuse the
+  issue, pull request or existing handoff; do not create a parallel tracking system.
+- Before adding another abstraction, ownership layer, recovery mechanism or work item,
+  check whether the existing design can satisfy the requirement. Prefer the smallest design
+  that preserves the complete accepted behavior and safety contracts. Consolidate duplicated
+  responsibilities; do not combine distinct authorities merely to reduce code or file counts.
+- Complete implementation in dependency order and review the stable integrated candidate.
+  Keep necessary focused checks during implementation. A design approval, source review,
+  fixture definition or passing component test is not completion of an end-to-end requirement.
+  Report authored, executed, reviewed, integrated and released work separately.
+- Reuse existing check runners, fixtures and execution controls. A separate harness needs a
+  concrete requirement the shared tooling cannot meet; do not build one merely because a new
+  issue or worker started. Preserve exact candidate identity, meaningful assertions and
+  required checks when reusing tooling.
+- Plan disk and execution headroom for the next useful batch, including temporary output,
+  cache growth, retained evidence and settlement space. Do not assume repeated small cleanups
+  will fund the batch, lower an admission floor to make a run start, or reclaim another
+  session's work. Required cleanup authorization and available activity checks still apply.
+- On a failed check, preserve the exact candidate, command and failure, diagnose the cause,
+  and change the relevant implementation or execution condition before retrying. When the
+  same cause recurs, stop repeating that approach and resolve the underlying design,
+  environment or resource problem. Required fresh-worker handoffs carry this diagnosis and
+  evidence; they do not justify another near-identical attempt or a new full-suite cycle.
+- Group related findings into a correction round, then verify the findings and changed paths.
+  Repeat a broad review or full validation only for substantive changes, unresolved evidence
+  or a repository requirement. Do not count review rounds or worker handoffs as issues closed.
+
+These rules do not reduce milestone scope, authorize delegation or upstream changes, or waive
+independent review, security checks, exact-head CI, required stop/handoff rules, merge approval
+or release approval. A simplification must preserve the accepted outcome; a scope or gate
+change still requires the maintainer's explicit decision.
+
 ## Before you open a pull request
 
-- Run `scripts/dev/check.sh` (or `jpdev check` where the kit is installed) once. It runs the
-  checks listed in `dev.json` in order and prints one summary block.
+- On the stable integrated candidate, run `scripts/dev/check.sh` (or `jpdev check` where the
+  kit is installed) once per batch. It runs the checks listed in `dev.json` in order and prints
+  one summary block. Do not repeat this step for each constituent issue or worker handoff.
 - Paste that summary block in the pull request body, under a "Checks" heading.
-- If a check fails: read its first lines in the block, fix the cause, re-run that one check with
-  `--only NAME`, then run the whole list once more. Do not loop on the whole list.
+- If a check fails: read its first lines in the block, fix the cause, and re-run that check with
+  `--only NAME`. After the fixes are integrated and the candidate is stable, run the whole list
+  once more. Do not loop on the whole list or run it after each individual fix.
 - Start no CI watch. Push, report once, and stop; CI owns everything deterministic.
 - Push with `jpdev push [BRANCH]`, or where the kit is not installed with
   `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -u origin BRANCH`.
   The machine's stored git credential can be another account's, and a plain `git push` is then
   refused; the helper form uses the `gh` login. Never store a credential, never change global git
   configuration, never push with force (`jpdev push` refuses `--force` and `-f`).
+
+## Changed-path iteration
+
+The vendored check runner and selector come from Devkit v0.9.0. For local iteration,
+`scripts/dev/check.sh --changed origin/main` selects the checks mapped in `jpdev.json`.
+Use the actual integration base when working against another branch. Selection includes
+committed, staged, working-tree and untracked paths since the merge base. Only explicit
+administrative prose and agent instruction paths are mapped; an unmapped path, no changes,
+or a changed mapping, manifest, runner or selector runs the whole list. An unresolved base
+or invalid mapping refuses before checks run. Do not combine `--changed` with `--only`.
+
+Keep the selection report with the summary: an unselected check did not pass. Scoped runs
+are allowed for iteration and the aggregate pull-request CI job; existing required Go, Web
+and other CI jobs still run their own checks. Pushes, reusable workflow calls and releases
+retain full validation. The stable integrated candidate must run the full checklist, including
+whenever check-selection semantics change, before CI and the independent review. A focused
+worker handoff records that pending gate and its coordinator; it does not waive it.
 
 ## Before you hand over
 
@@ -33,7 +111,8 @@ Run these self-checks on the builder's own head before writing the commit messag
 - (f) An interrupted and resumed run carries every new checkpoint member.
 - (g) The design's words and the code agree sentence by sentence.
 
-Run the check list with `--only <touched steps>` while iterating and whole exactly once at the end.
+Run relevant check-list steps with `--only <touched steps>` while iterating. Run the whole list
+on the stable integrated batch as described above, not at every individual work-item handoff.
 Change the paths in `dev.json` `handover.shared_paths` by appending only, never by reordering or
 rewriting, because a sibling build may be open. Never fetch, rebase or merge; the coordinator
 carries `main` into the branch after the push.

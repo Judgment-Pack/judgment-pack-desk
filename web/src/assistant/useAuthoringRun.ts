@@ -1,3 +1,4 @@
+import { serverContextDocument, type ServerContextPane } from './serverContexts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssistantEvent } from '@judgment-pack/harness/engine'
 import { failureEvent } from '@judgment-pack/harness/failures'
@@ -29,6 +30,8 @@ const terminal=(run:RunSnapshot)=>['complete','stopped','interrupted','failed'].
  * retained server events, and explicit Stop. Detaching never cancels host work. */
 export function useAuthoringRun(options:{target:AITarget;model:string;engine:AssistantEngine;thinking:ThinkingTier;effort?:string}) {
  const settings=useRef(options);settings.current=options
+ const pane=useRef<ServerContextPane|undefined>(undefined)
+ if(!pane.current)pane.current=serverContextDocument().pane()
  const [status,setStatus]=useState<'idle'|'running'|'finished'>('idle')
  const [canStart,setCanStart]=useState(true);const sessionClosed=useRef(false)
  const [events,setEvents]=useState<AssistantEvent[]>([])
@@ -89,7 +92,13 @@ export function useAuthoringRun(options:{target:AITarget;model:string;engine:Ass
     if(ref.cancelled){attempt.resolved=true;throw new RunRequestError('refused',409,'stale-state')}
     let run=ref.run
     if(!run){
-     try {run=await client.start(ref.start,undefined)}
+     // Discover the captured admission before registering a new reuse scope.
+     // Capture/cancel keep the immutable host reference without Context.
+     const context=await pane.current!.selector(client,request.purpose)
+     if(attempt.stopped){await cancelOwner(attempt);return}
+     if(!mounted.current)return
+     const admission:RunStart={...ref.start,context}
+     try {run=await client.start(admission,undefined)}
      catch(cause){
       if(!(cause instanceof RunRequestError)||cause.delivery!=='uncertain')throw cause
       // An uncertain admission is read, never resent. Missing admission is a
@@ -119,7 +128,7 @@ export function useAuthoringRun(options:{target:AITarget;model:string;engine:Ass
    finally{if(mounted.current&&active.current===attempt)finish(attempt)}
   })()
  },[adopt,finish,cancelOwner])
- useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;active.current?.view.abort()}},[])
+ useEffect(()=>{mounted.current=true;const detach=pane.current!.attach();return()=>{mounted.current=false;active.current?.view.abort();detach()}},[])
  useEffect(()=>whenSessionEnds(()=>{
   sessionClosed.current=true;setCanStart(false)
   const attempt=active.current;if(attempt){attempt.stopped=true;attempt.view.abort();finish(attempt)}

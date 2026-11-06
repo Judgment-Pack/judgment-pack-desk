@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 )
 
@@ -710,5 +711,40 @@ func TestAssistantChatProjectionRetainsUnrepresentableCheckpointOriginals(t *tes
 	assistantRunMust(t, err)
 	if saved.ProjectionIssue != "saved-chat-validation" || saved.ChatProjection != nil || !bytes.Equal(before, f.read(t)) {
 		t.Fatal("unrepresentable source changed")
+	}
+}
+
+func TestAssistantChatProjectionRetainsCanonicalReport(t *testing.T) {
+	f := newChatProjectionFixture(t)
+	run := f.admit(t, "chat-one", "message-one", "complete-report", "complete", projectionMessage("Exact completed answer."))
+	assistantRunMust(t, f.s.prepareAssistantChatProjection(f.request(), run.ID))
+	assistantRunMust(t, f.s.writeAssistantChatProjection(f.request(), run.ID))
+	written := f.read(t)
+	assistantRunMust(t, validateConversations(written))
+	var doc struct {
+		Chats []struct {
+			Checkpoint struct {
+				State struct {
+					Responses []struct {
+						Work struct {
+							Report struct {
+								Canonical json.RawMessage `json:"canonical"`
+							} `json:"report"`
+						} `json:"work"`
+					} `json:"responses"`
+				} `json:"state"`
+			} `json:"checkpoint"`
+		} `json:"chats"`
+	}
+	assistantRunMust(t, json.Unmarshal(written, &doc))
+	reports := doc.Chats[0].Checkpoint.State.Responses
+	raw := reports[len(reports)-1].Work.Report.Canonical
+	held, err := runcontext.ParseRunReport(raw)
+	assistantRunMust(t, err)
+	if held.Get("used").Num() != 2 || len(held.Get("prompts").Items()) != 2 {
+		t.Fatal("terminal history lost canonical source facts")
+	}
+	if held.Has("approval") || held.Has("handoff") || held.Has("operations") {
+		t.Fatal("report contains capability state")
 	}
 }

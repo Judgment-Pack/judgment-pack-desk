@@ -45,7 +45,9 @@ func (*assistantDiagnosticExecutor) Prepare(ctx context.Context, source assistan
 	}
 	named := runcontext.RunModels{Critic: source.Binding.Model, Child: source.Binding.Model}
 	r := &adapter.Run{ModelName: source.Binding.Model, Context: input, Agent: &adapter.Agent{Model: source.Binding.Model, Effort: assistantBriefEffort(source)}}
-	opened, err := runcontext.ContextualSession(ctx, runcontext.Session{Prompt: assistantDiagnosticInstruction, AllowConversation: true, Context: input, Critic: "off", Agent: &runcontext.AgentSession{Model: source.Binding.Model, Effort: r.Agent.Effort}, Tools: []runcontext.RuntimeTool{{Name: "get_schema"}}, PolicyLegacyModels: &named, PolicyFamilies: adapter.PolicyFamilies(r, named), PolicyConnections: append(adapter.PolicyConnectionIDs(r), named.Critic, named.Child)})
+	// Preparation establishes accounting without observing Runtime or declaring tools.
+	// Execute obtains the served schema declaration through its own gate.
+	opened, err := runcontext.ContextualSession(ctx, runcontext.Session{Prompt: assistantDiagnosticInstruction, AllowConversation: true, Context: input, Critic: "off", Agent: &runcontext.AgentSession{Model: source.Binding.Model, Effort: r.Agent.Effort}, PolicyLegacyModels: &named, PolicyFamilies: adapter.PolicyFamilies(r, named), PolicyConnections: append(adapter.PolicyConnectionIDs(r), named.Critic, named.Child)})
 	if err != nil {
 		return contract.Checkpoint{}, err
 	}
@@ -65,13 +67,21 @@ func (*assistantDiagnosticExecutor) Execute(ctx context.Context, e *assistantRun
 	}
 	defer runtime.Close()
 	var eventErr error
-	emit := func(event contract.RunEvent) {
+	deliver := func(event contract.RunEvent, host bool) {
 		if eventErr != nil {
 			return
 		}
 		persist, finish := e.diagnosticPersistenceContext(ctx)
 		defer finish()
 		switch {
+		case assistantCanonicalActive(e.record):
+			if event.BudgetPaused != nil || event.Proposal != nil || event.UserQuestion != nil || event.ApprovalRequested != nil || event.DelegationRequested != nil {
+				eventErr = errAssistantRunScope
+			} else if host {
+				eventErr = e.publishCanonicalHostEvent(persist, event)
+			} else {
+				eventErr = e.deliverCanonicalEvent(persist, event)
+			}
 		case event.MessageProgress != nil:
 			_ = e.Progress(ctx, *event.MessageProgress)
 		case event.ExecutionCheckpoint != nil:
@@ -88,7 +98,28 @@ func (*assistantDiagnosticExecutor) Execute(ctx context.Context, e *assistantRun
 			e.cancel()
 		}
 	}
-	g := gate.New(gate.Options{Runtime: runtime.Call, Granted: []string{"get_schema"}, Emit: emit})
+	emit := func(event contract.RunEvent) { deliver(event, false) }
+	hostEmit := func(event contract.RunEvent) { deliver(event, true) }
+	// Retain the exact physical receipt before enforcing the diagnostic's existing
+	// schema observation bound. An oversized schema must not enter canonical
+	// context merely because the final success check would later reject it.
+	observe := func(ctx context.Context, message json.RawMessage) (json.RawMessage, error) {
+		reply, err := runtime.Call(ctx, message)
+		if err != nil || len(reply) <= 1<<20 {
+			return reply, err
+		}
+		var request struct {
+			Method string `json:"method"`
+			Params struct {
+				Name string `json:"name"`
+			} `json:"params"`
+		}
+		if json.Unmarshal(message, &request) == nil && request.Method == "tools/call" && request.Params.Name == "get_schema" {
+			return nil, failure.Authored("invalid-response", "The schema response exceeded the connection check's observation limit.", "desk")
+		}
+		return reply, nil
+	}
+	g := gate.New(gate.Options{Runtime: observe, Granted: []string{"get_schema"}, Emit: hostEmit})
 	offer, err := g.Open(ctx, nil)
 	if err != nil {
 		return err
@@ -103,12 +134,20 @@ func (*assistantDiagnosticExecutor) Execute(ctx context.Context, e *assistantRun
 		return err
 	}
 	input.Authorize, input.Checkpoint, input.Execution = e.Authorize, e.Checkpoint, e.record.Checkpoint
+	if err = e.bindCanonicalInput(ctx, input); err != nil {
+		return err
+	}
 	agent, err := e.assistantAgent()
 	if err != nil {
 		return err
 	}
 	run := &adapter.Run{ModelName: e.record.Binding.Model, Agent: agent, Prompt: assistantDiagnosticInstruction, AllowConversation: true, Critic: "off", Gate: g.Calls(), Tools: phase.Offer(offer).Tools, Context: input, Emit: emit}
-	if err = assistantCanonicalAgent(agentadapter.New()).Run(ctx, run); err != nil {
+	bindings := &assistantGateBindings{}
+	bindings.add(g)
+	if err = bindings.bind(run); err != nil {
+		return err
+	}
+	if err = e.canonicalAdapter(bindings.adapter(assistantCanonicalAgent(agentadapter.New())), g).Run(ctx, run); err != nil {
 		return err
 	}
 	if eventErr != nil {
@@ -121,7 +160,7 @@ func (*assistantDiagnosticExecutor) Execute(ctx context.Context, e *assistantRun
 	latest.State = "complete"
 	if !assistantDiagnosticSucceeded(latest) {
 		cause := failure.Authored("invalid-response", "The connection check did not complete one successful schema read through Desk.", "desk")
-		emit(failure.Event(cause, "desk"))
+		hostEmit(failure.Event(cause, "desk"))
 		return errors.New("connection diagnostic has no successful current schema observation")
 	}
 	return nil

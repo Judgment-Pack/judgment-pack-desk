@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/gate"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/relay"
 )
 
 const assistantGraphConfig = `{"configVersion":"5","packs":{"one":{"path":"one.json","description":"A pack"}},"graphs":{"flow":{"path":"flow.graph.json","description":"A graph"}}}`
@@ -148,7 +151,8 @@ func TestAssistantGraphProducerDurableReadAndProjection(t *testing.T) {
 func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 	for _, phase := range []string{"work", "plan"} {
 		t.Run(phase, func(t *testing.T) {
-			s, _, e := assistantExecutionFixture(t, "http://127.0.0.1:1", phase)
+			f := assistantSourceEnrollmentFixture(t, phase)
+			s, e := f.s, f.e
 			x := assistantGraphSetup(t, s, e)
 			// Ordinary chats share Graph, Test and Recipe offers. Keep every tool's
 			// explicit classification; an unknown addition needs a reviewed fixture.
@@ -168,13 +172,27 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 				effects[assistantPlanTool] = "plan"
 			}
 			names := []string{}
+			wireNames := map[string]string{}
 			for _, tool := range x.Run.HostTools {
 				effect, known := effects[tool.Name]
 				if !known || contains(names, tool.Name) {
 					t.Fatal("unknown or duplicate shared offer", tool.Name)
 				}
 				names = append(names, tool.Name)
-				if effect == "proposal" || effect == "workflow" || effect == "plan" {
+				wireNames[tool.Name] = tool.Name
+				if taxonomy, external := assistantExternalOwnerTaxonomies()[tool.Name]; external {
+					if tool.Source == nil || tool.Source.ID != assistantExternalOwnerIDs()[tool.Name] || tool.Effect != "" || tool.Taxonomy == nil || *tool.Taxonomy != taxonomy || tool.EffectClass != runcontext.LegacyClass(&taxonomy) || !assistantExternalSourceDeclaration(tool) {
+						t.Fatal("approved source classification", tool.Name)
+					}
+					wireNames[tool.Name] = runcontext.WireName(tool.Source.ID, tool.Name)
+					if tool.Name == assistantResearchTool {
+						if tool.Approval != "required" || tool.Approve == nil || tool.Delegation != "" {
+							t.Fatal("workflow admission widened")
+						}
+					} else if tool.Delegation != map[string]string{assistantSearchTool: "research", assistantLinkTool: "read", assistantWebsiteTool: "research"}[tool.Name] || tool.Source.VerifyReceipt == nil || tool.Approval != "none" || tool.Approve != nil {
+						t.Fatal("external read admission widened", tool.Name)
+					}
+				} else if effect == "proposal" || effect == "workflow" || effect == "plan" {
 					if tool.Effect != effect || tool.Delegation != "" {
 						t.Fatal("proposal grants", tool.Name)
 					}
@@ -189,16 +207,6 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 			for name, effect := range effects {
 				if contains(names, name) != (effect == "read" || phase == "work" || effect == "plan" && phase == "plan") {
 					t.Fatal("Work/Plan shared offer", name, names)
-				}
-			}
-			profile := contract.DelegatedTaskProfile{ID: "reader", Capabilities: []string{"read"}}
-			_, _, err := x.Run.Children(t.Context(), profile, func(contract.RunEvent) {})
-			assistantRunMust(t, err)
-			offered := x.gate.Offer()
-			child := gate.ChildPhase(profile, offered, gate.PlanPhase(offered))
-			for name, effect := range effects {
-				if contains(child.Host, name) != (effect == "read" && name != "search_sources" && name != assistantWebsiteTool) {
-					t.Fatal("child shared offer", name, child.Host)
 				}
 			}
 			for _, row := range []struct {
@@ -222,6 +230,42 @@ func TestAssistantGraphToolsRealServicesAndOffers(t *testing.T) {
 			assistantRunMust(t, err)
 			if !bytes.Contains(cli, []byte(`--rehearsal`)) || !bytes.Contains(cli, []byte(`1.20`)) {
 				t.Fatal("typed rehearsal input changed", string(cli))
+			}
+			// Host metadata is enrolled by the real adapter's contextual session,
+			// before provider dispatch; opening the execution alone offers none.
+			providerCalls := 0
+			x.Run.Model = func(ctx context.Context, _ string, _ relay.Request) (*http.Response, error) {
+				providerCalls++
+				if providerCalls != 1 {
+					t.Fatal("unexpected graph offer provider request", providerCalls)
+				}
+				profile := contract.DelegatedTaskProfile{ID: "reader", Capabilities: []string{"read"}}
+				_, _, err := x.Run.Children(ctx, profile, func(contract.RunEvent) {})
+				assistantRunMust(t, err)
+				offered := x.gate.Offer()
+				child := gate.ChildPhase(profile, offered, gate.PlanPhase(offered))
+				for name, effect := range effects {
+					if contains(child.Host, wireNames[name]) != (effect == "read" && name != "search_sources" && name != assistantWebsiteTool) {
+						t.Fatal("child shared offer", name, child.Host)
+					}
+				}
+				recorder := httptest.NewRecorder()
+				assistantPolicySSE(recorder, "", nil, "Done.")
+				return recorder.Result(), nil
+			}
+			var adapterEvents []contract.RunEvent
+			emit := x.Run.Emit
+			x.Run.Emit = func(event contract.RunEvent) {
+				adapterEvents = append(adapterEvents, event)
+				emit(event)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
+			if providerCalls != 1 {
+				events, err := json.Marshal(adapterEvents)
+				assistantRunMust(t, err)
+				t.Fatalf("graph offer provider not reached: calls=%d writer=%v events=%s", providerCalls, e.writer.Err(), events)
 			}
 		})
 	}
@@ -275,6 +319,26 @@ func TestAssistantGraphActualEinoProducer(t *testing.T) {
 	if record.Checkpoint.Status != "complete" {
 		t.Fatal("actual API checkpoint did not finish")
 	}
+	cli, err := os.ReadFile(filepath.Join(s.cfg.ProjectDir, "graph-cli.jsonl"))
+	assistantRunMust(t, err)
+	rehearsals := 0
+	for _, line := range bytes.Split(bytes.TrimSpace(cli), []byte("\n")) {
+		var command struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+			Input   string   `json:"input"`
+		}
+		assistantRunMust(t, json.Unmarshal(line, &command))
+		if command.Command == "evaluate" {
+			rehearsals++
+			if !contains(command.Args, "--rehearsal") || command.Input != `{"first":{"facts":{"null":null,"flag":false,"zero":0,"literal":"50","number":1.20}}}` {
+				t.Fatal("physical API rehearsal changed exact typed input or scope")
+			}
+		}
+	}
+	if rehearsals != 1 {
+		t.Fatalf("actual API rehearsals = %d, want one", rehearsals)
+	}
 	assistantRunMust(t, e.writer.State(t.Context(), "complete"))
 	assistantRunMust(t, s.prepareAssistantChatProjection(e.request.Clone(t.Context()), record.ID))
 	assistantRunMust(t, s.writeAssistantChatProjection(e.request.Clone(t.Context()), record.ID))
@@ -291,7 +355,7 @@ func TestAssistantGraphActualEinoProducer(t *testing.T) {
 	// Recovery decodes the actual stored terminal receipt and performs only its
 	// saved write/readback/ack; no host operation or model invocation is repeated.
 	data, _ := json.Marshal(assistantRunLedger{Version: 1, Project: prepared.Binding.Project, Runs: []assistantRunRecord{prepared}})
-	_, err := decodeAssistantRunStorage(e.writer.lease.store.name, data)
+	_, err = decodeAssistantRunStorage(e.writer.lease.store.name, data)
 	assistantRunMust(t, err)
 	count := step.Load()
 	assistantRunMust(t, e.ProjectChat(t.Context()))
@@ -300,4 +364,93 @@ func TestAssistantGraphActualEinoProducer(t *testing.T) {
 		t.Fatal("terminal ack recovery dispatched work")
 	}
 
+}
+
+func TestAssistantGraphRehearsalPublishedTaxonomy(t *testing.T) {
+	tools, err := (&assistantRunExecution{}).assistantGraphTools(nil)
+	assistantRunMust(t, err)
+	rehearsal := assistantGraphFind(t, tools.tools, "graph_rehearse")
+	if !strings.HasPrefix(rehearsal.Description, "Rehearsal, non-binding:") || rehearsal.Taxonomy == nil || rehearsal.Taxonomy.Operation != "check" || rehearsal.Taxonomy.Effect != "read" || rehearsal.Taxonomy.CheckKind != "rehearse" || rehearsal.Effect != "read" || rehearsal.Delegation != "read" {
+		t.Fatal("rehearsal lost published classification or host read boundary")
+	}
+	if problem := runcontext.HostTaxonomyProblem(rehearsal); problem != "" {
+		t.Fatal(problem)
+	}
+	for _, description := range []string{"Rehearse an existing declared graph", "Rehearsal, non-bindingish: graph"} {
+		bad := rehearsal
+		bad.Description = description
+		if runcontext.HostTaxonomyProblem(bad) == "" {
+			t.Fatal("invalid rehearsal prefix admitted")
+		}
+	}
+}
+
+// Reuse the real native Manager, callback boundary, admitted host store and
+// test-owned Runtime peer. A taxonomy-only check cannot prove this dispatch.
+func TestAssistantGraphActualNativeRehearsal(t *testing.T) {
+	s, _, e, _, trace := assistantCodexFixture(t, "read", "work")
+	inputs := `{"first":{"facts":{"null":null,"flag":false,"zero":0,"literal":"50","number":1.20},"evidence":{}}}`
+	args, err := json.Marshal(map[string]string{"id": "flow", "inputs": inputs})
+	assistantRunMust(t, err)
+	const original = "else: tool(offered('get_schema'),{})"
+	if strings.Count(assistantExecutionCodexPeer, original) != 1 {
+		t.Fatal("native fixture selection changed")
+	}
+	peer := strings.Replace(assistantExecutionCodexPeer, original, "else: tool(offered('graph_rehearse'),"+string(args)+")", 1)
+	assistantRunMust(t, os.WriteFile(filepath.Join(filepath.Dir(trace), "peer.py"), []byte(peer), 0600))
+	x := assistantGraphSetup(t, s, e)
+	rehearsal := assistantGraphFind(t, x.Run.HostTools, "graph_rehearse")
+	if rehearsal.Taxonomy == nil || rehearsal.Taxonomy.CheckKind != "rehearse" || rehearsal.Taxonomy.Effect != "read" || !strings.HasPrefix(rehearsal.Description, "Rehearsal, non-binding:") {
+		t.Fatal("native offer lost published rehearsal classification")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
+	record := assistantExecutionRecord(t, e)
+	if record.Checkpoint.Status != "complete" || len(record.DomainOutputs) != 0 || record.Checkpoint.Approval != nil {
+		t.Fatal("read-only rehearsal did not complete independently of approval or proposals")
+	}
+	calls := 0
+	for _, op := range record.Operations {
+		if op.Kind != "host" || op.Name != "graph_rehearse" {
+			continue
+		}
+		calls++
+		var intent assistantHostIntent
+		var result assistantHostResult
+		assistantRunMust(t, json.Unmarshal(op.Intent, &intent))
+		assistantRunMust(t, json.Unmarshal(op.Result, &result))
+		if op.State != "completed" || !intent.Root || intent.CallbackID == "" || !assistantHostArgumentsMatch(intent.Arguments, args) || !bytes.Contains(result.Result, []byte(`\"rehearsal\":true`)) || !bytes.Contains(result.Result, []byte("1.20")) {
+			t.Fatal("native rehearsal lost exact typed arguments, callback custody or recorded result")
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("native rehearsal calls = %d, want one", calls)
+	}
+	cli, err := os.ReadFile(filepath.Join(s.cfg.ProjectDir, "graph-cli.jsonl"))
+	assistantRunMust(t, err)
+	// graphPathOf resolves the saved declaration through list before evaluate.
+	// The CLI audit is JSONL: require that exact read-only sequence, rather
+	// than treating its two physical invocations as one JSON value.
+	lines := bytes.Split(bytes.TrimSpace(cli), []byte("\n"))
+	if len(lines) != 2 {
+		t.Fatalf("physical native rehearsal commands = %d, want list then evaluate", len(lines))
+	}
+	for i, line := range lines {
+		var command struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+			Input   string   `json:"input"`
+		}
+		assistantRunMust(t, json.Unmarshal(line, &command))
+		wantCommand, wantInput := "list", ""
+		wantArgs := []string{"--config", "jpack.json", "--format", "json"}
+		if i == 1 {
+			wantCommand, wantInput = "evaluate", inputs
+			wantArgs = append([]string{"flow.graph.json", "--inputs", "-", "--rehearsal"}, wantArgs...)
+		}
+		if command.Command != wantCommand || !reflect.DeepEqual(command.Args, wantArgs) || command.Input != wantInput {
+			t.Fatal("physical native rehearsal changed exact input or scope", string(cli))
+		}
+	}
 }

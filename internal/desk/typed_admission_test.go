@@ -64,7 +64,7 @@ func typedAdmissionCall(s *Server, method, path, revision string, raw []byte, to
 
 func TestTypedAdmissionQualificationHTTPAndReload(t *testing.T) {
 	_, _, pack := typedAdmissionVector(t)
-	q := &inputQualification{Kind: "pack", Key: "typed", Pack: pack, Digest: "sha256:" + digestOf([]byte(pack)), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{"/Fact", "/values/Fact"}, {"/fact", "/values/fact"}}, Evidence: []inputDialectEvidence{}}, Sources: []json.RawMessage{}}, Conversions: map[string]inputConversion{"/Fact": {Kind: "boolean", TrueValue: "true", FalseValue: "false"}, "/fact": {Kind: "number"}}}
+	q := &inputQualification{Kind: "pack", Key: "typed", Pack: pack, Digest: "sha256:" + digestOf([]byte(pack)), Mapping: inputRecordDialect{Version: 2, Case: &inputCaseDialect{Facts: []inputDialectFact{{Target: "/Fact", Source: "/values/Fact"}, {Target: "/fact", Source: "/values/fact"}}, Evidence: []inputDialectEvidence{}}, Sources: []json.RawMessage{}}, Conversions: map[string]inputConversion{"/Fact": {Kind: "boolean", TrueValue: "true", FalseValue: "false"}, "/fact": {Kind: "number"}}}
 	document, err := json.Marshal(q.Mapping)
 	assistantRunMust(t, err)
 	bin, calls, retained := typedAdmissionRuntime(t, string(document), pack)
