@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
 )
@@ -1031,7 +1032,7 @@ func TestStorageMoveOriginalHistoryJourneys(t *testing.T) {
 			if cut == "artifact-present-delta" {
 				locatorAfter := len(dialectArtifactOwnerRead(t, dialectArtifactLocationPath(s, locatorOwner)))
 				seen := 0
-				storageTestMust(t, s.storageConstruction.owner.withControl(t.Context(), func(ctx context.Context, table *storageIntentTable) error {
+				storageTestMust(t, storageTestCompletedMoveJournal(t.Context(), s.storageConstruction.owner, func(ctx context.Context, table *storageIntentTable) error {
 					for _, j := range table.identity {
 						if j == nil || j.Action != storageIdentityIntentMove || j.Core.Phase != storageIntentRetired {
 							continue
@@ -1104,6 +1105,69 @@ func TestStorageMoveOriginalHistoryJourneys(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Read-only J inspection after a completed move, when no startup mutation or
+// registered move epoch remains for withControlOriginal. As in
+// withStartupMoveControl, the strict original decode runs once with the caller
+// context; the same try-only controlMu, original bootstrap EX and 250 ms window
+// then bound the J decode, and both physical banks must equal the decoded
+// images before and after it. Every J receipt/mapping check still runs.
+func storageTestCompletedMoveJournal(ctx context.Context, o *storageBudgetOwner, run func(context.Context, *storageIntentTable) error) (err error) {
+	if !o.valid() {
+		return storagebudget.ErrAuthority
+	}
+	original, err := o.readOriginalPolicy(ctx)
+	if err != nil {
+		return err
+	}
+	if original.RecoveryOnly {
+		return errStorageEnrollmentUnresolved
+	}
+	ctx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancel()
+	if !o.controlMu.TryLock() {
+		return storagebudget.ErrBusy
+	}
+	defer o.controlMu.Unlock()
+	gate, err := storageOpenOriginalControl(o.ref.cell, storageBootstrapName)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, gate.file.Close()) }()
+	if lockPrivateData(gate.file, true) != nil {
+		return storagebudget.ErrBusy
+	}
+	if err = gate.current(); err != nil {
+		return err
+	}
+	// controlOriginalCurrent without its startup/registered exclusion check.
+	images := func() error {
+		var actual [2][]byte
+		for i, name := range []string{"storage-owner.a", "storage-owner.b"} {
+			file, err := storageOpenOriginalControl(o.ref.cell, name)
+			if err != nil {
+				return err
+			}
+			actual[i] = make([]byte, storageOwnerCatalogBytes)
+			n, readErr := file.file.ReadAt(actual[i], 0)
+			err = errors.Join(readErr, file.current(), file.file.Close())
+			if err != nil || n != len(actual[i]) {
+				return errors.Join(errStorageCustody, err)
+			}
+		}
+		if !storageControlOriginalImages(&original, actual) {
+			return errStorageCustody
+		}
+		return ctx.Err()
+	}
+	if err = images(); err != nil {
+		return err
+	}
+	if err = o.withOriginalIntentTableOriginal(ctx, &original, run); err != nil {
+		return err
+	}
+	return images()
 }
 
 // These cuts leave an actual admitted Pending move for the outer New path.
