@@ -308,6 +308,7 @@ func TestDialectArtifactProjectMoveNativeRenameRecovery(t *testing.T) {
 }
 
 func TestDialectArtifactRecognizedExternalMove(t *testing.T) {
+	t.Skip(projectFollowedOutsideDesk)
 	s, ts, _ := assistantServer(t)
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
@@ -336,6 +337,7 @@ func TestDialectArtifactRecognizedExternalMove(t *testing.T) {
 // Missing pre-existing custody must refuse before owning workflow startup even
 // though there is no recovery journal yet. Restore the same lock inode to retry.
 func TestDialectArtifactRecognizedMoveMissingMarkerLockRefusesStartup(t *testing.T) {
+	t.Skip(projectFollowedOutsideDesk)
 	s, ts, _ := assistantServer(t)
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)
@@ -444,6 +446,7 @@ func TestDialectArtifactRecognizedMoveMissingMarkerLockRefusesStartup(t *testing
 }
 
 func TestDialectArtifactRecognizedMoveUncertainCASRestartsBeforeIdentity(t *testing.T) {
+	t.Skip(projectFollowedOutsideDesk)
 	s, ts, _ := assistantServer(t)
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
 		t.Fatal(code)

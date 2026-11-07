@@ -550,6 +550,22 @@ func (c *storageBudgetConstruction) validateBootstrapContinuation(ctx context.Co
 // pause. Desk does not start; nothing is reconciled or merged.
 var errDeskAnotherStartupProject = errors.New("This installation's storage belongs to the project Desk was first started on with these settings and data folders, not to this project. Start Desk on that project, or move that project from there with Move… under Admin → General → Desk home.")
 
+// errDeskProjectMovedOutside refuses a start on a project folder that was
+// moved or renamed outside Desk after storage registered it. The owner record
+// names the folder at its earlier path, so the start would otherwise refuse
+// custody and run read-only with a generic pause. Desk does not start; nothing
+// is rewritten. Following a folder by its identity is Desk #698.
+var errDeskProjectMovedOutside = errors.New("project moved outside Desk")
+
+type storageProjectMovedOutsideError struct{ From, To string }
+
+func (e storageProjectMovedOutsideError) Error() string {
+	return "This project was moved outside Desk, from " + e.From + " to " + e.To + ". Desk registered its storage at the earlier folder and cannot follow a move it did not make. Move the folder back to " + e.From + " and start Desk there; to move it, use Move… under Admin → General → Desk home."
+}
+func (e storageProjectMovedOutsideError) Is(target error) bool {
+	return target == errDeskProjectMovedOutside || target == errStorageCustody
+}
+
 // A saved catalog without a Desk home records exactly one project workspace:
 // the startup project's, keyed by its project identity. A start whose project
 // has another identity key is another project. A Desk home's registry projects

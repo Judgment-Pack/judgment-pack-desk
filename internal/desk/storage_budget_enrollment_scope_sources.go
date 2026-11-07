@@ -37,6 +37,28 @@ func (s *storageOriginalSourceRoot) directoryIdentity() (storageDirectoryIdentit
 	return storageDirectoryID(s.root)
 }
 
+// The startup project's own folder, registered at another path, with no move
+// Desk made: it was moved or renamed outside Desk. Only the words differ; the
+// start is refused either way.
+func (x *storageOriginalSources) projectMovedOutside(ctx context.Context, registered storageOwnerPersistentObject, from string) *storageProjectMovedOutsideError {
+	c := x.construction
+	if c == nil || c.server == nil || c.server.home != nil || c.server.cfg.deskID != "" || c.project == nil || c.project.own == nil {
+		return nil
+	}
+	c.mu.Lock()
+	moved := c.moveHistory
+	c.mu.Unlock()
+	to := c.server.projectDir
+	if moved || from == to || !filepath.IsAbs(from) || !filepath.IsAbs(to) {
+		return nil
+	}
+	project, err := storageOwnerPersistentRoot(ctx, c.project.own.root)
+	if err != nil || project != registered {
+		return nil
+	}
+	return &storageProjectMovedOutsideError{From: from, To: to}
+}
+
 // Resolve only from the actual original adopted project or original home
 // registry's retained project edges. A catalog pathname is never followed.
 func (x *storageOriginalSources) exactProjectScope(ctx context.Context, catalog storageOwnerCatalogV2, row storageOwnerRoot) (*storageOriginalSourceRoot, error) {
@@ -62,6 +84,9 @@ func (x *storageOriginalSources) exactProjectScope(ctx context.Context, catalog 
 		}
 	}
 	if !workspace {
+		if moved := x.projectMovedOutside(ctx, binding.Project, string(binding.HistoryIdentity)); moved != nil {
+			return nil, *moved
+		}
 		return nil, errStorageCustody
 	}
 	var root *os.Root

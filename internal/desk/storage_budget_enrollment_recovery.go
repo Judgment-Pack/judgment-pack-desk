@@ -3405,6 +3405,14 @@ func (c *storageBudgetConstruction) inspectOriginalStartupKey(ctx context.Contex
 			return "", errStorageCustody
 		}
 		if string(plan.HistoryIdentity) != history {
+			// The same folder at another path, with no move Desk made: it was
+			// moved or renamed outside Desk. Refuse that in words.
+			if history == c.server.projectDir && c.home != nil && c.home.exclusive {
+				x := &storageOriginalSources{construction: c}
+				if moved := x.projectMovedOutside(ctx, plan.ProjectObject, string(plan.HistoryIdentity)); moved != nil {
+					return "", *moved
+				}
+			}
 			return "", errStorageCustody
 		}
 		key = string(plan.AccountingOwnerKey)

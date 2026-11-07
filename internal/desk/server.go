@@ -614,6 +614,12 @@ func New(cfg Config) (*Server, error) {
 			s.Close()
 			return nil, errDeskAnotherStartupProject
 		}
+		// So is a project folder moved outside Desk after registration.
+		var moved storageProjectMovedOutsideError
+		if errors.As(err, &moved) {
+			s.Close()
+			return nil, moved
+		}
 		s.storageReadOnly = true
 		s.storageProblem = err
 		s.recordStorageStatusProblem(err)

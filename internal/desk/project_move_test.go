@@ -47,7 +47,12 @@ func stampMoveIdentity(t *testing.T, s *Server) {
 	privateFixture(t, filepath.Join(s.projectDir, startupIdentityDir, startupIdentityName), identityLine(strings.Repeat("c", 64), s.projectDir, ""))
 }
 
+// These follow a project folder moved outside Desk. Storage registers a project
+// at its folder, and v0.14.0 refuses a start there in words instead.
+const projectFollowedOutsideDesk = "v0.14.0 refuses a project moved outside Desk in words (TestProjectMovedOutsideDeskIsRefusedInWords); following the folder by its identity is Desk #698"
+
 func TestRecognizedMoveLinksAllHistoryBeforeIdentity(t *testing.T) {
+	t.Skip(projectFollowedOutsideDesk)
 	s, ts, _ := assistantServer(t)
 	stampMoveIdentity(t, s)
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
@@ -98,6 +103,7 @@ func TestRecognizedMoveLinksAllHistoryBeforeIdentity(t *testing.T) {
 	}
 }
 func TestMovedHistoryWithoutChatsAndConflicts(t *testing.T) {
+	t.Skip(projectFollowedOutsideDesk)
 	for _, conflict := range []bool{false, true} {
 		t.Run(map[bool]string{false: "draft only", true: "destination draft conflict"}[conflict], func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
@@ -149,6 +155,7 @@ func TestMovedHistoryWithoutChatsAndConflicts(t *testing.T) {
 }
 
 func TestMovedHistoryWithoutMarkerValidatesPreviousRuns(t *testing.T) {
+	t.Skip(projectFollowedOutsideDesk)
 	for _, kind := range []string{"empty ledger", "malformed ledger", "wrong namespace"} {
 		t.Run(kind, func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
@@ -264,6 +271,58 @@ func TestProjectMoveAfterRestartKeepsHistory(t *testing.T) {
 		t.Fatalf("lost history %d %s", code, reply.Content)
 	}
 }
+
+// **A project moved outside Desk is refused in words.** Storage registered
+// the project at its folder when its history was enrolled. Renamed by hand,
+// the start found the same folder at another path and refused custody, so
+// Desk ran read-only behind a generic pause. It now does not start, says the
+// project was moved outside Desk, and names both folders, moving it back and
+// Move…. Moved back, the project starts with its history.
+func TestProjectMovedOutsideDeskIsRefusedInWords(t *testing.T) {
+	for _, identity := range []bool{false, true} {
+		t.Run(map[bool]string{false: "history", true: "history and identity"}[identity], func(t *testing.T) {
+			s, ts, _ := assistantServer(t)
+			if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
+				t.Fatal(code)
+			}
+			if identity {
+				// The producer's private folder and identity: the lineage
+				// then names the project's accounting key and history path.
+				storageTestMust(t, s.ensureDialectDraftEnrollment(t.Context()))
+				if _, err := os.Stat(filepath.Join(s.projectDir, startupIdentityDir, startupIdentityName)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			storageChat := savedConversationBytes(t, s, ts)
+			previous := s.projectDir
+			destination := previous + "-renamed"
+			storageTestMust(t, s.Close())
+			storageTestMust(t, os.Rename(previous, destination))
+			cfg := s.cfg
+			cfg.Root, cfg.ProjectDir = nil, destination
+			refused, err := New(cfg)
+			if refused != nil {
+				refused.Close()
+			}
+			if !errors.Is(err, errDeskProjectMovedOutside) || refused != nil {
+				t.Fatalf("a project moved outside Desk started: %v", err)
+			}
+			for _, words := range []string{"moved outside Desk", previous, destination, "Move the folder back", "Move…"} {
+				if !strings.Contains(err.Error(), words) {
+					t.Fatalf("the refusal does not say %q: %v", words, err)
+				}
+			}
+			storageTestMust(t, os.Rename(destination, previous))
+			again, ats, _ := startedAt(t, s, previous)
+			if again.storageReadOnly {
+				t.Fatalf("the project moved back started read-only: %v", again.storageProblem)
+			}
+			if code, reply := chatRequest(t, ats, "GET", "", "", true, ""); code != 200 || string(reply.Content) != storageChat {
+				t.Fatalf("history after moving back %d %s", code, reply.Content)
+			}
+		})
+	}
+}
 func TestProjectMoveNeverReplacesDestinationOrStaleConfig(t *testing.T) {
 	for _, kind := range []string{"occupied", "stale", "history", "busy", "tool"} {
 		t.Run(kind, func(t *testing.T) {
@@ -377,6 +436,7 @@ func TestProjectMoveCrashRecovery(t *testing.T) {
 }
 
 func TestConfirmedMoveOrCopyKeepsHistorySeparate(t *testing.T) {
+	t.Skip(projectFollowedOutsideDesk)
 	for _, choice := range []string{identityMoved, identityCopy} {
 		t.Run(choice, func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
