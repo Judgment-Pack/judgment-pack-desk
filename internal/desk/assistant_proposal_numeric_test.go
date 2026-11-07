@@ -125,7 +125,7 @@ func TestAssistantProposalNumericActualAPI(t *testing.T) {
 			s, token := assistantAuthoringFixture(t, provider.URL)
 			a := assistantAuthoringRequestFixture("numeric-api", "author-pack")
 			ref := assistantAuthoringCaptureFixture(t, s, token, a)
-			first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 201)
+			first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", assistantContextStartFixture(t, s, token, *ref.Start)), 201)
 			state := "complete"
 			if tc.canonical == "" {
 				state = "stopped"
@@ -179,7 +179,7 @@ func TestAssistantProposalNumericActualNative(t *testing.T) {
 			a := assistantAuthoringRequestFixture("numeric-native", "author-pack")
 			a.Effort = "medium"
 			ref := assistantAuthoringCaptureFixture(t, s, token, a)
-			first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", ref.Start), 201)
+			first := assistantProtocolView(t, assistantBriefCall(s, token, "POST", "/api/assistant-runs", assistantContextStartFixture(t, s, token, *ref.Start)), 201)
 			run := assistantProtocolWait(t, s, token, first.ID, "complete")
 			if tc.name == "stable" {
 				assistantNumericAccepted(t, run, assistantNumericCanonicalDocument)
