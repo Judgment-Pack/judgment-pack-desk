@@ -611,7 +611,7 @@ func storageOpenComplete(ctx context.Context, o *storageOriginal, homeOwner stri
 	if re != nil || ce != nil || len(names) != 6 {
 		return nil, errStorageBootstrap
 	}
-	q, e := storagebudget.OpenHeld(storagebudget.HeldAnchor{Root: anchor.root, LockWitness: lock, Installation: record.Installation, Binding: binding})
+	q, e := storagebudget.OpenHeld(storagebudget.HeldAnchor{Root: anchor.root, LockWitness: lock, Installation: record.Installation, Binding: binding, AdvisoryLimits: storageLimitsAdvisory})
 	if e != nil {
 		return nil, e
 	}
@@ -930,7 +930,7 @@ func bootstrapStorageInstallation(ctx context.Context, config, homeOwner string,
 		return nil, e
 	}
 	o.files = append(o.files, lock)
-	q, e := storagebudget.OpenHeld(storagebudget.HeldAnchor{Root: anchor.root, LockWitness: lock.file, Installation: id, Binding: binding})
+	q, e := storagebudget.OpenHeld(storagebudget.HeldAnchor{Root: anchor.root, LockWitness: lock.file, Installation: id, Binding: binding, AdvisoryLimits: storageLimitsAdvisory})
 	if e != nil {
 		return nil, e
 	}

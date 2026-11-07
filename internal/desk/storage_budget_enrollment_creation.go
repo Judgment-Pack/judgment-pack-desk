@@ -1612,7 +1612,7 @@ func storageCreationLogicalRoom(tail storageCreationTail, components []storagebu
 		return err
 	}
 	for category, value := range usage {
-		if !value.le(q.Policy.Installation.Category[category]) {
+		if !storageLimitsAdvisory && !value.le(q.Policy.Installation.Category[category]) {
 			return storagebudget.ErrLimit
 		}
 	}
@@ -1620,7 +1620,7 @@ func storageCreationLogicalRoom(tail storageCreationTail, components []storagebu
 	if err != nil {
 		return err
 	}
-	if !total.le(q.Policy.Installation.Total) {
+	if !storageLimitsAdvisory && !total.le(q.Policy.Installation.Total) {
 		return storagebudget.ErrLimit
 	}
 	return nil

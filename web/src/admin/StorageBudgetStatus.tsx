@@ -3,7 +3,7 @@ import {msg, useLocale} from '../i18n'
 import {Button} from '../ui/Button'
 import {SettingsSection} from '../ui/SettingsSection'
 import {SettingsFeedback} from '../ui/SettingsFeedback'
-import {formatStorageUInt, type StorageAmounts, type StorageCategory, type StorageVector} from './storageBudgetModel'
+import {formatStorageUInt, storageOverLimit, type StorageAmounts, type StorageCategory, type StorageVector} from './storageBudgetModel'
 import {useStorageBudgetStatus} from './useStorageBudgetStatus'
 
 function Vector({value}: {value: StorageVector | null}) {
@@ -50,6 +50,7 @@ export function StorageBudgetStatus() {
     {snapshot && <>
       <p role="status">{stale ? msg('Stale storage observation') : msg('Storage observation')} · {msg('As of')} <time dateTime={snapshot.observedAt}>{snapshot.observedAt}</time></p>
       {status?.readOnly && <SettingsFeedback tone="warning">{msg('Storage is read only. Existing data remains visible; status refresh does not resume paused work.')}</SettingsFeedback>}
+      {storageOverLimit(snapshot) && <SettingsFeedback tone="warning">{msg('Storage is at or over a limit set under Admin → Storage. In this release limits are warnings: Desk keeps working and refuses no work for them.')}</SettingsFeedback>}
       {measurement?.at ? <>
        <h3>{msg('Measured Desk-owned usage')}</h3>
        <p role="status">{measurementStale ? msg('Stale usage measurement') : msg('Usage measurement')} · {msg('Measurement as of')} <time dateTime={measurement.at}>{measurement.at}</time> · {msg('Measurement generation')}: {measurement.generation}</p>

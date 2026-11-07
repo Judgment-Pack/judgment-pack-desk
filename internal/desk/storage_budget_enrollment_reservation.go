@@ -50,7 +50,7 @@ func storageEnrollmentInitialRoomVariant(s storageEnrollmentPeakScope, q *storag
 	if err != nil {
 		return err
 	}
-	if !control.le(q.Policy.Installation.Category[storagebudget.Control]) || !all.le(q.Policy.Installation.Total) {
+	if !storageLimitsAdvisory && (!control.le(q.Policy.Installation.Category[storagebudget.Control]) || !all.le(q.Policy.Installation.Total)) {
 		return storagebudget.ErrLimit
 	}
 	for i := 0; i < int(s[326]); i++ {

@@ -507,6 +507,13 @@ func promises(c *checkpoint, tickets [Slots]Ticket) ([Categories]Vector, [MaxWor
 	return all, work, capacity, nil
 }
 func admit(c *checkpoint, tickets [Slots]Ticket, observations []CapacityObservation, now time.Time) error {
+	return admitLimits(c, tickets, observations, now, false)
+}
+
+// admitLimits checks the candidate tickets. With advisory limits, a promise at
+// or over an installation or workspace limit is not refused; the sums are still
+// computed, so an overflow still refuses, and capacity headroom is unchanged.
+func admitLimits(c *checkpoint, tickets [Slots]Ticket, observations []CapacityObservation, now time.Time, advisory bool) error {
 	if c.Maintenance {
 		return ErrUnknown
 	}
@@ -514,12 +521,13 @@ func admit(c *checkpoint, tickets [Slots]Ticket, observations []CapacityObservat
 	if e != nil {
 		return e
 	}
-	if e = limitsCheck(c.Installation, all, c.Policy.Installation); e != nil {
+	limited := func(e error) bool { return e != nil && !(advisory && e == ErrLimit) }
+	if e = limitsCheck(c.Installation, all, c.Policy.Installation); limited(e) {
 		return e
 	}
 	for i, v := range c.Workspaces {
 		if !v.ID.zero() {
-			if e = limitsCheck(v.Usage, work[i], v.Limits); e != nil {
+			if e = limitsCheck(v.Usage, work[i], v.Limits); limited(e) {
 				return e
 			}
 		}

@@ -258,7 +258,7 @@ func (q *Coordinator) reserve(ctx context.Context, r Request, observations []Cap
 		// can consume capacity when another component/filesystem would refuse.
 		candidate := l.tickets
 		candidate[slot] = t
-		if e = admit(l.cp, candidate, observations, time.Now()); e != nil {
+		if e = admitLimits(l.cp, candidate, observations, time.Now(), q.anchor.AdvisoryLimits); e != nil {
 			return e
 		}
 		manifest, e := encodeManifest(t, r.Entries, q.anchor)

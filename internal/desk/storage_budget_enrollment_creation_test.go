@@ -755,9 +755,11 @@ func TestStorageCreationRetainedTailRoomIncludesAction(t *testing.T) {
 	}
 	q.Policy.Installation.Category[storagebudget.Control].Bytes = q.Installation[storagebudget.Control].Bytes + r.Tail.Logical.Bytes + 2 + (128 << 20)
 	storageTestMust(t, storageCreationLogicalRoom(r.Tail, r.Core.Components, q))
+	// Limits are warnings (storageLimitsAdvisory): one byte past the combined
+	// logical limit is admitted, not refused.
 	q.Policy.Installation.Category[storagebudget.Control].Bytes--
-	if err := storageCreationLogicalRoom(r.Tail, r.Core.Components, q); !errors.Is(err, storagebudget.ErrLimit) {
-		t.Fatal("tail and action admitted independently past combined logical limit", err)
+	if err := storageCreationLogicalRoom(r.Tail, r.Core.Components, q); err != nil {
+		t.Fatal("an advisory combined logical limit refused the tail and action", err)
 	}
 	var id storagebudget.ID
 	copy(id[:], r.Tail.Capacity[0][:16])

@@ -13,8 +13,10 @@ acquired before host custody and retained until its borrowed source descriptors
 have drained. Prefix order is home EX, installation-use EX, original work EX,
 then canonical domain EX; the short control/Q gate comes after these prefixes.
 Initial census borrows these same holds. The constructor changes the same home
-descriptor to SH, then checks original currentness, Q, logical limits and a fresh
-concrete advisory capacity pass before recovery or workers start. The live
+descriptor to SH, then checks original currentness, Q and a fresh concrete
+advisory capacity pass before recovery or workers start, and compares usage with
+the logical limits. In v0.14.0 the limits are advisory: usage at or over a limit
+is reported and logged, never a refusal. The live
 source set retains the absolute named home and every original registry project
 edge, including projects without private data. Currentness
 rechecks these names; child servers borrow the parent's installation only after
@@ -190,9 +192,14 @@ blank banks, absent Ready and empty original host journal.
 Ordinary reopen conserves exact root/workspace/filesystem/constraint IDs,
 generations, policy, capacity bindings and every current/retired ticket tuple.
 Unretired obligations, unreusable host journal state or an unknown maintenance
-fence wait for their original recovery path. Existing over-budget data remains
-readable through the private startup read-only routes while growth and workers
-pause; this state is launch-local and grants no saved permission.
+fence wait for their original recovery path. Existing data stays readable
+through the private startup read-only routes while growth and workers pause;
+this state is launch-local and grants no saved permission. Over-budget data
+alone does not start it: in v0.14.0 a start over a logical limit is writable and
+warns (`storageLimitsAdvisory`; Q is opened with `AdvisoryLimits`, so Reserve
+charges and reports but does not refuse a limit). The free-space headroom on
+each measured filesystem still refuses growth. Accurate counting and enforcing
+the limits come in v0.15.0 (Desk #698).
 
 This batch has handwritten source tests and requires independent source review
 before focused compiler/runtime checks. It does not qualify all producers,

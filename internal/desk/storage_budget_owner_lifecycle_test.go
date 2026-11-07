@@ -522,9 +522,13 @@ func TestStorageOwnerLogicalLimitIntersectionsAndReadableRefusal(t *testing.T) {
 	}
 }
 
-// Existing data is counted before the supported startup hands off home EX.
-// Sparse length exercises logical policy without an allocation/workload claim.
-func TestStorageOwnerActualOverBudgetPreservesReadableData(t *testing.T) {
+// **A start over a storage limit warns and keeps working.** Existing data is
+// counted before the supported startup hands off home EX; here it is past the
+// Control limit. Limits are warnings in this release (storageLimitsAdvisory):
+// the start is not read only, ordinary writes and the chat-storage settings
+// answer, and status shows the counted data over the limit. Sparse length
+// exercises logical policy without an allocation/workload claim.
+func TestStorageOwnerActualOverBudgetWarnsAndKeepsWorking(t *testing.T) {
 	cfg := ownerActualConfig(t)
 	privateFixture(t, filepath.Join(cfg.ProjectDir, "saved.md"), "saved project document")
 	if err := os.Mkdir(cfg.DeskConfigDir, 0700); err != nil {
@@ -549,8 +553,8 @@ func TestStorageOwnerActualOverBudgetPreservesReadableData(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if !s.storageReadOnly || !errors.Is(s.storageProblem, storagebudget.ErrLimit) || s.jobs != nil || s.stamping != nil {
-		t.Fatalf("over-budget actual startup did not pause growth: %v", s.storageProblem)
+	if s.storageReadOnly || s.storageProblem != nil {
+		t.Fatalf("an over-limit start was read only: %v", s.storageProblem)
 	}
 	f, err = os.Open(path)
 	if err != nil {
@@ -565,23 +569,23 @@ func TestStorageOwnerActualOverBudgetPreservesReadableData(t *testing.T) {
 	if _, err = f.Read(raw); err != nil || string(raw) != "saved" {
 		t.Fatal("existing bytes unreadable", err)
 	}
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/assistant/runs", nil)
-	r.Header.Set("Authorization", "Bearer "+testToken)
-	s.ServeHTTP(w, r)
-	if w.Code != 503 {
-		t.Fatal("over-budget startup served growth", w.Code)
-	}
-	get := func(route string) *httptest.ResponseRecorder {
+	call := func(method, route, body string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
-		r := httptest.NewRequest("GET", route, nil)
+		r := httptest.NewRequest(method, route, nil)
+		if body != "" {
+			r = httptest.NewRequest(method, route, strings.NewReader(body))
+		}
 		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set("Content-Type", "application/json")
 		s.ServeHTTP(w, r)
 		return w
 	}
-	// Saved data stays readable over HTTP.
-	if w := get("/api/file?path=saved.md"); w.Code != 200 {
-		t.Fatal("refused startup lost the safe HTTP read", w.Code, w.Body.String())
+	// An ordinary write is not paused by the limit.
+	if w := call("PUT", "/api/file", `{"path":"notes.md","content":"after the limit","baseSha256":""}`); w.Code != 200 && w.Code != 201 {
+		t.Fatal("an over-limit start refused an ordinary write", w.Code, w.Body.String())
+	}
+	if w := call("GET", "/api/file?path=saved.md", ""); w.Code != 200 {
+		t.Fatal("an over-limit start lost the HTTP read", w.Code, w.Body.String())
 	} else {
 		var reply struct {
 			Content string `json:"content"`
@@ -590,20 +594,17 @@ func TestStorageOwnerActualOverBudgetPreservesReadableData(t *testing.T) {
 			t.Fatal("HTTP read changed saved document", err)
 		}
 	}
-	// The chat-storage settings reply needs the settings read recovery holds,
-	// so it answers 503 in words (serveStorageReadOnly), never a substitute.
-	if w := get("/api/storage"); w.Code != 503 || !strings.Contains(w.Body.String(), storageStatusUnknown) {
-		t.Fatal("read-only chat-storage settings were not refused as documented", w.Code, w.Body.String())
+	if w := call("GET", "/api/storage", ""); w.Code != 200 {
+		t.Fatal("an over-limit start withheld the chat-storage settings", w.Code, w.Body.String())
 	}
-	// Storage status shows the measured read-only state, with the over-budget
-	// data counted.
-	w = get("/api/storage/status")
+	// Storage status shows the counted data over the Control limit, writable.
+	w := call("GET", "/api/storage/status", "")
 	var status struct {
 		ReadOnly bool                   `json:"readOnly"`
 		Snapshot *storageStatusSnapshot `json:"snapshot"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil || w.Code != 200 || !status.ReadOnly || status.Snapshot == nil || status.Snapshot.Installation.ChargedLogical == nil {
-		t.Fatal("storage status omitted the measured read-only state", w.Code, err, w.Body.String())
+	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil || w.Code != 200 || status.ReadOnly || status.Snapshot == nil || status.Snapshot.Installation.ChargedLogical == nil {
+		t.Fatal("storage status omitted the measured writable state", w.Code, err, w.Body.String())
 	}
 	if charged, err := strconv.ParseUint(status.Snapshot.Installation.ChargedLogical.Bytes, 10, 64); err != nil || charged < 536870913 {
 		t.Fatal("storage status did not count the over-budget data", status.Snapshot.Installation.ChargedLogical, err)

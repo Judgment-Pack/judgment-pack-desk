@@ -298,20 +298,18 @@ func TestStoragePolicyHostPrepareAndStickyRestart(t *testing.T) {
 					t.Fatal("policy reduction erased an existing workspace charge")
 				}
 			}
-			qBefore, e := s.storageConstruction.ref.cell.q.InspectAction(t.Context())
-			storageTestMust(t, e)
+			// Limits are warnings (storageLimitsAdvisory): new growth under the
+			// reduced workspace limit is admitted, not refused.
 			plan := storageWriterPlan(root)
 			plan.Target, plan.Stage, plan.Operation = "policy-over-limit.json", ".policy-over-limit-stage", "policy-over-limit"
-			if a, e := s.storageConstruction.owner.admitSingleFile(t.Context(), plan); !errors.Is(e, storagebudget.ErrLimit) || a != nil {
-				t.Fatal("new growth under reduced workspace limit was not refused", e)
+			a, e := s.storageConstruction.owner.admitSingleFile(t.Context(), plan)
+			if e != nil || a == nil {
+				t.Fatal("new growth under a reduced, advisory workspace limit was refused", e)
 			}
-			qAfter, e := s.storageConstruction.ref.cell.q.InspectAction(t.Context())
-			storageTestMust(t, e)
-			if !reflect.DeepEqual(qBefore, qAfter) {
-				t.Fatal("refused growth changed original Q promises or charges")
-			}
-			if _, e = root.root.Stat(plan.Target); !errors.Is(e, os.ErrNotExist) {
-				t.Fatal("refused growth wrote its target", e)
+			storageTestMust(t, a.Write(t.Context()))
+			storageTestMust(t, a.Close())
+			if _, e = root.root.Stat(plan.Target); e != nil {
+				t.Fatal("growth admitted over an advisory limit was not written", e)
 			}
 			storageTestMust(t, s.Close())
 			next := ownerActualNew(t, cfg)

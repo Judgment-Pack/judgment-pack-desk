@@ -40,6 +40,10 @@ export type StorageBudgetStatus = {
   pressure: {active: boolean; codes: StorageReason[]; firstSeenAt: string | null; lastSeenAt: string | null; durableState: 'unconfirmed' | 'available' | 'unknown'}
   snapshot: StorageSnapshot | null
 }
+/** Whether any shown scope is at or over its limit. Limits are warnings in this release; this grants or refuses nothing. */
+export function storageOverLimit(snapshot: StorageSnapshot | null | undefined): boolean {
+  return Boolean(snapshot && [snapshot.installation, snapshot.currentWorkspace, ...snapshot.categories, ...(snapshot.currentWorkspaceCategories ?? [])].some(row => row?.overBudget === true))
+}
 const invalid = () => { throw new Error('Storage status unavailable') }
 function object(value: unknown): Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : invalid() }
 function bool(value: unknown): boolean { return typeof value === 'boolean' ? value : invalid() }

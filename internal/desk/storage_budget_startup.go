@@ -559,13 +559,8 @@ func (s *Server) revalidateStorageBudgetStartup(ctx context.Context) (err error)
 	if err != nil {
 		return err
 	}
-	if err = storageOwnerUsageWithinLimits(snapshot.Installation, v.Configuration.Policy.Installation); err != nil {
+	if err = storageOwnerLimitsAtStart(s, snapshot, v.Configuration.Policy.Installation); err != nil {
 		return err
-	}
-	for _, w := range snapshot.Workspaces {
-		if err = storageOwnerUsageWithinLimits(w.Usage, w.Limits); err != nil {
-			return err
-		}
 	}
 	var pass *storageCapacityPass
 	if handoff != nil {
@@ -589,6 +584,41 @@ func (s *Server) revalidateStorageBudgetStartup(ctx context.Context) (err error)
 		}
 		g.mu.Unlock()
 		return c.openAdmissionHandoff(ctx, handoff)
+	}
+	return nil
+}
+
+// storageLimitsAdvisory: in this release a storage limit is a warning. Usage
+// at or over a limit is measured and reported (status, Admin → Storage and the
+// storage notice), and Desk keeps working: no start is made read only and no
+// ordinary write is refused for it. Free-space headroom on the disk itself and
+// every custody, recovery and ownership check are unchanged. Accurate counting
+// and enforcing the limits come in a later release (Desk #698).
+const storageLimitsAdvisory = true
+
+// storageOwnerLimitsAtStart compares the counted usage with the limits once the
+// start is otherwise ready. Over a limit is said in the log and shown by status;
+// only an arithmetic failure (an overflowing count) refuses.
+func storageOwnerLimitsAtStart(s *Server, snapshot storagebudget.Snapshot, installation storagebudget.Limits) error {
+	over := false
+	check := func(usage [storagebudget.Categories]storagebudget.Vector, limits storagebudget.Limits) error {
+		err := storageOwnerUsageWithinLimits(usage, limits)
+		if storageLimitsAdvisory && errors.Is(err, storagebudget.ErrLimit) {
+			over = true
+			return nil
+		}
+		return err
+	}
+	if err := check(snapshot.Installation, installation); err != nil {
+		return err
+	}
+	for _, w := range snapshot.Workspaces {
+		if err := check(w.Usage, w.Limits); err != nil {
+			return err
+		}
+	}
+	if over && s != nil && s.log != nil {
+		s.log.Print("desk: storage is at or over a limit set under Admin → Storage; in this release limits are warnings, and Desk keeps working")
 	}
 	return nil
 }
@@ -644,7 +674,9 @@ func (s *Server) serveStorageReadOnly(w http.ResponseWriter, r *http.Request) bo
 		if s.refuseUnusableStore(w) {
 			return true
 		}
-		http.Error(w, "Storage budget is unavailable or exceeded; new work is paused.", http.StatusServiceUnavailable)
+		// Never a limit: limits are warnings (storageLimitsAdvisory). This is
+		// custody or recovery that the start could not resolve.
+		http.Error(w, "Storage is unavailable until its recovery completes; new work is paused. Review Admin → Storage.", http.StatusServiceUnavailable)
 		return true
 	}
 	return false

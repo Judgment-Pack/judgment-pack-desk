@@ -147,7 +147,7 @@ func TestStorageEnrollmentInitialRoomHandwritten(t *testing.T) {
 		}
 	}
 	storageTestMust(t, storageEnrollmentInitialRoom(s, &q, observations, now))
-	for _, mutation := range []string{"missing", "duplicate", "generation", "unknown", "stale", "future", "bytes", "inodes", "root-unknown", "workspace-unknown", "maintenance", "logical-limit"} {
+	for _, mutation := range []string{"missing", "duplicate", "generation", "unknown", "stale", "future", "bytes", "inodes", "root-unknown", "workspace-unknown", "maintenance"} {
 		t.Run(mutation, func(t *testing.T) {
 			badQ := q
 			bad := append([]storagebudget.CapacityObservation{}, observations...)
@@ -174,14 +174,19 @@ func TestStorageEnrollmentInitialRoomHandwritten(t *testing.T) {
 				badQ.Workspaces[0].Known = false
 			case "maintenance":
 				badQ.Maintenance = true
-			case "logical-limit":
-				badQ.Installation[storagebudget.Control] = badQ.Policy.Installation.Category[storagebudget.Control]
-				badQ.Roots[0].Usage[storagebudget.Control] = badQ.Installation[storagebudget.Control]
 			}
 			if err := storageEnrollmentInitialRoom(s, &badQ, bad, now); err == nil {
 				t.Fatal("inadmissible initial scope accepted")
 			}
 		})
+	}
+	// Limits are warnings (storageLimitsAdvisory): a scope already at the
+	// Control limit is admitted, not refused.
+	over := q
+	over.Installation[storagebudget.Control] = over.Policy.Installation.Category[storagebudget.Control]
+	over.Roots[0].Usage[storagebudget.Control] = over.Installation[storagebudget.Control]
+	if err := storageEnrollmentInitialRoom(s, &over, observations, now); err != nil {
+		t.Fatal("an advisory logical limit refused the initial scope", err)
 	}
 }
 

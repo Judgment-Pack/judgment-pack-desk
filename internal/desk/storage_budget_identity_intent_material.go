@@ -953,7 +953,7 @@ func (p *storageEnrollmentEpoch) checkIdentityLaunch(ctx context.Context, l *sto
 	if err != nil {
 		return err
 	}
-	if !owedMove {
+	if !owedMove && !storageLimitsAdvisory {
 		if !within(installation, status.Policy.Installation) {
 			return storagebudget.ErrLimit
 		}

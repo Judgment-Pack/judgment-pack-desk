@@ -104,7 +104,7 @@ func openFixture(t *testing.T, path string) (*Coordinator, *os.Root, *os.File) {
 	must(t, e)
 	w, e := r.OpenFile("lock", os.O_RDWR|noFollow, 0)
 	must(t, e)
-	q, e := OpenHeld(HeldAnchor{r, w, ident(30), digest(30)})
+	q, e := OpenHeld(HeldAnchor{r, w, ident(30), digest(30), false})
 	must(t, e)
 	return q, r, w
 }
@@ -116,7 +116,7 @@ func fixture(t *testing.T) (*Coordinator, string) {
 	must(t, e)
 	w, e := r.OpenFile("lock", os.O_CREATE|os.O_EXCL|os.O_RDWR|noFollow, 0600)
 	must(t, e)
-	q, e := OpenHeld(HeldAnchor{r, w, ident(30), digest(30)})
+	q, e := OpenHeld(HeldAnchor{r, w, ident(30), digest(30), false})
 	must(t, e)
 	t.Cleanup(func() { q.Close(); w.Close(); r.Close() })
 	must(t, q.InitializeHeld(t.Context(), fixturePolicy()))
@@ -228,6 +228,46 @@ func TestAtomicAdmissionAndRestart(t *testing.T) {
 	}
 	if s.Promised[History].Bytes != 6 || len(s.Tickets) != 1 || s.Tickets[0].Token != token {
 		t.Fatalf("lost promise: %+v", s)
+	}
+}
+
+// **Advisory limits admit, charge and report; headroom still refuses.** With
+// AdvisoryLimits, a promise past the History limit is admitted and charged, and
+// Snapshot reports usage and promises over the limit. A promise that would
+// leave less than the disk's headroom is still refused, and admits nothing.
+func TestAdvisoryLimitsAdmitButHeadroomStillRefuses(t *testing.T) {
+	q, path := fixture(t)
+	must(t, q.Close())
+	r, e := os.OpenRoot(path)
+	must(t, e)
+	w, e := r.OpenFile("lock", os.O_RDWR|noFollow, 0)
+	must(t, e)
+	advisory, e := OpenHeld(HeldAnchor{Root: r, LockWitness: w, Installation: ident(30), Binding: digest(30), AdvisoryLimits: true})
+	must(t, e)
+	t.Cleanup(func() { advisory.Close(); w.Close(); r.Close() })
+	first, e := advisory.Reserve(t.Context(), request(6), observations())
+	must(t, e)
+	second, e := advisory.Reserve(t.Context(), request(5), observations())
+	if e != nil {
+		t.Fatalf("an advisory limit refused growth: %v", e)
+	}
+	if first == second {
+		t.Fatal("the second promise reused the first")
+	}
+	s, e := advisory.Snapshot(t.Context())
+	must(t, e)
+	if s.Promised[History].Bytes != 11 || s.Promised[History].le(fixturePolicy().Installation.Category[History]) {
+		t.Fatalf("the promises over the limit were not charged: %+v", s.Promised[History])
+	}
+	o := observations()
+	o[0].Available.Bytes = 100
+	if _, e = advisory.Reserve(t.Context(), request(1), o); !errors.Is(e, ErrHeadroom) {
+		t.Fatalf("headroom was not kept with advisory limits: %v", e)
+	}
+	s, e = advisory.Snapshot(t.Context())
+	must(t, e)
+	if s.Promised[History].Bytes != 11 || len(s.Tickets) != 2 {
+		t.Fatal("a refused promise was admitted")
 	}
 }
 func TestMultipleFilesystemsAllOrNone(t *testing.T) {
@@ -1172,7 +1212,7 @@ func TestInitializeHeldHandwrittenFaultBoundaries(t *testing.T) {
 			witness, e := root.OpenFile("lock", os.O_CREATE|os.O_EXCL|os.O_RDWR|noFollow, 0600)
 			must(t, e)
 			defer witness.Close()
-			q, e := OpenHeld(HeldAnchor{root, witness, ident(30), digest(30)})
+			q, e := OpenHeld(HeldAnchor{root, witness, ident(30), digest(30), false})
 			must(t, e)
 			defer q.Close()
 			q.fault = &fault
@@ -1209,7 +1249,7 @@ func TestInitializeHeldHandwrittenFaultBoundaries(t *testing.T) {
 					t.Fatal("partial retry changed retained bytes")
 				}
 			}
-			second, e := OpenHeld(HeldAnchor{root, witness, ident(30), digest(30)})
+			second, e := OpenHeld(HeldAnchor{root, witness, ident(30), digest(30), false})
 			must(t, e)
 			must(t, second.Close())
 		})

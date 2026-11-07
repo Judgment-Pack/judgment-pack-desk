@@ -138,11 +138,18 @@ func (p Policy) valid() bool {
 // LockWitness are borrowed. OpenHeld opens an independent lock description and
 // verifies the witness names that same private stable inode. Binding identifies
 // original installation custody; it is not an owner marker minted here.
+//
+// AdvisoryLimits makes installation and workspace limits advisory: Reserve
+// still charges every promise and Snapshot still reports usage against the
+// limits, but a promise that reaches or exceeds a limit is admitted rather
+// than refused with ErrLimit. Capacity headroom (ErrHeadroom), bounds,
+// authority and every other refusal are unchanged.
 type HeldAnchor struct {
-	Root         *os.Root
-	LockWitness  *os.File
-	Installation ID
-	Binding      Digest
+	Root           *os.Root
+	LockWitness    *os.File
+	Installation   ID
+	Binding        Digest
+	AdvisoryLimits bool
 }
 
 type Root struct {

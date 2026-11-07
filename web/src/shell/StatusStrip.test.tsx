@@ -17,6 +17,12 @@ vi.mock('../mcp/McpProvider',()=>({useMcp:()=>({status:'ready',known:true})}))
 vi.mock('../packs/upgrade/UpgradeNote',()=>({ProjectSafeguardsStatus:()=>null}))
 vi.mock('./ConnectionNotices',()=>({ConnectionStatus:()=> <button data-connection-status>connected</button>}))
 afterEach(()=>{cleanup();vi.clearAllMocks();storage.data=undefined})
+/** The contract fixture is over its limits; this one is within them. */
+function withinLimits(){
+ const value=storageStatusFixture()
+ for(const row of [value.snapshot.installation,value.snapshot.currentWorkspace,...value.snapshot.categories,...value.snapshot.currentWorkspaceCategories]) row.overBudget=false
+ return value
+}
 it('reports chat storage once across pages and keeps read and save recovery distinct',async()=>{
  const client=new QueryClient()
  const page=()=> <QueryClientProvider client={client}><MemoryRouter><DeskNoticesProvider><main>Chat content</main><StatusStrip/></DeskNoticesProvider></MemoryRouter></QueryClientProvider>
@@ -50,7 +56,7 @@ it('coalesces child low-space and actual refusal into the existing volatile stor
  view.rerender(page())
  expect(screen.getByText(/A storage refusal was reported/)).toBeTruthy()
  expect(screen.getAllByRole('link',{name:'Review storage'})).toHaveLength(1)
- storage.data=decodeStorageBudgetStatus({...storageStatusFixture(),childObservation:{...childObservation,state:'partial',roots:[{component:'runner',role:'workspace',state:'unavailable',reason:'unknown',logicalBytes:null,files:null,directories:null,availableBytes:null,lowSpace:null}]}})
+ storage.data=decodeStorageBudgetStatus({...withinLimits(),childObservation:{...childObservation,state:'partial',roots:[{component:'runner',role:'workspace',state:'unavailable',reason:'unknown',logicalBytes:null,files:null,directories:null,availableBytes:null,lowSpace:null}]}})
  view.rerender(page())
  await waitFor(()=>expect(screen.queryByRole('button',{name:'Storage needs attention'})).toBeNull())
  client.clear()
@@ -63,6 +69,23 @@ it('reports folders storage measures but has not registered in the same storage 
  render(<QueryClientProvider client={client}><MemoryRouter><DeskNoticesProvider><StatusStrip/></DeskNoticesProvider></MemoryRouter></QueryClientProvider>)
  fireEvent.click(screen.getByRole('button',{name:'Storage needs attention'}))
  expect(screen.getByText(/Storage measures folders Desk made that are not registered with it yet/)).toBeTruthy()
+ expect(screen.queryByText(/A storage refusal was reported/)).toBeNull()
+ expect(screen.getAllByRole('link',{name:'Review storage'})).toHaveLength(1)
+ client.clear()
+})
+
+it('warns, in the same storage notice, that storage is over a limit and Desk keeps working',async()=>{
+ state.error='';state.ready=true
+ storage.data=decodeStorageBudgetStatus(withinLimits())
+ const client=new QueryClient()
+ const page=()=> <QueryClientProvider client={client}><MemoryRouter><DeskNoticesProvider><StatusStrip/></DeskNoticesProvider></MemoryRouter></QueryClientProvider>
+ const view=render(page())
+ expect(screen.queryByRole('button',{name:'Storage needs attention'})).toBeNull()
+ const over=withinLimits();over.snapshot.categories[4].overBudget=true
+ storage.data=decodeStorageBudgetStatus(over)
+ view.rerender(page())
+ fireEvent.click(screen.getByRole('button',{name:'Storage needs attention'}))
+ expect(screen.getByText(/In this release limits are warnings: Desk keeps working and refuses no work for them/)).toBeTruthy()
  expect(screen.queryByText(/A storage refusal was reported/)).toBeNull()
  expect(screen.getAllByRole('link',{name:'Review storage'})).toHaveLength(1)
  client.clear()

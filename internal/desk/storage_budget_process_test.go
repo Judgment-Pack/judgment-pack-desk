@@ -66,7 +66,7 @@ func TestStorageCheckedWriterCrossProcessOriginalBudgetAndLifetime(t *testing.T)
 	policy.Installation.Category[storagebudget.Control].Bytes = policy.Installation.Total.Bytes
 	storageTestMust(t, o.ref.cell.q.UpdatePolicy(t.Context(), c.Revision, policy))
 	send("quota")
-	expect("shared-quota-refused")
+	expect("shared-quota-counted")
 	c, e = o.ref.cell.q.ConfigurationSnapshot(t.Context())
 	storageTestMust(t, e)
 	storageTestMust(t, o.ref.cell.q.UpdatePolicy(t.Context(), c.Revision, storageTestOptions().Policy))
@@ -77,7 +77,7 @@ func TestStorageCheckedWriterCrossProcessOriginalBudgetAndLifetime(t *testing.T)
 	done = true
 	s, e := o.ref.cell.q.Snapshot(t.Context())
 	storageTestMust(t, e)
-	if len(s.Tickets) != 0 || s.Installation[storagebudget.Control].Bytes != storagebudget.MetadataBudget+storageHostBudget+uint64(len(p.Bytes))*2 {
+	if len(s.Tickets) != 0 || s.Installation[storagebudget.Control].Bytes != storagebudget.MetadataBudget+storageHostBudget+uint64(len(p.Bytes))*3 {
 		t.Fatal("separate process budget or terminal bytes diverged")
 	}
 	status, e := o.ref.cell.q.InspectHostState(t.Context())
@@ -125,13 +125,25 @@ func TestStorageCheckedWriterProcessHelper(t *testing.T) {
 	}
 	fmt.Println("busy-original-domain-and-use")
 	barrier("quota")
-	if a, e := o.admitSingleFile(t.Context(), p); !errors.Is(e, storagebudget.ErrLimit) {
-		if a != nil {
-			a.Close()
-		}
-		t.Fatalf("separate process exceeded original shared quota: %v", e)
+	// Limits are warnings (storageLimitsAdvisory): the separate process is
+	// admitted past the lowered shared limit, and sees the original process's
+	// charge and its own promise counted together over it.
+	probe := p
+	probe.Target, probe.Stage, probe.Operation = "child-over.json", ".child-over-stage", "child-over-limit"
+	over, e := o.admitSingleFile(t.Context(), probe)
+	if e != nil {
+		t.Fatalf("an advisory shared limit refused the separate process: %v", e)
 	}
-	fmt.Println("shared-quota-refused")
+	shared, e := o.ref.cell.q.Snapshot(t.Context())
+	storageTestMust(t, e)
+	c, e := o.ref.cell.q.ConfigurationSnapshot(t.Context())
+	storageTestMust(t, e)
+	if counted := shared.Installation[storagebudget.Control].Bytes + shared.Promised[storagebudget.Control].Bytes; counted <= c.Policy.Installation.Category[storagebudget.Control].Bytes {
+		t.Fatalf("the separate process did not count the shared charge over the limit: %d", counted)
+	}
+	storageTestMust(t, over.Write(t.Context()))
+	storageTestMust(t, over.Close())
+	fmt.Println("shared-quota-counted")
 	barrier("publish")
 	a, e := o.admitSingleFile(t.Context(), p)
 	storageTestMust(t, e)

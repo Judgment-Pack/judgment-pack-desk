@@ -93,7 +93,11 @@ scopes, not a physical pool or exclusive reservation against other writers. Its
 inode axis has a fixed finite cap of 1,048,576 authored policy units even when
 all native inode models are dynamic. Native observations and unknown discovery
 remain separately labelled; no generic physically Healthy claim follows.
-Duplicate component keys refuse. Pure attribution carries the complete relation
+Duplicate component keys refuse. A handle opened with `HeldAnchor.AdvisoryLimits`
+(Desk v0.14.0) treats installation and workspace limits as advisory: Reserve
+still charges every promise and Snapshot reports usage over a limit, but no
+promise is refused with ErrLimit. Headroom, bounds, overflow and authority
+refusals are unchanged. Pure attribution carries the complete relation
 with zero capacity peaks. Every peak includes the installed versioned authored allocation estimate for
 rounding, namespace/metadata and settlement activity. These finite conservative
 policy estimates are not measured or universal OS allocation bounds and never

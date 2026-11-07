@@ -238,7 +238,7 @@ func (c *storageBudgetConstruction) loadOrEnrollOwner(ctx context.Context) (err 
 			return e
 		}
 	}
-	q, e := storagebudget.OpenHeld(storagebudget.HeldAnchor{Root: c.anchor, LockWitness: lock.file, Installation: record.Installation, Binding: record.QBinding})
+	q, e := storagebudget.OpenHeld(storagebudget.HeldAnchor{Root: c.anchor, LockWitness: lock.file, Installation: record.Installation, Binding: record.QBinding, AdvisoryLimits: storageLimitsAdvisory})
 	if e != nil {
 		return e
 	}
