@@ -26,7 +26,15 @@ func (o *storageBudgetOwner) coveredEnrollmentHost(host storageIntentSlot, statu
 }
 
 func storageEnrollmentPeakCoversHost(e storageEnrollmentPeakEvidence, host storageIntentSlot, status storagebudget.HostState) bool {
-	if e.Phase != 2 || e.CoveredEpoch != status.Epoch || e.AfterRevision > status.Revision || host.record.Slot >= 64 {
+	return storageEnrollmentPeakCoversHostAt(e, host, status, status.Epoch)
+}
+
+// storageEnrollmentPeakCoversHostAt is the coverage check with the epoch the
+// evidence must have covered given separately. Only the current epoch, or an
+// earlier one a completed original policy proves it advanced from by policy
+// alone (storageBudgetOwner.policyExplainedCoverageEpoch), may be passed.
+func storageEnrollmentPeakCoversHostAt(e storageEnrollmentPeakEvidence, host storageIntentSlot, status storagebudget.HostState, epoch uint64) bool {
+	if e.Phase != 2 || e.CoveredEpoch != epoch || epoch > status.Epoch || e.AfterRevision > status.Revision || host.record.Slot >= 64 {
 		return false
 	}
 	for _, coverage := range e.Board.Coverage {
@@ -44,7 +52,7 @@ func storageEnrollmentPeakCoversHost(e storageEnrollmentPeakEvidence, host stora
 		if w.Core.Transfer != nil && host.record.Phase == storageIntentRetired && !storageTransferTailBound(w.Core, e) {
 			return false
 		}
-		if !w.Selected || w.Slot != coverage.Slot || w.Generation != host.record.Generation || w.Operation != host.record.OperationID || w.Digest != sha256.Sum256(host.page) || !bytes.Equal(w.Page, host.page) || coverage.Page != w.Digest || coverage.Epoch != status.Epoch || coverage.Bridge != e.Bridge || int(origin.View) >= len(e.Views) {
+		if !w.Selected || w.Slot != coverage.Slot || w.Generation != host.record.Generation || w.Operation != host.record.OperationID || w.Digest != sha256.Sum256(host.page) || !bytes.Equal(w.Page, host.page) || coverage.Page != w.Digest || coverage.Epoch != epoch || coverage.Bridge != e.Bridge || int(origin.View) >= len(e.Views) {
 			return false
 		}
 		switch host.record.Phase {

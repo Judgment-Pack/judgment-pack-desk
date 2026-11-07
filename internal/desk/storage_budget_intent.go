@@ -1350,6 +1350,81 @@ func (o *storageBudgetOwner) intentCapacityMatches(r *storageRootBinding, c stor
 	return true
 }
 
+// policyCompletedAt returns the actual completed V6 policy when Q is exactly at
+// its outcome: the same full host state, the policy's effective definitions,
+// its boundary epoch and no terminal left unapplied. Only that can explain a
+// policy-only epoch advance; a legacy or recovery-only image cannot widen it.
+func (o *storageBudgetOwner) policyCompletedAt(ctx context.Context, status storagebudget.HostState, original *storagePolicyOriginal) (storagePolicyOriginal, bool) {
+	var state storagePolicyOriginal
+	if original == nil {
+		active, err := o.policyReserveClosureActive(ctx)
+		if err != nil || !active {
+			return state, false
+		}
+		state, err = o.readOriginalPolicy(ctx)
+		if err != nil {
+			return state, false
+		}
+	} else {
+		// Same strictly decoded images were compared under bootstrap EX; retain
+		// the original V6-only policy epoch exception, not a legacy widening.
+		if ctx.Err() != nil || original.RecoveryOnly ||
+			(!bytes.HasPrefix(original.Actual[0], storageOwnerV6Magic[:]) && !bytes.HasPrefix(original.Actual[1], storageOwnerV6Magic[:])) {
+			return state, false
+		}
+		state = *original
+	}
+	q, err := o.ref.cell.q.InspectAction(ctx)
+	if err != nil || !reflect.DeepEqual(storageHostState(q.View), status) {
+		return state, false
+	}
+	if state.RecoveryOnly {
+		o.admission.mu.Lock()
+		p := o.admission.enrollment
+		o.admission.mu.Unlock()
+		if p == nil || p.originalPolicyCurrentQ(ctx, state, q) != nil {
+			return state, false
+		}
+	} else if storagePolicyCompletedQ(state, q) != nil {
+		return state, false
+	}
+	return state, true
+}
+
+// policyCompletedDefinitions reports whether Q's definitions in v are exactly
+// the effective definitions of a completed original policy that Q is at, for
+// a start whose catalogue predates the limits edited since enrollment.
+func (o *storageBudgetOwner) policyCompletedDefinitions(ctx context.Context, v storagebudget.HostInspection) bool {
+	if !o.valid() || v.Configuration.Maintenance {
+		return false
+	}
+	q, err := o.ref.cell.q.InspectAction(ctx)
+	if err != nil {
+		return false
+	}
+	state, ok := o.policyCompletedAt(ctx, storageHostState(q.View), nil)
+	return ok && !state.RecoveryOnly && reflect.DeepEqual(storageOwnerDefinitionSnapshot(v), state.Effective) && reflect.DeepEqual(storageHostState(v), storageHostState(q.View))
+}
+
+// policyExplainedCoverageEpoch is the epoch at which the enrollment endpoint
+// covered its retained pages, when the advance from it to the current epoch is
+// explained by completed policy edits alone. Each limit edit after enrollment
+// moves Q to a new epoch without touching the enrollment: the completed policy
+// is built on this exact endpoint evidence, and Q, in this same full host
+// state, is at that policy's boundary epoch (policyCompletedAt). Anything else
+// (no completed policy, another endpoint, another epoch or host state, an
+// unapplied terminal) explains nothing and returns false.
+func (o *storageBudgetOwner) policyExplainedCoverageEpoch(ctx context.Context, e storageEnrollmentPeakEvidence, status storagebudget.HostState, original *storagePolicyOriginal) (uint64, bool) {
+	if !o.valid() || e.Phase != 2 || e.CoveredEpoch == 0 || e.CoveredEpoch >= status.Epoch {
+		return 0, false
+	}
+	state, ok := o.policyCompletedAt(ctx, status, original)
+	if !ok || state.RecoveryOnly || state.Evidence.Phase != 2 || !bytes.Equal(state.Evidence.Raw, e.Raw) || state.Evidence.CoveredEpoch != e.CoveredEpoch {
+		return 0, false
+	}
+	return e.CoveredEpoch, true
+}
+
 // Only a strict actual completed V6 source can explain a policy-only epoch
 // advance. This supplements the unchanged legacy epoch guard for an already
 // durable Retired/Rejected page; it never promotes an unfinished operation.
@@ -1362,37 +1437,8 @@ func (o *storageBudgetOwner) policyCompletedHostOriginal(ctx context.Context, ho
 	if !o.valid() || len(host.page) != storageIntentPage || host.record.Slot >= storagebudget.Slots || host.record.Phase != storageIntentRetired && host.record.Phase != storageIntentRejected {
 		return false
 	}
-	var state storagePolicyOriginal
-	if original == nil {
-		active, err := o.policyReserveClosureActive(ctx)
-		if err != nil || !active {
-			return false
-		}
-		state, err = o.readOriginalPolicy(ctx)
-		if err != nil {
-			return false
-		}
-	} else {
-		// Same strictly decoded images were compared under bootstrap EX; retain
-		// the original V6-only policy epoch exception, not a legacy widening.
-		if ctx.Err() != nil || original.RecoveryOnly ||
-			(!bytes.HasPrefix(original.Actual[0], storageOwnerV6Magic[:]) && !bytes.HasPrefix(original.Actual[1], storageOwnerV6Magic[:])) {
-			return false
-		}
-		state = *original
-	}
-	q, err := o.ref.cell.q.InspectAction(ctx)
-	if err != nil || !reflect.DeepEqual(storageHostState(q.View), status) {
-		return false
-	}
-	if state.RecoveryOnly {
-		o.admission.mu.Lock()
-		p := o.admission.enrollment
-		o.admission.mu.Unlock()
-		if p == nil || p.originalPolicyCurrentQ(ctx, state, q) != nil {
-			return false
-		}
-	} else if storagePolicyCompletedQ(state, q) != nil {
+	state, ok := o.policyCompletedAt(ctx, status, original)
+	if !ok {
 		return false
 	}
 	r := host.record

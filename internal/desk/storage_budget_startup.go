@@ -552,6 +552,11 @@ func (s *Server) revalidateStorageBudgetStartup(ctx context.Context) (err error)
 		return err
 	}
 	_, after, err := storageOwnerActualDefinitions(v, c.ref.cell.ownerCatalog)
+	if err == nil && !after {
+		// A limit edited after enrollment changes the workspace definitions in
+		// Q; only a completed original policy at its boundary explains them.
+		after = c.owner.policyCompletedDefinitions(ctx, v)
+	}
 	if err != nil || !after || v.Configuration.Maintenance {
 		return errors.Join(errStorageOwnerRecovery, err)
 	}

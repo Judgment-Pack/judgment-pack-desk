@@ -1500,6 +1500,38 @@ func (o *storageBudgetOwner) creationTailReusable(r storageCreationIntent, page 
 	return false
 }
 
+// creationTailCoveredAcrossPolicy is creationTailReusable's endpoint coverage
+// for a retained enrolled (not local) creation page after storage limits were
+// edited: each edit advanced Q's epoch past the one the enrollment endpoint
+// covered. The page must be exactly what that endpoint covered at its epoch,
+// with its tail included, and the advance must be explained by a completed
+// original policy alone (policyExplainedCoverageEpoch). Nothing else changes:
+// a local page keeps its own proof, and an unexplained epoch stays unresolved.
+func (o *storageBudgetOwner) creationTailCoveredAcrossPolicy(ctx context.Context, r storageCreationIntent, page []byte, status storagebudget.HostState, original *storagePolicyOriginal) bool {
+	if o == nil || !o.valid() || r.Kind == storageCreationLocalPrivate || r.validate() != nil || len(page) != storageIntentPage || !r.Core.reusable() {
+		return false
+	}
+	if r.Core.Phase != storageIntentRetired && r.Core.Phase != storageIntentRejected {
+		return false
+	}
+	o.ref.cell.mu.Lock()
+	endpoint := o.ref.cell.enrollmentEndpoint
+	catalog := o.ref.cell.ownerCatalog
+	o.ref.cell.mu.Unlock()
+	if endpoint == nil || endpoint.Installation != o.ref.cell.record.Installation || endpoint.QBinding != o.ref.cell.binding || !storageEnrollmentPeakCoreCatalog(r.Core, catalog) {
+		return false
+	}
+	decoded, err := storageDecodeCreationIntent(page, int(r.Core.Slot), o.ref.cell.record.Installation, o.ref.cell.binding)
+	if err != nil || !reflect.DeepEqual(decoded, r) {
+		return false
+	}
+	if r.Core.Phase == storageIntentRetired && !storageCreationTailIncluded(r, *endpoint) {
+		return false
+	}
+	epoch, ok := o.policyExplainedCoverageEpoch(ctx, *endpoint, status, original)
+	return ok && storageEnrollmentPeakCoversHostAt(*endpoint, storageIntentSlot{record: r.Core, page: page}, status, epoch)
+}
+
 // Derive the retained tail from actual same-load originals. This returns data;
 // the original action issuer must still check room, parent custody, selected
 // workflow and native feature qualification before installing its reservation.
@@ -3440,6 +3472,9 @@ func (o *storageBudgetOwner) creationTailCurrent(ctx context.Context, r storageC
 
 func (o *storageBudgetOwner) creationTailCurrentOriginal(ctx context.Context, r storageCreationIntent, page []byte, status storagebudget.HostState, original *storagePolicyOriginal) bool {
 	if o.creationTailReusable(r, page, status) {
+		return true
+	}
+	if o.creationTailCoveredAcrossPolicy(ctx, r, page, status, original) {
 		return true
 	}
 	if r.Kind != storageCreationLocalPrivate || r.validate() != nil || r.Core.Phase != storageIntentRetired || o.validateCreationReferencedComponents(r) != nil {
