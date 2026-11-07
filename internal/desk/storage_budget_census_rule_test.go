@@ -148,3 +148,45 @@ func TestStorageCensusRuleRefusesAnotherUsersEntry(t *testing.T) {
 		}
 	}
 }
+
+// censusModeInfo is an entry's real metadata with another mode.
+type censusModeInfo struct {
+	os.FileInfo
+	mode os.FileMode
+}
+
+func (i censusModeInfo) Mode() os.FileMode { return i.mode }
+func (i censusModeInfo) IsDir() bool       { return i.mode.IsDir() }
+
+// **A link is refused for being a link, not only for its mode.** Linux keeps
+// every link at 0777 and has no lchmod, so a real link there is also refused
+// for being writable by group and others; platforms with lchmod can give a
+// link an owner-only mode. A link at 0600, or with its owner-only mode and a
+// directory's permissions, is still refused where a file or folder is
+// expected: the walk reads entries without following links, so a link to a
+// folder reaches the file rule.
+func TestStorageCensusRuleRefusesALinkWhoseModeWouldOtherwisePass(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	storageTestMust(t, os.WriteFile(target, []byte("{}"), 0o600))
+	link := filepath.Join(dir, "link.json")
+	storageTestMust(t, os.Symlink(target, link))
+	info, err := os.Lstat(link)
+	storageTestMust(t, err)
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("fixture is not a link: %v", info.Mode())
+	}
+	for _, mode := range []os.FileMode{os.ModeSymlink | 0o600, os.ModeSymlink | 0o700, os.ModeSymlink | 0o644} {
+		if storageCensusMeasuredFile(censusModeInfo{info, mode}) {
+			t.Fatalf("a link at %v was measured as a file", mode)
+		}
+		if storageCensusMeasuredDirectory(censusModeInfo{info, mode}) {
+			t.Fatalf("a link at %v was measured as a folder", mode)
+		}
+	}
+	// The same metadata as a regular file at 0600 is measured, so the mode
+	// alone would have passed.
+	if !storageCensusMeasuredFile(censusModeInfo{info, 0o600}) {
+		t.Fatal("the control case was refused")
+	}
+}
