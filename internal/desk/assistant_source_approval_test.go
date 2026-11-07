@@ -54,6 +54,34 @@ func assistantSourceTestApprove(t *testing.T, s *Server, token string, row assis
 	}
 	return result
 }
+
+// assistantSourceTestApproveFor approves the Desk source adapters for chatID
+// through the owner's review routes, as a person does before a run offers the
+// source's tool. A run offers an external source's tool only with a current
+// approval; each adapter must be available for review here.
+func assistantSourceTestApproveFor(t *testing.T, s *Server, token, chatID string, adapters ...string) {
+	t.Helper()
+	for _, adapter := range adapters {
+		response := policyCall(s, token, "GET", "/api/assistant-source-approvals/"+chatID, nil)
+		if response.Code != 200 {
+			t.Fatalf("review %d: %s", response.Code, response.Body.String())
+		}
+		var view assistantSourceCatalogView
+		assistantRunMust(t, json.Unmarshal(response.Body.Bytes(), &view))
+		row := assistantSourceTestRow(t, view, adapter)
+		if row.Status == "approved" {
+			continue
+		}
+		if row.Status != "review-required" || row.ReviewID == "" {
+			t.Fatal("source not available for review", adapter, row.Status)
+		}
+		approve := policyCall(s, token, "POST", "/api/assistant-source-approvals/"+chatID+"/approve", assistantSourceApproveRequest{ReviewID: row.ReviewID, ReviewRevision: row.ReviewRevision})
+		if approve.Code != 200 {
+			t.Fatalf("approve %s %d: %s", adapter, approve.Code, approve.Body.String())
+		}
+	}
+}
+
 func TestAssistantSourceApprovalLifecycle(t *testing.T) {
 	s, token, _, executor := assistantProtocolFixture(t, nil)
 	initial := assistantSourceTestView(t, s, token)

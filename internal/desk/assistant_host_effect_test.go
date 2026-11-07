@@ -15,24 +15,30 @@ func TestAssistantHostCanonicalEffects(t *testing.T) {
 		t.Run(map[bool]string{false: "conversation", true: "policy"}[policy], func(t *testing.T) {
 			var e *assistantRunExecution
 			var s *Server
+			var token string
 			if policy {
 				s, _, e, _, _ = assistantPolicyFixture(t, "http://127.0.0.1:1", "work", false, nil)
 			} else {
-				s, _, e = assistantExecutionFixture(t, "http://127.0.0.1:1", "work")
+				s, token, e = assistantExecutionFixture(t, "http://127.0.0.1:1", "work")
+				// External sources are offered only with a current approval,
+				// and then as sourced tools: an effectClass, approval and source
+				// record, not this hostTool.effect vocabulary. Approve Desk's
+				// research workflow, as an owner does; the search, link and
+				// website sources stay unapproved and are not offered.
+				assistantSourceTestApproveFor(t, s, token, e.record.Binding.Owner.ID, "desk-research-workflow")
 			}
 			x := assistantExecutionOpen(t, s, e)
-			expected := map[string]string{"list_decisions": "read", "read_decision": "read", "get_graph_authoring_instructions": "read", "graph_validate": "read", "graph_explain": "read", "graph_rehearse": "read", "propose_graph": "proposal", "read_pack_tests": "read", "propose_test_cases": "proposal", "get_dialect_recipe_instructions": "read", "list_dialects": "read", "read_dialect_recipe": "read", "propose_dialect_recipe": "proposal", "read_dialect": "read", "propose_dialect": "proposal", "read_dialect_publication": "read", "propose_dialect_publication": "proposal", "read_dialect_records": "read", "read_dialect_activity": "read", "propose_dialect_action": "proposal", "request_dialect_research": "workflow"}
+			expected := map[string]string{"list_decisions": "read", "read_decision": "read", "get_graph_authoring_instructions": "read", "graph_validate": "read", "graph_explain": "read", "graph_rehearse": "read", "propose_graph": "proposal", "read_pack_tests": "read", "propose_test_cases": "proposal", "get_dialect_recipe_instructions": "read", "list_dialects": "read", "read_dialect_recipe": "read", "propose_dialect_recipe": "proposal", "read_dialect": "read", "propose_dialect": "proposal", "read_dialect_publication": "read", "propose_dialect_publication": "proposal", "read_dialect_records": "read", "read_dialect_activity": "read", "propose_dialect_action": "proposal"}
+			// Approved external sources, by tool and source owner.
+			sourced := map[string]string{"request_dialect_research": "desk-research-workflow"}
 			if policy {
 				expected = map[string]string{"read_policy": "read", "propose_policy_update": "proposal", "read_policy_comparison": "read", "read_policy_coverage": "read", "propose_policy_pack_interpretation": "proposal", "propose_policy_graph_interpretation": "proposal"}
-			} else {
-				expected["search_sources"] = "read"
-				expected["read_link"] = "read"
-				expected[assistantWebsiteTool] = "read"
+				sourced = map[string]string{}
 			}
 			registry, err := newAssistantHostRegistry(x.Run.HostTools)
 			assistantRunMust(t, err)
-			if len(registry.tools) != len(expected) {
-				t.Fatal("combined actual registry incomplete", len(registry.tools), len(expected))
+			if len(registry.tools) != len(expected)+len(sourced) {
+				t.Fatal("combined actual registry incomplete", len(registry.tools), len(expected)+len(sourced))
 			}
 			for _, declaration := range registry.declarations() {
 				raw := assistantChatJSON(declaration)
@@ -40,6 +46,16 @@ func TestAssistantHostCanonicalEffects(t *testing.T) {
 				assistantRunMust(t, json.Unmarshal(raw, &fields))
 				name, err := assistantTestString(fields["name"])
 				assistantRunMust(t, err)
+				if owner, ok := sourced[name]; ok {
+					var source struct {
+						ID string `json:"id"`
+					}
+					if _, has := fields["effect"]; has || json.Unmarshal(fields["source"], &source) != nil || source.ID != owner {
+						t.Fatal("approved external source not offered as its sourced tool", name, string(raw))
+					}
+					delete(sourced, name)
+					continue
+				}
 				effect, err := assistantTestString(fields["effect"])
 				assistantRunMust(t, err)
 				want, ok := expected[name]
@@ -48,8 +64,8 @@ func TestAssistantHostCanonicalEffects(t *testing.T) {
 				}
 				delete(expected, name)
 			}
-			if len(expected) != 0 {
-				t.Fatal("canonical declaration missing", expected)
+			if len(expected) != 0 || len(sourced) != 0 {
+				t.Fatal("canonical declaration missing", expected, sourced)
 			}
 		})
 	}

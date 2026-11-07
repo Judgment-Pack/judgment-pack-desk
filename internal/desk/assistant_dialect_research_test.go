@@ -55,6 +55,9 @@ func assistantResearchSeed(t *testing.T, s *Server, token string, e *assistantRu
 			t.Fatal("real grant refused", w.Code, w.Body.String())
 		}
 	}
+	// A run offers request_dialect_research only with a current approval of
+	// Desk's research workflow, made after the Desk file it reviews is written.
+	assistantSourceTestApproveFor(t, s, token, e.record.Binding.Owner.ID, "desk-research-workflow")
 	return saved, rr, run
 }
 func assistantResearchArgs(saved inputPreparationReply) string {
