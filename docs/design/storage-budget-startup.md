@@ -128,6 +128,36 @@ Q/config floor remains, the two catalog banks are measured as a further 16 MiB,
 and Ready's 32 bytes are charged exactly once. Existing data is measured in
 addition; pre-budget bytes never enlarge the authored limits or grants.
 
+## Custody rule for v0.14.0
+
+Desk #685 (maintainer decision of 2026-11-07, "option B") sets what the census
+measures. Every census walk, including startup, first-use enrollment and
+transfer censuses, applies custody's rule for what Desk reads to each entry
+under a registered root: a regular file or a folder owned by the effective user
+that neither group nor others can write, with no special mode bits (a folder
+must also be listable and enterable by its owner). Group and other read are
+not refused. Another user's entry, a link where a file or folder is expected, a
+special file and anything group- or other-writable refuse the census, which
+starts storage read-only. The stricter private rule remains for the control,
+marker and data files Desk writes and reopens itself, and for the roots the
+owner record registers.
+
+A difference between the measured tree and the owner record's exact
+registration is a warning, not a custody refusal. An ordinary start that finds
+a project's `.desk-private`, or its `retained-artifacts`, that the saved
+catalog does not list does not split it out as a new root; it records the
+folder for `/api/storage/status` (`registration`, `enforcement: warning-only`).
+A project scope root measures such a `.desk-private` as before. Where no
+registered root does, the census measures it under the census rule as part of
+the config root's Control usage, attributed to the project's workspace, without
+a capacity sample. A registered root that is missing or replaced still fails
+the exact comparison: recovery, project move and the owner record's other
+checks are unchanged. Strict registration of every folder, and the repeated
+custody re-walks behind first-use enrollment, are Desk #698 (v0.15.0).
+
+Workspace lookups after registration use the accounting key the identity
+lineage retains for the startup project, not a later identity alone.
+
 ## Crash state and remaining qualification
 
 Prepared must be durable before Register. Both banks are checked as a pair;
