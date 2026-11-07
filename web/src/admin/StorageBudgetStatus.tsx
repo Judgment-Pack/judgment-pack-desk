@@ -43,9 +43,10 @@ export function StorageBudgetStatus() {
   const measurement = snapshot?.measurement
   const measurementStale = query.isError || status?.availability !== 'available' || measurement?.freshness !== 'fresh' || Boolean(measurement?.at && Date.now() - Date.parse(measurement.at) > 15_000)
   const stale = query.isError || status?.availability !== 'available' || snapshot?.maintenance || Boolean(snapshot && Date.now() - Date.parse(snapshot.observedAt) > 15_000)
+  const refresh = <Button variant="quiet" disabled={query.isFetching} onClick={() => void query.refetch()}>{msg('Refresh storage status')}</Button>
   return <SettingsSection title={msg('Storage accounting')} variant="plain" description={msg('Registered storage scopes only. Logical charges are not physical disk occupation.')}>
     {!status && !query.isError && <p>{msg('Reading storage status…')}</p>}
-    {(query.isError || status?.availability === 'unavailable') && <SettingsFeedback tone="warning">{msg('Storage status unavailable. Previous observations, if present, remain visible.')}</SettingsFeedback>}
+    {(query.isError || status?.availability === 'unavailable') && <SettingsFeedback tone="warning" actions={!status && refresh}>{msg('Storage status unavailable. Previous observations, if present, remain visible.')}</SettingsFeedback>}
     {snapshot && <>
       <p role="status">{stale ? msg('Stale storage observation') : msg('Storage observation')} · {msg('As of')} <time dateTime={snapshot.observedAt}>{snapshot.observedAt}</time></p>
       {status?.readOnly && <SettingsFeedback tone="warning">{msg('Storage is read only. Existing data remains visible; status refresh does not resume paused work.')}</SettingsFeedback>}
@@ -69,12 +70,13 @@ export function StorageBudgetStatus() {
     </>}
     {status?.readOnly && !snapshot && <p>{msg('Storage is read only.')}</p>}
     <h3>{msg('Child storage observations')}</h3>
-    <p>{msg('Warning only. Child storage growth is measured where available and is not prevented. These observations do not reserve capacity or change Desk limits.')}</p>
+    <p>{msg('Warning only. Child storage growth is measured where available and is not prevented; it reserves no capacity and changes no Desk limit.')}</p>
     {!child && <SettingsFeedback tone="warning">{msg('Child storage measurements are unavailable. Unknown usage is not zero.')}</SettingsFeedback>}
     {child && <>
       <p role="status">{childStale ? msg('Stale child storage observation') : child.state === 'partial' ? msg('Partial child storage observation') : msg('Child storage observation')} · {msg('As of')} <time dateTime={child.observedAt}>{child.observedAt}</time></p>
       {child.roots.some(row => row.lowSpace === true) && <SettingsFeedback tone="warning">{msg('Low filesystem space observed for child storage. Available space is below 1 GiB. Child growth is not prevented.')}</SettingsFeedback>}
-      <p>{msg('Selected child roots only. File lengths are metadata observations, not allocated disk bytes. Partial counts are lower bounds; shared roots and objects are counted once and must not be added to Desk charges.')}</p>
+      <p>{msg('Selected child roots only; shared roots and objects count once.')}</p>
+      <p>{msg('File lengths are metadata, not allocated disk bytes; partial counts are lower bounds. Never add them to Desk charges.')}</p>
       <ul>{child.roots.map((row, i) => <li key={`${row.component}:${row.role}:${i}`}>
         {row.component} · {row.role} · {row.state === 'inactive' ? msg('Not active or configured') : row.state === 'unavailable' ? msg('Unavailable') : row.state === 'partial' ? msg('Partial') : msg('Measured')}
         {' · '}{msg('File-length bytes')}: {row.logicalBytes === null ? msg('Unknown') : formatStorageUInt(row.logicalBytes)}
@@ -94,7 +96,10 @@ export function StorageBudgetStatus() {
       <dl className="fields"><dt>{msg('Measured logical usage')}</dt><dd><Vector value={row.measuredLogical}/></dd><dt>{msg('Reported allocated storage')}</dt><dd><Vector value={row.physicalAllocated}/></dd></dl>
     </section>)}</details>}
     <p>{msg('Context compaction changes what the model sees. It does not delete local history or free this storage.')}</p>
-    <StorageBudgetPolicyEditor readOnly={status?.readOnly === true}/>
-    <Button variant="quiet" disabled={query.isFetching} onClick={() => void query.refetch()}>{msg('Refresh storage status')}</Button>
+    {/* Limits and a refresh are offered once a status has been read: until
+        then Desk cannot say whether storage is read only, and a failed read
+        offers its refresh beside the failure. */}
+    {status && <StorageBudgetPolicyEditor readOnly={status.readOnly === true}/>}
+    {status && refresh}
   </SettingsSection>
 }

@@ -1324,6 +1324,7 @@ fieldset {
    region lets keyboard users reach every layer column. */
 .diagram-scroll {
   overflow-x: auto;
+  position: relative;
 }
 
 .diagram-scroll:focus-visible {

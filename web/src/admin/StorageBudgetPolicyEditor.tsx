@@ -52,7 +52,7 @@ export function StorageBudgetPolicyEditor({readOnly}: {readOnly: boolean}) {
   }
   return <section aria-label={msg('Storage limits')}>
     <h3>{msg('Storage limits')}</h3>
-    <p>{msg('Registered workspaces keep their own limits. The default applies to future workspaces. Lower limits keep existing charges and promises; new growth can be refused.')}</p>
+    <p>{msg('Workspaces keep their own limits; the default is for new ones. Lower limits keep existing charges and promises; new growth can be refused.')}</p>
     {!base && <Button disabled={busy || readOnly} onClick={() => void load(true)}>{busy ? msg('Preparing storage limits…') : msg('Edit storage limits')}</Button>}
     {base && draft && <form onSubmit={e => {e.preventDefault(); void save()}}>
       <Field label={msg('Limits to edit')}>{wiring => <select {...wiring} value={scope} disabled={busy || dirty || readOnly} onChange={e => {const next = e.target.value as StoragePolicyScope; setScope(next); setDraft(cloneStoragePolicyLimits(storagePolicyScopeLimits(base, next))); setSaved(false)}}>
