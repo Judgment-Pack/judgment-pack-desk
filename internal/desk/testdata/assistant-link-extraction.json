@@ -1,0 +1,7 @@
+[
+ {"name":"punctuation and brackets","text":"Read (https://example.org/a#brief-human-review). Also example.org/news!","links":["https://example.org/a#brief-human-review","example.org/news"]},
+ {"name":"balanced parentheses","text":"https://en.wikipedia.org/wiki/Foo_(bar).","links":["https://en.wikipedia.org/wiki/Foo_(bar)"]},
+ {"name":"mail paths and filenames","text":"owner@example.org /local/example.org example.org:444 notes.md http://elsewhere.org/","links":[]},
+ {"name":"duplicate links","text":"example.org example.org https://éxample.org/über","links":["example.org","https://éxample.org/über"]},
+ {"name":"bare versus prose","text":"use sub.example.org/path?q=yes, then https://example.org/[one].","links":["sub.example.org/path?q=yes","https://example.org/[one]"]}
+]

@@ -196,8 +196,9 @@ func (e overLimit) Error() string { return fmt.Sprintf("more than %d bytes", e.l
 // tells the reader to write. A *failed* read is still a refusal, because then
 // the answer is genuinely not known.
 type DeskLevelConfig struct {
-	Builds       ComponentBuilds     `json:"builds"`
-	LocalGateway *LocalGatewayStatus `json:"localGateway,omitempty"`
+	PromptPolicy assistantPromptPolicy `json:"promptPolicy"`
+	Builds       ComponentBuilds       `json:"builds"`
+	LocalGateway *LocalGatewayStatus   `json:"localGateway,omitempty"`
 	// Path is absolute, on this machine.
 	Path    string `json:"path"`
 	Present bool   `json:"present"`
@@ -355,7 +356,7 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 	// is no file" and is what a page sends back as `ifMatch` to create one.
 	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{
-			Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})
+			PromptPolicy: currentAssistantPromptPolicy(), Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})
 		return
 	}
 	if !validUTF8(data) {
@@ -364,7 +365,7 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, DeskLevelConfig{
-		Builds: s.builds, Path: path, Present: true, Content: string(data), SHA256: digestOf(data), LocalGateway: s.localGatewayStatus(data),
+		PromptPolicy: currentAssistantPromptPolicy(), Builds: s.builds, Path: path, Present: true, Content: string(data), SHA256: digestOf(data), LocalGateway: s.localGatewayStatus(data),
 		Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy()})
 }
 
@@ -1719,7 +1720,8 @@ var AssistantDiagnostics = []string{
 // not take, and calling that reachable would report a desk that cannot make a
 // single call as ready.
 type ProbeResult struct {
-	Reachable bool `json:"reachable"`
+	ObservationComplete *bool `json:"observationComplete,omitempty"`
+	Reachable           bool  `json:"reachable"`
 	// Status is the HTTP status, or 0 where no response arrived at all.
 	Status    int   `json:"status"`
 	LatencyMs int64 `json:"latencyMs"`
@@ -1769,6 +1771,10 @@ func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 			writeJSONCoded(w, http.StatusConflict, CodeAssistantKeyUnbound, reason)
 			return
 		}
+	}
+	if endpoint.kind == "anthropic" {
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, "Use a saved Settings observation to check this connection.")
+		return
 	}
 	result := probeEndpoint(r.Context(), endpoint, stored.key)
 	// **Scheme and host only.** A configured URL may legitimately carry a
@@ -2065,27 +2071,6 @@ func probeRequest(ctx context.Context, endpoint assistantEndpoint, key string) (
 			return nil, err
 		}
 		attachCredential(request.Header, endpoint, key)
-		return request, nil
-	case "anthropic":
-		payload, err := json.Marshal(map[string]any{
-			"model":      endpoint.model,
-			"max_tokens": 1,
-			"messages":   []map[string]string{{"role": "user", "content": "ping"}},
-		})
-		if err != nil {
-			return nil, err
-		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			probeAddress(endpoint.url, "/v1/messages"), strings.NewReader(string(payload)))
-		if err != nil {
-			return nil, err
-		}
-		attachCredential(request.Header, endpoint, key)
-		// The version this protocol requires on every request. It is a
-		// property of the wire, not a model or a vendor choice, and an
-		// endpoint speaking this protocol refuses a request without it.
-		request.Header.Set("anthropic-version", "2023-06-01")
-		request.Header.Set("content-type", "application/json")
 		return request, nil
 	case "gemini":
 		// The model listing, bounded to one entry. A `GET`, which creates

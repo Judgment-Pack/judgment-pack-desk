@@ -1,0 +1,25 @@
+{
+ "valid": [
+  {"name":"search-choice","tool":"search_sources","arguments":{"query":"public policy"},"control":{"version":1,"kind":"research-choice","hostOperationId":"host-one","sourceBindingDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","requestId":"request-one","query":"public policy","reason":"choice-required"}},
+  {"name":"search-provided","tool":"search_sources","arguments":{"query":"public policy"},"control":{"version":1,"kind":"provided-only","hostOperationId":"host-one","sourceBindingDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","requestId":"request-one","query":"public policy","reason":"provided-only"}},
+  {"name":"search-config","tool":"search_sources","arguments":{"query":"public policy"},"control":{"version":1,"kind":"setup-required","hostOperationId":"host-one","sourceBindingDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","requestId":"request-one","query":"public policy","reason":"configuration-required"}},
+  {"name":"search-connection-provider","tool":"search_sources","arguments":{"query":"public policy"},"control":{"version":1,"kind":"setup-required","hostOperationId":"host-one","sourceBindingDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","requestId":"request-one","query":"public policy","provider":"tavily","reason":"connection-required"}},
+  {"name":"search-verifier","tool":"search_sources","arguments":{"query":"public policy"},"control":{"version":1,"kind":"setup-required","hostOperationId":"host-one","sourceBindingDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","requestId":"request-one","query":"public policy","provider":"tavily","reason":"verifier-required"}},
+  {"name":"link-config","tool":"read_link","arguments":{"url":"https://example.test"},"control":{"version":1,"kind":"setup-required","hostOperationId":"host-one","sourceBindingDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","requestId":"request-one","reason":"configuration-required"}},
+  {"name":"website-choice","tool":"explore_website","arguments":{"url":"https://example.test"},"control":{"version":1,"kind":"research-choice","hostOperationId":"host-one","sourceBindingDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","requestId":"request-one","reason":"choice-required"}}
+ ],
+ "invalidPatches": [
+  {"version":2}, {"version":1.5}, {"version":9007199254740992}, {"version":null},
+  {"kind":"unknown"}, {"kind":["research-choice"]}, {"reason":"provided-only"}, {"reason":["choice-required"]},
+  {"hostOperationId":null}, {"sourceBindingDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  {"requestId":"other\nrequest"}, {"requestId":3}, {"query":null}, {"query":"different"}, {"provider":null}, {"provider":""}, {"provider":"https://secret.test"}, {"sourceBindingDigest":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]},
+  {"url":"https://secret.test"}, {"error":"raw provider prose"}, {"receipt":"fake"}, {"proof":true}, {"Version":1}
+ ],
+ "invalidJSON": [
+  "null", "[]", "{\"version\":1,\"version\":1}",
+  "{\"version\":1,\"Version\":1}",
+  "{\"version\":1,\"kind\":null}",
+  "{\"version\":1,\"requestId\":\"\\ud800\"}",
+  "{\"version\":1,\"extra\":true}"
+ ]
+}
