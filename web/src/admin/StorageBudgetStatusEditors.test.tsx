@@ -4,8 +4,8 @@ import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {ChatDataSettings} from './ChatDataSettings'
 import {StorageBudgetStatus} from './StorageBudgetStatus'
 import {storageBudgetStatusKey} from './useStorageBudgetStatus'
-import {decodeStorageBudgetStatus, retainStorageSnapshot} from './storageBudgetStatus'
-import {storageStatusFixture} from './storageBudgetStatus.fixture'
+import {decodeStorageBudgetStatus, retainStorageSnapshot} from './storageBudgetModel'
+import {storageStatusFixture} from './storageBudgetModel.fixture'
 import type {ChatStorageStatus} from './chatStorage'
 const mocks = vi.hoisted(() => ({fetch:vi.fn(), flush:vi.fn(async () => true), load:vi.fn()}))
 vi.mock('../files/client', async original => ({...await original<typeof import('../files/client')>(), deskFetch:mocks.fetch}))

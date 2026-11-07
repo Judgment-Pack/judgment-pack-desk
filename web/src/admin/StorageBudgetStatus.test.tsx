@@ -2,8 +2,8 @@ import {QueryClient, QueryClientProvider, focusManager} from '@tanstack/react-qu
 import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react'
 import {afterEach, expect, it, vi} from 'vitest'
 import {StorageBudgetStatus} from './StorageBudgetStatus'
-import {decodeStorageBudgetStatus, retainStorageSnapshot} from './storageBudgetStatus'
-import {storageStatusFixture, storageMeasuredFixture} from './storageBudgetStatus.fixture'
+import {decodeStorageBudgetStatus, retainStorageSnapshot} from './storageBudgetModel'
+import {storageStatusFixture, storageMeasuredFixture} from './storageBudgetModel.fixture'
 import {storageBudgetStatusKey, useStorageBudgetStatus} from './useStorageBudgetStatus'
 const fetch = vi.hoisted(() => vi.fn())
 vi.mock('../files/client', async original => ({...await original<typeof import('../files/client')>(), deskFetch: fetch}))

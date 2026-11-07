@@ -1,5 +1,5 @@
 import {deskFetch} from '../files/client'
-import {storageCategories, storageUInt, type StorageVector} from './storageBudgetStatus'
+import {storageCategories, storageUInt, type StorageVector} from './storageBudgetModel'
 
 export const STORAGE_POLICY_MAX_BYTES = 16_384
 export type StoragePolicyLimits = {total: StorageVector; categories: StorageVector[]}

@@ -2,7 +2,7 @@ import {useQuery, useQueryClient} from '@tanstack/react-query'
 import {activeDeskId} from '../desks/scope'
 import {privateQuery} from '../data/privateQuery'
 import {deskFetch} from '../files/client'
-import {readStorageBudgetStatus, retainStorageSnapshot, type StorageBudgetStatus} from './storageBudgetStatus'
+import {readStorageBudgetStatus, retainStorageSnapshot, type StorageBudgetStatus} from './storageBudgetModel'
 
 export const storageBudgetStatusKey = ['storage-budget-status', activeDeskId] as const
 /** Only shell health owns a timer/focus/reconnect read; all panels observe its cache. */

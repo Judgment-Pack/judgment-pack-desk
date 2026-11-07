@@ -3,7 +3,7 @@ import {msg, useLocale} from '../i18n'
 import {Button} from '../ui/Button'
 import {SettingsSection} from '../ui/SettingsSection'
 import {SettingsFeedback} from '../ui/SettingsFeedback'
-import {formatStorageUInt, type StorageAmounts, type StorageCategory, type StorageVector} from './storageBudgetStatus'
+import {formatStorageUInt, type StorageAmounts, type StorageCategory, type StorageVector} from './storageBudgetModel'
 import {useStorageBudgetStatus} from './useStorageBudgetStatus'
 
 function Vector({value}: {value: StorageVector | null}) {

@@ -4,8 +4,8 @@ import {MemoryRouter} from 'react-router-dom'
 import {afterEach,expect,it,vi} from 'vitest'
 import {DeskNoticesProvider} from './DeskNotices'
 import {StatusStrip} from './StatusStrip'
-import {decodeStorageBudgetStatus, type StorageBudgetStatus} from '../admin/storageBudgetStatus'
-import {storageStatusFixture} from '../admin/storageBudgetStatus.fixture'
+import {decodeStorageBudgetStatus, type StorageBudgetStatus} from '../admin/storageBudgetModel'
+import {storageStatusFixture} from '../admin/storageBudgetModel.fixture'
 const storage=vi.hoisted(()=>({data:undefined as StorageBudgetStatus | undefined}))
 vi.mock('../admin/useStorageBudgetStatus',()=>({useStorageBudgetStatus:()=>storage}))
 const state=vi.hoisted(()=>({ready:false,saving:false,error:'History read failed',store:{canCreate:true,load:vi.fn(),retrySave:vi.fn()}}))

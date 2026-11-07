@@ -1,6 +1,6 @@
 import {expect, it} from 'vitest'
-import {decodeStorageBudgetStatus, formatStorageUInt, readStorageBudgetStatus, retainStorageSnapshot, storageUInt, STORAGE_STATUS_MAX_BYTES} from './storageBudgetStatus'
-import {storageStatusFixture, storageMeasuredFixture} from './storageBudgetStatus.fixture'
+import {decodeStorageBudgetStatus, formatStorageUInt, readStorageBudgetStatus, retainStorageSnapshot, storageUInt, STORAGE_STATUS_MAX_BYTES} from './storageBudgetModel'
+import {storageStatusFixture, storageMeasuredFixture} from './storageBudgetModel.fixture'
 import measurementVectors from './storageOwnedMeasurement.vectors.json'
 it('preserves exact uint64 decimal counters and distinguishes measured zero from unknown', () => {
   const status = decodeStorageBudgetStatus(storageStatusFixture())

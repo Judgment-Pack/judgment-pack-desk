@@ -6,7 +6,7 @@ import {Field, FieldGroup} from '../ui/Field'
 import {Input} from '../ui/Input'
 import {SettingsFeedback} from '../ui/SettingsFeedback'
 import {useDirtyGuard} from '../shell/useDirtyGuard'
-import {storageCategories, type StorageVector} from './storageBudgetStatus'
+import {storageCategories, type StorageVector} from './storageBudgetModel'
 import {storageBudgetStatusKey} from './useStorageBudgetStatus'
 import {cloneStoragePolicyLimits, decodeStoragePolicyLimits, editStorageBudgetPolicy, prepareStorageBudgetPolicy, readStorageBudgetPolicy, storagePolicyScopeLimits, StoragePolicyError, type StoragePolicyLimits, type StoragePolicyScope, type StoragePolicySnapshot} from './storageBudgetPolicy'
 
