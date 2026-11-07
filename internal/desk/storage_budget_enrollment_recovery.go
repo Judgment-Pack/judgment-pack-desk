@@ -1430,6 +1430,16 @@ func (p *storageEnrollmentEpoch) acquireStartupSourceDescriptions(ctx context.Co
 			return storagebudget.ErrBounds
 		}
 		native := catalog.Objects[row.DirectoryObject].Persistent
+		if (row.Role == 3 || row.Role == 6) && row.Source.Kind == 8 && row.DomainObject == storageOwnerNoObject {
+			// A Kind8 private child has no serialized domain: its ordinary
+			// binding borrows its Role7 project parent's domain, which that
+			// parent row holds here. Its own source must still be current;
+			// the binding pass validates the parent relation.
+			if err := p.startupKind8Current(ctx, catalog, row, native); err != nil {
+				return err
+			}
+			continue
+		}
 		directory := row.DomainObject == row.DirectoryObject || row.Role == 7 && row.Source.Kind == 7 || row.Role == 8 && row.Source.Kind == 9
 		if !directory {
 			if int(row.DomainObject) >= len(catalog.Objects) {
@@ -1504,6 +1514,38 @@ func (p *storageEnrollmentEpoch) acquireStartupSourceDescriptions(ctx context.Co
 		}
 	}
 	return p.current(ctx)
+}
+
+// startupKind8Current checks a Kind8 private child row against the startup
+// sources without taking a second hold: its parent must be a Role7 project
+// scope row of the same catalog, and exactly one held source must name its
+// directory and be current.
+func (p *storageEnrollmentEpoch) startupKind8Current(ctx context.Context, catalog storageOwnerCatalogV2, row storageOwnerRoot, native storageOwnerPersistentObject) error {
+	parent := false
+	for _, r := range catalog.Roots {
+		if r.Definition.ID == row.Source.ParentRoot {
+			if parent || r.Role != 7 || r.Source.Kind != 7 {
+				return errStorageCustody
+			}
+			parent = true
+		}
+	}
+	if !parent {
+		return errStorageCustody
+	}
+	var found *storageOriginalSourceRoot
+	for _, source := range p.c.sources.roots {
+		if source.persistent == native {
+			if found != nil && found.root != source.root {
+				return errStorageCustody
+			}
+			found = source
+		}
+	}
+	if found == nil {
+		return errStorageCustody
+	}
+	return found.current(ctx, p.c)
 }
 func (p *storageEnrollmentEpoch) holdStartupSourceDirectory(ctx context.Context, root *os.Root) (*os.File, error) {
 	if !p.startup || root == nil {
