@@ -138,3 +138,16 @@ it('keeps unavailable allocation unknown and retains the original measured sampl
  expect(screen.getAllByText('Not measured')).toHaveLength(3)
  expect(fetch).toHaveBeenCalledTimes(1)
 })
+
+it('warns that measured folders are not registered yet, names them, and keeps the status writable', async () => {
+  const q = client()
+  q.setQueryData(storageBudgetStatusKey, decodeStorageBudgetStatus({...storageStatusFixture(), registration: {enforcement: 'warning-only', folders: ['/projects/one/.desk-private']}}))
+  render(<QueryClientProvider client={q}><StorageBudgetStatus/></QueryClientProvider>)
+  expect(screen.getByText(/storage has not registered them yet/)).toBeTruthy()
+  expect(screen.getByRole('list', {name: 'Folders not registered with storage'}).textContent).toContain('/projects/one/.desk-private')
+  expect(screen.queryByText(/Storage is read only/)).toBeNull()
+  cleanup()
+  q.setQueryData(storageBudgetStatusKey, decodeStorageBudgetStatus(storageStatusFixture()))
+  render(<QueryClientProvider client={q}><StorageBudgetStatus/></QueryClientProvider>)
+  expect(screen.queryByText(/storage has not registered them yet/)).toBeNull()
+})

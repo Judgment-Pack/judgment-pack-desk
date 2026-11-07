@@ -55,3 +55,15 @@ it('coalesces child low-space and actual refusal into the existing volatile stor
  await waitFor(()=>expect(screen.queryByRole('button',{name:'Storage needs attention'})).toBeNull())
  client.clear()
 })
+
+it('reports folders storage measures but has not registered in the same storage notice',async()=>{
+ state.error='';state.ready=true
+ storage.data=decodeStorageBudgetStatus({...storageStatusFixture(),registration:{enforcement:'warning-only',folders:['/projects/one/.desk-private']}})
+ const client=new QueryClient()
+ render(<QueryClientProvider client={client}><MemoryRouter><DeskNoticesProvider><StatusStrip/></DeskNoticesProvider></MemoryRouter></QueryClientProvider>)
+ fireEvent.click(screen.getByRole('button',{name:'Storage needs attention'}))
+ expect(screen.getByText(/Storage measures folders Desk made that are not registered with it yet/)).toBeTruthy()
+ expect(screen.queryByText(/A storage refusal was reported/)).toBeNull()
+ expect(screen.getAllByRole('link',{name:'Review storage'})).toHaveLength(1)
+ client.clear()
+})

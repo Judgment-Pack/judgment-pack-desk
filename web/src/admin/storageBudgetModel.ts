@@ -31,8 +31,11 @@ export type ChildRootObservation = {
 export type ChildStorageObservation = {
   coverage: 'selected-child-roots-only'; enforcement: 'warning-only'; state: 'measured' | 'partial' | 'stale'; observedAt: string; lowSpaceThresholdBytes: '1073741824'; roots: ChildRootObservation[]
 }
+/** Folders a start measures that the storage owner record does not register as their own roots. Warning only. */
+export type StorageRegistration = { enforcement: 'warning-only'; folders: string[] }
 export type StorageBudgetStatus = {
   childObservation: ChildStorageObservation | null
+  registration: StorageRegistration | null
   version: 1; availability: 'available' | 'stale' | 'unavailable'; reason: StorageReason | null; readOnly: boolean; servedAt: string
   pressure: {active: boolean; codes: StorageReason[]; firstSeenAt: string | null; lastSeenAt: string | null; durableState: 'unconfirmed' | 'available' | 'unknown'}
   snapshot: StorageSnapshot | null
@@ -140,6 +143,13 @@ function childObservation(value: unknown): ChildStorageObservation {
   if (new Set(identities).size !== identities.length) invalid()
   return {coverage: 'selected-child-roots-only', enforcement: 'warning-only', state, observedAt: time(v.observedAt), lowSpaceThresholdBytes: '1073741824', roots}
 }
+function registration(value: unknown): StorageRegistration {
+  const v = closed(value, ['enforcement', 'folders'])
+  if (v.enforcement !== 'warning-only') invalid()
+  const folders = rows(v.folders, 64, value => typeof value === 'string' && value.length > 0 && value.length <= 4096 ? value : invalid())
+  if (!folders.length || new Set(folders).size !== folders.length) invalid()
+  return {enforcement: 'warning-only', folders}
+}
 export function decodeStorageBudgetStatus(value: unknown): StorageBudgetStatus {
   const v = object(value), p = object(v.pressure)
   if (v.version !== 1) invalid()
@@ -147,7 +157,7 @@ export function decodeStorageBudgetStatus(value: unknown): StorageBudgetStatus {
   if ((availability === 'unavailable') !== (data === null)) invalid()
   const codes = rows(p.codes, 8, v => choice(v, storageReasons))
   if (new Set(codes).size !== codes.length || bool(p.active) !== (codes.length > 0)) invalid()
-  return {childObservation: v.childObservation === undefined || v.childObservation === null ? null : childObservation(v.childObservation), version: 1, availability, snapshot: data, reason: nullable(v.reason, value => choice(value, storageReasons)), readOnly: bool(v.readOnly), servedAt: time(v.servedAt), pressure: {active: bool(p.active), codes, firstSeenAt: nullable(p.firstSeenAt, time), lastSeenAt: nullable(p.lastSeenAt, time), durableState: choice(p.durableState, ['unconfirmed', 'available', 'unknown'])}}
+  return {childObservation: v.childObservation === undefined || v.childObservation === null ? null : childObservation(v.childObservation), registration: v.registration === undefined || v.registration === null ? null : registration(v.registration), version: 1, availability, snapshot: data, reason: nullable(v.reason, value => choice(value, storageReasons)), readOnly: bool(v.readOnly), servedAt: time(v.servedAt), pressure: {active: bool(p.active), codes, firstSeenAt: nullable(p.firstSeenAt, time), lastSeenAt: nullable(p.lastSeenAt, time), durableState: choice(p.durableState, ['unconfirmed', 'available', 'unknown'])}}
 }
 export const STORAGE_STATUS_MAX_BYTES = 8_388_608
 /** Bound bytes before decoding JSON; a large/malformed reply cannot erase cached rows. */

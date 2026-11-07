@@ -232,3 +232,15 @@ it('decodes per-filesystem measured values without replacing charged scope value
  expect(()=>decodeStorageBudgetStatus({...v,snapshot:{...v.snapshot,filesystems:[file,file]}})).toThrow()
  expect(()=>decodeStorageBudgetStatus({...v,snapshot:{...v.snapshot,filesystems:[{...file,source:'/private'}]}})).toThrow()
 })
+it('decodes the registration difference as warning-only folder paths and rejects any other shape', () => {
+  expect(decodeStorageBudgetStatus(storageStatusFixture()).registration).toBeNull()
+  const registration = {enforcement: 'warning-only', folders: ['/projects/one/.desk-private']}
+  expect(decodeStorageBudgetStatus({...storageStatusFixture(), registration}).registration).toEqual(registration)
+  expect(decodeStorageBudgetStatus({...storageStatusFixture(), availability: 'unavailable', snapshot: null, reason: 'storage-busy', registration}).registration?.folders).toHaveLength(1)
+  const invalid = [
+    {enforcement: 'enforced', folders: ['/a']}, {enforcement: 'warning-only', folders: []}, {enforcement: 'warning-only', folders: ['']},
+    {enforcement: 'warning-only', folders: ['/a', '/a']}, {enforcement: 'warning-only', folders: [7]}, {enforcement: 'warning-only', folders: ['/a'], extra: true},
+    {enforcement: 'warning-only', folders: Array.from({length: 65}, (_, i) => `/p${i}`)}, {enforcement: 'warning-only', folders: ['/' + 'a'.repeat(4096)]},
+  ]
+  for (const value of invalid) expect(() => decodeStorageBudgetStatus({...storageStatusFixture(), registration: value})).toThrow('Storage status unavailable')
+})
