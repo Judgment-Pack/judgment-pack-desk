@@ -376,8 +376,16 @@ func TestARecoveryWaitsOnceForTheSigningLock(t *testing.T) {
 			left := r.describe(t)
 			release := holdSigningLock(t, r.signing)
 			if released {
+				// Released 300 ms after the recovery first finds the lock
+				// held, however long the start took to reach it.
 				shortLockWait(t, 10*time.Second)
-				releaseAfter(t, release, 300*time.Millisecond)
+				var once sync.Once
+				testHookKeyBetween = func(at string) {
+					if at == "rotations: before the lock" {
+						once.Do(func() { releaseAfter(t, release, 300*time.Millisecond) })
+					}
+				}
+				t.Cleanup(func() { testHookKeyBetween = nil })
 			} else {
 				shortLockWait(t, 300*time.Millisecond)
 			}

@@ -428,6 +428,49 @@ func (c *storageBudgetConstruction) forServer(s *Server) (*storageServerEnrollme
 	e.runtimePressure = &storageRuntimePressureScope{server: s, enrollment: e, owner: c.owner, construction: c}
 	return e, nil
 }
+
+// namedDeskChildCurrent holds a named desk outside a Desk home to its own
+// registered folder: a child of this installation's original server, with the
+// installation's artifact providers, whose held project tree is the folder the
+// desks folder names for its ID now. Such a desk starts writable and keeps its
+// data as in v0.13.2, without a budget enrollment of its own: its folder lies
+// in the installation's settings folder, which the start measures. Registering
+// it as a root of its own is Desk #698. Nothing else starts this way.
+func (c *storageBudgetConstruction) namedDeskChildCurrent(s *Server) error {
+	if s.cfg.parent != c.server || s.cfg.deskID == "" || s.project == nil || s.project.own.root != s.root || c.sources == nil {
+		return storagebudget.ErrAuthority
+	}
+	if s.retainedArtifactProviders != c.providers {
+		return storagebudget.ErrAuthority
+	}
+	if p, ok := s.retainedArtifacts.(*persistentInjectedArtifactProvider); ok {
+		if c.providers == nil || c.providers.byID[p.id] == nil || c.providers.byID[p.id].provider != p || len(c.sources.selectedProviders[p.id]) == 0 {
+			return storagebudget.ErrAuthority
+		}
+	}
+	folder, err := c.server.registryFolder(s.cfg.deskID)
+	if err != nil {
+		return errors.Join(storagebudget.ErrAuthority, err)
+	}
+	if filepath.Join(c.server.registryPath(), folder) != s.projectDir {
+		return storagebudget.ErrAuthority
+	}
+	root, err := c.server.desksRoot()
+	if err != nil {
+		return err
+	}
+	named, err := root.Lstat(folder)
+	cerr := root.Close()
+	if err != nil || cerr != nil || !deskFolderAccepted(named) {
+		return errors.Join(errStorageCustody, err, cerr)
+	}
+	held, err := s.root.Stat(".")
+	if err != nil || !os.SameFile(named, held) || !os.SameFile(held, s.project.info) {
+		return errors.Join(errStorageCustody, err)
+	}
+	return nil
+}
+
 func (e *storageServerEnrollment) Close() error {
 	if e == nil {
 		return nil
@@ -456,6 +499,13 @@ func (s *Server) activateStorageBudgetStartup(ctx context.Context) (err error) {
 		c := s.cfg.parent.storageConstruction
 		if c == nil {
 			return storagebudget.ErrAuthority
+		}
+		if c.server == s.cfg.parent && c.server.home == nil {
+			// Never writable where the installation itself is read only.
+			if c.server.storageReadOnly {
+				return errors.Join(errStorageCustody, c.server.storageProblem)
+			}
+			return c.namedDeskChildCurrent(s)
 		}
 		e, err := c.forServer(s)
 		if err != nil {
