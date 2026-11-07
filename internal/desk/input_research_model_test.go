@@ -32,7 +32,7 @@ func TestInputResearchUsesReviewedNamedConnectionAndCannotPickAnotherModel(t *te
 		t.Fatal(code)
 	}
 	choice := inputResearchAI{Connection: connection.ID, Revision: connection.Revision, Model: "shared-model"}
-	raw, e := s.inputResearchModel(backgroundResearchFixtureContext(t, choice), choice, "Research provided URLs.", nil)
+	raw, e := s.inputResearchModel(backgroundResearchFixtureContext(t, choice), choice, `{"instructions":"Research provided URLs.","retainedSources":[]}`, nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -41,12 +41,12 @@ func TestInputResearchUsesReviewedNamedConnectionAndCannotPickAnotherModel(t *te
 		t.Fatal("action lost", e)
 	}
 	choice.Model = "unapproved-model"
-	if _, e = s.inputResearchModel(backgroundResearchFixtureContext(t, choice), choice, "test", nil); e == nil || calls.Load() != 1 {
+	if _, e = s.inputResearchModel(backgroundResearchFixtureContext(t, choice), choice, `{"instructions":"test","retainedSources":[]}`, nil); e == nil || calls.Load() != 1 {
 		t.Fatal("unapproved model sent")
 	}
 	choice.Model = "shared-model"
 	choice.Revision = "old"
-	if _, e = s.inputResearchModel(backgroundResearchFixtureContext(t, choice), choice, "test", nil); e == nil || calls.Load() != 1 {
+	if _, e = s.inputResearchModel(backgroundResearchFixtureContext(t, choice), choice, `{"instructions":"test","retainedSources":[]}`, nil); e == nil || calls.Load() != 1 {
 		t.Fatal("stale connection sent")
 	}
 }
