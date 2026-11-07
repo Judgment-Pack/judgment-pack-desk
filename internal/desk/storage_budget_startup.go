@@ -471,6 +471,42 @@ func (c *storageBudgetConstruction) namedDeskChildCurrent(s *Server) error {
 	return nil
 }
 
+// addedDeskChildCurrent holds a Desk home desk added after the installation's
+// first start, which the saved catalog does not register, to its own folder in
+// the home: a child of the original server with the installation's artifact
+// providers, whose held tree is the home's folder for its registry entry now.
+// Such a desk starts writable without a budget enrollment of its own; its
+// private folder is measured with the settings folder and listed as a
+// registration difference in status. Enrolling it is Desk #698.
+func (c *storageBudgetConstruction) addedDeskChildCurrent(s *Server, entry deskHomeEntry) error {
+	if s.cfg.parent != c.server || s.project == nil || s.project.own.root != s.root || c.sources == nil || c.sources.homeNamed == nil || c.server.home == nil {
+		return storagebudget.ErrAuthority
+	}
+	if s.retainedArtifactProviders != c.providers {
+		return storagebudget.ErrAuthority
+	}
+	if p, ok := s.retainedArtifacts.(*persistentInjectedArtifactProvider); ok {
+		if c.providers == nil || c.providers.byID[p.id] == nil || c.providers.byID[p.id].provider != p || len(c.sources.selectedProviders[p.id]) == 0 {
+			return storagebudget.ErrAuthority
+		}
+	}
+	if filepath.Join(c.server.home.Path, entry.Folder) != s.projectDir || !filepath.IsLocal(entry.Folder) {
+		return storagebudget.ErrAuthority
+	}
+	if err := c.sources.homeNamed.current(); err != nil {
+		return err
+	}
+	named, err := c.sources.homeNamed.root.Lstat(entry.Folder)
+	if err != nil || !deskFolderAccepted(named) {
+		return errors.Join(errStorageCustody, err)
+	}
+	held, err := s.root.Stat(".")
+	if err != nil || !os.SameFile(named, held) || !os.SameFile(held, s.project.info) {
+		return errors.Join(errStorageCustody, err)
+	}
+	return nil
+}
+
 func (e *storageServerEnrollment) Close() error {
 	if e == nil {
 		return nil
@@ -506,6 +542,22 @@ func (s *Server) activateStorageBudgetStartup(ctx context.Context) (err error) {
 				return errors.Join(errStorageCustody, c.server.storageProblem)
 			}
 			return c.namedDeskChildCurrent(s)
+		}
+		if c.server == s.cfg.parent && c.server.home != nil && c.sources != nil {
+			// The registry file, which a desk created while Desk runs is
+			// written to before this server's own copy is read again.
+			live, err := readDeskHome(c.server.configDir)
+			if err != nil {
+				return err
+			}
+			if entry := live.entry(s.projectDir); entry != nil && live.Path == c.server.home.Path {
+				if _, held := c.sources.projects[entry.ID]; !held {
+					if c.server.storageReadOnly {
+						return errors.Join(errStorageCustody, c.server.storageProblem)
+					}
+					return c.addedDeskChildCurrent(s, *entry)
+				}
+			}
 		}
 		e, err := c.forServer(s)
 		if err != nil {

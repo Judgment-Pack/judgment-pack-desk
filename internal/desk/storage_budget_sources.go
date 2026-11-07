@@ -56,6 +56,45 @@ type storageOriginalSources struct {
 	// Every inspected project; the census measures its .desk-private where no
 	// registered root holds or scopes it (storageCensusWalk.carried).
 	carried []storageCarriedPrivate
+	// Desks in the home registry that the saved catalog does not hold: added
+	// after the first start. A registration difference, not a custody one:
+	// their private folders are measured (carried) and reported, and each
+	// starts writable without a budget enrollment (Desk #698 enrolls them).
+	added map[string]storageOriginalProject
+}
+
+// storageHomeRegistryGrew is whether now is was with desks added and nothing
+// else changed: the same version and owner, and every desk of was, unchanged.
+// A desk created while Desk runs is written to the registry file before this
+// server's own copy of it is read again.
+func storageHomeRegistryGrew(was, now deskHomeRegistry) bool {
+	if reflect.DeepEqual(was, now) {
+		return true
+	}
+	plain, grown := was, now
+	plain.Desks, grown.Desks = nil, nil
+	if !reflect.DeepEqual(plain, grown) || len(now.Desks) < len(was.Desks) {
+		return false
+	}
+	for _, old := range was.Desks {
+		if !slices.Contains(now.Desks, old) {
+			return false
+		}
+	}
+	return true
+}
+
+// storageCatalogHomeRelation is the saved catalog's relation for a home desk.
+func storageCatalogHomeRelation(c *storageOwnerCatalogV2, id string) (storageOwnerHomeRelation, bool) {
+	if c == nil {
+		return storageOwnerHomeRelation{}, false
+	}
+	for _, e := range c.OriginalOwner.Entries {
+		if e.DeskID == id {
+			return e, true
+		}
+	}
+	return storageOwnerHomeRelation{}, false
 }
 
 // storageCarriedPrivate is one adopted project folder, held for this
@@ -181,13 +220,24 @@ func (c *storageBudgetConstruction) inspectOriginalSources(ctx context.Context, 
 			if entry.Kind == "desk" {
 				kind = 2
 			}
-			x.owner.Entries = append(x.owner.Entries, storageOwnerHomeRelation{DeskID: entry.ID, Folder: []byte(entry.Folder), Kind: kind, HistoryIdentity: []byte(entry.HistoryIdentity), StorageOwner: entry.StorageOwner, RunnerWorkspace: entry.RunnerWorkspace})
 			projectNamed, readErr := storagePinChild(homeRoot, entry.Folder, false)
 			if readErr != nil {
 				return nil, readErr
 			}
 			project := projectNamed.root
 			x.openedRoots = append(x.openedRoots, project)
+			if _, known := storageCatalogHomeRelation(reattached, entry.ID); reattached != nil && !known && filepath.Join(h.Path, entry.Folder) != c.server.projectDir {
+				// A desk added after the first start: measured and warned
+				// about, never a custody refusal (Desk #698 registers it).
+				if x.added == nil {
+					x.added = map[string]storageOriginalProject{}
+				}
+				x.added[entry.ID] = storageOriginalProject{entry: entry, named: projectNamed}
+				x.carried = append(x.carried, storageCarriedPrivate{project: project, workspace: storageDerivedID("desk-storage-workspace-v2", installation, []byte(entry.RunnerWorkspace))})
+				x.unregistered = append(x.unregistered, filepath.Join(h.Path, entry.Folder))
+				continue
+			}
+			x.owner.Entries = append(x.owner.Entries, storageOwnerHomeRelation{DeskID: entry.ID, Folder: []byte(entry.Folder), Kind: kind, HistoryIdentity: []byte(entry.HistoryIdentity), StorageOwner: entry.StorageOwner, RunnerWorkspace: entry.RunnerWorkspace})
 			if _, duplicate := x.projects[entry.ID]; duplicate {
 				return nil, errStorageCustody
 			}
@@ -650,7 +700,7 @@ func (x *storageOriginalSources) currentProjects(ctx context.Context) error {
 	if x.owner.Kind != 2 {
 		return nil
 	}
-	if x.homeNamed == nil || x.construction.server.home == nil || string(x.owner.HomePath) != x.construction.server.home.Path || x.owner.HomeOwner != x.construction.server.home.Registry.Owner || len(x.projects) != len(x.construction.server.home.Registry.Desks) {
+	if x.homeNamed == nil || x.construction.server.home == nil || string(x.owner.HomePath) != x.construction.server.home.Path || x.owner.HomeOwner != x.construction.server.home.Registry.Owner || len(x.projects) > len(x.construction.server.home.Registry.Desks) {
 		return errStorageCustody
 	}
 	b, err := readPrivateData(x.construction.original.config, deskHomeRegistryName, 1048576)
@@ -658,20 +708,31 @@ func (x *storageOriginalSources) currentProjects(ctx context.Context) error {
 		return err
 	}
 	registry, err := decodeHomeRegistry(b)
-	if err != nil || !reflect.DeepEqual(registry, x.construction.server.home.Registry) {
+	if err != nil || !storageHomeRegistryGrew(x.construction.server.home.Registry, registry) {
 		return errors.Join(errStorageCustody, err)
 	}
 	if err := x.homeNamed.current(); err != nil {
 		return err
 	}
-	for _, entry := range x.construction.server.home.Registry.Desks {
+	found := 0
+	for _, entry := range registry.Desks {
 		project, ok := x.projects[entry.ID]
-		if !ok || project.entry != entry || project.named.parent != x.homeNamed.root {
+		if !ok {
+			// Added after this start's census: a registration difference,
+			// warned about, never custody (Desk #698).
+			continue
+		}
+		if project.entry != entry || project.named.parent != x.homeNamed.root {
 			return errStorageCustody
 		}
 		if err := project.named.current(); err != nil {
 			return err
 		}
+		found++
+	}
+	// Every desk this start holds is still registered, unchanged.
+	if found != len(x.projects) {
+		return errStorageCustody
 	}
 	return x.homeNamed.current()
 }
