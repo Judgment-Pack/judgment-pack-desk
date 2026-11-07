@@ -180,12 +180,14 @@ func (s *Server) handleProjectArtifactReview(w http.ResponseWriter, r *http.Requ
 		fail(errors.New(refusal))
 		return
 	}
-	unlock, failure := s.lockProjectFor(r.Context(), "artifact review", "reviewed")
+	// The owned form, so the publication folders this review may make first
+	// borrow the lock held here rather than trying the same folder again.
+	projectLease, failure := s.lockProjectForOwned(r.Context(), "artifact review", "reviewed")
 	if failure != nil {
 		writeJSONCoded(w, failure.status, failure.code, failure.message)
 		return
 	}
-	defer unlock()
+	defer func() { _ = projectLease.Close() }()
 	snap, err := s.readSnapshot()
 	if err != nil {
 		fail(err)
@@ -195,7 +197,7 @@ func (s *Server) handleProjectArtifactReview(w http.ResponseWriter, r *http.Requ
 		fail(errors.New("The project changed. Review the current files again."))
 		return
 	}
-	p, err := s.beginPublication(r.Context(), snap)
+	p, err := s.beginPublication(r.Context(), snap, projectLease)
 	if err != nil {
 		fail(err)
 		return
