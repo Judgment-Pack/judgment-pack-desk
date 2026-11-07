@@ -1476,6 +1476,12 @@ func TestStorageCompositionCompletedPhysicalEndpointR1(t *testing.T) {
 				native := storageOwnerV6NativeBank{Stage: c, NativeBase: 40, Boundary: storagePolicyQBoundary{e.AfterEpoch, e.AfterRevision}, Policy: f.after.Policy, Overrides: []byte{0, 0}}
 				nativeRaw, nativeErr := native.encode(f.record, f.claim)
 				storageTestMust(t, nativeErr)
+				// An enrollment founds its own lineage: no first base below it.
+				founded := native
+				founded.Stage.FirstBase = storagebudget.Digest{0x5a}
+				if _, nativeErr = founded.encode(f.record, f.claim); nativeErr == nil {
+					t.Fatal("native enrollment carried a first base")
+				}
 				nativePair, nativeErr := storageOwnerV6NativeReadPair(nativeRaw, nativeRaw, nil, nil, f.record, f.claim)
 				if nativeErr != nil || nativePair.RecoveryOnly || !nativePair.Duplicated || nativePair.Selected != cBank || !storagePolicyOriginalPairBank([2][]byte{nativeRaw, nativeRaw}, 0, nativePair.Selected, nativePair.Duplicated) {
 					t.Fatal("native completed semantic bank lost", nativeErr)

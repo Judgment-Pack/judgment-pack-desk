@@ -1109,7 +1109,17 @@ func (v storageOwnerV6NativeBank) validate(record storageOwnerRecordV2, claim st
 	s := v.Stage
 	// Both digest halves are original operands. The predecessor half is not
 	// padding; entry/pair/Snapshot joins compare the complete 65 bytes.
-	if v.Packed != nil || !claim.matches(record) || !v.Policy.valid() || s.Sequence == 0 || s.BeforeBank > 1 || s.CoreCodec != 2 || s.TransitionID == (storagebudget.ID{}) || s.Previous == (storageCompositionChecksum{}) || s.FirstBase != (storagebudget.Digest{}) || s.BeforePeer[0] != 0 || storageEnrollmentPeakZero(s.BeforePeer[1:33]) || s.Transition < storageCompositionEnrollment || s.Transition > storageCompositionMove {
+	if v.Packed != nil || !claim.matches(record) || !v.Policy.valid() || s.Sequence == 0 || s.BeforeBank > 1 || s.CoreCodec != 2 || s.TransitionID == (storagebudget.ID{}) || s.Previous == (storageCompositionChecksum{}) || s.BeforePeer[0] != 0 || storageEnrollmentPeakZero(s.BeforePeer[1:33]) || s.Transition < storageCompositionEnrollment || s.Transition > storageCompositionMove {
+		return storagebudget.ErrBounds
+	}
+	// FirstBase is the founding commitment of the composition lineage, part of
+	// its frozen core, under the same rule as storageCompositionBank.validateCore.
+	// An Enrollment stage founds its own lineage and carries none. A later stage
+	// keeps its root's value: zero below an enrollment, or the exact first-base
+	// commitment below a composition founded on an already completed E1 pair.
+	// Every edge compares it exactly (storageCompositionFrozenCore); a native
+	// frame never founds a first base, so a Base transition stays refused above.
+	if s.Transition == storageCompositionEnrollment && s.FirstBase != (storagebudget.Digest{}) {
 		return storagebudget.ErrBounds
 	}
 	if len(v.Overrides) < 2 || len(v.Overrides) > 270338 {
