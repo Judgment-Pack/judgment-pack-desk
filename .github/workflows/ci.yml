@@ -5,8 +5,9 @@ name: CI
 # check is defined once, in dev.json, and runs the same way on a contributor's machine.
 #
 # The jobs named Go and Web are the status checks branch protection on main requires (with
-# DCO); keep their names. The job named check runs the whole list, so that nothing in dev.json
-# is left to a job that does not exist.
+# DCO); keep their names. The job named check runs the whole list but go-test, so that nothing
+# in dev.json is left to a job that does not exist; go-test is the Go jobs' (internal/desk in
+# shards), and runs once.
 
 on:
   push:
@@ -50,9 +51,29 @@ jobs:
       # step passes with nothing to build when the lock has no development pin.
       - run: scripts/dev/check.sh --only development-build
 
-  go:
-    name: Go
+  # internal/desk's tests run in parallel shards (scripts/dev/go-test.sh says how a test is
+  # assigned; the number of shards is its own, read here), the other packages in Go checks. The
+  # job named Go is the required status check: it passes only when every Go job passed and the
+  # shards together reported every test the package lists.
+  go-plan:
+    name: Go test shards
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: plan
+        run: |
+          shards=$(scripts/dev/go-test.sh --shards)
+          echo "shards=$shards" >> "$GITHUB_OUTPUT"
+          echo "count=$(python3 -c 'import json, sys; print(len(json.loads(sys.argv[1])))' "$shards")" >> "$GITHUB_OUTPUT"
+
+  go-checks:
+    name: Go checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -63,13 +84,11 @@ jobs:
       # not the test suite: every row's needle matches its file once, and the harness's own
       # logic holds against stand-in suites. No mutation row runs here. The rows run in
       # mutation-rows.yml (a pull request's own) and mutation-nightly.yml, which block nothing.
-      # The relay's end-to-end tests need a runtime binary and a Judgment Pack project. This job
-      # supplies neither, so they skip themselves (requireBinary and e2eFixtures in
-      # internal/desk/server_test.go); go-test runs with -v so that the skips stay visible.
-      # What runs with the real companions is in the check job.
+      # go-test here is every package but internal/desk, whose shards are the next job.
       - run: scripts/dev/check.sh --only gofmt,component-policy,python-tests,needle-check,component-identities,go-vet,go-test
         env:
           JPDEV_LOGDIR: ${{ runner.temp }}/go-check-logs
+          GO_TEST_SHARD: others
       # Only per-step command output, not workspace, credentials or caches.
       - name: Upload the go step logs
         if: always()
@@ -79,6 +98,74 @@ jobs:
           path: ${{ runner.temp }}/go-check-logs/
           if-no-files-found: ignore
           retention-days: 7
+
+  # One shard of internal/desk a job. Each shard's tests stop at 30 minutes (go test's own
+  # -timeout, whose panic names the tests still running), well inside the job's limit. The
+  # relay's end-to-end tests need a runtime binary and a Judgment Pack project. These jobs
+  # supply neither, so they skip themselves (requireBinary and e2eFixtures in
+  # internal/desk/server_test.go); go-test runs with -v so that the skips stay visible. What
+  # runs with the real companions is in the check job. The shard's log, its test list and its
+  # record are its artifact, named by the shard; the job summary names its failing tests.
+  go-test-desk:
+    name: Go test internal/desk (${{ matrix.shard }}/${{ needs.go-plan.outputs.count }})
+    needs: go-plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.go-plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchains
+      - run: scripts/dev/check.sh --only go-test
+        env:
+          JPDEV_LOGDIR: ${{ runner.temp }}/go-test-desk
+          GO_TEST_SHARD: ${{ matrix.shard }}/${{ needs.go-plan.outputs.count }}
+          GO_TEST_ARTIFACT: go-test-desk-shard-${{ matrix.shard }}-of-${{ needs.go-plan.outputs.count }}-${{ github.run_id }}
+      # A re-run replaces the shard's artifact, so the Go job reads each shard's latest run.
+      - name: Upload the shard's log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: go-test-desk-shard-${{ matrix.shard }}-of-${{ needs.go-plan.outputs.count }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/go-test-desk/
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
+
+  go:
+    name: Go
+    needs: [go-plan, go-checks, go-test-desk]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        if: needs.go-plan.result == 'success'
+        with:
+          pattern: go-test-desk-shard-*-of-${{ needs.go-plan.outputs.count }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/shards
+      # Every test the package lists reported a result in exactly one shard: a test no shard
+      # selected, a shard that never ran, or one that stopped early fails here. The job
+      # summary lists each shard's verdict, failing tests and artifact.
+      - name: Every internal/desk test ran in one shard
+        if: needs.go-plan.result == 'success'
+        env:
+          SHARDS: ${{ needs.go-plan.outputs.count }}
+        run: python3 scripts/dev/go-test-shards.py complete "$SHARDS" "$RUNNER_TEMP"/shards/*/
+      - name: Every Go job passed
+        if: always()
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          failed = {job: need['result'] for job, need in json.loads(os.environ['RESULTS']).items() if need['result'] != 'success'}
+          for job, result in failed.items(): print('%s: %s' % (job, result))
+          sys.exit(1 if failed else 0)
+          PY
 
   web:
     name: Web
@@ -123,7 +210,8 @@ jobs:
   # steps that need the official companions, the Exchange and the Gateway fixtures run here
   # (they were the Jobs companion and Signed Exchange acquisition acceptance jobs). A step whose
   # environment variable is empty is skipped and said to be; component-freshness and
-  # mutation-rows are optional because their own workflows set theirs.
+  # mutation-rows are optional because their own workflows set theirs. go-test is skipped: the
+  # Go jobs run it, internal/desk in shards, which no single job's budget holds.
   check:
     name: check
     runs-on: ubuntu-latest
@@ -153,9 +241,9 @@ jobs:
             fi
             git check-ref-format "refs/heads/$CHECK_BASE_REF" || exit 2
             git rev-parse --verify "refs/remotes/origin/$CHECK_BASE_REF^{commit}" >/dev/null || exit 2
-            scripts/dev/check.sh --all --changed "origin/$CHECK_BASE_REF"
+            scripts/dev/check.sh --all --skip go-test --changed "origin/$CHECK_BASE_REF"
           else
-            scripts/dev/check.sh --all
+            scripts/dev/check.sh --all --skip go-test
           fi
       # The full output of every step, which the summary block shortens.
       - name: Upload the step logs
