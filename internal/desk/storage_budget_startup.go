@@ -623,7 +623,7 @@ func (s *Server) serveStorageReadOnly(w http.ResponseWriter, r *http.Request) bo
 		return true
 	}
 	if r.URL.Path == "/api/storage" && r.Method == http.MethodGet {
-		if !s.guard(w, r) {
+		if !s.guard(w, r) || s.refuseUnusableStore(w) {
 			return true
 		}
 		w.Header().Set("Cache-Control", "no-store")
@@ -635,6 +635,13 @@ func (s *Server) serveStorageReadOnly(w http.ResponseWriter, r *http.Request) bo
 
 	if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/ws" || strings.HasPrefix(r.URL.Path, relayPrefix) || strings.HasPrefix(r.URL.Path, researchPrefix) {
 		if !s.guard(w, r) {
+			return true
+		}
+		// Storage is read-only where the private store is unusable. That is
+		// the more specific refusal, worded as each route that keeps data
+		// gives it (409, naming the directory to repair), not the generic
+		// pause; the route is refused either way.
+		if s.refuseUnusableStore(w) {
 			return true
 		}
 		http.Error(w, "Storage budget is unavailable or exceeded; new work is paused.", http.StatusServiceUnavailable)
