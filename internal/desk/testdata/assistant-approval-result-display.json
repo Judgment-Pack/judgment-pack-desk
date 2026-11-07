@@ -1,0 +1,40 @@
+[
+  {
+    "callId": "approved-one",
+    "name": "notes__write_note",
+    "isError": false,
+    "result": {
+      "available": true,
+      "text": [
+        " {\n \"number\":1.20,\"exponent\":1e2,\"wide\":9007199254740993,\"zero\":-0\n}\n",
+        "<script>untrusted result</script>"
+      ],
+      "otherContent": [
+        "image",
+        "structuredContent"
+      ]
+    }
+  },
+  {
+    "callId": "approved-two",
+    "name": "notes__write_note",
+    "isError": true,
+    "result": {
+      "available": true,
+      "text": [
+        "Exact second result."
+      ],
+      "otherContent": []
+    }
+  },
+  {
+    "callId": "missing-result",
+    "name": "notes__write_note",
+    "isError": false,
+    "result": {
+      "available": false,
+      "text": [],
+      "otherContent": []
+    }
+  }
+]

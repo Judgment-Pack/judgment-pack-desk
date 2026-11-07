@@ -1,0 +1,111 @@
+{
+  "release": "v0.10.0",
+  "sourceRevision": "e00d2b11d11af4dabb0a4de6c1a5e7322bd8527e",
+  "predecessorRelease": "v0.9.1",
+  "harnessArchiveSha256": "58dd309b4a902978bdb174b217c9ba2f11a394afb8896ed68b7c0840c5f0068a",
+  "scope": "SHA-256 inventory of source contract/schemas/*.json from the immutable release source. Metadata only: does not enumerate schema members, vectors, tests, certification, npm bundled-file coverage, or Desk cutover.",
+  "schemaDirectory": "contract/schemas",
+  "schemaCount": 20,
+  "schemas": [
+    {
+      "name": "approval",
+      "sha256": "200beb046c2535057903c1f6a0c79da37792ecfae057daf53a97ab3424a51e66",
+      "changedSince091": false
+    },
+    {
+      "name": "budget",
+      "sha256": "0c96a917270523af3b0d31f31829909ed78a32f34647c5a431de39fea8248fe8",
+      "changedSince091": false
+    },
+    {
+      "name": "capability",
+      "sha256": "0772e7e1e9c7fd7d30b169e2012c53f6efb7c7808bd84e3d75478c92a17214f4",
+      "changedSince091": false
+    },
+    {
+      "name": "checkpoint",
+      "sha256": "fc3088adda9c4ee0ea3061877bc192985e885c0c48d24113ad0af39041f67b05",
+      "changedSince091": true
+    },
+    {
+      "name": "corpus-entry",
+      "sha256": "1d2fb6d448747a0fa3b360adee42ef3b3b89ac6b323d8ce1c80dbb70afed63c3",
+      "changedSince091": false
+    },
+    {
+      "name": "delegated-task",
+      "sha256": "d10a37b3d097d49931005e65c5d0bf208f2c018e06bbe5ef9167db6b5cdea013",
+      "changedSince091": true
+    },
+    {
+      "name": "export",
+      "sha256": "0aed9f288bb55861425d0078ffe2927d7d8cec255dcdf98484b32cc7c74235f9",
+      "changedSince091": true
+    },
+    {
+      "name": "failure",
+      "sha256": "6230bb060131d9b72493ed019e5cd3f504d2deff4d6da4d99768876914b7bb1b",
+      "changedSince091": true
+    },
+    {
+      "name": "memory",
+      "sha256": "3ba9ad715dcb9437dcc426d5b54877a6980355e2011ea5fc5151df6352b32cbe",
+      "changedSince091": false
+    },
+    {
+      "name": "policy",
+      "sha256": "3114afcbdf9596de81d52ac12cdbe872f56b0f93bef1afec4ef0b33cf6344e0e",
+      "changedSince091": true
+    },
+    {
+      "name": "provenance",
+      "sha256": "2cc86bd1ca6cc341a60a83a1b5520912533304c94b1d70834e731f1ef01af182",
+      "changedSince091": true
+    },
+    {
+      "name": "question",
+      "sha256": "00ec47bbe042dcb4241931bfcafa804d3e166dc709b636f39942d20895434b81",
+      "changedSince091": false
+    },
+    {
+      "name": "run-event",
+      "sha256": "3a8ab9562488437d9cc63b6bae629d207e3519bd4aaa8f785ec5e32c648710d4",
+      "changedSince091": true
+    },
+    {
+      "name": "run-report",
+      "sha256": "728a799665c3855c2e246609599f2d311c6c1f1a2dab163e64c1a3a5ff5473a2",
+      "changedSince091": true
+    },
+    {
+      "name": "skill",
+      "sha256": "562c65a7b2110d0aa763319a28960a04fcde49784feacb5ffa3d07ccd9c77d8d",
+      "changedSince091": false
+    },
+    {
+      "name": "subagent",
+      "sha256": "99121ef0e8df45c943ad8fad632d03fe47fe4349b43d1064898e97ffef17f6e5",
+      "changedSince091": false
+    },
+    {
+      "name": "tool-call",
+      "sha256": "a8028d41c24dd10869d0b64e60fe49a7445c468f3ebd1540344bc66f147856f6",
+      "changedSince091": true
+    },
+    {
+      "name": "tool-offer",
+      "sha256": "f8b4d8f1974689e776a239c32bf8c7849509cb07ea852dc05866f90ae56f4808",
+      "changedSince091": true
+    },
+    {
+      "name": "tool-result",
+      "sha256": "e342560b105f928047cc3d118e08efcc0de871f0bb53251661cb34e9314a1307",
+      "changedSince091": true
+    },
+    {
+      "name": "usage",
+      "sha256": "27d58f4f6f6dcc70dd420b4866678ce6e8f98414da24c57a8978eed9a1d8f725",
+      "changedSince091": false
+    }
+  ]
+}

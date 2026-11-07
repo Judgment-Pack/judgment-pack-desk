@@ -1,0 +1,19 @@
+{
+ "request":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","candidate":{"title":"Held title","narrative":"Held exact narrative: false, 0, null, 中文.\r\n","artifactVersion":"1.0.0"}},
+ "cases":[
+  {"name":"title-only","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":"Changed"},"want":{"title":"Changed","narrative":"Held exact narrative: false, 0, null, 中文.\r\n","artifactVersion":"1.0.0"}},
+  {"name":"empty-narrative","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","narrative":""},"want":{"title":"Held title","narrative":"","artifactVersion":"1.0.0"}},
+  {"name":"version-only","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","artifactVersion":"2"},"want":{"title":"Held title","narrative":"Held exact narrative: false, 0, null, 中文.\r\n","artifactVersion":"2"}},
+  {"name":"full-fields","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":"Full","narrative":"New narrative","artifactVersion":"2.0.0"},"want":{"title":"Full","narrative":"New narrative","artifactVersion":"2.0.0"}},
+  {"name":"explicit-empty-fields","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":"","narrative":"","artifactVersion":""},"want":{"title":"","narrative":"","artifactVersion":""}},
+  {"name":"revision-only","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}},
+  {"name":"missing-revision","args":{"title":"Changed"}},
+  {"name":"wrong-revision","args":{"revision":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","title":"Changed"}},
+  {"name":"null-title","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":null}},
+  {"name":"null-narrative","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","narrative":null}},
+  {"name":"null-version","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","artifactVersion":null}},
+  {"name":"unknown-authority","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":"Changed","approve":true}},
+  {"name":"case-alias","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Title":"Changed"}},
+  {"name":"typed-value","args":{"revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":false}}
+ ]
+}

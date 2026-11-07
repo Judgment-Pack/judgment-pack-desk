@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,20 +17,23 @@ import (
 )
 
 type subscriptionCapacityHarness struct {
-	t        *testing.T
-	journal  evaluationJournal
-	b        inputEvaluation
-	server   func() *Server
-	repo     inputPreparationRepository
-	mu       sync.Mutex
-	full     int
-	status   int
-	code     string
-	refuseAt string
-	paused   bool
-	reads    int
-	bodies   [][]byte
-	admitted map[string]int
+	t                      *testing.T
+	journal                evaluationJournal
+	b                      inputEvaluation
+	server                 func() *Server
+	repo                   inputPreparationRepository
+	mu                     sync.Mutex
+	full                   int
+	successesBeforeRefusal int
+	receipt                bool
+	receiptState           string
+	status                 int
+	code                   string
+	refuseAt               string
+	paused                 bool
+	reads                  int
+	bodies                 [][]byte
+	admitted               map[string]int
 }
 
 // Start from two retained outbox intents. No Runtime, model, source acquisition,
@@ -75,7 +79,7 @@ func newSubscriptionCapacityHarness(t *testing.T, backend string) *subscriptionC
 		case r.Method == "POST" && r.URL.Path == "/v1/triggers/"+b.Subscription.TriggerID+"/deliveries":
 			raw, _ := io.ReadAll(r.Body)
 			h.bodies = append(h.bodies, raw)
-			if h.full > 0 && h.refuseAt == "" {
+			if h.full > 0 && h.refuseAt == "" && h.successesBeforeRefusal == 0 {
 				h.full--
 				writeJSON(w, h.status, map[string]any{"error": map[string]string{"code": h.code, "message": "Runner refused this request"}})
 				return
@@ -84,10 +88,21 @@ func newSubscriptionCapacityHarness(t *testing.T, backend string) *subscriptionC
 			if err := json.Unmarshal(raw, &request); err != nil {
 				t.Error(err)
 			}
+			if h.successesBeforeRefusal > 0 {
+				h.successesBeforeRefusal--
+			}
 			h.admitted[request.Event.ID]++
 			writeJSON(w, 200, map[string]any{"occurrence": map[string]string{"id": "occ_" + request.Event.ID, "state": "completed"}})
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v1/triggers/"+b.Subscription.TriggerID+"/deliveries/"):
 			h.reads++
+			if h.receipt {
+				state := h.receiptState
+				if state == "" {
+					state = "skipped"
+				}
+				writeJSON(w, 200, map[string]any{"occurrence": map[string]string{"id": "occ_recovered", "state": state, "jobId": b.JobID, "releaseId": b.ReleaseID, "triggerId": b.Subscription.TriggerID, "eventId": strings.TrimPrefix(r.URL.Path, "/v1/triggers/"+b.Subscription.TriggerID+"/deliveries/")}})
+				return
+			}
 			writeJSON(w, 404, map[string]any{"error": map[string]string{"code": "not_found", "message": "No delivery admitted"}})
 		case r.Method == "POST" && r.URL.Path == "/v1/triggers/"+b.Subscription.TriggerID+"/state":
 			var request struct{ Paused bool }
@@ -511,6 +526,197 @@ func TestInputSubscriptionRealRunnerCapacityWait(t *testing.T) {
 			var runs struct{ Items []json.RawMessage }
 			if err = json.Unmarshal(raw, &runs); err != nil || len(runs.Items) != 2 {
 				t.Fatal("Runner created extra or missing runs", len(runs.Items), err)
+			}
+		})
+	}
+}
+
+// Stop each pass on the next refusal, before the end-of-pass reset. This
+// models an outbox that keeps growing without depending on Runtime backfill.
+func TestInputSubscriptionSuccessResetsConsecutiveRefusals(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		t.Run(backend, func(t *testing.T) {
+			h := newSubscriptionCapacityHarness(t, backend)
+			h.status, h.code, h.full = 503, "unavailable", 1
+			h.tick(false)
+			template := h.b.Rows[1]
+			for attempt := range 6 {
+				h.update(func(b *inputEvaluation) {
+					b.Subscription.RetryAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+					if attempt > 0 {
+						row := template
+						row.EventID = fmt.Sprintf("input-%064x", attempt)
+						b.Rows = append(b.Rows, row)
+					}
+				})
+				original := h.b.Rows[len(h.b.Rows)-2]
+				h.mu.Lock()
+				h.full, h.successesBeforeRefusal = 1, 1
+				h.mu.Unlock()
+				h.tick(false)
+				if h.b.State != "queued" || h.b.Subscription.Failures != 1 || h.b.Subscription.RetryAt == "" {
+					t.Fatal("successful admission did not restart consecutive refusal count", h.b)
+				}
+				delivered := h.b.Rows[len(h.b.Rows)-2]
+				pending := h.b.Rows[len(h.b.Rows)-1]
+				if delivered.EventID != original.EventID || delivered.EventAt != original.EventAt || delivered.OccurrenceID == "" || len(delivered.Input) != 0 || !bytes.Equal(pending.Input, template.Input) {
+					t.Fatal("admission changed retained identity or pending input", h.b.Rows)
+				}
+			}
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			for id, count := range h.admitted {
+				if count != 1 {
+					t.Fatal("duplicate delivery", id, count)
+				}
+			}
+		})
+	}
+}
+
+func (h *subscriptionCapacityHarness) update(change func(*inputEvaluation)) {
+	h.t.Helper()
+	saved, err := h.journal.Read(h.t.Context())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	change(&saved.Document)
+	saved, err = h.journal.CompareAndSwap(h.t.Context(), saved.Document, saved.SHA256)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	h.b = saved.Document
+}
+
+func TestInputSubscriptionReceiptResetsRefusals(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		for _, mode := range []string{"revoked", "paused"} {
+			t.Run(backend+"/"+mode, func(t *testing.T) {
+				h := newSubscriptionCapacityHarness(t, backend)
+				original := h.b.Rows[0]
+				pending := h.b.Rows[1]
+				h.update(func(b *inputEvaluation) {
+					b.Subscription.Failures = 4
+					b.Subscription.RetryAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+					if mode == "paused" {
+						b.Subscription.Enabled = false
+						b.State = "paused"
+					}
+				})
+				if mode == "revoked" {
+					saved, err := h.repo.Get(t.Context(), h.b.PreparationID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					saved.Document.Records = saved.Document.Records[1:]
+					if _, err = h.repo.CompareAndSwap(t.Context(), saved.Document, saved.SHA256); err != nil {
+						t.Fatal(err)
+					}
+				}
+				h.receipt, h.full, h.status, h.code = true, 1, 503, "unavailable"
+				if mode == "paused" {
+					h.paused = true
+					h.refuseAt = "GET /v1/triggers/" + h.b.Subscription.TriggerID + "/deliveries/" + h.b.Rows[1].EventID
+				}
+				h.tick(false)
+				if h.b.State != "queued" || h.b.Subscription.Failures != 1 || h.b.Subscription.RetryAt == "" || h.b.Rows[0].EventID != original.EventID || h.b.Rows[0].EventAt != original.EventAt || len(h.b.Rows[0].Input) != 0 || h.b.Rows[0].OccurrenceID != "occ_recovered" || len(h.admitted) != 0 {
+					t.Fatal("receipt reconciliation retained refusal count or changed delivery identity", h.b)
+				}
+				if !sameEvaluationValue(h.b.Rows[1], pending) {
+					t.Fatal("receipt reconciliation changed pending delivery", h.b.Rows[1])
+				}
+				if mode == "paused" && len(h.bodies) != 0 {
+					t.Fatal("paused receipt recovery submitted a delivery")
+				}
+			})
+		}
+	}
+}
+
+func TestInputSubscriptionResumeResetsRefusals(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		t.Run(backend, func(t *testing.T) {
+			h := newSubscriptionCapacityHarness(t, backend)
+			h.update(func(b *inputEvaluation) {
+				b.State, b.Problem = "blocked", "Runner unavailable"
+				b.Subscription.Failures, b.Subscription.RetryAt = 5, time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
+			})
+			original := h.b.Rows
+			view, err := h.repo.Read(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			saved, err := view.Get(h.b.PreparationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest("POST", "/evaluations/"+h.b.ID+"/resume", strings.NewReader(`{"reviewed":true}`))
+			response := httptest.NewRecorder()
+			h.server().confirmInputEvaluation(response, request, view, saved, h.b.ID)
+			if response.Code != 200 {
+				t.Fatal(response.Code, response.Body.String())
+			}
+			retained, err := h.journal.Read(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			b := retained.Document
+			if b.State != "queued" || b.Problem != "" || b.Subscription.Failures != 0 || b.Subscription.RetryAt != "" || b.Subscription.CapacityBackoff != 0 || b.Subscription.CapacityRetryAt != "" || !sameEvaluationValue(b.Rows, original) || len(h.bodies) != 0 {
+				t.Fatal("resume did not reset waits while retaining exact outbox", b)
+			}
+		})
+	}
+}
+
+func TestInputSubscriptionAgedOrdinaryRetryThenCapacityWait(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		t.Run(backend, func(t *testing.T) {
+			h := newSubscriptionCapacityHarness(t, backend)
+			original := h.b.Rows
+			h.status, h.code, h.full = 503, "unavailable", 1
+			h.tick(false)
+			h.update(func(b *inputEvaluation) {
+				b.Subscription.RetryAt = time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano)
+			})
+			h.mu.Lock()
+			h.status, h.code, h.full = 429, "queue_full", 2
+			h.mu.Unlock()
+			h.tick(false)
+			if h.b.Subscription.RetryAt != "" || h.b.Subscription.CapacityBackoff != 2 || h.b.Subscription.CapacityRetryAt == "" || h.b.Subscription.Failures != 1 || !sameEvaluationValue(h.b.Rows, original) {
+				t.Fatal("aged retry did not persist separate capacity wait", h.b)
+			}
+			h.tick(false)
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			if len(h.bodies) != 2 || len(h.admitted) != 0 {
+				t.Fatal("delivery repeated before capacity retry due", len(h.bodies), h.admitted)
+			}
+		})
+	}
+}
+
+func TestInputSubscriptionKnownOccurrencePreservesPendingWait(t *testing.T) {
+	for _, backend := range []string{"file", "memory"} {
+		t.Run(backend, func(t *testing.T) {
+			h := newSubscriptionCapacityHarness(t, backend)
+			pending := h.b.Rows[1]
+			retryAt := time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
+			h.update(func(b *inputEvaluation) {
+				b.Rows[0].OccurrenceID, b.Rows[0].State, b.Rows[0].Input = "occ_recovered", "accepted", nil
+				b.State = "queued"
+				b.Subscription.Failures = 3
+				b.Subscription.CapacityBackoff, b.Subscription.CapacityRetryAt = 2, retryAt
+			})
+			h.receipt, h.receiptState = true, "accepted"
+			for range 2 {
+				h.tick(false)
+				if h.b.Subscription.Failures != 3 || h.b.Subscription.CapacityBackoff != 2 || h.b.Subscription.CapacityRetryAt != retryAt || h.b.Subscription.RetryAt != "" || !sameEvaluationValue(h.b.Rows[1], pending) {
+					t.Fatal("known occurrence poll changed pending retry state", h.b)
+				}
+			}
+			if h.reads != 2 || len(h.bodies) != 0 || len(h.admitted) != 0 {
+				t.Fatal("known occurrence poll bypassed pending capacity wait", h.reads, len(h.bodies), h.admitted)
 			}
 		})
 	}

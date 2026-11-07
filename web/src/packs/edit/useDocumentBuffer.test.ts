@@ -462,3 +462,59 @@ it('adopts a verified host save only for the exact clean buffer; watcher reads s
  act(()=>publishVerifiedWrite({beforeSha256:saved.sha256,file:{...saved,content:'other save'}}));expect(result.current.text).toBe('saved')
  unmount()
 })
+
+describe('conditional application uses live buffer identity', () => {
+  it('refuses a captured handler after a same-tick edit before React renders', () => {
+    const {result} = renderHook(() => useDocumentBuffer(file('{"a":1}')))
+    const captured = result.current
+    const edit = vi.fn(() => '{"a":3}')
+    act(() => {
+      captured.commit('{"a":2}')
+      expect(captured.commitIfCurrent(captured.identity!, '{"a":1}', edit)).toEqual({applied:false})
+    })
+    expect(edit).not.toHaveBeenCalled()
+    expect(result.current.text).toBe('{"a":2}')
+    act(() => result.current.undo())
+    expect(result.current.text).toBe('{"a":1}')
+    expect(result.current.canUndo).toBe(false)
+  })
+
+  it('refuses edit-away/Undo-back even when the exact baseline bytes return', () => {
+    const {result} = renderHook(() => useDocumentBuffer(file('{"a":1}')))
+    const captured = result.current
+    act(() => result.current.commit('{"a":2}'))
+    act(() => {
+      result.current.undo()
+      expect(captured.commitIfCurrent(captured.identity!, '{"a":1}', () => '{"a":3}')).toEqual({applied:false})
+    })
+    expect(result.current.text).toBe('{"a":1}')
+    expect(result.current.canUndo).toBe(false)
+  })
+
+  it('refuses equal bytes at another path or generation and mismatched baseline bytes', () => {
+    const {result} = renderHook(() => useDocumentBuffer(file('{"a":1}')))
+    const captured = result.current
+    const edit = vi.fn(() => '{"a":3}')
+    act(() => {
+      expect(captured.commitIfCurrent({...captured.identity!,path:'packs/other.json'}, '{"a":1}', edit)).toEqual({applied:false})
+      expect(captured.commitIfCurrent({...captured.identity!,generation:99}, '{"a":1}', edit)).toEqual({applied:false})
+      expect(captured.commitIfCurrent(captured.identity!, '{ "a":1}', edit)).toEqual({applied:false})
+      captured.forget()
+      expect(captured.commitIfCurrent(captured.identity!, '{"a":1}', edit)).toEqual({applied:false})
+    })
+    expect(edit).not.toHaveBeenCalled()
+    expect(result.current.canUndo).toBe(false)
+  })
+
+  it('applies once with one undo action and refuses duplicate captured delivery', () => {
+    const {result} = renderHook(() => useDocumentBuffer(file('{"a":1}')))
+    const captured = result.current
+    act(() => {
+      expect(captured.commitIfCurrent(captured.identity!, '{"a":1}', () => '{"a":2}')).toEqual({applied:true,text:'{"a":2}'})
+      expect(captured.commitIfCurrent(captured.identity!, '{"a":1}', () => '{"a":2}')).toEqual({applied:false})
+    })
+    act(() => result.current.undo())
+    expect(result.current.text).toBe('{"a":1}')
+    expect(result.current.canUndo).toBe(false)
+  })
+})

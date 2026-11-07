@@ -134,6 +134,8 @@ export interface ProbeResult {
   /** The HTTP status, or 0 where no response arrived at all. */
   status: number
   latencyMs: number
+  /** Present only for a canonical generated ping; reachability is independent. */
+  observationComplete?: boolean
   /**
    * One word from `PROBE_DIAGNOSTICS`, or empty on a success. Never text the
    * endpoint wrote.

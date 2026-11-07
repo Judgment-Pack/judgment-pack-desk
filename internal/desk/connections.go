@@ -258,10 +258,10 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	var out json.RawMessage
 	if method == "catalog" {
-		out, err = readConnectionCatalog(ctx, bundle)
+		out, err = s.readSetupConnectionCatalog(ctx, bundle)
 	} else {
 		if method != "cancel" {
-			catalogRaw, catalogErr := readConnectionCatalog(ctx, bundle)
+			catalogRaw, catalogErr := s.readSetupConnectionCatalog(ctx, bundle)
 			var catalog connectionCatalog
 			if catalogErr != nil || json.Unmarshal(catalogRaw, &catalog) != nil {
 				writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
@@ -366,4 +366,21 @@ func readConnectionLine(reader *bufio.Reader, limit int) ([]byte, error) {
 		}
 		return raw, err
 	}
+}
+
+// Retention adds no catalog work: this is the genuine existing setup read.
+// The caller owns no private-data transaction while the companion executes.
+func (s *Server) readSetupConnectionCatalog(ctx context.Context, bundle string) (json.RawMessage, error) {
+	before, captureErr := s.localGateway.catalogBasis(s.assistant, bundle)
+	raw, err := readConnectionCatalog(ctx, bundle)
+	if err != nil {
+		return nil, err
+	}
+	if captureErr == nil {
+		after, afterErr := s.localGateway.catalogBasis(s.assistant, bundle)
+		if afterErr == nil {
+			s.localGateway.retainCatalog(s.assistant, before, after, raw)
+		}
+	}
+	return raw, nil
 }

@@ -23,8 +23,16 @@ func policyTestServer(t *testing.T) (*Server, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	// This fixture exercises the existing guarded subprocess boundary, not a
-	// second version parser. Domain race tests substitute a controlled read.
+	s.cfg.JpackBin = policyVersionRuntime(t)
+	return s, policyTestSession(t, s)
+}
+
+// policyVersionRuntime is a runtime that answers only Policy's artifact
+// version comparison. This fixture exercises the existing guarded subprocess
+// boundary, not a second version parser. Domain race tests substitute a
+// controlled read.
+func policyVersionRuntime(t *testing.T) string {
+	t.Helper()
 	bin := filepath.Join(t.TempDir(), "version-runtime")
 	script := `#!/bin/sh
 if [ "$1 $2" != 'artifact version' ] || [ "$3" != '--base' ] || [ "$5" != '--candidate' ]; then exit 1; fi
@@ -36,8 +44,7 @@ esac
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	s.cfg.JpackBin = bin
-	return s, policyTestSession(t, s)
+	return bin
 }
 func policyTestSession(t *testing.T, s *Server) string {
 	t.Helper()

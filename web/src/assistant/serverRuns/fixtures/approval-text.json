@@ -1,0 +1,41 @@
+[
+  {
+    "label": "large-integer",
+    "request": "{\"rehearsal\":true,\"value\":9007199254740993}",
+    "args": {
+      "rehearsal": true,
+      "value": 9007199254740992
+    },
+    "digest": "sha256:221072385d17dd1f1734aa0629e904c79e8e53cd6ffa8dc2a343747d0bb6f2d2"
+  },
+  {
+    "label": "decimal",
+    "request": "{\"rehearsal\":true,\"value\":10.50}",
+    "args": {
+      "rehearsal": true,
+      "value": 10.5
+    },
+    "digest": "sha256:795c081fa2fae25a69ed473693730c3f05489747e1d751b831d871678c164dee"
+  },
+  {
+    "label": "nested",
+    "request": "{\"rehearsal\":true,\"value\":{\"id\":9007199254740993,\"amount\":10.50}}",
+    "args": {
+      "rehearsal": true,
+      "value": {
+        "id": 9007199254740992,
+        "amount": 10.5
+      }
+    },
+    "digest": "sha256:2c0295daabe8303d4627630f7e8656d26ada43b7ab2aabe7cebfac053db1de67"
+  },
+  {
+    "label": "underflow",
+    "request": "{\"rehearsal\":true,\"value\":1e-400}",
+    "args": {
+      "rehearsal": true,
+      "value": 0
+    },
+    "digest": "sha256:ba539acaa01a21195fc8fe717e27660b3b5de2728b65551824280b4e2114faa5"
+  }
+]

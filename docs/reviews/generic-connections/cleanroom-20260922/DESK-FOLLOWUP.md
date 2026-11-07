@@ -41,7 +41,7 @@ I separately executed `ConnectionsPane.test.tsx` and the newly committed `Connec
 Reproduction commands:
 
 ```bash
-export PATH=/home/onword/.nvm/versions/node/v22.23.1/bin:$PATH
+export PATH=$HOME/.nvm/versions/node/v22.23.1/bin:$PATH
 cd /tmp/jp-foundation-cleanroom-20260922/desk-followup/web
 npm test -- --reporter=verbose src/connections/cleanroom-oauth-form.test.tsx src/connections/cleanroom-oauth-phase.test.tsx
 npm test -- --reporter=verbose src/connections/ConnectionsPane.test.tsx src/connections/ConnectionsPane.oauth-registration.test.tsx

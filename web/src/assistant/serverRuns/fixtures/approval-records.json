@@ -1,0 +1,127 @@
+[
+  {
+    "checkpoint": {
+      "version": 5,
+      "id": "execution-one",
+      "requestKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "work",
+      "unit": "model-requests",
+      "used": 1,
+      "limit": 20,
+      "grants": [],
+      "status": "paused",
+      "plan": [],
+      "explanation": "",
+      "operations": [],
+      "context": {
+        "scope": "fixture",
+        "entries": []
+      },
+      "approval": {
+        "callId": "call-one",
+        "name": "write_file",
+        "tool": "write_file",
+        "source": {
+          "kind": "custom",
+          "id": "fixture",
+          "trust": "person"
+        },
+        "args": {
+          "id": 9007199254740992
+        },
+        "request": "{\"id\":9007199254740993}",
+        "state": "asked"
+      }
+    },
+    "event": {
+      "version": 3,
+      "type": "approval_requested",
+      "callId": "call-one",
+      "name": "write_file",
+      "tool": "write_file",
+      "source": {
+        "kind": "custom",
+        "id": "fixture",
+        "trust": "person"
+      },
+      "args": {
+        "id": 9007199254740992
+      },
+      "request": "{\"id\":9007199254740993}"
+    }
+  },
+  {
+    "checkpoint": {
+      "version": 6,
+      "id": "execution-one",
+      "requestKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "work",
+      "unit": "model-requests",
+      "used": 1,
+      "limit": 20,
+      "grants": [],
+      "status": "paused",
+      "plan": [],
+      "explanation": "",
+      "operations": [],
+      "context": {
+        "scope": "fixture",
+        "entries": []
+      },
+      "approval": {
+        "callId": "call-one",
+        "name": "write_file",
+        "tool": "write_file",
+        "source": {
+          "kind": "custom",
+          "id": "fixture",
+          "trust": "person"
+        },
+        "args": {
+          "id": 9007199254740992
+        },
+        "request": "{\"id\":9007199254740993}",
+        "state": "asked"
+      },
+      "principal": {
+        "actor": {
+          "agent": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "host": "desk",
+          "software": {
+            "package": "@judgment-pack/harness",
+            "version": "0.13.0"
+          }
+        },
+        "subject": {
+          "kind": "person",
+          "issuer": "https://login.example.com/",
+          "subject": "approver@example.com"
+        },
+        "delegation": {
+          "id": "33333333333333333333333333333333",
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "chain": [
+          "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "rootActor": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+      }
+    },
+    "event": {
+      "version": 3,
+      "type": "approval_requested",
+      "callId": "call-one",
+      "name": "write_file",
+      "tool": "write_file",
+      "source": {
+        "kind": "custom",
+        "id": "fixture",
+        "trust": "person"
+      },
+      "args": {
+        "id": 9007199254740992
+      },
+      "request": "{\"id\":9007199254740993}"
+    }
+  }
+]

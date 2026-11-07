@@ -15,7 +15,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { ChatPanel } from '../chat/ChatPanel'
 import { useChats } from '../chat/ChatProvider'
 import { draftHref, type PackDraft } from '../packs/drafts/model'
-import type { ResearchRunBinding } from '../research/useResearchRun'
+import type { ResearchRunBinding } from '../research/types'
 import { ShowFolders } from '../packs/folders/FolderBrowser'
 import { usePackFolders } from '../packs/folders/FolderContext'
 import { packFolder } from '../packs/folders/model'
@@ -108,6 +108,7 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
   const [review, setReview] = useState(false)
   const [testActive, setTestActive] = useState(false)
   const reviewDigest = useRef<string | undefined>(undefined)
+	const reviewGeneration = useRef<number | undefined>(undefined)
   const [reviewNotice, setReviewNotice] = useState('')
   const [writing, setWriting] = useState(false)
   const writingRef = useRef(false)
@@ -120,9 +121,9 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
   const details = useDetailsSlot()
   const draft = true
   const latest = state.candidates.at(-1)
-  const basis = binding.run?.basisNow()
+  const basis = binding.run?.basisNow?.()
   const passing = draftReady(chat,state,basis) && !store?.getSnapshot().dirty && !store?.getSnapshot().error
-  const beginReview = () => { reviewDigest.current = latest?.digest; setReviewNotice(''); setReview(true) }
+  const beginReview = () => { reviewDigest.current = latest?.digest; reviewGeneration.current=artifact.generation; setReviewNotice(''); setReview(true) }
   useEffect(() => {
     if (review && latest?.digest !== reviewDigest.current) { setReview(false); setReviewNotice(sourceMessage('The draft changed. Review the latest revision before creating it.')) }
   }, [review, latest?.digest])
@@ -155,17 +156,18 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
       {review && latest ? <div className={styles.review}>
         <CreatePackDialog open presentation="review" submitLabel={msg("Finalize pack")} onOpenChange={open => { if (!open && !writing) setReview(false) }}
           onWritingChange={writingChanged}
+			beforeCreate={binding.run?.prepareCreation}
           initialFolderId={folderId}
           onFolderChange={targetFolderId => store?.update(chat.id,{targetFolderId})}
-          canCreate={() => { const snapshot=store?.getSnapshot(); const current=snapshot?.packDrafts.find(item=>item.id===artifact.id); const active=binding.run?.getSnapshot(); return !snapshot?.dirty && !snapshot?.error && current?.checkpoint.state.candidates.at(-1)?.text===active?.candidates.at(-1)?.text && !!active && active.candidates.at(-1)?.digest===reviewDigest.current && draftReady(chat,active,binding.run?.basisNow()) }}
+          canCreate={() => { const snapshot=store?.getSnapshot(); const current=snapshot?.packDrafts.find(item=>item.id===artifact.id); const active=binding.run?.getSnapshot(); return !snapshot?.dirty && !snapshot?.error && current?.generation===reviewGeneration.current && current?.checkpoint.state.candidates.at(-1)?.text===active?.candidates.at(-1)?.text && !!active && active.candidates.at(-1)?.digest===reviewDigest.current && draftReady(chat,active,binding.run?.basisNow?.()) }}
           reviewDraft={{ trialCount: state.probes?.length ?? 0, caseCount: state.cases.length, document: latest.document, name: artifact.title, description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns, research,
             citations: { traced: state.citations.filter(c=>c.traced).length, total: state.citations.length },
             cases: { agreeing: latest.check?.cases.filter(c=>c.passed).length ?? 0, total: state.cases.length } }}
           onSaved={async pack => { await carryDraftTests({...artifact,checkpoint:{...artifact.checkpoint,state}},pack.id); store?.finalizeDraft(artifact.id,pack); if(!await store?.flush()) throw new Error(sourceMessage('The pack was finalized, but its draft link could not be saved. Retry saving before leaving.')); writingChanged(false); return `/packs/${encodeURIComponent(pack.id)}` }} />
       </div> : <DraftTabs requestedTab={testParams.get('testProposal') || testParams.get('case') ? {tab:'tests',id:(testParams.get('testProposal') ?? testParams.get('case'))!} : undefined} historyPanel={<DefinitionHistory kind="pack" draft owner={artifact.id} candidates={state.candidates}/>} usagePanel={<DefinitionUsage kind="pack" draft documentId={typeof (latest?.document as {id?:unknown})?.id === 'string' ? (latest!.document as {id:string}).id : undefined}/>} brief={latest && <DefinitionBrief kind="pack-draft" owner={artifact.id} title={artifact.title} content={latest.text} sourceKey={JSON.stringify([latest.text, artifact.updatedAt, store?.getSnapshot().dirty])}/>} onTabChange={tab=>setTestActive(tab==='tests')} testsPanel={latest && candidate ? <TestsContent chatId={chat.id} owner={artifact.id} document={latest.document as import('../mcp/types').PackDocument} text={latest.text} title={artifact.title} active={testActive && !review} draft={{...artifact,checkpoint:{...artifact.checkpoint,state}}}/> : undefined} documents={artifact.documents} files={artifact.sourceFiles} policySources={artifact.policySources} onRead={readSource} hideHeader onSelectInMain={setSelection} state={state} mode={chat.mode} basis={basis} sources={binding?.sources ?? []} selection={selection} onSelect={select} onCreate={beginReview} showCreateAction={false}
-        onEstablishCases={() => store?.perform(chat.id, active => active.run?.establishCases())}
-        onProposeCorrection={id => store?.perform(chat.id, active => active.run?.proposeExpectationCorrection(id))}
-        onApproveCorrection={(id,token) => store?.perform(chat.id, active => active.run?.approveExpectationCorrection(id,token), false)} />}
+        onEstablishCases={binding.run?.establishCases?() => store?.perform(chat.id, active => active.run?.establishCases?.()):undefined}
+        onProposeCorrection={binding.run?.proposeExpectationCorrection?id => store?.perform(chat.id, active => active.run?.proposeExpectationCorrection?.(id)):undefined}
+        onApproveCorrection={binding.run?.approveExpectationCorrection?(id,token) => store?.perform(chat.id, active => active.run?.approveExpectationCorrection?.(id,token), false):undefined} />}
     </div>
   </div>
 }

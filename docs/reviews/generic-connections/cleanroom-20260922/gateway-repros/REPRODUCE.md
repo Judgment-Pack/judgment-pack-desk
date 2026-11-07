@@ -2,7 +2,7 @@
 
 All added files and generated records are confined to this directory. Reviewed source trees were not edited. These probes use only local fixtures and the published corpus test signing seed.
 
-Run from `/tmp/jp-foundation-cleanroom-20260922/gateway/adapters`:
+Run from `<scratch>/jp-foundation-cleanroom-20260922/gateway/adapters`:
 
 ```sh
 GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false go run /tmp/jp-foundation-cleanroom-20260922/gateway-repros/producer_probe.go
@@ -17,8 +17,8 @@ The full adapter suite requires permission to open local loopback listeners.
 Run from this directory:
 
 ```sh
-/home/onword/.nvm/versions/node/v22.23.1/bin/node --import /tmp/jp-foundation-cleanroom-20260922/desk/web/node_modules/tsx/dist/loader.mjs /tmp/jp-foundation-cleanroom-20260922/gateway-repros/consumer_probe.mts
-/home/onword/.nvm/versions/node/v22.23.1/bin/node /tmp/jp-foundation-cleanroom-20260922/desk/web/node_modules/vitest/vitest.mjs run --config /tmp/jp-foundation-cleanroom-20260922/gateway-repros/vitest.config.mjs
+$HOME/.nvm/versions/node/v22.23.1/bin/node --import /tmp/jp-foundation-cleanroom-20260922/desk/web/node_modules/tsx/dist/loader.mjs /tmp/jp-foundation-cleanroom-20260922/gateway-repros/consumer_probe.mts
+$HOME/.nvm/versions/node/v22.23.1/bin/node /tmp/jp-foundation-cleanroom-20260922/desk/web/node_modules/vitest/vitest.mjs run --config /tmp/jp-foundation-cleanroom-20260922/gateway-repros/vitest.config.mjs
 python - <<'PY'
 import json
 from pathlib import Path
@@ -31,13 +31,13 @@ for path in sorted((root/'gateway-repros/records').glob('*.json')):
 PY
 ```
 
-Run from `/tmp/jp-foundation-cleanroom-20260922/gateway/go`:
+Run from `<scratch>/jp-foundation-cleanroom-20260922/gateway/go`:
 
 ```sh
 GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false go run . conform
 ```
 
-Run from `/tmp/jp-foundation-cleanroom-20260922/desk` with local test listeners enabled:
+Run from `<scratch>/jp-foundation-cleanroom-20260922/desk` with local test listeners enabled:
 
 ```sh
 GOCACHE=/tmp/jp-authoring-go-cache GOFLAGS=-buildvcs=false go test ./internal/desk -run 'Test(ConnectionCatalog|LocalPlan|IndependentGateway)' -count=1

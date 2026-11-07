@@ -16,6 +16,32 @@ Implemented 2026-10-14. This is Desk infrastructure for existing and future AI f
 
 The JSON defaults in `internal/aicontext/policy.json` are consumed by both TypeScript and Go. `jpack-assistant.json` can override declared model budgets. The defaults are a conservative application policy, not a claim about a provider's actual context window. Bytes/3 is explicitly an estimate; provider tokenization and usage remain authoritative. A 180,000-byte transport ceiling applies even to larger declared windows. Output reserves, instructions, tool schemas, optional project background and framing are included. The initial prompt uses at most 60% of the remaining message allowance, leaving room for tool steps.
 
+## Adapter prompt ownership candidate (#546)
+
+The canonical Go adapter receives raw project brief, explicit-query memory and
+project instructions through its Host, and owns their framing, ordering and
+prompt provenance. The API relay and legacy native transport do not infer a
+recall query or append brief/memory text. `ai_wire_guard.go` retains the legacy
+transport's model-specific byte/output refusal without clipping or reserializing
+accepted input. Canonical dispatch retains the adapter's admitted context policy;
+the relay still applies its existing body, credential, target and capacity fences.
+
+`ai_context.go` retains only the fresh explicit brief resolver used by existing
+background/research source-currentness checks. Those reads validate retained
+source custody; they do not assemble another prompt behind the relay. The
+obsolete request-body recall-rule helpers, tests and historical recall fixture
+fetch/diff obligation are removed. Current host-parts/state-placement/approval
+vectors and provider certification gates remain in place.
+
+Focused fixtures execute the actual canonical adapter and Desk relay/native
+bridge on OpenAI-compatible, Anthropic, Gemini and native wires. Each prompt part
+is requested once with the adapter's exact query; removing the configured brief
+after the Host read cannot cause a second relay read. API dispatch receipts and
+upstream bytes must match exactly, with one copy of each ordered prompt layer.
+This source candidate does not activate a global cutover or remove browser
+engines; coordinated migration and current-wiring certification remain release
+requirements.
+
 ## Retention, projection and recovery
 
 Original chat messages, question resolutions, artifact bytes and full tool-result events remain with their existing owners. Model projection never rewrites those originals. Historical Desk snapshots are omitted only when an explicit authored statement separates them from user-supplied material; legacy mixed inputs remain retrievable.
@@ -38,7 +64,7 @@ The immediate regression was a 138-turn chat with approximately 35,000 visible c
 | Optional project guidance | Explicit relative file named by `context.projectBrief` in the project’s `jpack-assistant.json`; read freshly by the server |
 | Context policy defaults | Shared application configuration in `internal/aicontext/policy.json` |
 
-For the current local GTM Desk, durable Desk-owned data is under `/home/onword/.local/share/jpack-desk/gtm-desk/.desk-private/`. The private data location is installation/project scoped, not a public project memory folder. No new permanent summary directory is created. A browser refresh loses active in-memory execution; existing saved history is used for an explicit new turn/retry, without automatically replaying work.
+For the current local GTM Desk, durable Desk-owned data is under `$HOME/.local/share/jpack-desk/gtm-desk/.desk-private/`. The private data location is installation/project scoped, not a public project memory folder. No new permanent summary directory is created. A browser refresh loses active in-memory execution; existing saved history is used for an explicit new turn/retry, without automatically replaying work.
 
 ## Optional project context
 

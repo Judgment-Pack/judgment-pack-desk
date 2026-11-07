@@ -17,7 +17,8 @@ var (
 	ErrRetries = errors.New("Codex automatic recovery exhausted")
 )
 
-// Only these presentation fields and host-tool requests can leave the bridge.
+// Presentation fields and host-tool requests leave through the application.
+// Optional AccountingSink reports are a closed, private host-only exception.
 type RunEvent struct {
 	Type    string `json:"type"`
 	ID      string `json:"id,omitempty"`
@@ -56,7 +57,9 @@ func validID(id string) bool {
 
 // Run admits one owner, re-verifies subscription auth, and uses a new ephemeral
 // thread. There is no automatic replay, API-key fallback or native tool handler.
-func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit func(RunEvent) error, execute ToolHandler) error {
+func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit func(RunEvent) error, execute ToolHandler) (runErr error) {
+	accounting := newAccountingObservation(m.accounting, request)
+	defer func() { accounting.finish(m.accounting, runErr) }()
 	if !owner.alive() || emit == nil || execute == nil {
 		return ErrRun
 	}
@@ -75,8 +78,32 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 	if err = m.admitRun(ctx, request.WaitForAvailability, emit); err != nil {
 		return err
 	}
+	// Until active ownership transfers below, this invocation owns the locked
+	// idle client. Early refusal must reap it too; an arbitrary Run return or
+	// another active invocation is never a release acknowledgement.
+	if accounting != nil {
+		accounting.report.Admitted = true
+	}
+	preflight := true
+	defer func() {
+		if preflight {
+			ownedClient := m.client != nil
+			m.stopClient()
+			if accounting != nil {
+				accounting.report.OwnedClientReaped = ownedClient
+			}
+			m.mu.Unlock()
+			if request.ProviderReleased != nil {
+				request.ProviderReleased()
+			}
+		}
+	}()
+	if request.AuthorizeAdmission != nil {
+		if err = request.AuthorizeAdmission(ctx); err != nil {
+			return err
+		}
+	}
 	if err = m.ready(ctx); err != nil {
-		m.mu.Unlock()
 		return err
 	}
 	// Check native account presence without forcing a credential refresh.
@@ -84,7 +111,6 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 	// during execution. Explicit refresh remains a separate account action.
 	account, err := m.readAccount(ctx, false)
 	if err != nil || !account.Authenticated {
-		m.mu.Unlock()
 		if err != nil {
 			return err
 		}
@@ -94,7 +120,6 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 	// a replacement model or inherit an unsupported native effort default.
 	models, err := m.models(ctx)
 	if err != nil {
-		m.mu.Unlock()
 		return err
 	}
 	found := false
@@ -114,11 +139,14 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 		}
 	}
 	if !found {
-		m.mu.Unlock()
 		return ErrRun
+	}
+	if accounting != nil {
+		accounting.report.SelectedEffort = strings.Clone(request.Effort)
 	}
 	run := &activeRun{client: m.client, events: make(chan frame, 64), done: make(chan struct{}), cancel: cancel}
 	m.active = run
+	preflight = false
 	m.mu.Unlock()
 	c := run.client
 	stopOnCancel := context.AfterFunc(ctx, c.stop)
@@ -128,6 +156,9 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 		// The process group is the cancellation fallback, including a blocked
 		// stdin write or host callback. Reap before admitting another run.
 		c.close()
+		if accounting != nil {
+			accounting.report.OwnedClientReaped = true
+		}
 		m.mu.Lock()
 		if m.client == c {
 			m.client = nil
@@ -137,6 +168,9 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 		}
 		m.mu.Unlock()
 		close(run.done)
+		if request.ProviderReleased != nil {
+			request.ProviderReleased()
+		}
 	}()
 	var started struct {
 		Thread struct {
@@ -147,7 +181,21 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 		Approval string `json:"approvalPolicy"`
 		Cwd      string `json:"cwd"`
 	}
-	if err = c.call(ctx, "thread/start", params, &started); err != nil {
+	if accounting == nil {
+		err = c.call(ctx, "thread/start", params, &started)
+	} else {
+		// Keep application decoding identical; the separate bounded reader retains
+		// only response metadata and rejects ambiguity for accounting evidence.
+		var response json.RawMessage
+		err = c.call(ctx, "thread/start", params, &response)
+		if err == nil {
+			if json.Unmarshal(response, &started) != nil {
+				err = ErrUnavailable
+			}
+			accounting.observeStart(response)
+		}
+	}
+	if err != nil {
 		return err
 	}
 	if !validID(started.Thread.ID) || started.Model != request.Model || started.Provider != "openai" || started.Approval != "never" || started.Cwd != m.profile.work {
@@ -159,6 +207,11 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 			ID string `json:"id"`
 		} `json:"turn"`
 	}
+	if request.BeforeGeneration != nil {
+		if err = request.BeforeGeneration(ctx); err != nil {
+			return err
+		}
+	}
 	if err = c.call(ctx, "turn/start", turnParams(threadID, request), &turn); err != nil {
 		return err
 	}
@@ -166,6 +219,9 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 		return ErrRun
 	}
 	turnID = turn.Turn.ID
+	if accounting != nil {
+		accounting.report.TurnID = strings.Clone(turnID)
+	}
 	offered := map[string]bool{}
 	for _, tool := range request.Tools {
 		offered[tool.Name] = true
@@ -283,7 +339,18 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 				}
 				continue
 			}
+			if accounting != nil {
+				accounting.report.Notifications++
+			}
 			switch f.Method {
+			case "thread/tokenUsage/updated":
+				if accounting != nil {
+					accounting.observeUsage(f.Params)
+				}
+			case "model/rerouted":
+				if accounting != nil {
+					accounting.observeReroute(f.Params)
+				}
 			case "item/agentMessage/delta":
 				var d struct {
 					Thread string `json:"threadId"`
@@ -347,6 +414,9 @@ func (m *Manager) Run(ctx context.Context, owner Owner, request RunRequest, emit
 					}
 				}
 			case "turn/completed":
+				if accounting != nil {
+					accounting.observeTerminal(f.Params)
+				}
 				var d struct {
 					Thread string `json:"threadId"`
 					Turn   struct {

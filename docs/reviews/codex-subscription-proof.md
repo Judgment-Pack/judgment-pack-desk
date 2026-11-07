@@ -30,7 +30,7 @@ or certified subscription feature**.
 ## What was developed
 
 The initial prototype was developed in
-`/tmp/jps-desk-subscription-4mgfp4ys/desk`, a separate copy of the
+`<scratch>/jps-desk-subscription-4mgfp4ys/desk`, a separate copy of the
 Desk's tracked and nonignored working files, including its existing uncommitted
 changes. Its Git baseline records that snapshot. During those proof runs,
 the live Desk checkout, processes, configuration, account stores, and active
@@ -50,7 +50,7 @@ back into the live tree.
 ## Local source merge
 
 On 2026-09-25, at the user's request, the eleven-file milestone patch was
-applied to `/home/onword/repo/judgment-pack/judgment-pack-desk` as working-tree
+applied to `$HOME/repo/judgment-pack/judgment-pack-desk` as working-tree
 changes. It applied without conflicts. The other existing source files were
 verified unchanged, and both pre-existing Desk processes retained their process
 IDs and start times. No running server was rebuilt or restarted.

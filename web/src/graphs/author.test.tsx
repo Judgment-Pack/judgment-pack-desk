@@ -18,7 +18,7 @@ vi.mock('../assistant/useAssistantSlot', () => ({
   useAssistantSlot: () => ({ endpoint: { model: 'chosen-model' }, engine: 'vercel', thinking: 'off' }),
   assistantReady: () => state.ready
 }))
-vi.mock('../assistant/useAssistantRun', () => ({ useAssistantRun: (options: unknown) => {
+vi.mock('../assistant/useAuthoringRun', () => ({ useAuthoringRun: (options: unknown) => {
   state.options(options)
   return { status: 'finished', events: state.events, start: state.start, stop: state.stop }
 } }))
@@ -62,8 +62,8 @@ it('fetches author_graph with exactly the chosen packs read through the file API
   await waitFor(() => expect(state.start).toHaveBeenCalledTimes(1))
   expect(readFile).toHaveBeenCalledTimes(1)
   expect(state.getPrompt).toHaveBeenCalledWith({ name: 'author_graph', arguments: { relationship: 'Alpha feeds the next decision.', packs: '[{ "id":"alpha.json" }]' } })
-  expect(state.start).toHaveBeenCalledWith('Runtime author_graph prompt. Step 6: write rows.')
-  expect(state.options).toHaveBeenLastCalledWith(expect.objectContaining({ purpose: 'graph', hostTools: expect.arrayContaining([expect.objectContaining({ name: 'graph_validate' }), expect.objectContaining({ name: 'graph_explain' })]) }))
+  expect(state.start).toHaveBeenCalledWith({purpose:'author-graph',prompt:'author_graph',arguments:{relationship:'Alpha feeds the next decision.'},packs:['alpha']})
+  expect(state.options).toHaveBeenLastCalledWith(expect.objectContaining({model:'chosen-model',engine:'vercel',thinking:'off'}))
   expect(deskFetch).not.toHaveBeenCalled()
   expect(screen.getByText('Runtime author_graph prompt. Step 6: write rows.').getAttribute('lang')).toBe('en')
 })
@@ -162,4 +162,13 @@ it('names the current graph document in the provider disclosure when editing', (
   render(<GraphAuthor />)
   fireEvent.click(screen.getByRole('button', { name: 'Author graph' }))
   expect(screen.getByText(/The configured model provider receives/).textContent).not.toContain('current graph document')
+})
+
+it('captures the exact existing graph comparison digest beside server-resolved declaration IDs',async()=>{
+ render(<GraphAuthor graphId="draft"/>);fireEvent.click(screen.getByRole('button',{name:'Author graph'}));fireEvent.click(screen.getByLabelText('alpha'));fireEvent.change(screen.getByLabelText('Relationship'),{target:{value:'Revise the saved graph.'}});fireEvent.click(screen.getByRole('button',{name:'Propose graph'}));await waitFor(()=>expect(state.start).toHaveBeenCalledOnce())
+ expect(state.start).toHaveBeenCalledWith({purpose:'author-graph',prompt:'author_graph',arguments:{relationship:'Revise the saved graph.'},packs:['alpha'],graphId:'draft',graphDigest:'c'.repeat(64)})
+})
+it('Stop during prompt preview prevents a late start',async()=>{
+ let release!:(value:unknown)=>void;state.getPrompt.mockReturnValue(new Promise(resolve=>{release=resolve}))
+ render(<GraphAuthor/>);fireEvent.click(screen.getByRole('button',{name:'Author graph'}));fireEvent.click(screen.getByLabelText('alpha'));fireEvent.change(screen.getByLabelText('Relationship'),{target:{value:'relationship'}});fireEvent.click(screen.getByRole('button',{name:'Propose graph'}));await waitFor(()=>expect(state.getPrompt).toHaveBeenCalledOnce());fireEvent.click(screen.getByRole('button',{name:'Stop'}));release({messages:[{content:{type:'text',text:'Preview'}}]});await waitFor(()=>expect(state.stop).toHaveBeenCalledOnce());expect(state.start).not.toHaveBeenCalled()
 })

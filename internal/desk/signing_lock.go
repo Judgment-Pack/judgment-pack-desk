@@ -110,3 +110,9 @@ func lockSigningWithin(ctx context.Context, dir *signingDir, wait time.Duration)
 		pause = min(2*pause, 100*time.Millisecond)
 	}
 }
+
+// Only the exact original assistant opens this existing signing directory;
+// unlike the legacy func() wrapper, Close errors remain visible to preparation.
+func (p *storageIdentityPreparation) lockSigningPrefix(ctx context.Context) (*storagePrefixLease, error) {
+	return p.acquirePrefix(ctx, true)
+}
