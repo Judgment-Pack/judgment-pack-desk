@@ -175,6 +175,18 @@ type inputRunnerError struct {
 
 func (e *inputRunnerError) Error() string { return e.Message }
 
+// The review's first read of the saved tests. It holds no private-data
+// transaction, so a fresh Desk's first-use history is enrolled here, before any
+// lock, the route every other history reader takes; inputReleaseSnapshot then
+// opens only an enrolled store and never creates an unaccounted one. Callers
+// already inside a private-data transaction were enrolled when they took it.
+func (s *Server) inputReviewReleaseSnapshot(ctx context.Context, q *inputQualification) (string, map[string]any, bool, error) {
+	if err := s.ensureDefaultHistoryEnrollment(ctx); err != nil {
+		return "", nil, false, err
+	}
+	return s.inputReleaseSnapshot(q)
+}
+
 // Read saved authoring cases, never old test reports or caller-asserted results.
 func (s *Server) inputReleaseSnapshot(q *inputQualification) (string, map[string]any, bool, error) {
 	fail := func(e error) (string, map[string]any, bool, error) { return "", nil, false, e }
@@ -468,7 +480,7 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Only the review operation performs a rehearsal; /prepare remains read-only.
-	fingerprint, previewRequest, projectReviewed, e := s.inputReleaseSnapshot(saved.Document.Recipe.Qualification)
+	fingerprint, previewRequest, projectReviewed, e := s.inputReviewReleaseSnapshot(r.Context(), saved.Document.Recipe.Qualification)
 	if e != nil {
 		fail(409, e)
 		return
