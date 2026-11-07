@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -57,6 +58,37 @@ func storageCensusMeasuredFile(info os.FileInfo) bool {
 	uid, ok := ownerOf(info)
 	links, known := linkCount(info)
 	return ok && known && uid == effectiveUser() && links > 0
+}
+
+// storageCensusRefusal names an entry the census refuses under its rule (desk
+// #685): a link where a file or folder is expected, a special file, another
+// user's file, or one a group or other user can write. Storage starts
+// read-only over it, and the storage status names it (readStorageStatus). A
+// request that meets it after the start is refused in the same words (403).
+type storageCensusRefusal struct{ Path, Kind string }
+
+func (e *storageCensusRefusal) Error() string {
+	return e.Path + " is " + e.Kind + ", which storage does not count: storage stays read-only until it is removed or made a private file of yours, and Desk is restarted"
+}
+
+func storageCensusRefused(r *storageRootBinding, relative string, info os.FileInfo) error {
+	path := relative
+	if r != nil && r.source != nil && r.source.path != "" {
+		path = filepath.Join(r.source.path, filepath.FromSlash(relative))
+	}
+	kind := "not a file storage counts"
+	uid, known := ownerOf(info)
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
+		kind = "a link"
+	case !info.Mode().IsRegular():
+		kind = "a special file"
+	case !known || uid != effectiveUser():
+		kind = "owned by another user"
+	case info.Mode().Perm()&worldMode != 0:
+		kind = "writable by group or others"
+	}
+	return withCode(CodeForbidden, &storageCensusRefusal{Path: path, Kind: kind})
 }
 
 // storageCensusMeasuredDirectory is the same rule for a directory, which the
@@ -953,7 +985,7 @@ func (w *storageCensusWalk) directory(r *storageRootBinding, root *os.Root, witn
 			}
 		} else {
 			if !storageCensusMeasuredFile(info) {
-				return storagebudget.ErrUnknown
+				return errors.Join(storagebudget.ErrUnknown, storageCensusRefused(r, childName, info))
 			}
 			covered, e := r.censusCovered(w.ctx, childName, info)
 			if e != nil {

@@ -156,10 +156,26 @@ func TestConversationHistoryRejectsUnsafeFiles(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			for _, method := range []string{"GET", "PUT"} {
+			for i, method := range []string{"GET", "PUT"} {
 				status, _ := chatRequest(t, ts, method, "absent", `{"version":1,"chats":[]}`, true, "")
-				if status != 403 {
+				// A link storage's census meets on first use refuses that use
+				// (403); storage then needs recovery, said in words (503).
+				if status != 403 && !(kind == "symlink" && i > 0 && status == 503) {
 					t.Fatalf("unsafe %s via %s accepted: %d", kind, method, status)
+				}
+			}
+			if kind != "symlink" {
+				return
+			}
+			// A link the census meets starts the next Desk read-only (desk
+			// #685), its status naming the link, and the history is refused.
+			ts.Close()
+			assistantRunMust(t, s.Close())
+			again, againTS, _ := assistantServerAt(t, s.cfg.ProjectDir, s.cfg.DeskConfigDir)
+			storageCensusRefusalStatus(t, again, name)
+			for _, method := range []string{"GET", "PUT"} {
+				if status, _ := chatRequest(t, againTS, method, "absent", `{"version":1,"chats":[]}`, true, ""); status != 503 {
+					t.Fatalf("history via %s over a link on a read-only start: %d", method, status)
 				}
 			}
 		})

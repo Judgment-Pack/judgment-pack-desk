@@ -96,7 +96,7 @@ func (o *storageBudgetOwner) beginAdmission(ctx context.Context) (*storageMutati
 	g.mu.Lock()
 	var err error
 	if g.phase != storageAdmissionOpen {
-		err = storagebudget.ErrBusy
+		err = storageAdmissionBusy(g.phase == storageAdmissionFailed)
 	} else if g.generation == 0 || g.shared == ^uint64(0) {
 		err = storagebudget.ErrBounds
 	}

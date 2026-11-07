@@ -51,6 +51,21 @@ func storageGet(t *testing.T, ts *httptest.Server) storageStatus {
 	return value
 }
 
+// storageCensusRefusalStatus requires s to have started read-only over path,
+// a link the census refuses (desk #685), and its storage status to say so in
+// words naming the path.
+func storageCensusRefusalStatus(t *testing.T, s *Server, path string) {
+	t.Helper()
+	if !s.storageReadOnly {
+		t.Fatalf("storage started writable over the link %s", path)
+	}
+	w, status := storageStatusTestRequest(t, s, "GET", "/api/storage/status", nil)
+	if w.Code != 200 || !status.ReadOnly || status.Refusal == nil || status.Refusal.Path != path ||
+		!strings.Contains(status.Refusal.Reason, path+" is a link") || !strings.Contains(status.Refusal.Reason, "read-only") {
+		t.Fatalf("the status does not name the link: %d %+v %s", w.Code, status.Refusal, w.Body.String())
+	}
+}
+
 // enrolledChatData opens chat storage the way the product's first writer
 // does: storage enrolls the default history before the store is opened.
 // openChatData alone never creates an unaccounted default location once

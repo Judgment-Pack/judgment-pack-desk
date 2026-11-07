@@ -1275,7 +1275,8 @@ func TestDeskConfigWriteRefusesASymlinkedFile(t *testing.T) {
 	// credential is presented to, so a name reached through a symlink is not
 	// read — and therefore not written either. A write that treated the read's
 	// refusal as absence would replace an out-pointing link with a regular
-	// file.
+	// file. Storage's census refuses the link too (desk #685): the Desk
+	// starts read-only, its status names the link, and the write is refused.
 	config := t.TempDir()
 	elsewhere := filepath.Join(t.TempDir(), "somewhere.json")
 	if err := os.WriteFile(elsewhere, []byte(`{"deskConfigVersion":1}`), 0o600); err != nil {
@@ -1284,10 +1285,11 @@ func TestDeskConfigWriteRefusesASymlinkedFile(t *testing.T) {
 	if err := os.Symlink(elsewhere, filepath.Join(config, deskConfigName)); err != nil {
 		t.Skipf("symlinks are not available here: %v", err)
 	}
-	_, ts, _ := assistantServerIn(t, config)
+	s, ts, _ := assistantServerIn(t, config)
+	storageCensusRefusalStatus(t, s, filepath.Join(config, deskConfigName))
 	status, body := putDeskConfig(t, ts, geminiAssistant, digestOf([]byte(`{"deskConfigVersion":1}`)))
-	if status != http.StatusBadRequest || body["code"] != CodeNotAFile {
-		t.Fatalf("status %d, body %v; want 400 %s", status, body, CodeNotAFile)
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, body %v; want the read-only refusal", status, body)
 	}
 	// The file the link points at is untouched.
 	target, err := os.ReadFile(elsewhere)

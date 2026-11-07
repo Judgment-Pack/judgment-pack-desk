@@ -161,10 +161,11 @@ func (c *storageBudgetConstruction) beginEnrollmentEpoch(ctx context.Context) (*
 	// Pin before the first out-of-lock currentness/native operation. Every
 	// ordinary/observer entry uses these same short locks or the owner retain.
 	if c.closing || c.closed || c.home == nil || c.home.exclusive || c.server == nil || c.server.storageConstruction != c || o.closing || o.closed || o.transitionRequired || o.active != 0 || o.currentCensus != nil || g.phase != storageAdmissionOpen || g.shared != 0 || g.prefixes != 0 || g.preparation != nil || g.exclusiveCensus != nil || g.enrollment != nil || g.generation == ^uint64(0) || c.startupUse != nil || c.startupWork != nil || len(c.startupHolds) != 0 {
+		failed := g.phase == storageAdmissionFailed
 		c.mu.Unlock()
 		g.mu.Unlock()
 		o.mu.Unlock()
-		return nil, storagebudget.ErrBusy
+		return nil, storageAdmissionBusy(failed)
 	}
 	g.generation++
 	callCtx, cancel := context.WithCancel(ctx)
@@ -467,6 +468,18 @@ func (p *storageEnrollmentEpoch) acquirePrefixes(ctx context.Context, identity b
 	}
 	p.sourceHoldsComplete = true
 	return p.current(ctx)
+}
+
+// storageAdmissionBusy is the refusal of an admission that cannot enter.
+// After an enrollment that could not be reconciled (a census refusal, a
+// refused move), admission stays failed until the original owner recovers it
+// at a restart: still ErrBusy for callers, and also the recovery cause, so
+// the refusal is worded instead of an internal error.
+func storageAdmissionBusy(failed bool) error {
+	if failed {
+		return errors.Join(storagebudget.ErrBusy, errStorageEnrollmentUnresolved)
+	}
+	return storagebudget.ErrBusy
 }
 
 // storageLockBusy is ErrBusy for a try-only storage lock not taken. One held

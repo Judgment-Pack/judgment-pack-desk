@@ -343,6 +343,10 @@ func storageFailure(w http.ResponseWriter, err error) {
 		policyHTTPFailure(w, err)
 		return
 	}
+	if storageRecoveryRequired(err) && codeOf(err) == CodeInternal {
+		writeJSONCoded(w, http.StatusServiceUnavailable, storageStatusUnknown, "Chat storage is unavailable while storage recovery is required; restart Desk once what storage refused is fixed.")
+		return
+	}
 	writeJSONCoded(w, statusForRefusal(err), codeOf(err), "Chat storage: "+err.Error())
 }
 

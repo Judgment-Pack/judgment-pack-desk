@@ -180,9 +180,17 @@ type storageRegistrationStatus struct {
 // storageRegistrationFolders bounds the folders one status reply names.
 const storageRegistrationFolders = 64
 
+// storageStatusRefusal is the entry a read-only start's census refused, in
+// words, and its path.
+type storageStatusRefusal struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
 type storageStatusResponse struct {
 	ChildObservation *storageChildObservation   `json:"childObservation"`
 	Registration     *storageRegistrationStatus `json:"registration"`
+	Refusal          *storageStatusRefusal      `json:"refusal,omitempty"`
 	Version          int                        `json:"version"`
 	Availability     string                     `json:"availability"`
 	Reason           *string                    `json:"reason"`
@@ -995,6 +1003,10 @@ func (s *Server) readStorageStatus(parent context.Context) storageStatusResponse
 	defer cancel()
 	out.ChildObservation = s.storageChildStatus(ctx, now)
 	out.Registration = s.storageRegistrationStatus()
+	var refused *storageCensusRefusal
+	if s.storageReadOnly && errors.As(s.storageProblem, &refused) {
+		out.Refusal = &storageStatusRefusal{Path: refused.Path, Reason: refused.Error()}
+	}
 	e, o, use, err := s.storageStatusLifetime(ctx)
 	if err != nil {
 		reason = storageStatusReason(err)

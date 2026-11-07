@@ -345,6 +345,12 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 			policyHTTPFailure(w, err)
 			return
 		}
+		if storageRecoveryRequired(err) && codeOf(err) == CodeInternal {
+			// Storage refused its own state (a census refusal, or a refused
+			// move): worded, as the read-only start answers.
+			writeJSONCoded(w, http.StatusServiceUnavailable, storageStatusUnknown, "Workspace data could not be saved or read while storage recovery is required.")
+			return
+		}
 		code := codeOf(err)
 		writeJSONCoded(w, statusForRefusal(err), code, "Workspace data could not be saved or read: "+err.Error())
 	}
