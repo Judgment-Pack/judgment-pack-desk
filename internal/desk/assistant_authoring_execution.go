@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter"
+	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/turn"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter/wire"
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
@@ -114,7 +115,13 @@ func assistantAuthoringPrompt(source assistantRunSource) (assistantExecutionProm
 }
 func (e *assistantRunExecution) assistantAuthoringTools() (*assistantHostRegistry, error) {
 	tools := []runcontext.HostTool{}
-	if e.source.Start.Purpose == "author-graph" {
+	if e.source.Start.Purpose != "author-graph" {
+		// The Agent reads a host-declared propose_pack call itself as the run's
+		// proposal and never reaches this execute; reaching it is out of scope.
+		tools = append(tools, runcontext.HostTool{Name: turn.ProposePackTool, Taxonomy: &runcontext.ToolTaxonomy{Operation: "propose", Effect: "propose"}, Description: "Deliver the pack proposal for the person to review. Nothing is written or saved.", InputSchema: turn.ProposePackSchema, Effect: "proposal", Execute: func(context.Context, json.RawMessage) (runcontext.ToolResult, error) {
+			return runcontext.ToolResult{}, errAssistantRunScope
+		}})
+	} else {
 		for _, command := range []string{"validate", "explain"} {
 			command := command
 			purpose := "validate"

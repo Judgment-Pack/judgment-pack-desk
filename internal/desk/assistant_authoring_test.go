@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -393,6 +394,14 @@ func TestAssistantAuthoringSavedCasesAndClosedTools(t *testing.T) {
 	assistantRunMust(t, err)
 	if len(tools.tools) != 1 || tools.tools[0].Name != "propose_pack" || tools.tools[0].Delegation != "" || tools.tools[0].Effect != "proposal" {
 		t.Fatal("authoring host tool offer expanded")
+	}
+	// The Agent reads a host-declared propose_pack call itself; the host's
+	// declaration carries its owner taxonomy and its execute is never reached.
+	if x := tools.tools[0].Taxonomy; x == nil || x.Operation != "propose" || x.Effect != "propose" || x.CheckKind != "" || x.Experimental != nil {
+		t.Fatal("authoring proposal tool taxonomy changed", x)
+	}
+	if _, err := tools.tools[0].Execute(t.Context(), json.RawMessage(`{"documentJson":"{}"}`)); !errors.Is(err, errAssistantRunScope) {
+		t.Fatal("host propose_pack execute became reachable", err)
 	}
 	prompt, err := assistantAuthoringPrompt(e.source)
 	assistantRunMust(t, err)
