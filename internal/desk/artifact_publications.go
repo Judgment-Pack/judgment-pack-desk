@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
 )
 
 const publicationDirectory = ".desk-private/artifact-publications"
@@ -162,8 +164,14 @@ func (s *Server) retainPublicationSnapshot(ctx context.Context, snap *reviewSnap
 
 // Called only while holding the cross-process project lock. Lock ordering is
 // project -> publication ledger -> retained artifacts, for every writer.
-func (s *Server) beginPublication(ctx context.Context, snap *reviewSnapshot) (*publicationTransaction, error) {
-	p, err := s.openPublicationTransaction(ctx)
+// projectLease is that held lock: a folder this makes directly in the project
+// borrows it, because a second exclusive try on the same folder is refused by
+// the lease this transaction already holds.
+func (s *Server) beginPublication(ctx context.Context, snap *reviewSnapshot, projectLease *storageCreatorLease) (*publicationTransaction, error) {
+	if projectLease == nil {
+		return nil, storagebudget.ErrAuthority
+	}
+	p, err := s.openPublicationTransactionWithCreator(ctx, projectLease)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +271,7 @@ func (s *Server) beginPublication(ctx context.Context, snap *reviewSnapshot) (*p
 	}
 	// These verified digest-addressed copies make the public lock recoverable
 	// even if the process stops before its history receipt is committed.
-	if err = s.storeReviewedCopies(snap); err != nil {
+	if err = s.storeReviewedCopiesWithCreator(snap, projectLease); err != nil {
 		return nil, err
 	}
 	proposed := p.withCandidate()
@@ -473,7 +481,13 @@ func (s *Server) handleArtifactVersions(w http.ResponseWriter, r *http.Request) 
 
 // Lock ordering for all writers: project/preparation -> ledger -> retained artifacts.
 func (s *Server) openPublicationTransaction(ctx context.Context) (*publicationTransaction, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(publicationDirectory, "/"), true, "artifact versions")
+	return s.openPublicationTransactionWithCreator(ctx, nil)
+}
+
+// original is the caller's held project lease, or nil where the caller holds
+// none and the folder's own creator lock is taken and released here.
+func (s *Server) openPublicationTransactionWithCreator(ctx context.Context, original *storageCreatorLease) (*publicationTransaction, error) {
+	root, made, err := openOwnFolderWithCreator(s.root, strings.Split(publicationDirectory, "/"), true, "artifact versions", original)
 	if err != nil {
 		return nil, err
 	}

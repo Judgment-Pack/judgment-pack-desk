@@ -868,14 +868,14 @@ func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string, r
 		}
 		// beginPublication reconciles only an already committed exact lock.
 		// It never calls Runtime or writes a new public lock in this path.
-		p, err := s.beginPublication(ctx, snap)
+		p, err := s.beginPublication(ctx, snap, projectLease)
 		if err != nil {
 			return nil, &lockFailure{http.StatusConflict, CodeStale, err.Error()}
 		}
 		p.close()
 		return map[string]any{"files": 1 + len(snap.set.Entries), "copies": "stored", "reconciled": true}, nil
 	}
-	publication, admissionErr := s.beginPublication(ctx, snap)
+	publication, admissionErr := s.beginPublication(ctx, snap, projectLease)
 	if admissionErr != nil {
 		return nil, &lockFailure{http.StatusConflict, CodeStale, admissionErr.Error()}
 	}
