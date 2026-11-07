@@ -1354,6 +1354,33 @@ func (l *storageCreatorLease) Close() error {
 	return result
 }
 
+// storageCooperatingExisting opens name, which another cooperating creator
+// may have made while it holds parent's creator lock, without creating it:
+// the folder found, checked as the creator checks it, or a worded busy
+// refusal (409) where there is none yet. held is the lock refusal.
+func storageCooperatingExisting(parent *os.Root, name string, held error) (_ *os.Root, made bool, err error) {
+	info, err := parent.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, storageLockBusy(held)
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, false, errStorageCustody
+	}
+	root, err := parent.OpenRoot(name)
+	if err != nil {
+		return nil, false, err
+	}
+	opened, oe := root.Stat(".")
+	named, ne := parent.Lstat(name)
+	if oe != nil || ne != nil || !os.SameFile(info, opened) || !os.SameFile(info, named) {
+		return nil, false, errors.Join(errStorageCustody, oe, ne, root.Close())
+	}
+	return root, false, nil
+}
+
 // Ordinary cooperating creators use this exact absent-name interval. The new
 // admitted action uses its own original issuer and no-replace/charged cuts.
 // This helper grants no accounting permission or recovered creation receipt.
@@ -1382,7 +1409,14 @@ func storageCooperatingDirectory(ctx context.Context, parent *os.Root, name stri
 	if l == nil {
 		l, err = storageCreatorAcquire(parent)
 		if err != nil {
-			return nil, false, err
+			if !lockHeld(err) {
+				return nil, false, err
+			}
+			// Another cooperating creator holds the parent. It is never
+			// waited for: a folder it has already made is used as found, as
+			// an existing folder always is; otherwise the caller is refused,
+			// worded, and may retry.
+			return storageCooperatingExisting(parent, name, err)
 		}
 		owned = true
 	}

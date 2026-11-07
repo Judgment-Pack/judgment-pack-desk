@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
 )
 
 const inputRecordLimit = 1000
@@ -174,6 +176,10 @@ func (s *Server) handleInputPreparations(w http.ResponseWriter, r *http.Request)
 		if errors.Is(err, errInputPreparationBusy) {
 			w.Header().Set("Retry-After", "1")
 			writeJSONCoded(w, 503, "storage-busy", "Dialects are being saved. Try again shortly.")
+		} else if codeOf(err) == CodeStale && errors.Is(err, storagebudget.ErrBusy) {
+			// Another request holds a storage lock this one only tries,
+			// such as the first creation of a shared folder: worded, retryable.
+			writeJSONCoded(w, http.StatusConflict, CodeStale, fallback+" Storage is busy with another request; try again.")
 		} else {
 			writeJSONCoded(w, 409, CodeBadRequest, fallback)
 		}
