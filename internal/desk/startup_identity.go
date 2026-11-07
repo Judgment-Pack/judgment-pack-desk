@@ -448,6 +448,32 @@ func (s *Server) openIdentityFolder() (*os.Root, error) {
 	return root, err
 }
 
+// openIdentityFolderToRead opens `.desk-private/` only to read the identity
+// in it, under the census rule for what Desk reads and measures
+// (storageCensusMeasuredDirectory, desk #685): a real folder, the user's,
+// that neither group nor others can write. Group and other read are not
+// refused, so a folder a umask of 022 left at 0755 is read. Desk writes the
+// identity only through openIdentityFolder, which keeps the private rule. It
+// is fs.ErrNotExist where the project has none.
+func (s *Server) openIdentityFolderToRead() (_ *os.Root, err error) {
+	info, err := s.root.Lstat(startupIdentityDir)
+	if err != nil {
+		return nil, err
+	}
+	if !storageCensusMeasuredDirectory(info) {
+		return nil, fmt.Errorf("%s is not a folder Desk reads %s from: it must be a folder of the user running Desk that no group or other user can write", startupIdentityDir, startupIdentityKept)
+	}
+	root, err := s.root.OpenRoot(startupIdentityDir)
+	if err != nil {
+		return nil, err
+	}
+	held, err := root.Stat(".")
+	if err != nil || !os.SameFile(info, held) {
+		return nil, errors.Join(errStorageCustody, err, root.Close())
+	}
+	return root, nil
+}
+
 // identityFolderUsable is nil where the project's identity can be written:
 // its `.desk-private/` is not there, and would be made owner-only, or is a
 // folder Desk holds. Otherwise it says why, in words with no path.

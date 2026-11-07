@@ -296,11 +296,19 @@ func storageInjectedProviderSourceLocator(raw string) (string, bool) {
 
 // Read-only identity inspection precedes any default startupName decision.
 // A retained key is used exactly; copied/moved recovery remains its own owner.
+//
+// The folder is read under the census rule (desk #685): a 0755 `.desk-private`
+// is read, not refused, while a folder another user owns or can write still
+// refuses, and storage starts read-only as the census would. An identity file
+// Desk cannot read names nothing: the start records it as unread for the owner
+// (resolveStartupIdentity), and storage counts the project under its path, the
+// key a project has before its identity is written, which its identity lineage
+// then keeps.
 func (s *Server) inspectStorageStartupKey() (key string, err error) {
 	if s.cfg.deskID != "" {
 		return s.cfg.deskID, nil
 	}
-	private, err := s.openIdentityFolder()
+	private, err := s.openIdentityFolderToRead()
 	if errors.Is(err, os.ErrNotExist) {
 		return digestOf([]byte(s.projectDir)), nil
 	}
@@ -309,10 +317,7 @@ func (s *Server) inspectStorageStartupKey() (key string, err error) {
 	}
 	defer func() { err = errors.Join(err, private.Close()) }()
 	r, _, found, err := readIdentity(private)
-	if err != nil {
-		return "", err
-	}
-	if found {
+	if err == nil && found {
 		return r.ID, nil
 	}
 	return digestOf([]byte(s.projectDir)), nil
@@ -398,8 +403,13 @@ func (x *storageOriginalSources) inspectProject(ctx context.Context, project *os
 	}
 	x.workspaces = append(x.workspaces, w)
 	// An ordinary start pins the folder by the census rule first: whether it
-	// may be registered is decided by the saved catalog below.
-	n, err := storagePinChild(project, ".desk-private", x.reattached == nil)
+	// may be registered is decided by the saved catalog below. A first start
+	// registers a standalone project's folder only where it meets the private
+	// rule a registered root keeps; one a group or other user may read (0755,
+	// as a umask of 022 makes it) is measured and reported instead, as an
+	// ordinary start does with a folder the catalog does not register.
+	standalone := deskID == "" && x.construction.server.home == nil
+	n, err := storagePinChild(project, ".desk-private", x.reattached == nil && !standalone)
 	// storagePinChild deliberately returns a custody refusal for unsafe/missing
 	// names; prove absence on the actual adopted parent before accepting it.
 	// Every project is offered to the census: it measures the project's
@@ -429,6 +439,15 @@ func (x *storageOriginalSources) inspectProject(ctx context.Context, project *os
 			return nil
 		}
 		// A registered private folder keeps the private rule.
+		n.private = true
+		if err = n.current(); err != nil {
+			return err
+		}
+	} else if standalone {
+		if !storagePrivate(n.identity, true) {
+			x.unregistered = append(x.unregistered, filepath.Join(path, ".desk-private"))
+			return nil
+		}
 		n.private = true
 		if err = n.current(); err != nil {
 			return err
