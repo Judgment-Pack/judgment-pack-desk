@@ -55,11 +55,9 @@ func TestChatPlanAdmissionAndStorage(t *testing.T) {
 func TestChatPlanCannotConsumeAutoAllowance(t *testing.T) {
 	s, rr, run, _ := approvalFixture(t)
 	authorizeFixture(t, s, run)
-	store, e := s.openChatData()
-	if e != nil {
-		t.Fatal(e)
-	}
+	store := enrolledChatData(t, s)
 	defer store.root.Close()
+	var e error
 	if e = writePrivateData(store.root, s.conversationName(), []byte(`{"version":1,"chats":[{"id":"chat-1","interaction":"plan"}]}`)); e != nil {
 		t.Fatal(e)
 	}
@@ -85,10 +83,7 @@ func TestChatPlanInvalidInteractionCannotConsumeAutoAllowance(t *testing.T) {
 		t.Run(interaction, func(t *testing.T) {
 			s, rr, run, _ := approvalFixture(t)
 			authorizeFixture(t, s, run)
-			store, err := s.openChatData()
-			if err != nil {
-				t.Fatal(err)
-			}
+			store := enrolledChatData(t, s)
 			defer store.root.Close()
 			raw := []byte(`{"version":1,"chats":[{"id":"chat-1","interaction":` + interaction + `}]}`)
 			if err := validateConversations(raw); err != nil {

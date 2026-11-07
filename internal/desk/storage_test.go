@@ -50,6 +50,23 @@ func storageGet(t *testing.T, ts *httptest.Server) storageStatus {
 	}
 	return value
 }
+
+// enrolledChatData opens chat storage the way the product's first writer
+// does: storage enrolls the default history before the store is opened.
+// openChatData alone never creates an unaccounted default location once
+// storage enrollment exists.
+func enrolledChatData(t *testing.T, s *Server) *chatDataStore {
+	t.Helper()
+	if err := s.ensureDefaultHistoryEnrollment(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	store, err := s.openChatData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
 func privateFixture(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {

@@ -255,10 +255,7 @@ func TestAttachmentStoreQuota(t *testing.T) {
 		t.Run(quota, func(t *testing.T) {
 			s, _, _ := assistantServer(t)
 			enableTestDocuments(t, s)
-			store, err := s.openChatData()
-			if err != nil {
-				t.Fatal(err)
-			}
+			store := enrolledChatData(t, s)
 			defer store.root.Close()
 			if quota == "bytes" {
 				// Sparse fixture exercises accounting without allocating the quota.
