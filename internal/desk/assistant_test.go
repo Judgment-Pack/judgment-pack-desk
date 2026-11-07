@@ -45,9 +45,17 @@ func assistantServer(t *testing.T) (*Server, *httptest.Server, *bytes.Buffer) {
 // store validates and pins it.
 func assistantServerIn(t *testing.T, config string) (*Server, *httptest.Server, *bytes.Buffer) {
 	t.Helper()
+	return assistantServerAt(t, t.TempDir(), config)
+}
+
+// assistantServerAt is assistantServerIn on a given project. One Desk runs
+// per installation: a test that starts a second Desk on config closes the
+// first one before it does.
+func assistantServerAt(t *testing.T, project, config string) (*Server, *httptest.Server, *bytes.Buffer) {
+	t.Helper()
 	logged := &bytes.Buffer{}
 	s, ts := startDesk(t, Config{
-		ProjectDir: t.TempDir(),
+		ProjectDir: project,
 		// A stand-in by absolute path: creating a desk runs the runtime.
 		JpackBin:      standInRuntime(t),
 		Token:         testToken,
@@ -1676,9 +1684,14 @@ func TestABindingSurvivesARestart(t *testing.T) {
 	s, ts, _ := assistantServerIn(t, config)
 	storeKeyBoundTo(t, s, ts, "gemini", "https://first.example.invalid/")
 
-	// A second desk over the same directory: a restart, in the only form a
-	// test can take it.
-	next, nextTS, _ := assistantServerIn(t, config)
+	// The same project and directory started again once the first desk has
+	// closed: a restart, in the only form a test can take it. One Desk runs
+	// per installation, so the two are never open at once.
+	ts.Close()
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	next, nextTS, _ := assistantServerAt(t, s.cfg.ProjectDir, config)
 	stored, err := next.assistant.readKey()
 	if err != nil {
 		t.Fatalf("read after restart: %v", err)

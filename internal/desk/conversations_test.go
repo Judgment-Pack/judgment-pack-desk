@@ -113,9 +113,11 @@ func TestConversationHistoryGuardsAndShape(t *testing.T) {
 	}
 }
 func TestConversationHistoryProjectIsolation(t *testing.T) {
-	shared := t.TempDir()
-	first, a, _ := assistantServerIn(t, shared)
-	second, b, _ := assistantServerIn(t, shared)
+	// One Desk runs per installation, and an installation without a Desk
+	// home belongs to the one project it was first started on: another
+	// project's Desk is another installation.
+	first, a, _ := assistantServerIn(t, t.TempDir())
+	second, b, _ := assistantServerIn(t, t.TempDir())
 	if first.conversationName() == second.conversationName() {
 		t.Fatal("different roots shared a record")
 	}

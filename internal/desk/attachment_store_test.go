@@ -214,9 +214,11 @@ func TestAttachmentStoreValidationAndConfiguration(t *testing.T) {
 }
 
 func TestAttachmentStoreNamespaceAndCustody(t *testing.T) {
-	shared := t.TempDir()
-	a, ats, _ := assistantServerIn(t, shared)
-	b, _, _ := assistantServerIn(t, shared)
+	// One Desk runs per installation, and an installation without a Desk
+	// home belongs to the one project it was first started on: another
+	// project's Desk is another installation.
+	a, ats, _ := assistantServerIn(t, t.TempDir())
+	b, _, _ := assistantServerIn(t, t.TempDir())
 	enableTestDocuments(t, a)
 	body := []byte(documentBody(t, "private original"))
 	receipt, err := a.attachmentStorage().write(t.Context(), attachmentWriteRequest{id: testAttachmentID, ifMatch: "absent", data: body})
