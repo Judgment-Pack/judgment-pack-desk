@@ -88,12 +88,9 @@ func assistantAuthoringLedger(t *testing.T, s *Server) assistantRunLedger {
 }
 func assistantAuthoringComplete(ctx context.Context, e *assistantRunExecution) error {
 	document := map[string]json.RawMessage{"title": json.RawMessage(`"Proposed"`)}
-	if err := e.Event(ctx, "proposal", contract.RunEvent{Proposal: &contract.RunEventProposal{Type: "proposal", Document: document, Unknowns: []string{}}}); err != nil {
-		return err
-	}
-	cp := *e.record.Checkpoint
-	cp.Status = "complete"
-	return e.Checkpoint(ctx, cp)
+	// An authoring run is canonical: the proposal and the completed checkpoint
+	// are one commit to its journal, as Agent's writer makes them.
+	return assistantCanonicalFixtureCommit(ctx, e, "complete", contract.RunEvent{Proposal: &contract.RunEventProposal{Type: "proposal", Document: document, Unknowns: []string{}}})
 }
 func TestAssistantAuthoringCaptureOwnerAndCancellation(t *testing.T) {
 	s, token := assistantAuthoringFixture(t, "https://example.invalid")

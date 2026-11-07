@@ -45,12 +45,9 @@ func assistantBriefTestComplete(ctx context.Context, e *assistantRunExecution) e
 	raw, _ := json.Marshal(assistantBriefFixtureText)
 	var document map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &document)
-	if err := e.Event(ctx, "fixture-brief-proposal", contract.RunEvent{Proposal: &contract.RunEventProposal{Type: "proposal", Document: document, Unknowns: []string{}}}); err != nil {
-		return err
-	}
-	cp := *e.record.Checkpoint
-	cp.Status = "complete"
-	return e.Checkpoint(ctx, cp)
+	// A brief run is canonical: the proposal and the completed checkpoint are
+	// one commit to its journal, as Agent's writer makes them.
+	return assistantCanonicalFixtureCommit(ctx, e, "complete", contract.RunEvent{Proposal: &contract.RunEventProposal{Type: "proposal", Document: document, Unknowns: []string{}}})
 }
 
 func assistantBriefCall(s *Server, token, method, path string, body any) *httptest.ResponseRecorder {
@@ -725,7 +722,7 @@ func TestAssistantBriefStopAndInterruptedNoReplay(t *testing.T) {
 			s, token := assistantBriefFixture(t, "https://example.invalid")
 			entered := make(chan struct{})
 			executor := &assistantBriefTestExecutor{execute: func(ctx context.Context, e *assistantRunExecution) error {
-				if err := e.Event(ctx, "retained-prefix", contract.RunEvent{Message: &contract.RunEventMessage{Type: "message", Text: "Retained interrupted output"}}); err != nil {
+				if err := assistantCanonicalFixtureCommit(ctx, e, "", contract.RunEvent{Message: &contract.RunEventMessage{Type: "message", Text: "Retained interrupted output"}}); err != nil {
 					return err
 				}
 				close(entered)
