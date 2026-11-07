@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
@@ -52,8 +53,8 @@ type storageOriginalSources struct {
 	// is measured inside the tree that holds it and reported as a warning
 	// (storage-budget-startup.md, "Custody rule for v0.14.0").
 	unregistered []string
-	// Projects whose .desk-private, if there is one, no registered root of
-	// its own measures; the census measures it (storageCensusWalk.carried).
+	// Every inspected project; the census measures its .desk-private where no
+	// registered root holds or scopes it (storageCensusWalk.carried).
 	carried []storageCarriedPrivate
 }
 
@@ -62,6 +63,38 @@ type storageOriginalSources struct {
 type storageCarriedPrivate struct {
 	project   *os.Root
 	workspace storagebudget.ID
+}
+
+// bindsSource is whether one of this owner's registered roots holds source.
+func (o *storageBudgetOwner) bindsSource(source *storageOriginalSourceRoot) bool {
+	if o == nil || source == nil {
+		return false
+	}
+	for _, r := range o.orderedRoots() {
+		if r.source == source {
+			return true
+		}
+	}
+	return false
+}
+
+// noteUnboundPrivate adds to the registration difference each project private
+// folder, or its retained-artifacts, that source inspection held as a root of
+// its own but no registered root of the loaded owner holds. An ordinary start
+// never splits such a folder (inspectProject); the enrollment and policy
+// startup routes inspect sources by their own rule, and this is where their
+// difference is found. The census measures such a folder inside the tree that
+// holds it. Called once, before the start serves, with the sources unshared.
+func (x *storageOriginalSources) noteUnboundPrivate(o *storageBudgetOwner) {
+	if x == nil || o == nil {
+		return
+	}
+	for _, source := range x.roots {
+		if source.role != 3 && source.role != 6 || o.bindsSource(source) || filepath.Base(source.path) != startupIdentityDir && filepath.Base(source.path) != "retained-artifacts" || slices.Contains(x.unregistered, source.path) {
+			continue
+		}
+		x.unregistered = append(x.unregistered, source.path)
+	}
 }
 
 // storageCatalogRegisters is whether the saved catalog lists an object with this
@@ -369,9 +402,11 @@ func (x *storageOriginalSources) inspectProject(ctx context.Context, project *os
 	n, err := storagePinChild(project, ".desk-private", x.reattached == nil)
 	// storagePinChild deliberately returns a custody refusal for unsafe/missing
 	// names; prove absence on the actual adopted parent before accepting it.
+	// Every project is offered to the census: it measures the project's
+	// private folder only where no registered root holds or scopes it.
+	x.carried = append(x.carried, storageCarriedPrivate{project: project, workspace: id})
 	if err != nil {
 		if _, le := project.Lstat(".desk-private"); errors.Is(le, os.ErrNotExist) {
-			x.carried = append(x.carried, storageCarriedPrivate{project: project, workspace: id})
 			return nil
 		}
 		return err
@@ -391,7 +426,6 @@ func (x *storageOriginalSources) inspectProject(ctx context.Context, project *os
 			// it under its rule, and the difference is reported. Strict
 			// registration of such folders is later work (desk #698).
 			x.unregistered = append(x.unregistered, filepath.Join(path, ".desk-private"))
-			x.carried = append(x.carried, storageCarriedPrivate{project: project, workspace: id})
 			return nil
 		}
 		// A registered private folder keeps the private rule.

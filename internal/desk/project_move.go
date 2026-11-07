@@ -160,6 +160,22 @@ func (s *Server) moveSnapshotOriginal(ctx context.Context, destination string, m
 	if s.startupShared() || s.startupUnresolved() {
 		return preview, errors.New("Resolve this project's copy or move identity in Decision safeguards before moving it.")
 	}
+	if move == nil {
+		// A move carries the project's identity, which the identity producer
+		// keeps in the project's registered private folder. A project with no
+		// private folder yet gets one now, through the producer's own creation
+		// path (the one a first dialect draft takes), before the identity this
+		// preview's token covers is read. One Desk made outside the producer
+		// is refused in words (errStoragePrivateUnregistered).
+		if _, e := s.root.Lstat(startupIdentityDir); errors.Is(e, os.ErrNotExist) {
+			err = s.ensureDialectDraftEnrollment(ctx)
+		} else {
+			err = s.requireRegisteredPrivate(ctx)
+		}
+		if err != nil {
+			return preview, err
+		}
+	}
 	present, config, err := s.readDeskFile()
 	if err != nil {
 		return preview, err

@@ -481,6 +481,7 @@ func (s *Server) activateStorageBudgetStartup(ctx context.Context) (err error) {
 	if err = c.loadOrEnrollOwner(ctx); err != nil {
 		return err
 	}
+	c.sources.noteUnboundPrivate(c.owner)
 	if err = s.recoverOriginalStorageMove(ctx); err != nil {
 		return err
 	}
@@ -690,7 +691,10 @@ func (c *storageBudgetConstruction) originalIdentityDemand(ctx context.Context) 
 		}
 		private = source
 	}
-	if private == nil {
+	if private == nil || !c.owner.bindsSource(private) {
+		// A private folder no registered root holds (one Desk made outside the
+		// identity producer) cannot receive an identity through the producer;
+		// it stays measured and reported (storageOriginalSources.unregistered).
 		return false, nil
 	}
 	if err = private.current(ctx, c); err != nil {

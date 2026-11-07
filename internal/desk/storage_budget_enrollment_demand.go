@@ -500,11 +500,48 @@ func (c *storageBudgetConstruction) originalDraftBindings(ctx context.Context, s
 		}
 	}
 	if private == nil {
-		if _, e := s.root.Lstat(startupIdentityDir); !errors.Is(e, os.ErrNotExist) {
+		if _, e := s.root.Lstat(startupIdentityDir); e == nil {
+			return nil, nil, errStoragePrivateUnregistered
+		} else if !errors.Is(e, os.ErrNotExist) {
 			return nil, nil, errors.Join(errStorageOwnerTransitionRequired, e)
 		}
 	}
 	return private, parent, nil
+}
+
+// requireRegisteredPrivate refuses, in words, a project whose existing private
+// folder no registered root holds (errStoragePrivateUnregistered).
+func (s *Server) requireRegisteredPrivate(ctx context.Context) error {
+	if s.storageEnrollment == nil {
+		return nil
+	}
+	c := s.storageEnrollment.construction
+	if c == nil || c.owner == nil {
+		return storagebudget.ErrAuthority
+	}
+	if err := c.owner.retain(); err != nil {
+		return err
+	}
+	_, _, err := c.originalDraftBindings(ctx, s)
+	return errors.Join(err, c.owner.drop())
+}
+
+// errStoragePrivateUnregistered refuses work that needs a project's private
+// folder registered with storage (dialect drafts, the identity a project move
+// carries) when the folder exists but no registered root holds it: Desk made
+// it outside the identity producer. Storage measures and reports it and Desk
+// keeps working; registering an existing folder is later work (desk #698),
+// because the producer's creation path never adopts a folder it did not make.
+// It is the owner transition refusal, in words.
+var errStoragePrivateUnregistered error = storagePrivateUnregisteredError{}
+
+type storagePrivateUnregisteredError struct{}
+
+func (storagePrivateUnregisteredError) Error() string {
+	return "This project's .desk-private folder was made before storage registered it. Desk keeps and counts its data, but cannot keep dialect drafts in it or move this project until a later Desk release registers it. Storage in Admin lists the folder."
+}
+func (storagePrivateUnregisteredError) Is(target error) bool {
+	return target == errStorageOwnerTransitionRequired
 }
 func storageDraftMissing(root *os.Root) (directory, ignore, workflow bool, err error) {
 	edge, e := storagePinChild(root, "dialect-drafts", true)
