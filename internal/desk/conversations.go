@@ -5,6 +5,7 @@ package desk
 // The server chooses the name from its pinned project identity.
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,6 +101,50 @@ func validateDraftPacks(data []byte) error {
 func (s *Server) readConversationFile(root *os.Root, name string) (conversationReply, error) {
 	return s.readWorkspaceRecord(root, name, false)
 }
+
+// prepareConversationDraftEnrollment enrolls the dialect drafts' storage
+// where it is still needed and the saved conversation record, or the one being
+// saved, asks for a draft. It reads the saved record in its own short shared
+// transaction. Only the enrollment's own failure is answered here: a body that
+// does not parse, or a record or inspection that fails, is left to the
+// transaction, which reports it as it always has.
+func (s *Server) prepareConversationDraftEnrollment(ctx context.Context, body []byte) error {
+	if needed, err := s.dialectDraftEnrollmentNeeded(ctx); err != nil || !needed {
+		return nil
+	}
+	if requests, err := conversationDialectDraftRequests(body); err == nil && len(requests) > 0 {
+		return s.ensureDialectDraftEnrollment(ctx)
+	}
+	saved, err := func() ([]byte, error) {
+		lock, err := s.privateDataLockContext(ctx, false)
+		if err != nil {
+			return nil, err
+		}
+		defer lock.Close()
+		store, err := s.openChatData()
+		if err != nil {
+			return nil, err
+		}
+		defer store.root.Close()
+		name, err := resolveConversationName(store.root, s.conversationIdentity())
+		if err != nil {
+			return nil, err
+		}
+		raw, err := readPrivateData(store.root, name, maxConversationBytes)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return raw, err
+	}()
+	if err != nil {
+		return nil
+	}
+	if requests, err := conversationDialectDraftRequests(saved); err != nil || len(requests) == 0 {
+		return nil
+	}
+	return s.ensureDialectDraftEnrollment(ctx)
+}
+
 func (s *Server) readWorkspaceRecord(root *os.Root, name string, drafts bool) (conversationReply, error) {
 	reply := conversationReply{Project: s.projectDir, SHA256: "absent", Content: json.RawMessage(`{"version":1,"chats":[]}`)}
 	if graphDraftFileName.MatchString(name) {
@@ -207,6 +252,28 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 			s.retireSavedContextOwners(contextBinding, removedContextOwners)
 		}
 	}()
+	conversations := r.URL.Path == "/api/conversations" && !drafts
+	var body []byte
+	if r.Method != http.MethodGet {
+		if r.Header.Get("If-Match") == "" && r.URL.Path != "/api/briefs" {
+			writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "If-Match is required; reload history before saving")
+			return
+		}
+		var err error
+		if body, err = readBounded(r.Body, maxConversationBytes); err != nil {
+			writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge, "Workspace records are limited to 16 MiB; nothing was written.")
+			return
+		}
+	}
+	// The dialect drafts' first use is enrolled before this transaction takes
+	// .data.lock, whose domain the enrollment takes itself, as every
+	// first-use path is.
+	if conversations {
+		if err := s.prepareConversationDraftEnrollment(r.Context(), body); err != nil {
+			storageFailure(w, err)
+			return
+		}
+	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	lock, err := s.privateDataLockContext(r.Context(), true)
@@ -297,15 +364,7 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 		return
 	}
 	expected := r.Header.Get("If-Match")
-	if expected == "" && !briefs {
-		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "If-Match is required; reload history before saving")
-		return
-	}
-	data, err := readBounded(r.Body, maxConversationBytes)
-	if err != nil {
-		writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge, "Workspace records are limited to 16 MiB; nothing was written.")
-		return
-	}
+	data := body
 	if briefs {
 		current, e := read()
 		if e != nil {

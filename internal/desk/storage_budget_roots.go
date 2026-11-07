@@ -827,7 +827,7 @@ func (o *storageBudgetOwner) domain(ctx context.Context, r *storageRootBinding, 
 		return nil, errors.Join(errStorageCustody, n.file.Close())
 	}
 	if e = lockPrivateData(n.file, true); e != nil {
-		return nil, errors.Join(storagebudget.ErrBusy, n.file.Close())
+		return nil, errors.Join(storageLockBusy(e), n.file.Close())
 	}
 	d.file = n.file
 	if m, ok := lifetime.(*storageMaintenanceUse); ok {

@@ -579,20 +579,29 @@ func storageDraftMissing(root *os.Root) (directory, ignore, workflow bool, err e
 	return false, ignore, workflow, nil
 }
 func (s *Server) ensureDialectDraftEnrollment(ctx context.Context) (err error) {
+	needed, err := s.dialectDraftEnrollmentNeeded(ctx)
+	if err != nil || !needed {
+		return err
+	}
+	return s.storageEnrollment.construction.enrollDemandedDraft(ctx, s)
+}
+
+// dialectDraftEnrollmentNeeded inspects, without enrolling, whether the
+// dialect drafts' folder still needs its storage enrollment.
+func (s *Server) dialectDraftEnrollmentNeeded(ctx context.Context) (needed bool, err error) {
 	if s.storageReadOnly {
-		return errStorageEnrollmentUnresolved
+		return false, errStorageEnrollmentUnresolved
 	}
 	if s.storageEnrollment == nil {
-		return nil
+		return false, nil
 	}
 	c := s.storageEnrollment.construction
 	if c == nil || c.owner == nil {
-		return storagebudget.ErrAuthority
+		return false, storagebudget.ErrAuthority
 	}
 	if err = c.owner.retain(); err != nil {
-		return err
+		return false, err
 	}
-	needed := false
 	inspectErr := func() error {
 		if err := c.current(ctx, false); err != nil {
 			return err
@@ -609,10 +618,10 @@ func (s *Server) ensureDialectDraftEnrollment(ctx context.Context) (err error) {
 		needed = directory || ignore || workflow
 		return err
 	}()
-	if err = errors.Join(inspectErr, c.owner.drop()); err != nil || !needed {
-		return err
+	if err = errors.Join(inspectErr, c.owner.drop()); err != nil {
+		return false, err
 	}
-	return c.enrollDemandedDraft(ctx, s)
+	return needed, nil
 }
 func (c *storageBudgetConstruction) enrollDemandedDraft(ctx context.Context, s *Server) error {
 	private, parent, err := func() (*storageRootBinding, *storageRootBinding, error) {
