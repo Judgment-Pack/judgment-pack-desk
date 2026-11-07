@@ -131,3 +131,7 @@ it('projects retained null cells as legacy blanks without changing raw records o
  expect(Object.hasOwn(row.values,'absentCell')).toBe(false)
  expect(vi.mocked(dialectAPI).mock.calls).toEqual([['/'+inputId]])
 })
+it('declares the owner taxonomy of each server-side record tool',()=>{
+ const owned=Object.fromEntries(tools.filter(t=>t.name!=='request_dialect_research').map(t=>[t.name,t.taxonomy]))
+ expect(owned).toEqual({read_dialect_records:{operation:'read',effect:'read'},read_dialect_activity:{operation:'read',effect:'read'},propose_dialect_action:{operation:'propose',effect:'propose'}})
+})

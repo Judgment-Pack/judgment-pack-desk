@@ -136,3 +136,7 @@ it('samples retained null as a legacy blank while keeping missing columns planne
  expect(Object.hasOwn(row.values,'absentCell')).toBe(false)
  expect(vi.mocked(dialectAPI).mock.calls).toEqual([['/'+id]])
 })
+it('declares the owner taxonomy of each server-side mapping tool',()=>{
+ const owned=dialectChatTools({retainAction:async()=>{},afterTurnId:()=> 'turn'})
+ expect(Object.fromEntries(owned.map(t=>[t.name,t.taxonomy]))).toEqual({read_dialect:{operation:'read',effect:'read'},propose_dialect:{operation:'propose',effect:'propose'},read_dialect_publication:{operation:'read',effect:'read'},propose_dialect_publication:{operation:'propose',effect:'propose'}})
+})
