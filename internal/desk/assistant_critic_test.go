@@ -617,10 +617,14 @@ func TestAssistantCriticUncomparedAndMismatch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	assistantRunMust(t, x.Adapter.Run(ctx, x.Run))
+	// The Runtime declares experimental_evaluate evaluate/act (Runtime ADR-0070)
+	// and Agent v0.13.2 sends no act call without an exact approved attempt, so
+	// no rehearsal compares a case: each declared case stays incomplete, in
+	// order, and none is rewritten.
 	found := false
 	for _, held := range assistantExecutionRecord(t, e).Events {
 		if critique := held.Event.Critique; critique != nil {
-			found = critique.Refuted && len(critique.Cases) == 2 && !critique.Cases[0].Agrees && critique.Cases[1].Agrees && reflect.DeepEqual(critique.Incomplete, []string{"uncompared"})
+			found = critique.Refuted && len(critique.Cases) == 0 && reflect.DeepEqual(critique.Incomplete, []string{"wrong", "agrees", "uncompared"})
 		}
 	}
 	if !found || len(x.Run.Cases) != 3 || !bytes.Contains(x.Run.Cases[0], []byte(`"outcomeId":"decline"`)) {
