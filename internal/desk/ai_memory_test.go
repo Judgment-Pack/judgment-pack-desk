@@ -37,6 +37,11 @@ func seedMemoryMessage(t *testing.T, s *Server, text string) *memorySource {
 	source := &memorySource{ChatID: "chat-one", TurnID: "turn-one"}
 	doc := map[string]any{"version": 1, "chats": []any{map[string]any{"id": source.ChatID, "checkpoint": map[string]any{"state": map[string]any{"turns": []any{map[string]any{"id": source.TurnID, "role": "user", "statement": text, "at": time.Now().UTC().Format(time.RFC3339Nano)}}}, "sources": []any{}}}}}
 	data, _ := json.Marshal(doc)
+	// A fixture seeds history the way the product's first writer does: enrolled
+	// before the store is opened, never created bare under openChatData.
+	if e := s.ensureDefaultHistoryEnrollment(t.Context()); e != nil {
+		t.Fatal(e)
+	}
 	store, e := s.openChatData()
 	if e != nil {
 		t.Fatal(e)
