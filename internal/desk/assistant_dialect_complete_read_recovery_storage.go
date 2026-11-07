@@ -124,14 +124,16 @@ func newAssistantDialectReadRecoveryStorage(s *Server, o *storageBudgetOwner, ro
 	if err != nil || o != actualOwner || root != actualRoot || workspace != actualWorkspace || settings == nil {
 		return nil, errors.Join(errAssistantDialectReadRecoveryBudget, err)
 	}
-	if e := o.retain(); e != nil {
+	// A passive pin for the writer's lifetime: an enrollment step does not wait
+	// for it. Each operation retains the owner and rechecks this binding.
+	if e := o.pin(); e != nil {
 		return nil, e
 	}
 	w := &assistantDialectReadRecoveryStorageWriter{server: s, owner: o, enrollment: s.storageEnrollment, settings: settings, root: root, workspace: workspace, home: s.originalDialectRecoveryHome(), operations: map[*assistantDialectReadRecoveryStorageOperation]context.CancelFunc{}, drained: make(chan struct{}), closedDone: make(chan struct{})}
 	w.self = w
 	defer func() {
 		if err != nil {
-			err = errors.Join(err, o.drop())
+			err = errors.Join(err, o.unpin())
 		}
 	}()
 	if err = w.home.current(); err != nil {
@@ -292,7 +294,7 @@ func (w *assistantDialectReadRecoveryStorageWriter) Close() error {
 	// No host/service/lease or writer mutex is held while canceled FIFO waits
 	// and already-entered completion return their original custody.
 	<-w.drained
-	err := w.owner.drop()
+	err := w.owner.unpin()
 	w.mu.Lock()
 	w.closeErr = errors.Join(w.closeErr, err)
 	err = w.closeErr
@@ -352,13 +354,16 @@ func (w *assistantDialectReadRecoveryStorageWriter) prepareOriginalDialectReadRe
 		w.mu.Unlock()
 		return nil, errRetainedArtifactBusy
 	}
-	if err = w.current(ctx); err != nil {
-		w.mu.Unlock()
-		return nil, err
-	}
+	// Retain first: an enrollment step may have replaced the owner's bindings
+	// while only the writer's pin was held, and holding the retain excludes
+	// one from starting while the binding is compared.
 	if err = w.owner.retain(); err != nil {
 		w.mu.Unlock()
 		return nil, err
+	}
+	if err = w.current(ctx); err != nil {
+		w.mu.Unlock()
+		return nil, errors.Join(err, w.owner.drop())
 	}
 	op := &assistantDialectReadRecoveryStorageOperation{writer: w}
 	op.self = op

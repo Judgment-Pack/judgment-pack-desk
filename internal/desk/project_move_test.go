@@ -237,6 +237,33 @@ func TestProjectMoveConfirmedAndRestarted(t *testing.T) {
 		t.Fatalf("lost history %d %s", code, reply.Content)
 	}
 }
+
+// **A project with history moves after a restart.** The chat's first save
+// enrolls the project's history; Desk restarts on the project and moves it from
+// there. The start at the destination opens the same history writable.
+func TestProjectMoveAfterRestartKeepsHistory(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
+		t.Fatal(code)
+	}
+	storageChat := savedConversationBytes(t, s, ts)
+	again, ats, _ := startedAt(t, s, s.projectDir)
+	if again.storageReadOnly {
+		t.Fatalf("the restart was read-only: %v", again.storageProblem)
+	}
+	destination := filepath.Join(t.TempDir(), "new project")
+	request := movePreview(t, ats, destination)
+	if code, data := moveRequest(t, ats, "move", request); code != 200 {
+		t.Fatalf("move after a restart %d %s", code, data)
+	}
+	moved, mts, _ := startedAt(t, again, destination)
+	if moved.storageReadOnly || moved.locationStatus().Problem != "" {
+		t.Fatalf("the moved project started read-only: %v %+v", moved.storageProblem, moved.locationStatus())
+	}
+	if code, reply := chatRequest(t, mts, "GET", "", "", true, ""); code != 200 || string(reply.Content) != storageChat {
+		t.Fatalf("lost history %d %s", code, reply.Content)
+	}
+}
 func TestProjectMoveNeverReplacesDestinationOrStaleConfig(t *testing.T) {
 	for _, kind := range []string{"occupied", "stale", "history", "busy", "tool"} {
 		t.Run(kind, func(t *testing.T) {

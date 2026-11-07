@@ -65,6 +65,7 @@ type storageBudgetOwner struct {
 	openedRoots        []*os.Root
 	openedFiles        []*os.File
 	active             uint64
+	pinned             uint64 // passive lifetime holds (pin): Close waits, enrollment does not
 	closing, closed    bool
 	closeErr           error
 	censusEpoch        uint64
@@ -192,8 +193,38 @@ func (o *storageBudgetOwner) drop() error {
 	o.active--
 	return o.closeLocked()
 }
+
+// pin and unpin are the passive lifetime hold. Close waits for every pin as it
+// waits for every retain.
+func (o *storageBudgetOwner) pin() error {
+	if !o.valid() {
+		return errStorageCustody
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closing || o.closed {
+		return os.ErrClosed
+	}
+	if o.transitionRequired {
+		return errStorageOwnerTransitionRequired
+	}
+	if o.pinned == ^uint64(0) {
+		return storagebudget.ErrBounds
+	}
+	o.pinned++
+	return nil
+}
+func (o *storageBudgetOwner) unpin() error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.pinned == 0 {
+		return storagebudget.ErrAuthority
+	}
+	o.pinned--
+	return o.closeLocked()
+}
 func (o *storageBudgetOwner) closeLocked() (e error) {
-	if !o.closing || o.active != 0 {
+	if !o.closing || o.active != 0 || o.pinned != 0 {
 		return nil
 	}
 	if o.closed {

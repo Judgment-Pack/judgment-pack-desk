@@ -184,3 +184,36 @@ func TestProjectMovePreviewMakesTheProducersPrivateFolder(t *testing.T) {
 		t.Fatalf("the moved project has no identity: %v", err)
 	}
 }
+
+// **A move after a restart works in a project whose private folder the
+// producer made.** The first start's preview makes .desk-private through the
+// producer's own creation path. A later start, with that folder registered,
+// previews and moves the project; the start at the destination opens it with
+// storage writable.
+func TestProjectMoveAfterRestartWithAProducerMadePrivateFolder(t *testing.T) {
+	cfg := storageProducerConfig(t)
+	s, ts := startDesk(t, cfg)
+	movePreview(t, ts, filepath.Join(t.TempDir(), "first"))
+	ts.Close()
+	storageTestMust(t, s.Close())
+	again, ats := startDesk(t, cfg)
+	defer ats.Close()
+	defer again.Close()
+	if again.storageReadOnly {
+		t.Fatalf("the restart was read-only: %v", again.storageProblem)
+	}
+	destination := filepath.Join(t.TempDir(), "moved")
+	request := movePreview(t, ats, destination)
+	if code, data := moveRequest(t, ats, "move", request); code != 200 {
+		t.Fatalf("move after a restart %d %s", code, data)
+	}
+	ats.Close()
+	storageTestMust(t, again.Close())
+	cfg.ProjectDir = destination
+	moved, mts := startDesk(t, cfg)
+	defer mts.Close()
+	defer moved.Close()
+	if moved.storageReadOnly || moved.locationStatus().Problem != "" {
+		t.Fatalf("the moved project started read-only: %v %+v", moved.storageProblem, moved.locationStatus())
+	}
+}
