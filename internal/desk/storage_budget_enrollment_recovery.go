@@ -3272,6 +3272,22 @@ func (c *storageBudgetConstruction) validateStartupCompositionQ(ctx context.Cont
 // into the identity/signing state. Full original dictionary, Q definitions,
 // native sources and every retained reference must still validate at attach
 // and action admission; this read-only selection grants no authority.
+// storageAccountingKey is the owner key s's workspace is registered under in
+// the catalog: a Desk home project's runner workspace; for this construction's
+// own project, the accounting key its identity lineage retains (the key it was
+// registered under before the identity producer wrote its identity); and
+// otherwise its identity key. Matching a workspace by the identity alone
+// missed a project whose identity was written after registration and refused
+// custody ("no matching workspace").
+func (c *storageBudgetConstruction) storageAccountingKey(ctx context.Context, s *Server) (string, error) {
+	if entry := s.homeEntry(); entry != nil {
+		return entry.RunnerWorkspace, nil
+	}
+	if c != nil && s == c.server {
+		return c.inspectOriginalStartupKey(ctx)
+	}
+	return s.inspectStorageStartupKey()
+}
 func (c *storageBudgetConstruction) inspectOriginalStartupKey(ctx context.Context) (string, error) {
 	if c.server.home != nil {
 		return c.server.inspectStorageStartupKey()

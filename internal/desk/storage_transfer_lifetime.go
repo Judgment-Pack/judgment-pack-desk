@@ -30,6 +30,16 @@ type chatTransferLifetimes struct {
 	err     error
 }
 
+// accountingKey is the key the requester's workspace is registered under
+// (storageAccountingKey), through this transfer's enrollment construction.
+func (p *chatTransferPreparation) accountingKey(ctx context.Context) (string, error) {
+	var c *storageBudgetConstruction
+	if p.epoch != nil {
+		c = p.epoch.c
+	}
+	return c.storageAccountingKey(ctx, p.server)
+}
+
 type chatTransferPreparation struct {
 	self                                           *chatTransferPreparation
 	registry                                       *chatTransferLifetimes

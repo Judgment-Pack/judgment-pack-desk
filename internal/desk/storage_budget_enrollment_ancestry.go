@@ -361,12 +361,9 @@ func (p *storageEnrollmentEpoch) planHistoryAncestorCatalogOriginal(ctx context.
 	for _, r := range before.Constraints {
 		catalog.BeforeDefinitionIDs.Constraints = append(catalog.BeforeDefinitionIDs.Constraints, r.Definition.ID)
 	}
-	key, err := s.inspectStorageStartupKey()
+	key, err := p.c.storageAccountingKey(ctx, s)
 	if err != nil {
 		return catalog, source, err
-	}
-	if entry := s.homeEntry(); entry != nil {
-		key = entry.RunnerWorkspace
 	}
 	var workspace storageOwnerWorkspace
 	for _, w := range catalog.Workspaces {

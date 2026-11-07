@@ -3914,12 +3914,9 @@ func (op *chatTransferOperation) sealOriginalTransferPlan(ctx context.Context) (
 	if err != nil {
 		return nil, err
 	}
-	key, err := op.preparation.server.inspectStorageStartupKey()
+	key, err := op.preparation.accountingKey(ctx)
 	if err != nil {
 		return nil, err
-	}
-	if entry := op.preparation.server.homeEntry(); entry != nil {
-		key = entry.RunnerWorkspace
 	}
 	for _, workspace := range op.catalog.Workspaces {
 		if string(workspace.OwnerKey) == key && string(workspace.HistoryIdentity) == op.preparation.server.conversationIdentity() {
@@ -6947,12 +6944,9 @@ func (op *chatTransferOperation) appendOriginalTransferRoot(ctx context.Context,
 	if !found {
 		return source, storagebudget.ErrAuthority
 	}
-	key, err := op.preparation.server.inspectStorageStartupKey()
+	key, err := op.preparation.accountingKey(ctx)
 	if err != nil {
 		return source, err
-	}
-	if entry := op.preparation.server.homeEntry(); entry != nil {
-		key = entry.RunnerWorkspace
 	}
 	var workspace storageOwnerWorkspace
 	for _, w := range catalog.Workspaces {

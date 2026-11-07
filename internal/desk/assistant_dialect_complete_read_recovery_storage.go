@@ -54,14 +54,9 @@ func originalDialectReadRecoveryBinding(ctx context.Context, s *Server) (o *stor
 	if _, ok := o.observer.(*storageAdvisoryObserver); !ok || o.censusEpoch == 0 {
 		return nil, nil, workspace, nil, errAssistantDialectReadRecoveryBudget
 	}
-	key := s.cfg.deskID
-	if entry := s.homeEntry(); entry != nil {
-		key = entry.RunnerWorkspace
-	} else if key == "" {
-		key, err = s.inspectStorageStartupKey()
-		if err != nil {
-			return nil, nil, workspace, nil, err
-		}
+	key, err := c.storageAccountingKey(ctx, s)
+	if err != nil {
+		return nil, nil, workspace, nil, err
 	}
 	for _, w := range c.sources.workspaces {
 		if string(w.OwnerKey) == key && string(w.HistoryIdentity) == s.conversationIdentity() {

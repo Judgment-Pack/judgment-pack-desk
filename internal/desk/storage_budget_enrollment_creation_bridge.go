@@ -406,12 +406,9 @@ func (p *storageEnrollmentEpoch) historyCreationOwner(ctx context.Context, recor
 		if !settings.configControl || settings.source.persistent != record.Tail.Config {
 			return workspace, owner, errStorageCustody
 		}
-		key, err := p.c.server.inspectStorageStartupKey()
+		key, err := p.c.storageAccountingKey(ctx, p.c.server)
 		if err != nil {
 			return workspace, owner, err
-		}
-		if entry := p.c.server.homeEntry(); entry != nil {
-			key = entry.RunnerWorkspace
 		}
 		for _, w := range catalog.Workspaces {
 			if string(w.OwnerKey) == key && string(w.HistoryIdentity) == p.c.server.conversationIdentity() {
