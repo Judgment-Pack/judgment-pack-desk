@@ -18,7 +18,9 @@ import { useHasPendingChanges, useConfirmDiscard } from '../shell/UnsavedChanges
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import styles from './ProjectLocation.module.css'
 
-export interface ProjectLocationStatus { path: string; defaultDestination?: string; moving?: boolean; restartRequired: boolean; movedTo?: string; problem?: string }
+/** A project move's settings conflict: the settings file was edited after the move's rename. */
+export interface ProjectMoveSettingsConflict { file: string; digest: string; later: string[]; canFinish: boolean; finished: boolean }
+export interface ProjectLocationStatus { path: string; defaultDestination?: string; moving?: boolean; restartRequired: boolean; movedTo?: string; problem?: string; settingsConflict?: ProjectMoveSettingsConflict }
 interface Preview { project: string; destination: string; token: string; createParent?: boolean }
 export const PROJECT_LOCATION_KEY = ['project-location'] as const
 async function readLocation(): Promise<ProjectLocationStatus> {
@@ -44,6 +46,37 @@ export function ProjectLocationNotice() {
     {systemMessage(data.problem)}
   </DeskStatusNotice>
   return null
+}
+
+/**
+ * The one choice for a move's settings conflict, under Desk home: finish the
+ * move with the moved settings. The server words the conflict, names the file
+ * and the later edit to make again; Desk finishes the move when it restarts.
+ */
+export function ProjectMoveSettingsChoice() {
+  useLocale()
+  const client = useQueryClient(), location = useProjectLocation()
+  const [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const status = location.data, conflict = status?.settingsConflict
+  if (!status || !conflict) return null
+  async function finish() {
+    if (busy || !conflict?.canFinish) return
+    setBusy(true); setError('')
+    try {
+      const result = await answer<ProjectLocationStatus>(await deskFetch('/api/project-location/finish-move', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ digest: conflict.digest })
+      }))
+      if (!result.restartRequired || !result.settingsConflict?.finished) throw new Error(msg('The settings could not be confirmed. Restart Desk to check the project move again.'))
+      client.setQueryData<ProjectLocationStatus>(PROJECT_LOCATION_KEY, result)
+    } catch (cause) { setError((cause as Error).message) }
+    finally { setBusy(false) }
+  }
+  return <>
+    <SettingsFeedback tone="warning" actions={conflict.canFinish ? <Button disabled={busy} onClick={() => void finish()}>{busy ? msg('Working…') : msg('Finish the move with the moved settings')}</Button> : undefined}>
+      {status.problem ? systemMessage(status.problem) : null}
+    </SettingsFeedback>
+    {error && <SettingsFeedback tone="error">{systemMessage(error)}</SettingsFeedback>}
+  </>
 }
 
 export function ProjectLocationSettings() {

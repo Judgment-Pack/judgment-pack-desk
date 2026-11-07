@@ -653,6 +653,11 @@ func (s *Server) serveStorageReadOnly(w http.ResponseWriter, r *http.Request) bo
 	if r.URL.Path == "/api/session" || r.Method == http.MethodGet && (r.URL.Path == "/api/files" || r.URL.Path == "/api/file") {
 		return false
 	}
+	// The project location card, and the one choice for a move's settings
+	// conflict, which is what resolves this read-only start.
+	if r.Method == http.MethodGet && r.URL.Path == "/api/project-location" || r.Method == http.MethodPost && r.URL.Path == "/api/project-location/finish-move" {
+		return false
+	}
 	if r.URL.Path == "/api/storage/status" && r.Method == http.MethodGet {
 		s.handleStorageStatus(w, r)
 		return true

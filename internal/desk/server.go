@@ -620,6 +620,12 @@ func New(cfg Config) (*Server, error) {
 			s.Close()
 			return nil, moved
 		}
+		// Settings edited after a move's rename: the start stays read only
+		// (the move's recovery is unresolved), and says so with its choice.
+		var settings storageMoveSettingsConflict
+		if errors.As(err, &settings) {
+			s.noteMoveSettingsConflict(settings)
+		}
 		s.storageReadOnly = true
 		s.storageProblem = err
 		s.recordStorageStatusProblem(err)
@@ -905,6 +911,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/project-location/choose-folder", s.handleProjectFolderPicker)
 	s.mux.HandleFunc("POST /api/project-location/preview", s.handleProjectMove)
 	s.mux.HandleFunc("POST /api/project-location/move", s.handleProjectMove)
+	s.mux.HandleFunc("POST /api/project-location/finish-move", s.handleProjectMoveFinishSettings)
 	s.mux.HandleFunc("GET /api/ai-memory", s.handleAIMemory)
 	s.mux.HandleFunc("POST /api/ai-memory", s.handleAIMemory)
 	s.mux.HandleFunc("POST /api/ai-memory/recall", s.handleAIMemory)

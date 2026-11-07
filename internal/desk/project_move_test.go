@@ -511,11 +511,58 @@ func TestProjectMoveRecoveryWillNotOverwriteLaterSettings(t *testing.T) {
 	if _, err := OpenProject("", s.configDir); err == nil {
 		t.Fatal("ignored later startup edit")
 	}
-	again, _, _ := startedAt(t, s, destination)
-	if again.locationStatus().Problem == "" {
-		t.Fatal("unreported settings conflict")
+	settingsFile := filepath.Join(s.configDir, deskConfigName)
+	again, ats, _ := startedAt(t, s, destination)
+	// The conflict is worded and names the file; the start stays read only
+	// (the move's recovery is unresolved) and never overwrites the later edit.
+	status := again.locationStatus()
+	if !again.storageReadOnly || !strings.Contains(status.Problem, settingsFile) || !strings.Contains(status.Problem, "edited after the project was moved") || !strings.Contains(status.Problem, "Finish the move with the moved settings") {
+		t.Fatalf("unreported settings conflict: %v %q", again.storageReadOnly, status.Problem)
 	}
-	mustBytes(t, filepath.Join(s.configDir, deskConfigName), replacement)
+	conflict := status.SettingsConflict
+	if conflict == nil || !conflict.CanFinish || conflict.Finished || conflict.File != settingsFile || len(conflict.Later) != 1 || !strings.Contains(conflict.Later[0], "the startup project") || !strings.Contains(status.Problem, conflict.Later[0]) {
+		t.Fatalf("the conflict did not offer its one choice and the later edit: %+v", conflict)
+	}
+	mustBytes(t, settingsFile, replacement)
+	// The location card answers while read only; the choice needs the exact
+	// conflict this start reported.
+	if code, data := deskCall(t, ats, "GET", "/api/project-location", "", "", true); code != 200 || !strings.Contains(string(data), `"canFinish":true`) {
+		t.Fatalf("the read-only location card %d %s", code, data)
+	}
+	if code, data := deskCall(t, ats, "POST", "/api/project-location/finish-move", "", `{"digest":"`+strings.Repeat("0", 64)+`"}`, true); code != 409 {
+		t.Fatalf("a stale choice was taken %d %s", code, data)
+	}
+	mustBytes(t, settingsFile, replacement)
+	// Another edit after the start reported the conflict is not removed unseen.
+	again2 := `{"project":{"file":null},"assistant":{}}`
+	privateFixture(t, settingsFile, again2)
+	if code, data := deskCall(t, ats, "POST", "/api/project-location/finish-move", "", `{"digest":"`+conflict.Digest+`"}`, true); code != 409 {
+		t.Fatalf("a settings file changed since the start was removed %d %s", code, data)
+	}
+	mustBytes(t, settingsFile, again2)
+	privateFixture(t, settingsFile, replacement)
+	code, data := deskCall(t, ats, "POST", "/api/project-location/finish-move", "", `{"digest":"`+conflict.Digest+`"}`, true)
+	var finished projectLocation
+	if code != 200 || json.Unmarshal(data, &finished) != nil || !finished.RestartRequired || finished.SettingsConflict == nil || !finished.SettingsConflict.Finished || !strings.Contains(finished.Problem, "make this later edit again: "+conflict.Later[0]) {
+		t.Fatalf("finish the move with the moved settings %d %s", code, data)
+	}
+	if code, _ := deskCall(t, ats, "POST", "/api/project-location/finish-move", "", `{"digest":"`+conflict.Digest+`"}`, true); code != 409 {
+		t.Fatal("the choice was taken twice")
+	}
+	// The next start's recovery writes the move's committed settings and
+	// finishes the move: writable, no problem, the project pointing at the
+	// moved folder, and the recovery record gone.
+	done, _, _ := startedAt(t, again, destination)
+	if done.storageReadOnly || done.locationStatus().Problem != "" || done.locationStatus().SettingsConflict != nil {
+		t.Fatalf("the move did not finish after the choice: %v %q", done.storageProblem, done.locationStatus().Problem)
+	}
+	present, current, err := done.readDeskFile()
+	if err != nil || !present || decodeDeskFile(current).ProjectFile != filepath.Join(destination, projectConfigName) {
+		t.Fatalf("the moved settings were not written: %v %s", err, current)
+	}
+	if _, found, err := readProjectMove(done.assistant.root); err != nil || found {
+		t.Fatalf("the move's recovery record remained: %v %v", found, err)
+	}
 }
 func TestProjectLocationIsAuthenticatedInstallationScope(t *testing.T) {
 	s, ts, _ := assistantServer(t)

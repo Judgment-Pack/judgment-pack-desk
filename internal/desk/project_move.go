@@ -28,6 +28,10 @@ type projectLocationState struct {
 	picking atomic.Bool
 	moved   string
 	problem string
+	// settings is a move's settings conflict found at the start, and
+	// settingsFinished says its one choice was taken (restart to finish).
+	settings         *storageMoveSettingsConflict
+	settingsFinished bool
 }
 type projectLocation struct {
 	Path               string `json:"path"`
@@ -36,6 +40,8 @@ type projectLocation struct {
 	Moving             bool   `json:"moving"`
 	MovedTo            string `json:"movedTo,omitempty"`
 	Problem            string `json:"problem,omitempty"`
+	// SettingsConflict is a move's settings conflict and its one choice.
+	SettingsConflict *projectMoveSettingsConflictStatus `json:"settingsConflict,omitempty"`
 }
 type projectMoveRequest struct {
 	Destination string `json:"destination"`
@@ -73,7 +79,7 @@ func (s *Server) setHistoryMoveProblem(problem string) {
 func (s *Server) locationStatus() projectLocation {
 	s.location.mu.Lock()
 	defer s.location.mu.Unlock()
-	return projectLocation{Path: s.projectDir, DefaultDestination: s.defaultProjectDestination(), Moving: s.location.moving.Load(), RestartRequired: s.location.moved != "", MovedTo: s.location.moved, Problem: s.location.problem}
+	return projectLocation{Path: s.projectDir, DefaultDestination: s.defaultProjectDestination(), Moving: s.location.moving.Load(), RestartRequired: s.location.moved != "" || s.location.settingsFinished, MovedTo: s.location.moved, Problem: s.location.problem, SettingsConflict: s.moveSettingsConflictStatus()}
 }
 func (s *Server) projectHasMoved() bool { return s.locationStatus().RestartRequired }
 func (s *Server) markProjectMoved(destination string) {
