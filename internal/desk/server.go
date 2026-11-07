@@ -600,6 +600,13 @@ func New(cfg Config) (*Server, error) {
 			return nil, err
 		}
 	}
+	// Before the census: narrow a local gateway store an earlier Desk left at
+	// the inherited mask. What is not repaired stays for the census to refuse.
+	if s.cfg.parent == nil {
+		if err := s.narrowLocalGatewayStore(); err != nil {
+			s.log.Printf("desk: the local gateway's store could not be made owner-only: %v", err)
+		}
+	}
 	if err := s.activateStorageBudgetStartup(ctx); err != nil {
 		s.storageReadOnly = true
 		s.storageProblem = err
