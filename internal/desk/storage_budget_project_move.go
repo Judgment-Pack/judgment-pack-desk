@@ -2769,7 +2769,7 @@ func (m *storageMoveOperation) recoverTails(ctx context.Context, store *chatData
 				// The settings were edited after the move's rename. Say so, in
 				// words, instead of a bare custody refusal; recovery stays
 				// unresolved until the person chooses (storageMoveSettingsConflict).
-				return newStorageMoveSettingsConflict(filepath.Join(p.c.server.configDir, deskConfigName), raw, v, string(m.request.Destination))
+				return newStorageMoveSettingsConflict(filepath.Join(p.c.server.configDir, deskConfigName), raw, v, string(m.request.Destination), native == v.Before)
 			}
 			if v.Before == (storageOwnerPersistentObject{}) {
 				if !absent {

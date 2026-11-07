@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
@@ -26,18 +27,43 @@ import (
 // are the moved settings composed onto nothing, and removing the later file
 // returns the settings to the state the move recorded. The next start's
 // recovery then writes the committed bytes through the move's own journal.
+//
+// Where the move found a settings file, it recorded only that file's size,
+// SHA-256 and file identity, not its bytes, so Desk cannot put it back and
+// offers no choice. Where the file there is still the one the move found, the
+// words say how to finish by hand, which the recovery already accepts
+// unchanged: put its bytes back exactly as the move found them, in that same
+// file, and restart; the recovery then writes the moved settings onto it.
+// Where another file replaced it (as an editor saving a copy does), no hand
+// edit can finish the move, and the words say so. Keeping the bytes in the
+// move journal is Desk #698.
 type storageMoveSettingsConflict struct {
 	File      string
 	Digest    storagebudget.Digest
 	Size      int
 	Later     []string
 	CanFinish bool
+	// Found is whether the move found a settings file; FoundBytes and
+	// FoundDigest are its size and SHA-256, and Replaced is whether another
+	// file has taken its place. Project is the startup project file the moved
+	// settings name.
+	Found       bool
+	FoundBytes  uint64
+	FoundDigest storagebudget.Digest
+	Replaced    bool
+	Project     string
 }
 
 func (e storageMoveSettingsConflict) Error() string {
 	later := strings.Join(e.Later, ", ")
 	if e.CanFinish {
 		return "The settings in " + e.File + " were edited after the project was moved, so the move could not finish. Desk does not overwrite a later edit by itself. Under Admin → General → Desk home, choose Finish the move with the moved settings, restart Desk, and then make this later edit again: " + later + "."
+	}
+	if e.Found && e.Replaced {
+		return "The settings in " + e.File + " were edited after the project was moved, so the move could not finish. Desk does not overwrite a later edit by itself. The settings file the move found was replaced by another file, as an editor that saves a copy does, and Desk did not keep the file it found, so neither Desk nor a hand edit can finish this move in this version. The file now holds " + later + ". The moved settings are the file as the move found it, with the startup project (“project”) set to " + e.Project + ". Desk starts read only and keeps the recovery information; finishing such a move comes in a later version."
+	}
+	if e.Found {
+		return "The settings in " + e.File + " were edited after the project was moved, so the move could not finish. Desk does not overwrite a later edit by itself, and it did not keep the settings file the move found, so it cannot put that file back for you, or tell which of its settings the later edit changed: the file now holds " + later + ". The moved settings are the file as the move found it, with the startup project (“project”) set to " + e.Project + ". To finish the move by hand, undo the later edit so that " + e.File + " is again exactly the file the move found (" + strconv.FormatUint(e.FoundBytes, 10) + " bytes, SHA-256 " + hex.EncodeToString(e.FoundDigest[:]) + "), editing that same file rather than replacing it, and restart Desk: the move then writes the moved settings and finishes. Then make the later edit again. Until then Desk starts read only and keeps the recovery information."
 	}
 	return "The settings in " + e.File + " were edited after the project was moved, so the move could not finish. Desk does not overwrite a later edit by itself, and it cannot restore the settings the move found. The later edit changed: " + later + ". Recovery information was kept."
 }
@@ -67,9 +93,13 @@ func storageMoveSettingsWords(name string) string {
 
 // newStorageMoveSettingsConflict words the conflict for the settings file at
 // file, whose edited bytes are raw, against the move's settings tail v.
-func newStorageMoveSettingsConflict(file string, raw []byte, v storageMoveTail, destination string) storageMoveSettingsConflict {
-	out := storageMoveSettingsConflict{File: file, Digest: sha256.Sum256(raw), Size: len(raw)}
-	project, _ := json.Marshal(map[string]string{"file": filepath.Join(destination, projectConfigName)})
+// same is whether the file there is still the one the move found.
+func newStorageMoveSettingsConflict(file string, raw []byte, v storageMoveTail, destination string, same bool) storageMoveSettingsConflict {
+	out := storageMoveSettingsConflict{File: file, Digest: sha256.Sum256(raw), Size: len(raw), Project: filepath.Join(destination, projectConfigName)}
+	if v.Before != (storageOwnerPersistentObject{}) {
+		out.Found, out.FoundBytes, out.FoundDigest, out.Replaced = true, v.BeforeBytes, v.BeforeDigest, !same
+	}
+	project, _ := json.Marshal(map[string]string{"file": out.Project})
 	var moved []byte
 	if v.Before == (storageOwnerPersistentObject{}) && v.BeforeBytes == 0 {
 		composed, problems := composeDeskFile(nil, false, nil, project, nil)

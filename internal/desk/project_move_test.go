@@ -3,6 +3,8 @@ package desk
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -563,6 +566,113 @@ func TestProjectMoveRecoveryWillNotOverwriteLaterSettings(t *testing.T) {
 	}
 	if _, found, err := readProjectMove(done.assistant.root); err != nil || found {
 		t.Fatalf("the move's recovery record remained: %v %v", found, err)
+	}
+}
+
+// **A settings conflict over a settings file the move found says how to
+// finish by hand.** The move found desk.json and recorded its size, SHA-256
+// and file identity, not its bytes, so Desk offers no choice. The start stays
+// read only, and its words name the file, what it now holds, the moved
+// settings (the startup project set to the moved folder), the size and
+// SHA-256 of the file the move found, and how to finish: undo the later edit
+// in that same file and restart. Done by hand, the next start's recovery
+// writes the moved settings onto it and finishes the move.
+func TestProjectMoveSettingsConflictOverAFoundFileSaysHowToFinishByHand(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	settingsFile := filepath.Join(s.configDir, deskConfigName)
+	found := `{"deskConfigVersion":1}`
+	privateFixture(t, settingsFile, found)
+	destination := filepath.Join(t.TempDir(), "new")
+	request := movePreview(t, ts, destination)
+	testProjectMoveStep = func(at string) error {
+		if at == "after-rename" {
+			return errors.New("stop")
+		}
+		return nil
+	}
+	defer func() { testProjectMoveStep = nil }()
+	moveRequest(t, ts, "move", request)
+	testProjectMoveStep = nil
+	later := `{"deskConfigVersion":1,"assistant":{}}`
+	privateFixture(t, settingsFile, later)
+	again, ats, _ := startedAt(t, s, destination)
+	status := again.locationStatus()
+	sum := sha256.Sum256([]byte(found))
+	for _, words := range []string{
+		"The settings in " + settingsFile + " were edited after the project was moved",
+		"the file now holds “deskConfigVersion”, the assistant settings (“assistant”)",
+		"with the startup project (“project”) set to " + filepath.Join(destination, projectConfigName),
+		"(" + strconv.Itoa(len(found)) + " bytes, SHA-256 " + hex.EncodeToString(sum[:]) + "), editing that same file rather than replacing it, and restart Desk",
+		"Then make the later edit again.",
+	} {
+		if !strings.Contains(status.Problem, words) {
+			t.Fatalf("the conflict does not say %q: %q", words, status.Problem)
+		}
+	}
+	if !again.storageReadOnly || status.SettingsConflict == nil || status.SettingsConflict.CanFinish {
+		t.Fatalf("the conflict over a found file: read only %v, %+v", again.storageReadOnly, status.SettingsConflict)
+	}
+	if code, data := deskCall(t, ats, "POST", "/api/project-location/finish-move", "", `{"digest":"`+status.SettingsConflict.Digest+`"}`, true); code != 409 {
+		t.Fatalf("a choice was taken over a found file %d %s", code, data)
+	}
+	mustBytes(t, settingsFile, later)
+	// By hand: the later edit undone in that same file.
+	privateFixture(t, settingsFile, found)
+	done, _, _ := startedAt(t, again, destination)
+	if done.storageReadOnly || done.locationStatus().Problem != "" || done.locationStatus().SettingsConflict != nil {
+		t.Fatalf("the move did not finish by hand: %v %q", done.storageProblem, done.locationStatus().Problem)
+	}
+	present, current, err := done.readDeskFile()
+	if err != nil || !present || decodeDeskFile(current).ProjectFile != filepath.Join(destination, projectConfigName) {
+		t.Fatalf("the moved settings were not written: %v %s", err, current)
+	}
+	if _, found, err := readProjectMove(done.assistant.root); err != nil || found {
+		t.Fatalf("the move's recovery record remained: %v %v", found, err)
+	}
+}
+
+// **A settings conflict where another file replaced the found one says no
+// hand edit finishes it.** The later edit is saved as a copy renamed over
+// desk.json, as many editors save. The recovery accepts only the file the move
+// found, so the words do not offer a hand edit: they say the file was
+// replaced and that this version cannot finish the move, and putting the
+// found bytes back in the replacing file does not finish it either.
+func TestProjectMoveSettingsConflictOverAReplacedFileSaysItCannotBeFinished(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	settingsFile := filepath.Join(s.configDir, deskConfigName)
+	found := `{"deskConfigVersion":1}`
+	privateFixture(t, settingsFile, found)
+	destination := filepath.Join(t.TempDir(), "new")
+	request := movePreview(t, ts, destination)
+	testProjectMoveStep = func(at string) error {
+		if at == "after-rename" {
+			return errors.New("stop")
+		}
+		return nil
+	}
+	defer func() { testProjectMoveStep = nil }()
+	moveRequest(t, ts, "move", request)
+	testProjectMoveStep = nil
+	copied := settingsFile + ".saving"
+	privateFixture(t, copied, `{"deskConfigVersion":1,"assistant":{}}`)
+	if err := os.Rename(copied, settingsFile); err != nil {
+		t.Fatal(err)
+	}
+	again, _, _ := startedAt(t, s, destination)
+	status := again.locationStatus()
+	for _, words := range []string{"The settings file the move found was replaced by another file", "neither Desk nor a hand edit can finish this move in this version", "set to " + filepath.Join(destination, projectConfigName)} {
+		if !strings.Contains(status.Problem, words) {
+			t.Fatalf("the conflict does not say %q: %q", words, status.Problem)
+		}
+	}
+	if strings.Contains(status.Problem, "To finish the move by hand") || !again.storageReadOnly || status.SettingsConflict == nil || status.SettingsConflict.CanFinish {
+		t.Fatalf("a replaced file was offered a way to finish: %v %q", again.storageReadOnly, status.Problem)
+	}
+	// The found bytes in the replacing file are still not the file the move found.
+	privateFixture(t, settingsFile, found)
+	still, _, _ := startedAt(t, again, destination)
+	if !still.storageReadOnly || !strings.Contains(still.locationStatus().Problem, "was replaced by another file") {
+		t.Fatalf("the found bytes in another file were taken: %v %q", still.storageReadOnly, still.locationStatus().Problem)
 	}
 }
 func TestProjectLocationIsAuthenticatedInstallationScope(t *testing.T) {
