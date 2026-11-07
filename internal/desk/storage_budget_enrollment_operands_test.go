@@ -238,3 +238,63 @@ func TestStorageEnrollmentOperandsBoundUsesStrictFallback(t *testing.T) {
 		t.Fatal("retention ceiling became a validity limit")
 	}
 }
+
+// The single-copy detach returns the same complete deep copy: equal values,
+// preserved nil/empty distinctions and exact lengths, and no reachable byte,
+// pointer target, nested slice, map or interface value shared with the source.
+func TestStorageEnrollmentOperandCloneDetachesEveryReference(t *testing.T) {
+	type named []byte
+	type inner struct {
+		Raw   []byte
+		Named named
+		Big   [4]uint64
+		Text  string
+	}
+	type value struct {
+		Bytes   []byte
+		Empty   []byte
+		Nil     []byte
+		Pointer *inner
+		Rows    []inner
+		Fixed   [2]inner
+		Map     map[string][]byte
+		Any     any
+		Scalars [3]storagebudget.Digest
+	}
+	text := string([]byte("retained-text"))
+	src := value{
+		Bytes:   append(make([]byte, 0, 64), 1, 2, 3),
+		Empty:   []byte{},
+		Pointer: &inner{Raw: []byte{4}, Named: named{5}, Big: [4]uint64{6}, Text: text},
+		Rows:    []inner{{Raw: []byte{7}}, {Named: named{8}}},
+		Fixed:   [2]inner{{Raw: []byte{9}}, {Text: text}},
+		Map:     map[string][]byte{"k": {10}},
+		Any:     &inner{Raw: []byte{11}},
+		Scalars: [3]storagebudget.Digest{{12}},
+	}
+	for _, freeze := range []bool{false, true} {
+		got := storageEnrollmentOperandCloneValue(reflect.ValueOf(&src).Elem(), freeze).Interface().(value)
+		if !reflect.DeepEqual(got, src) {
+			t.Fatal("clone changed the value", freeze)
+		}
+		if got.Nil != nil || got.Empty == nil || len(got.Empty) != 0 || cap(got.Bytes) != len(got.Bytes) || cap(got.Pointer.Raw) != 1 || cap(got.Pointer.Named) != 1 {
+			t.Fatal("clone changed nil, empty or exact lengths", freeze)
+		}
+		got.Bytes[0] ^= 1
+		got.Pointer.Raw[0] ^= 1
+		got.Pointer.Named[0] ^= 1
+		got.Pointer.Big[0]++
+		got.Rows[0].Raw[0] ^= 1
+		got.Rows[1].Named[0] ^= 1
+		got.Fixed[0].Raw[0] ^= 1
+		got.Map["k"][0] ^= 1
+		got.Any.(*inner).Raw[0] ^= 1
+		got.Scalars[0][0] ^= 1
+		if src.Bytes[0] != 1 || src.Pointer.Raw[0] != 4 || src.Pointer.Named[0] != 5 || src.Pointer.Big[0] != 6 || src.Rows[0].Raw[0] != 7 || src.Rows[1].Named[0] != 8 || src.Fixed[0].Raw[0] != 9 || src.Map["k"][0] != 10 || src.Any.(*inner).Raw[0] != 11 || src.Scalars[0][0] != 12 {
+			t.Fatal("clone shares mutable data with its source", freeze)
+		}
+		if got.Pointer == src.Pointer || got.Any.(*inner) == src.Any.(*inner) {
+			t.Fatal("clone shares a pointer target", freeze)
+		}
+	}
+}

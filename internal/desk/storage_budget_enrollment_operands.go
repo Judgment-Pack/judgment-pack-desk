@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
 )
@@ -44,7 +45,7 @@ const (
 var storageEnrollmentOperandCounts = [10]int{0, 6, 4, 1, 6, 128, 2, 1, 66, 2}
 
 // Clone mutable data recursively; fixed value arrays use ordinary value copies.
-// Byte slices use reflect.Copy, never a per-byte reflection loop. Strings and
+// Byte slices use one copy, never a per-byte reflection loop. Strings and
 // scalar fields are immutable. On retention, strings are also detached from
 // potentially larger caller backing allocations. Hits may share those privately
 // retained immutable strings. This isolates both returned planner/comparison
@@ -64,55 +65,95 @@ func storageEnrollmentOperandMutable(t reflect.Type) bool {
 	}
 	return false
 }
+
+// Pure facts about a static type, computed once per type. They depend on the
+// type alone, never on a value, owner, epoch or caller.
+type storageEnrollmentOperandTypeFacts struct{ mutable, dynamic bool }
+
+var storageEnrollmentOperandTypes sync.Map // reflect.Type -> storageEnrollmentOperandTypeFacts
+
+func storageEnrollmentOperandDetaches(t reflect.Type, freezeStrings bool) bool {
+	facts, ok := storageEnrollmentOperandTypes.Load(t)
+	if !ok {
+		facts, _ = storageEnrollmentOperandTypes.LoadOrStore(t, storageEnrollmentOperandTypeFacts{storageEnrollmentOperandMutable(t), storageEnrollmentOperandDynamic(t)})
+	}
+	f := facts.(storageEnrollmentOperandTypeFacts)
+	return f.mutable || freezeStrings && f.dynamic
+}
+
+var storageEnrollmentOperandByte = reflect.TypeFor[byte]()
+
 func storageEnrollmentOperandCloneValue(v reflect.Value, freezeStrings bool) reflect.Value {
 	out := reflect.New(v.Type()).Elem()
 	out.Set(v)
-	switch v.Kind() {
+	storageEnrollmentOperandDetach(out, freezeStrings)
+	return out
+}
+
+// Detach replaces, in place, every mutable reference reachable from the
+// addressable out, which already holds a shallow copy of the source value.
+// Each pointer target and slice backing array is allocated and copied once,
+// and a byte copy is not zero-filled first: every byte is overwritten by the
+// copy. The result is the same complete deep copy as before.
+func storageEnrollmentOperandDetach(out reflect.Value, freezeStrings bool) {
+	switch out.Kind() {
 	case reflect.String:
 		if freezeStrings {
-			out.SetString(strings.Clone(v.String()))
+			out.SetString(strings.Clone(out.String()))
 		}
 	case reflect.Pointer:
-		if !v.IsNil() {
-			out.Set(reflect.New(v.Type().Elem()))
-			out.Elem().Set(storageEnrollmentOperandCloneValue(v.Elem(), freezeStrings))
+		if !out.IsNil() {
+			target := reflect.New(out.Type().Elem())
+			target.Elem().Set(out.Elem())
+			if storageEnrollmentOperandDetaches(out.Type().Elem(), freezeStrings) {
+				storageEnrollmentOperandDetach(target.Elem(), freezeStrings)
+			}
+			out.Set(target)
 		}
 	case reflect.Interface:
-		if !v.IsNil() {
-			out.Set(storageEnrollmentOperandCloneValue(v.Elem(), freezeStrings))
+		if !out.IsNil() {
+			out.Set(storageEnrollmentOperandCloneValue(out.Elem(), freezeStrings))
 		}
 	case reflect.Slice:
-		if !v.IsNil() {
-			out.Set(reflect.MakeSlice(v.Type(), v.Len(), v.Len()))
-			reflect.Copy(out, v)
-			if storageEnrollmentOperandMutable(v.Type().Elem()) || freezeStrings && storageEnrollmentOperandDynamic(v.Type().Elem()) {
-				for i := 0; i < v.Len(); i++ {
-					out.Index(i).Set(storageEnrollmentOperandCloneValue(v.Index(i), freezeStrings))
-				}
+		if out.IsNil() {
+			return
+		}
+		n := out.Len()
+		if out.Type().Elem() == storageEnrollmentOperandByte && n > 0 {
+			b := append([]byte(nil), out.Bytes()...)
+			out.Set(reflect.ValueOf(b[:n:n]).Convert(out.Type()))
+			return
+		}
+		copied := reflect.MakeSlice(out.Type(), n, n)
+		reflect.Copy(copied, out)
+		if storageEnrollmentOperandDetaches(out.Type().Elem(), freezeStrings) {
+			for i := 0; i < n; i++ {
+				storageEnrollmentOperandDetach(copied.Index(i), freezeStrings)
 			}
 		}
+		out.Set(copied)
 	case reflect.Array:
-		if storageEnrollmentOperandMutable(v.Type().Elem()) || freezeStrings && storageEnrollmentOperandDynamic(v.Type().Elem()) {
-			for i := 0; i < v.Len(); i++ {
-				out.Index(i).Set(storageEnrollmentOperandCloneValue(v.Index(i), freezeStrings))
+		if storageEnrollmentOperandDetaches(out.Type().Elem(), freezeStrings) {
+			for i := 0; i < out.Len(); i++ {
+				storageEnrollmentOperandDetach(out.Index(i), freezeStrings)
 			}
 		}
 	case reflect.Struct:
-		for i := 0; i < v.NumField(); i++ {
-			if storageEnrollmentOperandMutable(v.Type().Field(i).Type) || freezeStrings && storageEnrollmentOperandDynamic(v.Type().Field(i).Type) {
-				out.Field(i).Set(storageEnrollmentOperandCloneValue(v.Field(i), freezeStrings))
+		for i := 0; i < out.NumField(); i++ {
+			if storageEnrollmentOperandDetaches(out.Type().Field(i).Type, freezeStrings) {
+				storageEnrollmentOperandDetach(out.Field(i), freezeStrings)
 			}
 		}
 	case reflect.Map:
-		if !v.IsNil() {
-			out.Set(reflect.MakeMapWithSize(v.Type(), v.Len()))
-			iter := v.MapRange()
+		if !out.IsNil() {
+			copied := reflect.MakeMapWithSize(out.Type(), out.Len())
+			iter := out.MapRange()
 			for iter.Next() {
-				out.SetMapIndex(storageEnrollmentOperandCloneValue(iter.Key(), freezeStrings), storageEnrollmentOperandCloneValue(iter.Value(), freezeStrings))
+				copied.SetMapIndex(storageEnrollmentOperandCloneValue(iter.Key(), freezeStrings), storageEnrollmentOperandCloneValue(iter.Value(), freezeStrings))
 			}
+			out.Set(copied)
 		}
 	}
-	return out
 }
 func storageEnrollmentOperandClone[T any](v T) T {
 	return storageEnrollmentOperandCloneValue(reflect.ValueOf(&v).Elem(), false).Interface().(T)
