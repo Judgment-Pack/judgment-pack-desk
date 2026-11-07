@@ -1271,12 +1271,18 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return "x-api-key", key, true' \
     '	case "anthropic":
 		return "Authorization", "Bearer " + key, true'
-  mutate go "the version header this protocol requires is dropped" "$A" \
-    '		request.Header.Set("anthropic-version", "2023-06-01")' \
-    '		request.Header.Del("anthropic-version")'
-  mutate go "the anthropic probe is not the smallest request" "$A" \
-    '			"max_tokens": 1,' \
-    '			"max_tokens": 1024,'
+  # Retargeted: the anthropic probe is the Settings ping now. The Agent's
+  # adapter writes its body and headers and the model relay sends them, so the
+  # version header travels only while the relay's list carries it, and the
+  # one-token ceiling is the ping profile's.
+  mutate go "the version header this protocol requires is dropped" "$MR" \
+    '	"User-Agent", "Anthropic-Version", "Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization",' \
+    '	"User-Agent", "Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization",'
+  mutate go "the anthropic probe is not the smallest request" internal/desk/assistant_settings_observation.go \
+    '		p.OutputCeiling = 1
+		instruction = "ping"' \
+    '		p.OutputCeiling = 1024
+		instruction = "ping"'
   # "There is none, and it would be here" is an answer, and Admin needs the path.
   mutate go "an absent desk-level file is a refusal" "$A" \
     '	if !present {
@@ -2742,8 +2748,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '		dir.startup = true
 		verified, err = s.runVerify(ctx, dir)'
   mutate go "signing key: the startup desk's upgrade drops it" internal/desk/upgrade.go \
-    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (any, *lockFailure) {' \
-    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (any, *lockFailure) {
+    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (answer any, failure *lockFailure) {' \
+    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (answer any, failure *lockFailure) {
 	dir.startup = false'
   mutate go "signing key: a named desk's project is marked the startup desk's" internal/desk/review.go \
     'info: s.project.info, startup: s.usesStartupRuntimeEnvironment(), expectedSigning: s.runtimeSigningExpectation}' \
@@ -3635,18 +3641,22 @@ func (b *cappedBuffer) exceeded() bool {'
 	data, _, err := s.readThroughRootWithin(clean, limit)' \
     '	data, _, err := s.readThroughRootWithin(clean, limit)'
   mutate go "review: no copies are kept" "$RV" \
-    '	if err := s.storeReviewedCopies(snap); err != nil {' \
+    '	if err := s.storeReviewedCopiesWithCreator(snap, projectLease); err != nil {' \
     '	if err := error(nil); err != nil {'
   mutate go "review: a copy of other bytes is shown" "$RV" \
     '	if err != nil || sha256Digest(data) != digest || !utf8.Valid(data) {
 		return reviewSide{State: "no-copy"}' \
     '	if err != nil || !utf8.Valid(data) {
 		return reviewSide{State: "no-copy"}'
-  mutate go "review: the copies folder is not owner-only" "$RV" \
-    '			if err = current.Mkdir(part, custodyDirMode); err != nil && !errors.Is(err, fs.ErrExist) {' \
-    '			if err = current.Mkdir(part, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {'
-  mutate go "review: a copies folder open to others is trusted" "$RV" \
-    '		if err == nil && info.Mode().Perm()&0o077 != 0 {' \
+  # Retargeted: the copies folder is opened by openOwnFolder (handover.go),
+  # which the hand-over folder shares, and a missing component is made by
+  # storageCooperatingDirectory. These rows break the shared checks and ask
+  # whether the review's own tests notice.
+  mutate go "review: the copies folder is not owner-only" internal/desk/storage_budget_enrollment_creation.go \
+    '		if err = parent.Mkdir(name, custodyDirMode); err == nil {' \
+    '		if err = parent.Mkdir(name, 0o755); err == nil {'
+  mutate go "review: a copies folder open to others is trusted" internal/desk/handover.go \
+    '		if info.Mode().Perm()&0o077 != 0 {' \
     '		if false {'
   mutate go "review: the copies folder does not ignore itself" "$RV" \
     '	if made {' \
@@ -3654,37 +3664,43 @@ func (b *cappedBuffer) exceeded() bool {'
   # **Three layers refuse a link, and each alone is enough**: the type check
   # on the Lstat, the mode a link reports, and the identity check between what
   # was inspected and what was opened. So the row breaks all three.
-  mutate go "review: copies are kept through a link" "$RV" \
-    '		if err == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {
-			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
+  mutate go "review: copies are kept through a link" internal/desk/handover.go \
+    '		if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
+			return nil, false, fmt.Errorf("%s is not a folder Desk keeps %s in", part, keeps)
 		}
-		if err == nil && info.Mode().Perm()&0o077 != 0 {
-			err = fmt.Errorf("%s is open to other users (%v), so Desk does not keep copies in it", part, info.Mode().Perm())
+		if info.Mode().Perm()&0o077 != 0 {
+			return nil, false, fmt.Errorf("%s is open to other users (%v), so Desk does not keep %s in it", part, info.Mode().Perm(), keeps)
 		}
-		if err == nil {
-			err = ownedByUs(part, info)
+		if err := ownedByUs(part, info); err != nil {
+			return nil, false, err
 		}
-		var next *os.Root
-		if err == nil {
-			next, err = current.OpenRoot(part)
+		next, openErr := pending, error(nil)
+		pending = nil
+		if next == nil {
+			next, openErr = current.OpenRoot(part)
 		}
-		if err == nil {
-			if held, statErr := next.Stat("."); statErr != nil || !os.SameFile(info, held) {' \
+		if openErr != nil {
+			return nil, false, openErr
+		}
+		if held, statErr := next.Stat("."); statErr != nil || !os.SameFile(info, held) {' \
     '		if _ = info; false {
-			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
+			return nil, false, fmt.Errorf("%s is not a folder Desk keeps %s in", part, keeps)
 		}
 		if false {
-			err = fmt.Errorf("%s is open to other users (%v), so Desk does not keep copies in it", part, info.Mode().Perm())
+			return nil, false, fmt.Errorf("%s is open to other users (%v), so Desk does not keep %s in it", part, info.Mode().Perm(), keeps)
 		}
-		if err == nil {
-			err = ownedByUs(part, info)
+		if err := ownedByUs(part, info); err != nil {
+			return nil, false, err
 		}
-		var next *os.Root
-		if err == nil {
-			next, err = current.OpenRoot(part)
+		next, openErr := pending, error(nil)
+		pending = nil
+		if next == nil {
+			next, openErr = current.OpenRoot(part)
 		}
-		if err == nil {
-			if held, statErr := next.Stat("."); statErr != nil && held == nil {'
+		if openErr != nil {
+			return nil, false, openErr
+		}
+		if held, statErr := next.Stat("."); statErr != nil && held == nil {'
   # **The startup desk reviews only its own jpack.json, by path.** A hard link
   # from another directory is the same file in another project.
   mutate go "review: the startup desk reviews another configuration" "$RV" \
@@ -3943,7 +3959,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '		Locked: plan.snap.hasLock, ConfigBefore: string(plan.snap.config), SigningKey: plan.signing, Sign: plan.sign}' \
     '		Locked: false, ConfigBefore: string(plan.snap.config), SigningKey: plan.signing, Sign: plan.sign}'
   mutate go "upgrade: no copies are kept" "$UP" \
-    '	if err := s.storeReviewedCopies(plan.upgraded); err != nil {' \
+    '	if err := s.storeReviewedCopiesWithCreator(plan.upgraded, projectLease); err != nil {' \
     '	if err := error(nil); err != nil {'
 
   # **The signing key of the project Desk was started on (ADR-0010, section 1
@@ -4242,12 +4258,15 @@ func (b *cappedBuffer) exceeded() bool {'
 		// The project'"'"'s identity could not be read now (issue #283): what' \
     '	if false {
 		// The project'"'"'s identity could not be read now (issue #283): what'
+  # Retargeted: the project's lock is a lease now (lockProjectForOwned). The
+  # rows hand the transaction a lease over the project folder that holds no
+  # lock, so it runs, and closes, exactly as before but without the exclusion.
   mutate go "audit fix: an upgrade runs without this project's lock" "$UP" \
-    '	unlock, failure := s.lockProjectFor(ctx, "an upgrade", "written")' \
-    '	unlock, failure := func() {}, (*lockFailure)(nil)'
+    '	projectLease, failure := s.lockProjectForOwned(ctx, "an upgrade", "written")' \
+    '	projectLease, failure := func() (*storageCreatorLease, *lockFailure) { file, _ := s.root.Open("."); held, _ := storageCreatorLockedLease(s.root, file); return held, nil }()'
   mutate go "audit fix: a review's lock runs without this project's lock" internal/desk/review.go \
-    '	unlock, failure := s.lockProjectFor(ctx, "a review'"'"'s lock", "locked")' \
-    '	unlock, failure := func() {}, (*lockFailure)(nil)'
+    '	projectLease, failure := s.lockProjectForOwned(ctx, "a review'"'"'s lock", "locked")' \
+    '	projectLease, failure := func() (*storageCreatorLease, *lockFailure) { file, _ := s.root.Open("."); held, _ := storageCreatorLockedLease(s.root, file); return held, nil }()'
   mutate go 'audit fix: a file is put back over what another writer wrote' internal/desk/project_lock.go \
     '		if !now.holds(projectFile{data: wrote, present: true}) {' \
     '		if false {'
@@ -4303,9 +4322,17 @@ func (b *cappedBuffer) exceeded() bool {'
 		if err != nil {
 			continue
 		}'
+  # Retargeted to lockProjectForOwned, the lease an upgrade and a review's
+  # lock take; lockProjectFor's identical refusal serves the other callers.
   mutate go 'audit fix: an upgrade goes on where no project lock can be taken' internal/desk/project_lock.go \
-    '		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was " + done + ": " + projectNoLockWords}' \
-    '		return func() {}, nil'
+    '		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was " + done + ": " + projectNoLockWords}
+	}
+	return held, nil' \
+    '		file, _ := s.root.Open(".")
+		held, _ := storageCreatorLockedLease(s.root, file)
+		return held, nil
+	}
+	return held, nil'
   mutate go 'audit fix: a lock of another configuration is put back over' internal/desk/project_lock.go \
     '		if pinned, _, err := lockedSet(now.data); err == nil && recordForm.MatchString(pinned.Config) && pinned.Config != config {' \
     '		if pinned, _, err := lockedSet(now.data); err == nil && false && pinned.Config != config {'
@@ -6603,7 +6630,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '!*profile.Inherit && !contains(profile.Connections, connection.ID) {' \
     '!*profile.Inherit && false {'
   mutate go "ai connections: a model the desk did not enable is relayed" "$MR" \
-    '	if !listing && connection != nil && !profileAPIModelAllowed(endpoint.kind, suffix, body, connectionModels(connection, profile)) {' \
+    '	if !listing && connection != nil && !settingsPing && !profileAPIModelAllowed(endpoint.kind, suffix, body, connectionModels(connection, profile)) {' \
     '	if false {'
   mutate go "ai connections: a ChatGPT run takes a model nobody allowed" internal/desk/agent_run.go \
     '	if !s.connectionAgentAllowed(r, start.Request.Model) {' \
@@ -13762,8 +13789,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # probe beside the listing, the key routes, the relay and the run socket —
   # and a name the desk refuses is not offered for saving.
   mutate web "ai connections: Test connection's probe names no connection" web/src/assistant/endpointCheck.ts \
-    '    void probeAssistantEndpoint(cancellation.current.signal, scope?.connection.id, scope?.connection.revision).then(' \
-    '    void probeAssistantEndpoint().then('
+    '      : probeAssistantEndpoint(cancellation.current.signal, scope?.connection.id, scope?.connection.revision)' \
+    '      : probeAssistantEndpoint(cancellation.current.signal)'
   mutate web "ai connections: the page's requests name no connection" web/src/assistant/aiConnections.tsx \
     "export const aiHeaders=(id?:string,revision?:string):Record<string,string>=>id?{'X-Assistant-Connection':id,...(revision?{'X-Assistant-Revision':revision}:{})}:{}" \
     'export const aiHeaders=(_id?:string,_revision?:string):Record<string,string>=>({})'
@@ -14435,9 +14462,29 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant Codex: saved project effort uses shared configuration' internal/desk/assistant_execution_agent.go \
     'effort = preferences.Effort' \
     'effort = config.Agent.Effort'
+  # Retargeted: arbitrary cancellation now closes the root in two places, the
+  # caller's cancellation and any other error that is not a known stop. The
+  # row breaks both, as the single guard it was written for did.
   mutate go 'assistant Codex: arbitrary cancellation keeps root dispatch' internal/desk/assistant_execution_agent.go \
-    'if !knownStop {' \
-    'if false {'
+    'if err := caller.Err(); err != nil {
+			e.cancel()
+			return err
+		}
+		if err := e.ctx.Err(); err != nil && toolReturned {
+			return err
+		}
+		if runErr != nil && !knownStop && (!toolReturned || failure.IsCancelled(runErr)) {
+			e.cancel()
+		}' \
+    'if err := caller.Err(); err != nil {
+			return err
+		}
+		if err := e.ctx.Err(); err != nil && toolReturned {
+			return err
+		}
+		if false {
+			e.cancel()
+		}'
   mutate go 'assistant Codex: canonical stop acknowledgement omitted' internal/desk/assistant_execution_agent.go \
     's.retained = s.call == id && s.kind != "" && stopped' \
     's.retained = false'
@@ -14496,9 +14543,9 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant execution: Plan enters unrestricted loop' internal/desk/assistant_execution.go \
     'phase = gate.PlanPhase(offer)' \
     'phase = gate.LoopPhase(offer)'
-  mutate go 'assistant execution: child profile widens to parent offer' internal/desk/assistant_execution.go \
-    'childPhase := gate.ChildPhase(profile, offer, phase)' \
-    'childPhase := phase'
+  mutate go 'assistant execution: child profile widens to parent offer' internal/desk/assistant_plan_gate.go \
+    'phase := gate.ChildPhase(profile, parentOffer, parentPhase)' \
+    'phase := parentPhase'
   mutate go 'assistant execution: Runtime skips project admission fence' internal/desk/assistant_execution_runtime.go \
     'if !s.beginProjectRequest(r.conn, outbound) {' \
     'if false {'
@@ -14510,17 +14557,20 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'if !listing {'
   # Durable host ledger guards: these rows exercise real restore/work-lock paths.
   mutate go 'assistant runs: current event cursor suppresses replay suffix' internal/desk/assistant_run_http.go \
-    'if known {' \
-    'if known && revision != run.Revision {'
+    'if known && run.Binding.Owner.Kind != assistantSettingsObservationPurpose {' \
+    'if known && revision != run.Revision && run.Binding.Owner.Kind != assistantSettingsObservationPurpose {'
   mutate go 'assistant runs: current full cursor suppresses first snapshot' internal/desk/assistant_run_http.go \
-    'if first || !known || revision != run.Revision || count != len(run.Events) {' \
-    'if first && revision != run.Revision || !known || revision != run.Revision || count != len(run.Events) {'
+    'if first || !known || revision != run.Revision || count != len(run.Events) || view.State != run.State {' \
+    'if first && revision != run.Revision || !known || revision != run.Revision || count != len(run.Events) || view.State != run.State {'
   mutate go 'assistant runs: heartbeat skips deadline renewal' internal/desk/assistant_run_http.go \
     'if err := controller.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {' \
     'if err := error(nil); err != nil && !errors.Is(err, http.ErrNotSupported) {'
+  # Retargeted: abandonment now finalizes a parked execution and refuses any
+  # other; the row makes it ignore the active execution altogether, as the
+  # guard it was written for did.
   mutate go 'assistant runs: abandonment ignores active execution' internal/desk/assistant_run_service.go \
-    'record.Revision != action.Revision || h.active[record.ID] != nil' \
-    'record.Revision != action.Revision'
+    'active := h.active[record.ID]' \
+    'active := (*assistantRunExecution)(nil)'
   mutate go 'assistant runs: replacement session inherits approval' internal/desk/assistant_run_service.go \
     'if err = h.server.authorizeAssistantRun(r, record); err != nil {' \
     'if err = h.server.authorizeAssistantRun(r, record); false {'
@@ -14571,8 +14621,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))' \
     'ok && bytes.Equal(bytes.TrimSpace(raw), []byte("null"))'
   mutate go 'assistant chat projection: tool results lose call identity' internal/desk/assistant_chat_projection.go \
-    'if !ok || completed[*result.CallID] || items[index]["name"] != result.Name {' \
-    'if false && (!ok || completed[*result.CallID] || items[index]["name"] != result.Name) {'
+    'if !ok || completed[*result.CallID] || items[index]["name"] != assistantExternalDisplayName(run, *result.CallID, result.Name) {' \
+    'if false && (!ok || completed[*result.CallID] || items[index]["name"] != assistantExternalDisplayName(run, *result.CallID, result.Name)) {'
   mutate go 'assistant chat projection: invalid typed failure becomes display data' internal/desk/assistant_chat_projection.go \
     'held, ok := failure.Read(*event.Error.Failure)' \
     'held, ok := failure.Read(failure.New("unknown", "desk", "unknown"))'
@@ -14730,8 +14780,8 @@ fi
 # Private finite Graph host producers and durable proposal custody.
 if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go 'assistant graph: duplicate registry name accepted' internal/desk/assistant_host_tools.go \
-    't.Name == "" || seen[t.Name] ||' \
-    't.Name == "" || false ||'
+    'if t.Name == "" || seen[t.Name] || t.Execute == nil || !json.Valid(t.InputSchema) || (!contains(' \
+    'if t.Name == "" || false || t.Execute == nil || !json.Valid(t.InputSchema) || (!contains('
   mutate go 'assistant graph: argument aliases accepted' internal/desk/assistant_graph_tools.go \
     '!ok || bytes.Equal(bytes.TrimSpace(raw[member.start:member.end]), []byte("null"))' \
     'false && (!ok || bytes.Equal(bytes.TrimSpace(raw[member.start:member.end]), []byte("null")))'
@@ -14751,8 +14801,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '&& run.Context.Execution.RequestKey == binding.ExecutionKey' \
     '&& true'
   mutate go 'assistant graph: native callback identity omitted' internal/desk/assistant_execution_agent.go \
-    'callbacks.Tool(context.WithValue(callCtx, assistantHostCallbackKey{}, op.ID),' \
-    'callbacks.Tool(callCtx,'
+    'callbacks.Tool(context.WithValue(context.WithValue(callCtx, assistantHostCallbackKey{}, op.ID), assistantHostCallbackAliasKey{}, call.Name),' \
+    'callbacks.Tool(context.WithValue(callCtx, assistantHostCallbackAliasKey{}, call.Name),'
   mutate go 'assistant graph: native callback association ignored' internal/desk/assistant_domain_output.go \
     'if intent.CallbackID == "" {' \
     'if true {'
@@ -14777,8 +14827,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'drafts = append(drafts, assistantChatJSON(out.Draft))' \
     'drafts = drafts'
   mutate go 'assistant graph: unmatched root call accepted' internal/desk/assistant_domain_output.go \
-    'return count == 1' \
-    'return count <= 1'
+    'return count == 1
+}
+func assistantNativeHostCall(' \
+    'return count <= 1
+}
+func assistantNativeHostCall('
   mutate go 'assistant graph: foreign output run accepted' internal/desk/assistant_domain_output.go \
     'out.RunID != run.ID || out.RequestKey != run.Binding.ExecutionKey || seen[out.OperationID]' \
     'false || out.RequestKey != run.Binding.ExecutionKey || seen[out.OperationID]'
@@ -15248,11 +15302,15 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     'preparation, err = s.preparationRepository().TryRead(r.Context())' \
     'preparation, err = s.preparationRepository().Read(r.Context())'
   mutate go 'assistant dialect research: manual local bearer incorrectly requires session' internal/desk/input_research_request.go \
-    'if !s.authorized(r) || !s.originAllowed(r) {' \
-    'if _, ok := s.sessionOf(r); !ok {'
+    'never just the launch bearer.
+		if !s.authorized(r) || !s.originAllowed(r) {' \
+    'never just the launch bearer.
+		if _, ok := s.sessionOf(r); !ok {'
   mutate go 'assistant dialect research: current shared request guard omitted' internal/desk/input_research_request.go \
-    'if !s.authorized(r) || !s.originAllowed(r) {' \
-    'if false && (!s.authorized(r) || !s.originAllowed(r)) {'
+    'never just the launch bearer.
+		if !s.authorized(r) || !s.originAllowed(r) {' \
+    'never just the launch bearer.
+		if false && (!s.authorized(r) || !s.originAllowed(r)) {'
   mutate go 'assistant dialect research: private host accepts local bearer' internal/desk/input_research_request.go \
     'if authority != nil {
 			if err := s.authorizePrivateWorkspace(r); err != nil {' \
