@@ -357,6 +357,22 @@ GO_FULL_BACKSTOP=960s
 GO_BASELINE_WATCHDOG=2400
 GO_BASELINE_BACKSTOP=2460s
 
+# **A baseline of the selections alone** (MUTATION_GO_BASELINE=selected). internal/desk's
+# whole suite is hours of tests: CI runs it in parallel shards (scripts/dev/go-test.sh), and
+# no one job can run it, clean, before a row. With selected, a package's whole-suite baseline
+# is not run; its test binary is built as always. A row whose recorded selection passes by
+# itself on the unmutated tree (go_selection_green, unchanged) is measured on that selection,
+# and a catch there is a verdict, as always. Every route that needs the whole package (no
+# entry, a selection not green unmutated, a selection that caught nothing, --whole) is
+# INCONCLUSIVE instead: no whole-package run is read without a whole-package baseline.
+# The default, whole, is the behaviour described above. scripts/dev/mutation-rows.sh (a pull
+# request's own rows) sets selected.
+GO_BASELINE_MODE=${MUTATION_GO_BASELINE:-whole}
+case "$GO_BASELINE_MODE" in
+  whole | selected) ;;
+  *) echo "MUTATION_GO_BASELINE is whole or selected, not $GO_BASELINE_MODE" >&2; exit 2 ;;
+esac
+
 # run_go <package> [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
   # Keep compilation on its independent bound: a cold build is not a hang.
@@ -402,6 +418,7 @@ go_package_green() {
   key=$(go_package_key "$package")
   [ ! -f "$work/package-$key.green" ] || return 0
   [ ! -f "$work/package-$key.failed" ] || return 1
+  [ ! -f "$work/package-$key.selected" ] || return 0
   log="$work/package-$key.build.log"
   echo "checking the unmutated Go baseline for $package…" >&2
   bounded 1800 "$log" go test -c -o "$work/package-$key.test" "$package"
@@ -411,6 +428,11 @@ go_package_green() {
     tail -n 30 "$log" >&2
     : > "$work/package-$key.failed"
     return 1
+  fi
+  if [ "$GO_BASELINE_MODE" = selected ]; then
+    echo "unmutated Go baseline not run for $package: each row's selection is checked by itself (MUTATION_GO_BASELINE=selected)" >&2
+    : > "$work/package-$key.selected"
+    return 0
   fi
   verdict=$(run_go_unmutated "$package" '.')
   if [ -n "$verdict" ]; then
@@ -666,7 +688,9 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement> [go-package]
     esac
   fi
   if [ "$how" != selected ]; then
-    if [ "$lang" = go ]; then failures="$(run_go "$package")"; else failures="$(run_web)"; fi
+    if [ "$lang" = go ] && [ "$GO_BASELINE_MODE" = selected ]; then
+      failures="INCONCLUSIVE — needs the whole package, which has no clean baseline here ($how, MUTATION_GO_BASELINE=selected)"
+    elif [ "$lang" = go ]; then failures="$(run_go "$package")"; else failures="$(run_web)"; fi
   fi
   restore
   case "$failures" in

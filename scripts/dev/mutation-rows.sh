@@ -29,6 +29,12 @@ if [ "$go_rows" -eq 0 ] && [ "$web_rows" -eq 0 ]; then
   exit 0
 fi
 
+# Unlike the nightly, no whole-package Go baseline: internal/desk's whole suite is hours of tests
+# (CI runs it in shards, scripts/dev/go-test.sh), longer than this job. Each row is measured on
+# its recorded tests, once they pass by themselves unmutated; a row that would need the whole
+# package is INCONCLUSIVE, and fails the job (MUTATION_GO_BASELINE in scripts/mutation-check.sh).
+export MUTATION_GO_BASELINE=selected
+
 # As the nightly: Go mutations receive the pinned offline crypto fixture. A
 # missing fixture is a setup failure, never a skipped-document mutant verdict.
 if [ "$go_rows" -ne 0 ]; then

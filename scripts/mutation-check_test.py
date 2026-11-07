@@ -692,6 +692,39 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn("./internal/desk", calls)
         self.assertEqual(calls.count("go test -c"), 1, calls)
 
+    def test_selected_baseline_decides_only_on_a_clean_selection(self):
+        # MUTATION_GO_BASELINE=selected: no whole-package baseline and no whole-package mutant
+        # run; a clean selection's catch decides, and every route to the whole package is
+        # INCONCLUSIVE, never a survivor and never a catch.
+        rows = [("go", "selected catch", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge"),
+                ("go", "selected misses", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge"),
+                ("go", "no entry", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge"),
+                ("go", "not green alone", "internal/bridge/a.go", "guard bridge", "broken bridge", "./internal/bridge")]
+        self.package_fixture(rows, {"selected catch": "TestBridge", "selected misses": "TestOther",
+                                    "not green alone": "TestAlone"},
+                             {"./internal/bridge": {"TestBridge": ["broken bridge"], "TestOther": [],
+                                                    "TestSetup": [], "TestAlone": []}})
+        self.env["MUTATION_GO_BASELINE"] = "selected"
+        result = self.harness("go")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        table = self.table(result)
+        self.assertEqual(table["selected catch"], "TestBridge")
+        for name in ("selected misses", "no entry", "not green alone"):
+            self.assertIn("INCONCLUSIVE", table[name])
+            self.assertIn("MUTATION_GO_BASELINE=selected", table[name])
+        self.assertEqual(self.how(result), {"selected catch": "selected", "selected misses": "fallback",
+                                            "no entry": "no-selection", "not green alone": "set-aside"})
+        self.assertIn("unmutated Go baseline not run for ./internal/bridge", result.stderr)
+        calls = self.log.read_text().splitlines()
+        self.assertEqual(sum(line.startswith("go test -c") for line in calls), 1, calls)
+        self.assertFalse([line for line in calls if line.startswith("go-test-binary ") and "-test.run . " in line], calls)
+        self.assertFalse([line for line in calls if line.startswith("go test ") and "-timeout" in line and "-run" not in line], calls)
+
+        self.env["MUTATION_GO_BASELINE"] = "some"
+        refused = self.harness("go")
+        self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+        self.assertIn("MUTATION_GO_BASELINE is whole or selected", refused.stderr)
+
     def instrument_go_timeout_budgets(self):
         # Run the real driver with short stand-ins, recording the actual watchdog
         # selected by each call. A declared synthetic work cost exceeds a budget
