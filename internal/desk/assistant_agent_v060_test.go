@@ -62,9 +62,14 @@ func TestAssistantAgentV060ApprovalMarker(t *testing.T) {
 			lease, err := s.assistantRuns().Acquire(t.Context())
 			assistantRunMust(t, err)
 			assistantRunMust(t, lease.Close())
-			args, err := json.Marshal(paused.Checkpoint.Approval.Args)
-			assistantRunMust(t, err)
-			action := assistantRunAction{ID: "marker-decision", Kind: "approval", Revision: paused.Revision, CallID: "call-one", ArgsDigest: digestOf(args), Approved: &approved}
+			// Since Agent v0.13.2 a decision names the digest of the approval as
+			// it was shown (runcontext.ApprovalShownDigest), which the paused view
+			// carries; a digest of the bare arguments is refused as stale.
+			if paused.ApprovalReference == nil || paused.ApprovalReference.ArgsDigest != runcontext.ApprovalShownDigest(*paused.Checkpoint.Approval) {
+				t.Fatal("paused view lost its shown approval digest")
+			}
+			shown := paused.ApprovalReference.ArgsDigest
+			action := assistantRunAction{ID: "marker-decision", Kind: "approval", Revision: paused.Revision, CallID: "call-one", ArgsDigest: shown, ShownDigest: &shown, Approved: &approved}
 			assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs/"+view.ID+"/actions", action), 200)
 			complete := assistantProtocolWait(t, s, token, view.ID, "complete")
 			before, err := json.Marshal(paused.Checkpoint.Approval.Marker)
