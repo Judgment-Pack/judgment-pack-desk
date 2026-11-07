@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -373,7 +374,12 @@ func (p *storageEnrollmentEpoch) acquirePrefixes(ctx context.Context, identity b
 	}
 	var err error
 	// The original long-lived home SH remains untouched. These independent
-	// descriptions acquire EX try-only, in use/project/work/domain order.
+	// descriptions are taken try-only, in use/project/work/domain order: the
+	// project and transfer locks EX. The work lock is EX only for a chat
+	// transfer (backup, restore, move), which refuses while work runs; any
+	// other enrollment takes it SH, as running work does (ADR 0003, ADR 0014),
+	// so it excludes a transfer or move and not the work a write runs inside.
+	// In-process writers are ordered by admission, not by this lock.
 	p.use, err = p.c.owner.maintenanceUse()
 	if err != nil {
 		return err
@@ -383,7 +389,7 @@ func (p *storageEnrollmentEpoch) acquirePrefixes(ctx context.Context, identity b
 		return err
 	}
 	if err = lockProjectFile(p.project); err != nil {
-		return errors.Join(storagebudget.ErrBusy, err)
+		return storageLockBusy(err)
 	}
 	if identity {
 		if err = p.acquireIdentitySigning(ctx); err != nil {
@@ -403,7 +409,7 @@ func (p *storageEnrollmentEpoch) acquirePrefixes(ctx context.Context, identity b
 		}
 		p.transferLock = &transfer
 		if e = lockPrivateData(transfer.file, true); e != nil {
-			return errors.Join(storagebudget.ErrBusy, e)
+			return storageLockBusy(e)
 		}
 	}
 	w, err := storageOpenOriginalControl(p.c.ref.cell, ".data-work.lock")
@@ -411,8 +417,8 @@ func (p *storageEnrollmentEpoch) acquirePrefixes(ctx context.Context, identity b
 		return err
 	}
 	p.work = &w
-	if err = lockPrivateData(w.file, true); err != nil {
-		return errors.Join(storagebudget.ErrBusy, err)
+	if err = lockPrivateData(w.file, p.transfer != nil); err != nil {
+		return storageLockBusy(err)
 	}
 	p.originalRoots = p.c.owner.orderedRoots()
 	if p.transfer != nil {
@@ -461,6 +467,16 @@ func (p *storageEnrollmentEpoch) acquirePrefixes(ctx context.Context, identity b
 	}
 	p.sourceHoldsComplete = true
 	return p.current(ctx)
+}
+
+// storageLockBusy is ErrBusy for a try-only storage lock not taken. One held
+// elsewhere is also worded as the refusal chat storage gave before the
+// budget (409, CodeStale), instead of an internal error.
+func storageLockBusy(err error) error {
+	if !lockHeld(err) {
+		return errors.Join(storagebudget.ErrBusy, err)
+	}
+	return errors.Join(storagebudget.ErrBusy, withCode(CodeStale, fmt.Errorf("chat storage is busy or unavailable; finish active work and retry: %w", err)))
 }
 
 func (p *storageEnrollmentEpoch) held(ctx context.Context) error {
