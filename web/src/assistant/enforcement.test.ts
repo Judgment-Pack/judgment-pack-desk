@@ -608,6 +608,17 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
     return (schemaMembers[path] ?? []).some(name => literal === schemaRoot + name)
   }
 
+  // Agent v0.13.2's storage conformance kits (ADR-0029) bind a delegated run's
+  // principal in their hand-authored fixtures. The issuer is an identity the
+  // kit compares, in the RFC 2606 `.example` domain that never resolves, and
+  // nothing fetches it. Admitted only in these modules and only as this value.
+  const conformanceKitIssuer = (path: string, literal: string) => ({
+    '@judgment-pack/harness/dist/storage/conformance.js': 'https://kit.example/',
+    '@judgment-pack/harness/dist/storage/lease.js': 'https://kit.example/',
+    '@judgment-pack/harness/dist/storage/waitConformance.js': 'https://kit.example/',
+    '@judgment-pack/harness/dist/storage/jobConformance.js': 'https://host.example/'
+  } as Record<string, string>)[path] === literal
+
   it('finds no reachable https:// endpoint literal outside tests and docs', () => {
     const allowed = [
       'https://github.com/Judgment-Pack/judgment-pack-desk',
@@ -642,7 +653,7 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
         expect(
           // A user-initiated source-navigation link, never an API endpoint or issuer.
           (source.path === 'routes/StorageFilesView.tsx' && literal === 'https://drive.google.com/open?id=${encodeURIComponent(selected.id') ||
-          contractMetadataLiteral(source.path, literal) || prefill || genericDescriptorHostValidation(source.path, literal) || allowed.some((prefix) => literal.startsWith(prefix)),
+          contractMetadataLiteral(source.path, literal) || conformanceKitIssuer(source.path, literal) || prefill || genericDescriptorHostValidation(source.path, literal) || allowed.some((prefix) => literal.startsWith(prefix)),
           `${source.path} carries the literal ${literal}`
         ).toBe(true)
       }

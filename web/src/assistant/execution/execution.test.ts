@@ -12,7 +12,10 @@ describe('shared execution continuity',()=>{
  it('keeps progress and exact typed operation results across JSON checkpoint and explicit extension',async()=>{
   const input=base(),ready=await contextualSession(input),task=ready.context.execution
   const update=ready.session.values.hostTools.find(t=>t.name==='update_plan')!
-  await update.execute({explanation:'Exception fixed in a proposal; tests remain',plan:[{step:'Inspect exception',status:'completed'},{step:'Verify proposed change',status:'in_progress'}]},input.signal)
+  // Since Agent v0.13.2 update_plan only tracks pending and in_progress work; a
+  // step becomes terminal through complete_plan_step with evidence, which this
+  // continuity check does not need.
+  await update.execute({explanation:'Exception being fixed in a proposal; tests remain',plan:[{step:'Inspect exception',status:'in_progress'},{step:'Verify proposed change',status:'pending'}]},input.signal)
   const ref=await ready.context.ledger.retain({id:'test-facts',kind:'tool',label:'Exact facts',value:{zero:0,flag:false,nothing:null,decimal:'24'}})
   task.observe({type:'tool_call',callId:'check',name:'experimental_evaluate',args:{facts:{zero:0,flag:false,nothing:null}}})
   task.observe({type:'tool_result',callId:'check',name:'experimental_evaluate',isError:false,text:'verified',structured:{result:'set-aside'}})
