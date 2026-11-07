@@ -25,6 +25,7 @@ jobs:
       development: ${{ steps.lock.outputs.development }}
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchains
       - id: lock
         run: |
           scripts/dev/check.sh --only component-policy
