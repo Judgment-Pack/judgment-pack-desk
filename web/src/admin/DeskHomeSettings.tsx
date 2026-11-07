@@ -18,7 +18,7 @@ import { ProjectMoveSettingsChoice } from './ProjectLocation'
 import styles from './DeskHomeSettings.module.css'
 
 interface DeskFolder { id: string; name: string; folder: string }
-interface HomeStatus { path: string; defaultPath: string; current: DeskFolder; desks: DeskFolder[]; canMove: boolean; restartRequired: boolean; destination?: string }
+interface HomeStatus { path: string; defaultPath: string; current: DeskFolder; desks: DeskFolder[]; canMove: boolean; restartRequired: boolean; destination?: string; moveRefusal?: string }
 interface HomePreview { destination: string; moves: {label: string; from: string; to: string}[]; blockers: string[]; token: string }
 export const DESK_HOME_KEY = ['desk-home'] as const
 // Bound the whole operation, including session bootstrap and response-body reads.
@@ -118,6 +118,7 @@ export function DeskHomeSettings() {
     <CardField label={msg('Current Desk')} action={<Button disabled={!status?.current || status.restartRequired} onClick={() => void openFolder('current')}><IconFolder/>{msg('Open folder')}</Button>}>
       <span>{status?.current?.name ?? (home.isPending ? <LoadingState inline>{msg('Loading…')}</LoadingState> : msg('Unavailable'))}</span><span className={styles.location}>{status?.current?.folder}</span>
     </CardField>
+    {status?.moveRefusal && <SettingsFeedback>{systemMessage(status.moveRefusal)}</SettingsFeedback>}
     <ProjectMoveSettingsChoice/>
     {(unsaved || chatBlocked) && <SettingsFeedback>{msg('Save or discard changes before moving Desk home.')}</SettingsFeedback>}
     {home.isError && <SettingsFeedback tone="error" actions={<Button onClick={() => void home.refetch()}>{msg('Reload locations')}</Button>}>{msg('Desk locations could not be read.')}</SettingsFeedback>}

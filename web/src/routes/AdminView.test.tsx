@@ -1200,7 +1200,7 @@ describe('one section at a time', () => {
         .map((element) => element.textContent?.trim())
         .filter((label) => label !== '')
     for (const [fragment, expected] of [
-      ['general', ['Upload file', 'Reset to default', 'Upload file', 'Use logo', 'Save', 'Open this project at startup', 'Move…', 'Open folder']],
+      ['general', ['Upload file', 'Reset to default', 'Upload file', 'Use logo', 'Save', 'Open this project at startup', 'Move…', 'Open folder', 'Move to…']],
       ['storage', ['Save']],
       [
         // **This desk's model preferences**, and nothing that writes the

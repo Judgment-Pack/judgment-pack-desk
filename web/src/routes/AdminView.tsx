@@ -63,6 +63,7 @@ import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { ConfigPane } from '../admin/ConfigPane'
 import { SourceCard, CardField, type SourceStatus } from '../admin/SourceCard'
 import { DeskHomeSettings } from '../admin/DeskHomeSettings'
+import { ProjectLocationSettings } from '../admin/ProjectLocation'
 import { useDefaultProject } from '../admin/DefaultProject'
 import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { SignInSettings } from '../auth/SignInSettings'
@@ -186,6 +187,7 @@ export function AdminView() {
                       {defaultProject.save}
                     </SettingsSection>
                     <DeskHomeSettings />
+                    <ProjectLocationSettings />
                   </SettingsStack>
                 </SettingsSection>
               </RetainedPanel>

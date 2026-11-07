@@ -114,7 +114,7 @@ func (s *Server) moveSnapshotOriginal(ctx context.Context, destination string, m
 		return preview, policyMachineRefusal()
 	}
 	if s.home != nil {
-		return preview, errors.New("This project belongs to Desk home. Use Admin > General > Desk home to move its files and history together.")
+		return preview, errors.New("This project belongs to Desk home, so it moves only with the whole Desk home, with its files and history together. Desk home moves are not available once storage is set up; they come in a later version.")
 	}
 	if len((identityRecord{ID: strings.Repeat("0", 64), Path: destination, Folder: s.folderKey()}).line()) > startupIdentityLimit {
 		return preview, errors.New("Choose a shorter destination path so the project identity can be saved.")

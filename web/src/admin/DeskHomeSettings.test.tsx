@@ -12,15 +12,16 @@ import { deskFetch } from '../files/client'
 const fetchMock=vi.mocked(deskFetch)
 afterEach(() => { cleanup();vi.useRealTimers();vi.restoreAllMocks() })
 let queued=false
+let refusal:string|undefined
 type Location={path:string;restartRequired:boolean;problem?:string;settingsConflict?:{file:string;digest:string;later:string[];canFinish:boolean;finished:boolean}}
 let location:Location={path:'/p',restartRequired:false}
 let finishBody:unknown
 beforeEach(() => {
- queued=false;location={path:'/p',restartRequired:false};finishBody=undefined
+ queued=false;refusal=undefined;location={path:'/p',restartRequired:false};finishBody=undefined
  fetchMock.mockReset().mockImplementation(async (url,init) => {
   if(url==='/api/project-location')return Response.json(location)
   if(url==='/api/project-location/finish-move'){finishBody=JSON.parse(init!.body as string);location={...location,restartRequired:true,problem:'The moved settings are back in place of the later edit in /config/desk.json. Restart Desk to finish the move, and then make this later edit again: the startup project (“project”).',settingsConflict:{...location.settingsConflict!,canFinish:false,finished:true}};return Response.json(location)}
-  if(url==='/api/desk-home')return Response.json({path:'',defaultPath:'/data/jpack-desk',current:{id:'desk-a',name:'Research',folder:'/old/research'},desks:[],canMove:true,restartRequired:queued,destination:queued?'/data/jpack-desk':undefined})
+  if(url==='/api/desk-home')return Response.json({path:'',defaultPath:'/data/jpack-desk',current:{id:'desk-a',name:'Research',folder:'/old/research'},desks:[],canMove:refusal===undefined,restartRequired:queued,destination:queued?'/data/jpack-desk':undefined,moveRefusal:refusal})
   if(url.endsWith('/choose-folder'))return Response.json({destination:'/chosen/jpack-desk'})
   if(url.endsWith('/preview'))return Response.json({destination:JSON.parse(init!.body as string).destination,moves:[{label:'Research',from:'/old/research',to:'/data/jpack-desk/research'}],blockers:[],token:'preview-token'})
   if(url.endsWith('/move')){queued=true;return Response.json({restartRequired:true,destination:JSON.parse(init!.body as string).destination})}
@@ -48,6 +49,13 @@ it('uses a native chooser and reviewed exact paths, with no free-text destinatio
  const submitted=fetchMock.mock.calls.find(([url])=>url.endsWith('/move'))![1]!
  expect(JSON.parse(submitted.body as string)).toEqual({destination:'/data/jpack-desk',token:'preview-token'})
  expect(fetchMock.mock.calls.filter(([url])=>url.endsWith('/move'))).toHaveLength(1)
+})
+it('says in words why a Desk home move is not offered once storage is set up',async()=>{
+ refusal='Desk home moves are not available once storage is set up: in this version, storage does not move with a whole installation or a Desk home, so Desk keeps them where they are. Home moves come in a later version. Project moves remain available: to move a project that is not in a Desk home, use Move to… under Admin → General → Project location.'
+ mount();await screen.findByText('Files use separate locations')
+ expect(await screen.findByText(refusal)).toBeTruthy()
+ expect((screen.getByRole('button',{name:'Move…'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(fetchMock.mock.calls.some(([url])=>url.endsWith('/preview')||url.endsWith('/move'))).toBe(false)
 })
 it('keeps blockers next to the review and prevents confirmation',async()=>{
  mount();const dialog=await open();fireEvent.click(within(dialog).getByRole('button',{name:'Use default location'}))

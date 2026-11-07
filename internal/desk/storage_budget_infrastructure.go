@@ -263,13 +263,18 @@ func (p *storageInfrastructureStart) authority(ctx context.Context) error {
 	}
 	return nil
 }
+
+// storageInstallationNames are the settings folder's names that storage sets
+// up; any one present means the installation's storage is set up, or partly.
+var storageInstallationNames = []string{storageClaimName, storageRecordName, storageReadyName, storageBootstrapName, storageUseName, storageIntentName, storageAnchorName, "storage-owner.a", "storage-owner.b", ".data-transfer.lock", storageTransferBankA, storageTransferBankB}
+
 func (p *storageInfrastructureStart) storageAbsent() (bool, error) {
 	if p.config == nil {
 		return true, nil
 	}
 	absent := true
 	// Presence of any name, even a foreign or partial object, forbids pre-Q.
-	for _, name := range []string{storageClaimName, storageRecordName, storageReadyName, storageBootstrapName, storageUseName, storageIntentName, storageAnchorName, "storage-owner.a", "storage-owner.b", ".data-transfer.lock", storageTransferBankA, storageTransferBankB} {
+	for _, name := range storageInstallationNames {
 		_, err := p.config.root.Lstat(name)
 		if err == nil {
 			absent = false

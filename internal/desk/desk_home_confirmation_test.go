@@ -25,17 +25,19 @@ func TestDeskHomeConfirmWithNamedDesksAndRealRunner(t *testing.T) {
 	createTestDesk(t, ts, "First")
 	createTestDesk(t, ts, "Second")
 	request := projectMoveRequest{Destination: filepath.Join(t.TempDir(), "jpack-desk")}
+	// Storage is set up: the API refuses in words (errDeskHomeMoveAfterStorage).
+	// The planner and the queue below it keep their coverage.
 	raw, _ := json.Marshal(request)
-	code, body := deskCall(t, ts, "POST", "/api/desk-home/preview", "", string(raw), true)
-	var plan deskHomePlan
-	if code != 200 || json.Unmarshal(body, &plan) != nil || len(plan.Blockers) > 0 {
+	if code, body := deskCall(t, ts, "POST", "/api/desk-home/preview", "", string(raw), true); code != 409 || refusalOf(body) != errDeskHomeMoveAfterStorage.Error() {
 		t.Fatal(code, string(body))
 	}
+	plan, err := s.planDeskHome(request.Destination)
+	if err != nil || len(plan.Blockers) > 0 {
+		t.Fatal(err, plan.Blockers)
+	}
 	request.Token = plan.Token
-	raw, _ = json.Marshal(request)
-	code, body = deskCall(t, ts, "POST", "/api/desk-home/move", "", string(raw), true)
-	if code != 200 {
-		t.Fatal(code, string(body))
+	if err = s.queueHomeMove(t.Context(), request); err != nil {
+		t.Fatal(err)
 	}
 	ts.Close()
 	s.Close()
@@ -75,8 +77,11 @@ func TestDeskHomeExpiredConfirmationDoesNotQueue(t *testing.T) {
 	}
 }
 
-// Exercise the HTTP preview and confirmation against a live Runner contract.
-// The selected Desk differs from the one with the active trigger.
+// Exercise the preview's and the confirmation's work checks against a live
+// Runner contract. Storage is set up, so the HTTP preview and confirmation
+// refuse in words first (errDeskHomeMoveAfterStorage); the checks keep their
+// coverage below them, through the preview's own check of each Desk and the
+// queue. The selected Desk differs from the one with the active trigger.
 func TestDeskHomePreviewReportsActiveTriggerAndConfirmationRechecks(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: homeRuntime(t), HomeMoveShutdown: func() {}}
@@ -113,13 +118,23 @@ func TestDeskHomePreviewReportsActiveTriggerAndConfirmationRechecks(t *testing.T
 	child.jobs = &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{}), stop: make(chan struct{})}
 	t.Cleanup(func() { child.jobs.closed = true })
 	request := projectMoveRequest{Destination: filepath.Join(t.TempDir(), "jpack-desk")}
+	for _, path := range []string{"/api/desk-home/preview", "/api/desk-home/move"} {
+		raw, _ := json.Marshal(request)
+		if code, body := deskCall(t, ts, "POST", path, selected.ID, string(raw), true); code != 409 || refusalOf(body) != errDeskHomeMoveAfterStorage.Error() {
+			t.Fatal(path, code, string(body))
+		}
+	}
+	// The preview's check of each Desk's work, as its handler makes it.
 	preview := func() deskHomePlan {
 		t.Helper()
-		raw, _ := json.Marshal(request)
-		code, body := deskCall(t, ts, "POST", "/api/desk-home/preview", selected.ID, string(raw), true)
-		var plan deskHomePlan
-		if code != 200 || json.Unmarshal(body, &plan) != nil {
-			t.Fatal(code, string(body))
+		plan, err := s.planDeskHome(request.Destination)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, server := range s.homeServers() {
+			if err := server.homeWorkBlocker(t.Context()); err != nil {
+				plan.Blockers = append(plan.Blockers, err.Error())
+			}
 		}
 		return plan
 	}
@@ -136,13 +151,8 @@ func TestDeskHomePreviewReportsActiveTriggerAndConfirmationRechecks(t *testing.T
 	request.Token = plan.Token
 	// An enabled trigger after review must still prevent journaling and shutdown.
 	paused.Store(false)
-	raw, _ := json.Marshal(request)
-	code, body := deskCall(t, ts, "POST", "/api/desk-home/move", selected.ID, string(raw), true)
-	var failure struct {
-		Error string `json:"error"`
-	}
-	if code != 409 || json.Unmarshal(body, &failure) != nil || !strings.Contains(failure.Error, want) {
-		t.Fatal(code, string(body))
+	if err := s.queueHomeMove(t.Context(), request); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatal(err)
 	}
 	if s.homeMove.queued.Load() {
 		t.Fatal("blocked move queued")

@@ -17,6 +17,28 @@ import (
 	"time"
 )
 
+// errDeskHomeMoveAfterStorage refuses, in v0.14.0, moving a whole installation
+// into a Desk home and moving a Desk home once the installation's storage is
+// set up: at Desk home status, preview and confirmation, the only ways a move
+// is asked for. Storage registers its folders where they are, and no transition
+// carries its owner record and catalog to another folder yet, so the moved
+// installation would start with its storage refused. Storage-aware home moves
+// are Desk #698. A project move (/api/project-location) is unchanged.
+var errDeskHomeMoveAfterStorage = errors.New("Desk home moves are not available once storage is set up: in this version, storage does not move with a whole installation or a Desk home, so Desk keeps them where they are. Home moves come in a later version. Project moves remain available: to move a project that is not in a Desk home, use Move to… under Admin → General → Project location.")
+
+// homeMoveStorageRefusal is errDeskHomeMoveAfterStorage where this
+// installation's settings folder holds any name storage sets up
+// (storageInstallationNames), even partly. A name Desk cannot rule out counts
+// as set up.
+func (s *Server) homeMoveStorageRefusal() error {
+	for _, name := range storageInstallationNames {
+		if _, err := os.Lstat(filepath.Join(s.configDir, name)); !errors.Is(err, os.ErrNotExist) {
+			return errDeskHomeMoveAfterStorage
+		}
+	}
+	return nil
+}
+
 type homeMoveState struct {
 	queued      atomic.Bool
 	mu          sync.Mutex
@@ -516,6 +538,10 @@ func (s *Server) handleHomeMove(w http.ResponseWriter, r *http.Request) {
 	var request projectMoveRequest
 	if err != nil || decodeDataJSON(raw, &request) != nil {
 		writeJSONCoded(w, 400, CodeBadRequest, "Choose a Desk home and review the move first.")
+		return
+	}
+	if err = s.homeMoveStorageRefusal(); err != nil {
+		writeJSONCoded(w, 409, CodeStale, err.Error())
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)

@@ -277,7 +277,8 @@ func TestProjectMoveAfterRestartKeepsHistory(t *testing.T) {
 // the start found the same folder at another path and refused custody, so
 // Desk ran read-only behind a generic pause. It now does not start, says the
 // project was moved outside Desk, and names both folders, moving it back and
-// Move…. Moved back, the project starts with its history.
+// Move to… under Project location. Moved back, the project starts with its
+// history.
 func TestProjectMovedOutsideDeskIsRefusedInWords(t *testing.T) {
 	for _, identity := range []bool{false, true} {
 		t.Run(map[bool]string{false: "history", true: "history and identity"}[identity], func(t *testing.T) {
@@ -307,7 +308,7 @@ func TestProjectMovedOutsideDeskIsRefusedInWords(t *testing.T) {
 			if !errors.Is(err, errDeskProjectMovedOutside) || refused != nil {
 				t.Fatalf("a project moved outside Desk started: %v", err)
 			}
-			for _, words := range []string{"moved outside Desk", previous, destination, "Move the folder back", "Move…"} {
+			for _, words := range []string{"moved outside Desk", previous, destination, "Move the folder back", "Move to… under Admin → General → Project location"} {
 				if !strings.Contains(err.Error(), words) {
 					t.Fatalf("the refusal does not say %q: %v", words, err)
 				}
