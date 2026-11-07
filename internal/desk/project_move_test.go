@@ -282,16 +282,24 @@ func TestProjectMoveNeverReplacesDestinationOrStaleConfig(t *testing.T) {
 		})
 	}
 }
+
+// The chat's first save enrolls the project's history, so every cut below is a
+// move of a project with history. Each must actually be reached: a move that
+// fails earlier also answers 409. A stop before the move's Pending row leaves
+// an unknown prefix: the restart stays read-only and keeps the intent as it
+// was. Every later stop is finished or rolled back by the restart.
 func TestProjectMoveCrashRecovery(t *testing.T) {
-	for _, step := range []string{"before-rename", "after-rename"} {
+	for _, step := range []string{"intent-claimed", "admitted-before-stage", "before-rename", "after-rename", "terminal-before-current"} {
 		t.Run(step, func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
 			chatRequest(t, ts, "PUT", "absent", storageChat, true, "")
 			storageChat := savedConversationBytes(t, s, ts)
 			destination := filepath.Join(t.TempDir(), "new")
 			request := movePreview(t, ts, destination)
+			reached := false
 			testProjectMoveStep = func(at string) error {
 				if at == step {
+					reached = true
 					return errors.New("simulated stop")
 				}
 				return nil
@@ -299,8 +307,11 @@ func TestProjectMoveCrashRecovery(t *testing.T) {
 			defer func() { testProjectMoveStep = nil }()
 			code, data := moveRequest(t, ts, "move", request)
 			testProjectMoveStep = nil
+			if !reached {
+				t.Fatalf("the move stopped before %s: %d %s", step, code, data)
+			}
 			next := s.projectDir
-			if step == "after-rename" {
+			if step == "after-rename" || step == "terminal-before-current" {
 				if code != 200 {
 					t.Fatal(code, string(data))
 				}
@@ -311,6 +322,18 @@ func TestProjectMoveCrashRecovery(t *testing.T) {
 				}
 			} else if code != 409 {
 				t.Fatal(code, string(data))
+			}
+			if step == "intent-claimed" || step == "admitted-before-stage" {
+				intent, err := os.ReadFile(filepath.Join(s.configDir, projectMoveName))
+				if err != nil {
+					t.Fatal(err)
+				}
+				again, _, _ := startedAt(t, s, next)
+				if !again.storageReadOnly || !errors.Is(again.storageProblem, errStorageEnrollmentUnresolved) {
+					t.Fatal("an unknown move prefix became writable", again.storageProblem)
+				}
+				mustBytes(t, filepath.Join(s.configDir, projectMoveName), string(intent))
+				return
 			}
 			again, ats, _ := startedAt(t, s, next)
 			if again.locationStatus().Problem != "" {
