@@ -278,12 +278,31 @@ func (s *Server) describeStorage(store *chatDataStore) (storageStatus, error) {
 	return status, nil
 }
 
+// storageRecoveryRequired is whether err says the chat storage settings no
+// longer match what storage holds for them until the original owner
+// reconciles them: a refused or interrupted move left its pointer, or the
+// settings changed behind the Desk.
+func storageRecoveryRequired(err error) bool {
+	return errors.Is(err, errStorageOwnerTransitionRequired) || errors.Is(err, errStorageEnrollmentUnresolved) || errors.Is(err, errStorageOwnerRecovery)
+}
+
+// storageStatusRecovery answers the storage settings read in words while
+// storage recovery is required, as the read-only start does, instead of an
+// internal error.
+func storageStatusRecovery(w http.ResponseWriter) {
+	writeJSONCoded(w, http.StatusServiceUnavailable, storageStatusUnknown, "Chat storage settings are unavailable while storage recovery is required.")
+}
+
 func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	if err := s.ensureDefaultHistoryEnrollment(r.Context()); err != nil {
+		if storageRecoveryRequired(err) {
+			storageStatusRecovery(w)
+			return
+		}
 		storageFailure(w, err)
 		return
 	}
@@ -291,12 +310,20 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 	defer s.writes.Unlock()
 	lock, err := s.privateDataLockContext(r.Context(), true)
 	if err != nil {
+		if storageRecoveryRequired(err) {
+			storageStatusRecovery(w)
+			return
+		}
 		storageFailure(w, err)
 		return
 	}
 	defer lock.Close()
 	store, err := s.openChatData()
 	if err != nil {
+		if storageRecoveryRequired(err) {
+			storageStatusRecovery(w)
+			return
+		}
 		storageFailure(w, err)
 		return
 	}

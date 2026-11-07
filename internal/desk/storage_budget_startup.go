@@ -629,7 +629,7 @@ func (s *Server) serveStorageReadOnly(w http.ResponseWriter, r *http.Request) bo
 		w.Header().Set("Cache-Control", "no-store")
 		// The legacy location/transfer DTO requires a separate safe settings read.
 		// Do not substitute installation accounting or scan/create it in fallback.
-		writeJSONCoded(w, http.StatusServiceUnavailable, storageStatusUnknown, "Chat storage settings are unavailable while storage recovery is required.")
+		storageStatusRecovery(w)
 		return true
 	}
 

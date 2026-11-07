@@ -248,7 +248,14 @@ func TestStorageMoveRefusalsPreserveOriginal(t *testing.T) {
 				t.Fatalf("%s accepted: %s", kind, body)
 			}
 			mustBytes(t, filepath.Join(before.Path, s.conversationName()), storageChat)
-			if kind != "pointer-change" && kind != "other-writer" {
+			if kind == "path-substitution" {
+				// The substituted destination is found after the move published
+				// its pointer: the refused move leaves storage recovery required,
+				// and the settings read says so in words rather than failing.
+				if code, _, body := storageRequest(t, ts, "/api/storage", nil); code != 503 || !strings.Contains(body, "storage recovery is required") {
+					t.Fatal("settings after a substituted destination", code, body)
+				}
+			} else if kind != "pointer-change" && kind != "other-writer" {
 				if status := storageGet(t, ts); status.Path != before.Path {
 					t.Fatal("failure changed pointer", status.Path)
 				}
