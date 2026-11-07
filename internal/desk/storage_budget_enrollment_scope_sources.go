@@ -146,6 +146,13 @@ func (x *storageOriginalSources) exactCapturedPrivateChild(ctx context.Context, 
 		if len(source.witnesses) == 0 || source.witnesses[len(source.witnesses)-1].parent != parent.root {
 			return nil, errStorageCustody
 		}
+		// Discovery held the child through its project edge as a root of its
+		// own. Join it to the exact project scope it was captured under, as
+		// its creator did, so its binding borrows that parent's domain.
+		if source.parent != nil && source.parent != parent {
+			return nil, errStorageCustody
+		}
+		source.parent, source.relative = parent, ".desk-private"
 		if err := source.current(ctx, x.construction); err != nil {
 			return nil, err
 		}

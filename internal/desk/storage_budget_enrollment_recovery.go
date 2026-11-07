@@ -2298,7 +2298,10 @@ func (p *storageEnrollmentEpoch) keepStartupSourceFile(named storageNamedFile) e
 // descriptions before restoring dictionary indices. Extra observations never
 // replace missing originals. An independently rooted selected History keeps
 // its old boundary/provenance even when discovery also has a named config edge.
-func storageEnrollmentOriginalObjectsObserved(original, observed storageOwnerCatalogV2, boundaries []storageOwnerPersistentObject) bool {
+// A Kind8 private child is recorded under its project scope's folder; discovery
+// holds it as a root of its own through its named project edge, so its parent
+// and name are compared with that actual held edge instead (edges).
+func storageEnrollmentOriginalObjectsObserved(original, observed storageOwnerCatalogV2, boundaries []storageOwnerPersistentObject, edges ...storageObservedEdge) bool {
 	byNative := map[storageOwnerPersistentObject]storageOwnerObject{}
 	for _, o := range observed.Objects {
 		if _, duplicate := byNative[o.Persistent]; duplicate {
@@ -2350,6 +2353,19 @@ func storageEnrollmentOriginalObjectsObserved(original, observed storageOwnerCat
 			if !roots[old.Persistent] || len(old.Name) != 0 {
 				return false
 			}
+		} else if int(old.Parent) < len(original.Objects) && next.Parent == storageOwnerNoObject && len(next.Name) == 0 && storageEnrollmentKind8Child(original, uint32(i)) {
+			found := false
+			for _, edge := range edges {
+				if edge.Child == old.Persistent {
+					if found || edge.Parent != original.Objects[old.Parent].Persistent || edge.Name != string(old.Name) {
+						return false
+					}
+					found = true
+				}
+			}
+			if !found {
+				return false
+			}
 		} else {
 			if int(old.Parent) >= len(original.Objects) || int(next.Parent) >= len(observed.Objects) || original.Objects[old.Parent].Persistent != observed.Objects[next.Parent].Persistent || !bytes.Equal(old.Name, next.Name) {
 				return false
@@ -2357,6 +2373,54 @@ func storageEnrollmentOriginalObjectsObserved(original, observed storageOwnerCat
 		}
 	}
 	return true
+}
+
+// storageObservedEdge is one named edge discovery actually holds: the child
+// folder's and its parent folder's native identities and the child's name.
+type storageObservedEdge struct {
+	Child, Parent storageOwnerPersistentObject
+	Name          string
+}
+
+// storageEnrollmentKind8Child is whether object index is the folder of a
+// Kind8 private child row whose parent row is a Role7 project scope whose
+// folder is the object's parent.
+func storageEnrollmentKind8Child(c storageOwnerCatalogV2, index uint32) bool {
+	for _, row := range c.Roots {
+		if row.DirectoryObject != index || row.Role != 3 && row.Role != 6 || row.Source.Kind != 8 || string(row.Source.Relative) != startupIdentityDir || string(c.Objects[index].Name) != startupIdentityDir {
+			continue
+		}
+		for _, parent := range c.Roots {
+			if parent.Definition.ID == row.Source.ParentRoot && parent.Role == 7 && parent.Source.Kind == 7 && parent.DirectoryObject == c.Objects[index].Parent {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// storageObservedPrivateEdges are the named project edges discovery holds for
+// each project private folder it inspected as a root of its own.
+func (x *storageOriginalSources) observedPrivateEdges(ctx context.Context) ([]storageObservedEdge, error) {
+	var edges []storageObservedEdge
+	for _, source := range x.roots {
+		if source.role != 3 && source.role != 6 || len(source.witnesses) == 0 {
+			continue
+		}
+		edge := source.witnesses[len(source.witnesses)-1]
+		if edge.name != startupIdentityDir || edge.root != source.root {
+			continue
+		}
+		if err := edge.current(); err != nil {
+			return nil, err
+		}
+		parent, err := storageOwnerPersistentRoot(ctx, edge.parent)
+		if err != nil {
+			return nil, err
+		}
+		edges = append(edges, storageObservedEdge{Child: source.persistent, Parent: parent, Name: edge.name})
+	}
+	return edges, nil
 }
 func (p *storageEnrollmentEpoch) compareOriginalObjectDescriptions(ctx context.Context, catalog storageOwnerCatalogV2) error {
 	if !p.startup || len(p.sourceFiles) == 0 && !p.sourceHoldsComplete {
@@ -2390,7 +2454,11 @@ func (p *storageEnrollmentEpoch) compareOriginalObjectDescriptions(ctx context.C
 		boundaries = append(boundaries, native)
 	}
 	observed := storageOwnerCatalogV2{Objects: p.c.sources.objects}
-	if !storageEnrollmentOriginalObjectsObserved(catalog, observed, boundaries) {
+	edges, err := p.c.sources.observedPrivateEdges(ctx)
+	if err != nil {
+		return err
+	}
+	if !storageEnrollmentOriginalObjectsObserved(catalog, observed, boundaries, edges...) {
 		return errStorageCustody
 	}
 	return p.current(ctx)
