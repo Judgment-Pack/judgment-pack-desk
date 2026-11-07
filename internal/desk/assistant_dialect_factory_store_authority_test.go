@@ -83,7 +83,11 @@ func assistantDialectAuthoritySetupWithProvider(t *testing.T, provider *persiste
 func assistantDialectAuthorityExecutionSetup(t *testing.T, provider *persistentInjectedArtifactProvider, registry *retainedArtifactProviderRegistry) (*Server, string, *assistantRunExecution) {
 	t.Helper()
 	monitorChecked := make(chan *assistantRunExecution, 1)
-	s, token, e := assistantExecutionFixtureSource(t, "http://127.0.0.1:1", "work", nil, func(s *Server, _ string, start assistantRunStart) assistantRunStart {
+	var configure func(*Config)
+	if provider != nil {
+		configure = injectedArtifactConfigured(t, provider, registry)
+	}
+	s, token, e := assistantExecutionFixtureConfigured(t, configure, "http://127.0.0.1:1", "work", nil, func(s *Server, _ string, start assistantRunStart) assistantRunStart {
 		if s.testAssistantRunMonitorChecked != nil {
 			t.Fatal("monitor barrier already installed")
 		}
@@ -97,9 +101,6 @@ func assistantDialectAuthorityExecutionSetup(t *testing.T, provider *persistentI
 				return
 			}
 			<-ctx.Done()
-		}
-		if provider != nil {
-			injectedArtifactAttach(s, provider, registry)
 		}
 		return start
 	})
@@ -186,18 +187,44 @@ func (f *assistantDialectAuthorityFixture) put() error {
 
 func assistantDialectAssertReleased(t *testing.T, f *assistantDialectAuthorityFixture) {
 	t.Helper()
+	assistantDialectAssertLocksReleased(t, f)
+	view, err := f.server.preparationRepository().TryRead(t.Context())
+	assistantRunMust(t, err)
+	assistantRunMust(t, view.Close())
+}
+
+// assistantDialectAssertLocksReleased is the in-process and private-data
+// custody part of assistantDialectAssertReleased.
+func assistantDialectAssertLocksReleased(t *testing.T, f *assistantDialectAuthorityFixture) {
+	t.Helper()
+	assistantDialectAssertMutexesReleased(t, f)
+	lock, err := f.server.tryPrivateDataLockContext(t.Context(), true)
+	assistantRunMust(t, err)
+	assistantRunMust(t, lock.Close())
+}
+func assistantDialectAssertMutexesReleased(t *testing.T, f *assistantDialectAuthorityFixture) {
+	t.Helper()
 	for name, mu := range map[string]*sync.Mutex{"writes": f.server.writes, "canonical": &f.execution.canonicalMu, "writer": &f.owner.writer.mu, "lease": &f.owner.lease.mu} {
 		if !mu.TryLock() {
 			t.Fatalf("%s custody leaked", name)
 		}
 		mu.Unlock()
 	}
-	lock, err := f.server.tryPrivateDataLockContext(t.Context(), true)
+}
+
+// assistantDialectAssertRevokedReleased checks the same custody on a Desk
+// whose bound provider was revoked. Storage then refuses every admission,
+// including a private-data transaction, for that reason; the local turn and
+// the OS lock are tried directly instead, both try-only.
+func assistantDialectAssertRevokedReleased(t *testing.T, f *assistantDialectAuthorityFixture) {
+	t.Helper()
+	assistantDialectAssertMutexesReleased(t, f)
+	release, _, err := f.server.privateDataTurns.tryAcquireOriginal(t.Context())
+	assistantRunMust(t, err)
+	defer release()
+	lock, err := f.server.privateDataFileLock(".data.lock", true)
 	assistantRunMust(t, err)
 	assistantRunMust(t, lock.Close())
-	view, err := f.server.preparationRepository().TryRead(t.Context())
-	assistantRunMust(t, err)
-	assistantRunMust(t, view.Close())
 }
 
 func TestAssistantDialectDraftAuthorityOriginalReservationAndNoRetry(t *testing.T) {

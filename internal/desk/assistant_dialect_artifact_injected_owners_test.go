@@ -92,7 +92,7 @@ func TestDialectArtifactInjectedPersistentReopen(t *testing.T) {
 			if mode == "standalone" {
 				var request *http.Request
 				s, request = dialectArtifactOwnerFixture(t, projectPath, configPath)
-				injectedArtifactAttach(s, p, registry)
+				injectedArtifactAttach(t, s, p, registry)
 				out = injectedArtifactPublish(t, s, request, raw)
 				injectedArtifactExpectedRows(t, s, providerPath, out)
 				dialectArtifactOwnerNoEffects(t, s)
@@ -101,8 +101,8 @@ func TestDialectArtifactInjectedPersistentReopen(t *testing.T) {
 				s.sessions.close()
 				assistantRunMust(t, registry.Close())
 			} else {
-				s = dialectArtifactExecutionServer(t, Config{ProjectDir: projectPath, DeskConfigDir: configPath})
-				injectedArtifactAttach(s, p, registry)
+				s = dialectArtifactExecutionServer(t, Config{ProjectDir: projectPath, DeskConfigDir: configPath,
+					retainedArtifactConstruction: injectedArtifactConstruction(t, p, registry, projectPath)})
 				e := dialectArtifactExecutionStart(t, s, true)
 				work, executor := dialectArtifactExecutionFDs(t, e)
 				beforeNames, beforeJournal := dialectArtifactExecutionJournal(t, e)
@@ -132,7 +132,7 @@ func TestDialectArtifactInjectedPersistentReopen(t *testing.T) {
 			// Reopen real host roots and mint a new authenticated local request.
 			// No in-memory owner map or old provider handle reaches this witness.
 			s2, request2 := dialectArtifactOwnerFixtureWithStorage(t, projectPath, configPath, true, false)
-			injectedArtifactAttach(s2, fresh, freshRegistry)
+			injectedArtifactAttach(t, s2, fresh, freshRegistry)
 			got, reopened, err := injectedArtifactInspect(s2, request2, artifactReference(raw))
 			assistantRunMust(t, err)
 			if !bytes.Equal(got, raw) || reopened.Owner != out.Owner || reopened.Namespace != out.Namespace || reopened.OwnerSHA256 != out.OwnerSHA256 {
@@ -150,8 +150,8 @@ func TestDialectArtifactInjectedPersistentReopenScopeIsolation(t *testing.T) {
 	p, registry, _, _ := injectedArtifactProviderFixture(t)
 	s1, r1 := dialectArtifactOwnerSetup(t)
 	s2, r2 := dialectArtifactOwnerSetup(t)
-	injectedArtifactAttach(s1, p, registry)
-	injectedArtifactAttach(s2, p, registry)
+	injectedArtifactAttach(t, s1, p, registry)
+	injectedArtifactAttach(t, s2, p, registry)
 	a, b := []byte("scope one exact payload"), []byte("scope two exact payload")
 	one := injectedArtifactPublish(t, s1, r1, a)
 	two := injectedArtifactPublish(t, s2, r2, b)
@@ -177,7 +177,7 @@ func TestDialectArtifactInjectedTrustedResolution(t *testing.T) {
 		t.Run(mutation, func(t *testing.T) {
 			p, registry, root, providerPath := injectedArtifactProviderFixture(t)
 			s, r := dialectArtifactOwnerSetup(t)
-			injectedArtifactAttach(s, p, registry)
+			injectedArtifactAttach(t, s, p, registry)
 			raw := []byte("trusted exact scope")
 			out := injectedArtifactPublish(t, s, r, raw)
 			switch mutation {
@@ -222,7 +222,7 @@ func TestDialectArtifactInjectedActualQueue(t *testing.T) {
 					// Keep provider operations and fixture cleanup in the same bubble.
 					p, registry, root, _ := injectedArtifactProviderFixture(t)
 					s, r := dialectArtifactOwnerSetup(t)
-					injectedArtifactAttach(s, p, registry)
+					injectedArtifactAttach(t, s, p, registry)
 					queue := injectedArtifactQueue(t, root)
 					defer queue.Close()
 					ctx, cancel := context.WithCancel(t.Context())
@@ -266,7 +266,7 @@ func TestDialectArtifactInjectedActualQueue(t *testing.T) {
 	t.Run("one-final-try", func(t *testing.T) {
 		p, registry, root, _ := injectedArtifactProviderFixture(t)
 		s, r := dialectArtifactOwnerSetup(t)
-		injectedArtifactAttach(s, p, registry)
+		injectedArtifactAttach(t, s, p, registry)
 		tries := 0
 		var competitor *os.File
 		testHookDialectArtifactOwnerStep = func(step string) error {
@@ -293,8 +293,9 @@ func TestDialectArtifactInjectedActualQueue(t *testing.T) {
 	})
 	t.Run("actual-live-view-excludes-and-has-no-reentry", func(t *testing.T) {
 		p, registry, root, _ := injectedArtifactProviderFixture(t)
-		s := dialectArtifactExecutionServer(t, Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir()})
-		injectedArtifactAttach(s, p, registry)
+		project := t.TempDir()
+		s := dialectArtifactExecutionServer(t, Config{ProjectDir: project, DeskConfigDir: t.TempDir(),
+			retainedArtifactConstruction: injectedArtifactConstruction(t, p, registry, project)})
 		e := dialectArtifactExecutionStart(t, s, false)
 		work, executor := dialectArtifactExecutionFDs(t, e)
 		raw := []byte("bounded current native transfer")
@@ -351,7 +352,7 @@ func TestDialectArtifactInjectedDurabilityAndClose(t *testing.T) {
 			t.Run(fmt.Sprintf("reused=%t/%s", reused, step), func(t *testing.T) {
 				p, registry, _, _ := injectedArtifactProviderFixture(t)
 				s, r := dialectArtifactOwnerSetup(t)
-				injectedArtifactAttach(s, p, registry)
+				injectedArtifactAttach(t, s, p, registry)
 				if reused {
 					_, err := s.enrollDialectArtifactOwner(r)
 					assistantRunMust(t, err)
@@ -375,7 +376,7 @@ func TestDialectArtifactInjectedDurabilityAndClose(t *testing.T) {
 	t.Run("object-reuse-and-view-close-zero-inspection", func(t *testing.T) {
 		p, registry, _, _ := injectedArtifactProviderFixture(t)
 		s, r := dialectArtifactOwnerSetup(t)
-		injectedArtifactAttach(s, p, registry)
+		injectedArtifactAttach(t, s, p, registry)
 		raw := []byte("immutable scoped artifact")
 		injectedArtifactPublish(t, s, r, raw)
 		for _, step := range []string{"injected-object.sync", "injected-object.file-close", "injected-object.directory-sync", "injected-view-queue.close"} {
@@ -425,7 +426,7 @@ func TestDialectArtifactInjectedDurabilityAndClose(t *testing.T) {
 	t.Run("provider-close-wins", func(t *testing.T) {
 		p, registry, _, _ := injectedArtifactProviderFixture(t)
 		s, r := dialectArtifactOwnerSetup(t)
-		injectedArtifactAttach(s, p, registry)
+		injectedArtifactAttach(t, s, p, registry)
 		revoked := make(chan struct{})
 		closed := make(chan error, 1)
 		testHookDialectArtifactOwnerStep = func(step string) error {
@@ -543,7 +544,7 @@ func TestDialectArtifactInjectedDurabilityAndCloseServerOwnership(t *testing.T) 
 func TestDialectArtifactInjectedDurabilityAndCloseArtifactCorruption(t *testing.T) {
 	p, registry, _, providerPath := injectedArtifactProviderFixture(t)
 	s, r := dialectArtifactOwnerSetup(t)
-	injectedArtifactAttach(s, p, registry)
+	injectedArtifactAttach(t, s, p, registry)
 	raw := []byte("exact immutable artifact")
 	out := injectedArtifactPublish(t, s, r, raw)
 	ref := artifactReference(raw)
@@ -565,7 +566,7 @@ func TestDialectArtifactInjectedDurabilityAndCloseArtifactCorruption(t *testing.
 func TestDialectArtifactInjectedDurabilityAndCloseBranchContinuity(t *testing.T) {
 	p, registry, _, providerPath := injectedArtifactProviderFixture(t)
 	s, r := dialectArtifactOwnerSetup(t)
-	injectedArtifactAttach(s, p, registry)
+	injectedArtifactAttach(t, s, p, registry)
 	out, err := s.enrollDialectArtifactOwner(r)
 	assistantRunMust(t, err)
 	branch := filepath.Join(providerPath, "d5-native", out.Namespace)
@@ -594,7 +595,7 @@ func TestDialectArtifactInjectedDurabilityAndCloseBranchContinuity(t *testing.T)
 func TestDialectArtifactInjectedTrustedResolutionUnrelatedRows(t *testing.T) {
 	p, registry, _, providerPath := injectedArtifactProviderFixture(t)
 	s, r := dialectArtifactOwnerSetup(t)
-	injectedArtifactAttach(s, p, registry)
+	injectedArtifactAttach(t, s, p, registry)
 	raw := []byte("selected finite scope")
 	out := injectedArtifactPublish(t, s, r, raw)
 	// An unrelated fixed fixture is deliberately larger than every row cap.
@@ -611,7 +612,7 @@ func TestDialectArtifactInjectedTrustedResolutionUnrelatedRows(t *testing.T) {
 func TestDialectArtifactInjectedUnsupportedAndInactiveBoundGuard(t *testing.T) {
 	p, registry, _, _ := injectedArtifactProviderFixture(t)
 	s, r := dialectArtifactOwnerSetup(t)
-	injectedArtifactAttach(s, p, registry)
+	injectedArtifactAttach(t, s, p, registry)
 	raw := []byte("generic guard cannot publish into D5")
 	calls, closes := 0, 0
 	acquire := func(context.Context) (retainedArtifactGuard, error) {
@@ -634,10 +635,10 @@ func TestDialectArtifactInjectedUnsupportedAndInactiveBoundGuard(t *testing.T) {
 }
 
 func TestDialectArtifactInjectedPersistentReopenActualHome(t *testing.T) {
-	parent, child := dialectArtifactExecutionHome(t)
 	p, registry, _, providerPath := injectedArtifactProviderFixture(t)
-	injectedArtifactAttach(parent, p, registry)
-	injectedArtifactAttach(child, p, registry)
+	parent, child := dialectArtifactExecutionHomeConfigured(t, func(cfg *Config, parentPath, childPath string) {
+		cfg.retainedArtifactConstruction = injectedArtifactConstruction(t, p, registry, parentPath, childPath)
+	})
 	raw := []byte("same bytes in two real home scopes")
 	var prior dialectArtifactOwnerEnrollment
 	for _, s := range []*Server{parent, child} {
@@ -668,8 +669,9 @@ func TestDialectArtifactInjectedActualQueueAuthorityContention(t *testing.T) {
 	for _, kind := range []string{"session", "policy"} {
 		t.Run(kind, func(t *testing.T) {
 			p, registry, _, _ := injectedArtifactProviderFixture(t)
-			s := dialectArtifactExecutionServer(t, Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir()})
-			injectedArtifactAttach(s, p, registry)
+			project := t.TempDir()
+			s := dialectArtifactExecutionServer(t, Config{ProjectDir: project, DeskConfigDir: t.TempDir(),
+				retainedArtifactConstruction: injectedArtifactConstruction(t, p, registry, project)})
 			e := dialectArtifactExecutionStart(t, s, false)
 			identity, _, err := s.assistantRunIdentity(e.request.WithContext(t.Context()))
 			assistantRunMust(t, err)
@@ -702,8 +704,9 @@ func TestDialectArtifactInjectedActualQueueLiveAdmissionGap(t *testing.T) {
 	for _, fact := range []string{"session", "policy", "generation", "stop", "cancel-call", "cancel-execution"} {
 		t.Run(fact, func(t *testing.T) {
 			p, registry, _, providerPath := injectedArtifactProviderFixture(t)
-			s := dialectArtifactExecutionServer(t, Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir()})
-			injectedArtifactAttach(s, p, registry)
+			project := t.TempDir()
+			s := dialectArtifactExecutionServer(t, Config{ProjectDir: project, DeskConfigDir: t.TempDir(),
+				retainedArtifactConstruction: injectedArtifactConstruction(t, p, registry, project)})
 			e := dialectArtifactExecutionStart(t, s, false)
 			work, executor := dialectArtifactExecutionFDs(t, e)
 			ctx, cancel := context.WithCancel(t.Context())

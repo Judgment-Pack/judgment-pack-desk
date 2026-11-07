@@ -193,10 +193,10 @@ func TestDialectArtifactSelectedTransferForeignInjectedRegistration(t *testing.T
 	q := selectedProviderFixture(t, strings.Repeat("b", 64))
 	registry, err := newRetainedArtifactProviderRegistry(p, q)
 	assistantRunMust(t, err)
-	injectedArtifactAttach(viewer, p, registry)
+	injectedArtifactAttach(t, viewer, p, registry)
 	foreign, foreignRequest := dialectArtifactOwnerSetup(t)
 	foreign.cfg.parent = viewer
-	injectedArtifactAttach(foreign, q, registry)
+	injectedArtifactAttach(t, foreign, q, registry)
 	enrolled, err := foreign.enrollDialectArtifactOwner(foreignRequest)
 	assistantRunMust(t, err)
 	run, raw := selectedTransferRunFixture(t, enrolled, false)
@@ -333,7 +333,7 @@ func TestDialectArtifactSelectedHistoricalDoesNotDiscoverOtherRunOwners(t *testi
 func TestDialectArtifactSelectedTransferMissingHeavyDeclaredBytesDoNotNarrowArchive(t *testing.T) {
 	s, request := dialectArtifactOwnerSetup(t)
 	p, registry, _, _ := injectedArtifactProviderFixture(t)
-	injectedArtifactAttach(s, p, registry)
+	injectedArtifactAttach(t, s, p, registry)
 	enrolled, err := s.enrollDialectArtifactOwner(request)
 	assistantRunMust(t, err)
 	ledger := assistantRunLedger{Version: 1, Project: enrolled.Namespace, Runs: []assistantRunRecord{}}

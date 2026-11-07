@@ -34,6 +34,17 @@ func assistantExecutionFixtureExecute(t *testing.T, upstreamURL, phase string, e
 }
 func assistantExecutionFixtureSource(t *testing.T, upstreamURL, phase string, execute func(context.Context, *assistantRunExecution) error, prepare func(*Server, string, assistantRunStart) assistantRunStart, families ...string) (*Server, string, *assistantRunExecution) {
 	t.Helper()
+	return assistantExecutionFixtureConfigured(t, nil, upstreamURL, phase, execute, prepare, families...)
+}
+
+// assistantExecutionFixtureConfigured is assistantExecutionFixtureSource with
+// configure applied to the Desk's Config before New.
+func assistantExecutionFixtureConfigured(t *testing.T, configure func(*Config), upstreamURL, phase string, execute func(context.Context, *assistantRunExecution) error, prepare func(*Server, string, assistantRunStart) assistantRunStart, families ...string) (*Server, string, *assistantRunExecution) {
+	t.Helper()
+	var configs []func(*Config)
+	if configure != nil {
+		configs = append(configs, configure)
+	}
 	entered := make(chan *assistantRunExecution, 1)
 	s, token, start, _ := assistantProtocolFixture(t, func(ctx context.Context, e *assistantRunExecution) error {
 		entered <- e
@@ -42,7 +53,7 @@ func assistantExecutionFixtureSource(t *testing.T, upstreamURL, phase string, ex
 		}
 		<-ctx.Done()
 		return ctx.Err()
-	})
+	}, configs...)
 	connection := aiTestConnection(testAIAlpha, "Execution fixture", upstreamURL)
 	connection.Assistant.Endpoint.Tools = []string{"validate", "experimental_evaluate", "get_schema"}
 	if len(families) > 0 {

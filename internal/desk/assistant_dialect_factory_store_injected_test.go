@@ -12,7 +12,6 @@ import (
 	"reflect"
 	"sync"
 	"testing"
-	"testing/synctest"
 	"time"
 )
 
@@ -152,16 +151,15 @@ func assistantDialectInjectedAuthReleased(t *testing.T, f *assistantDialectAutho
 func TestAssistantDialectFactoryInjectedQueueAndRevocation(t *testing.T) {
 	for _, fact := range []string{"session", "policy", "generation", "stop", "cancel", "source", "phase"} {
 		t.Run("drain-"+fact, func(t *testing.T) {
-			// The actual monitor must authorize before entering fake time. Its
-			// real watcher and execution owner remain outside this bubble;
-			// provider pin/finish/Close all remain inside it.
-			s, token, e := assistantDialectAuthorityExecutionSetup(t, nil, nil)
-			synctest.Test(t, func(t *testing.T) {
-				p, registry, root, path := injectedArtifactProviderFixture(t)
-				injectedArtifactAttach(s, p, registry)
+			// A running Desk's provider is bound at New and pinned for the
+			// Desk's life, so it is not made inside a synctest bubble: the
+			// put is followed to the provider drain by its own step instead.
+			p, registry, root, path := injectedArtifactProviderFixture(t)
+			s, token, e := assistantDialectAuthorityExecutionSetup(t, p, registry)
+			func() {
 				f := assistantDialectAuthoritySetupWithExecution(t, s, token, e)
 				if f.owner.registration == nil || f.owner.registration.provider != p || f.owner.registration.registry != registry {
-					t.Fatal("factory did not retain the bubble's actual provider registration")
+					t.Fatal("factory did not retain the Desk's actual provider registration")
 				}
 				f.reserve(t, true)
 				ctx, cancel := context.WithCancel(f.ctx)
@@ -169,9 +167,23 @@ func TestAssistantDialectFactoryInjectedQueueAndRevocation(t *testing.T) {
 				f.ctx = ctx
 				queue := injectedArtifactQueue(t, root)
 				defer queue.Close()
+				draining := make(chan struct{})
+				var reached sync.Once
+				testHookDialectArtifactOwnerStep = func(step string) error {
+					if step == "injected-before-drain" {
+						reached.Do(func() { close(draining) })
+					}
+					return nil
+				}
+				defer func() { testHookDialectArtifactOwnerStep = nil }()
 				result := make(chan error, 1)
 				go func() { result <- f.put() }()
-				synctest.Wait()
+				// From this step to the queue's flock the put takes nothing.
+				select {
+				case <-draining:
+				case <-time.After(10 * time.Second):
+					t.Fatal("the put did not reach the provider drain")
+				}
 				assistantDialectAssertReleased(t, f)
 				assistantDialectInjectedAuthReleased(t, f)
 				switch fact {
@@ -213,10 +225,7 @@ func TestAssistantDialectFactoryInjectedQueueAndRevocation(t *testing.T) {
 				if f.put() == nil {
 					t.Fatal("refused drained attempt replayed")
 				}
-				// Close and join the provider here. Outer server cleanup sees
-				// an already-closed registry and no live bubble WaitGroup.
-				assistantRunMust(t, registry.Close())
-			})
+			}()
 		})
 	}
 	for _, fact := range []string{"session", "policy", "expiry", "actor"} {
@@ -522,11 +531,27 @@ func TestAssistantDialectFactoryInjectedProviderCloseWins(t *testing.T) {
 	if !reached || err == nil {
 		t.Fatal("provider revocation acknowledged publication", err)
 	}
-	assistantRunMust(t, <-closed)
 	testHookDialectArtifactOwnerStep = nil
 	assistantDialectInjectedAbsent(t, f, path)
-	assistantDialectAssertReleased(t, f)
+	// The Desk's provider is revoked: storage refuses every admission for
+	// that reason, so custody is tried directly.
+	assistantDialectAssertRevokedReleased(t, f)
 	assistantDialectInjectedAuthReleased(t, f)
+	// The revoked provider's Close joins the Desk's own pin on it, which the
+	// Desk releases when it closes. That Close may report the revoked
+	// provider; it must still release the pin.
+	select {
+	case err := <-closed:
+		t.Fatal("provider Close returned while the Desk still pinned it", err)
+	default:
+	}
+	_ = f.server.Close()
+	select {
+	case err := <-closed:
+		assistantRunMust(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("provider Close did not return after the Desk closed")
+	}
 }
 
 type assistantDialectFactoryMarkerGuard struct{ artifactAuthorityTestGuard }
@@ -536,7 +561,7 @@ func (*assistantDialectFactoryMarkerGuard) injectedArtifactPhysicalGuard() {}
 func TestAssistantDialectFactoryInjectedConcreteGuardRefusals(t *testing.T) {
 	for _, mode := range []string{"generic", "marker", "inspection", "foreign-factory"} {
 		t.Run(mode, func(t *testing.T) {
-			p, registry, _, path := injectedArtifactProviderFixture(t)
+			p, registry, root, path := injectedArtifactProviderFixture(t)
 			f := assistantDialectAuthoritySetupWithProvider(t, p, registry)
 			f.reserve(t, true)
 			var acquire func(context.Context) (retainedArtifactGuard, error)
@@ -557,7 +582,15 @@ func TestAssistantDialectFactoryInjectedConcreteGuardRefusals(t *testing.T) {
 					return f.owner.acquireInspectionGuard(ctx, artifactReference(f.raw))
 				}
 			case "foreign-factory":
-				other := assistantDialectAuthoritySetupWithProvider(t, p, registry)
+				// Another Desk on the same provider folder: a registry is
+				// adopted and closed by the one Desk built with it, so the
+				// other Desk opens its own instance of the same provider.
+				q, err := openPersistentInjectedArtifactProvider(t.Context(), injectedFixtureProviderID, root)
+				assistantRunMust(t, err)
+				foreign, err := newRetainedArtifactProviderRegistry(q)
+				assistantRunMust(t, err)
+				t.Cleanup(func() { _ = foreign.Close() })
+				other := assistantDialectAuthoritySetupWithProvider(t, q, foreign)
 				other.reserve(t, true)
 				publication, err := readAssistantDialectDraftPublication(other.raw)
 				assistantRunMust(t, err)

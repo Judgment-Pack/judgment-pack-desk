@@ -333,6 +333,12 @@ func (s *Server) enrollDialectArtifactInjectedOwnerRowsLocked(ctx context.Contex
 		}
 		return out, err
 	}
+	// The queue is the exclusive lock on the registration folder: its own
+	// folders are made under it, never under a second lock on the same folder.
+	queueCreator, err := heldInjectedArtifactCreator(registration.root, queue)
+	if err != nil {
+		return out, err
+	}
 	leaf := func() error {
 		if err := g.Check(ctx); err != nil {
 			return err
@@ -412,14 +418,18 @@ func (s *Server) enrollDialectArtifactInjectedOwnerRowsLocked(ctx context.Contex
 		{rows.metadata, []string{"work-domains", rows.workDomain[:2]}},
 		{rows.metadata, []string{"native", binding.Namespace}},
 	} {
-		pinned, pinErr := prepareInjectedArtifactEdges(ctx, branch.root, branch.parts...)
+		var held *storageCreatorLease
+		if branch.root == registration.root {
+			held = queueCreator
+		}
+		pinned, pinErr := prepareInjectedArtifactEdges(ctx, branch.root, held, branch.parts...)
 		if pinErr != nil {
 			return out, pinErr
 		}
 		edges = append(edges, pinned...)
 	}
 	if home != nil {
-		pinned, pinErr := prepareInjectedArtifactEdges(ctx, rows.metadata, "home-anchors", home.record.ID[:2])
+		pinned, pinErr := prepareInjectedArtifactEdges(ctx, rows.metadata, nil, "home-anchors", home.record.ID[:2])
 		if pinErr != nil {
 			return out, pinErr
 		}

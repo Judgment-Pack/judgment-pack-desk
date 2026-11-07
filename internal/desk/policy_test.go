@@ -15,10 +15,14 @@ import (
 	"time"
 )
 
-func policyTestServer(t *testing.T) (*Server, string) {
+func policyTestServer(t *testing.T, configure ...func(*Config)) (*Server, string) {
 	t.Helper()
 	// HTTP recorders exercise the real guard/routes without opening a listener.
-	s, err := New(Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), JpackBin: jpackBinary(), Token: testToken, Port: 8791, Logger: log.New(io.Discard, "", 0)})
+	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), JpackBin: jpackBinary(), Token: testToken, Port: 8791, Logger: log.New(io.Discard, "", 0)}
+	for _, c := range configure {
+		c(&cfg)
+	}
+	s, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

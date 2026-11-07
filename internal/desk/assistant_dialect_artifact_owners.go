@@ -280,7 +280,15 @@ func syncExistingDialectArtifactOwner(ctx context.Context, root *os.Root, name s
 
 // Open only directly selected components. Neither this table nor its shards
 // are enumerated, and no lifetime count or aggregate-byte quota is imposed.
-func openDialectArtifactOwnerFolder(ctx context.Context, start *os.Root, create bool, label string, parts ...string) (_ *os.Root, err error) {
+func openDialectArtifactOwnerFolder(ctx context.Context, start *os.Root, create bool, label string, parts ...string) (*os.Root, error) {
+	return openDialectArtifactOwnerFolderHeld(ctx, start, create, label, nil, parts...)
+}
+
+// held is the caller's own exclusive lock on start's folder, when it holds
+// one: a folder made directly under start is made under that lock instead of
+// asking for it a second time, which the caller's own hold would refuse. A
+// lease on any other folder is not used; deeper folders take their own.
+func openDialectArtifactOwnerFolderHeld(ctx context.Context, start *os.Root, create bool, label string, held *storageCreatorLease, parts ...string) (_ *os.Root, err error) {
 	current, err := start.OpenRoot(".")
 	if err != nil {
 		return nil, err
@@ -296,7 +304,7 @@ func openDialectArtifactOwnerFolder(ctx context.Context, start *os.Root, create 
 		}
 		info, lookErr := current.Lstat(part)
 		if errors.Is(lookErr, os.ErrNotExist) && create {
-			observed, made, createErr := storageCooperatingDirectory(ctx, current, part, nil)
+			observed, made, createErr := storageCooperatingDirectory(ctx, current, part, held)
 			if createErr != nil {
 				return nil, createErr
 			}

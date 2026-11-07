@@ -136,9 +136,9 @@ func (x *assistantProtocolExecutor) Execute(ctx context.Context, e *assistantRun
 	x.calls.Add(1)
 	return x.execute(ctx, e)
 }
-func assistantProtocolFixture(t *testing.T, execute func(context.Context, *assistantRunExecution) error) (*Server, string, assistantRunStart, *assistantProtocolExecutor) {
+func assistantProtocolFixture(t *testing.T, execute func(context.Context, *assistantRunExecution) error, configure ...func(*Config)) (*Server, string, assistantRunStart, *assistantProtocolExecutor) {
 	t.Helper()
-	s, token := policyTestServer(t)
+	s, token := policyTestServer(t, configure...)
 	connection := aiTestConnection(testAIAlpha, "Protocol fixture", "https://example.invalid")
 	registry := aiRegistry{Version: 1, DefaultConnection: testAIAlpha, Connections: []aiConnection{connection}}
 	raw, err := encodeAIRegistry(registry)

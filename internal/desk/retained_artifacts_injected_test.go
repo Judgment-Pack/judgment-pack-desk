@@ -27,9 +27,43 @@ func injectedArtifactProviderFixture(t *testing.T) (*persistentInjectedArtifactP
 	t.Cleanup(func() { _ = registry.Close() })
 	return p, registry, root, path
 }
-func injectedArtifactAttach(s *Server, p *persistentInjectedArtifactProvider, registry *retainedArtifactProviderRegistry) {
+
+// injectedArtifactAttach selects p on a Desk assembled without New, which
+// has no storage construction to bind a provider. A Desk made by New binds
+// its provider at construction (injectedArtifactConstruction), as the
+// project-move construction does, and its provider is never swapped while it
+// runs: the storage construction refuses a swapped one.
+func injectedArtifactAttach(t *testing.T, s *Server, p *persistentInjectedArtifactProvider, registry *retainedArtifactProviderRegistry) {
+	t.Helper()
+	if s.deskOwner().storageConstruction != nil {
+		t.Fatal("a Desk made by New binds its provider at construction")
+	}
 	s.deskOwner().retainedArtifactProviders = registry
 	s.retainedArtifacts = p
+}
+
+// injectedArtifactConstruction is the trusted pre-New selection of p for the
+// projects at paths. New adopts the registry, pins p for the Desk's life and
+// closes the registry when the Desk closes.
+func injectedArtifactConstruction(t *testing.T, p *persistentInjectedArtifactProvider, registry *retainedArtifactProviderRegistry, paths ...string) *retainedArtifactServerConstruction {
+	t.Helper()
+	projects := make(map[string]string, len(paths))
+	for _, path := range paths {
+		assistantRunMust(t, os.MkdirAll(path, 0700))
+		info, err := os.Stat(path)
+		assistantRunMust(t, err)
+		projects[identityKey(info)] = p.id
+	}
+	c, err := newRetainedArtifactServerConstruction(registry, projects)
+	assistantRunMust(t, err)
+	return c
+}
+
+// injectedArtifactConfigured binds p at New for the configured project.
+func injectedArtifactConfigured(t *testing.T, p *persistentInjectedArtifactProvider, registry *retainedArtifactProviderRegistry) func(*Config) {
+	return func(cfg *Config) {
+		cfg.retainedArtifactConstruction = injectedArtifactConstruction(t, p, registry, cfg.ProjectDir)
+	}
 }
 func injectedArtifactQueue(t *testing.T, root *os.Root) *os.File {
 	t.Helper()

@@ -289,7 +289,11 @@ func (p *persistentInjectedArtifactProvider) Put(ctx context.Context, raw []byte
 	if err = check(); err != nil {
 		return ref, err
 	}
-	objects, err := openDialectArtifactOwnerFolder(ctx, p.root, true, "injected-compat-folder", "compatibility-objects")
+	held, err := heldInjectedArtifactCreator(p.root, lock)
+	if err != nil {
+		return ref, err
+	}
+	objects, err := openDialectArtifactOwnerFolderHeld(ctx, p.root, true, "injected-compat-folder", held, "compatibility-objects")
 	if err != nil {
 		return ref, err
 	}
@@ -465,10 +469,10 @@ func preflightInjectedArtifactRow(ctx context.Context, root *os.Root, expected [
 	return err
 }
 func claimInjectedArtifactRow(ctx context.Context, root *os.Root, expected []byte, name, label string, check func() error, parts ...string) (err error) {
-	return claimInjectedArtifactRowPinned(ctx, root, expected, name, label, check, nil, parts...)
+	return claimInjectedArtifactRowPinned(ctx, root, expected, name, label, check, nil, nil, parts...)
 }
-func claimInjectedArtifactRowPinned(ctx context.Context, root *os.Root, expected []byte, name, label string, check func() error, pins *[]retainedArtifactInjectedEdge, parts ...string) (err error) {
-	folder, err := openDialectArtifactOwnerFolder(ctx, root, true, label+"-folder", parts...)
+func claimInjectedArtifactRowPinned(ctx context.Context, root *os.Root, expected []byte, name, label string, check func() error, pins *[]retainedArtifactInjectedEdge, held *storageCreatorLease, parts ...string) (err error) {
+	folder, err := openDialectArtifactOwnerFolderHeld(ctx, root, true, label+"-folder", held, parts...)
 	if err != nil {
 		return err
 	}
@@ -672,7 +676,13 @@ func (v *retainedArtifactInjectedView) PublishExact(ctx context.Context, ref ret
 		return err
 	}
 	b := v.binding
-	return claimInjectedArtifactRowPinned(ctx, v.registration.root, raw, ref.SHA256, "injected-object", func() error { return v.check(ctx) }, &v.edges, "d5-objects", b.Owner, b.Namespace)
+	// The view's queue is the exclusive lock on the registration folder; the
+	// object folders are made under it.
+	held, err := heldInjectedArtifactCreator(v.registration.root, v.queue)
+	if err != nil {
+		return err
+	}
+	return claimInjectedArtifactRowPinned(ctx, v.registration.root, raw, ref.SHA256, "injected-object", func() error { return v.check(ctx) }, &v.edges, held, "d5-objects", b.Owner, b.Namespace)
 }
 func (v *retainedArtifactInjectedView) Close() error {
 	if v == nil {
@@ -726,8 +736,8 @@ func pinInjectedArtifactHeldEdges(ctx context.Context, root, held *os.Root, part
 	}
 	return edges, nil
 }
-func prepareInjectedArtifactEdges(ctx context.Context, root *os.Root, parts ...string) (edges []retainedArtifactInjectedEdge, err error) {
-	folder, err := openDialectArtifactOwnerFolder(ctx, root, true, "injected-edge-setup", parts...)
+func prepareInjectedArtifactEdges(ctx context.Context, root *os.Root, held *storageCreatorLease, parts ...string) (edges []retainedArtifactInjectedEdge, err error) {
+	folder, err := openDialectArtifactOwnerFolderHeld(ctx, root, true, "injected-edge-setup", held, parts...)
 	if err != nil {
 		return nil, err
 	}
@@ -738,6 +748,16 @@ func prepareInjectedArtifactEdges(ctx context.Context, root *os.Root, parts ...s
 		}
 	}()
 	return pinInjectedArtifactHeldEdges(ctx, root, folder, parts...)
+}
+
+// heldInjectedArtifactCreator names the caller's exclusive queue lock on the
+// provider folder as the creator lease for folders made directly under it.
+// The lease is borrowed, never closed: the queue's own close releases it.
+func heldInjectedArtifactCreator(root *os.Root, queue *os.File) (*storageCreatorLease, error) {
+	if root == nil || queue == nil {
+		return nil, errRetainedArtifactAuthorityUnavailable
+	}
+	return storageCreatorLockedLease(root, queue)
 }
 func checkInjectedArtifactEdges(ctx context.Context, edges []retainedArtifactInjectedEdge) error {
 	for _, edge := range edges {

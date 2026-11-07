@@ -305,6 +305,13 @@ func TestDialectArtifactExecutionOwnerActualLiveLease(t *testing.T) {
 
 func dialectArtifactExecutionHome(t *testing.T) (*Server, *Server) {
 	t.Helper()
+	return dialectArtifactExecutionHomeConfigured(t, nil)
+}
+
+// dialectArtifactExecutionHomeConfigured applies configure to the startup
+// Desk's Config before New, once both project folders exist.
+func dialectArtifactExecutionHomeConfigured(t *testing.T, configure func(cfg *Config, parentPath, childPath string)) (*Server, *Server) {
+	t.Helper()
 	home := filepath.Join(t.TempDir(), "native-home\t")
 	config := filepath.Join(home, deskHomePlatform)
 	parentPath, childPath := filepath.Join(home, "startup"), filepath.Join(home, "child")
@@ -332,7 +339,11 @@ func dialectArtifactExecutionHome(t *testing.T) (*Server, *Server) {
 		assistantRunMust(t, err)
 		assistantRunMust(t, os.WriteFile(filepath.Join(path, ".desk-private", "data", dataMarkerName), marker, 0600))
 	}
-	parent := dialectArtifactExecutionServer(t, Config{ProjectDir: parentPath, DeskConfigDir: config, LocalAccess: true})
+	cfg := Config{ProjectDir: parentPath, DeskConfigDir: config, LocalAccess: true}
+	if configure != nil {
+		configure(&cfg, parentPath, childPath)
+	}
+	parent := dialectArtifactExecutionServer(t, cfg)
 	parent.desksMu.Lock()
 	child, err := parent.openDeskLocked(childID)
 	parent.desksMu.Unlock()

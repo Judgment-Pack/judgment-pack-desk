@@ -180,13 +180,13 @@ func TestDialectArtifactRunOwnerStages(t *testing.T) {
 			first, err := f.store.retainDraft(f.ctx, f.raw)
 			assistantRunMust(t, err)
 			previous := first.Receipt
-			fields := map[string]any{"version": 1, "attemptId": candidate.AttemptID, "candidate": candidate.Candidate, "stage": "checked", "previousReceipt": &previous, "fingerprint": candidate.Fingerprint, "check": runcontext.DialectDraftCheck{Results: []runcontext.DialectDraftResult{{Operation: "dialect_validate", ResultJSON: `{"valid":true}`}}}}
+			fields := map[string]any{"version": 2, "attemptId": candidate.AttemptID, "candidate": candidate.Candidate, "stage": "checked", "previousReceipt": &previous, "fingerprint": candidate.Fingerprint, "check": runcontext.DialectDraftCheck{Results: []runcontext.DialectDraftResult{{Operation: "dialect_validate", ResultJSON: `{"valid":true}`}}}}
 			fields["digest"] = assistantDialectFactoryFixtureHash(t, fields)
 			checkedRaw := assistantChatJSON(fields)
 			checked, err := f.store.retainDraft(f.ctx, checkedRaw)
 			assistantRunMust(t, err)
 			fingerprint := assistantDialectFactoryFixtureHash(t, candidate.Candidate)
-			proposal := runcontext.DialectReviewProposal{Draft: runcontext.DialectDraftLineage{AttemptID: candidate.AttemptID, Fingerprint: candidate.Fingerprint, CandidateReceipt: first.Receipt, CheckedReceipt: checked.Receipt, CheckedDigest: checked.Digest}, DialectCandidate: candidate.Candidate, Version: 1, Fingerprint: fingerprint, MappingDigest: "sha256:" + digestOf([]byte(candidate.Candidate.DocumentJSON)), Status: "review-required", Validation: map[string]any{}, Coverage: map[string]any{}, Preview: runcontext.DialectPreview{Fingerprint: fingerprint, RecordCount: 1, Issues: []runcontext.DialectPreviewIssue{}}}
+			proposal := runcontext.DialectReviewProposal{Draft: runcontext.DialectDraftLineage{AttemptID: candidate.AttemptID, Fingerprint: candidate.Fingerprint, CandidateReceipt: first.Receipt, CheckedReceipt: checked.Receipt, CheckedDigest: checked.Digest}, DialectCandidate: candidate.Candidate, Version: 2, Fingerprint: fingerprint, MappingDigest: "sha256:" + digestOf([]byte(candidate.Candidate.DocumentJSON)), Status: "review-required", Validation: map[string]any{}, Coverage: map[string]any{}, Preview: runcontext.DialectPreview{Fingerprint: fingerprint, RecordCount: 1, Issues: []runcontext.DialectPreviewIssue{}}}
 			finalRaw := assistantChatJSON(proposal)
 			final, err := f.store.retainFinal(f.ctx, finalRaw)
 			assistantRunMust(t, err)
