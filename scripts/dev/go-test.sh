@@ -25,7 +25,9 @@ cd "$root" || exit 2
 # on a hosted runner, one at a time (a sample spread over the whole list, scaled by tests timed
 # both there and locally; one standard error is about an hour), so 16 shards run about 14
 # minutes each, and stay inside their 30 if the estimate is two errors short. Each shard's
-# minutes of tests are in the Go job's summary: change this number when they drift.
+# minutes of tests are in the Go job's summary: change this number when they drift. Shards are
+# balanced by the recorded seconds in go-test-durations.json; refresh it from a run's shard
+# logs with `go-test-shards.py durations DIR...` when tests are added or their cost changes.
 shards_default=16
 package=./internal/desk
 module=github.com/Judgment-Pack/judgment-pack-desk

@@ -12,6 +12,10 @@ import unittest
 HELPER = Path(__file__).resolve().parent / 'go-test-shards.py'
 NAMES = ['TestZeta', 'TestAlpha', 'TestAlphaTwo', 'TestBeta', 'ExampleGamma', 'FuzzDelta', 'TestEpsilon']
 LISTING = '\n'.join(NAMES + ['BenchmarkNotRun']) + '\nok  \texample.invalid/internal/desk\t0.01s\n'
+# Handwritten seconds. TestEpsilon is not recorded and counts as the default.
+SECONDS = {'TestZeta': 100.0, 'TestAlpha': 40.0, 'TestAlphaTwo': 30.0, 'TestBeta': 30.0,
+           'ExampleGamma': 0.0, 'FuzzDelta': 20.0}
+DEFAULT = 10.0
 
 
 class Shards(unittest.TestCase):
@@ -21,7 +25,10 @@ class Shards(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.list = self.root / 'list'
         self.list.write_text(LISTING)
+        self.durations = self.root / 'durations.json'
+        self.durations.write_text(json.dumps({'version': 1, 'default': DEFAULT, 'tests': SECONDS}))
         self.env = {k: v for k, v in os.environ.items() if k != 'GITHUB_STEP_SUMMARY'}
+        self.env['GO_TEST_SHARD_DURATIONS'] = str(self.durations)
 
     def run_helper(self, *args, env=None):
         return subprocess.run([sys.executable, '-I', str(HELPER), *args], text=True, stdout=subprocess.PIPE,
@@ -47,17 +54,83 @@ class Shards(unittest.TestCase):
         (directory / 'go-test-desk.log').write_text('\n'.join(lines + ['PASS', 'ok  \tpkg\t1.0s']) + '\n')
         return directory
 
-    def test_shards_partition_the_list_evenly_and_in_run_order(self):
+    def cost(self, test):
+        return max(SECONDS.get(test, DEFAULT), 0.1)
+
+    def test_shards_partition_the_list_in_run_order_balanced_by_time(self):
         for n in (1, 2, 3, 7):
             with self.subTest(shards=n):
                 parts = [self.shard(k, n) for k in range(1, n + 1)]
                 together = [test for part in parts for test in part]
                 self.assertEqual(sorted(together), sorted(NAMES))
                 self.assertEqual(len(together), len(set(together)))
-                self.assertLessEqual(max(map(len, parts)) - min(map(len, parts)), 1)
                 for part in parts:
                     self.assertEqual(part, [test for test in NAMES if test in part])
+                # Longest first to the least loaded shard: no shard exceeds another by more
+                # than its own longest test.
+                loads = [sum(map(self.cost, part)) for part in parts]
+                for part, load in zip(parts, loads):
+                    self.assertLessEqual(load - min(loads), max(map(self.cost, part)) + 1e-9, (parts, loads))
         self.assertEqual(self.shard(1, 3), self.shard(1, 3))
+
+    def test_the_split_follows_recorded_time_not_count(self):
+        # Longest first: Zeta 100 | Alpha 40 + AlphaTwo 30 + Beta 30; FuzzDelta 20 breaks the
+        # 100/100 tie to shard 1; Epsilon 10 (default) and Gamma (0 s, the 0.1 floor) to 2.
+        self.assertEqual(self.shard(1, 2), ['TestZeta', 'FuzzDelta'])
+        self.assertEqual(self.shard(2, 2), ['TestAlpha', 'TestAlphaTwo', 'TestBeta', 'ExampleGamma', 'TestEpsilon'])
+        # Three shards: 100 | 40 + 20 + 10 | 30 + 30 + 0.1, where a count split is 3, 2, 2.
+        self.assertEqual(self.shard(1, 3), ['TestZeta'])
+        self.assertEqual(self.shard(2, 3), ['TestAlpha', 'FuzzDelta', 'TestEpsilon'])
+        self.assertEqual(self.shard(3, 3), ['TestAlphaTwo', 'TestBeta', 'ExampleGamma'])
+
+    def test_tests_reported_at_no_time_are_spread_over_the_shards(self):
+        quick = ['TestQuick%02d' % i for i in range(10)]
+        self.list.write_text('\n'.join(quick) + '\n')
+        self.durations.write_text(json.dumps({'version': 1, 'default': DEFAULT, 'tests': {n: 0.0 for n in quick}}))
+        parts = [self.shard(k, 2) for k in (1, 2)]
+        self.assertEqual(sorted(parts[0] + parts[1]), quick)
+        self.assertEqual((len(parts[0]), len(parts[1])), (5, 5))
+
+    def test_an_unrecorded_test_counts_as_the_default(self):
+        self.durations.write_text(json.dumps({'version': 1, 'default': 500.0, 'tests': SECONDS}))
+        self.assertEqual(self.shard(1, 2), ['TestEpsilon'])
+
+    def test_a_missing_or_malformed_durations_file_is_refused(self):
+        for content in (None, 'not json', json.dumps({'version': 2, 'default': 1, 'tests': {}}),
+                        json.dumps({'version': 1, 'default': 0, 'tests': {}}),
+                        json.dumps({'version': 1, 'default': 1, 'tests': {'TestA': -1}}),
+                        json.dumps({'version': 1, 'default': 1, 'tests': {'not a test': 1}})):
+            with self.subTest(content=content):
+                if content is None:
+                    self.durations.unlink(missing_ok=True)
+                else:
+                    self.durations.write_text(content)
+                result = self.run_helper('select', '1/2', str(self.list))
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertIn('durations', result.stderr)
+
+    def test_durations_records_top_level_seconds_from_shard_logs(self):
+        one = self.root / 'one'
+        one.mkdir()
+        (one / 'go-test-desk.log').write_text('\n'.join([
+            '=== RUN   TestAlpha', '    --- PASS: TestAlpha/sub (2.00s)', '--- PASS: TestAlpha (2.50s)',
+            '--- FAIL: TestBeta (1.25s)', '--- SKIP: TestGamma (0.00s)',
+            'panic: test timed out after 30m0s', '\trunning tests:', '\t\tTestDelta (9m0s)']) + '\n')
+        two = self.root / 'two'
+        two.mkdir()
+        (two / 'go-test-desk.log').write_text('--- PASS: TestAlpha (3.00s)\n--- PASS: TestEpsilon (0.75s)\n')
+        result = self.run_helper('durations', str(one), str(two))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data['tests'], {'TestAlpha': 3.0, 'TestBeta': 1.25, 'TestGamma': 0.0, 'TestEpsilon': 0.75})
+        self.assertEqual(data['version'], 1)
+        self.assertEqual(data['default'], 1.2)
+        self.assertEqual(self.run_helper('durations', str(self.root / 'nothing')).returncode, 2)
+
+    def test_the_checked_in_durations_file_is_read(self):
+        env = {k: v for k, v in self.env.items() if k != 'GO_TEST_SHARD_DURATIONS'}
+        result = self.run_helper('select', '1/1', str(self.list), env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_select_refuses_a_bad_shard_a_bad_list_and_an_empty_shard(self):
         for shard in ('0/3', '4/3', '1/0', 'x', '1/3/1'):

@@ -2,22 +2,28 @@
 """The shards of internal/desk's Go tests, and the check that together they ran every test.
 
 The package's suite is too long for one CI job, so scripts/dev/go-test.sh runs it in shards.
-The package's top-level tests, sorted by name (byte order), are dealt out in turn: the i-th
-(from 0) belongs to shard 1 + i mod N. Every machine computes the same split from the same
-`go test -list` output, the shards differ by at most one test, and the tests of one feature,
-whose names share a prefix and whose cost is alike, are spread over all the shards rather than
-piled into one. No durations are recorded: the split needs none.
+Its tests differ in cost by more than a hundredfold (a few take minutes, most take seconds), so
+the shards are balanced by recorded time, not by count: go-test-durations.json, beside this
+script, holds each top-level test's seconds from a CI run (refresh it with `durations`), and a
+test it does not name counts as its `default`. The tests, longest first (ties by name, byte
+order), each go to the shard with the least time so far (ties to the lowest shard). Every
+machine computes the same split from the same `go test -list` output and the same file.
+GO_TEST_SHARD_DURATIONS names another durations file (the helper's own tests use one).
 
   go-test-shards.py select K/N LIST          the anchored -run pattern of shard K (stdout)
   go-test-shards.py summary K/N LIST LOG     a Markdown block of what shard K's log says
   go-test-shards.py complete N DIR...        every listed test reported in exactly one shard
+  go-test-shards.py durations DIR...         a durations file from shards' logs (stdout)
 
 LIST is the output of `go test -list '.*'` for the package. `complete` reads, in each DIR, the
 files go-test.sh leaves there for one shard (go-test-shard.json, go-test-desk.list and
 go-test-desk.log) and fails when a shard is missing or duplicated, when the shards listed
 different tests, or when a listed test has no PASS, FAIL or SKIP line in any shard's log, or in
-more than one. A test that never ran is never read as a pass. Standard library only.
+more than one. A test that never ran is never read as a pass. `durations` reads the same logs
+and records each top-level test's reported seconds; a test that reported none, such as one
+still running when its shard timed out, is left to the default. Standard library only.
 """
+import heapq
 import json
 import os
 import re
@@ -30,6 +36,8 @@ OK_LINE = re.compile(r'^(ok|PASS|FAIL)(\s|$)')
 STATE = 'go-test-shard.json'
 LIST = 'go-test-desk.list'
 LOG = 'go-test-desk.log'
+FLOOR = 0.1
+DURATIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'go-test-durations.json')
 
 
 def refuse(message):
@@ -44,10 +52,45 @@ def parse_shard(text):
     return int(match.group(1)), int(match.group(2))
 
 
-def shard_names(names, k, shards):
+def read_durations():
+    """The recorded seconds of each test, and the seconds of a test the file does not name."""
+    path = os.environ.get('GO_TEST_SHARD_DURATIONS') or DURATIONS
+    try:
+        with open(path, encoding='utf-8') as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as error:
+        refuse('%s: no durations (%s)' % (path, error))
+    number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 1e6
+    if not isinstance(data, dict) or data.get('version') != 1 or not number(data.get('default')) \
+            or data['default'] <= 0 or not isinstance(data.get('tests'), dict):
+        refuse('%s: not a version 1 durations file with a positive default' % path)
+    for name, seconds in data['tests'].items():
+        if not NAME.match(name) or not number(seconds):
+            refuse('%s: not a test duration: %r' % (path, name[:200]))
+    return data['tests'], data['default']
+
+
+def assign(names, shards, durations):
+    """Shard (1..n) of each test: longest first, each to the shard with the least time so far.
+
+    A test costs at least FLOOR seconds, so the many tests reported at 0.00s are spread over
+    the shards rather than all given to whichever shard is least loaded."""
+    recorded, default = durations
+    cost = lambda name: max(recorded.get(name, default), FLOOR)
+    order = sorted(names, key=lambda name: (-cost(name), name))
+    loads = [(0.0, k) for k in range(1, shards + 1)]
+    owner = {}
+    for name in order:
+        total, k = heapq.heappop(loads)
+        owner[name] = k
+        heapq.heappush(loads, (total + cost(name), k))
+    return owner
+
+
+def shard_names(names, k, shards, durations):
     """The tests of shard k of n, in the list's own order (the order go test runs them in)."""
-    mine = set(sorted(names)[k - 1::shards])
-    return [name for name in names if name in mine]
+    owner = assign(names, shards, durations)
+    return [name for name in names if owner[name] == k]
 
 
 def read_list(path):
@@ -124,7 +167,7 @@ def summary_block(label, names, found, failed, timeout, seconds, artifact=''):
 def select(args):
     if len(args) != 2: refuse('select K/N LIST')
     k, n = parse_shard(args[0])
-    names = shard_names(read_list(args[1]), k, n)
+    names = shard_names(read_list(args[1]), k, n, read_durations())
     if not names:
         refuse('shard %d/%d has no tests; choose fewer shards' % (k, n))
     print('^(%s)$' % '|'.join(names))
@@ -133,13 +176,14 @@ def select(args):
 def summary(args):
     if len(args) != 3: refuse('summary K/N LIST LOG')
     k, n = parse_shard(args[0])
-    names = shard_names(read_list(args[1]), k, n)
+    names = shard_names(read_list(args[1]), k, n, read_durations())
     print('\n'.join(summary_block('internal/desk shard %d/%d' % (k, n), names, *results(args[2]))))
 
 
 def complete(args):
     if len(args) < 2: refuse('complete N DIR...')
     shards = int(args[0]) if args[0].isdigit() and int(args[0]) > 0 else refuse('N must be a positive count')
+    durations = read_durations()
     problems, seen, listing, reported, report = [], {}, None, {}, []
     for directory in args[1:]:
         try:
@@ -161,7 +205,7 @@ def complete(args):
             listing = names
         elif set(names) != set(listing):
             problems.append('%s: shard %d listed other tests than the first shard read' % (directory, k))
-        mine = shard_names(names, k, n)
+        mine = shard_names(names, k, n, durations)
         found, failed, timeout, seconds = results(os.path.join(directory, LOG))
         report += summary_block('internal/desk shard %d/%d' % (k, n), mine, found, failed, timeout, seconds,
                                 state.get('artifact', ''))
@@ -199,8 +243,30 @@ def complete(args):
     print('go-test-shards: complete: ' + tally)
 
 
+def durations(args):
+    if not args: refuse('durations DIR...')
+    tests = {}
+    for directory in args:
+        path = os.path.join(directory, LOG)
+        try:
+            with open(path, encoding='utf-8', errors='replace') as handle:
+                lines = handle.read().splitlines()
+        except OSError as error:
+            refuse('%s: no log (%s)' % (path, error))
+        for line in lines:
+            match = RESULT.match(line)
+            if match:
+                name, seconds = match.group(2), float(match.group(3))
+                tests[name] = max(tests.get(name, 0.0), seconds)
+    if not tests:
+        refuse('no test reported a duration')
+    default = round(sum(tests.values()) / len(tests), 1) or 0.1
+    data = {'version': 1, 'default': default, 'tests': {name: round(tests[name], 2) for name in sorted(tests)}}
+    print(json.dumps(data, indent=0, sort_keys=True))
+
+
 if __name__ == '__main__':
-    commands = {'select': select, 'summary': summary, 'complete': complete}
+    commands = {'select': select, 'summary': summary, 'complete': complete, 'durations': durations}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
-        refuse('usage: select K/N LIST | summary K/N LIST LOG | complete N DIR...')
+        refuse('usage: select K/N LIST | summary K/N LIST LOG | complete N DIR... | durations DIR...')
     commands[sys.argv[1]](sys.argv[2:])
