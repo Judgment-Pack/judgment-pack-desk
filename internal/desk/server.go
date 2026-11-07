@@ -608,6 +608,12 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 	if err := s.activateStorageBudgetStartup(ctx); err != nil {
+		// Another project in an installation sealed to its first one is
+		// refused in words, not started read-only behind a generic pause.
+		if errors.Is(err, errDeskAnotherStartupProject) {
+			s.Close()
+			return nil, errDeskAnotherStartupProject
+		}
 		s.storageReadOnly = true
 		s.storageProblem = err
 		s.recordStorageStatusProblem(err)

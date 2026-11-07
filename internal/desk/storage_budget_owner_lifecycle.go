@@ -318,6 +318,11 @@ func (c *storageBudgetConstruction) loadOrEnrollOwner(ctx context.Context) (err 
 	if peak != nil {
 		return c.resumeOriginalEnrollmentStartup(ctx, *peak, peakCatalogs, record, claim)
 	}
+	if raw != nil {
+		if e = storageOwnerSameStartupProject(cat, x); e != nil {
+			return e
+		}
+	}
 	freshCatalog := raw == nil
 	if freshCatalog {
 		v, ve := q.InspectHost(ctx)
@@ -538,6 +543,30 @@ func (c *storageBudgetConstruction) validateBootstrapContinuation(ctx context.Co
 		err = errStorageBootstrap
 	}
 	return errors.Join(err, n.root.Close())
+}
+
+// errDeskAnotherStartupProject refuses a start on another project in an
+// installation without a Desk home. Its storage catalog is sealed to the
+// project Desk was first started on (storage-budget-startup.md: the original
+// adopted project seals construction), and no transition moves that owner to
+// another project, so the start would otherwise run read-only with a generic
+// pause. Desk does not start; nothing is reconciled or merged.
+var errDeskAnotherStartupProject = errors.New("This installation's storage belongs to the project Desk was first started on with these settings and data folders, not to this project. Start Desk on that project, or move that project from there with Move… under Admin → General → Desk home.")
+
+// A saved catalog without a Desk home records exactly one project workspace:
+// the startup project's, keyed by its project identity. A start whose project
+// has another identity key is another project. A Desk home's registry projects
+// and every other difference, including the same project's history identity,
+// keep the exact comparison that follows.
+func storageOwnerSameStartupProject(cat storageOwnerCatalogV2, x *storageOriginalSources) error {
+	if x == nil || cat.OriginalOwner.Kind != 1 || x.owner.Kind != 1 || !bytes.Equal(cat.OriginalOwner.ConfigPath, x.owner.ConfigPath) || len(cat.Workspaces) != 1 || len(x.workspaces) != 1 {
+		return nil
+	}
+	old, now := cat.Workspaces[0], x.workspaces[0]
+	if old.OwnerKind != 3 || now.OwnerKind != 3 || bytes.Equal(old.OwnerKey, now.OwnerKey) {
+		return nil
+	}
+	return errDeskAnotherStartupProject
 }
 
 func (c *storageBudgetConstruction) selectOwnerCatalog(ctx context.Context, r storageOwnerRecordV2, claim storageOwnerClaimV2) (cat storageOwnerCatalogV2, bank int, frame []byte, err error) {

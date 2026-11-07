@@ -307,8 +307,16 @@ func (c *storageBudgetConstruction) resumeOriginalEnrollmentStartup(ctx context.
 	p.sourceHoldsComplete = false
 	scope := outer.Scope
 	actualProject, err := storageOwnerPersistentRoot(ctx, c.project.own.root)
-	if err != nil || actualProject != storageEnrollmentPeakNative(scope[286:321]) {
+	if err != nil {
 		return errors.Join(errStorageCustody, err)
+	}
+	if actualProject != storageEnrollmentPeakNative(scope[286:321]) {
+		// Without a Desk home the enrolled project is the installation's one
+		// startup project; another project folder is refused in words.
+		if c.server.home == nil {
+			return errDeskAnotherStartupProject
+		}
+		return errStorageCustody
 	}
 	// Installation/control originals and complete immutable Scope were decoded
 	// under actual home EX. Reconstruct precisely the same P, without claiming
