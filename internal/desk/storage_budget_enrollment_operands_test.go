@@ -298,3 +298,76 @@ func TestStorageEnrollmentOperandCloneDetachesEveryReference(t *testing.T) {
 		}
 	}
 }
+
+// Pointer-free views read the exact retained strict decode without cloning it,
+// keep the strict refusal for other bytes, and cannot return an aliasing type.
+func TestStorageEnrollmentOperandViewsReadRetainedFactsOnly(t *testing.T) {
+	f := epEvidence(t, 1)
+	anchor := storageEnrollmentPeakQHeldAnchor{Installation: storageEnrollmentPeakQID(f.record.Installation), Binding: storageEnrollmentPeakQDigest(f.record.QBinding)}
+	strict, err := storageEnrollmentPeakQDecodeCheckpoint(append([]byte(nil), f.cp[0]...), anchor)
+	storageTestMust(t, err)
+	var operands storageEnrollmentOperands
+	for round := 0; round < 2; round++ {
+		got, err := operands.checkpointFacts(f.cp[0], anchor)
+		storageTestMust(t, err)
+		if got.Generation != strict.Generation || got.Applied != strict.Applied || got.Digest != sha256.Sum256(f.cp[0]) || operands.next != 1 {
+			t.Fatal("checkpoint facts differ from the strict decode or were not reused", round)
+		}
+		got.Applied[0].NextSequence++
+	}
+	full, err := storageEnrollmentOperandGet(&operands, storageEnrollmentOperandCheckpoint, f.cp[0], anchor, storageEnrollmentCheckpointDecoder(anchor))
+	storageTestMust(t, err)
+	if !reflect.DeepEqual(full.Value, strict) || operands.next != 1 {
+		t.Fatal("a view changed or replaced the retained model")
+	}
+	bad := append([]byte(nil), f.cp[0]...)
+	bad[200] ^= 1
+	_, strictErr := storageEnrollmentPeakQDecodeCheckpoint(append([]byte(nil), bad...), anchor)
+	_, viewErr := operands.checkpointFacts(bad, anchor)
+	if strictErr == nil || !errors.Is(viewErr, strictErr) {
+		t.Fatal("changed checkpoint bytes reused facts", viewErr, strictErr)
+	}
+	e := epDecode(t, f)
+	if e.Scope.hasOriginalPeer() {
+		_, _, strictPeer := storageEnrollmentPeakRestoreOriginalPeerVariant(e.Scope, e.OriginalV3, f.record, f.claim, false)
+		for round := 0; round < 2; round++ {
+			before := operands.next
+			err := operands.peerValid(e.Scope, e.OriginalV3, f.record, f.claim, false)
+			if (err == nil) != (strictPeer == nil) || round == 1 && strictPeer == nil && operands.next != before {
+				t.Fatal("peer validation differs from strict restoration or was not reused", round, err, strictPeer)
+			}
+		}
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("an aliasing view was accepted")
+		}
+	}()
+	_, _ = storageEnrollmentOperandView(&operands, storageEnrollmentOperandCheckpoint, f.cp[0], anchor, storageEnrollmentCheckpointDecoder(anchor), func(v storageEnrollmentCheckpointOperand) *storageEnrollmentPeakQCheckpoint { return v.Value })
+}
+
+// Sub-decodes reused within one epoch's operands return the strict evidence.
+func TestStorageEnrollmentOperandsSharedSubDecodesStayStrict(t *testing.T) {
+	for _, phase := range []byte{0, 1, 2} {
+		f := epEvidence(t, phase)
+		want, err := storageEnrollmentPeakDecodeEvidence(f.raw, f.record, f.claim)
+		storageTestMust(t, err)
+		var operands storageEnrollmentOperands
+		for round := 0; round < 2; round++ {
+			before := operands.next
+			got, err := storageEnrollmentPeakDecodeEvidenceOperands(append([]byte(nil), f.raw...), nil, f.record, f.claim, &operands)
+			storageTestMust(t, err)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatal("reused sub-decodes changed the evidence", phase, round)
+			}
+			if round == 1 && operands.next != before {
+				t.Fatal("identical sub-decodes were not reused", phase)
+			}
+			for _, b := range [][]byte{got.Checkpoint.Checkpoint, got.Checkpoint.PeerCheckpoint, got.OriginalV3} {
+				if len(b) > 0 {
+					b[0] ^= 1
+				}
+			}
+		}
+	}
+}

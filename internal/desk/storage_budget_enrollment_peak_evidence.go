@@ -350,6 +350,13 @@ func storageEnrollmentPeakDecodeEvidence(raw []byte, record storageOwnerRecordV2
 }
 
 func storageEnrollmentPeakDecodeEvidenceWithLineage(raw []byte, retained *storageCompositionLineage, record storageOwnerRecordV2, claim storageOwnerClaimV2) (storageEnrollmentPeakEvidence, error) {
+	return storageEnrollmentPeakDecodeEvidenceOperands(raw, retained, record, claim, nil)
+}
+
+// The same strict decoder. Nonnil operands only reuse this epoch's exact
+// earlier results for pure sub-decodes (original peer restoration, original
+// checkpoint pair, full projection digests) on identical bytes and context.
+func storageEnrollmentPeakDecodeEvidenceOperands(raw []byte, retained *storageCompositionLineage, record storageOwnerRecordV2, claim storageOwnerClaimV2, operands *storageEnrollmentOperands) (storageEnrollmentPeakEvidence, error) {
 	var e storageEnrollmentPeakEvidence
 	fail := func() (storageEnrollmentPeakEvidence, error) {
 		return storageEnrollmentPeakEvidence{}, storagebudget.ErrBounds
@@ -464,7 +471,7 @@ func storageEnrollmentPeakDecodeEvidenceWithLineage(raw []byte, retained *storag
 		return fail()
 	}
 	if scope.hasOriginalPeer() {
-		if _, _, err := storageEnrollmentPeakRestoreOriginalPeerVariant(scope, e.OriginalV3, record, claim, e.Version == 2 || e.Version == 3); err != nil {
+		if err := operands.peerValid(scope, e.OriginalV3, record, claim, e.Version == 2 || e.Version == 3); err != nil {
 			return fail()
 		}
 	}
@@ -557,9 +564,9 @@ func storageEnrollmentPeakDecodeEvidenceWithLineage(raw []byte, retained *storag
 		return fail()
 	}
 	if e.Version == 3 {
-		e.Checkpoint, err = storagePolicyReadCheckpoint(e.Sections[6].Raw, e.Inner.Catalog, e.Views, scope, e.EffectiveSets)
+		e.Checkpoint, err = storagePolicyReadCheckpointOperands(e.Sections[6].Raw, e.Inner.Catalog, e.Views, scope, e.EffectiveSets, operands)
 	} else {
-		e.Checkpoint, err = storageEnrollmentPeakReadCheckpoint(e.Sections[6].Raw, e.Inner.Catalog, e.Views, scope)
+		e.Checkpoint, err = storageEnrollmentPeakReadCheckpointOperands(e.Sections[6].Raw, e.Inner.Catalog, e.Views, scope, operands)
 	}
 	if err != nil {
 		return fail()
@@ -575,7 +582,7 @@ func storageEnrollmentPeakDecodeEvidenceWithLineage(raw []byte, retained *storag
 	// complete canonical DTO supplies the before-inner comparison material.
 	matches := 0
 	for _, p := range e.Projections {
-		if storageEnrollmentPeakProjectionFullDigest(p) == e.Before {
+		if operands.projectionDigest(p) == e.Before {
 			matches++
 			j, _ := json.Marshal(p.Catalog)
 			if sha256.Sum256(j) != e.BeforeInner {
@@ -672,7 +679,7 @@ func storageEnrollmentPeakDecodeEvidenceWithLineage(raw []byte, retained *storag
 		}
 	}
 	for _, projection := range e.Projections {
-		if storageEnrollmentPeakProjectionFullDigest(projection) == e.Before && !storageEnrollmentRetainsOriginalWithDefault(projection.Catalog, e.Inner.Catalog, &e.Board.Source) {
+		if operands.projectionDigest(projection) == e.Before && !storageEnrollmentRetainsOriginalWithDefault(projection.Catalog, e.Inner.Catalog, &e.Board.Source) {
 			return fail()
 		}
 	}

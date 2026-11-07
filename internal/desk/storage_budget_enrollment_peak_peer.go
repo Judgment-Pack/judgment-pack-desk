@@ -258,12 +258,12 @@ func storageEnrollmentPeakRestoreOriginalCheckpointsOperands(p storageEnrollment
 	out[p.Bank] = p.Checkpoint
 	out[1-p.Bank] = p.PeerCheckpoint
 	anchor := storageEnrollmentPeakQHeldAnchor{Installation: storageEnrollmentPeakQID(c.Installation), Binding: storageEnrollmentPeakQDigest(c.QBinding)}
-	var q [2]*storageEnrollmentPeakQCheckpoint
+	var q [2]storageEnrollmentCheckpointFacts
 	for i := range q {
 		var err error
-		decoded, decodeErr := operands.checkpoint(out[i], anchor)
+		decoded, decodeErr := operands.checkpointFacts(out[i], anchor)
 		err = decodeErr
-		q[i] = decoded.Value
+		q[i] = decoded
 		if err != nil || decoded.Digest != p.Checkpoints[i] {
 			return [2][]byte{}, storagebudget.ErrBounds
 		}
@@ -291,6 +291,9 @@ func storageEnrollmentPeakCheckpointParts(raw []byte, s storageEnrollmentPeakSco
 }
 
 func storageEnrollmentPeakReadCheckpoint(raw []byte, c storageOwnerCatalogV2, views []storageEnrollmentPeakView, s storageEnrollmentPeakScope) (storageEnrollmentPeakCheckpointProjection, error) {
+	return storageEnrollmentPeakReadCheckpointOperands(raw, c, views, s, nil)
+}
+func storageEnrollmentPeakReadCheckpointOperands(raw []byte, c storageOwnerCatalogV2, views []storageEnrollmentPeakView, s storageEnrollmentPeakScope, operands *storageEnrollmentOperands) (storageEnrollmentPeakCheckpointProjection, error) {
 	if !s.hasOriginalPeer() {
 		return storageEnrollmentPeakReadCheckpointV1(raw, c, views, s)
 	}
@@ -303,12 +306,13 @@ func storageEnrollmentPeakReadCheckpoint(raw []byte, c storageOwnerCatalogV2, vi
 	if err != nil {
 		return zero, err
 	}
-	return storageEnrollmentPeakFinishCheckpointPeer(raw, peer, p, c)
+	return storageEnrollmentPeakFinishCheckpointPeer(raw, peer, p, c, operands)
 }
 
 // Both callers have just strictly decoded the selected bytes in this same
-// synchronous call. This shares no decoded operand with an external reader.
-func storageEnrollmentPeakFinishCheckpointPeer(raw, peerRaw []byte, p storageEnrollmentPeakCheckpointProjection, c storageOwnerCatalogV2) (storageEnrollmentPeakCheckpointProjection, error) {
+// synchronous call. This shares no decoded operand with an external reader;
+// nonnil epoch operands supply only pointer-free facts of the exact pages.
+func storageEnrollmentPeakFinishCheckpointPeer(raw, peerRaw []byte, p storageEnrollmentPeakCheckpointProjection, c storageOwnerCatalogV2, operands *storageEnrollmentOperands) (storageEnrollmentPeakCheckpointProjection, error) {
 	var zero storageEnrollmentPeakCheckpointProjection
 	peer, err := storageEnrollmentPeakReadPeerCheckpoint(peerRaw)
 	if err != nil {
@@ -319,7 +323,7 @@ func storageEnrollmentPeakFinishCheckpointPeer(raw, peerRaw []byte, p storageEnr
 	if err != nil {
 		return zero, err
 	}
-	if _, err = storageEnrollmentPeakRestoreOriginalCheckpoints(p, c); err != nil {
+	if _, err = storageEnrollmentPeakRestoreOriginalCheckpointsOperands(p, c, operands); err != nil {
 		return zero, err
 	}
 	p.Raw = append([]byte{}, raw...)
@@ -357,7 +361,7 @@ func storageEnrollmentPeakWriteCheckpoint(p storageEnrollmentPeakCheckpointProje
 	_, peerRaw, err := storageEnrollmentPeakCheckpointParts(w.raw, s)
 	var decoded storageEnrollmentPeakCheckpointProjection
 	if err == nil {
-		decoded, err = storageEnrollmentPeakFinishCheckpointPeer(w.raw, peerRaw, validated, c)
+		decoded, err = storageEnrollmentPeakFinishCheckpointPeer(w.raw, peerRaw, validated, c, nil)
 	}
 	if err != nil || !reflect.DeepEqual(decoded.Q, p.Q) {
 		return nil, storagebudget.ErrBounds
@@ -369,6 +373,9 @@ func storageEnrollmentPeakWriteCheckpoint(p storageEnrollmentPeakCheckpointProje
 // set as its View. The arbitrary peer keeps its existing full independent
 // codec; the additional frame never supplies or rewrites peer policy rows.
 func storagePolicyReadCheckpoint(raw []byte, c storageOwnerCatalogV2, views []storageEnrollmentPeakView, s storageEnrollmentPeakScope, sets []storagePolicyEffectiveSet) (storageEnrollmentPeakCheckpointProjection, error) {
+	return storagePolicyReadCheckpointOperands(raw, c, views, s, sets, nil)
+}
+func storagePolicyReadCheckpointOperands(raw []byte, c storageOwnerCatalogV2, views []storageEnrollmentPeakView, s storageEnrollmentPeakScope, sets []storagePolicyEffectiveSet, operands *storageEnrollmentOperands) (storageEnrollmentPeakCheckpointProjection, error) {
 	var zero storageEnrollmentPeakCheckpointProjection
 	if len(raw) < 8 || len(raw) > 4718592 || storageEnrollmentPeakU16(raw[:2]) != 1 || uint64(storageEnrollmentPeakU32(raw[4:8])) != uint64(len(raw)-8) {
 		return zero, storagebudget.ErrBounds
@@ -377,7 +384,7 @@ func storagePolicyReadCheckpoint(raw []byte, c storageOwnerCatalogV2, views []st
 	if index >= len(sets) {
 		return zero, storagebudget.ErrBounds
 	}
-	p, err := storageEnrollmentPeakReadCheckpoint(raw[8:], c, views, s)
+	p, err := storageEnrollmentPeakReadCheckpointOperands(raw[8:], c, views, s, operands)
 	if err != nil {
 		return zero, err
 	}

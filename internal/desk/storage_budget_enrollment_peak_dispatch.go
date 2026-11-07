@@ -183,14 +183,14 @@ func storageEnrollmentPeakCompareQ(e storageEnrollmentPeakEvidence, checkpoints 
 func storageEnrollmentPeakCompareQOperands(e storageEnrollmentPeakEvidence, checkpoints [2][]byte, tickets [2][]byte, dispatch storageEnrollmentPeakDispatch, operands *storageEnrollmentOperands) (storageEnrollmentPeakQComparison, error) {
 	var result storageEnrollmentPeakQComparison
 	anchor := storageEnrollmentPeakQHeldAnchor{Installation: storageEnrollmentPeakQID(e.Installation), Binding: storageEnrollmentPeakQDigest(e.QBinding)}
-	var q [2]*storageEnrollmentPeakQCheckpoint
+	var q [2]storageEnrollmentCheckpointFacts
 	var checkpointDigests [2]storagebudget.Digest
 	for i := range q {
-		decoded, err := operands.checkpoint(checkpoints[i], anchor)
+		decoded, err := operands.checkpointFacts(checkpoints[i], anchor)
 		if err != nil {
 			return result, err
 		}
-		q[i] = decoded.Value
+		q[i] = decoded
 		checkpointDigests[i] = decoded.Digest
 		if len(tickets[i]) != 64*16384 {
 			return result, storagebudget.ErrBounds
@@ -378,7 +378,7 @@ func storageEnrollmentPeakCompareOriginalOperands(e storageEnrollmentPeakEvidenc
 	} else {
 		for i := 0; i < 2; i++ {
 			anchor := storageEnrollmentPeakQHeldAnchor{Installation: storageEnrollmentPeakQID(e.Installation), Binding: storageEnrollmentPeakQDigest(e.QBinding)}
-			cp, decodeErr := operands.checkpoint(c.Checkpoints[i], anchor)
+			cp, decodeErr := operands.checkpointFacts(c.Checkpoints[i], anchor)
 			if decodeErr != nil || cp.Digest != e.Checkpoint.Checkpoints[i] {
 				return storagebudget.ErrBounds
 			}

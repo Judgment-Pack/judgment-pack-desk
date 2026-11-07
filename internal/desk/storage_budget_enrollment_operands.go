@@ -210,6 +210,7 @@ func storageEnrollmentOperandSize(v reflect.Value) uint64 {
 	}
 	return n
 }
+
 func storageEnrollmentOperandGet[T any](o *storageEnrollmentOperands, kind uint8, raw []byte, context any, decode func([]byte) (T, error)) (T, error) {
 	if o == nil {
 		return decode(raw)
@@ -274,6 +275,31 @@ func storageEnrollmentOperandGet[T any](o *storageEnrollmentOperands, kind uint8
 	return value, nil
 }
 
+// View reads a pointer-free projection of the exact retained (or freshly and
+// strictly decoded) model without cloning that model. The view function only
+// reads its argument, and V holds no pointer, slice, map or interface, so the
+// result shares nothing with the retained model. Keys, retention, bounds and
+// strict fallback are exactly those of storageEnrollmentOperandGet.
+func storageEnrollmentOperandView[T, V any](o *storageEnrollmentOperands, kind uint8, raw []byte, context any, decode func([]byte) (T, error), view func(T) V) (V, error) {
+	var zero V
+	if storageEnrollmentOperandMutable(reflect.TypeFor[V]()) {
+		panic("storage enrollment operand view can alias its model")
+	}
+	if o != nil {
+		for i := range o.entries {
+			e := &o.entries[i]
+			if e.kind == kind && bytes.Equal(e.raw, raw) && reflect.DeepEqual(e.context, context) {
+				return view(e.value.(T)), nil
+			}
+		}
+	}
+	value, err := storageEnrollmentOperandGet(o, kind, raw, context, decode)
+	if err != nil {
+		return zero, err
+	}
+	return view(value), nil
+}
+
 type storageEnrollmentEvidenceContext struct {
 	Record  storageOwnerRecordV2
 	Claim   storageOwnerClaimV2
@@ -286,7 +312,7 @@ func (o *storageEnrollmentOperands) evidence(raw []byte, lineage *storageComposi
 		if o != nil {
 			lineage = storageEnrollmentOperandFreeze(lineage)
 		}
-		return storageEnrollmentPeakDecodeEvidenceWithLineage(held, lineage, record, claim)
+		return storageEnrollmentPeakDecodeEvidenceOperands(held, lineage, record, claim, o)
 	})
 }
 func (o *storageEnrollmentOperands) envelope(raw []byte, record storageOwnerRecordV2, claim storageOwnerClaimV2, validate, composition bool) (storageEnrollmentPeakEnvelope, error) {
@@ -305,13 +331,27 @@ type storageEnrollmentCheckpointOperand struct {
 	Digest storagebudget.Digest
 }
 
-func (o *storageEnrollmentOperands) checkpoint(raw []byte, anchor storageEnrollmentPeakQHeldAnchor) (storageEnrollmentCheckpointOperand, error) {
-	return storageEnrollmentOperandGet(o, storageEnrollmentOperandCheckpoint, raw, anchor, func(held []byte) (storageEnrollmentCheckpointOperand, error) {
+func storageEnrollmentCheckpointDecoder(anchor storageEnrollmentPeakQHeldAnchor) func([]byte) (storageEnrollmentCheckpointOperand, error) {
+	return func(held []byte) (storageEnrollmentCheckpointOperand, error) {
 		q, err := storageEnrollmentPeakQDecodeCheckpoint(append([]byte(nil), held...), anchor)
 		if err != nil {
 			return storageEnrollmentCheckpointOperand{}, err
 		}
 		return storageEnrollmentCheckpointOperand{q, sha256.Sum256(held)}, nil
+	}
+}
+
+// The pair/transition facts that bank comparisons read from a strictly
+// decoded checkpoint page, without copying its 2.5 MiB model.
+type storageEnrollmentCheckpointFacts struct {
+	Generation uint64
+	Applied    [storageEnrollmentPeakQSlots]storageEnrollmentPeakQApplied
+	Digest     storagebudget.Digest
+}
+
+func (o *storageEnrollmentOperands) checkpointFacts(raw []byte, anchor storageEnrollmentPeakQHeldAnchor) (storageEnrollmentCheckpointFacts, error) {
+	return storageEnrollmentOperandView(o, storageEnrollmentOperandCheckpoint, raw, anchor, storageEnrollmentCheckpointDecoder(anchor), func(v storageEnrollmentCheckpointOperand) storageEnrollmentCheckpointFacts {
+		return storageEnrollmentCheckpointFacts{Generation: v.Value.Generation, Applied: v.Value.Applied, Digest: v.Digest}
 	})
 }
 
@@ -340,16 +380,27 @@ type storageEnrollmentPeerOperand struct {
 }
 
 func (o *storageEnrollmentOperands) peer(scope storageEnrollmentPeakScope, raw []byte, record storageOwnerRecordV2, claim storageOwnerClaimV2, composition bool) (storageEnrollmentPeerOperand, error) {
+	context, decode := storageEnrollmentPeerOperandKey(scope, record, claim, composition)
+	return storageEnrollmentOperandGet(o, storageEnrollmentOperandPeer, raw, context, decode)
+}
+
+// peerValid is peer when only the strict success of the restoration is used.
+func (o *storageEnrollmentOperands) peerValid(scope storageEnrollmentPeakScope, raw []byte, record storageOwnerRecordV2, claim storageOwnerClaimV2, composition bool) error {
+	context, decode := storageEnrollmentPeerOperandKey(scope, record, claim, composition)
+	_, err := storageEnrollmentOperandView(o, storageEnrollmentOperandPeer, raw, context, decode, func(storageEnrollmentPeerOperand) struct{} { return struct{}{} })
+	return err
+}
+func storageEnrollmentPeerOperandKey(scope storageEnrollmentPeakScope, record storageOwnerRecordV2, claim storageOwnerClaimV2, composition bool) (any, func([]byte) (storageEnrollmentPeerOperand, error)) {
 	context := struct {
 		Scope       storageEnrollmentPeakScope
 		Record      storageOwnerRecordV2
 		Claim       storageOwnerClaimV2
 		Composition bool
 	}{scope, record, claim, composition}
-	return storageEnrollmentOperandGet(o, storageEnrollmentOperandPeer, raw, context, func(held []byte) (storageEnrollmentPeerOperand, error) {
+	return context, func(held []byte) (storageEnrollmentPeerOperand, error) {
 		p, b, err := storageEnrollmentPeakRestoreOriginalPeerVariant(scope, held, record, claim, composition)
 		return storageEnrollmentPeerOperand{p, b}, err
-	})
+	}
 }
 
 func (o *storageEnrollmentOperands) catalog(raw [2][]byte, record storageOwnerRecordV2, claim storageOwnerClaimV2) (storageOwnerCatalogPair, error) {
