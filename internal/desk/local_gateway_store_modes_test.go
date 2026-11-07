@@ -11,10 +11,11 @@ import (
 // **A local gateway store an earlier Desk left at the inherited mask is made
 // owner-only before the census.** Before the worker set an owner-only mask,
 // the gateway made its store's folders 0755 and files 0644 inside Desk's
-// config folder; the census refuses any entry there that is not private, so
-// every later start was read-only. Start narrows that store, and only that
-// store: an entry group or others may write, a link's target and a file
-// outside the store keep their modes, and the census still refuses them.
+// config folder; the census then refused any entry there that was not
+// private, so every later start was read-only. Start narrows that store, and
+// only that store: an entry group or others may write, a link's target and a
+// file outside the store keep their modes, and the census still refuses an
+// entry someone else could write.
 func TestLocalGatewayStoreFromAnEarlierDeskIsNarrowedBeforeTheCensus(t *testing.T) {
 	type entry struct {
 		path string

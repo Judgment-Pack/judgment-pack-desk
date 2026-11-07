@@ -82,7 +82,9 @@ func TestStorageInitialCensusRefusalsPreserveMaintenance(t *testing.T) {
 			case "symlink":
 				storageTestMust(t, os.Symlink("missing", filepath.Join(config, "link")))
 			case "nonprivate":
-				storageTestMust(t, os.WriteFile(filepath.Join(config, "public"), nil, 0644))
+				// Group write, not group read, is what the census refuses.
+				storageTestMust(t, os.WriteFile(filepath.Join(config, "public"), nil, 0600))
+				storageTestMust(t, os.Chmod(filepath.Join(config, "public"), 0664))
 			case "missing-domain":
 				storageTestMust(t, os.Remove(filepath.Join(config, ".data.lock")))
 			case "entry-bound":

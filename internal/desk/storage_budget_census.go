@@ -40,18 +40,18 @@ func storageCensusPrivateFile(info os.FileInfo) bool {
 	return ok && known && uid == effectiveUser() && links > 0
 }
 
-// The desk-level desk.json is the one file in the original config parent that a
-// person edits by hand. Custody reads it at the mode a checkout or an editor
-// leaves (0644) and refuses only one that someone else could write
-// (readConfigNamed); the census measures that same file rather than refusing
-// the installation over a mode Desk itself accepts. Ownership, link, regular-file
-// and no-group/other-write rules still hold. Every other name, and the same name
-// anywhere else, keeps the private-file rule.
-func storageCensusMeasuredFile(r *storageRootBinding, relative string, info os.FileInfo) bool {
-	if storageCensusPrivateFile(info) {
-		return true
-	}
-	if relative != deskConfigName && !storageCensusDeskProjectPath(relative) || info == nil || !info.Mode().IsRegular() || info.Mode() & ^os.FileMode(0777) != 0 || info.Mode().Perm()&worldMode != 0 || info.Size() < 0 || !storageCensusOriginalConfig(r) {
+// The census rule is custody's rule for what Desk reads (readConfigNamed): a
+// regular file or a directory, owned by the user running Desk, that neither
+// group nor others may write. Group and other read are not refused, so a file
+// at the mode an editor, a checkout or the person's umask leaves (0644, 0755)
+// is measured and its bytes counted, wherever it is under a registered root.
+// Another user's entry, a link where a file or directory is expected, a special
+// file, special mode bits, and anything group or others may write are refused,
+// and the census refuses the installation over it (storage starts read-only).
+// storageCensusPrivateFile stays the stricter rule for the files Desk writes
+// and reopens itself.
+func storageCensusMeasuredFile(info os.FileInfo) bool {
+	if info == nil || !info.Mode().IsRegular() || info.Mode() & ^os.FileMode(0777) != 0 || info.Mode().Perm()&worldMode != 0 || info.Size() < 0 {
 		return false
 	}
 	uid, ok := ownerOf(info)
@@ -59,38 +59,10 @@ func storageCensusMeasuredFile(r *storageRootBinding, relative string, info os.F
 	return ok && known && uid == effectiveUser() && links > 0
 }
 
-// A named desk made in an installation that has no Desk home is a project folder
-// below the original config parent's desks directory (desksRoot). Its project
-// content, everything outside its .desk-private, is written at the mode the
-// person's umask gives, as every project's is: Project Files writes 0666 masked
-// by the umask (createStaging), and the runtime writes jpack.lock.json the same
-// way. The census measures that content under custody's rule for a project
-// directory or file it may read, owned by this user and not writable by group or
-// others, instead of refusing the installation, and so starting it read-only,
-// over a mode Desk itself writes. Its bytes are counted as before. A desk's
-// .desk-private, the desks directory and each desk folder itself, and every
-// other name keep the private rule.
-func storageCensusDeskProjectPath(relative string) bool {
-	parts := strings.Split(relative, "/")
-	return len(parts) >= 3 && parts[0] == "desks" && deskIDPattern.MatchString(parts[1]) && parts[2] != ".desk-private"
-}
-func storageCensusOriginalConfig(r *storageRootBinding) bool {
-	if r == nil || !r.configControl {
-		return false
-	}
-	parent, err := r.censusControlParent()
-	return err == nil && parent == storageCensusConfigParent
-}
-
-// storageCensusMeasuredDirectory is storagePrivate for a directory, or, for a
-// named desk's project content, custody's rule: a directory, owned by this
-// user, that the owner may list and enter and that neither group nor others
-// may write.
-func storageCensusMeasuredDirectory(r *storageRootBinding, relative string, info os.FileInfo) bool {
-	if storagePrivate(info, true) {
-		return true
-	}
-	if !storageCensusDeskProjectPath(relative) || !custodyChecked || info == nil || !info.IsDir() || info.Mode() & ^(os.ModeDir|os.FileMode(0777)) != 0 || info.Mode().Perm()&0700 != 0700 || info.Mode().Perm()&worldMode != 0 || !storageCensusOriginalConfig(r) {
+// storageCensusMeasuredDirectory is the same rule for a directory, which the
+// owner must also be able to list and enter.
+func storageCensusMeasuredDirectory(info os.FileInfo) bool {
+	if !custodyChecked || info == nil || !info.IsDir() || info.Mode() & ^(os.ModeDir|os.FileMode(0777)) != 0 || info.Mode().Perm()&0700 != 0700 || info.Mode().Perm()&worldMode != 0 {
 		return false
 	}
 	uid, ok := ownerOf(info)
@@ -852,7 +824,7 @@ func (w *storageCensusWalk) directory(r *storageRootBinding, root *os.Root, witn
 		return e
 	}
 	before, e := root.Stat(".")
-	if e != nil || !storageCensusMeasuredDirectory(r, relative, before) {
+	if e != nil || !storageCensusMeasuredDirectory(before) {
 		return storagebudget.ErrUnknown
 	}
 	identity, e := storageFileIdentity(before)
@@ -955,9 +927,8 @@ func (w *storageCensusWalk) directory(r *storageRootBinding, root *os.Root, witn
 				}
 				continue
 			}
-			// A named desk's project directory is held to its rule when the
-			// walk enters it; every other child must be private to be pinned.
-			child, e := storagePinChild(root, name, !storageCensusDeskProjectPath(childName))
+			// The walk holds the child to the census rule when it enters it.
+			child, e := storagePinChild(root, name, false)
 			if e != nil {
 				return e
 			}
@@ -975,7 +946,7 @@ func (w *storageCensusWalk) directory(r *storageRootBinding, root *os.Root, witn
 				return errors.Join(e, ce)
 			}
 		} else {
-			if !storageCensusMeasuredFile(r, childName, info) {
+			if !storageCensusMeasuredFile(info) {
 				return storagebudget.ErrUnknown
 			}
 			covered, e := r.censusCovered(w.ctx, childName, info)
