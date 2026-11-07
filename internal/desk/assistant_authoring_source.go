@@ -14,6 +14,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/jsonscalar"
 )
@@ -498,6 +499,19 @@ func (s *Server) handleAssistantAuthoringCapture(w http.ResponseWriter, r *http.
 	}
 	store := s.assistantRuns()
 	var reply assistantAuthoringReply
+	// A cancellation holds the service mutex across its transaction, as Stop on
+	// a run does: whether an owner is active is decided with the durable close.
+	var host *assistantRunService
+	var owners []*assistantRunExecution
+	if cancel {
+		host = s.assistantRunService()
+		host.mu.Lock()
+		defer func() {
+			if host != nil {
+				host.mu.Unlock()
+			}
+		}()
+	}
 	_, err = store.transaction(r.Context(), func(ledger *assistantRunLedger) (bool, error) {
 		for i := range ledger.AuthoringCaptures {
 			c := &ledger.AuthoringCaptures[i]
@@ -521,12 +535,18 @@ func (s *Server) handleAssistantAuthoringCapture(w http.ResponseWriter, r *http.
 					if run.Binding.Owner.ID == c.ID && run.AdmissionID == c.AdmissionID {
 						// Closing the reservation and any admitted run is one
 						// atomic transaction, including a lost start response.
+						// An active owner holds the run's writer revision and
+						// settles its own canonical stop; only it may end the run.
 						if cancel && !run.Historical && !assistantRunTerminal(run.State) {
-							action := assistantRunAction{ID: "author-cancel-" + c.ID, Kind: "cancel", Revision: run.Revision}
-							run.Actions = append(run.Actions, assistantRunActionReceipt{ID: action.ID, Digest: assistantRunActionDigest(action), Kind: "cancel"})
-							stopAssistantRun(run)
-							run.Revision++
-							changed = true
+							if active := host.active[run.ID]; active != nil {
+								owners = append(owners, active)
+							} else {
+								action := assistantRunAction{ID: "author-cancel-" + c.ID, Kind: "cancel", Revision: run.Revision}
+								run.Actions = append(run.Actions, assistantRunActionReceipt{ID: action.ID, Digest: assistantRunActionDigest(action), Kind: "cancel"})
+								stopAssistantRun(run)
+								run.Revision++
+								changed = true
+							}
 						}
 						view := assistantRunPublic(*run)
 						reply.Run = &view
@@ -572,16 +592,70 @@ func (s *Server) handleAssistantAuthoringCapture(w http.ResponseWriter, r *http.
 	}
 	if cancel && reply.Start != nil {
 		// No I/O/dispatch while the private-data lock is held. This only
-		// interrupts the exact in-memory owner after its durable close.
-		host := s.assistantRunService()
-		host.mu.Lock()
+		// interrupts the exact in-memory owner after its durable close. The
+		// owner's own writer records the receipt, as Stop on an active run does.
+		var done []<-chan struct{}
+		for _, active := range owners {
+			if active.finalizing {
+				continue
+			}
+			id := "author-cancel-" + reply.Start.OwnerID
+			e := active.writer.changeAt(r.Context(), false, nil, func(run *assistantRunRecord) (bool, error) {
+				for _, receipt := range run.Actions {
+					if receipt.ID == id {
+						return false, nil
+					}
+				}
+				action := assistantRunAction{ID: id, Kind: "cancel", Revision: run.Revision}
+				run.Actions = append(run.Actions, assistantRunActionReceipt{ID: action.ID, Digest: assistantRunActionDigest(action), Kind: "cancel"})
+				run.DisplayPreview = active.progressPreviewLocked()
+				return true, nil
+			})
+			if e != nil && err == nil {
+				err = e
+			}
+		}
 		for _, active := range host.active {
 			if sameAssistantAuthoringReference(active.source.Start, *reply.Start) && assistantRunIdentityMatches(identity, active.record.Binding) {
 				active.cancel()
 				host.notifyLocked(active.record.ID)
+				if !active.finalizing {
+					done = append(done, active.done)
+				}
 			}
 		}
+		// Cleanup and canonical delivery need the service mutex; never wait
+		// while holding it.
 		host.mu.Unlock()
+		host = nil
+		if err != nil {
+			assistantRunHTTPError(w, err)
+			return
+		}
+		timer := time.NewTimer(6 * time.Second)
+		defer timer.Stop()
+		for _, owner := range done {
+			select {
+			case <-owner:
+			case <-timer.C:
+				err = context.DeadlineExceeded
+			case <-r.Context().Done():
+				err = r.Context().Err()
+			}
+			if err != nil {
+				assistantRunHTTPError(w, err)
+				return
+			}
+		}
+		if reply.Run != nil && len(done) > 0 {
+			latest, e := store.lookup(r.Context(), identity, reply.Run.ID, "", true)
+			if e != nil {
+				assistantRunHTTPError(w, e)
+				return
+			}
+			view := assistantRunPublic(latest)
+			reply.Run = &view
+		}
 	}
 	writeJSON(w, 200, reply)
 }

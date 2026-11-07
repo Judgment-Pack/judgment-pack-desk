@@ -554,6 +554,19 @@ func TestAssistantAuthoringStopActiveProviderAndLateAdmission(t *testing.T) {
 	if again.Code != 200 {
 		t.Fatal("idempotent exact cancellation failed", again.Code)
 	}
+	// The active owner's writer records the one Stop receipt; the owner, not
+	// the capture transaction, settles the canonical stop.
+	receipts := 0
+	for _, run := range assistantAuthoringLedger(t, s).Runs {
+		for _, action := range run.Actions {
+			if action.Kind == "cancel" && action.ID == "author-cancel-"+ref.Start.OwnerID {
+				receipts++
+			}
+		}
+	}
+	if receipts != 1 {
+		t.Fatal("capture Stop receipt missing or repeated", receipts)
+	}
 }
 func TestAssistantAuthoringTerminalCaptureCannotReadmit(t *testing.T) {
 	s, token := assistantAuthoringFixture(t, "https://example.invalid")
