@@ -2120,6 +2120,12 @@ func (c *storageBudgetConstruction) resumeOriginalPolicyStartup(ctx context.Cont
 	if !bytes.Equal(state.Actual[0], c.startupPhysical[0]) || !bytes.Equal(state.Actual[1], c.startupPhysical[1]) {
 		return errStorageCustody
 	}
+	// The strict selected lineage of these exact banks names each enrolled
+	// project's accounting key, as the native enrollment resume records it. A
+	// moved project's identity file carries a newer ID; without the lineage
+	// the start would key discovery by that ID and refuse the scope row.
+	lineage := state.Lineage
+	c.startupLineage = &lineage
 	m := &storagePolicyOperation{phase: p, original: state}
 	p.policy = m
 	if state.Packed != nil {
