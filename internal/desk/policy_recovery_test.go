@@ -84,12 +84,18 @@ func recoveryRestore(t *testing.T, s *Server, token string, archive []byte, q po
 	}
 	return r
 }
+
+// recoveryOpen starts Desk on a restored destination while the source Desk
+// stays open for the test to compare. One Desk runs per installation, so the
+// restored project is opened in an installation of its own, as a restore read
+// on another installation is; the restore itself carries no installation state.
 func recoveryOpen(t *testing.T, s *Server, destination string) (*Server, string) {
 	t.Helper()
 	cfg := s.cfg
 	cfg.ProjectDir = destination
 	cfg.Root = nil
 	cfg.Port = 8792
+	cfg.DeskConfigDir = t.TempDir()
 	fresh, err := New(cfg)
 	if err != nil {
 		t.Fatal("restored scaffold cannot open", err)
