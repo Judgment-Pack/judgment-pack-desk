@@ -244,3 +244,16 @@ it('decodes the registration difference as warning-only folder paths and rejects
   ]
   for (const value of invalid) expect(() => decodeStorageBudgetStatus({...storageStatusFixture(), registration: value})).toThrow('Storage status unavailable')
 })
+
+it('decodes projects given an identity after storage was set up, with or without unregistered folders', () => {
+  const later = {enforcement: 'warning-only', folders: [], identities: ['/projects/one']}
+  expect(decodeStorageBudgetStatus({...storageStatusFixture(), registration: later}).registration).toEqual(later)
+  const both = {enforcement: 'warning-only', folders: ['/projects/one/.desk-private'], identities: ['/projects/one']}
+  expect(decodeStorageBudgetStatus({...storageStatusFixture(), registration: both}).registration).toEqual(both)
+  const invalid = [
+    {enforcement: 'warning-only', folders: [], identities: []}, {enforcement: 'warning-only', folders: [], identities: ['']},
+    {enforcement: 'warning-only', folders: [], identities: ['/a', '/a']}, {enforcement: 'warning-only', folders: [], identities: null},
+    {enforcement: 'warning-only', folders: [], identities: Array.from({length: 65}, (_, i) => `/p${i}`)},
+  ]
+  for (const value of invalid) expect(() => decodeStorageBudgetStatus({...storageStatusFixture(), registration: value})).toThrow('Storage status unavailable')
+})

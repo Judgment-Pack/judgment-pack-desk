@@ -32,7 +32,8 @@ export type ChildStorageObservation = {
   coverage: 'selected-child-roots-only'; enforcement: 'warning-only'; state: 'measured' | 'partial' | 'stale'; observedAt: string; lowSpaceThresholdBytes: '1073741824'; roots: ChildRootObservation[]
 }
 /** Folders a start measures that the storage owner record does not register as their own roots. Warning only. */
-export type StorageRegistration = { enforcement: 'warning-only'; folders: string[] }
+/** Folders storage measures but has not registered, and projects given an identity after storage was set up for them (kept under their folder). */
+export type StorageRegistration = { enforcement: 'warning-only'; folders: string[]; identities?: string[] }
 export type StorageBudgetStatus = {
   childObservation: ChildStorageObservation | null
   registration: StorageRegistration | null
@@ -148,11 +149,13 @@ function childObservation(value: unknown): ChildStorageObservation {
   return {coverage: 'selected-child-roots-only', enforcement: 'warning-only', state, observedAt: time(v.observedAt), lowSpaceThresholdBytes: '1073741824', roots}
 }
 function registration(value: unknown): StorageRegistration {
-  const v = closed(value, ['enforcement', 'folders'])
+  const v = closed(value, object(value).identities === undefined ? ['enforcement', 'folders'] : ['enforcement', 'folders', 'identities'])
   if (v.enforcement !== 'warning-only') invalid()
-  const folders = rows(v.folders, 64, value => typeof value === 'string' && value.length > 0 && value.length <= 4096 ? value : invalid())
-  if (!folders.length || new Set(folders).size !== folders.length) invalid()
-  return {enforcement: 'warning-only', folders}
+  const path = (value: unknown) => typeof value === 'string' && value.length > 0 && value.length <= 4096 ? value : invalid()
+  const folders = rows(v.folders, 64, path), identities = v.identities === undefined ? undefined : rows(v.identities, 64, path)
+  if (identities !== undefined && (!identities.length || new Set(identities).size !== identities.length)) invalid()
+  if (!folders.length && !identities || new Set(folders).size !== folders.length) invalid()
+  return identities ? {enforcement: 'warning-only', folders, identities} : {enforcement: 'warning-only', folders}
 }
 export function decodeStorageBudgetStatus(value: unknown): StorageBudgetStatus {
   const v = object(value), p = object(v.pressure)

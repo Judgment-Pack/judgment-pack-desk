@@ -61,6 +61,54 @@ type storageOriginalSources struct {
 	// their private folders are measured (carried) and reported, and each
 	// starts writable without a budget enrollment (Desk #698 enrolls them).
 	added map[string]storageOriginalProject
+	// Project folders given an identity after storage registered them under
+	// the folder (storageRecordedStartupKey): storage keeps each under the key
+	// it registered, and the later identity is a registration difference.
+	identityLater []string
+}
+
+// storageRecordedStartup is the startup project's key as storage registered it
+// (key), and the identity its folder names now (identity).
+type storageRecordedStartup struct {
+	key, identity string
+}
+
+// storageRecordedStartupKey is the key storage registered the one project of
+// an installation without a Desk home under, where it registered the project
+// under this folder's own key, the digest of its path from before it had an
+// identity, and the folder now names an identity (key): one Desk wrote into
+// the same folder later, outside the storage identity producer (a signing
+// upgrade, a key rotation, a repair or a person). The same folder is the same
+// project (Desk #685): storage keeps it under the key it was set up with, and
+// the identity written later is a registration difference, never a custody
+// refusal. registered is Q's registered workspaces, each named by the ID its
+// key derives in this installation, so the rule holds on every start route,
+// whether or not it has decoded a catalog yet. A project registered under an
+// identity, another folder or another history is not matched, and the
+// first-project seal still refuses a start on another folder or a copy
+// (storageOwnerSameStartupProject).
+func storageRecordedStartupKey(registered []storagebudget.RegisteredWorkspace, installation storagebudget.ID, key, history, projectDir string) (string, bool) {
+	folder := digestOf([]byte(projectDir))
+	if key == "" || key == folder || history != projectDir || len(registered) != 1 || registered[0].ID != storageDerivedID("desk-storage-workspace-v2", installation, []byte(folder)) {
+		return "", false
+	}
+	return folder, true
+}
+
+// recordedStartupKey is key, or the key storage registered the startup
+// project under where key is the identity written into its folder later
+// (storageRecordedStartupKey).
+func (c *storageBudgetConstruction) recordedStartupKey(key string) string {
+	if c == nil {
+		return key
+	}
+	c.mu.Lock()
+	r := c.startupRecorded
+	c.mu.Unlock()
+	if r != nil && key == r.identity {
+		return r.key
+	}
+	return key
 }
 
 // storageHomeRegistryGrew is whether now is was with desks added and nothing
@@ -255,13 +303,33 @@ func (c *storageBudgetConstruction) inspectOriginalSources(ctx context.Context, 
 		}
 		sort.Slice(x.owner.Entries, func(i, j int) bool { return x.owner.Entries[i].DeskID < x.owner.Entries[j].DeskID })
 	} else {
-		key, readErr := c.inspectOriginalStartupKey(ctx)
+		key, lineaged, readErr := c.originalStartupKey(ctx)
 		if readErr != nil {
 			return nil, readErr
 		}
 		history, readErr := c.originalStorageHistory(ctx)
 		if readErr != nil {
 			return nil, readErr
+		}
+		if !lineaged && c.server.cfg.deskID == "" && key != digestOf([]byte(c.server.projectDir)) && c.ref != nil && c.ref.cell.ownerRecord != nil {
+			// The workspaces storage registered: the same on the ordinary
+			// start and on a start that resumes an enrollment or a policy edit.
+			view, viewErr := c.ref.cell.q.InspectHost(ctx)
+			if viewErr != nil {
+				return nil, viewErr
+			}
+			if recorded, later := storageRecordedStartupKey(view.Workspaces, installation, key, history, c.server.projectDir); later {
+				c.mu.Lock()
+				c.startupRecorded = &storageRecordedStartup{key: recorded, identity: key}
+				c.mu.Unlock()
+				x.identityLater = append(x.identityLater, c.server.projectDir)
+				if c.server.log != nil {
+					c.server.log.Printf("desk: %s was given a project identity after storage was set up for it; storage keeps the project under its folder, as it was set up, and Desk keeps working (registering the identity comes in a later release)", c.server.projectDir)
+				}
+				key = recorded
+			} else {
+				key = c.recordedStartupKey(key)
+			}
 		}
 		if err = x.inspectProject(ctx, c.server.root, c.server.projectDir, c.server.cfg.deskID, key, history, c.server.storageOwner(), installation); err != nil {
 			return nil, err

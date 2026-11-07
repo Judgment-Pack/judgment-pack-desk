@@ -40,6 +40,7 @@ type storageBudgetConstruction struct {
 	startupPhysical          [2][]byte
 	startupCores             [2][]byte
 	startupLineage           *storageCompositionLineage
+	startupRecorded          *storageRecordedStartup // the key storage registered, where an identity was written later (storageRecordedStartupKey); under mu
 	startupComposed          bool
 	startupFirstBase         bool
 	startupLocal             bool

@@ -74,6 +74,18 @@ it('reports folders storage measures but has not registered in the same storage 
  client.clear()
 })
 
+it('reports a project given an identity after storage was set up in the same storage notice',async()=>{
+ state.error='';state.ready=true
+ storage.data=decodeStorageBudgetStatus({...withinLimits(),registration:{enforcement:'warning-only',folders:[],identities:['/projects/one']}})
+ const client=new QueryClient()
+ render(<QueryClientProvider client={client}><MemoryRouter><DeskNoticesProvider><StatusStrip/></DeskNoticesProvider></MemoryRouter></QueryClientProvider>)
+ fireEvent.click(screen.getByRole('button',{name:'Storage needs attention'}))
+ expect(screen.getByText(/A project was given a project identity after storage was set up for it/)).toBeTruthy()
+ expect(screen.queryByText(/Storage measures folders Desk made/)).toBeNull()
+ expect(screen.queryByText(/Storage is at or over a limit/)).toBeNull()
+ client.clear()
+})
+
 it('warns, in the same storage notice, that storage is over a limit and Desk keeps working',async()=>{
  state.error='';state.ready=true
  storage.data=decodeStorageBudgetStatus(withinLimits())

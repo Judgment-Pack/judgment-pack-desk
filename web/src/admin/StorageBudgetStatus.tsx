@@ -70,9 +70,13 @@ export function StorageBudgetStatus() {
       </details>
     </>}
     {status?.readOnly && !snapshot && <p>{msg('Storage is read only.')}</p>}
-    {status?.registration && <>
+    {status?.registration && status.registration.folders.length > 0 && <>
       <SettingsFeedback tone="warning">{msg('Desk measures these folders, but storage has not registered them yet. Their bytes count toward the limits and Desk keeps working. Registering every folder comes in a later release.')}</SettingsFeedback>
       <ul aria-label={msg('Folders not registered with storage')}>{status.registration.folders.map(folder => <li key={folder}><code>{folder}</code></li>)}</ul>
+    </>}
+    {status?.registration?.identities && <>
+      <SettingsFeedback tone="warning">{msg('These projects were given a project identity after storage was set up for them. Storage keeps each under its folder, as it was set up, and Desk keeps working. Registering the identity comes in a later release.')}</SettingsFeedback>
+      <ul aria-label={msg('Projects given an identity after storage was set up')}>{status.registration.identities.map(folder => <li key={folder}><code>{folder}</code></li>)}</ul>
     </>}
     <h3>{msg('Child storage observations')}</h3>
     <p>{msg('Warning only. Child storage growth is measured where available and is not prevented; it reserves no capacity and changes no Desk limit.')}</p>

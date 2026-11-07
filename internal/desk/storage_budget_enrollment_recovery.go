@@ -3343,7 +3343,9 @@ func (c *storageBudgetConstruction) validateStartupCompositionQ(ctx context.Cont
 // storageAccountingKey is the owner key s's workspace is registered under in
 // the catalog: a Desk home project's runner workspace; for this construction's
 // own project, the accounting key its identity lineage retains (the key it was
-// registered under before the identity producer wrote its identity); and
+// registered under before the identity producer wrote its identity), or the
+// key the saved catalog registered it under before an identity was written
+// into the same folder outside that producer (recordedStartupKey); and
 // otherwise its identity key. Matching a workspace by the identity alone
 // missed a project whose identity was written after registration and refused
 // custody ("no matching workspace").
@@ -3357,8 +3359,20 @@ func (c *storageBudgetConstruction) storageAccountingKey(ctx context.Context, s 
 	return s.inspectStorageStartupKey()
 }
 func (c *storageBudgetConstruction) inspectOriginalStartupKey(ctx context.Context) (string, error) {
+	key, lineaged, err := c.originalStartupKey(ctx)
+	if err != nil || lineaged {
+		return key, err
+	}
+	return c.recordedStartupKey(key), nil
+}
+
+// originalStartupKey is the startup project's key as its identity lineage
+// retains it (lineaged), or else as its folder names it now: the identity
+// written in it, or its path's digest where it has none.
+func (c *storageBudgetConstruction) originalStartupKey(ctx context.Context) (key string, lineaged bool, err error) {
 	if c.server.home != nil {
-		return c.server.inspectStorageStartupKey()
+		key, err = c.server.inspectStorageStartupKey()
+		return key, false, err
 	}
 	lineage := c.startupLineage
 	if c.owner != nil {
@@ -3376,33 +3390,33 @@ func (c *storageBudgetConstruction) inspectOriginalStartupKey(ctx context.Contex
 		}
 	}
 	if lineage == nil {
-		return c.server.inspectStorageStartupKey()
+		key, err = c.server.inspectStorageStartupKey()
+		return key, false, err
 	}
 	project, err := storageOwnerPersistentRoot(ctx, c.project.own.root)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	config, err := storageOwnerPersistentRoot(ctx, c.original.config)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	history, err := c.originalStorageHistory(ctx)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	key := ""
 	for _, plan := range lineage.Rows.LineagePlans {
 		if plan.ProjectObject != project {
 			continue
 		}
 		if plan.ConfigObject != config {
-			return "", errStorageCustody
+			return "", false, errStorageCustody
 		}
 		if key != "" {
-			return "", errStorageCustody
+			return "", false, errStorageCustody
 		}
 		if len(plan.AccountingOwnerKey) == 0 {
-			return "", errStorageCustody
+			return "", false, errStorageCustody
 		}
 		if string(plan.HistoryIdentity) != history {
 			// The same folder at another path, with no move Desk made: it was
@@ -3410,17 +3424,18 @@ func (c *storageBudgetConstruction) inspectOriginalStartupKey(ctx context.Contex
 			if history == c.server.projectDir && c.home != nil && c.home.exclusive {
 				x := &storageOriginalSources{construction: c}
 				if moved := x.projectMovedOutside(ctx, plan.ProjectObject, string(plan.HistoryIdentity)); moved != nil {
-					return "", *moved
+					return "", false, *moved
 				}
 			}
-			return "", errStorageCustody
+			return "", false, errStorageCustody
 		}
 		key = string(plan.AccountingOwnerKey)
 	}
 	if key != "" {
-		return key, nil
+		return key, true, nil
 	}
-	return c.server.inspectStorageStartupKey()
+	key, err = c.server.inspectStorageStartupKey()
+	return key, false, err
 }
 
 // Decode only a strict actual current physical pair. The detached original

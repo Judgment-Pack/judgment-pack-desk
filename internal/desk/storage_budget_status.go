@@ -170,11 +170,14 @@ type storageStatusSnapshot struct {
 }
 
 // storageRegistrationStatus reports folders this start measures that the
-// storage owner record does not register as roots of their own. It is a
+// storage owner record does not register as roots of their own, and project
+// folders given an identity after storage registered them under the folder
+// (Identities; storage keeps each under the key it registered). It is a
 // warning only: their bytes are counted and Desk keeps working.
 type storageRegistrationStatus struct {
 	Enforcement string   `json:"enforcement"`
 	Folders     []string `json:"folders"`
+	Identities  []string `json:"identities,omitempty"`
 }
 
 // storageRegistrationFolders bounds the folders one status reply names.
@@ -1138,14 +1141,21 @@ func (s *Server) storageRegistrationStatus() *storageRegistrationStatus {
 	if c == nil && s.storageEnrollment != nil {
 		c = s.storageEnrollment.construction
 	}
-	if c == nil || c.sources == nil || len(c.sources.unregistered) == 0 {
+	if c == nil || c.sources == nil || len(c.sources.unregistered) == 0 && len(c.sources.identityLater) == 0 {
 		return nil
 	}
-	folders := c.sources.unregistered
+	folders, identities := c.sources.unregistered, c.sources.identityLater
 	if len(folders) > storageRegistrationFolders {
 		folders = folders[:storageRegistrationFolders]
 	}
-	return &storageRegistrationStatus{Enforcement: "warning-only", Folders: append([]string{}, folders...)}
+	if len(identities) > storageRegistrationFolders {
+		identities = identities[:storageRegistrationFolders]
+	}
+	out := &storageRegistrationStatus{Enforcement: "warning-only", Folders: append([]string{}, folders...)}
+	if len(identities) != 0 {
+		out.Identities = append([]string{}, identities...)
+	}
+	return out
 }
 
 // Resolve scope once while enrolling against original construction sources.

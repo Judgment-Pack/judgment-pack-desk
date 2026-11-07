@@ -151,3 +151,13 @@ it('warns that measured folders are not registered yet, names them, and keeps th
   render(<QueryClientProvider client={q}><StorageBudgetStatus/></QueryClientProvider>)
   expect(screen.queryByText(/storage has not registered them yet/)).toBeNull()
 })
+
+it('warns about a project given an identity after storage was set up, names it, and keeps the status writable', async () => {
+  const q = client()
+  q.setQueryData(storageBudgetStatusKey, decodeStorageBudgetStatus({...storageStatusFixture(), registration: {enforcement: 'warning-only', folders: [], identities: ['/projects/one']}}))
+  render(<QueryClientProvider client={q}><StorageBudgetStatus/></QueryClientProvider>)
+  expect(screen.getByText(/given a project identity after storage was set up for them/)).toBeTruthy()
+  expect(screen.getByRole('list', {name: 'Projects given an identity after storage was set up'}).textContent).toContain('/projects/one')
+  expect(screen.queryByText(/storage has not registered them yet/)).toBeNull()
+  expect(screen.queryByText(/Storage is read only/)).toBeNull()
+})

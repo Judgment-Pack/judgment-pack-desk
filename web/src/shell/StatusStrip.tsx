@@ -24,7 +24,8 @@ function SystemNotices() {
   const storage = useStorageBudgetStatus(true)
   const childLowSpace = storage.data?.childObservation?.roots.some(row => row.lowSpace === true) ?? false
   const refusalReported = Boolean(storage.data?.pressure.active && storage.data.pressure.codes.length > 0)
-  const unregistered = Boolean(storage.data?.registration)
+  const unregistered = (storage.data?.registration?.folders.length ?? 0) > 0
+  const identityLater = Boolean(storage.data?.registration?.identities)
   // Limits are warnings in this release: over a limit is said here, and Desk keeps working.
   const overLimit = storageOverLimit(storage.data?.snapshot)
   const { status, known } = useMcp()
@@ -38,11 +39,12 @@ function SystemNotices() {
   const refresh = () => { void client.invalidateQueries({queryKey: DESK_CONFIG_QUERY_KEY}) }
   const settingsAction = <PopoverClose><ButtonLink to="/admin">{msg('Review settings')}</ButtonLink></PopoverClose>
   return <>
-    {(refusalReported || childLowSpace || unregistered || overLimit) && <DeskStatusNotice id="storage-pressure" tone="warning" label={msg('Storage needs attention')}
+    {(refusalReported || childLowSpace || unregistered || identityLater || overLimit) && <DeskStatusNotice id="storage-pressure" tone="warning" label={msg('Storage needs attention')}
       actions={<PopoverClose><ButtonLink to="/admin#storage">{msg('Review storage')}</ButtonLink></PopoverClose>}>
       {refusalReported && <p>{msg('A storage refusal was reported. Review Storage for the last observation. Refreshing status does not resume work.')}</p>}
       {childLowSpace && <p>{msg('A child storage observation reports low filesystem space. Child growth is warned about, not prevented. Review Storage for the observation time and coverage.')}</p>}
       {unregistered && <p>{msg('Storage measures folders Desk made that are not registered with it yet. Their bytes are counted and Desk keeps working. Review Storage for the folders.')}</p>}
+      {identityLater && <p>{msg('A project was given a project identity after storage was set up for it. Storage keeps it under its folder and Desk keeps working. Review Storage for the project.')}</p>}
       {overLimit && <p>{msg('Storage is at or over a limit set under Admin → Storage. In this release limits are warnings: Desk keeps working and refuses no work for them.')}</p>}
     </DeskStatusNotice>}
     {chatError && <DeskStatusNotice id="chat-history" tone={chatsReady ? 'error' : 'warning'} label={chatsReady ? msg('Chat changes not saved') : msg('Chat history unavailable')}

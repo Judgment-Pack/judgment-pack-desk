@@ -178,6 +178,23 @@ the last enrollment census is counted at the next census.
 Workspace lookups after registration use the accounting key the identity
 lineage retains for the startup project, not a later identity alone.
 
+The same folder is the same project. In an installation without a Desk home,
+storage registers the startup project under the key it has at the first start:
+its identity, or, before it has one, the digest of its folder's path. Desk can
+later write an identity into that folder outside the identity producer (a
+signing upgrade, a key rotation or a repair), which no lineage records. A start
+that finds such an identity, with Q's one registered workspace still the one
+the folder's own key derives and the history identity still the folder, keeps
+the project under the registered key (`storageRecordedStartupKey`), on the
+ordinary start and on a start that resumes an enrollment or a policy edit
+alike. The later identity is a registration difference: the start logs it and
+`/api/storage/status` lists the project folder under `registration.identities`
+(`enforcement: warning-only`); it never refuses custody or starts read-only.
+The first-project seal is unchanged for every other difference: another
+folder, a copy of the project carrying the same identity, or a project
+registered under an identity that now names another is refused at startup
+(`errDeskAnotherStartupProject`). Registering the later identity is Desk #698.
+
 ## Crash state and remaining qualification
 
 Prepared must be durable before Register. Both banks are checked as a pair;

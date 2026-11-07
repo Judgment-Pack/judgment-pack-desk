@@ -5529,7 +5529,11 @@ func (p *storageEnrollmentEpoch) originalAccountingKey(ctx context.Context) (str
 	if key != "" {
 		return key, nil
 	}
-	return s.inspectStorageStartupKey()
+	key, err = s.inspectStorageStartupKey()
+	if err != nil {
+		return "", err
+	}
+	return p.c.recordedStartupKey(key), nil
 }
 
 // Initialize pending projection from the exact original joined terminal, whose
