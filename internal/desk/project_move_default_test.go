@@ -147,7 +147,24 @@ func TestChatDataDefaultUsesHistoryAndPreservesSavedPointer(t *testing.T) {
 	privateFixture(t, filepath.Join(application, "releases", "keep"), "installed release")
 	// Exercise production path resolution instead of startDesk's config override.
 	ts := httptest.NewUnstartedServer(nil)
-	s, err := New(Config{ProjectDir: t.TempDir(), Token: testToken, Port: ts.Listener.Addr().(*net.TCPAddr).Port})
+	cfg := Config{ProjectDir: t.TempDir(), Token: testToken, Port: ts.Listener.Addr().(*net.TCPAddr).Port}
+	// An existing legacy pointer remains authoritative after the default changes.
+	// An earlier Desk left it: it is in place before the start that finds it,
+	// never written behind a running Desk. A first start names the folders.
+	earlier, err := New(cfg)
+	if err != nil {
+		ts.Close()
+		t.Fatal(err)
+	}
+	configDir, conversation := earlier.configDir, earlier.conversationName()
+	if err = earlier.Close(); err != nil {
+		ts.Close()
+		t.Fatal(err)
+	}
+	location, _ := json.Marshal(dataLocation{Version: 1, Path: configDir})
+	privateFixture(t, filepath.Join(configDir, dataLocationName), string(location))
+	privateFixture(t, filepath.Join(configDir, conversation), storageChat)
+	s, err := New(cfg)
 	if err != nil {
 		ts.Close()
 		t.Fatal(err)
@@ -156,10 +173,6 @@ func TestChatDataDefaultUsesHistoryAndPreservesSavedPointer(t *testing.T) {
 	ts.Start()
 	defer s.Close()
 	defer ts.Close()
-	// An existing legacy pointer remains authoritative after the default changes.
-	location, _ := json.Marshal(dataLocation{Version: 1, Path: s.configDir})
-	privateFixture(t, filepath.Join(s.configDir, dataLocationName), string(location))
-	privateFixture(t, filepath.Join(s.configDir, s.conversationName()), storageChat)
 	status := storageGet(t, ts)
 	if status.Path != s.configDir || status.RecommendedPath != filepath.Join(application, "history") {
 		t.Fatal(status)

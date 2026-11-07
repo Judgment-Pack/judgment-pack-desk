@@ -222,7 +222,7 @@ func TestStorageRuntimeFileJournalActualStageError(t *testing.T) {
 // A handwritten memory-only scope fixture tests routing/lifetime mechanics. It
 // is not an enrollment, status endpoint or supported-New acceptance fixture.
 func runtimePressureScopeFixture() (*Server, *storageServerEnrollment, *storageBudgetOwner) {
-	s := &Server{configDir: "synthetic-scope"}
+	s := &Server{configDir: "synthetic-scope", writes: &sync.Mutex{}}
 	o := &storageBudgetOwner{}
 	o.self = o
 	cell := &storageInstallation{}

@@ -16,9 +16,7 @@ import (
 	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-agent/go/adapter"
-	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-agent/go/contract"
-	"github.com/Judgment-Pack/judgment-pack-agent/go/gate"
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
 )
 
@@ -702,19 +700,15 @@ func TestAssistantExecutionCodexQuestionAndAllowancePolicy(t *testing.T) {
 			s, _, e, m, trace := assistantCodexFixture(t, mode, "work")
 			x := assistantExecutionOpen(t, s, e)
 			if mode == "question" {
-				// A fixture-owned interaction supplies no production domain tool.
-				interaction := "question"
-				offer, err := x.gate.Open(context.Background(), []contract.ToolOfferHostTool{{Name: "ask_user", Interaction: &interaction}})
-				assistantRunMust(t, err)
-				x.gate.Enter(gate.LoopPhase(offer))
-				x.Run.HostTools = []runcontext.HostTool{{Name: "ask_user", Description: "Ask a scope question.", Interaction: interaction, InputSchema: json.RawMessage(`{"type":"object"}`)}}
+				// A fixture-owned interaction supplies no production domain
+				// tool. Agent v0.13.2 enrolls the complete final offer once
+				// before dispatch and refuses a reopened Gate, so the question
+				// is declared on the run before it starts, with its mandatory
+				// taxonomy, as assistantPlanBindingOfferQuestion does.
+				assistantPlanBindingOfferQuestion(x)
 			}
-			if mode == "budget" {
-				effect := "plan"
-				offer, err := x.gate.Open(context.Background(), []contract.ToolOfferHostTool{{Name: "request_budget_increase", Effect: &effect}})
-				assistantRunMust(t, err)
-				x.gate.Enter(gate.LoopPhase(offer))
-			}
+			// The budget request is the Agent's own context tool; the run
+			// offers it without a host declaration.
 			assistantRunMust(t, x.Adapter.Run(context.Background(), x.Run))
 			r := assistantExecutionRecord(t, e)
 			if e.ctx.Err() != nil || r.Checkpoint.Used != 0 || r.Checkpoint.Limit != 1 || len(r.Checkpoint.Grants) != 0 {
