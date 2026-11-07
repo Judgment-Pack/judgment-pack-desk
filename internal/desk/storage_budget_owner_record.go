@@ -186,10 +186,8 @@ func storageOwnerDecodeFrame(raw []byte, magic [8]byte, size int) ([]byte, uint6
 		return nil, 0, storagebudget.ErrBounds
 	}
 	end := 64 + int(n)
-	for _, b := range raw[end:] {
-		if b != 0 {
-			return nil, 0, storagebudget.ErrBounds
-		}
+	if !storageAllZero(raw[end:]) {
+		return nil, 0, storagebudget.ErrBounds
 	}
 	h := sha256.New()
 	h.Write(raw[:32])

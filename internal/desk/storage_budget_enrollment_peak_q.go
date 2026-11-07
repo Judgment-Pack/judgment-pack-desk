@@ -436,12 +436,7 @@ func (r *storageEnrollmentPeakQReader) end() error {
 	return r.err
 }
 func storageEnrollmentPeakQAllZero(b []byte) bool {
-	for _, v := range b {
-		if v != 0 {
-			return false
-		}
-	}
-	return true
+	return storageAllZero(b)
 }
 
 func storageEnrollmentPeakQSeal(b []byte, kind byte, index uint16, generation uint64, a storageEnrollmentPeakQHeldAnchor) {

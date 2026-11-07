@@ -505,11 +505,8 @@ func (c *storageBudgetConstruction) validateBootstrapContinuation(ctx context.Co
 				if err != nil || read != len(chunk) {
 					break
 				}
-				for _, value := range chunk {
-					if value != 0 {
-						err = errStorageBootstrap
-						break
-					}
+				if !storageAllZero(chunk) {
+					err = errStorageBootstrap
 				}
 				if err != nil {
 					break
@@ -1092,11 +1089,8 @@ func (c *storageBudgetConstruction) requireBlankCatalogs(ctx context.Context) er
 		if err != nil {
 			return err
 		}
-		for _, value := range b {
-			if value != 0 {
-				err = errStorageBootstrap
-				break
-			}
+		if !storageAllZero(b) {
+			err = errStorageBootstrap
 		}
 		err = errors.Join(err, n.current(), n.file.Close(), ctx.Err())
 		if err != nil {

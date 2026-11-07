@@ -135,11 +135,18 @@ func (r *reader) end() error {
 	}
 	return r.err
 }
+
+// zeroBlock is never written. Comparing a buffer against it checks every byte,
+// as a byte loop would, using the runtime's vectorized equality.
+var zeroBlock [64 << 10]byte
+
 func allZero(b []byte) bool {
-	for _, v := range b {
-		if v != 0 {
+	for len(b) > 0 {
+		n := min(len(b), len(zeroBlock))
+		if !bytes.Equal(b[:n], zeroBlock[:n]) {
 			return false
 		}
+		b = b[n:]
 	}
 	return true
 }

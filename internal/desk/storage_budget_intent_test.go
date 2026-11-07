@@ -303,3 +303,36 @@ func TestStorageHostIntentEveryPhaseAndOutcome(t *testing.T) {
 		t.Fatal("generation overflow accepted")
 	}
 }
+
+// The vectorized scan is the same exact predicate as a byte loop: every byte
+// of every length, including block boundaries and an 8 MiB bank tail, counts.
+func TestStorageAllZeroChecksEveryByte(t *testing.T) {
+	loop := func(b []byte) bool {
+		for _, v := range b {
+			if v != 0 {
+				return false
+			}
+		}
+		return true
+	}
+	block := len(storageZeroBlock)
+	for _, n := range []int{0, 1, 7, 8, 9, 63, 64, 65, block - 1, block, block + 1, 2*block + 3, storageOwnerCatalogBytes} {
+		b := make([]byte, n)
+		if !storageAllZero(b) || !storageEnrollmentPeakZero(b) || !storageEnrollmentPeakQAllZero(b) {
+			t.Fatal("zero buffer refused", n)
+		}
+		for _, i := range []int{0, n / 2, block - 1, block, n - 1} {
+			if i < 0 || i >= n {
+				continue
+			}
+			b[i] = 0x80
+			if storageAllZero(b) || storageAllZero(b) != loop(b) || storageEnrollmentPeakZero(b) || storageEnrollmentPeakQAllZero(b) {
+				t.Fatal("nonzero byte accepted", n, i)
+			}
+			b[i] = 0
+		}
+	}
+	if storageZeroBlock != ([len(storageZeroBlock)]byte{}) {
+		t.Fatal("the shared zero block was written")
+	}
+}

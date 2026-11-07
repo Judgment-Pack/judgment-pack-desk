@@ -332,10 +332,8 @@ func (c *storageBudgetConstruction) createOwnerFile(ctx context.Context, parent 
 		if _, err = out.file.ReadAt(b, 0); err != nil || !bytes.Equal(raw, b[:len(raw)]) {
 			return storageNamedFile{}, errors.Join(errStorageBootstrap, err, out.file.Close())
 		}
-		for _, value := range b[len(raw):] {
-			if value != 0 {
-				return storageNamedFile{}, errors.Join(errStorageBootstrap, out.file.Close())
-			}
+		if !storageAllZero(b[len(raw):]) {
+			return storageNamedFile{}, errors.Join(errStorageBootstrap, out.file.Close())
 		}
 	}
 	if int64(len(raw)) == size && size > 0 {

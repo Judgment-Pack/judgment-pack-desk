@@ -43,12 +43,7 @@ func storageEnrollmentPeakEvidenceSectionMaximum(version uint32, s storageEnroll
 var storageEnrollmentPeakSectionCounts = [9]uint32{1, 1, 4224, 66, 66, 128, 1, 1, 1}
 
 func storageEnrollmentPeakZero(b []byte) bool {
-	for _, v := range b {
-		if v != 0 {
-			return false
-		}
-	}
-	return true
+	return storageAllZero(b)
 }
 func storageEnrollmentPeakHash(domain string, b []byte) storagebudget.Digest {
 	h := sha256.New()

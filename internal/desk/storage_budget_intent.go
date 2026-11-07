@@ -404,11 +404,18 @@ func (c *storageIntentCodec) change(v *storagebudget.Change, read bool) {
 	c.vector(&v.AttributionAdd, read)
 	c.vector(&v.AttributionRemove, read)
 }
+
+// storageZeroBlock is never written. Comparing a buffer against it checks
+// every byte, as a byte loop would, using the runtime's vectorized equality.
+var storageZeroBlock [64 << 10]byte
+
 func storageAllZero(b []byte) bool {
-	for _, v := range b {
-		if v != 0 {
+	for len(b) > 0 {
+		n := min(len(b), len(storageZeroBlock))
+		if !bytes.Equal(b[:n], storageZeroBlock[:n]) {
 			return false
 		}
+		b = b[n:]
 	}
 	return true
 }
