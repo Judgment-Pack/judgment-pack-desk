@@ -218,20 +218,28 @@ func assistantCriticAssertResult(t *testing.T, e *assistantRunExecution, x *assi
 	if record.CriticCustody == nil || record.CriticCustody.Version != 2 || record.CriticCustody.Fingerprint != e.input.critic.fingerprint {
 		t.Fatal("private run lost host-bound critic custody")
 	}
-	critique, proposal, testResult, proposalRefused := false, false, false, false
+	// The Runtime declares experimental_evaluate evaluate/act (Runtime ADR-0070).
+	// Agent v0.13.2 runs an act Runtime tool only as an exact approved attempt,
+	// and the critic phase admits none: its rehearsal of the saved case is
+	// refused before the Runtime and the critique says the case is incomplete.
+	critique, proposal, rehearsalRefused, proposalRefused := false, false, false, false
 	for _, held := range record.Events {
 		event := held.Event
 		if event.Critique != nil {
-			critique = len(event.Critique.Cases) == 1 && event.Critique.Cases[0].Agrees && event.Critique.Cases[0].Case == "case-one" && !event.Critique.Refuted && len(event.Critique.Incomplete) == 0 && event.Critique.Figures != nil && event.Critique.Figures.Model == "child-model"
+			c := event.Critique
+			critique = c.Refuted && len(c.Cases) == 0 && reflect.DeepEqual(c.Incomplete, []string{"case-one"}) && c.Figures != nil && c.Figures.Model == "child-model" && c.Figures.HarnessCalls != nil && *c.Figures.HarnessCalls == 1
 		}
 		if event.Proposal != nil {
-			proposal = event.Proposal.Critique != nil && !event.Proposal.Critique.Refuted
+			proposal = event.Proposal.Critique != nil && event.Proposal.Critique.Refuted && reflect.DeepEqual(event.Proposal.Critique.Incomplete, []string{"case-one"})
 		}
 		if event.Guardrail != nil && event.Guardrail.Tool == "proposal" && event.Guardrail.Action == "refused" {
 			proposalRefused = true
 		}
-		if event.ToolResult != nil && event.ToolResult.Name == "experimental_evaluate" {
-			testResult = !event.ToolResult.IsError
+		if event.Guardrail != nil && event.Guardrail.Tool == "experimental_evaluate" && event.Guardrail.Action == "refused" && event.Guardrail.Reason != nil && *event.Guardrail.Reason == "approval stale" {
+			rehearsalRefused = true
+		}
+		if event.ToolResult != nil && event.ToolResult.Name == "experimental_evaluate" && !event.ToolResult.IsError {
+			t.Fatal("critic rehearsal of an act Runtime tool ran without an approved attempt")
 		}
 		if event.ApprovalRequested != nil {
 			t.Fatal("critic restored approval")
@@ -249,8 +257,15 @@ func assistantCriticAssertResult(t *testing.T, e *assistantRunExecution, x *assi
 	} else if !proposal || proposalRefused {
 		t.Fatal("canonical artifact proposal changed", record.Events)
 	}
-	if !critique || !testResult {
-		t.Fatalf("canonical critic evidence missing: %+v", record.Events)
+	if !critique || !rehearsalRefused {
+		t.Fatalf("canonical critic evidence missing: critique=%t refused=%t", critique, rehearsalRefused)
+	}
+	for _, row := range assistantCodexLog(t, filepath.Join(e.service.server.projectDir, "execution-fixture.jsonl")) {
+		var params struct{ Name string }
+		_ = json.Unmarshal(row["params"], &params)
+		if string(row["method"]) == `"tools/call"` && params.Name == "experimental_evaluate" {
+			t.Fatal("refused critic rehearsal reached the Runtime")
+		}
 	}
 	for _, op := range record.Operations {
 		if op.State != "completed" || len(op.Result) == 0 {
