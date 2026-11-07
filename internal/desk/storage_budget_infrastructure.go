@@ -21,6 +21,23 @@ const (
 
 var errStorageInfrastructure = errors.New("Desk infrastructure changed or requires original-owner storage reconciliation")
 
+// errDeskInstallationInUse is a start refused because another Desk process holds
+// this installation: its home lease, which a running Desk keeps for its whole
+// life and a start must take exclusively, or the start gate another Desk is
+// starting under. One Desk process serves an installation and the projects it
+// opens; the start changes nothing and says so in words rather than the lock's
+// errno. Any other lock failure keeps its own error.
+var errDeskInstallationInUse = errors.New("Another Desk is already open for this installation. Open this project from that Desk, or close it before starting Desk again.")
+
+// deskInstallationInUse answers errDeskInstallationInUse only for a lock that
+// another descriptor holds now.
+func deskInstallationInUse(err error) error {
+	if err != nil && lockHeld(err) {
+		return errDeskInstallationInUse
+	}
+	return err
+}
+
 // A safe ancestry can exist while custody of the assistant directory cannot.
 // This preserves the pack-reading startup fallback, before any lease effect.
 type storageInfrastructureAssistantError struct{ err error }
@@ -286,7 +303,7 @@ func (p *storageInfrastructureStart) acquireParentGate(ctx context.Context) (err
 		return errors.Join(errStorageInfrastructure, err, berr, f.Close())
 	}
 	if err = lockPrivateData(f, true); err != nil {
-		return errors.Join(err, f.Close())
+		return errors.Join(deskInstallationInUse(err), f.Close())
 	}
 	p.gate = f
 	if err = p.authority(ctx); err != nil {
@@ -629,6 +646,7 @@ func (p *storageInfrastructureStart) provisionConfigAndAcquireHome(ctx context.C
 		}
 	}
 	lease, err := openHomeLeaseExistingRoot(p.config.root, true)
+	err = deskInstallationInUse(err)
 	if errors.Is(err, os.ErrNotExist) {
 		if !p.preBudget {
 			return nil, errStorageInfrastructure
@@ -649,7 +667,7 @@ func (p *storageInfrastructureStart) provisionConfigAndAcquireHome(ctx context.C
 			return nil, errors.Join(errStorageInfrastructure, e, lease.Close())
 		}
 		if err = lockPrivateData(lease, true); err != nil {
-			return nil, errors.Join(err, lease.Close())
+			return nil, errors.Join(deskInstallationInUse(err), lease.Close())
 		}
 		err = p.adoptHome(lease, info)
 		if err != nil {

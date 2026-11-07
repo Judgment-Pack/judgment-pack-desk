@@ -18,6 +18,8 @@ import urllib.error
 import uuid
 
 TOKEN = 'local-gateway-isolated-test'
+# A second Desk on an installation another Desk holds exits with these words.
+ALREADY_OPEN = 'Another Desk is already open for this installation. Open this project from that Desk, or close it before starting Desk again.'
 
 def request(url, body=None, method=None, headers=None):
     encoded = None if body is None else json.dumps(body).encode()
@@ -68,14 +70,14 @@ def main():
     processes = []
     with tempfile.TemporaryDirectory(prefix='desk-local-gateway-') as temp:
         root = Path(temp).resolve()
-        project, config, data = [root / part for part in ('project', 'config', 'data')]
-        for folder in (project, config, data): folder.mkdir(mode=0o700)
+        project, other_project, config, data = [root / part for part in ('project', 'other-project', 'config', 'data')]
+        for folder in (project, other_project, config, data): folder.mkdir(mode=0o700)
         env = {**os.environ, 'XDG_CONFIG_HOME': str(config), 'XDG_DATA_HOME': str(data)}
-        def start():
+        def start(folder=project):
             address = 'http://127.0.0.1:' + str(port())
             log_path = root / ('backend-' + str(len(processes)) + '.log')
             log = log_path.open('wb')
-            proc = subprocess.Popen([str(bundle / 'jpack-desk'), '--port', address.rsplit(':',1)[1], '--jpack', runtime, '--dev-token', TOKEN, '--print-url=false', str(project)], env=env, stdout=log, stderr=log)
+            proc = subprocess.Popen([str(bundle / 'jpack-desk'), '--port', address.rsplit(':',1)[1], '--jpack', runtime, '--dev-token', TOKEN, '--print-url=false', str(folder)], env=env, stdout=log, stderr=log)
             log.close()
             processes.append(proc)
             def ready():
@@ -84,6 +86,16 @@ def main():
             answer = wait_for(ready)
             assert answer['localGateway']['status'] == 'ready', answer.get('localGateway')
             return proc, address, answer
+        def refused(folder):
+            # One Desk per project: a second Desk on a project another Desk
+            # holds exits at startup with words, not the lock's errno.
+            log_path = root / ('refused-' + folder.name + '.log')
+            with log_path.open('wb') as log:
+                proc = subprocess.run([str(bundle / 'jpack-desk'), '--port', str(port()), '--jpack', runtime, '--dev-token', TOKEN, '--print-url=false', str(folder)], env=env, stdout=log, stderr=log, timeout=60)
+            said = log_path.read_text()
+            assert proc.returncode != 0, 'a second Desk started on ' + folder.name + ': ' + said
+            assert 'jpack-desk: ' + ALREADY_OPEN in said, said
+            assert 'resource temporarily unavailable' not in said, said
         try:
             first, desk, answer = start()
             installed = json.loads((bundle / 'gateway-bundle.json').read_text())
@@ -102,7 +114,8 @@ def main():
             seed = config / 'jpack-desk/secrets/local-gateway.seed'
             assert seed.stat().st_mode & 0o777 == 0o600
             assert 'seed' not in json.dumps(answer)
-            second, other_desk, other = start()
+            refused(project)
+            second, other_desk, other = start(other_project)
             assert other['localGateway']['gateway']['signer'] == gateway['signer']
             assert other['localGateway']['gateway']['url'] != gateway['url']
             # Private connection companion integration, with synthetic registration.
@@ -229,7 +242,7 @@ def main():
             gateway = request(desk + '/api/desk-config')['localGateway']['gateway']
             assert gateway['url'] != restarted['gateway']['url'], 'turning processing off did not restart the gateway'
             # The key is in the gateway's own store, private, and nowhere else.
-            for folder in (config, data, project):
+            for folder in (config, data, project, other_project):
                 for path in folder.rglob('*'):
                     if path.is_file() and key.encode() in path.read_bytes():
                         assert folder == config and path.relative_to(config).parts[:3] == ('jpack-desk', 'gateway-connections', 'document-processing'), path
