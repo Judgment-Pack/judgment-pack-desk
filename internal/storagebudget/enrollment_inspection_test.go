@@ -478,3 +478,46 @@ func TestCoordinatorDecodedBanksStrictEquivalenceAndIsolation(t *testing.T) {
 		t.Fatal("closed coordinator retained page data")
 	}
 }
+
+// A load copies only its selected checkpoint bank. Mutating that loaded model
+// must not reach either retained bank decode, and each later load still
+// equals a fresh strict decode of the actual selected page.
+func TestCoordinatorLoadCopiesSelectedCheckpointOnly(t *testing.T) {
+	q, path := fixture(t)
+	_, err := q.Reserve(t.Context(), request(1), observations())
+	must(t, err)
+	must(t, q.locked(t.Context(), func() error {
+		for round := 0; round < 2; round++ {
+			l, err := q.load()
+			if err != nil {
+				return err
+			}
+			name := []string{"checkpoint.a", "checkpoint.b"}[l.cpBank]
+			raw, err := os.ReadFile(filepath.Join(path, name))
+			if err != nil {
+				return err
+			}
+			strict, err := decodeCheckpoint(raw, q.anchor)
+			if err != nil {
+				return err
+			}
+			if !reflect.DeepEqual(l.cp, strict) {
+				t.Fatal("loaded checkpoint differs from strict decode", round)
+			}
+			for bank := range q.decoded {
+				if q.decoded[bank].checkpoint == l.cp {
+					t.Fatal("load returned a retained bank model", round)
+				}
+			}
+			l.cp.Generation++
+			l.cp.Roots[0].Locator = "changed loaded copy"
+			l.cp.Applied[0].NextSequence++
+			for bank := range q.decoded {
+				if c := q.decoded[bank].checkpoint; c != nil && (c.Roots[0].Locator == "changed loaded copy" || c.Generation == l.cp.Generation && bank == l.cpBank) {
+					t.Fatal("loaded checkpoint poisoned a retained bank", round, bank)
+				}
+			}
+		}
+		return nil
+	}))
+}

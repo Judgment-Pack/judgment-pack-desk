@@ -368,7 +368,9 @@ func (q *Coordinator) loadWithEnrollment(census bool, enrollment *EnrollmentInsp
 			return nil, e
 		}
 		raw[i] = b
-		cp[i], e = q.decodeCheckpointBank(i, b)
+		// Both retained decodes are only compared here; the selected one is
+		// copied below, so the other bank's model is never copied per load.
+		cp[i], e = q.checkpointBank(i, b)
 		if e != nil {
 			return nil, refuse(ErrUnknown, "checkpoint page")
 		}
@@ -381,7 +383,8 @@ func (q *Coordinator) loadWithEnrollment(census bool, enrollment *EnrollmentInsp
 	if cp[high].Generation-cp[low].Generation > 1 || cp[high].Generation == cp[low].Generation && !bytes.Equal(raw[0], raw[1]) {
 		return nil, refuse(ErrUnknown, "checkpoint generations")
 	}
-	l.cp = cp[high]
+	selected := *cp[high]
+	l.cp = &selected
 	l.cpBank = high
 	l.diskApplied = l.cp.Applied
 	var censusHash = sha256.New()
@@ -630,10 +633,20 @@ func (q *Coordinator) decodedBank(bank int) *decodedBank {
 	return b
 }
 func (q *Coordinator) decodeCheckpointBank(bank int, raw []byte) (*checkpoint, error) {
+	value, err := q.checkpointBank(bank, raw)
+	if err != nil {
+		return nil, err
+	}
+	copy := *value
+	return &copy, nil
+}
+
+// checkpointBank returns the retained strict decode of exactly raw. It is
+// read-only: callers copy whatever they keep and never mutate or retain it.
+func (q *Coordinator) checkpointBank(bank int, raw []byte) (*checkpoint, error) {
 	b := q.decodedBank(bank)
 	if b.checkpoint != nil && bytes.Equal(raw, b.checkpointRaw) {
-		copy := *b.checkpoint
-		return &copy, nil
+		return b.checkpoint, nil
 	}
 	// The strict unsealer temporarily changes its input's checksum. The fresh
 	// read is private here; retain an independent snapshot only after success.
@@ -641,9 +654,8 @@ func (q *Coordinator) decodeCheckpointBank(bank int, raw []byte) (*checkpoint, e
 	if err != nil {
 		return nil, err
 	}
-	copy := *value
 	b.checkpointRaw = append([]byte(nil), raw...)
-	b.checkpoint = &copy
+	b.checkpoint = value
 	return value, nil
 }
 func (q *Coordinator) decodeTicketBank(bank, slot int, raw []byte) (Ticket, error) {
