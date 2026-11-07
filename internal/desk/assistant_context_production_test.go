@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	runcontext "github.com/Judgment-Pack/judgment-pack-agent/go/context"
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
@@ -175,7 +176,10 @@ func TestAssistantContextActualAuthoringTwoTurns(t *testing.T) {
 					t.Fatalf("actual Prepare changed scope: prepared=%q retained=%q disposed=%v", view.Checkpoint.Context.Scope, chat.Scope(), chat.IsDisposed())
 				}
 				t.Logf("actual authoring settlement: turn=%d", turn)
-				complete := assistantProtocolWait(t, s, token, view.ID, "complete")
+				// Every canonical event rewrites the one retained per-project ledger.
+				// The second turn's run commits behind the first turn's complete
+				// journal (about 1.8 MB here), so it settles more slowly than one run.
+				complete := assistantProtocolWaitWithin(t, s, token, view.ID, "complete", 60*time.Second)
 				if complete.Checkpoint == nil {
 					t.Fatal("actual execution omitted completed checkpoint")
 				}
