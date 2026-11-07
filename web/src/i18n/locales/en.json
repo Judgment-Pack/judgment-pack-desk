@@ -5781,6 +5781,7 @@
   "This desk is not signed, because Desk could not keep a signing key for it: {{reason}}. It was created at configVersion 5, which names no signing key.": "This desk is not signed, because Desk could not keep a signing key for it: {{reason}}. It was created at configVersion 5, which names no signing key.",
   "This desk is not signed: a desk names its signing key at configVersion 6, and the runtime this Desk runs (jpack {{version}}) does not read it. A runtime of {{floor}} or later creates desks signed.": "This desk is not signed: a desk names its signing key at configVersion 6, and the runtime this Desk runs (jpack {{version}}) does not read it. A runtime of {{floor}} or later creates desks signed.",
   "This desk keeps its conversations and documents inside its own folder. API keys remain in protected machine settings.": "This desk keeps its conversations and documents inside its own folder. API keys remain in protected machine settings.",
+  "This desk runs no submissions to a witness, so it starts none.": "This desk runs no submissions to a witness, so it starts none.",
   "This desk sent a request the chassis could not read. Nothing was created.": "This desk sent a request the chassis could not read. Nothing was created.",
   "This desk was not allowed to write there. Nothing was created.": "This desk was not allowed to write there. Nothing was created.",
   "This desk will not begin another session. Restart jpack-desk.": "This desk will not begin another session. Restart jpack-desk.",
