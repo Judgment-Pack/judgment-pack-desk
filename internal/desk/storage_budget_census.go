@@ -39,6 +39,28 @@ func storageCensusPrivateFile(info os.FileInfo) bool {
 	links, known := linkCount(info)
 	return ok && known && uid == effectiveUser() && links > 0
 }
+
+// The desk-level desk.json is the one file in the original config parent that a
+// person edits by hand. Custody reads it at the mode a checkout or an editor
+// leaves (0644) and refuses only one that someone else could write
+// (readConfigNamed); the census measures that same file rather than refusing
+// the installation over a mode Desk itself accepts. Ownership, link, regular-file
+// and no-group/other-write rules still hold. Every other name, and the same name
+// anywhere else, keeps the private-file rule.
+func storageCensusMeasuredFile(r *storageRootBinding, relative string, info os.FileInfo) bool {
+	if storageCensusPrivateFile(info) {
+		return true
+	}
+	if r == nil || !r.configControl || relative != deskConfigName || info == nil || !info.Mode().IsRegular() || info.Mode() & ^os.FileMode(0777) != 0 || info.Mode().Perm()&worldMode != 0 || info.Size() < 0 {
+		return false
+	}
+	if parent, err := r.censusControlParent(); err != nil || parent != storageCensusConfigParent {
+		return false
+	}
+	uid, ok := ownerOf(info)
+	links, known := linkCount(info)
+	return ok && known && uid == effectiveUser() && links > 0
+}
 func storageUnretired(slot storagebudget.HostSlotState) bool {
 	return slot.Ticket.State != storagebudget.Empty && !(slot.Ticket.State == storagebudget.Terminal && slot.Ticket.Token == slot.PersistedApplied)
 }
@@ -916,7 +938,7 @@ func (w *storageCensusWalk) directory(r *storageRootBinding, root *os.Root, witn
 				return errors.Join(e, ce)
 			}
 		} else {
-			if !storageCensusPrivateFile(info) {
+			if !storageCensusMeasuredFile(r, childName, info) {
 				return storagebudget.ErrUnknown
 			}
 			covered, e := r.censusCovered(w.ctx, childName, info)
