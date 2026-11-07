@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -571,30 +572,48 @@ func TestStorageOwnerActualOverBudgetPreservesReadableData(t *testing.T) {
 	if w.Code != 503 {
 		t.Fatal("over-budget startup served growth", w.Code)
 	}
-	for _, route := range []string{"/api/file?path=saved.md", "/api/storage"} {
+	get := func(route string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", route, nil)
 		r.Header.Set("Authorization", "Bearer "+testToken)
 		s.ServeHTTP(w, r)
-		if w.Code != 200 {
-			t.Fatal("refused startup lost safe HTTP read/status", route, w.Code, w.Body.String())
+		return w
+	}
+	// Saved data stays readable over HTTP.
+	if w := get("/api/file?path=saved.md"); w.Code != 200 {
+		t.Fatal("refused startup lost the safe HTTP read", w.Code, w.Body.String())
+	} else {
+		var reply struct {
+			Content string `json:"content"`
 		}
-		if route == "/api/file?path=saved.md" {
-			var reply struct {
-				Content string `json:"content"`
-			}
-			if err := json.Unmarshal(w.Body.Bytes(), &reply); err != nil || reply.Content != "saved project document" {
-				t.Fatal("HTTP read changed saved document", err)
-			}
-		} else {
-			var reply struct {
-				ReadOnly bool                    `json:"readOnly"`
-				Usage    *storagebudget.Snapshot `json:"usage"`
-			}
-			if err := json.Unmarshal(w.Body.Bytes(), &reply); err != nil || !reply.ReadOnly || reply.Usage == nil {
-				t.Fatal("HTTP status omitted measured read-only state", err)
-			}
+		if err := json.Unmarshal(w.Body.Bytes(), &reply); err != nil || reply.Content != "saved project document" {
+			t.Fatal("HTTP read changed saved document", err)
 		}
+	}
+	// The chat-storage settings reply needs the settings read recovery holds,
+	// so it answers 503 in words (serveStorageReadOnly), never a substitute.
+	if w := get("/api/storage"); w.Code != 503 || !strings.Contains(w.Body.String(), storageStatusUnknown) {
+		t.Fatal("read-only chat-storage settings were not refused as documented", w.Code, w.Body.String())
+	}
+	// Storage status shows the measured read-only state, with the over-budget
+	// data counted.
+	w = get("/api/storage/status")
+	var status struct {
+		ReadOnly bool                   `json:"readOnly"`
+		Snapshot *storageStatusSnapshot `json:"snapshot"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil || w.Code != 200 || !status.ReadOnly || status.Snapshot == nil || status.Snapshot.Installation.ChargedLogical == nil {
+		t.Fatal("storage status omitted the measured read-only state", w.Code, err, w.Body.String())
+	}
+	if charged, err := strconv.ParseUint(status.Snapshot.Installation.ChargedLogical.Bytes, 10, 64); err != nil || charged < 536870913 {
+		t.Fatal("storage status did not count the over-budget data", status.Snapshot.Installation.ChargedLogical, err)
+	}
+	over := false
+	for _, row := range status.Snapshot.Categories {
+		over = over || row.Category == "control" && row.OverBudget != nil && *row.OverBudget
+	}
+	if !over {
+		t.Fatal("storage status did not show the Control category over its limit", status.Snapshot.Categories)
 	}
 }
 
@@ -1002,8 +1021,16 @@ func TestStorageOwnerFixedControlCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.Installation[storagebudget.Control].Bytes != 88080384 {
-		t.Fatal("68 MiB provision plus 16 MiB banks changed or Ready double counted", v.Installation[storagebudget.Control])
+	// The 68 MiB Q/config provision and the two 8 MiB catalog banks, with
+	// Ready charged once, and the two chat-storage transfer banks every start
+	// makes beside them, measured at their fixed length.
+	if want := uint64(88080384 + 2*storageTransferBankBytes); v.Installation[storagebudget.Control].Bytes != want {
+		t.Fatal("68 MiB provision, 16 MiB catalog banks and the transfer banks changed, or Ready double counted", v.Installation[storagebudget.Control], want)
+	}
+	for _, name := range []string{storageTransferBankA, storageTransferBankB} {
+		if info, err := os.Stat(filepath.Join(cfg.DeskConfigDir, name)); err != nil || !info.Mode().IsRegular() || info.Size() != storageTransferBankBytes {
+			t.Fatal("transfer bank inventory changed", name, err)
+		}
 	}
 	fixed := map[string]int64{
 		".home-use.lock": 0, storageBootstrapName: 0, storageUseName: 0, storageClaimName: 4096, storageRecordName: 4096, storageIntentName: 2097152,

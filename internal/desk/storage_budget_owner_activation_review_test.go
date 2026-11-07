@@ -477,7 +477,7 @@ func TestStorageOwnerRequiredCompletionOutcomes(t *testing.T) {
 			if err := s.Close(); err != nil {
 				t.Fatal(err)
 			}
-			_, c, _ := ownerCrashConstruction(t, cfg)
+			_, c, closeCrash := ownerCrashConstruction(t, cfg)
 			c.fault = &storageBootstrapFault{Name: point.Name, Phase: point.Phase}
 			before := ownerReviewDurableState(t, c.original.config)
 			if err := c.loadOrEnrollOwner(t.Context()); !errors.Is(err, io.ErrUnexpectedEOF) {
@@ -486,8 +486,12 @@ func TestStorageOwnerRequiredCompletionOutcomes(t *testing.T) {
 			if c.grants["anchor/initialize"] || c.grants["anchor/register"] || c.grants["anchor/census"] {
 				t.Fatal("completion uncertainty reached reset/register/census")
 			}
-			// BeginMaintenance is an explicit pre-completion fence, preserving every
-			// immutable definition and ticket. Catalog, Ready and journal bytes stay exact.
+			// An ordinary reopen of an active catalog selects the exclusive startup
+			// census before completion, and that census begins maintenance itself.
+			// A completion fault therefore changes no Q state: no maintenance is
+			// begun, and every definition, ticket, revision and epoch is the one
+			// the previous start published. Catalog, Ready and journal bytes stay
+			// exact, and the launch stays read only.
 			after := ownerReviewDurableState(t, c.original.config)
 			for name, digest := range before {
 				if name == storageAnchorName+"/checkpoint.a" || name == storageAnchorName+"/checkpoint.b" {
@@ -500,21 +504,16 @@ func TestStorageOwnerRequiredCompletionOutcomes(t *testing.T) {
 			if !c.grants["anchor/complete-state"] {
 				t.Fatal("completion test did not reach original Q state")
 			}
-			v, err := c.ref.cell.q.Snapshot(t.Context())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !v.Maintenance {
-				t.Fatal("completion uncertainty published a healthy census")
-			}
 			actual, err := c.ref.cell.q.InspectHost(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
-			if actual.Configuration.Revision != originalState.Configuration.Revision+1 || actual.Configuration.Epoch != originalState.Configuration.Epoch+1 || actual.Configuration.Policy != originalState.Configuration.Policy || !reflect.DeepEqual(actual.Roots, originalState.Roots) || !reflect.DeepEqual(actual.Workspaces, originalState.Workspaces) || !reflect.DeepEqual(actual.Configuration.Filesystems, originalState.Configuration.Filesystems) || !reflect.DeepEqual(actual.Configuration.CapacityConstraints, originalState.Configuration.CapacityConstraints) || !reflect.DeepEqual(actual.Slots, originalState.Slots) {
-				t.Fatal("completion changed definitions/obligations beyond explicit maintenance fence")
+			if actual.Configuration.Maintenance || actual.Configuration.Revision != originalState.Configuration.Revision || actual.Configuration.Epoch != originalState.Configuration.Epoch || actual.Configuration.Policy != originalState.Configuration.Policy || !reflect.DeepEqual(actual.Roots, originalState.Roots) || !reflect.DeepEqual(actual.Workspaces, originalState.Workspaces) || !reflect.DeepEqual(actual.Configuration.Filesystems, originalState.Configuration.Filesystems) || !reflect.DeepEqual(actual.Configuration.CapacityConstraints, originalState.Configuration.CapacityConstraints) || !reflect.DeepEqual(actual.Slots, originalState.Slots) {
+				t.Fatal("a completion fault changed Q state before the census")
 			}
-
+			// The next start completes and publishes its census.
+			closeCrash()
+			ownerActualNew(t, cfg)
 		})
 	}
 }
