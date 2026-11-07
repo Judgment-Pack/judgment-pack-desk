@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
 )
 
 // **A retained-artifacts folder made after the storage catalog is measured
@@ -59,9 +61,16 @@ func TestStorageRetainedChildMadeAfterTheCatalogStaysInItsPrivateRoot(t *testing
 		if _, err := os.Lstat(filepath.Join(project, ".desk-private", "retained-artifacts")); err != nil {
 			t.Fatalf("the Policy made no retained-artifacts folder: %v", err)
 		}
+		_, wantRetained := storagePrivateUsage(t, filepath.Join(project, ".desk-private"))
 		next := restart(t, s, project, config)
 		if next.storageReadOnly || next.storageEnrollment == nil {
 			t.Fatalf("a retained-artifacts folder made after the catalog started read-only: %v", next.storageProblem)
+		}
+		// It is measured inside its private folder, as Retained by path.
+		v, err := next.storageConstruction.ref.cell.q.Snapshot(t.Context())
+		storageTestMust(t, err)
+		if wantRetained.Files == 0 || len(v.Workspaces) != 1 || v.Workspaces[0].Usage[storagebudget.Retained] != wantRetained {
+			t.Fatalf("retained artifacts %+v made after the catalog were not counted as Retained: %+v", wantRetained, v.Workspaces)
 		}
 	})
 	t.Run("registered at the first start", func(t *testing.T) {

@@ -573,6 +573,15 @@ func (r *storageRootBinding) categoryOf(relative string) (uint8, []storagebudget
 	} else if assistantDialectReadRecoveryFileName.MatchString(relative) {
 		category = storagebudget.Control
 	}
+	// Retained artifacts that a project private folder holds without a
+	// registered root of their own (a folder made after the catalog, or one
+	// measured under the project scope) are Retained by path, as their
+	// registered root would be.
+	if !r.configControl && r.category == storagebudget.Control && r.source != nil {
+		if (r.source.role == 3 || r.source.role == 6) && storageRetainedArtifactsPath(relative, "") || r.source.role == 7 && storageRetainedArtifactsPath(relative, startupIdentityDir+"/") {
+			category = storagebudget.Retained
+		}
+	}
 	// One owner decision serves census and every ordinary writer. Retained
 	// provider roots retain their category; only flat chat namespaces split.
 	if !strings.Contains(relative, "/") && (r.category == storagebudget.History || r.configControl) {
@@ -590,6 +599,13 @@ func (r *storageRootBinding) categoryOf(relative string) (uint8, []storagebudget
 		}
 	}
 	return category, references
+}
+
+// storageRetainedArtifactsPath is whether relative names a project's
+// retained-artifacts folder, or something in it, below prefix.
+func storageRetainedArtifactsPath(relative, prefix string) bool {
+	rest, ok := strings.CutPrefix(relative, prefix)
+	return ok && (rest == "retained-artifacts" || strings.HasPrefix(rest, "retained-artifacts/"))
 }
 func (o *storageBudgetOwner) legacyHistory(r *storageRootBinding, workspaces []storagebudget.ID) error {
 	o.mu.Lock()

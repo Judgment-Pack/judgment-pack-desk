@@ -38,6 +38,19 @@ func storageTreeUsage(t *testing.T, root string) storagebudget.Vector {
 	return v
 }
 
+// storagePrivateUsage is a project private folder's usage split the way the
+// census attributes it: its retained-artifacts folder and everything in it
+// as Retained, the rest as Control.
+func storagePrivateUsage(t *testing.T, private string) (control, retained storagebudget.Vector) {
+	t.Helper()
+	all := storageTreeUsage(t, private)
+	if _, err := os.Lstat(filepath.Join(private, "retained-artifacts")); err == nil {
+		retained = storageTreeUsage(t, filepath.Join(private, "retained-artifacts"))
+	}
+	control = storagebudget.Vector{Bytes: all.Bytes - retained.Bytes, Files: all.Files - retained.Files, Directories: all.Directories - retained.Directories}
+	return control, retained
+}
+
 // **A private folder Desk made after the storage catalog is measured, and
 // the next start is writable with a warning.** A standalone project has no
 // .desk-private when Desk first starts on it, so the catalog registers none.
@@ -70,6 +83,10 @@ func TestStorageRestartMeasuresAPrivateFolderMadeAfterTheCatalog(t *testing.T) {
 		}
 	}
 	want := storageTreeUsage(t, private)
+	wantControl, wantRetained := storagePrivateUsage(t, private)
+	if wantRetained.Files == 0 {
+		t.Fatal("the fixture retained no artifact")
+	}
 	ts.Close()
 	storageTestMust(t, s.Close())
 
@@ -84,11 +101,12 @@ func TestStorageRestartMeasuresAPrivateFolderMadeAfterTheCatalog(t *testing.T) {
 	}
 	v, err := next.storageConstruction.ref.cell.q.Snapshot(t.Context())
 	storageTestMust(t, err)
-	if len(v.Workspaces) != 1 || !v.Workspaces[0].Known || v.Workspaces[0].Usage[storagebudget.Control] != want {
-		t.Fatalf("the private folder's %+v was not counted for its workspace: %+v", want, v.Workspaces)
+	// Retained artifacts are Retained by path, the rest Control.
+	if len(v.Workspaces) != 1 || !v.Workspaces[0].Known || v.Workspaces[0].Usage[storagebudget.Control] != wantControl || v.Workspaces[0].Usage[storagebudget.Retained] != wantRetained {
+		t.Fatalf("the private folder's %+v (Control %+v, Retained %+v) was not counted for its workspace: %+v", want, wantControl, wantRetained, v.Workspaces)
 	}
-	if !storageVectorLE(want, v.Installation[storagebudget.Control]) {
-		t.Fatalf("the private folder's %+v was not counted for the installation: %+v", want, v.Installation[storagebudget.Control])
+	if !storageVectorLE(wantControl, v.Installation[storagebudget.Control]) || !storageVectorLE(wantRetained, v.Installation[storagebudget.Retained]) {
+		t.Fatalf("the private folder's %+v was not counted for the installation: %+v", want, v.Installation)
 	}
 	status := next.readStorageStatus(t.Context())
 	if status.Registration == nil || status.Registration.Enforcement != "warning-only" || !slices.Contains(status.Registration.Folders, private) {

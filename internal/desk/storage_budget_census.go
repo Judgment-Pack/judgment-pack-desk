@@ -1049,7 +1049,8 @@ func (w *storageCensusWalk) carried(r *storageRootBinding, count *int, usage *[s
 
 // carriedDirectory is directory's walk for a carried private folder: the same
 // bounds, rule and before/after identity checks, with every entry charged to r
-// as Control and attributed to workspace when it is registered in this walk.
+// as Control, or Retained in its retained-artifacts folder, and attributed to
+// workspace when it is registered in this walk.
 func (w *storageCensusWalk) carriedDirectory(r *storageRootBinding, workspace storagebudget.ID, root *os.Root, relative string, depth int, count *int, usage *[storagebudget.Categories]storagebudget.Vector) error {
 	var references []storagebudget.ID
 	if _, ok := w.workspace[workspace]; ok {
@@ -1078,7 +1079,11 @@ func (w *storageCensusWalk) carriedDirectory(r *storageRootBinding, workspace st
 		return storagebudget.ErrUnknown
 	}
 	w.directories[identity] = true
-	if e = w.addAs(r, storagebudget.Control, references, identity, 0, true, usage); e != nil {
+	category := uint8(storagebudget.Control)
+	if storageRetainedArtifactsPath(relative, startupIdentityDir+"/") {
+		category = storagebudget.Retained
+	}
+	if e = w.addAs(r, category, references, identity, 0, true, usage); e != nil {
 		return e
 	}
 	file, e := root.Open(".")
@@ -1147,7 +1152,11 @@ func (w *storageCensusWalk) carriedDirectory(r *storageRootBinding, workspace st
 		if !storageCensusMeasuredFile(info) {
 			return storagebudget.ErrUnknown
 		}
-		if e = w.addAs(r, storagebudget.Control, references, id, uint64(info.Size()), false, usage); e != nil {
+		fileCategory := uint8(storagebudget.Control)
+		if storageRetainedArtifactsPath(childName, startupIdentityDir+"/") {
+			fileCategory = storagebudget.Retained
+		}
+		if e = w.addAs(r, fileCategory, references, id, uint64(info.Size()), false, usage); e != nil {
 			return e
 		}
 		after, e := root.Lstat(name)

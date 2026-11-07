@@ -9,7 +9,46 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
 )
+
+// **Retained artifacts in a private folder are Retained by path.** A
+// retained-artifacts folder is its own Retained root only where the catalog
+// registered it. One measured inside a registered private folder, under a
+// project's scope, or carried for an unregistered private folder was counted
+// as Control, against Control's far smaller limits.
+func TestStorageRetainedArtifactsAreRetainedByPathInPrivateFolders(t *testing.T) {
+	w := storagebudget.ID{1}
+	binding := func(role uint8, category uint8) *storageRootBinding {
+		return &storageRootBinding{category: category, references: []storagebudget.ID{w}, source: &storageOriginalSourceRoot{role: role}}
+	}
+	for _, c := range []struct {
+		name     string
+		r        *storageRootBinding
+		relative string
+		want     uint8
+	}{
+		{"a registered private folder's retained folder", binding(6, storagebudget.Control), "retained-artifacts", storagebudget.Retained},
+		{"an artifact in it", binding(6, storagebudget.Control), "retained-artifacts/0a1b", storagebudget.Retained},
+		{"a home project's private folder", binding(3, storagebudget.Control), "retained-artifacts/0a1b", storagebudget.Retained},
+		{"a Policy in it", binding(6, storagebudget.Control), "policies/ledger.json", storagebudget.Control},
+		{"a look-alike name", binding(6, storagebudget.Control), "retained-artifacts-old/0a1b", storagebudget.Control},
+		{"under a project scope", binding(7, storagebudget.Control), ".desk-private/retained-artifacts/0a1b", storagebudget.Retained},
+		{"a Policy under a project scope", binding(7, storagebudget.Control), ".desk-private/policies/ledger.json", storagebudget.Control},
+		{"outside the private folder under a scope", binding(7, storagebudget.Control), "retained-artifacts/0a1b", storagebudget.Control},
+		{"a history root", binding(4, storagebudget.History), "retained-artifacts/0a1b", storagebudget.History},
+	} {
+		if got, refs := c.r.categoryOf(c.relative); got != c.want || len(refs) != 1 || refs[0] != w {
+			t.Errorf("%s (%s): category %d references %v, want %d", c.name, c.relative, got, refs, c.want)
+		}
+	}
+	for relative, want := range map[string]bool{".desk-private/retained-artifacts": true, ".desk-private/retained-artifacts/x": true, ".desk-private/retained-artifactsx": false, ".desk-private/policies": false} {
+		if storageRetainedArtifactsPath(relative, startupIdentityDir+"/") != want {
+			t.Errorf("carried path %s classified %v", relative, !want)
+		}
+	}
+}
 
 func storageProducerConfig(t *testing.T) Config {
 	t.Helper()
