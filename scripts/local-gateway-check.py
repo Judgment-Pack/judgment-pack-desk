@@ -18,6 +18,10 @@ import urllib.error
 import uuid
 
 TOKEN = 'local-gateway-isolated-test'
+# One Desk runs per installation (one settings and data folder), whatever the
+# project: a second Desk on an installation another Desk holds exits with these
+# words. The running Desk opens other projects as named desks.
+ALREADY_OPEN = 'Another Desk is already open for this installation. Open this project from that Desk, or close it before starting Desk again.'
 
 def request(url, body=None, method=None, headers=None):
     encoded = None if body is None else json.dumps(body).encode()
@@ -46,6 +50,16 @@ def closed(url):
     try: urllib.request.urlopen(url + '/publickey', timeout=.2); return False
     except (urllib.error.URLError, ConnectionError, TimeoutError): return True
 
+def makes_desks(runtime):
+    # A named desk is made by the runtime Desk runs. The Local gateway job runs
+    # Desk with a stand-in that is no runtime (true), which makes none; the
+    # release archives run the bundled jpack, which must.
+    try:
+        answer = subprocess.run([runtime, '--version'], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return answer.returncode == 0 and answer.stdout.startswith('jpack ')
+
 def sample_pdf():
     stream = b'BT /F1 12 Tf 72 720 Td (Local PDF processing works.) Tj ET'
     objects = [b'<< /Type /Catalog /Pages 2 0 R >>', b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -68,14 +82,14 @@ def main():
     processes = []
     with tempfile.TemporaryDirectory(prefix='desk-local-gateway-') as temp:
         root = Path(temp).resolve()
-        project, config, data = [root / part for part in ('project', 'config', 'data')]
-        for folder in (project, config, data): folder.mkdir(mode=0o700)
+        project, other_project, config, data = [root / part for part in ('project', 'other-project', 'config', 'data')]
+        for folder in (project, other_project, config, data): folder.mkdir(mode=0o700)
         env = {**os.environ, 'XDG_CONFIG_HOME': str(config), 'XDG_DATA_HOME': str(data)}
-        def start():
+        def start(folder=project):
             address = 'http://127.0.0.1:' + str(port())
             log_path = root / ('backend-' + str(len(processes)) + '.log')
             log = log_path.open('wb')
-            proc = subprocess.Popen([str(bundle / 'jpack-desk'), '--port', address.rsplit(':',1)[1], '--jpack', runtime, '--dev-token', TOKEN, '--print-url=false', str(project)], env=env, stdout=log, stderr=log)
+            proc = subprocess.Popen([str(bundle / 'jpack-desk'), '--port', address.rsplit(':',1)[1], '--jpack', runtime, '--dev-token', TOKEN, '--print-url=false', str(folder)], env=env, stdout=log, stderr=log)
             log.close()
             processes.append(proc)
             def ready():
@@ -84,6 +98,17 @@ def main():
             answer = wait_for(ready)
             assert answer['localGateway']['status'] == 'ready', answer.get('localGateway')
             return proc, address, answer
+        def refused(folder):
+            # One Desk per installation: a second Desk with the same settings and
+            # data exits at startup with words, not the lock's errno, whether it
+            # names the running Desk's project or another.
+            log_path = root / ('refused-' + folder.name + '.log')
+            with log_path.open('wb') as log:
+                proc = subprocess.run([str(bundle / 'jpack-desk'), '--port', str(port()), '--jpack', runtime, '--dev-token', TOKEN, '--print-url=false', str(folder)], env=env, stdout=log, stderr=log, timeout=60)
+            said = log_path.read_text()
+            assert proc.returncode != 0, 'a second Desk started on ' + folder.name + ': ' + said
+            assert 'jpack-desk: ' + ALREADY_OPEN in said, said
+            assert 'resource temporarily unavailable' not in said, said
         try:
             first, desk, answer = start()
             installed = json.loads((bundle / 'gateway-bundle.json').read_text())
@@ -102,14 +127,30 @@ def main():
             seed = config / 'jpack-desk/secrets/local-gateway.seed'
             assert seed.stat().st_mode & 0o777 == 0o600
             assert 'seed' not in json.dumps(answer)
-            second, other_desk, other = start()
-            assert other['localGateway']['gateway']['signer'] == gateway['signer']
-            assert other['localGateway']['gateway']['url'] != gateway['url']
+            refused(project)
+            refused(other_project)
+            # The refused starts changed nothing: the running Desk keeps its gateway.
+            held = request(desk + '/api/desk-config')['localGateway']
+            assert held['status'] == 'ready' and held['gateway']['url'] == gateway['url'] and held['gateway']['signer'] == gateway['signer'], held
+            # A named desk in the running Desk has its own gateway and connection
+            # companion, signed with the installation's one seed.
+            named, named_url = None, None
+            if makes_desks(runtime):
+                made = request(desk + '/api/desks', {'name': 'Gateway check'})
+                named = {'X-Jpack-Desk': made['id']}
+                other = request(desk + '/api/desk-config', headers=named)['localGateway']
+                assert other['status'] == 'ready', other
+                assert other['gateway']['signer'] == gateway['signer']
+                assert other['gateway']['url'] != gateway['url']
+                named_url = other['gateway']['url']
+            else:
+                print('NOTE: ' + runtime + ' is not a jpack runtime, so no named desk is made and the per-desk connection checks are not run', file=sys.stderr)
             # Private connection companion integration, with synthetic registration.
             assert request(desk + '/api/connections/status', {})['state'] == 'setup-required'
             configured = request(desk + '/api/connections/configure', {'clientId': 'isolated-test.apps.googleusercontent.com', 'clientSecret': 'synthetic-public-test'})
             assert configured['saved']
-            assert request(other_desk + '/api/connections/status', {})['state'] == 'not-connected'
+            if named:
+                assert request(desk + '/api/connections/status', {}, headers=named)['state'] == 'not-connected'
             invalid = request(desk + '/api/connections/status', {'principal': 'different-principal'})
             assert invalid.get('error'), 'caller principal override accepted'
             flow = request(desk + '/api/connections/connect', {})
@@ -141,7 +182,8 @@ def main():
                     with socket.create_connection((address.hostname, address.port), timeout=.2): return False
                 except OSError: return True
             wait_for(callback_closed)
-            assert request(other_desk + '/api/connections/poll', {'id': flow['id']}).get('error'), 'flow crossed connection process'
+            if named:
+                assert request(desk + '/api/connections/poll', {'id': flow['id']}, headers=named).get('error'), 'flow crossed connection process'
             try:
                 unknown = request(desk + '/api/research/gateway/acquire', {'session':str(uuid.uuid4()), 'source':'drive', 'arguments':{'grant':'ab'*32,'fileId':'not-selected'}}, headers={'X-JPack-Local-Documents':'1'})
             except urllib.error.HTTPError as error:
@@ -151,7 +193,8 @@ def main():
                 raise AssertionError('unknown Drive grant returned a result: '+json.dumps(unknown))
             assert request(desk + '/api/connections/gmail/status', {})['state'] == 'setup-required', 'Drive setup leaked into Gmail'
             assert request(desk + '/api/connections/gmail/configure', {'clientId':'gmail-isolated.apps.googleusercontent.com','clientSecret':'synthetic-gmail'})['saved']
-            assert request(other_desk + '/api/connections/gmail/status', {})['state'] == 'not-connected'
+            if named:
+                assert request(desk + '/api/connections/gmail/status', {}, headers=named)['state'] == 'not-connected'
             mail_flow = request(desk + '/api/connections/gmail/connect', {})
             mail_params = parse_qs(urlsplit(mail_flow['url']).query)
             assert mail_params['scope'] == ['https://www.googleapis.com/auth/gmail.readonly']
@@ -229,7 +272,7 @@ def main():
             gateway = request(desk + '/api/desk-config')['localGateway']['gateway']
             assert gateway['url'] != restarted['gateway']['url'], 'turning processing off did not restart the gateway'
             # The key is in the gateway's own store, private, and nowhere else.
-            for folder in (config, data, project):
+            for folder in (config, data, project, other_project):
                 for path in folder.rglob('*'):
                     if path.is_file() and key.encode() in path.read_bytes():
                         assert folder == config and path.relative_to(config).parts[:3] == ('jpack-desk', 'gateway-connections', 'document-processing'), path
@@ -254,9 +297,15 @@ def main():
                     request(desk + '/api/attachments/' + str(uuid.uuid4()), {'version': 1, 'original': original}, 'PUT', {'If-Match': 'absent'})
                     raise AssertionError('disabled PDF processing accepted new original')
                 except urllib.error.HTTPError as error: assert error.code == 409
+            # A graceful stop closes every companion the Desk started, the named desk's too.
             first.terminate(); first.wait(timeout=12)
             wait_for(lambda: closed(gateway['url']))
-            assert request(other_desk + '/api/desk-config')['localGateway']['status'] == 'ready'
+            if named_url:
+                wait_for(lambda: closed(named_url))
+            # With the first Desk closed, Desk starts again on the installation
+            # and reuses the signer seed it kept.
+            second, other_desk, other = start()
+            assert other['localGateway']['gateway']['signer'] == gateway['signer'], 'identity rotated on restart'
             # Parent death, without running Desk cleanup, must close the companion.
             other_url = other['localGateway']['gateway']['url']
             second.kill(); second.wait(timeout=5)
@@ -282,7 +331,7 @@ def main():
             # Invalid configuration must not get a managed fallback.
             config_path.write_text('{broken')
             assert 'localGateway' not in request(desk + '/api/desk-config')
-            print('PASS: Drive/Gmail isolated status, fixed OAuth, cancel, grant refusal, private modes; automatic setup, two instances, signed extraction, document processing settings, credential custody and restart, disable/null, graceful shutdown, crash cleanup, stable identity, external preservation, invalid config refusal')
+            print('PASS: Drive/Gmail isolated status, fixed OAuth, cancel, grant refusal, private modes; automatic setup, one Desk per installation, ' + ('named desk companions, ' if named else '') + 'signed extraction, document processing settings, credential custody and restart, disable/null, graceful shutdown, crash cleanup, stable identity, external preservation, invalid config refusal')
         finally:
             for proc in processes:
                 if proc.poll() is None: proc.terminate()

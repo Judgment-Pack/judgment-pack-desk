@@ -21,11 +21,11 @@ function declaration(entries: Configuration['packs'], id: unknown): Declaration 
 export function graphChatTools(options: { client: () => Client | null; chatId: string; addDraft: (draft: GraphDraft,signal:AbortSignal) => void|Promise<void> }): HostTool[] {
   const readGraphs = new Map<string, {path: string; sha256: string}>()
   return [
-    {name: 'list_decisions',delegation:'read', description: 'List the project’s declared packs and graphs before composing or running them. Reads declarations; evaluates nothing.', inputSchema: schema({}), execute: async (_args, signal) => {
+    {name: 'list_decisions',taxonomy:{operation:'discover',effect:'read'},delegation:'read', description: 'List the project’s declared packs and graphs before composing or running them. Reads declarations; evaluates nothing.', inputSchema: schema({}), execute: async (_args, signal) => {
       const config = await configuration(signal)
       return text({packs: Object.entries(config.packs ?? {}).map(([id, entry]) => ({id, description: entry.description})), graphs: Object.entries(config.graphs ?? {}).map(([id, entry]) => ({id, description: entry.description}))})
     }},
-    {name: 'read_decision',delegation:'read', description: 'Read a declared pack or graph by type and id. For a graph, also returns its declared pack documents for inspection.', inputSchema: schema({type: {type: 'string', enum: ['pack', 'graph']}, id: idSchema}, ['type', 'id']), execute: async (args, signal) => {
+    {name: 'read_decision',taxonomy:{operation:'read',effect:'read'},delegation:'read', description: 'Read a declared pack or graph by type and id. For a graph, also returns its declared pack documents for inspection.', inputSchema: schema({type: {type: 'string', enum: ['pack', 'graph']}, id: idSchema}, ['type', 'id']), execute: async (args, signal) => {
       if (args.type !== 'pack' && args.type !== 'graph') throw toolInputFailure('Choose pack or graph.')
       const config = await configuration(signal)
       const file = await readFile(declaration(args.type === 'pack' ? config.packs : config.graphs, args.id).path, signal)
@@ -42,7 +42,7 @@ export function graphChatTools(options: { client: () => Client | null; chatId: s
       }
       return text({type: args.type, id: args.id, content: file.content, sha256: file.sha256, packs})
     }},
-    {name: 'get_graph_authoring_instructions',delegation:'read',contextPolicy:{reference:true}, description: 'Read the runtime author_graph contract before proposing a graph. Supply the intended relationship and ids of existing packs; never invent pack references.', inputSchema: schema({relationship: {type: 'string', maxLength: 20000}, packs: {type: 'array', items: idSchema, minItems: 1, maxItems: 64}}, ['relationship', 'packs']), execute: async (args, signal) => {
+    {name: 'get_graph_authoring_instructions',taxonomy:{operation:'read',effect:'read'},delegation:'read',contextPolicy:{reference:true}, description: 'Read the runtime author_graph contract before proposing a graph. Supply the intended relationship and ids of existing packs; never invent pack references.', inputSchema: schema({relationship: {type: 'string', maxLength: 20000}, packs: {type: 'array', items: idSchema, minItems: 1, maxItems: 64}}, ['relationship', 'packs']), execute: async (args, signal) => {
       const client = options.client()
       if (!client) throw toolInputFailure('The runtime connection is not ready.')
       if (typeof args.relationship !== 'string' || !Array.isArray(args.packs) || !args.packs.length || args.packs.length > 64) throw toolInputFailure('Provide a relationship and up to 64 declared pack ids.')
@@ -53,7 +53,7 @@ export function graphChatTools(options: { client: () => Client | null; chatId: s
       return text(result.messages.flatMap(message => message.content.type === 'text' ? [message.content.text] : []).join('\n\n') + '\n\nUse propose_graph to retain a graph draft for human review. Do not use a pack proposal fence. Rehearsals run saved graphs only; no rows, lock or project files are written by these tools.')
     }},
     ...graphHostTools(),
-    {name: 'propose_graph', description: 'Keep a graph draft in this conversation for the person to inspect, edit and review. Does not save a project file, change configuration or run a decision. For revisions, read the existing graph first.', inputSchema: schema({id: idSchema, content: {type: 'string', maxLength: 1048576}, description: {type: 'string', maxLength: 4096}}, ['id', 'content']), execute: async (args, signal) => {
+    {name: 'propose_graph',taxonomy:{operation:'propose',effect:'propose'}, description: 'Keep a graph draft in this conversation for the person to inspect, edit and review. Does not save a project file, change configuration or run a decision. For revisions, read the existing graph first.', inputSchema: schema({id: idSchema, content: {type: 'string', maxLength: 1048576}, description: {type: 'string', maxLength: 4096}}, ['id', 'content']), execute: async (args, signal) => {
       if (typeof args.id !== 'string' || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(args.id) || args.id.length > 128 || typeof args.content !== 'string' || new TextEncoder().encode(args.content).length > 1024 * 1024) throw toolInputFailure('Provide a graph id and a graph document up to 1 MiB.')
       const doc = JSON.parse(args.content)
       if (!doc || typeof doc !== 'object' || Array.isArray(doc) || doc.formatVersion !== '1' || !doc.nodes || !Array.isArray(doc.edges)) throw toolInputFailure('Provide a graph document, not a pack.')
@@ -67,7 +67,7 @@ export function graphChatTools(options: { client: () => Client | null; chatId: s
       await options.addDraft(draft,signal)
       return text({artifactType: 'graph', status: 'draft', draftId: draft.draftId, reviewUrl: graphDraftHref(options.chatId, draft.draftId), message: 'Draft retained for review. No project file was written. Open the draft to validate, review and save.'})
     }},
-    {name: 'graph_rehearse', description: 'Rehearse an existing declared graph with the user’s supplied inputs keyed by node id. All nodes run. Does not write an audit decision or execute actions. Ask for missing facts; never invent them. Input and tool result are retained in chat history.', inputSchema: schema({id: idSchema, inputs: {type: 'string', description: 'JSON object keyed by node id; each entry has facts and/or evidence.'}}, ['id', 'inputs']), execute: async (args, signal) => {
+    {name: 'graph_rehearse',taxonomy:{operation:'check',effect:'read',checkKind:'rehearse'}, description: 'Rehearse an existing declared graph with the user’s supplied inputs keyed by node id. All nodes run. Does not write an audit decision or execute actions. Ask for missing facts; never invent them. Input and tool result are retained in chat history.', inputSchema: schema({id: idSchema, inputs: {type: 'string', description: 'JSON object keyed by node id; each entry has facts and/or evidence.'}}, ['id', 'inputs']), execute: async (args, signal) => {
       if (typeof args.id !== 'string' || typeof args.inputs !== 'string') throw toolInputFailure('A configured graph id and JSON inputs are required.')
       const result = await rehearseGraph(args.id, args.inputs, signal)
       return text(result.raw)

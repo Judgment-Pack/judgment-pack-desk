@@ -1,0 +1,25 @@
+{
+  "version":1,
+  "scope":"D0a handwritten original-history baseline and factory-domain prerequisite; no adapter2 or signed new carrier evidence",
+  "baseline":{
+    "fields":"original-fields.json",
+    "modelAction":"model-action.json",
+    "originalRecipeVersion":1,
+    "currentRecipeVersion":2,
+    "originalTypes":["text","integer","decimal","boolean","text-list","range","string","number"],
+    "conversions":["text","decimal","number","boolean","research-value"],
+    "source":"Existing test-only fixed-key source proof fixture; actual selected Gateway canonicalizer and verifier, not a live source or actual Gateway-issued acquisition",
+    "originalSnapshotOwner":"Server.reviewedInputSnapshot"
+  },
+  "saturation":{
+    "originalRevisions":150,
+    "fieldsPerRevision":30,
+    "descriptionUTF8Bytes":1000,
+    "recordsPerRevision":1,
+    "fieldType":"text",
+    "fieldValueJson":"\"x\"",
+    "revisionInventory":"Deduplicated by original retained collection recipe version; all represented revisions and all fields included once",
+    "requiredAssertion":"A legal actual Desk collection and generated snapshot must fit the complete published factory domain; reachable refusal fails this prerequisite and stops work"
+  },
+  "observations":"Exact observed snapshot/collection/model/projection bytes are saved only as scratch evidence, never imported as golden expectations"
+}

@@ -167,14 +167,17 @@ describe('the desk reading jpack-desk.json', () => {
     expect(asked.some((url) => url.includes('/api/desk-config'))).toBe(true)
     // Project files, configuration, the named desk directory and the AI
     // connections shared on this computer use the chassis. The optional
-    // safeguards cue now reads its offer from the status strip.
+    // safeguards cue now reads its offer from the status strip, and so does
+    // the storage pressure notice: shell health owns the one read of
+    // /api/storage/status that every storage panel observes.
     expect(
       asked.every(
         (url) =>
           url.includes('/api/file?') ||
           url.includes('/api/files') ||
           url.includes('/api/desk-config') || url === '/api/desks' ||
-          url.includes('/api/ai-connections') || url === '/api/upgrade' || url === '/api/desk-home' || url === '/api/project-location'
+          url.includes('/api/ai-connections') || url === '/api/upgrade' || url === '/api/desk-home' || url === '/api/project-location' ||
+          url === '/api/storage/status'
       )
     ).toBe(true)
   })

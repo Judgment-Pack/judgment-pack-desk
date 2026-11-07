@@ -553,7 +553,7 @@ function GraphRowItem({ row, known }: { row: GraphTestRow; known: (string | unde
  * nothing walked. So nothing is rendered where the member is absent, and an
  * empty trace says it is empty.
  */
-function GraphNodeItem({ node }: { node: GraphTestNode }) {
+export function GraphNodeItem({ node }: { node: GraphTestNode }) {
   useLocale()
   const assertion = describeTargetAssertion(node)
   return (
@@ -576,14 +576,16 @@ function GraphNodeItem({ node }: { node: GraphTestNode }) {
       />
 
       {node.trace !== undefined && (
+        <Disclosure size="small" title={<>{msg("Trace of {{value0}}", { value0: node.node })} · {msg('{{count}} trace entries', { count: node.trace.length })}</>}>
         <TracePanel
           trace={node.trace}
-          title={msg("Trace of {{value0}}", { value0: node.node })}
+          title={msg('Trace')}
           context={
             msg("This trace is the evaluator’s own walk order; the node comparisons above it are listed lexicographically by node name. Two orders, and neither is read off the other.")
           }
           emptyWhat={msg("This node's evaluation")}
         />
+        </Disclosure>
       )}
     </li>
   )

@@ -7,7 +7,11 @@ import (
 	"strings"
 )
 
-type fileDialectDraftRepository struct{ open func(bool) (*os.Root, error) }
+type fileDialectDraftRepository struct {
+	open func(bool) (*os.Root, error)
+	// Current authority only; never reacquires the conversation/private lock.
+	authorize func(context.Context) error
+}
 
 // File transactions use the existing directory lock and bounded wait. The
 // workflow lease is a different file; neither is a recursive storage transaction.
@@ -31,7 +35,18 @@ func (f fileDialectDraftRepository) locked(ctx context.Context, write bool, use 
 	if err = ctx.Err(); err != nil {
 		return err
 	}
-	return use(root)
+	if f.authorize != nil {
+		if err = f.authorize(ctx); err != nil {
+			return err
+		}
+	}
+	if err = use(root); err != nil {
+		return err
+	}
+	if f.authorize != nil {
+		return f.authorize(ctx)
+	}
+	return nil
 }
 func readDialectDraft(root *os.Root, id string) (dialectDraftReply, error) {
 	raw, err := readPrivateData(root, id+".json", dialectDraftLimit)
@@ -125,6 +140,11 @@ func (f fileDialectDraftRepository) CompareAndSwap(ctx context.Context, d dialec
 		if e = ctx.Err(); e != nil {
 			return e
 		}
+		if f.authorize != nil {
+			if e = f.authorize(ctx); e != nil {
+				return e
+			}
+		}
 		if e = writePrivateData(root, d.ID+".json", raw); e != nil {
 			return e
 		}
@@ -135,4 +155,44 @@ func (f fileDialectDraftRepository) CompareAndSwap(ctx context.Context, d dialec
 		return dialectDraftReply{}, err
 	}
 	return saved, nil
+}
+
+// captureRetentionDrafts runs under the caller's original project lease.
+// It enumerates only this owner's existing folder, preserving checked absence.
+func (s *Server) captureRetentionDrafts(ctx context.Context, c *storageRetentionCapture, o *storageBudgetOwner) (err error) {
+	drafts, absent, e := storageRetentionOwnFolder(s.root, strings.Split(dialectDraftDir, "/"), "dialect drafts", o, "draft-ancestor-close")
+	if e != nil {
+		return e
+	}
+	if absent {
+		c.Sources = append(c.Sources, storageRetentionSource{ID: digestOf([]byte("dialect-drafts")), Kind: "dialect-drafts", Revision: digestOf(nil), Complete: true, Reasons: []string{}, References: []storageRetentionReference{}})
+		return nil
+	}
+	defer func() { err = errors.Join(err, drafts.Close()) }()
+	lock, e := drafts.Open(".")
+	if e != nil {
+		return e
+	}
+	defer func() { err = errors.Join(err, lock.Close()) }()
+	if e = lockPrivateData(lock, false); e != nil {
+		return e
+	}
+	entries, e := storageRetentionEntries(drafts, o, "draft-entries-close")
+	if e != nil {
+		return e
+	}
+	for _, entry := range entries {
+		if entry.Name() == ".gitignore" {
+			continue
+		}
+		raw, _, e := storageRetentionRead(drafts, entry.Name(), min(dialectDraftLimit, int(maxBackupData-c.Total)))
+		if e != nil {
+			return e
+		}
+		if e = c.charge(raw); e != nil {
+			return e
+		}
+		c.Sources = append(c.Sources, storageRetentionUnknown("draft:"+entry.Name(), "dialect-draft", raw, "draft-recipe-origin-and-publication-closure-not-joined"))
+	}
+	return ctx.Err()
 }

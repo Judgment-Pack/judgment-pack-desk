@@ -322,10 +322,17 @@ func holderText(value string, limit int) (string, bool) {
 // owner-only; made says whether the last one was. keeps names what Desk keeps
 // there, for a refusal's words. The root it answers is the caller's to close;
 // start is never closed.
-func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (root *os.Root, made bool, err error) {
+func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (*os.Root, bool, error) {
+	return openOwnFolderWithCreator(start, parts, create, keeps, nil)
+}
+
+func openOwnFolderWithCreator(start *os.Root, parts []string, create bool, keeps string, original *storageCreatorLease) (root *os.Root, made bool, err error) {
 	current := start
-	var opened *os.Root
+	var opened, pending *os.Root
 	defer func() {
+		if err != nil && pending != nil {
+			err = errors.Join(err, pending.Close())
+		}
 		if err != nil && opened != nil {
 			opened.Close()
 		}
@@ -334,11 +341,7 @@ func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (r
 		made = false
 		info, lookErr := current.Lstat(part)
 		if errors.Is(lookErr, fs.ErrNotExist) && create {
-			if lookErr = current.Mkdir(part, custodyDirMode); lookErr == nil {
-				made = true
-			} else if errors.Is(lookErr, fs.ErrExist) {
-				lookErr = nil
-			}
+			pending, made, lookErr = storageCooperatingDirectory(context.Background(), current, part, original)
 			if lookErr == nil {
 				info, lookErr = current.Lstat(part)
 			}
@@ -355,7 +358,11 @@ func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (r
 		if err := ownedByUs(part, info); err != nil {
 			return nil, false, err
 		}
-		next, openErr := current.OpenRoot(part)
+		next, openErr := pending, error(nil)
+		pending = nil
+		if next == nil {
+			next, openErr = current.OpenRoot(part)
+		}
 		if openErr != nil {
 			return nil, false, openErr
 		}

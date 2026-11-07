@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -357,5 +359,191 @@ func TestManagedRuntimeRecoversAbandonedStagingOnlyOnConnect(t *testing.T) {
 	}
 	if _, err = root.Stat(name); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("orphaned staging left behind", err)
+	}
+}
+
+func TestManagedRuntimePrunesOnlySupersededOwnedExecutablesAfterVerification(t *testing.T) {
+	m, options := accountManager(t, "pending")
+	artifact, data := runtimeFixture(t, "codex-fixture", tar.TypeReg)
+	client, _ := serveRuntime(t, &artifact, data)
+	dir := filepath.Join(m.profile.dir, "runtime")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(dir, "codex-0.145.0")
+	if err := os.WriteFile(old, []byte("previous"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"notes", "codex-custom", "codex-0.145.0.backup", "codex-1.2.3"} {
+		mode := os.FileMode(0700)
+		if name == "codex-1.2.3" {
+			mode = 0600
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("keep"), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(target, []byte("outside"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "codex-1.2.4")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(target, filepath.Join(dir, "codex-1.2.5")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "codex-1.2.6"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	bad := artifact
+	bad.BinarySHA256 = strings.Repeat("0", 64)
+	if _, err := m.profile.resolveRuntime(context.Background(), true, bad, client); !errors.Is(err, ErrInstall) {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Fatal("failed preparation removed old executable", err)
+	}
+	if _, err := m.profile.resolveRuntime(context.Background(), false, artifact, client); !errors.Is(err, ErrNotInstalled) {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Fatal("read removed old executable", err)
+	}
+	// The lifetime lease excludes a second preparation process.
+	if second, err := NewManager(options); !errors.Is(err, ErrBusy) {
+		if second != nil {
+			second.Close()
+		}
+		t.Fatalf("second owner: %v", err)
+	}
+	binary, err := m.profile.resolveRuntime(context.Background(), true, artifact, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("superseded executable retained", err)
+	}
+	if err = os.WriteFile(old, []byte("previous"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = m.profile.resolveRuntime(context.Background(), true, artifact, client); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("verified cache hit did not prune", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 8 {
+		t.Fatalf("unrelated files removed: %v %v", entries, err)
+	}
+	if contents, err := os.ReadFile(target); err != nil || string(contents) != "outside" {
+		t.Fatal("external target changed", err)
+	}
+	if contents, err := os.ReadFile(binary); err != nil || string(contents) != "synthetic executable; never executed\n" {
+		t.Fatal("pinned executable changed", err)
+	}
+}
+
+type fullRuntimeStage struct{ runtimeStage }
+
+func (f fullRuntimeStage) Write([]byte) (int, error) {
+	return 0, &os.PathError{Op: "write", Path: "PRIVATE_SENTINEL", Err: syscall.ENOSPC}
+}
+func TestManagedRuntimeRetainsDiskFullWriteCause(t *testing.T) {
+	for _, stage := range []int{1, 2} {
+		t.Run(fmt.Sprint(stage), func(t *testing.T) {
+			m, _ := accountManager(t, "pending")
+			artifact, data := runtimeFixture(t, "codex-fixture", tar.TypeReg)
+			client, _ := serveRuntime(t, &artifact, data)
+			calls := 0
+			m.profile.stageRuntime = func(root *os.Root) (runtimeStage, string, error) {
+				f, name, err := runtimeTemp(root)
+				calls++
+				if calls == stage && err == nil {
+					return fullRuntimeStage{f}, name, nil
+				}
+				return f, name, err
+			}
+			_, err := m.profile.resolveRuntime(context.Background(), true, artifact, client)
+			if !errors.Is(err, ErrInstall) || !DiskFull(err) || !errors.Is(err, syscall.ENOSPC) {
+				t.Fatalf("disk cause lost: %v", err)
+			}
+			if strings.Contains(err.Error(), "PRIVATE_SENTINEL") {
+				t.Fatal("path leaked")
+			}
+			entries, _ := os.ReadDir(filepath.Join(m.profile.dir, "runtime"))
+			if len(entries) != 0 {
+				t.Fatal("partial files left", entries)
+			}
+		})
+	}
+}
+
+func TestManagedRuntimePruningRefusesReplacedRoot(t *testing.T) {
+	m, _ := accountManager(t, "pending")
+	root, err := m.profile.runtimeRoot(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	dir := filepath.Join(m.profile.dir, "runtime")
+	if err = os.WriteFile(filepath.Join(dir, "codex-0.145.0"), []byte("keep"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Rename(dir, dir+"-held"); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.profile.pruneRuntimes(root); !errors.Is(err, ErrProfile) {
+		t.Fatal("replaced root accepted", err)
+	}
+	if _, err = os.Stat(filepath.Join(dir+"-held", "codex-0.145.0")); err != nil {
+		t.Fatal("held root modified", err)
+	}
+}
+
+func TestManagedPreparationDoesNotRunDuringActiveRun(t *testing.T) {
+	m, _ := accountManager(t, "pending")
+	m.managed = true
+	m.resolveBinary = func(context.Context, bool) (string, error) {
+		t.Fatal("active run overlapped preparation")
+		return "", nil
+	}
+	m.active = &activeRun{}
+	owner, endSession, endPolicy := ownerFixture()
+	defer endSession()
+	defer endPolicy()
+	_, err := m.StartLogin(context.Background(), owner, "browser")
+	m.active = nil
+	if !errors.Is(err, ErrBusy) {
+		t.Fatal(err)
+	}
+}
+
+func TestManagedRuntimePruningKeepsPinnedAndUnrecognizedExecutables(t *testing.T) {
+	m, _ := accountManager(t, "pending")
+	root, err := m.profile.runtimeRoot(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	for _, name := range []string{runtimeFilename, "codex-custom", "codex-0.145.0"} {
+		if err = os.WriteFile(filepath.Join(m.profile.dir, "runtime", name), []byte("synthetic"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = m.profile.pruneRuntimes(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{runtimeFilename, "codex-custom"} {
+		if _, err = root.Lstat(name); err != nil {
+			t.Fatalf("removed protected executable %s: %v", name, err)
+		}
+	}
+	if _, err = root.Lstat("codex-0.145.0"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("old executable retained", err)
 	}
 }

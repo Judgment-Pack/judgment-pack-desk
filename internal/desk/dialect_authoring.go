@@ -123,9 +123,27 @@ func (s *Server) checkDialectAuthoring(ctx context.Context, document []byte, pac
 	if err != nil {
 		return nil, report, err
 	}
+	validated, err := readDialectAuthoringReport(document, pack, raw)
+	if err != nil {
+		return nil, empty, err
+	}
+	return raw, validated, nil
+}
+
+// The same exact check envelope is read from live Runtime output and retained
+// private host receipts. This validates custody, never repeats evaluation.
+func readDialectAuthoringReport(document []byte, pack string, raw []byte) (dialectAuthoringReport, error) {
+	var report, empty dialectAuthoringReport
+	operation := "dialect validate"
+	if pack != "" {
+		operation = "dialect check"
+	}
+	if rejectDuplicateMembers(raw) != nil || json.Unmarshal(raw, &report) != nil || report.OutputVersion != "2" || report.ContractVersion != "1" || report.Command != operation || report.Status == "" {
+		return empty, errDialectChecksUnavailable
+	}
 	if report.Document != "" {
 		if report.Digest != "sha256:"+digestOf([]byte(report.Document)) {
-			return nil, empty, errDialectChecksUnavailable
+			return empty, errDialectChecksUnavailable
 		}
 		// Compare values without converting JSON numbers to floating point. Runtime
 		// may canonicalize spelling, but may not replace the supplied document.
@@ -137,18 +155,18 @@ func (s *Server) checkDialectAuthoring(ctx context.Context, document []byte, pac
 			return d.Decode(v)
 		}
 		if decode(document, &given) != nil || decode([]byte(report.Document), &returned) != nil {
-			return nil, empty, errDialectChecksUnavailable
+			return empty, errDialectChecksUnavailable
 		}
 		a, _ := json.Marshal(dialectComparable(given))
 		b, _ := json.Marshal(dialectComparable(returned))
 		if !bytes.Equal(a, b) {
-			return nil, empty, errDialectChecksUnavailable
+			return empty, errDialectChecksUnavailable
 		}
 	}
 	if report.Compatibility != nil && (report.Compatibility.Scope != "declared-inventory-coverage" || report.Compatibility.Pack.SHA256 != digestOf([]byte(pack))) {
-		return nil, empty, errDialectChecksUnavailable
+		return empty, errDialectChecksUnavailable
 	}
-	return raw, report, nil
+	return report, nil
 }
 
 func (r dialectAuthoringReport) accepted(pack bool) bool {
@@ -164,9 +182,26 @@ func (s *Server) checkInputQualification(ctx context.Context, q *inputQualificat
 	if q == nil {
 		return nil
 	}
+	if q.ConversionContract != nil {
+		if err := validateInputQualification(q); err != nil {
+			return err
+		}
+	} else if err := requireOrdinaryInputQualification(q); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(q.Mapping)
 	if err != nil {
 		return err
+	}
+	if q.ConversionContract != nil {
+		checked, err := s.checkRetainedDialectAuthoring(ctx, retainedInstalledSelector("document-validation"), raw, []byte(q.Pack))
+		if err != nil {
+			return err
+		}
+		if !checked.Accepted {
+			return retainedContractFailure("capability-unsupported")
+		}
+		return nil
 	}
 	_, err = s.checkedDialectMapping(ctx, raw, q.Pack)
 	return err
@@ -186,6 +221,9 @@ func (s *Server) checkedDialectMapping(ctx context.Context, raw []byte, pack str
 // distinct mapping in this request, preserving all case/acquisition byte slices.
 // This request-local index cannot make a later workspace read or check stale.
 func (s *Server) checkPreparedMappings(ctx context.Context, doc inputPreparation, rows []inputPreparedRow) error {
+	if err := requireOrdinaryInputQualification(doc.Recipe.Qualification); err != nil {
+		return err
+	}
 	if doc.Recipe.Qualification == nil {
 		return errors.New("Choose a saved pack and review its dialect.")
 	}

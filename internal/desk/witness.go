@@ -215,6 +215,7 @@ const (
 	witnessNoneWords      = "No witness is set for this desk, so Desk submits nothing."
 	witnessBusyWords      = "A submission to the witness is in progress, so Desk starts no other. The decision record shows its outcome once it ends."
 	witnessClosedWords    = "Desk is stopping, so it starts no submission."
+	witnessNoLoopWords    = "This desk runs no submissions to a witness, so it starts none."
 	witnessStartWords     = "A submission needs no settings: send {} as JSON."
 	witnessOwnKeyWords    = "This is the public key of Desk's own local gateway, which is yours as the operator: it is not a witness."
 	witnessNewKeyWords    = "This desk has a witness under another key. A pinned key is never changed in place: remove the witness, and add the one under the new key as a new witness."
@@ -2962,7 +2963,14 @@ func (s *Server) handleWitnessSend(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, witnessNoneWords)
 		return
 	}
+	// A desk that returned before its loops started (a read-only storage
+	// start) has no turn to take: it says so rather than ending the
+	// connection.
 	ws := s.witnessLoop
+	if ws == nil {
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, witnessNoLoopWords)
+		return
+	}
 	if !ws.turn.TryLock() {
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, witnessBusyWords)
 		return

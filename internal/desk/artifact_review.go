@@ -92,6 +92,24 @@ func (s *Server) latestArtifactReview(ctx context.Context, target string) (*arti
 	return &reply, nil
 }
 func (s *Server) retainArtifactReview(ctx context.Context, review artifactReview) (artifactReviewReply, error) {
+	return s.retainArtifactReviewWithAuthority(ctx, review, nil)
+}
+func (s *Server) retainArtifactReviewWithAuthority(ctx context.Context, review artifactReview, authorize func(context.Context) error) (artifactReviewReply, error) {
+	current := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if authorize != nil {
+			return authorize(ctx)
+		}
+		return nil
+	}
+	if authorize != nil {
+		if err := current(); err != nil {
+			return artifactReviewReply{}, err
+		}
+	}
+	repository := s.artifactRepositoryWithAuthority(authorize)
 	raw, err := json.Marshal(review)
 	if err != nil {
 		return artifactReviewReply{}, err
@@ -101,11 +119,11 @@ func (s *Server) retainArtifactReview(ctx context.Context, review artifactReview
 	}
 	// Candidate and dependencies must already be retained. Refuse dangling checks.
 	for _, ref := range append([]retainedArtifactRef{review.Candidate}, review.Dependencies...) {
-		if _, err = s.artifactRepository().Get(ctx, ref); err != nil {
+		if _, err = repository.Get(ctx, ref); err != nil {
 			return artifactReviewReply{}, err
 		}
 	}
-	ref, err := s.artifactRepository().Put(ctx, raw)
+	ref, err := repository.Put(ctx, raw)
 	if err != nil {
 		return artifactReviewReply{}, err
 	}
@@ -127,6 +145,11 @@ func (s *Server) retainArtifactReview(ctx context.Context, review artifactReview
 	if err = waitPrivateDataLock(ctx, lock, true); err != nil {
 		return artifactReviewReply{}, err
 	}
+	if authorize != nil {
+		if err = current(); err != nil {
+			return artifactReviewReply{}, err
+		}
+	}
 	entries, err := lock.ReadDir(-1)
 	if err != nil {
 		return artifactReviewReply{}, err
@@ -137,12 +160,17 @@ func (s *Server) retainArtifactReview(ctx context.Context, review artifactReview
 			return artifactReviewReply{}, errors.New("Artifact review storage is full.")
 		}
 	}
-	if err = ctx.Err(); err != nil {
+	if err = current(); err != nil {
 		return artifactReviewReply{}, err
 	}
 	pointer, _ := json.Marshal(ref)
 	if err = writePrivateData(root, name, pointer); err != nil {
 		return artifactReviewReply{}, err
+	}
+	if authorize != nil {
+		if err = current(); err != nil {
+			return artifactReviewReply{}, err
+		}
 	}
 	return artifactReviewReply{ref, review}, nil
 }

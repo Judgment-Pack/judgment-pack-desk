@@ -30,6 +30,12 @@ type inputSubscription struct {
 
 const subscriptionCapacityBackoffMax = 256 // seconds, independent of refusal failures
 
+func (a *inputSubscription) resetRetryState() {
+	a.Failures = 0
+	a.RetryAt = ""
+	a.clearCapacityWait()
+}
+
 func (a *inputSubscription) clearCapacityWait() {
 	a.CapacityBackoff = 0
 	a.CapacityRetryAt = ""
@@ -83,6 +89,9 @@ func initializeSubscription(a *inputSubscription, doc inputPreparation) {
 	a.Initialized = true
 }
 func (s *Server) subscriptionDocument(reader inputPreparationReader, b inputEvaluation) (inputPreparationReply, error) {
+	if err := requireOrdinaryInputQualification(b.Recipe.Qualification); err != nil {
+		return inputPreparationReply{}, err
+	}
 	saved, e := reader.Get(b.PreparationID)
 	if e != nil {
 		return saved, e
@@ -91,6 +100,9 @@ func (s *Server) subscriptionDocument(reader inputPreparationReader, b inputEval
 		return saved, errors.New("The recipe changed. Review a new Dialects subscription before continuing.")
 	}
 	q := saved.Document.Recipe.Qualification
+	if err := requireOrdinaryInputQualification(q); err != nil {
+		return saved, err
+	}
 	if q == nil {
 		return saved, errors.New("The pack dialect was removed. Review a new subscription.")
 	}
@@ -184,6 +196,9 @@ func (s *Server) handleInputSubscriptions(w http.ResponseWriter, r *http.Request
 	writeJSON(w, 200, map[string]any{"items": items})
 }
 func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evaluationCheckpoint, b *inputEvaluation) {
+	if requireOrdinaryInputQualification(b.Recipe.Qualification) != nil {
+		return
+	}
 	if checkpoint.failure != nil || subscriptionReserved(*b) {
 		return
 	}
@@ -305,8 +320,11 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 				problem(err)
 				return
 			}
-			if found && !save() {
-				return
+			if found {
+				a.resetRetryState()
+				if !save() {
+					return
+				}
 			}
 		}
 	}
@@ -442,7 +460,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 			row.State = ack.Occurrence.State
 			row.RunID = ack.Occurrence.RunID
 			row.Input = nil
-			a.clearCapacityWait()
+			a.resetRetryState()
 			if !save() {
 				return
 			}
@@ -485,7 +503,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 			return
 		}
 		row.Input = nil
-		a.clearCapacityWait()
+		a.resetRetryState()
 		row.OccurrenceID = reply.Occurrence.ID
 		row.RunID = reply.Occurrence.RunID
 		row.State = reply.Occurrence.State
@@ -526,9 +544,7 @@ func (s *Server) advanceInputSubscription(ctx context.Context, checkpoint *evalu
 		return
 	}
 	b.State = "watching"
-	a.Failures = 0
-	a.RetryAt = ""
-	a.clearCapacityWait()
+	a.resetRetryState()
 	b.Problem = ""
 	save()
 }

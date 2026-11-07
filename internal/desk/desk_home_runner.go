@@ -67,7 +67,11 @@ func (s *Server) homeRunnerRelocations(plan deskHomePlan) ([]homeRunnerRelocatio
 		// IDs are assigned once when the confirmed journal is prepared. Preview
 		// checks support, but does not spend IDs or modify the workspace.
 		next := filepath.Join(plan.Destination, entry.Folder)
-		rows = append(rows, homeRunnerRelocation{Version: 1, Dir: filepath.Join(next, ".desk-private", "jobs"), Workspace: entry.RunnerWorkspace, Owner: "local-owner:" + plan.Registry.Owner, PreviousInputRoot: oldProject, InputRoot: next})
+		request := homeRunnerRelocation{Version: 1, Dir: filepath.Join(next, ".desk-private", "jobs"), Workspace: entry.RunnerWorkspace, Owner: "local-owner:" + plan.Registry.Owner, PreviousInputRoot: oldProject, InputRoot: next}
+		if err := validateHomeRunnerRelocation(s.cfg.RunnerBin, request); err != nil {
+			return nil, err
+		}
+		rows = append(rows, request)
 	}
 	if len(rows) > 0 {
 		if err := runnerHomeCapability(s.cfg.RunnerBin); err != nil {
@@ -77,6 +81,9 @@ func (s *Server) homeRunnerRelocations(plan deskHomePlan) ([]homeRunnerRelocatio
 	return rows, nil
 }
 func applyHomeRunnerRelocation(binary string, request homeRunnerRelocation) error {
+	if err := validateHomeRunnerRelocation(binary, request); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(request)
 	if err != nil {
 		return err

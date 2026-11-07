@@ -96,7 +96,16 @@ var lockProjectFile = func(file *os.File) error { return lockPrivateData(file, t
 // errProjectBusy. errProjectNoLock where none can be taken here. With no
 // wait, it asks once. It answers the release, which may be called more than
 // once.
-func (s *Server) lockProject(ctx context.Context, wait time.Duration) (unlock func(), err error) {
+func (s *Server) lockProject(ctx context.Context, wait time.Duration) (func(), error) {
+	held, err := s.lockProjectOwned(ctx, wait)
+	if err != nil {
+		return nil, err
+	}
+	var release sync.Once
+	return func() { release.Do(func() { _ = held.Close() }) }, nil
+}
+
+func (s *Server) lockProjectOwned(ctx context.Context, wait time.Duration) (*storageCreatorLease, error) {
 	file, err := s.root.Open(".")
 	if err != nil {
 		return nil, fmt.Errorf("%w: the folder could not be opened to lock it", errProjectNoLock)
@@ -106,8 +115,11 @@ func (s *Server) lockProject(ctx context.Context, wait time.Duration) (unlock fu
 	for {
 		err := lockProjectFile(file)
 		if err == nil {
-			var release sync.Once
-			return func() { release.Do(func() { file.Close() }) }, nil
+			held, err := storageCreatorLockedLease(s.root, file)
+			if err != nil {
+				return nil, errors.Join(err, file.Close())
+			}
+			return held, nil
 		}
 		if !lockHeld(err) {
 			file.Close()
@@ -245,4 +257,24 @@ func pinsConfig(config string) func(projectFile) error {
 		}
 		return nil
 	}
+}
+
+// Unselected startup preparation uses the error-reporting sealed lease. Legacy
+// action callers retain lockProject's func() compatibility behavior above.
+func (p *storageIdentityPreparation) lockProjectPrefix(ctx context.Context) (*storagePrefixLease, error) {
+	return p.acquirePrefix(ctx, false)
+}
+
+// Same legacy user-facing refusal, with the original EX description retained
+// for selected cooperating folder helpers to borrow through their last check.
+func (s *Server) lockProjectForOwned(ctx context.Context, what, done string) (*storageCreatorLease, *lockFailure) {
+	held, err := s.lockProjectOwned(ctx, projectLockWait)
+	switch {
+	case errors.Is(err, errProjectBusy):
+		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was " + done + ": " + projectBusyWords}
+	case err != nil:
+		s.log.Printf("desk: %s was refused, because this project's lock could not be taken: %v", what, err)
+		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was " + done + ": " + projectNoLockWords}
+	}
+	return held, nil
 }

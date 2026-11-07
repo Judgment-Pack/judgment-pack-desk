@@ -211,3 +211,14 @@ describe('upsertListed', () => {
     ])
   })
 })
+
+it('claims the reload latch synchronously before the next render', async () => {
+  chassis(() => ({status:200,body:landed(LOADED)}))
+  const {result} = harness()
+  const captured = result.current
+  act(() => {
+    captured.reload(PATH, () => true)
+    expect(captured.isReloading()).toBe(true)
+  })
+  await waitFor(() => expect(captured.isReloading()).toBe(false))
+})

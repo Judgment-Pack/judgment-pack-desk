@@ -1,3 +1,4 @@
+import { criticDecisionLine } from './criticDecision'
 import {FailureDetails} from './FailureDetails'
 import { sourceMessage } from '../i18n/source'
 import { systemMessage, msg as uiMessage } from '../i18n'
@@ -38,6 +39,7 @@ const COMPACT: ReadonlySet<AssistantEvent['type']> = new Set([
   'message',
   'tool_call',
   'tool_result',
+  'approval_requested',
   'guardrail',
   'thinking_unavailable',
   'proposal',
@@ -54,8 +56,38 @@ const COMPACT: ReadonlySet<AssistantEvent['type']> = new Set([
  */
 export function describeEvent(event: AssistantEvent, msg: typeof uiMessage = uiMessage): string {
   switch (event.type) {
+    case 'plan_revised': return msg('Plan updated')
+    case 'plan_departed': return msg('Plan change proposed')
+    case 'plan_drift_decided': return msg('Plan decision recorded')
+    case 'plan_completion_refused': return msg('Task completion refused')
+    case 'steered': return msg('New guidance delivered')
+    case 'compacted': return msg('Earlier context compacted')
+    case 'policy_resolved': return msg('Run settings resolved')
+    case 'repeat_detected':
+      return event.stopped ? msg('Repeated tool use stopped')
+        : event.reminder ? msg('Repeated tool use reminder') : msg('Repeated tool use detected')
+    case 'route_decided': return msg('Turn route selected')
+    case 'route_widened': return msg('Turn route widened')
+    case 'critic_decided': return criticDecisionLine(event, msg)
+    case 'memory_proposed': return msg('Memory proposed for review')
+    case 'memory_recalled': return msg('Project memory recalled')
+    case 'edit_applied': return msg('Draft edit validated; nothing was saved')
+    case 'edit_refused': return msg('Draft edit refused')
+    case 'output_guarded': return event.action === 'redact' ? msg('Sensitive output redacted') : msg('Sensitive output refused')
+    case 'export_written': return msg('Run records exported')
+    case 'connection_switched': return msg('Model connection changed')
+    case 'usage': return msg('Model usage recorded')
+    case 'recorded': return msg('Run recording saved')
     case 'execution_checkpoint': return msg('Task progress saved')
     case 'budget_paused': return msg('Paused · Request limit reached')
+    case 'approval_requested':
+      return event.purpose === 'plan-drift'
+        ? msg('Waiting for your approval of the plan change')
+        : msg('Waiting for your approval: {{tool}}', {tool:event.tool})
+    case 'skill_loaded':
+      return msg('Loaded skill {{name}} · {{bytes}} bytes', {name:event.skill.name,bytes:event.bytes})
+    case 'skill_unloaded':
+      return msg('Unloaded skill {{id}}', {id:event.id})
     case 'delegation_requested':
       return msg('Delegating tasks')
     case 'delegated_task':

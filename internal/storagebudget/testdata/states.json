@@ -1,0 +1,10 @@
+[
+ {"old":"empty","new":"reserved","allowed":true},
+ {"old":"reserved","new":"staging","allowed":true},
+ {"old":"staging","new":"dispatched","allowed":true},
+ {"old":"dispatched","new":"uncertain","allowed":true},
+ {"old":"uncertain","new":"terminal","allowed":true},
+ {"old":"reserved","new":"dispatched","allowed":false},
+ {"old":"dispatched","new":"reserved","allowed":false},
+ {"old":"terminal","new":"reserved","allowed":false}
+]

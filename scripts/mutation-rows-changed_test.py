@@ -72,6 +72,21 @@ class RowsChangedTests(unittest.TestCase):
         self.assertIn("0 Go, 0 web", result.stdout)
         self.assertEqual((root / "same/go").read_text(), "")
 
+    def test_package_selection_change_counts_even_with_identical_mutation(self):
+        root=pathlib.Path(tempfile.mkdtemp());self.addCleanup(shutil.rmtree,root)
+        (root/"scripts").mkdir();shutil.copy(SCRIPT,root/"scripts/mutation-rows-changed.sh")
+        def git(*args):
+            return subprocess.run(["git","-c","user.name=fixture","-c","user.email=fixture@example.invalid",*args],cwd=root,check=True,capture_output=True,text=True).stdout.strip()
+        git("init","-q")
+        harness=root/"scripts/mutation-check.sh"
+        harness.write_text(BASE);git("add","-A");git("commit","-qsm","base")
+        base=git("rev-parse","HEAD")
+        harness.write_text(BASE.replace("'one' 'ONE'", "'one' 'ONE' ./internal/bridge"))
+        result=subprocess.run(["bash",str(root/"scripts/mutation-rows-changed.sh"),base,str(root/"out")],cwd=root,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual((root/"out/go").read_text(),"kept as it was\n")
+        self.assertEqual((root/"out/web").read_text(),"")
+
 
 if __name__ == "__main__":
     unittest.main()

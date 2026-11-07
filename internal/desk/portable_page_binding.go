@@ -94,6 +94,9 @@ func pageBindingProfile(descriptor pageBindingDescriptor, pin inputResearchPin, 
 // Check any scoped page assignment, including operator-owned profile IDs,
 // before a review/confirmation/worker start can spend research allowance.
 func (s *Server) validatePortablePageProfile(ctx context.Context, profile portableProfileDetails, pin inputResearchPin) error {
+	if err := validatePortablePageForm(profile); err != nil {
+		return err
+	}
 	if profile.EndpointScope == nil {
 		return nil
 	}

@@ -37,6 +37,21 @@ func (s *Server) checkExchangeTarget(ctx context.Context, id, pack string, docum
 	if err != nil {
 		return err
 	}
+	// Validate exact pack controls before handing retained bytes to Runtime.
+	target := candidate.Entry.Pack
+	var identity struct {
+		ID      string `json:"id"`
+		Version string `json:"version"`
+	}
+	if pack != "" || target != nil {
+		if len(pack) > maxFileBytes {
+			return errors.New("The pack exceeds the authoring check limit.")
+		}
+		_, err = readInputPack([]byte(pack))
+		if err != nil || json.Unmarshal([]byte(pack), &identity) != nil || target != nil && identity.ID != target.ID {
+			return errors.New("Choose the pack declared by this template")
+		}
+	}
 	_, checked, err := s.checkDialectAuthoring(ctx, document, pack)
 	if err != nil {
 		return err
@@ -44,13 +59,8 @@ func (s *Server) checkExchangeTarget(ctx context.Context, id, pack string, docum
 	if !checked.accepted(true) || checked.Digest != candidate.Digest {
 		return errors.New("The imported definition or its pack coverage changed. Review a new template configuration")
 	}
-	target := candidate.Entry.Pack
 	if target == nil {
 		return nil
-	}
-	var identity struct{ ID, Version string }
-	if rejectDuplicateMembers([]byte(pack)) != nil || json.Unmarshal([]byte(pack), &identity) != nil || identity.ID != target.ID {
-		return errors.New("Choose the pack declared by this template")
 	}
 	if target.Digests != nil {
 		if !slices.Contains(target.Digests, "sha256:"+digestOf([]byte(pack))) {
@@ -108,8 +118,8 @@ func (s *Server) handleExchangeTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		Pack     string
-		Document string
+		Pack     string `json:"pack"`
+		Document string `json:"document"`
 	}
 	if inputRequest(r, &request) != nil || request.Pack == "" || request.Document == "" {
 		writeJSONCoded(w, 400, CodeBadRequest, "Choose an imported definition and saved pack")

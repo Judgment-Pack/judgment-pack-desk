@@ -147,12 +147,34 @@ func (f *policyMachineFixture) command(t *testing.T, action string) PolicyAuthor
 	}
 	return status
 }
+
+// configured starts Desk on the fixture's installation and project with the
+// machine options. One Desk runs per installation, so the fixture's first
+// server, which made the Policy, is closed first; it keeps its settings,
+// project and configuration for the test to read. A server configured earlier
+// is the test's to close, as an operator stops Desk before starting it again.
 func (f *policyMachineFixture) configured(t *testing.T) (*Server, error) {
 	t.Helper()
 	cfg := f.s.cfg
+	cfg.PolicyAuthority = &f.options
+	return f.start(t, cfg)
+}
+
+// plain starts Desk on the fixture's installation and project without the
+// machine options, as the fixture's first server was started.
+func (f *policyMachineFixture) plain(t *testing.T) (*Server, error) {
+	t.Helper()
+	cfg := f.s.cfg
+	cfg.PolicyAuthority = nil
+	return f.start(t, cfg)
+}
+func (f *policyMachineFixture) start(t *testing.T, cfg Config) (*Server, error) {
+	t.Helper()
+	if err := f.s.Close(); err != nil {
+		t.Fatal("the fixture's first server did not close", err)
+	}
 	cfg.Root = nil
 	cfg.ProjectDir = f.s.projectDir
-	cfg.PolicyAuthority = &f.options
 	s, err := New(cfg)
 	if err == nil {
 		stopAuthorityStoreWorker(s)
@@ -197,6 +219,15 @@ func TestPolicyMachineEnrollmentAndCapturedLegacyFence(t *testing.T) {
 		t.Fatal("enrolled while configured legacy server owns lease")
 	}
 	legacy.Close()
+	// The Desk running during enrollment is one started without the machine
+	// options, which captured no anchor; after enrollment it must not admit.
+	old, err := f.plain(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.policyAuthorityAnchor != nil {
+		t.Fatal("legacy acquired authority")
+	}
 	before := machineRaw(t, f.s.projectDir+"/"+policyDirectory, "ledger.json")
 	enrolled := f.command(t, "enroll")
 	if enrolled.State != "enrolled" || enrolled.WorkspaceID == "" || enrolled.InstallationID != f.options.InstallationID || enrolled.AnchorGeneration != 1 {
@@ -205,12 +236,13 @@ func TestPolicyMachineEnrollmentAndCapturedLegacyFence(t *testing.T) {
 	if !bytes.Equal(before, machineRaw(t, f.s.projectDir+"/"+policyDirectory, "ledger.json")) {
 		t.Fatal("enrollment rewrote ledger")
 	}
-	if err = f.s.policyRepository().View(context.Background(), func(policyLedger) error { t.Fatal("captured nil admitted current read"); return nil }); err == nil {
+	if err = old.policyRepository().View(context.Background(), func(policyLedger) error { t.Fatal("captured nil admitted current read"); return nil }); err == nil {
 		t.Fatal("old server ignored marker")
 	}
-	if err = f.s.policyRepository().Update(context.Background(), func(*policyLedger) (bool, error) { t.Fatal("captured nil admitted mutation"); return true, nil }); err == nil {
+	if err = old.policyRepository().Update(context.Background(), func(*policyLedger) (bool, error) { t.Fatal("captured nil admitted mutation"); return true, nil }); err == nil {
 		t.Fatal("old server ignored marker")
 	}
+	old.Close()
 	cfg := f.s.cfg
 	cfg.Root = nil
 	cfg.ProjectDir = f.s.projectDir
@@ -340,6 +372,11 @@ func TestPolicyMachineRegistryRollbackCopyAndMissing(t *testing.T) {
 			case "copy-project":
 				copyPath := filepath.Join(t.TempDir(), "copy")
 				copyPolicyMachineTree(t, f.s.projectDir, copyPath)
+				// One Desk per installation: the first Desk closes before Desk
+				// is started on the copy.
+				if err := f.s.Close(); err != nil {
+					t.Fatal(err)
+				}
 				cfg := f.s.cfg
 				cfg.Root = nil
 				cfg.ProjectDir = copyPath

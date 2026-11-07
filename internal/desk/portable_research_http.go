@@ -138,13 +138,32 @@ func (s *Server) handlePortableResearch(w http.ResponseWriter, r *http.Request) 
 			fail(err)
 			return
 		}
-		rr, err := openInputResearch(root, run.ID, true)
+		// Join ordinary research admission on the original root directory. Keep
+		// the all-entry count and creation together, then release before replying.
+		err = func() error {
+			admission, err := root.Open(".")
+			if err != nil {
+				return err
+			}
+			defer admission.Close()
+			if err = lockPrivateData(admission, true); err != nil {
+				return errors.New("Another research change is being saved. Try again after it finishes.")
+			}
+			entries, err := admission.ReadDir(-1)
+			if err != nil {
+				return err
+			}
+			if len(entries) >= 501 {
+				return errors.New("This project has reached its retained research-run limit.")
+			}
+			rr, err := openInputResearch(root, run.ID, true)
+			if err != nil {
+				return err
+			}
+			defer rr.Close()
+			return s.researchJournal(rr, run.ID).Create(r.Context(), run)
+		}()
 		if err != nil {
-			fail(err)
-			return
-		}
-		defer rr.Close()
-		if err := s.researchJournal(rr, run.ID).Create(r.Context(), run); err != nil {
 			fail(err)
 			return
 		}
@@ -159,6 +178,9 @@ func (s *Server) handlePortableResearch(w http.ResponseWriter, r *http.Request) 
 	defer rr.Close()
 	journal := s.researchJournal(rr, id)
 	run, err := journal.Read(r.Context())
+	if err == nil {
+		err = s.researchRunStore(rr, id).validatePortableProofs(r.Context(), run)
+	}
 	if err != nil || run.Portable == nil {
 		writeJSONCoded(w, 404, CodeNotFound, "Research run not found.")
 		return

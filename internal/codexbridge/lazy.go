@@ -82,3 +82,11 @@ func (l *LazyManager) Close() {
 		m.Close()
 	}
 }
+
+func (l *LazyManager) AccountBinding() (string, error) {
+	m, err := l.get()
+	if err != nil {
+		return "", err
+	}
+	return m.AccountBinding()
+}

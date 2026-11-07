@@ -54,6 +54,7 @@ import { useFileListing } from '../files/queries'
 import { desksAPI } from '../desks/DeskSwitcher'
 import { ConnectionSettings } from '../admin/ConnectionSettings'
 import { DocumentProcessingSettings } from '../admin/DocumentProcessingSettings'
+import { StorageBudgetStatus } from '../admin/StorageBudgetStatus'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { PolicyRecoverySettings } from '../admin/PolicyRecoverySettings'
 import { AssistantSection } from '../assistant/AssistantSection'
@@ -201,6 +202,7 @@ export function AdminView() {
                       description={effective.sources.storage === 'desk file' ? msg('Shared on this computer') : msg('This desk')}
                       fields={<StorageKind />}
                       save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocationState(effective.config.storage.packs.dir, listing)]} />} />
+                    <StorageBudgetStatus />
                     <ChatDataSettings />
                     <PolicyRecoverySettings active={id==='storage'} />
                   </SettingsStack>

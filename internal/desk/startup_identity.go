@@ -600,6 +600,12 @@ func (s *Server) resolveStartupIdentity() {
 			return
 		}
 	}
+	if s.storageEnrollment != nil {
+		// Original startup/private demand completed its finite J/Q/native lineage
+		// before handoff. Late startup only observes; it cannot start an unjournaled
+		// migration after the same-descriptor EX→SH transition.
+		return
+	}
 	s.migrateStartupIdentity(private, record, info, found)
 }
 
@@ -626,6 +632,14 @@ func (s *Server) copiedOrMoved(private *os.Root, record identityRecord, info os.
 		s.setHistoryMoveProblem("Confirm whether this project was moved or copied in Decision safeguards before opening its history.")
 		s.log.Printf("desk: this project's identity was written in %s, which no longer holds it, and this folder is not shown to be that one moved here, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder was moved here or is a copy", record.Path)
 		return record, info
+	}
+	if moved, written, handled, moveErr := s.retainDialectArtifactRecognizedMove(private, record, info); handled {
+		if moveErr != nil {
+			s.retainedRecognizedMoveStartupErr = moveErr
+			s.setHistoryMoveProblem("Retained project move needs recovery before history can be opened. " + moveErr.Error())
+			return record, info
+		}
+		return moved, written
 	}
 	unlock, err := s.lockProject(context.Background(), 0)
 	if err != nil {
