@@ -70,7 +70,7 @@ it('uses the same Policy tools and context projection through the subscription a
 it('checks current access before retained-context retrieval and each provider dispatch',async()=>{
  let allowed=true,authorizations=0,reads=0,calls=0
  const session=base();session.prompt='Explain this Policy';session.context!.authorize=async()=>{authorizations++;if(!allowed)throw failureError('permission','desk','not-started')}
- session.hostTools=[{name:'read_policy',description:'Read current Policy',effect:'read',inputSchema:{type:'object',properties:{}},execute:async()=>{reads++;return {structuredContent:saved}}}]
+ session.hostTools=[{name:'read_policy',description:'Read current Policy',taxonomy:{operation:'read',effect:'read'},effect:'read',inputSchema:{type:'object',properties:{}},execute:async()=>{reads++;return {structuredContent:saved}}}]
  session.model.call=async()=>{calls++;return new Response()}
  const managed=await contextualSession(session)
  await managed.session.values.hostTools.find(tool=>tool.name==='read_policy')!.execute({},session.signal)
