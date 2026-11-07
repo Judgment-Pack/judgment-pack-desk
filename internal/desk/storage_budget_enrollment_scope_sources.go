@@ -189,7 +189,8 @@ func (w *storageCensusWalk) projectPrivateScope(r *storageRootBinding, root *os.
 		}
 		return errors.Join(child.current(w.ctx), r.current(w.ctx))
 	}
-	child, err := storagePinChild(root, ".desk-private", true)
+	// The walk holds the folder to the census rule when it enters it.
+	child, err := storagePinChild(root, ".desk-private", false)
 	if err != nil {
 		return err
 	}

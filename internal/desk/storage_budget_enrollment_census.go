@@ -150,6 +150,9 @@ func (p *storageEnrollmentEpoch) measureEnrollmentCandidate(ctx context.Context)
 				return storagebudget.Census{}, err
 			}
 		}
+		if err = walk.carried(root, &count, &usage); err != nil {
+			return storagebudget.Census{}, err
+		}
 		usage[storagebudget.Control], err = storageVectorAdd(usage[storagebudget.Control], parent.provision(walk.readyMeasured[root]))
 		if err != nil {
 			return storagebudget.Census{}, err

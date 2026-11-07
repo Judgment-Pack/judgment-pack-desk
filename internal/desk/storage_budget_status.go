@@ -168,15 +168,28 @@ type storageStatusSnapshot struct {
 		TerminalAwaitingCheckpointCount uint64  `json:"terminalAwaitingCheckpointCount"`
 	} `json:"recovery"`
 }
+
+// storageRegistrationStatus reports folders this start measures that the
+// storage owner record does not register as roots of their own. It is a
+// warning only: their bytes are counted and Desk keeps working.
+type storageRegistrationStatus struct {
+	Enforcement string   `json:"enforcement"`
+	Folders     []string `json:"folders"`
+}
+
+// storageRegistrationFolders bounds the folders one status reply names.
+const storageRegistrationFolders = 64
+
 type storageStatusResponse struct {
-	ChildObservation *storageChildObservation `json:"childObservation"`
-	Version          int                      `json:"version"`
-	Availability     string                   `json:"availability"`
-	Reason           *string                  `json:"reason"`
-	ReadOnly         bool                     `json:"readOnly"`
-	ServedAt         string                   `json:"servedAt"`
-	Pressure         storageStatusPressure    `json:"pressure"`
-	Snapshot         *storageStatusSnapshot   `json:"snapshot"`
+	ChildObservation *storageChildObservation   `json:"childObservation"`
+	Registration     *storageRegistrationStatus `json:"registration"`
+	Version          int                        `json:"version"`
+	Availability     string                     `json:"availability"`
+	Reason           *string                    `json:"reason"`
+	ReadOnly         bool                       `json:"readOnly"`
+	ServedAt         string                     `json:"servedAt"`
+	Pressure         storageStatusPressure      `json:"pressure"`
+	Snapshot         *storageStatusSnapshot     `json:"snapshot"`
 }
 
 // A single fixed-size volatile occurrence slot. Only owners reporting an actual
@@ -981,6 +994,7 @@ func (s *Server) readStorageStatus(parent context.Context) storageStatusResponse
 	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	out.ChildObservation = s.storageChildStatus(ctx, now)
+	out.Registration = s.storageRegistrationStatus()
 	e, o, use, err := s.storageStatusLifetime(ctx)
 	if err != nil {
 		reason = storageStatusReason(err)
@@ -1094,13 +1108,32 @@ func (s *Server) writeStorageStatus(w http.ResponseWriter, out storageStatusResp
 	encoded, err := storageStatusEncode(out, min(storageStatusBytes, storageStatusDerivedBytes))
 	if err != nil {
 		reason := storageStatusUnknown
-		out = storageStatusResponse{Version: 1, Availability: "unavailable", Reason: &reason, ReadOnly: out.ReadOnly, ServedAt: storageStatusTime(time.Now()), ChildObservation: out.ChildObservation, Pressure: storageStatusPressure{Codes: []string{}, DurableState: "unconfirmed"}}
+		out = storageStatusResponse{Version: 1, Availability: "unavailable", Reason: &reason, ReadOnly: out.ReadOnly, ServedAt: storageStatusTime(time.Now()), ChildObservation: out.ChildObservation, Registration: out.Registration, Pressure: storageStatusPressure{Codes: []string{}, DurableState: "unconfirmed"}}
 		encoded, _ = storageStatusEncode(out, storageStatusEnvelopeBytes)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, bytes.NewReader(encoded))
+}
+
+// storageRegistrationStatus is the start's registration difference: the
+// folders its source inspection measured inside another tree because the
+// saved catalog does not register them (storageOriginalSources.unregistered).
+// It is fixed for the construction's lifetime and reads no filesystem.
+func (s *Server) storageRegistrationStatus() *storageRegistrationStatus {
+	c := s.storageConstruction
+	if c == nil && s.storageEnrollment != nil {
+		c = s.storageEnrollment.construction
+	}
+	if c == nil || c.sources == nil || len(c.sources.unregistered) == 0 {
+		return nil
+	}
+	folders := c.sources.unregistered
+	if len(folders) > storageRegistrationFolders {
+		folders = folders[:storageRegistrationFolders]
+	}
+	return &storageRegistrationStatus{Enforcement: "warning-only", Folders: append([]string{}, folders...)}
 }
 
 // Resolve scope once while enrolling against original construction sources.

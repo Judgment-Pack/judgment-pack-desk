@@ -716,6 +716,9 @@ func (o *storageBudgetOwner) measureCensusAllTransfer(ctx context.Context, roots
 				return storagebudget.Census{}, e
 			}
 		}
+		if e := walk.carried(r, &count, &usage); e != nil {
+			return storagebudget.Census{}, e
+		}
 		v, e := storageVectorAdd(usage[storagebudget.Control], parent.provision(walk.readyMeasured[r]))
 		if e != nil {
 			return storagebudget.Census{}, e
@@ -761,6 +764,9 @@ func (r *storageRootBinding) fixedControl(relative string) bool {
 }
 func (w *storageCensusWalk) add(r *storageRootBinding, relative string, identity storageDirectoryIdentity, size uint64, directory bool, usage *[storagebudget.Categories]storagebudget.Vector) error {
 	category, references := r.categoryOf(relative)
+	return w.addAs(r, category, references, identity, size, directory, usage)
+}
+func (w *storageCensusWalk) addAs(r *storageRootBinding, category uint8, references []storagebudget.ID, identity storageDirectoryIdentity, size uint64, directory bool, usage *[storagebudget.Categories]storagebudget.Vector) error {
 	v := storagebudget.Vector{}
 	if directory {
 		v.Directories = 1
@@ -976,6 +982,186 @@ func (w *storageCensusWalk) directory(r *storageRootBinding, root *os.Root, witn
 	}
 	w.observation.observe(r, relative, before, after)
 	return r.current(w.ctx)
+}
+
+// carried measures, under the installation's config root r, each project's
+// private folder that no registered root measures: one Desk made outside the
+// identity producer before the project had a registered private folder or
+// project scope (storage-budget-startup.md, "Custody rule for v0.14.0"). The
+// config root carries its bytes as Control, attributed to the project's
+// workspace, so installation and workspace limits count them. Its content is
+// held to the census rule like any other. A folder its own root, a project
+// scope or a transfer view measures is left to that root. No capacity sample
+// is taken for it: no registered filesystem row describes where it is.
+func (w *storageCensusWalk) carried(r *storageRootBinding, count *int, usage *[storagebudget.Categories]storagebudget.Vector) error {
+	if r == nil || !r.configControl {
+		return nil
+	}
+	var x *storageOriginalSources
+	if w.enrollment != nil {
+		x = w.enrollment.c.sources
+	} else if w.owner != nil && w.owner.ref != nil && w.owner.ref.cell != nil && w.owner.ref.cell.startup != nil {
+		x = w.owner.ref.cell.startup.sources
+	}
+	if x == nil {
+		return nil
+	}
+	for _, c := range x.carried {
+		if e := w.ctx.Err(); e != nil {
+			return e
+		}
+		project, e := c.project.Stat(".")
+		if e != nil {
+			return e
+		}
+		projectID, e := storageFileIdentity(project)
+		if e != nil {
+			return e
+		}
+		if scope := w.roots[projectID]; scope != nil && scope.restrictedNamespace == startupIdentityDir || w.transferNamespaceClaim(projectID, startupIdentityDir) != nil {
+			continue
+		}
+		info, e := c.project.Lstat(startupIdentityDir)
+		if errors.Is(e, os.ErrNotExist) {
+			continue
+		}
+		if e != nil {
+			return storagebudget.ErrUnknown
+		}
+		id, e := storageFileIdentity(info)
+		if e != nil {
+			return e
+		}
+		if w.roots[id] != nil {
+			continue
+		}
+		child, e := storagePinChild(c.project, startupIdentityDir, false)
+		if e != nil {
+			return e
+		}
+		e = w.carriedDirectory(r, c.workspace, child.root, startupIdentityDir, 1, count, usage)
+		if e = errors.Join(e, child.current(), child.root.Close()); e != nil {
+			return e
+		}
+	}
+	return r.current(w.ctx)
+}
+
+// carriedDirectory is directory's walk for a carried private folder: the same
+// bounds, rule and before/after identity checks, with every entry charged to r
+// as Control and attributed to workspace when it is registered in this walk.
+func (w *storageCensusWalk) carriedDirectory(r *storageRootBinding, workspace storagebudget.ID, root *os.Root, relative string, depth int, count *int, usage *[storagebudget.Categories]storagebudget.Vector) error {
+	var references []storagebudget.ID
+	if _, ok := w.workspace[workspace]; ok {
+		references = []storagebudget.ID{workspace}
+	}
+	if w.exclusive != nil {
+		if e := w.exclusive.permit(w.ctx); e != nil {
+			return e
+		}
+	}
+	if depth > storageCensusDepth || len(relative) > storageCensusName {
+		return storagebudget.ErrBounds
+	}
+	if e := w.ctx.Err(); e != nil {
+		return e
+	}
+	before, e := root.Stat(".")
+	if e != nil || !storageCensusMeasuredDirectory(before) {
+		return storagebudget.ErrUnknown
+	}
+	identity, e := storageFileIdentity(before)
+	if e != nil {
+		return e
+	}
+	if w.directories[identity] {
+		return storagebudget.ErrUnknown
+	}
+	w.directories[identity] = true
+	if e = w.addAs(r, storagebudget.Control, references, identity, 0, true, usage); e != nil {
+		return e
+	}
+	file, e := root.Open(".")
+	if e != nil {
+		return e
+	}
+	if w.exclusive != nil {
+		if e = w.exclusive.current(w.ctx); e != nil {
+			return errors.Join(e, file.Close())
+		}
+	}
+	entries, re := file.ReadDir(storageCensusEntries - w.entries + 1)
+	ce := file.Close()
+	if re != nil && !errors.Is(re, io.EOF) || ce != nil {
+		return errors.Join(storagebudget.ErrUnknown, re, ce)
+	}
+	if len(entries) > storageCensusEntries-w.entries {
+		return storagebudget.ErrBounds
+	}
+	w.entries += len(entries)
+	*count += len(entries)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	for _, entry := range entries {
+		if w.exclusive != nil {
+			if e = w.exclusive.permit(w.ctx); e != nil {
+				return e
+			}
+		}
+		if e = w.ctx.Err(); e != nil {
+			return e
+		}
+		name := entry.Name()
+		childName := relative + "/" + name
+		if len(childName) > storageCensusName {
+			return storagebudget.ErrBounds
+		}
+		info, e := root.Lstat(name)
+		if e != nil {
+			return storagebudget.ErrUnknown
+		}
+		id, e := storageFileIdentity(info)
+		if e != nil {
+			return e
+		}
+		if info.IsDir() {
+			bound := w.roots[id]
+			if view := w.transferNamespaceClaim(identity, name); view != nil {
+				bound = view
+			}
+			if bound != nil {
+				if e = bound.current(w.ctx); e != nil {
+					return e
+				}
+				continue
+			}
+			child, e := storagePinChild(root, name, false)
+			if e != nil {
+				return e
+			}
+			e = w.carriedDirectory(r, workspace, child.root, childName, depth+1, count, usage)
+			if e = errors.Join(e, child.current(), child.root.Close()); e != nil {
+				return e
+			}
+			continue
+		}
+		if !storageCensusMeasuredFile(info) {
+			return storagebudget.ErrUnknown
+		}
+		if e = w.addAs(r, storagebudget.Control, references, id, uint64(info.Size()), false, usage); e != nil {
+			return e
+		}
+		after, e := root.Lstat(name)
+		if e != nil || !os.SameFile(info, after) || after.Size() != info.Size() || after.Mode() != info.Mode() || !after.ModTime().Equal(info.ModTime()) {
+			return storagebudget.ErrUnknown
+		}
+		w.observation.observe(r, childName, info, after)
+	}
+	after, e := root.Stat(".")
+	if e != nil || !os.SameFile(before, after) || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) {
+		return storagebudget.ErrUnknown
+	}
+	w.observation.observe(r, relative, before, after)
+	return nil
 }
 
 // Each census child retains its exact original named chain until observation

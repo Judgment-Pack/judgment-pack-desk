@@ -46,7 +46,35 @@ type storageOriginalSources struct {
 	// The saved catalog an ordinary start reattaches, or nil when a fresh
 	// catalog is built or another route compares sources by its own rule.
 	reattached *storageOwnerCatalogV2
+	// Folders this start found that the saved catalog does not register as
+	// roots of their own, by path: a project's .desk-private, or its
+	// retained-artifacts, that Desk made outside the identity producer. Each
+	// is measured inside the tree that holds it and reported as a warning
+	// (storage-budget-startup.md, "Custody rule for v0.14.0").
+	unregistered []string
+	// Projects whose .desk-private, if there is one, no registered root of
+	// its own measures; the census measures it (storageCensusWalk.carried).
+	carried []storageCarriedPrivate
 }
+
+// storageCarriedPrivate is one adopted project folder, held for this
+// construction's lifetime, and the workspace its private folder belongs to.
+type storageCarriedPrivate struct {
+	project   *os.Root
+	workspace storagebudget.ID
+}
+
+// storageCatalogRegisters is whether the saved catalog lists an object with this
+// native identity. A registered folder keeps the exact comparison.
+func storageCatalogRegisters(c *storageOwnerCatalogV2, native storageOwnerPersistentObject) bool {
+	for _, object := range c.Objects {
+		if object.Persistent == native {
+			return true
+		}
+	}
+	return false
+}
+
 type storageOriginalHistorySelection struct {
 	settings *os.Root
 	path     string
@@ -336,19 +364,42 @@ func (x *storageOriginalSources) inspectProject(ctx context.Context, project *os
 		return storagebudget.ErrBounds
 	}
 	x.workspaces = append(x.workspaces, w)
-	n, err := storagePinChild(project, ".desk-private", true)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
+	// An ordinary start pins the folder by the census rule first: whether it
+	// may be registered is decided by the saved catalog below.
+	n, err := storagePinChild(project, ".desk-private", x.reattached == nil)
 	// storagePinChild deliberately returns a custody refusal for unsafe/missing
 	// names; prove absence on the actual adopted parent before accepting it.
 	if err != nil {
 		if _, le := project.Lstat(".desk-private"); errors.Is(le, os.ErrNotExist) {
+			x.carried = append(x.carried, storageCarriedPrivate{project: project, workspace: id})
 			return nil
 		}
 		return err
 	}
 	x.openedRoots = append(x.openedRoots, n.root)
+	if x.reattached != nil {
+		native, err := storageOwnerPersistentRoot(ctx, n.root)
+		if err != nil {
+			return err
+		}
+		if !storageCatalogRegisters(x.reattached, native) {
+			// The catalog registered no private folder here: Desk made this
+			// one later, outside the identity producer (a first Policy,
+			// publication or retained artifact), or a person or tool did. It is
+			// not split out as a root the catalog does not list, which would
+			// refuse custody and start storage read-only; the census measures
+			// it under its rule, and the difference is reported. Strict
+			// registration of such folders is later work (desk #698).
+			x.unregistered = append(x.unregistered, filepath.Join(path, ".desk-private"))
+			x.carried = append(x.carried, storageCarriedPrivate{project: project, workspace: id})
+			return nil
+		}
+		// A registered private folder keeps the private rule.
+		n.private = true
+		if err = n.current(); err != nil {
+			return err
+		}
+	}
 	role := uint8(6)
 	rootKey := key
 	if deskID != "" {
@@ -385,11 +436,8 @@ func (x *storageOriginalSources) inspectProject(ctx context.Context, project *os
 		if err != nil {
 			return err
 		}
-		registered := false
-		for _, object := range x.reattached.Objects {
-			registered = registered || object.Persistent == native
-		}
-		if !registered {
+		if !storageCatalogRegisters(x.reattached, native) {
+			x.unregistered = append(x.unregistered, filepath.Join(path, ".desk-private", "retained-artifacts"))
 			return nil
 		}
 	}
