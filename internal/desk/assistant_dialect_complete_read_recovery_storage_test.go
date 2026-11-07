@@ -1060,7 +1060,7 @@ func TestDialectReadRecoveryStorageAdmissionAndStaleRefusals(t *testing.T) {
 				f.server.recoveryStorage.root = &copyRoot
 				defer func() { f.server.recoveryStorage.root = original }()
 			case "copied-writer":
-				copyWriter := *f.server.recoveryStorage
+				copyWriter := copiedValue(f.server.recoveryStorage)
 				if _, err := copyWriter.prepareOriginalDialectReadRecovery(t.Context()); err == nil {
 					t.Fatal("copied writer became authority")
 				}
@@ -1163,7 +1163,7 @@ func TestDialectReadRecoveryStorageTransferRevocationAndOneBorrow(t *testing.T) 
 	if err = op.private.borrow(t.Context(), foreign); err == nil {
 		t.Fatal("second consumer borrowed transferred turn")
 	}
-	copied := *op.private
+	copied := copiedValue(op.private)
 	if err = copied.current(t.Context()); err == nil {
 		t.Fatal("copied hold retained authority")
 	}

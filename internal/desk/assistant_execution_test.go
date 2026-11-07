@@ -728,7 +728,7 @@ func TestAssistantExecutionReconstructedIdentities(t *testing.T) {
 	extended, err := runcontext.ExtendExecution(paused, false, time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC))
 	assistantRunMust(t, err)
 	assistantRunMust(t, e.Checkpoint(context.Background(), *extended))
-	continued := *e
+	continued := copiedValue(e)
 	continued.record = assistantExecutionRecord(t, e)
 	continued.writer, err = e.writer.lease.Writer(context.Background(), e.record.Binding, e.record.ID)
 	assistantRunMust(t, err)

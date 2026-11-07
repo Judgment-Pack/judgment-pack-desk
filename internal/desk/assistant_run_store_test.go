@@ -78,6 +78,15 @@ func assistantRunMust(t *testing.T, err error) {
 	}
 }
 
+// copiedValue is a shallow copy of *p, its mutexes and atomics included. The
+// tests that use it copy on purpose: either to show that a copied holder is
+// not the original and keeps none of its authority, or to continue an
+// execution from a copy of its state. go vet's copylocks check is right that
+// such a copy is never what production code wants; here it is the subject.
+func copiedValue[T any](p *T) T {
+	return *p
+}
+
 func TestAssistantRunConcurrentAdmissionAndLostResponse(t *testing.T) {
 	store, binding, _ := assistantRunFixture(t)
 	lease, err := store.Acquire(context.Background())

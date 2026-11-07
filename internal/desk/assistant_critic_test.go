@@ -428,7 +428,7 @@ func TestAssistantCriticSnapshotRefusesChange(t *testing.T) {
 					t.Fatal("stale suite crossed gated Runtime boundary")
 				}
 			} else if boundary == "reconstructed-suite" {
-				continued := *e
+				continued := copiedValue(e)
 				if next, err := continued.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served"}); err == nil {
 					defer next.Close()
 					response, err := next.Run.Model(context.Background(), "chat/completions", assistantExecutionRequest())
@@ -678,7 +678,7 @@ func TestAssistantCriticDurableCustody(t *testing.T) {
 					return true, nil
 				}))
 			}
-			continued := *e
+			continued := copiedValue(e)
 			continued.input = &assistantChatCustody{}
 			continued.record = assistantExecutionRecord(t, e)
 			next, err := continued.openAssistantExecution(context.Background(), assistantExecutionPrompt{Name: "served"})

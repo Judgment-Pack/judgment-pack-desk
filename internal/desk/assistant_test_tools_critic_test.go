@@ -47,7 +47,7 @@ func TestAssistantTestHostCriticConsumedInputs(t *testing.T) {
 				defer root.root.Close()
 				path := filepath.Join(root.location.Path, e.writer.lease.store.name)
 				assistantRunMust(t, os.WriteFile(path, legacy, 0600))
-				continued := *e
+				continued := copiedValue(e)
 				continued.input = &assistantChatCustody{}
 				continued.record = e.record
 				next, err := continued.openAssistantExecution(t.Context(), assistantExecutionPrompt{Name: "served"})

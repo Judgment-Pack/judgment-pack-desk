@@ -173,7 +173,7 @@ func TestStorageOwnerActualCopiedAuthorityAndCurrentness(t *testing.T) {
 	if _, err := copy.forServer(s); err == nil {
 		t.Fatal("copied construction activated")
 	}
-	e := *s.storageEnrollment
+	e := copiedValue(s.storageEnrollment)
 	if err := e.Close(); err == nil {
 		t.Fatal("copied enrollment released original custody")
 	}

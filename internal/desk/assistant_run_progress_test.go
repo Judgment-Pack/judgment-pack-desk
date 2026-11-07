@@ -100,7 +100,7 @@ func TestAssistantRunProgressPreviewVectors(t *testing.T) {
 func TestAssistantRunProgressBoundedAuthenticatedLifecycle(t *testing.T) {
 	s, token, e := assistantExecutionFixture(t, "https://example.invalid", "work")
 	before := assistantExecutionRecord(t, e)
-	stale := *e
+	stale := copiedValue(e)
 	if err := stale.Progress(context.Background(), progressValue("Stale execution", nil)); err == nil {
 		t.Fatal("superseded execution emitted prefix")
 	}

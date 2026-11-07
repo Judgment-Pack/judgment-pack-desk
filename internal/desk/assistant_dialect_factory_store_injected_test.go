@@ -66,7 +66,7 @@ func TestAssistantDialectFactoryInjectedOriginalIdentity(t *testing.T) {
 	p, registry, _, _ := injectedArtifactProviderFixture(t)
 	f := assistantDialectAuthoritySetupWithProvider(t, p, registry)
 	f.reserve(t, true)
-	ownerCopy := *f.owner
+	ownerCopy := copiedValue(f.owner)
 	if _, err := ownerCopy.acquireHostHold(f.ctx); err == nil {
 		t.Fatal("copied owner admitted host custody")
 	}

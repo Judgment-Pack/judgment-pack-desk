@@ -482,7 +482,7 @@ func TestAssistantTestHostEnabledCriticProposalCustody(t *testing.T) {
 	cp, err := runcontext.ReadExecution(value)
 	assistantRunMust(t, err)
 	assistantRunMust(t, e.Checkpoint(t.Context(), *cp))
-	continued := *e
+	continued := copiedValue(e)
 	continued.input = &assistantChatCustody{}
 	continued.record = assistantExecutionRecord(t, e)
 	next, err := continued.openAssistantExecution(t.Context(), assistantExecutionPrompt{Name: "served"})

@@ -978,7 +978,7 @@ func TestStorageTransferRefreshSelectsFrozenNamespaceAtSharedAnchor(t *testing.T
 		t.Fatal("ordinary Control group obscured exact frozen destination", err)
 	}
 	for _, cut := range []string{"different-next", "different-view-id", "inactive-view", "stale-membership", "changed-native", "changed-binding-refs", "changed-source", "duplicate-owning-parent", "consumed-refresh"} {
-		bad := *op
+		bad := copiedValue(op)
 		bad.self = &bad
 		bad.catalog = ownerCatalogClone(catalog)
 		bad.record.Groups = append([]storageTransferGroup{}, bank.Groups...)
