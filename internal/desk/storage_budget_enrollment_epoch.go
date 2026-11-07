@@ -2134,7 +2134,7 @@ func (c *storageBudgetConstruction) resumeOriginalPolicyStartup(ctx context.Cont
 	if err = c.selectMoveHistory(ctx, state); err != nil {
 		return err
 	}
-	x, err := c.inspectOriginalSources(ctx, record.Installation)
+	x, err := c.inspectOriginalSources(ctx, record.Installation, nil)
 	if err != nil {
 		return err
 	}

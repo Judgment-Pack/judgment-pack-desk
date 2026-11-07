@@ -3414,7 +3414,7 @@ func (c *storageBudgetConstruction) resumeOriginalNativeSourceCut(ctx context.Co
 	if err = c.selectMoveHistory(ctx, moveState); err != nil {
 		return err
 	}
-	sources, err := c.inspectOriginalSources(ctx, record.Installation)
+	sources, err := c.inspectOriginalSources(ctx, record.Installation, nil)
 	if err != nil {
 		return err
 	}

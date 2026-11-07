@@ -290,7 +290,24 @@ func (c *storageBudgetConstruction) loadOrEnrollOwner(ctx context.Context) (err 
 	if storagePolicyActualPair(c.startupPhysical) {
 		return c.resumeOriginalPolicyStartup(ctx, record, claim)
 	}
-	x, e := c.inspectOriginalSources(ctx, record.Installation)
+	// An ordinary start selects its saved catalog before inspecting sources. The
+	// selection is the same read-only bank read under the owner gate; source
+	// inspection uses it only to tell an optional registered child from one
+	// made after registration. The exact comparison below is unchanged.
+	var cat storageOwnerCatalogV2
+	var bank int
+	var raw []byte
+	var reattached *storageOwnerCatalogV2
+	if peak == nil {
+		cat, bank, raw, e = c.selectOwnerCatalog(ctx, record, claim)
+		if e != nil {
+			return e
+		}
+		if raw != nil {
+			reattached = &cat
+		}
+	}
+	x, e := c.inspectOriginalSources(ctx, record.Installation, reattached)
 	if e != nil {
 		return e
 	}
@@ -300,10 +317,6 @@ func (c *storageBudgetConstruction) loadOrEnrollOwner(ctx context.Context) (err 
 	}
 	if peak != nil {
 		return c.resumeOriginalEnrollmentStartup(ctx, *peak, peakCatalogs, record, claim)
-	}
-	cat, bank, raw, e := c.selectOwnerCatalog(ctx, record, claim)
-	if e != nil {
-		return e
 	}
 	freshCatalog := raw == nil
 	if freshCatalog {

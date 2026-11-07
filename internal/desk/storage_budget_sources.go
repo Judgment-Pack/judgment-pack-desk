@@ -43,6 +43,9 @@ type storageOriginalSources struct {
 	openedFiles       []*os.File
 	selections        []storageOriginalHistorySelection
 	selectedProviders map[string][]storagebudget.ID
+	// The saved catalog an ordinary start reattaches, or nil when a fresh
+	// catalog is built or another route compares sources by its own rule.
+	reattached *storageOwnerCatalogV2
 }
 type storageOriginalHistorySelection struct {
 	settings *os.Root
@@ -56,11 +59,13 @@ type storageOriginalHistorySelection struct {
 	pointerNative storageOwnerPersistentObject
 }
 
-func (c *storageBudgetConstruction) inspectOriginalSources(ctx context.Context, installation storagebudget.ID) (out *storageOriginalSources, err error) {
+// reattached is the saved catalog an ordinary start compares these sources
+// with exactly, or nil (see storageOriginalSources.reattached).
+func (c *storageBudgetConstruction) inspectOriginalSources(ctx context.Context, installation storagebudget.ID, reattached *storageOwnerCatalogV2) (out *storageOriginalSources, err error) {
 	if err = c.current(ctx, true); err != nil {
 		return nil, err
 	}
-	x := &storageOriginalSources{construction: c, projects: map[string]storageOriginalProject{}, selectedProviders: map[string][]storagebudget.ID{}, owner: storageOwnerSource{Kind: 1, ConfigPath: []byte(c.server.configDir), HomeOwner: c.server.installationOwner(), HomePath: []byte{}, RegistryControl: storageOwnerNoControl, Entries: []storageOwnerHomeRelation{}}, workspaces: []storageOwnerWorkspace{}, controls: []storageOwnerControl{}}
+	x := &storageOriginalSources{construction: c, projects: map[string]storageOriginalProject{}, selectedProviders: map[string][]storagebudget.ID{}, owner: storageOwnerSource{Kind: 1, ConfigPath: []byte(c.server.configDir), HomeOwner: c.server.installationOwner(), HomePath: []byte{}, RegistryControl: storageOwnerNoControl, Entries: []storageOwnerHomeRelation{}}, workspaces: []storageOwnerWorkspace{}, controls: []storageOwnerControl{}, reattached: reattached}
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, x.Close())
@@ -368,6 +373,26 @@ func (x *storageOriginalSources) inspectProject(ctx context.Context, project *os
 		return err
 	}
 	x.openedRoots = append(x.openedRoots, retained.root)
+	if x.reattached != nil {
+		// The retained child is its own root only where the saved catalog
+		// registered it: it existed when the catalog was built. One made
+		// later (a first Policy, research proof or publication) was made and
+		// measured inside this private root, under its private rule, and
+		// stays there. A child whose identity the catalog lists is still
+		// split and compared exactly, and a replaced or removed registered
+		// child still fails that comparison.
+		native, err := storageOwnerPersistentRoot(ctx, retained.root)
+		if err != nil {
+			return err
+		}
+		registered := false
+		for _, object := range x.reattached.Objects {
+			registered = registered || object.Persistent == native
+		}
+		if !registered {
+			return nil
+		}
+	}
 	child, err := x.addRoot(ctx, retained.root, []storageNamedRoot{n, retained}, filepath.Join(path, ".desk-private", "retained-artifacts"), key, 6, storagebudget.Retained, r, "retained-artifacts")
 	if err == nil {
 		child.workspaces = []storagebudget.ID{id}
