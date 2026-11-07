@@ -15,14 +15,17 @@ import (
 // Every reuse requires complete bytes and the complete interpretation context.
 // Fixed packet/bank counts and a conservative 256 MiB retained-data ceiling
 // bound even maximum evidence graphs. An oversized entry simply stays strict.
+// Replacement evicts the least recently used entry: next counts retained
+// decodes, while clock also advances on every exact reuse.
 type storageEnrollmentOperands struct {
 	entries [216]storageEnrollmentOperand
 	next    uint64
+	clock   uint64
 	bytes   uint64
 }
 type storageEnrollmentOperand struct {
 	kind    uint8
-	age     uint64
+	age     uint64 // clock value at retention or at the latest exact reuse
 	raw     []byte
 	context any
 	value   any
@@ -211,6 +214,13 @@ func storageEnrollmentOperandSize(v reflect.Value) uint64 {
 	return n
 }
 
+// touch records an exact reuse; it changes only replacement order.
+func (o *storageEnrollmentOperands) touch(e *storageEnrollmentOperand) {
+	if o.clock < ^uint64(0) {
+		o.clock++
+		e.age = o.clock
+	}
+}
 func storageEnrollmentOperandGet[T any](o *storageEnrollmentOperands, kind uint8, raw []byte, context any, decode func([]byte) (T, error)) (T, error) {
 	if o == nil {
 		return decode(raw)
@@ -218,6 +228,7 @@ func storageEnrollmentOperandGet[T any](o *storageEnrollmentOperands, kind uint8
 	for i := range o.entries {
 		e := &o.entries[i]
 		if e.kind == kind && bytes.Equal(e.raw, raw) && reflect.DeepEqual(e.context, context) {
+			o.touch(e)
 			return storageEnrollmentOperandClone(e.value.(T)), nil
 		}
 	}
@@ -233,7 +244,7 @@ func storageEnrollmentOperandGet[T any](o *storageEnrollmentOperands, kind uint8
 	if size > storageEnrollmentOperandLimit {
 		return value, nil
 	}
-	if o.next == ^uint64(0) {
+	if o.next == ^uint64(0) || o.clock == ^uint64(0) {
 		*o = storageEnrollmentOperands{}
 	}
 	count, empty, oldest := 0, -1, -1
@@ -268,9 +279,10 @@ func storageEnrollmentOperandGet[T any](o *storageEnrollmentOperands, kind uint8
 	}
 	o.bytes -= o.entries[empty].bytes
 	o.next++
+	o.clock++
 	// The decoder input may also appear in its returned sections. Neither it
 	// nor the returned model is the private key or retained model.
-	o.entries[empty] = storageEnrollmentOperand{kind: kind, age: o.next, raw: append([]byte(nil), raw...), context: storageEnrollmentOperandFreeze(context), value: storageEnrollmentOperandFreeze(value), bytes: size}
+	o.entries[empty] = storageEnrollmentOperand{kind: kind, age: o.clock, raw: append([]byte(nil), raw...), context: storageEnrollmentOperandFreeze(context), value: storageEnrollmentOperandFreeze(value), bytes: size}
 	o.bytes += size
 	return value, nil
 }
@@ -289,6 +301,7 @@ func storageEnrollmentOperandView[T, V any](o *storageEnrollmentOperands, kind u
 		for i := range o.entries {
 			e := &o.entries[i]
 			if e.kind == kind && bytes.Equal(e.raw, raw) && reflect.DeepEqual(e.context, context) {
+				o.touch(e)
 				return view(e.value.(T)), nil
 			}
 		}

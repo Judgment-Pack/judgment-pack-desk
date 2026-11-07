@@ -371,3 +371,33 @@ func TestStorageEnrollmentOperandsSharedSubDecodesStayStrict(t *testing.T) {
 		}
 	}
 }
+
+// Replacement evicts the least recently used entry of a full role; exact reuse
+// keeps an older entry. A hit never counts as a retained decode.
+func TestStorageEnrollmentOperandsReplaceLeastRecentlyUsed(t *testing.T) {
+	var operands storageEnrollmentOperands
+	decode := func(b []byte) ([]byte, error) { return append([]byte(nil), b...), nil }
+	get := func(i byte) {
+		got, err := storageEnrollmentOperandGet(&operands, storageEnrollmentOperandEvidence, []byte{i}, i, decode)
+		storageTestMust(t, err)
+		if !bytes.Equal(got, []byte{i}) {
+			t.Fatal("replacement changed a value", i)
+		}
+	}
+	for i := byte(0); i < 6; i++ {
+		get(i)
+	}
+	get(0)
+	if operands.next != 6 {
+		t.Fatal("a hit counted as a retained decode")
+	}
+	get(6) // replaces 1, the least recently used, not 0
+	get(0)
+	if operands.next != 7 {
+		t.Fatal("a reused entry was evicted before an unused one")
+	}
+	get(1)
+	if operands.next != 8 {
+		t.Fatal("the least recently used entry was retained")
+	}
+}
