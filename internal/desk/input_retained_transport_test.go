@@ -12,7 +12,7 @@ import (
 // Independently encoded from the handwritten selector literal, not captured
 // from the transport helper under test. Canonicality is base64url encoding;
 // JSON object member order itself is not a capability identity requirement.
-const retainedD2HeaderVector = "eyJjb250cmFjdCI6InJldGFpbmVkLWNvbHVtbi8xIiwic3BlYyI6eyJ2ZXJzaW9uIjoiMC4zLjAtcmMuMiIsInJldmlzaW9uIjoiYmNhYzE1Yjc1MzdjZTIxODc5MjAxYjVlNWRmZTc5NTQ5NjIyNTEyMSIsInNjaGVtYVNoYTI1NiI6InNoYTI1NjowY2I0OWYyMzhjNzgzOTFjYjE2M2E2NTQ3NGNjOWFmOTYyZGYyYmIxMDI0YTU1YzUzMTBjMmI3ODRiMmYwNTU3IiwiY29ycHVzU2hhMjU2Ijoic2hhMjU2OjE3YjE2ZmY3YTliNzRmZTRjYzgxZWI2ZjYxMjlhNmFhYmRkOTgzNDYyMWQ5ZTc1NmFhMmQ0YzFhM2YyNDU4NjMifSwicHJvZmlsZSI6ImJhc2UiLCJyb2xlcyI6WyJkb2N1bWVudC12YWxpZGF0aW9uIiwicHJldmlldyIsInByZXBhcmF0aW9uIl19"
+const retainedD2HeaderVector = "eyJjb250cmFjdCI6InJldGFpbmVkLWNvbHVtbi8xIiwic3BlYyI6eyJ2ZXJzaW9uIjoiMC4zLjAiLCJyZXZpc2lvbiI6IjI3Y2IyOWJmMTNlNGEyZDU4ZDY5ZmUxOWM3ZWJmZWI3NjJiMDE0ZmMiLCJzY2hlbWFTaGEyNTYiOiJzaGEyNTY6MGNiNDlmMjM4Yzc4MzkxY2IxNjNhNjU0NzRjYzlhZjk2MmRmMmJiMTAyNGE1NWM1MzEwYzJiNzg0YjJmMDU1NyIsImNvcnB1c1NoYTI1NiI6InNoYTI1NjoxN2IxNmZmN2E5Yjc0ZmU0Y2M4MWViNmY2MTI5YTZhYWJkZDk4MzQ2MjFkOWU3NTZhYTJkNGMxYTNmMjQ1ODYzIn0sInByb2ZpbGUiOiJiYXNlIiwicm9sZXMiOlsiZG9jdW1lbnQtdmFsaWRhdGlvbiIsInByZXZpZXciLCJwcmVwYXJhdGlvbiJdfQ"
 
 func retainedD2Admission(t *testing.T, generated bool) *retainedAdmission {
 	t.Helper()
@@ -96,7 +96,7 @@ func TestRetainedD2HeaderRefusalsBeforeRead(t *testing.T) {
 	}
 	for name, raw := range map[string]string{
 		"tiny-missing-role": strings.Replace(retainedD2SelectorJSON, `,"preparation"`, "", 1),
-		"wrong-pin":         strings.Replace(retainedD2SelectorJSON, "0.3.0-rc.2", "0.3.0-rc.1", 1),
+		"wrong-pin":         strings.Replace(retainedD2SelectorJSON, `"version":"0.3.0"`, `"version":"0.3.0-rc.2"`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := readRetainedRunnerSelection("POST", path, http.Header{retainedSelectorHeaderName: {base64.RawURLEncoding.EncodeToString([]byte(raw))}}, false)
@@ -176,7 +176,7 @@ func TestRetainedD2CompleteArtifactLowerLimitAndOneOver(t *testing.T) {
 func TestRetainedD2RuntimeSelectionOperationScope(t *testing.T) {
 	for _, operation := range []string{"contract", "canonicalize", "digest", "validate", "check"} {
 		selectors, err := retainedRuntimeSelectors(operation)
-		if err != nil || len(selectors) != 2 || selectors["draftContract"] != "retained-column/1@bcac15b7537ce21879201b5e5dfe795496225121" || selectors["draftProfile"] != "base" {
+		if err != nil || len(selectors) != 2 || selectors["draftContract"] != "retained-column/1@27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc" || selectors["draftProfile"] != "base" {
 			t.Fatalf("Runtime operation %s: %#v %v", operation, selectors, err)
 		}
 	}

@@ -73,7 +73,7 @@ describe('inactive captured retained selection client', () => {
  })
  const invalidHeaders: Record<string, string>[] = [
   {'Content-Type': `${retainedSelectionMediaType}; charset=utf-8`},
-  {'Content-Length': '01029'}, {'Content-Length': '+1029'}, {'Content-Length': '1e3'},
+  {'Content-Length': '01024'}, {'Content-Length': '+1024'}, {'Content-Length': '1e3'},
   {'Content-Length': '9007199254740992'}, {'Content-Encoding': 'gzip'}, {'Content-Encoding': 'Identity'}
  ]
  it.each(invalidHeaders)('refuses nonexact success headers %j', async headers => {
