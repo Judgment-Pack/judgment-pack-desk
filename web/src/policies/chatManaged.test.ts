@@ -67,17 +67,23 @@ it('uses the same Policy tools and context projection through the subscription a
  const events:AssistantEvent[]=[];for await(const event of runCodex(session))events.push(event)
  expect(events.filter(event=>event.type==='error'||event.type==='guardrail'&&event.action==='refused')).toEqual([]);expect(retained[0]).toMatchObject({revision,before:candidate,candidate:{...candidate,title:'Requested title'},check:{status:'passed'}})
 })
+// Agent v0.13.2 checks current access when the managed session opens, when a
+// host tool is called, and again immediately before the host tool is dispatched;
+// a refused check stops retained-context retrieval and provider dispatch.
 it('checks current access before retained-context retrieval and each provider dispatch',async()=>{
- let allowed=true,authorizations=0,reads=0,calls=0
- const session=base();session.prompt='Explain this Policy';session.context!.authorize=async()=>{authorizations++;if(!allowed)throw failureError('permission','desk','not-started')}
- session.hostTools=[{name:'read_policy',description:'Read current Policy',taxonomy:{operation:'read',effect:'read'},effect:'read',inputSchema:{type:'object',properties:{}},execute:async()=>{reads++;return {structuredContent:saved}}}]
+ let allowed=true,reads=0,calls=0
+ const order:string[]=[]
+ const session=base();session.prompt='Explain this Policy';session.context!.authorize=async()=>{order.push('authorize');if(!allowed)throw failureError('permission','desk','not-started')}
+ session.hostTools=[{name:'read_policy',description:'Read current Policy',taxonomy:{operation:'read',effect:'read'},effect:'read',inputSchema:{type:'object',properties:{}},execute:async()=>{reads++;order.push('read');return {structuredContent:saved}}}]
  session.model.call=async()=>{calls++;return new Response()}
  const managed=await contextualSession(session)
+ expect(order).toEqual(['authorize'])
  await managed.session.values.hostTools.find(tool=>tool.name==='read_policy')!.execute({},session.signal)
+ expect(order).toEqual(['authorize','authorize','authorize','read'])
  allowed=false
  await expect(managed.session.values.hostTools.find(tool=>tool.name==='list_context')!.execute({},session.signal)).rejects.toThrow()
  await expect(managed.session.values.model.call('/v1/chat/completions',{method:'POST',headers:{},body:'{}'})).rejects.toThrow()
- expect(reads).toBe(1);expect(calls).toBe(0);expect(authorizations).toBe(4)
+ expect(reads).toBe(1);expect(calls).toBe(0);expect(order).toEqual(['authorize','authorize','authorize','read','authorize','authorize'])
 })
 it('refuses pack or graph proposal envelopes in a Policy-only conversation without adopting another artifact scope',async()=>{
  const session=base();session.prompt='Create a pack from this Policy';session.context={...session.context,artifactProposals:false};session.model.call=async()=>new Response(JSON.stringify({candidates:[{content:{role:'model',parts:[{text:'```json\n'+JSON.stringify({proposal:{kind:'create',document:{id:'urn:pack',version:'1.0.0'},unknowns:[]}})+'\n```'}]},finishReason:'STOP'}]}),{headers:{'Content-Type':'application/json'}})
