@@ -155,6 +155,24 @@ the exact comparison: recovery, project move and the owner record's other
 checks are unchanged. Strict registration of every folder, and the repeated
 custody re-walks behind first-use enrollment, are Desk #698 (v0.15.0).
 
+The enrollment and policy startup routes inspect sources by their own rule and
+may hold such a folder as a source; after the owner loads, any project private
+folder or retained-artifacts source that no registered root holds is added to
+the same warning, and the startup identity demand applies only to a private
+folder a registered root holds. Retained artifacts inside a private folder,
+under a project scope or in a carried folder are Retained by path. A Kind8
+private child the producer made is compared with the named project edge
+discovery actually holds (its native, its parent's native and its name) and is
+joined to the project scope it was captured under.
+
+The producer never adopts an existing folder: its creation records refuse an
+existing name so that a crash cannot complete a creation by matching a name
+someone else made. Dialect drafts and a project move therefore refuse, in words,
+in a project whose `.desk-private` is unregistered; a project with no private
+folder gets one at the move preview through the producer's creation path. A
+start that resumes enrollment publishes no new census, so content added since
+the last enrollment census is counted at the next census.
+
 Workspace lookups after registration use the accounting key the identity
 lineage retains for the startup project, not a later identity alone.
 
