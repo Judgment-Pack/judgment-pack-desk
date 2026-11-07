@@ -18,6 +18,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/storagebudget"
 )
@@ -193,6 +194,11 @@ func TestStorageEnrollmentEpochOriginalExclusionAndNoEffectExit(t *testing.T) {
 	storageTestMust(t, err)
 	p, err := c.beginEnrollmentEpoch(t.Context())
 	storageTestMust(t, err)
+	// The epoch's lexical owner finishes it on every path, as the product's
+	// deferred finish does. Server.Close waits for the owner retain an
+	// unfinished epoch holds, so a failed assertion below must not leave
+	// it running. A finished epoch's finish is a no-op.
+	t.Cleanup(func() { _ = p.finish(errors.New("test ended")) })
 	if o.active != 1 || c.home.exclusive {
 		t.Fatal("phase changed home or lost owner retain")
 	}
@@ -209,11 +215,31 @@ func TestStorageEnrollmentEpochOriginalExclusionAndNoEffectExit(t *testing.T) {
 	if len(p.holds) != len(o.orderedRoots()) || p.use == nil || p.project == nil || p.work == nil {
 		t.Fatal("complete original exclusion missing")
 	}
-	if err := p.qualifyOriginalNative(t.Context()); !errors.Is(err, errStorageEnrollmentQualification) {
-		t.Fatal("unqualified installed data minted authority", err)
+	// The installed native records qualify a machine by its system and
+	// filesystem facts, not its kernel build: the release development record
+	// applies on a matching Linux host. Expect what the records say about
+	// this host, so the no-effect exit is tested on every machine.
+	records, err := storageEnrollmentNativeRecords(storageEnrollmentInstalledNativeRecords)
+	storageTestMust(t, err)
+	facts, err := p.qualificationFacts(t.Context())
+	storageTestMust(t, err)
+	applies := false
+	for _, r := range records {
+		applies = applies || storageEnrollmentNativeRecordApplies(r, facts)
 	}
-	if p.qualified != nil || p.scope != nil {
-		t.Fatal("refusal created authority or scope")
+	err = p.qualifyOriginalNative(t.Context())
+	if applies {
+		storageTestMust(t, err)
+		if p.qualified == nil || p.scope != nil {
+			t.Fatal("qualification did not bind its record, or created scope", p.qualified, p.scope)
+		}
+	} else {
+		if !errors.Is(err, errStorageEnrollmentQualification) {
+			t.Fatal("unqualified installed data minted authority", err)
+		}
+		if p.qualified != nil || p.scope != nil {
+			t.Fatal("refusal created authority or scope")
+		}
 	}
 	storageTestMust(t, p.finish(nil))
 	if !o.admissionOpen() || o.active != 0 || p.running || p.use != nil || p.project != nil || p.work != nil || len(p.holds) != 0 {
@@ -227,6 +253,15 @@ func TestStorageEnrollmentEpochOriginalExclusionAndNoEffectExit(t *testing.T) {
 	ordinary, err := o.beginAdmission(t.Context())
 	storageTestMust(t, err)
 	storageTestMust(t, ordinary.Close())
+	// A finished no-effect epoch leaves nothing that holds the Desk's Close.
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close() }()
+	select {
+	case err := <-closed:
+		storageTestMust(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("Close did not return after a finished no-effect enrollment")
+	}
 }
 
 func TestStorageEnrollmentEpochCancellationRetainsOriginalHolds(t *testing.T) {
