@@ -69,3 +69,17 @@ it('does not retain an aborted proposal or a pack disguised as a graph', async (
   await expect(t.call('propose_graph', {id:'new-flow',content:'{"specVersion":"0.2.0-draft"}'})).rejects.toThrow('graph document')
   expect(t.addDraft).not.toHaveBeenCalled()
 })
+it('declares the owner taxonomy of each server-side graph tool', () => {
+  // Agent v0.13.2 reads each host tool's owner taxonomy (ADR-0027); the browser
+  // factory declares what the Desk server's graph tools declare.
+  const taxonomies = Object.fromEntries(tools().all.map(t => [t.name, t.taxonomy]))
+  expect(taxonomies).toEqual({
+    list_decisions: {operation:'discover', effect:'read'},
+    read_decision: {operation:'read', effect:'read'},
+    get_graph_authoring_instructions: {operation:'read', effect:'read'},
+    graph_validate: {operation:'check', effect:'read', checkKind:'validate'},
+    graph_explain: {operation:'check', effect:'read', checkKind:'analyze'},
+    propose_graph: {operation:'propose', effect:'propose'},
+    graph_rehearse: {operation:'check', effect:'read', checkKind:'rehearse'},
+  })
+})

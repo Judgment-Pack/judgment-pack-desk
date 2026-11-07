@@ -49,3 +49,23 @@ func writeInputPreparation(root *os.Root, doc inputPreparation) (inputPreparatio
 	}
 	return readInputPreparation(root, doc.ID)
 }
+
+// Raw export stays inside the original collection owner. The caller borrows
+// the original project; every opened ancestor is checked, with no creation.
+func (s *Server) openInputPreparationRaw() (*os.Root, bool, error) {
+	var owner *storageBudgetOwner
+	if s.storageConstruction != nil {
+		owner = s.storageConstruction.owner
+	}
+	return storageRetentionOwnFolder(s.root, strings.Split(inputPreparationDir, "/"), "input preparations", owner, "preparation-ancestor-close")
+}
+func readInputPreparationRawFile(root *os.Root, id string) (inputPreparationRawSnapshot, error) {
+	if !inputPreparationID.MatchString(id) {
+		return inputPreparationRawSnapshot{}, errors.New("invalid dialect collection identity")
+	}
+	raw, _, err := storageRetentionRead(root, id+".json", inputPreparationLimit)
+	if err != nil {
+		return inputPreparationRawSnapshot{}, err
+	}
+	return validateInputPreparationRaw(id, "", inputPreparationRawSnapshot{ID: id, Revision: digestOf(raw), Bytes: raw})
+}

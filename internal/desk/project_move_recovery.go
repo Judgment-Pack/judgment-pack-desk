@@ -177,6 +177,15 @@ func (s *Server) recoverProjectMove() {
 	if s.projectDir != intent.Previous && s.projectDir != intent.Destination {
 		return
 	}
+	// New performs this once before identity mutation. Re-establish exact
+	// custody here as well: this completion method must never clear a retained
+	// before-rename intent or finish config merely from pathname absence.
+	if intent.Retained != nil {
+		if err = s.replayDialectArtifactProjectMove(); err != nil {
+			s.setHistoryMoveProblem("Retained project move recovery is incomplete. " + err.Error())
+			return
+		}
+	}
 	unlock, err := s.lockProject(context.Background(), 0)
 	if err != nil {
 		s.setHistoryMoveProblem("Project move recovery is waiting for the project lock. Restart Desk after active work finishes.")

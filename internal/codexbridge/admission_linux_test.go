@@ -145,3 +145,36 @@ func TestResearchAdmissionCancellationAndJournalFailureSendNothing(t *testing.T)
 		})
 	}
 }
+
+func TestRunHostFencesAtPhysicalAdmissionAndGeneration(t *testing.T) {
+	for _, boundary := range []string{"admission", "generation"} {
+		t.Run(boundary, func(t *testing.T) {
+			m := runManager(t, "normal")
+			owner, a, b := ownerFixture()
+			defer a()
+			defer b()
+			var admitted, generation, calls atomic.Int32
+			refused := errors.New("host authority changed")
+			request := runRequest()
+			request.AuthorizeAdmission = func(ctx context.Context) error {
+				admitted.Add(1)
+				if ctx.Err() != nil {
+					t.Error("admission got an expired context")
+				}
+				if boundary == "admission" {
+					return refused
+				}
+				return nil
+			}
+			request.BeforeGeneration = func(context.Context) error { generation.Add(1); return refused }
+			err := m.Run(context.Background(), owner, request, func(RunEvent) error { calls.Add(1); return nil }, func(context.Context, ToolCall) (ToolAnswer, error) { calls.Add(1); return ToolAnswer{}, nil })
+			if !errors.Is(err, refused) || admitted.Load() != 1 || calls.Load() != 0 || boundary == "admission" && generation.Load() != 0 || boundary == "generation" && generation.Load() != 1 {
+				t.Fatalf("host fence bypassed: %v %d/%d/%d", err, admitted.Load(), generation.Load(), calls.Load())
+			}
+			// Each refusal releases the same lock/process needed by a normal run.
+			if err = m.Run(context.Background(), owner, runRequest(), func(RunEvent) error { return nil }, func(context.Context, ToolCall) (ToolAnswer, error) { return ToolAnswer{Text: "done"}, nil }); err != nil {
+				t.Fatal("host refusal retained account", err)
+			}
+		})
+	}
+}

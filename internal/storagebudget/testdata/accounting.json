@@ -1,0 +1,8 @@
+[
+ {"name":"exact residual","used":4,"promised":6,"limit":10,"allowed":true},
+ {"name":"one byte over","used":4,"promised":7,"limit":10,"allowed":false},
+ {"name":"coexistence is full stage","used":10,"promised":10,"limit":10,"allowed":false},
+ {"name":"zero-byte namespace pressure","usedFiles":4,"promisedFiles":7,"fileLimit":10,"allowed":false},
+ {"name":"directory pressure","usedDirectories":1,"promisedDirectories":2,"directoryLimit":2,"allowed":false},
+ {"name":"overflow refuses","used":1152921504606846976,"promised":1,"limit":1152921504606846976,"allowed":false}
+]

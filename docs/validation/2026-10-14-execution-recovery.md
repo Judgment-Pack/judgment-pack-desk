@@ -8,9 +8,9 @@ Only identical successful immutable reads are cached within an active session. E
 
 ## Validation
 
-- Full frontend suite: **405 files, 6,341 tests passed**, with runtime-dependent fixtures enabled and no skips. Log: `/tmp/desk-execution-full-final.log`.
-- Subsequent focused verification of delegated request persistence, native-provider progress, context coverage and localization: **7 files, 99 tests passed**. This includes two added delegation regression cases. Log: `/tmp/desk-execution-post-review-tests.log`.
-- Gemini browser fixtures passed in main chat and the right pane. Covered existing-draft recovery, spinner/dimming/reduced motion, preserving the current question, reserving the final request, exhaustion, explicit increase, exact result restoration, task progress and refresh before/after continuation. No browser errors. Log: `/tmp/desk-execution-browser-final.log`.
+- Full frontend suite: **405 files, 6,341 tests passed**, with runtime-dependent fixtures enabled and no skips. Log: `<scratch>/desk-execution-full-final.log`.
+- Subsequent focused verification of delegated request persistence, native-provider progress, context coverage and localization: **7 files, 99 tests passed**. This includes two added delegation regression cases. Log: `<scratch>/desk-execution-post-review-tests.log`.
+- Gemini browser fixtures passed in main chat and the right pane. Covered existing-draft recovery, spinner/dimming/reduced motion, preserving the current question, reserving the final request, exhaustion, explicit increase, exact result restoration, task progress and refresh before/after continuation. No browser errors. Log: `<scratch>/desk-execution-browser-final.log`.
 - The SDK adapter tests exercise budget pause/resume for OpenAI-compatible, Anthropic and Gemini families. Native Codex task tracking does not invent a model-request counter. Tests use scripted providers; these results do not measure live model quality.
 - TypeScript and production Vite build passed. Localization validation has no placeholder or extraction errors; 11 translated catalogs retain their English-fallback backlog, including the newly introduced messages. The existing Vite large-chunk advisory remains.
 - `git diff --check` passed.
@@ -22,7 +22,7 @@ The user's saved pack policy and test expectations are not edited by this update
 ## Installed build
 
 - Selected bundle: `78df8cd6d62c899ec80a6dfd39a526514af9d352bb9d86ccc915565d2ca9ef06`. Go binary build, bundle hash verification and capability probe passed. Only the Desk executable was replaced in the selected bundle.
-- Final release-asset browser checks passed for Gemini pause/extend/reload and Codex delegated handoff, scoped capabilities, retained results, cancellation and no restart on refresh. Log: `/tmp/desk-execution-release-browser.log`.
+- Final release-asset browser checks passed for Gemini pause/extend/reload and Codex delegated handoff, scoped capabilities, retained results, cancellation and no restart on refresh. Log: `<scratch>/desk-execution-release-browser.log`.
 - Checked 33 chats, 39 operation files and 10 Job databases immediately before installation; none was active. Stopped the idle launcher gracefully, installed and restarted the usual port 5173 launcher.
 - HTTP 200 and served assets match the final build. A single Desk process owns the selected binary.
 - Of 1,666 fingerprinted saved JSON/JSONL files, **1,665 were unchanged**. The remaining conversation file was updated while a chat was running after restart and contained the new execution checkpoint. Its live journal was left untouched. No pack, test, recipe or other fingerprinted file changed during this check.

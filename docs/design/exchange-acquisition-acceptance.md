@@ -13,6 +13,11 @@ pinned, explicitly tagged fixture executable from
 `4b9fa82ddeae772654d8f8bcf7b33d47ac65a512`. Its real executable digest and
 `fixture.4b9fa82ddeae` version appear in reviewed profiles and genuine receipts.
 The fixture source pin remains independent of the official component release lock.
+The CI fixture build uses that pinned source. An operator-supplied fixture bundle
+is checked against its manifest, replacement-program digest and provenance's
+`dirty:false` marker; those matching bytes and self-reported fields do not by
+themselves establish that the bundle was built from the pinned source or a clean
+worktree.
 
 Each case reviews/registers local model, search and scoped page profiles through
 the existing producers. Different installations have different profile digests
@@ -111,9 +116,12 @@ go test -race ./internal/desk \
   -count=1 -v
 ```
 
-Opt-in requires every explicit input and verifies published component bytes plus
-the clean fixture's separate pinned identity before approving only its exact
-manifest for this test. Default runs visibly skip; CI explicitly opts in and
+Opt-in requires every explicit input. It compares published Runtime and Runner
+bytes to the release lock and component artifact record, and checks the supplied
+fixture's declared revision, `dirty:false` marker and replacement executable
+digest against the supplied files before approving only its exact manifest for
+this test. CI's pinned-source fixture build supplies stronger source provenance
+than that bundle consistency check. Default runs visibly skip; CI explicitly opts in and
 requires both tests and all six signed subcases to report PASS. Missing inputs,
-signature trust, fixture identity or released artifact agreement fail; no
+operator Git signature trust, fixture identity or released artifact agreement fail; no
 substitute build/provider is selected.

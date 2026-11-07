@@ -580,6 +580,19 @@ export function PackView() {
   /* The editing session ---------------------------------------------------- */
 
   const commit = buffer.commit
+  // Old proposal handlers consult this editor's current admission state, then
+  // the buffer compares its synchronous identity/bytes refs before committing.
+  const applicationState = useRef({ editable: false, path, savePending: false })
+  applicationState.current = { editable: onPath && editing && shape === 'form' && read !== undefined,
+    path, savePending: editor.write.isPending }
+  const editorMounted = useRef(true)
+  useEffect(() => { editorMounted.current = true; return () => { editorMounted.current = false } }, [])
+  const writeIfCurrent = useCallback<NonNullable<EditingSession['writeIfCurrent']>>((expect, baseline, edit) => {
+    const live = applicationState.current
+    if (!editorMounted.current || !live.editable || live.path !== expect.path || held.hasPending() ||
+      saving.current !== undefined || live.savePending || editor.isReloading()) return { applied: false }
+    return buffer.commitIfCurrent(expect, baseline, text => edit(buffered(text)).text)
+  }, [held.hasPending, editor.isReloading, buffer.commitIfCurrent])
   const session: EditingSession = useMemo(
     () => ({
       editing: editing && shape === 'form' && read !== undefined,
@@ -589,12 +602,13 @@ export function PackView() {
         if (read === undefined) return
         commit(edit(read).text, options)
       },
+      writeIfCurrent,
       diagnosticsAt: (pointer) => byPointer.get(pointer) ?? [],
       ids: declaredIds(drawn ?? {}, summary?.consultedFactPaths ?? []),
       pending: drafts,
       hold
     }),
-    [editing, shape, read, commit, byPointer, drawn, summary?.consultedFactPaths, drafts, hold, buffer.base?.content]
+    [editing, shape, read, commit, writeIfCurrent, byPointer, drawn, summary?.consultedFactPaths, drafts, hold, buffer.base?.content]
   )
 
   /**

@@ -303,7 +303,7 @@ func TestResearchRetryBrowser(t *testing.T) {
 	saved, _ := reviewedFixture(t, s, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "/home/onword/.nvm/versions/node/v22.23.1/bin/node", script, ts.URL, saved.Document.ID)
+	cmd := exec.CommandContext(ctx, "node", script, ts.URL, saved.Document.ID)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("browser: %s %v", out, err)
 	} else {

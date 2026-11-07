@@ -118,3 +118,25 @@ it('offers typed research mapping through the same checked proposal path',async(
  expect(actions[0].dialect?.facts[0].conversion).toEqual({kind:'research-value'})
  expect(validDialectProposal({...proposal,facts:[{...proposal.facts[0],conversion:{kind:'research-value',trueValue:'yes'}}]})).toBe(false)
 })
+
+
+it('samples retained null as a legacy blank while keeping missing columns planned and sample bounds',async()=>{
+ const row=saved.document.records[0]
+ row.values={nullCell:null,blankCell:'',textCell:'x'.repeat(161)}
+ saved.document.records.push(...['','x'.repeat(161),'outside sample'].map((value,i)=>({...row,id:rowId+'-'+i,values:{nullCell:value}})))
+ saved.document.recipe.research={version:1,target:'records',fields:[{name:'absentCell',type:'string',description:'Planned'}],criteria:[],limits:{records:10,searches:0,pages:20,modelCalls:40},ai:{connection:'private',revision:'secret',model:'model'}}
+ const before=JSON.stringify(saved)
+ const body=JSON.parse((await context() as any).content[0].text)
+ expect(body.columns.find((c:any)=>c.name==='nullCell')).toEqual({name:'nullCell',planned:false,samples:[{value:'',truncated:false,origin:'generated'},{value:'',truncated:false,origin:'generated'},{value:'x'.repeat(160),truncated:true,origin:'generated'}]})
+ expect(body.columns.find((c:any)=>c.name==='blankCell')).toEqual({name:'blankCell',planned:false,samples:[{value:'',truncated:false,origin:'generated'}]})
+ expect(body.columns.find((c:any)=>c.name==='textCell')).toEqual({name:'textCell',planned:false,samples:[{value:'x'.repeat(160),truncated:true,origin:'generated'}]})
+ expect(body.columns.find((c:any)=>c.name==='absentCell')).toEqual({name:'absentCell',requestedType:'string',planned:true,samples:[]})
+ expect(JSON.stringify(saved)).toBe(before)
+ expect(row.values.nullCell).toBeNull()
+ expect(Object.hasOwn(row.values,'absentCell')).toBe(false)
+ expect(vi.mocked(dialectAPI).mock.calls).toEqual([['/'+id]])
+})
+it('declares the owner taxonomy of each server-side mapping tool',()=>{
+ const owned=dialectChatTools({retainAction:async()=>{},afterTurnId:()=> 'turn'})
+ expect(Object.fromEntries(owned.map(t=>[t.name,t.taxonomy]))).toEqual({read_dialect:{operation:'read',effect:'read'},propose_dialect:{operation:'propose',effect:'propose'},read_dialect_publication:{operation:'read',effect:'read'},propose_dialect_publication:{operation:'propose',effect:'propose'}})
+})

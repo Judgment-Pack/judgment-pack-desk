@@ -34,6 +34,8 @@ export function heldChanged(before: PendingText | undefined, draft: PendingText 
 export interface HeldText {
   /** What is held now, by pointer. */
   drafts: ReadonlyMap<string, PendingText>
+  /** Includes a hold made before React renders its state update. */
+  hasPending: () => boolean
   /** Hold what was typed at one pointer, or let it go once it is written. */
   hold: (pointer: string, draft: PendingText | null) => void
   /** Let all of it go, which adopting another document does. */
@@ -50,8 +52,8 @@ export interface HeldText {
 
 export function useHeldText(touch: () => void): HeldText {
   const [drafts, setDrafts] = useState<ReadonlyMap<string, PendingText>>(new Map())
-  // What is held as of this render, readable from a callback that must not be
-  // rebuilt whenever it changes.
+  // Updated synchronously by every mutation so a captured writer can veto a
+  // hold before its React state update renders.
   const now = useRef<ReadonlyMap<string, PendingText>>(drafts)
   now.current = drafts
   const touchNow = useRef(touch)
@@ -61,25 +63,21 @@ export function useHeldText(touch: () => void): HeldText {
     // **Outside the updater.** React is entitled to call an updater twice, and
     // one that reported an edit would report two.
     if (heldChanged(now.current.get(pointer), draft)) touchNow.current()
-    setDrafts((held) => {
-      if (draft === null) {
-        if (!held.has(pointer)) return held
-        const next = new Map(held)
-        next.delete(pointer)
-        return next
-      }
-      const next = new Map(held)
-      next.set(pointer, draft)
-      return next
-    })
+    if (draft === null && !now.current.has(pointer)) return
+    const next = new Map(now.current)
+    if (draft === null) next.delete(pointer)
+    else next.set(pointer, draft)
+    now.current = next
+    setDrafts(next)
   }, [])
 
-  const forget = useCallback(() => setDrafts(new Map()), [])
+  const forget = useCallback(() => { now.current = new Map(); setDrafts(now.current) }, [])
   const update = useCallback(
     (next: (held: ReadonlyMap<string, PendingText>) => ReadonlyMap<string, PendingText>) =>
-      setDrafts(next),
+      { now.current = next(now.current); setDrafts(now.current) },
     []
   )
 
-  return useMemo(() => ({ drafts, hold, forget, update }), [drafts, hold, forget, update])
+  const hasPending = useCallback(() => now.current.size > 0, [])
+  return useMemo(() => ({ drafts, hold, forget, update, hasPending }), [drafts, hold, forget, update, hasPending])
 }

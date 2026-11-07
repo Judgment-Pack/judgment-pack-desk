@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sort"
 	"time"
 )
 
@@ -264,4 +265,69 @@ func (s *Server) createEvaluationReview(ctx context.Context, root *os.Root, b in
 		return err
 	}
 	return syncPrivateDirectory(root)
+}
+
+// Read-only discovery belongs to the evaluation owner, not an assistant tool.
+func (s *Server) readInputEvaluationSummaries(ctx context.Context, preparation string) ([]inputEvaluationSummary, error) {
+	if s.evaluationJournals != nil {
+		owner, ok := s.evaluationJournals.(interface {
+			Summaries(context.Context, string) ([]inputEvaluationSummary, error)
+		})
+		if !ok {
+			return nil, errors.New("Evaluation history discovery is unavailable.")
+		}
+		return owner.Summaries(ctx, preparation)
+	}
+	root, err := s.inputEvaluationRoot(false)
+	if errors.Is(err, os.ErrNotExist) {
+		return []inputEvaluationSummary{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	dir, err := root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+	out := []inputEvaluationSummary{}
+	for _, entry := range entries {
+		if !inputEvaluationID.MatchString(entry.Name()) {
+			continue
+		}
+		rr, err := openInputEvaluation(root, entry.Name(), false)
+		if err != nil {
+			return nil, err
+		}
+		snapshot, err := s.evaluationJournal(rr, entry.Name()).Read(ctx)
+		rr.Close()
+		if err != nil {
+			return nil, err
+		}
+		b := snapshot.Document
+		if b.PreparationID == preparation && b.ConfirmedAt != "" {
+			out = append(out, inputEvaluationSummary{b.ID, b.State, b.CreatedAt, b.JobID, len(b.Rows), b.Problem})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt == out[j].CreatedAt {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt > out[j].CreatedAt
+	})
+	return out, ctx.Err()
+}
+
+type inputEvaluationSummary struct {
+	ID          string `json:"id"`
+	State       string `json:"state"`
+	CreatedAt   string `json:"createdAt"`
+	JobID       string `json:"jobId"`
+	RecordCount int    `json:"recordCount"`
+	Problem     string `json:"problem,omitempty"`
 }

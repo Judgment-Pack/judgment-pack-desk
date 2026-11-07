@@ -1,0 +1,221 @@
+[
+  {
+    "name": "document registration",
+    "kind": "document",
+    "raw": "{\"registrationId\":\"document-attempt-1\"}",
+    "valid": true
+  },
+  {
+    "name": "document registration extra",
+    "kind": "document",
+    "raw": "{\"registrationId\":\"document-attempt-1\",\"principal\":\"browser\"}",
+    "valid": false
+  },
+  {
+    "name": "document registration null",
+    "kind": "document",
+    "raw": "{\"registrationId\":null}",
+    "valid": false
+  },
+  {
+    "name": "document registration case",
+    "kind": "document",
+    "raw": "{\"RegistrationId\":\"attempt\"}",
+    "valid": false
+  },
+  {
+    "name": "document registration duplicate",
+    "kind": "document",
+    "raw": "{\"registrationId\":\"one\",\"registrationId\":\"two\"}",
+    "valid": false
+  },
+  {
+    "name": "document registration empty",
+    "kind": "document",
+    "raw": "{\"registrationId\":\"\"}",
+    "valid": false
+  },
+  {
+    "name": "document registration lone surrogate",
+    "kind": "document",
+    "raw": "{\"registrationId\":\"\\ud800\"}",
+    "valid": false
+  },
+  {
+    "name": "document registration line break",
+    "kind": "document",
+    "raw": "{\"registrationId\":\"one\\ntwo\"}",
+    "valid": false
+  },
+  {
+    "name": "document registration oversized",
+    "kind": "document",
+    "raw": "{\"registrationId\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": false
+  },
+  {
+    "name": "pane registration",
+    "kind": "pane",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"registrationId\": \"pane-attempt-1\", \"purpose\": \"describe-pack\"}",
+    "valid": true
+  },
+  {
+    "name": "pane wrong purpose",
+    "kind": "pane",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"registrationId\": \"pane-attempt-1\", \"purpose\": \"chat\"}",
+    "valid": false
+  },
+  {
+    "name": "pane unknown document format",
+    "kind": "pane",
+    "raw": "{\"document\": \"bad\", \"registrationId\": \"pane-attempt-1\", \"purpose\": \"author-pack\"}",
+    "valid": false
+  },
+  {
+    "name": "pane absent registration",
+    "kind": "pane",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"purpose\": \"author-graph\"}",
+    "valid": false
+  },
+  {
+    "name": "pane injected token",
+    "kind": "pane",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"registrationId\": \"pane-attempt-1\", \"purpose\": \"author-graph\", \"pane\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+    "valid": false
+  },
+  {
+    "name": "document release",
+    "kind": "release-document",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": true
+  },
+  {
+    "name": "document release pane forbidden",
+    "kind": "release-document",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"pane\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+    "valid": false
+  },
+  {
+    "name": "pane release",
+    "kind": "release-pane",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"pane\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+    "valid": true
+  },
+  {
+    "name": "pane release absent pane",
+    "kind": "release-pane",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": false
+  },
+  {
+    "name": "pane release uppercase",
+    "kind": "release-pane",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"pane\": \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"}",
+    "valid": false
+  },
+  {
+    "name": "saved chat selector",
+    "kind": "selector",
+    "purpose": "chat",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": true
+  },
+  {
+    "name": "author pane selector",
+    "kind": "selector",
+    "purpose": "author-pack",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"pane\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+    "valid": true
+  },
+  {
+    "name": "describe pane selector",
+    "kind": "selector",
+    "purpose": "describe-pack",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"pane\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+    "valid": true
+  },
+  {
+    "name": "graph pane selector",
+    "kind": "selector",
+    "purpose": "author-graph",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"pane\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+    "valid": true
+  },
+  {
+    "name": "saved pane forbidden",
+    "kind": "selector",
+    "purpose": "chat",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"pane\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+    "valid": false
+  },
+  {
+    "name": "saved empty pane forbidden",
+    "kind": "selector",
+    "purpose": "chat",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"pane\": \"\"}",
+    "valid": false
+  },
+  {
+    "name": "author pane required",
+    "kind": "selector",
+    "purpose": "author-pack",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": false
+  },
+  {
+    "name": "brief forbidden",
+    "kind": "selector",
+    "purpose": "brief",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": false
+  },
+  {
+    "name": "diagnostic forbidden",
+    "kind": "selector",
+    "purpose": "connection-diagnostic",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": false
+  },
+  {
+    "name": "settings forbidden",
+    "kind": "selector",
+    "purpose": "settings-observation",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": false
+  },
+  {
+    "name": "selector null",
+    "kind": "selector",
+    "purpose": "chat",
+    "raw": "null",
+    "valid": false
+  },
+  {
+    "name": "selector extra",
+    "kind": "selector",
+    "purpose": "chat",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"history\": []}",
+    "valid": false
+  },
+  {
+    "name": "selector case alias",
+    "kind": "selector",
+    "purpose": "chat",
+    "raw": "{\"Document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": false
+  },
+  {
+    "name": "selector duplicate",
+    "kind": "selector",
+    "purpose": "chat",
+    "raw": "{\"document\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"document\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "valid": false
+  },
+  {
+    "name": "selector null pane",
+    "kind": "selector",
+    "purpose": "describe-pack",
+    "raw": "{\"document\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"pane\": null}",
+    "valid": false
+  }
+]

@@ -1,4 +1,5 @@
 import { useAIConnectionScope } from './aiConnections'
+import { observeSettings } from './serverRuns/settingsObservation'
 /**
  * **Test connection**: one press, one question — *can this desk reach that
  * endpoint, and what does it offer?*
@@ -11,10 +12,8 @@ import { useAIConnectionScope } from './aiConnections'
  * endpoint asked anything. The check runs only when its button is pressed;
  * saving a key leaves the connection untested.
  *
- * **Neither route changed, and neither is built here.** The probe carries no
- * destination — the chassis reads the file — and the listing names a path
- * suffix that `bindModelCall` turns into an address. This module holds a
- * generation counter and some state; there is no `fetch` in it.
+ * Both requests use fixed server actions and the saved connection revision.
+ * No destination, path suffix or model-call capability is supplied by the form.
  *
  * **Anthropic with nothing enabled is refused before anything is sent.** That
  * protocol's probe is a *generation* call, so a desk with no model would put a
@@ -30,13 +29,12 @@ import { useAIConnectionScope } from './aiConnections'
  * the URL was typed away and back again, resurrecting an arbitrarily stale
  * listing with no request behind it.
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { sourceMessage } from '../i18n/source'
 import type { AssistantEndpointConfig } from '../config/deskConfig'
 import { DIAGNOSTIC_SAYS, probeAssistantEndpoint, type ProbeResult } from './client'
 import type { EndpointDraft } from './endpointDraft'
 import { listModels, type ModelRow } from './modelListing'
-import { bindModelCall } from '@judgment-pack/harness/session'
 
 /**
  * What the button says where the protocol's probe would have to name a model
@@ -96,9 +94,12 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
   // **Which answer is still the current one.** Every press takes a number and
   // only the latest may land; a cleanup that cancelled on re-render would
   // cancel the request the render was made to start.
+  const cancellation = useRef<AbortController | undefined>(undefined)
+  useEffect(() => () => { cancellation.current?.abort(); generation.current += 1 }, [])
   const generation = useRef(0)
   const inFlight = useRef<number | undefined>(undefined)
   const reset = () => {
+    cancellation.current?.abort()
     generation.current += 1
     inFlight.current = undefined
     setAnswer(undefined)
@@ -107,7 +108,13 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
   // **Dropped, not hidden**, the instant the form says a different endpoint.
   // Adjusted during render rather than in an effect, so there is never a frame
   // in which a reading of one endpoint is on screen under another's address.
-  const here = identityOf(draft)
+  const here = identityOf(draft) + (draft.kind === 'anthropic' ? `\n${draft.model}` : '')
+  const connectionIdentity = `${scope?.connection.id ?? ""}\n${scope?.connection.revision ?? ""}`
+  const previousConnection = useRef(connectionIdentity)
+  if (previousConnection.current !== connectionIdentity) {
+    previousConnection.current = connectionIdentity
+    reset()
+  }
   if (answer !== undefined && answer.of !== here) reset()
 
   const run = () => {
@@ -117,11 +124,12 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
     // typing into, would be a suffix composed for one destination and sent to
     // another.
     const target = saved
-    const of = identityOf(target)
+    const of = identityOf(target) + (target.kind === 'anthropic' ? `\n${target.model ?? ''}` : '')
     if (target.kind === 'anthropic' && target.model === null) {
       setAnswer({ of, asking: false, refusedToAsk: CHOOSE_A_MODEL })
       return
     }
+    cancellation.current = new AbortController()
     const mine = ++generation.current
     inFlight.current = mine
     setAnswer({ of, asking: true })
@@ -143,16 +151,19 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
     }
     // The probe names the connection it asks about, as the listing below does:
     // once AI connections exist, the desk refuses a probe that names none.
-    void probeAssistantEndpoint(undefined, scope?.connection.id, scope?.connection.revision).then(
+    const probing = target.kind === 'anthropic'
+      ? observeSettings({kind:'ping',model:target.model!},scope ? {connectionId:scope.connection.id,connectionRevision:scope.connection.revision} : undefined,cancellation.current.signal).then(result => {
+          if(result.kind!=='ping') throw new Error(DIAGNOSTIC_SAYS['unexpected-status'])
+          return result.ping
+        })
+      : probeAssistantEndpoint(cancellation.current.signal, scope?.connection.id, scope?.connection.revision)
+    void probing.then(
       (result) => landed((previous) => ({ ...previous, probe: result })),
       (cause: unknown) =>
         landed((previous) => ({ ...previous, probeRefusal: said(cause) }))
     )
-    // **The desk's capability, bound to the saved family.** The page names a
-    // path suffix; the address, this chassis' token and the credential are none
-    // of its business. The family is the file's, so a listing cannot talk its
-    // way into a query its endpoint does not admit.
-    void listModels(target.kind, bindModelCall(target.kind,scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:undefined)).then(
+    // Metadata only; the server chooses the saved family's listing path.
+    void listModels(target.kind, scope?.connection.id, scope?.connection.revision, cancellation.current?.signal).then(
       (rows) => landed((previous) => ({ ...previous, rows })),
       (cause: unknown) =>
         landed((previous) => ({ ...previous, listingRefusal: said(cause) }))
@@ -209,6 +220,7 @@ export function checkLine(answer: CheckAnswer, msg = sourceMessage): CheckLine {
         : msg('Not connected · {{answered}} · {{diagnostic}}', { answered, diagnostic: DIAGNOSTIC_SAYS[probe.diagnostic] ? msg(DIAGNOSTIC_SAYS[probe.diagnostic]!) : probe.diagnostic })
     return { says }
   }
+  if (probe.observationComplete === false) return { says: msg('Connected · test response incomplete') }
   if (answer.listingRefusal !== undefined) {
     return { says: msg('Connected · the models could not be listed:'), quoted: answer.listingRefusal }
   }

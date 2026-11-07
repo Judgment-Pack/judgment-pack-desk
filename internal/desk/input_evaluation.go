@@ -175,6 +175,18 @@ type inputRunnerError struct {
 
 func (e *inputRunnerError) Error() string { return e.Message }
 
+// The review's first read of the saved tests. It holds no private-data
+// transaction, so a fresh Desk's first-use history is enrolled here, before any
+// lock, the route every other history reader takes; inputReleaseSnapshot then
+// opens only an enrolled store and never creates an unaccounted one. Callers
+// already inside a private-data transaction were enrolled when they took it.
+func (s *Server) inputReviewReleaseSnapshot(ctx context.Context, q *inputQualification) (string, map[string]any, bool, error) {
+	if err := s.ensureDefaultHistoryEnrollment(ctx); err != nil {
+		return "", nil, false, err
+	}
+	return s.inputReleaseSnapshot(q)
+}
+
 // Read saved authoring cases, never old test reports or caller-asserted results.
 func (s *Server) inputReleaseSnapshot(q *inputQualification) (string, map[string]any, bool, error) {
 	fail := func(e error) (string, map[string]any, bool, error) { return "", nil, false, e }
@@ -402,12 +414,22 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 409, CodeStale, "Dialects changed. Reload and review the selection again.")
 		return
 	}
+	// Saved selection is not public preparation admission. Keep this gate ahead
+	// of ordinary transforms, acquisition and evaluation/release effects.
+	if e = requireOrdinaryInputQualification(saved.Document.Recipe.Qualification); e != nil {
+		fail(422, e)
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, "/conversion-preview") {
 		var request struct {
 			Qualification *inputQualification `json:"qualification"`
 		}
 		if inputRequest(r, &request) != nil || request.Qualification == nil {
 			fail(400, errors.New("Choose a pack and conversions to preview."))
+			return
+		}
+		if e = requireOrdinaryInputQualification(request.Qualification); e != nil {
+			fail(422, e)
 			return
 		}
 		if e = validateInputQualification(request.Qualification); e != nil {
@@ -458,7 +480,7 @@ func (s *Server) handleInputEvaluation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Only the review operation performs a rehearsal; /prepare remains read-only.
-	fingerprint, previewRequest, projectReviewed, e := s.inputReleaseSnapshot(saved.Document.Recipe.Qualification)
+	fingerprint, previewRequest, projectReviewed, e := s.inputReviewReleaseSnapshot(r.Context(), saved.Document.Recipe.Qualification)
 	if e != nil {
 		fail(409, e)
 		return
@@ -612,6 +634,14 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if b.ConfirmedAt != "" {
+		// A completed confirmation remains readable after recipe changes. Only a
+		// new state/resume mutation needs the retained batch's ordinary gate.
+		if strings.HasSuffix(r.URL.Path, "/subscription-state") || strings.HasSuffix(r.URL.Path, "/resume") {
+			if e = requireOrdinaryInputQualification(b.Recipe.Qualification); e != nil {
+				fail(e)
+				return
+			}
+		}
 		if b.Subscription != nil && strings.HasSuffix(r.URL.Path, "/subscription-state") {
 			if request.Enabled == nil {
 				fail(errors.New("Choose whether to enable or pause this subscription."))
@@ -638,6 +668,9 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 			}
 		}
 		if strings.HasSuffix(r.URL.Path, "/resume") && b.State == "blocked" {
+			if b.Subscription != nil {
+				b.Subscription.resetRetryState()
+			}
 			b.State = "queued"
 			b.Problem = ""
 			if e = checkpoint.save(r.Context(), b); e != nil {
@@ -646,6 +679,10 @@ func (s *Server) confirmInputEvaluation(w http.ResponseWriter, r *http.Request, 
 			}
 		}
 		writeJSON(w, 200, b)
+		return
+	}
+	if e = requireOrdinaryInputQualification(b.Recipe.Qualification); e != nil {
+		fail(e)
 		return
 	}
 	if strings.HasSuffix(r.URL.Path, "/resume") {
@@ -849,6 +886,10 @@ func (s *Server) resumeInputEvaluations(ctx context.Context) {
 	}
 }
 func (s *Server) advanceInputEvaluation(ctx context.Context, checkpoint *evaluationCheckpoint, b *inputEvaluation) {
+	// Inspect the frozen batch, never substitute today's recipe for old work.
+	if requireOrdinaryInputQualification(b.Recipe.Qualification) != nil {
+		return
+	}
 	if checkpoint.failure != nil {
 		return
 	}

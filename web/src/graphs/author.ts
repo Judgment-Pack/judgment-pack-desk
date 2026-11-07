@@ -33,6 +33,7 @@ export async function graphPost<T>(route: string, body: unknown, signal?: AbortS
 export function graphHostTools(): HostTool[] {
   return (['validate', 'explain'] as const).map(command => ({
     name: `graph_${command}`,
+    taxonomy: {operation: 'check' as const, effect: 'read' as const, checkKind: command === 'validate' ? 'validate' as const : 'analyze' as const},
     description: command === 'validate'
       ? 'Run experimental graph validate - over the exact content on standard input. Writes nothing.'
       : 'Run experimental graph explain - over the exact content on standard input. Writes nothing.',

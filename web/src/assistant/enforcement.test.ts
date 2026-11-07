@@ -553,25 +553,72 @@ describe('(4) no component branches on the endpoint — a WEAK, enumerated guard
     }
   })
 
-  it('compares a host to nothing but the loopback names', () => {
-    // The sharper half, and the one worth having. Both URL rules — the
-    // issuer's and the endpoint's — do compare a hostname, because `http:` is
-    // permitted on loopback and nowhere else. That is a statement about
-    // **transport**: a bearer credential in clear text over a network is a
-    // credential given away. Every host literal in these directories is
-    // enumerated here and has to be one of the loopback spellings, so a
-    // comparison against a *vendor's* host cannot hide among them.
-    const loopback = ["'localhost'", "'127.0.0.1'", "'::1'"]
+  // Host absence validation and transport loopback checks are generic.
+  // Enumerate their literal values across both Desk and the installed harness;
+  // no file or package is exempt from provider-specific branching protection.
+  const genericHosts = ['', 'localhost', '127.0.0.1', '::1', '[::1]']
+  const forbiddenHostComparisons = (text: string) =>
+    [...text.matchAll(/host(?:name)?\s*[=!]==\s*(('[^']*')|("[^"]*"))/g)]
+      .map((match) => match[1].slice(1, -1))
+      .filter((host) => !genericHosts.includes(host))
+
+  it('compares a host only to absence or an enumerated loopback name', () => {
+    // The descriptor snapshot reader rejects an empty parsed hostname and
+    // permits HTTP on bracketed IPv6 loopback. Neither selects a provider.
     for (const source of [...sourcesUnder('assistant', 'config', 'routes'), ...harnessSourcesUnder()]) {
       if (source.path.includes('.test.')) continue
-      for (const match of source.text.matchAll(/host(?:name)?\s*[=!]==\s*(('[^']*')|("[^"]*"))/g)) {
-        expect(loopback, `${source.path} compares a host to ${match[1]}`).toContain(match[1])
+      expect(forbiddenHostComparisons(source.text), `${source.path} compares a provider host`).toEqual([])
+    }
+  })
+
+  it('still detects provider host comparisons beside generic validation', () => {
+    for (const quote of ["'", '"']) {
+      const compare = (host: string) => `endpoint.hostname === ${quote}${host}${quote}`
+      expect(forbiddenHostComparisons(genericHosts.map(compare).join(' || '))).toEqual([])
+      for (const host of ['api.openai.com', 'api.anthropic.com', 'generativelanguage.googleapis.com', 'custom.example']) {
+        expect(forbiddenHostComparisons(`${compare('')} || ${compare(host)}`)).toEqual([host])
+        expect(forbiddenHostComparisons(`host !== ${quote}${host}${quote}`)).toEqual([host])
       }
     }
   })
 })
 
 describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', () => {
+  // The descriptor reader parses a bracketed IPv6 host with URL to validate
+  // its syntax. This template supplies no destination and performs no request.
+  const genericDescriptorHostValidation = (path: string, literal: string) =>
+    path === '@judgment-pack/harness/dist/descriptorSnapshot.js' && literal === 'https://${host}'
+
+  // Closed record schema identities and the retained-column specification
+  // identity are compared as contract metadata, never used as destinations.
+  // Both the emitted module and complete literal must match.
+  const contractMetadataLiteral = (path: string, literal: string) => {
+    if (path === '@judgment-pack/harness/dist/dialects.js') {
+      return literal === 'https://github.com/Judgment-Pack/judgment-pack-spec/blob/${selection.spec.revision}/spec/retained-column.md'
+    }
+    const schemaRoot = 'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/'
+    const recordSchemas = ['checkpoint.json', 'provenance.json', 'run-event.json#/$defs/critique']
+    const schemaMembers: Record<string, string[]> = {
+      '@judgment-pack/harness/dist/records.js': [...recordSchemas, 'export.json'],
+      '@judgment-pack/harness/dist/records.d.ts': [...recordSchemas, 'export.json'],
+      '@judgment-pack/harness/dist/execution/controller.d.ts': ['checkpoint.json'],
+      '@judgment-pack/harness/dist/testing/scripted.d.ts': recordSchemas,
+      '@judgment-pack/harness/dist/storage/writer.d.ts': recordSchemas
+    }
+    return (schemaMembers[path] ?? []).some(name => literal === schemaRoot + name)
+  }
+
+  // Agent v0.13.2's storage conformance kits (ADR-0029) bind a delegated run's
+  // principal in their hand-authored fixtures. The issuer is an identity the
+  // kit compares, in the RFC 2606 `.example` domain that never resolves, and
+  // nothing fetches it. Admitted only in these modules and only as this value.
+  const conformanceKitIssuer = (path: string, literal: string) => ({
+    '@judgment-pack/harness/dist/storage/conformance.js': 'https://kit.example/',
+    '@judgment-pack/harness/dist/storage/lease.js': 'https://kit.example/',
+    '@judgment-pack/harness/dist/storage/waitConformance.js': 'https://kit.example/',
+    '@judgment-pack/harness/dist/storage/jobConformance.js': 'https://host.example/'
+  } as Record<string, string>)[path] === literal
+
   it('finds no reachable https:// endpoint literal outside tests and docs', () => {
     const allowed = [
       'https://github.com/Judgment-Pack/judgment-pack-desk',
@@ -594,8 +641,8 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
     // retyping an address the README already names — and every one of them is
     // replaced by typing over it. That is a *default in an editable field*,
     // which is a different thing from a destination the desk holds: nothing
-    // reads them back, and the sharper guard above — every host comparison in
-    // these directories is a loopback name — is what says so and is untouched.
+    // reads them back, and the sharper guard above — every nonempty host
+    // comparison is a loopback name — is what says so.
     // Admitting them anywhere else, or under any other name, still fails.
     const prefills = Object.values(PREFILLED_URL)
     const PREFILL_MODULE = 'assistant/endpointDraft.ts'
@@ -606,10 +653,74 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
         expect(
           // A user-initiated source-navigation link, never an API endpoint or issuer.
           (source.path === 'routes/StorageFilesView.tsx' && literal === 'https://drive.google.com/open?id=${encodeURIComponent(selected.id') ||
-          prefill || allowed.some((prefix) => literal.startsWith(prefix)),
+          contractMetadataLiteral(source.path, literal) || conformanceKitIssuer(source.path, literal) || prefill || genericDescriptorHostValidation(source.path, literal) || allowed.some((prefix) => literal.startsWith(prefix)),
           `${source.path} carries the literal ${literal}`
         ).toBe(true)
       }
+    }
+  })
+
+  it('admits only exact contract metadata in its declared modules', () => {
+    const dialects = '@judgment-pack/harness/dist/dialects.js'
+    const specification = 'https://github.com/Judgment-Pack/judgment-pack-spec/blob/${selection.spec.revision}/spec/retained-column.md'
+    expect(contractMetadataLiteral(dialects, specification)).toBe(true)
+    const writer = '@judgment-pack/harness/dist/storage/writer.d.ts'
+    for (const literal of [
+      'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/checkpoint.json',
+      'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/provenance.json',
+      'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/run-event.json#/$defs/critique'
+    ]) {
+      expect(contractMetadataLiteral(writer, literal), literal).toBe(true)
+    }
+    for (const path of [dialects, writer, '@judgment-pack/harness/dist/records.js']) {
+      for (const literal of [
+        'https://api.openai.com/v1',
+        'https://api.anthropic.com/v1',
+        'https://generativelanguage.googleapis.com/v1beta',
+        'https://custom.example',
+        'https://${host}',
+        'https://github.com/Judgment-Pack/judgment-pack-spec/blob/${revision}/spec/retained-column.md',
+        'https://github.com/Judgment-Pack/judgment-pack-spec/blob/${selection.spec.revision}/spec/retained-column.md/endpoint',
+        'https://github.com/Judgment-Pack/judgment-pack-spec/blob/${selection.spec.revision}/spec/other.md',
+        'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/checkpoint.json/endpoint',
+        'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/other.json'
+      ]) {
+        expect(contractMetadataLiteral(path, literal), `${path}: ${literal}`).toBe(false)
+      }
+    }
+    for (const path of [
+      'assistant/client.ts',
+      '@judgment-pack/harness/dist/host.js',
+      '@judgment-pack/harness/dist/dialects.d.ts',
+      `${dialects}.map`,
+      `${writer}.map`
+    ]) {
+      expect(contractMetadataLiteral(path, specification), path).toBe(false)
+      expect(contractMetadataLiteral(path, 'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/checkpoint.json'), path).toBe(false)
+    }
+    expect(contractMetadataLiteral(writer, specification)).toBe(false)
+    expect(contractMetadataLiteral(dialects, 'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/checkpoint.json')).toBe(false)
+    expect(contractMetadataLiteral(writer, 'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/export.json')).toBe(false)
+    expect(contractMetadataLiteral('@judgment-pack/harness/dist/execution/controller.d.ts', 'https://github.com/Judgment-Pack/judgment-pack-agent/blob/main/contract/schemas/provenance.json')).toBe(false)
+  })
+
+  it('admits only the exact descriptor host validation template', () => {
+    const descriptor = '@judgment-pack/harness/dist/descriptorSnapshot.js'
+    expect(genericDescriptorHostValidation(descriptor, 'https://${host}')).toBe(true)
+    for (const literal of [
+      'https://api.openai.com',
+      'https://api.anthropic.com',
+      'https://generativelanguage.googleapis.com',
+      'https://custom.example',
+      'https://${host}/v1',
+      'https://${host}.api.openai.com',
+      'https://${host}@api.openai.com',
+      'https://${endpoint.hostname}'
+    ]) {
+      expect(genericDescriptorHostValidation(descriptor, literal), literal).toBe(false)
+    }
+    for (const path of ['assistant/client.ts', '@judgment-pack/harness/dist/host.js', `${descriptor}.map`]) {
+      expect(genericDescriptorHostValidation(path, 'https://${host}'), path).toBe(false)
     }
   })
 
@@ -684,6 +795,7 @@ describe('(6) the probe answers from a closed vocabulary, shared with the desk',
       'reachable',
       'status',
       'latencyMs',
+      'observationComplete',
       'diagnostic'
     ])
     expect(client, 'the probe result still carries a detail member').not.toMatch(/\bdetail\b\s*:/)
@@ -725,6 +837,17 @@ describe('(7) one member, one refusal', () => {
  * both ways round, exactly as (1) asserts the endpoint's.
  */
 const SESSION_KEYS = [
+  'input',
+  'record',
+  'corpus',
+  'route',
+  'routeFacts',
+  'policy',
+  'policyProject',
+  'taskClass',
+  'paceUsed',
+  'policyConnections',
+  'policyRequests',
   'context',
   'purpose',
   'replyLanguage',
@@ -732,18 +855,26 @@ const SESSION_KEYS = [
   'testPrompt',
   'allowConversation',
   'interactive',
+  'critic',
+  'criticProject',
+  'criticReasoning',
+  'existingPack',
+  'reviewerAssigned',
   'adversarialReview',
   'criticCases',
   'tools',
   'callTool',
   'hostTools',
+  'skills',
+  'subagents',
+  'childDefinition',
   'model',
   'thinking',
   'signal'
 ] as const
 
 const sessionKeysAreExact: Exactly<
-  keyof import('@judgment-pack/harness/engine').AssistantSession,
+  Extract<keyof import('@judgment-pack/harness/engine').AssistantSession, string | number>,
   (typeof SESSION_KEYS)[number]
 > = true
 
@@ -753,6 +884,12 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // beside the ToolGate rather than behind it, and every guarantee the gate
     // holds would become a guarantee about the door engines happened to use.
     expect(sessionKeysAreExact).toBe(true)
+    // v0.9 adds a private, uninhabitable brand separating raw and resolved sessions.
+    // Keep the executable member inventory closed and inspect that sole symbol too.
+    const body = interfaceBody(harness('engine.d.ts'), 'AssistantSession')
+    expect(body.match(/^\s*readonly \[.*$/gm)?.map(line => line.trim())).toEqual([
+      'readonly [requestSessionBoundary]?: never;'
+    ])
     expect(membersOf(interfaceBody(harness('engine.d.ts'), 'AssistantSession'))).toEqual([
       ...SESSION_KEYS
     ])
@@ -791,7 +928,7 @@ describe('(8) the engine is handed a bound callTool and nothing else', () => {
     // capability record's members, read closed by the harness. It is not an
     // address and not a credential, so the rule above holds with it.
     expect(source).toMatch(
-      /model: \{\s*family: EndpointKind;\s*model: string;\s*call: ModelCall;\s*capabilities\?: Partial<import\('\.\/capabilities'\)\.ModelCapabilities>;?\s*\}/
+      /model: \{\s*family: EndpointKind;\s*model: string;\s*call: ModelCall;\s*capabilities\?: Partial<import\("\.\/capabilities\.js"\)\.ModelCapabilities>;?\s*\}/
     )
   })
 
@@ -876,22 +1013,151 @@ describe('the proposal is canonicalized in one place, and nowhere else', () => {
       (source) =>
         !source.path.includes('.test.') &&
         !source.path.includes('/certification/') &&
-        source.path !== 'assistant/useAssistantRun.ts'
+        source.path !== 'assistant/proposalValue.ts'
     )
 
-  it('round-trips and freezes in the run hook, and in no other module', () => {
-    const hook = read('assistant/useAssistantRun.ts')
+  /**
+   * v0.11 also seals non-proposal values: dialect contracts and Runtime check
+   * arguments, receipt inputs, detached history views, and private admission,
+   * capture, release and usage tokens. The turn-route digest copies tool offers.
+   * Each allowance is an exact statement/block in one module, required once;
+   * a second occurrence or any proposal round trip/freeze remains in the sweep.
+   * Generic value/this freezes include their complete helper/constructor so
+   * they cannot exempt an identically spelled proposal operation elsewhere.
+   */
+  const NON_PROPOSAL_STATEMENTS: Record<string, readonly string[]> = {
+    "@judgment-pack/harness/dist/dialects.js": [
+      "export const DIALECT_AUTHORING_LIMITS = Object.freeze({ documentBytes: 1048576, packBytes: 1048576, snapshotBytes: 4194304, resultBytes: 2097152, runtimeBytes: 4194304, candidateBytes: 4194304, draftBytes: 8388608, runtimeResults: 2, columns: 1000, bindings: 1000, samples: 3, sampleBytes: 16384, shownSampleBytes: 160, rememberedReads: 32, milliseconds: 10000, indexBytes: 2097152, pageBytes: 1048576, pageDeclarations: 1000 });",
+      "export const DIALECT_RETAINED_COLUMN_DRAFT = Object.freeze({\n    contract: 'retained-column/1', profile: 'base',\n    spec: Object.freeze({ version: '0.3.0', revision: '27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc', schemaSha256: 'sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557', corpusSha256: 'sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863' })\n});",
+      "const discovery = await bounded(signal, b => ports.runtime('get_dialect_contract', Object.freeze({ draftContract: `${selection.contract}@${selection.spec.revision}`, draftProfile: selection.profile }), b));",
+      "const result = await bounded(signal, b => ports.runtime(name, Object.freeze({ ...copy(args), draftContract: `${selection.contract}@${selection.spec.revision}`, draftProfile: selection.profile }), b));",
+    ],
+    "@judgment-pack/harness/dist/gatewayReceipt.js": [
+      "const context = Object.freeze({ receiptSession: 'agent-' + hex(nonce) });",
+    ],
+    "@judgment-pack/harness/dist/history/archive.js": [
+      "constructor(key, manifest, objects, mappings, bytes) { if (key !== token)\n        invalid(); this.#manifest = manifest; this.#objects = objects; this.#mappings = mappings; this.#bytes = bytes; Object.freeze(this); }",
+    ],
+    "@judgment-pack/harness/dist/history/capture.js": [
+      "const prepared = Object.freeze({});",
+    ],
+    "@judgment-pack/harness/dist/history/captureCollector.js": [
+      "root = Object.freeze({});",
+      "const token = Object.freeze({}), held = { admission: a, acknowledged: false };",
+      "const value = { terminal: copy(terminal), rows: this.rows.map(row => ({ admission: copy(row.admission), frame: copy(row.frame) })) }, seal = Object.freeze({});",
+    ],
+    "@judgment-pack/harness/dist/history/view.js": [
+      "constructor(token, head, commits, metadata, values) {\n        if (token !== viewToken)\n            throw new HistoryInputInvalid();\n        this.#head = head;\n        this.#commits = commits;\n        this.#metadata = metadata;\n        this.#values = values;\n        Object.freeze(this);\n    }",
+    ],
+    // v0.13.2 seals verified principal and fenced-store capabilities, never
+    // proposal values. Generic view freezes include their complete function;
+    // every exact statement remains required once and additional freezes fail.
+    "@judgment-pack/harness/dist/principal.js": [
+      "return Object.freeze({ chain, record: principalRecord(chain), audience: input.audience, keys, software: runSoftware, admission: input.admission, clock: input.clock ?? (() => Date.now()), text: input.chain, input });",
+    ],
+    "@judgment-pack/harness/dist/storage/lease.js": [
+      "const wrapper = Object.freeze({ effectFencing: 'enforced', dispatch(admission, perform, signal) {\n            if (host.dispatch !== dispatch)\n                return Promise.reject(new LeaseCapabilityRefused('effect-host-unfenced'));\n            return dispatch.call(host, admission, perform, signal);\n        } });",
+      "export function fencedRunStore(store, fence, effectHost) {\n    const lease = store;\n    if (lease.leaseVersion !== 1 || typeof lease.commitFenced !== 'function' || store.durability === 'single-writer-callback' || lease.historyVersion === 1 && (typeof lease.commitHistoryFenced !== 'function' || typeof lease.commitContextSnapshotFenced !== 'function'))\n        throw new LeaseCapabilityRefused('store-unsupported');\n    if (effectHost !== undefined && effectHost.effectFencing !== 'enforced')\n        throw new LeaseCapabilityRefused('effect-host-unfenced');\n    const held = readLeaseFence(fence);\n    // ADR-0029: a store that does not keep a lease's principals cannot host a delegated run's lease.\n    if (held.principal && lease.leasePrincipals !== true)\n        throw new LeaseCapabilityRefused('store-unsupported');\n    const view = { durability: store.durability, load: bind(store, 'load'), readEvents: bind(store, 'readEvents'), commit: (input, signal) => lease.commitFenced(input, held, signal) };\n    if (lease.historyVersion === 1) {\n        view.historyVersion = 1;\n        for (const name of HISTORY_METHODS)\n            view[name] = bind(store, name);\n        view.commitHistory = (input, signal) => lease.commitHistoryFenced(input, held, signal);\n        view.commitContextSnapshot = (input, commitId, signal) => lease.commitContextSnapshotFenced(input, commitId, held, signal);\n    }\n    Object.freeze(view);\n    leased.set(view, { fence: held, store, ...(effectHost ? { effectHost } : {}) });\n    return view;\n}",
+      "export function fencedChatStore(store, fence) {\n    const lease = store;\n    if (lease.leaseVersion !== 1 || typeof lease.updateFenced !== 'function' || store.consistency === 'single-writer-legacy')\n        throw new LeaseCapabilityRefused('store-unsupported');\n    const held = readLeaseFence(fence);\n    return Object.freeze({ consistency: store.consistency, get: store.get.bind(store), list: store.list.bind(store), update: (id, patch, expectedRevision, signal) => lease.updateFenced(id, patch, expectedRevision, held, signal) });\n}",
+    ],
+    "@judgment-pack/harness/dist/storage/physicalDispatch.js": [
+      "export function openNativeWitness(binding, ticket) { const token = Object.freeze({}); nativeWitnesses.set(token, { binding: { ...binding, scope: { ...binding.scope } }, ticket, live: true, admitted: false }); return token; }",
+      "const proof = Object.freeze({ [nativeCaptureBrand]: true });",
+    ],
+    "@judgment-pack/harness/dist/storage/release.js": [
+      "export function providerReleaseAttempt() {\n    const invocation = Object.freeze(Object.create(null));\n    let live = true, acknowledged = false, invalid = false;\n    const capability = Object.freeze({ invocation, acknowledge(token) { if (!live || token !== invocation || acknowledged) {\n            invalid = true;\n            return false;\n        } ; acknowledged = true; return true; } });\n    return { capability, finish() { live = false; return acknowledged && !invalid; } };\n}",
+      "export function composeProviderRelease(...given) {\n    const owners = given.filter((owner) => owner !== undefined);\n    if (owners.length === 0)\n        return;\n    if (owners.length === 1)\n        return owners[0];\n    const invocation = Object.freeze(Object.create(null));\n    let responded = false;\n    return Object.freeze({ invocation, acknowledge(token) {\n            if (token !== invocation || responded) {\n                for (const owner of owners)\n                    owner.acknowledge(Object.freeze({}));\n                return false;\n            }\n            responded = true;\n            const results = owners.map(owner => owner.acknowledge(owner.invocation));\n            if (!results.every(Boolean)) {\n                for (const owner of owners)\n                    owner.acknowledge(Object.freeze({}));\n                return false;\n            }\n            ;\n            return true;\n        } });\n}",
+    ],
+    "@judgment-pack/harness/dist/storage/runtimeActionOwner.js": [
+      "const attempt = Object.freeze({ request: deepFreeze(request), descriptor: canonicalJSON({ version: 1, name, args: clean, source, runtime }) });",
+      "function deepFreeze(value) { if (value && typeof value === 'object') {\n    for (const v of Object.values(value))\n        deepFreeze(v);\n    Object.freeze(value);\n} return value; }",
+    ],
+    "@judgment-pack/harness/dist/storage/turnRouteOwner.js": [
+      "this.#binding = structuredClone({ execution: context.execution.state.id, request: context.execution.state.requestKey, scope: context.execution.state.context.scope, phase: session.context?.phase ?? 'work', policy, override: session.route ?? null, offer: routeDigest(JSON.parse(JSON.stringify([...session.tools, ...hostTools]))), provider: context.provider('author'), members: context.resolvedPolicy });",
+    ],
+    "@judgment-pack/harness/dist/storage/usageJournal.js": [
+      "const token = Object.freeze({});",
+    ],
+    "@judgment-pack/harness/dist/storage/writer.js": [
+      "return this.invoke(binding, 'model', source, tool, request, true, async (raw) => Object.freeze({ [modelClaim]: true, request: raw }), () => false, () => [], signal, ticket);",
+      "const nativeClaim = kind === 'agent' && this.latest?.turnRoute && !this.latest.turnRoute.widened ? Object.freeze({}) : undefined;",
+    ],
+    "@judgment-pack/harness/dist/toolSources.js": [
+      "source: Object.freeze({ ...source, descriptorSnapshot: bytes, descriptorApproval: structuredClone(source.descriptorApproval), gatewayReceipt: source.gatewayReceipt === undefined ? undefined : structuredClone(source.gatewayReceipt), identity: source.identity === undefined ? undefined : { ...source.identity }, currentDigest: async () => {\n                            if (admitted.changed)\n                                return '';\n                            try {\n                                const now = await descriptorSnapshotDigest(await observe());\n                                if (admitted.changed || now !== approved) {\n                                    admitted.changed = true;\n                                    return '';\n                                }\n                                return now;\n                            }\n                            catch {\n                                admitted.changed = true;\n                                throw Error('descriptor snapshot observation failed');\n                            }\n                        } })",
+      "verified = await withDeadline(bounded => Promise.resolve(entry.declared.source.verifyReceipt(Object.freeze({ source: canonicalJSON(entry.record), tool: entry.record.tool, args: argsEvidence, result: canonicalJSON(shown), receipt }), bounded)), signal, Math.max(1, limit - (Date.now() - started)), () => toolTimeout(limit)) === true;",
+    ],
+  }
+
+  function withoutNonProposalStatements(source: { path: string; text: string }): string {
+    let text = source.text
+    for (const statement of NON_PROPOSAL_STATEMENTS[source.path] ?? []) {
+      expect(text.split(statement), `${source.path} carries its exact non-proposal statement once`).toHaveLength(2)
+      text = text.replace(statement, '')
+    }
+    return text
+  }
+
+  it('keeps additional proposal freezes and round trips visible beside every non-proposal allowance', () => {
+    for (const [path, statements] of Object.entries(NON_PROPOSAL_STATEMENTS)) {
+      const extra = 'Object.freeze(proposal); JSON.parse(JSON.stringify(proposal));'
+      const remainder = withoutNonProposalStatements({ path, text: [...statements, extra].join('\n') })
+      expect(remainder, path).toContain('Object.freeze(proposal)')
+      expect(remainder, path).toContain('JSON.parse(JSON.stringify(proposal))')
+    }
+  })
+
+  it('round-trips and freezes proposals only in the shared ingestion boundary', () => {
+    const hook = read('assistant/proposalValue.ts')
     expect(hook).toContain('JSON.stringify(value)')
     expect(hook).toContain('JSON.parse(text)')
     expect(hook).toContain('Object.freeze(value)')
     const swept = others()
     expect(swept.length).toBeGreaterThan(3)
     for (const source of swept) {
-      expect(source.text, `${source.path} round-trips a proposal`).not.toContain(
+      const proposalSource = withoutNonProposalStatements(source)
+      if (source.path === '@judgment-pack/harness/dist/storage/runtimeActionOwner.js') {
+        // The exact helper above is private and used only for its Runtime
+        // request plus its own recursion; another ingestion call must fail.
+        expect(source.text.match(/\bdeepFreeze\(/g)).toHaveLength(3)
+      }
+      expect(proposalSource, `${source.path} round-trips a proposal`).not.toContain(
         'JSON.parse(JSON.stringify'
       )
       expect(source.text, `${source.path} calls plain()`).not.toMatch(/[^A-Za-z]plain\(/)
-      if(!FROZEN_TABLES.some(table=>source.path.startsWith(table)))expect(source.text, `${source.path} freezes again`).not.toContain('Object.freeze(')
+      // v0.9 freezes one empty identity token for delegated policy admission.
+      // Strip only that statement; any proposal or second freeze still fails.
+      let freezeSource = proposalSource
+      if (source.path === '@judgment-pack/harness/dist/context/session.js') {
+        const identityToken = 'const token = Object.freeze({});'
+        expect(source.text.split(identityToken)).toHaveLength(2)
+        expect(source.text).toContain('delegatedPolicies.set(token, projection);')
+        freezeSource = source.text.replace(identityToken, '')
+        // v0.11 retains live turn-route reasoning on the two admitted request
+        // value views. These are request capabilities, never proposal data.
+        // Match each
+        // complete declaration once; freezes elsewhere remain in the sweep.
+        const requestViews = [
+          "return Object.freeze(Object.defineProperties({ member: common.member, sameBinding: common.sameBinding, allowsTool: common.allowsTool, model: Object.freeze({ family: selected.family, model: override ?? selected.model, call }), get capabilities() { return requestCopy(capabilitiesFor(selected)); }, ...(context?.turnRoute ? { get reasoning() { const tier = context.turnRoute?.tier(role) ?? value; return tier === undefined ? undefined : normalize(tier, selected.family); } } : value === undefined ? {} : { reasoning: normalize(value, selected.family) }), forRole: (next) => view(next), withModel: (name) => view(role, name) }, descriptors));",
+          "return Object.freeze(Object.defineProperties({ member: common.member, sameBinding: common.sameBinding, allowsTool: common.allowsTool, agent: Object.freeze({ ...requestCopy(binding.agent), run: 'agent' in session ? session.agent.run : binding.agent.run }), ...(context?.turnRoute ? { get reasoning() { return (context.turnRoute?.tier(role) ?? value); } } : value === undefined ? {} : { reasoning: value }), forRole: (next) => view(next) }, descriptors));",
+        ]
+        for (const declaration of requestViews) {
+          expect(freezeSource.split(declaration)).toHaveLength(2)
+          freezeSource = freezeSource.replace(declaration, '')
+        }
+      }
+      const frozenDeclarations: Record<string, string> = {
+        // Immutable run identity is not proposal canonicalization. Strip this
+        // exact statement once; any other freeze in the module still fails.
+        'assistant/serverRuns/stream.ts': 'this.reference = Object.freeze({id:reference.id, owner:Object.freeze({...reference.owner}), requestId:reference.requestId})',
+        '@judgment-pack/harness/dist/subagents.js': 'export const SUBAGENT_DEFAULTS = Object.freeze({ cataloguedSubagents: 16, subagentCatalogueBytes: 4000 });',
+        '@judgment-pack/harness/dist/criticSwitch.js': "export const REQUEST_REVIEW_SCHEMA = Object.freeze({ type: 'object', properties: { reason: { type: 'string', description: 'Why a review of this run’s proposal is wanted, in one sentence.' } } });"
+      }
+      const declaration = frozenDeclarations[source.path]
+      if (declaration) {
+        expect(source.text.split(declaration)).toHaveLength(2)
+        freezeSource = freezeSource.replace(declaration, '')
+      }
+      if(!FROZEN_TABLES.some(table=>source.path.startsWith(table)))expect(freezeSource, `${source.path} freezes again`).not.toContain('Object.freeze(')
     }
   })
 

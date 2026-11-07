@@ -21,17 +21,29 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux_amd64
+            goos: linux
+            goarch: amd64
+            cgo: '0'
+            identity_test: TestStorageOwnerPersistentFileLinuxNative
           - os: macos-15
             platform: darwin_arm64
+            goos: darwin
+            goarch: arm64
+            cgo: '1'
+            identity_test: TestStorageOwnerPersistentFileDarwinNative
           - os: macos-15-intel
             platform: darwin_amd64
+            goos: darwin
+            goarch: amd64
+            cgo: '1'
+            identity_test: TestStorageOwnerPersistentFileDarwinNative
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.10'
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -45,8 +57,158 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         run: git tag "$RELEASE_TAG" HEAD
+      - name: Check native packaging contracts
+        run: python3 scripts/package-release_test.py
       - name: Check native installer selection and platform refusals
         run: python3 scripts/desk-update_test.py
+      - name: Check native storage prerequisites and retain evidence
+        timeout-minutes: 8
+        shell: bash
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOWORK: 'off'
+          IDENTITY_TEST: ${{ matrix.identity_test }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/storage-native-prerequisites"
+          binaries="$RUNNER_TEMP/storage-native-prerequisite-binaries"
+          mkdir -p "$evidence" "$binaries"
+          trap 'rm -f "$binaries/desk.test" "$binaries/storagebudget.test"' EXIT
+          python3 - "$evidence/provenance.json" <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          import platform
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          def output(*args):
+              return subprocess.check_output(args, text=True).strip()
+
+          paths = subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0')
+          sources = {os.fsdecode(path): hashlib.sha256(Path(os.fsdecode(path)).read_bytes()).hexdigest()
+                     for path in paths if path}
+          provenance = {
+              'purpose': 'Native prerequisites only; test binaries are not packaged application binaries or qualification records',
+              'commit': output('git', 'rev-parse', 'HEAD'),
+              'tree': output('git', 'rev-parse', 'HEAD^{tree}'),
+              'worktreeStatus': output('git', 'status', '--porcelain'),
+              'sourcesSHA256': sources,
+              'goVersion': output('go', 'version'),
+              'goEnvironment': json.loads(output('go', 'env', '-json')),
+              'uname': output('uname', '-a'),
+              'platform': platform.platform(),
+              'execution': {key: os.environ.get(key, '') for key in (
+                  'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT',
+                  'RUNNER_OS', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion', 'RELEASE_TAG',
+                  'GOOS', 'GOARCH', 'CGO_ENABLED', 'GOWORK', 'IDENTITY_TEST')},
+              'compileFlags': ['-trimpath'],
+              'testFlags': ['-test.v=test2json', '-test.count=1', '-test.timeout=2m', '-test.failfast'],
+          }
+          if sys.platform == 'darwin':
+              provenance['sdkVersion'] = output('xcrun', '--show-sdk-version')
+              provenance['sdkPath'] = output('xcrun', '--show-sdk-path')
+              provenance['clangVersion'] = output('clang', '--version')
+          Path(sys.argv[1]).write_text(json.dumps(provenance, indent=2) + '\n')
+          env = provenance['goEnvironment']
+          if env['GOOS'] != os.environ['GOOS'] or env['GOARCH'] != os.environ['GOARCH'] or env['CGO_ENABLED'] != os.environ['CGO_ENABLED']:
+              raise SystemExit('Native prerequisite toolchain does not match release target/CGO settings')
+          if env['GOVERSION'] != 'go1.26.10':
+              raise SystemExit('Native prerequisite toolchain does not match release Go version')
+          PYTHON
+          require_native_pass() {
+            python3 - "$@" <<'PYTHON'
+          import json
+          import sys
+          from pathlib import Path
+
+          path, package, *tests = sys.argv[1:]
+          events = [json.loads(line) for line in Path(path).read_text().splitlines()]
+          failures = [event for event in events if event.get('Action') in ('skip', 'fail')]
+          package_results = [event['Action'] for event in events
+                             if event.get('Package') == package and 'Test' not in event
+                             and event.get('Action') in ('pass', 'skip', 'fail')]
+          for test in tests:
+              actions = [event['Action'] for event in events
+                         if event.get('Package') == package and event.get('Test') == test
+                         and event.get('Action') in ('run', 'pass', 'skip', 'fail')]
+              if actions != ['run', 'pass']:
+                  raise SystemExit(test + ': required native prerequisite did not run and pass without skipping')
+          if failures or package_results != ['pass']:
+              raise SystemExit('Native prerequisite package or subtest failed/skipped; raw evidence retained')
+          print(', '.join(tests) + ': native prerequisite run and pass confirmed; no whole-entry qualification')
+          PYTHON
+          }
+          run_native() {
+            local label="$1" package="$2" selection="$3"
+            shift 3
+            go test -c -trimpath -o "$binaries/$label.test" "$package" 2>&1 | tee "$evidence/$label-build.txt"
+            python3 - "$binaries/$label.test" "$evidence/$label-build.json" <<'PYTHON'
+          import hashlib
+          import json
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          binary = Path(sys.argv[1])
+          digest = hashlib.sha256()
+          with binary.open('rb') as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                  digest.update(chunk)
+          Path(sys.argv[2]).write_text(json.dumps({
+              'testBinarySHA256': digest.hexdigest(),
+              'testBinaryBytes': binary.stat().st_size,
+              'goVersionModuleInfo': subprocess.check_output(['go', 'version', '-m', str(binary)], text=True),
+          }, indent=2) + '\n')
+          PYTHON
+            (
+              cd "$package"
+              go tool test2json -p "github.com/Judgment-Pack/judgment-pack-desk/${package#./}" "$binaries/$label.test" \
+                -test.v=test2json -test.count=1 -test.timeout=2m -test.failfast -test.run "$selection"
+            ) 2> >(tee "$evidence/$label-stderr.txt" >&2) | tee "$evidence/$label-native.json"
+            require_native_pass "$evidence/$label-native.json" "github.com/Judgment-Pack/judgment-pack-desk/${package#./}" "$@"
+          }
+          # These scratch/native/process fixtures provide prerequisite evidence only.
+          # Helpers are selected by the owning tests in exact child subprocesses.
+          desk_tests=(
+            TestStorageEnrollmentNativeEstimateObservationPrerequisites
+            TestStorageEnrollmentNativeEstimateActualWriteAndCheckedSync
+            "$IDENTITY_TEST"
+            TestStorageEnrollmentNativeRecordComparisons
+            TestStorageEnrollmentCreationQualificationDoesNotFollowControlOnlyRecord
+            TestStorageEnrollmentNativeV2PrivateClosedCohort
+            TestStorageEnrollmentNativeEstimateRecordVersionAndBounds
+            TestStorageEnrollmentNativeActualErrnoPreservesOriginal
+            TestStorageEnrollmentNativeProcessDeathPreservesOriginal
+            TestStorageEnrollmentNativeFenceProcessDeathImages
+          )
+          if [[ "$GOOS/$GOARCH" == linux/amd64 ]]; then
+            # The child-local RLIMIT_FSIZE fixture is build-tagged linux && amd64.
+            desk_tests+=(TestStorageEnrollmentNativeLinuxActualShortWrite)
+          fi
+          desk_selection="^($(IFS='|'; echo "${desk_tests[*]}"))$"
+          run_native desk ./internal/desk "$desk_selection" "${desk_tests[@]}"
+          storagebudget_tests=(
+            TestAtomicAdmissionAndRestart
+            TestProcessDeathRetainsOriginalAdmissionAndUncertainty
+            TestDistinctProcessesCannotOverAdmit
+            TestDistinctProcessesFanoutCannotOverAdmit
+          )
+          storagebudget_selection="^($(IFS='|'; echo "${storagebudget_tests[*]}"))$"
+          run_native storagebudget ./internal/storagebudget "$storagebudget_selection" "${storagebudget_tests[@]}"
+      - name: Retain native prerequisite evidence, including failures and skips
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: storage-native-prerequisites-${{ matrix.platform }}
+          path: ${{ runner.temp }}/storage-native-prerequisites/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
       - run: npm --prefix web ci
       - name: Build the pinned native release bundle
         env:

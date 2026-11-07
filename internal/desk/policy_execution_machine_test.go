@@ -74,11 +74,18 @@ func enableAdmissionFixture(t *testing.T, f *policyMachineFixture, hook func(str
 	if err != nil {
 		return PolicyAuthorityStatus{}, err
 	}
-	w, ok, err := policyMachineWorkspaceFor(r, f.s.project)
+	// An offline step holds the project itself, as the CLI does; the fixture's
+	// first server may have been closed for a configured one.
+	project, err := OpenProjectRoot(f.s.projectDir)
+	if err != nil {
+		return PolicyAuthorityStatus{}, err
+	}
+	defer project.Close()
+	w, ok, err := policyMachineWorkspaceFor(r, project)
 	if err != nil || !ok {
 		return PolicyAuthorityStatus{}, policyMachineRefusal()
 	}
-	return m.enableExecution(context.Background(), f.s.project, f.s.configDir, w)
+	return m.enableExecution(context.Background(), project, f.s.configDir, w)
 }
 func executionMachineWrite(phase string, root *os.Root, name string, raw []byte) error {
 	if name == "" {

@@ -322,3 +322,81 @@ func TestDialectDraftReadDoesNotTakeWorkflowLease(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
+
+// Injected adapters expose the same current-authority fence as the owner's file
+// binding. A post-operation refusal returns no successful acknowledgement; a
+// completed write is retained for inspection rather than silently retried.
+type countedDialectDraftRepository struct {
+	dialectDraftRepository
+	calls int
+}
+
+func (r *countedDialectDraftRepository) List(ctx context.Context) ([]dialectDraftSummary, error) {
+	r.calls++
+	return r.dialectDraftRepository.List(ctx)
+}
+func (r *countedDialectDraftRepository) Get(ctx context.Context, id string) (dialectDraftReply, error) {
+	r.calls++
+	return r.dialectDraftRepository.Get(ctx, id)
+}
+func (r *countedDialectDraftRepository) CompareAndSwap(ctx context.Context, d dialectDraftDocument, revision string) (dialectDraftReply, error) {
+	r.calls++
+	return r.dialectDraftRepository.CompareAndSwap(ctx, d, revision)
+}
+func TestDialectDraftRepositoryCurrentAuthority(t *testing.T) {
+	for _, operation := range []string{"list", "get", "create"} {
+		for _, withdrawAt := range []int{1, 2} {
+			t.Run(fmt.Sprintf("%s/%d", operation, withdrawAt), func(t *testing.T) {
+				s, underlying := draftRepositoryFixture(t, "memory")
+				existing := repositoryDraft(1)
+				_, err := underlying.CompareAndSwap(t.Context(), existing, "")
+				assistantRunMust(t, err)
+				counted := &countedDialectDraftRepository{dialectDraftRepository: underlying}
+				s.dialectDrafts = counted
+				if s.draftRepository() != counted {
+					t.Fatal("ordinary repository binding changed")
+				}
+				checks := 0
+				repository := s.draftRepositoryWithAuthority(func(context.Context) error {
+					checks++
+					if checks >= withdrawAt {
+						return errAssistantRunScope
+					}
+					return nil
+				})
+				switch operation {
+				case "list":
+					var items []dialectDraftSummary
+					items, err = repository.List(t.Context())
+					if items != nil {
+						t.Fatal("withdrawn read exposed a list")
+					}
+				case "get":
+					var saved dialectDraftReply
+					saved, err = repository.Get(t.Context(), existing.ID)
+					if saved.SHA256 != "" || saved.Document.ID != "" {
+						t.Fatal("withdrawn read exposed a draft")
+					}
+				case "create":
+					var saved dialectDraftReply
+					saved, err = repository.CompareAndSwap(t.Context(), repositoryDraft(2), "")
+					if saved.SHA256 != "" || saved.Document.ID != "" {
+						t.Fatal("withdrawn write exposed success")
+					}
+				}
+				if !errors.Is(err, errAssistantRunScope) || checks != withdrawAt || counted.calls != withdrawAt-1 {
+					t.Fatal("owning repository omitted current authority", err, checks, counted.calls)
+				}
+				if operation == "create" {
+					saved, err := underlying.Get(t.Context(), repositoryDraft(2).ID)
+					if withdrawAt == 1 && !errors.Is(err, os.ErrNotExist) {
+						t.Fatal("pre-operation refusal wrote")
+					}
+					if withdrawAt == 2 && (err != nil || saved.Document.ID != repositoryDraft(2).ID) {
+						t.Fatal("post-operation uncertainty lost completed effect", err)
+					}
+				}
+			})
+		}
+	}
+}

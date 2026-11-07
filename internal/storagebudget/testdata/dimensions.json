@@ -1,0 +1,11 @@
+[
+ {"name":"history","value":0},
+ {"name":"retained","value":1},
+ {"name":"attachments","value":2},
+ {"name":"memory","value":3},
+ {"name":"control","value":4},
+ {"name":"disposable","value":5},
+ {"name":"binaries","value":6},
+ {"name":"transient","value":7},
+ {"name":"settlement","value":8}
+]

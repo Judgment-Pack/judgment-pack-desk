@@ -30,12 +30,12 @@ Before the metadata generalization, the full frontend suite passed **6,372 tests
 
 The canonical review also added a shared independent-phase reset. Both adapters clear retained author scope, working summaries and immutable-read cache before an independent critic begins. Execution accounting and original journals remain intact. Regression checks verify that an author-only context reference cannot be read from the reviewer, even if it was cached earlier. Explicit workflow classification overrides a conflicting read hint for caching.
 
-The final affected regression run passed **414 tests in 14 files**, including adapter conformance, context/execution, planning, delegation and feature tool integration. Final browser journeys passed for both main and pane chat, explicit allowance extension, exact-result restoration and refresh. No live provider calls were made. Logs: `/tmp/desk-canonical-final-regression.log` and `/tmp/desk-canonical-final-browser.log`.
+The final affected regression run passed **414 tests in 14 files**, including adapter conformance, context/execution, planning, delegation and feature tool integration. Final browser journeys passed for both main and pane chat, explicit allowance extension, exact-result restoration and refresh. No live provider calls were made. Logs: `<scratch>/desk-canonical-final-regression.log` and `<scratch>/desk-canonical-final-browser.log`.
 
 ## Final verification and installation
 
-- Final full run: **6,387 tests passed in 408 files**, with code unchanged throughout that run. Log: `/tmp/desk-canonical-final-full.log`. This supersedes the intermediate audit run that mixed modules while the isolation and write-classification guards were being finished.
+- Final full run: **6,387 tests passed in 408 files**, with code unchanged throughout that run. Log: `<scratch>/desk-canonical-final-full.log`. This supersedes the intermediate audit run that mixed modules while the isolation and write-classification guards were being finished.
 - TypeScript, Vite and Go builds passed. Localization has no extraction or placeholder errors; existing untranslated English fallbacks and bundle-size advisories remain. `git diff --check` passes.
 - Installed manifest `b12f41633a4cad56e4b503aa110f1b10fae309ec0ee5aa2cfe46d3709e444e86` after a fresh idle check. Only the Desk executable changed; the selected runtime components stayed intact.
 - HTTP 200, final built index/assets match the served files, and one main Desk process owns the selected binary. All 1,666 fingerprinted saved project JSON/JSONL files stayed unchanged.
-- Installation verification: `/tmp/desk-canonical-installed-verification.json`. Browser refresh is required for already-open tabs to load the new frontend. A failed conversation remains saved and resumes only after an explicit user action.
+- Installation verification: `<scratch>/desk-canonical-installed-verification.json`. Browser refresh is required for already-open tabs to load the new frontend. A failed conversation remains saved and resumes only after an explicit user action.

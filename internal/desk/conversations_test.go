@@ -45,10 +45,19 @@ func TestConversationHistoryCustodyAndCompare(t *testing.T) {
 	if status != 200 || initial.SHA256 != "absent" || initial.Project != s.projectDir {
 		t.Fatalf("bad initial reply: %d %+v", status, initial)
 	}
-	data := `{"version":1,"chats":[{"id":"chat-one","composer":"private transcript"}]}`
+	row := `{"id":"chat-one","composer":"private transcript","n":9007199254740993,"decimal":1.00,"exponent":1e+2,"zero":-0}`
+	data := `{"version":1,"chats":[` + row + `]}`
 	status, landed := chatRequest(t, ts, "PUT", initial.SHA256, data, true, "")
-	if status != 200 || landed.SHA256 != digestOf([]byte(data)) || string(landed.Content) != data {
+	if status != 200 {
 		t.Fatalf("write: %d %+v", status, landed)
+	}
+	saved := savedConversationBytes(t, s, ts)
+	if landed.SHA256 != digestOf([]byte(saved)) || string(landed.Content) != saved {
+		t.Fatal("save receipt does not match persisted bytes", landed)
+	}
+	var doc conversationDocument
+	if err := json.Unmarshal([]byte(saved), &doc); err != nil || len(doc.Chats) != 1 || string(doc.Chats[0]) != row {
+		t.Fatal("first save changed raw row or numeric wire bytes", saved, err)
 	}
 	info, err := os.Stat(filepath.Join(s.defaultChatDataPath(), s.conversationName()))
 	if err != nil {

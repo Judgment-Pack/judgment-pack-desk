@@ -73,6 +73,14 @@ func TestAccountHelper(t *testing.T) {
 			reply(map[string]string{"userAgent": "jps_desk/0.157.1 (Linux)"})
 		case "initialized":
 		case "account/read":
+			if mode == "account-lookup-fail" {
+				fail()
+				continue
+			}
+			if mode == "account-protocol-fail" {
+				reply(map[string]any{"account": "PRIVATE_SENTINEL"})
+				continue
+			}
 			var params struct {
 				Refresh bool `json:"refreshToken"`
 			}

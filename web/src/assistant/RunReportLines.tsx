@@ -1,14 +1,15 @@
+import { criticDecisionLine } from './criticDecision'
 import type { ChildFigures, FiguresTotal, TokenFigures } from '@judgment-pack/harness/execution/state'
 import { msg, useLocale } from '../i18n'
 import { Disclosure } from '../ui/Disclosure'
 import { profileLabel } from '../chat/DelegatedTaskDetails'
 import { timingTotals, type StepRecord } from './runMeter'
-import type { RunReport } from './report'
+import { reportedAgentRuns, type RunReport } from './report'
 import styles from './RunReportLines.module.css'
 
 const seconds = (ms: number | undefined) => (ms === undefined ? '—' : (ms / 1000).toFixed(1))
 const tokensOf = (tokens: TokenFigures | undefined) =>
-  tokens === undefined || (tokens.inputTokens === undefined && tokens.outputTokens === undefined) ? '—' : msg('in {{input}}, out {{output}}', { input: tokens.inputTokens ?? 0, output: tokens.outputTokens ?? 0 })
+  tokens === undefined || (tokens.inputTokens === undefined && tokens.outputTokens === undefined) ? '—' : msg('in {{input}}, out {{output}}', { input: tokens.inputTokens ?? '—', output: tokens.outputTokens ?? '—' })
 
 /**
  * What a response reports about itself: how many requests it made, the
@@ -21,16 +22,32 @@ const tokensOf = (tokens: TokenFigures | undefined) =>
  */
 export function RunReportLines({ report, titles = {}, className }: { report: RunReport; titles?: Readonly<Record<string, string>>; className?: string }) {
   useLocale()
+  const agentRuns = reportedAgentRuns(report)
   const delegation = report.delegation
   const timing = report.timing
   const totals = timing === undefined ? undefined : timingTotals(timing)
   return (
     <section className={className ?? styles.report} aria-label={msg('Run report')}>
       <p>
-        {report.unit === 'provider-managed' ? msg('Agent runs: {{requests}}', { requests: report.requests }) : msg('Model requests: {{requests}}', { requests: report.requests })}
+        {report.unit === 'provider-managed' ? (agentRuns === undefined ? msg('Provider managed · agent runs unknown') : msg('Agent runs: {{requests}}', { requests: agentRuns })) : msg('Model requests: {{requests}}', { requests: report.requests })}
         {report.retries && msg(' · retried: {{retried}} ({{reasons}})', { retried: report.retries.count, reasons: report.retries.reasons.join(', ') })}
         {report.tokens && msg(' · tokens reported by the provider: {{tokens}}', { tokens: tokensOf(report.tokens) })}
       </p>
+      {report.canonical && (
+        <Disclosure title={msg('Complete run report')} size="small">
+          <pre>{JSON.stringify(report.canonical, null, 2)}</pre>
+        </Disclosure>
+      )}
+      {report.critic && <p>{criticDecisionLine(report.critic)}</p>}
+
+      {report.prompts && report.prompts.length > 0 && (
+        <Disclosure title={msg('Prompt digests')} size="small">
+          <table className={styles.table}>
+            <thead><tr><th scope="col">{msg('Request')}</th><th scope="col">{msg('SHA-256')}</th></tr></thead>
+            <tbody>{report.prompts.map((row) => <tr key={row.request}><th scope="row">{row.request}</th><td><code className={styles.digest}>{row.sha256}</code></td></tr>)}</tbody>
+          </table>
+        </Disclosure>
+      )}
       {totals && (
         <p>
           {msg('Requests took {{seconds}} s in all', { seconds: seconds(totals.modelMs) })}
