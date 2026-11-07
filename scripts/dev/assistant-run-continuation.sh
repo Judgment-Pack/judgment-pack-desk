@@ -21,7 +21,9 @@ done
 python3 "$root/scripts/assistant-run-continuation-mutations.py"
 node_command=(bash -c '
  set -euo pipefail
- "$1/web/node_modules/.bin/esbuild" "$1/scripts/assistant-run-continuation-reference.mjs" --bundle --platform=node --format=esm --outfile="$2/reference.mjs"
+ "$1/web/node_modules/.bin/esbuild" "$1/scripts/assistant-run-continuation-reference.mjs" --bundle --platform=node --format=esm \
+  --inject:"$1/scripts/assistant-chat-projection-reference-locale.mjs" --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$2/reference.mjs"
  node "$2/reference.mjs" "$2/outputs"
  DESK_RUN_CLIENT_OUTPUTS="$2/outputs" npm --prefix "$1/web" test -- src/assistant/serverRuns/answerSuccessor.test.ts src/assistant/serverRuns/continuation.test.ts src/assistant/serverRuns/controller.test.ts
  node "$1/scripts/assistant-run-client-mutations.mjs"
