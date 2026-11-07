@@ -970,8 +970,10 @@ class DiagnosticLogsTests(unittest.TestCase):
             "web":["scripts/dev/check.sh --setup --only npm-ci",
                    "scripts/dev/check.sh --only i18n-check,ui-message-audit,typecheck,vite-build,web-tests,dialect-read"],
         }
-        for job,next_job in [("go","web"),("web","local-gateway")]:
-            block=workflow.split("\n  "+job+":",1)[1].split("\n  "+next_job+":",1)[0]
+        # The Go checks are the go-checks job's since internal/desk's tests run in shards
+        # (go-test-desk); the job named Go only gathers them. Its logs keep the name "go".
+        for job,key,next_job in [("go","go-checks","go-test-desk"),("web","web","local-gateway")]:
+            block=workflow.split("\n  "+key+":",1)[1].split("\n  "+next_job+":",1)[0]
             header,steps=block.split("\n    steps:",1)
             # runner context is unavailable in job.env; every command producing logs
             # must set its own step.env, including Web's separate setup command.
@@ -991,6 +993,16 @@ class DiagnosticLogsTests(unittest.TestCase):
             self.assertIn("retention-days: 7",upload)
             self.assertIn("if-no-files-found: ignore",upload)
             self.assertNotIn("github.workspace",upload)
+        # Each internal/desk shard uploads only its own logs, on every outcome, by shard.
+        block=workflow.split("\n  go-test-desk:",1)[1].split("\n  go:",1)[0]
+        header,steps=block.split("\n    steps:",1)
+        self.assertNotIn("JPDEV_LOGDIR",header)
+        self.assertEqual(block.count("JPDEV_LOGDIR: ${{ runner.temp }}/go-test-desk\n"),1)
+        upload=block.split("- name: Upload the shard's log",1)[1]
+        self.assertIn("if: always()",upload)
+        self.assertIn("name: go-test-desk-shard-${{ matrix.shard }}-of-${{ needs.go-plan.outputs.count }}-${{ github.run_id }}",upload)
+        self.assertIn("path: ${{ runner.temp }}/go-test-desk/",upload)
+        self.assertNotIn("github.workspace",upload)
 
 
 if __name__ == "__main__":

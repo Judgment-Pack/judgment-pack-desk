@@ -188,7 +188,8 @@ class Selection(unittest.TestCase):
                                         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         stdin=subprocess.DEVNULL, timeout=SUBPROCESS_TIMEOUT)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                expected = '--all --changed origin/baseline' if event == 'pull_request' else '--all'
+                # go-test runs in the Go jobs (internal/desk in shards), not a second time here.
+                expected = '--all --skip go-test --changed origin/baseline' if event == 'pull_request' else '--all --skip go-test'
                 self.assertEqual((self.root / 'invoked').read_text().strip(), expected)
                 (self.root / 'invoked').unlink()
         for base in ('', '../invalid', 'missing-branch'):
@@ -227,7 +228,12 @@ class DeskPolicy(unittest.TestCase):
         self.assertIn('if [ -z "$CHECK_BASE_REF" ]; then', aggregate)
         self.assertIn('git check-ref-format "refs/heads/$CHECK_BASE_REF" || exit 2', aggregate)
         self.assertIn('git rev-parse --verify "refs/remotes/origin/$CHECK_BASE_REF^{commit}" >/dev/null || exit 2', aggregate)
-        self.assertIn('scripts/dev/check.sh --all --changed "origin/$CHECK_BASE_REF"\n          else\n            scripts/dev/check.sh --all\n          fi', aggregate)
+        self.assertIn('scripts/dev/check.sh --all --skip go-test --changed "origin/$CHECK_BASE_REF"\n          else\n            scripts/dev/check.sh --all --skip go-test\n          fi', aggregate)
+        # The go-test the check job skips runs in the Go jobs: the other packages in Go checks,
+        # internal/desk in the shard matrix, which Go requires.
+        self.assertIn('GO_TEST_SHARD: others', workflow)
+        self.assertIn('GO_TEST_SHARD: ${{ matrix.shard }}/${{ needs.go-plan.outputs.count }}', workflow)
+        self.assertIn('needs: [go-plan, go-checks, go-test-desk]', workflow)
         self.assertEqual(workflow.count('--changed'), 1)
         self.assertIn('  push:\n    branches: [main]\n  pull_request:\n  workflow_call:', workflow)
         self.assertIn('name: Go\n', workflow)
