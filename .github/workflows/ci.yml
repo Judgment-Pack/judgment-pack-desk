@@ -134,6 +134,39 @@ jobs:
           retention-days: 7
           overwrite: true
 
+  # The storage line (ADR-0015) is off in v0.14.0. Its tests skip in the shards above
+  # (requireStorageLine) and run here, with the line on, over the same shards. This lane
+  # blocks nothing: continue-on-error, and the job named Go does not need it. Its artifacts
+  # are named apart, so the Go job's completeness check never reads them.
+  go-test-desk-storage-line:
+    name: Go test internal/desk, storage line on (${{ matrix.shard }}/${{ needs.go-plan.outputs.count }})
+    needs: go-plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.go-plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchains
+      - run: scripts/dev/check.sh --only go-test
+        env:
+          JPACK_DESK_STORAGE_LINE: 'on'
+          JPDEV_LOGDIR: ${{ runner.temp }}/go-test-desk-storage-line
+          GO_TEST_SHARD: ${{ matrix.shard }}/${{ needs.go-plan.outputs.count }}
+          GO_TEST_ARTIFACT: storage-line-go-test-desk-shard-${{ matrix.shard }}-of-${{ needs.go-plan.outputs.count }}-${{ github.run_id }}
+      - name: Upload the shard's log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: storage-line-go-test-desk-shard-${{ matrix.shard }}-of-${{ needs.go-plan.outputs.count }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/go-test-desk-storage-line/
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
+
   go:
     name: Go
     needs: [go-plan, go-checks, go-test-desk]

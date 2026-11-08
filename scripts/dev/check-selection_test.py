@@ -234,6 +234,14 @@ class DeskPolicy(unittest.TestCase):
         self.assertIn('GO_TEST_SHARD: others', workflow)
         self.assertIn('GO_TEST_SHARD: ${{ matrix.shard }}/${{ needs.go-plan.outputs.count }}', workflow)
         self.assertIn('needs: [go-plan, go-checks, go-test-desk]', workflow)
+        # The storage line's lane (ADR-0015) runs the same shards with the line on and blocks
+        # nothing: continue-on-error, not a need of Go, and artifacts the Go job never reads.
+        lane = workflow.split('\n  go-test-desk-storage-line:\n', 1)[1].split('\n  go:\n', 1)[0]
+        self.assertIn('continue-on-error: true', lane)
+        self.assertIn("JPACK_DESK_STORAGE_LINE: 'on'", lane)
+        self.assertIn('GO_TEST_SHARD: ${{ matrix.shard }}/${{ needs.go-plan.outputs.count }}', lane)
+        self.assertNotIn('name: go-test-desk-shard-', lane)
+        self.assertNotIn('JPACK_DESK_STORAGE_LINE', workflow.split('\n  go-test-desk-storage-line:\n', 1)[0])
         self.assertEqual(workflow.count('--changed'), 1)
         self.assertIn('  push:\n    branches: [main]\n  pull_request:\n  workflow_call:', workflow)
         self.assertIn('name: Go\n', workflow)
