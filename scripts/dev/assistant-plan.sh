@@ -3,6 +3,9 @@
 # shellcheck shell=bash
 set -euo pipefail
 root=${JPDEV_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
+# The binding producers prepare a real chat run with the published Runtime the component lock names.
+source "$root/scripts/dev/dialect-mapping-fixture.sh"
+prepare_dialect_mapping_fixture
 tmp_root=${RUNNER_TEMP:-${TMPDIR:-/tmp}/desk-check}
 mkdir -p "$tmp_root"
 tmp=$(mktemp -d "$tmp_root/assistant-plan.XXXXXX")
@@ -12,11 +15,11 @@ mkdir -m 700 "$outputs"
 (
  cd "$root"
  export DESK_PLAN_READER_OUTPUTS="$outputs"
- command=(go test ./internal/desk -run '^TestAssistant(Plan(ActualProducersAndProjection|ActualRefusalEvents|RecoveryCustodyMembers|SharedVectors|BindingActualHistorical|BindingActualCurrentEvidence|BindingLegacyAndMissingLineage|BindingOperationEvidenceRefusals|BindingExplicitContinuation|GateDeclarations|GateActualContextualEvidence|NativePeerConstruction|NativeTraceScope)|CanonicalHostCustodyVectors|HostArgumentWireEncoding|ParentHostArgumentWireEncoding)$' -count=1 -v)
+ command=(go test ./internal/desk -run '^TestAssistant(Plan(ActualProducersAndProjection|ActualRefusalEvents|RecoveryCustodyMembers|SharedVectors|BindingActualHistorical|BindingActualCurrentEvidence|BindingLegacyAndMissingLineage|BindingOperationEvidenceRefusals|BindingExplicitContinuation|GateActualContextualEvidence|NativePeerConstruction|NativeTraceScope)|CanonicalHostCustodyVectors|HostArgumentWireEncoding|ParentHostArgumentWireEncoding)$' -count=1 -v)
  if [ -n "${JPDEV_WRAP:-}" ]; then command=("$JPDEV_WRAP" go -- "${command[@]}"); fi
  "${command[@]}"
 ) | tee "$tmp/producers.log"
-for producer in ActualProducersAndProjection ActualRefusalEvents RecoveryCustodyMembers SharedVectors BindingActualHistorical BindingActualCurrentEvidence BindingLegacyAndMissingLineage BindingOperationEvidenceRefusals BindingExplicitContinuation GateDeclarations GateActualContextualEvidence NativePeerConstruction NativeTraceScope; do
+for producer in ActualProducersAndProjection ActualRefusalEvents RecoveryCustodyMembers SharedVectors BindingActualHistorical BindingActualCurrentEvidence BindingLegacyAndMissingLineage BindingOperationEvidenceRefusals BindingExplicitContinuation GateActualContextualEvidence NativePeerConstruction NativeTraceScope; do
  grep -Eq -- "^--- PASS: TestAssistantPlan$producer \\(" "$tmp/producers.log" || { echo "Plan $producer producer did not pass" >&2; exit 1; }
 done
 for producer in CanonicalHostCustodyVectors HostArgumentWireEncoding ParentHostArgumentWireEncoding; do
