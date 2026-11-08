@@ -12,12 +12,12 @@ export DESK_SAVED_PACK_READER_OUTPUT="$scratch/outputs/saved-pack-chat.json"
 export DESK_SAVED_PACK_SUITE_OUTPUT="$scratch/outputs/saved-pack-suite.json"
 export DESK_SAVED_PACK_RECHECK_OUTPUT="$scratch/outputs/saved-pack-recheck.json"
 cd "$root"
-producer='^Test(ConversationExactRows|ConversationUnrelatedCASRetainsStartedRun|SavedChatConsumerProducer|SavedChatConsumerApprovalVector|SavedChatConsumerCheckVector|AssistantRunClientSharedVectors|AssistantRunClientActualProducer|AssistantRunContinuationActualEino|AssistantRunContinuationActualSubscription|AssistantRunProtocolApprovalRestoredAndDeliveredOnce|AssistantSavedPackActualAPIAndReload|AssistantSavedPackExplicitRecheckHTTP)$'
+producer='^Test(ConversationExactRows|ConversationUnrelatedCASRetainsStartedRun|SavedChatConsumerProducer|SavedChatConsumerApprovalVector|SavedChatConsumerCheckVector|AssistantRunClientSharedVectors|AssistantRunClientActualProducer|AssistantRunContinuationActualEino|AssistantRunContinuationActualSubscription|AssistantRunProtocolApprovalRestoredAndDeliveredOnce|AssistantSavedPackActualAPIAndReload|AssistantSavedPackExplicitRecheckHTTP|AssistantRetainedProductionAPIGuardedResultUnknown)$'
 command=(go test ./internal/desk -run "$producer" -count=1 -v)
 # The Go wrapper owns the machine lock; never wrap this branch in a second flock.
 if [ -n "${JPDEV_WRAP:-}" ]; then command=("$JPDEV_WRAP" go -- "${command[@]}"); fi
 "${command[@]}"
-for file in pending.json events.sse consumer-source.json consumer-terminal.json consumer-conversations.json consumer-approval.json actual-continuation-answer.json actual-answer-parent.json actual-subscription-answer-parent.json actual-continuation-extend-budget.json actual-continuation-subscription.json saved-pack-chat.json saved-pack-snapshot.json saved-pack-suite.json saved-pack-recheck.json; do
+for file in pending.json events.sse consumer-source.json consumer-terminal.json consumer-conversations.json consumer-approval.json actual-continuation-answer.json actual-answer-parent.json actual-subscription-answer-parent.json actual-continuation-extend-budget.json actual-continuation-subscription.json saved-pack-chat.json saved-pack-snapshot.json saved-pack-suite.json saved-pack-recheck.json actual-guarded-result-343.json; do
  test -s "$DESK_RUN_CLIENT_OUTPUTS/$file" || { echo "Missing actual saved-chat producer: $file" >&2; exit 1; }
 done
 node_command=(bash -c '

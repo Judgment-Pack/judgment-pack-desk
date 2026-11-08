@@ -13,6 +13,9 @@ const chat={id:'chat-one',title:'Chat',model:'fixture',mode:'draft',view:'chat',
 let prepared=0,posts=0,start
 const response=()=>({...pending,state:'failed',admissionId:start.admissionId,requestId:start.requestId})
 globalThis.fetch=async(path,init)=>{
+ // A run start first registers its model-free document context; acknowledge it like the chassis.
+ if(path==='/api/assistant-contexts/documents')return Response.json({document:'c'.repeat(64)})
+ if(path==='/api/assistant-contexts/documents/release')return Response.json({released:true})
  if(path==='/api/assistant-runs'){
   posts++;start=JSON.parse(init.body)
   if(posts===1)throw Error('uncertain delivery')
@@ -45,7 +48,8 @@ const responseId=`response-${createHash('sha256').update(pending.id).digest('hex
 const acknowledged={...pending,state:'failed',chatProjection:{responseId,digest:'b'.repeat(64),acknowledged:true}}
 const retained={...chat,serverRequest:{requestId:pending.requestId,admissionId:pending.admissionId}}
 const reconciling=new SavedChatRun(chat.id,retained,{
- project:'/project',client:async()=>({discover:async()=>[acknowledged]}),
+ // The real client decodes every discovered snapshot (Go's null slices become []); so does this one.
+ project:'/project',client:async()=>({discover:async()=>[decodeSnapshot(acknowledged,{owner:pending.owner,requestId:pending.requestId})]}),
  prepare:async()=>{pendingPrepares++;return 'a'.repeat(64)},
  reconcile:async()=>{enteredReconciliation();return reconciliation},pin(){},problem(){},
 })

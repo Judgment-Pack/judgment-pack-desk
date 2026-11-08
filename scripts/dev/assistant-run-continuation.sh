@@ -25,7 +25,10 @@ node_command=(bash -c '
   --inject:"$1/scripts/assistant-chat-projection-reference-locale.mjs" --define:import.meta.glob=offlineLocaleCatalogues \
   --outfile="$2/reference.mjs"
  node "$2/reference.mjs" "$2/outputs"
- DESK_RUN_CLIENT_OUTPUTS="$2/outputs" npm --prefix "$1/web" test -- src/assistant/serverRuns/answerSuccessor.test.ts src/assistant/serverRuns/continuation.test.ts src/assistant/serverRuns/controller.test.ts
+ DESK_RUN_CLIENT_OUTPUTS="$2/outputs" npm --prefix "$1/web" test -- src/assistant/serverRuns/answerSuccessor.test.ts src/assistant/serverRuns/continuation.test.ts
+ # controller.test.ts also reads the saved-chat producers (saved-chat-consumer runs it whole);
+ # these producers feed only its continuation reader.
+ DESK_RUN_CLIENT_OUTPUTS="$2/outputs" npm --prefix "$1/web" test -- src/assistant/serverRuns/controller.test.ts -t "consumes actual Go API/native continuations"
  node "$1/scripts/assistant-run-client-mutations.mjs"
 ' assistant-run-continuation "$root" "$tmp")
 if [ -n "${JPDEV_WRAP:-}" ]; then node_command=(flock "$JPDEV_LOCK" "$JPDEV_WRAP" node -- "${node_command[@]}"); fi

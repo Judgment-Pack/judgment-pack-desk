@@ -12,7 +12,7 @@ const rows=[
  // F1's unreconciled gate independently protects unacknowledged terminals. Remove
  // both retry defenses explicitly: a single ACK edit is now a redundant mutant.
  ['paired terminal acknowledgement and reconciliation retry gates','controller.ts',[
-  ['if(this.unreconciled)return false;',''],
+  ['if(this.unreconciled||this.snapshot?.approvalResults','if(this.snapshot?.approvalResults'],
   ['!!this.snapshot?.chatProjection?.acknowledged','!!this.snapshot'],
  ],null,'terminal without acknowledgement must stay pinned'],
  ['required admission identity','decode.ts','!text(value.admissionId,128)','false','admission identity must remain required'],
