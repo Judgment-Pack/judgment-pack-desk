@@ -341,10 +341,11 @@
         "internal/desk/input_research_completion_test.go",
         "internal/desk/background_model_test.go",
         "internal/desk/background_completion_test.go",
-        "internal/desk/background_execution_test.go"
+        "internal/desk/background_execution_test.go",
+        "internal/desk/background_opening_projection_test.go"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "Inherited background091 final-focused.log PASS27, API RequestCap1/native0/1 exact one-use receipt proofs. These preserve one-request admission and receipt custody but do not cover complete structured-input retention at the actual boundary; Desk #668 remains blocked pending [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) and strict real-boundary tests. Workflow unchanged."
+      "journeyEvidence": "Inherited background091 final-focused.log PASS27, API RequestCap1/native0/1 exact one-use receipt proofs. These preserve one-request admission and receipt custody. Desk #668 is delivered: the complete structured background envelope opens through the published runcontext.OpeningProjection ([Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202)) in background_opening_projection.go, which may shorten only retained source previews to fit and refuses before dispatch when they cannot; actual API/native boundary tests are in background_opening_projection_test.go. Workflow unchanged."
     },
     {
       "id": "input-research-domain-parent-child",
@@ -373,10 +374,11 @@
         "internal/desk/input_research_budget_test.go",
         "internal/desk/input_research_parent_identity_test.go",
         "internal/desk/input_research_recovery_test.go",
-        "internal/desk/background_execution_test.go"
+        "internal/desk/background_execution_test.go",
+        "internal/desk/background_opening_projection_test.go"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "Inherited background091 reservation-concurrency-fixed.log and final-focused.log; original two-child/journal limits and no replay unchanged. These proofs do not resolve Desk #668's incomplete structured background input at the actual boundary; [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) and strict real-boundary tests remain required."
+      "journeyEvidence": "Inherited background091 reservation-concurrency-fixed.log and final-focused.log; original two-child/journal limits and no replay unchanged. Desk #668 is delivered: the complete structured background envelope opens through the published runcontext.OpeningProjection ([Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202)) in background_opening_projection.go, which may shorten only retained source previews to fit and refuses before dispatch when they cannot; actual API/native boundary tests are in background_opening_projection_test.go."
     },
     {
       "id": "portable-research-and-model-acquisition",
@@ -405,10 +407,11 @@
         "internal/desk/model_source_test.go",
         "internal/desk/portable_research_acceptance_test.go",
         "internal/desk/input_research_journal_workflows_test.go",
-        "internal/desk/background_execution_test.go"
+        "internal/desk/background_execution_test.go",
+        "internal/desk/background_opening_projection_test.go"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "Inherited background091 actual-portable-and-native.log and model-source-actual.log using verified official Runner/Runtime. These proofs do not establish complete structured background input at the actual boundary; Desk #668 remains blocked pending [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) and strict real-boundary tests."
+      "journeyEvidence": "Inherited background091 actual-portable-and-native.log and model-source-actual.log using verified official Runner/Runtime. Desk #668 is delivered: the complete structured background envelope opens through the published runcontext.OpeningProjection ([Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202)) in background_opening_projection.go, which may shorten only retained source previews to fit and refuses before dispatch when they cannot; actual API/native boundary tests are in background_opening_projection_test.go."
     },
     {
       "id": "model-list-discovery",
@@ -438,12 +441,14 @@
     {
       "id": "capability-probe",
       "category": "bounded-generative-diagnostic",
-      "currentOwner": "EndpointCapabilitiesSection \u2192 capabilityProbe: one chat request plus model-list GET",
+      "currentOwner": "EndpointCapabilitiesSection \u2192 capabilityProbe \u2192 observeSettings: server-owned fixed capability observation (assistant_settings_observation*.go) plus model-list POST",
       "targetOwner": "fixed host-authored one-request diagnostic; same bound relay/context/accounting; no tool execution",
       "entrypoints": [
         "web/src/assistant/EndpointCapabilitiesSection.tsx",
         "web/src/assistant/capabilityProbe.ts",
-        "web/src/assistant/endpointCapabilities.ts"
+        "web/src/assistant/endpointCapabilities.ts",
+        "web/src/assistant/serverRuns/settingsObservation.ts",
+        "internal/desk/assistant_settings_observation.go"
       ],
       "preserve": [
         "probe_echo calls counted but never executed; no model-written instructions retained",
@@ -453,18 +458,21 @@
       "verification": [
         "web/src/assistant/capabilityProbe.test.ts",
         "web/src/assistant/endpointCapabilities.test.ts",
-        "new server diagnostic request/accounting fixture"
+        "web/src/assistant/serverRuns/settingsObservation.test.ts",
+        "internal/desk/assistant_settings_observation_test.go",
+        "internal/desk/assistant_settings_observation_store_test.go"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "BLOCKED #662: EndpointCapabilitiesSection still imports bindModelCall. Probe observation/one-token ceiling unchanged; no complete direct-transport exclusion claim."
+      "journeyEvidence": "Desk #662 delivered: the browser no longer calls the model; it asks the server for a fixed host-authored capability observation (128-token ceiling, probe_echo counted, never executed) and reads the canonical run's settings-observation result. Observation ceilings unchanged."
     },
     {
       "id": "endpoint-connection-probe",
       "category": "bounded-diagnostic-mixed",
-      "currentOwner": "handleAssistantProbe \u2192 probeEndpoint; OpenAI/Gemini GET, Anthropic bounded messages ping",
+      "currentOwner": "endpointCheck: Anthropic generative ping \u2192 observeSettings (server-owned settings observation, one-token ceiling); OpenAI/Gemini GET \u2192 handleAssistantProbe \u2192 probeEndpoint",
       "targetOwner": "same fixed diagnostic owner; generative ping reserved/accounted, shared auth/context/custody path",
       "entrypoints": [
         "internal/desk/assistant.go:handleAssistantProbe/probeEndpoint",
+        "internal/desk/assistant_settings_observation.go",
         "web/src/assistant/endpointCheck.ts"
       ],
       "preserve": [
@@ -473,10 +481,10 @@
       ],
       "verification": [
         "internal/desk/assistant_test.go",
-        "internal/desk/assistant_test.go"
+        "internal/desk/assistant_settings_observation_test.go"
       ],
       "blockedByProviderManagedCoordinator": false,
-      "journeyEvidence": "BLOCKED #662: separate Settings probe path retained. No observation or ceiling relaxation."
+      "journeyEvidence": "Desk #662 delivered: the generative Anthropic ping is a server-owned settings observation with a one-token ceiling; the model-free GET probes stay on the fixed server action. No observation or ceiling relaxation."
     },
     {
       "id": "codex-connection-test",
@@ -508,7 +516,7 @@
     {
       "id": "context-maintenance",
       "category": "model-free-canonical",
-      "currentOwner": "Canonical Go Host/context/checkpoint ownership; retired browser loop and duplicate prompt assembly removed; Settings direct transport remains #662",
+      "currentOwner": "Canonical Go Host/context/checkpoint ownership; retired browser loop and duplicate prompt assembly removed; Settings probes are server-owned observations (#662)",
       "targetOwner": "published Go context plus server-owned ChatContext per authorized owner; no model summarizer",
       "entrypoints": [
         "web/src/assistant/chatContexts.ts",
@@ -1024,23 +1032,24 @@
       "finite research-choice continuation through the saved chat/creation owner; current source/phase controls remain server-owned",
       "canonical memory Use/Suggest snapshot/lifecycle and current person acceptance, including explicit proposal/store revision and identity guards; memory and Plan grant no implicit write or compute authority",
       "at Desk 8886caf1afacaa8764386a44f49eb7818a68e711, three former controller gaps passed with fresh Go observations: API/native continuation readers, snapshots/SSE/session-end, and latest saved-pack mismatch/pass refresh; protocol/adapter fixtures are not another normal-New activation proof",
-      "at the same Desk head, both existing mounted usePackProposalSave server-hook cases passed with fresh Go proposal/recheck observations, mocked file read/write and HTTP check/suite responses; explicit Save/readback and dirty/stale/suite/mismatch vetoes are covered, not a full persisted page/editor Apply/Save journey"
+      "at the same Desk head, both existing mounted usePackProposalSave server-hook cases passed with fresh Go proposal/recheck observations, mocked file read/write and HTTP check/suite responses; explicit Save/readback and dirty/stale/suite/mismatch vetoes are covered, not a full persisted page/editor Apply/Save journey",
+      "Desk #668: complete structured background input opens through the published runcontext.OpeningProjection (Agent #202), reducing only retained source previews and refusing before dispatch when they cannot fit; actual API/native boundary tests in background_opening_projection_test.go",
+      "Desk #662: Settings capability and generative ping probes run as server-owned settings observations (assistant_settings_observation*.go) with unchanged ceilings; the browser no longer calls the model"
     ],
     "pending": [
       "complete current-head provider-managed binding and feature certification; unresolved native certification contract mismatch tracked by https://github.com/Judgment-Pack/judgment-pack-agent/issues/201",
-      "mandatory Desk #668 v0.14.0 blocker: Agent v0.9.1 generic context opening can reduce the complete background research envelope to incomplete JSON, omitting domain searchBindings/used; preserve the strict boundary assertions while this blocker is unresolved, and require released [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202)'s supported projection plus complete API/native boundary tests. Preserve one physical request and all existing budgets, admission and canonical guards. Agent #202 is owner-scheduled for v0.11.0 alongside #199 and #201, following Agent v0.10.0; this schedule is not a Desk resolution date",
       "full integrated product journeys not established by bounded fixtures, including complete page/editor Apply and persisted server Save; current-head integration/bundle evidence, independent review and release acceptance",
-      "mandatory Desk #660 provider-wire numeric fidelity and #662 remaining Settings capability/connection browser transport; no probe ceiling relaxation or full direct-transport exclusion claim",
+      "mandatory Desk #660 provider-wire numeric fidelity",
       "Desk #582 remains intentionally v0.17.0-scoped: pinned Runtime v0.37.0 fact-type proposal support is unavailable (Runtime #274); preserve authored unavailable, unchanged facts/expectations, no fabricated advice and current pins",
       "package-owned draft-edit scope not independently verified by the delivered Plan/memory and registration evidence"
     ],
     "testToolCeiling": "existing Desk configuration excludes experimental_test_cases; refused child attempts use the published shared count",
-    "activation": "Normal Server construction installs assistantProductionExecutor for existing chat/creation, Brief and standalone author-pack/describe-pack/author-graph purposes; unknown purposes refuse. Saved chat uses SavedChatRun; remaining Settings transport and complete release acceptance stay pending."
+    "activation": "Normal Server construction installs assistantProductionExecutor for existing chat/creation, Brief and standalone author-pack/describe-pack/author-graph purposes; unknown purposes refuse. Saved chat uses SavedChatRun; Settings probes run as server-owned observations; complete release acceptance stays pending."
   },
   "requiredReleaseGates": [
-    "Desk #668 background structured-input boundary: adopt released [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) projection after final canonical system/schema assembly and pass strict actual API/native boundary tests for complete protected fields, retained large sources and refusal before dispatch when permitted reduction cannot fit; preserve one physical request, budgets, admission and canonical guards",
+    "Delivered: Desk #668 background structured-input boundary: adopt released [Agent #202](https://github.com/Judgment-Pack/judgment-pack-agent/issues/202) projection after final canonical system/schema assembly and pass strict actual API/native boundary tests for complete protected fields, retained large sources and refusal before dispatch when permitted reduction cannot fit; preserve one physical request, budgets, admission and canonical guards",
     "Desk #660 canonical proposal numeric fidelity",
-    "Desk #662 bounded Settings probes and remaining direct transport",
+    "Delivered: Desk #662 bounded Settings probes and remaining direct transport",
     "Complete actual bound API/native certification; preserve host authority and uncertainty guards",
     "Complete source-bound journey, race, platform, i18n, security and release-diff review",
     "Maintainer approval for each merge and release gate"
