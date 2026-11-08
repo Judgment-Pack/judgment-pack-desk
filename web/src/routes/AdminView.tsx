@@ -55,6 +55,7 @@ import { desksAPI } from '../desks/DeskSwitcher'
 import { ConnectionSettings } from '../admin/ConnectionSettings'
 import { DocumentProcessingSettings } from '../admin/DocumentProcessingSettings'
 import { StorageBudgetStatus } from '../admin/StorageBudgetStatus'
+import { useStorageLineOff } from '../admin/useStorageBudgetStatus'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { PolicyRecoverySettings } from '../admin/PolicyRecoverySettings'
 import { AssistantSection } from '../assistant/AssistantSection'
@@ -96,6 +97,7 @@ export function AdminView() {
   const tab = connectionTab(hash)
   // General's Startup field and its Save, sharing one draft across two slots.
   const defaultProject = useDefaultProject()
+  const storageOff = useStorageLineOff()
   const directory = useQuery({ ...privateQuery,queryKey: ['desks'], queryFn: () => desksAPI<{ current: { name: string } }>() })
   // **One unsaved draft at a time between the desk's model preferences and the
   // shared AI connections.** Each blocks the other while it holds an edit, so
@@ -204,7 +206,7 @@ export function AdminView() {
                       description={effective.sources.storage === 'desk file' ? msg('Shared on this computer') : msg('This desk')}
                       fields={<StorageKind />}
                       save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocationState(effective.config.storage.packs.dir, listing)]} />} />
-                    <StorageBudgetStatus />
+                    {!storageOff && <StorageBudgetStatus />}
                     <ChatDataSettings />
                     <PolicyRecoverySettings active={id==='storage'} />
                   </SettingsStack>

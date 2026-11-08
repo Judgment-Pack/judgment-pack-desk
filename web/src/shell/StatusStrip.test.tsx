@@ -102,3 +102,19 @@ it('warns, in the same storage notice, that storage is over a limit and Desk kee
  expect(screen.getAllByRole('link',{name:'Review storage'})).toHaveLength(1)
  client.clear()
 })
+it('shows no storage notice while the storage line is off, whatever a status says',async()=>{
+ state.error='';state.ready=true
+ const pressure={active:true,codes:['storage-disk-full'],firstSeenAt:'2026-11-01T12:00:00Z',lastSeenAt:'2026-11-01T12:00:00Z',durableState:'unconfirmed'}
+ const off=decodeStorageBudgetStatus({version:1,line:'off',servedAt:'2026-11-01T12:00:00Z'})
+ expect(off.line).toBe('off')
+ // The over-limit contract fixture, a refusal and an unregistered folder, all marked off.
+ storage.data={...decodeStorageBudgetStatus({...storageStatusFixture(),pressure,registration:{enforcement:'warning-only',folders:['/projects/one/.desk-private']}}),line:'off'}
+ const client=new QueryClient()
+ const page=()=> <QueryClientProvider client={client}><MemoryRouter><DeskNoticesProvider><StatusStrip/></DeskNoticesProvider></MemoryRouter></QueryClientProvider>
+ const view=render(page())
+ expect(screen.queryByRole('button',{name:'Storage needs attention'})).toBeNull()
+ storage.data={...storage.data,line:'on'}
+ view.rerender(page())
+ expect(screen.getByRole('button',{name:'Storage needs attention'})).toBeTruthy()
+ client.clear()
+})

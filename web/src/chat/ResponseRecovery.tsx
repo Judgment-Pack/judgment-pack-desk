@@ -8,7 +8,7 @@ import styles from './ResponseRecovery.module.css'
 import type {DialectReadRecoveryView} from '../assistant/serverRuns/types'
 
 /** Backing observations are separate from original response completion. */
-export function DialectReadRecovery({view,failed,busy,disabled,onInspect,onRefresh}:{view?:DialectReadRecoveryView;failed:boolean;busy:boolean;disabled:boolean;onInspect?:(operationId:string)=>void;onRefresh?:()=>void}){
+export function DialectReadRecovery({view,failed,busy,disabled,onInspect,onRefresh,storageLineOff=false}:{view?:DialectReadRecoveryView;failed:boolean;busy:boolean;disabled:boolean;onInspect?:(operationId:string)=>void;onRefresh?:()=>void;storageLineOff?:boolean}){
  useLocale()
  if(!failed&&!view?.reads.length)return null
  const message=(state:string)=>state==='present-valid'?msg('The retained snapshot was found. The earlier read outcome is unchanged.'):state==='absent'?msg('The retained snapshot is missing. The earlier read was not restarted.'):state==='corrupt'?msg('The retained snapshot could not be verified. The earlier read was not restarted.'):state==='unavailable'?msg('The retained snapshot is unavailable. Saved history is kept.'):msg('The retained snapshot has not been inspected.')
@@ -16,8 +16,8 @@ export function DialectReadRecovery({view,failed,busy,disabled,onInspect,onRefre
   {failed&&<><p role="status">{msg('Saved read status is unavailable. Retained work is unchanged.')}</p>{onRefresh&&<button type="button" disabled={disabled||busy} onClick={onRefresh}>{msg('Reload saved read status')}</button>}</>}
   {view?.reads.map(row=><div key={row.operationId}>
    <p role="status">{message(row.backingState)}</p>
-   {row.reason==='budget-unresolved'&&<p className={styles.caption}>{msg('Storage recovery admission is required before a new observation can be saved.')}</p>}
-   {row.canInspect&&onInspect&&<button type="button" disabled={disabled||busy} onClick={()=>onInspect(row.operationId)}>{busy?msg('Inspecting retained read…'):msg('Inspect retained read')}</button>}
+   {!storageLineOff&&row.reason==='budget-unresolved'&&<p className={styles.caption}>{msg('Storage recovery admission is required before a new observation can be saved.')}</p>}
+   {!storageLineOff&&row.canInspect&&onInspect&&<button type="button" disabled={disabled||busy} onClick={()=>onInspect(row.operationId)}>{busy?msg('Inspecting retained read…'):msg('Inspect retained read')}</button>}
   </div>)}
  </article>
 }

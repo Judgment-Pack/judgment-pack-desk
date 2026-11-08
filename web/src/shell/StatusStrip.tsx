@@ -1,5 +1,5 @@
 import {useStorageBudgetStatus} from '../admin/useStorageBudgetStatus'
-import {storageOverLimit} from '../admin/storageBudgetModel'
+import {storageLineOff, storageOverLimit} from '../admin/storageBudgetModel'
 import { useChats } from '../chat/ChatProvider'
 import { DeskHomeNotice, useDeskHome } from '../admin/DeskHomeSettings'
 import { ProjectLocationNotice, useProjectLocation } from '../admin/ProjectLocation'
@@ -28,6 +28,8 @@ function SystemNotices() {
   const identityLater = Boolean(storage.data?.registration?.identities)
   // Limits are warnings in this release: over a limit is said here, and Desk keeps working.
   const overLimit = storageOverLimit(storage.data?.snapshot)
+  // Off in this release: no storage notice at all.
+  const storageOff = storageLineOff(storage.data)
   const { status, known } = useMcp()
   const { store, ready: chatsReady, error: chatError, saving } = useChats()
   const { problems, readFailure, desk, aiConnections } = useEffectiveConfig()
@@ -39,7 +41,7 @@ function SystemNotices() {
   const refresh = () => { void client.invalidateQueries({queryKey: DESK_CONFIG_QUERY_KEY}) }
   const settingsAction = <PopoverClose><ButtonLink to="/admin">{msg('Review settings')}</ButtonLink></PopoverClose>
   return <>
-    {(refusalReported || childLowSpace || unregistered || identityLater || overLimit) && <DeskStatusNotice id="storage-pressure" tone="warning" label={msg('Storage needs attention')}
+    {!storageOff && (refusalReported || childLowSpace || unregistered || identityLater || overLimit) && <DeskStatusNotice id="storage-pressure" tone="warning" label={msg('Storage needs attention')}
       actions={<PopoverClose><ButtonLink to="/admin#storage">{msg('Review storage')}</ButtonLink></PopoverClose>}>
       {refusalReported && <p>{msg('A storage refusal was reported. Review Storage for the last observation. Refreshing status does not resume work.')}</p>}
       {childLowSpace && <p>{msg('A child storage observation reports low filesystem space. Child growth is warned about, not prevented. Review Storage for the observation time and coverage.')}</p>}

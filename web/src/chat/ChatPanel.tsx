@@ -55,6 +55,7 @@ import { createPortal } from 'react-dom'
 import { useInspectorControls } from '../shell/InspectorSlot'
 import { VisuallyHidden } from 'radix-ui'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { useStorageLineOff } from '../admin/useStorageBudgetStatus'
 import { MessageDetails, ReadingDetails, useReadingDetails } from './ReadingDetails'
 import { IconLink } from '../shell/icons'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
@@ -287,6 +288,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     title: context.title ?? '', detail: context.detail, text: context.text, tests: context.tests, open: placement === 'pane',
   } : undefined
   const testProposals = useChatTestProposals(chat.id)
+  // Off in this release: a retained read is not re-inspected (no recovery storage).
+  const storageLineOff = useStorageLineOff()
   const hasRelatedWork = !!(testProposals.length || context || chat.policy || chat.input || chat.pack || chat.draftId || chat.graph || chat.inputDrafts?.length || chat.inputActions?.length || chat.graphDrafts?.length)
   const openRelatedWork = (opener: HTMLElement | null) => read(<RelatedChatWork chatId={chat.id} current={workContext} openGraphDraftId={openGraphDraftId} disabled={locked||inputActionsLocked}/>, opener)
   const inputContextHeader = isInput && context && placement === 'pane'
@@ -358,7 +361,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
       </div>}
       {pendingApproval && <div role="group" aria-label={msg('Approval required')}><p>{pendingApproval.name}</p>{pendingApproval.runtimeOwner&&<div><p>{msg('Runtime')}</p><dl><dt>{msg('Project')}</dt><dd>{pendingApproval.runtimeOwner.projectLabel}</dd><dt>{msg('Principal')}</dt><dd>{pendingApproval.runtimeOwner.principalLabel}</dd><dt>{msg('Scope')}</dt><dd>{pendingApproval.runtimeOwner.scopeLabel}</dd></dl></div>}<CodeBlock label={msg('Arguments')} text={approvalText!} verbatim/><ChatAction disabled={actionDisabled} onClick={()=>binding?.run?.decideApproval?.(true,shownApproval)}>{msg('Approve')}</ChatAction><ChatAction disabled={actionDisabled} onClick={()=>binding?.run?.decideApproval?.(false)}>{msg('Decline')}</ChatAction></div>}
       {binding?.run?.needsReconnect && binding.run.reconnect && <ChatAction disabled={running || locked || Boolean(otherRun)} onClick={()=>void binding.run?.reconnect?.()}>{msg('Reconnect')}</ChatAction>}
-      <DialectReadRecovery view={binding?.run?.dialectReadRecovery} failed={Boolean(binding?.run?.dialectReadRecoveryFailed)} busy={Boolean(binding?.run?.dialectReadRecoveryBusy)} disabled={running||locked||Boolean(otherRun)} onInspect={binding?.run?.inspectDialectRead?operation=>void binding.run?.inspectDialectRead?.(operation):undefined} onRefresh={binding?.run?.refreshDialectReadRecovery?()=>void binding.run?.refreshDialectReadRecovery?.():undefined}/>
+      <DialectReadRecovery view={binding?.run?.dialectReadRecovery} failed={Boolean(binding?.run?.dialectReadRecoveryFailed)} busy={Boolean(binding?.run?.dialectReadRecoveryBusy)} disabled={running||locked||Boolean(otherRun)} onInspect={binding?.run?.inspectDialectRead?operation=>void binding.run?.inspectDialectRead?.(operation):undefined} onRefresh={binding?.run?.refreshDialectReadRecovery?()=>void binding.run?.refreshDialectReadRecovery?.():undefined} storageLineOff={storageLineOff}/>
       {state.status==='failed' && <ResponseRecovery failure={state.failure} detail={state.detail} disabled={actionDisabled} onRetry={binding?.run?.canExtendResponse?continueExecution:binding?.run?.canRetryResponse?retryResponse:undefined} additionalRequests={binding?.run?.canExtendResponse?Math.min(REQUEST_INCREMENT,MAX_REQUEST_ALLOWANCE-state.execution!.limit):undefined}/>}
       </div>
     </div>

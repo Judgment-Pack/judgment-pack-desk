@@ -17,6 +17,7 @@ import { PopoverClose } from '../ui/Popover'
 import { useHasPendingChanges, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import styles from './ProjectLocation.module.css'
+import { useStorageLineOff } from './useStorageBudgetStatus'
 
 /** A project move's settings conflict: the settings file was edited after the move's rename. */
 export interface ProjectMoveSettingsConflict { file: string; digest: string; later: string[]; canFinish: boolean; finished: boolean }
@@ -58,7 +59,9 @@ export function ProjectMoveSettingsChoice() {
   const client = useQueryClient(), location = useProjectLocation()
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const status = location.data, conflict = status?.settingsConflict
-  if (!status || !conflict) return null
+  // Finishing a move's settings conflict belongs to the storage line, off in this release.
+  const storageOff = useStorageLineOff()
+  if (!status || !conflict || storageOff) return null
   async function finish() {
     if (busy || !conflict?.canFinish) return
     setBusy(true); setError('')

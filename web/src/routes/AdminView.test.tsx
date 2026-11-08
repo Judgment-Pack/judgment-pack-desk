@@ -47,6 +47,9 @@ import selectStyles from '../ui/Select.module.css'
 import { AdminView } from './AdminView'
 import { readAuditRecord } from '../audit/client'
 import { ADMIN_GROUPS, ADMIN_SECTIONS, adminSectionId, connectionTab } from './adminSections'
+import { decodeStorageBudgetStatus } from '../admin/storageBudgetModel'
+import { storageStatusFixture } from '../admin/storageBudgetModel.fixture'
+import { storageBudgetStatusKey } from '../admin/useStorageBudgetStatus'
 
 // The decision-record panel asks the chassis to run the runtime's audit
 // verify; here it is told the project keeps no trail, and counted.
@@ -1769,4 +1772,33 @@ it('opens Document processing for the legacy Documents fragment', () => {
   renderAdmin(effectiveConfig(undefined), '/admin#documents')
   expect(screen.getByRole('heading', { name: 'Document processing', level: 2 })).toBeTruthy()
   expect(screen.queryByRole('textbox', { name: 'Pack folder' })).toBeNull()
+})
+
+describe('Storage & backups with the storage line off', () => {
+  function renderStorage(line: 'on' | 'off') {
+    const client = testQueryClient()
+    client.setQueryData(storageBudgetStatusKey, line === 'off'
+      ? decodeStorageBudgetStatus({ version: 1, line: 'off', servedAt: '2026-11-08T12:00:00Z' })
+      : decodeStorageBudgetStatus(storageStatusFixture()))
+    const router = createMemoryRouter([{ path: '*', element: (
+      <McpContext.Provider value={connected({ client: QUIET.client })}>
+        <DeskConfigFixture value={effectiveConfig(undefined)}>
+          <ShellStateProvider projectIdentity={ROOT} viewport={{ railIsDrawer: false, inspectorIsDrawer: false }}>
+            <AdminView />
+          </ShellStateProvider>
+        </DeskConfigFixture>
+      </McpContext.Provider>
+    ) }], { initialEntries: ['/admin#storage'] })
+    return render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  }
+  it('hides storage accounting and limits, and keeps chat data', () => {
+    renderStorage('off')
+    expect(screen.queryByText('Storage accounting')).toBeNull()
+    expect(screen.getByText('Chat data')).toBeTruthy()
+  })
+  it('shows storage accounting where the line is on', () => {
+    renderStorage('on')
+    expect(screen.getAllByText('Storage accounting').length).toBeGreaterThan(0)
+    expect(screen.getByText('Chat data')).toBeTruthy()
+  })
 })

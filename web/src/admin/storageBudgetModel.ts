@@ -35,6 +35,8 @@ export type ChildStorageObservation = {
 /** Folders storage measures but has not registered, and projects given an identity after storage was set up for them (kept under their folder). */
 export type StorageRegistration = { enforcement: 'warning-only'; folders: string[]; identities?: string[] }
 export type StorageBudgetStatus = {
+  /** 'off': the storage line does not run in this release; nothing below is measured or enforced. */
+  line: 'on' | 'off'
   childObservation: ChildStorageObservation | null
   registration: StorageRegistration | null
   version: 1; availability: 'available' | 'stale' | 'unavailable'; reason: StorageReason | null; readOnly: boolean; servedAt: string
@@ -157,14 +159,21 @@ function registration(value: unknown): StorageRegistration {
   if (!folders.length && !identities || new Set(folders).size !== folders.length) invalid()
   return identities ? {enforcement: 'warning-only', folders, identities} : {enforcement: 'warning-only', folders}
 }
+/** The storage line is off (v0.14.0): Desk keeps v0.13.2's storage, with no limits, accounting or warnings. */
+export function storageLineOff(status: StorageBudgetStatus | null | undefined): boolean { return status?.line === 'off' }
 export function decodeStorageBudgetStatus(value: unknown): StorageBudgetStatus {
+  if (object(value).line !== undefined && object(value).line !== 'on') {
+    const v = closed(value, ['version', 'line', 'servedAt'])
+    if (v.version !== 1 || v.line !== 'off') invalid()
+    return {line: 'off', childObservation: null, registration: null, version: 1, availability: 'unavailable', snapshot: null, reason: null, readOnly: false, servedAt: time(v.servedAt), pressure: {active: false, codes: [], firstSeenAt: null, lastSeenAt: null, durableState: 'unknown'}}
+  }
   const v = object(value), p = object(v.pressure)
   if (v.version !== 1) invalid()
   const availability = choice(v.availability, ['available', 'stale', 'unavailable']), data = nullable(v.snapshot, snapshot)
   if ((availability === 'unavailable') !== (data === null)) invalid()
   const codes = rows(p.codes, 8, v => choice(v, storageReasons))
   if (new Set(codes).size !== codes.length || bool(p.active) !== (codes.length > 0)) invalid()
-  return {childObservation: v.childObservation === undefined || v.childObservation === null ? null : childObservation(v.childObservation), registration: v.registration === undefined || v.registration === null ? null : registration(v.registration), version: 1, availability, snapshot: data, reason: nullable(v.reason, value => choice(value, storageReasons)), readOnly: bool(v.readOnly), servedAt: time(v.servedAt), pressure: {active: bool(p.active), codes, firstSeenAt: nullable(p.firstSeenAt, time), lastSeenAt: nullable(p.lastSeenAt, time), durableState: choice(p.durableState, ['unconfirmed', 'available', 'unknown'])}}
+  return {line: 'on', childObservation: v.childObservation === undefined || v.childObservation === null ? null : childObservation(v.childObservation), registration: v.registration === undefined || v.registration === null ? null : registration(v.registration), version: 1, availability, snapshot: data, reason: nullable(v.reason, value => choice(value, storageReasons)), readOnly: bool(v.readOnly), servedAt: time(v.servedAt), pressure: {active: bool(p.active), codes, firstSeenAt: nullable(p.firstSeenAt, time), lastSeenAt: nullable(p.lastSeenAt, time), durableState: choice(p.durableState, ['unconfirmed', 'available', 'unknown'])}}
 }
 export const STORAGE_STATUS_MAX_BYTES = 8_388_608
 /** Bound bytes before decoding JSON; a large/malformed reply cannot erase cached rows. */
