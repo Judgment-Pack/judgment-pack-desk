@@ -243,11 +243,10 @@ func TestAssistantRunPlanDecisionRefusals(t *testing.T) {
 				start.Revision = digestOf(doc.Chats[0])
 			}
 			started := assistantProtocolView(t, policyCall(s, token, "POST", "/api/assistant-runs", start), 201)
-			state := "awaiting-input"
-			if mode == "asked-and-pending" {
-				state = "paused-budget"
-			}
-			paused := assistantProtocolWait(t, s, token, started.ID, state)
+			// An asked approval is an approval pause: the run awaits the person
+			// (awaiting-input) even with a Plan pending, and withholds the Plan
+			// reference, so the Plan decision below is refused.
+			paused := assistantProtocolWait(t, s, token, started.ID, "awaiting-input")
 			e := <-executions
 			// Wait for finalization to drop the active executor before admission checks.
 			<-e.done
@@ -258,6 +257,9 @@ func TestAssistantRunPlanDecisionRefusals(t *testing.T) {
 				paused = assistantProtocolWait(t, s, token, paused.ID, "stopped")
 			}
 			before := assistantExecutionRecord(t, e)
+			if mode == "asked-and-pending" && (!assistantRunApprovalPause(before) || assistantRunPlanReference(before) != nil) {
+				t.Fatal("an asked approval did not withhold the pending Plan decision")
+			}
 			action := assistantRunAction{ID: "refused-plan", Kind: "plan-decision", Revision: paused.Revision, CallID: ref.CallID, PlanRevision: ref.PlanRevision, CandidateRevision: ref.CandidateRevision, Approved: new(bool)}
 			requestToken := token
 			want := 409

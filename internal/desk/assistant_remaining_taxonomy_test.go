@@ -36,8 +36,14 @@ func TestAssistantRemainingLocalTaxonomy(t *testing.T) {
 	e.source.Start.Purpose = "author-pack"
 	pack, err := e.assistantAuthoringTools()
 	assistantRunMust(t, err)
-	if len(pack.tools) != 0 {
-		t.Fatal("standalone pack placeholder retained")
+	// Pack authoring declares only propose_pack, which the Agent reads itself
+	// as the run's proposal (Agent v0.13.2 tool-offer contract), with its
+	// owner taxonomy; no other standalone pack tool is offered.
+	if len(pack.tools) != 1 || pack.tools[0].Name != "propose_pack" || !reflect.DeepEqual(pack.tools[0].Taxonomy, &runcontext.ToolTaxonomy{Operation: "propose", Effect: "propose"}) {
+		t.Fatal("standalone pack offer changed", len(pack.tools))
+	}
+	if problem := runcontext.HostTaxonomyProblem(pack.tools[0]); problem != "" {
+		t.Fatal(problem)
 	}
 	e.source.Start.Purpose = "author-graph"
 	author, err := e.assistantAuthoringTools()
