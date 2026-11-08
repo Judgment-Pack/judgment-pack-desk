@@ -85,8 +85,13 @@ func assistantResearchSourceBrowserFixtureWithCompletion(t *testing.T, upstreamU
 
 func assistantResearchSourceApprovalFixture(t *testing.T, s *Server, token string) assistantSourceApproval {
 	t.Helper()
-	row := assistantSourceTestRow(t, assistantSourceTestView(t, s, token), "desk-research-workflow")
-	approved := assistantSourceTestApprove(t, s, token, row)
+	// assistantResearchSeed approved Desk's research workflow through the
+	// owner's review routes, as an owner does before a run offers its tool; a
+	// second approval of the same review is refused. This reads that one.
+	approved := assistantSourceTestRow(t, assistantSourceTestView(t, s, token), "desk-research-workflow")
+	if approved.Status != "approved" || approved.Approval == nil {
+		t.Fatal("the seeded research workflow approval is not current", approved)
+	}
 	store, err := s.openChatData()
 	assistantRunMust(t, err)
 	defer store.root.Close()
