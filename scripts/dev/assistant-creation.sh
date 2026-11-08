@@ -21,7 +21,9 @@ for producer in ActualAPI ActualNative InterruptedValidationAndRetest MultipleCo
 done
 node_command=(bash -c '
  set -euo pipefail
- "$1/web/node_modules/.bin/esbuild" "$1/scripts/assistant-creation-reference.mjs" --bundle --platform=node --format=esm --outfile="$2/reference.mjs"
+ "$1/web/node_modules/.bin/esbuild" "$1/scripts/assistant-creation-reference.mjs" --bundle --platform=node --format=esm \
+  --inject:"$1/scripts/assistant-chat-projection-reference-locale.mjs" --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$2/reference.mjs"
  node "$2/reference.mjs" "$2/outputs"
  cd "$1/web"
  JPS_CREATION_OUTPUTS="$2/outputs" JPS_CREATION_NATIVE_OUTPUTS="$2/outputs/native" ./node_modules/.bin/vitest run src/routes/CreationRoutes.test.tsx src/assistant/serverRuns/creationContinuation.test.ts

@@ -16,7 +16,9 @@ mkdir -m 700 "$tmp/outputs"
 ) | tee "$tmp/producers.log"
 node_command=(bash -c '
  set -euo pipefail
- "$1/web/node_modules/.bin/esbuild" "$1/scripts/assistant-brief-reference.mjs" --bundle --platform=node --format=esm --outfile="$2/reference.mjs"
+ "$1/web/node_modules/.bin/esbuild" "$1/scripts/assistant-brief-reference.mjs" --bundle --platform=node --format=esm \
+  --inject:"$1/scripts/assistant-chat-projection-reference-locale.mjs" --define:import.meta.glob=offlineLocaleCatalogues \
+  --outfile="$2/reference.mjs"
  node "$2/reference.mjs" "$2/outputs"
 ' assistant-brief "$root" "$tmp")
 if [ -n "${JPDEV_WRAP:-}" ]; then node_command=(flock "$JPDEV_LOCK" "$JPDEV_WRAP" node -- "${node_command[@]}"); fi
