@@ -15,6 +15,12 @@ jobs:
     name: Archive (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
+    env:
+      # The storage line (ADR-0015) is off in this release. Its native prerequisites
+      # still run, with the line on, and keep their evidence; while the released line
+      # is off, their failure does not stop the archive. Set to 'on' with the release
+      # that turns the line on, and the failure stops the archive again.
+      RELEASED_STORAGE_LINE: 'off'
     strategy:
       fail-fast: false
       matrix:
@@ -62,9 +68,13 @@ jobs:
       - name: Check native installer selection and platform refusals
         run: python3 scripts/desk-update_test.py
       - name: Check native storage prerequisites and retain evidence
+        id: native-prerequisites
         timeout-minutes: 8
+        continue-on-error: ${{ env.RELEASED_STORAGE_LINE == 'off' }}
         shell: bash
         env:
+          # The prerequisites are storage-line tests, which skip with the line off.
+          JPACK_DESK_STORAGE_LINE: 'on'
           CGO_ENABLED: ${{ matrix.cgo }}
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -105,7 +115,8 @@ jobs:
               'execution': {key: os.environ.get(key, '') for key in (
                   'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT',
                   'RUNNER_OS', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion', 'RELEASE_TAG',
-                  'GOOS', 'GOARCH', 'CGO_ENABLED', 'GOWORK', 'IDENTITY_TEST')},
+                  'GOOS', 'GOARCH', 'CGO_ENABLED', 'GOWORK', 'IDENTITY_TEST',
+                  'JPACK_DESK_STORAGE_LINE', 'RELEASED_STORAGE_LINE')},
               'compileFlags': ['-trimpath'],
               'testFlags': ['-test.v=test2json', '-test.count=1', '-test.timeout=2m', '-test.failfast'],
           }
@@ -200,6 +211,11 @@ jobs:
           )
           storagebudget_selection="^($(IFS='|'; echo "${storagebudget_tests[*]}"))$"
           run_native storagebudget ./internal/storagebudget "$storagebudget_selection" "${storagebudget_tests[@]}"
+      - name: Say that the storage line's native prerequisites failed, allowed while the line is off
+        if: steps.native-prerequisites.outcome == 'failure'
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: echo "::warning title=Storage line native prerequisites failed ($PLATFORM)::The storage line is off in this release (ADR-0015), so this failure does not stop the archive; the raw evidence is kept in storage-native-prerequisites-$PLATFORM."
       - name: Retain native prerequisite evidence, including failures and skips
         if: always()
         uses: actions/upload-artifact@v7

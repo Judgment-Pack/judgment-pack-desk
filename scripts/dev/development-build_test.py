@@ -88,6 +88,22 @@ if pathlib.Path(sys.argv[0]).name == 'go':
         for platform in ('linux_amd64', 'darwin_arm64', 'darwin_amd64'):
             self.assertIn('platform: ' + platform, workflow)
 
+    def test_native_storage_prerequisites_run_with_the_line_on_and_allowed_while_it_is_off(self):
+        # The storage line (ADR-0015) is off in the release: its native prerequisites still
+        # run with the line on and keep their evidence, and their failure stops the archive
+        # only once the released line is on.
+        workflow = (ROOT / '.github/workflows/release-build.yml').read_text()
+        self.assertIn("      RELEASED_STORAGE_LINE: 'off'\n", workflow)
+        step = workflow.split('      - name: Check native storage prerequisites and retain evidence\n', 1)[1]
+        step = step.split('\n      - name: ', 1)[0]
+        self.assertIn("continue-on-error: ${{ env.RELEASED_STORAGE_LINE == 'off' }}", step)
+        self.assertIn("JPACK_DESK_STORAGE_LINE: 'on'", step)
+        self.assertIn("raise SystemExit('Native prerequisite package or subtest failed/skipped; raw evidence retained')", step)
+        self.assertIn("if: steps.native-prerequisites.outcome == 'failure'", workflow)
+        upload = workflow.split('      - name: Retain native prerequisite evidence, including failures and skips\n', 1)[1]
+        self.assertTrue(upload.startswith('        if: always()\n'))
+        self.assertEqual(workflow.count('continue-on-error'), 1)
+
 
 if __name__ == '__main__':
     unittest.main()
