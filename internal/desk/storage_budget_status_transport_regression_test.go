@@ -33,6 +33,7 @@ func (w *storageStatusTransportBarrier) Write(raw []byte) (int, error) {
 }
 
 func TestStorageStatusTransportDoesNotRetainFirstUseExclusion(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	cfg.JpackBin = standInRuntime(t)
 	cfg.Logger = log.New(io.Discard, "", 0)

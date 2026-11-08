@@ -921,6 +921,7 @@ func TestStorageMoveControlProvision(t *testing.T) {
 // These are actual original-host journeys, separately gated by the matching
 // current-source native proof. Pure codec vectors do not qualify these calls.
 func TestStorageMoveOriginalHistoryJourneys(t *testing.T) {
+	requireStorageLine(t)
 	for _, cut := range []string{"artifact-absent-repeat", "artifact-present-delta", "intent-claimed", "admitted-before-stage"} {
 		t.Run(cut, func(t *testing.T) {
 			project := t.TempDir()
@@ -1175,6 +1176,7 @@ func storageTestOriginalJournal(ctx context.Context, o *storageBudgetOwner, run 
 // They separately require abort at the original path, completion at the moved
 // inode, and completion with Q already retired but no active current row.
 func TestStorageMovePendingRecoveryFinalization(t *testing.T) {
+	requireStorageLine(t)
 	for _, cut := range []string{"before-rename", "after-rename", "terminal-before-current"} {
 		t.Run(cut, func(t *testing.T) {
 			project := t.TempDir()

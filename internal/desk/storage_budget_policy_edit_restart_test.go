@@ -14,6 +14,7 @@ import (
 // definitions through the completed policy, and open writable with the edited
 // limits in force. A second start, after another edit, does the same.
 func TestStoragePolicyEditAfterHistoryEnrollmentRestartsWritable(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	for _, change := range []struct {
 		name   string

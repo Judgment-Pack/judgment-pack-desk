@@ -468,6 +468,7 @@ func TestStorageOwnedMeasurementSharedWireVectors(t *testing.T) {
 // Actual application identity/custody is required here. Parent must integrate
 // fresh exact-source native/proof correspondence before selecting this group.
 func TestStorageOwnedMeasurementQualifiedLifecycle(t *testing.T) {
+	requireStorageLine(t)
 	records, err := storageEnrollmentNativeRecords(storageEnrollmentInstalledNativeRecords)
 	storageTestMust(t, err)
 	if len(records) == 0 {

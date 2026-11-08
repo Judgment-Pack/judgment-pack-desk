@@ -46,6 +46,7 @@ func storageHistoryConcurrentRequest(ctx context.Context, s *Server, session str
 // unselected default history. The follower must inspect the completed original
 // selection itself; canceling another queued caller cannot revoke the creator.
 func TestStorageHistoryConcurrentFirstUseJoinsOriginalTurn(t *testing.T) {
+	requireStorageLine(t)
 	s := storageHistoryConcurrentServer(t)
 	c, owner := s.storageConstruction, s.storageConstruction.owner
 	session := policyTestSession(t, s)
@@ -225,6 +226,7 @@ func TestStorageHistoryConcurrentFirstUseJoinsOriginalTurn(t *testing.T) {
 }
 
 func TestStorageHistoryFirstUseWaitIsBounded(t *testing.T) {
+	requireStorageLine(t)
 	s := storageHistoryConcurrentServer(t)
 	before := storageTestTree(t, s.configDir)
 	synctest.Test(t, func(t *testing.T) {
@@ -249,6 +251,7 @@ func TestStorageHistoryFirstUseWaitIsBounded(t *testing.T) {
 }
 
 func TestStorageHistoryFirstUseKeepsConflictingAdmissionTryOnly(t *testing.T) {
+	requireStorageLine(t)
 	s := storageHistoryConcurrentServer(t)
 	owner := s.storageConstruction.owner
 	before := storageTestTree(t, s.configDir)

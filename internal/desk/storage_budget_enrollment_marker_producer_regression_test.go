@@ -21,6 +21,7 @@ import (
 // recovery. No encoded envelope, native qualification or expected packet is
 // seeded by this fixture. The installed native qualification remains required.
 func TestStorageEnrollmentMarkerProducersKeepBeforeCodecThroughRecovery(t *testing.T) {
+	requireStorageLine(t)
 	paths := map[byte]bool{}
 	for _, family := range []byte{1, 4} {
 		t.Run(fmt.Sprint(family), func(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 // root identities and domain witnesses. Coalescing repeated installation reads
 // inside one read-only frame must not cache authority for the next frame.
 func TestStorageEnrollmentCurrentFrameFreshOriginalWitnesses(t *testing.T) {
+	requireStorageLine(t)
 	s := storageHistoryConcurrentServer(t)
 	c := s.storageConstruction
 	p, err := c.beginEnrollmentEpoch(t.Context())

@@ -90,6 +90,7 @@ func storageFirstUseErrorClass(err error) string {
 }
 
 func TestStorageStatusActualFirstUseEnrollment(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	cfg.JpackBin = standInRuntime(t) // Match the actual browser fixture.
 	cfg.Logger = log.New(io.Discard, "", 0)
@@ -323,6 +324,7 @@ func TestStorageStatusActualFirstUseEnrollment(t *testing.T) {
 // installed qualification records keep this requirement open; no skip, injected
 // proof or refusal-only result substitutes for the restored success assertion.
 func TestStorageEnrollmentActualRetiredCreationRestart(t *testing.T) {
+	requireStorageLine(t)
 	for _, scenario := range []struct{ point, change string }{
 		{"creation-retired-before-enrollment", "restored"}, {"creation-retired-before-enrollment", "changed-native"}, {"creation-retired-before-enrollment", "changed-marker-owner"}, {"creation-retired-before-enrollment", "changed-marker-payload"},
 		{"creation-scope-prepared-before-q", "restored"}, {"creation-scope-prepared-before-q", "changed-native"}, {"creation-scope-prepared-before-q", "changed-marker-owner"}, {"creation-scope-prepared-before-q", "changed-marker-payload"},
@@ -460,6 +462,7 @@ func TestStorageEnrollmentActualRetiredCreationRestart(t *testing.T) {
 // its absent pointer is created, and retired/prepared/completed restart cuts
 // must recover to healthy authority without a History directory or marker.
 func TestStorageEnrollmentActualLegacyConfigSelectionRestart(t *testing.T) {
+	requireStorageLine(t)
 	for _, cut := range []string{"creation-retired-before-enrollment", "creation-scope-prepared-before-q", "fully-completed"} {
 		t.Run(cut, func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -593,6 +596,7 @@ func TestStorageEnrollmentActualLegacyConfigSelectionRestart(t *testing.T) {
 // demand and original fault seams. Empty installed qualification does not skip
 // or turn refusal into success; platform/first-use gates remain explicit.
 func TestStorageEnrollmentActualSuccessorFenceFamiliesRestart(t *testing.T) {
+	requireStorageLine(t)
 	paths := map[byte]bool{}
 	familyPaths := map[byte]byte{}
 	for family := byte(1); family <= 4; family++ {
@@ -772,6 +776,7 @@ func TestStorageEnrollmentActualSuccessorFenceFamiliesRestart(t *testing.T) {
 }
 
 func TestStorageEnrollmentActualSuccessorFenceIntentTamperRefusal(t *testing.T) {
+	requireStorageLine(t)
 	for family := byte(1); family <= 4; family++ {
 		for _, change := range []string{"intended-catalog", "original-inputs", "changed-captured-native"} {
 			t.Run("family"+strconv.Itoa(int(family))+"/"+change, func(t *testing.T) {

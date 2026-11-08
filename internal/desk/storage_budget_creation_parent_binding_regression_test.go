@@ -13,6 +13,7 @@ import (
 // The project domain is a legitimate borrowed hold with no owned File; it is
 // unrelated to the configured parent, which still needs its own creator EX.
 func TestStorageCreationHistoryAfterProjectEnrollmentKeepsBorrowedDomain(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	s := ownerActualNew(t, cfg)
 	c := s.storageConstruction

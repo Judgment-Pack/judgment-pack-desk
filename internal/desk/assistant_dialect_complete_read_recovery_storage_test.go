@@ -183,6 +183,7 @@ func TestDialectReadRecoveryStorageActualParentChildHTTP(t *testing.T) {
 }
 
 func TestDialectReadRecoveryStorageActualAbsentOriginalHistoryUnavailable(t *testing.T) {
+	requireStorageLine(t)
 	cfg, entry := ownerReviewHome(t, false)
 	parent := ownerActualNew(t, cfg)
 	child := parent.desks[entry.ID]

@@ -21,6 +21,7 @@ import (
 // work is paused"). A registered child is still compared exactly: one that was
 // replaced is refused.
 func TestStorageRetainedChildMadeAfterTheCatalogStaysInItsPrivateRoot(t *testing.T) {
+	requireStorageLine(t)
 	start := func(t *testing.T, project, config string) *Server {
 		t.Helper()
 		s, err := New(Config{ProjectDir: project, DeskConfigDir: config, JpackBin: jpackBinary(), Token: testToken, Port: 8791, Logger: log.New(io.Discard, "", 0)})

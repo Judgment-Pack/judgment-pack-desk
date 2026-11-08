@@ -1286,10 +1286,15 @@ func TestDeskConfigWriteRefusesASymlinkedFile(t *testing.T) {
 		t.Skipf("symlinks are not available here: %v", err)
 	}
 	s, ts, _ := assistantServerIn(t, config)
-	storageCensusRefusalStatus(t, s, filepath.Join(config, deskConfigName))
-	status, body := putDeskConfig(t, ts, geminiAssistant, digestOf([]byte(`{"deskConfigVersion":1}`)))
-	if status != http.StatusServiceUnavailable {
-		t.Fatalf("status %d, body %v; want the read-only refusal", status, body)
+	if storageLineOn() {
+		storageCensusRefusalStatus(t, s, filepath.Join(config, deskConfigName))
+		status, body := putDeskConfig(t, ts, geminiAssistant, digestOf([]byte(`{"deskConfigVersion":1}`)))
+		if status != http.StatusServiceUnavailable {
+			t.Fatalf("status %d, body %v; want the read-only refusal", status, body)
+		}
+	} else if status, body := putDeskConfig(t, ts, geminiAssistant, digestOf([]byte(`{"deskConfigVersion":1}`))); status != http.StatusBadRequest || body["code"] != CodeNotAFile {
+		// With the storage line off, as in v0.13.2: the write is refused as not a file.
+		t.Fatalf("status %d, body %v; want 400 %s", status, body, CodeNotAFile)
 	}
 	// The file the link points at is untouched.
 	target, err := os.ReadFile(elsewhere)

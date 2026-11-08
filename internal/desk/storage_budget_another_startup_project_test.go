@@ -16,6 +16,7 @@ import (
 // startup, naming the cause and what to do, before and after the first
 // project's first-use history enrollment; the first project still starts.
 func TestStorageAnotherStartupProjectIsRefusedInWords(t *testing.T) {
+	requireStorageLine(t)
 	for _, enrolled := range []bool{false, true} {
 		name := "before first-use enrollment"
 		if enrolled {

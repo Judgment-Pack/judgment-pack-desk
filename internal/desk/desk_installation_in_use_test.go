@@ -14,6 +14,7 @@ import (
 // start after the first Desk closes is unaffected on the same project; on
 // another project it is the first-project seal's refusal, in its own words.
 func TestASecondDeskOnAHeldInstallationIsRefusedInWords(t *testing.T) {
+	requireStorageLine(t)
 	config := filepath.Join(t.TempDir(), "config")
 	project := t.TempDir()
 	start := func(dir string, port int) (*Server, error) {

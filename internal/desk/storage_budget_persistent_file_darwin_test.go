@@ -11,6 +11,7 @@ import (
 // This focused gate needs the actual supported native bridge and filesystem.
 // Missing prerequisites fail; portable handwritten tests are not a native pass.
 func TestStorageOwnerPersistentFileDarwinNative(t *testing.T) {
+	requireStorageLine(t)
 	root, err := os.OpenRoot(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

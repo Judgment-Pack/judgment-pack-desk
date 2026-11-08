@@ -16,6 +16,7 @@ import (
 // found none, and refused custody, so every chat, Policy recovery and other
 // history-backed operation answered that storage was unavailable.
 func TestStorageHistoryEnrollmentUsesTheRegisteredKeyAfterAnIdentityIsWritten(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())

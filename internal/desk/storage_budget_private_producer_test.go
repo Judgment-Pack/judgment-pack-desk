@@ -76,6 +76,7 @@ func storageProducerStart(t *testing.T, cfg Config) *Server {
 // it as a folder of its own. Both starts are now writable and drafts keep
 // working; a registered folder that was replaced is still refused.
 func TestStorageRestartKeepsAProducerMadePrivateFolderWritable(t *testing.T) {
+	requireStorageLine(t)
 	cfg := storageProducerConfig(t)
 	s := storageProducerStart(t, cfg)
 	if _, err := os.Lstat(filepath.Join(cfg.ProjectDir, startupIdentityDir)); !errors.Is(err, os.ErrNotExist) {
@@ -119,6 +120,7 @@ func TestStorageRestartKeepsAProducerMadePrivateFolderWritable(t *testing.T) {
 // keeps working; dialect drafts and a move refuse in words that say what is
 // wrong, since the producer never adopts a folder it did not make.
 func TestStorageEnrollmentStartKeepsAnUnregisteredPrivateFolderWritable(t *testing.T) {
+	requireStorageLine(t)
 	cfg := storageProducerConfig(t)
 	s := storageProducerStart(t, cfg)
 	storageTestMust(t, s.ensureDefaultHistoryEnrollment(t.Context()))
@@ -164,6 +166,7 @@ func fmtError(err error) string {
 // creation path before reading the identity its token covers, and the move
 // completes.
 func TestProjectMovePreviewMakesTheProducersPrivateFolder(t *testing.T) {
+	requireStorageLine(t)
 	cfg := storageProducerConfig(t)
 	s, ts := startDesk(t, cfg)
 	defer ts.Close()

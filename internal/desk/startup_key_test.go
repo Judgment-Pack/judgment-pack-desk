@@ -1389,6 +1389,13 @@ func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 	if got := through.signingKeyName(); got != want {
 		t.Errorf("started through the link again, the key is named %s, want %s", got, want)
 	}
+	if !storageLineOn() {
+		// v0.13.2: another project starts on this installation, under its own name.
+		if elsewhere, _ := start(t, other); elsewhere.signingKeyName() == want || startupNameOf(t, elsewhere) == want {
+			t.Errorf("another project's key is named %s too", want)
+		}
+		return
+	}
 	through.Close()
 	ts.Close()
 	if elsewhere, err := New(Config{ProjectDir: other, JpackBin: rig.bin, Token: testToken, Port: 8793, DeskConfigDir: config, Logger: log.New(io.Discard, "", 0)}); err == nil {

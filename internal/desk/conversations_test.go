@@ -164,7 +164,8 @@ func TestConversationHistoryRejectsUnsafeFiles(t *testing.T) {
 					t.Fatalf("unsafe %s via %s accepted: %d", kind, method, status)
 				}
 			}
-			if kind != "symlink" {
+			// The census and its read-only start belong to the storage line.
+			if kind != "symlink" || !storageLineOn() {
 				return
 			}
 			// A link the census meets starts the next Desk read-only (desk

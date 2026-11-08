@@ -428,6 +428,7 @@ func TestStorageStatusGuardExactReadAndStartupFallback(t *testing.T) {
 // not mint an enrollment or bypass the existing startup custody failure. Until
 // that unrelated failure is repaired they are expected to stop at its evidence.
 func TestStorageStatusActualReadNoWriteAndCopiedEnrollment(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	beforeConfig := storageTestTree(t, s.configDir)
 	beforeProject := storageTestTree(t, s.projectDir)
@@ -455,6 +456,7 @@ func TestStorageStatusActualReadNoWriteAndCopiedEnrollment(t *testing.T) {
 }
 
 func TestStorageStatusActualLifetimeDrainsAndRejectsClosing(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	e, o, use, err := s.storageStatusLifetime(t.Context())
 	if err != nil {
@@ -488,6 +490,7 @@ func TestStorageStatusActualLifetimeDrainsAndRejectsClosing(t *testing.T) {
 	}
 }
 func TestStorageStatusActualUseReplacementAndEXRefusal(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	path := filepath.Join(s.configDir, storageUseName)
 	gate, err := os.OpenFile(path, os.O_RDWR, 0)

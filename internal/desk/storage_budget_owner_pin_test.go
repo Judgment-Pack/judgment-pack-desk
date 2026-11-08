@@ -14,6 +14,7 @@ import (
 // move and a first dialect draft. A pin does not stop an enrollment step;
 // an operation retain still does; and Close still waits for the last pin.
 func TestStorageOwnerPinIsNotAnOperation(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c, o := s.storageConstruction, s.storageConstruction.owner
 	if s.recoveryStorage != nil {

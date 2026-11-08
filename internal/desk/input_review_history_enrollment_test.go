@@ -12,6 +12,7 @@ import (
 // no Dialects evaluation could be reviewed. The read itself still creates
 // nothing unaccounted: it runs only after the enrolled route.
 func TestInputEvaluationReviewEnrollsFirstUseHistory(t *testing.T) {
+	requireStorageLine(t)
 	s, _, _ := assistantServer(t)
 	writeProjectFile(t, s.projectDir, "jpack.json", `{"configVersion":"5","packs":{"one":{"path":"one.pack.json"}}}`)
 	writeProjectFile(t, s.projectDir, "one.pack.json", reviewPack)

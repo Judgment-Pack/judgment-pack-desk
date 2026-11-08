@@ -51,6 +51,7 @@ func exclusiveSeedRejected(t *testing.T, o *storageBudgetOwner, count int) {
 }
 
 func TestStorageExclusiveCensusRejectedHealthyRestarts(t *testing.T) {
+	requireStorageLine(t)
 	for _, count := range []int{1, 64} {
 		t.Run(fmt.Sprintf("rejected-%d", count), func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -93,6 +94,7 @@ func TestStorageExclusiveCensusRejectedHealthyRestarts(t *testing.T) {
 }
 
 func TestStorageExclusiveCensusRetiredHistoryControls(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	first := ownerActualNew(t, cfg)
 	cfg.ProjectDir = first.projectDir
@@ -134,6 +136,7 @@ func TestStorageExclusiveCensusRetiredHistoryControls(t *testing.T) {
 }
 
 func TestStorageExclusiveCensusUnknownMaintenanceRefused(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	first := ownerActualNew(t, cfg)
 	cfg.ProjectDir = first.projectDir
@@ -163,6 +166,7 @@ func exclusiveAwait(t *testing.T, entered <-chan struct{}, done <-chan error) {
 	}
 }
 func TestStorageExclusiveCensusCloseRetainsActualDrain(t *testing.T) {
+	requireStorageLine(t)
 	for _, point := range []string{"capture", "walk-read-dir", "walk-dir-close", "child-root-close", "allowance-native-read", "allowance-parent-close", "post-spend", "control-return", "helper-drained"} {
 		t.Run(point, func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -271,6 +275,7 @@ func TestStorageExclusiveCensusCloseRetainsActualDrain(t *testing.T) {
 }
 
 func TestStorageExclusiveCensusFailedSpentGroupFreshRestart(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	first := ownerActualNew(t, cfg)
 	cfg.ProjectDir = first.projectDir
@@ -292,6 +297,7 @@ func TestStorageExclusiveCensusFailedSpentGroupFreshRestart(t *testing.T) {
 }
 
 func TestStorageExclusiveCensusCancellationAndCleanupError(t *testing.T) {
+	requireStorageLine(t)
 	for _, kind := range []string{"canceled-after-spend", "owned-close-error"} {
 		t.Run(kind, func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -388,6 +394,7 @@ func TestStorageExclusiveRetiredEpochPredicatesUnchanged(t *testing.T) {
 }
 
 func TestStorageExclusiveCensusUncertainReserveNotAdopted(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	first := ownerActualNew(t, cfg)
 	cfg.ProjectDir = first.projectDir
@@ -487,6 +494,7 @@ func exclusiveAssertOriginalEX(t *testing.T, c *storageBudgetConstruction) {
 }
 
 func TestStorageExclusiveCensusPriorObserverRefusedBeforeCurrentness(t *testing.T) {
+	requireStorageLine(t)
 	for _, point := range []string{"before-exclusive-selection", "before-phase", "allowance-parent-close"} {
 		t.Run(point, func(t *testing.T) {
 			cfg := ownerActualConfig(t)

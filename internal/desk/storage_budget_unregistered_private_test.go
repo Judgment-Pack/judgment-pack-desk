@@ -60,6 +60,7 @@ func storagePrivateUsage(t *testing.T, private string) (control, retained storag
 // start now leaves it to the census, which counts its bytes for the project's
 // workspace and the installation, and storage status reports the folder.
 func TestStorageRestartMeasuresAPrivateFolderMadeAfterTheCatalog(t *testing.T) {
+	requireStorageLine(t)
 	s, ts, rig, project := reviewProject(t, "", "")
 	private := filepath.Join(project, startupIdentityDir)
 	if _, err := os.Lstat(private); !errors.Is(err, os.ErrNotExist) {
@@ -123,6 +124,7 @@ func TestStorageRestartMeasuresAPrivateFolderMadeAfterTheCatalog(t *testing.T) {
 // expected, or a special file in it still starts storage read-only. A readable
 // file there is measured.
 func TestStorageRestartRefusesWhatTheRuleRefusesInAnUnregisteredPrivateFolder(t *testing.T) {
+	requireStorageLine(t)
 	seeded := func(t *testing.T) (Config, string) {
 		t.Helper()
 		t.Setenv("HOME", t.TempDir())
@@ -200,6 +202,7 @@ func TestStorageRestartRefusesWhatTheRuleRefusesInAnUnregisteredPrivateFolder(t 
 // that finds the registered .desk-private gone and another folder at its name
 // misses a registered root, and refuses custody as before.
 func TestStorageRestartRefusesAReplacedRegisteredPrivateFolder(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())

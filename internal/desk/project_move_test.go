@@ -283,6 +283,7 @@ func TestProjectMoveAfterRestartKeepsHistory(t *testing.T) {
 // Move to… under Project location. Moved back, the project starts with its
 // history.
 func TestProjectMovedOutsideDeskIsRefusedInWords(t *testing.T) {
+	requireStorageLine(t)
 	for _, identity := range []bool{false, true} {
 		t.Run(map[bool]string{false: "history", true: "history and identity"}[identity], func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
@@ -379,6 +380,7 @@ func TestProjectMoveNeverReplacesDestinationOrStaleConfig(t *testing.T) {
 // an unknown prefix: the restart stays read-only and keeps the intent as it
 // was. Every later stop is finished or rolled back by the restart.
 func TestProjectMoveCrashRecovery(t *testing.T) {
+	requireStorageLine(t)
 	for _, step := range []string{"intent-claimed", "admitted-before-stage", "before-rename", "after-rename", "terminal-before-current"} {
 		t.Run(step, func(t *testing.T) {
 			s, ts, _ := assistantServer(t)
@@ -498,6 +500,7 @@ func TestProjectMoveDestinationAppearsAfterReview(t *testing.T) {
 	}
 }
 func TestProjectMoveRecoveryWillNotOverwriteLaterSettings(t *testing.T) {
+	requireStorageLine(t)
 	s, ts, _ := assistantServer(t)
 	destination := filepath.Join(t.TempDir(), "new")
 	request := movePreview(t, ts, destination)
@@ -578,6 +581,7 @@ func TestProjectMoveRecoveryWillNotOverwriteLaterSettings(t *testing.T) {
 // in that same file and restart. Done by hand, the next start's recovery
 // writes the moved settings onto it and finishes the move.
 func TestProjectMoveSettingsConflictOverAFoundFileSaysHowToFinishByHand(t *testing.T) {
+	requireStorageLine(t)
 	s, ts, _ := assistantServer(t)
 	settingsFile := filepath.Join(s.configDir, deskConfigName)
 	found := `{"deskConfigVersion":1}`
@@ -638,6 +642,7 @@ func TestProjectMoveSettingsConflictOverAFoundFileSaysHowToFinishByHand(t *testi
 // replaced and that this version cannot finish the move, and putting the
 // found bytes back in the replacing file does not finish it either.
 func TestProjectMoveSettingsConflictOverAReplacedFileSaysItCannotBeFinished(t *testing.T) {
+	requireStorageLine(t)
 	s, ts, _ := assistantServer(t)
 	settingsFile := filepath.Join(s.configDir, deskConfigName)
 	found := `{"deskConfigVersion":1}`

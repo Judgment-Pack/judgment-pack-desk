@@ -9,6 +9,7 @@ import "testing"
 // its own: every transfer on a restarted Desk with history was "busy". The
 // writer now holds a pin, counted apart from retains, so a backup runs.
 func TestAnIdleRecoveryWriterLeavesTransfersAdmissible(t *testing.T) {
+	requireStorageLine(t)
 	config := t.TempDir()
 	first, ts, _ := assistantServerIn(t, config)
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {

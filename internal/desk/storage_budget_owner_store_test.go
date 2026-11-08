@@ -9,6 +9,7 @@ import (
 // Decimal values are handwritten from the closed initializer/publication
 // inventory, not generated from a saved catalog, available space or fixture.
 func TestStorageOwnerFiniteBootstrapInventory(t *testing.T) {
+	requireStorageLine(t)
 	want := map[string]storageOwnerBootstrapEffect{
 		"config/claim": {4096, 1, 0, 0}, "config/record": {4096, 1, 0, 0},
 		"config/bootstrap": {0, 1, 0, 0}, "config/use": {0, 1, 0, 0},

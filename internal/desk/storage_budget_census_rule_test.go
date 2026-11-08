@@ -21,6 +21,7 @@ import (
 // read-only ("new work is paused"). Content someone else could write, a link
 // where a file or folder is expected, and a special file are still refused.
 func TestStorageCensusMeasuresOwnContentNoOneElseCanWrite(t *testing.T) {
+	requireStorageLine(t)
 	const desk = "c7000000000000000000000000000001"
 	type entry struct {
 		path string

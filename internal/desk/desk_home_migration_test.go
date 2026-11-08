@@ -44,6 +44,7 @@ func withoutStorage(t *testing.T, config string) {
 // Starting it is not checked: history written by this version carries
 // storage state that only a storage-aware home move carries (Desk #698).
 func TestDeskHomeMigrationPreservesHistoryCredentialsAndNamedDesk(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	s, ts, _ := assistantServer(t)
 	if code, _ := chatRequest(t, ts, "PUT", "absent", storageChat, true, ""); code != 200 {
@@ -202,6 +203,7 @@ func TestDeskHomeTransactionNeverOverwritesChangedFiles(t *testing.T) {
 // Nothing is scheduled or moved, no shutdown is requested and ordinary writes
 // continue.
 func TestDeskHomeAPIRequiresReviewAndStopsBeforeMove(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	shutdown := make(chan struct{}, 1)
 	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: os.Getenv("JPACK_BIN"), HomeMoveShutdown: func() { shutdown <- struct{}{} }}
@@ -279,6 +281,7 @@ func TestDeskHomeOtherProcessBlocksMigrationLease(t *testing.T) {
 // by a home without storage, stopped after its pointer write, is finished at
 // the next attempt and keeps a desk created after the registry was cached.
 func TestDeskHomeWholeMoveKeepsNewDesksAndRecoversAfterPointer(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	cfg, _ := homeFixture(t)
 	s, ts := startDesk(t, cfg)

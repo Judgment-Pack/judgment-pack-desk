@@ -57,6 +57,7 @@ func storageOwnedJoin(t *testing.T, done <-chan error, joined *bool) error {
 // Exercises activateStorageBudgetStartup itself, including a late original
 // identity epoch after loadOrEnrollOwner, forServer, and the outer cleanup.
 func TestStorageOwnedMeasurementQualifiedOuterStartup(t *testing.T) {
+	requireStorageLine(t)
 	storageOwnedRequireCurrentProof(t)
 	for _, name := range []string{"late-identity-success", "late-setup-refusal", "for-server-original-authority-close", "caller-canceled-after-capture"} {
 		t.Run(name, func(t *testing.T) {
@@ -175,6 +176,7 @@ func storageOwnedForceStatusRefresh(t *testing.T, s *Server) storageStatusRespon
 // Q is genuinely refreshed while that writer is active, and after its injected
 // pre-Reserve refusal has drained without a Q ticket/revision change.
 func TestStorageOwnedMeasurementQualifiedWriterBeforeReserve(t *testing.T) {
+	requireStorageLine(t)
 	storageOwnedRequireCurrentProof(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	storageTestMust(t, s.prepareStoragePolicy(t.Context()))

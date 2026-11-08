@@ -436,6 +436,7 @@ func TestPrivateDataFirstUseReusedIdleQueueHasLocalNotification(t *testing.T) {
 // The actual private-lock path carries charged enrollment waiting into the
 // remaining queue/OS allowance, while same-first-use waiting keeps its own cap.
 func TestPrivateDataFirstUseShortLockCarriesOnlyNonmatchingWait(t *testing.T) {
+	requireStorageLine(t)
 	for _, matching := range []bool{false, true} {
 		name := "unrelated"
 		if matching {

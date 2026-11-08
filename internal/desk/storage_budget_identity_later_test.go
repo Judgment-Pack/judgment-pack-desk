@@ -24,6 +24,7 @@ import (
 // status that the project was given an identity later. The seal still refuses
 // another folder, and a copy of the project that carries the same identity.
 func TestStorageIdentityAddedLaterToTheSameFolderRestartsWritableWithAWarning(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())

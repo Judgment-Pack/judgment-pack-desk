@@ -43,6 +43,7 @@ func (b *storageTransferCloseBody) Close() error {
 func (b *storageTransferCloseBody) count() int { b.mu.Lock(); defer b.mu.Unlock(); return b.closes }
 
 func TestStorageTransferRestorePreparationChecksBodyClose(t *testing.T) {
+	requireStorageLine(t)
 	s, err := New(ownerActualConfig(t))
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +86,7 @@ func TestStorageTransferRestorePreparationChecksBodyClose(t *testing.T) {
 }
 
 func TestStorageTransferRestoreCancellationClosesOriginalBodyAndDrains(t *testing.T) {
+	requireStorageLine(t)
 	s, err := New(ownerActualConfig(t))
 	if err != nil {
 		t.Fatal(err)
@@ -134,6 +136,7 @@ func TestStorageTransferRestoreCancellationClosesOriginalBodyAndDrains(t *testin
 }
 
 func TestStorageTransferRestorePreparationPermitRefusesWithoutQueue(t *testing.T) {
+	requireStorageLine(t)
 	first, err := New(ownerActualConfig(t))
 	if err != nil {
 		t.Fatal(err)
@@ -165,6 +168,7 @@ func TestStorageTransferRestorePreparationPermitRefusesWithoutQueue(t *testing.T
 }
 
 func TestStorageTransferQualifiedMoveRestoreExportRoutes(t *testing.T) {
+	requireStorageLine(t)
 	records, err := storageEnrollmentNativeRecords(storageEnrollmentInstalledNativeRecords)
 	if err != nil {
 		t.Fatal(err)
@@ -285,6 +289,7 @@ func (storageTransferRepeatedByte) Read(p []byte) (int, error) {
 }
 
 func TestStorageTransferRestorePreparationUploadMatrix(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	s, err := New(cfg)
 	if err != nil {
@@ -421,6 +426,7 @@ func (b *storageTransferPausedBody) Close() error {
 }
 
 func TestStorageTransferRestoreCanceledValidUploadKeepsOriginalPreparation(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	s, err := New(cfg)
 	if err != nil {
@@ -738,6 +744,7 @@ func storageTransferNativeRetireAbsent(t *testing.T, s *Server, server *httptest
 // fixture checks unchanged B union A; a differing-cohort native route remains a
 // separate gate (the changing-union comparator vectors are retained unchanged).
 func TestStorageTransferQualifiedRetiredViewExportAndExistingTarget(t *testing.T) {
+	requireStorageLine(t)
 	records, err := storageEnrollmentNativeRecords(storageEnrollmentInstalledNativeRecords)
 	if err != nil {
 		t.Fatal(err)
@@ -892,6 +899,7 @@ func TestStorageTransferQualifiedRetiredViewExportAndExistingTarget(t *testing.T
 // while the original finite observation actually expires; no timestamp, policy,
 // receipt, binding or qualification is rewritten by this fixture.
 func TestStorageTransferQualifiedExpiredSharedAnchorRefresh(t *testing.T) {
+	requireStorageLine(t)
 	records, err := storageEnrollmentNativeRecords(storageEnrollmentInstalledNativeRecords)
 	if err != nil {
 		t.Fatal(err)

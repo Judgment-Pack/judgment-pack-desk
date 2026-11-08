@@ -83,6 +83,7 @@ func TestDeskHomeExpiredConfirmationDoesNotQueue(t *testing.T) {
 // coverage below them, through the preview's own check of each Desk and the
 // queue. The selected Desk differs from the one with the active trigger.
 func TestDeskHomePreviewReportsActiveTriggerAndConfirmationRechecks(t *testing.T) {
+	requireStorageLine(t)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	cfg := Config{ProjectDir: t.TempDir(), DeskConfigDir: t.TempDir(), Token: testToken, JpackBin: homeRuntime(t), HomeMoveShutdown: func() {}}
 	privateFixture(t, filepath.Join(cfg.ProjectDir, projectConfigName), `{"deskConfigVersion":1}`)

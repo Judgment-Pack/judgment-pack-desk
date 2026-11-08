@@ -16,6 +16,7 @@ import (
 // identity there, and one it cannot read names nothing. A folder a group can
 // write is still refused.
 func TestAPrivateFolderOthersCanReadIsReadAndMeasured(t *testing.T) {
+	requireStorageLine(t)
 	for _, tc := range []struct {
 		name     string
 		mode     os.FileMode

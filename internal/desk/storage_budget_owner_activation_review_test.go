@@ -74,6 +74,7 @@ func TestStorageOwnerOriginalAnchorControls(t *testing.T) {
 }
 
 func TestStorageOwnerActualAnchorControlRefusals(t *testing.T) {
+	requireStorageLine(t)
 	for _, name := range ownerReviewAnchorNames {
 		for _, kind := range []string{"missing", "substituted", "partial"} {
 			t.Run(name+"/"+kind, func(t *testing.T) {
@@ -165,6 +166,7 @@ func ownerReviewHome(t *testing.T, private bool) (Config, deskHomeEntry) {
 }
 
 func TestStorageOwnerActualNamedProjectReplacement(t *testing.T) {
+	requireStorageLine(t)
 	for _, private := range []bool{false, true} {
 		t.Run(map[bool]string{false: "absent-private", true: "retained-private"}[private], func(t *testing.T) {
 			cfg, entry := ownerReviewHome(t, private)
@@ -219,6 +221,7 @@ func TestStorageOwnerActualNamedProjectReplacement(t *testing.T) {
 }
 
 func TestStorageOwnerActualNamedHomeReplacement(t *testing.T) {
+	requireStorageLine(t)
 	cfg, entry := ownerReviewHome(t, false)
 	parent := ownerActualNew(t, cfg)
 	c := parent.storageConstruction
@@ -252,6 +255,7 @@ func TestStorageOwnerActualNamedHomeReplacement(t *testing.T) {
 }
 
 func TestStorageOwnerActualUnretiredRestartPreservesObligation(t *testing.T) {
+	requireStorageLine(t)
 	for _, terminal := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unretired", true: "terminal-not-applied"}[terminal], func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -366,6 +370,7 @@ func TestStorageOwnerActualUnretiredRestartPreservesObligation(t *testing.T) {
 }
 
 func TestStorageOwnerActualIdentityPrecedenceAndMismatch(t *testing.T) {
+	requireStorageLine(t)
 	for _, kind := range []string{"retained", "malformed", "unsafe", "persistent-private-mismatch"} {
 		t.Run(kind, func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -454,6 +459,7 @@ func TestStorageOwnerActualIdentityPrecedenceAndMismatch(t *testing.T) {
 }
 
 func TestStorageOwnerRequiredCompletionOutcomes(t *testing.T) {
+	requireStorageLine(t)
 	points := []storageBootstrapFault{}
 	for _, name := range ownerReviewAnchorNames {
 		for _, phase := range []string{"sync", "close"} {
@@ -519,6 +525,7 @@ func TestStorageOwnerRequiredCompletionOutcomes(t *testing.T) {
 }
 
 func TestStorageOwnerActualHomeLeaseContentionPreservesState(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	s := ownerActualNew(t, cfg)
 	if err := s.Close(); err != nil {
@@ -560,6 +567,7 @@ func TestStorageOwnerActualHomeLeaseContentionPreservesState(t *testing.T) {
 // phase4 enrollment/census and existing infrastructure conversion. The separate
 // actual-New contention test covers constructor refusal and writable restart.
 func TestStorageOwnerSameFDHandoffOriginalWitness(t *testing.T) {
+	requireStorageLine(t)
 	for _, changed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "continuous", true: "changed-name"}[changed], func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -625,6 +633,7 @@ func TestStorageOwnerSameFDHandoffOriginalWitness(t *testing.T) {
 }
 
 func TestStorageOwnerActualUnsafeReadyPreserved(t *testing.T) {
+	requireStorageLine(t)
 	for _, kind := range []string{"directory", "symlink", "hardlink", "public"} {
 		t.Run(kind, func(t *testing.T) {
 			cfg := ownerActualConfig(t)

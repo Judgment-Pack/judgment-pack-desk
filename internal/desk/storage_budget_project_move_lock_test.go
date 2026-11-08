@@ -16,6 +16,7 @@ import (
 // Actual host paths: pure self/tuple checks cannot establish that ordinary
 // lazy enrollment survives or that registered custody acquires its real lock.
 func TestStorageMovePrivateLockOriginal(t *testing.T) {
+	requireStorageLine(t)
 	for _, name := range []string{"ordinary-lazy", "registered-original", "stale-confirmation"} {
 		t.Run(name, func(t *testing.T) {
 			project := t.TempDir()

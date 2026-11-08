@@ -133,6 +133,7 @@ func enrollDialectArtifactMoveServer(t *testing.T, s *Server) dialectArtifactOwn
 }
 
 func TestDialectArtifactProjectMoveNativeRenameRecovery(t *testing.T) {
+	requireStorageLine(t)
 	for _, stop := range []string{"none", "before-rename", "after-rename", "move-location.after-cas", "move-queue.close"} {
 		t.Run(stop, func(t *testing.T) {
 			// Establish the real project identity before New can discover or

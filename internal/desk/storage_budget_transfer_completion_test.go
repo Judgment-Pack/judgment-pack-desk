@@ -69,6 +69,7 @@ func TestStorageTransferSelectionPointerStateRefusals(t *testing.T) {
 }
 
 func TestStorageTransferQualifiedCompletionSelectionCurrent(t *testing.T) {
+	requireStorageLine(t)
 	records, err := storageEnrollmentNativeRecords(storageEnrollmentInstalledNativeRecords)
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +190,7 @@ func TestStorageTransferQualifiedCompletionSelectionCurrent(t *testing.T) {
 // These are actual one-ticket transfers. Only the existing synchronous
 // successor seam pauses the owner; it grants no effect or qualification.
 func TestStorageTransferQualifiedCompletionCallerLifecycle(t *testing.T) {
+	requireStorageLine(t)
 	records, err := storageEnrollmentNativeRecords(storageEnrollmentInstalledNativeRecords)
 	storageTestMust(t, err)
 	if len(records) == 0 {

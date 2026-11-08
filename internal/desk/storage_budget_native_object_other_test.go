@@ -12,6 +12,7 @@ import (
 )
 
 func TestStorageNativeExt4ObjectUnavailable(t *testing.T) {
+	requireStorageLine(t)
 	got, err := storageNativeExt4Object(context.Background(), nil)
 	if got != (storageNativeExt4ObjectRaw{}) || !errors.Is(err, storagebudget.ErrUnsupported) {
 		t.Fatalf("%+v %v", got, err)
@@ -19,6 +20,7 @@ func TestStorageNativeExt4ObjectUnavailable(t *testing.T) {
 }
 
 func TestStorageNativeLinuxObjectMetadataUnavailable(t *testing.T) {
+	requireStorageLine(t)
 	if runtime.GOOS == "linux" {
 		t.Skip("Linux implementation is available")
 	}

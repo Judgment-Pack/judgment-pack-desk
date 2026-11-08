@@ -11,6 +11,7 @@ import (
 )
 
 func TestStorageNativeQuotaUnsupportedPlatform(t *testing.T) {
+	requireStorageLine(t)
 	ctx := context.Background()
 	status, err := storageNativeQuotaStatus(ctx, nil, 0)
 	if status != (storageNativeQuotaStatusRaw{}) || !errors.Is(err, storagebudget.ErrUnsupported) {

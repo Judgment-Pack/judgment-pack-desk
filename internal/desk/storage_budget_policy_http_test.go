@@ -197,6 +197,7 @@ func TestStoragePolicyHTTPJoinedUnknown(t *testing.T) {
 // Actual host/API equivalence remains proof-dependent. An empty or stale record
 // is not replaced by a fake host callback; parent must require this node to run.
 func TestStoragePolicyHTTPActualPrepareEditRestart(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	cfg := ownerActualConfig(t)
 	s := ownerActualNew(t, cfg)
@@ -268,6 +269,7 @@ func TestStoragePolicyHTTPActualPrepareEditRestart(t *testing.T) {
 // The seam is reached only after actual checked original publications. Capture
 // its invocation while paused; no alternate error producer or fake result is used.
 func TestStoragePolicyHTTPPostPublicationStaleOutcome(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	for _, tc := range []struct {
 		name, point string

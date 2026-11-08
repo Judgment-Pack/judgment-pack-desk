@@ -15,6 +15,7 @@ import (
 )
 
 func TestStorageEnrollmentRestrictedProjectCensusAbsenceAndDelegation(t *testing.T) {
+	requireStorageLine(t)
 	for _, delegated := range []bool{false, true} {
 		name := "positive-absence"
 		if delegated {
@@ -178,6 +179,7 @@ func storageRestrictedProjectBindingInputs(t *testing.T, c *storageBudgetConstru
 // M1/M3/CC-2 lineage integration is still pending; no skip/refusal substitutes
 // for normal automatic identity issuance and healthy immutable accounting.
 func TestStorageEnrollmentPreexistingPrivateIdentityIssuanceRestartKeepsHealthyAuthority(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	storageTestMust(t, os.Mkdir(filepath.Join(cfg.ProjectDir, startupIdentityDir), 0700))
 	privateFixture(t, filepath.Join(cfg.ProjectDir, startupIdentityDir, "retained-control"), "original preexisting private bytes")
@@ -651,6 +653,7 @@ func TestStorageEnrollmentPersonalAncestryRejectsExchangedAndSymlinkEdges(t *tes
 // entering its private transaction queue or changing any final namespace.
 // This proves refusal ordering only; successful native demand stays required.
 func TestStorageEnrollmentDefaultHistoryDemandPrecedesPrivateQueue(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c := s.storageConstruction
 	if c.ref.cell.enrollmentEndpoint != nil {
@@ -760,6 +763,7 @@ func TestStorageEnrollmentHistoryAncestorObjectIndexMappingIsExact(t *testing.T)
 // unqualified first-use backup must reach native demand before trying it, and
 // must not create an archive stage. This is ordering/refusal evidence only.
 func TestStorageEnrollmentBackupDemandPrecedesTransferAndStage(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	token := policyTestSession(t, s)
 	transfer, err := s.privateDataFileLock(".data-transfer.lock", true)
@@ -989,6 +993,7 @@ func TestStorageEnrollmentCreationRestartOriginalObjectRelationsAreExact(t *test
 // The lower dictionary joins below are data comparisons, not a native receipt:
 // actual qualified Workflow3 crash/restart acceptance is a separate required test.
 func TestStorageEnrollmentLegacyConfigPointerDiscoveryReachesRecoveryDictionary(t *testing.T) {
+	requireStorageLine(t)
 	for _, change := range []string{"unchanged", "same-body-new-native", "same-selection-new-payload"} {
 		t.Run(change, func(t *testing.T) {
 			cfg := ownerActualConfig(t)

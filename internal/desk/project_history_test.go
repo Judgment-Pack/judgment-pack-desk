@@ -42,6 +42,7 @@ func historyRequest(t *testing.T, ts *httptest.Server, action string, request pr
 // The first project's history is untouched. These were the relink and stale
 // preview tests, which started both projects' Desks on one installation.
 func TestProjectHistoryOfAnotherStartupProjectIsRefusedBySeal(t *testing.T) {
+	requireStorageLine(t)
 	config := t.TempDir()
 	old, ots, _ := assistantServerIn(t, config)
 	if code, _ := chatRequest(t, ots, "PUT", "absent", storageChat, true, ""); code != 200 {

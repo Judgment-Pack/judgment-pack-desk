@@ -471,6 +471,7 @@ func TestStorageRetentionHTTPGuards(t *testing.T) {
 	}
 }
 func TestStorageRetentionQualifiedPolicyCASRestart(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	cfg := ownerActualConfig(t)
 	s := ownerActualNew(t, cfg)
@@ -657,6 +658,7 @@ func TestStorageRetentionNestedReferenceCompleteness(t *testing.T) {
 // Genuine original owner/startup and preview, not a mock of its release helper.
 // Parent must provide exact current-source Record3; a skipped case is not PASS.
 func TestStorageRetentionQualifiedPreviewCleanup(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	for _, phase := range []string{"chat-entries-close", "settings-close"} {
 		t.Run(phase, func(t *testing.T) {
@@ -860,6 +862,7 @@ func TestStorageRetentionCheckedRetainedOpening(t *testing.T) {
 // Original startup owns these already-existing exact project bytes. The test
 // traverses the genuine populated capture, not a mock of its release helper.
 func TestStorageRetentionQualifiedProjectCleanup(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	for _, phase := range []string{"publication-ancestor-close", "draft-ancestor-close", "retained-ancestor-close"} {
 		t.Run(phase, func(t *testing.T) {

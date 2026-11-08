@@ -22,6 +22,7 @@ import (
 // without constructing an admitted operation, archive or serving permission.
 // The deliberately unsealed operation cannot pass serveOriginalChatTransferExport.
 func TestStorageTransferExportViewsRefuseRevokedPreparation(t *testing.T) {
+	requireStorageLine(t)
 	for _, byServer := range []bool{false, true} {
 		name := "request-cancel"
 		if byServer {
@@ -284,6 +285,7 @@ func storageTransferAssertExportHeld(t *testing.T, held storageTransferHeldExpor
 // Synthetic response/after-real-Close errors are induced fault evidence only;
 // they do not certify native durability, ENOSPC, or external client receipt.
 func TestStorageTransferQualifiedExportServingLifetime(t *testing.T) {
+	requireStorageLine(t)
 	records, err := storageEnrollmentNativeRecords(storageEnrollmentInstalledNativeRecords)
 	if err != nil {
 		t.Fatal(err)

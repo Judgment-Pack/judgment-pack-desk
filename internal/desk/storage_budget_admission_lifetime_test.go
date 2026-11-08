@@ -207,6 +207,7 @@ func TestStorageAdmissionFenceRequiresExistingAuthority(t *testing.T) {
 }
 
 func TestStorageAdmissionConstructionCloseJoinsOutsideMutex(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c, o := s.storageConstruction, s.storageConstruction.owner
 	if s.recoveryStorage != nil {

@@ -14,6 +14,7 @@ import (
 // chat-only legacy settings into a first-use history enrollment. The original
 // startup services run normally; the fixture seeds no enrollment or run ledger.
 func TestStorageStartupRecoveryProbeDoesNotDemandHistory(t *testing.T) {
+	requireStorageLine(t)
 	for _, name := range []string{"blank", "chat-only-legacy", "contained-blank"} {
 		t.Run(name, func(t *testing.T) {
 			var cfg Config
@@ -112,6 +113,7 @@ func storageRecoveryProbeContainedConfig(t *testing.T) Config {
 }
 
 func TestStorageStartupRecoveryProbeRefusesDanglingPrivateEdge(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, storageRecoveryProbeContainedConfig(t))
 	if !s.containedDeskData() || s.assistantRunRecoveryFailure() != nil || !s.storageConstruction.owner.admissionOpen() {
 		t.Fatal("actual blank contained startup did not remain available")

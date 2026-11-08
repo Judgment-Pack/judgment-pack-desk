@@ -297,6 +297,7 @@ func TestStorageGenericCensusNamedChildReplacementRefusesPublication(t *testing.
 }
 
 func TestStorageGenericCensusConcurrentExitAndLatePassCleanup(t *testing.T) {
+	requireStorageLine(t)
 	o, config, _ := storageWriterFixture(t, false)
 	entered := make(chan *storageInitialCensusAuthority, 1)
 	resume := make(chan struct{})

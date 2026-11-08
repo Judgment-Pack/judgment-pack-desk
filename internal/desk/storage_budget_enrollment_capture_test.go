@@ -14,6 +14,7 @@ import (
 )
 
 func TestStorageEnrollmentInitialCaptureOriginalState(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c := s.storageConstruction
 	before, err := c.ref.cell.q.InspectEnrollment(t.Context())
@@ -75,6 +76,7 @@ func TestStorageEnrollmentInitialCaptureOriginalState(t *testing.T) {
 }
 
 func TestStorageEnrollmentInitialCapturePreservesPartialNamespace(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c := s.storageConstruction
 	const name = "storage-enrollment.b"

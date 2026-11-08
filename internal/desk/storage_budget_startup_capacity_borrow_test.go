@@ -11,6 +11,7 @@ import (
 )
 
 func TestStorageOwnerStartupCapacityOriginalBorrow(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	if err := os.MkdirAll(filepath.Join(cfg.DeskConfigDir, "retained", "nested"), 0700); err != nil {
 		t.Fatal(err)

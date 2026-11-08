@@ -45,6 +45,7 @@ func runtimePressureWorkspaceRequest(t *testing.T, s *Server, token, method, rev
 // enrollment, response fulfillment, global file hook, provider or disk exhaustion.
 // The refusal occurs before the first stage write, and proves only that boundary.
 func TestStorageRuntimeActualPersistenceBoundaries(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	token := policyTestSession(t, s)
 	var refuse atomic.Bool
@@ -183,6 +184,7 @@ func TestStorageRuntimeActualPersistenceBoundaries(t *testing.T) {
 // Closing a fixture-owned root at its per-handle boundary needs no global hook
 // and no host filesystem pressure. No postpublication failure is simulated here.
 func TestStorageRuntimeFileJournalActualStageError(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	owner := s.storageConstruction.owner
 	for _, operation := range []string{storagePersistenceResearchCreate, storagePersistenceResearchUpdate} {
@@ -308,6 +310,7 @@ func TestStorageRuntimeReporterScopeAndRetirement(t *testing.T) {
 }
 
 func TestStorageRuntimeActualChildHookAndCloseIsolation(t *testing.T) {
+	requireStorageLine(t)
 	cfg, registry := homeFixture(t)
 	cfg.CodexBin, cfg.DevMode, cfg.Port = "off", true, testPort
 	infrastructureRequireNative(t, cfg.DeskConfigDir)

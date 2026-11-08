@@ -882,6 +882,7 @@ func TestStorageOwnerCatalogV6LegacySourceRelations(t *testing.T) {
 }
 
 func TestStorageOwnerCatalogV6ClosureMaterial(t *testing.T) {
+	requireStorageLine(t)
 	c, _, r, cl := ownerV6Fixture(t, 5, true)
 	source, err := c.sourceDefinitions(r, cl)
 	if err != nil {

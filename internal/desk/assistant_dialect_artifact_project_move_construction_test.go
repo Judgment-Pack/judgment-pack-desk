@@ -6,6 +6,7 @@ import (
 )
 
 func TestDialectArtifactConstructionRetainsStartupOperation(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	p, registry, _, _ := injectedArtifactProviderFixture(t)
 	info, err := os.Stat(cfg.ProjectDir)

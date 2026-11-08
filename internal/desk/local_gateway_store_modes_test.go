@@ -17,6 +17,7 @@ import (
 // file outside the store keep their modes, and the census still refuses an
 // entry someone else could write.
 func TestLocalGatewayStoreFromAnEarlierDeskIsNarrowedBeforeTheCensus(t *testing.T) {
+	requireStorageLine(t)
 	type entry struct {
 		path string
 		mode os.FileMode

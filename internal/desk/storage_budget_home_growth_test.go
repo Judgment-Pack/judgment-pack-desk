@@ -13,6 +13,7 @@ import (
 // status lists the added desk's folder as not registered. Any other change to
 // the registry (a desk changed or gone, another owner) is still custody.
 func TestADeskAddedToADeskHomeIsWarnedAboutNotReadOnly(t *testing.T) {
+	requireStorageLine(t)
 	cfg, registry := homeFixture(t)
 	s, ts := startDesk(t, cfg)
 	added := createTestDesk(t, ts, "Added later")

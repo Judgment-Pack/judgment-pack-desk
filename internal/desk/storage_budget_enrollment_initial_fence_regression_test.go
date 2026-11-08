@@ -15,6 +15,7 @@ import (
 // qualification. Expected commitments are authored independently of the codec;
 // no packet, qualification member or expected result is recorded from a run.
 func TestStorageEnrollmentInitialFenceProducerOriginalPayloadDomain(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c := s.storageConstruction
 	if c.ref.cell.enrollmentEndpoint != nil {

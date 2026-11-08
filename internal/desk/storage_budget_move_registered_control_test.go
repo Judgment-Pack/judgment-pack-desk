@@ -17,6 +17,7 @@ import (
 // Actual original host custody is necessary: a detached tuple cannot prove
 // that the SH launch's registered epoch may read its original J/Q snapshot.
 func TestStorageMoveRegisteredControlOriginal(t *testing.T) {
+	requireStorageLine(t)
 	project := t.TempDir()
 	storageTestMust(t, os.Mkdir(filepath.Join(project, startupIdentityDir), 0700))
 	privateFixture(t, filepath.Join(project, startupIdentityDir, startupIdentityName), identityLine(strings.Repeat("f", 64), project, ""))

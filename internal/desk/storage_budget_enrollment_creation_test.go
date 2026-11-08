@@ -536,6 +536,7 @@ func TestStorageCreationExactMaximumAndTailBound(t *testing.T) {
 }
 
 func TestStorageCreationActualHelpersBorrowOriginalAndExcludeOtherConfig(t *testing.T) {
+	requireStorageLine(t)
 	cfg1, cfg2 := ownerActualConfig(t), ownerActualConfig(t)
 	cfg2.ProjectDir = cfg1.ProjectDir
 	first, second := ownerActualNew(t, cfg1), ownerActualNew(t, cfg2)
@@ -592,6 +593,7 @@ func TestStorageCreationActualHelpersBorrowOriginalAndExcludeOtherConfig(t *test
 }
 
 func TestStorageCreationOriginalCloseRetainsBorrowedDescription(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	lease, err := s.lockProjectOwned(t.Context(), 0)
 	storageTestMust(t, err)

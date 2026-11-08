@@ -364,6 +364,7 @@ func TestStoragePreparationTwoPrefixesSigningBorrowRetainsProject(t *testing.T) 
 }
 
 func TestStorageIdentityOriginalProducerCaptureAndUnqualifiedRefusal(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	storageTestMust(t, os.Chmod(cfg.ProjectDir, 0700))
 	storageTestMust(t, os.Mkdir(filepath.Join(cfg.ProjectDir, startupIdentityDir), 0700))
@@ -421,6 +422,7 @@ func TestStorageIdentityOriginalProducerCaptureAndUnqualifiedRefusal(t *testing.
 }
 
 func TestStorageIdentityActualStartupCallerUnqualifiedPreservesOriginal(t *testing.T) {
+	requireStorageLine(t)
 	if storageEnrollmentInstalledNativeRecords != "[]" {
 		t.Fatal("this negative fixture requires the pinned empty installed records")
 	}
@@ -781,6 +783,7 @@ func TestStorageEnrollmentRecoveryObserverRetainsOriginalRows(t *testing.T) {
 // these until the release-owned Version2 five-predicate prerequisite exists.
 // No record/profile/observer is injected and no refusal or skip is success.
 func TestStorageIdentityQualifiedOriginalKnownCuts(t *testing.T) {
+	requireStorageLine(t)
 	if storageEnrollmentInstalledNativeRecords == "[]" {
 		t.Fatal("pending genuine Version2 native qualification")
 	}
@@ -853,6 +856,7 @@ func TestStorageIdentityQualifiedOriginalKnownCuts(t *testing.T) {
 	}
 }
 func TestStorageIdentityQualifiedLazyPrivateDraftLifecycle(t *testing.T) {
+	requireStorageLine(t)
 	if storageEnrollmentInstalledNativeRecords == "[]" {
 		t.Fatal("pending genuine Version2 native qualification")
 	}
@@ -1065,6 +1069,7 @@ func TestStorageIdentityOriginalAppliedRequestRecoveryCuts(t *testing.T) {
 // qualification. It uses actual New, an actual retained home child and original
 // J/Q/native effects; no child Server/ProjectRoot or issuer is fabricated.
 func TestStorageIdentityQualifiedRetainedChildRestartViaPrimary(t *testing.T) {
+	requireStorageLine(t)
 	if storageEnrollmentInstalledNativeRecords == "[]" {
 		t.Fatal("pending genuine Version2 native qualification")
 	}

@@ -171,6 +171,7 @@ func storagePolicyHostRequireRecord(t *testing.T) {
 }
 
 func TestStoragePolicyHostPrepareAndStickyRestart(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	for _, kind := range []string{"project", "managed-desk"} {
 		t.Run(kind, func(t *testing.T) {
@@ -323,6 +324,7 @@ func TestStoragePolicyHostPrepareAndStickyRestart(t *testing.T) {
 }
 
 func TestStoragePolicyHostNativePBeforeFirstReserveRestart(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	cfg := ownerActualConfig(t)
 	s, err := New(cfg)
@@ -433,6 +435,7 @@ func TestStoragePolicyHostNativePBeforeFirstReserveRestart(t *testing.T) {
 }
 
 func TestStoragePolicyHostInterruptedGroups(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	for _, tc := range []struct {
 		name, point, phase string
@@ -508,6 +511,7 @@ func TestStoragePolicyHostInterruptedGroups(t *testing.T) {
 }
 
 func TestStoragePolicyHostCancellationDrain(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	for _, kind := range []string{"caller-cancel", "server-close"} {
 		t.Run(kind, func(t *testing.T) {
@@ -578,6 +582,7 @@ func TestStoragePolicyHostCancellationDrain(t *testing.T) {
 // operation. The bounded chain must establish both actual path2 and path3,
 // including interrupted continuations; missing coverage fails this group.
 func TestStoragePolicyHostPostPolicyR1Restart(t *testing.T) {
+	requireStorageLine(t)
 	storagePolicyHostRequireRecord(t)
 	cfg := ownerActualConfig(t)
 	cfg.JpackBin = standInRuntime(t)

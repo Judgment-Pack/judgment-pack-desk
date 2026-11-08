@@ -188,6 +188,7 @@ func TestStorageEnrollmentNativeDenseVectors(t *testing.T) {
 }
 
 func TestStorageEnrollmentEpochOriginalExclusionAndNoEffectExit(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c, o := s.storageConstruction, s.storageConstruction.owner
 	before, err := c.ref.cell.q.InspectHost(t.Context())
@@ -265,6 +266,7 @@ func TestStorageEnrollmentEpochOriginalExclusionAndNoEffectExit(t *testing.T) {
 }
 
 func TestStorageEnrollmentEpochCancellationRetainsOriginalHolds(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c, o := s.storageConstruction, s.storageConstruction.owner
 	ctx, cancel := context.WithCancel(t.Context())
@@ -305,6 +307,7 @@ func TestStorageEnrollmentEpochCancellationRetainsOriginalHolds(t *testing.T) {
 }
 
 func TestStorageEnrollmentEpochBusyOriginalProjectPreservesQ(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c := s.storageConstruction
 	f, err := s.root.Open(".")

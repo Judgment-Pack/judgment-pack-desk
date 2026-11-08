@@ -21,12 +21,14 @@ import (
 // injected. Unsupported native routes remain an explicit qualification skip.
 func ownerActualConfig(t *testing.T) Config {
 	t.Helper()
+	requireStorageLine(t)
 	base := t.TempDir()
 	infrastructureRequireNative(t, base)
 	return Config{ProjectDir: t.TempDir(), DeskConfigDir: filepath.Join(base, "config"), Token: testToken, Port: testPort, DevMode: true, CodexBin: "off", JpackBin: homeRuntime(t)}
 }
 func ownerActualNew(t *testing.T, cfg Config) *Server {
 	t.Helper()
+	requireStorageLine(t)
 	s, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +51,7 @@ func ownerActualNew(t *testing.T, cfg Config) *Server {
 }
 
 func TestStorageOwnerActualNewRestartAndAdmission(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	if err := os.Mkdir(cfg.DeskConfigDir, 0700); err != nil {
 		t.Fatal(err)
@@ -168,6 +171,7 @@ func TestStorageOwnerActualNewRestartAndAdmission(t *testing.T) {
 }
 
 func TestStorageOwnerActualCopiedAuthorityAndCurrentness(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c := s.storageConstruction
 	copy := &storageBudgetConstruction{self: c.self, server: c.server, project: c.project, assistant: c.assistant, home: c.home, original: c.original, ref: c.ref, owner: c.owner}
@@ -197,6 +201,7 @@ func TestStorageOwnerActualCopiedAuthorityAndCurrentness(t *testing.T) {
 }
 
 func TestStorageOwnerActualReadyRefusalsPreserveState(t *testing.T) {
+	requireStorageLine(t)
 	for _, kind := range []string{"missing", "wrong", "short", "long"} {
 		t.Run(kind, func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -255,6 +260,7 @@ func TestStorageOwnerActualReadyRefusalsPreserveState(t *testing.T) {
 }
 
 func TestStorageOwnerActualPreparedAfterAndConflictingBanks(t *testing.T) {
+	requireStorageLine(t)
 	for _, kind := range []string{"torn-active-peer", "both-invalid", "conflicting-sequence"} {
 		t.Run(kind, func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -329,6 +335,7 @@ func TestStorageOwnerActualPreparedAfterAndConflictingBanks(t *testing.T) {
 }
 
 func TestStorageOwnerActualPartialQIsNeverInitialized(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	s := ownerActualNew(t, cfg)
 	if err := s.Close(); err != nil {
@@ -353,6 +360,7 @@ func TestStorageOwnerActualPartialQIsNeverInitialized(t *testing.T) {
 }
 
 func TestStorageOwnerActualCloseDrainsUse(t *testing.T) {
+	requireStorageLine(t)
 	s := ownerActualNew(t, ownerActualConfig(t))
 	c, o := s.storageConstruction, s.storageConstruction.owner
 	if err := o.retain(); err != nil {
@@ -486,6 +494,7 @@ func TestStorageOwnerActualCloseDrainsUse(t *testing.T) {
 }
 
 func TestStorageOwnerLogicalLimitIntersectionsAndReadableRefusal(t *testing.T) {
+	requireStorageLine(t)
 	p := storageHostInitialPolicy()
 	var u [storagebudget.Categories]storagebudget.Vector
 	u[0] = storagebudget.Vector{Bytes: 1, Files: 262144, Directories: 1}
@@ -529,6 +538,7 @@ func TestStorageOwnerLogicalLimitIntersectionsAndReadableRefusal(t *testing.T) {
 // answer, and status shows the counted data over the limit. Sparse length
 // exercises logical policy without an allocation/workload claim.
 func TestStorageOwnerActualOverBudgetWarnsAndKeepsWorking(t *testing.T) {
+	requireStorageLine(t)
 	cfg := ownerActualConfig(t)
 	privateFixture(t, filepath.Join(cfg.ProjectDir, "saved.md"), "saved project document")
 	if err := os.Mkdir(cfg.DeskConfigDir, 0700); err != nil {
@@ -619,6 +629,7 @@ func TestStorageOwnerActualOverBudgetWarnsAndKeepsWorking(t *testing.T) {
 }
 
 func TestStorageOwnerActualChildBorrowsInstallation(t *testing.T) {
+	requireStorageLine(t)
 	cfg, registry := homeFixture(t)
 	cfg.CodexBin = "off"
 	cfg.DevMode = true
@@ -855,6 +866,7 @@ func ownerCrashConstructionStart(t *testing.T, cfg Config, closeCheck func(error
 }
 
 func TestStorageOwnerPreparedBeforeUsesExactRevision(t *testing.T) {
+	requireStorageLine(t)
 	for _, stale := range []bool{false, true} {
 		t.Run(map[bool]string{false: "exact-before", true: "stale-before"}[stale], func(t *testing.T) {
 			cfg := ownerActualConfig(t)
@@ -966,6 +978,7 @@ func TestStorageOwnerCreationUncertaintyNeverRetries(t *testing.T) {
 }
 
 func TestStorageOwnerCatalogCutsRetainExactTransaction(t *testing.T) {
+	requireStorageLine(t)
 	for _, key := range []string{"config/prepared", "config/active"} {
 		for _, phase := range []string{"write", "sync", "close", "readback"} {
 			t.Run(key+"/"+phase, func(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 // reads its own chats and files, and its storage status answers. It never
 // borrows the installation from a folder the desks folder does not name.
 func TestANamedDeskOutsideADeskHomeHasStorage(t *testing.T) {
+	requireStorageLine(t)
 	s, ts, _ := assistantServer(t)
 	named := createTestDesk(t, ts, "Named")
 	child := s.desks[named.ID]
